@@ -1,0 +1,60 @@
+system:
+  id: "bot-bybit-demo"
+  mode: "paper"
+  primary_symbol: "BTCUSDT"
+  data_path: "./data"
+  max_ticks: 0
+  status_log_interval_ticks: 20
+  reconcile:
+    enabled: true
+    interval_ticks: 10
+    tolerance_notional_usd: 5.0
+
+exchange:
+  platform: "bybit"
+  bybit:
+    testnet: false
+    demo_trading: true
+    category: "linear"
+    account_type: "UNIFIED"
+    expected_account_mode: "UNIFIED"
+    expected_margin_mode: "ISOLATED"
+    expected_position_mode: "ONE_WAY"
+    public_ws_enabled: true
+    public_ws_rest_fallback: true
+    private_ws_enabled: true
+    private_ws_rest_fallback: true
+    execution_poll_limit: 50
+
+risk:
+  max_abs_notional_usd: 3000
+  max_drawdown:
+    degraded_threshold: 0.08
+    cooldown_threshold: 0.12
+    fuse_threshold: 0.20
+
+execution:
+  max_order_notional: 1000
+  min_order_interval_ms: 3000
+  reverse_signal_cooldown_ticks: 4
+  protection:
+    enabled: false
+    require_sl: true
+    enable_tp: true
+    attach_timeout_ms: 1500
+    stop_loss_ratio: 0.01
+    take_profit_ratio: 0.015
+
+gate:
+  min_effective_signals_per_day: 24
+  min_fills_per_day: 4
+  heartbeat_empty_signal_ticks: 12
+  window_ticks: 288
+
+universe:
+  enabled: true
+  update_interval_ticks: 10
+  max_active_symbols: 3
+  min_active_symbols: 1
+  fallback_symbols: ["BTCUSDT", "ETHUSDT"]
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]

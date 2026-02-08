@@ -1,0 +1,20 @@
+services:
+  ai-trade:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-trade:latest
+    container_name: ai-trade
+    restart: "no"
+    command: ["--config=config/bybit.replay.yaml", "--exchange=bybit"]
+    # docker compose 会自动读取项目根目录 .env（建议从 .env.example 复制）
+    environment:
+      AI_TRADE_BYBIT_TESTNET_API_KEY: ${AI_TRADE_BYBIT_TESTNET_API_KEY:-}
+      AI_TRADE_BYBIT_TESTNET_API_SECRET: ${AI_TRADE_BYBIT_TESTNET_API_SECRET:-}
+      AI_TRADE_BYBIT_DEMO_API_KEY: ${AI_TRADE_BYBIT_DEMO_API_KEY:-}
+      AI_TRADE_BYBIT_DEMO_API_SECRET: ${AI_TRADE_BYBIT_DEMO_API_SECRET:-}
+      AI_TRADE_BYBIT_MAINNET_API_KEY: ${AI_TRADE_BYBIT_MAINNET_API_KEY:-}
+      AI_TRADE_BYBIT_MAINNET_API_SECRET: ${AI_TRADE_BYBIT_MAINNET_API_SECRET:-}
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
