@@ -80,9 +80,10 @@ self_evolution:
   initial_defensive_weight: 0.50
 
 gate:
-  min_effective_signals_per_day: 12
-  min_fills_per_day: 1
-  heartbeat_empty_signal_ticks: 12
+  # S5 稳态 soak：放宽活跃度门槛，降低低波动阶段误报。
+  min_effective_signals_per_day: 4
+  min_fills_per_day: 0
+  heartbeat_empty_signal_ticks: 24
   window_ticks: 288
   enforce_runtime_actions: false
   fail_to_reduce_only_windows: 2

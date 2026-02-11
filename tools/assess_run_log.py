@@ -26,6 +26,8 @@ class StageRule:
     require_gate_window: bool
     require_evolution_init: bool
     max_trading_halted_true_ratio: float
+    gate_warn_min_windows: int
+    gate_warn_max_fail_ratio: float
 
 
 STAGE_RULES: Dict[str, StageRule] = {
@@ -35,6 +37,8 @@ STAGE_RULES: Dict[str, StageRule] = {
         require_gate_window=True,
         require_evolution_init=False,
         max_trading_halted_true_ratio=0.20,
+        gate_warn_min_windows=20,
+        gate_warn_max_fail_ratio=0.90,
     ),
     "S5": StageRule(
         name="S5",
@@ -42,6 +46,8 @@ STAGE_RULES: Dict[str, StageRule] = {
         require_gate_window=True,
         require_evolution_init=True,
         max_trading_halted_true_ratio=0.10,
+        gate_warn_min_windows=50,
+        gate_warn_max_fail_ratio=0.95,
     ),
 }
 
@@ -171,6 +177,13 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         )
     else:
         metrics["trading_halted_true_ratio"] = 0.0
+    gate_window_count = metrics["gate_check_passed_count"] + metrics["gate_check_failed_count"]
+    if gate_window_count > 0:
+        metrics["gate_check_fail_ratio"] = (
+            metrics["gate_check_failed_count"] / gate_window_count
+        )
+    else:
+        metrics["gate_check_fail_ratio"] = 0.0
 
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
@@ -190,18 +203,28 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
     if metrics["ws_unhealthy_count"] > 0:
         fail_reasons.append(f"运行态 WS 健康检查失败次数: {metrics['ws_unhealthy_count']}")
 
-    gate_window_count = metrics["gate_check_passed_count"] + metrics["gate_check_failed_count"]
     if stage.require_gate_window and gate_window_count <= 0:
         fail_reasons.append("未检测到 Gate 窗口判定（GATE_CHECK_PASSED/FAILED）")
 
-    if stage.require_evolution_init and metrics["self_evolution_init_count"] <= 0:
-        fail_reasons.append("未检测到 SELF_EVOLUTION_INIT")
+    if (
+        stage.require_evolution_init
+        and metrics["self_evolution_init_count"] <= 0
+        and metrics["self_evolution_action_count"] <= 0
+    ):
+        fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
 
     # 软告警：不阻断阶段，但需要后续参数/策略动作
     if metrics["reconcile_mismatch_count"] > 0 and metrics["reconcile_autoresync_count"] <= 0:
         warn_reasons.append("出现对账不一致但未观察到 AUTORESYNC")
-    if metrics["gate_check_failed_count"] > metrics["gate_check_passed_count"]:
-        warn_reasons.append("Gate FAILED 次数高于 PASSED，建议复核策略活跃度参数")
+    if (
+        gate_window_count >= stage.gate_warn_min_windows
+        and metrics["gate_check_fail_ratio"] > stage.gate_warn_max_fail_ratio
+    ):
+        warn_reasons.append(
+            "Gate 失败率偏高，建议复核策略活跃度参数: "
+            f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
+            f"threshold={stage.gate_warn_max_fail_ratio:.4f}"
+        )
     if (
         metrics["trading_halted_true_count"] > 0
         and metrics["trading_halted_true_ratio"] <= stage.max_trading_halted_true_ratio
@@ -215,6 +238,11 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         and metrics["self_evolution_init_count"] > 0
     ):
         warn_reasons.append("未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛")
+    if (
+        metrics["self_evolution_init_count"] <= 0
+        and metrics["self_evolution_action_count"] > 0
+    ):
+        warn_reasons.append("窗口内未见 SELF_EVOLUTION_INIT，但已见 ACTION（可能因日志截窗不含启动段）")
 
     if fail_reasons:
         verdict = "FAIL"
