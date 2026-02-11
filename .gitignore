@@ -1,12 +1,17 @@
 # Build artifacts
 /build/
 /bin/
+/cmake-build-*/
+/compile_commands.json
 
 # macOS
 .DS_Store
 
 # Local secrets
 .env
+.env.runtime
+.env.local
+.env.*.local
 
 # Runtime / research artifacts (keep directory placeholders)
 /data/**
@@ -18,3 +23,19 @@ run_*.log
 
 # Write-ahead logs
 *.wal
+
+# Python cache / local tooling artifacts
+__pycache__/
+*.py[cod]
+.pycache_tmp/
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# CI / local temp artifacts
+.artifacts/
+
+# IDE/editor local files
+.vscode/
+.idea/
+*.swp

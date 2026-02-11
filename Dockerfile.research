@@ -9,5 +9,6 @@ WORKDIR /workspace
 
 COPY tools/requirements-research.txt /tmp/requirements-research.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-research.txt
+COPY tools /workspace/tools
 
 ENTRYPOINT ["python3", "tools/integrator_train.py"]

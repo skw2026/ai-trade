@@ -127,6 +127,13 @@ docker compose ps
 - Prometheus: `http://<host>:9090`
 - Loki: `http://<host>:3100`
 
+安全默认值（生产建议）：
+- 监控端口默认仅绑定本机回环（`127.0.0.1`）；若需公网访问，请显式设置：
+  - `GRAFANA_BIND_ADDRESS=0.0.0.0`
+  - `PROMETHEUS_BIND_ADDRESS=0.0.0.0`
+  - `LOKI_BIND_ADDRESS=0.0.0.0`
+- `GRAFANA_ADMIN_PASSWORD` 必须改为强密码，并配合安全组白名单。
+
 预置仪表盘：
 - `ai-trade Runtime`（已自动导入）
 - `ai-trade Metrics Runtime (Prometheus)`（已自动导入）
@@ -254,6 +261,10 @@ docker compose run --rm --entrypoint python3 ai-trade-research \
 docker compose run --rm ai-trade \
   --run_miner \
   --miner_csv=./data/research/ohlcv_5m.csv \
+  --miner_top_k=10 \
+  --miner_generations=4 \
+  --miner_population=32 \
+  --miner_elite=8 \
   --miner_output=./data/research/miner_report.json
 
 # R2: Integrator（Python + CatBoost）
@@ -263,6 +274,59 @@ docker compose run --rm ai-trade-research \
   --output=./data/research/integrator_report.json \
   --model_out=./data/models/integrator_latest.cbm
 ```
+
+自动闭环（训练/验收/汇总报告）：
+```bash
+# train: R0 + R1 + R2 + 模型注册 + 汇总报告
+tools/closed_loop_runner.sh train
+
+# assess: 仅运行态验收（S3/S5）+ 汇总报告
+tools/closed_loop_runner.sh assess --stage S5 --since 4h
+
+# full: train + assess
+tools/closed_loop_runner.sh full --stage S5 --since 4h
+```
+
+`train/full` 现在包含两道前置门禁：
+- `D1 baseline freeze`：冻结当前 active 模型快照（输出 `baseline_report.json`）
+- `D2 data quality gate`：训练前校验 CSV 质量（输出 `data_quality_report.json`）
+
+闭环产物目录：
+- 每次运行：`data/reports/closed_loop/<UTC_RUN_ID>/`
+- 最新软链接：`data/reports/closed_loop/latest`
+- 总结报告：`data/reports/closed_loop/latest/closed_loop_report.json`
+
+报告重点（账号盈亏）：
+- `account_outcome.first_equity_usd`
+- `account_outcome.last_equity_usd`
+- `account_outcome.equity_change_usd`
+- `account_outcome.equity_change_pct`
+- `account_outcome.max_drawdown_pct_observed`
+
+ECS 一键验收（已部署 `docker-compose.prod.yml` 场景）：
+```bash
+cd /opt/ai-trade
+set -a && source .env.runtime && set +a
+tools/closed_loop_runner.sh assess \
+  --compose-file docker-compose.prod.yml \
+  --env-file .env.runtime \
+  --stage S5 \
+  --since 4h
+cat data/reports/closed_loop/latest/closed_loop_report.json
+```
+
+定时闭环（cron 示例，每6小时跑一次运行态验收）：
+```bash
+cd /opt/ai-trade
+(crontab -l 2>/dev/null; echo "15 */6 * * * cd /opt/ai-trade && set -a && source .env.runtime && set +a && /opt/ai-trade/tools/closed_loop_runner.sh assess --compose-file docker-compose.prod.yml --env-file .env.runtime --stage S5 --since 6h >> /opt/ai-trade/data/reports/closed_loop/cron.log 2>&1") | crontab -
+```
+
+也可直接参考模板：`ops/cron/closed-loop.cron.example`。
+
+GitHub Actions 定时闭环：
+- 工作流：`.github/workflows/closed-loop.yml`
+- 支持 `workflow_dispatch` 手动触发（`train/full/assess`）
+- 默认每 6 小时在 ECS 执行一次 `assess` 并输出闭环报告。
 
 说明：默认采用“WS优先、失败自动回退 REST”。
 - 行情通道：`public_ws_enabled=true`，失败可回退 `/v5/market/tickers`

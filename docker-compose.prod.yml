@@ -25,6 +25,17 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  ai-trade-research:
+    image: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
+    container_name: ai-trade-research
+    restart: "no"
+    working_dir: /workspace
+    entrypoint: ["python3", "tools/integrator_train.py"]
+    command: ["--help"]
+    volumes:
+      - ./:/workspace
+    profiles: ["research"]
+
   loki:
     image: grafana/loki:2.9.8
     container_name: ai-trade-loki
@@ -34,7 +45,7 @@ services:
       - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
       - ./data/observability/loki:/loki
     ports:
-      - "3100:3100"
+      - "${LOKI_BIND_ADDRESS:-127.0.0.1}:${LOKI_PORT:-3100}:3100"
     profiles: ["obs"]
 
   promtail:
@@ -64,7 +75,7 @@ services:
       - ./observability/prometheus/rules:/etc/prometheus/rules:ro
       - ./data/observability/prometheus:/prometheus
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_BIND_ADDRESS:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
       - promtail
     profiles: ["obs"]
@@ -82,7 +93,7 @@ services:
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ./data/observability/grafana:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "${GRAFANA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - loki
       - prometheus

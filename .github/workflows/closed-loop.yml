@@ -1,0 +1,105 @@
+name: Closed Loop
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "闭环动作（assess/full/train）"
+        required: true
+        default: "assess"
+        type: choice
+        options:
+          - assess
+          - full
+          - train
+      stage:
+        description: "运行验收阶段（S3/S5）"
+        required: true
+        default: "S5"
+        type: choice
+        options:
+          - S3
+          - S5
+      since:
+        description: "日志窗口（例如 4h / 12h / 24h）"
+        required: true
+        default: "4h"
+        type: string
+  schedule:
+    - cron: "15 */6 * * *" # 每6小时一次
+
+permissions:
+  contents: read
+
+concurrency:
+  group: closed-loop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run-closed-loop:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deploy secrets
+        run: |
+          set -euo pipefail
+          test -n "${{ secrets.ECS_HOST }}"
+          test -n "${{ secrets.ECS_USER }}"
+          test -n "${{ secrets.ECS_SSH_KEY }}"
+
+      - name: Run Closed Loop on ECS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
+          CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
+          CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE
+          script: |
+            set -euo pipefail
+            cd /opt/ai-trade
+            set -a && source .env.runtime && set +a
+            chmod +x tools/closed_loop_runner.sh
+            tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
+              --compose-file docker-compose.prod.yml \
+              --env-file .env.runtime \
+              --output-root ./data/reports/closed_loop \
+              --stage "${CLOSED_LOOP_STAGE}" \
+              --since "${CLOSED_LOOP_SINCE}"
+            LATEST="./data/reports/closed_loop/latest/closed_loop_report.json"
+            if [[ -f "${LATEST}" ]]; then
+              echo "=== closed_loop_report ==="
+              cat "${LATEST}"
+            else
+              echo "missing report: ${LATEST}"
+              exit 1
+            fi
+
+      - name: Download Closed Loop Reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          umask 077
+          printf '%s' "${{ secrets.ECS_SSH_KEY }}" > .artifacts/ecs_key
+          chmod 600 .artifacts/ecs_key
+          PORT="${{ secrets.ECS_PORT || 22 }}"
+          HOST="${{ secrets.ECS_HOST }}"
+          USER="${{ secrets.ECS_USER }}"
+          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
+            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest/closed_loop_report.json" \
+            ".artifacts/closed_loop_report.json"
+          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
+            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest/runtime_assess.json" \
+            ".artifacts/runtime_assess.json" || true
+          rm -f .artifacts/ecs_key
+
+      - name: Upload Closed Loop Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: closed-loop-report-${{ github.run_id }}
+          path: .artifacts/*.json
+          if-no-files-found: error

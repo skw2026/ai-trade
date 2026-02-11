@@ -21,6 +21,9 @@ struct RuntimeOptions {
   std::string miner_csv_path;
   std::string miner_output_path{"./data/research/miner_report.json"};
   std::optional<int> miner_top_k;
+  std::optional<int> miner_generations;
+  std::optional<int> miner_population;
+  std::optional<int> miner_elite;
 };
 
 bool ParseNonNegativeInt(const std::string& raw, int* out_value) {
@@ -66,6 +69,8 @@ void ParseOptionalIntArg(const std::string& raw_value,
  * - `--remote_risk_refresh_interval_ticks=...` / `--remote_risk_refresh_interval_ticks ...`
  * - `--run_forever`
  * - `--run_miner --miner_csv=... [--miner_output=...] [--miner_top_k=...]`
+ *               [--miner_generations=...] [--miner_population=...]
+ *               [--miner_elite=...]
  */
 RuntimeOptions ParseOptions(int argc, char** argv) {
   RuntimeOptions options;
@@ -156,6 +161,40 @@ RuntimeOptions ParseOptions(int argc, char** argv) {
       ParseOptionalIntArg(argv[i], "--miner_top_k", &options.miner_top_k);
       continue;
     }
+    if (arg.rfind("--miner_generations=", 0) == 0) {
+      ParseOptionalIntArg(arg.substr(std::string("--miner_generations=").size()),
+                          "--miner_generations",
+                          &options.miner_generations);
+      continue;
+    }
+    if (arg == "--miner_generations" && i + 1 < argc) {
+      ++i;
+      ParseOptionalIntArg(
+          argv[i], "--miner_generations", &options.miner_generations);
+      continue;
+    }
+    if (arg.rfind("--miner_population=", 0) == 0) {
+      ParseOptionalIntArg(arg.substr(std::string("--miner_population=").size()),
+                          "--miner_population",
+                          &options.miner_population);
+      continue;
+    }
+    if (arg == "--miner_population" && i + 1 < argc) {
+      ++i;
+      ParseOptionalIntArg(argv[i], "--miner_population", &options.miner_population);
+      continue;
+    }
+    if (arg.rfind("--miner_elite=", 0) == 0) {
+      ParseOptionalIntArg(arg.substr(std::string("--miner_elite=").size()),
+                          "--miner_elite",
+                          &options.miner_elite);
+      continue;
+    }
+    if (arg == "--miner_elite" && i + 1 < argc) {
+      ++i;
+      ParseOptionalIntArg(argv[i], "--miner_elite", &options.miner_elite);
+      continue;
+    }
   }
   return options;
 }
@@ -208,8 +247,20 @@ int RunOfflineMiner(const RuntimeOptions& options) {
   if (options.miner_top_k.has_value() && *options.miner_top_k > 0) {
     miner_config.top_k = static_cast<std::size_t>(*options.miner_top_k);
   }
+  if (options.miner_generations.has_value() && *options.miner_generations > 0) {
+    miner_config.generations = *options.miner_generations;
+  }
+  if (options.miner_population.has_value() && *options.miner_population > 0) {
+    miner_config.population_size = *options.miner_population;
+  }
+  if (options.miner_elite.has_value() && *options.miner_elite > 0) {
+    miner_config.elite_size = *options.miner_elite;
+  }
   ai_trade::LogInfo("MINER_START: bars=" + std::to_string(bars.size()) +
-                    ", top_k=" + std::to_string(miner_config.top_k));
+                    ", top_k=" + std::to_string(miner_config.top_k) +
+                    ", generations=" + std::to_string(miner_config.generations) +
+                    ", population=" + std::to_string(miner_config.population_size) +
+                    ", elite=" + std::to_string(miner_config.elite_size));
 
   ai_trade::research::Miner miner;
   const ai_trade::research::MinerReport report = miner.Run(bars, miner_config);

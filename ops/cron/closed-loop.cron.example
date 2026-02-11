@@ -1,0 +1,12 @@
+# ai-trade 闭环定时任务示例
+#
+# 使用前请先确认：
+# 1) /opt/ai-trade 已部署最新代码；
+# 2) /opt/ai-trade/.env.runtime 已配置；
+# 3) tools/closed_loop_runner.sh 可执行。
+
+# 每 6 小时做一次运行态验收（S5）
+15 */6 * * * cd /opt/ai-trade && set -a && source .env.runtime && set +a && /opt/ai-trade/tools/closed_loop_runner.sh assess --compose-file docker-compose.prod.yml --env-file .env.runtime --stage S5 --since 6h >> /opt/ai-trade/data/reports/closed_loop/cron.log 2>&1
+
+# 每天 03:30 UTC 执行一次全流程闭环（R0/R1/R2 + 注册 + 验收）
+# 30 3 * * * cd /opt/ai-trade && set -a && source .env.runtime && set +a && /opt/ai-trade/tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml --env-file .env.runtime --stage S5 --since 12h >> /opt/ai-trade/data/reports/closed_loop/cron.log 2>&1

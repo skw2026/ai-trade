@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -186,6 +187,175 @@ struct CandidateEval {
 SpearmanIcResult ComputeIcInRange(const std::vector<double>& factor,
                                   const std::vector<double>& future_returns,
                                   std::size_t begin,
+                                  std::size_t end);
+
+IcSummary ComputeRollingSummaryInRange(const std::vector<double>& factor_values,
+                                       const std::vector<double>& future_returns,
+                                       int window,
+                                       std::size_t begin,
+                                       std::size_t end);
+
+CandidateEval EvaluateCandidate(const Candidate& candidate,
+                                const std::vector<double>& future_returns,
+                                std::size_t split_index,
+                                int rolling_window,
+                                double complexity_penalty) {
+  const SpearmanIcResult train_ic =
+      ComputeIcInRange(candidate.values, future_returns, 0, split_index);
+  const SpearmanIcResult oos_ic =
+      ComputeIcInRange(candidate.values, future_returns, split_index, future_returns.size());
+  const IcSummary rolling_train = ComputeRollingSummaryInRange(
+      candidate.values, future_returns, rolling_window, 0, split_index);
+  const IcSummary rolling_oos = ComputeRollingSummaryInRange(
+      candidate.values, future_returns, rolling_window, split_index, future_returns.size());
+  const double objective =
+      std::fabs(oos_ic.ic) - complexity_penalty * candidate.complexity;
+  return {candidate.expression,
+          train_ic.ic,
+          oos_ic.ic,
+          candidate.complexity,
+          objective,
+          rolling_train,
+          rolling_oos};
+}
+
+void SortEvaluations(std::vector<CandidateEval>* evaluations) {
+  if (evaluations == nullptr) {
+    return;
+  }
+  std::sort(evaluations->begin(),
+            evaluations->end(),
+            [](const CandidateEval& lhs, const CandidateEval& rhs) {
+              if (lhs.objective != rhs.objective) {
+                return lhs.objective > rhs.objective;
+              }
+              return lhs.expression < rhs.expression;
+            });
+}
+
+double MeanObjective(const std::vector<CandidateEval>& evaluations) {
+  if (evaluations.empty()) {
+    return 0.0;
+  }
+  double sum = 0.0;
+  for (const CandidateEval& eval : evaluations) {
+    sum += eval.objective;
+  }
+  return sum / static_cast<double>(evaluations.size());
+}
+
+bool AddCandidateDedup(const Candidate& candidate,
+                       std::unordered_set<std::string>* visited,
+                       std::vector<Candidate>* out) {
+  if (visited == nullptr || out == nullptr) {
+    return false;
+  }
+  if (candidate.expression.empty() || candidate.values.empty()) {
+    return false;
+  }
+  const auto [_, inserted] = visited->insert(candidate.expression);
+  if (!inserted) {
+    return false;
+  }
+  out->push_back(candidate);
+  return true;
+}
+
+std::vector<Candidate> BuildNextGeneration(
+    const std::vector<Candidate>& all_candidates,
+    const std::vector<CandidateEval>& evaluations,
+    int elite_size,
+    int population_size,
+    std::mt19937* rng) {
+  std::vector<Candidate> next;
+  if (all_candidates.empty() || evaluations.empty() || rng == nullptr) {
+    return next;
+  }
+
+  const std::size_t safe_elite =
+      std::max<std::size_t>(1, std::min<std::size_t>(static_cast<std::size_t>(std::max(elite_size, 1)),
+                                                     evaluations.size()));
+  const std::size_t safe_population = std::max<std::size_t>(
+      safe_elite, static_cast<std::size_t>(std::max(population_size, 1)));
+
+  std::unordered_map<std::string, const Candidate*> lookup;
+  lookup.reserve(all_candidates.size());
+  for (const Candidate& candidate : all_candidates) {
+    lookup[candidate.expression] = &candidate;
+  }
+
+  std::unordered_set<std::string> visited;
+  visited.reserve(safe_population * 2);
+  std::vector<const Candidate*> elites;
+  elites.reserve(safe_elite);
+  for (std::size_t i = 0; i < safe_elite; ++i) {
+    const auto it = lookup.find(evaluations[i].expression);
+    if (it == lookup.end() || it->second == nullptr) {
+      continue;
+    }
+    elites.push_back(it->second);
+    AddCandidateDedup(*it->second, &visited, &next);
+  }
+
+  if (elites.empty()) {
+    return next;
+  }
+
+  std::uniform_int_distribution<int> pick_elite(
+      0, static_cast<int>(elites.size() - 1));
+  while (next.size() < safe_population) {
+    const Candidate& a = *elites[static_cast<std::size_t>(pick_elite(*rng))];
+    const Candidate& b = *elites[static_cast<std::size_t>(pick_elite(*rng))];
+
+    Candidate plus;
+    plus.expression = "(" + a.expression + ")+(" + b.expression + ")";
+    plus.values = ElementWiseBinary(a.values, b.values, [](double lhs, double rhs) {
+      if (!IsFinite(lhs) || !IsFinite(rhs)) {
+        return NaN();
+      }
+      return lhs + rhs;
+    });
+    plus.complexity = a.complexity + b.complexity + 1.0;
+    if (AddCandidateDedup(plus, &visited, &next) && next.size() >= safe_population) {
+      break;
+    }
+
+    Candidate minus;
+    minus.expression = "(" + a.expression + ")-(" + b.expression + ")";
+    minus.values = ElementWiseBinary(a.values, b.values, [](double lhs, double rhs) {
+      if (!IsFinite(lhs) || !IsFinite(rhs)) {
+        return NaN();
+      }
+      return lhs - rhs;
+    });
+    minus.complexity = a.complexity + b.complexity + 1.0;
+    if (AddCandidateDedup(minus, &visited, &next) && next.size() >= safe_population) {
+      break;
+    }
+
+    Candidate corr;
+    corr.expression =
+        "ts_corr((" + a.expression + "),(" + b.expression + "),10)";
+    corr.values = TsCorr(a.values, b.values, 10);
+    corr.complexity = a.complexity + b.complexity + 2.0;
+    if (AddCandidateDedup(corr, &visited, &next) && next.size() >= safe_population) {
+      break;
+    }
+
+    Candidate rank;
+    rank.expression = "ts_rank((" + a.expression + "),10)";
+    rank.values = TsRank(a.values, 10);
+    rank.complexity = a.complexity + 1.0;
+    if (AddCandidateDedup(rank, &visited, &next) && next.size() >= safe_population) {
+      break;
+    }
+  }
+  return next;
+}
+
+SpearmanIcResult ComputeIcInRange(const std::vector<double>& factor,
+                                  const std::vector<double>& future_returns,
+                                  std::size_t begin,
                                   std::size_t end) {
   if (begin >= end || end > factor.size() || end > future_returns.size()) {
     return {};
@@ -326,6 +496,8 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
   report.random_seed = config.random_seed;
   report.search_space_version = "ts_ops_v1";
   report.random_baseline_trials = std::max(0, config.random_baseline_trials);
+  report.generations = std::max(1, config.generations);
+  report.population_size = std::max(1, config.population_size);
 
   std::vector<double> close;
   std::vector<double> volume;
@@ -336,11 +508,7 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
     volume.push_back(bar.volume);
   }
   const std::vector<double> future_returns = BuildForwardReturns(close);
-  const std::vector<Candidate> candidates = BuildCandidates(close, volume);
-  report.candidate_expressions.reserve(candidates.size());
-  for (const Candidate& candidate : candidates) {
-    report.candidate_expressions.push_back(candidate.expression);
-  }
+  std::vector<Candidate> population = BuildCandidates(close, volume);
 
   std::size_t split_index =
       static_cast<std::size_t>(config.train_split_ratio *
@@ -348,43 +516,75 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
   // 为 OOS 留出最小样本，避免 split 极端导致结果无意义。
   split_index = std::clamp<std::size_t>(split_index, 10, bars.size() - 10);
 
-  std::vector<CandidateEval> evaluations;
-  evaluations.reserve(candidates.size());
+  std::unordered_map<std::string, CandidateEval> best_eval_by_expression;
+  best_eval_by_expression.reserve(static_cast<std::size_t>(report.population_size) *
+                                  static_cast<std::size_t>(report.generations));
+
+  std::mt19937 rng(static_cast<std::mt19937::result_type>(config.random_seed));
+  const int target_generations = std::max(1, config.generations);
   const int rolling_window = std::max(3, config.rolling_ic_window);
-  for (const Candidate& candidate : candidates) {
-    const SpearmanIcResult train_ic =
-        ComputeIcInRange(candidate.values, future_returns, 0, split_index);
-    const SpearmanIcResult oos_ic =
-        ComputeIcInRange(candidate.values, future_returns, split_index, bars.size());
-    const IcSummary rolling_train = ComputeRollingSummaryInRange(
-        candidate.values, future_returns, rolling_window, 0, split_index);
-    const IcSummary rolling_oos = ComputeRollingSummaryInRange(
-        candidate.values, future_returns, rolling_window, split_index, bars.size());
-    const double objective =
-        std::fabs(oos_ic.ic) - config.complexity_penalty * candidate.complexity;
-    evaluations.push_back({candidate.expression,
-                           train_ic.ic,
-                           oos_ic.ic,
-                           candidate.complexity,
-                           objective,
-                           rolling_train,
-                           rolling_oos});
+  for (int generation = 0;
+       generation < target_generations && !population.empty();
+       ++generation) {
+    std::vector<CandidateEval> evaluations;
+    evaluations.reserve(population.size());
+    for (const Candidate& candidate : population) {
+      evaluations.push_back(EvaluateCandidate(candidate,
+                                             future_returns,
+                                             split_index,
+                                             rolling_window,
+                                             config.complexity_penalty));
+    }
+    SortEvaluations(&evaluations);
+    if (evaluations.empty()) {
+      break;
+    }
+
+    const CandidateEval& best = evaluations.front();
+    report.generation_summaries.push_back(
+        {generation,
+         static_cast<int>(evaluations.size()),
+         best.expression,
+         best.objective,
+         best.ic_oos,
+         MeanObjective(evaluations)});
+
+    for (const CandidateEval& eval : evaluations) {
+      const auto it = best_eval_by_expression.find(eval.expression);
+      if (it == best_eval_by_expression.end() ||
+          eval.objective > it->second.objective) {
+        best_eval_by_expression[eval.expression] = eval;
+      }
+    }
+
+    if (generation + 1 >= target_generations) {
+      break;
+    }
+    population = BuildNextGeneration(population,
+                                     evaluations,
+                                     config.elite_size,
+                                     config.population_size,
+                                     &rng);
+  }
+  report.generations = static_cast<int>(report.generation_summaries.size());
+
+  std::vector<CandidateEval> all_evaluations;
+  all_evaluations.reserve(best_eval_by_expression.size());
+  for (const auto& item : best_eval_by_expression) {
+    all_evaluations.push_back(item.second);
+  }
+  SortEvaluations(&all_evaluations);
+
+  report.candidate_expressions.reserve(all_evaluations.size());
+  for (const CandidateEval& eval : all_evaluations) {
+    report.candidate_expressions.push_back(eval.expression);
   }
 
-  std::sort(evaluations.begin(),
-            evaluations.end(),
-            [](const CandidateEval& lhs, const CandidateEval& rhs) {
-              if (lhs.objective != rhs.objective) {
-                return lhs.objective > rhs.objective;
-              }
-              return lhs.expression < rhs.expression;
-            });
-
   const std::size_t top_k = std::max<std::size_t>(1, config.top_k);
-  const std::size_t count = std::min<std::size_t>(top_k, evaluations.size());
+  const std::size_t count = std::min<std::size_t>(top_k, all_evaluations.size());
   report.factors.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
-    const CandidateEval& eval = evaluations[i];
+    const CandidateEval& eval = all_evaluations[i];
     report.factors.push_back({eval.expression,
                               eval.ic_train,
                               eval.ic_oos,
@@ -584,6 +784,8 @@ bool SaveMinerReport(const MinerReport& report,
   out << "  \"search_space_version\": \""
       << JsonEscape(report.search_space_version) << "\",\n";
   out << "  \"candidate_count\": " << report.candidate_expressions.size() << ",\n";
+  out << "  \"generations\": " << report.generations << ",\n";
+  out << "  \"population_size\": " << report.population_size << ",\n";
   out << "  \"random_baseline_trials\": " << report.random_baseline_trials
       << ",\n";
   out << "  \"oos_random_baseline_threshold_p90\": " << std::fixed
@@ -595,6 +797,27 @@ bool SaveMinerReport(const MinerReport& report,
   out << "  \"random_baseline_oos_abs_ic\":\n";
   write_summary(report.random_baseline_oos_abs_ic, 2);
   out << ",\n";
+  out << "  \"generation_summaries\": [\n";
+  for (std::size_t i = 0; i < report.generation_summaries.size(); ++i) {
+    const MinerGenerationSummary& summary = report.generation_summaries[i];
+    out << "    {\n";
+    out << "      \"generation\": " << summary.generation << ",\n";
+    out << "      \"candidate_count\": " << summary.candidate_count << ",\n";
+    out << "      \"best_expression\": \"" << JsonEscape(summary.best_expression)
+        << "\",\n";
+    out << "      \"best_objective_score\": " << std::fixed
+        << std::setprecision(8) << summary.best_objective_score << ",\n";
+    out << "      \"best_ic_oos\": " << std::fixed << std::setprecision(8)
+        << summary.best_ic_oos << ",\n";
+    out << "      \"mean_objective_score\": " << std::fixed
+        << std::setprecision(8) << summary.mean_objective_score << "\n";
+    out << "    }";
+    if (i + 1 < report.generation_summaries.size()) {
+      out << ",";
+    }
+    out << "\n";
+  }
+  out << "  ],\n";
   out << "  \"factors\": [\n";
   for (std::size_t i = 0; i < report.factors.size(); ++i) {
     const RankedFactor& factor = report.factors[i];

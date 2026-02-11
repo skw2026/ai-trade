@@ -2,11 +2,13 @@
 set -euo pipefail
 
 # 用法：
-#   AI_TRADE_IMAGE=<registry/image:tag> ./ecs-deploy.sh [compose_file] [env_file]
+#   AI_TRADE_IMAGE=<registry/image:tag> \
+#   AI_TRADE_RESEARCH_IMAGE=<registry/research-image:tag> \
+#   ./ecs-deploy.sh [compose_file] [env_file]
 #
 # 约定：
 # 1. env_file 中保存运行时密钥（Bybit AK/SK）；
-# 2. 本脚本仅 upsert AI_TRADE_IMAGE，不覆盖其他变量；
+# 2. 本脚本仅 upsert AI_TRADE_IMAGE / AI_TRADE_RESEARCH_IMAGE，不覆盖其他变量；
 # 3. 发布失败会自动回滚到上一个运行镜像。
 
 COMPOSE_FILE="${1:-/opt/ai-trade/docker-compose.prod.yml}"
@@ -77,6 +79,9 @@ echo "[deploy] previous_image=${previous_image:-<none>}"
 echo "[deploy] target_image=${AI_TRADE_IMAGE}"
 
 upsert_env "AI_TRADE_IMAGE" "${AI_TRADE_IMAGE}"
+if [[ -n "${AI_TRADE_RESEARCH_IMAGE:-}" ]]; then
+  upsert_env "AI_TRADE_RESEARCH_IMAGE" "${AI_TRADE_RESEARCH_IMAGE}"
+fi
 compose_cmd=(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}")
 
 "${compose_cmd[@]}" pull "${SERVICE_NAME}"

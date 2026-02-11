@@ -33,6 +33,16 @@ struct RankedFactor {
   IcSummary rolling_ic_oos{};
 };
 
+/// 代际搜索阶段统计（用于审计搜索过程是否收敛）。
+struct MinerGenerationSummary {
+  int generation{0};
+  int candidate_count{0};
+  std::string best_expression;
+  double best_objective_score{0.0};
+  double best_ic_oos{0.0};
+  double mean_objective_score{0.0};
+};
+
 /// Miner 运行配置（R1 最小集）。
 struct MinerConfig {
   int random_seed{42};
@@ -41,6 +51,9 @@ struct MinerConfig {
   double complexity_penalty{0.01};
   int rolling_ic_window{20};
   int random_baseline_trials{200};
+  int generations{4};
+  int population_size{32};
+  int elite_size{8};
 };
 
 /// Miner 产物报告（用于后续 Integrator 对接）。
@@ -55,6 +68,9 @@ struct MinerReport {
   double oos_random_baseline_threshold_p90{0.0};
   double top_factor_oos_abs_ic{0.0};
   bool oos_not_worse_than_random{false};
+  int generations{0};
+  int population_size{0};
+  std::vector<MinerGenerationSummary> generation_summaries;
 };
 
 /**

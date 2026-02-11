@@ -42,6 +42,13 @@ STAGE_RULES: Dict[str, StageRule] = {
     ),
 }
 
+RUNTIME_ACCOUNT_RE = re.compile(
+    r"RUNTIME_STATUS:.*?equity=(?P<equity>-?[0-9]+(?:\.[0-9]+)?), "
+    r"drawdown_pct=(?P<drawdown_pct>-?[0-9]+(?:\.[0-9]+)?), "
+    r"notional=(?P<notional>-?[0-9]+(?:\.[0-9]+)?)",
+    flags=re.MULTILINE,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ai-trade 运行日志自动验收")
@@ -88,7 +95,53 @@ def max_tick(text: str) -> int:
     return max(int(x) for x in matches)
 
 
+def extract_runtime_account_series(text: str) -> Dict[str, object]:
+    equities: list[float] = []
+    drawdowns: list[float] = []
+    notionals: list[float] = []
+
+    for m in RUNTIME_ACCOUNT_RE.finditer(text):
+        try:
+            equities.append(float(m.group("equity")))
+            drawdowns.append(float(m.group("drawdown_pct")))
+            notionals.append(float(m.group("notional")))
+        except ValueError:
+            continue
+
+    if not equities:
+        return {
+            "samples": 0,
+            "first_equity_usd": None,
+            "last_equity_usd": None,
+            "equity_change_usd": None,
+            "equity_change_pct": None,
+            "max_drawdown_pct_observed": None,
+            "max_abs_notional_usd_observed": None,
+        }
+
+    first_equity = equities[0]
+    last_equity = equities[-1]
+    equity_change = last_equity - first_equity
+    equity_change_pct = None
+    if abs(first_equity) > 1e-12:
+        equity_change_pct = equity_change / first_equity
+
+    max_drawdown_observed = max(drawdowns) if drawdowns else None
+    max_abs_notional_observed = max(abs(x) for x in notionals) if notionals else None
+
+    return {
+        "samples": len(equities),
+        "first_equity_usd": first_equity,
+        "last_equity_usd": last_equity,
+        "equity_change_usd": equity_change,
+        "equity_change_pct": equity_change_pct,
+        "max_drawdown_pct_observed": max_drawdown_observed,
+        "max_abs_notional_usd_observed": max_abs_notional_observed,
+    }
+
+
 def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, object]:
+    account_pnl = extract_runtime_account_series(text)
     metrics = {
         "runtime_status_count": count(r"RUNTIME_STATUS:", text),
         "max_runtime_tick": max_tick(text),
@@ -107,6 +160,7 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "reconcile_deferred_count": count(r"OMS_RECONCILE_DEFERRED", text),
         "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
+        "runtime_account_samples": account_pnl["samples"],
     }
 
     fail_reasons: list[str] = []
@@ -155,6 +209,7 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "stage": stage.name,
         "verdict": verdict,
         "metrics": metrics,
+        "account_pnl": account_pnl,
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
     }
@@ -168,6 +223,20 @@ def print_report(report: Dict[str, object]) -> None:
     assert isinstance(metrics, dict)
     for key in sorted(metrics.keys()):
         print(f"  - {key}: {metrics[key]}")
+
+    account_pnl = report.get("account_pnl", {})
+    if isinstance(account_pnl, dict):
+        print("ACCOUNT_PNL:")
+        for key in (
+            "samples",
+            "first_equity_usd",
+            "last_equity_usd",
+            "equity_change_usd",
+            "equity_change_pct",
+            "max_drawdown_pct_observed",
+            "max_abs_notional_usd_observed",
+        ):
+            print(f"  - {key}: {account_pnl.get(key)}")
 
     fail_reasons = report["fail_reasons"]
     warn_reasons = report["warn_reasons"]
@@ -220,4 +289,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

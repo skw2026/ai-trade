@@ -10,6 +10,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
 
@@ -19,6 +23,8 @@ jobs:
     outputs:
       image_uri: ${{ steps.meta.outputs.image_uri }}
       image_tag: ${{ steps.meta.outputs.image_tag }}
+      research_image_uri: ${{ steps.meta.outputs.research_image_uri }}
+      research_image_tag: ${{ steps.meta.outputs.research_image_tag }}
       deploy_enabled: ${{ steps.deploy_gate.outputs.enabled }}
     steps:
       - name: Checkout
@@ -30,9 +36,12 @@ jobs:
           set -euo pipefail
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           IMAGE_URI="${REGISTRY}/${OWNER_LC}/ai-trade"
+          RESEARCH_IMAGE_URI="${REGISTRY}/${OWNER_LC}/ai-trade-research"
           IMAGE_TAG="${GITHUB_SHA}"
           echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
           echo "image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "research_image_uri=${RESEARCH_IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "research_image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
 
       - name: Install Build Dependencies
         run: |
@@ -75,6 +84,16 @@ jobs:
             ${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}
             ${{ steps.meta.outputs.image_uri }}:latest
 
+      - name: Build and Push Research Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.research
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.research_image_uri }}:${{ steps.meta.outputs.research_image_tag }}
+            ${{ steps.meta.outputs.research_image_uri }}:latest
+
       - name: Compute Deploy Gate
         id: deploy_gate
         run: |
@@ -101,11 +120,20 @@ jobs:
           tar -czf deploy_bundle.tgz \
             docker-compose.prod.yml \
             deploy/ecs-deploy.sh \
-            observability
+            observability \
+            ops \
+            tools
           tar -tzf deploy_bundle.tgz > /tmp/deploy_bundle.list
           grep -q '^docker-compose.prod.yml$' /tmp/deploy_bundle.list
           grep -q '^deploy/ecs-deploy.sh$' /tmp/deploy_bundle.list
           grep -q '^observability/' /tmp/deploy_bundle.list
+          grep -q '^ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
+          grep -q '^tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
+          grep -q '^tools/fetch_bybit_kline.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/integrator_train.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/assess_run_log.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/model_registry.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/build_closed_loop_report.py$' /tmp/deploy_bundle.list
 
       - name: Upload Deployment Bundle
         uses: appleboy/scp-action@v0.1.7
@@ -121,6 +149,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           AI_TRADE_IMAGE: ${{ needs.build-test-push.outputs.image_uri }}:${{ needs.build-test-push.outputs.image_tag }}
+          AI_TRADE_RESEARCH_IMAGE: ${{ needs.build-test-push.outputs.research_image_uri }}:${{ needs.build-test-push.outputs.research_image_tag }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           DEPLOY_ENV_FILE: /opt/ai-trade/.env.runtime
@@ -129,7 +158,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
-          envs: AI_TRADE_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE
+          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE
           script: |
             set -euo pipefail
             DEPLOY_ROOT="/opt/ai-trade"
@@ -153,6 +182,13 @@ jobs:
             for required_file in \
               "${RELEASE_TMP}/docker-compose.prod.yml" \
               "${RELEASE_TMP}/deploy/ecs-deploy.sh" \
+              "${RELEASE_TMP}/tools/closed_loop_runner.sh" \
+              "${RELEASE_TMP}/tools/fetch_bybit_kline.py" \
+              "${RELEASE_TMP}/tools/integrator_train.py" \
+              "${RELEASE_TMP}/tools/assess_run_log.py" \
+              "${RELEASE_TMP}/tools/model_registry.py" \
+              "${RELEASE_TMP}/tools/build_closed_loop_report.py" \
+              "${RELEASE_TMP}/ops/cron/closed-loop.cron.example" \
               "${RELEASE_TMP}/observability/loki/loki-config.yaml" \
               "${RELEASE_TMP}/observability/promtail/promtail-config.yml" \
               "${RELEASE_TMP}/observability/prometheus/prometheus.yml" \
@@ -172,6 +208,10 @@ jobs:
             cp -f "${RELEASE_TMP}/docker-compose.prod.yml" "${DEPLOY_ROOT}/docker-compose.prod.yml"
             mkdir -p "${DEPLOY_ROOT}/deploy"
             cp -f "${RELEASE_TMP}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
+            rm -rf "${DEPLOY_ROOT}/ops"
+            cp -a "${RELEASE_TMP}/ops" "${DEPLOY_ROOT}/ops"
+            rm -rf "${DEPLOY_ROOT}/tools"
+            cp -a "${RELEASE_TMP}/tools" "${DEPLOY_ROOT}/tools"
             rm -rf "${DEPLOY_ROOT}/observability"
             cp -a "${RELEASE_TMP}/observability" "${DEPLOY_ROOT}/observability"
 
@@ -179,4 +219,5 @@ jobs:
             rm -rf "${RELEASE_TMP}"
 
             chmod +x "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
+            chmod +x "${DEPLOY_ROOT}/tools/closed_loop_runner.sh"
             "${DEPLOY_ROOT}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/docker-compose.prod.yml" "${DEPLOY_ENV_FILE}"
