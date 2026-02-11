@@ -76,6 +76,15 @@ BybitPrivateStream::BybitPrivateStream(
     std::unique_ptr<WebsocketClient> ws_client)
     : options_(std::move(options)), ws_client_(std::move(ws_client)) {}
 
+/**
+ * @brief 建立私有 WS 连接并完成鉴权/订阅
+ *
+ * 关键步骤：
+ * 1. 参数校验与建连；
+ * 2. 发送 auth 并等待 ACK；
+ * 3. 订阅 execution/order/position/wallet；
+ * 4. 初始化心跳状态。
+ */
 bool BybitPrivateStream::Connect(std::string* out_error) {
   connected_ = false;
   last_error_.clear();
@@ -117,6 +126,7 @@ bool BybitPrivateStream::Connect(std::string* out_error) {
     return false;
   }
 
+  // Bybit 私有 WS 鉴权：签名串固定为 "GET/realtime" + expires。
   const std::int64_t expires_ms = CurrentTimestampMs() + 10000;
   const std::string auth_payload_raw =
       "GET/realtime" + std::to_string(expires_ms);
@@ -154,6 +164,7 @@ bool BybitPrivateStream::Connect(std::string* out_error) {
     return false;
   }
 
+  // 私有主题一次性订阅，当前实现只消费 execution。
   const std::string subscribe_payload =
       "{\"op\":\"subscribe\",\"args\":[\"execution\",\"order\","
       "\"position\",\"wallet\"]}";
@@ -182,6 +193,11 @@ bool BybitPrivateStream::Healthy() const {
   return connected_ && ws_client_ != nullptr && ws_client_->IsConnected();
 }
 
+/**
+ * @brief 拉取一条成交事件
+ *
+ * 优先返回 pending 队列中的解析结果；若队列为空，则继续拉取 WS 消息并解析。
+ */
 bool BybitPrivateStream::PollExecution(FillEvent* out_fill) {
   if (out_fill == nullptr || !Healthy()) {
     return false;
@@ -191,6 +207,7 @@ bool BybitPrivateStream::PollExecution(FillEvent* out_fill) {
   }
 
   const std::int64_t now_ms = CurrentTimestampMs();
+  // 定时 ping，维持链路活性并尽快感知断链。
   if (options_.heartbeat_interval_ms > 0 &&
       now_ms - last_ping_ts_ms_ >= options_.heartbeat_interval_ms) {
     std::string ping_error;
@@ -281,6 +298,7 @@ bool BybitPrivateStream::WaitForAck(const std::string& expected_op,
 }
 
 bool BybitPrivateStream::ParseMessage(const std::string& message) {
+  // 解析策略：先处理控制帧（ping/pong/auth/subscribe），再处理 execution 业务消息。
   JsonValue root;
   std::string parse_error;
   if (!ParseJson(message, &root, &parse_error)) {
@@ -326,6 +344,7 @@ bool BybitPrivateStream::ParseExecutionPayload(const JsonValue* data) {
     if (exec_id.empty()) {
       return;
     }
+    // execution 可能重推，按 exec_id 去重避免重复记账。
     if (!seen_exec_ids_.insert(exec_id).second) {
       return;
     }

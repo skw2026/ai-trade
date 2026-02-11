@@ -8,6 +8,9 @@ namespace ai_trade {
 
 namespace {
 
+// 极简 JSON 解析器：
+// - 仅支持项目需要的标准 JSON 子集；
+// - 不追求高性能，优先可维护与易读错误信息。
 class JsonParser {
  public:
   explicit JsonParser(const std::string& text) : text_(text) {}
@@ -408,4 +411,3 @@ std::optional<bool> JsonAsBool(const JsonValue* value) {
 }
 
 }  // namespace ai_trade
-

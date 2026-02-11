@@ -1,0 +1,88 @@
+system:
+  id: "bot-bybit-demo-stable"
+  mode: "paper"
+  primary_symbol: "BTCUSDT"
+  data_path: "./data"
+  max_ticks: 0
+  status_log_interval_ticks: 10
+  remote_risk_refresh_interval_ticks: 10
+  reconcile:
+    enabled: true
+    interval_ticks: 10
+    tolerance_notional_usd: 8.0
+    mismatch_confirmations: 4
+    pending_order_stale_ms: 30000
+
+exchange:
+  platform: "bybit"
+  bybit:
+    testnet: false
+    demo_trading: true
+    category: "linear"
+    account_type: "UNIFIED"
+    expected_account_mode: "UNIFIED"
+    expected_margin_mode: "ISOLATED"
+    expected_position_mode: "ONE_WAY"
+    public_ws_enabled: true
+    public_ws_rest_fallback: true
+    private_ws_enabled: true
+    private_ws_rest_fallback: true
+    ws_reconnect_interval_ms: 15000
+    execution_poll_limit: 50
+
+risk:
+  max_abs_notional_usd: 2000
+  max_drawdown:
+    degraded_threshold: 0.08
+    cooldown_threshold: 0.12
+    fuse_threshold: 0.20
+
+execution:
+  max_order_notional: 600
+  min_rebalance_notional_usd: 120
+  min_order_interval_ms: 8000
+  reverse_signal_cooldown_ticks: 8
+  protection:
+    enabled: false
+    require_sl: true
+    enable_tp: true
+    attach_timeout_ms: 1500
+    stop_loss_ratio: 0.01
+    take_profit_ratio: 0.015
+
+strategy:
+  signal_notional_usd: 600
+  signal_deadband_abs: 1.2
+  min_hold_ticks: 8
+
+self_evolution:
+  enabled: false
+  update_interval_ticks: 120
+  min_update_interval_ticks: 120
+  max_single_strategy_weight: 0.55
+  max_weight_step: 0.02
+  rollback_degrade_windows: 2
+  rollback_degrade_threshold_score: 0.0
+  rollback_cooldown_ticks: 360
+  initial_trend_weight: 0.50
+  initial_defensive_weight: 0.50
+
+gate:
+  min_effective_signals_per_day: 24
+  min_fills_per_day: 4
+  heartbeat_empty_signal_ticks: 12
+  window_ticks: 288
+  enforce_runtime_actions: false
+  fail_to_reduce_only_windows: 0
+  fail_to_halt_windows: 0
+  reduce_only_cooldown_ticks: 0
+  halt_cooldown_ticks: 0
+  pass_to_resume_windows: 1
+
+universe:
+  enabled: true
+  update_interval_ticks: 20
+  max_active_symbols: 2
+  min_active_symbols: 1
+  fallback_symbols: ["BTCUSDT", "ETHUSDT"]
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]

@@ -11,6 +11,7 @@ namespace ai_trade {
 namespace {
 
 std::string SerializeIntent(const OrderIntent& order) {
+  // 文本 WAL 格式：字段顺序固定，便于版本兼容与人工排障。
   std::ostringstream oss;
   oss << "INTENT"
       << '\t'
@@ -31,6 +32,7 @@ std::string SerializeIntent(const OrderIntent& order) {
 }
 
 std::string SerializeFillV2(const FillEvent& fill) {
+  // V2 显式存储 fill_id，解决旧格式无法稳定去重的问题。
   std::ostringstream oss;
   oss << "FILL2"
       << '\t'
@@ -284,6 +286,7 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
         }
         return false;
       }
+      // 以 fill_id 去重，避免重复回放导致仓位漂移。
       const bool inserted = out_fill_ids->insert(fill.fill_id).second;
       if (inserted) {
         out_fills->push_back(fill);

@@ -1,0 +1,112 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.meta.outputs.image_uri }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute Image Metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          IMAGE_URI="${REGISTRY}/${OWNER_LC}/ai-trade"
+          IMAGE_TAG="${GITHUB_SHA}"
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install Build Dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libcurl4-openssl-dev \
+            libssl-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Runtime Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}
+            ${{ steps.meta.outputs.image_uri }}:latest
+
+  deploy-ecs:
+    needs: build-test-push
+    runs-on: ubuntu-latest
+    if: ${{ secrets.ECS_HOST != '' && secrets.ECS_USER != '' && secrets.ECS_SSH_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload Deployment Files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          source: "docker-compose.prod.yml,deploy/ecs-deploy.sh"
+          target: "/opt/ai-trade"
+
+      - name: Deploy to ECS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          AI_TRADE_IMAGE: ${{ needs.build-test-push.outputs.image_uri }}:${{ needs.build-test-push.outputs.image_tag }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          DEPLOY_ENV_FILE: /opt/ai-trade/.env.runtime
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          envs: AI_TRADE_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE
+          script: |
+            set -euo pipefail
+            mkdir -p /opt/ai-trade/data
+            chmod +x /opt/ai-trade/deploy/ecs-deploy.sh
+            /opt/ai-trade/deploy/ecs-deploy.sh /opt/ai-trade/docker-compose.prod.yml "${DEPLOY_ENV_FILE}"

@@ -19,6 +19,7 @@ bool MockExchangeAdapter::PollMarket(MarketEvent* out_event) {
 
   ++seq_;
   const double price = prices_[cursor_++];
+  // 多 symbol 情况下轮询分发，保证每个 symbol 都能收到行情。
   const std::string& symbol = symbols_[symbol_cursor_ % symbols_.size()];
   ++symbol_cursor_;
   last_price_by_symbol_[symbol] = price;
@@ -78,6 +79,7 @@ bool MockExchangeAdapter::PollFill(FillEvent* out_fill) {
 
   *out_fill = pending_fills_.front();
   pending_fills_.pop_front();
+  // 成交回放同时推进“交易所视角”的远端仓位，用于对账测试。
   remote_position_qty_by_symbol_[out_fill->symbol] +=
       static_cast<double>(out_fill->direction) * out_fill->qty;
   return true;
@@ -132,7 +134,40 @@ bool MockExchangeAdapter::GetRemotePositions(
         .qty = qty,
         .avg_entry_price = mark_price,
         .mark_price = mark_price,
+        .liquidation_price = 0.0,
     });
+  }
+  return true;
+}
+
+bool MockExchangeAdapter::GetRemoteAccountBalance(
+    RemoteAccountBalanceSnapshot* out_balance) const {
+  if (!connected_ || out_balance == nullptr) {
+    return false;
+  }
+  // mock 模式下使用固定钱包基线，便于本地回归保持可重复性。
+  *out_balance = RemoteAccountBalanceSnapshot{
+      .equity_usd = 10000.0,
+      .wallet_balance_usd = 10000.0,
+      .unrealized_pnl_usd = 0.0,
+      .has_equity = true,
+      .has_wallet_balance = true,
+      .has_unrealized_pnl = true,
+  };
+  return true;
+}
+
+bool MockExchangeAdapter::GetRemoteOpenOrderClientIds(
+    std::unordered_set<std::string>* out_client_order_ids) const {
+  if (!connected_ || out_client_order_ids == nullptr) {
+    return false;
+  }
+  out_client_order_ids->clear();
+  for (const auto& fill : pending_fills_) {
+    if (fill.client_order_id.empty()) {
+      continue;
+    }
+    out_client_order_ids->insert(fill.client_order_id);
   }
   return true;
 }

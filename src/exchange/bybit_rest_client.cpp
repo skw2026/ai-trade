@@ -54,6 +54,7 @@ BybitHttpResponse CurlBybitHttpTransport::Send(
     const std::string& url,
     const std::vector<std::pair<std::string, std::string>>& headers,
     const std::string& body) const {
+  // 进程级初始化一次，后续请求复用。
   static const bool kCurlGlobalInit = []() {
     return curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
   }();
@@ -175,6 +176,7 @@ bool BybitRestClient::SendRequest(const std::string& method,
   headers.emplace_back("Content-Type", "application/json");
 
   if (private_auth) {
+    // V5 签名：timestamp + apiKey + recvWindow + payload。
     const std::string ts_ms = CurrentTimestampMs();
     const std::string recv_window = "5000";
     const std::string payload = (method == "GET") ? query : body;
@@ -212,6 +214,7 @@ bool BybitRestClient::SendRequest(const std::string& method,
   }
 
   int ret_code = 0;
+  // HTTP 成功后继续检查业务 retCode，确保语义成功。
   if (ParseRetCode(response.body, &ret_code) && ret_code != 0) {
     if (out_error != nullptr) {
       *out_error = "Bybit retCode 异常: " + std::to_string(ret_code) +

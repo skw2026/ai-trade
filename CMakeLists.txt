@@ -4,6 +4,7 @@ project(ai_trade VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(AI_TRADE_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 option(AI_TRADE_USE_BEAST_WEBSOCKET
@@ -29,6 +30,7 @@ add_library(ai_trade_core STATIC
 target_include_directories(ai_trade_core PUBLIC src)
 
 add_library(ai_trade_system STATIC
+  src/app/bot_app.cpp
   src/exchange/bybit_rest_client.cpp
   src/exchange/websocket_client.cpp
   src/exchange/bybit_private_stream.cpp
@@ -39,10 +41,17 @@ add_library(ai_trade_system STATIC
   src/market/market_data.cpp
   src/universe/universe_selector.cpp
   src/strategy/strategy_engine.cpp
+  src/strategy/integrator_shadow.cpp
+  src/regime/regime_engine.cpp
   src/risk/risk_engine.cpp
   src/execution/execution_engine.cpp
   src/execution/order_throttle.cpp
+  src/execution/async_executor.cpp
+  src/evolution/self_evolution_controller.cpp
   src/monitor/gate_monitor.cpp
+  src/research/time_series_operators.cpp
+  src/research/ic_evaluator.cpp
+  src/research/miner.cpp
   src/oms/account_state.cpp
   src/oms/order_manager.cpp
   src/oms/reconciler.cpp

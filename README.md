@@ -66,7 +66,7 @@
 ```text
 ai-trade/
 ├── CMakeLists.txt       # CMake 构建入口
-├── bin/                 # 运行产物占位目录
+├── build/               # 构建产物目录 (cmake build)
 ├── config/              # 配置文件 (yaml)
 ├── data/                # 本地回测数据/缓存
 ├── docs/                # 项目文档
@@ -113,6 +113,44 @@ cp .env.example .env
 docker compose up --build ai-trade
 ```
 
+### GitHub Actions + 阿里云 ECS 自动部署
+适用场景：主分支合并后自动构建镜像并发布到 ECS，提升迭代效率与一致性。
+
+新增文件：
+- `.github/workflows/ci.yml`：PR / 非 main 分支编译与测试
+- `.github/workflows/cd.yml`：main 分支自动构建镜像并部署 ECS
+- `docker-compose.prod.yml`：生产部署编排（使用预构建镜像）
+- `deploy/ecs-deploy.sh`：远端部署脚本（带失败自动回滚）
+
+首次准备（ECS）：
+```bash
+sudo mkdir -p /opt/ai-trade/data
+cd /opt/ai-trade
+
+# 运行时密钥文件（仅示例，按需填写）
+cat > .env.runtime <<'EOF'
+AI_TRADE_BYBIT_DEMO_API_KEY=your_demo_key
+AI_TRADE_BYBIT_DEMO_API_SECRET=your_demo_secret
+EOF
+```
+
+GitHub Secrets（仓库 Settings -> Secrets and variables -> Actions）：
+- `ECS_HOST`：ECS 公网 IP
+- `ECS_USER`：SSH 用户（如 `root` / `ubuntu`）
+- `ECS_SSH_KEY`：SSH 私钥
+- `ECS_PORT`：SSH 端口（可选，默认 22）
+- `GHCR_USER`：GHCR 拉镜像账号（可选，私有镜像建议配置）
+- `GHCR_TOKEN`：GHCR 拉镜像令牌（可选，私有镜像建议配置）
+
+触发方式：
+- `CI`：PR 和非 main 分支 push 自动触发
+- `CD`：push 到 `main` 或手动 `workflow_dispatch` 触发
+
+发布结果：
+- 新镜像 tag：`ghcr.io/<owner>/ai-trade:<commit_sha>`
+- 部署脚本会写入 `AI_TRADE_IMAGE` 到 `/opt/ai-trade/.env.runtime`
+- 启动健康检查失败时自动回滚到上一个镜像
+
 Bybit 回放配置示例：
 ```bash
 ./build/trade_bot --config=config/bybit.replay.yaml
@@ -133,6 +171,20 @@ export AI_TRADE_BYBIT_DEMO_API_SECRET=your_demo_secret
 ./build/trade_bot --config=config/bybit.demo.yaml --exchange=bybit
 ```
 
+稳态参数模板（更低频、更强防抖）：
+```bash
+# Demo 稳态模板
+./build/trade_bot --config=config/bybit.demo.stable.yaml --exchange=bybit --run_forever
+
+# Paper/Testnet 稳态模板
+./build/trade_bot --config=config/bybit.paper.stable.yaml --exchange=bybit --run_forever
+```
+
+Demo 自进化保守模板（先跑这个再逐步放开）：
+```bash
+./build/trade_bot --config=config/bybit.demo.evolution.yaml --exchange=bybit --run_forever
+```
+
 运行控制示例：
 ```bash
 # 持续运行（默认：system.max_ticks=0）
@@ -146,6 +198,45 @@ Docker 下运行 paper/demo 示例：
 ```bash
 # 读取 .env 中的 AK/SK（不再临时 -e 注入）
 docker compose run --rm ai-trade --config=config/bybit.paper.yaml --exchange=bybit
+
+# 稳态模板示例
+docker compose run --rm ai-trade --config=config/bybit.demo.stable.yaml --exchange=bybit --run_forever
+
+# 自进化保守模板示例
+docker compose run --rm ai-trade --config=config/bybit.demo.evolution.yaml --exchange=bybit --run_forever
+```
+
+离线研究（R1/R2）示例：
+```bash
+# R0: 抓取 Bybit 历史 K 线（本机 Python）
+python3 tools/fetch_bybit_kline.py \
+  --symbol=BTCUSDT \
+  --interval=5 \
+  --category=linear \
+  --bars=5000 \
+  --output=./data/research/ohlcv_5m.csv
+
+# R0: 抓取 Bybit 历史 K 线（Docker）
+docker compose run --rm --entrypoint python3 ai-trade-research \
+  tools/fetch_bybit_kline.py \
+  --symbol=BTCUSDT \
+  --interval=5 \
+  --category=linear \
+  --bars=5000 \
+  --output=./data/research/ohlcv_5m.csv
+
+# R1: Miner（C++）
+docker compose run --rm ai-trade \
+  --run_miner \
+  --miner_csv=./data/research/ohlcv_5m.csv \
+  --miner_output=./data/research/miner_report.json
+
+# R2: Integrator（Python + CatBoost）
+docker compose run --rm ai-trade-research \
+  --csv=./data/research/ohlcv_5m.csv \
+  --miner_report=./data/research/miner_report.json \
+  --output=./data/research/integrator_report.json \
+  --model_out=./data/models/integrator_latest.cbm
 ```
 
 说明：默认采用“WS优先、失败自动回退 REST”。
@@ -156,10 +247,17 @@ docker compose run --rm ai-trade --config=config/bybit.paper.yaml --exchange=byb
 执行防抖参数（`execution`）：
 - `min_order_interval_ms`：同一 symbol 最小下单间隔（毫秒）
 - `reverse_signal_cooldown_ticks`：反向信号冷却 tick 数
+- `min_rebalance_notional_usd`：最小调仓名义阈值（小于阈值不下单）
+
+策略防抖参数（`strategy`）：
+- `signal_deadband_abs`：价格变化绝对死区
+- `min_hold_ticks`：反向信号最小持有 tick
+- `signal_notional_usd`：信号输出目标名义值
 
 运行态观测（`system`）：
 - `status_log_interval_ticks`：周期状态日志频率（日志前缀：`RUNTIME_STATUS`）
 - `max_ticks`：运行 tick 上限（`0` 表示不设上限）
+- `reconcile.mismatch_confirmations`：连续对账不一致确认次数（避免单次抖动误熔断）
 
 本地闭环演示（mock 行情/成交）：
 ```bash

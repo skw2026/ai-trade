@@ -106,6 +106,15 @@ BybitPublicStream::BybitPublicStream(BybitPublicStreamOptions options,
     : options_(std::move(options)),
       ws_client_(std::move(ws_client)) {}
 
+/**
+ * @brief 建立公共 WS 连接并完成订阅握手
+ *
+ * 关键步骤：
+ * 1. 参数与客户端校验；
+ * 2. WS 建连；
+ * 3. 发送 subscribe 并等待 ACK；
+ * 4. 初始化心跳状态。
+ */
 bool BybitPublicStream::Connect(std::string* out_error) {
   connected_ = false;
   last_error_.clear();
@@ -147,6 +156,7 @@ bool BybitPublicStream::Connect(std::string* out_error) {
     }
     args += "\"tickers." + EscapeJson(options_.symbols[i]) + "\"";
   }
+  // 单连接可订阅多个 symbol 的 ticker 主题。
   const std::string subscribe_payload =
       "{\"op\":\"subscribe\",\"args\":[" + args + "]}";
 
@@ -173,6 +183,11 @@ bool BybitPublicStream::Healthy() const {
   return connected_ && ws_client_ != nullptr && ws_client_->IsConnected();
 }
 
+/**
+ * @brief 拉取一条行情事件
+ *
+ * 优先返回 pending 队列中的解析结果；若队列为空，则继续拉取 WS 消息并解析。
+ */
 bool BybitPublicStream::PollTicker(MarketEvent* out_event) {
   if (out_event == nullptr || !Healthy()) {
     return false;
@@ -182,6 +197,7 @@ bool BybitPublicStream::PollTicker(MarketEvent* out_event) {
   }
 
   const std::int64_t now_ms = CurrentTimestampMs();
+  // 定期发送 ping，避免被网关空闲断开。
   if (options_.heartbeat_interval_ms > 0 &&
       now_ms - last_ping_ts_ms_ >= options_.heartbeat_interval_ms) {
     std::string ping_error;
@@ -274,6 +290,7 @@ bool BybitPublicStream::WaitForSubscribeAck(std::string* out_error) {
 }
 
 bool BybitPublicStream::ParseMessage(const std::string& message) {
+  // 解析策略：先处理控制帧（ping/pong/subscribe），再处理业务 topic。
   JsonValue root;
   std::string parse_error;
   if (!ParseJson(message, &root, &parse_error)) {
@@ -320,6 +337,7 @@ bool BybitPublicStream::ParseMessage(const std::string& message) {
         JsonNumberField(item, "markPrice").value_or(last_price);
 
     ++seq_;
+    // 统一转成内部标准行情事件，交由上游策略/风控复用。
     pending_events_.push_back(
         MarketEvent{CurrentTimestampMs(), symbol, last_price, mark_price});
   };

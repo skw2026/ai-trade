@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -9,6 +10,9 @@ namespace ai_trade {
 
 namespace {
 
+// 以下工具函数用于“轻量 YAML 解析”：
+// - 通过缩进和键路径识别结构；
+// - 仅覆盖当前项目使用到的配置字段。
 std::string Trim(const std::string& text) {
   std::size_t begin = 0;
   while (begin < text.size() &&
@@ -25,6 +29,7 @@ std::string Trim(const std::string& text) {
 }
 
 std::string StripInlineComment(const std::string& line) {
+  // 仅剔除非引号上下文中的 `#` 注释，避免误伤字符串内容。
   bool in_single_quotes = false;
   bool in_double_quotes = false;
   for (std::size_t i = 0; i < line.size(); ++i) {
@@ -322,6 +327,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "risk" &&
+        current_subsection == "liquidation" &&
+        key == "min_distance_p95") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "risk.liquidation.min_distance_p95 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.risk_thresholds.min_liquidation_distance = parsed;
+      continue;
+    }
+
     if (current_section == "execution" && key == "max_order_notional") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -333,6 +353,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.execution_max_order_notional = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        (key == "min_rebalance_notional" ||
+         key == "min_rebalance_notional_usd")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.min_rebalance_notional_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_min_rebalance_notional_usd = parsed;
       continue;
     }
 
@@ -362,6 +398,48 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.execution_reverse_signal_cooldown_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        (key == "signal_notional" || key == "signal_notional_usd")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.signal_notional_usd 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_signal_notional_usd = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        (key == "signal_deadband_abs" || key == "deadband_abs")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.signal_deadband_abs 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_signal_deadband_abs = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        (key == "min_hold_ticks" || key == "reverse_min_hold_ticks")) {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.min_hold_ticks 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_min_hold_ticks = parsed;
       continue;
     }
 
@@ -531,6 +609,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
 
     if (current_section == "exchange" &&
         current_subsection == "bybit" &&
+        key == "ws_reconnect_interval_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "exchange.bybit.ws_reconnect_interval_ms 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.bybit.ws_reconnect_interval_ms = parsed;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
         key == "execution_poll_limit") {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {
@@ -670,6 +764,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "system" &&
+        key == "remote_risk_refresh_interval_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "system.remote_risk_refresh_interval_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.system_remote_risk_refresh_interval_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "system" &&
         current_subsection == "reconcile" &&
         key == "enabled") {
       bool parsed = false;
@@ -712,6 +821,38 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.reconcile.tolerance_notional_usd = parsed;
+      continue;
+    }
+
+    if (current_section == "system" &&
+        current_subsection == "reconcile" &&
+        key == "mismatch_confirmations") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "system.reconcile.mismatch_confirmations 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.reconcile.mismatch_confirmations = parsed;
+      continue;
+    }
+
+    if (current_section == "system" &&
+        current_subsection == "reconcile" &&
+        key == "pending_order_stale_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "system.reconcile.pending_order_stale_ms 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.reconcile.pending_order_stale_ms = parsed;
       continue;
     }
 
@@ -771,6 +912,463 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.gate.window_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "gate" && key == "enforce_runtime_actions") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "gate.enforce_runtime_actions 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.enforce_runtime_actions = parsed;
+      continue;
+    }
+
+    if (current_section == "gate" && key == "fail_to_reduce_only_windows") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "gate.fail_to_reduce_only_windows 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.fail_to_reduce_only_windows = parsed;
+      continue;
+    }
+
+    if (current_section == "gate" && key == "fail_to_halt_windows") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "gate.fail_to_halt_windows 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.fail_to_halt_windows = parsed;
+      continue;
+    }
+
+    if (current_section == "gate" && key == "reduce_only_cooldown_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "gate.reduce_only_cooldown_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.reduce_only_cooldown_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "gate" && key == "halt_cooldown_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "gate.halt_cooldown_ticks 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.halt_cooldown_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "gate" &&
+        (key == "pass_to_resume_windows" || key == "resume_pass_windows")) {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "gate.pass_to_resume_windows 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.pass_to_resume_windows = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "integrator.enabled 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "model_type") {
+      config.integrator.model_type = value;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "integrator.shadow.enabled 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "log_model_score") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "integrator.shadow.log_model_score 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.log_model_score = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        (key == "model_report_path" || key == "report_path")) {
+      config.integrator.shadow.model_report_path = value;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "score_gain") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "integrator.shadow.score_gain 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.score_gain = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" && key == "enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "self_evolution.enabled 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "update_interval_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.update_interval_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.update_interval_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "min_update_interval_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.min_update_interval_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.min_update_interval_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "min_abs_window_pnl_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.min_abs_window_pnl_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.min_abs_window_pnl_usd = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "min_bucket_ticks_for_update") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.min_bucket_ticks_for_update 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.min_bucket_ticks_for_update = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "objective_alpha_pnl" || key == "alpha_pnl")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.objective_alpha_pnl 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.objective_alpha_pnl = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "objective_beta_drawdown" || key == "beta_drawdown")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.objective_beta_drawdown 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.objective_beta_drawdown = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "objective_gamma_notional_churn" ||
+         key == "gamma_notional_churn")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.objective_gamma_notional_churn 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.objective_gamma_notional_churn = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "max_single_strategy_weight") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.max_single_strategy_weight 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.max_single_strategy_weight = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" && key == "max_weight_step") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.max_weight_step 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.max_weight_step = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "rollback_degrade_windows") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.rollback_degrade_windows 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.rollback_degrade_windows = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "rollback_degrade_threshold_score" ||
+         key == "rollback_degrade_threshold_pnl")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.rollback_degrade_threshold_score 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.rollback_degrade_threshold_score = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "rollback_cooldown_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.rollback_cooldown_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.rollback_cooldown_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "initial_trend_weight") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.initial_trend_weight 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.initial_trend_weight = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "initial_defensive_weight") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.initial_defensive_weight 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.initial_defensive_weight = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" && key == "enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.enabled 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
+        (key == "warmup_ticks" || key == "min_warmup_ticks")) {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.warmup_ticks 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.warmup_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" && key == "ewma_alpha") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.ewma_alpha 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.ewma_alpha = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
+        (key == "trend_threshold" || key == "trend_return_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.trend_threshold 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.trend_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
+        (key == "extreme_threshold" || key == "extreme_return_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.extreme_threshold 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.extreme_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
+        (key == "volatility_threshold" ||
+         key == "extreme_volatility_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.volatility_threshold 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.volatility_threshold = parsed;
       continue;
     }
 
@@ -904,6 +1502,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.bybit.ws_reconnect_interval_ms < 0) {
+    if (out_error != nullptr) {
+      *out_error = "exchange.bybit.ws_reconnect_interval_ms 不能为负数";
+    }
+    return false;
+  }
   if (config.bybit.testnet && config.bybit.demo_trading) {
     if (out_error != nullptr) {
       *out_error =
@@ -917,10 +1521,45 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.reconcile.mismatch_confirmations <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "system.reconcile.mismatch_confirmations 必须大于 0";
+    }
+    return false;
+  }
+  if (config.reconcile.pending_order_stale_ms <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "system.reconcile.pending_order_stale_ms 必须大于 0";
+    }
+    return false;
+  }
   if (config.gate.min_effective_signals_per_window < 0 ||
       config.gate.min_fills_per_window < 0) {
     if (out_error != nullptr) {
       *out_error = "gate 最小活跃度阈值不能为负数";
+    }
+    return false;
+  }
+  if (config.gate.fail_to_reduce_only_windows < 0 ||
+      config.gate.fail_to_halt_windows < 0 ||
+      config.gate.reduce_only_cooldown_ticks < 0 ||
+      config.gate.halt_cooldown_ticks < 0 ||
+      config.gate.pass_to_resume_windows < 0) {
+    if (out_error != nullptr) {
+      *out_error = "gate 运行时动作参数不能为负数";
+    }
+    return false;
+  }
+  if (config.integrator.shadow.score_gain <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.shadow.score_gain 必须大于 0";
+    }
+    return false;
+  }
+  if (config.integrator.enabled && config.integrator.shadow.enabled &&
+      config.integrator.shadow.model_report_path.empty()) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.shadow.model_report_path 不能为空";
     }
     return false;
   }
@@ -938,9 +1577,33 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.execution_min_rebalance_notional_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.min_rebalance_notional_usd 不能为负数";
+    }
+    return false;
+  }
   if (config.execution_reverse_signal_cooldown_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "execution.reverse_signal_cooldown_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_signal_notional_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.signal_notional_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_signal_deadband_abs < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.signal_deadband_abs 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_min_hold_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.min_hold_ticks 不能为负数";
     }
     return false;
   }
@@ -953,6 +1616,141 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.system_status_log_interval_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "system.status_log_interval_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.system_remote_risk_refresh_interval_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "system.remote_risk_refresh_interval_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.update_interval_ticks <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.update_interval_ticks 必须大于 0";
+    }
+    return false;
+  }
+  if (config.self_evolution.min_update_interval_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.min_update_interval_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.min_abs_window_pnl_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.min_abs_window_pnl_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.min_bucket_ticks_for_update < 0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.min_bucket_ticks_for_update 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.objective_alpha_pnl < 0.0 ||
+      config.self_evolution.objective_beta_drawdown < 0.0 ||
+      config.self_evolution.objective_gamma_notional_churn < 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution objective 参数不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.objective_alpha_pnl <= 0.0 &&
+      config.self_evolution.objective_beta_drawdown <= 0.0 &&
+      config.self_evolution.objective_gamma_notional_churn <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution objective 参数不能同时为 0";
+    }
+    return false;
+  }
+  if (config.self_evolution.max_single_strategy_weight <= 0.0 ||
+      config.self_evolution.max_single_strategy_weight > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.max_single_strategy_weight 必须在 (0,1] 范围内";
+    }
+    return false;
+  }
+  if (config.self_evolution.max_single_strategy_weight < 0.5) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.max_single_strategy_weight 不能小于 0.5（双策略权重和=1）";
+    }
+    return false;
+  }
+  if (config.self_evolution.max_weight_step <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.max_weight_step 必须大于 0";
+    }
+    return false;
+  }
+  if (config.self_evolution.rollback_degrade_windows <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.rollback_degrade_windows 必须大于 0";
+    }
+    return false;
+  }
+  if (config.self_evolution.rollback_cooldown_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.rollback_cooldown_ticks 不能为负数";
+    }
+    return false;
+  }
+  const double initial_weight_sum =
+      config.self_evolution.initial_trend_weight +
+      config.self_evolution.initial_defensive_weight;
+  if (config.self_evolution.initial_trend_weight < 0.0 ||
+      config.self_evolution.initial_defensive_weight < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution 初始权重不能为负数";
+    }
+    return false;
+  }
+  if (std::fabs(initial_weight_sum - 1.0) > 1e-6) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution 初始权重和必须为 1.0";
+    }
+    return false;
+  }
+  if (config.self_evolution.initial_trend_weight >
+          config.self_evolution.max_single_strategy_weight ||
+      config.self_evolution.initial_defensive_weight >
+          config.self_evolution.max_single_strategy_weight) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution 初始权重超过 max_single_strategy_weight";
+    }
+    return false;
+  }
+  if (config.regime.warmup_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "regime.warmup_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.regime.ewma_alpha <= 0.0 || config.regime.ewma_alpha > 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "regime.ewma_alpha 必须在 (0,1] 范围内";
+    }
+    return false;
+  }
+  if (config.regime.trend_threshold < 0.0 ||
+      config.regime.extreme_threshold < 0.0 ||
+      config.regime.volatility_threshold < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "regime 阈值参数不能为负数";
+    }
+    return false;
+  }
+  if (config.regime.extreme_threshold > 0.0 &&
+      config.regime.trend_threshold > config.regime.extreme_threshold) {
+    if (out_error != nullptr) {
+      *out_error = "regime.trend_threshold 不能大于 regime.extreme_threshold";
     }
     return false;
   }

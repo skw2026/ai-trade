@@ -1,6 +1,7 @@
 #include "exchange/bybit_exchange_adapter.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -19,6 +20,11 @@ namespace ai_trade {
 
 namespace {
 
+// 说明：
+// 该文件承担 Bybit 适配器的核心编排逻辑，覆盖
+// 1) 认证与通道初始化（REST/WS）；
+// 2) symbol 规则加载与数量精度量化；
+// 3) 行情/成交统一转换与去重。
 bool IsReplayMode(const BybitAdapterOptions& options) {
   return options.mode == "replay";
 }
@@ -34,6 +40,10 @@ std::string ReadEnvOrEmpty(const char* key) {
   return value;
 }
 
+/**
+ * @brief 解析 Bybit API 密钥
+ * 优先级：Demo > Testnet > Mainnet > 通用回退
+ */
 void ResolveBybitCredentials(bool testnet,
                              bool demo_trading,
                              std::string* out_api_key,
@@ -91,6 +101,32 @@ std::string Trim(const std::string& text) {
     --end;
   }
   return text.substr(begin, end - begin);
+}
+
+/**
+ * @brief 判断 Bybit 订单状态是否仍属于“活动中”
+ *
+ * 说明：
+ * - `/v5/order/realtime` 在不同账户形态下可能返回非活动状态订单；
+ * - 对账“在途单”收敛必须只看活动态，避免已终态订单阻塞本地 pending。
+ */
+bool IsBybitOrderStatusActive(const std::string& order_status) {
+  const std::string normalized = ToUpperCopy(Trim(order_status));
+  if (normalized.empty()) {
+    // 缺失状态字段时保守放行，由 pending_order_stale_ms 再兜底收敛。
+    return true;
+  }
+  static const std::unordered_set<std::string> kTerminalStatuses{
+      "FILLED",
+      "CANCELLED",
+      "CANCELED",
+      "REJECTED",
+      "DEACTIVATED",
+      "EXPIRED",
+      "PARTIALLYFILLEDCANCELED",
+      "PARTIALLYFILLEDCANCELLED",
+  };
+  return kTerminalStatuses.find(normalized) == kTerminalStatuses.end();
 }
 
 std::vector<std::string> NormalizeSymbols(const std::vector<std::string>& input,
@@ -471,6 +507,10 @@ bool IsStepAligned(double qty, const BybitSymbolTradeRule& rule) {
   return true;
 }
 
+/**
+ * @brief 解析 Bybit 交易规则 (Instrument Info)
+ * 重点关注：最小下单量、价格精度、数量精度、最小名义价值
+ */
 bool ParseBybitSymbolTradeRule(const JsonValue* instrument,
                                BybitSymbolTradeRule* out_rule) {
   if (instrument == nullptr ||
@@ -604,14 +644,27 @@ bool LoadTradeRuleForSymbol(BybitRestClient* rest_client,
 
 }  // namespace
 
+/**
+ * @brief 建立 Bybit 适配器连接并初始化运行通道
+ *
+ * 初始化顺序：
+ * 1. 归一化 symbol 与本地状态清理；
+ * 2. 鉴权检查与 REST 客户端初始化；
+ * 3. 拉取交易规则与账户模式快照；
+ * 4. 建立 Public/Private WS（失败按配置降级到 REST 轮询）；
+ * 5. 预热 execution 游标，避免重启后误消费历史成交。
+ */
 bool BybitExchangeAdapter::Connect() {
   options_.symbols = NormalizeSymbols(options_.symbols, options_.primary_symbol);
   observed_exec_ids_.clear();
   pending_fills_.clear();
   pending_markets_.clear();
+  last_public_ws_reconnect_attempt_ms_ = 0;
+  last_private_ws_reconnect_attempt_ms_ = 0;
   execution_watermark_ms_ = 0;
   execution_cursor_primed_ = false;
   if (options_.replay_prices.empty()) {
+    // 回放模式兜底价格序列
     options_.replay_prices = {100.0, 100.5, 100.3, 100.8, 100.4, 100.9};
   }
 
@@ -663,6 +716,7 @@ bool BybitExchangeAdapter::Connect() {
     return true;
   }
 
+  // 初始化 HTTP 传输层 (便于 Mock 注入)
   std::unique_ptr<BybitHttpTransport> transport;
   if (options_.http_transport_factory) {
     transport = options_.http_transport_factory();
@@ -674,6 +728,7 @@ bool BybitExchangeAdapter::Connect() {
       options_.demo_trading,
       std::move(transport));
 
+  // 1. 加载交易规则 (Instrument Info)
   symbol_trade_rules_.clear();
   for (const auto& symbol : options_.symbols) {
     BybitSymbolTradeRule rule;
@@ -696,6 +751,7 @@ bool BybitExchangeAdapter::Connect() {
             ", tradable=" + std::string(rule.tradable ? "true" : "false"));
   }
 
+  // 2. 加载账户与持仓模式 (Account Info)
   std::string account_info_body;
   std::string account_info_error;
   if (!rest_client_->GetPrivate("/v5/account/info", "", &account_info_body,
@@ -722,6 +778,7 @@ bool BybitExchangeAdapter::Connect() {
   account_snapshot_.position_mode =
       ParsePositionMode(positions_body, options_.remote_position_mode);
 
+  // 3. 初始化行情通道 (Public WS 优先 -> REST 降级)
   market_channel_ = MarketChannel::kRestPolling;
   if (options_.public_ws_enabled) {
     BybitPublicStreamOptions ws_options;
@@ -753,6 +810,7 @@ bool BybitExchangeAdapter::Connect() {
     public_stream_.reset();
   }
 
+  // 4. 初始化成交通道 (Private WS 优先 -> REST 降级)
   fill_channel_ = FillChannel::kRestPolling;
   if (options_.private_ws_enabled) {
     BybitPrivateStreamOptions ws_options;
@@ -786,6 +844,7 @@ bool BybitExchangeAdapter::Connect() {
     private_stream_.reset();
   }
 
+  // 5. 预热成交游标 (防止重启后重复消费历史成交)
   if (options_.execution_skip_history_on_start) {
     if (!PrimeExecutionCursor()) {
       LogInfo("BYBIT_EXEC_CURSOR_PRIME_DEGRADED: 启动游标预热失败，后续将依赖execTime水位过滤");
@@ -829,6 +888,7 @@ std::string BybitExchangeAdapter::Name() const {
 }
 
 bool BybitExchangeAdapter::TradeOk() const {
+  // 交易健康由“连接状态 + 当前通道健康 + 是否允许降级”共同决定。
   if (!connected_) {
     return false;
   }
@@ -845,6 +905,68 @@ bool BybitExchangeAdapter::TradeOk() const {
     return false;
   }
   return true;
+}
+
+std::int64_t BybitExchangeAdapter::CurrentTimestampMs() {
+  const auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now());
+  return now.time_since_epoch().count();
+}
+
+void BybitExchangeAdapter::MaybeReconnectPublicWs() {
+  if (!connected_ ||
+      market_channel_ != MarketChannel::kRestPolling ||
+      !options_.public_ws_enabled ||
+      public_stream_ == nullptr) {
+    return;
+  }
+
+  if (options_.ws_reconnect_interval_ms > 0) {
+    const std::int64_t now_ms = CurrentTimestampMs();
+    if (last_public_ws_reconnect_attempt_ms_ > 0 &&
+        now_ms - last_public_ws_reconnect_attempt_ms_ <
+            options_.ws_reconnect_interval_ms) {
+      return;
+    }
+    last_public_ws_reconnect_attempt_ms_ = now_ms;
+  }
+
+  std::string reconnect_error;
+  if (public_stream_->Connect(&reconnect_error)) {
+    market_channel_ = MarketChannel::kPublicWs;
+    LogInfo("BYBIT_PUBLIC_WS_RECOVERED: 重连成功，切回 public_ws 行情通道");
+    return;
+  }
+
+  LogInfo("BYBIT_PUBLIC_WS_RECONNECT_FAILED: " + reconnect_error);
+}
+
+void BybitExchangeAdapter::MaybeReconnectPrivateWs() {
+  if (!connected_ ||
+      fill_channel_ != FillChannel::kRestPolling ||
+      !options_.private_ws_enabled ||
+      private_stream_ == nullptr) {
+    return;
+  }
+
+  if (options_.ws_reconnect_interval_ms > 0) {
+    const std::int64_t now_ms = CurrentTimestampMs();
+    if (last_private_ws_reconnect_attempt_ms_ > 0 &&
+        now_ms - last_private_ws_reconnect_attempt_ms_ <
+            options_.ws_reconnect_interval_ms) {
+      return;
+    }
+    last_private_ws_reconnect_attempt_ms_ = now_ms;
+  }
+
+  std::string reconnect_error;
+  if (private_stream_->Connect(&reconnect_error)) {
+    fill_channel_ = FillChannel::kPrivateWs;
+    LogInfo("BYBIT_PRIVATE_WS_RECOVERED: 重连成功，切回 private_ws 成交通道");
+    return;
+  }
+
+  LogInfo("BYBIT_PRIVATE_WS_RECONNECT_FAILED: " + reconnect_error);
 }
 
 std::string BybitExchangeAdapter::ChannelHealthSummary() const {
@@ -887,6 +1009,7 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
   }
 
   if (pending_markets_.empty()) {
+    // 批量拉取 symbol 行情，写入 pending 队列后逐条吐出。
     for (const auto& symbol : options_.symbols) {
       const std::string query =
           "category=" + options_.category + "&symbol=" + symbol;
@@ -935,6 +1058,12 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
   return true;
 }
 
+/**
+ * @brief 行情读取入口
+ *
+ * 优先级：Replay -> Public WS -> REST 轮询。
+ * 当 WS 运行时故障且配置允许回退时，自动切换到 REST。
+ */
 bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
   if (!connected_ || out_event == nullptr) {
     return false;
@@ -973,12 +1102,26 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
     }
   }
 
+  // 处于降级模式时，按节流间隔尝试恢复 Public WS。
+  if (market_channel_ == MarketChannel::kRestPolling &&
+      options_.public_ws_rest_fallback) {
+    MaybeReconnectPublicWs();
+  }
+  if (market_channel_ == MarketChannel::kPublicWs) {
+    if (public_stream_ != nullptr && public_stream_->PollTicker(out_event)) {
+      last_price_by_symbol_[out_event->symbol] =
+          out_event->mark_price > 0.0 ? out_event->mark_price : out_event->price;
+      return true;
+    }
+  }
+
   if (market_channel_ != MarketChannel::kRestPolling) {
     return false;
   }
   return PollMarketFromRest(out_event);
 }
 
+// 启动预热：拉取最近 execution，建立 exec_id 与 execTime 水位基线。
 bool BybitExchangeAdapter::PrimeExecutionCursor() {
   if (rest_client_ == nullptr) {
     return false;
@@ -1044,15 +1187,60 @@ bool BybitExchangeAdapter::DrainPendingFill(FillEvent* out_fill) {
   }
   *out_fill = pending_fills_.front();
   pending_fills_.pop_front();
+  CanonicalizeFillClientOrderId(out_fill);
   remote_position_qty_by_symbol_[out_fill->symbol] +=
       static_cast<double>(out_fill->direction) * out_fill->qty;
   return true;
+}
+
+void BybitExchangeAdapter::RememberOrderIdMapping(
+    const std::string& order_id,
+    const std::string& client_order_id) {
+  if (order_id.empty() || client_order_id.empty()) {
+    return;
+  }
+  order_id_to_client_id_[order_id] = client_order_id;
+}
+
+std::string BybitExchangeAdapter::ResolveClientOrderId(
+    const std::string& order_link_id,
+    const std::string& order_id) const {
+  if (!order_link_id.empty()) {
+    if (!order_id.empty()) {
+      order_id_to_client_id_[order_id] = order_link_id;
+    }
+    return order_link_id;
+  }
+  if (order_id.empty()) {
+    return {};
+  }
+  const auto mapped = order_id_to_client_id_.find(order_id);
+  if (mapped != order_id_to_client_id_.end() && !mapped->second.empty()) {
+    return mapped->second;
+  }
+  // 映射缺失时退化为 orderId，至少保证回报可追踪。
+  return order_id;
+}
+
+void BybitExchangeAdapter::CanonicalizeFillClientOrderId(FillEvent* fill) {
+  if (fill == nullptr || fill->client_order_id.empty()) {
+    return;
+  }
+  if (order_symbol_by_client_id_.find(fill->client_order_id) !=
+      order_symbol_by_client_id_.end()) {
+    return;
+  }
+  const auto mapped = order_id_to_client_id_.find(fill->client_order_id);
+  if (mapped != order_id_to_client_id_.end() && !mapped->second.empty()) {
+    fill->client_order_id = mapped->second;
+  }
 }
 
 bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
   if (rest_client_ == nullptr || out_fill == nullptr) {
     return false;
   }
+  // 确保游标已预热
   if (options_.execution_skip_history_on_start && !execution_cursor_primed_) {
     if (!PrimeExecutionCursor()) {
       return false;
@@ -1077,6 +1265,7 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
       return false;
     }
 
+    // 轮询批次内做去重 + 水位过滤，最终写入 pending_fills_。
     for (const auto& row : list->array_value) {
       if (row.type != JsonType::kObject) {
         continue;
@@ -1086,10 +1275,12 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
       if (exec_id.empty()) {
         continue;
       }
+      // 去重检查：如果已处理过该 exec_id，跳过
       if (!observed_exec_ids_.insert(exec_id).second) {
         continue;
       }
       const std::int64_t exec_time_ms = ParseExecTimeMs(&row);
+      // 水位检查：如果是启动前的历史成交，跳过
       if (options_.execution_skip_history_on_start &&
           exec_time_ms > 0 &&
           exec_time_ms <= execution_watermark_ms_) {
@@ -1109,9 +1300,17 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
 
       FillEvent fill;
       fill.fill_id = exec_id;
-      fill.client_order_id =
-          JsonStringField(&row, "orderLinkId")
-              .value_or(JsonStringField(&row, "orderId").value_or(std::string()));
+      const std::string order_link_id =
+          JsonStringField(&row, "orderLinkId").value_or(std::string());
+      const std::string order_id =
+          JsonStringField(&row, "orderId").value_or(std::string());
+      fill.client_order_id = ResolveClientOrderId(order_link_id, order_id);
+      if (fill.client_order_id.empty()) {
+        if (exec_time_ms > execution_watermark_ms_) {
+          execution_watermark_ms_ = exec_time_ms;
+        }
+        continue;
+      }
       fill.symbol = JsonStringField(&row, "symbol").value_or("BTCUSDT");
       fill.direction = direction;
       fill.qty = qty;
@@ -1127,6 +1326,12 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
   return DrainPendingFill(out_fill);
 }
 
+/**
+ * @brief 下单入口
+ *
+ * Replay 模式：本地生成模拟成交。
+ * Live/Paper 模式：应用 symbol 规则（步长/最小量/最小名义）后调用 REST 下单。
+ */
 bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   if (!connected_) {
     return false;
@@ -1182,6 +1387,8 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   double submit_qty = intent.qty;
   int qty_precision = 8;
   const std::string normalized_symbol = ToUpperCopy(intent.symbol);
+  
+  // 应用交易规则：先截断，再量化，再做最小名义与最小数量校验。
   const auto rule_it = symbol_trade_rules_.find(normalized_symbol);
   if (rule_it != symbol_trade_rules_.end()) {
     const BybitSymbolTradeRule& rule = rule_it->second;
@@ -1191,9 +1398,11 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
     }
     qty_precision = rule.qty_precision > 0 ? rule.qty_precision : 8;
 
+    // 1. 上限截断
     if (rule.max_mkt_order_qty > 0.0) {
       submit_qty = std::min(submit_qty, rule.max_mkt_order_qty);
     }
+    // 2. 步长量化 (向下取整)
     if (rule.qty_step > 0.0 || (rule.qty_scale > 0 && rule.qty_step_units > 0)) {
       submit_qty = QuantizeDownToStep(submit_qty, rule);
     }
@@ -1206,6 +1415,7 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
       }
     }
 
+    // 3. 最小名义价值检查 (Min Notional)
     if (rule.min_notional_value > 0.0 &&
         ref_price > 0.0 &&
         !intent.reduce_only &&
@@ -1218,6 +1428,7 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
       return false;
     }
 
+    // 4. 最小数量检查 (Min Qty)
     if (rule.min_order_qty > 0.0 &&
         submit_qty + 1e-12 < rule.min_order_qty) {
       LogInfo("Bybit 下单拒绝：数量低于最小下单数量, symbol=" +
@@ -1227,6 +1438,7 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
       return false;
     }
 
+    // 5. 步长对齐检查 (Double Check)
     if (!IsStepAligned(submit_qty, rule)) {
       LogInfo("Bybit 下单拒绝：数量不是qtyStep的整数倍, symbol=" +
               normalized_symbol +
@@ -1243,6 +1455,7 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   }
 
   order_symbol_by_client_id_[intent.client_order_id] = normalized_symbol;
+  // 构造 Bybit V5 下单 Payload
   const std::string side = intent.direction > 0 ? "Buy" : "Sell";
   const std::string body =
       "{\"category\":\"" + EscapeJson(options_.category) +
@@ -1260,9 +1473,28 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
             ", error=" + error);
     return false;
   }
+  // 记录 orderId->clientOrderId 映射，解决私有回报仅携带 orderId 时的本地归一化问题。
+  if (const std::optional<JsonValue> root = ParseJsonBody(response);
+      root.has_value()) {
+    const JsonValue* result = JsonObjectField(&(*root), "result");
+    if (result != nullptr && result->type == JsonType::kObject) {
+      const std::string order_id =
+          JsonStringField(result, "orderId").value_or(std::string());
+      const std::string order_link_id =
+          JsonStringField(result, "orderLinkId")
+              .value_or(intent.client_order_id);
+      RememberOrderIdMapping(order_id, order_link_id);
+    }
+  }
   return true;
 }
 
+/**
+ * @brief 撤单入口
+ *
+ * Replay 模式：从本地 pending fill 队列移除；
+ * Live/Paper 模式：调用 `/v5/order/cancel`。
+ */
 bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
   if (!connected_) {
     return false;
@@ -1293,13 +1525,27 @@ bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
   std::string response;
   std::string error;
   if (!rest_client_->PostPrivate("/v5/order/cancel", body, &response, &error)) {
+    // Bybit 110001: 订单不存在或已来不及撤销，按幂等成功处理即可。
+    if (error.find("retCode 异常: 110001") != std::string::npos) {
+      LogInfo("Bybit 撤单幂等成功: client_order_id=" + client_order_id +
+              ", detail=" + error);
+      order_symbol_by_client_id_.erase(client_order_id);
+      return true;
+    }
     LogInfo("Bybit 撤单失败: client_order_id=" + client_order_id +
             ", error=" + error);
     return false;
   }
+  order_symbol_by_client_id_.erase(client_order_id);
   return true;
 }
 
+/**
+ * @brief 成交读取入口
+ *
+ * 优先级：Replay -> Private WS -> REST 轮询。
+ * WS 故障时按配置自动降级到 REST。
+ */
 bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
   if (!connected_ || out_fill == nullptr) {
     return false;
@@ -1310,9 +1556,13 @@ bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
 
   if (fill_channel_ == FillChannel::kPrivateWs) {
     if (private_stream_ != nullptr && private_stream_->PollExecution(out_fill)) {
+      CanonicalizeFillClientOrderId(out_fill);
+      // Private WS 重连后可能重复推送历史 execution，这里做全局去重保护。
+      if (!observed_exec_ids_.insert(out_fill->fill_id).second) {
+        return false;
+      }
       remote_position_qty_by_symbol_[out_fill->symbol] +=
           static_cast<double>(out_fill->direction) * out_fill->qty;
-      observed_exec_ids_.insert(out_fill->fill_id);
       return true;
     }
     if (private_stream_ == nullptr || !private_stream_->Healthy()) {
@@ -1326,12 +1576,35 @@ bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
     }
   }
 
+  // 处于降级模式时，按节流间隔尝试恢复 Private WS。
+  if (fill_channel_ == FillChannel::kRestPolling &&
+      options_.private_ws_rest_fallback) {
+    MaybeReconnectPrivateWs();
+  }
+  if (fill_channel_ == FillChannel::kPrivateWs) {
+    if (private_stream_ != nullptr && private_stream_->PollExecution(out_fill)) {
+      CanonicalizeFillClientOrderId(out_fill);
+      if (!observed_exec_ids_.insert(out_fill->fill_id).second) {
+        return false;
+      }
+      remote_position_qty_by_symbol_[out_fill->symbol] +=
+          static_cast<double>(out_fill->direction) * out_fill->qty;
+      return true;
+    }
+    return false;
+  }
+
   if (fill_channel_ != FillChannel::kRestPolling) {
     return false;
   }
-  return PollFillFromRest(out_fill);
+  if (!PollFillFromRest(out_fill)) {
+    return false;
+  }
+  CanonicalizeFillClientOrderId(out_fill);
+  return true;
 }
 
+// 获取交易所侧净名义敞口（USD, signed），供对账快速检查使用。
 bool BybitExchangeAdapter::GetRemoteNotionalUsd(double* out_notional_usd) const {
   if (!connected_ || out_notional_usd == nullptr) {
     return false;
@@ -1418,6 +1691,7 @@ bool BybitExchangeAdapter::GetRemotePositions(
           .qty = qty,
           .avg_entry_price = mark,
           .mark_price = mark,
+          .liquidation_price = 0.0,
       });
     }
     return true;
@@ -1443,6 +1717,7 @@ bool BybitExchangeAdapter::GetRemotePositions(
     return false;
   }
 
+  // 统一转换为“带方向数量 + 强平价”的内部快照（多>0，空<0）。
   for (const auto& row : list->array_value) {
     if (row.type != JsonType::kObject) {
       continue;
@@ -1474,6 +1749,8 @@ bool BybitExchangeAdapter::GetRemotePositions(
 
     const double avg_entry_price = JsonNumberField(&row, "avgPrice").value_or(0.0);
     double mark_price = JsonNumberField(&row, "markPrice").value_or(0.0);
+    const double liquidation_price =
+        JsonNumberField(&row, "liqPrice").value_or(0.0);
     if (mark_price <= 0.0) {
       if (const auto it = last_price_by_symbol_.find(symbol);
           it != last_price_by_symbol_.end() && it->second > 0.0) {
@@ -1486,12 +1763,225 @@ bool BybitExchangeAdapter::GetRemotePositions(
         .qty = static_cast<double>(direction) * size,
         .avg_entry_price = avg_entry_price,
         .mark_price = mark_price,
+        .liquidation_price = liquidation_price > 0.0 ? liquidation_price : 0.0,
     });
   }
 
   return true;
 }
 
+bool BybitExchangeAdapter::GetRemoteAccountBalance(
+    RemoteAccountBalanceSnapshot* out_balance) const {
+  if (!connected_ || out_balance == nullptr) {
+    return false;
+  }
+  if (IsReplayMode(options_)) {
+    return false;
+  }
+  if (rest_client_ == nullptr) {
+    return false;
+  }
+
+  const std::string query = "accountType=" + options_.account_type;
+  std::string body;
+  std::string error;
+  if (!rest_client_->GetPrivate("/v5/account/wallet-balance", query, &body,
+                                &error)) {
+    return false;
+  }
+
+  const std::optional<JsonValue> root = ParseJsonBody(body);
+  if (!root.has_value()) {
+    return false;
+  }
+  const JsonValue* list = JsonResultList(&(*root));
+  if (list == nullptr || list->type != JsonType::kArray ||
+      list->array_value.empty()) {
+    return false;
+  }
+
+  const JsonValue* row = &list->array_value.front();
+  if (row->type != JsonType::kObject) {
+    return false;
+  }
+
+  RemoteAccountBalanceSnapshot snapshot;
+  if (const auto v = JsonNumberField(row, "totalEquity"); v.has_value()) {
+    snapshot.equity_usd = *v;
+    snapshot.has_equity = true;
+  }
+  if (const auto v = JsonNumberField(row, "totalWalletBalance"); v.has_value()) {
+    snapshot.wallet_balance_usd = *v;
+    snapshot.has_wallet_balance = true;
+  }
+  if (const auto v = JsonNumberField(row, "totalPerpUPL"); v.has_value()) {
+    snapshot.unrealized_pnl_usd = *v;
+    snapshot.has_unrealized_pnl = true;
+  }
+
+  // 回退逻辑：部分账户类型可能仅返回 coin 级明细。
+  const JsonValue* coins = JsonObjectField(row, "coin");
+  if (coins != nullptr && coins->type == JsonType::kArray &&
+      !coins->array_value.empty()) {
+    if (!snapshot.has_wallet_balance) {
+      double sum_wallet = 0.0;
+      bool has_wallet = false;
+      for (const auto& coin : coins->array_value) {
+        if (coin.type != JsonType::kObject) {
+          continue;
+        }
+        if (const auto usd = JsonNumberField(&coin, "usdValue");
+            usd.has_value()) {
+          sum_wallet += *usd;
+          has_wallet = true;
+          continue;
+        }
+        if (const auto wallet = JsonNumberField(&coin, "walletBalance");
+            wallet.has_value()) {
+          sum_wallet += *wallet;
+          has_wallet = true;
+        }
+      }
+      if (has_wallet) {
+        snapshot.wallet_balance_usd = sum_wallet;
+        snapshot.has_wallet_balance = true;
+      }
+    }
+    if (!snapshot.has_unrealized_pnl) {
+      double sum_upnl = 0.0;
+      bool has_upnl = false;
+      for (const auto& coin : coins->array_value) {
+        if (coin.type != JsonType::kObject) {
+          continue;
+        }
+        if (const auto upnl = JsonNumberField(&coin, "unrealisedPnl");
+            upnl.has_value()) {
+          sum_upnl += *upnl;
+          has_upnl = true;
+        }
+      }
+      if (has_upnl) {
+        snapshot.unrealized_pnl_usd = sum_upnl;
+        snapshot.has_unrealized_pnl = true;
+      }
+    }
+  }
+
+  if (!snapshot.has_equity) {
+    if (snapshot.has_wallet_balance && snapshot.has_unrealized_pnl) {
+      snapshot.equity_usd =
+          snapshot.wallet_balance_usd + snapshot.unrealized_pnl_usd;
+      snapshot.has_equity = true;
+    } else if (const auto v = JsonNumberField(row, "totalMarginBalance");
+               v.has_value()) {
+      snapshot.equity_usd = *v;
+      snapshot.has_equity = true;
+    }
+  }
+
+  if (!snapshot.has_equity && !snapshot.has_wallet_balance) {
+    return false;
+  }
+  *out_balance = snapshot;
+  return true;
+}
+
+bool BybitExchangeAdapter::GetRemoteOpenOrderClientIds(
+    std::unordered_set<std::string>* out_client_order_ids) const {
+  if (!connected_ || out_client_order_ids == nullptr) {
+    return false;
+  }
+  out_client_order_ids->clear();
+
+  if (IsReplayMode(options_)) {
+    for (const auto& fill : pending_fills_) {
+      if (!fill.client_order_id.empty()) {
+        out_client_order_ids->insert(fill.client_order_id);
+      }
+    }
+    return true;
+  }
+
+  if (rest_client_ == nullptr) {
+    return false;
+  }
+
+  const std::string query = "category=" + options_.category +
+                            "&openOnly=0&limit=50";
+  std::string body;
+  std::string error;
+  if (!rest_client_->GetPrivate("/v5/order/realtime", query, &body, &error)) {
+    return false;
+  }
+
+  const std::optional<JsonValue> root = ParseJsonBody(body);
+  if (!root.has_value()) {
+    return false;
+  }
+  const JsonValue* list = JsonResultList(&(*root));
+  if (list == nullptr || list->type != JsonType::kArray) {
+    return false;
+  }
+
+  int total_rows = 0;
+  int active_rows = 0;
+  int skipped_terminal = 0;
+  int skipped_zero_leaves = 0;
+  int skipped_missing_client_id = 0;
+  int mapped_from_order_id = 0;
+  for (const auto& row : list->array_value) {
+    if (row.type != JsonType::kObject) {
+      continue;
+    }
+    ++total_rows;
+    const std::string order_status =
+        JsonStringField(&row, "orderStatus").value_or(std::string());
+    if (!IsBybitOrderStatusActive(order_status)) {
+      ++skipped_terminal;
+      continue;
+    }
+    if (const auto leaves_qty = JsonNumberField(&row, "leavesQty");
+        leaves_qty.has_value() && *leaves_qty <= 1e-12) {
+      ++skipped_zero_leaves;
+      continue;
+    }
+    const std::string order_link_id =
+        JsonStringField(&row, "orderLinkId").value_or(std::string());
+    const std::string order_id =
+        JsonStringField(&row, "orderId").value_or(std::string());
+    if (order_link_id.empty() && !order_id.empty()) {
+      const auto mapped = order_id_to_client_id_.find(order_id);
+      if (mapped != order_id_to_client_id_.end() && !mapped->second.empty()) {
+        ++mapped_from_order_id;
+      }
+    }
+    const std::string client_order_id =
+        ResolveClientOrderId(order_link_id, order_id);
+    if (client_order_id.empty()) {
+      ++skipped_missing_client_id;
+      continue;
+    }
+    out_client_order_ids->insert(client_order_id);
+    ++active_rows;
+  }
+
+  const int filtered_rows =
+      skipped_terminal + skipped_zero_leaves + skipped_missing_client_id;
+  if ((filtered_rows > 0 || mapped_from_order_id > 0) &&
+      (++open_order_diag_counter_ % 20 == 0)) {
+    LogInfo("BYBIT_OPEN_ORDER_FILTER: total=" + std::to_string(total_rows) +
+            ", active=" + std::to_string(active_rows) +
+            ", skipped_terminal=" + std::to_string(skipped_terminal) +
+            ", skipped_zero_leaves=" + std::to_string(skipped_zero_leaves) +
+            ", skipped_missing_client_id=" +
+            std::to_string(skipped_missing_client_id) +
+            ", mapped_from_order_id=" + std::to_string(mapped_from_order_id));
+  }
+
+  return true;
+}
+
+// symbol 规则查询：供 Universe 过滤与执行层下单前校验复用。
 bool BybitExchangeAdapter::GetSymbolInfo(const std::string& symbol,
                                          SymbolInfo* out_info) const {
   if (!connected_ || out_info == nullptr || symbol.empty()) {

@@ -35,9 +35,10 @@ UniverseSelector::UniverseSelector(UniverseConfig config, std::string primary_sy
 }
 
 std::optional<UniverseUpdate> UniverseSelector::OnMarket(const MarketEvent& event) {
-  if (!event.symbol.empty()) {
-    seen_symbols_.insert(event.symbol);
+  if (event.symbol.empty()) {
+    return std::nullopt;
   }
+  seen_symbols_.insert(event.symbol);
 
   auto& stats = stats_by_symbol_[event.symbol];
   const double price = (event.mark_price > 0.0) ? event.mark_price : event.price;
@@ -52,11 +53,13 @@ std::optional<UniverseUpdate> UniverseSelector::OnMarket(const MarketEvent& even
   }
   ++stats.tick_count;
 
-  ++tick_count_;
-  if (tick_count_ < config_.update_interval_ticks) {
+  // 按 tick 间隔触发刷新，避免每个行情都重排 Universe。
+  ++ticks_since_update_;
+  if (config_.update_interval_ticks > 0 &&
+      ticks_since_update_ < config_.update_interval_ticks) {
     return std::nullopt;
   }
-  tick_count_ = 0;
+  ticks_since_update_ = 0;
   return Refresh();
 }
 
@@ -79,6 +82,7 @@ bool UniverseSelector::IsActive(const std::string& symbol) const {
 
 std::optional<UniverseUpdate> UniverseSelector::Refresh() {
   std::vector<std::string> candidates = config_.candidate_symbols;
+  // 如果没有配置候选池，则从所有见过的 symbol 中筛选
   if (candidates.empty()) {
     for (const auto& symbol : seen_symbols_) {
       candidates.push_back(symbol);
@@ -98,6 +102,7 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
       continue;
     }
     const MarketStats& stats = it->second;
+    // 评分公式：0.6 * 活跃度 + 0.4 * 波动率
     const double activity = Clamp01(static_cast<double>(stats.tick_count) / 10.0);
     const double volatility =
         (stats.return_count <= 0)
@@ -108,6 +113,7 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
     scores.push_back(SymbolScore{symbol, score});
   }
 
+  // 按分数降序排列
   std::sort(scores.begin(), scores.end(),
             [](const SymbolScore& lhs, const SymbolScore& rhs) {
               if (std::fabs(lhs.score - rhs.score) > 1e-12) {
@@ -127,6 +133,7 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
 
   bool degraded = false;
   std::string reason_code;
+  // 如果筛选结果为空，触发降级逻辑：使用 Fallback Symbols
   if (selected.empty()) {
     degraded = true;
     reason_code = "UNIVERSE_SELECTOR_DEGRADED";

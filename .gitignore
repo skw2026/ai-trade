@@ -1,8 +1,20 @@
 # Build artifacts
 /build/
+/bin/
 
 # macOS
 .DS_Store
 
 # Local secrets
 .env
+
+# Runtime / research artifacts (keep directory placeholders)
+/data/**
+!/data/.gitkeep
+!/data/**/.gitkeep
+
+# Local runtime logs
+run_*.log
+
+# Write-ahead logs
+*.wal

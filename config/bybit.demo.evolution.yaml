@@ -1,0 +1,114 @@
+system:
+  id: "bot-bybit-demo-evolution"
+  mode: "paper"
+  primary_symbol: "BTCUSDT"
+  data_path: "./data/demo_evolution"
+  max_ticks: 0
+  status_log_interval_ticks: 20
+  remote_risk_refresh_interval_ticks: 10
+  reconcile:
+    enabled: true
+    interval_ticks: 10
+    tolerance_notional_usd: 8.0
+    mismatch_confirmations: 4
+    pending_order_stale_ms: 15000
+
+exchange:
+  platform: "bybit"
+  bybit:
+    testnet: false
+    demo_trading: true
+    category: "linear"
+    account_type: "UNIFIED"
+    expected_account_mode: "UNIFIED"
+    expected_margin_mode: "ISOLATED"
+    expected_position_mode: "ONE_WAY"
+    public_ws_enabled: true
+    public_ws_rest_fallback: true
+    private_ws_enabled: true
+    private_ws_rest_fallback: true
+    ws_reconnect_interval_ms: 15000
+    execution_poll_limit: 50
+
+risk:
+  max_abs_notional_usd: 1800
+  max_drawdown:
+    degraded_threshold: 0.08
+    cooldown_threshold: 0.12
+    fuse_threshold: 0.20
+
+execution:
+  max_order_notional: 450
+  min_rebalance_notional_usd: 120
+  min_order_interval_ms: 4000
+  reverse_signal_cooldown_ticks: 10
+  protection:
+    enabled: false
+    require_sl: true
+    enable_tp: true
+    attach_timeout_ms: 1500
+    stop_loss_ratio: 0.01
+    take_profit_ratio: 0.015
+
+strategy:
+  signal_notional_usd: 450
+  signal_deadband_abs: 1.2
+  min_hold_ticks: 8
+
+integrator:
+  enabled: true
+  model_type: "catboost"
+  shadow:
+    enabled: true
+    log_model_score: true
+    model_report_path: "./data/research/integrator_report.json"
+    score_gain: 1.0
+
+self_evolution:
+  enabled: true
+  # S4 验收建议：将评估周期设置为可观测时长（例如 1200 ticks）。
+  update_interval_ticks: 1200
+  min_update_interval_ticks: 1200
+  # 窗口盈亏绝对值不足时跳过学习，避免在“无反馈噪声”下机械调权。
+  min_abs_window_pnl_usd: 5.0
+  # 单个 Regime bucket 在窗口内样本 tick 不足时，不执行该 bucket 的学习更新。
+  min_bucket_ticks_for_update: 120
+  # 风险调整目标函数（score = alpha*pnl - beta*drawdown_bps - gamma*churn_usd）
+  objective_alpha_pnl: 1.0
+  objective_beta_drawdown: 1.0
+  objective_gamma_notional_churn: 0.005
+  max_single_strategy_weight: 0.55
+  max_weight_step: 0.01
+  rollback_degrade_windows: 3
+  rollback_degrade_threshold_score: -15.0
+  rollback_cooldown_ticks: 36000
+  initial_trend_weight: 0.50
+  initial_defensive_weight: 0.50
+
+regime:
+  enabled: true
+  warmup_ticks: 30
+  ewma_alpha: 0.20
+  trend_threshold: 0.0010
+  extreme_threshold: 0.0040
+  volatility_threshold: 0.0025
+
+gate:
+  min_effective_signals_per_day: 24
+  min_fills_per_day: 2
+  heartbeat_empty_signal_ticks: 12
+  window_ticks: 288
+  enforce_runtime_actions: true
+  fail_to_reduce_only_windows: 2
+  fail_to_halt_windows: 4
+  reduce_only_cooldown_ticks: 120
+  halt_cooldown_ticks: 240
+  pass_to_resume_windows: 2
+
+universe:
+  enabled: true
+  update_interval_ticks: 20
+  max_active_symbols: 2
+  min_active_symbols: 1
+  fallback_symbols: ["BTCUSDT", "ETHUSDT"]
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]

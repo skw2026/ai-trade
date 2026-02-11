@@ -12,6 +12,10 @@ bool IsProtection(OrderPurpose purpose) {
   return purpose == OrderPurpose::kSl || purpose == OrderPurpose::kTp;
 }
 
+bool IsNetPositionMutating(OrderPurpose purpose) {
+  return purpose == OrderPurpose::kEntry || purpose == OrderPurpose::kReduce;
+}
+
 }  // namespace
 
 bool OrderManager::IsTerminalState(OrderState state) {
@@ -27,10 +31,12 @@ bool OrderManager::RegisterIntent(const OrderIntent& intent) {
   if (orders_.find(intent.client_order_id) != orders_.end()) {
     return false;
   }
+  // 订单生命周期入口：先注册再允许异步发送。
   orders_.emplace(intent.client_order_id, OrderRecord{intent});
   return true;
 }
 
+// 仅允许 New -> Sent 转移，避免终态订单被错误覆盖。
 void OrderManager::MarkSent(const std::string& client_order_id) {
   auto* record = FindMutable(client_order_id);
   if (record == nullptr) {
@@ -41,6 +47,7 @@ void OrderManager::MarkSent(const std::string& client_order_id) {
   }
 }
 
+// Reject 为终态之一；若已终态则忽略重复更新。
 void OrderManager::MarkRejected(const std::string& client_order_id) {
   auto* record = FindMutable(client_order_id);
   if (record == nullptr) {
@@ -51,6 +58,7 @@ void OrderManager::MarkRejected(const std::string& client_order_id) {
   }
 }
 
+// Cancel 为终态之一；若已终态则忽略重复更新。
 void OrderManager::MarkCancelled(const std::string& client_order_id) {
   auto* record = FindMutable(client_order_id);
   if (record == nullptr) {
@@ -61,7 +69,16 @@ void OrderManager::MarkCancelled(const std::string& client_order_id) {
   }
 }
 
+/**
+ * @brief 消费成交回报并更新订单状态
+ *
+ * 规则：
+ * 1. 先更新净成交统计（对账依赖）；
+ * 2. 再更新对应订单填充量与状态；
+ * 3. 终态订单收到重复回报时只保留净成交统计，状态不回滚。
+ */
 void OrderManager::OnFill(const FillEvent& fill) {
+  // 净成交仓位是对账基准之一，先更新聚合统计。
   const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
   net_filled_qty_ += signed_qty;
   net_filled_qty_by_symbol_[fill.symbol] += signed_qty;
@@ -77,6 +94,19 @@ void OrderManager::OnFill(const FillEvent& fill) {
     return;
   }
   record->state = OrderState::kPartial;
+}
+
+void OrderManager::SeedNetPositionBaseline(
+    const std::vector<RemotePositionSnapshot>& positions) {
+  net_filled_qty_ = 0.0;
+  net_filled_qty_by_symbol_.clear();
+  for (const auto& position : positions) {
+    if (position.symbol.empty() || std::fabs(position.qty) <= kEpsilon) {
+      continue;
+    }
+    net_filled_qty_by_symbol_[position.symbol] += position.qty;
+    net_filled_qty_ += position.qty;
+  }
 }
 
 double OrderManager::net_filled_qty(const std::string& symbol) const {
@@ -113,6 +143,7 @@ std::optional<std::string> OrderManager::FindOpenProtectiveSibling(
   const OrderPurpose sibling_purpose =
       (purpose == OrderPurpose::kSl) ? OrderPurpose::kTp : OrderPurpose::kSl;
 
+  // 当前实现 O(n) 扫描；MVP 阶段规模可接受，后续可按 parent_id 建索引优化。
   for (const auto& [order_id, record] : orders_) {
     if (record.intent.parent_order_id != parent_order_id) {
       continue;
@@ -129,6 +160,7 @@ std::optional<std::string> OrderManager::FindOpenProtectiveSibling(
 }
 
 bool OrderManager::HasOpenProtection(const std::string& parent_order_id) const {
+  // 只要存在任一未终态保护单即可判定为“已有保护”。
   for (const auto& [order_id, record] : orders_) {
     (void)order_id;
     if (record.intent.parent_order_id != parent_order_id) {
@@ -141,6 +173,88 @@ bool OrderManager::HasOpenProtection(const std::string& parent_order_id) const {
       continue;
     }
     return true;
+  }
+  return false;
+}
+
+bool OrderManager::HasPendingNetPositionOrders() const {
+  return PendingNetPositionOrderCount() > 0;
+}
+
+int OrderManager::PendingNetPositionOrderCount() const {
+  int count = 0;
+  for (const auto& [order_id, record] : orders_) {
+    (void)order_id;
+    if (!IsNetPositionMutating(record.intent.purpose)) {
+      continue;
+    }
+    if (IsTerminalState(record.state)) {
+      continue;
+    }
+    ++count;
+  }
+  return count;
+}
+
+std::vector<std::string> OrderManager::PendingNetPositionOrderIds() const {
+  std::vector<std::string> ids;
+  for (const auto& [order_id, record] : orders_) {
+    if (!IsNetPositionMutating(record.intent.purpose)) {
+      continue;
+    }
+    if (IsTerminalState(record.state)) {
+      continue;
+    }
+    ids.push_back(order_id);
+  }
+  return ids;
+}
+
+bool OrderManager::HasPendingNetPositionOrderForSymbolDirection(
+    const std::string& symbol,
+    int direction) const {
+  if (symbol.empty() || direction == 0) {
+    return false;
+  }
+  const int normalized_direction = direction > 0 ? 1 : -1;
+  for (const auto& [order_id, record] : orders_) {
+    (void)order_id;
+    if (!IsNetPositionMutating(record.intent.purpose)) {
+      continue;
+    }
+    if (IsTerminalState(record.state)) {
+      continue;
+    }
+    if (record.intent.symbol != symbol) {
+      continue;
+    }
+    if (record.intent.direction == 0) {
+      continue;
+    }
+    const int pending_direction = record.intent.direction > 0 ? 1 : -1;
+    if (pending_direction == normalized_direction) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool OrderManager::HasPendingNetPositionOrderForSymbol(
+    const std::string& symbol) const {
+  if (symbol.empty()) {
+    return false;
+  }
+  for (const auto& [order_id, record] : orders_) {
+    (void)order_id;
+    if (!IsNetPositionMutating(record.intent.purpose)) {
+      continue;
+    }
+    if (IsTerminalState(record.state)) {
+      continue;
+    }
+    if (record.intent.symbol == symbol) {
+      return true;
+    }
   }
   return false;
 }

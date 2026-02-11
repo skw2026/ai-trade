@@ -1,0 +1,1397 @@
+#include "app/bot_app.h"
+
+#include <chrono>
+#include <cmath>
+#include <sstream>
+#include <thread>
+#include <unordered_set>
+
+#include "core/log.h"
+#include "app/intent_policy.h"
+#include "exchange/binance_exchange_adapter.h"
+#include "exchange/bybit_exchange_adapter.h"
+#include "exchange/mock_exchange_adapter.h"
+
+namespace ai_trade {
+
+namespace {
+
+constexpr double kNotionalEpsilon = 1e-9;
+// 成交落地后，给远端持仓快照一个极短收敛窗口，避免瞬时对账误判。
+constexpr int kReconcileRecentFillGraceTicks = 2;
+// 自动远端重对齐最小间隔，避免短时间重复覆盖本地状态。
+constexpr int kReconcileAutoResyncCooldownTicks = 40;
+
+// 统一毫秒时间戳，供节流、日志和心跳逻辑复用。
+std::int64_t CurrentTimestampMs() {
+  const auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now());
+  return now.time_since_epoch().count();
+}
+
+// 去重并保序：确保 symbol 列表可直接用于配置下发与日志展示。
+std::vector<std::string> UniqueSymbols(const std::vector<std::string>& symbols) {
+  std::vector<std::string> out;
+  std::unordered_set<std::string> seen;
+  for (const auto& symbol : symbols) {
+    if (!symbol.empty() && seen.insert(symbol).second) {
+      out.push_back(symbol);
+    }
+  }
+  return out;
+}
+
+bool HasExposure(double notional_usd) {
+  return std::fabs(notional_usd) > kNotionalEpsilon;
+}
+
+bool IsNetPositionOrderPurpose(OrderPurpose purpose) {
+  return purpose == OrderPurpose::kEntry || purpose == OrderPurpose::kReduce;
+}
+
+const char* RiskModeToString(RiskMode mode) {
+  switch (mode) {
+    case RiskMode::kNormal:
+      return "normal";
+    case RiskMode::kDegraded:
+      return "degraded";
+    case RiskMode::kCooldown:
+      return "cooldown";
+    case RiskMode::kFuse:
+      return "fuse";
+    case RiskMode::kReduceOnly:
+      return "reduce_only";
+  }
+  return "unknown";
+}
+
+const char* EvolutionActionTypeToString(SelfEvolutionActionType type) {
+  switch (type) {
+    case SelfEvolutionActionType::kUpdated:
+      return "updated";
+    case SelfEvolutionActionType::kRolledBack:
+      return "rolled_back";
+    case SelfEvolutionActionType::kSkipped:
+      return "skipped";
+  }
+  return "unknown";
+}
+
+std::string FormatAccountPositions(const AccountState& account) {
+  const auto symbols = account.symbols();
+  if (symbols.empty()) {
+    return "flat";
+  }
+  std::ostringstream oss;
+  bool first = true;
+  for (const auto& symbol : symbols) {
+    const double qty = account.position_qty(symbol);
+    if (std::fabs(qty) <= kNotionalEpsilon) {
+      continue;
+    }
+    if (!first) {
+      oss << ";";
+    }
+    first = false;
+    const double mark = account.mark_price(symbol);
+    const double notional = account.current_notional_usd(symbol);
+    oss << symbol << ":qty=" << qty << ",mark=" << mark
+        << ",notional=" << notional;
+  }
+  if (first) {
+    return "flat";
+  }
+  return oss.str();
+}
+
+/**
+ * @brief 执行层前置最小名义敞口过滤
+ *
+ * 目的：
+ * - 在下单入队前提前拦截“达不到交易所最小名义金额”的订单；
+ * - 避免反复触发交易所拒单导致抖动与无效重试。
+ */
+bool ViolatesMinNotionalGuard(const ExchangeAdapter* adapter,
+                              const OrderIntent& intent,
+                              const MarketEvent& event,
+                              std::string* out_reason) {
+  if (adapter == nullptr || intent.reduce_only) {
+    return false;
+  }
+  SymbolInfo info;
+  if (!adapter->GetSymbolInfo(intent.symbol, &info)) {
+    return false;
+  }
+  if (!info.tradable || info.min_notional_usd <= 0.0) {
+    return false;
+  }
+  const double ref_price =
+      intent.price > 0.0 ? intent.price
+                         : (event.mark_price > 0.0 ? event.mark_price : event.price);
+  if (ref_price <= 0.0) {
+    return false;
+  }
+  const double order_notional = intent.qty * ref_price;
+  if (order_notional + 1e-9 >= info.min_notional_usd) {
+    return false;
+  }
+
+  if (out_reason != nullptr) {
+    *out_reason = "min_notional_guard(order_notional=" +
+                  std::to_string(order_notional) +
+                  ", min_notional=" + std::to_string(info.min_notional_usd) + ")";
+  }
+  return true;
+}
+
+/**
+ * @brief 根据配置创建交易所适配器实例
+ *
+ * 约束：
+ * 1. Universe 模式下将候选池与 fallback 合并后传入适配器；
+ * 2. Bybit 模式注入完整账户模式预期，供启动门禁校验；
+ * 3. 未识别交易所时退化到 Mock，保证本地可运行。
+ */
+std::unique_ptr<ExchangeAdapter> CreateAdapter(const AppConfig& config) {
+  auto collect_symbols = [&config]() {
+    std::vector<std::string> symbols;
+    if (config.universe.enabled) {
+      symbols = config.universe.candidate_symbols;
+      symbols.insert(symbols.end(), config.universe.fallback_symbols.begin(),
+                     config.universe.fallback_symbols.end());
+    }
+    symbols.push_back(config.primary_symbol);
+    return UniqueSymbols(symbols);
+  };
+
+  if (config.exchange == "bybit") {
+    BybitAdapterOptions options;
+    options.testnet = config.bybit.testnet;
+    options.demo_trading = config.bybit.demo_trading;
+    options.mode = config.mode;
+    options.category = config.bybit.category;
+    options.account_type = config.bybit.account_type;
+    options.primary_symbol = config.primary_symbol;
+    options.public_ws_enabled = config.bybit.public_ws_enabled;
+    options.public_ws_rest_fallback = config.bybit.public_ws_rest_fallback;
+    options.private_ws_enabled = config.bybit.private_ws_enabled;
+    options.private_ws_rest_fallback = config.bybit.private_ws_rest_fallback;
+    options.ws_reconnect_interval_ms = config.bybit.ws_reconnect_interval_ms;
+    options.execution_poll_limit = config.bybit.execution_poll_limit;
+    options.symbols = collect_symbols();
+    options.remote_account_mode = config.bybit.expected_account_mode;
+    options.remote_margin_mode = config.bybit.expected_margin_mode;
+    options.remote_position_mode = config.bybit.expected_position_mode;
+    return std::make_unique<BybitExchangeAdapter>(options);
+  }
+
+  if (config.exchange == "binance") {
+    return std::make_unique<BinanceExchangeAdapter>();
+  }
+
+  // Mock Adapter 默认行为
+  std::vector<double> prices = {100.0, 100.5, 100.7, 100.2, 99.8, 100.1};
+  return std::make_unique<MockExchangeAdapter>(prices, collect_symbols());
+}
+
+/**
+ * @brief 启动前账户模式校验（Bybit 专用）
+ *
+ * 只有当账户模式、保证金模式、持仓模式全部匹配时才允许启动，
+ * 防止策略在错误账户形态下误下单。
+ */
+bool ValidateAccountSnapshot(const AppConfig& config, ExchangeAdapter* adapter) {
+  if (adapter == nullptr) return false;
+  if (config.exchange != "bybit") return true;
+
+  ExchangeAccountSnapshot snapshot;
+  if (!adapter->GetAccountSnapshot(&snapshot)) {
+    LogInfo("账户快照读取失败：Bybit 模式下拒绝启动以确保安全");
+    return false;
+  }
+
+  const bool ok = (snapshot.account_mode == config.bybit.expected_account_mode &&
+                   snapshot.margin_mode == config.bybit.expected_margin_mode &&
+                   snapshot.position_mode == config.bybit.expected_position_mode);
+  
+  if (!ok) {
+    LogInfo("账户模式校验失败: 请检查 Unified/Isolated/OneWay 设置");
+  }
+  return ok;
+}
+
+}  // namespace
+
+BotApplication::BotApplication(const AppConfig& config)
+    : config_(config),
+      system_(config.risk_max_abs_notional_usd,
+              config.execution_max_order_notional,
+              config.risk_thresholds,
+              StrategyConfig{
+                  .signal_notional_usd = config.strategy_signal_notional_usd,
+                  .signal_deadband_abs = config.strategy_signal_deadband_abs,
+                  .min_hold_ticks = config.strategy_min_hold_ticks,
+              },
+              config.execution_min_rebalance_notional_usd,
+              config.regime,
+              config.integrator.shadow),
+      execution_(config.execution_max_order_notional),
+      order_throttle_({
+          .min_order_interval_ms = config.execution_min_order_interval_ms,
+          .reverse_signal_cooldown_ticks =
+              config.execution_reverse_signal_cooldown_ticks,
+      }),
+      self_evolution_(config.self_evolution),
+      reconciler_(config.reconcile.tolerance_notional_usd),
+      gate_monitor_(config.gate),
+      universe_selector_(config.universe, config.primary_symbol),
+      wal_(config.data_path + "/trade.wal") {}
+
+void BotApplication::AccumulateStats(DecisionFunnelStats* total,
+                                     const DecisionFunnelStats& delta) {
+  if (total == nullptr) {
+    return;
+  }
+  total->raw_signals += delta.raw_signals;
+  total->risk_adjusted_signals += delta.risk_adjusted_signals;
+  total->intents_generated += delta.intents_generated;
+  total->intents_filtered_inactive_symbol +=
+      delta.intents_filtered_inactive_symbol;
+  total->intents_filtered_min_notional += delta.intents_filtered_min_notional;
+  total->intents_throttled += delta.intents_throttled;
+  total->intents_enqueued += delta.intents_enqueued;
+  total->async_submit_ok += delta.async_submit_ok;
+  total->async_submit_failed += delta.async_submit_failed;
+  total->fills_applied += delta.fills_applied;
+  total->gate_alerts += delta.gate_alerts;
+  total->self_evolution_updates += delta.self_evolution_updates;
+  total->self_evolution_rollbacks += delta.self_evolution_rollbacks;
+  total->self_evolution_skipped += delta.self_evolution_skipped;
+  total->regime_trend_ticks += delta.regime_trend_ticks;
+  total->regime_range_ticks += delta.regime_range_ticks;
+  total->regime_extreme_ticks += delta.regime_extreme_ticks;
+  total->regime_warmup_ticks += delta.regime_warmup_ticks;
+  total->integrator_scored += delta.integrator_scored;
+  total->integrator_pred_up += delta.integrator_pred_up;
+  total->integrator_pred_down += delta.integrator_pred_down;
+  total->integrator_model_score_sum += delta.integrator_model_score_sum;
+  total->integrator_p_up_sum += delta.integrator_p_up_sum;
+  total->integrator_p_down_sum += delta.integrator_p_down_sum;
+}
+
+bool BotApplication::IsForceReduceOnlyActive() const {
+  return protection_forced_reduce_only_ || gate_forced_reduce_only_;
+}
+
+void BotApplication::RefreshReduceOnlyMode() {
+  system_.ForceReduceOnly(IsForceReduceOnlyActive());
+}
+
+void BotApplication::RefreshTradingHaltState() {
+  trading_halted_ = reconcile_halted_ || gate_halted_;
+}
+
+void BotApplication::TickGateRuntimeCooldown() {
+  if (gate_reduce_only_cooldown_ticks_left_ > 0) {
+    --gate_reduce_only_cooldown_ticks_left_;
+  }
+  if (gate_halt_cooldown_ticks_left_ > 0) {
+    --gate_halt_cooldown_ticks_left_;
+  }
+}
+
+/**
+ * @brief 应用主入口
+ *
+ * 执行顺序：Initialize -> RunLoop -> Shutdown。
+ */
+int BotApplication::Run() {
+  if (!Initialize()) {
+    return 1;
+  }
+  RunLoop();
+  Shutdown();
+  return 0;
+}
+
+/**
+ * @brief 系统初始化
+ *
+ * 关键顺序（不可随意调整）：
+ * 1. 初始化并恢复 WAL（先恢复状态再接入交易所）；
+ * 2. 建立交易所连接并做账户门禁；
+ * 3. 启动异步执行线程；
+ * 4. 初始化 Universe 并同步远端持仓。
+ */
+bool BotApplication::Initialize() {
+  std::string wal_error;
+  if (!wal_.Initialize(&wal_error)) {
+    LogError("WAL 初始化失败: " + wal_error);
+    return false;
+  }
+
+  if (config_.mode == "replay") {
+    LogInfo("replay 模式：跳过历史 WAL 恢复");
+  } else {
+    std::vector<FillEvent> historical_fills;
+    if (!wal_.LoadState(&intent_ids_, &fill_ids_, &historical_fills, &wal_error)) {
+      LogError("WAL 加载失败: " + wal_error);
+      return false;
+    }
+    // 仅回放成交恢复仓位和权益，Intent 去重由 intent_ids_ 负责。
+    for (const auto& fill : historical_fills) {
+      oms_.OnFill(fill);
+      system_.OnFill(fill);
+    }
+    LogInfo("WAL 恢复完成: intents=" + std::to_string(intent_ids_.size()) +
+            ", fills=" + std::to_string(fill_ids_.size()));
+  }
+
+  adapter_ = CreateAdapter(config_);
+  if (!adapter_->Connect()) {
+    LogError("交易所连接失败");
+    return false;
+  }
+  LogInfo("适配器已连接: " + adapter_->Name());
+
+  if (!ValidateAccountSnapshot(config_, adapter_.get())) {
+    LogError("账户模式校验失败");
+    return false;
+  }
+
+  // 执行通道单线程串行化，避免并发提交导致状态竞态。
+  executor_ = std::make_unique<AsyncExecutor>(adapter_.get());
+  executor_->Start();
+
+  InitializeUniverse();
+  SyncRemotePositions();
+
+  if (config_.integrator.enabled && config_.integrator.shadow.enabled) {
+    std::string shadow_error;
+    if (system_.InitializeIntegratorShadow(&shadow_error)) {
+      LogInfo("INTEGRATOR_SHADOW_INIT: enabled=true, model_version=" +
+              system_.integrator_shadow_model_version());
+    } else {
+      LogInfo("INTEGRATOR_SHADOW_DEGRADED: " + shadow_error);
+    }
+  }
+
+  // 自进化初始化必须在账户同步后进行，确保首个评估窗口权益基线准确。
+  if (config_.self_evolution.enabled) {
+    system_.EnableEvolution(true);
+    std::string error;
+    if (!system_.SetEvolutionWeights(config_.self_evolution.initial_trend_weight,
+                                     config_.self_evolution.initial_defensive_weight,
+                                     &error)) {
+      LogError("自进化初始权重设置失败: " + error);
+      return false;
+    }
+    if (!self_evolution_.Initialize(
+            /*current_tick=*/0,
+            system_.account().equity_usd(),
+            {config_.self_evolution.initial_trend_weight,
+             config_.self_evolution.initial_defensive_weight},
+            &error)) {
+      LogError("自进化控制器初始化失败: " + error);
+      return false;
+    }
+    LogInfo("SELF_EVOLUTION_INIT: trend_weight=" +
+            std::to_string(config_.self_evolution.initial_trend_weight) +
+            ", defensive_weight=" +
+            std::to_string(config_.self_evolution.initial_defensive_weight) +
+            ", update_interval_ticks=" +
+            std::to_string(config_.self_evolution.update_interval_ticks));
+  } else {
+    system_.EnableEvolution(false);
+  }
+
+  return true;
+}
+
+/**
+ * @brief 初始化 Universe 候选池
+ *
+ * 先按交易所 symbol 规则做可交易性过滤：
+ * - 必须可交易；
+ * - 必须有有效数量步长（qty_step > 0）。
+ */
+void BotApplication::InitializeUniverse() {
+  std::vector<std::string> candidates = config_.universe.candidate_symbols;
+  candidates.insert(candidates.end(), config_.universe.fallback_symbols.begin(),
+                    config_.universe.fallback_symbols.end());
+  candidates.push_back(config_.primary_symbol);
+  candidates = UniqueSymbols(candidates);
+
+  std::vector<std::string> allowed;
+  for (const auto& symbol : candidates) {
+    SymbolInfo info;
+    // 过滤掉不可交易或规则异常的币对
+    if (!adapter_->GetSymbolInfo(symbol, &info)) continue;
+    if (!info.tradable || info.qty_step <= 0.0) continue;
+    allowed.push_back(info.symbol);
+  }
+
+  if (!allowed.empty()) {
+    universe_selector_.SetAllowedSymbols(allowed);
+    tracked_symbols_ = allowed;
+  } else {
+    tracked_symbols_ = candidates;
+    LogInfo("警告: 未获取到有效交易规则，使用原始候选列表");
+  }
+}
+
+/**
+ * @brief 启动时同步远端持仓
+ *
+ * 设计取舍：
+ * - 非 replay 模式优先以交易所快照重建本地视图；
+ * - 失败时继续运行，但明确记录“状态可能不准确”。
+ */
+void BotApplication::SyncRemotePositions() {
+  if (config_.mode == "replay") return;
+
+  std::vector<RemotePositionSnapshot> remote_positions;
+  bool position_sync_ok = false;
+  if (adapter_->GetRemotePositions(&remote_positions)) {
+    system_.SyncAccountFromRemotePositions(remote_positions);
+    // 启动基线：将远端持仓映射到 OMS 净仓位，避免远端快照暂不可用时弱对账误判。
+    oms_.SeedNetPositionBaseline(remote_positions);
+    position_sync_ok = true;
+    LogInfo("远端持仓同步完成: count=" + std::to_string(remote_positions.size()));
+  } else {
+    LogInfo("警告: 无法同步远端持仓，账户状态可能不准确");
+  }
+
+  RemoteAccountBalanceSnapshot balance;
+  if (adapter_->GetRemoteAccountBalance(&balance)) {
+    // 启动阶段重置回撤峰值基线到远端权益，避免固定初始值引入伪回撤。
+    system_.SyncAccountFromRemoteBalance(balance, /*reset_peak_to_equity=*/true);
+    if (balance.has_equity) {
+      LogInfo("远端资金同步完成: equity=" + std::to_string(balance.equity_usd));
+    } else if (balance.has_wallet_balance) {
+      LogInfo("远端资金同步完成: wallet=" +
+              std::to_string(balance.wallet_balance_usd));
+    }
+  } else if (position_sync_ok) {
+    LogInfo("警告: 远端持仓已同步，但远端资金读取失败，回撤口径可能存在偏差");
+  }
+}
+
+/**
+ * @brief 主循环
+ *
+ * 每轮处理顺序：
+ * 1. 行情事件（驱动策略与下单决策）；
+ * 2. 异步执行结果（ACK/Reject）；
+ * 3. 成交回报（推进 OMS/账户）；
+ * 4. 周期任务（远端风险刷新、对账、Gate、状态日志）。
+ */
+void BotApplication::RunLoop() {
+  MarketEvent event;
+  while (true) {
+    const bool has_market = adapter_->PollMarket(&event);
+    bool advanced_tick = false;
+    bool has_fill = false;
+
+    if (has_market) {
+      advanced_tick = true;
+      ProcessMarketEvent(event);
+    }
+
+    ProcessAsyncResults();
+
+    FillEvent fill;
+    while (adapter_->PollFill(&fill)) {
+      has_fill = true;
+      ProcessFillEvent(fill);
+    }
+
+    if (advanced_tick) {
+      ++market_tick_count_;
+      RunRemoteRiskRefresh();
+      RunReconcile();
+      RunGateMonitor();
+      RunSelfEvolution();
+      LogStatus();
+    }
+
+    if (ShouldExit(has_market, has_fill)) {
+      break;
+    }
+
+    if (!has_market && !has_fill) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+}
+
+/**
+ * @brief 周期刷新远端风险字段（liqPrice/mark）
+ *
+ * 只刷新风险评估相关字段，不重置现金/峰值权益，不清空本地仓位表。
+ * 该机制用于降低“启动后持仓变化导致强平距离陈旧”的风险。
+ */
+void BotApplication::RunRemoteRiskRefresh() {
+  if (config_.mode == "replay") return;
+  if (adapter_ == nullptr) return;
+  if (config_.system_remote_risk_refresh_interval_ticks <= 0) return;
+  if (market_tick_count_ % config_.system_remote_risk_refresh_interval_ticks != 0) {
+    return;
+  }
+
+  std::vector<RemotePositionSnapshot> remote_positions;
+  if (!adapter_->GetRemotePositions(&remote_positions)) {
+    LogInfo("REMOTE_RISK_REFRESH_DEGRADED: 获取远端持仓失败，保留本地风险视图");
+    return;
+  }
+
+  system_.RefreshAccountRiskFromRemotePositions(remote_positions);
+  RemoteAccountBalanceSnapshot balance;
+  if (adapter_->GetRemoteAccountBalance(&balance)) {
+    // 运行中只上调峰值，不重置峰值，避免人为清零回撤统计。
+    system_.SyncAccountFromRemoteBalance(balance, /*reset_peak_to_equity=*/false);
+  }
+  LogInfo("REMOTE_RISK_REFRESH: count=" + std::to_string(remote_positions.size()));
+}
+
+/**
+ * @brief 行情事件处理
+ *
+ * 业务顺序：
+ * 1. 更新 Universe；
+ * 2. 交易暂停时仅更新市值，不做新决策；
+ * 3. 执行 Strategy->Risk->Execution；
+ * 4. 应用 Universe 约束与下单节流；
+ * 5. 满足条件则入队异步执行。
+ */
+void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
+  if (const auto update = universe_selector_.OnMarket(event); update.has_value()) {
+    LogInfo("Universe Updated: active_count=" + std::to_string(update->active_symbols.size()));
+  }
+
+  // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
+  if (reconcile_halted_) {
+    system_.OnMarketSnapshot(event);
+    return;
+  }
+
+  // inactive symbol 且无持仓/无在途净仓位订单时，直接跳过整条决策链，
+  // 降低无效信号评估与日志噪音。
+  const bool symbol_active = universe_selector_.IsActive(event.symbol);
+  const double symbol_notional = system_.account().current_notional_usd(event.symbol);
+  const bool has_pending_symbol_net_orders =
+      oms_.HasPendingNetPositionOrderForSymbol(event.symbol);
+  if (ShouldSkipInactiveSymbolDecision(symbol_active,
+                                       symbol_notional,
+                                       has_pending_symbol_net_orders)) {
+    return;
+  }
+
+  const bool trade_ok = adapter_->TradeOk() && !IsForceReduceOnlyActive();
+  auto decision = system_.Evaluate(event, trade_ok);
+  if (decision.regime.warmup) {
+    ++funnel_window_.regime_warmup_ticks;
+  }
+  switch (decision.regime.bucket) {
+    case RegimeBucket::kTrend:
+      ++funnel_window_.regime_trend_ticks;
+      break;
+    case RegimeBucket::kRange:
+      ++funnel_window_.regime_range_ticks;
+      break;
+    case RegimeBucket::kExtreme:
+      ++funnel_window_.regime_extreme_ticks;
+      break;
+  }
+  const bool regime_changed =
+      !has_last_regime_state_ ||
+      last_regime_state_.symbol != decision.regime.symbol ||
+      last_regime_state_.regime != decision.regime.regime ||
+      last_regime_state_.bucket != decision.regime.bucket ||
+      last_regime_state_.warmup != decision.regime.warmup;
+  if (regime_changed) {
+    LogInfo("REGIME_CHANGE: symbol=" + decision.regime.symbol +
+            ", regime=" + std::string(ToString(decision.regime.regime)) +
+            ", bucket=" + std::string(ToString(decision.regime.bucket)) +
+            ", warmup=" + (decision.regime.warmup ? "true" : "false") +
+            ", instant_return=" +
+            std::to_string(decision.regime.instant_return) +
+            ", trend_strength=" +
+            std::to_string(decision.regime.trend_strength) +
+            ", volatility=" +
+            std::to_string(decision.regime.volatility_level));
+  }
+  last_regime_state_ = decision.regime;
+  has_last_regime_state_ = true;
+  if (decision.shadow.enabled) {
+    ++funnel_window_.integrator_scored;
+    funnel_window_.integrator_model_score_sum += decision.shadow.model_score;
+    funnel_window_.integrator_p_up_sum += decision.shadow.p_up;
+    funnel_window_.integrator_p_down_sum += decision.shadow.p_down;
+    if (decision.shadow.p_up >= 0.55) {
+      ++funnel_window_.integrator_pred_up;
+    } else if (decision.shadow.p_down >= 0.55) {
+      ++funnel_window_.integrator_pred_down;
+    }
+    last_shadow_inference_ = decision.shadow;
+    has_last_shadow_inference_ = true;
+  }
+  if (HasExposure(decision.signal.suggested_notional_usd)) {
+    ++funnel_window_.raw_signals;
+  }
+  if (HasExposure(decision.risk_adjusted.adjusted_notional_usd)) {
+    ++funnel_window_.risk_adjusted_signals;
+  }
+  if (decision.intent.has_value()) {
+    ++funnel_window_.intents_generated;
+  }
+
+  // 不在活跃池时仅禁止“开仓意图”；减仓/保护单必须放行，避免风险无法收敛。
+  if (decision.intent.has_value() &&
+      !universe_selector_.IsActive(decision.intent->symbol) &&
+      ShouldFilterInactiveSymbolIntent(*decision.intent)) {
+    ++funnel_window_.intents_filtered_inactive_symbol;
+    decision.intent.reset();
+  }
+
+  // 交易所最小名义敞口前置保护：避免“买不起/卖不动”导致的拒单循环。
+  if (decision.intent.has_value()) {
+    std::string guard_reason;
+    if (ViolatesMinNotionalGuard(adapter_.get(), *decision.intent, event, &guard_reason)) {
+      LogInfo("EXEC_FILTER_IGNORE: symbol=" + decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", reason=" + guard_reason);
+      ++funnel_window_.intents_filtered_min_notional;
+      decision.intent.reset();
+    }
+  }
+
+  if (config_.integrator.enabled && config_.integrator.shadow.log_model_score &&
+      decision.shadow.enabled && decision.intent.has_value()) {
+    LogInfo("INTEGRATOR_SHADOW_SCORE: symbol=" + decision.intent->symbol +
+            ", model_version=" + decision.shadow.model_version +
+            ", model_score=" + std::to_string(decision.shadow.model_score) +
+            ", p_up=" + std::to_string(decision.shadow.p_up) +
+            ", p_down=" + std::to_string(decision.shadow.p_down));
+  }
+
+  if (const auto gate_alert =
+          gate_monitor_.OnDecision(decision.signal, decision.risk_adjusted,
+                                   decision.intent);
+      gate_alert.has_value()) {
+    ++funnel_window_.gate_alerts;
+    LogInfo("GATE_ALERT: code=" + *gate_alert +
+            ", tick=" + std::to_string(market_tick_count_));
+  }
+
+  if (gate_halted_ && decision.intent.has_value()) {
+    ++funnel_window_.intents_throttled;
+    LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+            ", client_order_id=" + decision.intent->client_order_id +
+            ", reason=gate_halted");
+    decision.intent.reset();
+  }
+
+  if (decision.intent.has_value()) {
+    // 同币种同方向已有在途净仓位订单时，不再重复入队，避免 pending 堆积和超时撤单抖动。
+    if (IsNetPositionOrderPurpose(decision.intent->purpose) &&
+        oms_.HasPendingNetPositionOrderForSymbolDirection(
+            decision.intent->symbol, decision.intent->direction)) {
+      ++funnel_window_.intents_throttled;
+      LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", reason=pending_same_side_inflight");
+      return;
+    }
+
+    std::string reason;
+    const auto now = CurrentTimestampMs();
+    if (order_throttle_.Allow(*decision.intent, now, market_tick_count_, &reason)) {
+      if (EnqueueIntent(*decision.intent)) {
+        order_throttle_.OnAccepted(*decision.intent, now, market_tick_count_);
+      }
+    } else {
+      ++funnel_window_.intents_throttled;
+      if (!reason.empty()) {
+        LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+                ", client_order_id=" + decision.intent->client_order_id +
+                ", reason=" + reason);
+      }
+    }
+  }
+}
+
+/**
+ * @brief 下单入队（WAL-first）
+ *
+ * 原子语义：
+ * - 必须先 RegisterIntent + AppendIntent(WAL) 成功；
+ * - 成功后才投递 AsyncExecutor；
+ * - WAL 失败时立即标记 Rejected，防止“已发单但不可恢复”。
+ */
+bool BotApplication::EnqueueIntent(const OrderIntent& intent) {
+  if (intent_ids_.count(intent.client_order_id)) return false;
+  if (!oms_.RegisterIntent(intent)) return false;
+
+  std::string wal_err;
+  if (!wal_.AppendIntent(intent, &wal_err)) {
+    LogError("WAL Write Error: " + wal_err);
+    oms_.MarkRejected(intent.client_order_id);
+    return false;
+  }
+  intent_ids_.insert(intent.client_order_id);
+  if (IsNetPositionOrderPurpose(intent.purpose)) {
+    pending_net_order_enqueued_ms_[intent.client_order_id] = CurrentTimestampMs();
+  }
+  executor_->Submit(intent);
+  ++funnel_window_.intents_enqueued;
+  return true;
+}
+
+/**
+ * @brief 处理异步执行结果
+ *
+ * 对关键保护单（SL）做升级处理：
+ * - 若 require_sl=true 且 SL 提交失败，立即进入强制只减仓（reduce-only）。
+ */
+void BotApplication::ProcessAsyncResults() {
+  std::vector<AsyncResult> results;
+  executor_->PollResults(&results);
+  for (const auto& res : results) {
+    if (res.is_cancel) continue;
+
+    if (res.success) {
+      oms_.MarkSent(res.client_order_id);
+      ++funnel_window_.async_submit_ok;
+    } else {
+      oms_.MarkRejected(res.client_order_id);
+      pending_net_order_enqueued_ms_.erase(res.client_order_id);
+      ++funnel_window_.async_submit_failed;
+      LogError("Async Submit Failed: " + res.error);
+
+      // 关键保护单失败触发熔断
+      const auto* record = oms_.Find(res.client_order_id);
+      if (record && record->intent.purpose == OrderPurpose::kSl &&
+          config_.protection.require_sl) {
+        protection_forced_reduce_only_ = true;
+        RefreshReduceOnlyMode();
+        LogError("CRITICAL: SL submission failed, forcing ReduceOnly");
+      }
+    }
+  }
+}
+
+/**
+ * @brief 处理成交回报
+ *
+ * 先持久化再推进内存状态，保证崩溃恢复一致性：
+ * - dedup(fill_id)；
+ * - AppendFill(WAL)；
+ * - OMS/Account/Gate 更新；
+ * - 触发保护单逻辑。
+ */
+void BotApplication::ProcessFillEvent(const FillEvent& fill) {
+  if (fill_ids_.count(fill.fill_id)) return;
+
+  std::string wal_err;
+  if (!wal_.AppendFill(fill, &wal_err)) {
+    LogError("WAL Fill Error: " + wal_err);
+    return;
+  }
+  fill_ids_.insert(fill.fill_id);
+  oms_.OnFill(fill);
+  system_.OnFill(fill);
+  gate_monitor_.OnFill(fill);
+  if (const auto* record = oms_.Find(fill.client_order_id);
+      record != nullptr && OrderManager::IsTerminalState(record->state)) {
+    pending_net_order_enqueued_ms_.erase(fill.client_order_id);
+  }
+  // 记录最近成交 tick，供对账阶段应用短暂宽限窗口。
+  last_fill_tick_ = market_tick_count_;
+  ++funnel_window_.fills_applied;
+
+  HandleProtectionOrders(fill);
+}
+
+/**
+ * @brief 保护单编排（Entry -> SL/TP，SL/TP 成交 -> OCO 撤单）
+ */
+void BotApplication::HandleProtectionOrders(const FillEvent& fill) {
+  const auto* record = oms_.Find(fill.client_order_id);
+  if (!record) return;
+
+  // 开仓成交后挂保护单；若强制要求 SL 但挂单失败，进入强制只减仓。
+  if (record->intent.purpose == OrderPurpose::kEntry &&
+      config_.protection.enabled &&
+      !oms_.HasOpenProtection(fill.client_order_id)) {
+    auto sl = execution_.BuildProtectionIntent(
+        fill, OrderPurpose::kSl, config_.protection.stop_loss_ratio);
+    bool sl_ok = false;
+    if (sl) sl_ok = EnqueueIntent(*sl);
+
+    if (!sl_ok && config_.protection.require_sl) {
+      protection_forced_reduce_only_ = true;
+      RefreshReduceOnlyMode();
+      LogError("Failed to attach required SL, forcing ReduceOnly");
+    }
+
+    if (config_.protection.enable_tp) {
+      auto tp = execution_.BuildProtectionIntent(
+          fill, OrderPurpose::kTp, config_.protection.take_profit_ratio);
+      if (tp) EnqueueIntent(*tp);
+    }
+  }
+
+  // 保护单任一侧成交后撤销另一侧，避免重复平仓（OCO）。
+  if (record->intent.purpose == OrderPurpose::kSl ||
+      record->intent.purpose == OrderPurpose::kTp) {
+    auto sibling = oms_.FindOpenProtectiveSibling(record->intent.parent_order_id,
+                                                  record->intent.purpose);
+    if (sibling) {
+      executor_->Cancel(*sibling);
+      oms_.MarkCancelled(*sibling);
+    }
+  }
+}
+
+/**
+ * @brief 周期性对账
+ *
+ * 双阶段确认：
+ * 1) 先用远端净名义敞口快照快速检查；
+ * 2) 失败后主动刷新远端持仓再检查一次；
+ * 连续超过阈值才熔断停止新下单，避免瞬时抖动误判。
+ */
+void BotApplication::RunReconcile() {
+  if (!config_.reconcile.enabled || config_.reconcile.interval_ticks <= 0) return;
+  if (reconcile_halted_) return;
+  if (++reconcile_tick_ % config_.reconcile.interval_ticks != 0) return;
+
+  // 净仓位变更订单仍在途时，远端与本地可能天然存在短时偏差。
+  // 但若订单长期未收敛（例如 reduce-only 部分成交尾量未终态），需要主动收敛以解除永久阻塞。
+  int stale_net_orders = 0;
+  int remote_missing_net_orders = 0;
+  int fresh_net_orders = 0;
+  const std::int64_t now_ms = CurrentTimestampMs();
+  const std::int64_t stale_ms =
+      static_cast<std::int64_t>(config_.reconcile.pending_order_stale_ms);
+  std::unordered_set<std::string> remote_open_order_ids;
+  const bool remote_open_orders_ok =
+      adapter_ != nullptr &&
+      adapter_->GetRemoteOpenOrderClientIds(&remote_open_order_ids);
+  for (const auto& client_order_id : oms_.PendingNetPositionOrderIds()) {
+    const auto it = pending_net_order_enqueued_ms_.find(client_order_id);
+    bool is_stale = false;
+    bool missing_on_remote = false;
+    if (remote_open_orders_ok &&
+        remote_open_order_ids.find(client_order_id) ==
+            remote_open_order_ids.end()) {
+      // 远端活动订单列表中已不存在该订单，优先按陈旧单收敛。
+      is_stale = true;
+      missing_on_remote = true;
+    }
+    if (it == pending_net_order_enqueued_ms_.end()) {
+      // WAL恢复或历史遗留订单：缺少本次进程入队时间，按陈旧单处理。
+      is_stale = true;
+    } else if (now_ms - it->second > stale_ms) {
+      is_stale = true;
+    }
+    if (!is_stale) {
+      ++fresh_net_orders;
+      continue;
+    }
+
+    ++stale_net_orders;
+    if (missing_on_remote) {
+      ++remote_missing_net_orders;
+    }
+    if (executor_ != nullptr) {
+      executor_->Cancel(client_order_id);
+    }
+    oms_.MarkCancelled(client_order_id);
+    pending_net_order_enqueued_ms_.erase(client_order_id);
+  }
+
+  if (stale_net_orders > 0) {
+    LogInfo("OMS_STALE_PENDING_CLOSED: count=" + std::to_string(stale_net_orders) +
+            ", remote_missing=" + std::to_string(remote_missing_net_orders) +
+            ", stale_ms=" + std::to_string(stale_ms));
+  }
+
+  if (fresh_net_orders > 0) {
+    reconcile_streak_ = 0;
+    LogInfo("OMS_RECONCILE_DEFERRED: pending_net_orders=" +
+            std::to_string(fresh_net_orders));
+    return;
+  }
+
+  std::optional<double> remote_notional;
+  double val = 0.0;
+  std::vector<RemotePositionSnapshot> remote_positions;
+  bool remote_positions_fresh = false;
+  if (adapter_->GetRemoteNotionalUsd(&val)) {
+    remote_notional = val;
+  } else if (adapter_->GetRemotePositions(&remote_positions)) {
+    remote_notional = reconciler_.ComputeRemoteNotionalUsd(remote_positions);
+    remote_positions_fresh = true;
+  }
+
+  // live/paper 模式下，远端快照不可用时跳过本轮对账，避免回退到弱口径导致误熔断。
+  if (!remote_notional.has_value() && config_.mode != "replay") {
+    reconcile_streak_ = 0;
+    LogInfo("OMS_RECONCILE_DEGRADED: 远端快照不可用，跳过本轮对账");
+    return;
+  }
+
+  auto result = reconciler_.Check(system_.account(), oms_, remote_notional);
+  if (!result.ok) {
+    // 成交刚落地时，远端持仓快照可能仍在最终一致性窗口内，先不累计失败次数。
+    if (market_tick_count_ - last_fill_tick_ <= kReconcileRecentFillGraceTicks) {
+      reconcile_streak_ = 0;
+      LogInfo("OMS_RECONCILE_GRACE: recent_fill_tick=" +
+              std::to_string(last_fill_tick_) +
+              ", delta_notional=" + std::to_string(result.delta_notional_usd));
+      return;
+    }
+
+    const double first_delta = result.delta_notional_usd;
+
+    // Retry with fresh snapshot
+    if (!remote_positions_fresh && adapter_->GetRemotePositions(&remote_positions)) {
+      remote_positions_fresh = true;
+    }
+    if (remote_positions_fresh) {
+      val = reconciler_.ComputeRemoteNotionalUsd(remote_positions);
+      result = reconciler_.Check(system_.account(), oms_, val);
+    }
+
+    if (!result.ok) {
+      const double second_delta = result.delta_notional_usd;
+      const std::string symbol_delta_report = remote_positions_fresh
+                                                  ? reconciler_.BuildSymbolDeltaReport(
+                                                        system_.account(),
+                                                        remote_positions,
+                                                        tracked_symbols_,
+                                                        /*min_abs_notional_delta_usd=*/1.0)
+                                                  : "none";
+      LogInfo("OMS_RECONCILE_MISMATCH: first_delta_notional=" +
+              std::to_string(first_delta) +
+              ", second_delta_notional=" + std::to_string(second_delta) +
+              ", remote_positions_refreshed=" +
+              std::string(remote_positions_fresh ? "true" : "false") +
+              ", symbol_deltas=" + symbol_delta_report);
+
+      // 运行时自愈：远端快照可用且达到防抖间隔时，以远端仓位重建本地仓位视图与 OMS 基线。
+      // 该路径用于“WS/REST 成交回报缺失导致本地仓位漂移”的根治兜底。
+      const bool can_auto_resync =
+          config_.mode != "replay" &&
+          remote_positions_fresh &&
+          (market_tick_count_ - last_auto_resync_tick_ >=
+           kReconcileAutoResyncCooldownTicks);
+      if (can_auto_resync) {
+        system_.ForceSyncAccountPositionsFromRemote(remote_positions);
+        oms_.SeedNetPositionBaseline(remote_positions);
+        pending_net_order_enqueued_ms_.clear();
+        RemoteAccountBalanceSnapshot balance;
+        if (adapter_->GetRemoteAccountBalance(&balance)) {
+          system_.SyncAccountFromRemoteBalance(balance,
+                                               /*reset_peak_to_equity=*/false);
+        }
+        last_auto_resync_tick_ = market_tick_count_;
+        reconcile_streak_ = 0;
+        LogInfo("OMS_RECONCILE_AUTORESYNC: applied=true, positions=" +
+                std::to_string(remote_positions.size()) +
+                ", cooldown_ticks=" +
+                std::to_string(kReconcileAutoResyncCooldownTicks));
+        return;
+      }
+
+      if (++reconcile_streak_ >= config_.reconcile.mismatch_confirmations &&
+          !reconcile_halted_) {
+        reconcile_halted_ = true;
+        RefreshTradingHaltState();
+        LogError("CRITICAL: Reconcile mismatch confirmed. Halting trading.");
+      }
+    } else {
+      reconcile_streak_ = 0;
+    }
+  } else {
+    reconcile_streak_ = 0;
+  }
+}
+
+// Gate 活跃度检查：支持“仅告警”与“运行时动作”两种模式。
+void BotApplication::RunGateMonitor() {
+  if (config_.gate.enforce_runtime_actions) {
+    TickGateRuntimeCooldown();
+  }
+
+  if (auto res = gate_monitor_.OnTick(); res.has_value()) {
+    if (!res->pass) {
+      std::ostringstream reasons;
+      for (std::size_t i = 0; i < res->fail_reasons.size(); ++i) {
+        if (i > 0) {
+          reasons << ",";
+        }
+        reasons << res->fail_reasons[i];
+      }
+      LogInfo("GATE_CHECK_FAILED: raw_signals=" + std::to_string(res->raw_signals) +
+              ", order_intents=" + std::to_string(res->order_intents) +
+              ", effective_signals=" +
+              std::to_string(res->effective_signals) +
+              ", fills=" + std::to_string(res->fills) +
+              ", fail_reasons=[" + reasons.str() + "]");
+    } else {
+      LogInfo("GATE_CHECK_PASSED: raw_signals=" +
+              std::to_string(res->raw_signals) +
+              ", order_intents=" + std::to_string(res->order_intents) +
+              ", effective_signals=" +
+              std::to_string(res->effective_signals) +
+              ", fills=" + std::to_string(res->fills));
+    }
+
+    if (res->pass) {
+      gate_fail_windows_streak_ = 0;
+      ++gate_pass_windows_streak_;
+    } else {
+      ++gate_fail_windows_streak_;
+      gate_pass_windows_streak_ = 0;
+    }
+
+    if (!config_.gate.enforce_runtime_actions) {
+      return;
+    }
+
+    if (!res->pass) {
+      if (!gate_forced_reduce_only_ &&
+          config_.gate.fail_to_reduce_only_windows > 0 &&
+          gate_fail_windows_streak_ >=
+              config_.gate.fail_to_reduce_only_windows) {
+        gate_forced_reduce_only_ = true;
+        gate_reduce_only_cooldown_ticks_left_ =
+            config_.gate.reduce_only_cooldown_ticks;
+        RefreshReduceOnlyMode();
+        LogInfo("GATE_RUNTIME_REDUCE_ONLY_ENTER: fail_streak=" +
+                std::to_string(gate_fail_windows_streak_) +
+                ", cooldown_ticks=" +
+                std::to_string(gate_reduce_only_cooldown_ticks_left_));
+      }
+
+      if (!gate_halted_ && config_.gate.fail_to_halt_windows > 0 &&
+          gate_fail_windows_streak_ >= config_.gate.fail_to_halt_windows) {
+        gate_halted_ = true;
+        gate_halt_cooldown_ticks_left_ = config_.gate.halt_cooldown_ticks;
+        RefreshTradingHaltState();
+        LogError("GATE_RUNTIME_HALT_ENTER: fail_streak=" +
+                 std::to_string(gate_fail_windows_streak_) +
+                 ", cooldown_ticks=" +
+                 std::to_string(gate_halt_cooldown_ticks_left_));
+      }
+      return;
+    }
+
+    const bool resume_windows_reached =
+        config_.gate.pass_to_resume_windows <= 0 ||
+        gate_pass_windows_streak_ >= config_.gate.pass_to_resume_windows;
+
+    if (gate_forced_reduce_only_ && resume_windows_reached &&
+        gate_reduce_only_cooldown_ticks_left_ <= 0) {
+      gate_forced_reduce_only_ = false;
+      RefreshReduceOnlyMode();
+      LogInfo("GATE_RUNTIME_REDUCE_ONLY_EXIT: pass_streak=" +
+              std::to_string(gate_pass_windows_streak_));
+    }
+
+    if (gate_halted_ && resume_windows_reached &&
+        gate_halt_cooldown_ticks_left_ <= 0) {
+      gate_halted_ = false;
+      RefreshTradingHaltState();
+      LogInfo("GATE_RUNTIME_HALT_EXIT: pass_streak=" +
+              std::to_string(gate_pass_windows_streak_) +
+              ", trading_halted=" +
+              std::string(trading_halted_ ? "true" : "false"));
+    }
+  }
+}
+
+void BotApplication::RunSelfEvolution() {
+  if (!config_.self_evolution.enabled) {
+    return;
+  }
+
+  const RegimeBucket active_bucket =
+      has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange;
+  const auto action =
+      self_evolution_.OnTick(market_tick_count_,
+                             system_.account().equity_usd(),
+                             active_bucket,
+                             system_.account().drawdown_pct(),
+                             system_.account().current_notional_usd());
+  if (!action.has_value()) {
+    return;
+  }
+
+  if (action->type == SelfEvolutionActionType::kUpdated ||
+      action->type == SelfEvolutionActionType::kRolledBack) {
+    std::string set_error;
+    if (!system_.SetEvolutionWeightsForBucket(action->regime_bucket,
+                                              action->trend_weight_after,
+                                              action->defensive_weight_after,
+                                              &set_error)) {
+      ++funnel_window_.self_evolution_skipped;
+      LogInfo("PORT_WEIGHT_INVALID_REJECTED: reason=" + set_error +
+              ", trend_weight=" + std::to_string(action->trend_weight_after) +
+              ", defensive_weight=" +
+              std::to_string(action->defensive_weight_after));
+      return;
+    }
+  }
+
+  if (action->type == SelfEvolutionActionType::kUpdated) {
+    ++funnel_window_.self_evolution_updates;
+  } else if (action->type == SelfEvolutionActionType::kRolledBack) {
+    ++funnel_window_.self_evolution_rollbacks;
+  } else {
+    ++funnel_window_.self_evolution_skipped;
+  }
+
+  LogInfo("SELF_EVOLUTION_ACTION: type=" +
+          std::string(EvolutionActionTypeToString(action->type)) +
+          ", bucket=" + std::string(ToString(action->regime_bucket)) +
+          ", reason=" + action->reason_code +
+          ", bucket_ticks=" + std::to_string(action->window_bucket_ticks) +
+          ", window_pnl_usd=" + std::to_string(action->window_pnl_usd) +
+          ", window_objective_score=" +
+          std::to_string(action->window_objective_score) +
+          ", window_max_drawdown_pct=" +
+          std::to_string(action->window_max_drawdown_pct) +
+          ", window_notional_churn_usd=" +
+          std::to_string(action->window_notional_churn_usd) +
+          ", weight_before={trend=" +
+          std::to_string(action->trend_weight_before) +
+          ",defensive=" + std::to_string(action->defensive_weight_before) +
+          "}, weight_after={trend=" +
+          std::to_string(action->trend_weight_after) +
+          ",defensive=" + std::to_string(action->defensive_weight_after) +
+          "}, degrade_windows=" + std::to_string(action->degrade_windows) +
+          ", cooldown_remaining_ticks=" +
+          std::to_string(action->cooldown_remaining_ticks));
+}
+
+// 运行态摘要日志：用于线上巡检与回放定位。
+void BotApplication::LogStatus() {
+  if (config_.system_status_log_interval_ticks <= 0) return;
+  if (market_tick_count_ % config_.system_status_log_interval_ticks != 0) return;
+
+  const bool trade_ok =
+      adapter_ != nullptr && adapter_->TradeOk() && !trading_halted_ &&
+      !IsForceReduceOnlyActive();
+
+  std::string ws_summary = "n/a";
+  if (const auto* bybit =
+          dynamic_cast<const BybitExchangeAdapter*>(adapter_.get());
+      bybit != nullptr) {
+    ws_summary = bybit->ChannelHealthSummary();
+  } else if (adapter_ != nullptr) {
+    ws_summary = "adapter=" + adapter_->Name();
+  }
+
+  const OrderThrottleStats throttle_window = order_throttle_.ConsumeWindowStats();
+  const OrderThrottleStats& throttle_total = order_throttle_.total_stats();
+  const double throttle_window_hit_rate =
+      throttle_window.checks > 0
+          ? static_cast<double>(throttle_window.rejected) /
+                static_cast<double>(throttle_window.checks)
+          : 0.0;
+  const double throttle_total_hit_rate =
+      throttle_total.checks > 0
+          ? static_cast<double>(throttle_total.rejected) /
+                static_cast<double>(throttle_total.checks)
+          : 0.0;
+
+  const DecisionFunnelStats funnel_window = funnel_window_;
+  AccumulateStats(&funnel_total_, funnel_window_);
+  funnel_window_ = DecisionFunnelStats{};
+  const double shadow_avg_model_score =
+      funnel_window.integrator_scored > 0
+          ? funnel_window.integrator_model_score_sum /
+                static_cast<double>(funnel_window.integrator_scored)
+          : 0.0;
+  const double shadow_avg_p_up =
+      funnel_window.integrator_scored > 0
+          ? funnel_window.integrator_p_up_sum /
+                static_cast<double>(funnel_window.integrator_scored)
+          : 0.0;
+  const double shadow_avg_p_down =
+      funnel_window.integrator_scored > 0
+          ? funnel_window.integrator_p_down_sum /
+                static_cast<double>(funnel_window.integrator_scored)
+          : 0.0;
+  const RegimeBucket active_bucket =
+      has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange;
+  const auto active_evolution_weights = system_.evolution_weights(active_bucket);
+  const auto evolution_weights = system_.evolution_weights_all();
+  const bool evolution_enabled =
+      config_.self_evolution.enabled && self_evolution_.initialized();
+  const bool evolution_cooldown =
+      evolution_enabled && market_tick_count_ < self_evolution_.cooldown_until_tick();
+  const int evolution_cooldown_remaining =
+      evolution_cooldown
+          ? static_cast<int>(self_evolution_.cooldown_until_tick() -
+                             market_tick_count_)
+          : 0;
+
+  LogInfo("RUNTIME_STATUS: ticks=" + std::to_string(market_tick_count_) +
+          ", trade_ok=" + std::string(trade_ok ? "true" : "false") +
+          ", trading_halted=" +
+          std::string(trading_halted_ ? "true" : "false") +
+          ", risk_mode=" + RiskModeToString(system_.risk_mode()) +
+          ", ws={" + ws_summary + "}" +
+          ", account={equity=" + std::to_string(system_.account().equity_usd()) +
+          ", drawdown_pct=" + std::to_string(system_.account().drawdown_pct()) +
+          ", notional=" + std::to_string(system_.account().current_notional_usd()) +
+          ", positions=" + FormatAccountPositions(system_.account()) + "}" +
+          ", funnel_window={raw=" + std::to_string(funnel_window.raw_signals) +
+          ", risk_adjusted=" +
+          std::to_string(funnel_window.risk_adjusted_signals) +
+          ", intents_generated=" +
+          std::to_string(funnel_window.intents_generated) +
+          ", intents_filtered_inactive_symbol=" +
+          std::to_string(funnel_window.intents_filtered_inactive_symbol) +
+          ", intents_filtered_min_notional=" +
+          std::to_string(funnel_window.intents_filtered_min_notional) +
+          ", throttled=" + std::to_string(funnel_window.intents_throttled) +
+          ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
+          ", async_ok=" + std::to_string(funnel_window.async_submit_ok) +
+          ", async_failed=" +
+          std::to_string(funnel_window.async_submit_failed) +
+          ", fills=" + std::to_string(funnel_window.fills_applied) +
+          ", gate_alerts=" + std::to_string(funnel_window.gate_alerts) +
+          ", evolution_updates=" +
+          std::to_string(funnel_window.self_evolution_updates) +
+          ", evolution_rollbacks=" +
+          std::to_string(funnel_window.self_evolution_rollbacks) +
+          ", evolution_skipped=" +
+          std::to_string(funnel_window.self_evolution_skipped) + "}" +
+          ", regime_window={trend_ticks=" +
+          std::to_string(funnel_window.regime_trend_ticks) +
+          ", range_ticks=" + std::to_string(funnel_window.regime_range_ticks) +
+          ", extreme_ticks=" +
+          std::to_string(funnel_window.regime_extreme_ticks) +
+          ", warmup_ticks=" +
+          std::to_string(funnel_window.regime_warmup_ticks) + "}" +
+          ", regime_current={symbol=" +
+          std::string(has_last_regime_state_ ? last_regime_state_.symbol : "n/a") +
+          ", regime=" +
+          std::string(has_last_regime_state_
+                          ? ToString(last_regime_state_.regime)
+                          : "n/a") +
+          ", bucket=" +
+          std::string(has_last_regime_state_
+                          ? ToString(last_regime_state_.bucket)
+                          : "n/a") +
+          ", warmup=" +
+          std::string(has_last_regime_state_ && last_regime_state_.warmup ? "true"
+                                                                            : "false") +
+          "}" +
+          ", shadow_latest={enabled=" +
+          std::string(has_last_shadow_inference_ &&
+                              last_shadow_inference_.enabled
+                          ? "true"
+                          : "false") +
+          ", model_version=" +
+          std::string(has_last_shadow_inference_
+                          ? last_shadow_inference_.model_version
+                          : "n/a") +
+          ", model_score=" +
+          std::to_string(has_last_shadow_inference_
+                             ? last_shadow_inference_.model_score
+                             : 0.0) +
+          ", p_up=" +
+          std::to_string(has_last_shadow_inference_ ? last_shadow_inference_.p_up
+                                                    : 0.0) +
+          ", p_down=" +
+          std::to_string(has_last_shadow_inference_
+                             ? last_shadow_inference_.p_down
+                             : 0.0) +
+          "}" +
+          ", shadow_window={scored=" +
+          std::to_string(funnel_window.integrator_scored) +
+          ", pred_up=" + std::to_string(funnel_window.integrator_pred_up) +
+          ", pred_down=" + std::to_string(funnel_window.integrator_pred_down) +
+          ", avg_model_score=" + std::to_string(shadow_avg_model_score) +
+          ", avg_p_up=" + std::to_string(shadow_avg_p_up) +
+          ", avg_p_down=" + std::to_string(shadow_avg_p_down) + "}" +
+          ", gate_runtime={enabled=" +
+          std::string(config_.gate.enforce_runtime_actions ? "true" : "false") +
+          ", fail_streak=" + std::to_string(gate_fail_windows_streak_) +
+          ", pass_streak=" + std::to_string(gate_pass_windows_streak_) +
+          ", reduce_only=" +
+          std::string(gate_forced_reduce_only_ ? "true" : "false") +
+          ", reduce_only_cooldown_ticks=" +
+          std::to_string(gate_reduce_only_cooldown_ticks_left_) +
+          ", gate_halted=" + std::string(gate_halted_ ? "true" : "false") +
+          ", halt_cooldown_ticks=" +
+          std::to_string(gate_halt_cooldown_ticks_left_) + "}" +
+          ", throttle_window={checks=" + std::to_string(throttle_window.checks) +
+          ", rejected=" + std::to_string(throttle_window.rejected) +
+          ", interval_rejects=" +
+          std::to_string(throttle_window.interval_rejects) +
+          ", reverse_rejects=" +
+          std::to_string(throttle_window.reverse_rejects) +
+          ", hit_rate=" + std::to_string(throttle_window_hit_rate) + "}" +
+          ", throttle_total={checks=" + std::to_string(throttle_total.checks) +
+          ", rejected=" + std::to_string(throttle_total.rejected) +
+          ", hit_rate=" + std::to_string(throttle_total_hit_rate) + "}" +
+          ", evolution={enabled=" +
+          std::string(evolution_enabled ? "true" : "false") +
+          ", objective={alpha_pnl=" +
+          std::to_string(config_.self_evolution.objective_alpha_pnl) +
+          ", beta_drawdown=" +
+          std::to_string(config_.self_evolution.objective_beta_drawdown) +
+          ", gamma_notional_churn=" +
+          std::to_string(
+              config_.self_evolution.objective_gamma_notional_churn) +
+          "}" +
+          ", active_bucket=" + std::string(ToString(active_bucket)) +
+          ", active_trend_weight=" +
+          std::to_string(active_evolution_weights.first) +
+          ", active_defensive_weight=" +
+          std::to_string(active_evolution_weights.second) +
+          ", by_bucket={trend=(" + std::to_string(evolution_weights[0].first) +
+          "," + std::to_string(evolution_weights[0].second) + ")" +
+          ", range=(" + std::to_string(evolution_weights[1].first) +
+          "," + std::to_string(evolution_weights[1].second) + ")" +
+          ", extreme=(" + std::to_string(evolution_weights[2].first) +
+          "," + std::to_string(evolution_weights[2].second) + ")}" +
+          ", next_eval_tick=" +
+          std::to_string(self_evolution_.next_eval_tick()) +
+          ", cooldown=" + std::string(evolution_cooldown ? "true" : "false") +
+          ", cooldown_remaining_ticks=" +
+          std::to_string(evolution_cooldown_remaining) + "}");
+}
+
+/**
+ * @brief 退出条件判断
+ *
+ * - live/paper: 受 system_max_ticks 控制；
+ * - replay: 数据耗尽后自动退出。
+ */
+bool BotApplication::ShouldExit(bool has_market, bool has_fill) {
+  if (config_.system_max_ticks > 0 &&
+      market_tick_count_ >= config_.system_max_ticks) {
+    return true;
+  }
+  if (config_.mode == "replay" && !has_market && !has_fill) {
+    return true;
+  }
+  return false;
+}
+
+// 停机顺序：先停执行线程，再输出结束日志。
+void BotApplication::Shutdown() {
+  if (executor_) executor_->Stop();
+  LogInfo("Bot Shutdown.");
+}
+
+}  // namespace ai_trade

@@ -1,0 +1,26 @@
+services:
+  ai-trade:
+    image: ${AI_TRADE_IMAGE:?AI_TRADE_IMAGE is required}
+    container_name: ai-trade
+    restart: unless-stopped
+    command: ["--config=config/bybit.demo.evolution.yaml", "--exchange=bybit", "--run_forever"]
+    environment:
+      AI_TRADE_BYBIT_TESTNET_API_KEY: ${AI_TRADE_BYBIT_TESTNET_API_KEY:-}
+      AI_TRADE_BYBIT_TESTNET_API_SECRET: ${AI_TRADE_BYBIT_TESTNET_API_SECRET:-}
+      AI_TRADE_BYBIT_DEMO_API_KEY: ${AI_TRADE_BYBIT_DEMO_API_KEY:-}
+      AI_TRADE_BYBIT_DEMO_API_SECRET: ${AI_TRADE_BYBIT_DEMO_API_SECRET:-}
+      AI_TRADE_BYBIT_MAINNET_API_KEY: ${AI_TRADE_BYBIT_MAINNET_API_KEY:-}
+      AI_TRADE_BYBIT_MAINNET_API_SECRET: ${AI_TRADE_BYBIT_MAINNET_API_SECRET:-}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f /app/trade_bot >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+运行日志自动验收脚本（S3/S5）。
+
+用途：
+1. 对 `run_s3.log` / `run_s5.log` 做统一 PASS/FAIL 判定；
+2. 汇总关键运行指标，减少人工翻日志成本；
+3. 生成可归档 JSON，便于阶段对比。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict
+
+
+@dataclass(frozen=True)
+class StageRule:
+    name: str
+    min_runtime_status: int
+    require_gate_window: bool
+    require_evolution_init: bool
+
+
+STAGE_RULES: Dict[str, StageRule] = {
+    "S3": StageRule(
+        name="S3",
+        min_runtime_status=10,
+        require_gate_window=True,
+        require_evolution_init=False,
+    ),
+    "S5": StageRule(
+        name="S5",
+        min_runtime_status=50,
+        require_gate_window=True,
+        require_evolution_init=True,
+    ),
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="ai-trade 运行日志自动验收")
+    parser.add_argument(
+        "--log",
+        required=True,
+        help="运行日志文件路径，例如 ./run_s5.log",
+    )
+    parser.add_argument(
+        "--stage",
+        default="S5",
+        choices=sorted(STAGE_RULES.keys()),
+        help="验收阶段（默认 S5）",
+    )
+    parser.add_argument(
+        "--min_runtime_status",
+        type=int,
+        default=None,
+        help="覆盖阶段默认最小 RUNTIME_STATUS 条数",
+    )
+    parser.add_argument(
+        "--json_out",
+        default="",
+        help="可选：将结构化结果输出到 JSON 文件",
+    )
+    return parser.parse_args()
+
+
+def load_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="utf-8", errors="replace")
+
+
+def count(pattern: str, text: str) -> int:
+    return len(re.findall(pattern, text, flags=re.MULTILINE))
+
+
+def max_tick(text: str) -> int:
+    matches = re.findall(r"RUNTIME_STATUS:\s*ticks=(\d+)", text)
+    if not matches:
+        return 0
+    return max(int(x) for x in matches)
+
+
+def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, object]:
+    metrics = {
+        "runtime_status_count": count(r"RUNTIME_STATUS:", text),
+        "max_runtime_tick": max_tick(text),
+        "critical_count": count(r"\bCRITICAL\b", text),
+        "trading_halted_event_count": count(r"\bTRADING_HALTED\b", text),
+        "trading_halted_true_count": count(r"RUNTIME_STATUS:.*trading_halted=true", text),
+        "ws_unhealthy_count": count(
+            r"RUNTIME_STATUS:.*(?:public_ws_healthy=false|private_ws_healthy=false)", text
+        ),
+        "ws_degraded_count": count(r"\bDEGRADED\b", text),
+        "gate_check_passed_count": count(r"GATE_CHECK_PASSED", text),
+        "gate_check_failed_count": count(r"GATE_CHECK_FAILED", text),
+        "gate_alert_count": count(r"GATE_ALERT", text),
+        "reconcile_mismatch_count": count(r"OMS_RECONCILE_MISMATCH", text),
+        "reconcile_autoresync_count": count(r"OMS_RECONCILE_AUTORESYNC", text),
+        "reconcile_deferred_count": count(r"OMS_RECONCILE_DEFERRED", text),
+        "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
+        "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
+    }
+
+    fail_reasons: list[str] = []
+    warn_reasons: list[str] = []
+
+    if metrics["runtime_status_count"] < min_runtime_status:
+        fail_reasons.append(
+            f"RUNTIME_STATUS 条数不足: {metrics['runtime_status_count']} < {min_runtime_status}"
+        )
+    if metrics["critical_count"] > 0:
+        fail_reasons.append(f"出现 CRITICAL: {metrics['critical_count']}")
+    if metrics["trading_halted_event_count"] > 0 or metrics["trading_halted_true_count"] > 0:
+        fail_reasons.append(
+            "出现停机迹象(TRADING_HALTED 或 trading_halted=true)"
+        )
+    if metrics["ws_unhealthy_count"] > 0:
+        fail_reasons.append(f"运行态 WS 健康检查失败次数: {metrics['ws_unhealthy_count']}")
+
+    gate_window_count = metrics["gate_check_passed_count"] + metrics["gate_check_failed_count"]
+    if stage.require_gate_window and gate_window_count <= 0:
+        fail_reasons.append("未检测到 Gate 窗口判定（GATE_CHECK_PASSED/FAILED）")
+
+    if stage.require_evolution_init and metrics["self_evolution_init_count"] <= 0:
+        fail_reasons.append("未检测到 SELF_EVOLUTION_INIT")
+
+    # 软告警：不阻断阶段，但需要后续参数/策略动作
+    if metrics["reconcile_mismatch_count"] > 0 and metrics["reconcile_autoresync_count"] <= 0:
+        warn_reasons.append("出现对账不一致但未观察到 AUTORESYNC")
+    if metrics["gate_check_failed_count"] > metrics["gate_check_passed_count"]:
+        warn_reasons.append("Gate FAILED 次数高于 PASSED，建议复核策略活跃度参数")
+    if (
+        stage.name == "S5"
+        and metrics["self_evolution_action_count"] <= 0
+        and metrics["self_evolution_init_count"] > 0
+    ):
+        warn_reasons.append("未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛")
+
+    if fail_reasons:
+        verdict = "FAIL"
+    elif warn_reasons:
+        verdict = "PASS_WITH_ACTIONS"
+    else:
+        verdict = "PASS"
+
+    return {
+        "stage": stage.name,
+        "verdict": verdict,
+        "metrics": metrics,
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+    }
+
+
+def print_report(report: Dict[str, object]) -> None:
+    print(f"STAGE: {report['stage']}")
+    print(f"VERDICT: {report['verdict']}")
+    print("METRICS:")
+    metrics = report["metrics"]
+    assert isinstance(metrics, dict)
+    for key in sorted(metrics.keys()):
+        print(f"  - {key}: {metrics[key]}")
+
+    fail_reasons = report["fail_reasons"]
+    warn_reasons = report["warn_reasons"]
+    assert isinstance(fail_reasons, list)
+    assert isinstance(warn_reasons, list)
+
+    if fail_reasons:
+        print("FAIL_REASONS:")
+        for item in fail_reasons:
+            print(f"  - {item}")
+    if warn_reasons:
+        print("WARN_REASONS:")
+        for item in warn_reasons:
+            print(f"  - {item}")
+
+
+def main() -> int:
+    args = parse_args()
+    log_path = Path(args.log)
+    if not log_path.exists():
+        print(f"[ERROR] 日志文件不存在: {log_path}", file=sys.stderr)
+        return 2
+
+    stage = STAGE_RULES[args.stage]
+    min_runtime_status = (
+        args.min_runtime_status
+        if args.min_runtime_status is not None
+        else stage.min_runtime_status
+    )
+    if min_runtime_status <= 0:
+        print("[ERROR] --min_runtime_status 必须大于 0", file=sys.stderr)
+        return 2
+
+    text = load_text(log_path)
+    report = assess(text, stage, min_runtime_status)
+    print_report(report)
+
+    if args.json_out:
+        out_path = Path(args.json_out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"JSON written: {out_path}")
+
+    verdict = report["verdict"]
+    return 0 if verdict in {"PASS", "PASS_WITH_ACTIONS"} else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+

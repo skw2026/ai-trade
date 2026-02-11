@@ -5,10 +5,13 @@ system:
   data_path: "./data"
   max_ticks: 0
   status_log_interval_ticks: 20
+  remote_risk_refresh_interval_ticks: 10
   reconcile:
     enabled: true
     interval_ticks: 10
     tolerance_notional_usd: 5.0
+    mismatch_confirmations: 2
+    pending_order_stale_ms: 30000
 
 exchange:
   platform: "bybit"
@@ -24,6 +27,7 @@ exchange:
     public_ws_rest_fallback: true
     private_ws_enabled: true
     private_ws_rest_fallback: true
+    ws_reconnect_interval_ms: 15000
     execution_poll_limit: 50
 
 risk:
@@ -35,6 +39,7 @@ risk:
 
 execution:
   max_order_notional: 1000
+  min_rebalance_notional_usd: 25
   min_order_interval_ms: 3000
   reverse_signal_cooldown_ticks: 4
   protection:
@@ -45,11 +50,47 @@ execution:
     stop_loss_ratio: 0.01
     take_profit_ratio: 0.015
 
+strategy:
+  signal_notional_usd: 1000
+  signal_deadband_abs: 0.5
+  min_hold_ticks: 3
+
+self_evolution:
+  enabled: false
+  update_interval_ticks: 60
+  min_update_interval_ticks: 60
+  min_abs_window_pnl_usd: 0.0
+  min_bucket_ticks_for_update: 0
+  objective_alpha_pnl: 1.0
+  objective_beta_drawdown: 0.0
+  objective_gamma_notional_churn: 0.0
+  max_single_strategy_weight: 0.60
+  max_weight_step: 0.05
+  rollback_degrade_windows: 2
+  rollback_degrade_threshold_score: 0.0
+  rollback_cooldown_ticks: 240
+  initial_trend_weight: 0.50
+  initial_defensive_weight: 0.50
+
+regime:
+  enabled: true
+  warmup_ticks: 20
+  ewma_alpha: 0.20
+  trend_threshold: 0.0008
+  extreme_threshold: 0.0030
+  volatility_threshold: 0.0018
+
 gate:
   min_effective_signals_per_day: 24
   min_fills_per_day: 4
   heartbeat_empty_signal_ticks: 12
   window_ticks: 288
+  enforce_runtime_actions: false
+  fail_to_reduce_only_windows: 0
+  fail_to_halt_windows: 0
+  reduce_only_cooldown_ticks: 0
+  halt_cooldown_ticks: 0
+  pass_to_resume_windows: 1
 
 universe:
   enabled: true
