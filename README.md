@@ -113,6 +113,31 @@ cp .env.example .env
 docker compose up --build ai-trade
 ```
 
+可观测性（Prometheus + Grafana + Loki + Promtail）：
+```bash
+# 启动监控栈（obs profile）
+docker compose --profile obs up -d loki promtail prometheus grafana
+
+# 查看状态
+docker compose ps
+```
+
+默认访问：
+- Grafana: `http://<host>:3000`（默认账号密码见 `.env` 中 `GRAFANA_ADMIN_USER/PASSWORD`）
+- Prometheus: `http://<host>:9090`
+- Loki: `http://<host>:3100`
+
+预置仪表盘：
+- `ai-trade Runtime`（已自动导入）
+- `ai-trade Metrics Runtime (Prometheus)`（已自动导入）
+- 关键监控项：`equity/drawdown/notional`、`funnel_window.fills`、`throttle_total.hit_rate`、`Gate pass/fail`、`SELF_EVOLUTION_ACTION`、`OMS_RECONCILE_AUTORESYNC`。
+
+生产编排下启用监控栈：
+```bash
+AI_TRADE_IMAGE=ghcr.io/<owner>/ai-trade:<tag> \
+docker compose -f docker-compose.prod.yml --profile obs up -d ai-trade loki promtail prometheus grafana
+```
+
 ### GitHub Actions + 阿里云 ECS 自动部署
 适用场景：主分支合并后自动构建镜像并发布到 ECS，提升迭代效率与一致性。
 

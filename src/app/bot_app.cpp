@@ -234,7 +234,7 @@ BotApplication::BotApplication(const AppConfig& config)
               },
               config.execution_min_rebalance_notional_usd,
               config.regime,
-              config.integrator.shadow),
+              config.integrator),
       execution_(config.execution_max_order_notional),
       order_throttle_({
           .min_order_interval_ms = config.execution_min_order_interval_ms,
@@ -274,6 +274,9 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->integrator_scored += delta.integrator_scored;
   total->integrator_pred_up += delta.integrator_pred_up;
   total->integrator_pred_down += delta.integrator_pred_down;
+  total->integrator_policy_applied += delta.integrator_policy_applied;
+  total->integrator_policy_canary += delta.integrator_policy_canary;
+  total->integrator_policy_active += delta.integrator_policy_active;
   total->integrator_model_score_sum += delta.integrator_model_score_sum;
   total->integrator_p_up_sum += delta.integrator_p_up_sum;
   total->integrator_p_down_sum += delta.integrator_p_down_sum;
@@ -366,13 +369,23 @@ bool BotApplication::Initialize() {
   InitializeUniverse();
   SyncRemotePositions();
 
-  if (config_.integrator.enabled && config_.integrator.shadow.enabled) {
+  if (config_.integrator.enabled &&
+      system_.integrator_mode() != IntegratorMode::kOff &&
+      config_.integrator.shadow.enabled) {
     std::string shadow_error;
     if (system_.InitializeIntegratorShadow(&shadow_error)) {
-      LogInfo("INTEGRATOR_SHADOW_INIT: enabled=true, model_version=" +
+      LogInfo("INTEGRATOR_INIT: mode=" +
+              std::string(ToString(system_.integrator_mode())) +
+              ", model_version=" +
               system_.integrator_shadow_model_version());
     } else {
-      LogInfo("INTEGRATOR_SHADOW_DEGRADED: " + shadow_error);
+      LogInfo("INTEGRATOR_DEGRADED: " + shadow_error);
+      // 兜底策略：canary/active 在模型不可用时立即退回 off，避免“盲下单”。
+      if (system_.integrator_mode() == IntegratorMode::kCanary ||
+          system_.integrator_mode() == IntegratorMode::kActive) {
+        system_.SetIntegratorMode(IntegratorMode::kOff);
+        LogInfo("INTEGRATOR_FAILSAFE: mode switched to off");
+      }
     }
   }
 
@@ -636,7 +649,24 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     last_shadow_inference_ = decision.shadow;
     has_last_shadow_inference_ = true;
   }
-  if (HasExposure(decision.signal.suggested_notional_usd)) {
+  if (decision.integrator_policy_applied) {
+    ++funnel_window_.integrator_policy_applied;
+    if (system_.integrator_mode() == IntegratorMode::kCanary) {
+      ++funnel_window_.integrator_policy_canary;
+    } else if (system_.integrator_mode() == IntegratorMode::kActive) {
+      ++funnel_window_.integrator_policy_active;
+    }
+    LogInfo("INTEGRATOR_POLICY_APPLIED: mode=" +
+            std::string(ToString(system_.integrator_mode())) +
+            ", reason=" + decision.integrator_policy_reason +
+            ", symbol=" + decision.signal.symbol +
+            ", confidence=" + std::to_string(decision.integrator_confidence) +
+            ", base_notional=" +
+            std::to_string(decision.base_signal.suggested_notional_usd) +
+            ", final_notional=" +
+            std::to_string(decision.signal.suggested_notional_usd));
+  }
+  if (HasExposure(decision.base_signal.suggested_notional_usd)) {
     ++funnel_window_.raw_signals;
   }
   if (HasExposure(decision.risk_adjusted.adjusted_notional_usd)) {
@@ -676,7 +706,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
 
   if (const auto gate_alert =
-          gate_monitor_.OnDecision(decision.signal, decision.risk_adjusted,
+          gate_monitor_.OnDecision(decision.base_signal, decision.risk_adjusted,
                                    decision.intent);
       gate_alert.has_value()) {
     ++funnel_window_.gate_alerts;
@@ -1319,9 +1349,17 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.integrator_scored) +
           ", pred_up=" + std::to_string(funnel_window.integrator_pred_up) +
           ", pred_down=" + std::to_string(funnel_window.integrator_pred_down) +
+          ", policy_applied=" +
+          std::to_string(funnel_window.integrator_policy_applied) +
+          ", policy_canary=" +
+          std::to_string(funnel_window.integrator_policy_canary) +
+          ", policy_active=" +
+          std::to_string(funnel_window.integrator_policy_active) +
           ", avg_model_score=" + std::to_string(shadow_avg_model_score) +
           ", avg_p_up=" + std::to_string(shadow_avg_p_up) +
           ", avg_p_down=" + std::to_string(shadow_avg_p_down) + "}" +
+          ", integrator_mode=" +
+          std::string(ToString(system_.integrator_mode())) +
           ", gate_runtime={enabled=" +
           std::string(config_.gate.enforce_runtime_actions ? "true" : "false") +
           ", fail_streak=" + std::to_string(gate_fail_windows_streak_) +

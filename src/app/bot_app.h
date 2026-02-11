@@ -177,6 +177,9 @@ class BotApplication {
     std::uint64_t integrator_scored{0};
     std::uint64_t integrator_pred_up{0};
     std::uint64_t integrator_pred_down{0};
+    std::uint64_t integrator_policy_applied{0};
+    std::uint64_t integrator_policy_canary{0};
+    std::uint64_t integrator_policy_active{0};
     double integrator_model_score_sum{0.0};
     double integrator_p_up_sum{0.0};
     double integrator_p_down_sum{0.0};

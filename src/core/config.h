@@ -96,10 +96,42 @@ struct IntegratorShadowConfig {
   double score_gain{1.0};
 };
 
+/// Integrator 接管模式：从纯观测到实际接管逐级放量。
+enum class IntegratorMode {
+  kOff,     // 完全关闭 Integrator，对策略输出不做任何影响。
+  kShadow,  // 仅观测打分，不改变策略输出（默认）。
+  kCanary,  // 小流量接管：仅在高置信时按比例覆盖策略输出。
+  kActive,  // 主接管：以 Integrator 置信度驱动方向与仓位比例。
+};
+
+/// IntegratorMode 文本化（用于日志展示）。
+inline const char* ToString(IntegratorMode mode) {
+  switch (mode) {
+    case IntegratorMode::kOff:
+      return "off";
+    case IntegratorMode::kShadow:
+      return "shadow";
+    case IntegratorMode::kCanary:
+      return "canary";
+    case IntegratorMode::kActive:
+      return "active";
+  }
+  return "unknown";
+}
+
 /// Integrator 模块配置：当前以影子模式为主。
 struct IntegratorConfig {
   bool enabled{false};
   std::string model_type{"catboost"};
+  IntegratorMode mode{IntegratorMode::kShadow};
+  // canary 模式：最终名义值上限比例（相对原策略绝对名义值）。
+  double canary_notional_ratio{0.30};
+  // canary 模式：最低置信阈值（|p_up-p_down|），低于阈值不接管。
+  double canary_confidence_threshold{0.60};
+  // canary 是否允许与原策略反向（默认不允许，优先保守）。
+  bool canary_allow_countertrend{false};
+  // active 模式：最低置信阈值（|p_up-p_down|），低于阈值转空仓。
+  double active_confidence_threshold{0.55};
   IntegratorShadowConfig shadow{};
 };
 

@@ -24,3 +24,66 @@ services:
       options:
         max-size: "20m"
         max-file: "5"
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: ai-trade-loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - ./data/observability/loki:/loki
+    ports:
+      - "3100:3100"
+    profiles: ["obs"]
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: ai-trade-promtail
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - ./data/observability/promtail:/tmp/promtail
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    profiles: ["obs"]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ai-trade-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
+      - ./data/observability/prometheus:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - promtail
+    profiles: ["obs"]
+
+  grafana:
+    image: grafana/grafana:10.4.8
+    container_name: ai-trade-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./data/observability/grafana:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loki
+      - prometheus
+    profiles: ["obs"]

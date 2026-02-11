@@ -1,0 +1,257 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/promtail/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 10s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        regex: ai-trade|ai-trade-research|grafana|loki|promtail|prometheus
+        action: keep
+      - source_labels: [__meta_docker_container_name]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        target_label: compose_project
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+      - source_labels: [__meta_docker_container_label_com_docker_compose_container_number]
+        target_label: compose_container_number
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+    pipeline_stages:
+      - docker: {}
+      - match:
+          selector: '{service="ai-trade"} |= "RUNTIME_STATUS:"'
+          stages:
+            - regex:
+                expression: 'RUNTIME_STATUS: ticks=(?P<ticks>[0-9]+), trade_ok=(?P<trade_ok>true|false), trading_halted=(?P<trading_halted>true|false), risk_mode=(?P<risk_mode>[^,]+), ws=\{[^}]*\}, account=\{equity=(?P<equity>-?[0-9]+(?:\.[0-9]+)?), drawdown_pct=(?P<drawdown_pct>-?[0-9]+(?:\.[0-9]+)?), notional=(?P<notional>-?[0-9]+(?:\.[0-9]+)?),'
+            - regex:
+                expression: 'funnel_window=\{[^}]*fills=(?P<fills>[0-9]+),'
+            - regex:
+                expression: 'gate_runtime=\{enabled=(?P<gate_enabled>true|false), fail_streak=(?P<gate_fail_streak>[0-9]+), pass_streak=(?P<gate_pass_streak>[0-9]+), reduce_only=(?P<gate_reduce_only>true|false), reduce_only_cooldown_ticks=(?P<gate_reduce_only_cooldown_ticks>[0-9]+), gate_halted=(?P<gate_halted>true|false), halt_cooldown_ticks=(?P<gate_halt_cooldown_ticks>[0-9]+)\}'
+            - regex:
+                expression: 'throttle_total=\{checks=(?P<throttle_checks>[0-9]+), rejected=(?P<throttle_rejected>[0-9]+), hit_rate=(?P<throttle_hit_rate>-?[0-9]+(?:\.[0-9]+)?)\}'
+            - regex:
+                expression: 'evolution=\{enabled=(?P<evolution_enabled>true|false), objective=\{alpha_pnl=(?P<evolution_alpha_pnl>-?[0-9]+(?:\.[0-9]+)?), beta_drawdown=(?P<evolution_beta_drawdown>-?[0-9]+(?:\.[0-9]+)?), gamma_notional_churn=(?P<evolution_gamma_notional_churn>-?[0-9]+(?:\.[0-9]+)?)\}, active_bucket=(?P<active_bucket>[a-z_]+), active_trend_weight=(?P<active_trend_weight>-?[0-9]+(?:\.[0-9]+)?), active_defensive_weight=(?P<active_defensive_weight>-?[0-9]+(?:\.[0-9]+)?),'
+            - template:
+                source: trade_ok_num
+                template: '{{ if eq .trade_ok "true" }}1{{ else }}0{{ end }}'
+            - template:
+                source: trading_halted_num
+                template: '{{ if eq .trading_halted "true" }}1{{ else }}0{{ end }}'
+            - template:
+                source: gate_halted_num
+                template: '{{ if eq .gate_halted "true" }}1{{ else }}0{{ end }}'
+            - template:
+                source: gate_reduce_only_num
+                template: '{{ if eq .gate_reduce_only "true" }}1{{ else }}0{{ end }}'
+            - template:
+                source: evolution_enabled_num
+                template: '{{ if eq .evolution_enabled "true" }}1{{ else }}0{{ end }}'
+            - metrics:
+                ai_trade_runtime_status_total:
+                  type: Counter
+                  description: "Total RUNTIME_STATUS logs"
+                  config:
+                    match_all: true
+                    action: inc
+                ai_trade_runtime_ticks:
+                  type: Gauge
+                  description: "Market tick count"
+                  source: ticks
+                  config:
+                    action: set
+                ai_trade_runtime_equity_usd:
+                  type: Gauge
+                  description: "Account equity in USD"
+                  source: equity
+                  config:
+                    action: set
+                ai_trade_runtime_drawdown_pct:
+                  type: Gauge
+                  description: "Account drawdown pct"
+                  source: drawdown_pct
+                  config:
+                    action: set
+                ai_trade_runtime_notional_usd:
+                  type: Gauge
+                  description: "Current notional exposure in USD"
+                  source: notional
+                  config:
+                    action: set
+                ai_trade_runtime_fills_window:
+                  type: Gauge
+                  description: "Window fills from funnel_window"
+                  source: fills
+                  config:
+                    action: set
+                ai_trade_trade_ok:
+                  type: Gauge
+                  description: "trade_ok flag as 0/1"
+                  source: trade_ok_num
+                  config:
+                    action: set
+                ai_trade_trading_halted:
+                  type: Gauge
+                  description: "trading_halted flag as 0/1"
+                  source: trading_halted_num
+                  config:
+                    action: set
+                ai_trade_gate_fail_streak:
+                  type: Gauge
+                  description: "Gate fail streak by runtime window"
+                  source: gate_fail_streak
+                  config:
+                    action: set
+                ai_trade_gate_pass_streak:
+                  type: Gauge
+                  description: "Gate pass streak by runtime window"
+                  source: gate_pass_streak
+                  config:
+                    action: set
+                ai_trade_gate_halted:
+                  type: Gauge
+                  description: "Gate halted flag as 0/1"
+                  source: gate_halted_num
+                  config:
+                    action: set
+                ai_trade_gate_reduce_only:
+                  type: Gauge
+                  description: "Gate reduce-only flag as 0/1"
+                  source: gate_reduce_only_num
+                  config:
+                    action: set
+                ai_trade_throttle_checks_total_runtime:
+                  type: Gauge
+                  description: "Total throttle checks reported in runtime logs"
+                  source: throttle_checks
+                  config:
+                    action: set
+                ai_trade_throttle_rejected_total_runtime:
+                  type: Gauge
+                  description: "Total throttle rejections reported in runtime logs"
+                  source: throttle_rejected
+                  config:
+                    action: set
+                ai_trade_throttle_hit_rate:
+                  type: Gauge
+                  description: "Throttle hit rate"
+                  source: throttle_hit_rate
+                  config:
+                    action: set
+                ai_trade_evolution_enabled:
+                  type: Gauge
+                  description: "Evolution enabled flag as 0/1"
+                  source: evolution_enabled_num
+                  config:
+                    action: set
+                ai_trade_evolution_active_trend_weight:
+                  type: Gauge
+                  description: "Active trend weight"
+                  source: active_trend_weight
+                  config:
+                    action: set
+                ai_trade_evolution_active_defensive_weight:
+                  type: Gauge
+                  description: "Active defensive weight"
+                  source: active_defensive_weight
+                  config:
+                    action: set
+
+      - match:
+          selector: '{service="ai-trade"} |= "GATE_CHECK_PASSED:"'
+          stages:
+            - metrics:
+                ai_trade_event_gate_check_passed_total:
+                  type: Counter
+                  description: "Total gate check pass events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "GATE_CHECK_FAILED:"'
+          stages:
+            - metrics:
+                ai_trade_event_gate_check_failed_total:
+                  type: Counter
+                  description: "Total gate check fail events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "GATE_ALERT:"'
+          stages:
+            - metrics:
+                ai_trade_event_gate_alert_total:
+                  type: Counter
+                  description: "Total gate alert events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "ORDER_THROTTLED:"'
+          stages:
+            - metrics:
+                ai_trade_event_order_throttled_total:
+                  type: Counter
+                  description: "Total order throttled events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "SELF_EVOLUTION_ACTION:"'
+          stages:
+            - metrics:
+                ai_trade_event_evolution_action_total:
+                  type: Counter
+                  description: "Total self evolution action events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "OMS_RECONCILE_AUTORESYNC:"'
+          stages:
+            - metrics:
+                ai_trade_event_reconcile_autoresync_total:
+                  type: Counter
+                  description: "Total reconcile auto-resync events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "BYBIT_PUBLIC_WS_DEGRADED:"'
+          stages:
+            - metrics:
+                ai_trade_event_ws_public_degraded_total:
+                  type: Counter
+                  description: "Total public ws degraded events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "BYBIT_PRIVATE_WS_DEGRADED:"'
+          stages:
+            - metrics:
+                ai_trade_event_ws_private_degraded_total:
+                  type: Counter
+                  description: "Total private ws degraded events"
+                  config:
+                    match_all: true
+                    action: inc

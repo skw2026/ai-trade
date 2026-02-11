@@ -58,6 +58,11 @@ strategy:
 integrator:
   enabled: true
   model_type: "catboost"
+  mode: "shadow"                    # off/shadow/canary/active
+  canary_notional_ratio: 0.30       # canary模式接管比例（相对原策略绝对名义值）
+  canary_confidence_threshold: 0.60 # canary最低置信阈值(|p_up-p_down|)
+  canary_allow_countertrend: false  # canary是否允许与原策略反向
+  active_confidence_threshold: 0.55 # active最低置信阈值，低于阈值转空仓
   shadow:
     enabled: true
     log_model_score: true

@@ -19,8 +19,12 @@ namespace ai_trade {
 // 单次行情评估的分层产物，便于监控漏斗和审计回放。
 struct MarketDecision {
   RegimeState regime;  ///< 当前行情对应 Regime 判定结果。
-  Signal signal;  ///< 策略原始信号（净名义敞口建议）。
+  Signal base_signal;  ///< 原策略信号（未经过 Integrator 接管）。
+  Signal signal;  ///< 最终信号（可能经过 Integrator 接管）。
   ShadowInference shadow;  ///< Integrator 影子推理输出（观测用途）。
+  bool integrator_policy_applied{false};  ///< 本 tick 是否发生 Integrator 接管。
+  std::string integrator_policy_reason{"n/a"};  ///< 接管/跳过原因。
+  double integrator_confidence{0.0};  ///< p_up - p_down，范围 [-1, 1]。
   TargetPosition target;  ///< 组合层目标净名义敞口（single-symbol）。
   RiskAdjustedPosition risk_adjusted;  ///< 风控修正后的目标净名义敞口。
   std::optional<OrderIntent> intent;  ///< 执行层输出订单意图（如有）。
@@ -46,7 +50,7 @@ class TradeSystem {
               StrategyConfig strategy_config = {},
               double min_rebalance_notional_usd = 0.0,
               RegimeConfig regime_config = {},
-              IntegratorShadowConfig integrator_shadow_config = {})
+              IntegratorConfig integrator_config = {})
       : strategy_(strategy_config),
         regime_(regime_config),
         risk_(risk_cap_usd, thresholds),
@@ -55,7 +59,8 @@ class TradeSystem {
             .max_order_notional_usd = max_order_notional_usd,
             .min_rebalance_notional_usd = min_rebalance_notional_usd,
         }),
-        integrator_shadow_(integrator_shadow_config) {}
+        integrator_config_(integrator_config),
+        integrator_shadow_(integrator_config.shadow) {}
 
   /// 便捷入口：仅用于本地快速回放，内部会把意图直接转成模拟成交。
   bool OnPrice(double price, bool trade_ok = true);
@@ -114,6 +119,8 @@ class TradeSystem {
   bool InitializeIntegratorShadow(std::string* out_error) {
     return integrator_shadow_.Initialize(out_error);
   }
+  IntegratorMode integrator_mode() const { return integrator_config_.mode; }
+  void SetIntegratorMode(IntegratorMode mode) { integrator_config_.mode = mode; }
   bool integrator_shadow_enabled() const { return integrator_shadow_.enabled(); }
   std::string integrator_shadow_model_version() const {
     return integrator_shadow_.model_version();
@@ -138,10 +145,15 @@ class TradeSystem {
   // 账户级总名义敞口上限（gross），用于多币种场景的统一预算裁剪。
   double max_account_gross_notional_usd_{3000.0};
   ExecutionEngine execution_;  ///< 执行引擎。
+  IntegratorConfig integrator_config_{};  ///< Integrator 接管配置（mode/阈值/比例）。
   IntegratorShadow integrator_shadow_;  ///< Integrator 影子推理器（观测用途）。
   AccountState account_;  ///< 账户状态聚合。
 
   static std::size_t BucketIndex(RegimeBucket bucket);
+  bool ApplyIntegratorPolicy(const ShadowInference& shadow,
+                             Signal* inout_signal,
+                             double* out_confidence,
+                             std::string* out_reason) const;
 };
 
 }  // namespace ai_trade

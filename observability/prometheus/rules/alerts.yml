@@ -1,0 +1,57 @@
+groups:
+  - name: ai-trade-runtime
+    interval: 30s
+    rules:
+      - alert: AiTradeDrawdownHigh
+        expr: ai_trade_runtime_drawdown_pct > 0.08
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ai-trade drawdown exceeds 8%"
+          description: "当前回撤超过 8%，请检查风险参数和持仓状态。"
+
+      - alert: AiTradeGateFailStreakHigh
+        expr: ai_trade_gate_fail_streak >= 3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gate fail streak >= 3"
+          description: "Gate 连续失败窗口过多，系统可能进入保守状态。"
+
+      - alert: AiTradeGateHalted
+        expr: ai_trade_gate_halted == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gate halted is active"
+          description: "Gate 已触发 halt，检查风控与交易状态。"
+
+      - alert: AiTradeTradingHalted
+        expr: ai_trade_trading_halted == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trading halted is active"
+          description: "交易系统处于 halted 状态。"
+
+      - alert: AiTradeWsDegraded
+        expr: increase(ai_trade_event_ws_public_degraded_total[5m]) > 0 or increase(ai_trade_event_ws_private_degraded_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WS degraded event detected"
+          description: "最近 5 分钟内出现 WS 降级事件。"
+
+      - alert: AiTradeRuntimeStatusMissing
+        expr: absent(ai_trade_runtime_status_total)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No runtime status metric"
+          description: "Prometheus 未采到 RUNTIME_STATUS 指标，可能进程停止或日志链路异常。"

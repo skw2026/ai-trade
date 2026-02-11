@@ -10,6 +10,21 @@ namespace ai_trade {
 namespace {
 
 constexpr double kWeightEpsilon = 1e-9;
+constexpr double kNotionalEpsilon = 1e-6;
+
+bool HasExposure(double notional_usd) {
+  return std::fabs(notional_usd) > kNotionalEpsilon;
+}
+
+int SignOf(double value) {
+  if (value > kNotionalEpsilon) {
+    return 1;
+  }
+  if (value < -kNotionalEpsilon) {
+    return -1;
+  }
+  return 0;
+}
 
 }  // namespace
 
@@ -66,11 +81,17 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event, bool trade_ok) {
   MarketDecision decision;
   account_.OnMarket(event);
   decision.regime = regime_.OnMarket(event);
-  decision.signal = strategy_.OnMarket(event);
-  if (decision.signal.symbol.empty()) {
-    decision.signal.symbol = event.symbol;
+  decision.base_signal = strategy_.OnMarket(event);
+  if (decision.base_signal.symbol.empty()) {
+    decision.base_signal.symbol = event.symbol;
   }
-  decision.shadow = integrator_shadow_.Infer(decision.signal, decision.regime);
+  decision.signal = decision.base_signal;
+  decision.shadow = integrator_shadow_.Infer(decision.base_signal, decision.regime);
+  decision.integrator_policy_applied = ApplyIntegratorPolicy(
+      decision.shadow,
+      &decision.signal,
+      &decision.integrator_confidence,
+      &decision.integrator_policy_reason);
   decision.target =
       TargetPosition{decision.signal.symbol, decision.signal.suggested_notional_usd};
   if (evolution_enabled_) {
@@ -149,6 +170,104 @@ std::pair<double, double> TradeSystem::evolution_weights(
 std::array<std::pair<double, double>, 3> TradeSystem::evolution_weights_all()
     const {
   return evolution_weights_by_bucket_;
+}
+
+bool TradeSystem::ApplyIntegratorPolicy(const ShadowInference& shadow,
+                                        Signal* inout_signal,
+                                        double* out_confidence,
+                                        std::string* out_reason) const {
+  if (inout_signal == nullptr) {
+    return false;
+  }
+
+  auto set_reason = [&](const std::string& reason) {
+    if (out_reason != nullptr) {
+      *out_reason = reason;
+    }
+  };
+  auto set_confidence = [&](double confidence) {
+    if (out_confidence != nullptr) {
+      *out_confidence = confidence;
+    }
+  };
+
+  set_confidence(0.0);
+  if (integrator_config_.mode == IntegratorMode::kOff) {
+    set_reason("mode_off");
+    return false;
+  }
+  if (integrator_config_.mode == IntegratorMode::kShadow) {
+    set_reason("mode_shadow_observe_only");
+    return false;
+  }
+  if (!shadow.enabled) {
+    set_reason("shadow_unavailable");
+    return false;
+  }
+  if (!HasExposure(inout_signal->suggested_notional_usd)) {
+    set_reason("flat_base_signal");
+    return false;
+  }
+
+  const double confidence = shadow.p_up - shadow.p_down;
+  const double confidence_abs = std::fabs(confidence);
+  const int shadow_direction = SignOf(confidence);
+  const int base_direction = SignOf(inout_signal->suggested_notional_usd);
+  const double base_abs_notional = std::fabs(inout_signal->suggested_notional_usd);
+  set_confidence(confidence);
+
+  if (shadow_direction == 0) {
+    set_reason("neutral_confidence");
+    return false;
+  }
+
+  if (integrator_config_.mode == IntegratorMode::kCanary) {
+    if (confidence_abs < integrator_config_.canary_confidence_threshold) {
+      set_reason("canary_low_confidence");
+      return false;
+    }
+    if (!integrator_config_.canary_allow_countertrend &&
+        shadow_direction != base_direction) {
+      set_reason("canary_countertrend_blocked");
+      return false;
+    }
+    const double canary_ratio =
+        std::clamp(integrator_config_.canary_notional_ratio, 0.0, 1.0);
+    const double final_notional =
+        static_cast<double>(shadow_direction) * base_abs_notional * canary_ratio;
+    if (!HasExposure(final_notional - inout_signal->suggested_notional_usd)) {
+      set_reason("canary_no_change");
+      return false;
+    }
+    inout_signal->suggested_notional_usd = final_notional;
+    inout_signal->direction = SignOf(final_notional);
+    set_reason("canary_applied");
+    return true;
+  }
+
+  // active: Integrator 主接管。低置信度直接转为空仓，高置信度按置信度缩放仓位。
+  if (confidence_abs < integrator_config_.active_confidence_threshold) {
+    if (!HasExposure(inout_signal->suggested_notional_usd)) {
+      set_reason("active_low_confidence_no_change");
+      return false;
+    }
+    inout_signal->suggested_notional_usd = 0.0;
+    inout_signal->direction = 0;
+    set_reason("active_low_confidence_to_flat");
+    return true;
+  }
+
+  const double scaled_abs_notional = base_abs_notional * confidence_abs;
+  const double final_notional =
+      static_cast<double>(shadow_direction) * scaled_abs_notional;
+  if (!HasExposure(final_notional - inout_signal->suggested_notional_usd)) {
+    set_reason("active_no_change");
+    return false;
+  }
+  inout_signal->suggested_notional_usd = final_notional;
+  inout_signal->direction = SignOf(final_notional);
+  set_reason("active_applied");
+  return true;
 }
 
 }  // namespace ai_trade

@@ -166,6 +166,30 @@ bool ParsePositionMode(const std::string& text, PositionMode* out_mode) {
   return false;
 }
 
+bool ParseIntegratorMode(const std::string& text, IntegratorMode* out_mode) {
+  if (out_mode == nullptr) {
+    return false;
+  }
+  const std::string lowered = ToLowerCopy(text);
+  if (lowered == "off" || lowered == "disabled") {
+    *out_mode = IntegratorMode::kOff;
+    return true;
+  }
+  if (lowered == "shadow" || lowered == "observe") {
+    *out_mode = IntegratorMode::kShadow;
+    return true;
+  }
+  if (lowered == "canary") {
+    *out_mode = IntegratorMode::kCanary;
+    return true;
+  }
+  if (lowered == "active" || lowered == "on") {
+    *out_mode = IntegratorMode::kActive;
+    return true;
+  }
+  return false;
+}
+
 bool ParseStringList(const std::string& text,
                      std::vector<std::string>* out_items) {
   if (out_items == nullptr) {
@@ -1017,6 +1041,80 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "mode") {
+      IntegratorMode parsed = IntegratorMode::kShadow;
+      if (!ParseIntegratorMode(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "integrator.mode 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.mode = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "canary_notional_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.canary_notional_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.canary_notional_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "canary_confidence_threshold") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.canary_confidence_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.canary_confidence_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "canary_allow_countertrend") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.canary_allow_countertrend 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.canary_allow_countertrend = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "active_confidence_threshold") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.active_confidence_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.active_confidence_threshold = parsed;
+      continue;
+    }
+
     if (current_section == "integrator" && current_subsection == "shadow" &&
         key == "enabled") {
       bool parsed = false;
@@ -1553,6 +1651,49 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.integrator.shadow.score_gain <= 0.0) {
     if (out_error != nullptr) {
       *out_error = "integrator.shadow.score_gain 必须大于 0";
+    }
+    return false;
+  }
+  if (!config.integrator.enabled) {
+    // 兼容旧配置：enabled=false 时强制等价 off。
+    config.integrator.mode = IntegratorMode::kOff;
+  }
+  if (config.integrator.canary_notional_ratio < 0.0 ||
+      config.integrator.canary_notional_ratio > 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.canary_notional_ratio 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.integrator.canary_confidence_threshold < 0.0 ||
+      config.integrator.canary_confidence_threshold > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.canary_confidence_threshold 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.integrator.active_confidence_threshold < 0.0 ||
+      config.integrator.active_confidence_threshold > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.active_confidence_threshold 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.integrator.mode == IntegratorMode::kCanary &&
+      config.integrator.canary_confidence_threshold < 0.5) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.canary_confidence_threshold 在 canary 模式下应 >= 0.5";
+    }
+    return false;
+  }
+  if (config.integrator.mode == IntegratorMode::kActive &&
+      config.integrator.active_confidence_threshold < 0.5) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.active_confidence_threshold 在 active 模式下应 >= 0.5";
     }
     return false;
   }

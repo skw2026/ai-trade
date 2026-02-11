@@ -1372,6 +1372,11 @@ int main() {
         << "integrator:\n"
         << "  enabled: true\n"
         << "  model_type: \"catboost\"\n"
+        << "  mode: \"canary\"\n"
+        << "  canary_notional_ratio: 0.35\n"
+        << "  canary_confidence_threshold: 0.62\n"
+        << "  canary_allow_countertrend: true\n"
+        << "  active_confidence_threshold: 0.57\n"
         << "  shadow:\n"
         << "    enabled: true\n"
         << "    log_model_score: false\n"
@@ -1452,6 +1457,11 @@ int main() {
         config.bybit.execution_poll_limit != 25 ||
         config.integrator.enabled != true ||
         config.integrator.model_type != "catboost" ||
+        config.integrator.mode != ai_trade::IntegratorMode::kCanary ||
+        !NearlyEqual(config.integrator.canary_notional_ratio, 0.35) ||
+        !NearlyEqual(config.integrator.canary_confidence_threshold, 0.62) ||
+        config.integrator.canary_allow_countertrend != true ||
+        !NearlyEqual(config.integrator.active_confidence_threshold, 0.57) ||
         config.integrator.shadow.enabled != true ||
         config.integrator.shadow.log_model_score != false ||
         config.integrator.shadow.model_report_path !=
@@ -1503,6 +1513,31 @@ int main() {
     }
     if (error.find("execution.protection") == std::string::npos) {
       std::cerr << "非法保护单配置错误信息不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_integrator_config.yaml";
+    std::ofstream out(temp_path);
+    out << "integrator:\n"
+        << "  enabled: true\n"
+        << "  mode: \"canary\"\n"
+        << "  canary_notional_ratio: 1.2\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 Integrator 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("integrator.canary_notional_ratio") == std::string::npos) {
+      std::cerr << "非法 Integrator 配置错误信息不符合预期\n";
       return 1;
     }
 
