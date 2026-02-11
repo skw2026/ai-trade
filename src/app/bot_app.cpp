@@ -1056,6 +1056,40 @@ void BotApplication::RunGateMonitor() {
     TickGateRuntimeCooldown();
   }
 
+  // Gate 自动恢复“空仓稳态”判定：
+  // 1) 账户当前无净敞口；
+  // 2) 无净仓位相关在途订单（避免与落地中的订单竞争状态）；
+  // 3) 连续满足最小 flat ticks 且冷却结束。
+  const bool flat_and_idle =
+      !HasExposure(system_.account().current_notional_usd()) &&
+      pending_net_order_enqueued_ms_.empty();
+  if (flat_and_idle) {
+    ++gate_flat_ticks_streak_;
+  } else {
+    gate_flat_ticks_streak_ = 0;
+  }
+
+  if (config_.gate.enforce_runtime_actions &&
+      config_.gate.auto_resume_when_flat &&
+      (gate_halted_ || gate_forced_reduce_only_) &&
+      !reconcile_halted_ && flat_and_idle &&
+      gate_flat_ticks_streak_ >= config_.gate.auto_resume_flat_ticks &&
+      gate_reduce_only_cooldown_ticks_left_ <= 0 &&
+      gate_halt_cooldown_ticks_left_ <= 0) {
+    gate_halted_ = false;
+    gate_forced_reduce_only_ = false;
+    gate_fail_windows_streak_ = 0;
+    gate_pass_windows_streak_ = 0;
+    RefreshReduceOnlyMode();
+    RefreshTradingHaltState();
+    LogInfo("GATE_RUNTIME_AUTO_RESUME: flat_ticks=" +
+            std::to_string(gate_flat_ticks_streak_) +
+            ", trading_halted=" +
+            std::string(trading_halted_ ? "true" : "false") +
+            ", reduce_only=" +
+            std::string(IsForceReduceOnlyActive() ? "true" : "false"));
+  }
+
   if (auto res = gate_monitor_.OnTick(); res.has_value()) {
     if (!res->pass) {
       std::ostringstream reasons;
@@ -1370,7 +1404,8 @@ void BotApplication::LogStatus() {
           std::to_string(gate_reduce_only_cooldown_ticks_left_) +
           ", gate_halted=" + std::string(gate_halted_ ? "true" : "false") +
           ", halt_cooldown_ticks=" +
-          std::to_string(gate_halt_cooldown_ticks_left_) + "}" +
+          std::to_string(gate_halt_cooldown_ticks_left_) +
+          ", flat_ticks=" + std::to_string(gate_flat_ticks_streak_) + "}" +
           ", throttle_window={checks=" + std::to_string(throttle_window.checks) +
           ", rejected=" + std::to_string(throttle_window.rejected) +
           ", interval_rejects=" +

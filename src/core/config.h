@@ -38,6 +38,8 @@ struct GateConfig {
   int reduce_only_cooldown_ticks{0};
   int halt_cooldown_ticks{0};
   int pass_to_resume_windows{1};
+  bool auto_resume_when_flat{true};
+  int auto_resume_flat_ticks{120};
 };
 
 /// Bybit 接入参数与账户模式约束。

@@ -1021,6 +1021,32 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "gate" && key == "auto_resume_when_flat") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "gate.auto_resume_when_flat 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.auto_resume_when_flat = parsed;
+      continue;
+    }
+
+    if (current_section == "gate" && key == "auto_resume_flat_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "gate.auto_resume_flat_ticks 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.auto_resume_flat_ticks = parsed;
+      continue;
+    }
+
     if (current_section == "integrator" && current_subsection.empty() &&
         key == "enabled") {
       bool parsed = false;
@@ -1642,7 +1668,8 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.gate.fail_to_halt_windows < 0 ||
       config.gate.reduce_only_cooldown_ticks < 0 ||
       config.gate.halt_cooldown_ticks < 0 ||
-      config.gate.pass_to_resume_windows < 0) {
+      config.gate.pass_to_resume_windows < 0 ||
+      config.gate.auto_resume_flat_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "gate 运行时动作参数不能为负数";
     }

@@ -1338,6 +1338,8 @@ int main() {
         << "  reduce_only_cooldown_ticks: 30\n"
         << "  halt_cooldown_ticks: 60\n"
         << "  pass_to_resume_windows: 2\n"
+        << "  auto_resume_when_flat: false\n"
+        << "  auto_resume_flat_ticks: 6\n"
         << "exchange:\n"
         << "  platform: \"mock\"\n"
         << "  bybit:\n"
@@ -1432,6 +1434,8 @@ int main() {
         config.gate.reduce_only_cooldown_ticks != 30 ||
         config.gate.halt_cooldown_ticks != 60 ||
         config.gate.pass_to_resume_windows != 2 ||
+        config.gate.auto_resume_when_flat != false ||
+        config.gate.auto_resume_flat_ticks != 6 ||
         config.gate.window_ticks != 48 ||
         config.universe.enabled != true ||
         config.universe.update_interval_ticks != 30 ||
@@ -1783,6 +1787,28 @@ int main() {
     }
     if (error.find("运行时动作") == std::string::npos) {
       std::cerr << "非法 gate 运行时动作错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_gate_auto_resume_flat_ticks.yaml";
+    std::ofstream out(temp_path);
+    out << "gate:\n"
+        << "  auto_resume_flat_ticks: -1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 gate.auto_resume_flat_ticks 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("运行时动作") == std::string::npos) {
+      std::cerr << "非法 gate.auto_resume_flat_ticks 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

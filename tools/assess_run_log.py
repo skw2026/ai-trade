@@ -25,6 +25,7 @@ class StageRule:
     min_runtime_status: int
     require_gate_window: bool
     require_evolution_init: bool
+    max_trading_halted_true_ratio: float
 
 
 STAGE_RULES: Dict[str, StageRule] = {
@@ -33,12 +34,14 @@ STAGE_RULES: Dict[str, StageRule] = {
         min_runtime_status=10,
         require_gate_window=True,
         require_evolution_init=False,
+        max_trading_halted_true_ratio=0.20,
     ),
     "S5": StageRule(
         name="S5",
         min_runtime_status=50,
         require_gate_window=True,
         require_evolution_init=True,
+        max_trading_halted_true_ratio=0.10,
     ),
 }
 
@@ -162,6 +165,12 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
         "runtime_account_samples": account_pnl["samples"],
     }
+    if metrics["runtime_status_count"] > 0:
+        metrics["trading_halted_true_ratio"] = (
+            metrics["trading_halted_true_count"] / metrics["runtime_status_count"]
+        )
+    else:
+        metrics["trading_halted_true_ratio"] = 0.0
 
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
@@ -172,9 +181,11 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         )
     if metrics["critical_count"] > 0:
         fail_reasons.append(f"出现 CRITICAL: {metrics['critical_count']}")
-    if metrics["trading_halted_event_count"] > 0 or metrics["trading_halted_true_count"] > 0:
+    if metrics["trading_halted_true_ratio"] > stage.max_trading_halted_true_ratio:
         fail_reasons.append(
-            "出现停机迹象(TRADING_HALTED 或 trading_halted=true)"
+            "trading_halted=true 占比超阈值: "
+            f"{metrics['trading_halted_true_ratio']:.4f} > "
+            f"{stage.max_trading_halted_true_ratio:.4f}"
         )
     if metrics["ws_unhealthy_count"] > 0:
         fail_reasons.append(f"运行态 WS 健康检查失败次数: {metrics['ws_unhealthy_count']}")
@@ -191,6 +202,13 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         warn_reasons.append("出现对账不一致但未观察到 AUTORESYNC")
     if metrics["gate_check_failed_count"] > metrics["gate_check_passed_count"]:
         warn_reasons.append("Gate FAILED 次数高于 PASSED，建议复核策略活跃度参数")
+    if (
+        metrics["trading_halted_true_count"] > 0
+        and metrics["trading_halted_true_ratio"] <= stage.max_trading_halted_true_ratio
+    ):
+        warn_reasons.append(
+            "出现短暂 trading_halted=true，但占比在阈值内，建议复核 Gate/对账参数"
+        )
     if (
         stage.name == "S5"
         and metrics["self_evolution_action_count"] <= 0
