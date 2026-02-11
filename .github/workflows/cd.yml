@@ -101,7 +101,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
-          source: "docker-compose.prod.yml,deploy/ecs-deploy.sh"
+          source: "docker-compose.prod.yml,deploy/ecs-deploy.sh,observability/**"
           target: "/opt/ai-trade"
 
       - name: Deploy to ECS
@@ -120,5 +120,9 @@ jobs:
           script: |
             set -euo pipefail
             mkdir -p /opt/ai-trade/data
+            # 历史错误兜底：若误把 prometheus.yml 创建成目录，先清理。
+            if [[ -d /opt/ai-trade/observability/prometheus/prometheus.yml ]]; then
+              rm -rf /opt/ai-trade/observability/prometheus/prometheus.yml
+            fi
             chmod +x /opt/ai-trade/deploy/ecs-deploy.sh
             /opt/ai-trade/deploy/ecs-deploy.sh /opt/ai-trade/docker-compose.prod.yml "${DEPLOY_ENV_FILE}"
