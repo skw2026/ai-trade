@@ -89,6 +89,10 @@ if wait_for_healthy; then
 fi
 
 echo "[deploy] deploy failed, start rollback"
+echo "[deploy] container status snapshot:"
+docker ps -a --filter "name=^/${CONTAINER_NAME}$" --no-trunc || true
+echo "[deploy] recent container logs:"
+docker logs --tail 200 "${CONTAINER_NAME}" || true
 if [[ -n "${previous_image}" ]]; then
   upsert_env "AI_TRADE_IMAGE" "${previous_image}"
   "${compose_cmd[@]}" pull "${SERVICE_NAME}" || true
