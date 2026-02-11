@@ -42,7 +42,7 @@
       "id": 1,
       "targets": [
         {
-          "expr": "ai_trade_runtime_equity_usd",
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_runtime_equity_usd\"}",
           "refId": "A"
         }
       ],
@@ -70,7 +70,7 @@
       "id": 2,
       "targets": [
         {
-          "expr": "ai_trade_runtime_drawdown_pct",
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_runtime_drawdown_pct\"}",
           "refId": "A"
         }
       ],
@@ -97,7 +97,7 @@
       "id": 3,
       "targets": [
         {
-          "expr": "ai_trade_runtime_notional_usd",
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_runtime_notional_usd\"}",
           "refId": "A"
         }
       ],
@@ -124,7 +124,7 @@
       "id": 4,
       "targets": [
         {
-          "expr": "ai_trade_runtime_fills_window",
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_runtime_fills_window\"}",
           "refId": "A"
         }
       ],
@@ -153,7 +153,7 @@
       "id": 5,
       "targets": [
         {
-          "expr": "ai_trade_throttle_hit_rate",
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_throttle_hit_rate\"}",
           "refId": "A"
         }
       ],
@@ -180,7 +180,7 @@
       "id": 6,
       "targets": [
         {
-          "expr": "ai_trade_gate_fail_streak",
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_gate_fail_streak\"}",
           "refId": "A"
         }
       ],
@@ -209,7 +209,7 @@
       "id": 7,
       "targets": [
         {
-          "expr": "ai_trade_gate_halted",
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_gate_halted\"}",
           "refId": "A"
         }
       ],
@@ -236,12 +236,12 @@
       "id": 8,
       "targets": [
         {
-          "expr": "increase(ai_trade_event_gate_check_passed_total[$__interval])",
+          "expr": "increase({__name__=~\"(promtail_custom_)?ai_trade_event_gate_check_passed_total\"}[$__interval])",
           "legendFormat": "Gate Pass",
           "refId": "A"
         },
         {
-          "expr": "increase(ai_trade_event_gate_check_failed_total[$__interval])",
+          "expr": "increase({__name__=~\"(promtail_custom_)?ai_trade_event_gate_check_failed_total\"}[$__interval])",
           "legendFormat": "Gate Fail",
           "refId": "B"
         }
@@ -269,7 +269,7 @@
       "id": 9,
       "targets": [
         {
-          "expr": "increase(ai_trade_event_evolution_action_total[$__interval])",
+          "expr": "increase({__name__=~\"(promtail_custom_)?ai_trade_event_evolution_action_total\"}[$__interval])",
           "refId": "A"
         }
       ],
