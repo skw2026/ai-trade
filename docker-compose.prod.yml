@@ -3,7 +3,10 @@ services:
     image: ${AI_TRADE_IMAGE:?AI_TRADE_IMAGE is required}
     container_name: ai-trade
     restart: unless-stopped
-    command: ["--config=config/bybit.demo.evolution.yaml", "--exchange=bybit", "--run_forever"]
+    command:
+      - "--config=${AI_TRADE_CONFIG_PATH:-config/bybit.demo.evolution.yaml}"
+      - "--exchange=${AI_TRADE_EXCHANGE:-bybit}"
+      - "--run_forever"
     environment:
       AI_TRADE_BYBIT_TESTNET_API_KEY: ${AI_TRADE_BYBIT_TESTNET_API_KEY:-}
       AI_TRADE_BYBIT_TESTNET_API_SECRET: ${AI_TRADE_BYBIT_TESTNET_API_SECRET:-}

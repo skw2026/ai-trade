@@ -4,6 +4,9 @@
 # 1) /opt/ai-trade 已部署最新代码；
 # 2) /opt/ai-trade/.env.runtime 已配置；
 # 3) tools/closed_loop_runner.sh 可执行。
+#
+# 推荐直接使用一键安装脚本生成 cron：
+#   ops/cron/install_closed_loop_cron.sh install --repo-dir /opt/ai-trade --compose-file docker-compose.prod.yml --env-file .env.runtime --stage S5
 
 # 每 6 小时做一次运行态验收（S5）
 15 */6 * * * cd /opt/ai-trade && set -a && source .env.runtime && set +a && /opt/ai-trade/tools/closed_loop_runner.sh assess --compose-file docker-compose.prod.yml --env-file .env.runtime --stage S5 --since 6h >> /opt/ai-trade/data/reports/closed_loop/cron.log 2>&1

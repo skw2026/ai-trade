@@ -145,6 +145,14 @@ AI_TRADE_IMAGE=ghcr.io/<owner>/ai-trade:<tag> \
 docker compose -f docker-compose.prod.yml --profile obs up -d ai-trade loki promtail prometheus grafana
 ```
 
+生产编排下切换运行配置（不改 compose 文件）：
+```bash
+cd /opt/ai-trade
+set -a && source .env.runtime && set +a
+export AI_TRADE_CONFIG_PATH=config/bybit.demo.s5.yaml
+docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d ai-trade
+```
+
 ### GitHub Actions + 阿里云 ECS 自动部署
 适用场景：主分支合并后自动构建镜像并发布到 ECS，提升迭代效率与一致性。
 
@@ -295,6 +303,11 @@ tools/closed_loop_runner.sh full --stage S5 --since 4h
 - 每次运行：`data/reports/closed_loop/<UTC_RUN_ID>/`
 - 最新软链接：`data/reports/closed_loop/latest`
 - 总结报告：`data/reports/closed_loop/latest/closed_loop_report.json`
+- 固定入口（无需解析软链接）：
+  - `data/reports/closed_loop/latest_closed_loop_report.json`
+  - `data/reports/closed_loop/latest_runtime_assess.json`
+  - `data/reports/closed_loop/latest_run_meta.json`
+  - `data/reports/closed_loop/latest_run_id`
 
 报告重点（账号盈亏）：
 - `account_outcome.first_equity_usd`
@@ -315,13 +328,27 @@ tools/closed_loop_runner.sh assess \
 cat data/reports/closed_loop/latest/closed_loop_report.json
 ```
 
-定时闭环（cron 示例，每6小时跑一次运行态验收）：
+定时闭环（推荐：一键安装 cron）：
 ```bash
 cd /opt/ai-trade
-(crontab -l 2>/dev/null; echo "15 */6 * * * cd /opt/ai-trade && set -a && source .env.runtime && set +a && /opt/ai-trade/tools/closed_loop_runner.sh assess --compose-file docker-compose.prod.yml --env-file .env.runtime --stage S5 --since 6h >> /opt/ai-trade/data/reports/closed_loop/cron.log 2>&1") | crontab -
+ops/cron/install_closed_loop_cron.sh install \
+  --repo-dir /opt/ai-trade \
+  --compose-file docker-compose.prod.yml \
+  --env-file .env.runtime \
+  --stage S5
 ```
 
-也可直接参考模板：`ops/cron/closed-loop.cron.example`。
+仅保留 assess 定时任务（禁用 full）：
+```bash
+ops/cron/install_closed_loop_cron.sh install --disable-full
+```
+
+卸载定时任务：
+```bash
+ops/cron/install_closed_loop_cron.sh uninstall
+```
+
+模板仍保留：`ops/cron/closed-loop.cron.example`。
 
 GitHub Actions 定时闭环：
 - 工作流：`.github/workflows/closed-loop.yml`

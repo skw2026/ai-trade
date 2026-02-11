@@ -205,6 +205,10 @@ REGISTRY_RESULT_PATH="${RUN_DIR}/model_registry_entry.json"
 ASSESS_LOG_PATH="${RUN_DIR}/runtime.log"
 ASSESS_JSON_PATH="${RUN_DIR}/runtime_assess.json"
 FINAL_REPORT_PATH="${RUN_DIR}/closed_loop_report.json"
+LATEST_REPORT_PATH="${OUTPUT_ROOT}/latest_closed_loop_report.json"
+LATEST_RUNTIME_ASSESS_PATH="${OUTPUT_ROOT}/latest_runtime_assess.json"
+LATEST_META_PATH="${OUTPUT_ROOT}/latest_run_meta.json"
+LATEST_RUN_ID_PATH="${OUTPUT_ROOT}/latest_run_id"
 
 run_fetch() {
   echo "[INFO] R0 fetch start"
@@ -333,6 +337,38 @@ build_summary() {
   fi
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${SUMMARY_ARGS[@]}"
   ln -sfn "${RUN_ID}" "${OUTPUT_ROOT}/latest"
+  cp -f "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
+  if [[ -f "${ASSESS_JSON_PATH}" ]]; then
+    cp -f "${ASSESS_JSON_PATH}" "${LATEST_RUNTIME_ASSESS_PATH}"
+  fi
+  printf '%s\n' "${RUN_ID}" > "${LATEST_RUN_ID_PATH}"
+
+  OVERALL_STATUS="$(
+    grep -m1 -oE '"overall_status"[[:space:]]*:[[:space:]]*"[^"]+"' "${FINAL_REPORT_PATH}" \
+      | sed -E 's/.*"([^"]+)".*/\1/' \
+      || true
+  )"
+  RUNTIME_VERDICT=""
+  if [[ -f "${ASSESS_JSON_PATH}" ]]; then
+    RUNTIME_VERDICT="$(
+      grep -m1 -oE '"verdict"[[:space:]]*:[[:space:]]*"[^"]+"' "${ASSESS_JSON_PATH}" \
+        | sed -E 's/.*"([^"]+)".*/\1/' \
+        || true
+    )"
+  fi
+  cat > "${LATEST_META_PATH}" <<EOF
+{
+  "run_id": "${RUN_ID}",
+  "action": "${ACTION}",
+  "generated_at_utc": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "stage": "${STAGE}",
+  "overall_status": "${OVERALL_STATUS}",
+  "runtime_verdict": "${RUNTIME_VERDICT}",
+  "run_dir": "${RUN_DIR}",
+  "final_report": "${FINAL_REPORT_PATH}",
+  "runtime_assess_report": "${ASSESS_JSON_PATH}"
+}
+EOF
   echo "[INFO] summary report done: ${FINAL_REPORT_PATH}"
 }
 
