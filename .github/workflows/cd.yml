@@ -94,14 +94,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Upload Deployment Files
+      - name: Create Deployment Bundle
+        run: |
+          set -euo pipefail
+          rm -f deploy_bundle.tgz
+          tar -czf deploy_bundle.tgz \
+            docker-compose.prod.yml \
+            deploy/ecs-deploy.sh \
+            observability
+          tar -tzf deploy_bundle.tgz > /tmp/deploy_bundle.list
+          grep -q '^docker-compose.prod.yml$' /tmp/deploy_bundle.list
+          grep -q '^deploy/ecs-deploy.sh$' /tmp/deploy_bundle.list
+          grep -q '^observability/' /tmp/deploy_bundle.list
+
+      - name: Upload Deployment Bundle
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
-          source: "docker-compose.prod.yml,deploy/ecs-deploy.sh,observability"
+          source: "deploy_bundle.tgz"
           target: "/opt/ai-trade"
 
       - name: Deploy to ECS
@@ -119,48 +132,51 @@ jobs:
           envs: AI_TRADE_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE
           script: |
             set -euo pipefail
-            mkdir -p /opt/ai-trade/data
+            DEPLOY_ROOT="/opt/ai-trade"
+            RELEASE_TMP="${DEPLOY_ROOT}/.release_unpack"
+            mkdir -p "${DEPLOY_ROOT}/data"
+            rm -rf "${RELEASE_TMP}"
+            mkdir -p "${RELEASE_TMP}"
 
-            # 某些 scp 场景可能出现 observability/observability 嵌套，做一次扁平化兜底。
-            if [[ -d /opt/ai-trade/observability/observability ]]; then
-              cp -a /opt/ai-trade/observability/observability/. /opt/ai-trade/observability/
-              rm -rf /opt/ai-trade/observability/observability
+            BUNDLE_PATH="$(find "${DEPLOY_ROOT}" -maxdepth 5 -type f -name deploy_bundle.tgz -printf '%T@ %p\n' | sort -nr | head -n1 | awk '{print $2}' || true)"
+            if [[ -z "${BUNDLE_PATH}" ]]; then
+              echo "[deploy] deploy bundle not found under ${DEPLOY_ROOT}"
+              exit 1
             fi
+            echo "[deploy] bundle=${BUNDLE_PATH}"
+            if [[ ! -s "${BUNDLE_PATH}" ]]; then
+              echo "[deploy] deploy bundle is empty: ${BUNDLE_PATH}"
+              exit 1
+            fi
+            tar -xzf "${BUNDLE_PATH}" -C "${RELEASE_TMP}"
 
-            # 历史错误兜底：若文件路径被 Docker 误创建为目录，先清理。
-            for maybe_dir in \
-              /opt/ai-trade/observability/loki/loki-config.yaml \
-              /opt/ai-trade/observability/promtail/promtail-config.yml \
-              /opt/ai-trade/observability/prometheus/prometheus.yml \
-              /opt/ai-trade/observability/prometheus/rules/alerts.yml \
-              /opt/ai-trade/observability/grafana/provisioning/datasources/loki.yaml \
-              /opt/ai-trade/observability/grafana/provisioning/datasources/prometheus.yaml \
-              /opt/ai-trade/observability/grafana/provisioning/dashboards/dashboards.yaml \
-              /opt/ai-trade/observability/grafana/dashboards/ai-trade-runtime.json \
-              /opt/ai-trade/observability/grafana/dashboards/ai-trade-prometheus-runtime.json
-            do
-              if [[ -d "${maybe_dir}" ]]; then
-                rm -rf "${maybe_dir}"
-              fi
-            done
-
-            # 发布前硬校验：缺文件就失败，避免线上起来才报挂载错误。
             for required_file in \
-              /opt/ai-trade/observability/loki/loki-config.yaml \
-              /opt/ai-trade/observability/promtail/promtail-config.yml \
-              /opt/ai-trade/observability/prometheus/prometheus.yml \
-              /opt/ai-trade/observability/prometheus/rules/alerts.yml \
-              /opt/ai-trade/observability/grafana/provisioning/datasources/loki.yaml \
-              /opt/ai-trade/observability/grafana/provisioning/datasources/prometheus.yaml \
-              /opt/ai-trade/observability/grafana/provisioning/dashboards/dashboards.yaml \
-              /opt/ai-trade/observability/grafana/dashboards/ai-trade-runtime.json \
-              /opt/ai-trade/observability/grafana/dashboards/ai-trade-prometheus-runtime.json
+              "${RELEASE_TMP}/docker-compose.prod.yml" \
+              "${RELEASE_TMP}/deploy/ecs-deploy.sh" \
+              "${RELEASE_TMP}/observability/loki/loki-config.yaml" \
+              "${RELEASE_TMP}/observability/promtail/promtail-config.yml" \
+              "${RELEASE_TMP}/observability/prometheus/prometheus.yml" \
+              "${RELEASE_TMP}/observability/prometheus/rules/alerts.yml" \
+              "${RELEASE_TMP}/observability/grafana/provisioning/datasources/loki.yaml" \
+              "${RELEASE_TMP}/observability/grafana/provisioning/datasources/prometheus.yaml" \
+              "${RELEASE_TMP}/observability/grafana/provisioning/dashboards/dashboards.yaml" \
+              "${RELEASE_TMP}/observability/grafana/dashboards/ai-trade-runtime.json" \
+              "${RELEASE_TMP}/observability/grafana/dashboards/ai-trade-prometheus-runtime.json"
             do
               if [[ ! -f "${required_file}" ]]; then
-                echo "[deploy] missing required observability file: ${required_file}"
+                echo "[deploy] missing required file in bundle: ${required_file}"
                 exit 1
               fi
             done
 
-            chmod +x /opt/ai-trade/deploy/ecs-deploy.sh
-            /opt/ai-trade/deploy/ecs-deploy.sh /opt/ai-trade/docker-compose.prod.yml "${DEPLOY_ENV_FILE}"
+            cp -f "${RELEASE_TMP}/docker-compose.prod.yml" "${DEPLOY_ROOT}/docker-compose.prod.yml"
+            mkdir -p "${DEPLOY_ROOT}/deploy"
+            cp -f "${RELEASE_TMP}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
+            rm -rf "${DEPLOY_ROOT}/observability"
+            cp -a "${RELEASE_TMP}/observability" "${DEPLOY_ROOT}/observability"
+
+            find "${DEPLOY_ROOT}" -maxdepth 5 -type f -name deploy_bundle.tgz -delete || true
+            rm -rf "${RELEASE_TMP}"
+
+            chmod +x "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
+            "${DEPLOY_ROOT}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/docker-compose.prod.yml" "${DEPLOY_ENV_FILE}"
