@@ -55,7 +55,7 @@ services:
     profiles: ["obs"]
 
   promtail:
-    image: grafana/promtail:2.9.8
+    image: ${PROMTAIL_IMAGE:-grafana/promtail:3.0.0}
     container_name: ai-trade-promtail
     restart: unless-stopped
     command: ["-config.file=/etc/promtail/promtail-config.yml"]
