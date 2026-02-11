@@ -19,6 +19,7 @@ jobs:
     outputs:
       image_uri: ${{ steps.meta.outputs.image_uri }}
       image_tag: ${{ steps.meta.outputs.image_tag }}
+      deploy_enabled: ${{ steps.deploy_gate.outputs.enabled }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,10 +75,21 @@ jobs:
             ${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}
             ${{ steps.meta.outputs.image_uri }}:latest
 
+      - name: Compute Deploy Gate
+        id: deploy_gate
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ secrets.ECS_HOST }}" && -n "${{ secrets.ECS_USER }}" && -n "${{ secrets.ECS_SSH_KEY }}" ]]; then
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "[warn] Deploy skipped: missing ECS_HOST/ECS_USER/ECS_SSH_KEY secrets."
+          fi
+
   deploy-ecs:
     needs: build-test-push
     runs-on: ubuntu-latest
-    if: ${{ secrets.ECS_HOST != '' && secrets.ECS_USER != '' && secrets.ECS_SSH_KEY != '' }}
+    if: ${{ needs.build-test-push.outputs.deploy_enabled == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
