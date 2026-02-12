@@ -134,6 +134,7 @@ jobs:
           grep -q '^tools/assess_run_log.py$' /tmp/deploy_bundle.list
           grep -q '^tools/model_registry.py$' /tmp/deploy_bundle.list
           grep -q '^tools/build_closed_loop_report.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/build_periodic_summary.py$' /tmp/deploy_bundle.list
 
       - name: Upload Deployment Bundle
         uses: appleboy/scp-action@v0.1.7
@@ -188,6 +189,7 @@ jobs:
               "${RELEASE_TMP}/tools/assess_run_log.py" \
               "${RELEASE_TMP}/tools/model_registry.py" \
               "${RELEASE_TMP}/tools/build_closed_loop_report.py" \
+              "${RELEASE_TMP}/tools/build_periodic_summary.py" \
               "${RELEASE_TMP}/ops/cron/closed-loop.cron.example" \
               "${RELEASE_TMP}/observability/loki/loki-config.yaml" \
               "${RELEASE_TMP}/observability/promtail/promtail-config.yml" \

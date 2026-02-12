@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import sys
@@ -52,10 +53,10 @@ STAGE_RULES: Dict[str, StageRule] = {
 }
 
 RUNTIME_ACCOUNT_RE = re.compile(
+    r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
     r"RUNTIME_STATUS:.*?equity=(?P<equity>-?[0-9]+(?:\.[0-9]+)?), "
     r"drawdown_pct=(?P<drawdown_pct>-?[0-9]+(?:\.[0-9]+)?), "
-    r"notional=(?P<notional>-?[0-9]+(?:\.[0-9]+)?)",
-    flags=re.MULTILINE,
+    r"notional=(?P<notional>-?[0-9]+(?:\.[0-9]+)?)"
 )
 
 
@@ -105,12 +106,14 @@ def max_tick(text: str) -> int:
 
 
 def extract_runtime_account_series(text: str) -> Dict[str, object]:
+    timestamps: list[dt.datetime] = []
     equities: list[float] = []
     drawdowns: list[float] = []
     notionals: list[float] = []
 
     for m in RUNTIME_ACCOUNT_RE.finditer(text):
         try:
+            timestamps.append(dt.datetime.strptime(m.group("ts"), "%Y-%m-%d %H:%M:%S"))
             equities.append(float(m.group("equity")))
             drawdowns.append(float(m.group("drawdown_pct")))
             notionals.append(float(m.group("notional")))
@@ -124,6 +127,13 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
             "last_equity_usd": None,
             "equity_change_usd": None,
             "equity_change_pct": None,
+            "first_sample_utc": None,
+            "last_sample_utc": None,
+            "day_start_equity_usd": None,
+            "equity_change_vs_day_start_usd": None,
+            "equity_change_vs_day_start_pct": None,
+            "max_equity_usd_observed": None,
+            "peak_to_last_drawdown_pct": None,
             "max_drawdown_pct_observed": None,
             "max_abs_notional_usd_observed": None,
         }
@@ -135,6 +145,25 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
     if abs(first_equity) > 1e-12:
         equity_change_pct = equity_change / first_equity
 
+    first_ts = timestamps[0]
+    last_ts = timestamps[-1]
+    current_day = last_ts.date()
+    day_start_index = 0
+    for idx, ts in enumerate(timestamps):
+        if ts.date() == current_day:
+            day_start_index = idx
+            break
+    day_start_equity = equities[day_start_index]
+    equity_change_vs_day_start = last_equity - day_start_equity
+    equity_change_vs_day_start_pct = None
+    if abs(day_start_equity) > 1e-12:
+        equity_change_vs_day_start_pct = equity_change_vs_day_start / day_start_equity
+
+    max_equity_observed = max(equities)
+    peak_to_last_drawdown_pct = None
+    if abs(max_equity_observed) > 1e-12:
+        peak_to_last_drawdown_pct = (max_equity_observed - last_equity) / max_equity_observed
+
     max_drawdown_observed = max(drawdowns) if drawdowns else None
     max_abs_notional_observed = max(abs(x) for x in notionals) if notionals else None
 
@@ -144,6 +173,13 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
         "last_equity_usd": last_equity,
         "equity_change_usd": equity_change,
         "equity_change_pct": equity_change_pct,
+        "first_sample_utc": first_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "last_sample_utc": last_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "day_start_equity_usd": day_start_equity,
+        "equity_change_vs_day_start_usd": equity_change_vs_day_start,
+        "equity_change_vs_day_start_pct": equity_change_vs_day_start_pct,
+        "max_equity_usd_observed": max_equity_observed,
+        "peak_to_last_drawdown_pct": peak_to_last_drawdown_pct,
         "max_drawdown_pct_observed": max_drawdown_observed,
         "max_abs_notional_usd_observed": max_abs_notional_observed,
     }
@@ -157,6 +193,8 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "critical_count": count(r"\bCRITICAL\b", text),
         "trading_halted_event_count": count(r"\bTRADING_HALTED\b", text),
         "trading_halted_true_count": count(r"RUNTIME_STATUS:.*trading_halted=true", text),
+        "gate_reduce_only_true_count": count(r"RUNTIME_STATUS:.*gate_runtime=.*reduce_only=true", text),
+        "gate_halted_true_count": count(r"RUNTIME_STATUS:.*gate_runtime=.*gate_halted=true", text),
         "ws_unhealthy_count": count(
             r"RUNTIME_STATUS:.*(?:public_ws_healthy=false|private_ws_healthy=false)", text
         ),
@@ -169,14 +207,38 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "reconcile_deferred_count": count(r"OMS_RECONCILE_DEFERRED", text),
         "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
+        "integrator_policy_applied_count": count(r"INTEGRATOR_POLICY_APPLIED:", text),
+        "integrator_policy_canary_count": count(
+            r"INTEGRATOR_POLICY_APPLIED:.*mode=canary", text
+        ),
+        "integrator_policy_active_count": count(
+            r"INTEGRATOR_POLICY_APPLIED:.*mode=active", text
+        ),
+        "integrator_mode_off_count": count(r"RUNTIME_STATUS:.*integrator_mode=off", text),
+        "integrator_mode_shadow_count": count(
+            r"RUNTIME_STATUS:.*integrator_mode=shadow", text
+        ),
+        "integrator_mode_canary_count": count(
+            r"RUNTIME_STATUS:.*integrator_mode=canary", text
+        ),
+        "integrator_mode_active_count": count(
+            r"RUNTIME_STATUS:.*integrator_mode=active", text
+        ),
+        "integrator_shadow_scored_runtime_count": count(
+            r"RUNTIME_STATUS:.*shadow_window=\{[^}]*scored=(?:[1-9][0-9]*)", text
+        ),
         "runtime_account_samples": account_pnl["samples"],
     }
     if metrics["runtime_status_count"] > 0:
         metrics["trading_halted_true_ratio"] = (
             metrics["trading_halted_true_count"] / metrics["runtime_status_count"]
         )
+        metrics["integrator_policy_applied_ratio"] = (
+            metrics["integrator_policy_applied_count"] / metrics["runtime_status_count"]
+        )
     else:
         metrics["trading_halted_true_ratio"] = 0.0
+        metrics["integrator_policy_applied_ratio"] = 0.0
     gate_window_count = metrics["gate_check_passed_count"] + metrics["gate_check_failed_count"]
     if gate_window_count > 0:
         metrics["gate_check_fail_ratio"] = (
@@ -216,12 +278,18 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
     # 软告警：不阻断阶段，但需要后续参数/策略动作
     if metrics["reconcile_mismatch_count"] > 0 and metrics["reconcile_autoresync_count"] <= 0:
         warn_reasons.append("出现对账不一致但未观察到 AUTORESYNC")
+    gate_runtime_impact = (
+        metrics["trading_halted_true_count"] > 0
+        or metrics["gate_reduce_only_true_count"] > 0
+        or metrics["gate_halted_true_count"] > 0
+    )
     if (
         gate_window_count >= stage.gate_warn_min_windows
         and metrics["gate_check_fail_ratio"] > stage.gate_warn_max_fail_ratio
+        and gate_runtime_impact
     ):
         warn_reasons.append(
-            "Gate 失败率偏高，建议复核策略活跃度参数: "
+            "Gate 失败率偏高且已触发运行态限制，建议复核策略活跃度/门槛参数: "
             f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
             f"threshold={stage.gate_warn_max_fail_ratio:.4f}"
         )
@@ -238,12 +306,17 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         and metrics["self_evolution_init_count"] > 0
     ):
         warn_reasons.append("未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛")
-    if (
-        metrics["self_evolution_init_count"] <= 0
-        and metrics["self_evolution_action_count"] > 0
-    ):
-        warn_reasons.append("窗口内未见 SELF_EVOLUTION_INIT，但已见 ACTION（可能因日志截窗不含启动段）")
 
+    integrator_takeover_mode_count = (
+        metrics["integrator_mode_canary_count"] + metrics["integrator_mode_active_count"]
+    )
+    if integrator_takeover_mode_count > 0 and metrics["integrator_policy_applied_count"] <= 0:
+        warn_reasons.append("Integrator 处于 canary/active 但未观测到策略接管事件")
+    if (
+        integrator_takeover_mode_count > 0
+        and metrics["integrator_shadow_scored_runtime_count"] <= 0
+    ):
+        warn_reasons.append("Integrator 处于 canary/active 但未观测到 shadow scored>0")
     if fail_reasons:
         verdict = "FAIL"
     elif warn_reasons:
@@ -275,10 +348,17 @@ def print_report(report: Dict[str, object]) -> None:
         print("ACCOUNT_PNL:")
         for key in (
             "samples",
+            "first_sample_utc",
+            "last_sample_utc",
             "first_equity_usd",
             "last_equity_usd",
             "equity_change_usd",
             "equity_change_pct",
+            "day_start_equity_usd",
+            "equity_change_vs_day_start_usd",
+            "equity_change_vs_day_start_pct",
+            "max_equity_usd_observed",
+            "peak_to_last_drawdown_pct",
             "max_drawdown_pct_observed",
             "max_abs_notional_usd_observed",
         ):

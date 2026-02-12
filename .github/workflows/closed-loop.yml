@@ -95,6 +95,12 @@ jobs:
           scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
             "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest/runtime_assess.json" \
             ".artifacts/runtime_assess.json" || true
+          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
+            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" \
+            ".artifacts/daily_summary.json" || true
+          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
+            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_weekly_summary.json" \
+            ".artifacts/weekly_summary.json" || true
           rm -f .artifacts/ecs_key
 
       - name: Upload Closed Loop Artifacts

@@ -95,6 +95,24 @@ struct IntegratorShadowConfig {
   bool enabled{false};
   bool log_model_score{true};
   std::string model_report_path{"./data/research/integrator_report.json"};
+  // 线上激活模型文件路径（用于运行时存在性校验）。
+  std::string model_path{"./data/models/integrator_latest.cbm"};
+  // 线上激活元信息路径（由 model_registry.py 产出）。
+  std::string active_meta_path{"./data/models/integrator_active.json"};
+  // 是否要求模型文件必须存在且非空。
+  bool require_model_file{false};
+  // 是否要求 active_meta 必须存在（canary/active 会强制启用）。
+  bool require_active_meta{false};
+  // 是否要求治理门槛通过（canary/active 会强制启用）。
+  bool require_gate_pass{false};
+  // 治理阈值：最小 AUC 均值。
+  double min_auc_mean{0.50};
+  // 治理阈值：最小 Delta AUC（相对 baseline）。
+  double min_delta_auc_vs_baseline{0.0};
+  // 治理阈值：最少完成训练的 split 数。
+  int min_split_trained_count{1};
+  // 治理阈值：完成训练 split 比例下限（0~1）。
+  double min_split_trained_ratio{0.5};
   double score_gain{1.0};
 };
 

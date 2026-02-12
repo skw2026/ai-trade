@@ -146,6 +146,7 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
         "warn_reasons": warns,
         "stage": payload.get("stage"),
         "verdict": verdict,
+        "metrics": payload.get("metrics", {}),
         "account_pnl": payload.get("account_pnl", {}),
     }
 
@@ -239,10 +240,25 @@ def main() -> int:
         runtime_account_pnl = runtime_section.get("account_pnl", {})
         if isinstance(runtime_account_pnl, dict):
             account_outcome = {
+                "first_sample_utc": runtime_account_pnl.get("first_sample_utc"),
+                "last_sample_utc": runtime_account_pnl.get("last_sample_utc"),
                 "first_equity_usd": runtime_account_pnl.get("first_equity_usd"),
                 "last_equity_usd": runtime_account_pnl.get("last_equity_usd"),
                 "equity_change_usd": runtime_account_pnl.get("equity_change_usd"),
                 "equity_change_pct": runtime_account_pnl.get("equity_change_pct"),
+                "day_start_equity_usd": runtime_account_pnl.get("day_start_equity_usd"),
+                "equity_change_vs_day_start_usd": runtime_account_pnl.get(
+                    "equity_change_vs_day_start_usd"
+                ),
+                "equity_change_vs_day_start_pct": runtime_account_pnl.get(
+                    "equity_change_vs_day_start_pct"
+                ),
+                "max_equity_usd_observed": runtime_account_pnl.get(
+                    "max_equity_usd_observed"
+                ),
+                "peak_to_last_drawdown_pct": runtime_account_pnl.get(
+                    "peak_to_last_drawdown_pct"
+                ),
                 "max_drawdown_pct_observed": runtime_account_pnl.get(
                     "max_drawdown_pct_observed"
                 ),

@@ -275,6 +275,99 @@
       ],
       "title": "Self Evolution Action 计数",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "increase({__name__=~\"(promtail_custom_)?ai_trade_event_integrator_policy_applied_total\"}[$__interval])",
+          "refId": "A"
+        }
+      ],
+      "title": "Integrator 接管计数",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 24
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "increase({__name__=~\"(promtail_custom_)?ai_trade_event_integrator_policy_applied_canary_total\"}[$__interval])",
+          "refId": "A"
+        },
+        {
+          "expr": "increase({__name__=~\"(promtail_custom_)?ai_trade_event_integrator_policy_applied_active_total\"}[$__interval])",
+          "refId": "B"
+        }
+      ],
+      "title": "Integrator Canary/Active 计数",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_integrator_mode_shadow\"}",
+          "refId": "A"
+        },
+        {
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_integrator_mode_canary\"}",
+          "refId": "B"
+        },
+        {
+          "expr": "{__name__=~\"(promtail_custom_)?ai_trade_integrator_mode_active\"}",
+          "refId": "C"
+        }
+      ],
+      "title": "Integrator Mode (0/1)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

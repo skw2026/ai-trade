@@ -117,7 +117,9 @@ class TradeSystem {
     return evolution_weights(RegimeBucket::kRange);
   }
   bool InitializeIntegratorShadow(std::string* out_error) {
-    return integrator_shadow_.Initialize(out_error);
+    const bool strict_takeover = (integrator_config_.mode == IntegratorMode::kCanary ||
+                                  integrator_config_.mode == IntegratorMode::kActive);
+    return integrator_shadow_.Initialize(strict_takeover, out_error);
   }
   IntegratorMode integrator_mode() const { return integrator_config_.mode; }
   void SetIntegratorMode(IntegratorMode mode) { integrator_config_.mode = mode; }

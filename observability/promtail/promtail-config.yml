@@ -43,6 +43,10 @@ scrape_configs:
                 expression: 'throttle_total=\{checks=(?P<throttle_checks>[0-9]+), rejected=(?P<throttle_rejected>[0-9]+), hit_rate=(?P<throttle_hit_rate>-?[0-9]+(?:\.[0-9]+)?)\}'
             - regex:
                 expression: 'evolution=\{enabled=(?P<evolution_enabled>true|false), objective=\{alpha_pnl=(?P<evolution_alpha_pnl>-?[0-9]+(?:\.[0-9]+)?), beta_drawdown=(?P<evolution_beta_drawdown>-?[0-9]+(?:\.[0-9]+)?), gamma_notional_churn=(?P<evolution_gamma_notional_churn>-?[0-9]+(?:\.[0-9]+)?)\}, active_bucket=(?P<active_bucket>[a-z_]+), active_trend_weight=(?P<active_trend_weight>-?[0-9]+(?:\.[0-9]+)?), active_defensive_weight=(?P<active_defensive_weight>-?[0-9]+(?:\.[0-9]+)?),'
+            - regex:
+                expression: 'shadow_window=\{scored=(?P<integrator_scored>[0-9]+), pred_up=(?P<integrator_pred_up>[0-9]+), pred_down=(?P<integrator_pred_down>[0-9]+), policy_applied=(?P<integrator_policy_applied>[0-9]+), policy_canary=(?P<integrator_policy_canary>[0-9]+), policy_active=(?P<integrator_policy_active>[0-9]+),'
+            - regex:
+                expression: 'integrator_mode=(?P<integrator_mode>[a-z_]+),'
             - template:
                 source: trade_ok_num
                 template: '{{ if eq .trade_ok "true" }}1{{ else }}0{{ end }}'
@@ -58,6 +62,15 @@ scrape_configs:
             - template:
                 source: evolution_enabled_num
                 template: '{{ if eq .evolution_enabled "true" }}1{{ else }}0{{ end }}'
+            - template:
+                source: integrator_mode_shadow_num
+                template: '{{ if eq .integrator_mode "shadow" }}1{{ else }}0{{ end }}'
+            - template:
+                source: integrator_mode_canary_num
+                template: '{{ if eq .integrator_mode "canary" }}1{{ else }}0{{ end }}'
+            - template:
+                source: integrator_mode_active_num
+                template: '{{ if eq .integrator_mode "active" }}1{{ else }}0{{ end }}'
             - metrics:
                 ai_trade_runtime_status_total:
                   type: Counter
@@ -167,6 +180,48 @@ scrape_configs:
                   source: active_defensive_weight
                   config:
                     action: set
+                ai_trade_integrator_scored_window:
+                  type: Gauge
+                  description: "Shadow scored count in runtime window"
+                  source: integrator_scored
+                  config:
+                    action: set
+                ai_trade_integrator_policy_applied_window:
+                  type: Gauge
+                  description: "Integrator policy applied count in runtime window"
+                  source: integrator_policy_applied
+                  config:
+                    action: set
+                ai_trade_integrator_policy_canary_window:
+                  type: Gauge
+                  description: "Integrator canary policy applied count in runtime window"
+                  source: integrator_policy_canary
+                  config:
+                    action: set
+                ai_trade_integrator_policy_active_window:
+                  type: Gauge
+                  description: "Integrator active policy applied count in runtime window"
+                  source: integrator_policy_active
+                  config:
+                    action: set
+                ai_trade_integrator_mode_shadow:
+                  type: Gauge
+                  description: "Integrator mode shadow as 0/1"
+                  source: integrator_mode_shadow_num
+                  config:
+                    action: set
+                ai_trade_integrator_mode_canary:
+                  type: Gauge
+                  description: "Integrator mode canary as 0/1"
+                  source: integrator_mode_canary_num
+                  config:
+                    action: set
+                ai_trade_integrator_mode_active:
+                  type: Gauge
+                  description: "Integrator mode active as 0/1"
+                  source: integrator_mode_active_num
+                  config:
+                    action: set
 
       - match:
           selector: '{service="ai-trade"} |= "GATE_CHECK_PASSED:"'
@@ -208,6 +263,39 @@ scrape_configs:
                 ai_trade_event_order_throttled_total:
                   type: Counter
                   description: "Total order throttled events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "INTEGRATOR_POLICY_APPLIED:"'
+          stages:
+            - metrics:
+                ai_trade_event_integrator_policy_applied_total:
+                  type: Counter
+                  description: "Total integrator policy applied events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "INTEGRATOR_POLICY_APPLIED: mode=canary"'
+          stages:
+            - metrics:
+                ai_trade_event_integrator_policy_applied_canary_total:
+                  type: Counter
+                  description: "Total integrator canary policy applied events"
+                  config:
+                    match_all: true
+                    action: inc
+
+      - match:
+          selector: '{service="ai-trade"} |= "INTEGRATOR_POLICY_APPLIED: mode=active"'
+          stages:
+            - metrics:
+                ai_trade_event_integrator_policy_applied_active_total:
+                  type: Counter
+                  description: "Total integrator active policy applied events"
                   config:
                     match_all: true
                     action: inc

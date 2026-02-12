@@ -1176,6 +1176,123 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "integrator" && current_subsection == "shadow" &&
+        (key == "model_path" || key == "active_model_path")) {
+      config.integrator.shadow.model_path = value;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "active_meta_path") {
+      config.integrator.shadow.active_meta_path = value;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "require_model_file") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.require_model_file 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.require_model_file = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "require_active_meta") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.require_active_meta 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.require_active_meta = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "require_gate_pass") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.require_gate_pass 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.require_gate_pass = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "min_auc_mean") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.min_auc_mean 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.min_auc_mean = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "min_delta_auc_vs_baseline") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.min_delta_auc_vs_baseline 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.min_delta_auc_vs_baseline = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "min_split_trained_count") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.min_split_trained_count 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.min_split_trained_count = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "min_split_trained_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.min_split_trained_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.min_split_trained_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
         key == "score_gain") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -1681,6 +1798,27 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.integrator.shadow.min_auc_mean < 0.0 ||
+      config.integrator.shadow.min_auc_mean > 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.shadow.min_auc_mean 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.integrator.shadow.min_split_trained_count < 1) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.shadow.min_split_trained_count 必须 >= 1";
+    }
+    return false;
+  }
+  if (config.integrator.shadow.min_split_trained_ratio < 0.0 ||
+      config.integrator.shadow.min_split_trained_ratio > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.shadow.min_split_trained_ratio 必须在 [0,1] 区间";
+    }
+    return false;
+  }
   if (!config.integrator.enabled) {
     // 兼容旧配置：enabled=false 时强制等价 off。
     config.integrator.mode = IntegratorMode::kOff;
@@ -1728,6 +1866,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.integrator.shadow.model_report_path.empty()) {
     if (out_error != nullptr) {
       *out_error = "integrator.shadow.model_report_path 不能为空";
+    }
+    return false;
+  }
+  if (config.integrator.enabled && config.integrator.shadow.enabled &&
+      config.integrator.shadow.require_model_file &&
+      config.integrator.shadow.model_path.empty()) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.shadow.model_path 不能为空";
+    }
+    return false;
+  }
+  if (config.integrator.enabled && config.integrator.shadow.enabled &&
+      config.integrator.shadow.require_active_meta &&
+      config.integrator.shadow.active_meta_path.empty()) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.shadow.active_meta_path 不能为空";
     }
     return false;
   }

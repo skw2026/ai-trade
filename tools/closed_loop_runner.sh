@@ -58,6 +58,9 @@ ROLLING_STEP_BARS="120"
 
 MIN_AUC_MEAN="0.50"
 MIN_DELTA_AUC_VS_BASELINE="0.0"
+MIN_SPLIT_TRAINED_COUNT="1"
+MIN_SPLIT_TRAINED_RATIO="0.50"
+FAIL_ON_GOVERNANCE="false"
 MAX_MODEL_VERSIONS="20"
 ACTIVATE_ON_PASS="true"
 
@@ -96,6 +99,9 @@ Options:
 
   --min-auc-mean <float>             模型激活门槛 AUC (default: 0.50)
   --min-delta-auc-vs-baseline <f>    模型激活门槛 Delta AUC (default: 0.0)
+  --min-split-trained-count <int>    模型激活门槛 split 训练成功数 (default: 1)
+  --min-split-trained-ratio <float>  模型激活门槛 split 训练成功比例 (default: 0.50)
+  --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
   --max-model-versions <int>         模型历史保留数 (default: 20)
   --activate-on-pass <true|false>    门槛通过后是否激活 (default: true)
 EOF
@@ -155,6 +161,12 @@ while [[ $# -gt 0 ]]; do
       MIN_AUC_MEAN="$2"; shift 2;;
     --min-delta-auc-vs-baseline)
       MIN_DELTA_AUC_VS_BASELINE="$2"; shift 2;;
+    --min-split-trained-count)
+      MIN_SPLIT_TRAINED_COUNT="$2"; shift 2;;
+    --min-split-trained-ratio)
+      MIN_SPLIT_TRAINED_RATIO="$2"; shift 2;;
+    --fail-on-governance)
+      FAIL_ON_GOVERNANCE="$2"; shift 2;;
     --max-model-versions)
       MAX_MODEL_VERSIONS="$2"; shift 2;;
     --activate-on-pass)
@@ -209,6 +221,9 @@ LATEST_REPORT_PATH="${OUTPUT_ROOT}/latest_closed_loop_report.json"
 LATEST_RUNTIME_ASSESS_PATH="${OUTPUT_ROOT}/latest_runtime_assess.json"
 LATEST_META_PATH="${OUTPUT_ROOT}/latest_run_meta.json"
 LATEST_RUN_ID_PATH="${OUTPUT_ROOT}/latest_run_id"
+SUMMARY_OUTPUT_DIR="${OUTPUT_ROOT}/summary"
+LATEST_DAILY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_daily_summary.json"
+LATEST_WEEKLY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_weekly_summary.json"
 
 run_fetch() {
   echo "[INFO] R0 fetch start"
@@ -262,17 +277,26 @@ run_miner() {
 
 run_integrator() {
   echo "[INFO] R2 integrator start"
-  compose_cmd --profile research run --rm ai-trade-research \
-    --csv="${CSV_PATH}" \
-    --miner_report="${MINER_REPORT_PATH}" \
-    --output="${INTEGRATOR_REPORT_PATH}" \
-    --model_out="${MODEL_OUTPUT_PATH}" \
-    --split_method=rolling \
-    --n_splits="${N_SPLITS}" \
-    --train_window_bars="${TRAIN_WINDOW_BARS}" \
-    --test_window_bars="${TEST_WINDOW_BARS}" \
-    --rolling_step_bars="${ROLLING_STEP_BARS}" \
+  INTEGRATOR_ARGS=(
+    --csv="${CSV_PATH}"
+    --miner_report="${MINER_REPORT_PATH}"
+    --output="${INTEGRATOR_REPORT_PATH}"
+    --model_out="${MODEL_OUTPUT_PATH}"
+    --split_method=rolling
+    --n_splits="${N_SPLITS}"
+    --train_window_bars="${TRAIN_WINDOW_BARS}"
+    --test_window_bars="${TEST_WINDOW_BARS}"
+    --rolling_step_bars="${ROLLING_STEP_BARS}"
     --predict_horizon_bars="${PREDICT_HORIZON_BARS}"
+    --min_auc_mean="${MIN_AUC_MEAN}"
+    --min_delta_auc_vs_baseline="${MIN_DELTA_AUC_VS_BASELINE}"
+    --min_split_trained_count="${MIN_SPLIT_TRAINED_COUNT}"
+    --min_split_trained_ratio="${MIN_SPLIT_TRAINED_RATIO}"
+  )
+  if [[ "${FAIL_ON_GOVERNANCE}" == "true" ]]; then
+    INTEGRATOR_ARGS+=(--fail_on_governance)
+  fi
+  compose_cmd --profile research run --rm ai-trade-research "${INTEGRATOR_ARGS[@]}"
   echo "[INFO] R2 integrator done"
 }
 
@@ -286,6 +310,8 @@ run_registry() {
     --max_versions="${MAX_MODEL_VERSIONS}"
     --min_auc_mean="${MIN_AUC_MEAN}"
     --min_delta_auc_vs_baseline="${MIN_DELTA_AUC_VS_BASELINE}"
+    --min_split_trained_count="${MIN_SPLIT_TRAINED_COUNT}"
+    --min_split_trained_ratio="${MIN_SPLIT_TRAINED_RATIO}"
     --registration_out="${REGISTRY_RESULT_PATH}"
   )
   if [[ "${ACTIVATE_ON_PASS}" == "true" ]]; then
@@ -336,10 +362,20 @@ build_summary() {
     SUMMARY_ARGS+=(--runtime_assess_report "${ASSESS_JSON_PATH}")
   fi
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${SUMMARY_ARGS[@]}"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/build_periodic_summary.py \
+    --reports-root "${OUTPUT_ROOT}" \
+    --out-dir "${SUMMARY_OUTPUT_DIR}"
   ln -sfn "${RUN_ID}" "${OUTPUT_ROOT}/latest"
   cp -f "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
     cp -f "${ASSESS_JSON_PATH}" "${LATEST_RUNTIME_ASSESS_PATH}"
+  fi
+  if [[ -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" ]]; then
+    cp -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" "${LATEST_DAILY_SUMMARY_PATH}"
+  fi
+  if [[ -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" ]]; then
+    cp -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" "${LATEST_WEEKLY_SUMMARY_PATH}"
   fi
   printf '%s\n' "${RUN_ID}" > "${LATEST_RUN_ID_PATH}"
 
@@ -366,7 +402,9 @@ build_summary() {
   "runtime_verdict": "${RUNTIME_VERDICT}",
   "run_dir": "${RUN_DIR}",
   "final_report": "${FINAL_REPORT_PATH}",
-  "runtime_assess_report": "${ASSESS_JSON_PATH}"
+  "runtime_assess_report": "${ASSESS_JSON_PATH}",
+  "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
+  "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }
 EOF
   echo "[INFO] summary report done: ${FINAL_REPORT_PATH}"

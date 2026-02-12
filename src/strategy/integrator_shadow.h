@@ -23,9 +23,15 @@ class IntegratorShadow {
    * @brief 初始化影子推理器
    *
    * 当启用时尝试读取 `integrator_report.json` 中的 `model_version`，
-   * 失败由调用方决定是否降级关闭。
+   * 并按配置执行模型/治理一致性校验。
+   *
+   * @param strict_takeover true 时按 canary/active 口径执行强校验：
+   * 1. 模型文件必须存在且非空；
+   * 2. active_meta 必须存在且 `gate.pass=true`；
+   * 3. report 指标必须满足最小治理门槛。
+   * @param out_error 失败原因（用于上层降级日志）
    */
-  bool Initialize(std::string* out_error);
+  bool Initialize(bool strict_takeover, std::string* out_error);
 
   /**
    * @brief 执行影子推理
@@ -47,4 +53,3 @@ class IntegratorShadow {
 };
 
 }  // namespace ai_trade
-

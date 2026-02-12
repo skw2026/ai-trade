@@ -153,6 +153,18 @@ def parse_args() -> argparse.Namespace:
         help="最小 Delta AUC（相对 baseline）门槛",
     )
     register.add_argument(
+        "--min_split_trained_count",
+        type=int,
+        default=1,
+        help="最小训练成功 split 数门槛",
+    )
+    register.add_argument(
+        "--min_split_trained_ratio",
+        type=float,
+        default=0.5,
+        help="最小训练成功 split 比例门槛",
+    )
+    register.add_argument(
         "--activate_on_pass",
         action="store_true",
         help="门槛通过后自动激活为当前版本",
@@ -166,13 +178,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def gate_integrator_report(
-    report: Dict[str, Any], min_auc_mean: float, min_delta_auc_vs_baseline: float
+    report: Dict[str, Any],
+    min_auc_mean: float,
+    min_delta_auc_vs_baseline: float,
+    min_split_trained_count: int,
+    min_split_trained_ratio: float,
 ) -> Tuple[bool, List[str], Dict[str, Any]]:
     metrics = report.get("metrics_oos", {})
+    governance = report.get("governance", {})
     auc_mean = metrics.get("auc_mean")
     delta_auc = metrics.get("delta_auc_vs_baseline")
     trained_count = metrics.get("split_trained_count")
     split_count = metrics.get("split_count")
+    split_trained_ratio = metrics.get("split_trained_ratio")
 
     fail_reasons: List[str] = []
 
@@ -197,6 +215,29 @@ def gate_integrator_report(
         fail_reasons.append(
             f"split 计数异常: split_trained_count={trained_count}, split_count={split_count}"
         )
+    elif trained_count < min_split_trained_count:
+        fail_reasons.append(
+            "split_trained_count="
+            f"{trained_count} < min_split_trained_count={min_split_trained_count}"
+        )
+
+    if not isinstance(split_trained_ratio, (float, int)):
+        if isinstance(trained_count, int) and isinstance(split_count, int) and split_count > 0:
+            split_trained_ratio = float(trained_count) / float(split_count)
+        else:
+            fail_reasons.append("缺少 metrics_oos.split_trained_ratio")
+    if isinstance(split_trained_ratio, (float, int)):
+        ratio_value = float(split_trained_ratio)
+        if ratio_value < min_split_trained_ratio:
+            fail_reasons.append(
+                "split_trained_ratio="
+                f"{ratio_value:.6f} < min_split_trained_ratio={min_split_trained_ratio:.6f}"
+            )
+
+    if isinstance(governance, dict):
+        governance_pass = governance.get("pass")
+        if isinstance(governance_pass, bool) and not governance_pass:
+            fail_reasons.append("integrator_report.governance.pass=false")
 
     gate_pass = len(fail_reasons) == 0
     summary = {
@@ -204,6 +245,7 @@ def gate_integrator_report(
         "delta_auc_vs_baseline": delta_auc,
         "split_trained_count": trained_count,
         "split_count": split_count,
+        "split_trained_ratio": split_trained_ratio,
     }
     return gate_pass, fail_reasons, summary
 
@@ -226,6 +268,16 @@ def prune_old_versions(
 
 
 def run_register(args: argparse.Namespace) -> int:
+    if not (0.0 <= float(args.min_auc_mean) <= 1.0):
+        print("[ERROR] --min_auc_mean 必须在 [0,1] 范围", file=sys.stderr)
+        return 2
+    if not (0.0 <= float(args.min_split_trained_ratio) <= 1.0):
+        print("[ERROR] --min_split_trained_ratio 必须在 [0,1] 范围", file=sys.stderr)
+        return 2
+    if int(args.min_split_trained_count) <= 0:
+        print("[ERROR] --min_split_trained_count 必须大于 0", file=sys.stderr)
+        return 2
+
     model_file = Path(args.model_file)
     integrator_report_path = Path(args.integrator_report)
     miner_report_path = Path(args.miner_report) if args.miner_report else None
@@ -246,7 +298,11 @@ def run_register(args: argparse.Namespace) -> int:
     factor_set_version = str(report.get("factor_set_version", "unknown_factor_set"))
 
     gate_pass, gate_fail_reasons, metric_summary = gate_integrator_report(
-        report, args.min_auc_mean, args.min_delta_auc_vs_baseline
+        report,
+        args.min_auc_mean,
+        args.min_delta_auc_vs_baseline,
+        args.min_split_trained_count,
+        args.min_split_trained_ratio,
     )
 
     created_at = now_utc_iso()
@@ -292,6 +348,8 @@ def run_register(args: argparse.Namespace) -> int:
                 "pass": gate_pass,
                 "min_auc_mean": args.min_auc_mean,
                 "min_delta_auc_vs_baseline": args.min_delta_auc_vs_baseline,
+                "min_split_trained_count": args.min_split_trained_count,
+                "min_split_trained_ratio": args.min_split_trained_ratio,
                 "fail_reasons": gate_fail_reasons,
             },
         }
@@ -323,6 +381,8 @@ def run_register(args: argparse.Namespace) -> int:
             "pass": gate_pass,
             "min_auc_mean": args.min_auc_mean,
             "min_delta_auc_vs_baseline": args.min_delta_auc_vs_baseline,
+            "min_split_trained_count": args.min_split_trained_count,
+            "min_split_trained_ratio": args.min_split_trained_ratio,
             "fail_reasons": gate_fail_reasons,
             "metric_summary": metric_summary,
         },

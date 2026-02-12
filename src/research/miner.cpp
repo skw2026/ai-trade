@@ -435,27 +435,69 @@ std::vector<Candidate> BuildCandidates(const std::vector<double>& close,
   const std::vector<double> delay1 = TsDelay(close, 1);
   const std::vector<double> delta1 = TsDelta(close, 1);
   const std::vector<double> delta3 = TsDelta(close, 3);
+  const std::vector<double> vdelay1 = TsDelay(volume, 1);
+  const std::vector<double> vdelay3 = TsDelay(volume, 3);
   const std::vector<double> vdelta1 = TsDelta(volume, 1);
+  const std::vector<double> vdelta3 = TsDelta(volume, 3);
   const std::vector<double> rank5 = TsRank(close, 5);
   const std::vector<double> rank10 = TsRank(close, 10);
   const std::vector<double> rank20 = TsRank(close, 20);
+  const std::vector<double> vrank5 = TsRank(volume, 5);
+  const std::vector<double> vrank10 = TsRank(volume, 10);
+  const std::vector<double> vrank20 = TsRank(volume, 20);
   const std::vector<double> corr_cv_10 = TsCorr(close, volume, 10);
+  const std::vector<double> corr_cv_20 = TsCorr(close, volume, 20);
   const std::vector<double> corr_dv_10 = TsCorr(delta1, vdelta1, 10);
+  const std::vector<double> corr_close_vdelta_10 = TsCorr(close, vdelta1, 10);
+  const std::vector<double> corr_delta1_volume_20 = TsCorr(delta1, volume, 20);
   const std::vector<double> rank_delta1_10 = TsRank(delta1, 10);
+  const std::vector<double> ret1_norm =
+      ElementWiseBinary(delta1,
+                        ElementWiseAbs(delay1),
+                        [](double a, double b) { return SafeDiv(a, b + 1e-9); });
+  const std::vector<double> volume_mom_1 =
+      ElementWiseBinary(vdelta1,
+                        ElementWiseAbs(vdelay1),
+                        [](double a, double b) { return SafeDiv(a, b + 1e-9); });
+  const std::vector<double> volume_mom_3 =
+      ElementWiseBinary(vdelta3,
+                        ElementWiseAbs(vdelay3),
+                        [](double a, double b) { return SafeDiv(a, b + 1e-9); });
 
   candidates.push_back({"ts_delay(close,1)", delay1, 1.0});
   candidates.push_back({"ts_delta(close,1)", delta1, 1.0});
   candidates.push_back({"ts_delta(close,3)", delta3, 1.0});
   candidates.push_back({"ts_rank(close,10)", rank10, 1.0});
+  candidates.push_back({"ts_delta(volume,1)", vdelta1, 1.0});
+  candidates.push_back({"ts_delta(volume,3)", vdelta3, 1.0});
+  candidates.push_back({"ts_rank(volume,10)", vrank10, 1.0});
   candidates.push_back({"ts_corr(close,volume,10)", corr_cv_10, 1.0});
+  candidates.push_back({"ts_corr(close,volume,20)", corr_cv_20, 1.0});
+  candidates.push_back({"ts_corr(close,ts_delta(volume,1),10)",
+                        corr_close_vdelta_10,
+                        2.0});
   candidates.push_back({"ts_rank(ts_delta(close,1),10)", rank_delta1_10, 2.0});
   candidates.push_back({"ts_corr(ts_delta(close,1),ts_delta(volume,1),10)",
                         corr_dv_10,
+                        3.0});
+  candidates.push_back({"ts_corr(ts_delta(close,1),volume,20)",
+                        corr_delta1_volume_20,
                         3.0});
 
   candidates.push_back({"ts_delta(close,1)-ts_delta(close,3)",
                         ElementWiseBinary(delta1,
                                           delta3,
+                                          [](double a, double b) {
+                                            if (!IsFinite(a) || !IsFinite(b)) {
+                                              return NaN();
+                                            }
+                                            return a - b;
+                                          }),
+                        2.0});
+
+  candidates.push_back({"ts_rank(volume,20)-ts_rank(volume,5)",
+                        ElementWiseBinary(vrank20,
+                                          vrank5,
                                           [](double a, double b) {
                                             if (!IsFinite(a) || !IsFinite(b)) {
                                               return NaN();
@@ -475,11 +517,33 @@ std::vector<Candidate> BuildCandidates(const std::vector<double>& close,
                                           }),
                         2.0});
 
+  candidates.push_back({"ts_delta(close,1)/(abs(ts_delay(close,1))+1e-9)",
+                        ret1_norm,
+                        2.0});
+  candidates.push_back({"ts_delta(volume,1)/(abs(ts_delay(volume,1))+1e-9)",
+                        volume_mom_1,
+                        2.0});
+  candidates.push_back({"ts_delta(volume,3)/(abs(ts_delay(volume,3))+1e-9)",
+                        volume_mom_3,
+                        2.0});
   candidates.push_back(
-      {"ts_delta(close,1)/(abs(ts_delay(close,1))+1e-9)",
-       ElementWiseBinary(delta1,
-                         ElementWiseAbs(delay1),
-                         [](double a, double b) { return SafeDiv(a, b + 1e-9); }),
+      {"(ts_delta(close,1)/(abs(ts_delay(close,1))+1e-9))*"
+       "(ts_delta(volume,1)/(abs(ts_delay(volume,1))+1e-9))",
+       ElementWiseBinary(ret1_norm, volume_mom_1, [](double a, double b) {
+         if (!IsFinite(a) || !IsFinite(b)) {
+           return NaN();
+         }
+         return a * b;
+       }),
+       3.0});
+  candidates.push_back(
+      {"ts_rank(volume,20)-ts_rank(close,20)",
+       ElementWiseBinary(vrank20, rank20, [](double a, double b) {
+         if (!IsFinite(a) || !IsFinite(b)) {
+           return NaN();
+         }
+         return a - b;
+       }),
        2.0});
 
   return candidates;

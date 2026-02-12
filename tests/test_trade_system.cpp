@@ -56,6 +56,37 @@ ai_trade::FillEvent ToFill(const ai_trade::OrderIntent& intent,
   return fill;
 }
 
+bool WriteIntegratorReportFile(const std::filesystem::path& path,
+                               double auc_mean,
+                               double delta_auc,
+                               int split_trained_count,
+                               int split_count,
+                               std::string* out_error) {
+  std::ofstream out(path);
+  if (!out.is_open()) {
+    if (out_error != nullptr) {
+      *out_error = "无法写入 integrator_report: " + path.string();
+    }
+    return false;
+  }
+  out << "{\n"
+      << "  \"model_version\": \"integrator_cb_v1_test\",\n"
+      << "  \"metrics_oos\": {\n"
+      << "    \"auc_mean\": " << auc_mean << ",\n"
+      << "    \"delta_auc_vs_baseline\": " << delta_auc << ",\n"
+      << "    \"split_trained_count\": " << split_trained_count << ",\n"
+      << "    \"split_count\": " << split_count << "\n"
+      << "  }\n"
+      << "}\n";
+  if (!out.good()) {
+    if (out_error != nullptr) {
+      *out_error = "写入 integrator_report 失败: " + path.string();
+    }
+    return false;
+  }
+  return true;
+}
+
 class ScopedEnvVar {
  public:
   ScopedEnvVar(std::string key, std::string value) : key_(std::move(key)) {
@@ -1383,6 +1414,15 @@ int main() {
         << "    enabled: true\n"
         << "    log_model_score: false\n"
         << "    model_report_path: \"./data/research/integrator_report.json\"\n"
+        << "    model_path: \"./data/models/integrator_latest.cbm\"\n"
+        << "    active_meta_path: \"./data/models/integrator_active.json\"\n"
+        << "    require_model_file: true\n"
+        << "    require_active_meta: true\n"
+        << "    require_gate_pass: true\n"
+        << "    min_auc_mean: 0.53\n"
+        << "    min_delta_auc_vs_baseline: 0.02\n"
+        << "    min_split_trained_count: 3\n"
+        << "    min_split_trained_ratio: 0.70\n"
         << "    score_gain: 1.2\n"
         << "self_evolution:\n"
         << "  enabled: true\n"
@@ -1470,6 +1510,17 @@ int main() {
         config.integrator.shadow.log_model_score != false ||
         config.integrator.shadow.model_report_path !=
             "./data/research/integrator_report.json" ||
+        config.integrator.shadow.model_path !=
+            "./data/models/integrator_latest.cbm" ||
+        config.integrator.shadow.active_meta_path !=
+            "./data/models/integrator_active.json" ||
+        config.integrator.shadow.require_model_file != true ||
+        config.integrator.shadow.require_active_meta != true ||
+        config.integrator.shadow.require_gate_pass != true ||
+        !NearlyEqual(config.integrator.shadow.min_auc_mean, 0.53) ||
+        !NearlyEqual(config.integrator.shadow.min_delta_auc_vs_baseline, 0.02) ||
+        config.integrator.shadow.min_split_trained_count != 3 ||
+        !NearlyEqual(config.integrator.shadow.min_split_trained_ratio, 0.70) ||
         !NearlyEqual(config.integrator.shadow.score_gain, 1.2) ||
         config.self_evolution.enabled != true ||
         config.self_evolution.update_interval_ticks != 88 ||
@@ -3594,6 +3645,225 @@ int main() {
       std::cerr << "Spearman IC 负相关计算不符合预期\n";
       return 1;
     }
+  }
+
+  {
+    // canary：高置信同向时应按比例接管。
+    const std::filesystem::path report_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_integrator_report_canary_applied.json";
+    std::string report_error;
+    if (!WriteIntegratorReportFile(report_path,
+                                   /*auc_mean=*/0.62,
+                                   /*delta_auc=*/0.03,
+                                   /*split_trained_count=*/5,
+                                   /*split_count=*/5,
+                                   &report_error)) {
+      std::cerr << report_error << "\n";
+      return 1;
+    }
+
+    ai_trade::IntegratorConfig integrator;
+    integrator.enabled = true;
+    integrator.mode = ai_trade::IntegratorMode::kShadow;
+    integrator.canary_notional_ratio = 0.35;
+    integrator.canary_confidence_threshold = 0.30;
+    integrator.canary_allow_countertrend = false;
+    integrator.shadow.enabled = true;
+    integrator.shadow.model_report_path = report_path.string();
+    integrator.shadow.score_gain = 1.0;
+
+    ai_trade::RegimeConfig regime_config;
+    regime_config.enabled = false;
+    ai_trade::TradeSystem system(/*risk_cap_usd=*/3000.0,
+                                 /*max_order_notional_usd=*/1000.0,
+                                 ai_trade::RiskThresholds{},
+                                 ai_trade::StrategyConfig{},
+                                 /*min_rebalance_notional_usd=*/0.0,
+                                 regime_config,
+                                 integrator);
+    std::string init_error;
+    if (!system.InitializeIntegratorShadow(&init_error)) {
+      std::cerr << "Integrator 初始化预期成功，错误: " << init_error << "\n";
+      return 1;
+    }
+    system.SetIntegratorMode(ai_trade::IntegratorMode::kCanary);
+
+    (void)system.Evaluate(ai_trade::MarketEvent{1, "BTCUSDT", 100.0, 100.0}, true);
+    const auto decision =
+        system.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0}, true);
+    if (!decision.integrator_policy_applied ||
+        decision.integrator_policy_reason != "canary_applied") {
+      std::cerr << "canary 高置信同向预期应接管\n";
+      return 1;
+    }
+    if (!NearlyEqual(decision.base_signal.suggested_notional_usd, 1000.0) ||
+        !NearlyEqual(decision.signal.suggested_notional_usd, 350.0)) {
+      std::cerr << "canary 接管后名义值不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(report_path);
+  }
+
+  {
+    // canary：若不允许反向且模型方向与原策略相反，应拒绝接管。
+    const std::filesystem::path report_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_integrator_report_canary_countertrend.json";
+    std::string report_error;
+    if (!WriteIntegratorReportFile(report_path,
+                                   /*auc_mean=*/0.62,
+                                   /*delta_auc=*/0.03,
+                                   /*split_trained_count=*/5,
+                                   /*split_count=*/5,
+                                   &report_error)) {
+      std::cerr << report_error << "\n";
+      return 1;
+    }
+
+    ai_trade::IntegratorConfig integrator;
+    integrator.enabled = true;
+    integrator.mode = ai_trade::IntegratorMode::kShadow;
+    integrator.canary_notional_ratio = 0.35;
+    integrator.canary_confidence_threshold = 0.30;
+    integrator.canary_allow_countertrend = false;
+    integrator.shadow.enabled = true;
+    integrator.shadow.model_report_path = report_path.string();
+    // 负增益用于构造“与 base 反向”的模型输出，验证拦截逻辑。
+    integrator.shadow.score_gain = -1.0;
+
+    ai_trade::RegimeConfig regime_config;
+    regime_config.enabled = false;
+    ai_trade::TradeSystem system(/*risk_cap_usd=*/3000.0,
+                                 /*max_order_notional_usd=*/1000.0,
+                                 ai_trade::RiskThresholds{},
+                                 ai_trade::StrategyConfig{},
+                                 /*min_rebalance_notional_usd=*/0.0,
+                                 regime_config,
+                                 integrator);
+    std::string init_error;
+    if (!system.InitializeIntegratorShadow(&init_error)) {
+      std::cerr << "Integrator 初始化预期成功，错误: " << init_error << "\n";
+      return 1;
+    }
+    system.SetIntegratorMode(ai_trade::IntegratorMode::kCanary);
+
+    (void)system.Evaluate(ai_trade::MarketEvent{1, "BTCUSDT", 100.0, 100.0}, true);
+    const auto decision =
+        system.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0}, true);
+    if (decision.integrator_policy_applied ||
+        decision.integrator_policy_reason != "canary_countertrend_blocked") {
+      std::cerr << "canary 反向拦截逻辑不符合预期\n";
+      return 1;
+    }
+    if (!NearlyEqual(decision.signal.suggested_notional_usd,
+                     decision.base_signal.suggested_notional_usd)) {
+      std::cerr << "canary 反向拦截后不应修改原策略信号\n";
+      return 1;
+    }
+
+    std::filesystem::remove(report_path);
+  }
+
+  {
+    // active：低置信应归零；高置信应按 |confidence| 缩放接管。
+    const std::filesystem::path report_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_integrator_report_active_policy.json";
+    std::string report_error;
+    if (!WriteIntegratorReportFile(report_path,
+                                   /*auc_mean=*/0.62,
+                                   /*delta_auc=*/0.03,
+                                   /*split_trained_count=*/5,
+                                   /*split_count=*/5,
+                                   &report_error)) {
+      std::cerr << report_error << "\n";
+      return 1;
+    }
+
+    ai_trade::RegimeConfig regime_config;
+    regime_config.enabled = false;
+
+    {
+      ai_trade::IntegratorConfig integrator_low;
+      integrator_low.enabled = true;
+      integrator_low.mode = ai_trade::IntegratorMode::kShadow;
+      integrator_low.active_confidence_threshold = 0.60;
+      integrator_low.shadow.enabled = true;
+      integrator_low.shadow.model_report_path = report_path.string();
+      integrator_low.shadow.score_gain = 1.0;
+
+      ai_trade::TradeSystem system_low(/*risk_cap_usd=*/3000.0,
+                                       /*max_order_notional_usd=*/1000.0,
+                                       ai_trade::RiskThresholds{},
+                                       ai_trade::StrategyConfig{},
+                                       /*min_rebalance_notional_usd=*/0.0,
+                                       regime_config,
+                                       integrator_low);
+      std::string init_error;
+      if (!system_low.InitializeIntegratorShadow(&init_error)) {
+        std::cerr << "Integrator 初始化预期成功，错误: " << init_error << "\n";
+        return 1;
+      }
+      system_low.SetIntegratorMode(ai_trade::IntegratorMode::kActive);
+      (void)system_low.Evaluate(
+          ai_trade::MarketEvent{1, "BTCUSDT", 100.0, 100.0}, true);
+      const auto decision_low =
+          system_low.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0},
+                              true);
+      if (!decision_low.integrator_policy_applied ||
+          decision_low.integrator_policy_reason != "active_low_confidence_to_flat" ||
+          !NearlyEqual(decision_low.signal.suggested_notional_usd, 0.0) ||
+          decision_low.signal.direction != 0) {
+        std::cerr << "active 低置信归零逻辑不符合预期\n";
+        return 1;
+      }
+    }
+
+    {
+      ai_trade::IntegratorConfig integrator_high;
+      integrator_high.enabled = true;
+      integrator_high.mode = ai_trade::IntegratorMode::kShadow;
+      integrator_high.active_confidence_threshold = 0.20;
+      integrator_high.shadow.enabled = true;
+      integrator_high.shadow.model_report_path = report_path.string();
+      integrator_high.shadow.score_gain = 2.0;
+
+      ai_trade::TradeSystem system_high(/*risk_cap_usd=*/3000.0,
+                                        /*max_order_notional_usd=*/1000.0,
+                                        ai_trade::RiskThresholds{},
+                                        ai_trade::StrategyConfig{},
+                                        /*min_rebalance_notional_usd=*/0.0,
+                                        regime_config,
+                                        integrator_high);
+      std::string init_error;
+      if (!system_high.InitializeIntegratorShadow(&init_error)) {
+        std::cerr << "Integrator 初始化预期成功，错误: " << init_error << "\n";
+        return 1;
+      }
+      system_high.SetIntegratorMode(ai_trade::IntegratorMode::kActive);
+      (void)system_high.Evaluate(
+          ai_trade::MarketEvent{1, "BTCUSDT", 100.0, 100.0}, true);
+      const auto decision_high =
+          system_high.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0},
+                               true);
+      const double expected_notional =
+          std::fabs(decision_high.integrator_confidence) *
+          std::fabs(decision_high.base_signal.suggested_notional_usd);
+      if (!decision_high.integrator_policy_applied ||
+          decision_high.integrator_policy_reason != "active_applied" ||
+          decision_high.integrator_confidence <=
+              integrator_high.active_confidence_threshold ||
+          !NearlyEqual(std::fabs(decision_high.signal.suggested_notional_usd),
+                       expected_notional,
+                       1e-6)) {
+        std::cerr << "active 高置信缩放接管逻辑不符合预期\n";
+        return 1;
+      }
+    }
+
+    std::filesystem::remove(report_path);
   }
 
   {

@@ -508,6 +508,53 @@ def class_count(values: np.ndarray) -> Dict[int, int]:
     return result
 
 
+def evaluate_governance(
+    metrics_oos: Dict[str, float],
+    min_auc_mean: float,
+    min_delta_auc_vs_baseline: float,
+    min_split_trained_count: int,
+    min_split_trained_ratio: float,
+) -> Tuple[bool, List[str]]:
+    fail_reasons: List[str] = []
+    auc_mean = metrics_oos.get("auc_mean", float("nan"))
+    delta_auc = metrics_oos.get("delta_auc_vs_baseline", float("nan"))
+    split_trained_count = metrics_oos.get("split_trained_count", float("nan"))
+    split_trained_ratio = metrics_oos.get("split_trained_ratio", float("nan"))
+
+    if not math.isfinite(auc_mean):
+        fail_reasons.append("缺少或无效 metrics_oos.auc_mean")
+    elif auc_mean < min_auc_mean:
+        fail_reasons.append(
+            f"auc_mean={auc_mean:.6f} < min_auc_mean={min_auc_mean:.6f}"
+        )
+
+    if not math.isfinite(delta_auc):
+        fail_reasons.append("缺少或无效 metrics_oos.delta_auc_vs_baseline")
+    elif delta_auc < min_delta_auc_vs_baseline:
+        fail_reasons.append(
+            "delta_auc_vs_baseline="
+            f"{delta_auc:.6f} < min_delta_auc_vs_baseline={min_delta_auc_vs_baseline:.6f}"
+        )
+
+    if not math.isfinite(split_trained_count):
+        fail_reasons.append("缺少或无效 metrics_oos.split_trained_count")
+    elif int(round(split_trained_count)) < min_split_trained_count:
+        fail_reasons.append(
+            "split_trained_count="
+            f"{int(round(split_trained_count))} < min_split_trained_count={min_split_trained_count}"
+        )
+
+    if not math.isfinite(split_trained_ratio):
+        fail_reasons.append("缺少或无效 metrics_oos.split_trained_ratio")
+    elif split_trained_ratio < min_split_trained_ratio:
+        fail_reasons.append(
+            "split_trained_ratio="
+            f"{split_trained_ratio:.6f} < min_split_trained_ratio={min_split_trained_ratio:.6f}"
+        )
+
+    return len(fail_reasons) == 0, fail_reasons
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="CatBoost Integrator 离线训练（R2）")
     parser.add_argument("--csv", required=True, help="研究数据 CSV 路径（OHLCV）")
@@ -530,6 +577,30 @@ def main() -> int:
     parser.add_argument("--depth", type=int, default=6, help="CatBoost 树深")
     parser.add_argument("--learning_rate", type=float, default=0.05, help="CatBoost 学习率")
     parser.add_argument("--random_seed", type=int, default=42, help="随机种子")
+    parser.add_argument("--min_auc_mean", type=float, default=0.50, help="治理门槛：最小 AUC 均值")
+    parser.add_argument(
+        "--min_delta_auc_vs_baseline",
+        type=float,
+        default=0.0,
+        help="治理门槛：最小 Delta AUC（相对 baseline）",
+    )
+    parser.add_argument(
+        "--min_split_trained_count",
+        type=int,
+        default=1,
+        help="治理门槛：最小成功训练 split 数",
+    )
+    parser.add_argument(
+        "--min_split_trained_ratio",
+        type=float,
+        default=0.5,
+        help="治理门槛：最小成功训练 split 比例",
+    )
+    parser.add_argument(
+        "--fail_on_governance",
+        action="store_true",
+        help="治理门槛不通过时返回非零退出码",
+    )
     parser.add_argument(
         "--min_samples",
         type=int,
@@ -558,6 +629,12 @@ def main() -> int:
     model_out_path = pathlib.Path(args.model_out)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     model_out_path.parent.mkdir(parents=True, exist_ok=True)
+    if not (0.0 <= float(args.min_auc_mean) <= 1.0):
+        raise ValueError("--min_auc_mean 必须在 [0,1] 范围")
+    if not (0.0 <= float(args.min_split_trained_ratio) <= 1.0):
+        raise ValueError("--min_split_trained_ratio 必须在 [0,1] 范围")
+    if int(args.min_split_trained_count) <= 0:
+        raise ValueError("--min_split_trained_count 必须大于 0")
 
     series = load_ohlcv_csv(csv_path)
     factor_set_version, factor_specs = load_factor_specs(miner_report_path, max(1, args.top_k))
@@ -761,7 +838,29 @@ def main() -> int:
         - mean_ignore_nan(baseline_auc_values),
         "split_trained_count": trained_split_count,
         "split_count": len(split_reports),
+        "split_trained_ratio": (
+            float(trained_split_count) / float(len(split_reports))
+            if len(split_reports) > 0
+            else float("nan")
+        ),
         "splits": split_reports,
+    }
+    governance_pass, governance_fail_reasons = evaluate_governance(
+        metrics_oos=metrics_oos,
+        min_auc_mean=float(args.min_auc_mean),
+        min_delta_auc_vs_baseline=float(args.min_delta_auc_vs_baseline),
+        min_split_trained_count=int(args.min_split_trained_count),
+        min_split_trained_ratio=float(args.min_split_trained_ratio),
+    )
+    governance = {
+        "pass": governance_pass,
+        "fail_reasons": governance_fail_reasons,
+        "thresholds": {
+            "min_auc_mean": float(args.min_auc_mean),
+            "min_delta_auc_vs_baseline": float(args.min_delta_auc_vs_baseline),
+            "min_split_trained_count": int(args.min_split_trained_count),
+            "min_split_trained_ratio": float(args.min_split_trained_ratio),
+        },
     }
 
     report_payload = {
@@ -795,6 +894,7 @@ def main() -> int:
             "random_seed": int(args.random_seed),
         },
         "metrics_oos": metrics_oos,
+        "governance": governance,
         "feature_importance": feature_importance,
         "feature_names": feature_names,
         "model_out": str(model_out_path),
@@ -808,6 +908,17 @@ def main() -> int:
         f"model_version={model_version}, feature_schema_version={feature_schema_version}, "
         f"output={output_path}, model_out={model_out_path}"
     )
+    log_info(
+        "INTEGRATOR_GOVERNANCE: "
+        f"pass={str(governance_pass).lower()}, "
+        f"fail_reasons={len(governance_fail_reasons)}"
+    )
+    if args.fail_on_governance and not governance_pass:
+        print(
+            "[ERROR] 治理门槛未通过: " + "; ".join(governance_fail_reasons),
+            file=sys.stderr,
+        )
+        return 3
     return 0
 
 

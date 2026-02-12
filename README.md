@@ -308,13 +308,32 @@ tools/closed_loop_runner.sh full --stage S5 --since 4h
   - `data/reports/closed_loop/latest_runtime_assess.json`
   - `data/reports/closed_loop/latest_run_meta.json`
   - `data/reports/closed_loop/latest_run_id`
+  - `data/reports/closed_loop/latest_daily_summary.json`
+  - `data/reports/closed_loop/latest_weekly_summary.json`
+
+手动重建日报/周报摘要（通常不需要，闭环脚本会自动生成）：
+```bash
+python3 tools/build_periodic_summary.py \
+  --reports-root ./data/reports/closed_loop \
+  --out-dir ./data/reports/closed_loop/summary
+```
 
 报告重点（账号盈亏）：
+- `account_outcome.first_sample_utc` / `account_outcome.last_sample_utc`
 - `account_outcome.first_equity_usd`
 - `account_outcome.last_equity_usd`
 - `account_outcome.equity_change_usd`
 - `account_outcome.equity_change_pct`
+- `account_outcome.day_start_equity_usd`
+- `account_outcome.equity_change_vs_day_start_usd`
+- `account_outcome.equity_change_vs_day_start_pct`
+- `account_outcome.max_equity_usd_observed`
+- `account_outcome.peak_to_last_drawdown_pct`
 - `account_outcome.max_drawdown_pct_observed`
+
+`runtime.warn_reasons` 中的 Gate 失败率告警已按“运行态影响”收敛：
+- 仅当 Gate 失败率偏高且窗口内出现 `reduce_only/gate_halted/trading_halted` 时才给黄灯，
+- 纯“低活跃但未触发限制”的情况不再误报黄灯。
 
 ECS 一键验收（已部署 `docker-compose.prod.yml` 场景）：
 ```bash
@@ -326,6 +345,8 @@ tools/closed_loop_runner.sh assess \
   --stage S5 \
   --since 4h
 cat data/reports/closed_loop/latest/closed_loop_report.json
+cat data/reports/closed_loop/latest_daily_summary.json
+cat data/reports/closed_loop/latest_weekly_summary.json
 ```
 
 定时闭环（推荐：一键安装 cron）：
