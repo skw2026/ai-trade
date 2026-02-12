@@ -109,11 +109,11 @@ class TradeSystem {
                                     double defensive_weight,
                                     std::string* out_error);
   /// 获取单个 Regime bucket 的自进化权重。
-  std::pair<double, double> evolution_weights(RegimeBucket bucket) const;
+  EvolutionWeights evolution_weights(RegimeBucket bucket) const;
   /// 获取三桶权重快照（Trend/Range/Extreme）。
-  std::array<std::pair<double, double>, 3> evolution_weights_all() const;
+  std::array<EvolutionWeights, 3> evolution_weights_all() const;
   /// 兼容旧调用：默认返回 RANGE bucket 权重。
-  std::pair<double, double> evolution_weights() const {
+  EvolutionWeights evolution_weights() const {
     return evolution_weights(RegimeBucket::kRange);
   }
   bool InitializeIntegratorShadow(std::string* out_error) {
@@ -139,10 +139,10 @@ class TradeSystem {
   RiskEngine risk_;  ///< 风控引擎。
   bool evolution_enabled_{false};  ///< 是否启用自进化权重缩放。
   // Regime 分桶权重：索引顺序固定为 Trend/Range/Extreme。
-  std::array<std::pair<double, double>, 3> evolution_weights_by_bucket_{
-      std::pair<double, double>{1.0, 0.0},
-      std::pair<double, double>{1.0, 0.0},
-      std::pair<double, double>{1.0, 0.0},
+  std::array<EvolutionWeights, 3> evolution_weights_by_bucket_{
+      EvolutionWeights{1.0, 0.0},
+      EvolutionWeights{1.0, 0.0},
+      EvolutionWeights{1.0, 0.0},
   };
   // 账户级总名义敞口上限（gross），用于多币种场景的统一预算裁剪。
   double max_account_gross_notional_usd_{3000.0};

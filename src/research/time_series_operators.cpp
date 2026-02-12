@@ -161,4 +161,84 @@ std::vector<double> TsCorr(const std::vector<double>& lhs,
   return out;
 }
 
+std::vector<double> TsRsi(const std::vector<double>& series, int period) {
+  std::vector<double> out = MakeNaNVector(series.size());
+  if (period <= 1) {
+    return out;
+  }
+  const std::size_t p = static_cast<std::size_t>(period);
+  if (series.size() <= p) {
+    return out;
+  }
+
+  std::vector<double> gains(series.size(), 0.0);
+  std::vector<double> losses(series.size(), 0.0);
+
+  // 预计算涨跌幅
+  for (std::size_t i = 1; i < series.size(); ++i) {
+    const double diff = series[i] - series[i - 1];
+    if (!IsFinite(diff)) {
+      gains[i] = NaN();
+      losses[i] = NaN();
+    } else if (diff > 0.0) {
+      gains[i] = diff;
+    } else {
+      losses[i] = -diff;
+    }
+  }
+
+  for (std::size_t i = p; i < series.size(); ++i) {
+    double sum_gain = 0.0;
+    double sum_loss = 0.0;
+    bool valid = true;
+    // 窗口范围 [i - p + 1, i]
+    for (std::size_t j = i - p + 1; j <= i; ++j) {
+      if (!IsFinite(gains[j]) || !IsFinite(losses[j])) {
+        valid = false;
+        break;
+      }
+      sum_gain += gains[j];
+      sum_loss += losses[j];
+    }
+
+    if (!valid) {
+      continue;
+    }
+
+    const double avg_gain = sum_gain / static_cast<double>(p);
+    const double avg_loss = sum_loss / static_cast<double>(p);
+
+    if (avg_loss <= 1e-12) {
+      out[i] = 100.0;
+    } else {
+      const double rs = avg_gain / avg_loss;
+      out[i] = 100.0 - (100.0 / (1.0 + rs));
+    }
+  }
+  return out;
+}
+
+std::vector<double> TsEma(const std::vector<double>& series, int period) {
+  std::vector<double> out = MakeNaNVector(series.size());
+  if (period <= 0) {
+    return out;
+  }
+  const double alpha = 2.0 / (static_cast<double>(period) + 1.0);
+  double running = NaN();
+
+  for (std::size_t i = 0; i < series.size(); ++i) {
+    const double val = series[i];
+    if (!IsFinite(val)) {
+      continue;
+    }
+    if (!IsFinite(running)) {
+      running = val;
+    } else {
+      running = alpha * val + (1.0 - alpha) * running;
+    }
+    out[i] = running;
+  }
+  return out;
+}
+
 }  // namespace ai_trade::research

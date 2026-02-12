@@ -1042,11 +1042,12 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
       const double mark_price =
           JsonNumberField(row, "markPrice").value_or(last_price);
       const double final_mark = mark_price > 0.0 ? mark_price : last_price;
+      const double volume = JsonNumberField(row, "volume24h").value_or(0.0);
       last_price_by_symbol_[symbol] = final_mark;
 
       ++replay_seq_;
       pending_markets_.push_back(
-          MarketEvent{replay_seq_, symbol, last_price, final_mark});
+          MarketEvent{replay_seq_, symbol, last_price, final_mark, volume});
     }
   }
 
@@ -1080,7 +1081,7 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
     const double price = options_.replay_prices[replay_cursor_++];
     last_price_by_symbol_[symbol] = price;
     ++replay_seq_;
-    *out_event = MarketEvent{replay_seq_, symbol, price, price};
+    *out_event = MarketEvent{replay_seq_, symbol, price, price, 10000.0}; // Mock volume
     return true;
   }
 

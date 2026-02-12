@@ -23,7 +23,7 @@ bool MockExchangeAdapter::PollMarket(MarketEvent* out_event) {
   const std::string& symbol = symbols_[symbol_cursor_ % symbols_.size()];
   ++symbol_cursor_;
   last_price_by_symbol_[symbol] = price;
-  *out_event = MarketEvent{seq_, symbol, price, price};
+  *out_event = MarketEvent{seq_, symbol, price, price, 1000.0};
   return true;
 }
 

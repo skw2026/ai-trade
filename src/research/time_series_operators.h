@@ -40,6 +40,21 @@ std::vector<double> TsCorr(const std::vector<double>& lhs,
                            const std::vector<double>& rhs,
                            int window);
 
+/**
+ * @brief 相对强弱指数 (RSI)：基于窗口内的简单移动平均 (SMA) 计算
+ *
+ * 逻辑与 tools/integrator_train.py 中的 rsi 函数一致。
+ */
+std::vector<double> TsRsi(const std::vector<double>& series, int period);
+
+/**
+ * @brief 指数移动平均 (EMA)
+ *
+ * 逻辑与 tools/integrator_train.py 中的 ema 函数一致。
+ * 注意：由于是在滑动窗口上计算，每次窗口移动都会重新初始化 EMA，因此窗口长度建议至少为 period 的 3-5 倍以保证收敛精度。
+ */
+std::vector<double> TsEma(const std::vector<double>& series, int period);
+
 /// 标准有限数值判断：用于过滤 NaN/Inf。
 bool IsFinite(double value);
 

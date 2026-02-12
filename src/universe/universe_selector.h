@@ -49,6 +49,7 @@ class UniverseSelector {
     double abs_return_sum{0.0};  ///< 绝对收益率累积和（波动度近似）。
     int return_count{0};  ///< 有效收益率样本数。
     int tick_count{0};  ///< 观测到的行情 tick 数（活跃度近似）。
+    double last_turnover{0.0}; ///< 最近一次观测到的 24h 成交额 (USD)。
   };
 
   std::optional<UniverseUpdate> Refresh();

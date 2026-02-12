@@ -3,6 +3,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "oms/account_state.h"
+#include "research/online_feature_engine.h"
 #include "core/types.h"
 
 namespace ai_trade {
@@ -14,16 +16,19 @@ struct StrategyConfig {
   double signal_notional_usd{1000.0}; ///< 信号触发时的目标净名义敞口基线（USD, signed）
   double signal_deadband_abs{0.1};    ///< 价格变化的绝对死区阈值 (防止微小波动频繁触发)
   int min_hold_ticks{0};              ///< 反向信号的最小持有 tick 数 (防止信号闪烁)
+  int trend_ema_fast{12};             ///< 趋势策略：快线周期
+  int trend_ema_slow{26};             ///< 趋势策略：慢线周期
+  double vol_target_pct{0.40};        ///< 波动率目标策略：年化波动率目标 (e.g. 0.40)
 };
 
 /**
  * @brief 策略引擎 (Strategy Engine)
  *
  * 负责接收市场行情 (MarketEvent)，根据配置的策略逻辑生成原始交易信号 (Signal)。
- * 当前实现为一个基础的趋势跟踪策略：
- * 1. 比较当前价格与上一 tick 价格。
- * 2. 变化量超过 deadband 则生成方向信号。
- * 3. 包含信号防抖机制 (Min Hold Ticks)。
+ * 实现逻辑：
+ * 1. Trend: 基于 EMA 快慢线交叉判断方向 (ema_fast > ema_slow -> Long)。
+ * 2. VolTarget: 基于 Regime 波动率动态调整目标仓位 (TargetVol / CurrentVol)。
+ * 3. Signal: 包含信号防抖机制 (Min Hold Ticks)。
  */
 class StrategyEngine {
  public:
@@ -32,9 +37,13 @@ class StrategyEngine {
   /**
    * @brief 处理行情事件并生成信号
    * @param event 最新行情事件
+   * @param account 账户状态（用于波动率目标计算仓位）
+   * @param regime 市场状态（用于过滤或调整策略）
    * @return Signal 生成的交易信号 (direction=0 表示观望)
    */
-  Signal OnMarket(const MarketEvent& event);
+  Signal OnMarket(const MarketEvent& event,
+                  const AccountState& account,
+                  const RegimeState& regime);
 
  private:
   struct SymbolState {
@@ -42,6 +51,7 @@ class StrategyEngine {
     bool has_last{false};  ///< 是否已完成暖机（拿到首个价格）。
     int effective_direction{0};  ///< 当前生效方向（防抖后）。
     int ticks_since_direction_change{0};  ///< 当前方向已持续的 tick 数。
+    research::OnlineFeatureEngine feature_engine{100}; ///< 在线特征计算引擎
   };
   StrategyConfig config_{};  ///< 策略静态参数。
   std::unordered_map<std::string, SymbolState> symbol_state_;  ///< 多 symbol 运行态。

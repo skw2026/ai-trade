@@ -21,7 +21,7 @@ void AsyncExecutor::Stop() {
   // 通过投递 stop 任务优雅退出，避免直接中断工作线程。
   {
     std::lock_guard<std::mutex> lock(queue_mutex_);
-    task_queue_.push(Task{.type = Task::kStop});
+    task_queue_.push(Task{.type = Task::kStop, .intent = {}, .cancel_id = ""});
   }
   queue_cv_.notify_one();
   if (worker_.joinable()) {
@@ -32,7 +32,7 @@ void AsyncExecutor::Stop() {
 void AsyncExecutor::Submit(const OrderIntent& intent) {
   {
     std::lock_guard<std::mutex> lock(queue_mutex_);
-    task_queue_.push(Task{.type = Task::kSubmit, .intent = intent});
+    task_queue_.push(Task{.type = Task::kSubmit, .intent = intent, .cancel_id = ""});
   }
   queue_cv_.notify_one();
 }
@@ -40,7 +40,7 @@ void AsyncExecutor::Submit(const OrderIntent& intent) {
 void AsyncExecutor::Cancel(const std::string& client_order_id) {
   {
     std::lock_guard<std::mutex> lock(queue_mutex_);
-    task_queue_.push(Task{.type = Task::kCancel, .cancel_id = client_order_id});
+    task_queue_.push(Task{.type = Task::kCancel, .intent = {}, .cancel_id = client_order_id});
   }
   queue_cv_.notify_one();
 }

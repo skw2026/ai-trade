@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(AI_TRADE_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 option(AI_TRADE_USE_BEAST_WEBSOCKET
        "Use Boost.Beast implementation for WebSocket client" OFF)
+option(AI_TRADE_ENABLE_CATBOOST "Enable CatBoost model inference" OFF)
 
 if(MSVC)
   add_compile_options(/W4)
@@ -52,6 +53,7 @@ add_library(ai_trade_system STATIC
   src/research/time_series_operators.cpp
   src/research/ic_evaluator.cpp
   src/research/miner.cpp
+  src/research/online_feature_engine.cpp
   src/oms/account_state.cpp
   src/oms/order_manager.cpp
   src/oms/reconciler.cpp
@@ -60,6 +62,13 @@ add_library(ai_trade_system STATIC
 )
 target_include_directories(ai_trade_system PUBLIC src)
 find_package(CURL REQUIRED)
+
+if(AI_TRADE_ENABLE_CATBOOST)
+  # 使用 dlopen 动态加载，无需链接时依赖
+  target_compile_definitions(ai_trade_system PUBLIC AI_TRADE_ENABLE_CATBOOST=1)
+  target_link_libraries(ai_trade_system PUBLIC ${CMAKE_DL_LIBS})
+endif()
+
 target_link_libraries(ai_trade_system PUBLIC ai_trade_core CURL::libcurl)
 if(AI_TRADE_USE_BEAST_WEBSOCKET)
   find_package(Boost REQUIRED COMPONENTS system)

@@ -30,6 +30,7 @@ struct MarketEvent {
   std::string symbol{"BTCUSDT"};
   double price{0.0};
   double mark_price{0.0};
+  double volume{0.0};  // 24h 成交量或当前 bar 成交量（取决于源）
 };
 
 /// Regime 四态：趋势上行、趋势下行、震荡、极端。
@@ -236,5 +237,11 @@ inline const char* ToString(RegimeBucket bucket) {
   }
   return "UNKNOWN";
 }
+
+/// 自进化权重结构体
+struct EvolutionWeights {
+  double trend_weight{0.0};
+  double defensive_weight{0.0};
+};
 
 }  // namespace ai_trade

@@ -5,10 +5,32 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "core/json_utils.h"
+#include "core/log.h"
+
+#if defined(AI_TRADE_ENABLE_CATBOOST)
+#if !defined(_WIN32)
+#include <dlfcn.h>
+#else
+#error "Windows dlopen not implemented"
+#endif
+
+// 定义函数指针类型
+typedef void* ModelCalcerHandle;
+typedef ModelCalcerHandle (*Proc_ModelCalcerCreate)();
+typedef void (*Proc_ModelCalcerDelete)(ModelCalcerHandle handle);
+typedef bool (*Proc_ModelCalcerLoadSingleModelFromFile)(ModelCalcerHandle handle, const char* filename);
+typedef bool (*Proc_ModelCalcerCalc)(ModelCalcerHandle handle, const float* features, size_t featuresSize, double* result, size_t resultSize);
+typedef const char* (*Proc_ModelCalcerGetErrorString)(ModelCalcerHandle handle);
+
+// 全局持有 dlopen 句柄，避免重复加载
+static void* g_catboost_lib_handle = nullptr;
+static bool g_catboost_lib_loaded = false;
+#endif
 
 namespace ai_trade {
 
@@ -53,14 +75,63 @@ bool IsRegularFileNonEmpty(const std::string& path, std::string* out_error) {
   return true;
 }
 
+// 将经典特征名映射为 OnlineFeatureEngine 支持的表达式
+std::string MapClassicFeatureToExpression(const std::string& name) {
+  if (name == "ret_1") {
+    return "ts_delta(close,1)/(abs(ts_delay(close,1))+1e-9)";
+  }
+  if (name == "ret_3") {
+    return "ts_delta(close,3)/(abs(ts_delay(close,3))+1e-9)";
+  }
+  if (name == "vol_delta_1") {
+    return "ts_delta(volume,1)";
+  }
+  if (name.find("rsi_") == 0) {
+    try {
+      // 映射 rsi_14 -> rsi(close, 14)
+      int period = std::stoi(name.substr(4));
+      return "rsi(close," + std::to_string(period) + ")";
+    } catch (...) {}
+  }
+  if (name == "macd_line") {
+    return "ema(close,12)-ema(close,26)";
+  }
+  if (name == "macd_signal") {
+    return "ema(ema(close,12)-ema(close,26),9)";
+  }
+  if (name == "macd_hist") {
+    return "(ema(close,12)-ema(close,26))-ema(ema(close,12)-ema(close,26),9)";
+  }
+  // 默认返回 0
+  return "0";
+}
+
 }  // namespace
 
 IntegratorShadow::IntegratorShadow(IntegratorShadowConfig config)
-    : config_(std::move(config)) {}
+    : config_(std::move(config)),
+      feature_engine_(config_.feature_window_ticks > 0 ? config_.feature_window_ticks : 300) {}
+
+IntegratorShadow::~IntegratorShadow() {
+#ifdef AI_TRADE_ENABLE_CATBOOST
+  if (model_handle_) {
+    // 析构时需要确保库还未卸载，或者容忍泄漏。
+    // 为简单起见，我们不 dlclose，让 OS 回收。
+    // 如果 g_catboost_lib_handle 有效，则调用 Delete。
+    if (g_catboost_lib_handle) {
+        auto func = reinterpret_cast<Proc_ModelCalcerDelete>(dlsym(g_catboost_lib_handle, "ModelCalcerDelete"));
+        if (func) func(static_cast<ModelCalcerHandle>(model_handle_));
+    }
+    model_handle_ = nullptr;
+  }
+#endif
+}
 
 bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) {
   initialized_ = false;
   model_version_ = "n/a";
+  feature_names_.clear();
+  feature_expressions_.clear();
 
   if (!config_.enabled) {
     initialized_ = true;
@@ -97,6 +168,23 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     return fail("integrator 报告缺少 model_version");
   }
   model_version_ = *version;
+
+  // 1. 解析特征列表
+  const JsonValue* feature_names_json = JsonObjectField(&root, "feature_names");
+  if (feature_names_json != nullptr && feature_names_json->type == JsonType::kArray) {
+    for (const auto& item : feature_names_json->array_value) {
+      if (auto name = JsonAsString(&item); name.has_value()) {
+        feature_names_.push_back(*name);
+      }
+    }
+  }
+
+  // 2. 获取 Miner 报告路径
+  std::string miner_report_path;
+  const JsonValue* data_section = JsonObjectField(&root, "data");
+  if (auto path = JsonAsString(JsonObjectField(data_section, "miner_report_path")); path.has_value()) {
+    miner_report_path = *path;
+  }
 
   std::vector<std::string> quality_failures;
   const JsonValue* metrics = JsonObjectField(&root, "metrics_oos");
@@ -169,6 +257,45 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     if (!IsRegularFileNonEmpty(config_.model_path, &file_error)) {
       return fail("integrator 模型文件校验失败: " + file_error);
     }
+
+#ifdef AI_TRADE_ENABLE_CATBOOST
+    // 1. 延迟加载库
+    if (!g_catboost_lib_loaded) {
+        g_catboost_lib_handle = dlopen("libcatboostmodel.so", RTLD_LAZY | RTLD_GLOBAL);
+        if (!g_catboost_lib_handle) {
+             // 尝试默认路径
+             g_catboost_lib_handle = dlopen("/usr/local/lib/libcatboostmodel.so", RTLD_LAZY | RTLD_GLOBAL);
+        }
+        if (!g_catboost_lib_handle) {
+            return fail("无法加载 libcatboostmodel.so: " + std::string(dlerror()));
+        }
+        g_catboost_lib_loaded = true;
+    }
+
+    // 2. 获取函数指针
+    auto p_Create = reinterpret_cast<Proc_ModelCalcerCreate>(dlsym(g_catboost_lib_handle, "ModelCalcerCreate"));
+    auto p_Delete = reinterpret_cast<Proc_ModelCalcerDelete>(dlsym(g_catboost_lib_handle, "ModelCalcerDelete"));
+    auto p_Load = reinterpret_cast<Proc_ModelCalcerLoadSingleModelFromFile>(dlsym(g_catboost_lib_handle, "ModelCalcerLoadSingleModelFromFile"));
+    auto p_Error = reinterpret_cast<Proc_ModelCalcerGetErrorString>(dlsym(g_catboost_lib_handle, "ModelCalcerGetErrorString"));
+
+    if (!p_Create || !p_Delete || !p_Load || !p_Error) {
+        return fail("libcatboostmodel.so 缺少必要符号");
+    }
+
+    if (model_handle_) {
+      p_Delete(static_cast<ModelCalcerHandle>(model_handle_));
+      model_handle_ = nullptr;
+    }
+    
+    model_handle_ = p_Create();
+    if (!p_Load(static_cast<ModelCalcerHandle>(model_handle_), 
+                                            config_.model_path.c_str())) {
+      const char* msg = "";
+      msg = p_Error(static_cast<ModelCalcerHandle>(model_handle_));
+      return fail("CatBoost 模型加载失败: " + std::string(msg ? msg : "unknown error"));
+    }
+    LogInfo("CatBoost 模型加载成功: " + config_.model_path);
+#endif
   }
 
   bool active_meta_found = false;
@@ -218,6 +345,48 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     return fail("require_active_meta=true 但未找到 active_meta");
   }
 
+  // 3. 加载 Miner 报告并构建特征表达式映射
+  std::unordered_map<std::string, std::string> miner_expressions;
+  if (!miner_report_path.empty()) {
+    std::ifstream miner_input(miner_report_path);
+    if (miner_input.is_open()) {
+      std::ostringstream miner_buffer;
+      miner_buffer << miner_input.rdbuf();
+      JsonValue miner_root;
+      std::string miner_err;
+      if (ParseJson(miner_buffer.str(), &miner_root, &miner_err)) {
+        const JsonValue* factors = JsonObjectField(&miner_root, "factors");
+        if (factors != nullptr && factors->type == JsonType::kArray) {
+          int idx = 0;
+          for (const auto& factor : factors->array_value) {
+            auto expr = JsonAsString(JsonObjectField(&factor, "expression"));
+            auto invert = JsonAsBool(JsonObjectField(&factor, "invert_signal"));
+            if (expr.has_value()) {
+              std::string final_expr = *expr;
+              if (invert.value_or(false)) {
+                final_expr = "-(" + final_expr + ")";
+              }
+              // key 格式需与 integrator_train.py 中的命名一致: miner_00, miner_01...
+              std::string key = std::string("miner_") + (idx < 10 ? "0" : "") + std::to_string(idx);
+              miner_expressions[key] = final_expr;
+            }
+            idx++;
+          }
+        }
+      }
+    }
+  }
+
+  // 4. 构建最终的表达式列表
+  for (const auto& name : feature_names_) {
+    if (name.rfind("miner_", 0) == 0) {
+      auto it = miner_expressions.find(name);
+      feature_expressions_.push_back(it != miner_expressions.end() ? it->second : "0");
+    } else {
+      feature_expressions_.push_back(MapClassicFeatureToExpression(name));
+    }
+  }
+
   initialized_ = true;
   return true;
 }
@@ -231,6 +400,10 @@ double IntegratorShadow::Sigmoid(double x) {
   return z / (1.0 + z);
 }
 
+void IntegratorShadow::OnMarket(const MarketEvent& event) {
+  feature_engine_.OnMarket(event);
+}
+
 ShadowInference IntegratorShadow::Infer(const Signal& signal,
                                         const RegimeState& regime) const {
   ShadowInference out;
@@ -241,11 +414,55 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   out.enabled = true;
   out.model_version = model_version_;
 
-  // 影子分数定义（观测用途）：
-  // 1) 信号强度项：将净名义值缩放到可解释区间；
-  // 2) Regime 偏置项：趋势桶给予方向先验，极端桶降低置信度；
-  // 3) warmup 惩罚：样本不足时收缩到中性概率。
-  double raw = std::clamp(signal.suggested_notional_usd / 1000.0, -2.0, 2.0);
+  // 1. 计算特征向量
+  // 注意：如果数据不足，EvaluateBatch 会返回 0 或 NaN
+  std::vector<double> features;
+  if (feature_engine_.IsReady()) {
+    features = feature_engine_.EvaluateBatch(feature_expressions_);
+  }
+
+  // 关键防御：检查特征向量是否存在 NaN/Inf。
+  // 任何脏数据都可能导致模型输出不可预测的极端值，必须在此熔断。
+  for (size_t i = 0; i < features.size(); ++i) {
+    if (!std::isfinite(features[i])) {
+      static int nan_warn_counter = 0;
+      // 限频日志：避免因数据预热期的连续 NaN 刷屏
+      if (config_.log_model_score && nan_warn_counter++ % 100 == 0) {
+        LogInfo("INTEGRATOR_SKIP: NaN feature detected at index " + std::to_string(i) +
+                " (" + (i < feature_names_.size() ? feature_names_[i] : "unknown") + ")");
+      }
+      out.enabled = false;
+      return out;
+    }
+  }
+
+  // 2. 模型推理 (Real vs Mock)
+  double raw = 0.0;
+
+#ifdef AI_TRADE_ENABLE_CATBOOST
+  if (model_handle_ && !features.empty()) {
+    // CatBoost C API 需要 float 数组
+    std::vector<float> float_features(features.begin(), features.end());
+    const float* row_ptr = float_features.data();
+    double result = 0.0;
+    
+    auto p_Calc = reinterpret_cast<Proc_ModelCalcerCalc>(dlsym(g_catboost_lib_handle, "ModelCalcerCalc"));
+    if (p_Calc && p_Calc(static_cast<ModelCalcerHandle>(model_handle_), 
+                        row_ptr, features.size(), &result, 1)) {
+      raw = result;
+    } else {
+      LogInfo("INTEGRATOR_ERROR: CatBoost inference failed");
+    }
+  } else {
+    // Fallback if model not loaded
+    raw = std::clamp(signal.suggested_notional_usd / 1000.0, -2.0, 2.0);
+  }
+#else
+  // Mock 逻辑：混合原始信号与特征计算结果
+  raw = std::clamp(signal.suggested_notional_usd / 1000.0, -2.0, 2.0);
+#endif
+
+  // 3. Regime 修正
   if (regime.regime == Regime::kUptrend) {
     raw += 0.20;
   } else if (regime.regime == Regime::kDowntrend) {
@@ -258,6 +475,27 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   }
   if (regime.warmup) {
     raw *= 0.60;
+  }
+
+  // 4. 特征影响 (Mock): 如果计算出了有效特征，微调分数
+  if (!features.empty()) {
+    // 简单示例：如果 ret_1 (通常是列表后部的特征) 为正，略微增加分数
+    // 仅用于验证 pipeline 连通性
+    if (features.size() > 5 && features.back() > 0.001) {
+      raw += 0.1;
+    }
+
+    // 增加特征值日志 (Sample logging)
+    if (config_.log_model_score) {
+      std::ostringstream oss;
+      oss << "FEATURES: ";
+      for (size_t i = 0; i < std::min<size_t>(5, features.size()); ++i) {
+        if (i > 0) oss << ", ";
+        oss << feature_names_[i] << "=" << features[i];
+      }
+      // 仅在调试或详细模式下输出特征值
+      LogInfo(oss.str());
+    }
   }
 
   out.model_score = std::clamp(raw * config_.score_gain, -6.0, 6.0);

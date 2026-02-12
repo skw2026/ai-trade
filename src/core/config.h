@@ -65,6 +65,7 @@ struct UniverseConfig {
   int update_interval_ticks{20};
   int max_active_symbols{3};
   int min_active_symbols{1};
+  double min_turnover_usd{0.0};  ///< 最小 24h 成交额过滤 (USD)
   std::vector<std::string> fallback_symbols{"BTCUSDT"};
   std::vector<std::string> candidate_symbols{"BTCUSDT", "ETHUSDT", "SOLUSDT"};
 };
@@ -114,6 +115,8 @@ struct IntegratorShadowConfig {
   // 治理阈值：完成训练 split 比例下限（0~1）。
   double min_split_trained_ratio{0.5};
   double score_gain{1.0};
+  // 特征计算窗口长度（tick），需覆盖模型中最长因子的 lookback。
+  int feature_window_ticks{300};
 };
 
 /// Integrator 接管模式：从纯观测到实际接管逐级放量。
@@ -175,6 +178,10 @@ struct AppConfig {
   double strategy_signal_notional_usd{1000.0};
   double strategy_signal_deadband_abs{0.1};
   int strategy_min_hold_ticks{0};
+  // 新增策略参数
+  int trend_ema_fast{12};
+  int trend_ema_slow{26};
+  double vol_target_pct{0.40}; // 年化波动率目标 (e.g. 40%)
   double risk_max_abs_notional_usd{3000.0};
   RiskThresholds risk_thresholds{};
   double execution_max_order_notional{1000.0};

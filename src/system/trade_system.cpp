@@ -81,11 +81,12 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event, bool trade_ok) {
   MarketDecision decision;
   account_.OnMarket(event);
   decision.regime = regime_.OnMarket(event);
-  decision.base_signal = strategy_.OnMarket(event);
+  decision.base_signal = strategy_.OnMarket(event, account_, decision.regime);
   if (decision.base_signal.symbol.empty()) {
     decision.base_signal.symbol = event.symbol;
   }
   decision.signal = decision.base_signal;
+  integrator_shadow_.OnMarket(event);
   decision.shadow = integrator_shadow_.Infer(decision.base_signal, decision.regime);
   decision.integrator_policy_applied = ApplyIntegratorPolicy(
       decision.shadow,
@@ -97,7 +98,7 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event, bool trade_ok) {
   if (evolution_enabled_) {
     // Regime 分桶权重：按当前 bucket 读取 trend 权重缩放目标名义值。
     const auto bucket_weights = evolution_weights(decision.regime.bucket);
-    decision.target.target_notional_usd *= bucket_weights.first;
+    decision.target.target_notional_usd *= bucket_weights.trend_weight;
   }
   
   // 从账户状态读取“强平距离加权 P95”（由远端持仓同步提供基础数据）。
@@ -158,16 +159,16 @@ bool TradeSystem::SetEvolutionWeightsForBucket(RegimeBucket bucket,
     return false;
   }
   evolution_weights_by_bucket_[BucketIndex(bucket)] =
-      std::make_pair(trend_weight, defensive_weight);
+      EvolutionWeights{trend_weight, defensive_weight};
   return true;
 }
 
-std::pair<double, double> TradeSystem::evolution_weights(
+EvolutionWeights TradeSystem::evolution_weights(
     RegimeBucket bucket) const {
   return evolution_weights_by_bucket_[BucketIndex(bucket)];
 }
 
-std::array<std::pair<double, double>, 3> TradeSystem::evolution_weights_all()
+std::array<EvolutionWeights, 3> TradeSystem::evolution_weights_all()
     const {
   return evolution_weights_by_bucket_;
 }

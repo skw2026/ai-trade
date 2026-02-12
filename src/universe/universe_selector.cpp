@@ -52,6 +52,7 @@ std::optional<UniverseUpdate> UniverseSelector::OnMarket(const MarketEvent& even
     stats.has_last_price = true;
   }
   ++stats.tick_count;
+  stats.last_turnover = event.volume * price; // 估算 24h 成交额 (volume 为 24h 基础币种量)
 
   // 按 tick 间隔触发刷新，避免每个行情都重排 Universe。
   ++ticks_since_update_;
@@ -102,6 +103,10 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
       continue;
     }
     const MarketStats& stats = it->second;
+    // 过滤：成交额不足
+    if (stats.last_turnover < config_.min_turnover_usd) {
+      continue;
+    }
     // 评分公式：0.6 * 活跃度 + 0.4 * 波动率
     const double activity = Clamp01(static_cast<double>(stats.tick_count) / 10.0);
     const double volatility =

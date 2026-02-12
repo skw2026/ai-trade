@@ -467,6 +467,34 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "strategy" &&
+        current_subsection == "params" &&
+        key == "ema_fast") {
+      int parsed = 0;
+      if (ParseInt(value, &parsed)) {
+        config.trend_ema_fast = parsed;
+      }
+      continue;
+    }
+    if (current_section == "strategy" &&
+        current_subsection == "params" &&
+        key == "ema_slow") {
+      int parsed = 0;
+      if (ParseInt(value, &parsed)) {
+        config.trend_ema_slow = parsed;
+      }
+      continue;
+    }
+    if (current_section == "strategy" &&
+        current_subsection == "params" &&
+        key == "target_vol") {
+      double parsed = 0.0;
+      if (ParseDouble(value, &parsed)) {
+        config.vol_target_pct = parsed;
+      }
+      continue;
+    }
+
     if (current_section == "execution" && key == "exchange") {
       config.exchange = NormalizeExchange(value);
       continue;
@@ -715,6 +743,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.universe.min_active_symbols = parsed;
+      continue;
+    }
+
+    if (current_section == "universe" &&
+        key == "min_turnover_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "universe.min_turnover_usd 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.universe.min_turnover_usd = parsed;
       continue;
     }
 
@@ -1306,6 +1348,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "feature_window_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "integrator.shadow.feature_window_ticks 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.feature_window_ticks = parsed;
+      continue;
+    }
+
     if (current_section == "self_evolution" && key == "enabled") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -1725,6 +1781,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.universe.max_active_symbols < config.universe.min_active_symbols) {
     if (out_error != nullptr) {
       *out_error = "universe min/max_active_symbols 配置非法";
+    }
+    return false;
+  }
+  if (config.universe.min_turnover_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "universe.min_turnover_usd 不能为负数";
     }
     return false;
   }

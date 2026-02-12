@@ -1,55 +1,41 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "core/config.h"
 #include "core/types.h"
+#include "research/online_feature_engine.h"
 
 namespace ai_trade {
 
-/**
- * @brief Integrator 影子推理器（运行态观测用）
- *
- * 设计目标：
- * 1. 提供统一的 `model_score/p_up/p_down` 可观测输出；
- * 2. 不参与下单决策，仅用于线上诊断与审计；
- * 3. 在模型文件缺失时可安全降级，不影响主流程。
- */
 class IntegratorShadow {
  public:
-  explicit IntegratorShadow(IntegratorShadowConfig config = {});
+  explicit IntegratorShadow(IntegratorShadowConfig config);
 
-  /**
-   * @brief 初始化影子推理器
-   *
-   * 当启用时尝试读取 `integrator_report.json` 中的 `model_version`，
-   * 并按配置执行模型/治理一致性校验。
-   *
-   * @param strict_takeover true 时按 canary/active 口径执行强校验：
-   * 1. 模型文件必须存在且非空；
-   * 2. active_meta 必须存在且 `gate.pass=true`；
-   * 3. report 指标必须满足最小治理门槛。
-   * @param out_error 失败原因（用于上层降级日志）
-   */
   bool Initialize(bool strict_takeover, std::string* out_error);
+  
+  // 新增：接收行情以更新特征引擎
+  void OnMarket(const MarketEvent& event);
 
-  /**
-   * @brief 执行影子推理
-   *
-   * 输入当前信号与 Regime，输出 `model_score/p_up/p_down`。
-   * 注意：该输出当前不参与订单决策，仅用于观测。
-   */
   ShadowInference Infer(const Signal& signal, const RegimeState& regime) const;
 
   bool enabled() const { return config_.enabled && initialized_; }
-  const std::string& model_version() const { return model_version_; }
+  std::string model_version() const { return model_version_; }
+  ~IntegratorShadow();
 
  private:
   static double Sigmoid(double x);
 
-  IntegratorShadowConfig config_{};
+  IntegratorShadowConfig config_;
   bool initialized_{false};
-  std::string model_version_{"n/a"};
+  std::string model_version_;
+
+  // 在线特征计算引擎
+  research::OnlineFeatureEngine feature_engine_;
+  std::vector<std::string> feature_names_;
+  std::vector<std::string> feature_expressions_;
+  void* model_handle_{nullptr}; // CatBoost ModelCalcerHandle (void* to avoid header dependency)
 };
 
 }  // namespace ai_trade

@@ -88,13 +88,13 @@ bool SelfEvolutionController::Initialize(
   return true;
 }
 
-std::pair<double, double> SelfEvolutionController::current_weights(
+EvolutionWeights SelfEvolutionController::current_weights(
     RegimeBucket bucket) const {
   const BucketRuntime& runtime = RuntimeFor(bucket);
   return {runtime.current_trend_weight, runtime.current_defensive_weight};
 }
 
-std::pair<double, double> SelfEvolutionController::rollback_anchor_weights(
+EvolutionWeights SelfEvolutionController::rollback_anchor_weights(
     RegimeBucket bucket) const {
   const BucketRuntime& runtime = RuntimeFor(bucket);
   return {runtime.rollback_anchor_trend_weight,
@@ -220,8 +220,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   }
 
   const auto candidate = ProposeWeights(window_objective_score, runtime);
-  if (std::fabs(candidate.first - runtime.current_trend_weight) <= kWeightEpsilon &&
-      std::fabs(candidate.second - runtime.current_defensive_weight) <=
+  if (std::fabs(candidate.trend_weight - runtime.current_trend_weight) <= kWeightEpsilon &&
+      std::fabs(candidate.defensive_weight - runtime.current_defensive_weight) <=
           kWeightEpsilon) {
     action.type = SelfEvolutionActionType::kSkipped;
     action.reason_code = "EVOLUTION_WEIGHT_NOOP";
@@ -230,7 +230,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   }
 
   std::string error;
-  if (!ValidateWeights(candidate.first, candidate.second, &error)) {
+  if (!ValidateWeights(candidate.trend_weight, candidate.defensive_weight, &error)) {
     action.type = SelfEvolutionActionType::kSkipped;
     action.reason_code = "PORT_WEIGHT_INVALID_REJECTED";
     ResetWindowAttribution();
@@ -240,8 +240,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   // 成功更新前记录当前 bucket 的回滚锚点：回滚时恢复到“上一版权重”。
   runtime.rollback_anchor_trend_weight = runtime.current_trend_weight;
   runtime.rollback_anchor_defensive_weight = runtime.current_defensive_weight;
-  runtime.current_trend_weight = candidate.first;
-  runtime.current_defensive_weight = candidate.second;
+  runtime.current_trend_weight = candidate.trend_weight;
+  runtime.current_defensive_weight = candidate.defensive_weight;
 
   action.type = SelfEvolutionActionType::kUpdated;
   action.reason_code = window_objective_score > ObjectiveThreshold()
@@ -314,7 +314,7 @@ bool SelfEvolutionController::ValidateWeights(double trend_weight,
   return true;
 }
 
-std::pair<double, double> SelfEvolutionController::ProposeWeights(
+EvolutionWeights SelfEvolutionController::ProposeWeights(
     double objective_score,
     const BucketRuntime& runtime) const {
   const double direction =
@@ -326,7 +326,7 @@ std::pair<double, double> SelfEvolutionController::ProposeWeights(
       runtime.current_trend_weight + direction * config_.max_weight_step;
   trend_weight = std::clamp(trend_weight, min_trend_weight, max_trend_weight);
   const double defensive_weight = 1.0 - trend_weight;
-  return {trend_weight, defensive_weight};
+  return EvolutionWeights{trend_weight, defensive_weight};
 }
 
 void SelfEvolutionController::PushDegradeWindow(BucketRuntime* runtime,

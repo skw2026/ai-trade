@@ -78,12 +78,12 @@ class SelfEvolutionController {
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
-  std::pair<double, double> current_weights(RegimeBucket bucket) const;
-  std::pair<double, double> rollback_anchor_weights(RegimeBucket bucket) const;
-  std::pair<double, double> current_weights() const {
+  EvolutionWeights current_weights(RegimeBucket bucket) const;
+  EvolutionWeights rollback_anchor_weights(RegimeBucket bucket) const;
+  EvolutionWeights current_weights() const {
     return current_weights(RegimeBucket::kRange);
   }
-  std::pair<double, double> rollback_anchor_weights() const {
+  EvolutionWeights rollback_anchor_weights() const {
     return rollback_anchor_weights(RegimeBucket::kRange);
   }
   std::int64_t next_eval_tick() const { return next_eval_tick_; }
@@ -118,7 +118,7 @@ class SelfEvolutionController {
   bool ValidateWeights(double trend_weight,
                        double defensive_weight,
                        std::string* out_error) const;
-  std::pair<double, double> ProposeWeights(double objective_score,
+  EvolutionWeights ProposeWeights(double objective_score,
                                            const BucketRuntime& runtime) const;
   void PushDegradeWindow(BucketRuntime* runtime, bool degraded);
   bool ShouldRollback(const BucketRuntime& runtime) const;

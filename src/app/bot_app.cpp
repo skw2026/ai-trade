@@ -231,6 +231,9 @@ BotApplication::BotApplication(const AppConfig& config)
                   .signal_notional_usd = config.strategy_signal_notional_usd,
                   .signal_deadband_abs = config.strategy_signal_deadband_abs,
                   .min_hold_ticks = config.strategy_min_hold_ticks,
+                  .trend_ema_fast = config.trend_ema_fast,
+                  .trend_ema_slow = config.trend_ema_slow,
+                  .vol_target_pct = config.vol_target_pct,
               },
               config.execution_min_rebalance_notional_usd,
               config.regime,
@@ -1428,15 +1431,15 @@ void BotApplication::LogStatus() {
           "}" +
           ", active_bucket=" + std::string(ToString(active_bucket)) +
           ", active_trend_weight=" +
-          std::to_string(active_evolution_weights.first) +
+          std::to_string(active_evolution_weights.trend_weight) +
           ", active_defensive_weight=" +
-          std::to_string(active_evolution_weights.second) +
-          ", by_bucket={trend=(" + std::to_string(evolution_weights[0].first) +
-          "," + std::to_string(evolution_weights[0].second) + ")" +
-          ", range=(" + std::to_string(evolution_weights[1].first) +
-          "," + std::to_string(evolution_weights[1].second) + ")" +
-          ", extreme=(" + std::to_string(evolution_weights[2].first) +
-          "," + std::to_string(evolution_weights[2].second) + ")}" +
+          std::to_string(active_evolution_weights.defensive_weight) +
+          ", by_bucket={trend=(" + std::to_string(evolution_weights[0].trend_weight) +
+          "," + std::to_string(evolution_weights[0].defensive_weight) + ")" +
+          ", range=(" + std::to_string(evolution_weights[1].trend_weight) +
+          "," + std::to_string(evolution_weights[1].defensive_weight) + ")" +
+          ", extreme=(" + std::to_string(evolution_weights[2].trend_weight) +
+          "," + std::to_string(evolution_weights[2].defensive_weight) + ")}" +
           ", next_eval_tick=" +
           std::to_string(self_evolution_.next_eval_tick()) +
           ", cooldown=" + std::string(evolution_cooldown ? "true" : "false") +

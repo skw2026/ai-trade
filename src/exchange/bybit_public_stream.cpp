@@ -335,11 +335,12 @@ bool BybitPublicStream::ParseMessage(const std::string& message) {
     }
     const double mark_price =
         JsonNumberField(item, "markPrice").value_or(last_price);
+    const double volume = JsonNumberField(item, "volume24h").value_or(0.0);
 
     ++seq_;
     // 统一转成内部标准行情事件，交由上游策略/风控复用。
     pending_events_.push_back(
-        MarketEvent{CurrentTimestampMs(), symbol, last_price, mark_price});
+        MarketEvent{CurrentTimestampMs(), symbol, last_price, mark_price, volume});
   };
 
   if (data->type == JsonType::kObject) {

@@ -28,6 +28,7 @@
 #include "regime/regime_engine.h"
 #include "research/ic_evaluator.h"
 #include "research/miner.h"
+#include "research/online_feature_engine.h"
 #include "research/time_series_operators.h"
 #include "risk/risk_engine.h"
 #include "storage/wal_store.h"
@@ -398,8 +399,14 @@ class MockBybitHttpTransport final : public ai_trade::BybitHttpTransport {
 
 int main() {
   {
+    // 使用极短周期的 EMA 以便在第 2 个 tick 就能触发信号
+    ai_trade::StrategyConfig fast_strategy;
+    fast_strategy.trend_ema_fast = 1;
+    fast_strategy.trend_ema_slow = 2;
+
     ai_trade::TradeSystem system(/*risk_cap_usd=*/500.0,
-                                 /*max_order_notional_usd=*/200.0);
+                                 /*max_order_notional_usd=*/200.0,
+                                 ai_trade::RiskThresholds{}, fast_strategy);
     // 第一根行情用于策略预热，不应触发下单。
     const bool first = system.OnPrice(100.0, true);
     if (first) {
@@ -422,8 +429,13 @@ int main() {
   }
 
   {
+    ai_trade::StrategyConfig fast_strategy;
+    fast_strategy.trend_ema_fast = 1;
+    fast_strategy.trend_ema_slow = 2;
+
     ai_trade::TradeSystem system(/*risk_cap_usd=*/500.0,
-                                 /*max_order_notional_usd=*/200.0);
+                                 /*max_order_notional_usd=*/200.0,
+                                 ai_trade::RiskThresholds{}, fast_strategy);
     system.OnPrice(100.0, true);
     // 当 trade_ok=false 时，风控应进入只减仓路径。
     system.OnPrice(100.0, false);
@@ -434,8 +446,13 @@ int main() {
   }
 
   {
+    ai_trade::StrategyConfig fast_strategy;
+    fast_strategy.trend_ema_fast = 1;
+    fast_strategy.trend_ema_slow = 2;
+
     ai_trade::TradeSystem system(/*risk_cap_usd=*/500.0,
-                                 /*max_order_notional_usd=*/200.0);
+                                 /*max_order_notional_usd=*/200.0,
+                                 ai_trade::RiskThresholds{}, fast_strategy);
     const ai_trade::MarketEvent first{1, "BTCUSDT", 100.0, 100.0};
     const auto i1 = system.OnMarket(first, true);
     if (i1.has_value()) {
@@ -664,17 +681,28 @@ int main() {
         .signal_notional_usd = 1000.0,
         .signal_deadband_abs = 0.2,
         .min_hold_ticks = 3,
+        .trend_ema_fast = 1, // 快速响应测试
+        .trend_ema_slow = 2,
     });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState dummy_regime;
+
+    // 预热数据以启动 EMA
+    for (int i = 0; i < 10; ++i) {
+        strategy.OnMarket(ai_trade::MarketEvent{
+            1, "BTCUSDT", 100.0, 100.0}, dummy_account, dummy_regime);
+    }
 
     const auto warmup = strategy.OnMarket(ai_trade::MarketEvent{
-        1, "BTCUSDT", 100.0, 100.0});
+        1, "BTCUSDT", 100.0, 100.0}, dummy_account, dummy_regime);
     if (warmup.direction != 0) {
       std::cerr << "策略预热阶段不应输出方向\n";
       return 1;
     }
 
+    // 价格上行: 100 -> 101. EMA(1)=101, EMA(2)=100.66 -> Cross Up
     const auto long_signal = strategy.OnMarket(ai_trade::MarketEvent{
-        2, "BTCUSDT", 101.0, 101.0});
+        2, "BTCUSDT", 101.0, 101.0}, dummy_account, dummy_regime);
     if (long_signal.direction != 1) {
       std::cerr << "预期上行触发多头信号\n";
       return 1;
@@ -682,11 +710,11 @@ int main() {
 
     // 仍在最小持有期内，反向信号应被抑制并保持原方向。
     const auto suppressed_1 = strategy.OnMarket(ai_trade::MarketEvent{
-        3, "BTCUSDT", 100.0, 100.0});
+        3, "BTCUSDT", 100.0, 100.0}, dummy_account, dummy_regime);
     const auto suppressed_2 = strategy.OnMarket(ai_trade::MarketEvent{
-        4, "BTCUSDT", 99.0, 99.0});
+        4, "BTCUSDT", 99.0, 99.0}, dummy_account, dummy_regime);
     const auto suppressed_3 = strategy.OnMarket(ai_trade::MarketEvent{
-        5, "BTCUSDT", 98.0, 98.0});
+        5, "BTCUSDT", 98.0, 98.0}, dummy_account, dummy_regime);
     if (suppressed_1.direction != 1 ||
         suppressed_2.direction != 1 ||
         suppressed_3.direction != 1) {
@@ -696,7 +724,7 @@ int main() {
 
     // 超过最小持有期后，允许反向。
     const auto reversed = strategy.OnMarket(ai_trade::MarketEvent{
-        6, "BTCUSDT", 97.0, 97.0});
+        6, "BTCUSDT", 97.0, 97.0}, dummy_account, dummy_regime);
     if (reversed.direction != -1 ||
         !NearlyEqual(reversed.suggested_notional_usd, -1000.0)) {
       std::cerr << "最小持有期后应允许反向信号\n";
@@ -2278,6 +2306,7 @@ int main() {
     config.max_active_symbols = 2;
     config.min_active_symbols = 1;
     config.fallback_symbols = {"BTCUSDT"};
+    config.min_turnover_usd = 100000.0; // 设置成交额门槛
     config.candidate_symbols = {"BTCUSDT", "ETHUSDT", "SOLUSDT"};
     ai_trade::UniverseSelector selector(config, "BTCUSDT");
     if (selector.active_symbols().empty()) {
@@ -2286,13 +2315,13 @@ int main() {
     }
 
     const auto first = selector.OnMarket(ai_trade::MarketEvent{
-        1, "BTCUSDT", 100.0, 100.0});
+        1, "BTCUSDT", 100.0, 100.0, 2000.0}); // Turnover = 200,000 > 100,000
     if (first.has_value()) {
       std::cerr << "Universe 未到更新间隔不应刷新\n";
       return 1;
     }
     const auto second = selector.OnMarket(ai_trade::MarketEvent{
-        2, "ETHUSDT", 2000.0, 2000.0});
+        2, "ETHUSDT", 2000.0, 2000.0, 10.0}); // Turnover = 20,000 < 100,000
     if (!second.has_value()) {
       std::cerr << "Universe 到更新间隔应刷新\n";
       return 1;
@@ -2302,8 +2331,13 @@ int main() {
       std::cerr << "Universe 刷新后的 active_symbols 数量不符合预期\n";
       return 1;
     }
-    if (!selector.IsActive(second->active_symbols.front())) {
-      std::cerr << "Universe 活跃币对判定不符合预期\n";
+    // ETHUSDT 成交额不足，应被过滤，仅剩 BTCUSDT (或 fallback)
+    if (selector.IsActive("ETHUSDT")) {
+      std::cerr << "Universe 应过滤低成交额币对\n";
+      return 1;
+    }
+    if (!selector.IsActive("BTCUSDT")) {
+      std::cerr << "Universe 应保留高成交额币对\n";
       return 1;
     }
   }
@@ -3951,6 +3985,92 @@ int main() {
         report_1.factors.front().rolling_ic_oos.sample_count <= 0) {
       std::cerr << "Miner 因子诊断字段不符合预期\n";
       return 1;
+    }
+  }
+
+  {
+    // OnlineFeatureEngine 单元测试
+    ai_trade::research::OnlineFeatureEngine engine(50);
+    
+    // 1. 预热数据
+    for (int i = 0; i < 20; ++i) {
+      ai_trade::MarketEvent event;
+      event.symbol = "BTCUSDT";
+      event.price = 100.0 + i; // 100, 101, ... 119
+      event.volume = 1000.0 + i * 100; // 1000, 1100, ...
+      engine.OnMarket(event);
+    }
+
+    if (!engine.IsReady()) {
+      std::cerr << "OnlineFeatureEngine 预热后应就绪\n";
+      return 1;
+    }
+
+    // 2. 验证算子计算
+    // ts_delay(close, 1) -> 118.0 (current is 119.0)
+    double delay = engine.Evaluate("ts_delay(close, 1)");
+    if (!NearlyEqual(delay, 118.0)) {
+      std::cerr << "OnlineFeatureEngine ts_delay 计算错误: " << delay << "\n";
+      return 1;
+    }
+
+    // ts_delta(close, 1) -> 1.0
+    double delta = engine.Evaluate("ts_delta(close, 1)");
+    if (!NearlyEqual(delta, 1.0)) {
+      std::cerr << "OnlineFeatureEngine ts_delta 计算错误: " << delta << "\n";
+      return 1;
+    }
+
+    // ts_rank(close, 5) -> 0.9 (strictly increasing: (4 + 0.5)/5)
+    double rank = engine.Evaluate("ts_rank(close, 5)");
+    if (!NearlyEqual(rank, 0.9)) {
+      std::cerr << "OnlineFeatureEngine ts_rank 计算错误: " << rank << "\n";
+      return 1;
+    }
+
+    // ts_corr(close, volume, 10) -> 1.0 (perfectly correlated)
+    double corr = engine.Evaluate("ts_corr(close, volume, 10)");
+    if (!NearlyEqual(corr, 1.0)) {
+      std::cerr << "OnlineFeatureEngine ts_corr 计算错误: " << corr << "\n";
+      return 1;
+    }
+
+    // rsi(close, 14) -> 100.0 (严格递增序列，无下跌，RSI=100)
+    double rsi = engine.Evaluate("rsi(close, 14)");
+    if (!NearlyEqual(rsi, 100.0)) {
+      std::cerr << "OnlineFeatureEngine rsi 计算错误: 预期 100.0, 实际 " << rsi << "\n";
+      return 1;
+    }
+
+    // ema(close, 5)
+    // 简单验证：EMA 应接近最新价格
+    double ema = engine.Evaluate("ema(close, 5)");
+    if (!std::isfinite(ema) || std::abs(ema - 119.0) > 5.0) {
+      std::cerr << "OnlineFeatureEngine ema 计算异常: " << ema << "\n";
+      return 1;
+    }
+
+    // macd 组合表达式验证
+    double macd = engine.Evaluate("ema(close,12)-ema(close,26)");
+    if (!std::isfinite(macd)) {
+      std::cerr << "OnlineFeatureEngine macd 组合计算异常\n";
+      return 1;
+    }
+
+    // 验证：窗口不足时应返回 NaN 而非 0.0
+    // ts_delay(close, 60) 需要 60+1 个数据，当前仅 20 个有效数据，padding 后窗口 50。
+    double invalid_delay = engine.Evaluate("ts_delay(close, 60)");
+    if (std::isfinite(invalid_delay)) {
+      std::cerr << "OnlineFeatureEngine 数据不足时应返回 NaN，实际返回: " << invalid_delay << "\n";
+      return 1;
+    }
+    
+    // 3. 验证批量计算
+    std::vector<std::string> exprs = {"close", "volume"};
+    std::vector<double> results = engine.EvaluateBatch(exprs);
+    if (results.size() != 2 || !NearlyEqual(results[0], 119.0) || !NearlyEqual(results[1], 2900.0)) {
+       std::cerr << "OnlineFeatureEngine EvaluateBatch 计算错误\n";
+       return 1;
     }
   }
 
