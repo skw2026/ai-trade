@@ -56,22 +56,23 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   scheduler:
-    # [修改] 改用主镜像，确保 /app/tools 脚本存在，不依赖宿主机代码挂载
-    image: ${AI_TRADE_IMAGE:?AI_TRADE_IMAGE is required}
+    # 使用 docker:cli (Alpine) 作为基础
+    image: docker:cli
     container_name: ai-trade-scheduler
     restart: unless-stopped
-    # 每天执行一次 full 流程 (sleep 86400 = 24h)
-    # [加固] 运行时安装 docker 客户端，并使用镜像内脚本路径 /app/tools
-    # 注意：这里假设宿主机 docker socket 挂载进来后，容器内 docker client 可以直接通信
-    entrypoint: ["/bin/sh", "-c", "apt-get update && apt-get install -y docker.io && while true; do echo '[Scheduler] Starting loop...'; /app/tools/closed_loop_runner.sh full; echo '[Scheduler] Sleeping 24h...'; sleep 86400; done"]
+    # [修正] 1. 包名改为 docker-cli-compose (Alpine v2插件)
+    # [修正] 2. 切换到工作目录再执行，确保相对路径正确
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache bash docker-cli-compose && cd ${PWD} && while true; do echo '[Scheduler] Starting loop...'; tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml; echo '[Scheduler] Sleeping 24h...'; sleep 86400; done"]
     environment:
       # 传递必要的环境变量给 runner 脚本
       AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
     volumes:
-      # 只需要挂载数据卷和 Docker Socket，不再挂载代码目录
-      - ./data:/app/data
+      # [关键] 使用镜像路径映射：将宿主机当前目录挂载到容器内相同路径
+      # 这解决了 Docker-in-Docker 场景下兄弟容器挂载宿主机路径失效的问题
+      - ${PWD}:${PWD}
       - /var/run/docker.sock:/var/run/docker.sock
-    working_dir: /app
+    # 工作目录设为宿主机相同路径
+    working_dir: ${PWD}
 
   loki:
     image: grafana/loki:2.9.8
