@@ -30,14 +30,47 @@ services:
 
   ai-trade-research:
     image: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
+    # [建议] 如果是本地构建，取消注释下面两行以使用 Dockerfile 中的 research 阶段
+    # build: { context: ., target: research }
     container_name: ai-trade-research
     restart: "no"
-    working_dir: /workspace
+    working_dir: /app
     entrypoint: ["python3", "tools/integrator_train.py"]
     command: ["--help"]
     volumes:
-      - ./:/workspace
+      - ./data:/app/data
     profiles: ["research"]
+
+  watchdog:
+    # 修改：复用主镜像(已包含python和脚本)，减少生产环境镜像拉取量
+    image: ${AI_TRADE_IMAGE:?AI_TRADE_IMAGE is required}
+    container_name: ai-trade-watchdog
+    restart: unless-stopped
+    # 修改：直接使用镜像内的路径 /app/ops/watchdog.py
+    entrypoint: ["/bin/sh", "-c", "while true; do python3 /app/ops/watchdog.py; sleep 60; done"]
+    environment:
+      AI_TRADE_WEBHOOK_URL: ${AI_TRADE_WEBHOOK_URL:-}
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  scheduler:
+    # 使用包含 Docker CLI 的镜像，用于调度宿主机/兄弟容器的 Docker 命令
+    image: docker:cli
+    container_name: ai-trade-scheduler
+    restart: unless-stopped
+    # 每天执行一次 full 流程 (sleep 86400 = 24h)
+    # [修正] 安装 bash (运行脚本) 和 docker-cli-compose (运行 docker compose 命令)
+    # 注意：apk add 是 Alpine 的包管理命令
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache bash docker-cli-compose && while true; do echo '[Scheduler] Starting loop...'; /workspace/tools/closed_loop_runner.sh full; echo '[Scheduler] Sleeping 24h...'; sleep 86400; done"]
+    environment:
+      # 传递必要的环境变量给 runner 脚本
+      AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
+    volumes:
+      - ./:/workspace
+      - ./data:/workspace/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /workspace
 
   loki:
     image: grafana/loki:2.9.8

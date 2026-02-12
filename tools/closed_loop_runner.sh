@@ -337,6 +337,19 @@ run_assess() {
   echo "[INFO] runtime assess done"
 }
 
+restart_if_activated() {
+  if [[ -f "${REGISTRY_RESULT_PATH}" ]]; then
+    # 检查注册结果是否标记为 activated=true (依赖 JSON 格式化，grep 简单有效)
+    if grep -q '"activated": true' "${REGISTRY_RESULT_PATH}"; then
+      echo "[INFO] DEPLOY: 检测到新模型已激活，正在重启 ai-trade 容器..."
+      compose_cmd restart ai-trade
+      echo "[INFO] DEPLOY: 容器重启指令已执行"
+    else
+      echo "[INFO] DEPLOY: 模型未激活，跳过重启"
+    fi
+  fi
+}
+
 build_summary() {
   echo "[INFO] summary report start"
   SUMMARY_ARGS=(
@@ -419,6 +432,7 @@ case "${ACTION}" in
     run_integrator
     run_registry
     build_summary
+    restart_if_activated
     ;;
   assess)
     run_assess
@@ -433,6 +447,7 @@ case "${ACTION}" in
     run_registry
     run_assess
     build_summary
+    restart_if_activated
     ;;
 esac
 

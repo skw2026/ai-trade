@@ -48,7 +48,9 @@ RUN apt-get update && \
       ca-certificates \
       libcurl4 \
       libssl3 \
-      libboost-system1.83.0 && \
+      libboost-system1.83.0 \
+      python3 \
+      python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -59,8 +61,20 @@ RUN ldconfig
 
 COPY --from=build /workspace/build/trade_bot /app/trade_bot
 COPY --from=build /workspace/config /app/config
+# [新增] 将运维和工具脚本打包进镜像，确保 CD 部署后直接可用
+COPY --from=build /workspace/ops /app/ops
+COPY --from=build /workspace/tools /app/tools
 
 RUN mkdir -p /app/data
 
+# [新增] Research 阶段：基于运行时镜像，额外安装训练所需的 Python 库
+# 这确保了 ai-trade-research 服务能运行 integrator_train.py
+FROM runtime AS research
+RUN apt-get update && apt-get install -y --no-install-recommends python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+RUN pip3 install --no-cache-dir --break-system-packages numpy catboost
+
+# [修改] 默认目标恢复为 runtime，确保主服务轻量
+FROM runtime
 ENTRYPOINT ["/app/trade_bot"]
 CMD ["--config=config/bybit.replay.yaml"]

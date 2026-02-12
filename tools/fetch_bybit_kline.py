@@ -226,6 +226,31 @@ def write_csv(path: pathlib.Path, candles: List[Candle]) -> None:
             )
 
 
+def read_existing_candles(path: pathlib.Path) -> List[Candle]:
+    if not path.exists():
+        return []
+    candles = []
+    try:
+        with path.open("r", encoding="utf-8") as fp:
+            reader = csv.DictReader(fp)
+            for row in reader:
+                try:
+                    candles.append(Candle(
+                        timestamp_ms=int(row["timestamp"]),
+                        open=float(row["open"]),
+                        high=float(row["high"]),
+                        low=float(row["low"]),
+                        close=float(row["close"]),
+                        volume=float(row["volume"]),
+                    ))
+                except (ValueError, KeyError):
+                    continue
+    except Exception as e:
+        log_warn(f"读取现有 CSV 失败: {e}")
+        return []
+    return candles
+
+
 def main() -> int:
     args = parse_args()
     interval = normalize_interval(args.interval)
@@ -238,18 +263,33 @@ def main() -> int:
     if args.start_ms is None and args.bars <= 0:
         raise ValueError("未指定 start_ms 时，bars 必须 > 0")
 
-    # 回溯终止条件：显式区间优先，否则按 bars 推导目标起点。
-    target_start_ms = (
-        args.start_ms
-        if args.start_ms is not None
-        else end_ms - max(0, args.bars - 1) * interval_ms
-    )
+    output_path = pathlib.Path(args.output)
+    existing_candles: List[Candle] = []
+
+    # 确定起始时间：显式指定 > 增量更新 > 默认回溯
+    if args.start_ms is not None:
+        target_start_ms = args.start_ms
+    elif output_path.exists():
+        existing_candles = read_existing_candles(output_path)
+        if existing_candles:
+            existing_candles.sort(key=lambda x: x.timestamp_ms)
+            last_ts = existing_candles[-1].timestamp_ms
+            target_start_ms = last_ts + interval_ms
+            log_info(f"INCREMENTAL: 发现现有数据 {len(existing_candles)} 条，最后时间戳 {last_ts}，将从 {target_start_ms} 开始抓取")
+        else:
+            target_start_ms = end_ms - max(0, args.bars - 1) * interval_ms
+    else:
+        target_start_ms = end_ms - max(0, args.bars - 1) * interval_ms
 
     log_info(
         "FETCH_START: "
         f"symbol={args.symbol}, category={args.category}, interval={interval}, "
         f"end_ms={end_ms}, target_start_ms={target_start_ms}, bars={args.bars}"
     )
+
+    if target_start_ms > end_ms:
+        log_info("INCREMENTAL: 数据已是最新，无需更新")
+        return 0
 
     candles_by_ts: Dict[int, Candle] = {}
     page_count = 0
@@ -325,7 +365,13 @@ def main() -> int:
         if gap_ms > int(math.ceil(interval_ms * 1.5)):
             gap_count += 1
 
-    output_path = pathlib.Path(args.output)
+    # 合并现有数据与新数据（去重）
+    if existing_candles:
+        merged_map = {c.timestamp_ms: c for c in existing_candles}
+        for c in candles:
+            merged_map[c.timestamp_ms] = c
+        candles = sorted(merged_map.values(), key=lambda x: x.timestamp_ms)
+
     write_csv(output_path, candles)
     log_info(
         "FETCH_DONE: "
