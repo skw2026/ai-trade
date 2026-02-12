@@ -34,11 +34,13 @@ services:
     # build: { context: ., target: research }
     container_name: ai-trade-research
     restart: "no"
-    working_dir: /app
+    # [修改] 统一工作目录为 /opt/ai-trade，与宿主机保持一致
+    working_dir: /opt/ai-trade
     entrypoint: ["python3", "tools/integrator_train.py"]
     command: ["--help"]
     volumes:
-      - ./data:/app/data
+      # [修改] 挂载整个项目目录，确保脚本和数据路径一致
+      - ./:/opt/ai-trade
     profiles: ["research"]
 
   watchdog:
@@ -46,62 +48,49 @@ services:
     image: ${AI_TRADE_IMAGE:?AI_TRADE_IMAGE is required}
     container_name: ai-trade-watchdog
     restart: unless-stopped
-    # 修改：直接使用镜像内的路径 /app/ops/watchdog.py
-    # [加固] 增加 || true 防止脚本报错导致容器退出
-    entrypoint: ["/bin/sh", "-c", "while true; do python3 /app/ops/watchdog.py || echo '[Watchdog] Process exited with error'; sleep 60; done"]
+    # [修改] 使用统一路径 /opt/ai-trade/ops/watchdog.py
+    entrypoint: ["/bin/sh", "-c", "while true; do python3 /opt/ai-trade/ops/watchdog.py || echo '[Watchdog] Process exited with error'; sleep 60; done"]
     environment:
       AI_TRADE_WEBHOOK_URL: ${AI_TRADE_WEBHOOK_URL:-}
     volumes:
-      - ./data:/app/data
+      # [修改] 挂载整个项目目录
+      - ./:/opt/ai-trade
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    working_dir: /opt/ai-trade
 
   scheduler:
     # 使用 docker:cli (Alpine) 作为基础
     image: docker:cli
     container_name: ai-trade-scheduler
     restart: unless-stopped
-    # [终极修正] 使用软链欺骗技术解决 DinD 路径映射问题
+    # [优化] 参考 Loki 等组件的写法，直接挂载到宿主机对应的绝对路径 /opt/ai-trade
+    # 这样 Docker-in-Docker (DinD) 场景下，容器内路径与宿主机路径一致。
     entrypoint:
       - /bin/sh
       - -c
       - |
-        echo "[Scheduler] Initializing..."
-        echo "[Scheduler] HOST_PWD=${HOST_PWD}"
-        echo "[Scheduler] Container /app content:"
-        ls -la /app
-
-        # 1. 安装依赖
-        until apk add --no-cache bash docker-cli-compose; do echo "[Scheduler] Install failed, retrying in 30s..."; sleep 30; done
+        # 1. 安装依赖 (Alpine)
+        apk add --no-cache bash docker-cli-compose
         
-        # 2. [关键] 构建与宿主机一致的路径结构
-        # 如果宿主机路径不是 /app，则在容器内创建指向 /app 的软链
-        if [ -n "$HOST_PWD" ] && [ "$HOST_PWD" != "/app" ] && [ "$HOST_PWD" != "/" ]; then
-          mkdir -p "$(dirname "$HOST_PWD")"
-          # 删除可能存在的冲突目录/文件，创建软链
-          rm -rf "$HOST_PWD" && ln -s /app "$HOST_PWD"
-          cd "$HOST_PWD" || echo "[Scheduler] Failed to cd to $HOST_PWD"
-        else
-          cd /app
-        fi
-
-        # 3. 启动循环
-        if [ ! -f "docker-compose.prod.yml" ]; then
-          echo "[Scheduler] CRITICAL: docker-compose.prod.yml not found in current directory ($PWD)"
-          ls -la
-          sleep 60
-        fi
-
+        # 2. 确保脚本有执行权限
         if [ -f "tools/closed_loop_runner.sh" ]; then chmod +x tools/closed_loop_runner.sh; fi
-        while true; do echo '[Scheduler] Starting loop...'; /bin/bash tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml || echo '[Scheduler] Job failed'; echo '[Scheduler] Sleeping 24h...'; sleep 86400; done
+        
+        # 3. 循环执行
+        while true; do 
+          echo '[Scheduler] Starting loop...'
+          /bin/bash tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml || echo '[Scheduler] Job failed'
+          echo '[Scheduler] Sleeping 24h...'
+          sleep 86400
+        done
     environment:
       # 传递必要的环境变量给 runner 脚本
-      HOST_PWD: ${PWD}
       AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
     volumes:
-      # 挂载到固定目录 /app，路径对齐由 entrypoint 软链处理
-      - .:/app
+      # [关键] 直接挂载宿主机当前目录到容器内 /opt/ai-trade
+      # 确保容器内路径与宿主机路径 (/opt/ai-trade) 完全一致
+      - ./:/opt/ai-trade
       - /var/run/docker.sock:/var/run/docker.sock
-    working_dir: /app
+    working_dir: /opt/ai-trade
 
   loki:
     image: grafana/loki:2.9.8
