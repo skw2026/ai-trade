@@ -41,6 +41,7 @@
 - **[开发指南 (Developer)](docs/开发指南.md)**: 环境搭建、编译构建、模拟器运行指南。
 - **[配置手册 (Configuration)](docs/配置手册.md)**: 系统配置模板、风控参数硬约束说明。
 - **[实现验收检查清单](docs/验收清单.md)**: P0 设计修复项与闭环保障的开发/测试打勾清单。
+- **[AI 自闭环实现路径](docs/实现路径.md)**: 先跑通闭环、再基于报告优化的执行路线图。
 
 ---
 
@@ -153,6 +154,15 @@ export AI_TRADE_CONFIG_PATH=config/bybit.demo.s5.yaml
 docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d ai-trade
 ```
 
+生产编排下启动自闭环常驻服务（scheduler + watchdog）：
+```bash
+cd /opt/ai-trade
+set -a && source .env.runtime && set +a
+export AI_TRADE_PROJECT_DIR=/opt/ai-trade
+export AI_TRADE_ENV_FILE=.env.runtime
+docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d ai-trade watchdog scheduler
+```
+
 ### GitHub Actions + 阿里云 ECS 自动部署
 适用场景：主分支合并后自动构建镜像并发布到 ECS，提升迭代效率与一致性。
 
@@ -169,6 +179,7 @@ cd /opt/ai-trade
 
 # 运行时密钥文件（仅示例，按需填写）
 cat > .env.runtime <<'EOF'
+AI_TRADE_IMAGE=ghcr.io/<owner>/ai-trade:<tag>
 AI_TRADE_BYBIT_DEMO_API_KEY=your_demo_key
 AI_TRADE_BYBIT_DEMO_API_SECRET=your_demo_secret
 EOF
@@ -293,6 +304,15 @@ tools/closed_loop_runner.sh assess --stage S5 --since 4h
 
 # full: train + assess
 tools/closed_loop_runner.sh full --stage S5 --since 4h
+```
+
+生产环境建议通过 `scheduler` 常驻执行闭环：
+```bash
+cd /opt/ai-trade
+set -a && source .env.runtime && set +a
+export AI_TRADE_PROJECT_DIR=/opt/ai-trade
+export AI_TRADE_ENV_FILE=.env.runtime
+docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d scheduler watchdog
 ```
 
 `train/full` 现在包含两道前置门禁：

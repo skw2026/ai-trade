@@ -1,0 +1,82 @@
+system:
+  id: "bot-bybit-replay-assess"
+  mode: "replay"
+  primary_symbol: "BTCUSDT"
+  data_path: "./data"
+  max_ticks: 0
+  status_log_interval_ticks: 1
+  remote_risk_refresh_interval_ticks: 0
+  reconcile:
+    enabled: false
+    interval_ticks: 10
+    tolerance_notional_usd: 5.0
+    mismatch_confirmations: 3
+    pending_order_stale_ms: 30000
+
+exchange:
+  platform: "bybit"
+  bybit:
+    testnet: true
+    demo_trading: false
+    category: "linear"
+    account_type: "UNIFIED"
+    expected_account_mode: "UNIFIED"
+    expected_margin_mode: "ISOLATED"
+    expected_position_mode: "ONE_WAY"
+    public_ws_enabled: true
+    public_ws_rest_fallback: true
+    private_ws_enabled: true
+    private_ws_rest_fallback: true
+    ws_reconnect_interval_ms: 15000
+    execution_poll_limit: 50
+
+risk:
+  max_abs_notional_usd: 3000
+  max_drawdown:
+    degraded_threshold: 0.08
+    cooldown_threshold: 0.12
+    fuse_threshold: 0.20
+
+execution:
+  max_order_notional: 1000
+  min_rebalance_notional_usd: 0
+  min_order_interval_ms: 0
+  reverse_signal_cooldown_ticks: 0
+  protection:
+    enabled: false
+    require_sl: true
+    enable_tp: true
+    attach_timeout_ms: 1500
+    stop_loss_ratio: 0.01
+    take_profit_ratio: 0.015
+
+strategy:
+  signal_notional_usd: 1000
+  signal_deadband_abs: 0.1
+  min_hold_ticks: 0
+
+self_evolution:
+  enabled: false
+  update_interval_ticks: 60
+  min_update_interval_ticks: 60
+  max_single_strategy_weight: 0.60
+  max_weight_step: 0.05
+  rollback_degrade_windows: 2
+  rollback_degrade_threshold_score: 0.0
+  rollback_cooldown_ticks: 240
+  initial_trend_weight: 0.50
+  initial_defensive_weight: 0.50
+
+gate:
+  min_effective_signals_per_day: 1
+  min_fills_per_day: 0
+  heartbeat_empty_signal_ticks: 2
+  window_ticks: 2
+
+universe:
+  enabled: true
+  update_interval_ticks: 1
+  max_active_symbols: 3
+  min_active_symbols: 1
+  fallback_symbols: ["BTCUSDT", "ETHUSDT"]
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]

@@ -1605,6 +1605,71 @@ int main() {
   {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
+        "ai_trade_test_protection_alias_config.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  primary_symbol: BTCUSDT\n"
+        << "universe:\n"
+        << "  fallback_symbols: [BTCUSDT]\n"
+        << "execution:\n"
+        << "  protection:\n"
+        << "    enabled: true\n"
+        << "    require_sl: true\n"
+        << "    enable_tp: true\n"
+        << "    attach_timeout_ms: 1200\n"
+        << "    stop_loss_atr_mult: 0.02\n"
+        << "    take_profit_rr: 0.03\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (!ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "兼容保护单别名字段配置应加载成功: " << error << "\n";
+      return 1;
+    }
+    if (!NearlyEqual(config.protection.stop_loss_ratio, 0.02) ||
+        !NearlyEqual(config.protection.take_profit_ratio, 0.03)) {
+      std::cerr << "保护单别名字段未正确映射到 ratio 参数\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_protection_ratio.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  primary_symbol: BTCUSDT\n"
+        << "universe:\n"
+        << "  fallback_symbols: [BTCUSDT]\n"
+        << "execution:\n"
+        << "  protection:\n"
+        << "    enabled: true\n"
+        << "    require_sl: true\n"
+        << "    attach_timeout_ms: 1500\n"
+        << "    stop_loss_ratio: 0.0\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 stop_loss_ratio 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("stop_loss_ratio") == std::string::npos) {
+      std::cerr << "非法 stop_loss_ratio 错误信息不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
         "ai_trade_test_invalid_integrator_config.yaml";
     std::ofstream out(temp_path);
     out << "integrator:\n"

@@ -109,6 +109,13 @@ class BotApplication {
    * 针对开仓成交，挂出 SL/TP；针对保护单成交，撤销对侧单 (OCO)。
    */
   void HandleProtectionOrders(const FillEvent& fill);
+  /// 检查“required SL 挂单确认”是否超时，超时则触发强制只减仓并审计。
+  void CheckPendingRequiredSlTimeouts();
+  /// 注册 required SL 的确认等待项（key=SL client_order_id）。
+  void TrackPendingRequiredSl(const std::string& sl_client_order_id,
+                              const std::string& parent_order_id);
+  /// 清理 required SL 的确认等待项（已确认/失败/成交后调用）。
+  void ClearPendingRequiredSl(const std::string& sl_client_order_id);
 
   /**
    * @brief 执行定期对账
@@ -218,6 +225,12 @@ class BotApplication {
   std::vector<std::string> tracked_symbols_;   ///< 当前关注的 Symbol 列表
   // 仅跟踪“净仓位相关订单（Entry/Reduce）”的入队时间，用于超时收敛。
   std::unordered_map<std::string, std::int64_t> pending_net_order_enqueued_ms_;
+  struct PendingRequiredSlAttach {
+    std::string parent_order_id;
+    std::int64_t deadline_ms{0};
+  };
+  std::unordered_map<std::string, PendingRequiredSlAttach>
+      pending_required_sl_attach_;
 
   bool protection_forced_reduce_only_{
       false};  ///< 保护单关键路径触发的只减仓开关（高优先级，需人工介入恢复）。

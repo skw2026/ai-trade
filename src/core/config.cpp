@@ -1732,7 +1732,7 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
 
     if (current_section == "execution" &&
         current_subsection == "protection" &&
-        key == "stop_loss_ratio") {
+        (key == "stop_loss_ratio" || key == "stop_loss_atr_mult")) {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
         if (out_error != nullptr) {
@@ -1748,7 +1748,7 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
 
     if (current_section == "execution" &&
         current_subsection == "protection" &&
-        key == "take_profit_ratio") {
+        (key == "take_profit_ratio" || key == "take_profit_rr")) {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
         if (out_error != nullptr) {
@@ -1952,6 +1952,19 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "execution.protection 启用时必须满足 require_sl=true 且 attach_timeout_ms>0";
+    }
+    return false;
+  }
+  if (config.protection.enabled && config.protection.stop_loss_ratio <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.protection.stop_loss_ratio 必须大于 0";
+    }
+    return false;
+  }
+  if (config.protection.enabled && config.protection.enable_tp &&
+      config.protection.take_profit_ratio <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.protection.take_profit_ratio 必须大于 0";
     }
     return false;
   }

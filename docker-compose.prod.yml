@@ -1,6 +1,6 @@
 services:
   ai-trade:
-    image: ${AI_TRADE_IMAGE:?AI_TRADE_IMAGE is required}
+    image: ${AI_TRADE_IMAGE:-ai-trade:latest}
     container_name: ai-trade
     restart: unless-stopped
     command:
@@ -15,7 +15,7 @@ services:
       AI_TRADE_BYBIT_MAINNET_API_KEY: ${AI_TRADE_BYBIT_MAINNET_API_KEY:-}
       AI_TRADE_BYBIT_MAINNET_API_SECRET: ${AI_TRADE_BYBIT_MAINNET_API_SECRET:-}
     volumes:
-      - ./data:/app/data
+      - ${AI_TRADE_PROJECT_DIR:-.}/data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "kill -0 1 || exit 1"]
       interval: 30s
@@ -30,67 +30,74 @@ services:
 
   ai-trade-research:
     image: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
-    # [建议] 如果是本地构建，取消注释下面两行以使用 Dockerfile 中的 research 阶段
+    # 如果是本地构建，取消注释下面两行以使用 Dockerfile 中的 research 阶段
     # build: { context: ., target: research }
     container_name: ai-trade-research
     restart: "no"
-    # [修改] 统一工作目录为 /opt/ai-trade，与宿主机保持一致
     working_dir: /opt/ai-trade
     entrypoint: ["python3", "tools/integrator_train.py"]
     command: ["--help"]
     volumes:
-      # [修改] 挂载整个项目目录，确保脚本和数据路径一致
-      - ./:/opt/ai-trade
+      - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade
     profiles: ["research"]
 
   watchdog:
-    # 修改：复用主镜像(已包含python和脚本)，减少生产环境镜像拉取量
-    image: ${AI_TRADE_IMAGE:?AI_TRADE_IMAGE is required}
+    image: ${AI_TRADE_IMAGE:-ai-trade:latest}
     container_name: ai-trade-watchdog
     restart: unless-stopped
-    # [修改] 使用统一路径 /opt/ai-trade/ops/watchdog.py
-    entrypoint: ["/bin/sh", "-c", "while true; do python3 /opt/ai-trade/ops/watchdog.py || echo '[Watchdog] Process exited with error'; sleep 60; done"]
+    entrypoint: ["/bin/sh", "-c", "while true; do python3 /app/ops/watchdog.py || echo '[Watchdog] Process exited with error'; sleep 60; done"]
     environment:
       AI_TRADE_WEBHOOK_URL: ${AI_TRADE_WEBHOOK_URL:-}
     volumes:
-      # [修改] 挂载整个项目目录
-      - ./:/opt/ai-trade
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    working_dir: /opt/ai-trade
+    working_dir: /app
+    depends_on:
+      - ai-trade
 
   scheduler:
-    # 使用 docker:cli (Alpine) 作为基础
     image: docker:cli
     container_name: ai-trade-scheduler
     restart: unless-stopped
-    # [优化] 参考 Loki 等组件的写法，直接挂载到宿主机对应的绝对路径 /opt/ai-trade
-    # 这样 Docker-in-Docker (DinD) 场景下，容器内路径与宿主机路径一致。
     entrypoint:
       - /bin/sh
       - -c
       - |
-        # 1. 安装依赖 (Alpine)
-        apk add --no-cache bash docker-cli-compose
-        
-        # 2. 确保脚本有执行权限
+        if ! command -v bash >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+          apk add --no-cache bash docker-cli-compose
+        fi
+
         if [ -f "tools/closed_loop_runner.sh" ]; then chmod +x tools/closed_loop_runner.sh; fi
-        
-        # 3. 循环执行
+
+        # Docker socket 嵌套 compose: 需要把宿主机项目绝对路径传给下一层 compose。
+        if [ -z "${AI_TRADE_PROJECT_DIR:-}" ]; then
+          AI_TRADE_PROJECT_DIR="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/opt/ai-trade"}}{{.Source}}{{end}}{{end}}' ai-trade-scheduler 2>/dev/null || true)"
+          export AI_TRADE_PROJECT_DIR
+        fi
+
+        ENV_FILE="$${AI_TRADE_ENV_FILE:-.env.runtime}"
+        if [ -f "$${ENV_FILE}" ]; then
+          ENV_FILE_OPT="--env-file $${ENV_FILE}"
+        else
+          ENV_FILE_OPT=""
+        fi
+
         while true; do 
           echo '[Scheduler] Starting loop...'
-          /bin/bash tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml || echo '[Scheduler] Job failed'
+          /bin/bash tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml $${ENV_FILE_OPT} || echo '[Scheduler] Job failed'
           echo '[Scheduler] Sleeping 24h...'
           sleep 86400
         done
     environment:
-      # 传递必要的环境变量给 runner 脚本
+      AI_TRADE_IMAGE: ${AI_TRADE_IMAGE:-ai-trade:latest}
       AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
+      AI_TRADE_PROJECT_DIR: ${AI_TRADE_PROJECT_DIR:-}
+      AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}
     volumes:
-      # [关键] 直接挂载宿主机当前目录到容器内 /opt/ai-trade
-      # 确保容器内路径与宿主机路径 (/opt/ai-trade) 完全一致
-      - ./:/opt/ai-trade
+      - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /opt/ai-trade
+    depends_on:
+      - ai-trade
 
   loki:
     image: grafana/loki:2.9.8

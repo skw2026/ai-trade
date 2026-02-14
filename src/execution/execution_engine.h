@@ -14,8 +14,8 @@ struct ExecutionProtectionConfig {
   bool require_sl{true};
   bool enable_tp{true};
   int attach_timeout_ms{1500};
-  double stop_loss_atr_mult{1.5};
-  double take_profit_rr{1.2};
+  double stop_loss_ratio{0.01};
+  double take_profit_ratio{0.015};
   bool cancel_opposite_on_fill{true};
 };
 

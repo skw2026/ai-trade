@@ -77,6 +77,24 @@ const char* EvolutionActionTypeToString(SelfEvolutionActionType type) {
   return "unknown";
 }
 
+const char* OrderStateToString(OrderState state) {
+  switch (state) {
+    case OrderState::kNew:
+      return "new";
+    case OrderState::kSent:
+      return "sent";
+    case OrderState::kPartial:
+      return "partial";
+    case OrderState::kFilled:
+      return "filled";
+    case OrderState::kRejected:
+      return "rejected";
+    case OrderState::kCancelled:
+      return "cancelled";
+  }
+  return "unknown";
+}
+
 std::string FormatAccountPositions(const AccountState& account) {
   const auto symbols = account.symbols();
   if (symbols.empty()) {
@@ -521,6 +539,7 @@ void BotApplication::RunLoop() {
       has_fill = true;
       ProcessFillEvent(fill);
     }
+    CheckPendingRequiredSlTimeouts();
 
     if (advanced_tick) {
       ++market_tick_count_;
@@ -795,6 +814,10 @@ void BotApplication::ProcessAsyncResults() {
 
     if (res.success) {
       oms_.MarkSent(res.client_order_id);
+      const auto* record = oms_.Find(res.client_order_id);
+      if (record != nullptr && record->intent.purpose == OrderPurpose::kSl) {
+        ClearPendingRequiredSl(res.client_order_id);
+      }
       ++funnel_window_.async_submit_ok;
     } else {
       oms_.MarkRejected(res.client_order_id);
@@ -802,13 +825,27 @@ void BotApplication::ProcessAsyncResults() {
       ++funnel_window_.async_submit_failed;
       LogError("Async Submit Failed: " + res.error);
 
-      // 关键保护单失败触发熔断
       const auto* record = oms_.Find(res.client_order_id);
+      if (record != nullptr && record->intent.purpose == OrderPurpose::kSl) {
+        ClearPendingRequiredSl(res.client_order_id);
+      }
+
+      // 关键保护单失败触发只减仓，并输出标准审计事件码。
       if (record && record->intent.purpose == OrderPurpose::kSl &&
-          config_.protection.require_sl) {
+          config_.protection.enabled && config_.protection.require_sl) {
         protection_forced_reduce_only_ = true;
         RefreshReduceOnlyMode();
-        LogError("CRITICAL: SL submission failed, forcing ReduceOnly");
+        LogError("EXEC_PROTECTIVE_ORDER_MISSING: reason=sl_submit_failed"
+                 ", parent_order_id=" + record->intent.parent_order_id +
+                 ", sl_client_order_id=" + res.client_order_id +
+                 ", error=" + res.error +
+                 ", forcing=reduce_only");
+      } else if (record && record->intent.purpose == OrderPurpose::kTp &&
+                 config_.protection.enabled && config_.protection.enable_tp) {
+        LogError("EXEC_TP_ATTACH_FAILED: reason=tp_submit_failed"
+                 ", parent_order_id=" + record->intent.parent_order_id +
+                 ", tp_client_order_id=" + res.client_order_id +
+                 ", error=" + res.error);
       }
     }
   }
@@ -835,6 +872,11 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   oms_.OnFill(fill);
   system_.OnFill(fill);
   gate_monitor_.OnFill(fill);
+  const auto* fill_order_record = oms_.Find(fill.client_order_id);
+  if (fill_order_record != nullptr &&
+      fill_order_record->intent.purpose == OrderPurpose::kSl) {
+    ClearPendingRequiredSl(fill.client_order_id);
+  }
   if (const auto* record = oms_.Find(fill.client_order_id);
       record != nullptr && OrderManager::IsTerminalState(record->state)) {
     pending_net_order_enqueued_ms_.erase(fill.client_order_id);
@@ -860,18 +902,34 @@ void BotApplication::HandleProtectionOrders(const FillEvent& fill) {
     auto sl = execution_.BuildProtectionIntent(
         fill, OrderPurpose::kSl, config_.protection.stop_loss_ratio);
     bool sl_ok = false;
-    if (sl) sl_ok = EnqueueIntent(*sl);
+    if (sl) {
+      sl_ok = EnqueueIntent(*sl);
+      if (sl_ok && config_.protection.require_sl) {
+        TrackPendingRequiredSl(sl->client_order_id, fill.client_order_id);
+      }
+    }
 
     if (!sl_ok && config_.protection.require_sl) {
       protection_forced_reduce_only_ = true;
       RefreshReduceOnlyMode();
-      LogError("Failed to attach required SL, forcing ReduceOnly");
+      LogError("EXEC_PROTECTIVE_ORDER_MISSING: reason=sl_enqueue_failed"
+               ", parent_order_id=" + fill.client_order_id +
+               ", forcing=reduce_only");
     }
 
     if (config_.protection.enable_tp) {
       auto tp = execution_.BuildProtectionIntent(
           fill, OrderPurpose::kTp, config_.protection.take_profit_ratio);
-      if (tp) EnqueueIntent(*tp);
+      if (tp) {
+        const bool tp_ok = EnqueueIntent(*tp);
+        if (!tp_ok) {
+          LogError("EXEC_TP_ATTACH_FAILED: reason=tp_enqueue_failed"
+                   ", parent_order_id=" + fill.client_order_id);
+        }
+      } else {
+        LogError("EXEC_TP_ATTACH_FAILED: reason=tp_intent_invalid"
+                 ", parent_order_id=" + fill.client_order_id);
+      }
     }
   }
 
@@ -884,6 +942,73 @@ void BotApplication::HandleProtectionOrders(const FillEvent& fill) {
       executor_->Cancel(*sibling);
       oms_.MarkCancelled(*sibling);
     }
+  }
+}
+
+void BotApplication::TrackPendingRequiredSl(
+    const std::string& sl_client_order_id,
+    const std::string& parent_order_id) {
+  if (sl_client_order_id.empty() || !config_.protection.require_sl) {
+    return;
+  }
+  const std::int64_t timeout_ms =
+      static_cast<std::int64_t>(config_.protection.attach_timeout_ms);
+  pending_required_sl_attach_[sl_client_order_id] = PendingRequiredSlAttach{
+      .parent_order_id = parent_order_id,
+      .deadline_ms = CurrentTimestampMs() + timeout_ms,
+  };
+}
+
+void BotApplication::ClearPendingRequiredSl(
+    const std::string& sl_client_order_id) {
+  if (sl_client_order_id.empty()) {
+    return;
+  }
+  pending_required_sl_attach_.erase(sl_client_order_id);
+}
+
+void BotApplication::CheckPendingRequiredSlTimeouts() {
+  if (!config_.protection.enabled || !config_.protection.require_sl ||
+      config_.protection.attach_timeout_ms <= 0 ||
+      pending_required_sl_attach_.empty()) {
+    return;
+  }
+
+  const std::int64_t now_ms = CurrentTimestampMs();
+  std::vector<std::string> to_remove;
+  to_remove.reserve(pending_required_sl_attach_.size());
+  for (const auto& [sl_client_order_id, pending] : pending_required_sl_attach_) {
+    if (now_ms < pending.deadline_ms) {
+      continue;
+    }
+
+    const auto* sl_record = oms_.Find(sl_client_order_id);
+    const bool confirmed =
+        sl_record != nullptr &&
+        (sl_record->state == OrderState::kSent ||
+         sl_record->state == OrderState::kPartial ||
+         sl_record->state == OrderState::kFilled);
+    if (confirmed) {
+      to_remove.push_back(sl_client_order_id);
+      continue;
+    }
+
+    protection_forced_reduce_only_ = true;
+    RefreshReduceOnlyMode();
+    LogError("EXEC_PROTECTIVE_ORDER_MISSING: reason=sl_attach_timeout"
+             ", parent_order_id=" + pending.parent_order_id +
+             ", sl_client_order_id=" + sl_client_order_id +
+             ", sl_state=" +
+             (sl_record != nullptr ? OrderStateToString(sl_record->state)
+                                   : "missing") +
+             ", timeout_ms=" +
+             std::to_string(config_.protection.attach_timeout_ms) +
+             ", forcing=reduce_only");
+    to_remove.push_back(sl_client_order_id);
+  }
+
+  for (const auto& id : to_remove) {
+    pending_required_sl_attach_.erase(id);
   }
 }
 
