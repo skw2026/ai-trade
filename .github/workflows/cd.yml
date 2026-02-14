@@ -162,7 +162,7 @@ jobs:
           CLOSED_LOOP_OUTPUT_ROOT: ${{ vars.CLOSED_LOOP_OUTPUT_ROOT || '/opt/ai-trade/data/reports/closed_loop' }}
           CLOSED_LOOP_STRICT_PASS: ${{ vars.CLOSED_LOOP_STRICT_PASS || 'true' }}
           DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'ai-trade watchdog scheduler' }}
-          GATE_DEFER_SERVICES: ${{ vars.GATE_DEFER_SERVICES || 'scheduler' }}
+          GATE_DEFER_SERVICES: ${{ vars.GATE_DEFER_SERVICES || 'watchdog scheduler' }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}

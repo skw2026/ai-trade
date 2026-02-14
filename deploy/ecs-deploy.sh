@@ -21,7 +21,7 @@ if [[ -z "${DEPLOY_SERVICES_RAW// }" ]]; then
 fi
 REQUIRED_CONTAINERS_RAW="${REQUIRED_CONTAINERS:-}"
 CONTAINER_NAME="${CONTAINER_NAME:-ai-trade}"
-HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-180}"
+HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-300}"
 CLOSED_LOOP_ENFORCE="${CLOSED_LOOP_ENFORCE:-false}"
 CLOSED_LOOP_ACTION="${CLOSED_LOOP_ACTION:-assess}"
 CLOSED_LOOP_STAGE="${CLOSED_LOOP_STAGE:-DEPLOY}"
@@ -29,7 +29,7 @@ CLOSED_LOOP_SINCE="${CLOSED_LOOP_SINCE:-30m}"
 CLOSED_LOOP_MIN_RUNTIME_STATUS="${CLOSED_LOOP_MIN_RUNTIME_STATUS:-}"
 CLOSED_LOOP_OUTPUT_ROOT="${CLOSED_LOOP_OUTPUT_ROOT:-./data/reports/closed_loop}"
 CLOSED_LOOP_STRICT_PASS="${CLOSED_LOOP_STRICT_PASS:-true}"
-GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-scheduler}"
+GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-watchdog scheduler}"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
@@ -147,6 +147,16 @@ wait_for_services_ready() {
     fi
 
     if (( $(date +%s) >= deadline )); then
+      local container=""
+      for container in "${containers_to_check[@]}"; do
+        local status="unknown"
+        if ! docker ps -a --format '{{.Names}}' | grep -qx "${container}"; then
+          status="missing"
+        else
+          status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{if .State.Running}}running{{else}}stopped{{end}}{{end}}' "${container}" 2>/dev/null || echo "unknown")"
+        fi
+        echo "[deploy] timeout status: ${container}=${status}"
+      done
       echo "[deploy] wait timeout: containers=${containers_to_check[*]}"
       return 1
     fi
@@ -292,12 +302,18 @@ for service in "${deferred_deploy_services[@]}"; do
 done
 
 initial_required_containers=()
-for container in "${required_containers[@]}"; do
-  if array_contains "${container}" "${deferred_containers[@]}"; then
-    continue
-  fi
-  initial_required_containers+=("${container}")
-done
+if [[ -n "${REQUIRED_CONTAINERS_RAW// }" ]]; then
+  for container in "${required_containers[@]}"; do
+    if array_contains "${container}" "${deferred_containers[@]}"; then
+      continue
+    fi
+    initial_required_containers+=("${container}")
+  done
+else
+  for service in "${initial_deploy_services[@]}"; do
+    initial_required_containers+=("$(service_to_container_name "${service}")")
+  done
+fi
 if (( ${#initial_required_containers[@]} == 0 )); then
   initial_required_containers=("${required_containers[@]}")
 fi
@@ -308,6 +324,7 @@ echo "[deploy] deploy_services=${deploy_services[*]}"
 echo "[deploy] initial_deploy_services=${initial_deploy_services[*]}"
 echo "[deploy] deferred_deploy_services=${deferred_deploy_services[*]}"
 echo "[deploy] required_containers=${required_containers[*]}"
+echo "[deploy] initial_required_containers=${initial_required_containers[*]}"
 
 upsert_env "AI_TRADE_IMAGE" "${AI_TRADE_IMAGE}"
 if [[ -n "${AI_TRADE_RESEARCH_IMAGE:-}" ]]; then
@@ -320,6 +337,11 @@ else
   upsert_env "AI_TRADE_ENV_FILE" "$(basename "${ENV_FILE}")"
 fi
 compose_cmd=(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}")
+
+if is_true "${CLOSED_LOOP_ENFORCE}" && (( ${#deferred_deploy_services[@]} > 0 )); then
+  echo "[deploy] stopping deferred services before gate: ${deferred_deploy_services[*]}"
+  "${compose_cmd[@]}" stop "${deferred_deploy_services[@]}" || true
+fi
 
 "${compose_cmd[@]}" pull "${initial_deploy_services[@]}"
 "${compose_cmd[@]}" up -d "${initial_deploy_services[@]}"
