@@ -16,6 +16,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
       - name: Install Build Dependencies
         run: |
           set -euo pipefail
@@ -30,6 +35,15 @@ jobs:
 
       - name: Configure
         run: cmake -S . -B build -G Ninja
+
+      - name: Verify Required Tests Registered
+        run: |
+          set -euo pipefail
+          ctest --test-dir build -N > /tmp/ctest-list.txt
+          grep -q "trade_system_test" /tmp/ctest-list.txt
+          grep -q "assess_run_log_test" /tmp/ctest-list.txt
+          grep -q "compose_consistency_test" /tmp/ctest-list.txt
+          grep -q "watchdog_utils_test" /tmp/ctest-list.txt
 
       - name: Build
         run: cmake --build build -j"$(nproc)"

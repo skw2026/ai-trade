@@ -67,6 +67,22 @@ RUNTIME_ACCOUNT_RE = re.compile(
     r"drawdown_pct=(?P<drawdown_pct>-?[0-9]+(?:\.[0-9]+)?), "
     r"notional=(?P<notional>-?[0-9]+(?:\.[0-9]+)?)"
 )
+RUNTIME_ACCOUNT_REALIZED_RE = re.compile(
+    r"RUNTIME_STATUS:.*?account=\{[^}]*?"
+    r"realized_pnl=(?P<realized>-?[0-9]+(?:\.[0-9]+)?), "
+    r"fees=(?P<fees>-?[0-9]+(?:\.[0-9]+)?), "
+    r"realized_net=(?P<net>-?[0-9]+(?:\.[0-9]+)?)"
+)
+RUNTIME_STRATEGY_MIX_RE = re.compile(
+    r"RUNTIME_STATUS:.*?strategy_mix=\{[^}]*?"
+    r"latest_trend_notional=(?P<latest_trend>-?[0-9]+(?:\.[0-9]+)?), "
+    r"latest_defensive_notional=(?P<latest_defensive>-?[0-9]+(?:\.[0-9]+)?), "
+    r"latest_blended_notional=(?P<latest_blended>-?[0-9]+(?:\.[0-9]+)?), "
+    r"avg_abs_trend_notional=(?P<avg_trend>[0-9]+(?:\.[0-9]+)?), "
+    r"avg_abs_defensive_notional=(?P<avg_defensive>[0-9]+(?:\.[0-9]+)?), "
+    r"avg_abs_blended_notional=(?P<avg_blended>[0-9]+(?:\.[0-9]+)?), "
+    r"samples=(?P<samples>\d+)"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -119,6 +135,9 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
     equities: list[float] = []
     drawdowns: list[float] = []
     notionals: list[float] = []
+    realized_pnls: list[float] = []
+    fees: list[float] = []
+    realized_nets: list[float] = []
 
     for m in RUNTIME_ACCOUNT_RE.finditer(text):
         try:
@@ -126,6 +145,14 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
             equities.append(float(m.group("equity")))
             drawdowns.append(float(m.group("drawdown_pct")))
             notionals.append(float(m.group("notional")))
+        except ValueError:
+            continue
+
+    for m in RUNTIME_ACCOUNT_REALIZED_RE.finditer(text):
+        try:
+            realized_pnls.append(float(m.group("realized")))
+            fees.append(float(m.group("fees")))
+            realized_nets.append(float(m.group("net")))
         except ValueError:
             continue
 
@@ -145,6 +172,16 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
             "peak_to_last_drawdown_pct": None,
             "max_drawdown_pct_observed": None,
             "max_abs_notional_usd_observed": None,
+            "fee_samples": 0,
+            "first_realized_pnl_usd": None,
+            "last_realized_pnl_usd": None,
+            "realized_pnl_change_usd": None,
+            "first_fee_usd": None,
+            "last_fee_usd": None,
+            "fee_change_usd": None,
+            "first_realized_net_pnl_usd": None,
+            "last_realized_net_pnl_usd": None,
+            "realized_net_pnl_change_usd": None,
         }
 
     first_equity = equities[0]
@@ -176,6 +213,28 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
     max_drawdown_observed = max(drawdowns) if drawdowns else None
     max_abs_notional_observed = max(abs(x) for x in notionals) if notionals else None
 
+    first_realized = realized_pnls[0] if realized_pnls else None
+    last_realized = realized_pnls[-1] if realized_pnls else None
+    realized_change = (
+        (last_realized - first_realized)
+        if first_realized is not None and last_realized is not None
+        else None
+    )
+    first_fee = fees[0] if fees else None
+    last_fee = fees[-1] if fees else None
+    fee_change = (
+        (last_fee - first_fee)
+        if first_fee is not None and last_fee is not None
+        else None
+    )
+    first_realized_net = realized_nets[0] if realized_nets else None
+    last_realized_net = realized_nets[-1] if realized_nets else None
+    realized_net_change = (
+        (last_realized_net - first_realized_net)
+        if first_realized_net is not None and last_realized_net is not None
+        else None
+    )
+
     return {
         "samples": len(equities),
         "first_equity_usd": first_equity,
@@ -191,11 +250,80 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
         "peak_to_last_drawdown_pct": peak_to_last_drawdown_pct,
         "max_drawdown_pct_observed": max_drawdown_observed,
         "max_abs_notional_usd_observed": max_abs_notional_observed,
+        "fee_samples": len(fees),
+        "first_realized_pnl_usd": first_realized,
+        "last_realized_pnl_usd": last_realized,
+        "realized_pnl_change_usd": realized_change,
+        "first_fee_usd": first_fee,
+        "last_fee_usd": last_fee,
+        "fee_change_usd": fee_change,
+        "first_realized_net_pnl_usd": first_realized_net,
+        "last_realized_net_pnl_usd": last_realized_net,
+        "realized_net_pnl_change_usd": realized_net_change,
+    }
+
+
+def extract_strategy_mix_series(text: str) -> Dict[str, float]:
+    latest_trend_values: list[float] = []
+    latest_defensive_values: list[float] = []
+    avg_trend_values: list[float] = []
+    avg_defensive_values: list[float] = []
+    avg_blended_values: list[float] = []
+    sample_values: list[int] = []
+
+    for m in RUNTIME_STRATEGY_MIX_RE.finditer(text):
+        try:
+            latest_trend_values.append(float(m.group("latest_trend")))
+            latest_defensive_values.append(float(m.group("latest_defensive")))
+            avg_trend_values.append(float(m.group("avg_trend")))
+            avg_defensive_values.append(float(m.group("avg_defensive")))
+            avg_blended_values.append(float(m.group("avg_blended")))
+            sample_values.append(int(m.group("samples")))
+        except ValueError:
+            continue
+
+    runtime_count = len(sample_values)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "nonzero_window_count": 0.0,
+            "defensive_active_count": 0.0,
+            "avg_abs_trend_notional": 0.0,
+            "avg_abs_defensive_notional": 0.0,
+            "avg_abs_blended_notional": 0.0,
+            "avg_defensive_share": 0.0,
+        }
+
+    nonzero_window_count = sum(1 for x in sample_values if x > 0)
+    defensive_active_count = sum(
+        1
+        for avg_defensive, window_samples in zip(avg_defensive_values, sample_values)
+        if window_samples > 0 and avg_defensive > 1e-9
+    )
+    avg_abs_trend_notional = sum(avg_trend_values) / runtime_count
+    avg_abs_defensive_notional = sum(avg_defensive_values) / runtime_count
+    avg_abs_blended_notional = sum(avg_blended_values) / runtime_count
+    defensive_share_den = avg_abs_trend_notional + avg_abs_defensive_notional
+    avg_defensive_share = (
+        avg_abs_defensive_notional / defensive_share_den
+        if defensive_share_den > 1e-12
+        else 0.0
+    )
+
+    return {
+        "runtime_count": float(runtime_count),
+        "nonzero_window_count": float(nonzero_window_count),
+        "defensive_active_count": float(defensive_active_count),
+        "avg_abs_trend_notional": avg_abs_trend_notional,
+        "avg_abs_defensive_notional": avg_abs_defensive_notional,
+        "avg_abs_blended_notional": avg_abs_blended_notional,
+        "avg_defensive_share": avg_defensive_share,
     }
 
 
 def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, object]:
     account_pnl = extract_runtime_account_series(text)
+    strategy_mix = extract_strategy_mix_series(text)
     metrics = {
         "runtime_status_count": count(r"RUNTIME_STATUS:", text),
         "max_runtime_tick": max_tick(text),
@@ -236,7 +364,24 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "integrator_shadow_scored_runtime_count": count(
             r"RUNTIME_STATUS:.*shadow_window=\{[^}]*scored=(?:[1-9][0-9]*)", text
         ),
+        "order_filtered_cost_count": count(r"ORDER_FILTERED_COST:", text),
+        "entry_gate_enabled_count": count(r"RUNTIME_STATUS:.*entry_gate=\{enabled=true", text),
+        "bybit_submit_limit_count": count(r"BYBIT_SUBMIT:.*order_type=Limit", text),
+        "bybit_submit_market_count": count(r"BYBIT_SUBMIT:.*order_type=Market", text),
         "runtime_account_samples": account_pnl["samples"],
+        "strategy_mix_runtime_count": int(strategy_mix["runtime_count"]),
+        "strategy_mix_nonzero_window_count": int(strategy_mix["nonzero_window_count"]),
+        "strategy_mix_defensive_active_count": int(
+            strategy_mix["defensive_active_count"]
+        ),
+        "strategy_mix_avg_abs_trend_notional": strategy_mix["avg_abs_trend_notional"],
+        "strategy_mix_avg_abs_defensive_notional": strategy_mix[
+            "avg_abs_defensive_notional"
+        ],
+        "strategy_mix_avg_abs_blended_notional": strategy_mix[
+            "avg_abs_blended_notional"
+        ],
+        "strategy_mix_avg_defensive_share": strategy_mix["avg_defensive_share"],
     }
     if metrics["runtime_status_count"] > 0:
         metrics["trading_halted_true_ratio"] = (
@@ -370,6 +515,16 @@ def print_report(report: Dict[str, object]) -> None:
             "peak_to_last_drawdown_pct",
             "max_drawdown_pct_observed",
             "max_abs_notional_usd_observed",
+            "fee_samples",
+            "first_realized_pnl_usd",
+            "last_realized_pnl_usd",
+            "realized_pnl_change_usd",
+            "first_fee_usd",
+            "last_fee_usd",
+            "fee_change_usd",
+            "first_realized_net_pnl_usd",
+            "last_realized_net_pnl_usd",
+            "realized_net_pnl_change_usd",
         ):
             print(f"  - {key}: {account_pnl.get(key)}")
 

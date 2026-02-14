@@ -178,16 +178,30 @@ struct AppConfig {
   double strategy_signal_notional_usd{1000.0};
   double strategy_signal_deadband_abs{0.1};
   int strategy_min_hold_ticks{0};
-  // 新增策略参数
+  // 趋势策略参数
   int trend_ema_fast{12};
   int trend_ema_slow{26};
   double vol_target_pct{0.40}; // 年化波动率目标 (e.g. 40%)
+  // 防御策略参数（均值回归分支）
+  double strategy_defensive_notional_ratio{0.0};
+  double strategy_defensive_entry_score{1.25};
+  double strategy_defensive_trend_scale{0.35};
+  double strategy_defensive_range_scale{1.00};
+  double strategy_defensive_extreme_scale{0.55};
   double risk_max_abs_notional_usd{3000.0};
   RiskThresholds risk_thresholds{};
   double execution_max_order_notional{1000.0};
   double execution_min_rebalance_notional_usd{0.0};
   int execution_min_order_interval_ms{0};
   int execution_reverse_signal_cooldown_ticks{0};
+  bool execution_enable_fee_aware_entry_gate{true};
+  double execution_entry_fee_bps{5.5};
+  double execution_exit_fee_bps{5.5};
+  double execution_expected_slippage_bps{1.0};
+  double execution_min_expected_edge_bps{1.0};
+  bool execution_maker_entry_enabled{false};
+  double execution_maker_price_offset_bps{1.0};
+  bool execution_maker_post_only{true};
   std::string exchange{"mock"};
   std::string data_path{"data"};
   ProtectionConfig protection{};

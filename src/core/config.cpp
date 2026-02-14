@@ -425,6 +425,120 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" &&
+        (key == "enable_fee_aware_entry_gate" ||
+         key == "fee_aware_entry_gate")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.enable_fee_aware_entry_gate 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_enable_fee_aware_entry_gate = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        (key == "entry_fee_bps" || key == "taker_fee_bps")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "execution.entry_fee_bps 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_entry_fee_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" && key == "exit_fee_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "execution.exit_fee_bps 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_exit_fee_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        (key == "expected_slippage_bps" || key == "slippage_bps" ||
+         key == "max_slippage_bps")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.expected_slippage_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_expected_slippage_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" && key == "min_expected_edge_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.min_expected_edge_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_min_expected_edge_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        (key == "maker_entry_enabled" || key == "maker_first")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "execution.maker_entry_enabled 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_maker_entry_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" && key == "maker_price_offset_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.maker_price_offset_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_maker_price_offset_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" && key == "maker_post_only") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "execution.maker_post_only 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_maker_post_only = parsed;
+      continue;
+    }
+
     if (current_section == "strategy" &&
         (key == "signal_notional" || key == "signal_notional_usd")) {
       double parsed = 0.0;
@@ -464,6 +578,76 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.strategy_min_hold_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "defensive_notional_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.defensive_notional_ratio 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_defensive_notional_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "defensive_entry_score") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.defensive_entry_score 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_defensive_entry_score = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "defensive_trend_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.defensive_trend_scale 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_defensive_trend_scale = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "defensive_range_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.defensive_range_scale 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_defensive_range_scale = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "defensive_extreme_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.defensive_extreme_scale 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_defensive_extreme_scale = parsed;
       continue;
     }
 
@@ -1986,6 +2170,36 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.execution_entry_fee_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.entry_fee_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_exit_fee_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.exit_fee_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_expected_slippage_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.expected_slippage_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_min_expected_edge_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.min_expected_edge_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_maker_price_offset_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.maker_price_offset_bps 不能为负数";
+    }
+    return false;
+  }
   if (config.strategy_signal_notional_usd < 0.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.signal_notional_usd 不能为负数";
@@ -2001,6 +2215,26 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.strategy_min_hold_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "strategy.min_hold_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_defensive_notional_ratio < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.defensive_notional_ratio 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_defensive_entry_score <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.defensive_entry_score 必须大于 0";
+    }
+    return false;
+  }
+  if (config.strategy_defensive_trend_scale < 0.0 ||
+      config.strategy_defensive_range_scale < 0.0 ||
+      config.strategy_defensive_extreme_scale < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.defensive_*_scale 不能为负数";
     }
     return false;
   }

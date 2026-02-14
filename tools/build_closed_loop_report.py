@@ -266,6 +266,28 @@ def main() -> int:
                     "max_abs_notional_usd_observed"
                 ),
                 "samples": runtime_account_pnl.get("samples"),
+                "fee_samples": runtime_account_pnl.get("fee_samples"),
+                "first_realized_pnl_usd": runtime_account_pnl.get(
+                    "first_realized_pnl_usd"
+                ),
+                "last_realized_pnl_usd": runtime_account_pnl.get(
+                    "last_realized_pnl_usd"
+                ),
+                "realized_pnl_change_usd": runtime_account_pnl.get(
+                    "realized_pnl_change_usd"
+                ),
+                "first_fee_usd": runtime_account_pnl.get("first_fee_usd"),
+                "last_fee_usd": runtime_account_pnl.get("last_fee_usd"),
+                "fee_change_usd": runtime_account_pnl.get("fee_change_usd"),
+                "first_realized_net_pnl_usd": runtime_account_pnl.get(
+                    "first_realized_net_pnl_usd"
+                ),
+                "last_realized_net_pnl_usd": runtime_account_pnl.get(
+                    "last_realized_net_pnl_usd"
+                ),
+                "realized_net_pnl_change_usd": runtime_account_pnl.get(
+                    "realized_net_pnl_change_usd"
+                ),
             }
 
     overall_status = "PASS"

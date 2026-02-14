@@ -88,4 +88,27 @@ if(BUILD_TESTING)
   add_executable(trade_system_test tests/test_trade_system.cpp)
   target_link_libraries(trade_system_test PRIVATE ai_trade_system)
   add_test(NAME trade_system_test COMMAND trade_system_test)
+
+  option(AI_TRADE_REQUIRE_PYTHON_TESTS
+         "Require Python interpreter for Python unit tests when BUILD_TESTING=ON"
+         ON)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(NOT Python3_Interpreter_FOUND)
+    if(AI_TRADE_REQUIRE_PYTHON_TESTS)
+      message(FATAL_ERROR
+              "Python3 interpreter not found but BUILD_TESTING=ON and "
+              "AI_TRADE_REQUIRE_PYTHON_TESTS=ON. Install Python3 or set "
+              "-DAI_TRADE_REQUIRE_PYTHON_TESTS=OFF.")
+    else()
+      message(WARNING
+              "Python3 interpreter not found; Python unit tests are disabled.")
+    endif()
+  else()
+    add_test(NAME assess_run_log_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_assess_run_log.py)
+    add_test(NAME compose_consistency_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_compose_consistency.py)
+    add_test(NAME watchdog_utils_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_watchdog.py)
+  endif()
 endif()

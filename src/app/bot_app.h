@@ -96,6 +96,17 @@ class BotApplication {
    */
   void ProcessAsyncResults();
 
+  /// 估算单次开仓的 round-trip 成本阈值（bps）。
+  double RoundTripCostBps() const;
+  /// 基于当前 regime 与信号估算开仓边际（bps）。
+  double EstimateEntryEdgeBps(const MarketDecision& decision,
+                              const MarketEvent& event) const;
+  /// 费率感知开仓过滤（仅 Entry 生效）。
+  bool ShouldFilterByFeeAwareGate(const MarketDecision& decision,
+                                  const MarketEvent& event,
+                                  double* out_expected_edge_bps,
+                                  double* out_required_edge_bps) const;
+
   // --- 辅助逻辑 ---
 
   /**
@@ -168,6 +179,7 @@ class BotApplication {
     std::uint64_t intents_generated{0};
     std::uint64_t intents_filtered_inactive_symbol{0};
     std::uint64_t intents_filtered_min_notional{0};
+    std::uint64_t intents_filtered_fee_aware{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
     std::uint64_t async_submit_ok{0};
@@ -187,9 +199,16 @@ class BotApplication {
     std::uint64_t integrator_policy_applied{0};
     std::uint64_t integrator_policy_canary{0};
     std::uint64_t integrator_policy_active{0};
+    std::uint64_t entry_edge_samples{0};
+    std::uint64_t strategy_mix_samples{0};
     double integrator_model_score_sum{0.0};
     double integrator_p_up_sum{0.0};
     double integrator_p_down_sum{0.0};
+    double entry_edge_bps_sum{0.0};
+    double entry_required_edge_bps_sum{0.0};
+    double trend_notional_abs_sum{0.0};
+    double defensive_notional_abs_sum{0.0};
+    double blended_notional_abs_sum{0.0};
   };
 
   static void AccumulateStats(DecisionFunnelStats* total,
@@ -258,6 +277,8 @@ class BotApplication {
   DecisionFunnelStats funnel_window_;  ///< 日志窗口漏斗统计（周期清零）。
   RegimeState last_regime_state_;  ///< 最近一笔行情对应的 Regime 状态。
   bool has_last_regime_state_{false};  ///< 是否已有 Regime 状态可展示。
+  Signal last_strategy_signal_;  ///< 最近一次“策略+自进化混合后”的基础信号。
+  bool has_last_strategy_signal_{false};  ///< 是否已有基础信号可展示。
   ShadowInference last_shadow_inference_;  ///< 最近一次影子推理结果。
   bool has_last_shadow_inference_{false};  ///< 是否已有影子推理结果可展示。
 };

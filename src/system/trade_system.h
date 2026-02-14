@@ -97,7 +97,7 @@ class TradeSystem {
                                     bool reset_peak_to_equity) {
     account_.SyncFromRemoteAccountBalance(balance, reset_peak_to_equity);
   }
-  /// 自进化权重是否启用（启用后会缩放策略目标名义值）。
+  /// 自进化权重是否启用（启用后会按 Regime 分桶混合 trend/defensive 分量）。
   void EnableEvolution(bool enabled) { evolution_enabled_ = enabled; }
   /// 设置所有 Regime bucket 的自进化权重（兼容旧调用）。
   bool SetEvolutionWeights(double trend_weight,

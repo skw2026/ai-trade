@@ -33,6 +33,18 @@ double AccountState::equity_usd() const {
   return cash_usd_ + UnrealizedPnlUsd();
 }
 
+double AccountState::cumulative_realized_pnl_usd() const {
+  return cumulative_realized_pnl_usd_;
+}
+
+double AccountState::cumulative_fee_usd() const {
+  return cumulative_fee_usd_;
+}
+
+double AccountState::cumulative_realized_net_pnl_usd() const {
+  return cumulative_realized_pnl_usd_ - cumulative_fee_usd_;
+}
+
 double AccountState::current_notional_usd() const {
   double total = 0.0;
   for (const auto& [symbol, position] : positions_) {
@@ -186,6 +198,7 @@ void AccountState::ApplyFill(const FillEvent& fill) {
   auto& position = positions_[fill.symbol];
 
   cash_usd_ -= fill.fee;
+  cumulative_fee_usd_ += fill.fee;
   const double old_qty = position.qty;
   const double old_abs = std::fabs(old_qty);
 
@@ -210,6 +223,7 @@ void AccountState::ApplyFill(const FillEvent& fill) {
     const double realized_pnl =
         close_qty * (fill.price - position.avg_entry_price) * Sign(old_qty);
     cash_usd_ += realized_pnl;
+    cumulative_realized_pnl_usd_ += realized_pnl;
 
     position.qty = old_qty + signed_qty;
     if (std::fabs(position.qty) < kEpsilon) {
@@ -247,6 +261,8 @@ void AccountState::SyncFromRemotePositions(
 
   cash_usd_ = baseline_cash_usd;
   peak_equity_usd_ = baseline_cash_usd;
+  cumulative_realized_pnl_usd_ = 0.0;
+  cumulative_fee_usd_ = 0.0;
   RefreshPeakEquity();
 }
 

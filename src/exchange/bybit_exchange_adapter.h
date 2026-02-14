@@ -56,6 +56,9 @@ struct BybitAdapterOptions {
   // 启动时预热 execution 游标，避免把历史成交误当作新成交推进本地状态。
   bool execution_skip_history_on_start{true};
   int execution_poll_limit{50};  ///< `/v5/execution/list` 轮询 limit。
+  bool maker_entry_enabled{false};  ///< 开仓优先用 maker limit，减少 taker 成本。
+  double maker_price_offset_bps{1.0};  ///< maker 限价相对参考价偏移（bps）。
+  bool maker_post_only{true};  ///< maker 模式是否强制 PostOnly。
   std::vector<std::string> symbols{"BTCUSDT"};  ///< 启动时关注的 symbol 列表。
   std::vector<double> replay_prices{100.0, 100.5, 100.3, 100.8, 100.4, 100.9};  ///< replay 行情序列。
   AccountMode remote_account_mode{AccountMode::kUnified};  ///< 期望远端账户模式。

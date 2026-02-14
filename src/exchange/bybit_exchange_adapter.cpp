@@ -488,6 +488,54 @@ double QuantizeDownToStep(double qty, const BybitSymbolTradeRule& rule) {
   return units * rule.qty_step;
 }
 
+double QuantizePassivePrice(double price,
+                            int direction,
+                            const BybitSymbolTradeRule& rule) {
+  if (price <= 0.0) {
+    return price;
+  }
+  if (direction == 0) {
+    return price;
+  }
+  if (rule.price_scale > 0 && rule.price_tick_units > 0) {
+    const long double scaled_raw =
+        static_cast<long double>(price) *
+        static_cast<long double>(rule.price_scale);
+    const std::int64_t scaled_units = direction > 0
+                                          ? static_cast<std::int64_t>(
+                                                std::floor(scaled_raw + 1e-12L))
+                                          : static_cast<std::int64_t>(
+                                                std::ceil(scaled_raw - 1e-12L));
+    if (scaled_units <= 0) {
+      return 0.0;
+    }
+    std::int64_t aligned_units = 0;
+    if (direction > 0) {
+      aligned_units =
+          (scaled_units / rule.price_tick_units) * rule.price_tick_units;
+    } else {
+      aligned_units = ((scaled_units + rule.price_tick_units - 1) /
+                       rule.price_tick_units) *
+                      rule.price_tick_units;
+    }
+    if (aligned_units <= 0) {
+      return 0.0;
+    }
+    return static_cast<double>(aligned_units) /
+           static_cast<double>(rule.price_scale);
+  }
+  if (rule.price_tick > 0.0) {
+    const double units = direction > 0
+                             ? std::floor((price + 1e-12) / rule.price_tick)
+                             : std::ceil((price - 1e-12) / rule.price_tick);
+    if (units <= 0.0) {
+      return 0.0;
+    }
+    return units * rule.price_tick;
+  }
+  return price;
+}
+
 bool IsStepAligned(double qty, const BybitSymbolTradeRule& rule) {
   if (qty <= 0.0) {
     return false;
@@ -1387,17 +1435,21 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   }
   double submit_qty = intent.qty;
   int qty_precision = 8;
+  int price_precision = 8;
   const std::string normalized_symbol = ToUpperCopy(intent.symbol);
+  const BybitSymbolTradeRule* submit_rule = nullptr;
   
   // 应用交易规则：先截断，再量化，再做最小名义与最小数量校验。
   const auto rule_it = symbol_trade_rules_.find(normalized_symbol);
   if (rule_it != symbol_trade_rules_.end()) {
     const BybitSymbolTradeRule& rule = rule_it->second;
+    submit_rule = &rule;
     if (!rule.tradable) {
       LogInfo("Bybit 下单拒绝：symbol 当前不可交易, symbol=" + normalized_symbol);
       return false;
     }
     qty_precision = rule.qty_precision > 0 ? rule.qty_precision : 8;
+    price_precision = rule.price_precision > 0 ? rule.price_precision : 8;
 
     // 1. 上限截断
     if (rule.max_mkt_order_qty > 0.0) {
@@ -1455,17 +1507,70 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
     return false;
   }
 
+  std::string order_type = "Market";
+  double submit_price = 0.0;
+  std::string time_in_force;
+  const bool maker_entry_order =
+      options_.maker_entry_enabled && !intent.reduce_only &&
+      intent.purpose == OrderPurpose::kEntry;
+  if (maker_entry_order) {
+    double reference_price = intent.price;
+    if (reference_price <= 0.0) {
+      const auto it = last_price_by_symbol_.find(normalized_symbol);
+      if (it != last_price_by_symbol_.end()) {
+        reference_price = it->second;
+      }
+    }
+    if (reference_price > 0.0) {
+      const double offset_ratio =
+          std::max(0.0, options_.maker_price_offset_bps) / 10000.0;
+      const double target_price =
+          intent.direction > 0 ? reference_price * (1.0 - offset_ratio)
+                               : reference_price * (1.0 + offset_ratio);
+      submit_price = submit_rule != nullptr
+                         ? QuantizePassivePrice(target_price,
+                                                intent.direction,
+                                                *submit_rule)
+                         : target_price;
+      if (submit_price > 0.0) {
+        order_type = "Limit";
+        time_in_force = options_.maker_post_only ? "PostOnly" : "GTC";
+      }
+    } else {
+      LogInfo("Bybit maker-first 回退市价: symbol=" + normalized_symbol +
+              ", reason=missing_reference_price");
+    }
+  }
+
   order_symbol_by_client_id_[intent.client_order_id] = normalized_symbol;
   // 构造 Bybit V5 下单 Payload
   const std::string side = intent.direction > 0 ? "Buy" : "Sell";
-  const std::string body =
+  std::string body =
       "{\"category\":\"" + EscapeJson(options_.category) +
       "\",\"symbol\":\"" + EscapeJson(normalized_symbol) +
       "\",\"side\":\"" + side +
-      "\",\"orderType\":\"Market\"" +
+      "\",\"orderType\":\"" + order_type + "\"" +
       ",\"qty\":\"" + ToDecimalString(submit_qty, qty_precision) + "\"" +
       ",\"reduceOnly\":" + std::string(intent.reduce_only ? "true" : "false") +
-      ",\"orderLinkId\":\"" + EscapeJson(intent.client_order_id) + "\"}";
+      ",\"orderLinkId\":\"" + EscapeJson(intent.client_order_id) + "\"";
+  if (order_type == "Limit" && submit_price > 0.0) {
+    body += ",\"price\":\"" + ToDecimalString(submit_price, price_precision) + "\"";
+    if (!time_in_force.empty()) {
+      body += ",\"timeInForce\":\"" + time_in_force + "\"";
+    }
+  }
+  body += "}";
+
+  LogInfo("BYBIT_SUBMIT: symbol=" + normalized_symbol +
+          ", client_order_id=" + intent.client_order_id +
+          ", order_type=" + order_type +
+          ", reduce_only=" + (intent.reduce_only ? std::string("true")
+                                                 : std::string("false")) +
+          ", qty=" + ToDecimalString(submit_qty, qty_precision) +
+          (order_type == "Limit"
+               ? ", price=" + ToDecimalString(submit_price, price_precision) +
+                     ", time_in_force=" + time_in_force
+               : std::string()));
 
   std::string response;
   std::string error;

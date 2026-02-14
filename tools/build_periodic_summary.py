@@ -133,6 +133,8 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     max_equity_observed: Optional[float] = None
     peak_to_last_drawdown: Optional[float] = None
     pnl_changes: List[float] = []
+    realized_net_changes: List[float] = []
+    fee_changes: List[float] = []
 
     for item in runs:
         account = item["report"].get("account_outcome", {})
@@ -178,6 +180,12 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         change = to_float(account.get("equity_change_usd"))
         if change is not None:
             pnl_changes.append(change)
+        realized_net_change = to_float(account.get("realized_net_pnl_change_usd"))
+        if realized_net_change is not None:
+            realized_net_changes.append(realized_net_change)
+        fee_change = to_float(account.get("fee_change_usd"))
+        if fee_change is not None:
+            fee_changes.append(fee_change)
 
     net_change = None
     net_change_pct = None
@@ -187,6 +195,12 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             net_change_pct = net_change / earliest_eq
 
     avg_change = sum(pnl_changes) / len(pnl_changes) if pnl_changes else None
+    avg_realized_net_change = (
+        sum(realized_net_changes) / len(realized_net_changes)
+        if realized_net_changes
+        else None
+    )
+    avg_fee_change = sum(fee_changes) / len(fee_changes) if fee_changes else None
 
     return {
         "earliest_sample_utc": to_iso_utc(earliest_ts) if earliest_ts else None,
@@ -196,6 +210,8 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "equity_change_usd": net_change,
         "equity_change_pct": net_change_pct,
         "avg_run_equity_change_usd": avg_change,
+        "avg_run_realized_net_change_usd": avg_realized_net_change,
+        "avg_run_fee_change_usd": avg_fee_change,
         "max_drawdown_pct_observed": max_drawdown,
         "max_abs_notional_usd_observed": max_abs_notional,
         "max_equity_usd_observed": max_equity_observed,
@@ -242,6 +258,13 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "integrator_mode_shadow_count": 0,
             "integrator_mode_canary_count": 0,
             "integrator_mode_active_count": 0,
+            "strategy_mix_runtime_count": 0,
+            "strategy_mix_nonzero_window_count": 0,
+            "strategy_mix_defensive_active_count": 0,
+            "strategy_mix_avg_abs_trend_notional": None,
+            "strategy_mix_avg_abs_defensive_notional": None,
+            "strategy_mix_avg_abs_blended_notional": None,
+            "strategy_mix_avg_defensive_share": None,
         }
 
     gate_failed = to_int(latest_metrics.get("gate_check_failed_count")) or 0
@@ -264,6 +287,27 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     integrator_mode_shadow = to_int(latest_metrics.get("integrator_mode_shadow_count")) or 0
     integrator_mode_canary = to_int(latest_metrics.get("integrator_mode_canary_count")) or 0
     integrator_mode_active = to_int(latest_metrics.get("integrator_mode_active_count")) or 0
+    strategy_mix_runtime_count = (
+        to_int(latest_metrics.get("strategy_mix_runtime_count")) or 0
+    )
+    strategy_mix_nonzero_window_count = (
+        to_int(latest_metrics.get("strategy_mix_nonzero_window_count")) or 0
+    )
+    strategy_mix_defensive_active_count = (
+        to_int(latest_metrics.get("strategy_mix_defensive_active_count")) or 0
+    )
+    strategy_mix_avg_abs_trend_notional = to_float(
+        latest_metrics.get("strategy_mix_avg_abs_trend_notional")
+    )
+    strategy_mix_avg_abs_defensive_notional = to_float(
+        latest_metrics.get("strategy_mix_avg_abs_defensive_notional")
+    )
+    strategy_mix_avg_abs_blended_notional = to_float(
+        latest_metrics.get("strategy_mix_avg_abs_blended_notional")
+    )
+    strategy_mix_avg_defensive_share = to_float(
+        latest_metrics.get("strategy_mix_avg_defensive_share")
+    )
 
     total_gate = gate_failed + gate_passed
     gate_fail_ratio = to_float(latest_metrics.get("gate_check_fail_ratio"))
@@ -306,6 +350,13 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "integrator_mode_shadow_count": integrator_mode_shadow,
         "integrator_mode_canary_count": integrator_mode_canary,
         "integrator_mode_active_count": integrator_mode_active,
+        "strategy_mix_runtime_count": strategy_mix_runtime_count,
+        "strategy_mix_nonzero_window_count": strategy_mix_nonzero_window_count,
+        "strategy_mix_defensive_active_count": strategy_mix_defensive_active_count,
+        "strategy_mix_avg_abs_trend_notional": strategy_mix_avg_abs_trend_notional,
+        "strategy_mix_avg_abs_defensive_notional": strategy_mix_avg_abs_defensive_notional,
+        "strategy_mix_avg_abs_blended_notional": strategy_mix_avg_abs_blended_notional,
+        "strategy_mix_avg_defensive_share": strategy_mix_avg_defensive_share,
     }
 
 

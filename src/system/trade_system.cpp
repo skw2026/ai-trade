@@ -26,6 +26,15 @@ int SignOf(double value) {
   return 0;
 }
 
+double BlendSignalNotional(const Signal& signal, const EvolutionWeights& weights) {
+  if (!HasExposure(signal.trend_notional_usd) &&
+      !HasExposure(signal.defensive_notional_usd)) {
+    return signal.suggested_notional_usd;
+  }
+  return signal.trend_notional_usd * weights.trend_weight +
+         signal.defensive_notional_usd * weights.defensive_weight;
+}
+
 }  // namespace
 
 std::size_t TradeSystem::BucketIndex(RegimeBucket bucket) {
@@ -85,6 +94,23 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event, bool trade_ok) {
   if (decision.base_signal.symbol.empty()) {
     decision.base_signal.symbol = event.symbol;
   }
+
+  if (!HasExposure(decision.base_signal.trend_notional_usd) &&
+      !HasExposure(decision.base_signal.defensive_notional_usd) &&
+      HasExposure(decision.base_signal.suggested_notional_usd)) {
+    // 兼容旧策略：若未提供分量字段，则把历史输出映射为 trend 分量。
+    decision.base_signal.trend_notional_usd =
+        decision.base_signal.suggested_notional_usd;
+  }
+
+  if (evolution_enabled_) {
+    const auto bucket_weights = evolution_weights(decision.regime.bucket);
+    decision.base_signal.suggested_notional_usd =
+        BlendSignalNotional(decision.base_signal, bucket_weights);
+    decision.base_signal.direction =
+        SignOf(decision.base_signal.suggested_notional_usd);
+  }
+
   decision.signal = decision.base_signal;
   integrator_shadow_.OnMarket(event);
   decision.shadow = integrator_shadow_.Infer(decision.base_signal, decision.regime);
@@ -95,12 +121,7 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event, bool trade_ok) {
       &decision.integrator_policy_reason);
   decision.target =
       TargetPosition{decision.signal.symbol, decision.signal.suggested_notional_usd};
-  if (evolution_enabled_) {
-    // Regime 分桶权重：按当前 bucket 读取 trend 权重缩放目标名义值。
-    const auto bucket_weights = evolution_weights(decision.regime.bucket);
-    decision.target.target_notional_usd *= bucket_weights.trend_weight;
-  }
-  
+
   // 从账户状态读取“强平距离加权 P95”（由远端持仓同步提供基础数据）。
   const double liq_dist = account_.liquidation_distance_p95();
   decision.risk_adjusted =

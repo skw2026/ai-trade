@@ -63,6 +63,10 @@ struct RegimeState {
 struct Signal {
   std::string symbol{"BTCUSDT"};
   double suggested_notional_usd{0.0};
+  // 趋势子策略目标名义值（未做自进化权重混合）。
+  double trend_notional_usd{0.0};
+  // 防御子策略目标名义值（未做自进化权重混合）。
+  double defensive_notional_usd{0.0};
   int direction{0};  // -1 代表做空，0 代表空仓，1 代表做多
 };
 

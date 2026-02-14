@@ -75,6 +75,12 @@ class AccountState {
   double current_notional_usd(const std::string& symbol) const;
   /// 当前账户权益（USD）。
   double equity_usd() const;
+  /// 累计已实现盈亏（未扣手续费，USD）。
+  double cumulative_realized_pnl_usd() const;
+  /// 累计手续费（USD）。
+  double cumulative_fee_usd() const;
+  /// 累计已实现净盈亏（已实现盈亏 - 手续费，USD）。
+  double cumulative_realized_net_pnl_usd() const;
   /// 当前回撤比例（相对权益峰值）。
   double drawdown_pct() const;
   /// 账户级强平距离加权 P95（0~1）；无可用样本时返回 1.0。
@@ -95,6 +101,8 @@ class AccountState {
 
   double cash_usd_{10000.0};  ///< 账户现金（已包含已实现盈亏与手续费扣减）。
   double peak_equity_usd_{10000.0};  ///< 历史权益峰值（用于回撤计算）。
+  double cumulative_realized_pnl_usd_{0.0};  ///< 成交累计已实现盈亏（不含手续费）。
+  double cumulative_fee_usd_{0.0};  ///< 成交累计手续费。
   std::unordered_map<std::string, PositionState> positions_;  ///< 多 symbol 持仓视图。
 };
 

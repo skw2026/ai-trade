@@ -196,6 +196,9 @@ std::unique_ptr<ExchangeAdapter> CreateAdapter(const AppConfig& config) {
     options.private_ws_rest_fallback = config.bybit.private_ws_rest_fallback;
     options.ws_reconnect_interval_ms = config.bybit.ws_reconnect_interval_ms;
     options.execution_poll_limit = config.bybit.execution_poll_limit;
+    options.maker_entry_enabled = config.execution_maker_entry_enabled;
+    options.maker_price_offset_bps = config.execution_maker_price_offset_bps;
+    options.maker_post_only = config.execution_maker_post_only;
     options.symbols = collect_symbols();
     options.remote_account_mode = config.bybit.expected_account_mode;
     options.remote_margin_mode = config.bybit.expected_margin_mode;
@@ -252,6 +255,16 @@ BotApplication::BotApplication(const AppConfig& config)
                   .trend_ema_fast = config.trend_ema_fast,
                   .trend_ema_slow = config.trend_ema_slow,
                   .vol_target_pct = config.vol_target_pct,
+                  .defensive_notional_ratio =
+                      config.strategy_defensive_notional_ratio,
+                  .defensive_entry_score =
+                      config.strategy_defensive_entry_score,
+                  .defensive_trend_scale =
+                      config.strategy_defensive_trend_scale,
+                  .defensive_range_scale =
+                      config.strategy_defensive_range_scale,
+                  .defensive_extreme_scale =
+                      config.strategy_defensive_extreme_scale,
               },
               config.execution_min_rebalance_notional_usd,
               config.regime,
@@ -268,6 +281,67 @@ BotApplication::BotApplication(const AppConfig& config)
       universe_selector_(config.universe, config.primary_symbol),
       wal_(config.data_path + "/trade.wal") {}
 
+double BotApplication::RoundTripCostBps() const {
+  const double entry_fee_bps = std::max(0.0, config_.execution_entry_fee_bps);
+  const double exit_fee_bps = std::max(0.0, config_.execution_exit_fee_bps);
+  const double slippage_bps =
+      std::max(0.0, config_.execution_expected_slippage_bps);
+  return entry_fee_bps + exit_fee_bps + 2.0 * slippage_bps;
+}
+
+double BotApplication::EstimateEntryEdgeBps(const MarketDecision& decision,
+                                            const MarketEvent& event) const {
+  if (!decision.intent.has_value() || !IsOpeningIntent(*decision.intent)) {
+    return 0.0;
+  }
+  const int direction = decision.intent->direction;
+  if (direction == 0) {
+    return 0.0;
+  }
+  const double price = event.price > 0.0 ? event.price : decision.intent->price;
+  const double deadband_bps =
+      (price > 0.0 && config_.strategy_signal_deadband_abs > 0.0)
+          ? std::fabs(config_.strategy_signal_deadband_abs) / price * 10000.0
+          : 0.0;
+
+  const double trend_edge_bps = std::max(
+      0.0, decision.regime.trend_strength * static_cast<double>(direction) * 10000.0);
+  const double instant_edge_bps = std::max(
+      0.0, decision.regime.instant_return * static_cast<double>(direction) * 10000.0);
+  const double regime_edge_bps = 0.6 * trend_edge_bps + 0.4 * instant_edge_bps;
+  return std::max(deadband_bps, regime_edge_bps);
+}
+
+bool BotApplication::ShouldFilterByFeeAwareGate(
+    const MarketDecision& decision,
+    const MarketEvent& event,
+    double* out_expected_edge_bps,
+    double* out_required_edge_bps) const {
+  if (out_expected_edge_bps != nullptr) {
+    *out_expected_edge_bps = 0.0;
+  }
+  if (out_required_edge_bps != nullptr) {
+    *out_required_edge_bps = 0.0;
+  }
+  if (!decision.intent.has_value() || !IsOpeningIntent(*decision.intent)) {
+    return false;
+  }
+
+  const double expected_edge_bps = EstimateEntryEdgeBps(decision, event);
+  const double required_edge_bps =
+      RoundTripCostBps() + std::max(0.0, config_.execution_min_expected_edge_bps);
+  if (out_expected_edge_bps != nullptr) {
+    *out_expected_edge_bps = expected_edge_bps;
+  }
+  if (out_required_edge_bps != nullptr) {
+    *out_required_edge_bps = required_edge_bps;
+  }
+  if (!config_.execution_enable_fee_aware_entry_gate) {
+    return false;
+  }
+  return expected_edge_bps + 1e-9 < required_edge_bps;
+}
+
 void BotApplication::AccumulateStats(DecisionFunnelStats* total,
                                      const DecisionFunnelStats& delta) {
   if (total == nullptr) {
@@ -279,6 +353,7 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->intents_filtered_inactive_symbol +=
       delta.intents_filtered_inactive_symbol;
   total->intents_filtered_min_notional += delta.intents_filtered_min_notional;
+  total->intents_filtered_fee_aware += delta.intents_filtered_fee_aware;
   total->intents_throttled += delta.intents_throttled;
   total->intents_enqueued += delta.intents_enqueued;
   total->async_submit_ok += delta.async_submit_ok;
@@ -298,9 +373,16 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->integrator_policy_applied += delta.integrator_policy_applied;
   total->integrator_policy_canary += delta.integrator_policy_canary;
   total->integrator_policy_active += delta.integrator_policy_active;
+  total->entry_edge_samples += delta.entry_edge_samples;
+  total->strategy_mix_samples += delta.strategy_mix_samples;
   total->integrator_model_score_sum += delta.integrator_model_score_sum;
   total->integrator_p_up_sum += delta.integrator_p_up_sum;
   total->integrator_p_down_sum += delta.integrator_p_down_sum;
+  total->entry_edge_bps_sum += delta.entry_edge_bps_sum;
+  total->entry_required_edge_bps_sum += delta.entry_required_edge_bps_sum;
+  total->trend_notional_abs_sum += delta.trend_notional_abs_sum;
+  total->defensive_notional_abs_sum += delta.defensive_notional_abs_sum;
+  total->blended_notional_abs_sum += delta.blended_notional_abs_sum;
 }
 
 bool BotApplication::IsForceReduceOnlyActive() const {
@@ -658,6 +740,19 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
   last_regime_state_ = decision.regime;
   has_last_regime_state_ = true;
+  last_strategy_signal_ = decision.base_signal;
+  has_last_strategy_signal_ = true;
+  if (HasExposure(decision.base_signal.trend_notional_usd) ||
+      HasExposure(decision.base_signal.defensive_notional_usd) ||
+      HasExposure(decision.base_signal.suggested_notional_usd)) {
+    ++funnel_window_.strategy_mix_samples;
+    funnel_window_.trend_notional_abs_sum +=
+        std::fabs(decision.base_signal.trend_notional_usd);
+    funnel_window_.defensive_notional_abs_sum +=
+        std::fabs(decision.base_signal.defensive_notional_usd);
+    funnel_window_.blended_notional_abs_sum +=
+        std::fabs(decision.base_signal.suggested_notional_usd);
+  }
   if (decision.shadow.enabled) {
     ++funnel_window_.integrator_scored;
     funnel_window_.integrator_model_score_sum += decision.shadow.model_score;
@@ -685,6 +780,10 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             ", confidence=" + std::to_string(decision.integrator_confidence) +
             ", base_notional=" +
             std::to_string(decision.base_signal.suggested_notional_usd) +
+            ", base_trend_component=" +
+            std::to_string(decision.base_signal.trend_notional_usd) +
+            ", base_defensive_component=" +
+            std::to_string(decision.base_signal.defensive_notional_usd) +
             ", final_notional=" +
             std::to_string(decision.signal.suggested_notional_usd));
   }
@@ -714,6 +813,27 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               ", client_order_id=" + decision.intent->client_order_id +
               ", reason=" + guard_reason);
       ++funnel_window_.intents_filtered_min_notional;
+      decision.intent.reset();
+    }
+  }
+
+  if (decision.intent.has_value() && IsOpeningIntent(*decision.intent)) {
+    double expected_edge_bps = 0.0;
+    double required_edge_bps = 0.0;
+    const bool filtered = ShouldFilterByFeeAwareGate(
+        decision, event, &expected_edge_bps, &required_edge_bps);
+    ++funnel_window_.entry_edge_samples;
+    funnel_window_.entry_edge_bps_sum += expected_edge_bps;
+    funnel_window_.entry_required_edge_bps_sum += required_edge_bps;
+    if (filtered) {
+      ++funnel_window_.intents_filtered_fee_aware;
+      LogInfo("ORDER_FILTERED_COST: symbol=" + decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
+              ", required_edge_bps=" + std::to_string(required_edge_bps) +
+              ", round_trip_cost_bps=" + std::to_string(RoundTripCostBps()) +
+              ", min_expected_edge_bps=" +
+              std::to_string(config_.execution_min_expected_edge_bps));
       decision.intent.reset();
     }
   }
@@ -1419,6 +1539,31 @@ void BotApplication::LogStatus() {
           ? funnel_window.integrator_p_down_sum /
                 static_cast<double>(funnel_window.integrator_scored)
           : 0.0;
+  const double entry_edge_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_edge_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double entry_required_edge_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_required_edge_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double strategy_trend_avg_abs_notional =
+      funnel_window.strategy_mix_samples > 0
+          ? funnel_window.trend_notional_abs_sum /
+                static_cast<double>(funnel_window.strategy_mix_samples)
+          : 0.0;
+  const double strategy_defensive_avg_abs_notional =
+      funnel_window.strategy_mix_samples > 0
+          ? funnel_window.defensive_notional_abs_sum /
+                static_cast<double>(funnel_window.strategy_mix_samples)
+          : 0.0;
+  const double strategy_blended_avg_abs_notional =
+      funnel_window.strategy_mix_samples > 0
+          ? funnel_window.blended_notional_abs_sum /
+                static_cast<double>(funnel_window.strategy_mix_samples)
+          : 0.0;
   const RegimeBucket active_bucket =
       has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange;
   const auto active_evolution_weights = system_.evolution_weights(active_bucket);
@@ -1442,6 +1587,11 @@ void BotApplication::LogStatus() {
           ", account={equity=" + std::to_string(system_.account().equity_usd()) +
           ", drawdown_pct=" + std::to_string(system_.account().drawdown_pct()) +
           ", notional=" + std::to_string(system_.account().current_notional_usd()) +
+          ", realized_pnl=" +
+          std::to_string(system_.account().cumulative_realized_pnl_usd()) +
+          ", fees=" + std::to_string(system_.account().cumulative_fee_usd()) +
+          ", realized_net=" +
+          std::to_string(system_.account().cumulative_realized_net_pnl_usd()) +
           ", positions=" + FormatAccountPositions(system_.account()) + "}" +
           ", funnel_window={raw=" + std::to_string(funnel_window.raw_signals) +
           ", risk_adjusted=" +
@@ -1452,6 +1602,8 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.intents_filtered_inactive_symbol) +
           ", intents_filtered_min_notional=" +
           std::to_string(funnel_window.intents_filtered_min_notional) +
+          ", intents_filtered_fee_aware=" +
+          std::to_string(funnel_window.intents_filtered_fee_aware) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
           ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
           ", async_ok=" + std::to_string(funnel_window.async_submit_ok) +
@@ -1464,7 +1616,12 @@ void BotApplication::LogStatus() {
           ", evolution_rollbacks=" +
           std::to_string(funnel_window.self_evolution_rollbacks) +
           ", evolution_skipped=" +
-          std::to_string(funnel_window.self_evolution_skipped) + "}" +
+          std::to_string(funnel_window.self_evolution_skipped) +
+          ", entry_edge_samples=" +
+          std::to_string(funnel_window.entry_edge_samples) +
+          ", entry_edge_avg_bps=" + std::to_string(entry_edge_avg_bps) +
+          ", entry_required_avg_bps=" +
+          std::to_string(entry_required_edge_avg_bps) + "}" +
           ", regime_window={trend_ticks=" +
           std::to_string(funnel_window.regime_trend_ticks) +
           ", range_ticks=" + std::to_string(funnel_window.regime_range_ticks) +
@@ -1520,6 +1677,25 @@ void BotApplication::LogStatus() {
           ", avg_model_score=" + std::to_string(shadow_avg_model_score) +
           ", avg_p_up=" + std::to_string(shadow_avg_p_up) +
           ", avg_p_down=" + std::to_string(shadow_avg_p_down) + "}" +
+          ", strategy_mix={latest_trend_notional=" +
+          std::to_string(has_last_strategy_signal_
+                             ? last_strategy_signal_.trend_notional_usd
+                             : 0.0) +
+          ", latest_defensive_notional=" +
+          std::to_string(has_last_strategy_signal_
+                             ? last_strategy_signal_.defensive_notional_usd
+                             : 0.0) +
+          ", latest_blended_notional=" +
+          std::to_string(has_last_strategy_signal_
+                             ? last_strategy_signal_.suggested_notional_usd
+                             : 0.0) +
+          ", avg_abs_trend_notional=" +
+          std::to_string(strategy_trend_avg_abs_notional) +
+          ", avg_abs_defensive_notional=" +
+          std::to_string(strategy_defensive_avg_abs_notional) +
+          ", avg_abs_blended_notional=" +
+          std::to_string(strategy_blended_avg_abs_notional) +
+          ", samples=" + std::to_string(funnel_window.strategy_mix_samples) + "}" +
           ", integrator_mode=" +
           std::string(ToString(system_.integrator_mode())) +
           ", gate_runtime={enabled=" +
@@ -1544,6 +1720,12 @@ void BotApplication::LogStatus() {
           ", throttle_total={checks=" + std::to_string(throttle_total.checks) +
           ", rejected=" + std::to_string(throttle_total.rejected) +
           ", hit_rate=" + std::to_string(throttle_total_hit_rate) + "}" +
+          ", entry_gate={enabled=" +
+          std::string(config_.execution_enable_fee_aware_entry_gate ? "true"
+                                                                     : "false") +
+          ", round_trip_cost_bps=" + std::to_string(RoundTripCostBps()) +
+          ", min_expected_edge_bps=" +
+          std::to_string(config_.execution_min_expected_edge_bps) + "}" +
           ", evolution={enabled=" +
           std::string(evolution_enabled ? "true" : "false") +
           ", objective={alpha_pnl=" +

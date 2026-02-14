@@ -733,6 +733,108 @@ int main() {
   }
 
   {
+    // 防御分支：当阈值过高时，不应产生 defensive 分量。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .defensive_notional_ratio = 1.0,
+        .defensive_entry_score = 100.0,
+        .defensive_trend_scale = 1.0,
+        .defensive_range_scale = 1.0,
+        .defensive_extreme_scale = 1.0,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kRange;
+    regime.warmup = false;
+    regime.volatility_level = 0.001;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          100 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        200, "BTCUSDT", 101.0, 101.0}, dummy_account, regime);
+    if (signal.trend_notional_usd <= 0.0 ||
+        !NearlyEqual(signal.defensive_notional_usd, 0.0, 1e-9)) {
+      std::cerr << "防御阈值过高时不应产生 defensive 分量\n";
+      return 1;
+    }
+  }
+
+  {
+    // 防御分支：偏离足够大时，方向应与 trend 相反（均值回归）。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .defensive_notional_ratio = 1.0,
+        .defensive_entry_score = 0.5,
+        .defensive_trend_scale = 1.0,
+        .defensive_range_scale = 1.0,
+        .defensive_extreme_scale = 1.0,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kRange;
+    regime.warmup = false;
+    regime.volatility_level = 0.001;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          200 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        300, "BTCUSDT", 101.0, 101.0}, dummy_account, regime);
+    if (signal.trend_notional_usd <= 0.0 ||
+        signal.defensive_notional_usd >= 0.0 ||
+        !NearlyEqual(signal.suggested_notional_usd,
+                     signal.trend_notional_usd + signal.defensive_notional_usd,
+                     1e-6)) {
+      std::cerr << "防御分支方向或混合结果不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 防御分支：TREND 桶 scale=0 时，应完全关闭 defensive 分量。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .defensive_notional_ratio = 1.0,
+        .defensive_entry_score = 0.5,
+        .defensive_trend_scale = 0.0,
+        .defensive_range_scale = 1.0,
+        .defensive_extreme_scale = 1.0,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kTrend;
+    regime.warmup = false;
+    regime.volatility_level = 0.001;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          300 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        400, "BTCUSDT", 101.0, 101.0}, dummy_account, regime);
+    if (signal.trend_notional_usd <= 0.0 ||
+        !NearlyEqual(signal.defensive_notional_usd, 0.0, 1e-9)) {
+      std::cerr << "TREND 桶 defensive_scale=0 时应关闭防御分量\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::AccountState account;
     const std::vector<ai_trade::RemotePositionSnapshot> remote_positions = {
         ai_trade::RemotePositionSnapshot{
@@ -1021,6 +1123,106 @@ int main() {
     if (!NearlyEqual(decision.target.target_notional_usd, 600.0, 1e-9)) {
       std::cerr << "自进化权重缩放后的目标名义值不符合预期，实际 "
                 << decision.target.target_notional_usd << "\n";
+      return 1;
+    }
+  }
+
+  {
+    // 双分支混合：evolution 权重应在 trend/defensive 分量之间真实切换。
+    ai_trade::StrategyConfig dual_strategy;
+    dual_strategy.signal_notional_usd = 1000.0;
+    dual_strategy.signal_deadband_abs = 0.1;
+    dual_strategy.min_hold_ticks = 0;
+    dual_strategy.trend_ema_fast = 1;
+    dual_strategy.trend_ema_slow = 2;
+    dual_strategy.defensive_notional_ratio = 1.0;
+    dual_strategy.defensive_entry_score = 0.5;
+    dual_strategy.defensive_trend_scale = 1.0;
+    dual_strategy.defensive_range_scale = 1.0;
+    dual_strategy.defensive_extreme_scale = 1.0;
+
+    ai_trade::RegimeConfig regime_config;
+    regime_config.enabled = false;
+
+    ai_trade::TradeSystem trend_only_system(
+        /*risk_cap_usd=*/3000.0,
+        /*max_order_notional_usd=*/3000.0,
+        ai_trade::RiskThresholds{},
+        dual_strategy,
+        /*min_rebalance_notional_usd=*/0.0,
+        regime_config);
+    ai_trade::TradeSystem defensive_only_system(
+        /*risk_cap_usd=*/3000.0,
+        /*max_order_notional_usd=*/3000.0,
+        ai_trade::RiskThresholds{},
+        dual_strategy,
+        /*min_rebalance_notional_usd=*/0.0,
+        regime_config);
+    trend_only_system.EnableEvolution(true);
+    defensive_only_system.EnableEvolution(true);
+    std::string error;
+    if (!trend_only_system.SetEvolutionWeights(1.0, 0.0, &error) ||
+        !defensive_only_system.SetEvolutionWeights(0.0, 1.0, &error)) {
+      std::cerr << "双分支权重设置失败: " << error << "\n";
+      return 1;
+    }
+
+    for (int i = 0; i < 12; ++i) {
+      const ai_trade::MarketEvent warmup{1 + i, "BTCUSDT", 100.0, 100.0};
+      (void)trend_only_system.Evaluate(warmup, true);
+      (void)defensive_only_system.Evaluate(warmup, true);
+    }
+
+    const ai_trade::MarketEvent breakout{20, "BTCUSDT", 101.0, 101.0};
+    const auto trend_decision = trend_only_system.Evaluate(breakout, true);
+    const auto defensive_decision = defensive_only_system.Evaluate(breakout, true);
+    if (!NearlyEqual(trend_decision.target.target_notional_usd,
+                     trend_decision.base_signal.trend_notional_usd,
+                     1e-6) ||
+        !NearlyEqual(defensive_decision.target.target_notional_usd,
+                     defensive_decision.base_signal.defensive_notional_usd,
+                     1e-6)) {
+      std::cerr << "双分支混合权重未正确映射到目标名义值\n";
+      return 1;
+    }
+    if (std::fabs(trend_decision.base_signal.trend_notional_usd) <= 1e-6 ||
+        std::fabs(defensive_decision.base_signal.defensive_notional_usd) <= 1e-6) {
+      std::cerr << "双分支分量预期应均有有效信号\n";
+      return 1;
+    }
+    if (trend_decision.target.target_notional_usd *
+            defensive_decision.target.target_notional_usd >=
+        0.0) {
+      std::cerr << "趋势与防御分量预期在该场景下方向相反\n";
+      return 1;
+    }
+
+    ai_trade::TradeSystem blend_system(
+        /*risk_cap_usd=*/3000.0,
+        /*max_order_notional_usd=*/3000.0,
+        ai_trade::RiskThresholds{},
+        dual_strategy,
+        /*min_rebalance_notional_usd=*/0.0,
+        regime_config);
+    blend_system.EnableEvolution(true);
+    if (!blend_system.SetEvolutionWeights(0.25, 0.75, &error)) {
+      std::cerr << "双分支混合权重设置失败: " << error << "\n";
+      return 1;
+    }
+    for (int i = 0; i < 12; ++i) {
+      const ai_trade::MarketEvent warmup{40 + i, "BTCUSDT", 100.0, 100.0};
+      (void)blend_system.Evaluate(warmup, true);
+    }
+    const auto blended = blend_system.Evaluate(
+        ai_trade::MarketEvent{60, "BTCUSDT", 101.0, 101.0}, true);
+    const double expected_blended =
+        trend_decision.base_signal.trend_notional_usd * 0.25 +
+        defensive_decision.base_signal.defensive_notional_usd * 0.75;
+    if (!NearlyEqual(blended.base_signal.suggested_notional_usd,
+                     expected_blended,
+                     1e-6) ||
+        !NearlyEqual(blended.target.target_notional_usd, expected_blended, 1e-6)) {
+      std::cerr << "双分支加权混合结果不符合预期\n";
       return 1;
     }
   }
@@ -1430,6 +1632,11 @@ int main() {
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
         << "  min_hold_ticks: 4\n"
+        << "  defensive_notional_ratio: 0.4\n"
+        << "  defensive_entry_score: 1.1\n"
+        << "  defensive_trend_scale: 0.3\n"
+        << "  defensive_range_scale: 0.9\n"
+        << "  defensive_extreme_scale: 0.5\n"
         << "integrator:\n"
         << "  enabled: true\n"
         << "  model_type: \"catboost\"\n"
@@ -1484,6 +1691,11 @@ int main() {
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
         config.strategy_min_hold_ticks != 4 ||
+        !NearlyEqual(config.strategy_defensive_notional_ratio, 0.4) ||
+        !NearlyEqual(config.strategy_defensive_entry_score, 1.1) ||
+        !NearlyEqual(config.strategy_defensive_trend_scale, 0.3) ||
+        !NearlyEqual(config.strategy_defensive_range_scale, 0.9) ||
+        !NearlyEqual(config.strategy_defensive_extreme_scale, 0.5) ||
         config.system_max_ticks != 120 ||
         config.system_status_log_interval_ticks != 9 ||
         config.system_remote_risk_refresh_interval_ticks != 7 ||
@@ -1978,6 +2190,50 @@ int main() {
     if (error.find("min_rebalance_notional_usd") == std::string::npos &&
         error.find("strategy.min_hold_ticks") == std::string::npos) {
       std::cerr << "非法 strategy/execution 防抖配置错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_defensive.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  defensive_notional_ratio: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 strategy.defensive_notional_ratio 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.defensive_notional_ratio") == std::string::npos) {
+      std::cerr << "非法 strategy.defensive_notional_ratio 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_defensive_entry_score.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  defensive_entry_score: 0\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 strategy.defensive_entry_score 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.defensive_entry_score") == std::string::npos) {
+      std::cerr << "非法 strategy.defensive_entry_score 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
