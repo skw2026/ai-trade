@@ -154,12 +154,20 @@ jobs:
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           DEPLOY_ENV_FILE: /opt/ai-trade/.env.runtime
+          CLOSED_LOOP_ENFORCE: ${{ vars.CLOSED_LOOP_ENFORCE || 'true' }}
+          CLOSED_LOOP_ACTION: ${{ vars.CLOSED_LOOP_ACTION || 'assess' }}
+          CLOSED_LOOP_STAGE: ${{ vars.CLOSED_LOOP_STAGE || 'S3' }}
+          CLOSED_LOOP_SINCE: ${{ vars.CLOSED_LOOP_SINCE || '30m' }}
+          CLOSED_LOOP_MIN_RUNTIME_STATUS: ${{ vars.CLOSED_LOOP_MIN_RUNTIME_STATUS || '10' }}
+          CLOSED_LOOP_OUTPUT_ROOT: ${{ vars.CLOSED_LOOP_OUTPUT_ROOT || '/opt/ai-trade/data/reports/closed_loop' }}
+          CLOSED_LOOP_STRICT_PASS: ${{ vars.CLOSED_LOOP_STRICT_PASS || 'true' }}
+          DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'ai-trade watchdog scheduler' }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
-          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE
+          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,DEPLOY_SERVICES
           script: |
             set -euo pipefail
             DEPLOY_ROOT="/opt/ai-trade"
@@ -222,4 +230,37 @@ jobs:
 
             chmod +x "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
             chmod +x "${DEPLOY_ROOT}/tools/closed_loop_runner.sh"
+            echo "[deploy] closed-loop gate config: enforce=${CLOSED_LOOP_ENFORCE} action=${CLOSED_LOOP_ACTION} stage=${CLOSED_LOOP_STAGE} since=${CLOSED_LOOP_SINCE} strict=${CLOSED_LOOP_STRICT_PASS} min_runtime_status=${CLOSED_LOOP_MIN_RUNTIME_STATUS}"
+            echo "[deploy] deploy services: ${DEPLOY_SERVICES}"
             "${DEPLOY_ROOT}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/docker-compose.prod.yml" "${DEPLOY_ENV_FILE}"
+
+      - name: Download Deploy Gate Reports
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          umask 077
+          printf '%s' "${{ secrets.ECS_SSH_KEY }}" > .artifacts/ecs_key
+          chmod 600 .artifacts/ecs_key
+          PORT="${{ secrets.ECS_PORT || 22 }}"
+          HOST="${{ secrets.ECS_HOST }}"
+          USER="${{ secrets.ECS_USER }}"
+          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
+            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_closed_loop_report.json" \
+            ".artifacts/latest_closed_loop_report.json" || true
+          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
+            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_runtime_assess.json" \
+            ".artifacts/latest_runtime_assess.json" || true
+          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
+            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" \
+            ".artifacts/latest_run_meta.json" || true
+          rm -f .artifacts/ecs_key
+
+      - name: Upload Deploy Gate Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-closed-loop-${{ github.run_id }}
+          path: .artifacts/*.json
+          if-no-files-found: warn

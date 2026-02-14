@@ -170,7 +170,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d ai-trade
 - `.github/workflows/ci.yml`：PR / 非 main 分支编译与测试
 - `.github/workflows/cd.yml`：main 分支自动构建镜像并部署 ECS
 - `docker-compose.prod.yml`：生产部署编排（使用预构建镜像）
-- `deploy/ecs-deploy.sh`：远端部署脚本（带失败自动回滚）
+- `deploy/ecs-deploy.sh`：远端部署脚本（健康检查 + 闭环门禁失败自动回滚）
 
 首次准备（ECS）：
 ```bash
@@ -193,6 +193,16 @@ GitHub Secrets（仓库 Settings -> Secrets and variables -> Actions）：
 - `GHCR_USER`：GHCR 拉镜像账号（可选，私有镜像建议配置）
 - `GHCR_TOKEN`：GHCR 拉镜像令牌（可选，私有镜像建议配置）
 
+GitHub Variables（可选，用于覆盖 CD 强闭环默认值）：
+- `CLOSED_LOOP_ENFORCE`（默认 `true`）
+- `CLOSED_LOOP_ACTION`（默认 `assess`）
+- `CLOSED_LOOP_STAGE`（默认 `S3`）
+- `CLOSED_LOOP_SINCE`（默认 `30m`）
+- `CLOSED_LOOP_MIN_RUNTIME_STATUS`（默认 `10`）
+- `CLOSED_LOOP_OUTPUT_ROOT`（默认 `/opt/ai-trade/data/reports/closed_loop`）
+- `CLOSED_LOOP_STRICT_PASS`（默认 `true`）
+- `DEPLOY_SERVICES`（默认 `ai-trade watchdog scheduler`）
+
 触发方式：
 - `CI`：PR 和非 main 分支 push 自动触发
 - `CD`：push 到 `main` 或手动 `workflow_dispatch` 触发
@@ -200,7 +210,12 @@ GitHub Secrets（仓库 Settings -> Secrets and variables -> Actions）：
 发布结果：
 - 新镜像 tag：`ghcr.io/<owner>/ai-trade:<commit_sha>`
 - 部署脚本会写入 `AI_TRADE_IMAGE` 到 `/opt/ai-trade/.env.runtime`
+- 部署脚本默认会拉起闭环核心服务：`ai-trade + watchdog + scheduler`
 - 启动健康检查失败时自动回滚到上一个镜像
+- 健康检查通过后会立即执行闭环 `assess` 门禁，且仅当以下两项都为 `PASS` 才放行：
+  - `data/reports/closed_loop/latest_runtime_assess.json` 的 `verdict`
+  - `data/reports/closed_loop/latest_closed_loop_report.json` 的 `overall_status`
+- CD 会自动上传部署门禁产物为 artifact：`deploy-closed-loop-<run_id>`
 
 Bybit 回放配置示例：
 ```bash
