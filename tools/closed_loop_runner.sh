@@ -3,7 +3,7 @@ set -euo pipefail
 
 # 说明：
 # 1) train  : 执行 R0/R1/R2 + 模型注册 + 汇总报告
-# 2) assess : 导出运行日志并做 S3/S5 自动验收 + 汇总报告
+# 2) assess : 导出运行日志并做 DEPLOY/S3/S5 自动验收 + 汇总报告
 # 3) full   : train + assess
 #
 # 示例：
@@ -73,7 +73,7 @@ Options:
   --compose-file <path>              docker compose 文件 (default: docker-compose.yml)
   --env-file <path>                  compose env 文件 (default: .env)
   --output-root <dir>                报告输出目录 (default: ./data/reports/closed_loop)
-  --stage <S3|S5>                    运行日志验收阶段 (default: S5)
+  --stage <DEPLOY|S3|S5>             运行日志验收阶段 (default: S5)
   --since <duration>                 导出日志窗口 (default: 4h)
   --min-runtime-status <int>         覆盖日志验收最小 RUNTIME_STATUS 条数
 

@@ -12,20 +12,114 @@ AI-Trade 外部看门狗 (Watchdog)
   python3 ops/watchdog.py
 """
 
+from __future__ import annotations
+
 import datetime
 import json
 import socket
 import os
 import sys
-import time
 import urllib.request
-import urllib.error
+from typing import Dict, Tuple
 
 # 配置
 CONTAINER_NAME = "ai-trade"
 # 心跳超时阈值（秒），应大于 system.status_log_interval_ticks * tick_interval
 HEARTBEAT_THRESHOLD_SEC = 120
 WEBHOOK_URL = os.getenv("AI_TRADE_WEBHOOK_URL")
+
+
+def decode_chunked_body(body: bytes) -> bytes:
+    decoded = bytearray()
+    idx = 0
+    while True:
+        line_end = body.find(b"\r\n", idx)
+        if line_end < 0:
+            return bytes(decoded) if decoded else body
+        size_hex = body[idx:line_end].split(b";", 1)[0].strip()
+        try:
+            size = int(size_hex, 16)
+        except ValueError:
+            return bytes(decoded) if decoded else body
+        idx = line_end + 2
+        if size == 0:
+            return bytes(decoded)
+        if idx + size > len(body):
+            return bytes(decoded) if decoded else body
+        decoded.extend(body[idx : idx + size])
+        idx += size
+        if body[idx : idx + 2] == b"\r\n":
+            idx += 2
+
+
+def decode_docker_log_stream(body: bytes) -> str:
+    if not body:
+        return ""
+    idx = 0
+    decoded = bytearray()
+    parsed_any = False
+    while idx + 8 <= len(body):
+        stream_type = body[idx]
+        if stream_type not in (0, 1, 2):
+            break
+        if body[idx + 1 : idx + 4] != b"\x00\x00\x00":
+            break
+        frame_size = int.from_bytes(body[idx + 4 : idx + 8], byteorder="big")
+        idx += 8
+        if idx + frame_size > len(body):
+            break
+        decoded.extend(body[idx : idx + frame_size])
+        idx += frame_size
+        parsed_any = True
+    if parsed_any and idx == len(body):
+        return decoded.decode("utf-8", errors="ignore")
+    return body.decode("utf-8", errors="ignore")
+
+
+def docker_http_get(path: str) -> Tuple[str, Dict[str, str], bytes]:
+    socket_path = "/var/run/docker.sock"
+    if not os.path.exists(socket_path):
+        raise RuntimeError(f"Docker socket not found at {socket_path}")
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(socket_path)
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        )
+        sock.sendall(request.encode())
+
+        response = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+
+    parts = response.split(b"\r\n\r\n", 1)
+    if len(parts) != 2:
+        raise RuntimeError("Invalid Docker API response")
+    header_blob, body = parts
+    header_lines = header_blob.split(b"\r\n")
+    if not header_lines:
+        raise RuntimeError("Missing Docker API status line")
+    status_line = header_lines[0].decode("utf-8", errors="ignore")
+
+    headers: Dict[str, str] = {}
+    for line in header_lines[1:]:
+        if b":" not in line:
+            continue
+        key_raw, value_raw = line.split(b":", 1)
+        key = key_raw.decode("utf-8", errors="ignore").strip().lower()
+        value = value_raw.decode("utf-8", errors="ignore").strip()
+        headers[key] = value
+
+    if "chunked" in headers.get("transfer-encoding", "").lower():
+        body = decode_chunked_body(body)
+
+    return status_line, headers, body
 
 
 def send_alert(message: str) -> None:
@@ -47,63 +141,27 @@ def send_alert(message: str) -> None:
 
 def check_container() -> tuple[bool, str]:
     """通过 Unix Socket 直接查询 Docker API，无需 docker 客户端"""
-    socket_path = "/var/run/docker.sock"
-    if not os.path.exists(socket_path):
-        return False, f"Docker socket not found at {socket_path}"
-
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.connect(socket_path)
-            # Docker Engine API: GET /containers/{name}/json
-            request = f"GET /containers/{CONTAINER_NAME}/json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-            sock.sendall(request.encode())
-
-            response = b""
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                response += chunk
-
-            # 分离 HTTP 头和体
-            header, body = response.split(b"\r\n\r\n", 1)
-            if b"200 OK" not in header.split(b"\r\n")[0]:
-                return False, f"Container not found or API error"
-
-            info = json.loads(body.decode("utf-8", errors="ignore"))
-            state = info.get("State", {})
-            if state.get("Running"):
-                return True, "OK"
-            return False, f"State: {state.get('Status', 'unknown')}"
+        status_line, _, body = docker_http_get(f"/containers/{CONTAINER_NAME}/json")
+        if " 200 " not in status_line:
+            return False, "Container not found or API error"
+        info = json.loads(body.decode("utf-8", errors="ignore"))
+        state = info.get("State", {})
+        if state.get("Running"):
+            return True, "OK"
+        return False, f"State: {state.get('Status', 'unknown')}"
     except Exception as e:
         return False, str(e)
 
 
 def get_docker_logs(tail: int = 50) -> str:
     """通过 Unix Socket 获取容器标准输出日志"""
-    socket_path = "/var/run/docker.sock"
     try:
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.connect(socket_path)
-            # Docker Engine API: GET /containers/{name}/logs
-            # params: stdout=1, stderr=1, tail=N
-            query = f"stdout=1&stderr=1&tail={tail}"
-            request = f"GET /containers/{CONTAINER_NAME}/logs?{query} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-            sock.sendall(request.encode())
-
-            response = b""
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                response += chunk
-
-            # 分离 HTTP 头和体
-            parts = response.split(b"\r\n\r\n", 1)
-            if len(parts) < 2:
-                return ""
-            # 忽略 Docker 流格式头 (8 bytes)，直接作为文本解码尝试查找关键词
-            return parts[1].decode("utf-8", errors="ignore")
+        query = f"stdout=1&stderr=1&tail={tail}"
+        status_line, _, body = docker_http_get(f"/containers/{CONTAINER_NAME}/logs?{query}")
+        if " 200 " not in status_line:
+            return ""
+        return decode_docker_log_stream(body)
     except Exception:
         return ""
 

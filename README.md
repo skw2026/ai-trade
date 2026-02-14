@@ -196,12 +196,13 @@ GitHub Secrets（仓库 Settings -> Secrets and variables -> Actions）：
 GitHub Variables（可选，用于覆盖 CD 强闭环默认值）：
 - `CLOSED_LOOP_ENFORCE`（默认 `true`）
 - `CLOSED_LOOP_ACTION`（默认 `assess`）
-- `CLOSED_LOOP_STAGE`（默认 `S3`）
+- `CLOSED_LOOP_STAGE`（默认 `DEPLOY`）
 - `CLOSED_LOOP_SINCE`（默认 `30m`）
-- `CLOSED_LOOP_MIN_RUNTIME_STATUS`（默认 `10`）
+- `CLOSED_LOOP_MIN_RUNTIME_STATUS`（默认空，使用阶段内置阈值）
 - `CLOSED_LOOP_OUTPUT_ROOT`（默认 `/opt/ai-trade/data/reports/closed_loop`）
 - `CLOSED_LOOP_STRICT_PASS`（默认 `true`）
 - `DEPLOY_SERVICES`（默认 `ai-trade watchdog scheduler`）
+- `GATE_DEFER_SERVICES`（默认 `scheduler`，表示门禁通过后再启动的服务）
 
 触发方式：
 - `CI`：PR 和非 main 分支 push 自动触发
@@ -211,6 +212,7 @@ GitHub Variables（可选，用于覆盖 CD 强闭环默认值）：
 - 新镜像 tag：`ghcr.io/<owner>/ai-trade:<commit_sha>`
 - 部署脚本会写入 `AI_TRADE_IMAGE` 到 `/opt/ai-trade/.env.runtime`
 - 部署脚本默认会拉起闭环核心服务：`ai-trade + watchdog + scheduler`
+- 门禁执行顺序为：先 `ai-trade + watchdog`，门禁通过后再启动 `scheduler`
 - 启动健康检查失败时自动回滚到上一个镜像
 - 健康检查通过后会立即执行闭环 `assess` 门禁，且仅当以下两项都为 `PASS` 才放行：
   - `data/reports/closed_loop/latest_runtime_assess.json` 的 `verdict`

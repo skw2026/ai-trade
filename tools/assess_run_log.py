@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-运行日志自动验收脚本（S3/S5）。
+运行日志自动验收脚本（DEPLOY/S3/S5）。
 
 用途：
 1. 对 `run_s3.log` / `run_s5.log` 做统一 PASS/FAIL 判定；
@@ -32,6 +32,15 @@ class StageRule:
 
 
 STAGE_RULES: Dict[str, StageRule] = {
+    "DEPLOY": StageRule(
+        name="DEPLOY",
+        min_runtime_status=2,
+        require_gate_window=False,
+        require_evolution_init=False,
+        max_trading_halted_true_ratio=0.50,
+        gate_warn_min_windows=10,
+        gate_warn_max_fail_ratio=0.95,
+    ),
     "S3": StageRule(
         name="S3",
         min_runtime_status=10,
