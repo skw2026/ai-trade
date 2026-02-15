@@ -45,6 +45,7 @@ jobs:
           grep -q "compose_consistency_test" /tmp/ctest-list.txt
           grep -q "watchdog_utils_test" /tmp/ctest-list.txt
           grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
+          grep -q "docker_gc_test" /tmp/ctest-list.txt
           grep -q "validate_reports_test" /tmp/ctest-list.txt
           grep -q "web_report_store_test" /tmp/ctest-list.txt
           grep -q "web_governance_test" /tmp/ctest-list.txt

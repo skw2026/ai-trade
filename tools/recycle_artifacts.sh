@@ -5,6 +5,7 @@ REPORTS_ROOT="${CLOSED_LOOP_GC_REPORTS_ROOT:-./data/reports/closed_loop}"
 KEEP_RUN_DIRS="${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}"
 KEEP_DAILY_FILES="${CLOSED_LOOP_GC_KEEP_DAILY_FILES:-120}"
 KEEP_WEEKLY_FILES="${CLOSED_LOOP_GC_KEEP_WEEKLY_FILES:-104}"
+MAX_AGE_HOURS="${CLOSED_LOOP_GC_MAX_AGE_HOURS:-72}"
 LOG_FILE="${CLOSED_LOOP_GC_LOG_FILE:-}"
 LOG_MAX_BYTES="${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}"
 LOG_KEEP_BYTES="${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}"
@@ -20,6 +21,7 @@ Options:
   --keep-run-dirs <int>       保留最近 run 目录数（按 run_id 逆序，default: 120）
   --keep-daily-files <int>    保留 daily_*.json 数量（default: 120）
   --keep-weekly-files <int>   保留 weekly_*.json 数量（default: 104）
+  --max-age-hours <int>       仅保留最近 N 小时产物（default: 72, 0=关闭）
   --log-file <path>           可选：需要回收的日志文件（例如 cron.log）
   --log-max-bytes <int>       日志超过该大小时触发截断（default: 104857600）
   --log-keep-bytes <int>      截断后保留尾部字节数（default: 20971520）
@@ -41,6 +43,8 @@ while [[ $# -gt 0 ]]; do
       KEEP_DAILY_FILES="$2"; shift 2;;
     --keep-weekly-files)
       KEEP_WEEKLY_FILES="$2"; shift 2;;
+    --max-age-hours)
+      MAX_AGE_HOURS="$2"; shift 2;;
     --log-file)
       LOG_FILE="$2"; shift 2;;
     --log-max-bytes)
@@ -59,7 +63,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for value_name in KEEP_RUN_DIRS KEEP_DAILY_FILES KEEP_WEEKLY_FILES LOG_MAX_BYTES LOG_KEEP_BYTES; do
+for value_name in KEEP_RUN_DIRS KEEP_DAILY_FILES KEEP_WEEKLY_FILES MAX_AGE_HOURS LOG_MAX_BYTES LOG_KEEP_BYTES; do
   value="${!value_name}"
   if ! is_nonneg_int "${value}"; then
     echo "[GC] ${value_name} must be a non-negative integer: ${value}"
@@ -79,6 +83,20 @@ delete_path() {
     return 0
   fi
   rm -rf -- "${target}"
+}
+
+stat_mtime_epoch() {
+  local target="$1"
+  local epoch=""
+  if epoch="$(stat -c %Y "${target}" 2>/dev/null)"; then
+    printf '%s\n' "${epoch}"
+    return 0
+  fi
+  if epoch="$(stat -f %m "${target}" 2>/dev/null)"; then
+    printf '%s\n' "${epoch}"
+    return 0
+  fi
+  return 1
 }
 
 protect_run_id() {
@@ -107,6 +125,7 @@ cleanup_ranked_files() {
   local keep_count="$3"
   local skipped_name="$4"
   local prefix="$5"
+  local max_age_hours="$6"
   local index=0
   local deleted=0
   local kept=0
@@ -120,7 +139,17 @@ cleanup_ranked_files() {
       continue
     fi
     index=$((index + 1))
-    if (( index > keep_count )); then
+    local delete_by_age="false"
+    if (( max_age_hours > 0 )); then
+      local mtime_epoch=""
+      if mtime_epoch="$(stat_mtime_epoch "${file_path}" 2>/dev/null)"; then
+        if [[ -n "${mtime_epoch}" && "${mtime_epoch}" -lt "${CUTOFF_EPOCH}" ]]; then
+          delete_by_age="true"
+        fi
+      fi
+    fi
+
+    if (( index > keep_count )) || [[ "${delete_by_age}" == "true" ]]; then
       delete_path "${file_path}"
       deleted=$((deleted + 1))
     else
@@ -128,12 +157,18 @@ cleanup_ranked_files() {
     fi
   done < <(find "${root}" -maxdepth 1 -type f -name "${glob}" -print | sort -r)
 
-  echo "[GC] ${prefix}: keep=${kept} deleted=${deleted} keep_limit=${keep_count}"
+  echo "[GC] ${prefix}: keep=${kept} deleted=${deleted} keep_limit=${keep_count} max_age_hours=${max_age_hours}"
 }
 
 PROTECTED_RUN_IDS=""
 LATEST_SYMLINK="${REPORTS_ROOT}/latest"
 LATEST_RUN_ID_FILE="${REPORTS_ROOT}/latest_run_id"
+CUTOFF_EPOCH=0
+
+if (( MAX_AGE_HOURS > 0 )); then
+  now_epoch="$(date +%s)"
+  CUTOFF_EPOCH=$((now_epoch - MAX_AGE_HOURS * 3600))
+fi
 
 if [[ -L "${LATEST_SYMLINK}" ]]; then
   latest_target="$(readlink "${LATEST_SYMLINK}" || true)"
@@ -160,7 +195,22 @@ while IFS= read -r dir_path; do
   fi
   run_total=$((run_total + 1))
   rank=$((rank + 1))
-  if (( rank > KEEP_RUN_DIRS )) && ! run_id_is_protected "${dir_name}"; then
+  delete_by_age="false"
+  if (( MAX_AGE_HOURS > 0 )); then
+    mtime_epoch=""
+    if mtime_epoch="$(stat_mtime_epoch "${dir_path}" 2>/dev/null)"; then
+      if [[ -n "${mtime_epoch}" && "${mtime_epoch}" -lt "${CUTOFF_EPOCH}" ]]; then
+        delete_by_age="true"
+      fi
+    fi
+  fi
+
+  delete_by_rank="false"
+  if (( rank > KEEP_RUN_DIRS )); then
+    delete_by_rank="true"
+  fi
+
+  if [[ ("${delete_by_rank}" == "true" || "${delete_by_age}" == "true") ]] && ! run_id_is_protected "${dir_name}"; then
     delete_path "${dir_path}"
     run_deleted=$((run_deleted + 1))
   else
@@ -168,7 +218,7 @@ while IFS= read -r dir_path; do
   fi
 done < <(find "${REPORTS_ROOT}" -mindepth 1 -maxdepth 1 -type d -print | sort -r)
 
-echo "[GC] run_dirs: total=${run_total} keep=${run_kept} deleted=${run_deleted} keep_limit=${KEEP_RUN_DIRS}"
+echo "[GC] run_dirs: total=${run_total} keep=${run_kept} deleted=${run_deleted} keep_limit=${KEEP_RUN_DIRS} max_age_hours=${MAX_AGE_HOURS}"
 if [[ -n "${PROTECTED_RUN_IDS}" ]]; then
   echo "[GC] protected_run_ids:"
   printf '%s\n' "${PROTECTED_RUN_IDS}" | sed '/^$/d' | sort -u | sed 's/^/[GC]   - /'
@@ -176,8 +226,8 @@ fi
 
 SUMMARY_DIR="${REPORTS_ROOT}/summary"
 if [[ -d "${SUMMARY_DIR}" ]]; then
-  cleanup_ranked_files "${SUMMARY_DIR}" "daily_*.json" "${KEEP_DAILY_FILES}" "daily_latest.json" "daily_summary"
-  cleanup_ranked_files "${SUMMARY_DIR}" "weekly_*.json" "${KEEP_WEEKLY_FILES}" "weekly_latest.json" "weekly_summary"
+  cleanup_ranked_files "${SUMMARY_DIR}" "daily_*.json" "${KEEP_DAILY_FILES}" "daily_latest.json" "daily_summary" "${MAX_AGE_HOURS}"
+  cleanup_ranked_files "${SUMMARY_DIR}" "weekly_*.json" "${KEEP_WEEKLY_FILES}" "weekly_latest.json" "weekly_summary" "${MAX_AGE_HOURS}"
 fi
 
 if [[ -n "${LOG_FILE}" && -f "${LOG_FILE}" && "${LOG_MAX_BYTES}" -gt 0 ]]; then

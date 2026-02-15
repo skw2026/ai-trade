@@ -73,6 +73,7 @@ services:
 
         if [ -f "tools/closed_loop_runner.sh" ]; then chmod +x tools/closed_loop_runner.sh; fi
         if [ -f "tools/recycle_artifacts.sh" ]; then chmod +x tools/recycle_artifacts.sh; fi
+        if [ -f "tools/docker_gc.sh" ]; then chmod +x tools/docker_gc.sh; fi
 
         # Docker socket 嵌套 compose: 需要把宿主机项目绝对路径传给下一层 compose。
         if [ -z "${AI_TRADE_PROJECT_DIR:-}" ]; then
@@ -90,6 +91,7 @@ services:
         while true; do 
           echo '[Scheduler] Starting loop...'
           /bin/bash tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml $${ENV_FILE_OPT} || echo '[Scheduler] Job failed'
+          /bin/bash tools/docker_gc.sh || echo '[Scheduler] Docker GC failed'
           echo '[Scheduler] Sleeping 24h...'
           sleep 86400
         done
@@ -102,8 +104,18 @@ services:
       CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}
       CLOSED_LOOP_GC_KEEP_DAILY_FILES: ${CLOSED_LOOP_GC_KEEP_DAILY_FILES:-120}
       CLOSED_LOOP_GC_KEEP_WEEKLY_FILES: ${CLOSED_LOOP_GC_KEEP_WEEKLY_FILES:-104}
+      CLOSED_LOOP_GC_MAX_AGE_HOURS: ${CLOSED_LOOP_GC_MAX_AGE_HOURS:-72}
+      CLOSED_LOOP_GC_LOG_FILE: ${CLOSED_LOOP_GC_LOG_FILE:-/opt/ai-trade/data/reports/closed_loop/cron.log}
       CLOSED_LOOP_GC_LOG_MAX_BYTES: ${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}
       CLOSED_LOOP_GC_LOG_KEEP_BYTES: ${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}
+      DOCKER_GC_ENABLED: ${DOCKER_GC_ENABLED:-true}
+      DOCKER_GC_UNTIL: ${DOCKER_GC_UNTIL:-72h}
+      DOCKER_GC_DRY_RUN: ${DOCKER_GC_DRY_RUN:-false}
+      DOCKER_GC_PRUNE_CONTAINERS: ${DOCKER_GC_PRUNE_CONTAINERS:-true}
+      DOCKER_GC_PRUNE_IMAGES: ${DOCKER_GC_PRUNE_IMAGES:-true}
+      DOCKER_GC_PRUNE_BUILD_CACHE: ${DOCKER_GC_PRUNE_BUILD_CACHE:-true}
+      DOCKER_GC_PRUNE_NETWORKS: ${DOCKER_GC_PRUNE_NETWORKS:-false}
+      DOCKER_GC_PRUNE_VOLUMES: ${DOCKER_GC_PRUNE_VOLUMES:-false}
     volumes:
       - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade
       - /var/run/docker.sock:/var/run/docker.sock

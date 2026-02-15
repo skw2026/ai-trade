@@ -3,7 +3,9 @@
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
+import os
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -20,6 +22,49 @@ def run_gc(*args: str) -> subprocess.CompletedProcess:
 
 
 class RecycleArtifactsTest(unittest.TestCase):
+    def test_max_age_hours_removes_old_runs_and_summaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reports_root = pathlib.Path(tmp) / "closed_loop"
+            summary = reports_root / "summary"
+            summary.mkdir(parents=True, exist_ok=True)
+
+            old_run = reports_root / "20260201T010101Z"
+            new_run = reports_root / "20260215T010101Z"
+            old_run.mkdir(parents=True, exist_ok=True)
+            new_run.mkdir(parents=True, exist_ok=True)
+            (reports_root / "latest_run_id").write_text("20260215T010101Z\n", encoding="utf-8")
+
+            old_daily = summary / "daily_20260201.json"
+            new_daily = summary / "daily_20260215.json"
+            old_daily.write_text("{}", encoding="utf-8")
+            new_daily.write_text("{}", encoding="utf-8")
+            (summary / "daily_latest.json").write_text("{}", encoding="utf-8")
+
+            now = time.time()
+            old_ts = now - 5 * 24 * 3600
+            os.utime(old_run, (old_ts, old_ts))
+            os.utime(old_daily, (old_ts, old_ts))
+
+            result = run_gc(
+                "--reports-root",
+                str(reports_root),
+                "--keep-run-dirs",
+                "100",
+                "--keep-daily-files",
+                "100",
+                "--keep-weekly-files",
+                "100",
+                "--max-age-hours",
+                "72",
+            )
+            self.assertEqual(result.returncode, 0, msg=f"stderr:\n{result.stderr}\nstdout:\n{result.stdout}")
+
+            self.assertFalse(old_run.exists())
+            self.assertTrue(new_run.is_dir())
+            self.assertFalse(old_daily.exists())
+            self.assertTrue(new_daily.is_file())
+            self.assertTrue((summary / "daily_latest.json").is_file())
+
     def test_run_dir_retention_respects_latest_run_id_protection(self):
         with tempfile.TemporaryDirectory() as tmp:
             reports_root = pathlib.Path(tmp) / "closed_loop"

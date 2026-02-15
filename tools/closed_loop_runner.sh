@@ -68,6 +68,7 @@ GC_ENABLED="${CLOSED_LOOP_GC_ENABLED:-true}"
 GC_KEEP_RUN_DIRS="${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}"
 GC_KEEP_DAILY_FILES="${CLOSED_LOOP_GC_KEEP_DAILY_FILES:-120}"
 GC_KEEP_WEEKLY_FILES="${CLOSED_LOOP_GC_KEEP_WEEKLY_FILES:-104}"
+GC_MAX_AGE_HOURS="${CLOSED_LOOP_GC_MAX_AGE_HOURS:-72}"
 GC_LOG_FILE="${CLOSED_LOOP_GC_LOG_FILE:-}"
 GC_LOG_MAX_BYTES="${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}"
 GC_LOG_KEEP_BYTES="${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}"
@@ -118,6 +119,7 @@ Options:
   --gc-keep-run-dirs <int>           保留最近 run 目录数 (default: 120)
   --gc-keep-daily-files <int>        保留 daily_*.json 数量 (default: 120)
   --gc-keep-weekly-files <int>       保留 weekly_*.json 数量 (default: 104)
+  --gc-max-age-hours <int>           仅保留最近 N 小时产物 (default: 72, 0=关闭)
   --gc-log-file <path>               可选：回收日志文件（如 cron.log）
   --gc-log-max-bytes <int>           日志超过该值触发截断 (default: 104857600)
   --gc-log-keep-bytes <int>          截断后保留尾部字节 (default: 20971520)
@@ -197,6 +199,8 @@ while [[ $# -gt 0 ]]; do
       GC_KEEP_DAILY_FILES="$2"; shift 2;;
     --gc-keep-weekly-files)
       GC_KEEP_WEEKLY_FILES="$2"; shift 2;;
+    --gc-max-age-hours)
+      GC_MAX_AGE_HOURS="$2"; shift 2;;
     --gc-log-file)
       GC_LOG_FILE="$2"; shift 2;;
     --gc-log-max-bytes)
@@ -485,6 +489,7 @@ run_gc() {
     --keep-run-dirs "${GC_KEEP_RUN_DIRS}"
     --keep-daily-files "${GC_KEEP_DAILY_FILES}"
     --keep-weekly-files "${GC_KEEP_WEEKLY_FILES}"
+    --max-age-hours "${GC_MAX_AGE_HOURS}"
     --log-max-bytes "${GC_LOG_MAX_BYTES}"
     --log-keep-bytes "${GC_LOG_KEEP_BYTES}"
   )

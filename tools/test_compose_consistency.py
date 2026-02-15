@@ -14,6 +14,7 @@ DEPLOY_SCRIPT = ROOT / "deploy" / "ecs-deploy.sh"
 RUNNER_SCRIPT = ROOT / "tools" / "closed_loop_runner.sh"
 WATCHDOG_SCRIPT = ROOT / "ops" / "watchdog.py"
 RECYCLE_SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
+DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -99,9 +100,22 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}", scheduler)
+        self.assertIn("CLOSED_LOOP_GC_MAX_AGE_HOURS: ${CLOSED_LOOP_GC_MAX_AGE_HOURS:-72}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_LOG_MAX_BYTES: ${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}", scheduler)
+        self.assertIn(
+            "CLOSED_LOOP_GC_LOG_FILE: ${CLOSED_LOOP_GC_LOG_FILE:-/opt/ai-trade/data/reports/closed_loop/cron.log}",
+            scheduler,
+        )
+        self.assertIn("tools/docker_gc.sh", scheduler)
+        self.assertIn("DOCKER_GC_ENABLED: ${DOCKER_GC_ENABLED:-true}", scheduler)
+        self.assertIn("DOCKER_GC_UNTIL: ${DOCKER_GC_UNTIL:-72h}", scheduler)
+        self.assertIn("DOCKER_GC_PRUNE_IMAGES: ${DOCKER_GC_PRUNE_IMAGES:-true}", scheduler)
+        self.assertIn(
+            "DOCKER_GC_PRUNE_BUILD_CACHE: ${DOCKER_GC_PRUNE_BUILD_CACHE:-true}", scheduler
+        )
         self.assertTrue(RUNNER_SCRIPT.is_file())
         self.assertTrue(RECYCLE_SCRIPT.is_file())
+        self.assertTrue(DOCKER_GC_SCRIPT.is_file())
 
     def test_web_service_paths_are_consistent(self):
         dev_web = self.dev_services["ai-trade-web"]

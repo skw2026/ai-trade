@@ -149,6 +149,17 @@ docker compose --profile web up -d ai-trade-web
   - `AI_TRADE_WEB_HIGH_RISK_REQUIRED_APPROVALS=2`
   - `AI_TRADE_WEB_HIGH_RISK_COOLDOWN_SECONDS=180`
 - 发布流程：`Preview -> Approve -> 输入 confirm phrase -> Publish`。
+- 闭环产物回收默认按 3 天窗口回收（`CLOSED_LOOP_GC_MAX_AGE_HOURS=72`），并叠加数量上限：
+  - `CLOSED_LOOP_GC_KEEP_RUN_DIRS`
+  - `CLOSED_LOOP_GC_KEEP_DAILY_FILES`
+  - `CLOSED_LOOP_GC_KEEP_WEEKLY_FILES`
+  - `CLOSED_LOOP_GC_MAX_AGE_HOURS`
+  - `CLOSED_LOOP_GC_LOG_FILE` / `CLOSED_LOOP_GC_LOG_MAX_BYTES` / `CLOSED_LOOP_GC_LOG_KEEP_BYTES`
+- scheduler 每轮闭环后会执行 Docker 层垃圾回收（控制 `/var/lib/containerd` 增长）：
+  - `DOCKER_GC_ENABLED`
+  - `DOCKER_GC_UNTIL`（默认 `72h`，即仅保留最近 3 天）
+  - `DOCKER_GC_PRUNE_IMAGES` / `DOCKER_GC_PRUNE_BUILD_CACHE`
+  - 默认不清理 volume（`DOCKER_GC_PRUNE_VOLUMES=false`）
 
 可观测性（Prometheus + Grafana + Loki + Promtail）：
 ```bash
@@ -399,11 +410,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d schedule
   - 最近 `120` 个 run 目录
   - 最近 `120` 份 `daily_*.json`
   - 最近 `104` 份 `weekly_*.json`
+  - 最近 `72h` 产物（`CLOSED_LOOP_GC_MAX_AGE_HOURS=72`）
 - 可通过环境变量覆盖：
   - `CLOSED_LOOP_GC_ENABLED`
   - `CLOSED_LOOP_GC_KEEP_RUN_DIRS`
   - `CLOSED_LOOP_GC_KEEP_DAILY_FILES`
   - `CLOSED_LOOP_GC_KEEP_WEEKLY_FILES`
+  - `CLOSED_LOOP_GC_MAX_AGE_HOURS`
   - `CLOSED_LOOP_GC_LOG_MAX_BYTES`
   - `CLOSED_LOOP_GC_LOG_KEEP_BYTES`
 
