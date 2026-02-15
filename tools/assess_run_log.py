@@ -25,8 +25,13 @@ class StageRule:
     name: str
     min_runtime_status: int
     require_gate_window: bool
+    require_gate_pass: bool
     require_evolution_init: bool
+    require_flat_start: bool
+    max_start_abs_notional_usd: float
     max_trading_halted_true_ratio: float
+    gate_fail_hard_min_windows: int
+    gate_fail_hard_max_fail_ratio: float
     gate_warn_min_windows: int
     gate_warn_max_fail_ratio: float
 
@@ -36,8 +41,13 @@ STAGE_RULES: Dict[str, StageRule] = {
         name="DEPLOY",
         min_runtime_status=2,
         require_gate_window=False,
+        require_gate_pass=False,
         require_evolution_init=False,
+        require_flat_start=False,
+        max_start_abs_notional_usd=0.0,
         max_trading_halted_true_ratio=0.50,
+        gate_fail_hard_min_windows=0,
+        gate_fail_hard_max_fail_ratio=1.10,
         gate_warn_min_windows=10,
         gate_warn_max_fail_ratio=0.95,
     ),
@@ -45,8 +55,13 @@ STAGE_RULES: Dict[str, StageRule] = {
         name="S3",
         min_runtime_status=10,
         require_gate_window=True,
+        require_gate_pass=False,
         require_evolution_init=False,
+        require_flat_start=False,
+        max_start_abs_notional_usd=0.0,
         max_trading_halted_true_ratio=0.20,
+        gate_fail_hard_min_windows=0,
+        gate_fail_hard_max_fail_ratio=1.10,
         gate_warn_min_windows=20,
         gate_warn_max_fail_ratio=0.90,
     ),
@@ -54,8 +69,13 @@ STAGE_RULES: Dict[str, StageRule] = {
         name="S5",
         min_runtime_status=50,
         require_gate_window=True,
+        require_gate_pass=True,
         require_evolution_init=True,
+        require_flat_start=True,
+        max_start_abs_notional_usd=50.0,
         max_trading_halted_true_ratio=0.10,
+        gate_fail_hard_min_windows=50,
+        gate_fail_hard_max_fail_ratio=0.95,
         gate_warn_min_windows=50,
         gate_warn_max_fail_ratio=0.95,
     ),
@@ -172,6 +192,9 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
             "peak_to_last_drawdown_pct": None,
             "max_drawdown_pct_observed": None,
             "max_abs_notional_usd_observed": None,
+            "first_notional_usd": None,
+            "first_abs_notional_usd": None,
+            "start_flat": None,
             "fee_samples": 0,
             "first_realized_pnl_usd": None,
             "last_realized_pnl_usd": None,
@@ -212,6 +235,8 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
 
     max_drawdown_observed = max(drawdowns) if drawdowns else None
     max_abs_notional_observed = max(abs(x) for x in notionals) if notionals else None
+    first_notional = notionals[0] if notionals else None
+    first_abs_notional = abs(first_notional) if first_notional is not None else None
 
     first_realized = realized_pnls[0] if realized_pnls else None
     last_realized = realized_pnls[-1] if realized_pnls else None
@@ -250,6 +275,9 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
         "peak_to_last_drawdown_pct": peak_to_last_drawdown_pct,
         "max_drawdown_pct_observed": max_drawdown_observed,
         "max_abs_notional_usd_observed": max_abs_notional_observed,
+        "first_notional_usd": first_notional,
+        "first_abs_notional_usd": first_abs_notional,
+        "start_flat": bool(first_abs_notional is not None and first_abs_notional <= 1e-6),
         "fee_samples": len(fees),
         "first_realized_pnl_usd": first_realized,
         "last_realized_pnl_usd": last_realized,
@@ -369,6 +397,8 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "bybit_submit_limit_count": count(r"BYBIT_SUBMIT:.*order_type=Limit", text),
         "bybit_submit_market_count": count(r"BYBIT_SUBMIT:.*order_type=Market", text),
         "runtime_account_samples": account_pnl["samples"],
+        "start_flat": account_pnl["start_flat"],
+        "start_abs_notional_usd": account_pnl["first_abs_notional_usd"],
         "strategy_mix_runtime_count": int(strategy_mix["runtime_count"]),
         "strategy_mix_nonzero_window_count": int(strategy_mix["nonzero_window_count"]),
         "strategy_mix_defensive_active_count": int(
@@ -421,6 +451,8 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
 
     if stage.require_gate_window and gate_window_count <= 0:
         fail_reasons.append("未检测到 Gate 窗口判定（GATE_CHECK_PASSED/FAILED）")
+    if stage.require_gate_pass and gate_window_count > 0 and metrics["gate_check_passed_count"] <= 0:
+        fail_reasons.append("未检测到 GATE_CHECK_PASSED（S5 要求至少一个通过窗口）")
 
     if (
         stage.require_evolution_init
@@ -428,6 +460,18 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         and metrics["self_evolution_action_count"] <= 0
     ):
         fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
+
+    start_abs_notional = account_pnl.get("first_abs_notional_usd")
+    if (
+        stage.require_flat_start
+        and isinstance(start_abs_notional, (int, float))
+        and start_abs_notional > stage.max_start_abs_notional_usd
+    ):
+        fail_reasons.append(
+            "运行窗口起点非平仓状态，S5 验收要求平仓起跑: "
+            f"abs_notional={start_abs_notional:.6f} > "
+            f"threshold={stage.max_start_abs_notional_usd:.6f}"
+        )
 
     # 软告警：不阻断阶段，但需要后续参数/策略动作
     if metrics["reconcile_mismatch_count"] > 0 and metrics["reconcile_autoresync_count"] <= 0:
@@ -437,6 +481,16 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         or metrics["gate_reduce_only_true_count"] > 0
         or metrics["gate_halted_true_count"] > 0
     )
+    if (
+        gate_window_count >= stage.gate_fail_hard_min_windows
+        and metrics["gate_check_fail_ratio"] > stage.gate_fail_hard_max_fail_ratio
+        and gate_runtime_impact
+    ):
+        fail_reasons.append(
+            "Gate 失败率过高且影响运行态（强闭环阻断）: "
+            f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
+            f"threshold={stage.gate_fail_hard_max_fail_ratio:.4f}"
+        )
     if (
         gate_window_count >= stage.gate_warn_min_windows
         and metrics["gate_check_fail_ratio"] > stage.gate_warn_max_fail_ratio
@@ -515,6 +569,9 @@ def print_report(report: Dict[str, object]) -> None:
             "peak_to_last_drawdown_pct",
             "max_drawdown_pct_observed",
             "max_abs_notional_usd_observed",
+            "first_notional_usd",
+            "first_abs_notional_usd",
+            "start_flat",
             "fee_samples",
             "first_realized_pnl_usd",
             "last_realized_pnl_usd",

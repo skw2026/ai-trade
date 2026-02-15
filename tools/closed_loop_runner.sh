@@ -64,6 +64,15 @@ FAIL_ON_GOVERNANCE="false"
 MAX_MODEL_VERSIONS="20"
 ACTIVATE_ON_PASS="true"
 
+GC_ENABLED="${CLOSED_LOOP_GC_ENABLED:-true}"
+GC_KEEP_RUN_DIRS="${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}"
+GC_KEEP_DAILY_FILES="${CLOSED_LOOP_GC_KEEP_DAILY_FILES:-120}"
+GC_KEEP_WEEKLY_FILES="${CLOSED_LOOP_GC_KEEP_WEEKLY_FILES:-104}"
+GC_LOG_FILE="${CLOSED_LOOP_GC_LOG_FILE:-}"
+GC_LOG_MAX_BYTES="${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}"
+GC_LOG_KEEP_BYTES="${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}"
+GC_DRY_RUN="false"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -104,6 +113,15 @@ Options:
   --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
   --max-model-versions <int>         模型历史保留数 (default: 20)
   --activate-on-pass <true|false>    门槛通过后是否激活 (default: true)
+
+  --gc-enabled <true|false>          启用产物回收 (default: true)
+  --gc-keep-run-dirs <int>           保留最近 run 目录数 (default: 120)
+  --gc-keep-daily-files <int>        保留 daily_*.json 数量 (default: 120)
+  --gc-keep-weekly-files <int>       保留 weekly_*.json 数量 (default: 104)
+  --gc-log-file <path>               可选：回收日志文件（如 cron.log）
+  --gc-log-max-bytes <int>           日志超过该值触发截断 (default: 104857600)
+  --gc-log-keep-bytes <int>          截断后保留尾部字节 (default: 20971520)
+  --gc-dry-run                       回收仅演练，不删除
 EOF
 }
 
@@ -171,6 +189,22 @@ while [[ $# -gt 0 ]]; do
       MAX_MODEL_VERSIONS="$2"; shift 2;;
     --activate-on-pass)
       ACTIVATE_ON_PASS="$2"; shift 2;;
+    --gc-enabled)
+      GC_ENABLED="$2"; shift 2;;
+    --gc-keep-run-dirs)
+      GC_KEEP_RUN_DIRS="$2"; shift 2;;
+    --gc-keep-daily-files)
+      GC_KEEP_DAILY_FILES="$2"; shift 2;;
+    --gc-keep-weekly-files)
+      GC_KEEP_WEEKLY_FILES="$2"; shift 2;;
+    --gc-log-file)
+      GC_LOG_FILE="$2"; shift 2;;
+    --gc-log-max-bytes)
+      GC_LOG_MAX_BYTES="$2"; shift 2;;
+    --gc-log-keep-bytes)
+      GC_LOG_KEEP_BYTES="$2"; shift 2;;
+    --gc-dry-run)
+      GC_DRY_RUN="true"; shift 1;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -202,6 +236,15 @@ fi
 
 compose_cmd() {
   "${COMPOSE_BASE[@]}" "$@"
+}
+
+is_true() {
+  case "${1,,}" in
+    1|true|yes|on)
+      return 0
+      ;;
+  esac
+  return 1
 }
 
 RUN_DIR="${OUTPUT_ROOT}/${RUN_ID}"
@@ -423,32 +466,75 @@ EOF
   echo "[INFO] summary report done: ${FINAL_REPORT_PATH}"
 }
 
-case "${ACTION}" in
-  train)
-    run_freeze_baseline
-    run_fetch
-    run_data_quality
-    run_miner
-    run_integrator
-    run_registry
-    build_summary
-    restart_if_activated
-    ;;
-  assess)
-    run_assess
-    build_summary
-    ;;
-  full)
-    run_freeze_baseline
-    run_fetch
-    run_data_quality
-    run_miner
-    run_integrator
-    run_registry
-    run_assess
-    build_summary
-    restart_if_activated
-    ;;
-esac
+run_gc() {
+  if ! is_true "${GC_ENABLED}"; then
+    echo "[INFO] recycle skipped (GC disabled)"
+    return 0
+  fi
+
+  local gc_script="tools/recycle_artifacts.sh"
+  if [[ ! -f "${gc_script}" ]]; then
+    echo "[WARN] recycle script missing, skip: ${gc_script}"
+    return 0
+  fi
+  chmod +x "${gc_script}" || true
+
+  echo "[INFO] recycle start"
+  local gc_args=(
+    --reports-root "${OUTPUT_ROOT}"
+    --keep-run-dirs "${GC_KEEP_RUN_DIRS}"
+    --keep-daily-files "${GC_KEEP_DAILY_FILES}"
+    --keep-weekly-files "${GC_KEEP_WEEKLY_FILES}"
+    --log-max-bytes "${GC_LOG_MAX_BYTES}"
+    --log-keep-bytes "${GC_LOG_KEEP_BYTES}"
+  )
+  if [[ -n "${GC_LOG_FILE}" ]]; then
+    gc_args+=(--log-file "${GC_LOG_FILE}")
+  fi
+  if is_true "${GC_DRY_RUN}"; then
+    gc_args+=(--dry-run)
+  fi
+  "${gc_script}" "${gc_args[@]}"
+  echo "[INFO] recycle done"
+}
+
+run_main() {
+  case "${ACTION}" in
+    train)
+      run_freeze_baseline
+      run_fetch
+      run_data_quality
+      run_miner
+      run_integrator
+      run_registry
+      build_summary
+      restart_if_activated
+      ;;
+    assess)
+      run_assess
+      build_summary
+      ;;
+    full)
+      run_freeze_baseline
+      run_fetch
+      run_data_quality
+      run_miner
+      run_integrator
+      run_registry
+      run_assess
+      build_summary
+      restart_if_activated
+      ;;
+  esac
+}
+
+main_status=0
+run_main || main_status=$?
+run_gc || echo "[WARN] recycle failed"
+
+if (( main_status != 0 )); then
+  echo "[ERROR] closed loop ${ACTION} failed: run_dir=${RUN_DIR}, status=${main_status}"
+  exit "${main_status}"
+fi
 
 echo "[INFO] closed loop ${ACTION} finished: ${RUN_DIR}"

@@ -13,6 +13,7 @@ PROD_COMPOSE = ROOT / "docker-compose.prod.yml"
 DEPLOY_SCRIPT = ROOT / "deploy" / "ecs-deploy.sh"
 RUNNER_SCRIPT = ROOT / "tools" / "closed_loop_runner.sh"
 WATCHDOG_SCRIPT = ROOT / "ops" / "watchdog.py"
+RECYCLE_SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -94,7 +95,19 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn("AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}", scheduler)
+        self.assertIn("CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}", scheduler)
+        self.assertIn("CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}", scheduler)
+        self.assertIn("CLOSED_LOOP_GC_LOG_MAX_BYTES: ${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}", scheduler)
         self.assertTrue(RUNNER_SCRIPT.is_file())
+        self.assertTrue(RECYCLE_SCRIPT.is_file())
+
+    def test_watchdog_and_scheduler_have_log_rotation(self):
+        watchdog = self.prod_services["watchdog"]
+        scheduler = self.prod_services["scheduler"]
+        for block in (watchdog, scheduler):
+            self.assertIn("logging:", block)
+            self.assertIn('max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"', block)
+            self.assertIn('max-file: "${DOCKER_LOG_MAX_FILE:-5}"', block)
 
     def test_deploy_defaults_match_prod_container_names(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
@@ -144,4 +157,3 @@ class ComposeConsistencyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -16,6 +16,15 @@ FULL_SCHEDULE="30 3 * * *"
 FULL_SINCE="12h"
 ENABLE_FULL="true"
 
+CLEANUP_SCHEDULE="45 4 * * *"
+ENABLE_CLEANUP="true"
+CLEANUP_KEEP_RUN_DIRS="120"
+CLEANUP_KEEP_DAILY_FILES="120"
+CLEANUP_KEEP_WEEKLY_FILES="104"
+CLEANUP_LOG_FILE=""
+CLEANUP_LOG_MAX_BYTES="104857600"
+CLEANUP_LOG_KEEP_BYTES="20971520"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -32,6 +41,15 @@ Options:
   --full-since <duration>     full 日志窗口（default: 12h）
   --disable-full              不安装 full 定时任务
   --enable-full               安装 full 定时任务（默认）
+  --cleanup-schedule "<expr>" cleanup cron 表达式（default: "45 4 * * *"）
+  --cleanup-keep-run-dirs <n> cleanup 保留 run 目录数（default: 120）
+  --cleanup-keep-daily-files <n>  cleanup 保留 daily 文件数（default: 120）
+  --cleanup-keep-weekly-files <n> cleanup 保留 weekly 文件数（default: 104）
+  --cleanup-log-file <path>   cleanup 管理的日志文件（default: <repo>/data/reports/closed_loop/cron.log）
+  --cleanup-log-max-bytes <n> cleanup 日志截断阈值（default: 104857600）
+  --cleanup-log-keep-bytes <n> cleanup 截断后保留字节（default: 20971520）
+  --disable-cleanup           不安装 cleanup 定时任务
+  --enable-cleanup            安装 cleanup 定时任务（默认）
 EOF
 }
 
@@ -57,6 +75,24 @@ while [[ $# -gt 0 ]]; do
       ENABLE_FULL="false"; shift 1;;
     --enable-full)
       ENABLE_FULL="true"; shift 1;;
+    --cleanup-schedule)
+      CLEANUP_SCHEDULE="$2"; shift 2;;
+    --cleanup-keep-run-dirs)
+      CLEANUP_KEEP_RUN_DIRS="$2"; shift 2;;
+    --cleanup-keep-daily-files)
+      CLEANUP_KEEP_DAILY_FILES="$2"; shift 2;;
+    --cleanup-keep-weekly-files)
+      CLEANUP_KEEP_WEEKLY_FILES="$2"; shift 2;;
+    --cleanup-log-file)
+      CLEANUP_LOG_FILE="$2"; shift 2;;
+    --cleanup-log-max-bytes)
+      CLEANUP_LOG_MAX_BYTES="$2"; shift 2;;
+    --cleanup-log-keep-bytes)
+      CLEANUP_LOG_KEEP_BYTES="$2"; shift 2;;
+    --disable-cleanup)
+      ENABLE_CLEANUP="false"; shift 1;;
+    --enable-cleanup)
+      ENABLE_CLEANUP="true"; shift 1;;
     -h|--help)
       usage; exit 0;;
     *)
@@ -75,9 +111,14 @@ fi
 MARK_START="# >>> AI_TRADE_CLOSED_LOOP >>>"
 MARK_END="# <<< AI_TRADE_CLOSED_LOOP <<<"
 LOG_FILE="${REPO_DIR}/data/reports/closed_loop/cron.log"
+GC_LOG_FILE="${REPO_DIR}/data/reports/closed_loop/gc.log"
+if [[ -z "${CLEANUP_LOG_FILE}" ]]; then
+  CLEANUP_LOG_FILE="${LOG_FILE}"
+fi
 
 ASSESS_CMD="cd ${REPO_DIR} && set -a && source ${ENV_FILE} && set +a && mkdir -p ${REPO_DIR}/data/reports/closed_loop && ${REPO_DIR}/tools/closed_loop_runner.sh assess --compose-file ${COMPOSE_FILE} --env-file ${ENV_FILE} --stage ${STAGE} --since ${ASSESS_SINCE} >> ${LOG_FILE} 2>&1"
 FULL_CMD="cd ${REPO_DIR} && set -a && source ${ENV_FILE} && set +a && mkdir -p ${REPO_DIR}/data/reports/closed_loop && ${REPO_DIR}/tools/closed_loop_runner.sh full --compose-file ${COMPOSE_FILE} --env-file ${ENV_FILE} --stage ${STAGE} --since ${FULL_SINCE} >> ${LOG_FILE} 2>&1"
+CLEANUP_CMD="cd ${REPO_DIR} && mkdir -p ${REPO_DIR}/data/reports/closed_loop && ${REPO_DIR}/tools/recycle_artifacts.sh --reports-root ${REPO_DIR}/data/reports/closed_loop --keep-run-dirs ${CLEANUP_KEEP_RUN_DIRS} --keep-daily-files ${CLEANUP_KEEP_DAILY_FILES} --keep-weekly-files ${CLEANUP_KEEP_WEEKLY_FILES} --log-file ${CLEANUP_LOG_FILE} --log-max-bytes ${CLEANUP_LOG_MAX_BYTES} --log-keep-bytes ${CLEANUP_LOG_KEEP_BYTES} >> ${GC_LOG_FILE} 2>&1"
 
 build_block() {
   echo "${MARK_START}"
@@ -85,6 +126,9 @@ build_block() {
   echo "${ASSESS_SCHEDULE} ${ASSESS_CMD}"
   if [[ "${ENABLE_FULL}" == "true" ]]; then
     echo "${FULL_SCHEDULE} ${FULL_CMD}"
+  fi
+  if [[ "${ENABLE_CLEANUP}" == "true" ]]; then
+    echo "${CLEANUP_SCHEDULE} ${CLEANUP_CMD}"
   fi
   echo "${MARK_END}"
 }

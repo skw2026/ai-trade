@@ -1,5 +1,6 @@
 #include "app/bot_app.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <sstream>
@@ -328,8 +329,13 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   }
 
   const double expected_edge_bps = EstimateEntryEdgeBps(decision, event);
-  const double required_edge_bps =
+  const double base_required_edge_bps =
       RoundTripCostBps() + std::max(0.0, config_.execution_min_expected_edge_bps);
+  double required_edge_bps = base_required_edge_bps;
+  if (config_.execution_required_edge_cap_bps > 0.0) {
+    required_edge_bps =
+        std::min(required_edge_bps, config_.execution_required_edge_cap_bps);
+  }
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = expected_edge_bps;
   }
@@ -833,7 +839,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               ", required_edge_bps=" + std::to_string(required_edge_bps) +
               ", round_trip_cost_bps=" + std::to_string(RoundTripCostBps()) +
               ", min_expected_edge_bps=" +
-              std::to_string(config_.execution_min_expected_edge_bps));
+              std::to_string(config_.execution_min_expected_edge_bps) +
+              ", required_edge_cap_bps=" +
+              std::to_string(config_.execution_required_edge_cap_bps));
       decision.intent.reset();
     }
   }
@@ -1722,10 +1730,12 @@ void BotApplication::LogStatus() {
           ", hit_rate=" + std::to_string(throttle_total_hit_rate) + "}" +
           ", entry_gate={enabled=" +
           std::string(config_.execution_enable_fee_aware_entry_gate ? "true"
-                                                                     : "false") +
+                                                                    : "false") +
           ", round_trip_cost_bps=" + std::to_string(RoundTripCostBps()) +
           ", min_expected_edge_bps=" +
-          std::to_string(config_.execution_min_expected_edge_bps) + "}" +
+          std::to_string(config_.execution_min_expected_edge_bps) +
+          ", required_edge_cap_bps=" +
+          std::to_string(config_.execution_required_edge_cap_bps) + "}" +
           ", evolution={enabled=" +
           std::string(evolution_enabled ? "true" : "false") +
           ", objective={alpha_pnl=" +

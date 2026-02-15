@@ -47,6 +47,8 @@ execution:
   exit_fee_bps: 5.5
   expected_slippage_bps: 1.0
   min_expected_edge_bps: 1.0
+  # 允许在高费率估计场景下放宽入场边际门槛上限，避免长期“全被成本门挡住”。
+  required_edge_cap_bps: 8.0
   maker_entry_enabled: true
   maker_price_offset_bps: 1.0
   maker_post_only: true
@@ -79,11 +81,12 @@ integrator:
 
 self_evolution:
   enabled: true
-  # S4 验收建议：将评估周期设置为可观测时长（例如 1200 ticks）。
-  update_interval_ticks: 1200
-  min_update_interval_ticks: 1200
-  # 窗口盈亏绝对值不足时跳过学习，避免在“无反馈噪声”下机械调权。
-  min_abs_window_pnl_usd: 5.0
+  # S5 优化：缩短评估窗口，提升可观测动作频率。
+  update_interval_ticks: 600
+  min_update_interval_ticks: 600
+  # 允许小盈亏窗口也参与学习，减少长期 skipped。
+  min_abs_window_pnl_usd: 0.5
+  min_bucket_ticks_for_update: 60
   max_single_strategy_weight: 0.55
   max_weight_step: 0.01
   rollback_degrade_windows: 3
@@ -93,10 +96,10 @@ self_evolution:
   initial_defensive_weight: 0.50
 
 gate:
-  # S5 稳态 soak：放宽活跃度门槛，降低低波动阶段误报。
-  min_effective_signals_per_day: 4
+  # S5 稳态 soak：更关注“策略持续运行”而不是强交易频次。
+  min_effective_signals_per_day: 2
   min_fills_per_day: 0
-  heartbeat_empty_signal_ticks: 24
+  heartbeat_empty_signal_ticks: 36
   window_ticks: 288
   enforce_runtime_actions: false
   fail_to_reduce_only_windows: 2

@@ -13,3 +13,6 @@
 
 # 每天 03:30 UTC 执行一次全流程闭环（R0/R1/R2 + 注册 + 验收）
 # 30 3 * * * cd /opt/ai-trade && set -a && source .env.runtime && set +a && /opt/ai-trade/tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml --env-file .env.runtime --stage S5 --since 12h >> /opt/ai-trade/data/reports/closed_loop/cron.log 2>&1
+
+# 每天 04:45 UTC 回收历史报告与日志，防止磁盘膨胀
+45 4 * * * cd /opt/ai-trade && mkdir -p /opt/ai-trade/data/reports/closed_loop && /opt/ai-trade/tools/recycle_artifacts.sh --reports-root /opt/ai-trade/data/reports/closed_loop --keep-run-dirs 120 --keep-daily-files 120 --keep-weekly-files 104 --log-file /opt/ai-trade/data/reports/closed_loop/cron.log --log-max-bytes 104857600 --log-keep-bytes 20971520 >> /opt/ai-trade/data/reports/closed_loop/gc.log 2>&1

@@ -44,6 +44,7 @@ jobs:
           grep -q "assess_run_log_test" /tmp/ctest-list.txt
           grep -q "compose_consistency_test" /tmp/ctest-list.txt
           grep -q "watchdog_utils_test" /tmp/ctest-list.txt
+          grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
 
       - name: Build
         run: cmake --build build -j"$(nproc)"

@@ -199,6 +199,8 @@ struct AppConfig {
   double execution_exit_fee_bps{5.5};
   double execution_expected_slippage_bps{1.0};
   double execution_min_expected_edge_bps{1.0};
+  double execution_required_edge_cap_bps{
+      0.0};  // 费率门槛上限（0=关闭，不限制）
   bool execution_maker_entry_enabled{false};
   double execution_maker_price_offset_bps{1.0};
   bool execution_maker_post_only{true};

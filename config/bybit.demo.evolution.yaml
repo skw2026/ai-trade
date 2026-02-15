@@ -39,14 +39,16 @@ risk:
 
 execution:
   max_order_notional: 450
-  min_rebalance_notional_usd: 120
-  min_order_interval_ms: 4000
+  min_rebalance_notional_usd: 80
+  min_order_interval_ms: 3000
   reverse_signal_cooldown_ticks: 10
   enable_fee_aware_entry_gate: true
   entry_fee_bps: 5.5
   exit_fee_bps: 5.5
   expected_slippage_bps: 1.0
   min_expected_edge_bps: 1.0
+  # 在 demo 实盘高费率估计下，为入场成本门槛设置上限，避免长期过滤掉全部信号。
+  required_edge_cap_bps: 8.0
   maker_entry_enabled: true
   maker_price_offset_bps: 1.0
   maker_post_only: true
@@ -86,13 +88,12 @@ integrator:
 
 self_evolution:
   enabled: true
-  # S4 验收建议：将评估周期设置为可观测时长（例如 1200 ticks）。
-  update_interval_ticks: 1200
-  min_update_interval_ticks: 1200
-  # 窗口盈亏绝对值不足时跳过学习，避免在“无反馈噪声”下机械调权。
-  min_abs_window_pnl_usd: 5.0
+  # 提高动作可观测性：缩短窗口并放宽最小盈亏阈值，避免长期 skipped。
+  update_interval_ticks: 600
+  min_update_interval_ticks: 600
+  min_abs_window_pnl_usd: 0.5
   # 单个 Regime bucket 在窗口内样本 tick 不足时，不执行该 bucket 的学习更新。
-  min_bucket_ticks_for_update: 120
+  min_bucket_ticks_for_update: 60
   # 风险调整目标函数（score = alpha*pnl - beta*drawdown_bps - gamma*churn_usd）
   objective_alpha_pnl: 1.0
   objective_beta_drawdown: 1.0
@@ -114,13 +115,13 @@ regime:
   volatility_threshold: 0.0025
 
 gate:
-  # 放宽活跃度要求，避免因行情平淡导致系统锁死
-  min_effective_signals_per_day: 6
-  min_fills_per_day: 1
-  heartbeat_empty_signal_ticks: 12
+  # 放宽活跃度要求，避免因行情平淡导致长期 reduce-only。
+  min_effective_signals_per_day: 3
+  min_fills_per_day: 0
+  heartbeat_empty_signal_ticks: 24
   window_ticks: 288
   enforce_runtime_actions: true
-  fail_to_reduce_only_windows: 2
+  fail_to_reduce_only_windows: 3
   fail_to_halt_windows: 4
   reduce_only_cooldown_ticks: 120
   halt_cooldown_ticks: 240

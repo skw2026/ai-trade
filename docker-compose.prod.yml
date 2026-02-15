@@ -53,6 +53,11 @@ services:
     working_dir: /app
     depends_on:
       - ai-trade
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
   scheduler:
     image: docker:cli
@@ -67,6 +72,7 @@ services:
         fi
 
         if [ -f "tools/closed_loop_runner.sh" ]; then chmod +x tools/closed_loop_runner.sh; fi
+        if [ -f "tools/recycle_artifacts.sh" ]; then chmod +x tools/recycle_artifacts.sh; fi
 
         # Docker socket 嵌套 compose: 需要把宿主机项目绝对路径传给下一层 compose。
         if [ -z "${AI_TRADE_PROJECT_DIR:-}" ]; then
@@ -92,12 +98,23 @@ services:
       AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
       AI_TRADE_PROJECT_DIR: ${AI_TRADE_PROJECT_DIR:-}
       AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}
+      CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}
+      CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}
+      CLOSED_LOOP_GC_KEEP_DAILY_FILES: ${CLOSED_LOOP_GC_KEEP_DAILY_FILES:-120}
+      CLOSED_LOOP_GC_KEEP_WEEKLY_FILES: ${CLOSED_LOOP_GC_KEEP_WEEKLY_FILES:-104}
+      CLOSED_LOOP_GC_LOG_MAX_BYTES: ${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}
+      CLOSED_LOOP_GC_LOG_KEEP_BYTES: ${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}
     volumes:
       - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /opt/ai-trade
     depends_on:
       - ai-trade
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
   loki:
     image: grafana/loki:2.9.8

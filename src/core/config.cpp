@@ -499,6 +499,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        (key == "required_edge_cap_bps" || key == "max_required_edge_bps")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.required_edge_cap_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_required_edge_cap_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         (key == "maker_entry_enabled" || key == "maker_first")) {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -2191,6 +2206,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_min_expected_edge_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.min_expected_edge_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_required_edge_cap_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.required_edge_cap_bps 不能为负数";
     }
     return false;
   }

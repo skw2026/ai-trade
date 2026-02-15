@@ -203,6 +203,8 @@ GitHub Variables（可选，用于覆盖 CD 强闭环默认值）：
 - `CLOSED_LOOP_STRICT_PASS`（默认 `true`）
 - `DEPLOY_SERVICES`（默认 `ai-trade watchdog scheduler`）
 - `GATE_DEFER_SERVICES`（默认 `watchdog scheduler`，表示门禁通过后再启动的服务）
+- `DOCKER_LOG_MAX_SIZE`（默认 `20m`，容器日志轮转大小）
+- `DOCKER_LOG_MAX_FILE`（默认 `5`，容器日志轮转文件数）
 
 触发方式：
 - `CI`：PR 和非 main 分支 push 自动触发
@@ -321,6 +323,13 @@ tools/closed_loop_runner.sh assess --stage S5 --since 4h
 
 # full: train + assess
 tools/closed_loop_runner.sh full --stage S5 --since 4h
+
+# 产物回收（按数量保留 + 可选日志截断）
+tools/recycle_artifacts.sh \
+  --reports-root ./data/reports/closed_loop \
+  --keep-run-dirs 120 \
+  --keep-daily-files 120 \
+  --keep-weekly-files 104
 ```
 
 生产环境建议通过 `scheduler` 常驻执行闭环：
@@ -347,6 +356,20 @@ docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d schedule
   - `data/reports/closed_loop/latest_run_id`
   - `data/reports/closed_loop/latest_daily_summary.json`
   - `data/reports/closed_loop/latest_weekly_summary.json`
+
+回收策略（默认开启）：
+- `closed_loop_runner.sh` 每次结束后自动执行 `tools/recycle_artifacts.sh`
+- 默认保留：
+  - 最近 `120` 个 run 目录
+  - 最近 `120` 份 `daily_*.json`
+  - 最近 `104` 份 `weekly_*.json`
+- 可通过环境变量覆盖：
+  - `CLOSED_LOOP_GC_ENABLED`
+  - `CLOSED_LOOP_GC_KEEP_RUN_DIRS`
+  - `CLOSED_LOOP_GC_KEEP_DAILY_FILES`
+  - `CLOSED_LOOP_GC_KEEP_WEEKLY_FILES`
+  - `CLOSED_LOOP_GC_LOG_MAX_BYTES`
+  - `CLOSED_LOOP_GC_LOG_KEEP_BYTES`
 
 手动重建日报/周报摘要（通常不需要，闭环脚本会自动生成）：
 ```bash
@@ -395,6 +418,8 @@ ops/cron/install_closed_loop_cron.sh install \
   --env-file .env.runtime \
   --stage S5
 ```
+
+说明：安装脚本会额外生成 `cleanup` 定时任务，默认每天回收一次历史报告，并对 `cron.log` 做按大小截断（输出到 `data/reports/closed_loop/gc.log`）。
 
 仅保留 assess 定时任务（禁用 full）：
 ```bash

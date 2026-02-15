@@ -21,6 +21,22 @@ ASSESS = load_assess_module()
 
 
 class AssessRunLogTest(unittest.TestCase):
+    @staticmethod
+    def _runtime_line(tick: int, notional: float, reduce_only: bool = False) -> str:
+        reduce_only_text = "true" if reduce_only else "false"
+        return (
+            f"2026-02-14 15:02:{tick % 60:02d} [INFO] RUNTIME_STATUS: ticks={tick}, "
+            "trade_ok=true, trading_halted=false, "
+            "account={equity=100000.0, drawdown_pct=0.000100, "
+            f"notional={notional:.6f}, realized_pnl=0.0, fees=0.0, realized_net=0.0}}, "
+            "strategy_mix={latest_trend_notional=0.0, latest_defensive_notional=0.0, "
+            "latest_blended_notional=0.0, avg_abs_trend_notional=0.0, "
+            "avg_abs_defensive_notional=0.0, avg_abs_blended_notional=0.0, samples=0}, "
+            "integrator_mode=shadow, "
+            f"gate_runtime={{enabled=true, fail_streak=0, pass_streak=0, reduce_only={reduce_only_text}, "
+            "reduce_only_cooldown_ticks=0, gate_halted=false, halt_cooldown_ticks=0, flat_ticks=0}}\n"
+        )
+
     def test_extract_strategy_mix_series_active(self):
         text = (
             "2026-02-14 15:02:18 [INFO] RUNTIME_STATUS: ticks=200, trade_ok=true, "
@@ -77,6 +93,38 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["strategy_mix_defensive_active_count"], 1)
         self.assertGreater(metrics["strategy_mix_avg_abs_defensive_notional"], 0.0)
         self.assertEqual(report["verdict"], "PASS")
+
+    def test_s5_fail_when_no_gate_pass(self):
+        runtime = "".join(
+            self._runtime_line(20 + i * 20, 0.0, reduce_only=(i % 2 == 0))
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_FAILED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, fail_reasons=[FAIL_LOW_ACTIVITY_SIGNALS,FAIL_LOW_ACTIVITY_FILLS]\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("未检测到 GATE_CHECK_PASSED" in x for x in report["fail_reasons"])
+        )
+
+    def test_s5_fail_when_start_not_flat(self):
+        runtime = "".join(
+            self._runtime_line(20 + i * 20, 180.0 if i == 0 else 0.0)
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=4, effective_signals=4, fills=1\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("运行窗口起点非平仓状态" in x for x in report["fail_reasons"])
+        )
 
 
 if __name__ == "__main__":

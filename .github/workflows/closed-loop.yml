@@ -84,8 +84,16 @@ jobs:
           set -euo pipefail
           mkdir -p .artifacts
           umask 077
-          printf '%s' "${{ secrets.ECS_SSH_KEY }}" > .artifacts/ecs_key
+          cat > .artifacts/ecs_key <<'EOF'
+          ${{ secrets.ECS_SSH_KEY }}
+          EOF
+          # 兼容从 Windows 复制密钥导致的 CRLF。
+          sed -i 's/\r$//' .artifacts/ecs_key
           chmod 600 .artifacts/ecs_key
+          if ! ssh-keygen -y -f .artifacts/ecs_key >/dev/null 2>&1; then
+            echo "invalid ECS_SSH_KEY format after normalization"
+            exit 1
+          fi
           PORT="${{ secrets.ECS_PORT || 22 }}"
           HOST="${{ secrets.ECS_HOST }}"
           USER="${{ secrets.ECS_USER }}"

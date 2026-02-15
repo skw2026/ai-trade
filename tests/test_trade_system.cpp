@@ -1628,6 +1628,7 @@ int main() {
         << "  min_rebalance_notional_usd: 45\n"
         << "  min_order_interval_ms: 2500\n"
         << "  reverse_signal_cooldown_ticks: 5\n"
+        << "  required_edge_cap_bps: 8.5\n"
         << "strategy:\n"
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
@@ -1688,6 +1689,7 @@ int main() {
         !NearlyEqual(config.execution_min_rebalance_notional_usd, 45.0) ||
         config.execution_min_order_interval_ms != 2500 ||
         config.execution_reverse_signal_cooldown_ticks != 5 ||
+        !NearlyEqual(config.execution_required_edge_cap_bps, 8.5) ||
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
         config.strategy_min_hold_ticks != 4 ||
@@ -2075,6 +2077,28 @@ int main() {
     }
     if (error.find("min_order_interval_ms") == std::string::npos) {
       std::cerr << "非法 execution.min_order_interval_ms 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_required_edge_cap.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  required_edge_cap_bps: -1.0\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 execution.required_edge_cap_bps 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("required_edge_cap_bps") == std::string::npos) {
+      std::cerr << "非法 execution.required_edge_cap_bps 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
