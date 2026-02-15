@@ -358,6 +358,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deploy-closed-loop-${{ github.run_id }}
+          name: deploy-closed-loop-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/*.json
+          include-hidden-files: true
           if-no-files-found: warn
