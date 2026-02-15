@@ -25,6 +25,8 @@ jobs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
       research_image_uri: ${{ steps.meta.outputs.research_image_uri }}
       research_image_tag: ${{ steps.meta.outputs.research_image_tag }}
+      web_image_uri: ${{ steps.meta.outputs.web_image_uri }}
+      web_image_tag: ${{ steps.meta.outputs.web_image_tag }}
       deploy_enabled: ${{ steps.deploy_gate.outputs.enabled }}
     steps:
       - name: Checkout
@@ -42,11 +44,14 @@ jobs:
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           IMAGE_URI="${REGISTRY}/${OWNER_LC}/ai-trade"
           RESEARCH_IMAGE_URI="${REGISTRY}/${OWNER_LC}/ai-trade-research"
+          WEB_IMAGE_URI="${REGISTRY}/${OWNER_LC}/ai-trade-web"
           IMAGE_TAG="${GITHUB_SHA}"
           echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
           echo "image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
           echo "research_image_uri=${RESEARCH_IMAGE_URI}" >> "${GITHUB_OUTPUT}"
           echo "research_image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
+          echo "web_image_uri=${WEB_IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+          echo "web_image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
 
       - name: Install Build Dependencies
         run: |
@@ -72,6 +77,10 @@ jobs:
           grep -q "compose_consistency_test" /tmp/ctest-list.txt
           grep -q "watchdog_utils_test" /tmp/ctest-list.txt
           grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
+          grep -q "validate_reports_test" /tmp/ctest-list.txt
+          grep -q "web_report_store_test" /tmp/ctest-list.txt
+          grep -q "web_governance_test" /tmp/ctest-list.txt
+          grep -q "web_static_test" /tmp/ctest-list.txt
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -108,6 +117,16 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.research_image_uri }}:${{ steps.meta.outputs.research_image_tag }}
             ${{ steps.meta.outputs.research_image_uri }}:latest
+
+      - name: Build and Push Web Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/ai_trade_web/backend
+          file: ./apps/ai_trade_web/backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.web_image_uri }}:${{ steps.meta.outputs.web_image_tag }}
+            ${{ steps.meta.outputs.web_image_uri }}:latest
 
       - name: Compute Deploy Gate
         id: deploy_gate
@@ -167,6 +186,7 @@ jobs:
         env:
           AI_TRADE_IMAGE: ${{ needs.build-test-push.outputs.image_uri }}:${{ needs.build-test-push.outputs.image_tag }}
           AI_TRADE_RESEARCH_IMAGE: ${{ needs.build-test-push.outputs.research_image_uri }}:${{ needs.build-test-push.outputs.research_image_tag }}
+          AI_TRADE_WEB_IMAGE: ${{ needs.build-test-push.outputs.web_image_uri }}:${{ needs.build-test-push.outputs.web_image_tag }}
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           DEPLOY_ENV_FILE: /opt/ai-trade/.env.runtime
@@ -184,7 +204,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
-          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,DEPLOY_SERVICES,GATE_DEFER_SERVICES
+          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,AI_TRADE_WEB_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,DEPLOY_SERVICES,GATE_DEFER_SERVICES
           script: |
             set -euo pipefail
             DEPLOY_ROOT="/opt/ai-trade"
@@ -269,20 +289,65 @@ jobs:
           if ! ssh-keygen -y -f .artifacts/ecs_key >/dev/null 2>&1; then
             echo "[deploy] invalid ECS_SSH_KEY format after normalization, skip artifact download"
             rm -f .artifacts/ecs_key
+            cat > .artifacts/deploy_gate_download_status.json <<'EOF'
+          {
+            "status": "SKIPPED",
+            "reason": "invalid_ssh_key_format"
+          }
+          EOF
             exit 0
           fi
           PORT="${{ secrets.ECS_PORT || 22 }}"
           HOST="${{ secrets.ECS_HOST }}"
           USER="${{ secrets.ECS_USER }}"
-          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
-            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_closed_loop_report.json" \
-            ".artifacts/latest_closed_loop_report.json" || true
-          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
-            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_runtime_assess.json" \
-            ".artifacts/latest_runtime_assess.json" || true
-          scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no \
-            "${USER}@${HOST}:/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" \
-            ".artifacts/latest_run_meta.json" || true
+          if [[ -z "${HOST}" || -z "${USER}" ]]; then
+            echo "[deploy] ECS_HOST/ECS_USER missing, skip artifact download"
+            rm -f .artifacts/ecs_key
+            cat > .artifacts/deploy_gate_download_status.json <<'EOF'
+          {
+            "status": "SKIPPED",
+            "reason": "missing_host_or_user"
+          }
+          EOF
+            exit 0
+          fi
+
+          downloaded=0
+          missing=()
+          fetch_report() {
+            local remote_path="$1"
+            local local_path="$2"
+            local label="$3"
+            if scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no "${USER}@${HOST}:${remote_path}" "${local_path}"; then
+              echo "[deploy] downloaded ${label}: ${remote_path}"
+              downloaded=$((downloaded + 1))
+            else
+              echo "[deploy] missing or inaccessible ${label}: ${remote_path}"
+              missing+=("${label}")
+            fi
+          }
+
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_closed_loop_report.json" ".artifacts/latest_closed_loop_report.json" "latest_closed_loop_report"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_runtime_assess.json" ".artifacts/latest_runtime_assess.json" "latest_runtime_assess"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta"
+
+          {
+            echo "{"
+            echo "  \"status\": \"DONE\","
+            echo "  \"downloaded_count\": ${downloaded},"
+            echo "  \"missing\": ["
+            for i in "${!missing[@]}"; do
+              sep=","
+              if [[ "${i}" -eq $((${#missing[@]} - 1)) ]]; then
+                sep=""
+              fi
+              echo "    \"${missing[$i]}\"${sep}"
+            done
+            echo "  ]"
+            echo "}"
+          } > .artifacts/deploy_gate_download_status.json
+
+          echo "[deploy] downloaded_count=${downloaded} missing_count=${#missing[@]}"
           rm -f .artifacts/ecs_key
 
       - name: Upload Deploy Gate Artifacts

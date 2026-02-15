@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ai-trade control plane</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>ai-trade Control Plane</h1>
+        <p id="top-status">Loading...</p>
+      </div>
+      <div class="top-actions">
+        <button id="refresh-all" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>Overview</h2>
+        <div class="cards">
+          <article class="card">
+            <h3>Run ID</h3>
+            <p id="card-run-id">-</p>
+          </article>
+          <article class="card">
+            <h3>Runtime Verdict</h3>
+            <p id="card-runtime-verdict">-</p>
+          </article>
+          <article class="card">
+            <h3>Overall Status</h3>
+            <p id="card-overall-status">-</p>
+          </article>
+          <article class="card">
+            <h3>Active Model</h3>
+            <p id="card-model-version">-</p>
+          </article>
+          <article class="card">
+            <h3>Write Mode</h3>
+            <p id="card-write-enabled">-</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Runs</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Run ID</th>
+              <th>Status</th>
+              <th>Generated</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="runs-table-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>Strategy / Execution Trends (last 12 runs)</h2>
+        <div class="trend-grid">
+          <article class="trend-card">
+            <h3>Self Evolution Actions</h3>
+            <canvas id="trend-evolution-actions" width="420" height="170"></canvas>
+          </article>
+          <article class="trend-card">
+            <h3>Integrator Policy Applied Ratio</h3>
+            <canvas id="trend-policy-ratio" width="420" height="170"></canvas>
+          </article>
+          <article class="trend-card">
+            <h3>Equity Change %</h3>
+            <canvas id="trend-equity-pct" width="420" height="170"></canvas>
+          </article>
+          <article class="trend-card">
+            <h3>Order Filtered By Cost</h3>
+            <canvas id="trend-cost-filtered" width="420" height="170"></canvas>
+          </article>
+          <article class="trend-card">
+            <h3>Reconcile Mismatch Count</h3>
+            <canvas id="trend-reconcile-mismatch" width="420" height="170"></canvas>
+          </article>
+          <article class="trend-card">
+            <h3>Max Drawdown %</h3>
+            <canvas id="trend-drawdown-pct" width="420" height="170"></canvas>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel split">
+        <div>
+          <h2>Latest Runtime Assess</h2>
+          <pre id="runtime-json">{}</pre>
+        </div>
+        <div>
+          <h2>Latest Closed Loop Report</h2>
+          <pre id="report-json">{}</pre>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Admin Session</h2>
+        <div class="form-grid">
+          <label>
+            Actor
+            <input id="admin-actor" type="text" value="web-admin" />
+          </label>
+          <label>
+            Admin Token
+            <input id="admin-token" type="password" placeholder="X-Admin-Token" />
+          </label>
+          <p class="hint">Token only kept in browser local storage for this host.</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Governance State</h2>
+        <div class="checkboxes">
+          <label><input id="state-read-only" type="checkbox" /> read_only_mode</label>
+          <label><input id="state-publish-frozen" type="checkbox" /> publish_frozen</label>
+          <label><input id="state-require-pass" type="checkbox" /> require_latest_pass</label>
+          <label>
+            <input id="state-allow-pass-actions" type="checkbox" />
+            allow_pass_with_actions
+          </label>
+          <label>
+            <input id="state-two-man-rule" type="checkbox" />
+            high_risk_two_man_rule
+          </label>
+        </div>
+        <div class="form-grid">
+          <label>
+            high_risk_required_approvals
+            <input id="state-required-approvals" type="number" min="2" max="5" step="1" />
+          </label>
+          <label>
+            high_risk_cooldown_seconds
+            <input id="state-cooldown-seconds" type="number" min="0" max="86400" step="1" />
+          </label>
+        </div>
+        <p class="hint">
+          Publish flow: Preview -> Approve (if high-risk) -> type confirm phrase -> Publish.
+        </p>
+        <div class="actions">
+          <button id="save-governance-state" type="button">Save State</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Draft Create</h2>
+        <div class="form-grid">
+          <label>
+            Profile Name
+            <input id="draft-profile" type="text" placeholder="bybit.demo.evolution.yaml" />
+          </label>
+          <label>
+            Note
+            <input id="draft-note" type="text" placeholder="Change note" />
+          </label>
+        </div>
+        <label>
+          Draft Content
+          <textarea id="draft-content" rows="12" spellcheck="false"></textarea>
+        </label>
+        <div class="actions">
+          <button id="create-draft" type="button">Create Draft</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Drafts</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Draft ID</th>
+              <th>Profile</th>
+              <th>Valid</th>
+              <th>Actor</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="drafts-table-body"></tbody>
+        </table>
+        <h3>Draft Detail</h3>
+        <pre id="draft-detail">{}</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Backups / Rollback</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Backup File</th>
+              <th>Bytes</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="backups-table-body"></tbody>
+        </table>
+        <div class="form-grid">
+          <label>
+            Rollback Profile
+            <input id="rollback-profile" type="text" placeholder="bybit.demo.evolution.yaml" />
+          </label>
+          <label>
+            Backup File
+            <input id="rollback-backup" type="text" placeholder="20260215T000000Z_xxx.yaml" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="rollback-submit" type="button">Rollback</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Audit</h2>
+        <div class="actions">
+          <button id="refresh-audit" type="button">Refresh Audit</button>
+        </div>
+        <pre id="audit-log">[]</pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

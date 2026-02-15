@@ -42,6 +42,37 @@ services:
     volumes:
       - ./:/workspace
 
+  ai-trade-web:
+    build:
+      context: ./apps/ai_trade_web/backend
+      dockerfile: Dockerfile
+    image: ai-trade-web:latest
+    container_name: ai-trade-web
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      AI_TRADE_REPORTS_ROOT: /workspace/data/reports/closed_loop
+      AI_TRADE_MODELS_ROOT: /workspace/data/models
+      AI_TRADE_CONFIG_ROOT: /workspace/config
+      AI_TRADE_CONTROL_ROOT: /workspace/data/control_plane
+      AI_TRADE_WEB_API_TITLE: ai-trade control plane
+      AI_TRADE_WEB_API_VERSION: v1
+      AI_TRADE_WEB_ENABLE_WRITE: ${AI_TRADE_WEB_ENABLE_WRITE:-false}
+      AI_TRADE_WEB_ADMIN_TOKEN: ${AI_TRADE_WEB_ADMIN_TOKEN:-}
+      AI_TRADE_WEB_REQUIRE_LATEST_PASS: ${AI_TRADE_WEB_REQUIRE_LATEST_PASS:-true}
+      AI_TRADE_WEB_ALLOW_PASS_WITH_ACTIONS: ${AI_TRADE_WEB_ALLOW_PASS_WITH_ACTIONS:-false}
+      AI_TRADE_WEB_HIGH_RISK_TWO_MAN_RULE: ${AI_TRADE_WEB_HIGH_RISK_TWO_MAN_RULE:-true}
+      AI_TRADE_WEB_HIGH_RISK_REQUIRED_APPROVALS: ${AI_TRADE_WEB_HIGH_RISK_REQUIRED_APPROVALS:-2}
+      AI_TRADE_WEB_HIGH_RISK_COOLDOWN_SECONDS: ${AI_TRADE_WEB_HIGH_RISK_COOLDOWN_SECONDS:-180}
+    volumes:
+      - ./data:/workspace/data
+      - ./config:/workspace/config
+    ports:
+      - "${AI_TRADE_WEB_PORT:-8080}:8080"
+    depends_on:
+      - ai-trade
+    profiles: ["web"]
+
   loki:
     image: grafana/loki:2.9.8
     container_name: ai-trade-loki

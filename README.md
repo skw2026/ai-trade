@@ -42,6 +42,7 @@
 - **[配置手册 (Configuration)](docs/配置手册.md)**: 系统配置模板、风控参数硬约束说明。
 - **[实现验收检查清单](docs/验收清单.md)**: P0 设计修复项与闭环保障的开发/测试打勾清单。
 - **[AI 自闭环实现路径](docs/实现路径.md)**: 先跑通闭环、再基于报告优化的执行路线图。
+- **[全工程重构蓝图](docs/重构蓝图.md)**: 前瞻性重构路线、目标架构与阶段计划。
 
 ---
 
@@ -67,6 +68,9 @@
 ```text
 ai-trade/
 ├── CMakeLists.txt       # CMake 构建入口
+├── Makefile             # 统一工程命令入口（qa/build/test）
+├── apps/
+│   └── ai_trade_web/    # 控制平面服务（phase-1 只读）
 ├── build/               # 构建产物目录 (cmake build)
 ├── config/              # 配置文件 (yaml)
 ├── data/                # 本地回测数据/缓存
@@ -93,6 +97,15 @@ cmake --build build -j 8
 ctest --test-dir build --output-on-failure
 ```
 
+### 工程质量门禁（推荐）
+```bash
+# 一键执行：编译 + 测试 + compose 配置校验 + 报告契约校验
+make qa
+
+# 或直接执行脚本
+tools/quality_gate.sh
+```
+
 ### Docker 运行（推荐统一编译环境）
 ```bash
 # 构建镜像（构建阶段会自动执行 ctest）
@@ -113,6 +126,29 @@ cp .env.example .env
 
 docker compose up --build ai-trade
 ```
+
+`ai-trade-web` 控制平面（phase-C）：
+```bash
+# 本地启动控制平面 API（读取 reports/models/config）
+docker compose --profile web up --build ai-trade-web
+# 默认访问: http://localhost:8080/docs
+```
+
+开启 phase-C 治理写入能力（谨慎）：
+```bash
+export AI_TRADE_WEB_ENABLE_WRITE=true
+export AI_TRADE_WEB_ADMIN_TOKEN=CHANGE_ME_STRONG_TOKEN
+docker compose --profile web up -d ai-trade-web
+```
+
+说明：
+- 写入接口需要请求头 `X-Admin-Token` 与环境变量令牌一致。
+- 默认发布保护会校验 latest 报告为 `PASS` 才允许发布配置。
+- 高风险发布默认启用双人审批与冷却：
+  - `AI_TRADE_WEB_HIGH_RISK_TWO_MAN_RULE=true`
+  - `AI_TRADE_WEB_HIGH_RISK_REQUIRED_APPROVALS=2`
+  - `AI_TRADE_WEB_HIGH_RISK_COOLDOWN_SECONDS=180`
+- 发布流程：`Preview -> Approve -> 输入 confirm phrase -> Publish`。
 
 可观测性（Prometheus + Grafana + Loki + Promtail）：
 ```bash

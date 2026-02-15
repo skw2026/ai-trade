@@ -70,10 +70,12 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("watchdog", self.prod_services)
         self.assertIn("scheduler", self.prod_services)
         self.assertIn("ai-trade-research", self.prod_services)
+        self.assertIn("ai-trade-web", self.prod_services)
 
     def test_dev_does_not_include_scheduler_and_watchdog(self):
         self.assertNotIn("watchdog", self.dev_services)
         self.assertNotIn("scheduler", self.dev_services)
+        self.assertIn("ai-trade-web", self.dev_services)
 
     def test_prod_only_services_match_expectation(self):
         prod_only = set(self.prod_services.keys()) - set(self.dev_services.keys())
@@ -100,6 +102,34 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_GC_LOG_MAX_BYTES: ${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}", scheduler)
         self.assertTrue(RUNNER_SCRIPT.is_file())
         self.assertTrue(RECYCLE_SCRIPT.is_file())
+
+    def test_web_service_paths_are_consistent(self):
+        dev_web = self.dev_services["ai-trade-web"]
+        prod_web = self.prod_services["ai-trade-web"]
+        self.assertIn("profiles: [\"web\"]", DEV_COMPOSE.read_text(encoding="utf-8"))
+        self.assertIn("profiles: [\"web\"]", PROD_COMPOSE.read_text(encoding="utf-8"))
+        self.assertIn("AI_TRADE_REPORTS_ROOT", dev_web)
+        self.assertIn("AI_TRADE_MODELS_ROOT", dev_web)
+        self.assertIn("AI_TRADE_CONFIG_ROOT", dev_web)
+        self.assertIn("AI_TRADE_CONTROL_ROOT", dev_web)
+        self.assertIn("AI_TRADE_WEB_ENABLE_WRITE", dev_web)
+        self.assertIn("AI_TRADE_WEB_ADMIN_TOKEN", dev_web)
+        self.assertIn("AI_TRADE_WEB_HIGH_RISK_TWO_MAN_RULE", dev_web)
+        self.assertIn("AI_TRADE_WEB_HIGH_RISK_REQUIRED_APPROVALS", dev_web)
+        self.assertIn("AI_TRADE_WEB_HIGH_RISK_COOLDOWN_SECONDS", dev_web)
+        self.assertIn("AI_TRADE_REPORTS_ROOT", prod_web)
+        self.assertIn("AI_TRADE_MODELS_ROOT", prod_web)
+        self.assertIn("AI_TRADE_CONFIG_ROOT", prod_web)
+        self.assertIn("AI_TRADE_CONTROL_ROOT", prod_web)
+        self.assertIn("AI_TRADE_WEB_ENABLE_WRITE", prod_web)
+        self.assertIn("AI_TRADE_WEB_ADMIN_TOKEN", prod_web)
+        self.assertIn("AI_TRADE_WEB_HIGH_RISK_TWO_MAN_RULE", prod_web)
+        self.assertIn("AI_TRADE_WEB_HIGH_RISK_REQUIRED_APPROVALS", prod_web)
+        self.assertIn("AI_TRADE_WEB_HIGH_RISK_COOLDOWN_SECONDS", prod_web)
+        self.assertIn("./data:/workspace/data", dev_web)
+        self.assertIn("./config:/workspace/config", dev_web)
+        self.assertIn("/data:/opt/ai-trade/data", prod_web)
+        self.assertIn("/config:/opt/ai-trade/config", prod_web)
 
     def test_watchdog_and_scheduler_have_log_rotation(self):
         watchdog = self.prod_services["watchdog"]
