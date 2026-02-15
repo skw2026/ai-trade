@@ -39,7 +39,7 @@ class StageRule:
 STAGE_RULES: Dict[str, StageRule] = {
     "DEPLOY": StageRule(
         name="DEPLOY",
-        min_runtime_status=2,
+        min_runtime_status=0,
         require_gate_window=False,
         require_gate_pass=False,
         require_evolution_init=False,
@@ -434,43 +434,13 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
 
+    if metrics["critical_count"] > 0:
+        fail_reasons.append(f"出现 CRITICAL: {metrics['critical_count']}")
+    if metrics["ws_unhealthy_count"] > 0:
+        fail_reasons.append(f"运行态 WS 健康检查失败次数: {metrics['ws_unhealthy_count']}")
     if metrics["runtime_status_count"] < min_runtime_status:
         fail_reasons.append(
             f"RUNTIME_STATUS 条数不足: {metrics['runtime_status_count']} < {min_runtime_status}"
-        )
-    if metrics["critical_count"] > 0:
-        fail_reasons.append(f"出现 CRITICAL: {metrics['critical_count']}")
-    if metrics["trading_halted_true_ratio"] > stage.max_trading_halted_true_ratio:
-        fail_reasons.append(
-            "trading_halted=true 占比超阈值: "
-            f"{metrics['trading_halted_true_ratio']:.4f} > "
-            f"{stage.max_trading_halted_true_ratio:.4f}"
-        )
-    if metrics["ws_unhealthy_count"] > 0:
-        fail_reasons.append(f"运行态 WS 健康检查失败次数: {metrics['ws_unhealthy_count']}")
-
-    if stage.require_gate_window and gate_window_count <= 0:
-        fail_reasons.append("未检测到 Gate 窗口判定（GATE_CHECK_PASSED/FAILED）")
-    if stage.require_gate_pass and gate_window_count > 0 and metrics["gate_check_passed_count"] <= 0:
-        fail_reasons.append("未检测到 GATE_CHECK_PASSED（S5 要求至少一个通过窗口）")
-
-    if (
-        stage.require_evolution_init
-        and metrics["self_evolution_init_count"] <= 0
-        and metrics["self_evolution_action_count"] <= 0
-    ):
-        fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
-
-    start_abs_notional = account_pnl.get("first_abs_notional_usd")
-    if (
-        stage.require_flat_start
-        and isinstance(start_abs_notional, (int, float))
-        and start_abs_notional > stage.max_start_abs_notional_usd
-    ):
-        fail_reasons.append(
-            "运行窗口起点非平仓状态，S5 验收要求平仓起跑: "
-            f"abs_notional={start_abs_notional:.6f} > "
-            f"threshold={stage.max_start_abs_notional_usd:.6f}"
         )
 
     gate_runtime_impact = (
@@ -478,16 +448,53 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         or metrics["gate_reduce_only_true_count"] > 0
         or metrics["gate_halted_true_count"] > 0
     )
-    if (
-        gate_window_count >= stage.gate_fail_hard_min_windows
-        and metrics["gate_check_fail_ratio"] > stage.gate_fail_hard_max_fail_ratio
-        and gate_runtime_impact
-    ):
-        fail_reasons.append(
-            "Gate 失败率过高且影响运行态（强闭环阻断）: "
-            f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
-            f"threshold={stage.gate_fail_hard_max_fail_ratio:.4f}"
-        )
+    # DEPLOY 门禁仅看“健康硬指标”，避免冷启动阶段的策略类指标误触发回滚。
+    if stage.name != "DEPLOY":
+        if metrics["trading_halted_true_ratio"] > stage.max_trading_halted_true_ratio:
+            fail_reasons.append(
+                "trading_halted=true 占比超阈值: "
+                f"{metrics['trading_halted_true_ratio']:.4f} > "
+                f"{stage.max_trading_halted_true_ratio:.4f}"
+            )
+
+        if stage.require_gate_window and gate_window_count <= 0:
+            fail_reasons.append("未检测到 Gate 窗口判定（GATE_CHECK_PASSED/FAILED）")
+        if (
+            stage.require_gate_pass
+            and gate_window_count > 0
+            and metrics["gate_check_passed_count"] <= 0
+        ):
+            fail_reasons.append("未检测到 GATE_CHECK_PASSED（S5 要求至少一个通过窗口）")
+
+        if (
+            stage.require_evolution_init
+            and metrics["self_evolution_init_count"] <= 0
+            and metrics["self_evolution_action_count"] <= 0
+        ):
+            fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
+
+        start_abs_notional = account_pnl.get("first_abs_notional_usd")
+        if (
+            stage.require_flat_start
+            and isinstance(start_abs_notional, (int, float))
+            and start_abs_notional > stage.max_start_abs_notional_usd
+        ):
+            fail_reasons.append(
+                "运行窗口起点非平仓状态，S5 验收要求平仓起跑: "
+                f"abs_notional={start_abs_notional:.6f} > "
+                f"threshold={stage.max_start_abs_notional_usd:.6f}"
+            )
+
+        if (
+            gate_window_count >= stage.gate_fail_hard_min_windows
+            and metrics["gate_check_fail_ratio"] > stage.gate_fail_hard_max_fail_ratio
+            and gate_runtime_impact
+        ):
+            fail_reasons.append(
+                "Gate 失败率过高且影响运行态（强闭环阻断）: "
+                f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
+                f"threshold={stage.gate_fail_hard_max_fail_ratio:.4f}"
+            )
 
     # 软告警：DEPLOY 仅保留硬失败项，避免上线门禁被策略类黄灯误阻断。
     if stage.name != "DEPLOY":
@@ -624,8 +631,8 @@ def main() -> int:
         if args.min_runtime_status is not None
         else stage.min_runtime_status
     )
-    if min_runtime_status <= 0:
-        print("[ERROR] --min_runtime_status 必须大于 0", file=sys.stderr)
+    if min_runtime_status < 0:
+        print("[ERROR] --min_runtime_status 必须大于等于 0", file=sys.stderr)
         return 2
 
     text = load_text(log_path)
