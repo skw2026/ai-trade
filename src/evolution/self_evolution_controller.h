@@ -62,7 +62,8 @@ class SelfEvolutionController {
   bool Initialize(std::int64_t current_tick,
                   double initial_equity_usd,
                   const std::pair<double, double>& initial_weights,
-                  std::string* out_error);
+                  std::string* out_error,
+                  double initial_realized_net_pnl_usd = 0.0);
 
   /**
    * @brief 每个行情 tick 调用一次，按配置周期评估是否更新/回滚
@@ -70,7 +71,7 @@ class SelfEvolutionController {
    * @return 无动作时返回 `std::nullopt`；有动作（更新/回滚/跳过）时返回详情。
    */
   std::optional<SelfEvolutionAction> OnTick(std::int64_t current_tick,
-                                            double equity_usd,
+                                            double realized_net_pnl_usd,
                                             RegimeBucket regime_bucket =
                                                 RegimeBucket::kRange,
                                             double drawdown_pct = 0.0,
@@ -132,7 +133,8 @@ class SelfEvolutionController {
   std::array<double, 3> bucket_window_notional_churn_usd_{};
   std::array<int, 3> bucket_window_ticks_{};
 
-  double last_observed_equity_usd_{0.0};
+  double last_observed_realized_net_pnl_usd_{0.0};
+  bool has_last_observed_realized_net_pnl_{false};
   double last_observed_notional_usd_{0.0};
   bool has_last_observed_notional_{false};
   std::int64_t next_eval_tick_{0};

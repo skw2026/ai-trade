@@ -48,7 +48,8 @@ execution:
   expected_slippage_bps: 1.0
   min_expected_edge_bps: 1.0
   # 允许在高费率估计场景下放宽入场边际门槛上限，避免长期“全被成本门挡住”。
-  required_edge_cap_bps: 8.0
+  # 加速阶段：降低上限，先恢复成交样本，再用报告回调。
+  required_edge_cap_bps: 5.7
   maker_entry_enabled: true
   maker_price_offset_bps: 1.0
   maker_post_only: true

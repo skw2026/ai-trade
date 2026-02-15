@@ -94,10 +94,13 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("working_dir: /opt/ai-trade", scheduler)
         self.assertIn("${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade", scheduler)
         self.assertIn(
-            "tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml",
+            'tools/closed_loop_runner.sh "$${SCHEDULER_ACTION_VALUE}" --compose-file docker-compose.prod.yml',
             scheduler,
         )
         self.assertIn("AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}", scheduler)
+        self.assertIn("SCHEDULER_ACTION: ${SCHEDULER_ACTION:-full}", scheduler)
+        self.assertIn("SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}", scheduler)
+        self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
         self.assertIn("CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_MAX_AGE_HOURS: ${CLOSED_LOOP_GC_MAX_AGE_HOURS:-72}", scheduler)

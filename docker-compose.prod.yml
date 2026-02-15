@@ -87,19 +87,34 @@ services:
         else
           ENV_FILE_OPT=""
         fi
+        SCHEDULER_ACTION_VALUE="$${SCHEDULER_ACTION:-full}"
+        SCHEDULER_INTERVAL_VALUE="$${SCHEDULER_INTERVAL_SECONDS:-86400}"
+        case "$${SCHEDULER_ACTION_VALUE}" in
+          train|assess|full) ;;
+          *)
+            echo "[Scheduler] invalid SCHEDULER_ACTION=$${SCHEDULER_ACTION_VALUE}, fallback=full"
+            SCHEDULER_ACTION_VALUE="full"
+            ;;
+        esac
+        if ! echo "$${SCHEDULER_INTERVAL_VALUE}" | grep -Eq '^[1-9][0-9]*$'; then
+          echo "[Scheduler] invalid SCHEDULER_INTERVAL_SECONDS=$${SCHEDULER_INTERVAL_VALUE}, fallback=86400"
+          SCHEDULER_INTERVAL_VALUE="86400"
+        fi
 
         while true; do 
-          echo '[Scheduler] Starting loop...'
-          /bin/bash tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml $${ENV_FILE_OPT} || echo '[Scheduler] Job failed'
+          echo "[Scheduler] Starting loop... action=$${SCHEDULER_ACTION_VALUE}"
+          /bin/bash tools/closed_loop_runner.sh "$${SCHEDULER_ACTION_VALUE}" --compose-file docker-compose.prod.yml $${ENV_FILE_OPT} || echo '[Scheduler] Job failed'
           /bin/bash tools/docker_gc.sh || echo '[Scheduler] Docker GC failed'
-          echo '[Scheduler] Sleeping 24h...'
-          sleep 86400
+          echo "[Scheduler] Sleeping $${SCHEDULER_INTERVAL_VALUE}s..."
+          sleep "$${SCHEDULER_INTERVAL_VALUE}"
         done
     environment:
       AI_TRADE_IMAGE: ${AI_TRADE_IMAGE:-ai-trade:latest}
       AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
       AI_TRADE_PROJECT_DIR: ${AI_TRADE_PROJECT_DIR:-}
       AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}
+      SCHEDULER_ACTION: ${SCHEDULER_ACTION:-full}
+      SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}
       CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}
       CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}
       CLOSED_LOOP_GC_KEEP_DAILY_FILES: ${CLOSED_LOOP_GC_KEEP_DAILY_FILES:-120}

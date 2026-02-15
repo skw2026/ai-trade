@@ -385,6 +385,9 @@ cd /opt/ai-trade
 set -a && source .env.runtime && set +a
 export AI_TRADE_PROJECT_DIR=/opt/ai-trade
 export AI_TRADE_ENV_FILE=.env.runtime
+# 可选：加速验证（每小时跑一次 assess/full）
+# export SCHEDULER_ACTION=assess
+# export SCHEDULER_INTERVAL_SECONDS=3600
 docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d scheduler watchdog
 ```
 

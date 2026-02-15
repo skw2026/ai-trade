@@ -53,7 +53,8 @@ bool SelfEvolutionController::Initialize(
     std::int64_t current_tick,
     double initial_equity_usd,
     const std::pair<double, double>& initial_weights,
-    std::string* out_error) {
+    std::string* out_error,
+    double initial_realized_net_pnl_usd) {
   if (!config_.enabled) {
     initialized_ = false;
     return true;
@@ -78,7 +79,8 @@ bool SelfEvolutionController::Initialize(
     runtime.degrade_windows.clear();
   }
 
-  last_observed_equity_usd_ = initial_equity_usd;
+  last_observed_realized_net_pnl_usd_ = initial_realized_net_pnl_usd;
+  has_last_observed_realized_net_pnl_ = true;
   last_observed_notional_usd_ = 0.0;
   has_last_observed_notional_ = false;
   ResetWindowAttribution();
@@ -107,7 +109,7 @@ int SelfEvolutionController::degrade_window_count(RegimeBucket bucket) const {
 
 std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     std::int64_t current_tick,
-    double equity_usd,
+    double realized_net_pnl_usd,
     RegimeBucket regime_bucket,
     double drawdown_pct,
     double account_notional_usd) {
@@ -115,10 +117,14 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     return std::nullopt;
   }
 
-  // 先按当前 bucket 归因逐 tick 权益变化，避免整窗收益被误记到评估时所在 bucket。
+  // 先按当前 bucket 归因逐 tick 已实现净盈亏变化，避免整窗收益被误记到评估时所在 bucket。
   const std::size_t active_index = BucketIndex(regime_bucket);
-  const double delta_equity = equity_usd - last_observed_equity_usd_;
-  bucket_window_pnl_usd_[active_index] += delta_equity;
+  double delta_realized_net_pnl_usd = 0.0;
+  if (has_last_observed_realized_net_pnl_) {
+    delta_realized_net_pnl_usd =
+        realized_net_pnl_usd - last_observed_realized_net_pnl_usd_;
+  }
+  bucket_window_pnl_usd_[active_index] += delta_realized_net_pnl_usd;
   bucket_window_ticks_[active_index] += 1;
   bucket_window_max_drawdown_pct_[active_index] =
       std::max(bucket_window_max_drawdown_pct_[active_index],
@@ -127,9 +133,10 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     bucket_window_notional_churn_usd_[active_index] +=
         std::fabs(account_notional_usd - last_observed_notional_usd_);
   }
+  last_observed_realized_net_pnl_usd_ = realized_net_pnl_usd;
+  has_last_observed_realized_net_pnl_ = true;
   last_observed_notional_usd_ = account_notional_usd;
   has_last_observed_notional_ = true;
-  last_observed_equity_usd_ = equity_usd;
 
   if (current_tick < next_eval_tick_) {
     return std::nullopt;

@@ -29,6 +29,8 @@ class AssessRunLogTest(unittest.TestCase):
         trading_halted: bool = False,
         public_ws_healthy: bool = True,
         private_ws_healthy: bool = True,
+        funnel_enqueued: int = 0,
+        funnel_fills: int = 0,
     ) -> str:
         reduce_only_text = "true" if reduce_only else "false"
         trading_halted_text = "true" if trading_halted else "false"
@@ -42,9 +44,17 @@ class AssessRunLogTest(unittest.TestCase):
             "}, "
             "account={equity=100000.0, drawdown_pct=0.000100, "
             f"notional={notional:.6f}, realized_pnl=0.0, fees=0.0, realized_net=0.0}}, "
+            "funnel_window={raw=1, risk_adjusted=1, intents_generated=1, "
+            "intents_filtered_inactive_symbol=0, intents_filtered_min_notional=0, "
+            "intents_filtered_fee_aware=0, throttled=0, "
+            f"enqueued={funnel_enqueued}, async_ok=0, async_failed=0, fills={funnel_fills}, "
+            "gate_alerts=0, evolution_updates=0, evolution_rollbacks=0, evolution_skipped=0, "
+            "entry_edge_samples=1, entry_edge_avg_bps=2.0, entry_required_avg_bps=1.0}, "
             "strategy_mix={latest_trend_notional=0.0, latest_defensive_notional=0.0, "
             "latest_blended_notional=0.0, avg_abs_trend_notional=0.0, "
             "avg_abs_defensive_notional=0.0, avg_abs_blended_notional=0.0, samples=0}, "
+            "entry_gate={enabled=true, round_trip_cost_bps=13.0, "
+            "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0}, "
             "integrator_mode=shadow, "
             f"gate_runtime={{enabled=true, fail_streak=0, pass_streak=0, reduce_only={reduce_only_text}, "
             "reduce_only_cooldown_ticks=0, gate_halted=false, halt_cooldown_ticks=0, flat_ticks=0}}\n"
@@ -138,6 +148,27 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertTrue(
             any("运行窗口起点非平仓状态" in x for x in report["fail_reasons"])
         )
+
+    def test_s5_pass_with_execution_activity(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1 if i == 0 else 0,
+                funnel_fills=1 if i == 1 else 0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:00:10 [INFO] SELF_EVOLUTION_ACTION: type=skipped, bucket=RANGE, reason=EVOLUTION_WINDOW_PNL_TOO_SMALL\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=1, effective_signals=10, fills=1\n"
+            "2026-02-14 15:30:01 [INFO] BYBIT_SUBMIT: order_type=Limit, symbol=BTCUSDT\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["fail_reasons"], [])
 
     def test_deploy_ignores_soft_warns(self):
         runtime = "".join(

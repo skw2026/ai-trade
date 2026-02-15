@@ -498,7 +498,7 @@ bool BotApplication::Initialize() {
     }
   }
 
-  // 自进化初始化必须在账户同步后进行，确保首个评估窗口权益基线准确。
+  // 自进化初始化必须在账户同步后进行，确保首个评估窗口的权益/已实现净盈亏基线准确。
   if (config_.self_evolution.enabled) {
     system_.EnableEvolution(true);
     std::string error;
@@ -513,7 +513,8 @@ bool BotApplication::Initialize() {
             system_.account().equity_usd(),
             {config_.self_evolution.initial_trend_weight,
              config_.self_evolution.initial_defensive_weight},
-            &error)) {
+            &error,
+            system_.account().cumulative_realized_net_pnl_usd())) {
       LogError("自进化控制器初始化失败: " + error);
       return false;
     }
@@ -1443,7 +1444,7 @@ void BotApplication::RunSelfEvolution() {
       has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange;
   const auto action =
       self_evolution_.OnTick(market_tick_count_,
-                             system_.account().equity_usd(),
+                             system_.account().cumulative_realized_net_pnl_usd(),
                              active_bucket,
                              system_.account().drawdown_pct(),
                              system_.account().current_notional_usd());

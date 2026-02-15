@@ -1245,7 +1245,8 @@ int main() {
     if (!controller.Initialize(/*current_tick=*/0,
                                /*initial_equity_usd=*/10000.0,
                                {0.50, 0.50},
-                               &error)) {
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
       std::cerr << "自进化控制器初始化失败: " << error << "\n";
       return 1;
     }
@@ -1282,7 +1283,8 @@ int main() {
     if (!controller.Initialize(/*current_tick=*/0,
                                /*initial_equity_usd=*/10000.0,
                                {0.50, 0.50},
-                               &error)) {
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
       std::cerr << "自进化控制器初始化失败: " << error << "\n";
       return 1;
     }
@@ -1316,7 +1318,8 @@ int main() {
     if (!controller.Initialize(/*current_tick=*/0,
                                /*initial_equity_usd=*/10000.0,
                                {0.50, 0.50},
-                               &error)) {
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
       std::cerr << "自进化控制器初始化失败: " << error << "\n";
       return 1;
     }
@@ -1352,7 +1355,8 @@ int main() {
     if (!controller.Initialize(/*current_tick=*/0,
                                /*initial_equity_usd=*/10000.0,
                                {0.50, 0.50},
-                               &error)) {
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
       std::cerr << "自进化控制器初始化失败: " << error << "\n";
       return 1;
     }
@@ -1405,7 +1409,8 @@ int main() {
     if (!controller.Initialize(/*current_tick=*/0,
                                /*initial_equity_usd=*/10000.0,
                                {0.50, 0.50},
-                               &error)) {
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
       std::cerr << "自进化控制器初始化失败: " << error << "\n";
       return 1;
     }
@@ -1453,7 +1458,8 @@ int main() {
     if (!controller.Initialize(/*current_tick=*/0,
                                /*initial_equity_usd=*/10000.0,
                                {0.50, 0.50},
-                               &error)) {
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
       std::cerr << "自进化控制器初始化失败: " << error << "\n";
       return 1;
     }

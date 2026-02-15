@@ -27,6 +27,7 @@ class StageRule:
     require_gate_window: bool
     require_gate_pass: bool
     require_evolution_init: bool
+    require_execution_activity: bool
     require_flat_start: bool
     max_start_abs_notional_usd: float
     max_trading_halted_true_ratio: float
@@ -43,6 +44,7 @@ STAGE_RULES: Dict[str, StageRule] = {
         require_gate_window=False,
         require_gate_pass=False,
         require_evolution_init=False,
+        require_execution_activity=False,
         require_flat_start=False,
         max_start_abs_notional_usd=0.0,
         max_trading_halted_true_ratio=0.50,
@@ -57,6 +59,7 @@ STAGE_RULES: Dict[str, StageRule] = {
         require_gate_window=True,
         require_gate_pass=False,
         require_evolution_init=False,
+        require_execution_activity=False,
         require_flat_start=False,
         max_start_abs_notional_usd=0.0,
         max_trading_halted_true_ratio=0.20,
@@ -71,6 +74,7 @@ STAGE_RULES: Dict[str, StageRule] = {
         require_gate_window=True,
         require_gate_pass=True,
         require_evolution_init=True,
+        require_execution_activity=True,
         require_flat_start=True,
         max_start_abs_notional_usd=50.0,
         max_trading_halted_true_ratio=0.10,
@@ -394,6 +398,14 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         ),
         "order_filtered_cost_count": count(r"ORDER_FILTERED_COST:", text),
         "entry_gate_enabled_count": count(r"RUNTIME_STATUS:.*entry_gate=\{enabled=true", text),
+        "funnel_enqueued_runtime_count": count(
+            r"RUNTIME_STATUS:.*funnel_window=\{[^}]*enqueued=(?:[1-9][0-9]*)",
+            text,
+        ),
+        "funnel_fills_runtime_count": count(
+            r"RUNTIME_STATUS:.*funnel_window=\{[^}]*fills=(?:[1-9][0-9]*)",
+            text,
+        ),
         "bybit_submit_limit_count": count(r"BYBIT_SUBMIT:.*order_type=Limit", text),
         "bybit_submit_market_count": count(r"BYBIT_SUBMIT:.*order_type=Market", text),
         "runtime_account_samples": account_pnl["samples"],
@@ -423,6 +435,15 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
     else:
         metrics["trading_halted_true_ratio"] = 0.0
         metrics["integrator_policy_applied_ratio"] = 0.0
+
+    execution_activity_count = (
+        metrics["bybit_submit_limit_count"]
+        + metrics["bybit_submit_market_count"]
+        + metrics["funnel_enqueued_runtime_count"]
+        + metrics["funnel_fills_runtime_count"]
+    )
+    metrics["execution_activity_count"] = execution_activity_count
+
     gate_window_count = metrics["gate_check_passed_count"] + metrics["gate_check_failed_count"]
     if gate_window_count > 0:
         metrics["gate_check_fail_ratio"] = (
@@ -430,6 +451,17 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         )
     else:
         metrics["gate_check_fail_ratio"] = 0.0
+
+    equity_change_usd = account_pnl.get("equity_change_usd")
+    realized_net_change_usd = account_pnl.get("realized_net_pnl_change_usd")
+    if isinstance(equity_change_usd, (int, float)) and isinstance(
+        realized_net_change_usd, (int, float)
+    ):
+        metrics["equity_vs_realized_net_gap_usd"] = (
+            equity_change_usd - realized_net_change_usd
+        )
+    else:
+        metrics["equity_vs_realized_net_gap_usd"] = None
 
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
@@ -472,6 +504,9 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             and metrics["self_evolution_action_count"] <= 0
         ):
             fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
+
+        if stage.require_execution_activity and execution_activity_count <= 0:
+            fail_reasons.append("未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）")
 
         start_abs_notional = account_pnl.get("first_abs_notional_usd")
         if (
@@ -543,6 +578,14 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             and metrics["integrator_shadow_scored_runtime_count"] <= 0
         ):
             warn_reasons.append("Integrator 处于 canary/active 但未观测到 shadow scored>0")
+
+        if execution_activity_count <= 0:
+            gap_usd = metrics.get("equity_vs_realized_net_gap_usd")
+            if isinstance(gap_usd, (int, float)) and abs(gap_usd) >= 50.0:
+                warn_reasons.append(
+                    "权益变化与已实现净盈亏偏差较大且无执行活动，建议检查资金同步/统计口径: "
+                    f"gap_usd={gap_usd:.6f}"
+                )
     if fail_reasons:
         verdict = "FAIL"
     elif warn_reasons:
