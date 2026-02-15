@@ -126,6 +126,20 @@ class AssessRunLogTest(unittest.TestCase):
             any("运行窗口起点非平仓状态" in x for x in report["fail_reasons"])
         )
 
+    def test_deploy_ignores_soft_warns(self):
+        runtime = "".join(
+            self._runtime_line(20 + i * 20, 0.0, reduce_only=True)
+            for i in range(12)
+        )
+        text = (
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_FAILED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, fail_reasons=[FAIL_LOW_ACTIVITY_SIGNALS,FAIL_LOW_ACTIVITY_FILLS]\n"
+            "2026-02-14 15:30:01 [INFO] GATE_CHECK_FAILED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, fail_reasons=[FAIL_LOW_ACTIVITY_SIGNALS,FAIL_LOW_ACTIVITY_FILLS]\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["DEPLOY"], min_runtime_status=2)
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["warn_reasons"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -473,9 +473,6 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             f"threshold={stage.max_start_abs_notional_usd:.6f}"
         )
 
-    # 软告警：不阻断阶段，但需要后续参数/策略动作
-    if metrics["reconcile_mismatch_count"] > 0 and metrics["reconcile_autoresync_count"] <= 0:
-        warn_reasons.append("出现对账不一致但未观察到 AUTORESYNC")
     gate_runtime_impact = (
         metrics["trading_halted_true_count"] > 0
         or metrics["gate_reduce_only_true_count"] > 0
@@ -491,40 +488,54 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
             f"threshold={stage.gate_fail_hard_max_fail_ratio:.4f}"
         )
-    if (
-        gate_window_count >= stage.gate_warn_min_windows
-        and metrics["gate_check_fail_ratio"] > stage.gate_warn_max_fail_ratio
-        and gate_runtime_impact
-    ):
-        warn_reasons.append(
-            "Gate 失败率偏高且已触发运行态限制，建议复核策略活跃度/门槛参数: "
-            f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
-            f"threshold={stage.gate_warn_max_fail_ratio:.4f}"
-        )
-    if (
-        metrics["trading_halted_true_count"] > 0
-        and metrics["trading_halted_true_ratio"] <= stage.max_trading_halted_true_ratio
-    ):
-        warn_reasons.append(
-            "出现短暂 trading_halted=true，但占比在阈值内，建议复核 Gate/对账参数"
-        )
-    if (
-        stage.name == "S5"
-        and metrics["self_evolution_action_count"] <= 0
-        and metrics["self_evolution_init_count"] > 0
-    ):
-        warn_reasons.append("未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛")
 
-    integrator_takeover_mode_count = (
-        metrics["integrator_mode_canary_count"] + metrics["integrator_mode_active_count"]
-    )
-    if integrator_takeover_mode_count > 0 and metrics["integrator_policy_applied_count"] <= 0:
-        warn_reasons.append("Integrator 处于 canary/active 但未观测到策略接管事件")
-    if (
-        integrator_takeover_mode_count > 0
-        and metrics["integrator_shadow_scored_runtime_count"] <= 0
-    ):
-        warn_reasons.append("Integrator 处于 canary/active 但未观测到 shadow scored>0")
+    # 软告警：DEPLOY 仅保留硬失败项，避免上线门禁被策略类黄灯误阻断。
+    if stage.name != "DEPLOY":
+        if (
+            metrics["reconcile_mismatch_count"] > 0
+            and metrics["reconcile_autoresync_count"] <= 0
+        ):
+            warn_reasons.append("出现对账不一致但未观察到 AUTORESYNC")
+        if (
+            gate_window_count >= stage.gate_warn_min_windows
+            and metrics["gate_check_fail_ratio"] > stage.gate_warn_max_fail_ratio
+            and gate_runtime_impact
+        ):
+            warn_reasons.append(
+                "Gate 失败率偏高且已触发运行态限制，建议复核策略活跃度/门槛参数: "
+                f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
+                f"threshold={stage.gate_warn_max_fail_ratio:.4f}"
+            )
+        if (
+            metrics["trading_halted_true_count"] > 0
+            and metrics["trading_halted_true_ratio"]
+            <= stage.max_trading_halted_true_ratio
+        ):
+            warn_reasons.append(
+                "出现短暂 trading_halted=true，但占比在阈值内，建议复核 Gate/对账参数"
+            )
+        if (
+            stage.name == "S5"
+            and metrics["self_evolution_action_count"] <= 0
+            and metrics["self_evolution_init_count"] > 0
+        ):
+            warn_reasons.append(
+                "未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛"
+            )
+
+        integrator_takeover_mode_count = (
+            metrics["integrator_mode_canary_count"] + metrics["integrator_mode_active_count"]
+        )
+        if (
+            integrator_takeover_mode_count > 0
+            and metrics["integrator_policy_applied_count"] <= 0
+        ):
+            warn_reasons.append("Integrator 处于 canary/active 但未观测到策略接管事件")
+        if (
+            integrator_takeover_mode_count > 0
+            and metrics["integrator_shadow_scored_runtime_count"] <= 0
+        ):
+            warn_reasons.append("Integrator 处于 canary/active 但未观测到 shadow scored>0")
     if fail_reasons:
         verdict = "FAIL"
     elif warn_reasons:
