@@ -51,6 +51,30 @@ def _validate_runtime_assess(payload: Dict[str, Any], errors: List[str]) -> None
         _require_key(metrics_obj, "runtime_status_count", "runtime_assess.metrics", errors)
         _require_key(metrics_obj, "critical_count", "runtime_assess.metrics", errors)
         _require_key(metrics_obj, "ws_unhealthy_count", "runtime_assess.metrics", errors)
+        _require_key(
+            metrics_obj,
+            "self_evolution_action_count",
+            "runtime_assess.metrics",
+            errors,
+        )
+        _require_key(
+            metrics_obj,
+            "self_evolution_virtual_action_count",
+            "runtime_assess.metrics",
+            errors,
+        )
+        _require_key(
+            metrics_obj,
+            "self_evolution_counterfactual_action_count",
+            "runtime_assess.metrics",
+            errors,
+        )
+        _require_key(
+            metrics_obj,
+            "self_evolution_counterfactual_update_count",
+            "runtime_assess.metrics",
+            errors,
+        )
 
     fail_reasons = _require_key(payload, "fail_reasons", "runtime_assess", errors)
     if fail_reasons is not None and not isinstance(fail_reasons, list):

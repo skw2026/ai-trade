@@ -35,6 +35,19 @@ Publish guard:
 - `publish` must include `preview_digest` + `confirm_phrase` returned by `preview`.
 - High-risk drafts may require multi-actor approvals and cooldown before publish.
 
+Web trend cards (last 12 runs) include:
+- `self_evolution_action_count`
+- `self_evolution_virtual_action_count`
+- `self_evolution_counterfactual_action_count`
+- `self_evolution_counterfactual_update_count`
+- `self_evolution_factor_ic_action_count`
+- `self_evolution_learnability_skip_count`
+- `integrator_policy_applied_ratio`
+- `order_filtered_cost_count`
+- `reconcile_mismatch_count`
+- `equity_change_pct`
+- `max_drawdown_pct_observed`
+
 ## Environment Variables
 
 - `AI_TRADE_REPORTS_ROOT` (default: `/opt/ai-trade/data/reports/closed_loop`)

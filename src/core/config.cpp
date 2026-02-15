@@ -1635,6 +1635,160 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "use_virtual_pnl") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.use_virtual_pnl 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.use_virtual_pnl = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "use_counterfactual_search" ||
+         key == "counterfactual_search_enabled")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.use_counterfactual_search 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.use_counterfactual_search = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "counterfactual_min_improvement_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_min_improvement_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_min_improvement_usd = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "virtual_cost_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.virtual_cost_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.virtual_cost_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "enable_factor_ic_adaptive_weights" ||
+         key == "use_factor_ic_adaptive_weights")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.enable_factor_ic_adaptive_weights 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.enable_factor_ic_adaptive_weights = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "factor_ic_min_samples") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.factor_ic_min_samples 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.factor_ic_min_samples = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "factor_ic_min_abs") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.factor_ic_min_abs 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.factor_ic_min_abs = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "enable_learnability_gate" ||
+         key == "learnability_gate_enabled")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.enable_learnability_gate 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.enable_learnability_gate = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "learnability_min_samples") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.learnability_min_samples 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.learnability_min_samples = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "learnability_min_t_stat_abs" ||
+         key == "learnability_t_stat_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.learnability_min_t_stat_abs 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.learnability_min_t_stat_abs = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         (key == "objective_alpha_pnl" || key == "alpha_pnl")) {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -2299,6 +2453,43 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "self_evolution.min_bucket_ticks_for_update 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.counterfactual_min_improvement_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.counterfactual_min_improvement_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.virtual_cost_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.virtual_cost_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.factor_ic_min_samples < 0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.factor_ic_min_samples 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.factor_ic_min_abs < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.factor_ic_min_abs 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.learnability_min_samples < 0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.learnability_min_samples 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.learnability_min_t_stat_abs < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.learnability_min_t_stat_abs 不能为负数";
     }
     return false;
   }

@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "core/config.h"
 
@@ -25,10 +26,25 @@ struct SelfEvolutionAction {
   std::int64_t tick{0};
   RegimeBucket regime_bucket{RegimeBucket::kRange};
   double window_pnl_usd{0.0};
+  double window_realized_pnl_usd{0.0};
+  double window_virtual_pnl_usd{0.0};
   double window_objective_score{0.0};
   double window_max_drawdown_pct{0.0};
   double window_notional_churn_usd{0.0};
   int window_bucket_ticks{0};
+  bool used_virtual_pnl{false};
+  bool used_counterfactual_search{false};
+  bool used_factor_ic_adaptive_weighting{false};
+  double counterfactual_best_virtual_pnl_usd{0.0};
+  double counterfactual_best_trend_weight{0.0};
+  double counterfactual_best_defensive_weight{0.0};
+  double trend_factor_ic{0.0};
+  double defensive_factor_ic{0.0};
+  int factor_ic_samples{0};
+  bool learnability_gate_enabled{false};
+  bool learnability_gate_passed{true};
+  double learnability_t_stat{0.0};
+  int learnability_samples{0};
   double trend_weight_before{0.0};
   double defensive_weight_before{0.0};
   double trend_weight_after{0.0};
@@ -75,7 +91,10 @@ class SelfEvolutionController {
                                             RegimeBucket regime_bucket =
                                                 RegimeBucket::kRange,
                                             double drawdown_pct = 0.0,
-                                            double account_notional_usd = 0.0);
+                                            double account_notional_usd = 0.0,
+                                            double trend_signal_notional_usd = 0.0,
+                                            double defensive_signal_notional_usd = 0.0,
+                                            double mark_price_usd = 0.0);
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
@@ -102,6 +121,19 @@ class SelfEvolutionController {
     double rollback_anchor_defensive_weight{0.0};
     std::deque<bool> degrade_windows;
   };
+  struct CorrelationAccumulator {
+    double sum_x{0.0};
+    double sum_y{0.0};
+    double sum_x2{0.0};
+    double sum_y2{0.0};
+    double sum_xy{0.0};
+    int samples{0};
+  };
+  struct SampleAccumulator {
+    double sum{0.0};
+    double sum_sq{0.0};
+    int samples{0};
+  };
 
   static std::size_t BucketIndex(RegimeBucket bucket);
   static RegimeBucket BucketFromIndex(std::size_t index);
@@ -112,6 +144,17 @@ class SelfEvolutionController {
   double ComputeObjectiveScore(double window_pnl_usd,
                                double window_max_drawdown_pct,
                                double window_notional_churn_usd) const;
+  void InitializeCounterfactualGrid();
+  std::optional<EvolutionWeights> BestCounterfactualWeights(
+      std::size_t bucket_index,
+      double* out_best_virtual_pnl_usd) const;
+  double CorrelationFromAccumulator(
+      const CorrelationAccumulator& accumulator) const;
+  double TStatFromAccumulator(const SampleAccumulator& accumulator) const;
+  std::optional<EvolutionWeights> ProposeFactorIcWeights(
+      std::size_t bucket_index,
+      const BucketRuntime& runtime,
+      SelfEvolutionAction* out_action) const;
   double ObjectiveThreshold() const {
     return config_.rollback_degrade_threshold_score;
   }
@@ -120,7 +163,7 @@ class SelfEvolutionController {
                        double defensive_weight,
                        std::string* out_error) const;
   EvolutionWeights ProposeWeights(double objective_score,
-                                           const BucketRuntime& runtime) const;
+                                  const BucketRuntime& runtime) const;
   void PushDegradeWindow(BucketRuntime* runtime, bool degraded);
   bool ShouldRollback(const BucketRuntime& runtime) const;
 
@@ -128,15 +171,25 @@ class SelfEvolutionController {
 
   bool initialized_{false};
   std::array<BucketRuntime, 3> bucket_runtime_{};
-  std::array<double, 3> bucket_window_pnl_usd_{};
+  std::array<double, 3> bucket_window_realized_pnl_usd_{};
+  std::array<double, 3> bucket_window_virtual_pnl_usd_{};
+  std::array<std::vector<double>, 3> bucket_window_virtual_pnl_by_candidate_{};
+  std::array<CorrelationAccumulator, 3> bucket_window_trend_factor_ic_{};
+  std::array<CorrelationAccumulator, 3> bucket_window_defensive_factor_ic_{};
+  std::array<SampleAccumulator, 3> bucket_window_learnability_stats_{};
   std::array<double, 3> bucket_window_max_drawdown_pct_{};
   std::array<double, 3> bucket_window_notional_churn_usd_{};
   std::array<int, 3> bucket_window_ticks_{};
+  std::vector<double> counterfactual_trend_weight_grid_{};
 
   double last_observed_realized_net_pnl_usd_{0.0};
   bool has_last_observed_realized_net_pnl_{false};
   double last_observed_notional_usd_{0.0};
   bool has_last_observed_notional_{false};
+  double last_signal_trend_notional_usd_{0.0};
+  double last_signal_defensive_notional_usd_{0.0};
+  double last_signal_price_usd_{0.0};
+  bool has_last_signal_state_{false};
   std::int64_t next_eval_tick_{0};
   std::int64_t cooldown_until_tick_{0};
 };

@@ -251,6 +251,12 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "reconcile_mismatch_count": 0,
             "reconcile_autoresync_count": 0,
             "self_evolution_action_count": 0,
+            "self_evolution_virtual_action_count": 0,
+            "self_evolution_counterfactual_action_count": 0,
+            "self_evolution_counterfactual_update_count": 0,
+            "self_evolution_factor_ic_action_count": 0,
+            "self_evolution_learnability_skip_count": 0,
+            "self_evolution_learnability_pass_count": 0,
             "integrator_policy_applied_count": 0,
             "integrator_policy_canary_count": 0,
             "integrator_policy_active_count": 0,
@@ -275,6 +281,24 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     reconcile_mismatch = to_int(latest_metrics.get("reconcile_mismatch_count")) or 0
     reconcile_autoresync = to_int(latest_metrics.get("reconcile_autoresync_count")) or 0
     evolution_action = to_int(latest_metrics.get("self_evolution_action_count")) or 0
+    evolution_virtual_action = (
+        to_int(latest_metrics.get("self_evolution_virtual_action_count")) or 0
+    )
+    evolution_counterfactual_action = (
+        to_int(latest_metrics.get("self_evolution_counterfactual_action_count")) or 0
+    )
+    evolution_counterfactual_update = (
+        to_int(latest_metrics.get("self_evolution_counterfactual_update_count")) or 0
+    )
+    evolution_factor_ic_action = (
+        to_int(latest_metrics.get("self_evolution_factor_ic_action_count")) or 0
+    )
+    evolution_learnability_skip = (
+        to_int(latest_metrics.get("self_evolution_learnability_skip_count")) or 0
+    )
+    evolution_learnability_pass = (
+        to_int(latest_metrics.get("self_evolution_learnability_pass_count")) or 0
+    )
     integrator_policy_applied = (
         to_int(latest_metrics.get("integrator_policy_applied_count")) or 0
     )
@@ -343,6 +367,12 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "reconcile_mismatch_count": reconcile_mismatch,
         "reconcile_autoresync_count": reconcile_autoresync,
         "self_evolution_action_count": evolution_action,
+        "self_evolution_virtual_action_count": evolution_virtual_action,
+        "self_evolution_counterfactual_action_count": evolution_counterfactual_action,
+        "self_evolution_counterfactual_update_count": evolution_counterfactual_update,
+        "self_evolution_factor_ic_action_count": evolution_factor_ic_action,
+        "self_evolution_learnability_skip_count": evolution_learnability_skip,
+        "self_evolution_learnability_pass_count": evolution_learnability_pass,
         "integrator_policy_applied_count": integrator_policy_applied,
         "integrator_policy_canary_count": integrator_policy_canary,
         "integrator_policy_active_count": integrator_policy_active,

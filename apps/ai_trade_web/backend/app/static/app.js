@@ -45,6 +45,19 @@ const ui = {
   refreshAudit: document.getElementById("refresh-audit"),
 
   trendEvolutionActions: document.getElementById("trend-evolution-actions"),
+  trendEvolutionVirtualActions: document.getElementById("trend-evolution-virtual-actions"),
+  trendEvolutionCounterfactualActions: document.getElementById(
+    "trend-evolution-counterfactual-actions"
+  ),
+  trendEvolutionCounterfactualUpdates: document.getElementById(
+    "trend-evolution-counterfactual-updates"
+  ),
+  trendEvolutionFactorIcActions: document.getElementById(
+    "trend-evolution-factor-ic-actions"
+  ),
+  trendEvolutionLearnabilitySkips: document.getElementById(
+    "trend-evolution-learnability-skips"
+  ),
   trendPolicyRatio: document.getElementById("trend-policy-ratio"),
   trendEquityPct: document.getElementById("trend-equity-pct"),
   trendCostFiltered: document.getElementById("trend-cost-filtered"),
@@ -334,6 +347,26 @@ async function loadTrendMetrics() {
       points.push({
         run_id: runId,
         evolution_actions: asNumber(runtimeMetrics.self_evolution_action_count, 0),
+        evolution_virtual_actions: asNumber(
+          runtimeMetrics.self_evolution_virtual_action_count,
+          0
+        ),
+        evolution_counterfactual_actions: asNumber(
+          runtimeMetrics.self_evolution_counterfactual_action_count,
+          0
+        ),
+        evolution_counterfactual_updates: asNumber(
+          runtimeMetrics.self_evolution_counterfactual_update_count,
+          0
+        ),
+        evolution_factor_ic_actions: asNumber(
+          runtimeMetrics.self_evolution_factor_ic_action_count,
+          0
+        ),
+        evolution_learnability_skips: asNumber(
+          runtimeMetrics.self_evolution_learnability_skip_count,
+          0
+        ),
         policy_applied_ratio: asNumber(runtimeMetrics.integrator_policy_applied_ratio, 0) * 100,
         equity_change_pct: asNumber(account.equity_change_pct, 0) * 100,
         cost_filtered: asNumber(runtimeMetrics.order_filtered_cost_count, 0),
@@ -346,6 +379,17 @@ async function loadTrendMetrics() {
   }
 
   const evolution = points.map((x) => x.evolution_actions);
+  const evolutionVirtual = points.map((x) => x.evolution_virtual_actions);
+  const evolutionCounterfactualActions = points.map(
+    (x) => x.evolution_counterfactual_actions
+  );
+  const evolutionCounterfactual = points.map(
+    (x) => x.evolution_counterfactual_updates
+  );
+  const evolutionFactorIcActions = points.map((x) => x.evolution_factor_ic_actions);
+  const evolutionLearnabilitySkips = points.map(
+    (x) => x.evolution_learnability_skips
+  );
   const policyRatio = points.map((x) => x.policy_applied_ratio);
   const equity = points.map((x) => x.equity_change_pct);
   const costFiltered = points.map((x) => x.cost_filtered);
@@ -355,6 +399,31 @@ async function loadTrendMetrics() {
   drawLineChart(ui.trendEvolutionActions, evolution, {
     label: "self_evolution_action_count",
     color: "#006d77",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendEvolutionVirtualActions, evolutionVirtual, {
+    label: "self_evolution_virtual_action_count",
+    color: "#2a9d8f",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendEvolutionCounterfactualActions, evolutionCounterfactualActions, {
+    label: "self_evolution_counterfactual_action_count",
+    color: "#7f5539",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendEvolutionCounterfactualUpdates, evolutionCounterfactual, {
+    label: "self_evolution_counterfactual_update_count",
+    color: "#8f2d56",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendEvolutionFactorIcActions, evolutionFactorIcActions, {
+    label: "self_evolution_factor_ic_action_count",
+    color: "#264653",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendEvolutionLearnabilitySkips, evolutionLearnabilitySkips, {
+    label: "self_evolution_learnability_skip_count",
+    color: "#c1121f",
     decimals: 2,
   });
   drawLineChart(ui.trendPolicyRatio, policyRatio, {

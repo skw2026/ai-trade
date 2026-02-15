@@ -523,7 +523,14 @@ bool BotApplication::Initialize() {
             ", defensive_weight=" +
             std::to_string(config_.self_evolution.initial_defensive_weight) +
             ", update_interval_ticks=" +
-            std::to_string(config_.self_evolution.update_interval_ticks));
+            std::to_string(config_.self_evolution.update_interval_ticks) +
+            ", factor_ic_weighting=" +
+            std::string(config_.self_evolution.enable_factor_ic_adaptive_weights
+                            ? "true"
+                            : "false") +
+            ", learnability_gate=" +
+            std::string(config_.self_evolution.enable_learnability_gate ? "true"
+                                                                        : "false"));
   } else {
     system_.EnableEvolution(false);
   }
@@ -618,6 +625,9 @@ void BotApplication::RunLoop() {
 
     if (has_market) {
       advanced_tick = true;
+      has_tick_strategy_signal_ = false;
+      tick_trend_notional_usd_ = 0.0;
+      tick_defensive_notional_usd_ = 0.0;
       ProcessMarketEvent(event);
     }
 
@@ -693,6 +703,15 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     LogInfo("Universe Updated: active_count=" + std::to_string(update->active_symbols.size()));
   }
 
+  const double mark_price_for_evolution =
+      event.mark_price > 0.0 ? event.mark_price : event.price;
+  if (std::isfinite(mark_price_for_evolution) && mark_price_for_evolution > 0.0) {
+    latest_mark_price_usd_ = mark_price_for_evolution;
+    has_latest_mark_price_ = true;
+  } else {
+    has_latest_mark_price_ = false;
+  }
+
   // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
   if (reconcile_halted_) {
     system_.OnMarketSnapshot(event);
@@ -749,6 +768,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   has_last_regime_state_ = true;
   last_strategy_signal_ = decision.base_signal;
   has_last_strategy_signal_ = true;
+  tick_trend_notional_usd_ = decision.base_signal.trend_notional_usd;
+  tick_defensive_notional_usd_ = decision.base_signal.defensive_notional_usd;
+  has_tick_strategy_signal_ = true;
   if (HasExposure(decision.base_signal.trend_notional_usd) ||
       HasExposure(decision.base_signal.defensive_notional_usd) ||
       HasExposure(decision.base_signal.suggested_notional_usd)) {
@@ -1442,12 +1464,20 @@ void BotApplication::RunSelfEvolution() {
 
   const RegimeBucket active_bucket =
       has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange;
+  const double trend_signal_notional_usd =
+      has_tick_strategy_signal_ ? tick_trend_notional_usd_ : 0.0;
+  const double defensive_signal_notional_usd =
+      has_tick_strategy_signal_ ? tick_defensive_notional_usd_ : 0.0;
+  const double mark_price_usd = has_latest_mark_price_ ? latest_mark_price_usd_ : 0.0;
   const auto action =
       self_evolution_.OnTick(market_tick_count_,
                              system_.account().cumulative_realized_net_pnl_usd(),
                              active_bucket,
                              system_.account().drawdown_pct(),
-                             system_.account().current_notional_usd());
+                             system_.account().current_notional_usd(),
+                             trend_signal_notional_usd,
+                             defensive_signal_notional_usd,
+                             mark_price_usd);
   if (!action.has_value()) {
     return;
   }
@@ -1482,6 +1512,30 @@ void BotApplication::RunSelfEvolution() {
           ", reason=" + action->reason_code +
           ", bucket_ticks=" + std::to_string(action->window_bucket_ticks) +
           ", window_pnl_usd=" + std::to_string(action->window_pnl_usd) +
+          ", window_realized_pnl_usd=" +
+          std::to_string(action->window_realized_pnl_usd) +
+          ", window_virtual_pnl_usd=" +
+          std::to_string(action->window_virtual_pnl_usd) +
+          ", pnl_source=" + std::string(action->used_virtual_pnl ? "virtual" : "realized") +
+          ", counterfactual_search=" +
+          std::string(action->used_counterfactual_search ? "true" : "false") +
+          ", factor_ic_weighting=" +
+          std::string(action->used_factor_ic_adaptive_weighting ? "true" : "false") +
+          ", counterfactual_best_virtual_pnl_usd=" +
+          std::to_string(action->counterfactual_best_virtual_pnl_usd) +
+          ", counterfactual_best_weight={trend=" +
+          std::to_string(action->counterfactual_best_trend_weight) +
+          ",defensive=" +
+          std::to_string(action->counterfactual_best_defensive_weight) + "}" +
+          ", factor_ic={trend=" + std::to_string(action->trend_factor_ic) +
+          ", defensive=" + std::to_string(action->defensive_factor_ic) +
+          ", samples=" + std::to_string(action->factor_ic_samples) + "}" +
+          ", learnability={enabled=" +
+          std::string(action->learnability_gate_enabled ? "true" : "false") +
+          ", passed=" +
+          std::string(action->learnability_gate_passed ? "true" : "false") +
+          ", t_stat=" + std::to_string(action->learnability_t_stat) +
+          ", samples=" + std::to_string(action->learnability_samples) + "}" +
           ", window_objective_score=" +
           std::to_string(action->window_objective_score) +
           ", window_max_drawdown_pct=" +
@@ -1747,6 +1801,21 @@ void BotApplication::LogStatus() {
           std::to_string(
               config_.self_evolution.objective_gamma_notional_churn) +
           "}" +
+          ", factor_ic_weighting=" +
+          std::string(config_.self_evolution.enable_factor_ic_adaptive_weights
+                          ? "true"
+                          : "false") +
+          ", factor_ic_min_samples=" +
+          std::to_string(config_.self_evolution.factor_ic_min_samples) +
+          ", factor_ic_min_abs=" +
+          std::to_string(config_.self_evolution.factor_ic_min_abs) +
+          ", learnability_gate=" +
+          std::string(config_.self_evolution.enable_learnability_gate ? "true"
+                                                                      : "false") +
+          ", learnability_min_samples=" +
+          std::to_string(config_.self_evolution.learnability_min_samples) +
+          ", learnability_min_t_stat_abs=" +
+          std::to_string(config_.self_evolution.learnability_min_t_stat_abs) +
           ", active_bucket=" + std::string(ToString(active_bucket)) +
           ", active_trend_weight=" +
           std::to_string(active_evolution_weights.trend_weight) +

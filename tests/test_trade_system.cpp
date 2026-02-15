@@ -1491,6 +1491,289 @@ int main() {
   }
 
   {
+    // 自进化控制器：启用 virtual PnL 后，即使 realized_net 不变也可产生学习动作。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 2;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 1.0;
+    config.use_virtual_pnl = true;
+    config.virtual_cost_bps = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(1,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/100.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(
+        2,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/1000.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/101.0);
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_WEIGHT_INCREASE_TREND" ||
+        !action->used_virtual_pnl ||
+        !NearlyEqual(action->window_realized_pnl_usd, 0.0, 1e-9) ||
+        action->window_virtual_pnl_usd <= 0.0 ||
+        !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
+      std::cerr << "virtual PnL 学习行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：反事实搜索应选择虚拟PnL更优的权重，而非固定步长梯度。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 2;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.5;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = true;
+    config.counterfactual_min_improvement_usd = 0.1;
+    config.virtual_cost_bps = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(1,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/-1000.0,
+                    /*mark_price_usd=*/100.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(
+        2,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/1000.0,
+        /*defensive_signal_notional_usd=*/-1000.0,
+        /*mark_price_usd=*/99.0);
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_COUNTERFACTUAL_DECREASE_TREND" ||
+        !action->used_counterfactual_search ||
+        !NearlyEqual(action->trend_weight_after, 0.40, 1e-9) ||
+        !NearlyEqual(action->counterfactual_best_trend_weight, 0.40, 1e-9) ||
+        action->counterfactual_best_virtual_pnl_usd <=
+            action->window_virtual_pnl_usd) {
+      std::cerr << "反事实搜索调权行为不符合预期: has="
+                << (action.has_value() ? "true" : "false");
+      if (action.has_value()) {
+        std::cerr << ", type=" << static_cast<int>(action->type)
+                  << ", reason=" << action->reason_code
+                  << ", used_counterfactual_search="
+                  << (action->used_counterfactual_search ? "true" : "false")
+                  << ", trend_after=" << action->trend_weight_after
+                  << ", best_trend=" << action->counterfactual_best_trend_weight
+                  << ", best_virtual_pnl="
+                  << action->counterfactual_best_virtual_pnl_usd
+                  << ", current_virtual_pnl=" << action->window_virtual_pnl_usd;
+      }
+      std::cerr << "\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：启用因子 IC 自适应后，应按 IC 方向调整权重。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.1;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = false;
+    config.enable_factor_ic_adaptive_weights = true;
+    config.factor_ic_min_samples = 2;
+    config.factor_ic_min_abs = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(1,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/100.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(2,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/500.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/101.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/400.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/101.101);
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
+        !action->used_factor_ic_adaptive_weighting ||
+        action->factor_ic_samples < 2 ||
+        action->trend_factor_ic <= 0.0 ||
+        !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
+      std::cerr << "因子 IC 自适应调权行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：可学习性门控在低 t-stat 窗口应冻结学习。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.0;
+    config.use_virtual_pnl = true;
+    config.enable_learnability_gate = true;
+    config.learnability_min_samples = 2;
+    config.learnability_min_t_stat_abs = 2.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(1,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/100.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(2,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/101.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/1000.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/100.0);
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kSkipped ||
+        action->reason_code != "EVOLUTION_LEARNABILITY_TSTAT_TOO_LOW" ||
+        !action->learnability_gate_enabled ||
+        action->learnability_gate_passed ||
+        action->learnability_samples < 2 ||
+        std::fabs(action->learnability_t_stat) >= 2.0) {
+      std::cerr << "可学习性门控行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::OrderThrottle throttle(ai_trade::OrderThrottleConfig{
         .min_order_interval_ms = 1000,
         .reverse_signal_cooldown_ticks = 0,
@@ -1672,6 +1955,16 @@ int main() {
         << "  min_update_interval_ticks: 40\n"
         << "  min_abs_window_pnl_usd: 2.5\n"
         << "  min_bucket_ticks_for_update: 9\n"
+        << "  use_virtual_pnl: true\n"
+        << "  use_counterfactual_search: true\n"
+        << "  counterfactual_min_improvement_usd: 1.2\n"
+        << "  virtual_cost_bps: 6.5\n"
+        << "  enable_factor_ic_adaptive_weights: true\n"
+        << "  factor_ic_min_samples: 180\n"
+        << "  factor_ic_min_abs: 0.015\n"
+        << "  enable_learnability_gate: true\n"
+        << "  learnability_min_samples: 200\n"
+        << "  learnability_min_t_stat_abs: 1.8\n"
         << "  objective_alpha_pnl: 1.5\n"
         << "  objective_beta_drawdown: 0.7\n"
         << "  objective_gamma_notional_churn: 0.02\n"
@@ -1775,6 +2068,17 @@ int main() {
         config.self_evolution.min_update_interval_ticks != 40 ||
         !NearlyEqual(config.self_evolution.min_abs_window_pnl_usd, 2.5) ||
         config.self_evolution.min_bucket_ticks_for_update != 9 ||
+        config.self_evolution.use_virtual_pnl != true ||
+        config.self_evolution.use_counterfactual_search != true ||
+        !NearlyEqual(config.self_evolution.counterfactual_min_improvement_usd,
+                     1.2) ||
+        !NearlyEqual(config.self_evolution.virtual_cost_bps, 6.5) ||
+        config.self_evolution.enable_factor_ic_adaptive_weights != true ||
+        config.self_evolution.factor_ic_min_samples != 180 ||
+        !NearlyEqual(config.self_evolution.factor_ic_min_abs, 0.015) ||
+        config.self_evolution.enable_learnability_gate != true ||
+        config.self_evolution.learnability_min_samples != 200 ||
+        !NearlyEqual(config.self_evolution.learnability_min_t_stat_abs, 1.8) ||
         !NearlyEqual(config.self_evolution.objective_alpha_pnl, 1.5) ||
         !NearlyEqual(config.self_evolution.objective_beta_drawdown, 0.7) ||
         !NearlyEqual(config.self_evolution.objective_gamma_notional_churn,
@@ -2333,6 +2637,76 @@ int main() {
     if (error.find("min_bucket_ticks_for_update") == std::string::npos) {
       std::cerr
           << "非法 self_evolution.min_bucket_ticks_for_update 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_virtual_cost.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  virtual_cost_bps: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 self_evolution.virtual_cost_bps 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("virtual_cost_bps") == std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.virtual_cost_bps 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_factor_ic_min_abs.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  factor_ic_min_abs: -0.01\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 self_evolution.factor_ic_min_abs 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("factor_ic_min_abs") == std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.factor_ic_min_abs 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_learnability_tstat.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  learnability_min_t_stat_abs: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 self_evolution.learnability_min_t_stat_abs 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("learnability_min_t_stat_abs") == std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.learnability_min_t_stat_abs 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

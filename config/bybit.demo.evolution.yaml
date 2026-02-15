@@ -95,6 +95,18 @@ self_evolution:
   min_abs_window_pnl_usd: 0.5
   # 单个 Regime bucket 在窗口内样本 tick 不足时，不执行该 bucket 的学习更新。
   min_bucket_ticks_for_update: 60
+  # P0/P1：使用虚拟PnL + 反事实搜索，让零成交阶段也可学习。
+  use_virtual_pnl: true
+  use_counterfactual_search: true
+  counterfactual_min_improvement_usd: 0.25
+  virtual_cost_bps: 6.5
+  # P2(3+6)：在线因子IC自适应 + 可学习性门控。
+  enable_factor_ic_adaptive_weights: true
+  factor_ic_min_samples: 120
+  factor_ic_min_abs: 0.01
+  enable_learnability_gate: true
+  learnability_min_samples: 120
+  learnability_min_t_stat_abs: 1.0
   # 风险调整目标函数（score = alpha*pnl - beta*drawdown_bps - gamma*churn_usd）
   objective_alpha_pnl: 1.0
   objective_beta_drawdown: 1.0

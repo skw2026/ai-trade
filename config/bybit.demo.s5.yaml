@@ -88,6 +88,19 @@ self_evolution:
   # 允许小盈亏窗口也参与学习，减少长期 skipped。
   min_abs_window_pnl_usd: 0.5
   min_bucket_ticks_for_update: 60
+  # 以虚拟PnL学习，避免“零成交=零学习”死锁。
+  use_virtual_pnl: true
+  use_counterfactual_search: true
+  counterfactual_min_improvement_usd: 0.25
+  virtual_cost_bps: 6.5
+  # 信号层：基于在线因子IC做权重自适应（与反事实搜索互补观测）。
+  enable_factor_ic_adaptive_weights: true
+  factor_ic_min_samples: 120
+  factor_ic_min_abs: 0.01
+  # 元控制层：仅在可学习窗口（|t-stat| 足够）允许更新。
+  enable_learnability_gate: true
+  learnability_min_samples: 120
+  learnability_min_t_stat_abs: 1.0
   max_single_strategy_weight: 0.55
   max_weight_step: 0.01
   rollback_degrade_windows: 3

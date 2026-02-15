@@ -77,6 +77,26 @@ struct SelfEvolutionConfig {
   int min_update_interval_ticks{120};
   double min_abs_window_pnl_usd{0.0};
   int min_bucket_ticks_for_update{0};
+  // 是否使用“虚拟PnL”作为学习目标（替代已实现净盈亏）。
+  bool use_virtual_pnl{false};
+  // 是否在评估窗口内基于反事实网格直接选择更优权重。
+  bool use_counterfactual_search{false};
+  // 反事实候选优于当前权重所需的最小虚拟PnL改进（USD）。
+  double counterfactual_min_improvement_usd{0.0};
+  // 虚拟PnL成本估计（按名义值变化收取，单位 bps）。
+  double virtual_cost_bps{0.0};
+  // 是否按“在线因子 IC”自适应调整 trend/defensive 权重。
+  bool enable_factor_ic_adaptive_weights{false};
+  // 因子 IC 样本数门槛（低于该值不调权）。
+  int factor_ic_min_samples{120};
+  // 因子 IC 绝对值门槛（低于该值视为无有效预测力）。
+  double factor_ic_min_abs{0.01};
+  // 是否启用“可学习性门控”（低信噪窗口冻结学习）。
+  bool enable_learnability_gate{false};
+  // 可学习性最小样本门槛（基于窗口内逐tick收益贡献样本）。
+  int learnability_min_samples{120};
+  // 可学习性门槛：|t-stat| 低于该值则跳过学习。
+  double learnability_min_t_stat_abs{1.5};
   // 目标函数权重：score = alpha*pnl - beta*drawdown_bps - gamma*notional_churn_usd
   double objective_alpha_pnl{1.0};
   double objective_beta_drawdown{0.0};

@@ -74,6 +74,16 @@ self_evolution:
   min_update_interval_ticks: 60
   min_abs_window_pnl_usd: 0.0
   min_bucket_ticks_for_update: 0
+  use_virtual_pnl: false
+  use_counterfactual_search: false
+  counterfactual_min_improvement_usd: 0.0
+  virtual_cost_bps: 0.0
+  enable_factor_ic_adaptive_weights: false
+  factor_ic_min_samples: 120
+  factor_ic_min_abs: 0.01
+  enable_learnability_gate: false
+  learnability_min_samples: 120
+  learnability_min_t_stat_abs: 1.5
   objective_alpha_pnl: 1.0
   objective_beta_drawdown: 0.0
   objective_gamma_notional_churn: 0.0

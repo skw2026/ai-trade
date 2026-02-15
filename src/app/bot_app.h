@@ -279,6 +279,11 @@ class BotApplication {
   bool has_last_regime_state_{false};  ///< 是否已有 Regime 状态可展示。
   Signal last_strategy_signal_;  ///< 最近一次“策略+自进化混合后”的基础信号。
   bool has_last_strategy_signal_{false};  ///< 是否已有基础信号可展示。
+  double latest_mark_price_usd_{0.0};  ///< 最近一笔行情的估值价格（mark 优先）。
+  bool has_latest_mark_price_{false};  ///< 是否已有可用估值价格。
+  double tick_trend_notional_usd_{0.0};  ///< 当前 tick 的趋势分支目标名义值。
+  double tick_defensive_notional_usd_{0.0};  ///< 当前 tick 的防御分支目标名义值。
+  bool has_tick_strategy_signal_{false};  ///< 当前 tick 是否已有新鲜策略分支信号。
   ShadowInference last_shadow_inference_;  ///< 最近一次影子推理结果。
   bool has_last_shadow_inference_{false};  ///< 是否已有影子推理结果可展示。
 };

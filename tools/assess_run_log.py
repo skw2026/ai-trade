@@ -376,6 +376,28 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "reconcile_deferred_count": count(r"OMS_RECONCILE_DEFERRED", text),
         "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
+        "self_evolution_virtual_action_count": count(
+            r"SELF_EVOLUTION_ACTION:.*pnl_source=virtual", text
+        ),
+        "self_evolution_counterfactual_action_count": count(
+            r"SELF_EVOLUTION_ACTION:.*counterfactual_search=true", text
+        ),
+        "self_evolution_counterfactual_update_count": count(
+            r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_COUNTERFACTUAL_(?:INCREASE|DECREASE)_TREND",
+            text,
+        ),
+        "self_evolution_factor_ic_action_count": count(
+            r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_FACTOR_IC_(?:INCREASE|DECREASE)_TREND",
+            text,
+        ),
+        "self_evolution_learnability_skip_count": count(
+            r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_LEARNABILITY_(?:INSUFFICIENT_SAMPLES|TSTAT_TOO_LOW)",
+            text,
+        ),
+        "self_evolution_learnability_pass_count": count(
+            r"SELF_EVOLUTION_ACTION:.*learnability=\{enabled=true, passed=true",
+            text,
+        ),
         "integrator_policy_applied_count": count(r"INTEGRATOR_POLICY_APPLIED:", text),
         "integrator_policy_canary_count": count(
             r"INTEGRATOR_POLICY_APPLIED:.*mode=canary", text

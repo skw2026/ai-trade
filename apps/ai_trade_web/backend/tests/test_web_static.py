@@ -21,6 +21,11 @@ class WebStaticTest(unittest.TestCase):
         content = (APP_ROOT / "static" / "index.html").read_text(encoding="utf-8")
         self.assertIn("/static/styles.css", content)
         self.assertIn("/static/app.js", content)
+        self.assertIn("trend-evolution-virtual-actions", content)
+        self.assertIn("trend-evolution-counterfactual-actions", content)
+        self.assertIn("trend-evolution-counterfactual-updates", content)
+        self.assertIn("trend-evolution-factor-ic-actions", content)
+        self.assertIn("trend-evolution-learnability-skips", content)
 
     def test_main_has_ui_route_and_static_mount(self):
         main_py = (APP_ROOT / "main.py").read_text(encoding="utf-8")
