@@ -93,10 +93,7 @@ bool SelfEvolutionController::Initialize(
   has_last_observed_realized_net_pnl_ = true;
   last_observed_notional_usd_ = 0.0;
   has_last_observed_notional_ = false;
-  has_last_signal_state_ = false;
-  last_signal_trend_notional_usd_ = 0.0;
-  last_signal_defensive_notional_usd_ = 0.0;
-  last_signal_price_usd_ = 0.0;
+  signal_states_by_symbol_.clear();
   ResetWindowAttribution();
   next_eval_tick_ = current_tick + EffectiveUpdateIntervalTicks();
   cooldown_until_tick_ = current_tick;
@@ -129,7 +126,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     double account_notional_usd,
     double trend_signal_notional_usd,
     double defensive_signal_notional_usd,
-    double mark_price_usd) {
+    double mark_price_usd,
+    const std::string& signal_symbol) {
   if (!config_.enabled || !initialized_) {
     return std::nullopt;
   }
@@ -158,91 +156,94 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   }
 
   const double turnover_cost_rate = std::max(0.0, config_.virtual_cost_bps) / 10000.0;
-  const bool has_current_signal_state =
-      std::isfinite(mark_price_usd) && mark_price_usd > 0.0;
-  if (has_last_signal_state_ && has_current_signal_state &&
-      last_signal_price_usd_ > 0.0) {
-    const double forward_return = mark_price_usd / last_signal_price_usd_ - 1.0;
-    const BucketRuntime& runtime = bucket_runtime_[active_index];
-    const double prev_blended_notional =
-        BlendNotional(last_signal_trend_notional_usd_,
-                      last_signal_defensive_notional_usd_,
-                      runtime.current_trend_weight);
-    const double curr_blended_notional =
-        BlendNotional(trend_signal_notional_usd,
-                      defensive_signal_notional_usd,
-                      runtime.current_trend_weight);
-    bucket_window_virtual_pnl_usd_[active_index] +=
-        prev_blended_notional * forward_return -
-        std::fabs(curr_blended_notional - prev_blended_notional) *
-            turnover_cost_rate;
-    const double tick_virtual_pnl =
-        prev_blended_notional * forward_return -
-        std::fabs(curr_blended_notional - prev_blended_notional) *
-            turnover_cost_rate;
-    if (config_.use_virtual_pnl) {
-      auto& learnability_stats = bucket_window_learnability_stats_[active_index];
-      learnability_stats.sum += tick_virtual_pnl;
-      learnability_stats.sum_sq += tick_virtual_pnl * tick_virtual_pnl;
-      ++learnability_stats.samples;
+  const bool has_current_signal_state = !signal_symbol.empty() &&
+                                        std::isfinite(mark_price_usd) &&
+                                        mark_price_usd > 0.0;
+  if (has_current_signal_state) {
+    auto& signal_state = signal_states_by_symbol_[signal_symbol];
+    if (signal_state.has_state && signal_state.mark_price_usd > 0.0) {
+      const double forward_return = mark_price_usd / signal_state.mark_price_usd - 1.0;
+      const BucketRuntime& runtime = bucket_runtime_[active_index];
+      const double prev_blended_notional =
+          BlendNotional(signal_state.trend_notional_usd,
+                        signal_state.defensive_notional_usd,
+                        runtime.current_trend_weight);
+      const double curr_blended_notional =
+          BlendNotional(trend_signal_notional_usd,
+                        defensive_signal_notional_usd,
+                        runtime.current_trend_weight);
+      bucket_window_virtual_pnl_usd_[active_index] +=
+          prev_blended_notional * forward_return -
+          std::fabs(curr_blended_notional - prev_blended_notional) *
+              turnover_cost_rate;
+      const double tick_virtual_pnl =
+          prev_blended_notional * forward_return -
+          std::fabs(curr_blended_notional - prev_blended_notional) *
+              turnover_cost_rate;
+      if (config_.use_virtual_pnl) {
+        auto& learnability_stats = bucket_window_learnability_stats_[active_index];
+        learnability_stats.sum += tick_virtual_pnl;
+        learnability_stats.sum_sq += tick_virtual_pnl * tick_virtual_pnl;
+        ++learnability_stats.samples;
+      }
+
+      const double trend_component = signal_state.trend_notional_usd;
+      const double defensive_component = signal_state.defensive_notional_usd;
+
+      auto& trend_factor_ic = bucket_window_trend_factor_ic_[active_index];
+      trend_factor_ic.sum_x += trend_component;
+      trend_factor_ic.sum_y += forward_return;
+      trend_factor_ic.sum_x2 += trend_component * trend_component;
+      trend_factor_ic.sum_y2 += forward_return * forward_return;
+      trend_factor_ic.sum_xy += trend_component * forward_return;
+      ++trend_factor_ic.samples;
+
+      auto& defensive_factor_ic =
+          bucket_window_defensive_factor_ic_[active_index];
+      defensive_factor_ic.sum_x += defensive_component;
+      defensive_factor_ic.sum_y += forward_return;
+      defensive_factor_ic.sum_x2 += defensive_component * defensive_component;
+      defensive_factor_ic.sum_y2 += forward_return * forward_return;
+      defensive_factor_ic.sum_xy += defensive_component * forward_return;
+      ++defensive_factor_ic.samples;
+
+      if (config_.use_counterfactual_search &&
+          !counterfactual_trend_weight_grid_.empty()) {
+        auto& bucket_counterfactual =
+            bucket_window_virtual_pnl_by_candidate_[active_index];
+        if (bucket_counterfactual.size() !=
+            counterfactual_trend_weight_grid_.size()) {
+          bucket_counterfactual.assign(counterfactual_trend_weight_grid_.size(), 0.0);
+        }
+        for (std::size_t i = 0; i < counterfactual_trend_weight_grid_.size();
+             ++i) {
+          const double trend_weight = counterfactual_trend_weight_grid_[i];
+          const double prev_counterfactual_notional =
+              BlendNotional(signal_state.trend_notional_usd,
+                            signal_state.defensive_notional_usd,
+                            trend_weight);
+          const double curr_counterfactual_notional =
+              BlendNotional(trend_signal_notional_usd,
+                            defensive_signal_notional_usd,
+                            trend_weight);
+          bucket_counterfactual[i] +=
+              prev_counterfactual_notional * forward_return -
+              std::fabs(curr_counterfactual_notional - prev_counterfactual_notional) *
+                  turnover_cost_rate;
+        }
+      }
     }
 
-    const double trend_component = last_signal_trend_notional_usd_;
-    const double defensive_component = last_signal_defensive_notional_usd_;
-
-    auto& trend_factor_ic = bucket_window_trend_factor_ic_[active_index];
-    trend_factor_ic.sum_x += trend_component;
-    trend_factor_ic.sum_y += forward_return;
-    trend_factor_ic.sum_x2 += trend_component * trend_component;
-    trend_factor_ic.sum_y2 += forward_return * forward_return;
-    trend_factor_ic.sum_xy += trend_component * forward_return;
-    ++trend_factor_ic.samples;
-
-    auto& defensive_factor_ic =
-        bucket_window_defensive_factor_ic_[active_index];
-    defensive_factor_ic.sum_x += defensive_component;
-    defensive_factor_ic.sum_y += forward_return;
-    defensive_factor_ic.sum_x2 += defensive_component * defensive_component;
-    defensive_factor_ic.sum_y2 += forward_return * forward_return;
-    defensive_factor_ic.sum_xy += defensive_component * forward_return;
-    ++defensive_factor_ic.samples;
-
-    if (config_.use_counterfactual_search &&
-        !counterfactual_trend_weight_grid_.empty()) {
-      auto& bucket_counterfactual = bucket_window_virtual_pnl_by_candidate_[active_index];
-      if (bucket_counterfactual.size() != counterfactual_trend_weight_grid_.size()) {
-        bucket_counterfactual.assign(counterfactual_trend_weight_grid_.size(), 0.0);
-      }
-      for (std::size_t i = 0; i < counterfactual_trend_weight_grid_.size(); ++i) {
-        const double trend_weight = counterfactual_trend_weight_grid_[i];
-        const double prev_counterfactual_notional =
-            BlendNotional(last_signal_trend_notional_usd_,
-                          last_signal_defensive_notional_usd_,
-                          trend_weight);
-        const double curr_counterfactual_notional =
-            BlendNotional(trend_signal_notional_usd,
-                          defensive_signal_notional_usd,
-                          trend_weight);
-        bucket_counterfactual[i] +=
-            prev_counterfactual_notional * forward_return -
-            std::fabs(curr_counterfactual_notional - prev_counterfactual_notional) *
-                turnover_cost_rate;
-      }
-    }
+    signal_state.trend_notional_usd = trend_signal_notional_usd;
+    signal_state.defensive_notional_usd = defensive_signal_notional_usd;
+    signal_state.mark_price_usd = mark_price_usd;
+    signal_state.has_state = true;
   }
 
   last_observed_realized_net_pnl_usd_ = realized_net_pnl_usd;
   has_last_observed_realized_net_pnl_ = true;
   last_observed_notional_usd_ = account_notional_usd;
   has_last_observed_notional_ = true;
-  if (has_current_signal_state) {
-    last_signal_trend_notional_usd_ = trend_signal_notional_usd;
-    last_signal_defensive_notional_usd_ = defensive_signal_notional_usd;
-    last_signal_price_usd_ = mark_price_usd;
-    has_last_signal_state_ = true;
-  } else {
-    has_last_signal_state_ = false;
-  }
 
   if (current_tick < next_eval_tick_) {
     return std::nullopt;

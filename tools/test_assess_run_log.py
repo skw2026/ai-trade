@@ -32,6 +32,7 @@ class AssessRunLogTest(unittest.TestCase):
         private_ws_healthy: bool = True,
         funnel_enqueued: int = 0,
         funnel_fills: int = 0,
+        prefix: str = "",
     ) -> str:
         reduce_only_text = "true" if reduce_only else "false"
         trading_halted_text = "true" if trading_halted else "false"
@@ -40,7 +41,7 @@ class AssessRunLogTest(unittest.TestCase):
         ts = (dt.datetime(2026, 2, 14, 15, 0, 0) + dt.timedelta(seconds=tick)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        return (
+        return prefix + (
             f"{ts} [INFO] RUNTIME_STATUS: ticks={tick}, "
             f"trade_ok=true, trading_halted={trading_halted_text}, "
             "ws={market_channel=public_ws, fill_channel=private_ws, "
@@ -150,6 +151,28 @@ class AssessRunLogTest(unittest.TestCase):
         text = (
             "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
             "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=4, effective_signals=4, fills=1\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["fail_reasons"], [])
+        self.assertEqual(report["metrics"]["flat_start_rebase_applied_count"], 1)
+        self.assertTrue(bool(report.get("flat_start_rebased")))
+
+    def test_s5_rebase_when_start_not_flat_with_compose_prefix(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                180.0 if i == 0 else 0.0,
+                funnel_enqueued=1 if i == 1 else 0,
+                funnel_fills=1 if i == 2 else 0,
+                prefix="ai-trade  | ",
+            )
+            for i in range(60)
+        )
+        text = (
+            "ai-trade  | 2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "ai-trade  | 2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=4, effective_signals=4, fills=1\n"
             + runtime
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)

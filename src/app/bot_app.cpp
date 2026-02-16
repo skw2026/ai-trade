@@ -6,6 +6,7 @@
 #include <sstream>
 #include <thread>
 #include <unordered_set>
+#include <utility>
 
 #include "core/log.h"
 #include "app/intent_policy.h"
@@ -44,6 +45,23 @@ std::vector<std::string> UniqueSymbols(const std::vector<std::string>& symbols) 
 
 bool HasExposure(double notional_usd) {
   return std::fabs(notional_usd) > kNotionalEpsilon;
+}
+
+// 将策略分支名义值按“可执行目标名义值”缩放，减少学习输入与执行结果的偏离。
+std::pair<double, double> ScaleStrategyComponentsForExecution(
+    const MarketDecision& decision) {
+  const double base_blended_notional = decision.base_signal.suggested_notional_usd;
+  const double executable_notional = decision.risk_adjusted.adjusted_notional_usd;
+  if (!std::isfinite(base_blended_notional) || !std::isfinite(executable_notional) ||
+      !HasExposure(base_blended_notional)) {
+    return {0.0, 0.0};
+  }
+  constexpr double kEvolutionSignalScaleLimit = 4.0;
+  const double scale = std::clamp(executable_notional / base_blended_notional,
+                                  -kEvolutionSignalScaleLimit,
+                                  kEvolutionSignalScaleLimit);
+  return {decision.base_signal.trend_notional_usd * scale,
+          decision.base_signal.defensive_notional_usd * scale};
 }
 
 bool IsNetPositionOrderPurpose(OrderPurpose purpose) {
@@ -628,6 +646,7 @@ void BotApplication::RunLoop() {
       has_tick_strategy_signal_ = false;
       tick_trend_notional_usd_ = 0.0;
       tick_defensive_notional_usd_ = 0.0;
+      tick_strategy_signal_symbol_.clear();
       ProcessMarketEvent(event);
     }
 
@@ -768,9 +787,13 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   has_last_regime_state_ = true;
   last_strategy_signal_ = decision.base_signal;
   has_last_strategy_signal_ = true;
-  tick_trend_notional_usd_ = decision.base_signal.trend_notional_usd;
-  tick_defensive_notional_usd_ = decision.base_signal.defensive_notional_usd;
-  has_tick_strategy_signal_ = true;
+  const auto executable_components =
+      ScaleStrategyComponentsForExecution(decision);
+  tick_trend_notional_usd_ = executable_components.first;
+  tick_defensive_notional_usd_ = executable_components.second;
+  tick_strategy_signal_symbol_ =
+      decision.signal.symbol.empty() ? event.symbol : decision.signal.symbol;
+  has_tick_strategy_signal_ = !tick_strategy_signal_symbol_.empty();
   if (HasExposure(decision.base_signal.trend_notional_usd) ||
       HasExposure(decision.base_signal.defensive_notional_usd) ||
       HasExposure(decision.base_signal.suggested_notional_usd)) {
@@ -1469,6 +1492,8 @@ void BotApplication::RunSelfEvolution() {
   const double defensive_signal_notional_usd =
       has_tick_strategy_signal_ ? tick_defensive_notional_usd_ : 0.0;
   const double mark_price_usd = has_latest_mark_price_ ? latest_mark_price_usd_ : 0.0;
+  const std::string signal_symbol =
+      has_tick_strategy_signal_ ? tick_strategy_signal_symbol_ : std::string();
   const auto action =
       self_evolution_.OnTick(market_tick_count_,
                              system_.account().cumulative_realized_net_pnl_usd(),
@@ -1477,7 +1502,8 @@ void BotApplication::RunSelfEvolution() {
                              system_.account().current_notional_usd(),
                              trend_signal_notional_usd,
                              defensive_signal_notional_usd,
-                             mark_price_usd);
+                             mark_price_usd,
+                             signal_symbol);
   if (!action.has_value()) {
     return;
   }

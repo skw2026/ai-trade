@@ -107,7 +107,7 @@ RUNTIME_STRATEGY_MIX_RE = re.compile(
     r"avg_abs_blended_notional=(?P<avg_blended>[0-9]+(?:\.[0-9]+)?), "
     r"samples=(?P<samples>\d+)"
 )
-LOG_LINE_TS_RE = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
 def parse_args() -> argparse.Namespace:
@@ -171,7 +171,7 @@ def filter_log_since(text: str, cutoff_ts: dt.datetime) -> str:
     lines_out: list[str] = []
     include_line = False
     for raw_line in text.splitlines():
-        ts_match = LOG_LINE_TS_RE.match(raw_line)
+        ts_match = LOG_LINE_TS_RE.search(raw_line)
         if ts_match:
             try:
                 line_ts = dt.datetime.strptime(

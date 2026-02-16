@@ -1523,7 +1523,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/1000.0,
                     /*defensive_signal_notional_usd=*/0.0,
-                    /*mark_price_usd=*/100.0)
+                    /*mark_price_usd=*/100.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1536,7 +1537,8 @@ int main() {
         /*account_notional_usd=*/0.0,
         /*trend_signal_notional_usd=*/1000.0,
         /*defensive_signal_notional_usd=*/0.0,
-        /*mark_price_usd=*/101.0);
+        /*mark_price_usd=*/101.0,
+        /*signal_symbol=*/"BTCUSDT");
     if (!action.has_value() ||
         action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
         action->reason_code != "EVOLUTION_WEIGHT_INCREASE_TREND" ||
@@ -1545,6 +1547,79 @@ int main() {
         action->window_virtual_pnl_usd <= 0.0 ||
         !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
       std::cerr << "virtual PnL 学习行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：virtual PnL 应按 symbol 独立累计，避免跨币种价格串扰。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 1.0;
+    config.use_virtual_pnl = true;
+    config.virtual_cost_bps = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(1,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/100.0,
+                    /*signal_symbol=*/"BTCUSDT")
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(2,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/200.0,
+                    /*signal_symbol=*/"ETHUSDT")
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/1000.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/101.0,
+        /*signal_symbol=*/"BTCUSDT");
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_WEIGHT_INCREASE_TREND" ||
+        !action->used_virtual_pnl ||
+        action->window_virtual_pnl_usd <= 0.0) {
+      std::cerr << "跨币种 virtual PnL 串扰防护行为不符合预期\n";
       return 1;
     }
   }
@@ -1584,7 +1659,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/1000.0,
                     /*defensive_signal_notional_usd=*/-1000.0,
-                    /*mark_price_usd=*/100.0)
+                    /*mark_price_usd=*/100.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1597,7 +1673,8 @@ int main() {
         /*account_notional_usd=*/0.0,
         /*trend_signal_notional_usd=*/1000.0,
         /*defensive_signal_notional_usd=*/-1000.0,
-        /*mark_price_usd=*/99.0);
+        /*mark_price_usd=*/99.0,
+        /*signal_symbol=*/"BTCUSDT");
     if (!action.has_value() ||
         action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
         action->reason_code != "EVOLUTION_COUNTERFACTUAL_DECREASE_TREND" ||
@@ -1660,7 +1737,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/1000.0,
                     /*defensive_signal_notional_usd=*/0.0,
-                    /*mark_price_usd=*/100.0)
+                    /*mark_price_usd=*/100.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1673,7 +1751,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/500.0,
                     /*defensive_signal_notional_usd=*/0.0,
-                    /*mark_price_usd=*/101.0)
+                    /*mark_price_usd=*/101.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1686,7 +1765,8 @@ int main() {
         /*account_notional_usd=*/0.0,
         /*trend_signal_notional_usd=*/400.0,
         /*defensive_signal_notional_usd=*/0.0,
-        /*mark_price_usd=*/101.101);
+        /*mark_price_usd=*/101.101,
+        /*signal_symbol=*/"BTCUSDT");
     if (!action.has_value() ||
         action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
         action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
@@ -1736,7 +1816,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/1000.0,
                     /*defensive_signal_notional_usd=*/0.0,
-                    /*mark_price_usd=*/100.0)
+                    /*mark_price_usd=*/100.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1749,7 +1830,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/500.0,
                     /*defensive_signal_notional_usd=*/0.0,
-                    /*mark_price_usd=*/101.0)
+                    /*mark_price_usd=*/101.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1762,7 +1844,8 @@ int main() {
         /*account_notional_usd=*/0.0,
         /*trend_signal_notional_usd=*/400.0,
         /*defensive_signal_notional_usd=*/0.0,
-        /*mark_price_usd=*/101.101);
+        /*mark_price_usd=*/101.101,
+        /*signal_symbol=*/"BTCUSDT");
     if (!action.has_value() ||
         action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
         action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
@@ -1811,7 +1894,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/1000.0,
                     /*defensive_signal_notional_usd=*/0.0,
-                    /*mark_price_usd=*/100.0)
+                    /*mark_price_usd=*/100.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1824,7 +1908,8 @@ int main() {
                     /*account_notional_usd=*/0.0,
                     /*trend_signal_notional_usd=*/1000.0,
                     /*defensive_signal_notional_usd=*/0.0,
-                    /*mark_price_usd=*/101.0)
+                    /*mark_price_usd=*/101.0,
+                    /*signal_symbol=*/"BTCUSDT")
             .has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1837,7 +1922,8 @@ int main() {
         /*account_notional_usd=*/0.0,
         /*trend_signal_notional_usd=*/1000.0,
         /*defensive_signal_notional_usd=*/0.0,
-        /*mark_price_usd=*/100.0);
+        /*mark_price_usd=*/100.0,
+        /*signal_symbol=*/"BTCUSDT");
     if (!action.has_value() ||
         action->type != ai_trade::SelfEvolutionActionType::kSkipped ||
         action->reason_code != "EVOLUTION_LEARNABILITY_TSTAT_TOO_LOW" ||

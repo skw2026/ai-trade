@@ -283,6 +283,7 @@ class BotApplication {
   bool has_latest_mark_price_{false};  ///< 是否已有可用估值价格。
   double tick_trend_notional_usd_{0.0};  ///< 当前 tick 的趋势分支目标名义值。
   double tick_defensive_notional_usd_{0.0};  ///< 当前 tick 的防御分支目标名义值。
+  std::string tick_strategy_signal_symbol_;  ///< 当前 tick 的策略信号 symbol。
   bool has_tick_strategy_signal_{false};  ///< 当前 tick 是否已有新鲜策略分支信号。
   ShadowInference last_shadow_inference_;  ///< 最近一次影子推理结果。
   bool has_last_shadow_inference_{false};  ///< 是否已有影子推理结果可展示。

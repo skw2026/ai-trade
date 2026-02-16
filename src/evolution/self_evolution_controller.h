@@ -5,6 +5,7 @@
 #include <deque>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -94,7 +95,8 @@ class SelfEvolutionController {
                                             double account_notional_usd = 0.0,
                                             double trend_signal_notional_usd = 0.0,
                                             double defensive_signal_notional_usd = 0.0,
-                                            double mark_price_usd = 0.0);
+                                            double mark_price_usd = 0.0,
+                                            const std::string& signal_symbol = "");
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
@@ -133,6 +135,12 @@ class SelfEvolutionController {
     double sum{0.0};
     double sum_sq{0.0};
     int samples{0};
+  };
+  struct SignalState {
+    double trend_notional_usd{0.0};
+    double defensive_notional_usd{0.0};
+    double mark_price_usd{0.0};
+    bool has_state{false};
   };
 
   static std::size_t BucketIndex(RegimeBucket bucket);
@@ -186,10 +194,7 @@ class SelfEvolutionController {
   bool has_last_observed_realized_net_pnl_{false};
   double last_observed_notional_usd_{0.0};
   bool has_last_observed_notional_{false};
-  double last_signal_trend_notional_usd_{0.0};
-  double last_signal_defensive_notional_usd_{0.0};
-  double last_signal_price_usd_{0.0};
-  bool has_last_signal_state_{false};
+  std::unordered_map<std::string, SignalState> signal_states_by_symbol_;
   std::int64_t next_eval_tick_{0};
   std::int64_t cooldown_until_tick_{0};
 };

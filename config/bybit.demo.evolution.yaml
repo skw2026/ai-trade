@@ -115,7 +115,7 @@ self_evolution:
   max_weight_step: 0.01
   rollback_degrade_windows: 3
   rollback_degrade_threshold_score: -15.0
-  rollback_cooldown_ticks: 36000
+  rollback_cooldown_ticks: 3600
   initial_trend_weight: 0.50
   initial_defensive_weight: 0.50
 
