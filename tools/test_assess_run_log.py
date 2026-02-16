@@ -3,6 +3,7 @@
 import importlib.util
 import pathlib
 import sys
+import datetime as dt
 import unittest
 
 
@@ -36,8 +37,11 @@ class AssessRunLogTest(unittest.TestCase):
         trading_halted_text = "true" if trading_halted else "false"
         public_ws_healthy_text = "true" if public_ws_healthy else "false"
         private_ws_healthy_text = "true" if private_ws_healthy else "false"
+        ts = (dt.datetime(2026, 2, 14, 15, 0, 0) + dt.timedelta(seconds=tick)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         return (
-            f"2026-02-14 15:02:{tick % 60:02d} [INFO] RUNTIME_STATUS: ticks={tick}, "
+            f"{ts} [INFO] RUNTIME_STATUS: ticks={tick}, "
             f"trade_ok=true, trading_halted={trading_halted_text}, "
             "ws={market_channel=public_ws, fill_channel=private_ws, "
             f"public_ws_healthy={public_ws_healthy_text}, private_ws_healthy={private_ws_healthy_text}"
@@ -133,11 +137,29 @@ class AssessRunLogTest(unittest.TestCase):
             any("未检测到 GATE_CHECK_PASSED" in x for x in report["fail_reasons"])
         )
 
-    def test_s5_fail_when_start_not_flat(self):
+    def test_s5_rebase_when_start_not_flat(self):
         runtime = "".join(
-            self._runtime_line(20 + i * 20, 180.0 if i == 0 else 0.0)
+            self._runtime_line(
+                20 + i * 20,
+                180.0 if i == 0 else 0.0,
+                funnel_enqueued=1 if i == 1 else 0,
+                funnel_fills=1 if i == 2 else 0,
+            )
             for i in range(60)
         )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=4, effective_signals=4, fills=1\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["fail_reasons"], [])
+        self.assertEqual(report["metrics"]["flat_start_rebase_applied_count"], 1)
+        self.assertTrue(bool(report.get("flat_start_rebased")))
+
+    def test_s5_fail_when_no_flat_sample(self):
+        runtime = "".join(self._runtime_line(20 + i * 20, 180.0) for i in range(60))
         text = (
             "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
             "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=4, effective_signals=4, fills=1\n"

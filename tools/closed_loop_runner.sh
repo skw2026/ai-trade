@@ -73,6 +73,10 @@ GC_LOG_FILE="${CLOSED_LOOP_GC_LOG_FILE:-}"
 GC_LOG_MAX_BYTES="${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}"
 GC_LOG_KEEP_BYTES="${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}"
 GC_DRY_RUN="false"
+VERIFY_S5_EVOLUTION_SWITCHES="${CLOSED_LOOP_VERIFY_S5_EVOLUTION_SWITCHES:-true}"
+REQUIRE_S5_FACTOR_IC_ACTION="${CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION:-false}"
+REQUIRE_S5_LEARNABILITY_ACTIVITY="${CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY:-false}"
+RUNTIME_CONFIG_PATH="${AI_TRADE_CONFIG_PATH:-config/bybit.demo.evolution.yaml}"
 
 usage() {
   cat <<'EOF'
@@ -124,6 +128,12 @@ Options:
   --gc-log-max-bytes <int>           日志超过该值触发截断 (default: 104857600)
   --gc-log-keep-bytes <int>          截断后保留尾部字节 (default: 20971520)
   --gc-dry-run                       回收仅演练，不删除
+
+Env toggles:
+  CLOSED_LOOP_VERIFY_S5_EVOLUTION_SWITCHES=true|false   S5 校验 3+6 开关是否显式启用 (default: true)
+  CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION=true|false    S5 要求 factor-IC 更新动作 >0 (default: false)
+  CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY=true|false
+                                                       S5 要求 learnability 有 pass/skip 活动 (default: false)
 EOF
 }
 
@@ -242,6 +252,45 @@ compose_cmd() {
   "${COMPOSE_BASE[@]}" "$@"
 }
 
+trim() {
+  echo "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+yaml_bool_value() {
+  local key="$1"
+  local path="$2"
+  local line
+  line="$(grep -m1 -E "^[[:space:]]*${key}:[[:space:]]*" "${path}" || true)"
+  if [[ -z "${line}" ]]; then
+    echo ""
+    return 0
+  fi
+  local value
+  value="$(echo "${line}" | sed -E 's/^[^:]+:[[:space:]]*([^#[:space:]]+).*/\1/' | tr '[:upper:]' '[:lower:]')"
+  trim "${value}"
+}
+
+json_number_value() {
+  local key="$1"
+  local path="$2"
+  local raw
+  raw="$(grep -m1 -oE "\"${key}\"[[:space:]]*:[[:space:]]*-?[0-9]+(\\.[0-9]+)?" "${path}" || true)"
+  if [[ -z "${raw}" ]]; then
+    echo ""
+    return 0
+  fi
+  trim "$(echo "${raw}" | sed -E 's/.*:[[:space:]]*//')"
+}
+
+to_int() {
+  local raw="$1"
+  if [[ -z "${raw}" ]]; then
+    echo 0
+    return 0
+  fi
+  echo "${raw}" | awk '{printf("%d\n", $1)}'
+}
+
 is_true() {
   case "${1,,}" in
     1|true|yes|on)
@@ -271,6 +320,80 @@ LATEST_RUN_ID_PATH="${OUTPUT_ROOT}/latest_run_id"
 SUMMARY_OUTPUT_DIR="${OUTPUT_ROOT}/summary"
 LATEST_DAILY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_daily_summary.json"
 LATEST_WEEKLY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_weekly_summary.json"
+
+verify_s5_learning_switches() {
+  if [[ "${STAGE}" != "S5" ]]; then
+    return 0
+  fi
+  if ! is_true "${VERIFY_S5_EVOLUTION_SWITCHES}"; then
+    echo "[INFO] S5 learning switch verification skipped"
+    return 0
+  fi
+  if [[ ! -f "${RUNTIME_CONFIG_PATH}" ]]; then
+    echo "[ERROR] S5 learning switch verification failed: missing config=${RUNTIME_CONFIG_PATH}"
+    return 1
+  fi
+
+  local use_virtual
+  local use_factor_ic
+  local use_learnability
+  use_virtual="$(yaml_bool_value "use_virtual_pnl" "${RUNTIME_CONFIG_PATH}")"
+  use_factor_ic="$(yaml_bool_value "enable_factor_ic_adaptive_weights" "${RUNTIME_CONFIG_PATH}")"
+  use_learnability="$(yaml_bool_value "enable_learnability_gate" "${RUNTIME_CONFIG_PATH}")"
+  echo "[INFO] S5 learning switches: config=${RUNTIME_CONFIG_PATH} use_virtual_pnl=${use_virtual:-missing} enable_factor_ic_adaptive_weights=${use_factor_ic:-missing} enable_learnability_gate=${use_learnability:-missing}"
+
+  local failed="false"
+  if [[ "${use_virtual}" != "true" ]]; then
+    echo "[ERROR] S5 learning switch not enabled: use_virtual_pnl=true required"
+    failed="true"
+  fi
+  if [[ "${use_factor_ic}" != "true" ]]; then
+    echo "[ERROR] S5 learning switch not enabled: enable_factor_ic_adaptive_weights=true required"
+    failed="true"
+  fi
+  if [[ "${use_learnability}" != "true" ]]; then
+    echo "[ERROR] S5 learning switch not enabled: enable_learnability_gate=true required"
+    failed="true"
+  fi
+  if [[ "${failed}" == "true" ]]; then
+    return 1
+  fi
+}
+
+verify_s5_learning_activity() {
+  if [[ "${STAGE}" != "S5" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${ASSESS_JSON_PATH}" ]]; then
+    echo "[WARN] S5 learning activity verification skipped: missing ${ASSESS_JSON_PATH}"
+    return 0
+  fi
+
+  local factor_ic_actions
+  local learnability_pass
+  local learnability_skip
+  factor_ic_actions="$(to_int "$(json_number_value "self_evolution_factor_ic_action_count" "${ASSESS_JSON_PATH}")")"
+  learnability_pass="$(to_int "$(json_number_value "self_evolution_learnability_pass_count" "${ASSESS_JSON_PATH}")")"
+  learnability_skip="$(to_int "$(json_number_value "self_evolution_learnability_skip_count" "${ASSESS_JSON_PATH}")")"
+  local learnability_total=$((learnability_pass + learnability_skip))
+  echo "[INFO] S5 learning activity: factor_ic_actions=${factor_ic_actions} learnability_pass=${learnability_pass} learnability_skip=${learnability_skip}"
+
+  if (( factor_ic_actions <= 0 )); then
+    echo "[WARN] S5 learning activity weak: self_evolution_factor_ic_action_count=0"
+  fi
+  if (( learnability_total <= 0 )); then
+    echo "[WARN] S5 learning activity weak: learnability pass/skip both 0"
+  fi
+
+  if is_true "${REQUIRE_S5_FACTOR_IC_ACTION}" && (( factor_ic_actions <= 0 )); then
+    echo "[ERROR] S5 gate require factor-IC action > 0"
+    return 1
+  fi
+  if is_true "${REQUIRE_S5_LEARNABILITY_ACTIVITY}" && (( learnability_total <= 0 )); then
+    echo "[ERROR] S5 gate require learnability activity > 0"
+    return 1
+  fi
+}
 
 run_fetch() {
   echo "[INFO] R0 fetch start"
@@ -516,7 +639,9 @@ run_main() {
       restart_if_activated
       ;;
     assess)
+      verify_s5_learning_switches
       run_assess
+      verify_s5_learning_activity
       build_summary
       ;;
     full)
@@ -526,7 +651,9 @@ run_main() {
       run_miner
       run_integrator
       run_registry
+      verify_s5_learning_switches
       run_assess
+      verify_s5_learning_activity
       build_summary
       restart_if_activated
       ;;

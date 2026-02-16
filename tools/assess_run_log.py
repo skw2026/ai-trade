@@ -107,6 +107,7 @@ RUNTIME_STRATEGY_MIX_RE = re.compile(
     r"avg_abs_blended_notional=(?P<avg_blended>[0-9]+(?:\.[0-9]+)?), "
     r"samples=(?P<samples>\d+)"
 )
+LOG_LINE_TS_RE = re.compile(r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
 def parse_args() -> argparse.Namespace:
@@ -152,6 +153,38 @@ def max_tick(text: str) -> int:
     if not matches:
         return 0
     return max(int(x) for x in matches)
+
+
+def extract_runtime_notional_samples(text: str) -> list[tuple[dt.datetime, float]]:
+    samples: list[tuple[dt.datetime, float]] = []
+    for match in RUNTIME_ACCOUNT_RE.finditer(text):
+        try:
+            ts = dt.datetime.strptime(match.group("ts"), "%Y-%m-%d %H:%M:%S")
+            notional = float(match.group("notional"))
+        except ValueError:
+            continue
+        samples.append((ts, notional))
+    return samples
+
+
+def filter_log_since(text: str, cutoff_ts: dt.datetime) -> str:
+    lines_out: list[str] = []
+    include_line = False
+    for raw_line in text.splitlines():
+        ts_match = LOG_LINE_TS_RE.match(raw_line)
+        if ts_match:
+            try:
+                line_ts = dt.datetime.strptime(
+                    ts_match.group("ts"), "%Y-%m-%d %H:%M:%S"
+                )
+                include_line = line_ts >= cutoff_ts
+            except ValueError:
+                pass
+        if include_line:
+            lines_out.append(raw_line)
+    if not lines_out:
+        return ""
+    return "\n".join(lines_out) + "\n"
 
 
 def extract_runtime_account_series(text: str) -> Dict[str, object]:
@@ -354,8 +387,35 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
 
 
 def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, object]:
+    original_text = text
+    flat_start_rebased = False
+    flat_start_rebase_cutoff_utc = None
+    if stage.require_flat_start:
+        notional_samples = extract_runtime_notional_samples(text)
+        if notional_samples:
+            first_abs_notional = abs(notional_samples[0][1])
+            if first_abs_notional > stage.max_start_abs_notional_usd:
+                first_flat_sample = next(
+                    (
+                        sample
+                        for sample in notional_samples
+                        if abs(sample[1]) <= stage.max_start_abs_notional_usd
+                    ),
+                    None,
+                )
+                if first_flat_sample is not None:
+                    rebased_text = filter_log_since(text, first_flat_sample[0])
+                    if rebased_text.strip():
+                        text = rebased_text
+                        flat_start_rebased = True
+                        flat_start_rebase_cutoff_utc = first_flat_sample[0].strftime(
+                            "%Y-%m-%dT%H:%M:%SZ"
+                        )
+
     account_pnl = extract_runtime_account_series(text)
     strategy_mix = extract_strategy_mix_series(text)
+    global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
+    global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
     metrics = {
         "runtime_status_count": count(r"RUNTIME_STATUS:", text),
         "max_runtime_tick": max_tick(text),
@@ -376,6 +436,8 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "reconcile_deferred_count": count(r"OMS_RECONCILE_DEFERRED", text),
         "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
+        "self_evolution_init_total_count": global_self_evolution_init_count,
+        "self_evolution_action_total_count": global_self_evolution_action_count,
         "self_evolution_virtual_action_count": count(
             r"SELF_EVOLUTION_ACTION:.*pnl_source=virtual", text
         ),
@@ -446,6 +508,7 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             "avg_abs_blended_notional"
         ],
         "strategy_mix_avg_defensive_share": strategy_mix["avg_defensive_share"],
+        "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
     if metrics["runtime_status_count"] > 0:
         metrics["trading_halted_true_ratio"] = (
@@ -522,8 +585,8 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
 
         if (
             stage.require_evolution_init
-            and metrics["self_evolution_init_count"] <= 0
-            and metrics["self_evolution_action_count"] <= 0
+            and metrics["self_evolution_init_total_count"] <= 0
+            and metrics["self_evolution_action_total_count"] <= 0
         ):
             fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
 
@@ -622,6 +685,8 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "account_pnl": account_pnl,
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
+        "flat_start_rebased": flat_start_rebased,
+        "flat_start_rebase_cutoff_utc": flat_start_rebase_cutoff_utc,
     }
 
 
@@ -633,6 +698,11 @@ def print_report(report: Dict[str, object]) -> None:
     assert isinstance(metrics, dict)
     for key in sorted(metrics.keys()):
         print(f"  - {key}: {metrics[key]}")
+    if bool(report.get("flat_start_rebased")):
+        print(
+            "FLAT_START_REBASE: "
+            f"applied=true, cutoff_utc={report.get('flat_start_rebase_cutoff_utc')}"
+        )
 
     account_pnl = report.get("account_pnl", {})
     if isinstance(account_pnl, dict):

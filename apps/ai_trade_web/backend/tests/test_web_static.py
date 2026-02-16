@@ -26,6 +26,7 @@ class WebStaticTest(unittest.TestCase):
         self.assertIn("trend-evolution-counterfactual-updates", content)
         self.assertIn("trend-evolution-factor-ic-actions", content)
         self.assertIn("trend-evolution-learnability-skips", content)
+        self.assertIn("trend-flat-start-rebases", content)
 
     def test_main_has_ui_route_and_static_mount(self):
         main_py = (APP_ROOT / "main.py").read_text(encoding="utf-8")

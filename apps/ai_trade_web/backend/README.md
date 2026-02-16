@@ -42,6 +42,7 @@ Web trend cards (last 12 runs) include:
 - `self_evolution_counterfactual_update_count`
 - `self_evolution_factor_ic_action_count`
 - `self_evolution_learnability_skip_count`
+- `flat_start_rebase_applied_count`
 - `integrator_policy_applied_ratio`
 - `order_filtered_cost_count`
 - `reconcile_mismatch_count`

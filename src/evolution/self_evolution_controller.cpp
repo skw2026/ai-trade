@@ -283,8 +283,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   action.used_counterfactual_search =
       config_.use_counterfactual_search && use_virtual_pnl;
   action.used_factor_ic_adaptive_weighting =
-      config_.enable_factor_ic_adaptive_weights &&
-      !action.used_counterfactual_search;
+      config_.enable_factor_ic_adaptive_weights;
   action.counterfactual_best_virtual_pnl_usd = window_virtual_pnl_usd;
   action.counterfactual_best_trend_weight = runtime.current_trend_weight;
   action.counterfactual_best_defensive_weight = runtime.current_defensive_weight;
@@ -406,16 +405,39 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       runtime.current_trend_weight,
       runtime.current_defensive_weight,
   };
+  enum class CandidateSource {
+    kObjective,
+    kCounterfactual,
+    kFactorIc,
+  };
+  CandidateSource candidate_source = CandidateSource::kObjective;
   std::optional<EvolutionWeights> factor_ic_candidate;
   if (action.used_counterfactual_search) {
     if (best_counterfactual_candidate.has_value() && counterfactual_improves) {
       candidate = *best_counterfactual_candidate;
+      candidate_source = CandidateSource::kCounterfactual;
+    } else if (action.used_factor_ic_adaptive_weighting) {
+      factor_ic_candidate =
+          ProposeFactorIcWeights(eval_index, runtime, &action);
+      if (factor_ic_candidate.has_value()) {
+        candidate = *factor_ic_candidate;
+        candidate_source = CandidateSource::kFactorIc;
+      } else {
+        action.type = SelfEvolutionActionType::kSkipped;
+        action.reason_code =
+            action.factor_ic_samples < config_.factor_ic_min_samples
+                ? "EVOLUTION_FACTOR_IC_INSUFFICIENT_SAMPLES"
+                : "EVOLUTION_FACTOR_IC_SIGNAL_WEAK";
+        ResetWindowAttribution();
+        return action;
+      }
     }
   } else if (action.used_factor_ic_adaptive_weighting) {
     factor_ic_candidate =
         ProposeFactorIcWeights(eval_index, runtime, &action);
     if (factor_ic_candidate.has_value()) {
       candidate = *factor_ic_candidate;
+      candidate_source = CandidateSource::kFactorIc;
     } else {
       action.type = SelfEvolutionActionType::kSkipped;
       action.reason_code =
@@ -434,8 +456,11 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           kWeightEpsilon) {
     action.type = SelfEvolutionActionType::kSkipped;
     if (action.used_counterfactual_search) {
-      action.reason_code = "EVOLUTION_COUNTERFACTUAL_WEIGHT_NOOP";
-    } else if (action.used_factor_ic_adaptive_weighting) {
+      action.reason_code =
+          candidate_source == CandidateSource::kFactorIc
+              ? "EVOLUTION_FACTOR_IC_WEIGHT_NOOP"
+              : "EVOLUTION_COUNTERFACTUAL_WEIGHT_NOOP";
+    } else if (candidate_source == CandidateSource::kFactorIc) {
       action.reason_code = "EVOLUTION_FACTOR_IC_WEIGHT_NOOP";
     } else {
       action.reason_code = "EVOLUTION_WEIGHT_NOOP";
@@ -459,11 +484,11 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   runtime.current_defensive_weight = candidate.defensive_weight;
 
   action.type = SelfEvolutionActionType::kUpdated;
-  if (action.used_counterfactual_search) {
+  if (candidate_source == CandidateSource::kCounterfactual) {
     action.reason_code = candidate.trend_weight > runtime.rollback_anchor_trend_weight
                              ? "EVOLUTION_COUNTERFACTUAL_INCREASE_TREND"
                              : "EVOLUTION_COUNTERFACTUAL_DECREASE_TREND";
-  } else if (action.used_factor_ic_adaptive_weighting) {
+  } else if (candidate_source == CandidateSource::kFactorIc) {
     action.reason_code = candidate.trend_weight > runtime.rollback_anchor_trend_weight
                              ? "EVOLUTION_FACTOR_IC_INCREASE_TREND"
                              : "EVOLUTION_FACTOR_IC_DECREASE_TREND";

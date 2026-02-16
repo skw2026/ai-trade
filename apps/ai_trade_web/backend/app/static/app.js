@@ -58,6 +58,7 @@ const ui = {
   trendEvolutionLearnabilitySkips: document.getElementById(
     "trend-evolution-learnability-skips"
   ),
+  trendFlatStartRebases: document.getElementById("trend-flat-start-rebases"),
   trendPolicyRatio: document.getElementById("trend-policy-ratio"),
   trendEquityPct: document.getElementById("trend-equity-pct"),
   trendCostFiltered: document.getElementById("trend-cost-filtered"),
@@ -367,6 +368,7 @@ async function loadTrendMetrics() {
           runtimeMetrics.self_evolution_learnability_skip_count,
           0
         ),
+        flat_start_rebases: asNumber(runtimeMetrics.flat_start_rebase_applied_count, 0),
         policy_applied_ratio: asNumber(runtimeMetrics.integrator_policy_applied_ratio, 0) * 100,
         equity_change_pct: asNumber(account.equity_change_pct, 0) * 100,
         cost_filtered: asNumber(runtimeMetrics.order_filtered_cost_count, 0),
@@ -390,6 +392,7 @@ async function loadTrendMetrics() {
   const evolutionLearnabilitySkips = points.map(
     (x) => x.evolution_learnability_skips
   );
+  const flatStartRebases = points.map((x) => x.flat_start_rebases);
   const policyRatio = points.map((x) => x.policy_applied_ratio);
   const equity = points.map((x) => x.equity_change_pct);
   const costFiltered = points.map((x) => x.cost_filtered);
@@ -424,6 +427,11 @@ async function loadTrendMetrics() {
   drawLineChart(ui.trendEvolutionLearnabilitySkips, evolutionLearnabilitySkips, {
     label: "self_evolution_learnability_skip_count",
     color: "#c1121f",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendFlatStartRebases, flatStartRebases, {
+    label: "flat_start_rebase_applied_count",
+    color: "#6a4c93",
     decimals: 2,
   });
   drawLineChart(ui.trendPolicyRatio, policyRatio, {

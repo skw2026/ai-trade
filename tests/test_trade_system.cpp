@@ -1700,6 +1700,83 @@ int main() {
   }
 
   {
+    // 自进化控制器：当反事实搜索无有效增益时，应回退到 factor-IC 调权。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.1;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = true;
+    config.counterfactual_min_improvement_usd = 1000.0;
+    config.enable_factor_ic_adaptive_weights = true;
+    config.factor_ic_min_samples = 2;
+    config.factor_ic_min_abs = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(1,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/100.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(2,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/500.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/101.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/400.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/101.101);
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
+        !action->used_counterfactual_search ||
+        !action->used_factor_ic_adaptive_weighting ||
+        action->factor_ic_samples < 2 ||
+        action->trend_factor_ic <= 0.0 ||
+        !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
+      std::cerr << "反事实回退到 factor-IC 调权行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：可学习性门控在低 t-stat 窗口应冻结学习。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;

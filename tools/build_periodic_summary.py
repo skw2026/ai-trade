@@ -257,6 +257,7 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "self_evolution_factor_ic_action_count": 0,
             "self_evolution_learnability_skip_count": 0,
             "self_evolution_learnability_pass_count": 0,
+            "flat_start_rebase_applied_count": 0,
             "integrator_policy_applied_count": 0,
             "integrator_policy_canary_count": 0,
             "integrator_policy_active_count": 0,
@@ -298,6 +299,9 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     evolution_learnability_pass = (
         to_int(latest_metrics.get("self_evolution_learnability_pass_count")) or 0
+    )
+    flat_start_rebase_applied = (
+        to_int(latest_metrics.get("flat_start_rebase_applied_count")) or 0
     )
     integrator_policy_applied = (
         to_int(latest_metrics.get("integrator_policy_applied_count")) or 0
@@ -373,6 +377,7 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "self_evolution_factor_ic_action_count": evolution_factor_ic_action,
         "self_evolution_learnability_skip_count": evolution_learnability_skip,
         "self_evolution_learnability_pass_count": evolution_learnability_pass,
+        "flat_start_rebase_applied_count": flat_start_rebase_applied,
         "integrator_policy_applied_count": integrator_policy_applied,
         "integrator_policy_canary_count": integrator_policy_canary,
         "integrator_policy_active_count": integrator_policy_active,
