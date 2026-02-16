@@ -32,6 +32,13 @@ class AssessRunLogTest(unittest.TestCase):
         private_ws_healthy: bool = True,
         funnel_enqueued: int = 0,
         funnel_fills: int = 0,
+        strategy_mix_samples: int = 1,
+        strategy_mix_latest_trend: float = 180.0,
+        strategy_mix_latest_defensive: float = -60.0,
+        strategy_mix_latest_blended: float = 120.0,
+        strategy_mix_avg_abs_trend: float = 180.0,
+        strategy_mix_avg_abs_defensive: float = 60.0,
+        strategy_mix_avg_abs_blended: float = 120.0,
         prefix: str = "",
     ) -> str:
         reduce_only_text = "true" if reduce_only else "false"
@@ -55,9 +62,11 @@ class AssessRunLogTest(unittest.TestCase):
             f"enqueued={funnel_enqueued}, async_ok=0, async_failed=0, fills={funnel_fills}, "
             "gate_alerts=0, evolution_updates=0, evolution_rollbacks=0, evolution_skipped=0, "
             "entry_edge_samples=1, entry_edge_avg_bps=2.0, entry_required_avg_bps=1.0}, "
-            "strategy_mix={latest_trend_notional=0.0, latest_defensive_notional=0.0, "
-            "latest_blended_notional=0.0, avg_abs_trend_notional=0.0, "
-            "avg_abs_defensive_notional=0.0, avg_abs_blended_notional=0.0, samples=0}, "
+            "strategy_mix={latest_trend_notional="
+            f"{strategy_mix_latest_trend}, latest_defensive_notional={strategy_mix_latest_defensive}, "
+            f"latest_blended_notional={strategy_mix_latest_blended}, avg_abs_trend_notional={strategy_mix_avg_abs_trend}, "
+            f"avg_abs_defensive_notional={strategy_mix_avg_abs_defensive}, avg_abs_blended_notional={strategy_mix_avg_abs_blended}, "
+            f"samples={strategy_mix_samples}}}, "
             "entry_gate={enabled=true, round_trip_cost_bps=13.0, "
             "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0}, "
             "integrator_mode=shadow, "
@@ -214,6 +223,36 @@ class AssessRunLogTest(unittest.TestCase):
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["fail_reasons"], [])
+
+    def test_s5_fail_when_no_strategy_mix_window(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1 if i == 0 else 0,
+                funnel_fills=1 if i == 1 else 0,
+                strategy_mix_samples=0,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:00:10 [INFO] SELF_EVOLUTION_ACTION: type=skipped, bucket=RANGE, reason=EVOLUTION_WINDOW_PNL_TOO_SMALL\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=1, effective_signals=10, fills=1\n"
+            "2026-02-14 15:30:01 [INFO] BYBIT_SUBMIT: order_type=Limit, symbol=BTCUSDT\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("未检测到有效策略信号窗口" in x for x in report["fail_reasons"])
+        )
 
     def test_deploy_ignores_soft_warns(self):
         runtime = "".join(

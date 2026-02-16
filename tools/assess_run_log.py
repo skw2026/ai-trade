@@ -35,6 +35,7 @@ class StageRule:
     gate_fail_hard_max_fail_ratio: float
     gate_warn_min_windows: int
     gate_warn_max_fail_ratio: float
+    min_strategy_mix_nonzero_windows: int
 
 
 STAGE_RULES: Dict[str, StageRule] = {
@@ -52,6 +53,7 @@ STAGE_RULES: Dict[str, StageRule] = {
         gate_fail_hard_max_fail_ratio=1.10,
         gate_warn_min_windows=10,
         gate_warn_max_fail_ratio=0.95,
+        min_strategy_mix_nonzero_windows=0,
     ),
     "S3": StageRule(
         name="S3",
@@ -67,6 +69,7 @@ STAGE_RULES: Dict[str, StageRule] = {
         gate_fail_hard_max_fail_ratio=1.10,
         gate_warn_min_windows=20,
         gate_warn_max_fail_ratio=0.90,
+        min_strategy_mix_nonzero_windows=0,
     ),
     "S5": StageRule(
         name="S5",
@@ -78,10 +81,11 @@ STAGE_RULES: Dict[str, StageRule] = {
         require_flat_start=True,
         max_start_abs_notional_usd=50.0,
         max_trading_halted_true_ratio=0.10,
-        gate_fail_hard_min_windows=50,
-        gate_fail_hard_max_fail_ratio=0.95,
-        gate_warn_min_windows=50,
-        gate_warn_max_fail_ratio=0.95,
+        gate_fail_hard_min_windows=10,
+        gate_fail_hard_max_fail_ratio=0.90,
+        gate_warn_min_windows=8,
+        gate_warn_max_fail_ratio=0.85,
+        min_strategy_mix_nonzero_windows=1,
     ),
 }
 
@@ -560,11 +564,6 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             f"RUNTIME_STATUS 条数不足: {metrics['runtime_status_count']} < {min_runtime_status}"
         )
 
-    gate_runtime_impact = (
-        metrics["trading_halted_true_count"] > 0
-        or metrics["gate_reduce_only_true_count"] > 0
-        or metrics["gate_halted_true_count"] > 0
-    )
     # DEPLOY 门禁仅看“健康硬指标”，避免冷启动阶段的策略类指标误触发回滚。
     if stage.name != "DEPLOY":
         if metrics["trading_halted_true_ratio"] > stage.max_trading_halted_true_ratio:
@@ -592,6 +591,15 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
 
         if stage.require_execution_activity and execution_activity_count <= 0:
             fail_reasons.append("未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）")
+        if (
+            stage.min_strategy_mix_nonzero_windows > 0
+            and metrics["strategy_mix_nonzero_window_count"]
+            < stage.min_strategy_mix_nonzero_windows
+        ):
+            fail_reasons.append(
+                "未检测到有效策略信号窗口（strategy_mix.samples>0），"
+                f"S5 至少要求 {stage.min_strategy_mix_nonzero_windows} 个窗口"
+            )
 
         start_abs_notional = account_pnl.get("first_abs_notional_usd")
         if (
@@ -608,10 +616,9 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         if (
             gate_window_count >= stage.gate_fail_hard_min_windows
             and metrics["gate_check_fail_ratio"] > stage.gate_fail_hard_max_fail_ratio
-            and gate_runtime_impact
         ):
             fail_reasons.append(
-                "Gate 失败率过高且影响运行态（强闭环阻断）: "
+                "Gate 失败率过高（强闭环阻断）: "
                 f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
                 f"threshold={stage.gate_fail_hard_max_fail_ratio:.4f}"
             )
@@ -626,10 +633,9 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         if (
             gate_window_count >= stage.gate_warn_min_windows
             and metrics["gate_check_fail_ratio"] > stage.gate_warn_max_fail_ratio
-            and gate_runtime_impact
         ):
             warn_reasons.append(
-                "Gate 失败率偏高且已触发运行态限制，建议复核策略活跃度/门槛参数: "
+                "Gate 失败率偏高，建议复核策略活跃度/门槛参数: "
                 f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
                 f"threshold={stage.gate_warn_max_fail_ratio:.4f}"
             )

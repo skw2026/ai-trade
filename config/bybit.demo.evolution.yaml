@@ -49,7 +49,7 @@ execution:
   min_expected_edge_bps: 1.0
   # 在 demo 实盘高费率估计下，为入场成本门槛设置上限，避免长期过滤掉全部信号。
   # 加速阶段：降低上限，先恢复成交样本，再用报告回调。
-  required_edge_cap_bps: 5.7
+  required_edge_cap_bps: 5.2
   maker_entry_enabled: true
   maker_price_offset_bps: 1.0
   maker_post_only: true
@@ -63,10 +63,10 @@ execution:
 
 strategy:
   signal_notional_usd: 450
-  signal_deadband_abs: 1.2
-  min_hold_ticks: 8
+  signal_deadband_abs: 0.6
+  min_hold_ticks: 4
   defensive_notional_ratio: 0.55
-  defensive_entry_score: 1.25
+  defensive_entry_score: 1.0
   defensive_trend_scale: 0.25
   defensive_range_scale: 1.00
   defensive_extreme_scale: 0.45
