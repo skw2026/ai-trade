@@ -83,6 +83,8 @@ struct SelfEvolutionConfig {
   bool use_counterfactual_search{false};
   // 反事实候选优于当前权重所需的最小虚拟PnL改进（USD）。
   double counterfactual_min_improvement_usd{0.0};
+  // 当窗口内存在大量“被成本门拦截信号”时，降低反事实改进门槛（每个信号衰减值，USD）。
+  double counterfactual_improvement_decay_per_filtered_signal_usd{0.0};
   // 虚拟PnL成本估计（按名义值变化收取，单位 bps）。
   double virtual_cost_bps{0.0};
   // 是否按“在线因子 IC”自适应调整 trend/defensive 权重。
@@ -221,9 +223,17 @@ struct AppConfig {
   double execution_min_expected_edge_bps{1.0};
   double execution_required_edge_cap_bps{
       0.0};  // 费率门槛上限（0=关闭，不限制）
+  bool execution_adaptive_fee_gate_enabled{true};
+  int execution_adaptive_fee_gate_min_samples{120};
+  double execution_adaptive_fee_gate_trigger_ratio{0.75};
+  double execution_adaptive_fee_gate_max_relax_bps{2.0};
   bool execution_maker_entry_enabled{false};
+  bool execution_maker_fallback_to_market{true};
   double execution_maker_price_offset_bps{1.0};
   bool execution_maker_post_only{true};
+  double execution_maker_edge_relax_bps{0.0};
+  int execution_cost_filter_cooldown_trigger_count{0};
+  int execution_cost_filter_cooldown_ticks{0};
   std::string exchange{"mock"};
   std::string data_path{"data"};
   ProtectionConfig protection{};

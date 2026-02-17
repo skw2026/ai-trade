@@ -47,9 +47,17 @@ execution:
   exit_fee_bps: 5.5
   expected_slippage_bps: 1.0
   min_expected_edge_bps: 1.0
+  adaptive_fee_gate_enabled: true
+  adaptive_fee_gate_min_samples: 120
+  adaptive_fee_gate_trigger_ratio: 0.75
+  adaptive_fee_gate_max_relax_bps: 2.0
   maker_entry_enabled: false
+  maker_fallback_to_market: true
   maker_price_offset_bps: 1.0
   maker_post_only: true
+  maker_edge_relax_bps: 0.0
+  cost_filter_cooldown_trigger_count: 0
+  cost_filter_cooldown_ticks: 0
   protection:
     enabled: false
     require_sl: true
@@ -77,6 +85,7 @@ self_evolution:
   use_virtual_pnl: false
   use_counterfactual_search: false
   counterfactual_min_improvement_usd: 0.0
+  counterfactual_improvement_decay_per_filtered_signal_usd: 0.0
   virtual_cost_bps: 0.0
   enable_factor_ic_adaptive_weights: false
   factor_ic_min_samples: 120

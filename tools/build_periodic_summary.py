@@ -265,6 +265,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "integrator_mode_shadow_count": 0,
             "integrator_mode_canary_count": 0,
             "integrator_mode_active_count": 0,
+            "filtered_cost_ratio": None,
+            "filtered_cost_ratio_avg": None,
+            "realized_net_per_fill": None,
+            "fee_bps_per_fill": None,
             "strategy_mix_runtime_count": 0,
             "strategy_mix_nonzero_window_count": 0,
             "strategy_mix_defensive_active_count": 0,
@@ -315,6 +319,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     integrator_mode_shadow = to_int(latest_metrics.get("integrator_mode_shadow_count")) or 0
     integrator_mode_canary = to_int(latest_metrics.get("integrator_mode_canary_count")) or 0
     integrator_mode_active = to_int(latest_metrics.get("integrator_mode_active_count")) or 0
+    filtered_cost_ratio = to_float(latest_metrics.get("filtered_cost_ratio"))
+    filtered_cost_ratio_avg = to_float(latest_metrics.get("filtered_cost_ratio_avg"))
+    realized_net_per_fill = to_float(latest_metrics.get("realized_net_per_fill"))
+    fee_bps_per_fill = to_float(latest_metrics.get("fee_bps_per_fill"))
     strategy_mix_runtime_count = (
         to_int(latest_metrics.get("strategy_mix_runtime_count")) or 0
     )
@@ -385,6 +393,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "integrator_mode_shadow_count": integrator_mode_shadow,
         "integrator_mode_canary_count": integrator_mode_canary,
         "integrator_mode_active_count": integrator_mode_active,
+        "filtered_cost_ratio": filtered_cost_ratio,
+        "filtered_cost_ratio_avg": filtered_cost_ratio_avg,
+        "realized_net_per_fill": realized_net_per_fill,
+        "fee_bps_per_fill": fee_bps_per_fill,
         "strategy_mix_runtime_count": strategy_mix_runtime_count,
         "strategy_mix_nonzero_window_count": strategy_mix_nonzero_window_count,
         "strategy_mix_defensive_active_count": strategy_mix_defensive_active_count,

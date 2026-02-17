@@ -514,6 +514,67 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        (key == "adaptive_fee_gate_enabled" ||
+         key == "adaptive_fee_aware_enabled")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.adaptive_fee_gate_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_adaptive_fee_gate_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "adaptive_fee_gate_min_samples") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.adaptive_fee_gate_min_samples 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_adaptive_fee_gate_min_samples = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "adaptive_fee_gate_trigger_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.adaptive_fee_gate_trigger_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_adaptive_fee_gate_trigger_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "adaptive_fee_gate_max_relax_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.adaptive_fee_gate_max_relax_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_adaptive_fee_gate_max_relax_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         (key == "maker_entry_enabled" || key == "maker_first")) {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -524,6 +585,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.execution_maker_entry_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "maker_fallback_to_market") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.maker_fallback_to_market 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_maker_fallback_to_market = parsed;
       continue;
     }
 
@@ -551,6 +627,50 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.execution_maker_post_only = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" && key == "maker_edge_relax_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.maker_edge_relax_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_maker_edge_relax_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "cost_filter_cooldown_trigger_count") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.cost_filter_cooldown_trigger_count 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_cost_filter_cooldown_trigger_count = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "cost_filter_cooldown_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.cost_filter_cooldown_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_cost_filter_cooldown_ticks = parsed;
       continue;
     }
 
@@ -1681,6 +1801,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "counterfactual_improvement_decay_per_filtered_signal_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_improvement_decay_per_filtered_signal_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_improvement_decay_per_filtered_signal_usd =
+          parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         key == "virtual_cost_bps") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -2369,9 +2505,55 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.execution_adaptive_fee_gate_min_samples < 0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.adaptive_fee_gate_min_samples 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_adaptive_fee_gate_trigger_ratio < 0.0 ||
+      config.execution_adaptive_fee_gate_trigger_ratio > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.adaptive_fee_gate_trigger_ratio 必须在 [0,1] 范围内";
+    }
+    return false;
+  }
+  if (config.execution_adaptive_fee_gate_max_relax_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.adaptive_fee_gate_max_relax_bps 不能为负数";
+    }
+    return false;
+  }
   if (config.execution_maker_price_offset_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.maker_price_offset_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_maker_edge_relax_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.maker_edge_relax_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_cost_filter_cooldown_trigger_count < 0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.cost_filter_cooldown_trigger_count 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_cost_filter_cooldown_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.cost_filter_cooldown_ticks 不能为负数";
+    }
+    return false;
+  }
+  if ((config.execution_cost_filter_cooldown_trigger_count > 0) !=
+      (config.execution_cost_filter_cooldown_ticks > 0)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.cost_filter_cooldown_trigger_count 与 execution.cost_filter_cooldown_ticks 需同时>0或同时为0";
     }
     return false;
   }
@@ -2460,6 +2642,14 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "self_evolution.counterfactual_min_improvement_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution
+          .counterfactual_improvement_decay_per_filtered_signal_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.counterfactual_improvement_decay_per_filtered_signal_usd 不能为负数";
     }
     return false;
   }

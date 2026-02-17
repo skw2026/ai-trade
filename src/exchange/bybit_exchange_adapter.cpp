@@ -1543,23 +1543,28 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   }
 
   order_symbol_by_client_id_[intent.client_order_id] = normalized_symbol;
-  // 构造 Bybit V5 下单 Payload
   const std::string side = intent.direction > 0 ? "Buy" : "Sell";
-  std::string body =
-      "{\"category\":\"" + EscapeJson(options_.category) +
-      "\",\"symbol\":\"" + EscapeJson(normalized_symbol) +
-      "\",\"side\":\"" + side +
-      "\",\"orderType\":\"" + order_type + "\"" +
-      ",\"qty\":\"" + ToDecimalString(submit_qty, qty_precision) + "\"" +
-      ",\"reduceOnly\":" + std::string(intent.reduce_only ? "true" : "false") +
-      ",\"orderLinkId\":\"" + EscapeJson(intent.client_order_id) + "\"";
-  if (order_type == "Limit" && submit_price > 0.0) {
-    body += ",\"price\":\"" + ToDecimalString(submit_price, price_precision) + "\"";
-    if (!time_in_force.empty()) {
-      body += ",\"timeInForce\":\"" + time_in_force + "\"";
+  auto build_order_body = [&](const std::string& submit_order_type,
+                              double limit_price,
+                              const std::string& submit_time_in_force) {
+    std::string body =
+        "{\"category\":\"" + EscapeJson(options_.category) +
+        "\",\"symbol\":\"" + EscapeJson(normalized_symbol) +
+        "\",\"side\":\"" + side +
+        "\",\"orderType\":\"" + submit_order_type + "\"" +
+        ",\"qty\":\"" + ToDecimalString(submit_qty, qty_precision) + "\"" +
+        ",\"reduceOnly\":" + std::string(intent.reduce_only ? "true" : "false") +
+        ",\"orderLinkId\":\"" + EscapeJson(intent.client_order_id) + "\"";
+    if (submit_order_type == "Limit" && limit_price > 0.0) {
+      body +=
+          ",\"price\":\"" + ToDecimalString(limit_price, price_precision) + "\"";
+      if (!submit_time_in_force.empty()) {
+        body += ",\"timeInForce\":\"" + submit_time_in_force + "\"";
+      }
     }
-  }
-  body += "}";
+    body += "}";
+    return body;
+  };
 
   LogInfo("BYBIT_SUBMIT: symbol=" + normalized_symbol +
           ", client_order_id=" + intent.client_order_id +
@@ -1572,12 +1577,43 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
                      ", time_in_force=" + time_in_force
                : std::string()));
 
+  std::string body = build_order_body(order_type, submit_price, time_in_force);
   std::string response;
   std::string error;
   if (!rest_client_->PostPrivate("/v5/order/create", body, &response, &error)) {
-    LogInfo("Bybit 下单失败: client_order_id=" + intent.client_order_id +
-            ", error=" + error);
-    return false;
+    const bool post_only_rejected =
+        (error.find("PostOnly") != std::string::npos) ||
+        (error.find("post only") != std::string::npos) ||
+        (error.find("post-only") != std::string::npos) ||
+        (error.find("post_only") != std::string::npos) ||
+        (error.find("would be filled immediately") != std::string::npos);
+    if (options_.maker_fallback_to_market && maker_entry_order &&
+        order_type == "Limit" && options_.maker_post_only && post_only_rejected) {
+      std::string fallback_response;
+      std::string fallback_error;
+      LogInfo("Bybit maker-first 回退市价: symbol=" + normalized_symbol +
+              ", client_order_id=" + intent.client_order_id +
+              ", reason=post_only_rejected");
+      LogInfo("BYBIT_SUBMIT: symbol=" + normalized_symbol +
+              ", client_order_id=" + intent.client_order_id +
+              ", order_type=Market, reduce_only=" +
+              (intent.reduce_only ? std::string("true")
+                                  : std::string("false")) +
+              ", qty=" + ToDecimalString(submit_qty, qty_precision) +
+              ", reason=maker_fallback_post_only");
+      const std::string market_body = build_order_body("Market", 0.0, "");
+      if (!rest_client_->PostPrivate("/v5/order/create", market_body,
+                                     &fallback_response, &fallback_error)) {
+        LogInfo("Bybit 下单失败: client_order_id=" + intent.client_order_id +
+                ", error=" + fallback_error);
+        return false;
+      }
+      response = fallback_response;
+    } else {
+      LogInfo("Bybit 下单失败: client_order_id=" + intent.client_order_id +
+              ", error=" + error);
+      return false;
+    }
   }
   // 记录 orderId->clientOrderId 映射，解决私有回报仅携带 orderId 时的本地归一化问题。
   if (const std::optional<JsonValue> root = ParseJsonBody(response);

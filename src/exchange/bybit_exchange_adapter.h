@@ -57,6 +57,8 @@ struct BybitAdapterOptions {
   bool execution_skip_history_on_start{true};
   int execution_poll_limit{50};  ///< `/v5/execution/list` 轮询 limit。
   bool maker_entry_enabled{false};  ///< 开仓优先用 maker limit，减少 taker 成本。
+  bool maker_fallback_to_market{
+      true};  ///< maker PostOnly 被拒时是否自动回退一次市价单。
   double maker_price_offset_bps{1.0};  ///< maker 限价相对参考价偏移（bps）。
   bool maker_post_only{true};  ///< maker 模式是否强制 PostOnly。
   std::vector<std::string> symbols{"BTCUSDT"};  ///< 启动时关注的 symbol 列表。

@@ -2081,6 +2081,14 @@ int main() {
         << "  min_order_interval_ms: 2500\n"
         << "  reverse_signal_cooldown_ticks: 5\n"
         << "  required_edge_cap_bps: 8.5\n"
+        << "  adaptive_fee_gate_enabled: true\n"
+        << "  adaptive_fee_gate_min_samples: 90\n"
+        << "  adaptive_fee_gate_trigger_ratio: 0.8\n"
+        << "  adaptive_fee_gate_max_relax_bps: 2.2\n"
+        << "  maker_fallback_to_market: false\n"
+        << "  maker_edge_relax_bps: 0.9\n"
+        << "  cost_filter_cooldown_trigger_count: 6\n"
+        << "  cost_filter_cooldown_ticks: 120\n"
         << "strategy:\n"
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
@@ -2121,6 +2129,7 @@ int main() {
         << "  use_virtual_pnl: true\n"
         << "  use_counterfactual_search: true\n"
         << "  counterfactual_min_improvement_usd: 1.2\n"
+        << "  counterfactual_improvement_decay_per_filtered_signal_usd: 0.05\n"
         << "  virtual_cost_bps: 6.5\n"
         << "  enable_factor_ic_adaptive_weights: true\n"
         << "  factor_ic_min_samples: 180\n"
@@ -2152,6 +2161,14 @@ int main() {
         config.execution_min_order_interval_ms != 2500 ||
         config.execution_reverse_signal_cooldown_ticks != 5 ||
         !NearlyEqual(config.execution_required_edge_cap_bps, 8.5) ||
+        config.execution_adaptive_fee_gate_enabled != true ||
+        config.execution_adaptive_fee_gate_min_samples != 90 ||
+        !NearlyEqual(config.execution_adaptive_fee_gate_trigger_ratio, 0.8) ||
+        !NearlyEqual(config.execution_adaptive_fee_gate_max_relax_bps, 2.2) ||
+        config.execution_maker_fallback_to_market != false ||
+        !NearlyEqual(config.execution_maker_edge_relax_bps, 0.9) ||
+        config.execution_cost_filter_cooldown_trigger_count != 6 ||
+        config.execution_cost_filter_cooldown_ticks != 120 ||
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
         config.strategy_min_hold_ticks != 4 ||
@@ -2235,6 +2252,10 @@ int main() {
         config.self_evolution.use_counterfactual_search != true ||
         !NearlyEqual(config.self_evolution.counterfactual_min_improvement_usd,
                      1.2) ||
+        !NearlyEqual(
+            config.self_evolution
+                .counterfactual_improvement_decay_per_filtered_signal_usd,
+            0.05) ||
         !NearlyEqual(config.self_evolution.virtual_cost_bps, 6.5) ||
         config.self_evolution.enable_factor_ic_adaptive_weights != true ||
         config.self_evolution.factor_ic_min_samples != 180 ||
@@ -2572,6 +2593,30 @@ int main() {
     }
     if (error.find("required_edge_cap_bps") == std::string::npos) {
       std::cerr << "非法 execution.required_edge_cap_bps 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_cost_filter_cooldown_pair.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  cost_filter_cooldown_trigger_count: 3\n"
+        << "  cost_filter_cooldown_ticks: 0\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 execution.cost_filter_cooldown_* 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("cost_filter_cooldown") == std::string::npos) {
+      std::cerr
+          << "非法 execution.cost_filter_cooldown_* 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

@@ -127,7 +127,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     double trend_signal_notional_usd,
     double defensive_signal_notional_usd,
     double mark_price_usd,
-    const std::string& signal_symbol) {
+    const std::string& signal_symbol,
+    bool entry_filtered_by_cost) {
   if (!config_.enabled || !initialized_) {
     return std::nullopt;
   }
@@ -147,6 +148,9 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     ++learnability_stats.samples;
   }
   bucket_window_ticks_[active_index] += 1;
+  if (entry_filtered_by_cost) {
+    bucket_window_cost_filtered_signals_[active_index] += 1;
+  }
   bucket_window_max_drawdown_pct_[active_index] =
       std::max(bucket_window_max_drawdown_pct_[active_index],
                std::max(0.0, drawdown_pct));
@@ -285,9 +289,13 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       config_.use_counterfactual_search && use_virtual_pnl;
   action.used_factor_ic_adaptive_weighting =
       config_.enable_factor_ic_adaptive_weights;
+  action.counterfactual_required_improvement_usd =
+      config_.counterfactual_min_improvement_usd;
   action.counterfactual_best_virtual_pnl_usd = window_virtual_pnl_usd;
   action.counterfactual_best_trend_weight = runtime.current_trend_weight;
   action.counterfactual_best_defensive_weight = runtime.current_defensive_weight;
+  action.window_cost_filtered_signals =
+      bucket_window_cost_filtered_signals_[eval_index];
   action.trend_factor_ic =
       CorrelationFromAccumulator(bucket_window_trend_factor_ic_[eval_index]);
   action.defensive_factor_ic =
@@ -309,6 +317,16 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   std::optional<EvolutionWeights> best_counterfactual_candidate;
   bool counterfactual_improves = false;
   if (action.used_counterfactual_search) {
+    if (action.window_cost_filtered_signals > 0) {
+      const double decay =
+          std::max(0.0,
+                   config_.counterfactual_improvement_decay_per_filtered_signal_usd);
+      const double relaxed_threshold =
+          config_.counterfactual_min_improvement_usd -
+          decay * static_cast<double>(action.window_cost_filtered_signals);
+      action.counterfactual_required_improvement_usd =
+          std::max(0.0, relaxed_threshold);
+    }
     double best_virtual_pnl_usd = window_virtual_pnl_usd;
     best_counterfactual_candidate =
         BestCounterfactualWeights(eval_index, &best_virtual_pnl_usd);
@@ -320,7 +338,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           best_counterfactual_candidate->defensive_weight;
       counterfactual_improves =
           best_virtual_pnl_usd >
-          window_virtual_pnl_usd + config_.counterfactual_min_improvement_usd;
+          window_virtual_pnl_usd + action.counterfactual_required_improvement_usd;
     }
   }
 
@@ -703,6 +721,7 @@ void SelfEvolutionController::ResetWindowAttribution() {
   for (auto& learnability_stats : bucket_window_learnability_stats_) {
     learnability_stats = SampleAccumulator{};
   }
+  bucket_window_cost_filtered_signals_.fill(0);
   bucket_window_max_drawdown_pct_.fill(0.0);
   bucket_window_notional_churn_usd_.fill(0.0);
   bucket_window_ticks_.fill(0);

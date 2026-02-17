@@ -105,7 +105,20 @@ class BotApplication {
   bool ShouldFilterByFeeAwareGate(const MarketDecision& decision,
                                   const MarketEvent& event,
                                   double* out_expected_edge_bps,
-                                  double* out_required_edge_bps) const;
+                                  double* out_required_edge_bps,
+                                  double* out_base_required_edge_bps,
+                                  double* out_adaptive_relax_bps,
+                                  double* out_maker_relax_bps,
+                                  double* out_observed_filtered_ratio) const;
+  /// 开仓成本门冷却是否生效（用于避免连续重复无效入场）。
+  bool IsCostFilterCooldownActive(const std::string& symbol,
+                                  int* out_remaining_ticks);
+  /// 记录一次成本门拦截，必要时触发 symbol 级冷却。
+  void OnCostFilterRejected(const std::string& symbol);
+  /// 记录一次开仓候选通过（清理连续拦截计数）。
+  void OnCostFilterAccepted(const std::string& symbol);
+  /// 更新成本门观测比例（全局），供自适应门槛使用。
+  void UpdateEntryGateObservedRatio(bool filtered);
 
   // --- 辅助逻辑 ---
 
@@ -180,6 +193,7 @@ class BotApplication {
     std::uint64_t intents_filtered_inactive_symbol{0};
     std::uint64_t intents_filtered_min_notional{0};
     std::uint64_t intents_filtered_fee_aware{0};
+    std::uint64_t intents_throttled_cost_cooldown{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
     std::uint64_t async_submit_ok{0};
@@ -205,10 +219,14 @@ class BotApplication {
     double integrator_p_up_sum{0.0};
     double integrator_p_down_sum{0.0};
     double entry_edge_bps_sum{0.0};
+    double entry_base_required_edge_bps_sum{0.0};
     double entry_required_edge_bps_sum{0.0};
+    double entry_adaptive_relax_bps_sum{0.0};
+    double entry_maker_relax_bps_sum{0.0};
     double trend_notional_abs_sum{0.0};
     double defensive_notional_abs_sum{0.0};
     double blended_notional_abs_sum{0.0};
+    double fills_notional_abs_usd_sum{0.0};
   };
 
   static void AccumulateStats(DecisionFunnelStats* total,
@@ -250,6 +268,11 @@ class BotApplication {
   };
   std::unordered_map<std::string, PendingRequiredSlAttach>
       pending_required_sl_attach_;
+  std::unordered_map<std::string, int> cost_filter_reject_streak_by_symbol_;
+  std::unordered_map<std::string, int> cost_filter_cooldown_until_tick_by_symbol_;
+  std::uint64_t entry_gate_observed_samples_{0};
+  std::uint64_t entry_gate_observed_filtered_{0};
+  double entry_gate_observed_filtered_ratio_{0.0};
 
   bool protection_forced_reduce_only_{
       false};  ///< 保护单关键路径触发的只减仓开关（高优先级，需人工介入恢复）。
@@ -285,8 +308,12 @@ class BotApplication {
   double tick_defensive_notional_usd_{0.0};  ///< 当前 tick 的防御分支目标名义值。
   std::string tick_strategy_signal_symbol_;  ///< 当前 tick 的策略信号 symbol。
   bool has_tick_strategy_signal_{false};  ///< 当前 tick 是否已有新鲜策略分支信号。
+  bool tick_cost_filtered_signal_{false};  ///< 当前 tick 是否触发了成本门过滤（供进化统计）。
   ShadowInference last_shadow_inference_;  ///< 最近一次影子推理结果。
   bool has_last_shadow_inference_{false};  ///< 是否已有影子推理结果可展示。
+  bool has_last_status_account_snapshot_{false};
+  double last_status_realized_net_pnl_usd_{0.0};
+  double last_status_fee_usd_{0.0};
 };
 
 }  // namespace ai_trade

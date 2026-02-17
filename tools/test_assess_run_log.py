@@ -39,6 +39,9 @@ class AssessRunLogTest(unittest.TestCase):
         strategy_mix_avg_abs_trend: float = 180.0,
         strategy_mix_avg_abs_defensive: float = 60.0,
         strategy_mix_avg_abs_blended: float = 120.0,
+        filtered_cost_ratio: float = 0.0,
+        realized_net_per_fill: float = 0.0,
+        fee_bps_per_fill: float = 0.0,
         prefix: str = "",
     ) -> str:
         reduce_only_text = "true" if reduce_only else "false"
@@ -69,6 +72,10 @@ class AssessRunLogTest(unittest.TestCase):
             f"samples={strategy_mix_samples}}}, "
             "entry_gate={enabled=true, round_trip_cost_bps=13.0, "
             "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0}, "
+            "execution_window={filtered_cost_ratio="
+            f"{filtered_cost_ratio}, realized_net_delta_usd=0.0, "
+            f"realized_net_per_fill={realized_net_per_fill}, fee_delta_usd=0.0, "
+            f"fee_bps_per_fill={fee_bps_per_fill}}}, "
             "integrator_mode=shadow, "
             f"gate_runtime={{enabled=true, fail_streak=0, pass_streak=0, reduce_only={reduce_only_text}, "
             "reduce_only_cooldown_ticks=0, gate_halted=false, halt_cooldown_ticks=0, flat_ticks=0}}\n"
@@ -82,7 +89,9 @@ class AssessRunLogTest(unittest.TestCase):
             "strategy_mix={latest_trend_notional=450.0, latest_defensive_notional=-180.0, "
             "latest_blended_notional=270.0, avg_abs_trend_notional=420.0, "
             "avg_abs_defensive_notional=160.0, avg_abs_blended_notional=260.0, "
-            "samples=18}, integrator_mode=shadow\n"
+            "samples=18}, execution_window={filtered_cost_ratio=0.0, "
+            "realized_net_delta_usd=0.0, realized_net_per_fill=0.0, fee_delta_usd=0.0, "
+            "fee_bps_per_fill=0.0}, integrator_mode=shadow\n"
         )
         series = ASSESS.extract_strategy_mix_series(text)
         self.assertEqual(series["runtime_count"], 1.0)
@@ -122,14 +131,43 @@ class AssessRunLogTest(unittest.TestCase):
             "strategy_mix={latest_trend_notional=450.0, latest_defensive_notional=-180.0, "
             "latest_blended_notional=270.0, avg_abs_trend_notional=420.0, "
             "avg_abs_defensive_notional=160.0, avg_abs_blended_notional=260.0, "
-            "samples=18}, integrator_mode=shadow\n"
+            "samples=18}, execution_window={filtered_cost_ratio=0.0, "
+            "realized_net_delta_usd=0.0, realized_net_per_fill=0.0, fee_delta_usd=0.0, "
+            "fee_bps_per_fill=0.0}, integrator_mode=shadow\n"
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["DEPLOY"], min_runtime_status=1)
         metrics = report["metrics"]
         self.assertEqual(metrics["strategy_mix_runtime_count"], 1)
         self.assertEqual(metrics["strategy_mix_defensive_active_count"], 1)
         self.assertGreater(metrics["strategy_mix_avg_abs_defensive_notional"], 0.0)
+        self.assertEqual(metrics["execution_window_runtime_count"], 1)
+        self.assertEqual(metrics["filtered_cost_ratio"], 0.0)
         self.assertEqual(report["verdict"], "PASS")
+
+    def test_assess_extracts_execution_window_metrics(self):
+        runtime = (
+            self._runtime_line(
+                20,
+                0.0,
+                filtered_cost_ratio=0.95,
+                realized_net_per_fill=-1.2,
+                fee_bps_per_fill=8.5,
+            )
+            + self._runtime_line(
+                40,
+                0.0,
+                filtered_cost_ratio=0.85,
+                realized_net_per_fill=0.3,
+                fee_bps_per_fill=7.5,
+            )
+        )
+        report = ASSESS.assess(runtime, ASSESS.STAGE_RULES["S3"], min_runtime_status=2)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["execution_window_runtime_count"], 2)
+        self.assertAlmostEqual(metrics["filtered_cost_ratio_avg"], 0.9, places=6)
+        self.assertAlmostEqual(metrics["filtered_cost_ratio"], 0.85, places=6)
+        self.assertAlmostEqual(metrics["realized_net_per_fill"], -0.45, places=6)
+        self.assertAlmostEqual(metrics["fee_bps_per_fill"], 8.0, places=6)
 
     def test_s5_fail_when_no_gate_pass(self):
         runtime = "".join(

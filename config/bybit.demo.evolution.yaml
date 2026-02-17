@@ -50,9 +50,17 @@ execution:
   # 在 demo 实盘高费率估计下，为入场成本门槛设置上限，避免长期过滤掉全部信号。
   # 加速阶段：降低上限，先恢复成交样本，再用报告回调。
   required_edge_cap_bps: 5.2
+  adaptive_fee_gate_enabled: true
+  adaptive_fee_gate_min_samples: 80
+  adaptive_fee_gate_trigger_ratio: 0.70
+  adaptive_fee_gate_max_relax_bps: 2.0
   maker_entry_enabled: true
+  maker_fallback_to_market: true
   maker_price_offset_bps: 1.0
   maker_post_only: true
+  maker_edge_relax_bps: 1.0
+  cost_filter_cooldown_trigger_count: 8
+  cost_filter_cooldown_ticks: 120
   protection:
     enabled: false
     require_sl: true
@@ -99,6 +107,7 @@ self_evolution:
   use_virtual_pnl: true
   use_counterfactual_search: true
   counterfactual_min_improvement_usd: 0.25
+  counterfactual_improvement_decay_per_filtered_signal_usd: 0.02
   virtual_cost_bps: 6.5
   # P2(3+6)：在线因子IC自适应 + 可学习性门控。
   enable_factor_ic_adaptive_weights: true

@@ -37,8 +37,10 @@ struct SelfEvolutionAction {
   bool used_counterfactual_search{false};
   bool used_factor_ic_adaptive_weighting{false};
   double counterfactual_best_virtual_pnl_usd{0.0};
+  double counterfactual_required_improvement_usd{0.0};
   double counterfactual_best_trend_weight{0.0};
   double counterfactual_best_defensive_weight{0.0};
+  int window_cost_filtered_signals{0};
   double trend_factor_ic{0.0};
   double defensive_factor_ic{0.0};
   int factor_ic_samples{0};
@@ -96,7 +98,8 @@ class SelfEvolutionController {
                                             double trend_signal_notional_usd = 0.0,
                                             double defensive_signal_notional_usd = 0.0,
                                             double mark_price_usd = 0.0,
-                                            const std::string& signal_symbol = "");
+                                            const std::string& signal_symbol = "",
+                                            bool entry_filtered_by_cost = false);
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
@@ -185,6 +188,7 @@ class SelfEvolutionController {
   std::array<CorrelationAccumulator, 3> bucket_window_trend_factor_ic_{};
   std::array<CorrelationAccumulator, 3> bucket_window_defensive_factor_ic_{};
   std::array<SampleAccumulator, 3> bucket_window_learnability_stats_{};
+  std::array<int, 3> bucket_window_cost_filtered_signals_{};
   std::array<double, 3> bucket_window_max_drawdown_pct_{};
   std::array<double, 3> bucket_window_notional_churn_usd_{};
   std::array<int, 3> bucket_window_ticks_{};

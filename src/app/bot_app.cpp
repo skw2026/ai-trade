@@ -216,6 +216,7 @@ std::unique_ptr<ExchangeAdapter> CreateAdapter(const AppConfig& config) {
     options.ws_reconnect_interval_ms = config.bybit.ws_reconnect_interval_ms;
     options.execution_poll_limit = config.bybit.execution_poll_limit;
     options.maker_entry_enabled = config.execution_maker_entry_enabled;
+    options.maker_fallback_to_market = config.execution_maker_fallback_to_market;
     options.maker_price_offset_bps = config.execution_maker_price_offset_bps;
     options.maker_post_only = config.execution_maker_post_only;
     options.symbols = collect_symbols();
@@ -335,35 +336,151 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
     const MarketDecision& decision,
     const MarketEvent& event,
     double* out_expected_edge_bps,
-    double* out_required_edge_bps) const {
+    double* out_required_edge_bps,
+    double* out_base_required_edge_bps,
+    double* out_adaptive_relax_bps,
+    double* out_maker_relax_bps,
+    double* out_observed_filtered_ratio) const {
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = 0.0;
   }
   if (out_required_edge_bps != nullptr) {
     *out_required_edge_bps = 0.0;
   }
+  if (out_base_required_edge_bps != nullptr) {
+    *out_base_required_edge_bps = 0.0;
+  }
+  if (out_adaptive_relax_bps != nullptr) {
+    *out_adaptive_relax_bps = 0.0;
+  }
+  if (out_maker_relax_bps != nullptr) {
+    *out_maker_relax_bps = 0.0;
+  }
+  if (out_observed_filtered_ratio != nullptr) {
+    *out_observed_filtered_ratio = entry_gate_observed_filtered_ratio_;
+  }
   if (!decision.intent.has_value() || !IsOpeningIntent(*decision.intent)) {
     return false;
   }
 
   const double expected_edge_bps = EstimateEntryEdgeBps(decision, event);
+  const double round_trip_cost_bps = RoundTripCostBps();
   const double base_required_edge_bps =
-      RoundTripCostBps() + std::max(0.0, config_.execution_min_expected_edge_bps);
+      round_trip_cost_bps + std::max(0.0, config_.execution_min_expected_edge_bps);
   double required_edge_bps = base_required_edge_bps;
   if (config_.execution_required_edge_cap_bps > 0.0) {
     required_edge_bps =
         std::min(required_edge_bps, config_.execution_required_edge_cap_bps);
   }
+  double adaptive_relax_bps = 0.0;
+  if (config_.execution_adaptive_fee_gate_enabled &&
+      static_cast<int>(entry_gate_observed_samples_) >=
+          config_.execution_adaptive_fee_gate_min_samples) {
+    const double trigger_ratio =
+        std::clamp(config_.execution_adaptive_fee_gate_trigger_ratio, 0.0, 1.0);
+    if (entry_gate_observed_filtered_ratio_ > trigger_ratio &&
+        trigger_ratio < 1.0) {
+      const double scale =
+          (entry_gate_observed_filtered_ratio_ - trigger_ratio) /
+          (1.0 - trigger_ratio);
+      adaptive_relax_bps =
+          std::clamp(scale, 0.0, 1.0) *
+          std::max(0.0, config_.execution_adaptive_fee_gate_max_relax_bps);
+    }
+  }
+  const bool maker_entry_candidate =
+      config_.execution_maker_entry_enabled &&
+      decision.intent->purpose == OrderPurpose::kEntry && !decision.intent->reduce_only;
+  const double maker_relax_bps =
+      maker_entry_candidate ? std::max(0.0, config_.execution_maker_edge_relax_bps)
+                            : 0.0;
+  required_edge_bps = std::max(
+      0.0, required_edge_bps - adaptive_relax_bps - maker_relax_bps);
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = expected_edge_bps;
   }
   if (out_required_edge_bps != nullptr) {
     *out_required_edge_bps = required_edge_bps;
   }
+  if (out_base_required_edge_bps != nullptr) {
+    *out_base_required_edge_bps = base_required_edge_bps;
+  }
+  if (out_adaptive_relax_bps != nullptr) {
+    *out_adaptive_relax_bps = adaptive_relax_bps;
+  }
+  if (out_maker_relax_bps != nullptr) {
+    *out_maker_relax_bps = maker_relax_bps;
+  }
   if (!config_.execution_enable_fee_aware_entry_gate) {
     return false;
   }
   return expected_edge_bps + 1e-9 < required_edge_bps;
+}
+
+bool BotApplication::IsCostFilterCooldownActive(const std::string& symbol,
+                                                int* out_remaining_ticks) {
+  if (out_remaining_ticks != nullptr) {
+    *out_remaining_ticks = 0;
+  }
+  if (symbol.empty()) {
+    return false;
+  }
+  const auto it = cost_filter_cooldown_until_tick_by_symbol_.find(symbol);
+  if (it == cost_filter_cooldown_until_tick_by_symbol_.end()) {
+    return false;
+  }
+  if (market_tick_count_ >= it->second) {
+    cost_filter_cooldown_until_tick_by_symbol_.erase(it);
+    LogInfo("ORDER_COST_FILTER_COOLDOWN_EXIT: symbol=" + symbol +
+            ", tick=" + std::to_string(market_tick_count_));
+    return false;
+  }
+  const int remaining_ticks = it->second - market_tick_count_;
+  if (out_remaining_ticks != nullptr) {
+    *out_remaining_ticks = std::max(0, remaining_ticks);
+  }
+  return true;
+}
+
+void BotApplication::OnCostFilterRejected(const std::string& symbol) {
+  if (symbol.empty()) {
+    return;
+  }
+  auto& reject_streak = cost_filter_reject_streak_by_symbol_[symbol];
+  ++reject_streak;
+  const int trigger_count =
+      std::max(0, config_.execution_cost_filter_cooldown_trigger_count);
+  const int cooldown_ticks = std::max(0, config_.execution_cost_filter_cooldown_ticks);
+  if (trigger_count <= 0 || cooldown_ticks <= 0 || reject_streak < trigger_count) {
+    return;
+  }
+  cost_filter_cooldown_until_tick_by_symbol_[symbol] =
+      market_tick_count_ + cooldown_ticks;
+  reject_streak = 0;
+  LogInfo("ORDER_COST_FILTER_COOLDOWN_ENTER: symbol=" + symbol +
+          ", cooldown_ticks=" + std::to_string(cooldown_ticks) +
+          ", until_tick=" + std::to_string(market_tick_count_ + cooldown_ticks));
+}
+
+void BotApplication::OnCostFilterAccepted(const std::string& symbol) {
+  if (symbol.empty()) {
+    return;
+  }
+  cost_filter_reject_streak_by_symbol_.erase(symbol);
+}
+
+void BotApplication::UpdateEntryGateObservedRatio(bool filtered) {
+  ++entry_gate_observed_samples_;
+  if (filtered) {
+    ++entry_gate_observed_filtered_;
+  }
+  if (entry_gate_observed_samples_ > 0) {
+    entry_gate_observed_filtered_ratio_ =
+        static_cast<double>(entry_gate_observed_filtered_) /
+        static_cast<double>(entry_gate_observed_samples_);
+  } else {
+    entry_gate_observed_filtered_ratio_ = 0.0;
+  }
 }
 
 void BotApplication::AccumulateStats(DecisionFunnelStats* total,
@@ -378,6 +495,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.intents_filtered_inactive_symbol;
   total->intents_filtered_min_notional += delta.intents_filtered_min_notional;
   total->intents_filtered_fee_aware += delta.intents_filtered_fee_aware;
+  total->intents_throttled_cost_cooldown +=
+      delta.intents_throttled_cost_cooldown;
   total->intents_throttled += delta.intents_throttled;
   total->intents_enqueued += delta.intents_enqueued;
   total->async_submit_ok += delta.async_submit_ok;
@@ -403,10 +522,15 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->integrator_p_up_sum += delta.integrator_p_up_sum;
   total->integrator_p_down_sum += delta.integrator_p_down_sum;
   total->entry_edge_bps_sum += delta.entry_edge_bps_sum;
+  total->entry_base_required_edge_bps_sum +=
+      delta.entry_base_required_edge_bps_sum;
   total->entry_required_edge_bps_sum += delta.entry_required_edge_bps_sum;
+  total->entry_adaptive_relax_bps_sum += delta.entry_adaptive_relax_bps_sum;
+  total->entry_maker_relax_bps_sum += delta.entry_maker_relax_bps_sum;
   total->trend_notional_abs_sum += delta.trend_notional_abs_sum;
   total->defensive_notional_abs_sum += delta.defensive_notional_abs_sum;
   total->blended_notional_abs_sum += delta.blended_notional_abs_sum;
+  total->fills_notional_abs_usd_sum += delta.fills_notional_abs_usd_sum;
 }
 
 bool BotApplication::IsForceReduceOnlyActive() const {
@@ -644,6 +768,7 @@ void BotApplication::RunLoop() {
     if (has_market) {
       advanced_tick = true;
       has_tick_strategy_signal_ = false;
+      tick_cost_filtered_signal_ = false;
       tick_trend_notional_usd_ = 0.0;
       tick_defensive_notional_usd_ = 0.0;
       tick_strategy_signal_symbol_.clear();
@@ -870,25 +995,64 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
 
   if (decision.intent.has_value() && IsOpeningIntent(*decision.intent)) {
+    int cooldown_ticks_remaining = 0;
+    if (IsCostFilterCooldownActive(decision.intent->symbol,
+                                   &cooldown_ticks_remaining)) {
+      ++funnel_window_.intents_throttled;
+      ++funnel_window_.intents_throttled_cost_cooldown;
+      LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", reason=cost_filter_cooldown_ticks_remaining=" +
+              std::to_string(cooldown_ticks_remaining));
+      decision.intent.reset();
+    }
+  }
+
+  if (decision.intent.has_value() && IsOpeningIntent(*decision.intent)) {
     double expected_edge_bps = 0.0;
     double required_edge_bps = 0.0;
+    double base_required_edge_bps = 0.0;
+    double adaptive_relax_bps = 0.0;
+    double maker_relax_bps = 0.0;
+    double observed_filtered_ratio = 0.0;
     const bool filtered = ShouldFilterByFeeAwareGate(
-        decision, event, &expected_edge_bps, &required_edge_bps);
+        decision,
+        event,
+        &expected_edge_bps,
+        &required_edge_bps,
+        &base_required_edge_bps,
+        &adaptive_relax_bps,
+        &maker_relax_bps,
+        &observed_filtered_ratio);
+    UpdateEntryGateObservedRatio(filtered);
     ++funnel_window_.entry_edge_samples;
     funnel_window_.entry_edge_bps_sum += expected_edge_bps;
+    funnel_window_.entry_base_required_edge_bps_sum += base_required_edge_bps;
     funnel_window_.entry_required_edge_bps_sum += required_edge_bps;
+    funnel_window_.entry_adaptive_relax_bps_sum += adaptive_relax_bps;
+    funnel_window_.entry_maker_relax_bps_sum += maker_relax_bps;
     if (filtered) {
       ++funnel_window_.intents_filtered_fee_aware;
+      tick_cost_filtered_signal_ = true;
+      OnCostFilterRejected(decision.intent->symbol);
       LogInfo("ORDER_FILTERED_COST: symbol=" + decision.intent->symbol +
               ", client_order_id=" + decision.intent->client_order_id +
               ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
+              ", base_required_edge_bps=" +
+              std::to_string(base_required_edge_bps) +
+              ", adaptive_relax_bps=" + std::to_string(adaptive_relax_bps) +
+              ", maker_relax_bps=" + std::to_string(maker_relax_bps) +
               ", required_edge_bps=" + std::to_string(required_edge_bps) +
               ", round_trip_cost_bps=" + std::to_string(RoundTripCostBps()) +
               ", min_expected_edge_bps=" +
               std::to_string(config_.execution_min_expected_edge_bps) +
               ", required_edge_cap_bps=" +
-              std::to_string(config_.execution_required_edge_cap_bps));
+              std::to_string(config_.execution_required_edge_cap_bps) +
+              ", observed_filtered_ratio=" +
+              std::to_string(observed_filtered_ratio));
       decision.intent.reset();
+    } else {
+      OnCostFilterAccepted(decision.intent->symbol);
     }
   }
 
@@ -1058,6 +1222,10 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   // 记录最近成交 tick，供对账阶段应用短暂宽限窗口。
   last_fill_tick_ = market_tick_count_;
   ++funnel_window_.fills_applied;
+  if (std::isfinite(fill.price) && fill.price > 0.0 && std::isfinite(fill.qty)) {
+    funnel_window_.fills_notional_abs_usd_sum +=
+        std::fabs(fill.price * std::fabs(fill.qty));
+  }
 
   HandleProtectionOrders(fill);
 }
@@ -1503,7 +1671,8 @@ void BotApplication::RunSelfEvolution() {
                              trend_signal_notional_usd,
                              defensive_signal_notional_usd,
                              mark_price_usd,
-                             signal_symbol);
+                             signal_symbol,
+                             tick_cost_filtered_signal_);
   if (!action.has_value()) {
     return;
   }
@@ -1556,12 +1725,16 @@ void BotApplication::RunSelfEvolution() {
           ", factor_ic={trend=" + std::to_string(action->trend_factor_ic) +
           ", defensive=" + std::to_string(action->defensive_factor_ic) +
           ", samples=" + std::to_string(action->factor_ic_samples) + "}" +
+          ", cost_filtered_signals=" +
+          std::to_string(action->window_cost_filtered_signals) +
           ", learnability={enabled=" +
           std::string(action->learnability_gate_enabled ? "true" : "false") +
           ", passed=" +
           std::string(action->learnability_gate_passed ? "true" : "false") +
           ", t_stat=" + std::to_string(action->learnability_t_stat) +
           ", samples=" + std::to_string(action->learnability_samples) + "}" +
+          ", counterfactual_required_improvement_usd=" +
+          std::to_string(action->counterfactual_required_improvement_usd) +
           ", window_objective_score=" +
           std::to_string(action->window_objective_score) +
           ", window_max_drawdown_pct=" +
@@ -1633,9 +1806,29 @@ void BotApplication::LogStatus() {
           ? funnel_window.entry_edge_bps_sum /
                 static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
+  const double entry_base_required_edge_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_base_required_edge_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
   const double entry_required_edge_avg_bps =
       funnel_window.entry_edge_samples > 0
           ? funnel_window.entry_required_edge_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double entry_adaptive_relax_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_adaptive_relax_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double entry_maker_relax_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_maker_relax_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double filtered_cost_ratio =
+      funnel_window.entry_edge_samples > 0
+          ? static_cast<double>(funnel_window.intents_filtered_fee_aware) /
                 static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
   const double strategy_trend_avg_abs_notional =
@@ -1666,6 +1859,25 @@ void BotApplication::LogStatus() {
           ? static_cast<int>(self_evolution_.cooldown_until_tick() -
                              market_tick_count_)
           : 0;
+  const double window_realized_net_delta_usd =
+      has_last_status_account_snapshot_
+          ? system_.account().cumulative_realized_net_pnl_usd() -
+                last_status_realized_net_pnl_usd_
+          : 0.0;
+  const double window_fee_delta_usd =
+      has_last_status_account_snapshot_
+          ? system_.account().cumulative_fee_usd() - last_status_fee_usd_
+          : 0.0;
+  const double window_realized_net_per_fill_usd =
+      funnel_window.fills_applied > 0
+          ? window_realized_net_delta_usd /
+                static_cast<double>(funnel_window.fills_applied)
+          : 0.0;
+  const double window_fee_bps_per_fill =
+      funnel_window.fills_notional_abs_usd_sum > 1e-9
+          ? window_fee_delta_usd / funnel_window.fills_notional_abs_usd_sum *
+                10000.0
+          : 0.0;
 
   LogInfo("RUNTIME_STATUS: ticks=" + std::to_string(market_tick_count_) +
           ", trade_ok=" + std::string(trade_ok ? "true" : "false") +
@@ -1693,12 +1905,16 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.intents_filtered_min_notional) +
           ", intents_filtered_fee_aware=" +
           std::to_string(funnel_window.intents_filtered_fee_aware) +
+          ", intents_throttled_cost_cooldown=" +
+          std::to_string(funnel_window.intents_throttled_cost_cooldown) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
           ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
           ", async_ok=" + std::to_string(funnel_window.async_submit_ok) +
           ", async_failed=" +
           std::to_string(funnel_window.async_submit_failed) +
           ", fills=" + std::to_string(funnel_window.fills_applied) +
+          ", fills_notional_abs_usd=" +
+          std::to_string(funnel_window.fills_notional_abs_usd_sum) +
           ", gate_alerts=" + std::to_string(funnel_window.gate_alerts) +
           ", evolution_updates=" +
           std::to_string(funnel_window.self_evolution_updates) +
@@ -1709,8 +1925,14 @@ void BotApplication::LogStatus() {
           ", entry_edge_samples=" +
           std::to_string(funnel_window.entry_edge_samples) +
           ", entry_edge_avg_bps=" + std::to_string(entry_edge_avg_bps) +
+          ", entry_base_required_avg_bps=" +
+          std::to_string(entry_base_required_edge_avg_bps) +
           ", entry_required_avg_bps=" +
-          std::to_string(entry_required_edge_avg_bps) + "}" +
+          std::to_string(entry_required_edge_avg_bps) +
+          ", entry_adaptive_relax_avg_bps=" +
+          std::to_string(entry_adaptive_relax_avg_bps) +
+          ", entry_maker_relax_avg_bps=" +
+          std::to_string(entry_maker_relax_avg_bps) + "}" +
           ", regime_window={trend_ticks=" +
           std::to_string(funnel_window.regime_trend_ticks) +
           ", range_ticks=" + std::to_string(funnel_window.regime_range_ticks) +
@@ -1816,7 +2038,35 @@ void BotApplication::LogStatus() {
           ", min_expected_edge_bps=" +
           std::to_string(config_.execution_min_expected_edge_bps) +
           ", required_edge_cap_bps=" +
-          std::to_string(config_.execution_required_edge_cap_bps) + "}" +
+          std::to_string(config_.execution_required_edge_cap_bps) +
+          ", adaptive_enabled=" +
+          std::string(config_.execution_adaptive_fee_gate_enabled ? "true"
+                                                                  : "false") +
+          ", adaptive_trigger_ratio=" +
+          std::to_string(config_.execution_adaptive_fee_gate_trigger_ratio) +
+          ", adaptive_max_relax_bps=" +
+          std::to_string(config_.execution_adaptive_fee_gate_max_relax_bps) +
+          ", adaptive_min_samples=" +
+          std::to_string(config_.execution_adaptive_fee_gate_min_samples) +
+          ", maker_edge_relax_bps=" +
+          std::to_string(config_.execution_maker_edge_relax_bps) +
+          ", observed_filtered_ratio=" +
+          std::to_string(entry_gate_observed_filtered_ratio_) +
+          ", cooldown_trigger_count=" +
+          std::to_string(config_.execution_cost_filter_cooldown_trigger_count) +
+          ", cooldown_ticks=" +
+          std::to_string(config_.execution_cost_filter_cooldown_ticks) +
+          ", cooldown_symbols_active=" +
+          std::to_string(cost_filter_cooldown_until_tick_by_symbol_.size()) + "}" +
+          ", execution_window={filtered_cost_ratio=" +
+          std::to_string(filtered_cost_ratio) +
+          ", realized_net_delta_usd=" +
+          std::to_string(window_realized_net_delta_usd) +
+          ", realized_net_per_fill=" +
+          std::to_string(window_realized_net_per_fill_usd) +
+          ", fee_delta_usd=" + std::to_string(window_fee_delta_usd) +
+          ", fee_bps_per_fill=" + std::to_string(window_fee_bps_per_fill) +
+          "}" +
           ", evolution={enabled=" +
           std::string(evolution_enabled ? "true" : "false") +
           ", objective={alpha_pnl=" +
@@ -1858,6 +2108,10 @@ void BotApplication::LogStatus() {
           ", cooldown=" + std::string(evolution_cooldown ? "true" : "false") +
           ", cooldown_remaining_ticks=" +
           std::to_string(evolution_cooldown_remaining) + "}");
+  last_status_realized_net_pnl_usd_ =
+      system_.account().cumulative_realized_net_pnl_usd();
+  last_status_fee_usd_ = system_.account().cumulative_fee_usd();
+  has_last_status_account_snapshot_ = true;
 }
 
 /**

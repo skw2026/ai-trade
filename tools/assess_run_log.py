@@ -111,6 +111,14 @@ RUNTIME_STRATEGY_MIX_RE = re.compile(
     r"avg_abs_blended_notional=(?P<avg_blended>[0-9]+(?:\.[0-9]+)?), "
     r"samples=(?P<samples>\d+)"
 )
+RUNTIME_EXECUTION_WINDOW_RE = re.compile(
+    r"RUNTIME_STATUS:.*?execution_window=\{[^}]*?"
+    r"filtered_cost_ratio=(?P<filtered_cost_ratio>-?[0-9]+(?:\.[0-9]+)?), "
+    r"realized_net_delta_usd=(?P<realized_net_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
+    r"realized_net_per_fill=(?P<realized_net_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
+    r"fee_delta_usd=(?P<fee_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
+    r"fee_bps_per_fill=(?P<fee_bps_per_fill>-?[0-9]+(?:\.[0-9]+)?)"
+)
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
@@ -390,6 +398,38 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
     }
 
 
+def extract_execution_window_series(text: str) -> Dict[str, float]:
+    filtered_cost_ratios: list[float] = []
+    realized_net_per_fills: list[float] = []
+    fee_bps_per_fills: list[float] = []
+
+    for m in RUNTIME_EXECUTION_WINDOW_RE.finditer(text):
+        try:
+            filtered_cost_ratios.append(float(m.group("filtered_cost_ratio")))
+            realized_net_per_fills.append(float(m.group("realized_net_per_fill")))
+            fee_bps_per_fills.append(float(m.group("fee_bps_per_fill")))
+        except ValueError:
+            continue
+
+    runtime_count = len(filtered_cost_ratios)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "filtered_cost_ratio_avg": 0.0,
+            "filtered_cost_ratio_latest": 0.0,
+            "realized_net_per_fill_avg": 0.0,
+            "fee_bps_per_fill_avg": 0.0,
+        }
+
+    return {
+        "runtime_count": float(runtime_count),
+        "filtered_cost_ratio_avg": sum(filtered_cost_ratios) / runtime_count,
+        "filtered_cost_ratio_latest": filtered_cost_ratios[-1],
+        "realized_net_per_fill_avg": sum(realized_net_per_fills) / runtime_count,
+        "fee_bps_per_fill_avg": sum(fee_bps_per_fills) / runtime_count,
+    }
+
+
 def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, object]:
     original_text = text
     flat_start_rebased = False
@@ -418,6 +458,7 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
 
     account_pnl = extract_runtime_account_series(text)
     strategy_mix = extract_strategy_mix_series(text)
+    execution_window = extract_execution_window_series(text)
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
     metrics = {
@@ -512,6 +553,11 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             "avg_abs_blended_notional"
         ],
         "strategy_mix_avg_defensive_share": strategy_mix["avg_defensive_share"],
+        "execution_window_runtime_count": int(execution_window["runtime_count"]),
+        "filtered_cost_ratio": execution_window["filtered_cost_ratio_latest"],
+        "filtered_cost_ratio_avg": execution_window["filtered_cost_ratio_avg"],
+        "realized_net_per_fill": execution_window["realized_net_per_fill_avg"],
+        "fee_bps_per_fill": execution_window["fee_bps_per_fill_avg"],
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
     if metrics["runtime_status_count"] > 0:
@@ -654,6 +700,15 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         ):
             warn_reasons.append(
                 "未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛"
+            )
+        if (
+            metrics["execution_window_runtime_count"] > 0
+            and metrics["order_filtered_cost_count"] >= 20
+            and metrics["filtered_cost_ratio_avg"] >= 0.90
+        ):
+            warn_reasons.append(
+                "ORDER_FILTERED_COST 占比较高，建议复核 entry gate 参数: "
+                f"filtered_cost_ratio_avg={metrics['filtered_cost_ratio_avg']:.4f}"
             )
 
         integrator_takeover_mode_count = (
