@@ -674,6 +674,111 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" &&
+        key == "quality_guard_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "quality_guard_min_fills") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_min_fills 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_min_fills = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "quality_guard_bad_streak_to_trigger") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_bad_streak_to_trigger 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_bad_streak_to_trigger = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "quality_guard_good_streak_to_release") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_good_streak_to_release 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_good_streak_to_release = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "quality_guard_min_realized_net_per_fill_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_min_realized_net_per_fill_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_min_realized_net_per_fill_usd = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "quality_guard_max_fee_bps_per_fill") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_max_fee_bps_per_fill 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_max_fee_bps_per_fill = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "quality_guard_required_edge_penalty_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_required_edge_penalty_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_required_edge_penalty_bps = parsed;
+      continue;
+    }
+
     if (current_section == "strategy" &&
         (key == "signal_notional" || key == "signal_notional_usd")) {
       double parsed = 0.0;
@@ -1238,6 +1343,54 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.reconcile.pending_order_stale_ms = parsed;
+      continue;
+    }
+
+    if (current_section == "system" &&
+        current_subsection == "reconcile" &&
+        key == "anomaly_reduce_only_streak") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "system.reconcile.anomaly_reduce_only_streak 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.reconcile.anomaly_reduce_only_streak = parsed;
+      continue;
+    }
+
+    if (current_section == "system" &&
+        current_subsection == "reconcile" &&
+        key == "anomaly_halt_streak") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "system.reconcile.anomaly_halt_streak 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.reconcile.anomaly_halt_streak = parsed;
+      continue;
+    }
+
+    if (current_section == "system" &&
+        current_subsection == "reconcile" &&
+        key == "anomaly_resume_streak") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "system.reconcile.anomaly_resume_streak 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.reconcile.anomaly_resume_streak = parsed;
       continue;
     }
 
@@ -1817,6 +1970,51 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "counterfactual_min_fill_count_for_update") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_min_fill_count_for_update 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_min_fill_count_for_update = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "counterfactual_min_t_stat_samples_for_update") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_min_t_stat_samples_for_update 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_min_t_stat_samples_for_update = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "counterfactual_min_t_stat_abs_for_update") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_min_t_stat_abs_for_update 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_min_t_stat_abs_for_update = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         key == "virtual_cost_bps") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -2325,6 +2523,14 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.reconcile.anomaly_reduce_only_streak < 0 ||
+      config.reconcile.anomaly_halt_streak < 0 ||
+      config.reconcile.anomaly_resume_streak < 0) {
+    if (out_error != nullptr) {
+      *out_error = "system.reconcile.anomaly_* 参数不能为负数";
+    }
+    return false;
+  }
   if (config.gate.min_effective_signals_per_window < 0 ||
       config.gate.min_fills_per_window < 0) {
     if (out_error != nullptr) {
@@ -2557,6 +2763,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.execution_quality_guard_min_fills < 0 ||
+      config.execution_quality_guard_bad_streak_to_trigger < 0 ||
+      config.execution_quality_guard_good_streak_to_release < 0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.quality_guard_* 整数参数不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_quality_guard_max_fee_bps_per_fill < 0.0 ||
+      config.execution_quality_guard_required_edge_penalty_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.quality_guard_* bps 参数不能为负数";
+    }
+    return false;
+  }
   if (config.strategy_signal_notional_usd < 0.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.signal_notional_usd 不能为负数";
@@ -2650,6 +2871,15 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "self_evolution.counterfactual_improvement_decay_per_filtered_signal_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.counterfactual_min_fill_count_for_update < 0 ||
+      config.self_evolution.counterfactual_min_t_stat_samples_for_update < 0 ||
+      config.self_evolution.counterfactual_min_t_stat_abs_for_update < 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.counterfactual_*_for_update 参数不能为负数";
     }
     return false;
   }

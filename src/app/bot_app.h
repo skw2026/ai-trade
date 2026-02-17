@@ -109,6 +109,7 @@ class BotApplication {
                                   double* out_base_required_edge_bps,
                                   double* out_adaptive_relax_bps,
                                   double* out_maker_relax_bps,
+                                  double* out_quality_guard_penalty_bps,
                                   double* out_observed_filtered_ratio) const;
   /// 开仓成本门冷却是否生效（用于避免连续重复无效入场）。
   bool IsCostFilterCooldownActive(const std::string& symbol,
@@ -119,6 +120,13 @@ class BotApplication {
   void OnCostFilterAccepted(const std::string& symbol);
   /// 更新成本门观测比例（全局），供自适应门槛使用。
   void UpdateEntryGateObservedRatio(bool filtered);
+  /// 执行质量守卫：根据窗口成交质量动态启停开仓惩罚。
+  void EvaluateExecutionQualityGuard(std::uint64_t window_fills,
+                                     double window_realized_net_per_fill_usd,
+                                     double window_fee_bps_per_fill);
+  /// 对账异常保护：连续异常触发 reduce-only / halt，自恢复窗口退出。
+  void UpdateReconcileAnomalyProtection(bool anomaly_detected,
+                                        const std::string& reason_code);
 
   // --- 辅助逻辑 ---
 
@@ -223,16 +231,24 @@ class BotApplication {
     double entry_required_edge_bps_sum{0.0};
     double entry_adaptive_relax_bps_sum{0.0};
     double entry_maker_relax_bps_sum{0.0};
+    double entry_quality_guard_penalty_bps_sum{0.0};
     double trend_notional_abs_sum{0.0};
     double defensive_notional_abs_sum{0.0};
     double blended_notional_abs_sum{0.0};
     double fills_notional_abs_usd_sum{0.0};
+    std::uint64_t fills_maker_count{0};
+    std::uint64_t fills_taker_count{0};
+    std::uint64_t fills_unknown_liquidity_count{0};
+    double fills_maker_fee_usd_sum{0.0};
+    double fills_taker_fee_usd_sum{0.0};
+    double fills_maker_notional_abs_usd_sum{0.0};
+    double fills_taker_notional_abs_usd_sum{0.0};
   };
 
   static void AccumulateStats(DecisionFunnelStats* total,
                               const DecisionFunnelStats& delta);
 
-  /// 当前是否存在任一“强制只减仓”来源（保护单失败或 Gate 运行时动作）。
+  /// 当前是否存在任一“强制只减仓”来源（保护单失败、Gate 或对账异常保护）。
   bool IsForceReduceOnlyActive() const;
   /// 将强制只减仓合并态同步到风控引擎。
   void RefreshReduceOnlyMode();
@@ -278,6 +294,8 @@ class BotApplication {
       false};  ///< 保护单关键路径触发的只减仓开关（高优先级，需人工介入恢复）。
   bool gate_forced_reduce_only_{
       false};  ///< Gate 运行时动作触发的只减仓开关（可自动恢复）。
+  bool reconcile_forced_reduce_only_{
+      false};  ///< 对账异常连续触发的只减仓保护（可在健康窗口自动恢复）。
   bool reconcile_halted_{
       false};  ///< 对账确认失败触发的停机开关（权威兜底，不自动恢复）。
   bool gate_halted_{false};  ///< Gate 运行时动作触发的停机开关（可自动恢复）。
@@ -294,6 +312,14 @@ class BotApplication {
   int market_tick_count_{0};       ///< 接收到的行情 tick 计数
   int last_fill_tick_{-1000000};   ///< 最近一次成交处理时的行情 tick（用于对账短暂宽限）
   int last_auto_resync_tick_{-1000000};  ///< 最近一次远端权威重对齐 tick（防抖）。
+  int pending_fills_for_evolution_{0};  ///< 待注入自进化的成交样本计数。
+  int execution_quality_bad_streak_{0};  ///< 执行质量连续劣化窗口计数。
+  int execution_quality_good_streak_{0};  ///< 执行质量连续恢复窗口计数。
+  bool execution_quality_guard_active_{false};  ///< 执行质量守卫是否处于激活态。
+  double execution_quality_required_edge_penalty_bps_{
+      0.0};  ///< 执行质量守卫施加的额外入场边际门槛。
+  int reconcile_anomaly_streak_{0};  ///< 连续对账异常窗口计数。
+  int reconcile_healthy_streak_{0};  ///< 对账连续健康窗口计数。
   int reconcile_tick_{0};          ///< 对账定时器计数
   int reconcile_streak_{0};        ///< 连续对账失败次数
   DecisionFunnelStats funnel_total_;  ///< 进程累计漏斗统计。

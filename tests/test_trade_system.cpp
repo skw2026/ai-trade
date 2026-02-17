@@ -1780,7 +1780,7 @@ int main() {
   }
 
   {
-    // 自进化控制器：当反事实搜索无有效增益时，应回退到 factor-IC 调权。
+    // 自进化控制器：反事实模式下若无有效增益，应直接跳过更新（不回退 factor-IC）。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
     config.update_interval_ticks = 3;
@@ -1847,14 +1847,15 @@ int main() {
         /*mark_price_usd=*/101.101,
         /*signal_symbol=*/"BTCUSDT");
     if (!action.has_value() ||
-        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
-        action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
+        action->type != ai_trade::SelfEvolutionActionType::kSkipped ||
+        action->reason_code !=
+            "EVOLUTION_COUNTERFACTUAL_IMPROVEMENT_TOO_SMALL" ||
         !action->used_counterfactual_search ||
         !action->used_factor_ic_adaptive_weighting ||
         action->factor_ic_samples < 2 ||
         action->trend_factor_ic <= 0.0 ||
-        !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
-      std::cerr << "反事实回退到 factor-IC 调权行为不符合预期\n";
+        !NearlyEqual(action->trend_weight_after, 0.5, 1e-9)) {
+      std::cerr << "反事实严格模式下的跳过行为不符合预期\n";
       return 1;
     }
   }
@@ -2033,6 +2034,9 @@ int main() {
         << "  reconcile:\n"
         << "    mismatch_confirmations: 3\n"
         << "    pending_order_stale_ms: 15000\n"
+        << "    anomaly_reduce_only_streak: 2\n"
+        << "    anomaly_halt_streak: 4\n"
+        << "    anomaly_resume_streak: 3\n"
         << "universe:\n"
         << "  enabled: true\n"
         << "  update_interval_minutes: 30\n"
@@ -2089,6 +2093,13 @@ int main() {
         << "  maker_edge_relax_bps: 0.9\n"
         << "  cost_filter_cooldown_trigger_count: 6\n"
         << "  cost_filter_cooldown_ticks: 120\n"
+        << "  quality_guard_enabled: true\n"
+        << "  quality_guard_min_fills: 10\n"
+        << "  quality_guard_bad_streak_to_trigger: 2\n"
+        << "  quality_guard_good_streak_to_release: 1\n"
+        << "  quality_guard_min_realized_net_per_fill_usd: -0.6\n"
+        << "  quality_guard_max_fee_bps_per_fill: 7.5\n"
+        << "  quality_guard_required_edge_penalty_bps: 1.2\n"
         << "strategy:\n"
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
@@ -2130,6 +2141,9 @@ int main() {
         << "  use_counterfactual_search: true\n"
         << "  counterfactual_min_improvement_usd: 1.2\n"
         << "  counterfactual_improvement_decay_per_filtered_signal_usd: 0.05\n"
+        << "  counterfactual_min_fill_count_for_update: 6\n"
+        << "  counterfactual_min_t_stat_samples_for_update: 160\n"
+        << "  counterfactual_min_t_stat_abs_for_update: 1.1\n"
         << "  virtual_cost_bps: 6.5\n"
         << "  enable_factor_ic_adaptive_weights: true\n"
         << "  factor_ic_min_samples: 180\n"
@@ -2169,6 +2183,16 @@ int main() {
         !NearlyEqual(config.execution_maker_edge_relax_bps, 0.9) ||
         config.execution_cost_filter_cooldown_trigger_count != 6 ||
         config.execution_cost_filter_cooldown_ticks != 120 ||
+        config.execution_quality_guard_enabled != true ||
+        config.execution_quality_guard_min_fills != 10 ||
+        config.execution_quality_guard_bad_streak_to_trigger != 2 ||
+        config.execution_quality_guard_good_streak_to_release != 1 ||
+        !NearlyEqual(
+            config.execution_quality_guard_min_realized_net_per_fill_usd,
+            -0.6) ||
+        !NearlyEqual(config.execution_quality_guard_max_fee_bps_per_fill, 7.5) ||
+        !NearlyEqual(config.execution_quality_guard_required_edge_penalty_bps,
+                     1.2) ||
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
         config.strategy_min_hold_ticks != 4 ||
@@ -2182,6 +2206,9 @@ int main() {
         config.system_remote_risk_refresh_interval_ticks != 7 ||
         config.reconcile.mismatch_confirmations != 3 ||
         config.reconcile.pending_order_stale_ms != 15000 ||
+        config.reconcile.anomaly_reduce_only_streak != 2 ||
+        config.reconcile.anomaly_halt_streak != 4 ||
+        config.reconcile.anomaly_resume_streak != 3 ||
         config.exchange != "mock" ||
         config.mode != "paper" ||
         config.primary_symbol != "ETHUSDT" ||
@@ -2256,6 +2283,12 @@ int main() {
             config.self_evolution
                 .counterfactual_improvement_decay_per_filtered_signal_usd,
             0.05) ||
+        config.self_evolution.counterfactual_min_fill_count_for_update != 6 ||
+        config.self_evolution.counterfactual_min_t_stat_samples_for_update !=
+            160 ||
+        !NearlyEqual(
+            config.self_evolution.counterfactual_min_t_stat_abs_for_update,
+            1.1) ||
         !NearlyEqual(config.self_evolution.virtual_cost_bps, 6.5) ||
         config.self_evolution.enable_factor_ic_adaptive_weights != true ||
         config.self_evolution.factor_ic_min_samples != 180 ||
@@ -2625,6 +2658,28 @@ int main() {
   {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_quality_guard_max_fee.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  quality_guard_max_fee_bps_per_fill: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 execution.quality_guard_max_fee_bps_per_fill 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("quality_guard") == std::string::npos) {
+      std::cerr << "非法 execution.quality_guard_* 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
         "ai_trade_test_invalid_reconcile_confirmations.yaml";
     std::ofstream out(temp_path);
     out << "system:\n"
@@ -2640,6 +2695,29 @@ int main() {
     }
     if (error.find("mismatch_confirmations") == std::string::npos) {
       std::cerr << "非法 reconcile.mismatch_confirmations 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_reconcile_anomaly_streak.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  reconcile:\n"
+        << "    anomaly_reduce_only_streak: -1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 reconcile.anomaly_* 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("anomaly") == std::string::npos) {
+      std::cerr << "非法 reconcile.anomaly_* 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -4638,6 +4716,7 @@ int main() {
     integrator.canary_allow_countertrend = false;
     integrator.shadow.enabled = true;
     integrator.shadow.model_report_path = report_path.string();
+    integrator.shadow.active_meta_path.clear();
     integrator.shadow.score_gain = 1.0;
 
     ai_trade::RegimeConfig regime_config;
@@ -4697,6 +4776,7 @@ int main() {
     integrator.canary_allow_countertrend = false;
     integrator.shadow.enabled = true;
     integrator.shadow.model_report_path = report_path.string();
+    integrator.shadow.active_meta_path.clear();
     // 负增益用于构造“与 base 反向”的模型输出，验证拦截逻辑。
     integrator.shadow.score_gain = -1.0;
 
@@ -4759,6 +4839,7 @@ int main() {
       integrator_low.active_confidence_threshold = 0.60;
       integrator_low.shadow.enabled = true;
       integrator_low.shadow.model_report_path = report_path.string();
+      integrator_low.shadow.active_meta_path.clear();
       integrator_low.shadow.score_gain = 1.0;
 
       ai_trade::TradeSystem system_low(/*risk_cap_usd=*/3000.0,
@@ -4795,6 +4876,7 @@ int main() {
       integrator_high.active_confidence_threshold = 0.20;
       integrator_high.shadow.enabled = true;
       integrator_high.shadow.model_report_path = report_path.string();
+      integrator_high.shadow.active_meta_path.clear();
       integrator_high.shadow.score_gain = 2.0;
 
       ai_trade::TradeSystem system_high(/*risk_cap_usd=*/3000.0,

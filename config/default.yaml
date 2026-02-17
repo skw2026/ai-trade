@@ -12,6 +12,9 @@ system:
     tolerance_notional_usd: 5.0
     mismatch_confirmations: 2
     pending_order_stale_ms: 30000
+    anomaly_reduce_only_streak: 0
+    anomaly_halt_streak: 0
+    anomaly_resume_streak: 3
 
 exchange:
   platform: "bybit"
@@ -58,6 +61,13 @@ execution:
   maker_edge_relax_bps: 0.0
   cost_filter_cooldown_trigger_count: 0
   cost_filter_cooldown_ticks: 0
+  quality_guard_enabled: false
+  quality_guard_min_fills: 12
+  quality_guard_bad_streak_to_trigger: 2
+  quality_guard_good_streak_to_release: 2
+  quality_guard_min_realized_net_per_fill_usd: -0.005
+  quality_guard_max_fee_bps_per_fill: 8.0
+  quality_guard_required_edge_penalty_bps: 1.5
   protection:
     enabled: false
     require_sl: true
@@ -86,6 +96,9 @@ self_evolution:
   use_counterfactual_search: false
   counterfactual_min_improvement_usd: 0.0
   counterfactual_improvement_decay_per_filtered_signal_usd: 0.0
+  counterfactual_min_fill_count_for_update: 0
+  counterfactual_min_t_stat_samples_for_update: 0
+  counterfactual_min_t_stat_abs_for_update: 0.0
   virtual_cost_bps: 0.0
   enable_factor_ic_adaptive_weights: false
   factor_ic_min_samples: 120

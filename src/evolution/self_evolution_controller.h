@@ -40,6 +40,7 @@ struct SelfEvolutionAction {
   double counterfactual_required_improvement_usd{0.0};
   double counterfactual_best_trend_weight{0.0};
   double counterfactual_best_defensive_weight{0.0};
+  int window_fill_count{0};
   int window_cost_filtered_signals{0};
   double trend_factor_ic{0.0};
   double defensive_factor_ic{0.0};
@@ -99,7 +100,8 @@ class SelfEvolutionController {
                                             double defensive_signal_notional_usd = 0.0,
                                             double mark_price_usd = 0.0,
                                             const std::string& signal_symbol = "",
-                                            bool entry_filtered_by_cost = false);
+                                            bool entry_filtered_by_cost = false,
+                                            int fill_count = 0);
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
@@ -188,6 +190,7 @@ class SelfEvolutionController {
   std::array<CorrelationAccumulator, 3> bucket_window_trend_factor_ic_{};
   std::array<CorrelationAccumulator, 3> bucket_window_defensive_factor_ic_{};
   std::array<SampleAccumulator, 3> bucket_window_learnability_stats_{};
+  std::array<int, 3> bucket_window_fill_count_{};
   std::array<int, 3> bucket_window_cost_filtered_signals_{};
   std::array<double, 3> bucket_window_max_drawdown_pct_{};
   std::array<double, 3> bucket_window_notional_churn_usd_{};

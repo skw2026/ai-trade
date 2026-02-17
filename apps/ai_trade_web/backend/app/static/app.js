@@ -62,7 +62,13 @@ const ui = {
   trendPolicyRatio: document.getElementById("trend-policy-ratio"),
   trendEquityPct: document.getElementById("trend-equity-pct"),
   trendCostFiltered: document.getElementById("trend-cost-filtered"),
+  trendMakerFillRatio: document.getElementById("trend-maker-fill-ratio"),
+  trendFeeBpsPerFill: document.getElementById("trend-fee-bps-per-fill"),
+  trendQualityGuardActive: document.getElementById("trend-quality-guard-active"),
   trendReconcileMismatch: document.getElementById("trend-reconcile-mismatch"),
+  trendReconcileAnomalyReduceOnly: document.getElementById(
+    "trend-reconcile-anomaly-ro"
+  ),
   trendDrawdownPct: document.getElementById("trend-drawdown-pct"),
 };
 
@@ -372,7 +378,18 @@ async function loadTrendMetrics() {
         policy_applied_ratio: asNumber(runtimeMetrics.integrator_policy_applied_ratio, 0) * 100,
         equity_change_pct: asNumber(account.equity_change_pct, 0) * 100,
         cost_filtered: asNumber(runtimeMetrics.order_filtered_cost_count, 0),
+        maker_fill_ratio:
+          asNumber(runtimeMetrics.execution_window_maker_fill_ratio_avg, 0) * 100,
+        fee_bps_per_fill: asNumber(runtimeMetrics.fee_bps_per_fill, 0),
+        quality_guard_active: asNumber(
+          runtimeMetrics.execution_quality_guard_active_count,
+          0
+        ),
         reconcile_mismatch: asNumber(runtimeMetrics.reconcile_mismatch_count, 0),
+        reconcile_anomaly_reduce_only: asNumber(
+          runtimeMetrics.reconcile_anomaly_reduce_only_true_count,
+          0
+        ),
         drawdown_pct: asNumber(account.max_drawdown_pct_observed, 0) * 100,
       });
     } catch (_ignored) {
@@ -396,7 +413,13 @@ async function loadTrendMetrics() {
   const policyRatio = points.map((x) => x.policy_applied_ratio);
   const equity = points.map((x) => x.equity_change_pct);
   const costFiltered = points.map((x) => x.cost_filtered);
+  const makerFillRatio = points.map((x) => x.maker_fill_ratio);
+  const feeBpsPerFill = points.map((x) => x.fee_bps_per_fill);
+  const qualityGuardActive = points.map((x) => x.quality_guard_active);
   const reconcileMismatch = points.map((x) => x.reconcile_mismatch);
+  const reconcileAnomalyReduceOnly = points.map(
+    (x) => x.reconcile_anomaly_reduce_only
+  );
   const drawdown = points.map((x) => x.drawdown_pct);
 
   drawLineChart(ui.trendEvolutionActions, evolution, {
@@ -451,9 +474,30 @@ async function loadTrendMetrics() {
     color: "#bc6c25",
     decimals: 2,
   });
+  drawLineChart(ui.trendMakerFillRatio, makerFillRatio, {
+    label: "execution_window_maker_fill_ratio_avg",
+    color: "#005f73",
+    unit: "%",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendFeeBpsPerFill, feeBpsPerFill, {
+    label: "fee_bps_per_fill",
+    color: "#9b2226",
+    decimals: 3,
+  });
+  drawLineChart(ui.trendQualityGuardActive, qualityGuardActive, {
+    label: "execution_quality_guard_active_count",
+    color: "#6c757d",
+    decimals: 2,
+  });
   drawLineChart(ui.trendReconcileMismatch, reconcileMismatch, {
     label: "reconcile_mismatch_count",
     color: "#9c6644",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendReconcileAnomalyReduceOnly, reconcileAnomalyReduceOnly, {
+    label: "reconcile_anomaly_reduce_only_true_count",
+    color: "#8d0801",
     decimals: 2,
   });
   drawLineChart(ui.trendDrawdownPct, drawdown, {

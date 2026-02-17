@@ -24,6 +24,9 @@ struct ReconcileConfig {
   double tolerance_notional_usd{5.0};
   int mismatch_confirmations{2};
   int pending_order_stale_ms{30000};
+  int anomaly_reduce_only_streak{0};
+  int anomaly_halt_streak{0};
+  int anomaly_resume_streak{3};
 };
 
 /// Gate 活跃度门禁：用于检测“有信号但不交易”等异常状态。
@@ -85,6 +88,12 @@ struct SelfEvolutionConfig {
   double counterfactual_min_improvement_usd{0.0};
   // 当窗口内存在大量“被成本门拦截信号”时，降低反事实改进门槛（每个信号衰减值，USD）。
   double counterfactual_improvement_decay_per_filtered_signal_usd{0.0};
+  // 反事实更新最小成交样本门槛（0=关闭）。
+  int counterfactual_min_fill_count_for_update{0};
+  // 反事实更新最小 t-stat 样本门槛（0=关闭）。
+  int counterfactual_min_t_stat_samples_for_update{0};
+  // 反事实更新最小 |t-stat| 门槛（0=关闭）。
+  double counterfactual_min_t_stat_abs_for_update{0.0};
   // 虚拟PnL成本估计（按名义值变化收取，单位 bps）。
   double virtual_cost_bps{0.0};
   // 是否按“在线因子 IC”自适应调整 trend/defensive 权重。
@@ -234,6 +243,13 @@ struct AppConfig {
   double execution_maker_edge_relax_bps{0.0};
   int execution_cost_filter_cooldown_trigger_count{0};
   int execution_cost_filter_cooldown_ticks{0};
+  bool execution_quality_guard_enabled{false};
+  int execution_quality_guard_min_fills{12};
+  int execution_quality_guard_bad_streak_to_trigger{2};
+  int execution_quality_guard_good_streak_to_release{2};
+  double execution_quality_guard_min_realized_net_per_fill_usd{-0.005};
+  double execution_quality_guard_max_fee_bps_per_fill{8.0};
+  double execution_quality_guard_required_edge_penalty_bps{1.5};
   std::string exchange{"mock"};
   std::string data_path{"data"};
   ProtectionConfig protection{};

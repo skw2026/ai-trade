@@ -269,6 +269,14 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "filtered_cost_ratio_avg": None,
             "realized_net_per_fill": None,
             "fee_bps_per_fill": None,
+            "execution_window_maker_fill_ratio_avg": None,
+            "execution_window_maker_fee_bps_avg": None,
+            "execution_window_taker_fee_bps_avg": None,
+            "execution_quality_guard_active_count": 0,
+            "execution_quality_guard_active_ratio": None,
+            "execution_quality_guard_penalty_bps_avg": None,
+            "reconcile_anomaly_reduce_only_true_count": 0,
+            "reconcile_anomaly_reduce_only_true_ratio": None,
             "strategy_mix_runtime_count": 0,
             "strategy_mix_nonzero_window_count": 0,
             "strategy_mix_defensive_active_count": 0,
@@ -323,6 +331,30 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     filtered_cost_ratio_avg = to_float(latest_metrics.get("filtered_cost_ratio_avg"))
     realized_net_per_fill = to_float(latest_metrics.get("realized_net_per_fill"))
     fee_bps_per_fill = to_float(latest_metrics.get("fee_bps_per_fill"))
+    execution_window_maker_fill_ratio_avg = to_float(
+        latest_metrics.get("execution_window_maker_fill_ratio_avg")
+    )
+    execution_window_maker_fee_bps_avg = to_float(
+        latest_metrics.get("execution_window_maker_fee_bps_avg")
+    )
+    execution_window_taker_fee_bps_avg = to_float(
+        latest_metrics.get("execution_window_taker_fee_bps_avg")
+    )
+    execution_quality_guard_active_count = (
+        to_int(latest_metrics.get("execution_quality_guard_active_count")) or 0
+    )
+    execution_quality_guard_active_ratio = to_float(
+        latest_metrics.get("execution_quality_guard_active_ratio")
+    )
+    execution_quality_guard_penalty_bps_avg = to_float(
+        latest_metrics.get("execution_quality_guard_penalty_bps_avg")
+    )
+    reconcile_anomaly_reduce_only_true_count = (
+        to_int(latest_metrics.get("reconcile_anomaly_reduce_only_true_count")) or 0
+    )
+    reconcile_anomaly_reduce_only_true_ratio = to_float(
+        latest_metrics.get("reconcile_anomaly_reduce_only_true_ratio")
+    )
     strategy_mix_runtime_count = (
         to_int(latest_metrics.get("strategy_mix_runtime_count")) or 0
     )
@@ -397,6 +429,14 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "filtered_cost_ratio_avg": filtered_cost_ratio_avg,
         "realized_net_per_fill": realized_net_per_fill,
         "fee_bps_per_fill": fee_bps_per_fill,
+        "execution_window_maker_fill_ratio_avg": execution_window_maker_fill_ratio_avg,
+        "execution_window_maker_fee_bps_avg": execution_window_maker_fee_bps_avg,
+        "execution_window_taker_fee_bps_avg": execution_window_taker_fee_bps_avg,
+        "execution_quality_guard_active_count": execution_quality_guard_active_count,
+        "execution_quality_guard_active_ratio": execution_quality_guard_active_ratio,
+        "execution_quality_guard_penalty_bps_avg": execution_quality_guard_penalty_bps_avg,
+        "reconcile_anomaly_reduce_only_true_count": reconcile_anomaly_reduce_only_true_count,
+        "reconcile_anomaly_reduce_only_true_ratio": reconcile_anomaly_reduce_only_true_ratio,
         "strategy_mix_runtime_count": strategy_mix_runtime_count,
         "strategy_mix_nonzero_window_count": strategy_mix_nonzero_window_count,
         "strategy_mix_defensive_active_count": strategy_mix_defensive_active_count,

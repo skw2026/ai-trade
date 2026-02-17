@@ -118,6 +118,34 @@ RUNTIME_EXECUTION_WINDOW_RE = re.compile(
     r"realized_net_per_fill=(?P<realized_net_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
     r"fee_delta_usd=(?P<fee_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
     r"fee_bps_per_fill=(?P<fee_bps_per_fill>-?[0-9]+(?:\.[0-9]+)?)"
+    r"(?:, maker_fills=(?P<maker_fills>\d+), "
+    r"taker_fills=(?P<taker_fills>\d+), "
+    r"unknown_fills=(?P<unknown_fills>\d+), "
+    r"maker_fee_bps=(?P<maker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
+    r"taker_fee_bps=(?P<taker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
+    r"maker_fill_ratio=(?P<maker_fill_ratio>-?[0-9]+(?:\.[0-9]+)?))?"
+)
+RUNTIME_EXECUTION_QUALITY_GUARD_RE = re.compile(
+    r"RUNTIME_STATUS:.*?execution_quality_guard=\{[^}]*?"
+    r"enabled=(?P<enabled>true|false), "
+    r"active=(?P<active>true|false), "
+    r"bad_streak=(?P<bad_streak>-?[0-9]+), "
+    r"good_streak=(?P<good_streak>-?[0-9]+), "
+    r"min_fills=(?P<min_fills>-?[0-9]+), "
+    r"trigger_streak=(?P<trigger_streak>-?[0-9]+), "
+    r"release_streak=(?P<release_streak>-?[0-9]+), "
+    r"min_realized_net_per_fill_usd=(?P<min_realized_net_per_fill_usd>-?[0-9]+(?:\.[0-9]+)?), "
+    r"max_fee_bps_per_fill=(?P<max_fee_bps_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
+    r"applied_penalty_bps=(?P<applied_penalty_bps>-?[0-9]+(?:\.[0-9]+)?)"
+)
+RUNTIME_RECONCILE_RUNTIME_RE = re.compile(
+    r"RUNTIME_STATUS:.*?reconcile_runtime=\{[^}]*?"
+    r"anomaly_streak=(?P<anomaly_streak>-?[0-9]+), "
+    r"healthy_streak=(?P<healthy_streak>-?[0-9]+), "
+    r"anomaly_reduce_only=(?P<anomaly_reduce_only>true|false), "
+    r"anomaly_reduce_only_threshold=(?P<anomaly_reduce_only_threshold>-?[0-9]+), "
+    r"anomaly_halt_threshold=(?P<anomaly_halt_threshold>-?[0-9]+), "
+    r"anomaly_resume_threshold=(?P<anomaly_resume_threshold>-?[0-9]+)"
 )
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
@@ -402,12 +430,24 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
     filtered_cost_ratios: list[float] = []
     realized_net_per_fills: list[float] = []
     fee_bps_per_fills: list[float] = []
+    maker_fills: list[float] = []
+    taker_fills: list[float] = []
+    unknown_fills: list[float] = []
+    maker_fee_bps_values: list[float] = []
+    taker_fee_bps_values: list[float] = []
+    maker_fill_ratios: list[float] = []
 
     for m in RUNTIME_EXECUTION_WINDOW_RE.finditer(text):
         try:
             filtered_cost_ratios.append(float(m.group("filtered_cost_ratio")))
             realized_net_per_fills.append(float(m.group("realized_net_per_fill")))
             fee_bps_per_fills.append(float(m.group("fee_bps_per_fill")))
+            maker_fills.append(float(m.group("maker_fills") or 0.0))
+            taker_fills.append(float(m.group("taker_fills") or 0.0))
+            unknown_fills.append(float(m.group("unknown_fills") or 0.0))
+            maker_fee_bps_values.append(float(m.group("maker_fee_bps") or 0.0))
+            taker_fee_bps_values.append(float(m.group("taker_fee_bps") or 0.0))
+            maker_fill_ratios.append(float(m.group("maker_fill_ratio") or 0.0))
         except ValueError:
             continue
 
@@ -419,6 +459,12 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
             "filtered_cost_ratio_latest": 0.0,
             "realized_net_per_fill_avg": 0.0,
             "fee_bps_per_fill_avg": 0.0,
+            "maker_fills_avg": 0.0,
+            "taker_fills_avg": 0.0,
+            "unknown_fills_avg": 0.0,
+            "maker_fee_bps_avg": 0.0,
+            "taker_fee_bps_avg": 0.0,
+            "maker_fill_ratio_avg": 0.0,
         }
 
     return {
@@ -427,6 +473,86 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
         "filtered_cost_ratio_latest": filtered_cost_ratios[-1],
         "realized_net_per_fill_avg": sum(realized_net_per_fills) / runtime_count,
         "fee_bps_per_fill_avg": sum(fee_bps_per_fills) / runtime_count,
+        "maker_fills_avg": sum(maker_fills) / runtime_count,
+        "taker_fills_avg": sum(taker_fills) / runtime_count,
+        "unknown_fills_avg": sum(unknown_fills) / runtime_count,
+        "maker_fee_bps_avg": sum(maker_fee_bps_values) / runtime_count,
+        "taker_fee_bps_avg": sum(taker_fee_bps_values) / runtime_count,
+        "maker_fill_ratio_avg": sum(maker_fill_ratios) / runtime_count,
+    }
+
+
+def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
+    active_flags: list[float] = []
+    enabled_flags: list[float] = []
+    applied_penalty_bps: list[float] = []
+    bad_streaks: list[int] = []
+    good_streaks: list[int] = []
+
+    for m in RUNTIME_EXECUTION_QUALITY_GUARD_RE.finditer(text):
+        active_flags.append(1.0 if m.group("active") == "true" else 0.0)
+        enabled_flags.append(1.0 if m.group("enabled") == "true" else 0.0)
+        try:
+            applied_penalty_bps.append(float(m.group("applied_penalty_bps")))
+            bad_streaks.append(int(m.group("bad_streak")))
+            good_streaks.append(int(m.group("good_streak")))
+        except ValueError:
+            continue
+
+    runtime_count = len(active_flags)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "enabled_count": 0.0,
+            "active_count": 0.0,
+            "active_ratio": 0.0,
+            "applied_penalty_bps_avg": 0.0,
+            "bad_streak_max": 0.0,
+            "good_streak_max": 0.0,
+        }
+
+    return {
+        "runtime_count": float(runtime_count),
+        "enabled_count": float(sum(enabled_flags)),
+        "active_count": float(sum(active_flags)),
+        "active_ratio": sum(active_flags) / runtime_count,
+        "applied_penalty_bps_avg": sum(applied_penalty_bps) / runtime_count,
+        "bad_streak_max": float(max(bad_streaks) if bad_streaks else 0),
+        "good_streak_max": float(max(good_streaks) if good_streaks else 0),
+    }
+
+
+def extract_reconcile_runtime_series(text: str) -> Dict[str, float]:
+    anomaly_streaks: list[int] = []
+    reduce_only_flags: list[float] = []
+
+    for m in RUNTIME_RECONCILE_RUNTIME_RE.finditer(text):
+        reduce_only_flags.append(
+            1.0 if m.group("anomaly_reduce_only") == "true" else 0.0
+        )
+        try:
+            anomaly_streaks.append(int(m.group("anomaly_streak")))
+        except ValueError:
+            continue
+
+    runtime_count = len(reduce_only_flags)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "anomaly_streak_nonzero_count": 0.0,
+            "anomaly_streak_max": 0.0,
+            "anomaly_reduce_only_true_count": 0.0,
+            "anomaly_reduce_only_true_ratio": 0.0,
+        }
+
+    anomaly_nonzero_count = sum(1 for x in anomaly_streaks if x > 0)
+    reduce_only_true_count = sum(reduce_only_flags)
+    return {
+        "runtime_count": float(runtime_count),
+        "anomaly_streak_nonzero_count": float(anomaly_nonzero_count),
+        "anomaly_streak_max": float(max(anomaly_streaks) if anomaly_streaks else 0),
+        "anomaly_reduce_only_true_count": float(reduce_only_true_count),
+        "anomaly_reduce_only_true_ratio": reduce_only_true_count / runtime_count,
     }
 
 
@@ -459,6 +585,8 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
     account_pnl = extract_runtime_account_series(text)
     strategy_mix = extract_strategy_mix_series(text)
     execution_window = extract_execution_window_series(text)
+    execution_quality_guard = extract_execution_quality_guard_series(text)
+    reconcile_runtime = extract_reconcile_runtime_series(text)
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
     metrics = {
@@ -479,6 +607,16 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "reconcile_mismatch_count": count(r"OMS_RECONCILE_MISMATCH", text),
         "reconcile_autoresync_count": count(r"OMS_RECONCILE_AUTORESYNC", text),
         "reconcile_deferred_count": count(r"OMS_RECONCILE_DEFERRED", text),
+        "reconcile_anomaly_event_count": count(r"OMS_RECONCILE_ANOMALY_STREAK", text),
+        "reconcile_anomaly_protection_enter_count": count(
+            r"OMS_RECONCILE_ANOMALY_PROTECTION_ENTER", text
+        ),
+        "reconcile_anomaly_protection_exit_count": count(
+            r"OMS_RECONCILE_ANOMALY_PROTECTION_EXIT", text
+        ),
+        "reconcile_anomaly_halt_enter_count": count(
+            r"OMS_RECONCILE_ANOMALY_HALT_ENTER", text
+        ),
         "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
         "self_evolution_init_total_count": global_self_evolution_init_count,
@@ -558,6 +696,52 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "filtered_cost_ratio_avg": execution_window["filtered_cost_ratio_avg"],
         "realized_net_per_fill": execution_window["realized_net_per_fill_avg"],
         "fee_bps_per_fill": execution_window["fee_bps_per_fill_avg"],
+        "execution_window_maker_fills_avg": execution_window["maker_fills_avg"],
+        "execution_window_taker_fills_avg": execution_window["taker_fills_avg"],
+        "execution_window_unknown_fills_avg": execution_window["unknown_fills_avg"],
+        "execution_window_maker_fee_bps_avg": execution_window["maker_fee_bps_avg"],
+        "execution_window_taker_fee_bps_avg": execution_window["taker_fee_bps_avg"],
+        "execution_window_maker_fill_ratio_avg": execution_window[
+            "maker_fill_ratio_avg"
+        ],
+        "execution_quality_guard_runtime_count": int(
+            execution_quality_guard["runtime_count"]
+        ),
+        "execution_quality_guard_enabled_count": int(
+            execution_quality_guard["enabled_count"]
+        ),
+        "execution_quality_guard_active_count": int(
+            execution_quality_guard["active_count"]
+        ),
+        "execution_quality_guard_active_ratio": execution_quality_guard[
+            "active_ratio"
+        ],
+        "execution_quality_guard_penalty_bps_avg": execution_quality_guard[
+            "applied_penalty_bps_avg"
+        ],
+        "execution_quality_guard_bad_streak_max": int(
+            execution_quality_guard["bad_streak_max"]
+        ),
+        "execution_quality_guard_good_streak_max": int(
+            execution_quality_guard["good_streak_max"]
+        ),
+        "execution_quality_guard_enter_count": count(
+            r"EXECUTION_QUALITY_GUARD_ENTER", text
+        ),
+        "execution_quality_guard_exit_count": count(
+            r"EXECUTION_QUALITY_GUARD_EXIT", text
+        ),
+        "reconcile_runtime_count": int(reconcile_runtime["runtime_count"]),
+        "reconcile_anomaly_streak_nonzero_count": int(
+            reconcile_runtime["anomaly_streak_nonzero_count"]
+        ),
+        "reconcile_anomaly_streak_max": int(reconcile_runtime["anomaly_streak_max"]),
+        "reconcile_anomaly_reduce_only_true_count": int(
+            reconcile_runtime["anomaly_reduce_only_true_count"]
+        ),
+        "reconcile_anomaly_reduce_only_true_ratio": reconcile_runtime[
+            "anomaly_reduce_only_true_ratio"
+        ],
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
     if metrics["runtime_status_count"] > 0:
@@ -709,6 +893,27 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             warn_reasons.append(
                 "ORDER_FILTERED_COST 占比较高，建议复核 entry gate 参数: "
                 f"filtered_cost_ratio_avg={metrics['filtered_cost_ratio_avg']:.4f}"
+            )
+        if metrics["execution_quality_guard_active_count"] > 0:
+            warn_reasons.append(
+                "执行质量守卫触发，入场门槛已抬升，建议复核手续费与执行路径: "
+                f"active_count={metrics['execution_quality_guard_active_count']}, "
+                f"penalty_bps_avg={metrics['execution_quality_guard_penalty_bps_avg']:.4f}"
+            )
+        if (
+            metrics["execution_window_runtime_count"] > 0
+            and metrics["execution_window_maker_fill_ratio_avg"] < 0.20
+            and metrics["fee_bps_per_fill"] >= 6.0
+        ):
+            warn_reasons.append(
+                "Maker 成交占比偏低且成交成本偏高，建议优化挂单成交质量: "
+                f"maker_fill_ratio_avg={metrics['execution_window_maker_fill_ratio_avg']:.4f}, "
+                f"fee_bps_per_fill={metrics['fee_bps_per_fill']:.4f}"
+            )
+        if metrics["reconcile_anomaly_reduce_only_true_count"] > 0:
+            warn_reasons.append(
+                "对账异常保护触发 reduce-only，建议核查回报链路与对账口径: "
+                f"reduce_only_true_count={metrics['reconcile_anomaly_reduce_only_true_count']}"
             )
 
         integrator_takeover_mode_count = (

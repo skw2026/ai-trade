@@ -340,6 +340,7 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
     double* out_base_required_edge_bps,
     double* out_adaptive_relax_bps,
     double* out_maker_relax_bps,
+    double* out_quality_guard_penalty_bps,
     double* out_observed_filtered_ratio) const {
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = 0.0;
@@ -355,6 +356,9 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   }
   if (out_maker_relax_bps != nullptr) {
     *out_maker_relax_bps = 0.0;
+  }
+  if (out_quality_guard_penalty_bps != nullptr) {
+    *out_quality_guard_penalty_bps = 0.0;
   }
   if (out_observed_filtered_ratio != nullptr) {
     *out_observed_filtered_ratio = entry_gate_observed_filtered_ratio_;
@@ -394,8 +398,12 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const double maker_relax_bps =
       maker_entry_candidate ? std::max(0.0, config_.execution_maker_edge_relax_bps)
                             : 0.0;
+  const double quality_guard_penalty_bps =
+      std::max(0.0, execution_quality_required_edge_penalty_bps_);
   required_edge_bps = std::max(
-      0.0, required_edge_bps - adaptive_relax_bps - maker_relax_bps);
+      0.0,
+      required_edge_bps - adaptive_relax_bps - maker_relax_bps +
+          quality_guard_penalty_bps);
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = expected_edge_bps;
   }
@@ -410,6 +418,9 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   }
   if (out_maker_relax_bps != nullptr) {
     *out_maker_relax_bps = maker_relax_bps;
+  }
+  if (out_quality_guard_penalty_bps != nullptr) {
+    *out_quality_guard_penalty_bps = quality_guard_penalty_bps;
   }
   if (!config_.execution_enable_fee_aware_entry_gate) {
     return false;
@@ -483,6 +494,115 @@ void BotApplication::UpdateEntryGateObservedRatio(bool filtered) {
   }
 }
 
+void BotApplication::EvaluateExecutionQualityGuard(
+    std::uint64_t window_fills,
+    double window_realized_net_per_fill_usd,
+    double window_fee_bps_per_fill) {
+  if (!config_.execution_quality_guard_enabled) {
+    execution_quality_guard_active_ = false;
+    execution_quality_required_edge_penalty_bps_ = 0.0;
+    execution_quality_bad_streak_ = 0;
+    execution_quality_good_streak_ = 0;
+    return;
+  }
+
+  const std::uint64_t min_fills = static_cast<std::uint64_t>(std::max(
+      0, config_.execution_quality_guard_min_fills));
+  if (window_fills < min_fills || window_fills == 0) {
+    return;
+  }
+
+  const bool bad_quality =
+      window_realized_net_per_fill_usd <
+          config_.execution_quality_guard_min_realized_net_per_fill_usd ||
+      window_fee_bps_per_fill >
+          config_.execution_quality_guard_max_fee_bps_per_fill;
+  if (bad_quality) {
+    ++execution_quality_bad_streak_;
+    execution_quality_good_streak_ = 0;
+    const int trigger_streak =
+        std::max(0, config_.execution_quality_guard_bad_streak_to_trigger);
+    if (!execution_quality_guard_active_ &&
+        (trigger_streak == 0 || execution_quality_bad_streak_ >= trigger_streak)) {
+      execution_quality_guard_active_ = true;
+      execution_quality_required_edge_penalty_bps_ = std::max(
+          0.0, config_.execution_quality_guard_required_edge_penalty_bps);
+      LogInfo("EXECUTION_QUALITY_GUARD_ENTER: bad_streak=" +
+              std::to_string(execution_quality_bad_streak_) +
+              ", min_realized_net_per_fill_usd=" +
+              std::to_string(
+                  config_.execution_quality_guard_min_realized_net_per_fill_usd) +
+              ", max_fee_bps_per_fill=" +
+              std::to_string(config_.execution_quality_guard_max_fee_bps_per_fill) +
+              ", applied_penalty_bps=" +
+              std::to_string(execution_quality_required_edge_penalty_bps_));
+    }
+    return;
+  }
+
+  execution_quality_bad_streak_ = 0;
+  if (!execution_quality_guard_active_) {
+    execution_quality_good_streak_ = 0;
+    execution_quality_required_edge_penalty_bps_ = 0.0;
+    return;
+  }
+  ++execution_quality_good_streak_;
+  const int release_streak =
+      std::max(0, config_.execution_quality_guard_good_streak_to_release);
+  if (release_streak == 0 || execution_quality_good_streak_ >= release_streak) {
+    execution_quality_guard_active_ = false;
+    execution_quality_required_edge_penalty_bps_ = 0.0;
+    execution_quality_good_streak_ = 0;
+    LogInfo("EXECUTION_QUALITY_GUARD_EXIT: release_streak=" +
+            std::to_string(release_streak));
+  }
+}
+
+void BotApplication::UpdateReconcileAnomalyProtection(bool anomaly_detected,
+                                                      const std::string& reason_code) {
+  if (anomaly_detected) {
+    ++reconcile_anomaly_streak_;
+    reconcile_healthy_streak_ = 0;
+    const int reduce_only_threshold =
+        std::max(0, config_.reconcile.anomaly_reduce_only_streak);
+    const int halt_threshold = std::max(0, config_.reconcile.anomaly_halt_streak);
+    if (!reconcile_forced_reduce_only_ && reduce_only_threshold > 0 &&
+        reconcile_anomaly_streak_ >= reduce_only_threshold) {
+      reconcile_forced_reduce_only_ = true;
+      RefreshReduceOnlyMode();
+      LogError("OMS_RECONCILE_ANOMALY_PROTECTION_ENTER: streak=" +
+               std::to_string(reconcile_anomaly_streak_) +
+               ", reason=" + reason_code);
+    }
+    if (!reconcile_halted_ && halt_threshold > 0 &&
+        reconcile_anomaly_streak_ >= halt_threshold) {
+      reconcile_halted_ = true;
+      RefreshTradingHaltState();
+      LogError("OMS_RECONCILE_ANOMALY_HALT_ENTER: streak=" +
+               std::to_string(reconcile_anomaly_streak_) +
+               ", reason=" + reason_code);
+    }
+    LogInfo("OMS_RECONCILE_ANOMALY_STREAK: streak=" +
+            std::to_string(reconcile_anomaly_streak_) +
+            ", reason=" + reason_code +
+            ", reduce_only=" +
+            std::string(reconcile_forced_reduce_only_ ? "true" : "false") +
+            ", halted=" + std::string(reconcile_halted_ ? "true" : "false"));
+    return;
+  }
+
+  reconcile_anomaly_streak_ = 0;
+  ++reconcile_healthy_streak_;
+  const int resume_threshold = std::max(0, config_.reconcile.anomaly_resume_streak);
+  if (reconcile_forced_reduce_only_ && resume_threshold > 0 &&
+      reconcile_healthy_streak_ >= resume_threshold) {
+    reconcile_forced_reduce_only_ = false;
+    RefreshReduceOnlyMode();
+    LogInfo("OMS_RECONCILE_ANOMALY_PROTECTION_EXIT: healthy_streak=" +
+            std::to_string(reconcile_healthy_streak_));
+  }
+}
+
 void BotApplication::AccumulateStats(DecisionFunnelStats* total,
                                      const DecisionFunnelStats& delta) {
   if (total == nullptr) {
@@ -527,14 +647,24 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->entry_required_edge_bps_sum += delta.entry_required_edge_bps_sum;
   total->entry_adaptive_relax_bps_sum += delta.entry_adaptive_relax_bps_sum;
   total->entry_maker_relax_bps_sum += delta.entry_maker_relax_bps_sum;
+  total->entry_quality_guard_penalty_bps_sum +=
+      delta.entry_quality_guard_penalty_bps_sum;
   total->trend_notional_abs_sum += delta.trend_notional_abs_sum;
   total->defensive_notional_abs_sum += delta.defensive_notional_abs_sum;
   total->blended_notional_abs_sum += delta.blended_notional_abs_sum;
   total->fills_notional_abs_usd_sum += delta.fills_notional_abs_usd_sum;
+  total->fills_maker_count += delta.fills_maker_count;
+  total->fills_taker_count += delta.fills_taker_count;
+  total->fills_unknown_liquidity_count += delta.fills_unknown_liquidity_count;
+  total->fills_maker_fee_usd_sum += delta.fills_maker_fee_usd_sum;
+  total->fills_taker_fee_usd_sum += delta.fills_taker_fee_usd_sum;
+  total->fills_maker_notional_abs_usd_sum += delta.fills_maker_notional_abs_usd_sum;
+  total->fills_taker_notional_abs_usd_sum += delta.fills_taker_notional_abs_usd_sum;
 }
 
 bool BotApplication::IsForceReduceOnlyActive() const {
-  return protection_forced_reduce_only_ || gate_forced_reduce_only_;
+  return protection_forced_reduce_only_ || gate_forced_reduce_only_ ||
+         reconcile_forced_reduce_only_;
 }
 
 void BotApplication::RefreshReduceOnlyMode() {
@@ -1014,6 +1144,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     double base_required_edge_bps = 0.0;
     double adaptive_relax_bps = 0.0;
     double maker_relax_bps = 0.0;
+    double quality_guard_penalty_bps = 0.0;
     double observed_filtered_ratio = 0.0;
     const bool filtered = ShouldFilterByFeeAwareGate(
         decision,
@@ -1023,6 +1154,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
         &base_required_edge_bps,
         &adaptive_relax_bps,
         &maker_relax_bps,
+        &quality_guard_penalty_bps,
         &observed_filtered_ratio);
     UpdateEntryGateObservedRatio(filtered);
     ++funnel_window_.entry_edge_samples;
@@ -1031,6 +1163,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     funnel_window_.entry_required_edge_bps_sum += required_edge_bps;
     funnel_window_.entry_adaptive_relax_bps_sum += adaptive_relax_bps;
     funnel_window_.entry_maker_relax_bps_sum += maker_relax_bps;
+    funnel_window_.entry_quality_guard_penalty_bps_sum +=
+        quality_guard_penalty_bps;
     if (filtered) {
       ++funnel_window_.intents_filtered_fee_aware;
       tick_cost_filtered_signal_ = true;
@@ -1042,6 +1176,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               std::to_string(base_required_edge_bps) +
               ", adaptive_relax_bps=" + std::to_string(adaptive_relax_bps) +
               ", maker_relax_bps=" + std::to_string(maker_relax_bps) +
+              ", quality_guard_penalty_bps=" +
+              std::to_string(quality_guard_penalty_bps) +
               ", required_edge_bps=" + std::to_string(required_edge_bps) +
               ", round_trip_cost_bps=" + std::to_string(RoundTripCostBps()) +
               ", min_expected_edge_bps=" +
@@ -1222,9 +1358,22 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   // 记录最近成交 tick，供对账阶段应用短暂宽限窗口。
   last_fill_tick_ = market_tick_count_;
   ++funnel_window_.fills_applied;
+  ++pending_fills_for_evolution_;
   if (std::isfinite(fill.price) && fill.price > 0.0 && std::isfinite(fill.qty)) {
-    funnel_window_.fills_notional_abs_usd_sum +=
-        std::fabs(fill.price * std::fabs(fill.qty));
+    const double fill_notional_abs_usd = std::fabs(fill.price * std::fabs(fill.qty));
+    funnel_window_.fills_notional_abs_usd_sum += fill_notional_abs_usd;
+    constexpr double kFeeSignEpsilon = 1e-12;
+    if (fill.fee < -kFeeSignEpsilon) {
+      ++funnel_window_.fills_maker_count;
+      funnel_window_.fills_maker_fee_usd_sum += fill.fee;
+      funnel_window_.fills_maker_notional_abs_usd_sum += fill_notional_abs_usd;
+    } else if (fill.fee > kFeeSignEpsilon) {
+      ++funnel_window_.fills_taker_count;
+      funnel_window_.fills_taker_fee_usd_sum += fill.fee;
+      funnel_window_.fills_taker_notional_abs_usd_sum += fill_notional_abs_usd;
+    } else {
+      ++funnel_window_.fills_unknown_liquidity_count;
+    }
   }
 
   HandleProtectionOrders(fill);
@@ -1422,6 +1571,7 @@ void BotApplication::RunReconcile() {
     reconcile_streak_ = 0;
     LogInfo("OMS_RECONCILE_DEFERRED: pending_net_orders=" +
             std::to_string(fresh_net_orders));
+    UpdateReconcileAnomalyProtection(false, "RECONCILE_DEFERRED");
     return;
   }
 
@@ -1440,6 +1590,7 @@ void BotApplication::RunReconcile() {
   if (!remote_notional.has_value() && config_.mode != "replay") {
     reconcile_streak_ = 0;
     LogInfo("OMS_RECONCILE_DEGRADED: 远端快照不可用，跳过本轮对账");
+    UpdateReconcileAnomalyProtection(true, "RECONCILE_DEGRADED");
     return;
   }
 
@@ -1451,6 +1602,7 @@ void BotApplication::RunReconcile() {
       LogInfo("OMS_RECONCILE_GRACE: recent_fill_tick=" +
               std::to_string(last_fill_tick_) +
               ", delta_notional=" + std::to_string(result.delta_notional_usd));
+      UpdateReconcileAnomalyProtection(false, "RECONCILE_GRACE");
       return;
     }
 
@@ -1503,6 +1655,7 @@ void BotApplication::RunReconcile() {
                 std::to_string(remote_positions.size()) +
                 ", cooldown_ticks=" +
                 std::to_string(kReconcileAutoResyncCooldownTicks));
+        UpdateReconcileAnomalyProtection(true, "RECONCILE_MISMATCH_AUTORESYNC");
         return;
       }
 
@@ -1512,11 +1665,14 @@ void BotApplication::RunReconcile() {
         RefreshTradingHaltState();
         LogError("CRITICAL: Reconcile mismatch confirmed. Halting trading.");
       }
+      UpdateReconcileAnomalyProtection(true, "RECONCILE_MISMATCH_CONFIRMED");
     } else {
       reconcile_streak_ = 0;
+      UpdateReconcileAnomalyProtection(false, "RECONCILE_OK");
     }
   } else {
     reconcile_streak_ = 0;
+    UpdateReconcileAnomalyProtection(false, "RECONCILE_OK");
   }
 }
 
@@ -1672,7 +1828,9 @@ void BotApplication::RunSelfEvolution() {
                              defensive_signal_notional_usd,
                              mark_price_usd,
                              signal_symbol,
-                             tick_cost_filtered_signal_);
+                             tick_cost_filtered_signal_,
+                             std::max(0, pending_fills_for_evolution_));
+  pending_fills_for_evolution_ = 0;
   if (!action.has_value()) {
     return;
   }
@@ -1725,6 +1883,8 @@ void BotApplication::RunSelfEvolution() {
           ", factor_ic={trend=" + std::to_string(action->trend_factor_ic) +
           ", defensive=" + std::to_string(action->defensive_factor_ic) +
           ", samples=" + std::to_string(action->factor_ic_samples) + "}" +
+          ", window_fill_count=" +
+          std::to_string(action->window_fill_count) +
           ", cost_filtered_signals=" +
           std::to_string(action->window_cost_filtered_signals) +
           ", learnability={enabled=" +
@@ -1826,6 +1986,11 @@ void BotApplication::LogStatus() {
           ? funnel_window.entry_maker_relax_bps_sum /
                 static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
+  const double entry_quality_guard_penalty_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_quality_guard_penalty_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
   const double filtered_cost_ratio =
       funnel_window.entry_edge_samples > 0
           ? static_cast<double>(funnel_window.intents_filtered_fee_aware) /
@@ -1878,6 +2043,27 @@ void BotApplication::LogStatus() {
           ? window_fee_delta_usd / funnel_window.fills_notional_abs_usd_sum *
                 10000.0
           : 0.0;
+  const double window_maker_fee_bps =
+      funnel_window.fills_maker_notional_abs_usd_sum > 1e-9
+          ? funnel_window.fills_maker_fee_usd_sum /
+                funnel_window.fills_maker_notional_abs_usd_sum * 10000.0
+          : 0.0;
+  const double window_taker_fee_bps =
+      funnel_window.fills_taker_notional_abs_usd_sum > 1e-9
+          ? funnel_window.fills_taker_fee_usd_sum /
+                funnel_window.fills_taker_notional_abs_usd_sum * 10000.0
+          : 0.0;
+  const std::uint64_t liquidity_classified_fills =
+      funnel_window.fills_maker_count + funnel_window.fills_taker_count +
+      funnel_window.fills_unknown_liquidity_count;
+  const double window_maker_fill_ratio =
+      liquidity_classified_fills > 0
+          ? static_cast<double>(funnel_window.fills_maker_count) /
+                static_cast<double>(liquidity_classified_fills)
+          : 0.0;
+  EvaluateExecutionQualityGuard(funnel_window.fills_applied,
+                                window_realized_net_per_fill_usd,
+                                window_fee_bps_per_fill);
 
   LogInfo("RUNTIME_STATUS: ticks=" + std::to_string(market_tick_count_) +
           ", trade_ok=" + std::string(trade_ok ? "true" : "false") +
@@ -1932,7 +2118,13 @@ void BotApplication::LogStatus() {
           ", entry_adaptive_relax_avg_bps=" +
           std::to_string(entry_adaptive_relax_avg_bps) +
           ", entry_maker_relax_avg_bps=" +
-          std::to_string(entry_maker_relax_avg_bps) + "}" +
+          std::to_string(entry_maker_relax_avg_bps) +
+          ", entry_quality_guard_penalty_avg_bps=" +
+          std::to_string(entry_quality_guard_penalty_avg_bps) +
+          ", maker_fills=" + std::to_string(funnel_window.fills_maker_count) +
+          ", taker_fills=" + std::to_string(funnel_window.fills_taker_count) +
+          ", unknown_fills=" +
+          std::to_string(funnel_window.fills_unknown_liquidity_count) + "}" +
           ", regime_window={trend_ticks=" +
           std::to_string(funnel_window.regime_trend_ticks) +
           ", range_ticks=" + std::to_string(funnel_window.regime_range_ticks) +
@@ -2050,6 +2242,8 @@ void BotApplication::LogStatus() {
           std::to_string(config_.execution_adaptive_fee_gate_min_samples) +
           ", maker_edge_relax_bps=" +
           std::to_string(config_.execution_maker_edge_relax_bps) +
+          ", quality_guard_penalty_bps=" +
+          std::to_string(execution_quality_required_edge_penalty_bps_) +
           ", observed_filtered_ratio=" +
           std::to_string(entry_gate_observed_filtered_ratio_) +
           ", cooldown_trigger_count=" +
@@ -2066,7 +2260,46 @@ void BotApplication::LogStatus() {
           std::to_string(window_realized_net_per_fill_usd) +
           ", fee_delta_usd=" + std::to_string(window_fee_delta_usd) +
           ", fee_bps_per_fill=" + std::to_string(window_fee_bps_per_fill) +
+          ", maker_fills=" + std::to_string(funnel_window.fills_maker_count) +
+          ", taker_fills=" + std::to_string(funnel_window.fills_taker_count) +
+          ", unknown_fills=" +
+          std::to_string(funnel_window.fills_unknown_liquidity_count) +
+          ", maker_fee_bps=" + std::to_string(window_maker_fee_bps) +
+          ", taker_fee_bps=" + std::to_string(window_taker_fee_bps) +
+          ", maker_fill_ratio=" + std::to_string(window_maker_fill_ratio) +
           "}" +
+          ", execution_quality_guard={enabled=" +
+          std::string(config_.execution_quality_guard_enabled ? "true"
+                                                              : "false") +
+          ", active=" +
+          std::string(execution_quality_guard_active_ ? "true" : "false") +
+          ", bad_streak=" + std::to_string(execution_quality_bad_streak_) +
+          ", good_streak=" + std::to_string(execution_quality_good_streak_) +
+          ", min_fills=" +
+          std::to_string(config_.execution_quality_guard_min_fills) +
+          ", trigger_streak=" +
+          std::to_string(config_.execution_quality_guard_bad_streak_to_trigger) +
+          ", release_streak=" +
+          std::to_string(
+              config_.execution_quality_guard_good_streak_to_release) +
+          ", min_realized_net_per_fill_usd=" +
+          std::to_string(
+              config_.execution_quality_guard_min_realized_net_per_fill_usd) +
+          ", max_fee_bps_per_fill=" +
+          std::to_string(config_.execution_quality_guard_max_fee_bps_per_fill) +
+          ", applied_penalty_bps=" +
+          std::to_string(execution_quality_required_edge_penalty_bps_) + "}" +
+          ", reconcile_runtime={anomaly_streak=" +
+          std::to_string(reconcile_anomaly_streak_) +
+          ", healthy_streak=" + std::to_string(reconcile_healthy_streak_) +
+          ", anomaly_reduce_only=" +
+          std::string(reconcile_forced_reduce_only_ ? "true" : "false") +
+          ", anomaly_reduce_only_threshold=" +
+          std::to_string(config_.reconcile.anomaly_reduce_only_streak) +
+          ", anomaly_halt_threshold=" +
+          std::to_string(config_.reconcile.anomaly_halt_streak) +
+          ", anomaly_resume_threshold=" +
+          std::to_string(config_.reconcile.anomaly_resume_streak) + "}" +
           ", evolution={enabled=" +
           std::string(evolution_enabled ? "true" : "false") +
           ", objective={alpha_pnl=" +

@@ -12,6 +12,9 @@ system:
     tolerance_notional_usd: 8.0
     mismatch_confirmations: 4
     pending_order_stale_ms: 15000
+    anomaly_reduce_only_streak: 3
+    anomaly_halt_streak: 6
+    anomaly_resume_streak: 3
 
 exchange:
   platform: "bybit"
@@ -61,6 +64,13 @@ execution:
   maker_edge_relax_bps: 1.0
   cost_filter_cooldown_trigger_count: 8
   cost_filter_cooldown_ticks: 120
+  quality_guard_enabled: true
+  quality_guard_min_fills: 8
+  quality_guard_bad_streak_to_trigger: 2
+  quality_guard_good_streak_to_release: 2
+  quality_guard_min_realized_net_per_fill_usd: -0.4
+  quality_guard_max_fee_bps_per_fill: 7.8
+  quality_guard_required_edge_penalty_bps: 1.0
   protection:
     enabled: false
     require_sl: true
@@ -108,6 +118,9 @@ self_evolution:
   use_counterfactual_search: true
   counterfactual_min_improvement_usd: 0.25
   counterfactual_improvement_decay_per_filtered_signal_usd: 0.02
+  counterfactual_min_fill_count_for_update: 4
+  counterfactual_min_t_stat_samples_for_update: 120
+  counterfactual_min_t_stat_abs_for_update: 0.8
   virtual_cost_bps: 6.5
   # P2(3+6)：在线因子IC自适应 + 可学习性门控。
   enable_factor_ic_adaptive_weights: true
