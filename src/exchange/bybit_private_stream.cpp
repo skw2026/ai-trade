@@ -43,6 +43,35 @@ std::optional<std::string> JsonStringField(const JsonValue* object,
   return JsonAsString(field);
 }
 
+FillLiquidity ParseFillLiquidity(const JsonValue* object) {
+  if (object == nullptr || object->type != JsonType::kObject) {
+    return FillLiquidity::kUnknown;
+  }
+  const JsonValue* maker_field = JsonObjectField(object, "isMaker");
+  if (maker_field == nullptr) {
+    return FillLiquidity::kUnknown;
+  }
+  if (const auto maker = JsonAsBool(maker_field); maker.has_value()) {
+    return *maker ? FillLiquidity::kMaker : FillLiquidity::kTaker;
+  }
+  if (const auto maker_number = JsonAsNumber(maker_field);
+      maker_number.has_value()) {
+    return *maker_number != 0.0 ? FillLiquidity::kMaker
+                                : FillLiquidity::kTaker;
+  }
+  if (const auto maker_text = JsonAsString(maker_field);
+      maker_text.has_value()) {
+    const std::string normalized = ToUpperCopy(*maker_text);
+    if (normalized == "TRUE" || normalized == "1") {
+      return FillLiquidity::kMaker;
+    }
+    if (normalized == "FALSE" || normalized == "0") {
+      return FillLiquidity::kTaker;
+    }
+  }
+  return FillLiquidity::kUnknown;
+}
+
 std::string EscapeJson(const std::string& raw) {
   std::string out;
   out.reserve(raw.size() + 8);
@@ -367,6 +396,7 @@ bool BybitPrivateStream::ParseExecutionPayload(const JsonValue* data) {
     fill.qty = qty;
     fill.price = price;
     fill.fee = JsonNumberField(item, "execFee").value_or(0.0);
+    fill.liquidity = ParseFillLiquidity(item);
     pending_fills_.push_back(std::move(fill));
   };
 

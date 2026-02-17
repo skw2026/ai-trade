@@ -28,6 +28,8 @@ class WebStaticTest(unittest.TestCase):
         self.assertIn("trend-evolution-learnability-skips", content)
         self.assertIn("trend-flat-start-rebases", content)
         self.assertIn("trend-maker-fill-ratio", content)
+        self.assertIn("trend-unknown-fill-ratio", content)
+        self.assertIn("trend-explicit-liquidity-fill-ratio", content)
         self.assertIn("trend-fee-bps-per-fill", content)
         self.assertIn("trend-quality-guard-active", content)
         self.assertIn("trend-reconcile-anomaly-ro", content)

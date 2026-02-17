@@ -239,6 +239,8 @@ class BotApplication {
     std::uint64_t fills_maker_count{0};
     std::uint64_t fills_taker_count{0};
     std::uint64_t fills_unknown_liquidity_count{0};
+    std::uint64_t fills_explicit_liquidity_count{0};
+    std::uint64_t fills_fee_sign_fallback_count{0};
     double fills_maker_fee_usd_sum{0.0};
     double fills_taker_fee_usd_sum{0.0};
     double fills_maker_notional_abs_usd_sum{0.0};

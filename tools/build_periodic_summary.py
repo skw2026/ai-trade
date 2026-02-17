@@ -272,6 +272,12 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "execution_window_maker_fill_ratio_avg": None,
             "execution_window_maker_fee_bps_avg": None,
             "execution_window_taker_fee_bps_avg": None,
+            "execution_window_unknown_fill_ratio_avg": None,
+            "execution_window_explicit_liquidity_fill_ratio_avg": None,
+            "execution_window_fee_sign_fallback_fill_ratio_avg": None,
+            "execution_window_explicit_liquidity_fills_avg": None,
+            "execution_window_fee_sign_fallback_fills_avg": None,
+            "execution_window_liquidity_source_runtime_count": 0,
             "execution_quality_guard_active_count": 0,
             "execution_quality_guard_active_ratio": None,
             "execution_quality_guard_penalty_bps_avg": None,
@@ -339,6 +345,25 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     execution_window_taker_fee_bps_avg = to_float(
         latest_metrics.get("execution_window_taker_fee_bps_avg")
+    )
+    execution_window_unknown_fill_ratio_avg = to_float(
+        latest_metrics.get("execution_window_unknown_fill_ratio_avg")
+    )
+    execution_window_explicit_liquidity_fill_ratio_avg = to_float(
+        latest_metrics.get("execution_window_explicit_liquidity_fill_ratio_avg")
+    )
+    execution_window_fee_sign_fallback_fill_ratio_avg = to_float(
+        latest_metrics.get("execution_window_fee_sign_fallback_fill_ratio_avg")
+    )
+    execution_window_explicit_liquidity_fills_avg = to_float(
+        latest_metrics.get("execution_window_explicit_liquidity_fills_avg")
+    )
+    execution_window_fee_sign_fallback_fills_avg = to_float(
+        latest_metrics.get("execution_window_fee_sign_fallback_fills_avg")
+    )
+    execution_window_liquidity_source_runtime_count = (
+        to_int(latest_metrics.get("execution_window_liquidity_source_runtime_count"))
+        or 0
     )
     execution_quality_guard_active_count = (
         to_int(latest_metrics.get("execution_quality_guard_active_count")) or 0
@@ -432,6 +457,12 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "execution_window_maker_fill_ratio_avg": execution_window_maker_fill_ratio_avg,
         "execution_window_maker_fee_bps_avg": execution_window_maker_fee_bps_avg,
         "execution_window_taker_fee_bps_avg": execution_window_taker_fee_bps_avg,
+        "execution_window_unknown_fill_ratio_avg": execution_window_unknown_fill_ratio_avg,
+        "execution_window_explicit_liquidity_fill_ratio_avg": execution_window_explicit_liquidity_fill_ratio_avg,
+        "execution_window_fee_sign_fallback_fill_ratio_avg": execution_window_fee_sign_fallback_fill_ratio_avg,
+        "execution_window_explicit_liquidity_fills_avg": execution_window_explicit_liquidity_fills_avg,
+        "execution_window_fee_sign_fallback_fills_avg": execution_window_fee_sign_fallback_fills_avg,
+        "execution_window_liquidity_source_runtime_count": execution_window_liquidity_source_runtime_count,
         "execution_quality_guard_active_count": execution_quality_guard_active_count,
         "execution_quality_guard_active_ratio": execution_quality_guard_active_ratio,
         "execution_quality_guard_penalty_bps_avg": execution_quality_guard_penalty_bps_avg,

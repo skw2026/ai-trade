@@ -89,6 +89,10 @@ STAGE_RULES: Dict[str, StageRule] = {
     ),
 }
 
+MIN_EXPLICIT_LIQUIDITY_FILL_RATIO_WARN = 0.70
+MAX_UNKNOWN_FILL_RATIO_WARN = 0.20
+MAX_FEE_SIGN_FALLBACK_FILL_RATIO_WARN = 0.30
+
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
     r"RUNTIME_STATUS:.*?equity=(?P<equity>-?[0-9]+(?:\.[0-9]+)?), "
@@ -121,6 +125,11 @@ RUNTIME_EXECUTION_WINDOW_RE = re.compile(
     r"(?:, maker_fills=(?P<maker_fills>\d+), "
     r"taker_fills=(?P<taker_fills>\d+), "
     r"unknown_fills=(?P<unknown_fills>\d+), "
+    r"(?:explicit_liquidity_fills=(?P<explicit_liquidity_fills>\d+), "
+    r"fee_sign_fallback_fills=(?P<fee_sign_fallback_fills>\d+), "
+    r"unknown_fill_ratio=(?P<unknown_fill_ratio>-?[0-9]+(?:\.[0-9]+)?), "
+    r"explicit_liquidity_fill_ratio=(?P<explicit_liquidity_fill_ratio>-?[0-9]+(?:\.[0-9]+)?), "
+    r"fee_sign_fallback_fill_ratio=(?P<fee_sign_fallback_fill_ratio>-?[0-9]+(?:\.[0-9]+)?), )?"
     r"maker_fee_bps=(?P<maker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
     r"taker_fee_bps=(?P<taker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
     r"maker_fill_ratio=(?P<maker_fill_ratio>-?[0-9]+(?:\.[0-9]+)?))?"
@@ -433,18 +442,52 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
     maker_fills: list[float] = []
     taker_fills: list[float] = []
     unknown_fills: list[float] = []
+    explicit_liquidity_fills: list[float] = []
+    fee_sign_fallback_fills: list[float] = []
+    unknown_fill_ratios: list[float] = []
+    explicit_liquidity_fill_ratios: list[float] = []
+    fee_sign_fallback_fill_ratios: list[float] = []
     maker_fee_bps_values: list[float] = []
     taker_fee_bps_values: list[float] = []
     maker_fill_ratios: list[float] = []
+    liquidity_source_runtime_count = 0
 
     for m in RUNTIME_EXECUTION_WINDOW_RE.finditer(text):
         try:
             filtered_cost_ratios.append(float(m.group("filtered_cost_ratio")))
             realized_net_per_fills.append(float(m.group("realized_net_per_fill")))
             fee_bps_per_fills.append(float(m.group("fee_bps_per_fill")))
-            maker_fills.append(float(m.group("maker_fills") or 0.0))
-            taker_fills.append(float(m.group("taker_fills") or 0.0))
-            unknown_fills.append(float(m.group("unknown_fills") or 0.0))
+            maker_fill_value = float(m.group("maker_fills") or 0.0)
+            taker_fill_value = float(m.group("taker_fills") or 0.0)
+            unknown_fill_value = float(m.group("unknown_fills") or 0.0)
+            maker_fills.append(maker_fill_value)
+            taker_fills.append(taker_fill_value)
+            unknown_fills.append(unknown_fill_value)
+            explicit_fill_value = float(m.group("explicit_liquidity_fills") or 0.0)
+            fallback_fill_value = float(m.group("fee_sign_fallback_fills") or 0.0)
+            explicit_liquidity_fills.append(explicit_fill_value)
+            fee_sign_fallback_fills.append(fallback_fill_value)
+            if m.group("explicit_liquidity_fills") is not None:
+                liquidity_source_runtime_count += 1
+            total_liquidity_samples = maker_fill_value + taker_fill_value + unknown_fill_value
+            unknown_ratio_value = (
+                float(m.group("unknown_fill_ratio"))
+                if m.group("unknown_fill_ratio") is not None
+                else (unknown_fill_value / total_liquidity_samples if total_liquidity_samples > 0 else 0.0)
+            )
+            explicit_ratio_value = (
+                float(m.group("explicit_liquidity_fill_ratio"))
+                if m.group("explicit_liquidity_fill_ratio") is not None
+                else 0.0
+            )
+            fallback_ratio_value = (
+                float(m.group("fee_sign_fallback_fill_ratio"))
+                if m.group("fee_sign_fallback_fill_ratio") is not None
+                else 0.0
+            )
+            unknown_fill_ratios.append(unknown_ratio_value)
+            explicit_liquidity_fill_ratios.append(explicit_ratio_value)
+            fee_sign_fallback_fill_ratios.append(fallback_ratio_value)
             maker_fee_bps_values.append(float(m.group("maker_fee_bps") or 0.0))
             taker_fee_bps_values.append(float(m.group("taker_fee_bps") or 0.0))
             maker_fill_ratios.append(float(m.group("maker_fill_ratio") or 0.0))
@@ -462,9 +505,15 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
             "maker_fills_avg": 0.0,
             "taker_fills_avg": 0.0,
             "unknown_fills_avg": 0.0,
+            "explicit_liquidity_fills_avg": 0.0,
+            "fee_sign_fallback_fills_avg": 0.0,
+            "unknown_fill_ratio_avg": 0.0,
+            "explicit_liquidity_fill_ratio_avg": 0.0,
+            "fee_sign_fallback_fill_ratio_avg": 0.0,
             "maker_fee_bps_avg": 0.0,
             "taker_fee_bps_avg": 0.0,
             "maker_fill_ratio_avg": 0.0,
+            "liquidity_source_runtime_count": 0.0,
         }
 
     return {
@@ -476,9 +525,15 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
         "maker_fills_avg": sum(maker_fills) / runtime_count,
         "taker_fills_avg": sum(taker_fills) / runtime_count,
         "unknown_fills_avg": sum(unknown_fills) / runtime_count,
+        "explicit_liquidity_fills_avg": sum(explicit_liquidity_fills) / runtime_count,
+        "fee_sign_fallback_fills_avg": sum(fee_sign_fallback_fills) / runtime_count,
+        "unknown_fill_ratio_avg": sum(unknown_fill_ratios) / runtime_count,
+        "explicit_liquidity_fill_ratio_avg": sum(explicit_liquidity_fill_ratios) / runtime_count,
+        "fee_sign_fallback_fill_ratio_avg": sum(fee_sign_fallback_fill_ratios) / runtime_count,
         "maker_fee_bps_avg": sum(maker_fee_bps_values) / runtime_count,
         "taker_fee_bps_avg": sum(taker_fee_bps_values) / runtime_count,
         "maker_fill_ratio_avg": sum(maker_fill_ratios) / runtime_count,
+        "liquidity_source_runtime_count": float(liquidity_source_runtime_count),
     }
 
 
@@ -699,11 +754,29 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "execution_window_maker_fills_avg": execution_window["maker_fills_avg"],
         "execution_window_taker_fills_avg": execution_window["taker_fills_avg"],
         "execution_window_unknown_fills_avg": execution_window["unknown_fills_avg"],
+        "execution_window_explicit_liquidity_fills_avg": execution_window[
+            "explicit_liquidity_fills_avg"
+        ],
+        "execution_window_fee_sign_fallback_fills_avg": execution_window[
+            "fee_sign_fallback_fills_avg"
+        ],
+        "execution_window_unknown_fill_ratio_avg": execution_window[
+            "unknown_fill_ratio_avg"
+        ],
+        "execution_window_explicit_liquidity_fill_ratio_avg": execution_window[
+            "explicit_liquidity_fill_ratio_avg"
+        ],
+        "execution_window_fee_sign_fallback_fill_ratio_avg": execution_window[
+            "fee_sign_fallback_fill_ratio_avg"
+        ],
         "execution_window_maker_fee_bps_avg": execution_window["maker_fee_bps_avg"],
         "execution_window_taker_fee_bps_avg": execution_window["taker_fee_bps_avg"],
         "execution_window_maker_fill_ratio_avg": execution_window[
             "maker_fill_ratio_avg"
         ],
+        "execution_window_liquidity_source_runtime_count": int(
+            execution_window["liquidity_source_runtime_count"]
+        ),
         "execution_quality_guard_runtime_count": int(
             execution_quality_guard["runtime_count"]
         ),
@@ -910,6 +983,50 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
                 f"maker_fill_ratio_avg={metrics['execution_window_maker_fill_ratio_avg']:.4f}, "
                 f"fee_bps_per_fill={metrics['fee_bps_per_fill']:.4f}"
             )
+        liquidity_classified_fills_avg = (
+            metrics["execution_window_maker_fills_avg"]
+            + metrics["execution_window_taker_fills_avg"]
+            + metrics["execution_window_unknown_fills_avg"]
+        )
+        if (
+            metrics["execution_window_runtime_count"] > 0
+            and liquidity_classified_fills_avg >= 1.0
+        ):
+            if metrics["execution_window_liquidity_source_runtime_count"] <= 0:
+                warn_reasons.append(
+                    "成交存在但未观测到流动性来源细分字段，建议升级到最新运行时二进制（explicit/fallback 口径）"
+                )
+            else:
+                if (
+                    metrics["execution_window_explicit_liquidity_fill_ratio_avg"]
+                    < MIN_EXPLICIT_LIQUIDITY_FILL_RATIO_WARN
+                ):
+                    warn_reasons.append(
+                        "显式流动性标签覆盖率偏低，建议排查交易所回报字段/解析链路: "
+                        "execution_window_explicit_liquidity_fill_ratio_avg="
+                        f"{metrics['execution_window_explicit_liquidity_fill_ratio_avg']:.4f}, "
+                        f"threshold={MIN_EXPLICIT_LIQUIDITY_FILL_RATIO_WARN:.4f}"
+                    )
+                if (
+                    metrics["execution_window_unknown_fill_ratio_avg"]
+                    > MAX_UNKNOWN_FILL_RATIO_WARN
+                ):
+                    warn_reasons.append(
+                        "Unknown 流动性成交占比偏高，建议检查成交回报完整性: "
+                        "execution_window_unknown_fill_ratio_avg="
+                        f"{metrics['execution_window_unknown_fill_ratio_avg']:.4f}, "
+                        f"threshold={MAX_UNKNOWN_FILL_RATIO_WARN:.4f}"
+                    )
+                if (
+                    metrics["execution_window_fee_sign_fallback_fill_ratio_avg"]
+                    > MAX_FEE_SIGN_FALLBACK_FILL_RATIO_WARN
+                ):
+                    warn_reasons.append(
+                        "fee 符号兜底占比偏高，建议优先修复显式流动性标签覆盖: "
+                        "execution_window_fee_sign_fallback_fill_ratio_avg="
+                        f"{metrics['execution_window_fee_sign_fallback_fill_ratio_avg']:.4f}, "
+                        f"threshold={MAX_FEE_SIGN_FALLBACK_FILL_RATIO_WARN:.4f}"
+                    )
         if metrics["reconcile_anomaly_reduce_only_true_count"] > 0:
             warn_reasons.append(
                 "对账异常保护触发 reduce-only，建议核查回报链路与对账口径: "

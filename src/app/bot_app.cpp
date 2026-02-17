@@ -656,6 +656,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->fills_maker_count += delta.fills_maker_count;
   total->fills_taker_count += delta.fills_taker_count;
   total->fills_unknown_liquidity_count += delta.fills_unknown_liquidity_count;
+  total->fills_explicit_liquidity_count += delta.fills_explicit_liquidity_count;
+  total->fills_fee_sign_fallback_count += delta.fills_fee_sign_fallback_count;
   total->fills_maker_fee_usd_sum += delta.fills_maker_fee_usd_sum;
   total->fills_taker_fee_usd_sum += delta.fills_taker_fee_usd_sum;
   total->fills_maker_notional_abs_usd_sum += delta.fills_maker_notional_abs_usd_sum;
@@ -1363,11 +1365,30 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
     const double fill_notional_abs_usd = std::fabs(fill.price * std::fabs(fill.qty));
     funnel_window_.fills_notional_abs_usd_sum += fill_notional_abs_usd;
     constexpr double kFeeSignEpsilon = 1e-12;
-    if (fill.fee < -kFeeSignEpsilon) {
+    const bool explicit_liquidity =
+        fill.liquidity == FillLiquidity::kMaker ||
+        fill.liquidity == FillLiquidity::kTaker;
+    const bool fallback_by_fee =
+        fill.liquidity == FillLiquidity::kUnknown &&
+        (fill.fee < -kFeeSignEpsilon || fill.fee > kFeeSignEpsilon);
+    const bool maker_fill =
+        fill.liquidity == FillLiquidity::kMaker ||
+        (fill.liquidity == FillLiquidity::kUnknown &&
+         fill.fee < -kFeeSignEpsilon);
+    const bool taker_fill =
+        fill.liquidity == FillLiquidity::kTaker ||
+        (fill.liquidity == FillLiquidity::kUnknown &&
+         fill.fee > kFeeSignEpsilon);
+    if (explicit_liquidity) {
+      ++funnel_window_.fills_explicit_liquidity_count;
+    } else if (fallback_by_fee) {
+      ++funnel_window_.fills_fee_sign_fallback_count;
+    }
+    if (maker_fill) {
       ++funnel_window_.fills_maker_count;
       funnel_window_.fills_maker_fee_usd_sum += fill.fee;
       funnel_window_.fills_maker_notional_abs_usd_sum += fill_notional_abs_usd;
-    } else if (fill.fee > kFeeSignEpsilon) {
+    } else if (taker_fill) {
       ++funnel_window_.fills_taker_count;
       funnel_window_.fills_taker_fee_usd_sum += fill.fee;
       funnel_window_.fills_taker_notional_abs_usd_sum += fill_notional_abs_usd;
@@ -2061,6 +2082,21 @@ void BotApplication::LogStatus() {
           ? static_cast<double>(funnel_window.fills_maker_count) /
                 static_cast<double>(liquidity_classified_fills)
           : 0.0;
+  const double window_unknown_fill_ratio =
+      liquidity_classified_fills > 0
+          ? static_cast<double>(funnel_window.fills_unknown_liquidity_count) /
+                static_cast<double>(liquidity_classified_fills)
+          : 0.0;
+  const double window_explicit_liquidity_fill_ratio =
+      liquidity_classified_fills > 0
+          ? static_cast<double>(funnel_window.fills_explicit_liquidity_count) /
+                static_cast<double>(liquidity_classified_fills)
+          : 0.0;
+  const double window_fee_sign_fallback_fill_ratio =
+      liquidity_classified_fills > 0
+          ? static_cast<double>(funnel_window.fills_fee_sign_fallback_count) /
+                static_cast<double>(liquidity_classified_fills)
+          : 0.0;
   EvaluateExecutionQualityGuard(funnel_window.fills_applied,
                                 window_realized_net_per_fill_usd,
                                 window_fee_bps_per_fill);
@@ -2124,7 +2160,11 @@ void BotApplication::LogStatus() {
           ", maker_fills=" + std::to_string(funnel_window.fills_maker_count) +
           ", taker_fills=" + std::to_string(funnel_window.fills_taker_count) +
           ", unknown_fills=" +
-          std::to_string(funnel_window.fills_unknown_liquidity_count) + "}" +
+          std::to_string(funnel_window.fills_unknown_liquidity_count) +
+          ", explicit_liquidity_fills=" +
+          std::to_string(funnel_window.fills_explicit_liquidity_count) +
+          ", fee_sign_fallback_fills=" +
+          std::to_string(funnel_window.fills_fee_sign_fallback_count) + "}" +
           ", regime_window={trend_ticks=" +
           std::to_string(funnel_window.regime_trend_ticks) +
           ", range_ticks=" + std::to_string(funnel_window.regime_range_ticks) +
@@ -2264,6 +2304,15 @@ void BotApplication::LogStatus() {
           ", taker_fills=" + std::to_string(funnel_window.fills_taker_count) +
           ", unknown_fills=" +
           std::to_string(funnel_window.fills_unknown_liquidity_count) +
+          ", explicit_liquidity_fills=" +
+          std::to_string(funnel_window.fills_explicit_liquidity_count) +
+          ", fee_sign_fallback_fills=" +
+          std::to_string(funnel_window.fills_fee_sign_fallback_count) +
+          ", unknown_fill_ratio=" + std::to_string(window_unknown_fill_ratio) +
+          ", explicit_liquidity_fill_ratio=" +
+          std::to_string(window_explicit_liquidity_fill_ratio) +
+          ", fee_sign_fallback_fill_ratio=" +
+          std::to_string(window_fee_sign_fallback_fill_ratio) +
           ", maker_fee_bps=" + std::to_string(window_maker_fee_bps) +
           ", taker_fee_bps=" + std::to_string(window_taker_fee_bps) +
           ", maker_fill_ratio=" + std::to_string(window_maker_fill_ratio) +

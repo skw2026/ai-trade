@@ -4,6 +4,7 @@ import importlib.util
 import pathlib
 import sys
 import datetime as dt
+import re
 import unittest
 
 
@@ -45,6 +46,11 @@ class AssessRunLogTest(unittest.TestCase):
         maker_fills: int = 0,
         taker_fills: int = 0,
         unknown_fills: int = 0,
+        explicit_liquidity_fills: int = 0,
+        fee_sign_fallback_fills: int = 0,
+        unknown_fill_ratio: float = 0.0,
+        explicit_liquidity_fill_ratio: float = 0.0,
+        fee_sign_fallback_fill_ratio: float = 0.0,
         maker_fee_bps: float = 0.0,
         taker_fee_bps: float = 0.0,
         maker_fill_ratio: float = 0.0,
@@ -93,6 +99,11 @@ class AssessRunLogTest(unittest.TestCase):
             f"realized_net_per_fill={realized_net_per_fill}, fee_delta_usd=0.0, "
             f"fee_bps_per_fill={fee_bps_per_fill}, maker_fills={maker_fills}, "
             f"taker_fills={taker_fills}, unknown_fills={unknown_fills}, "
+            f"explicit_liquidity_fills={explicit_liquidity_fills}, "
+            f"fee_sign_fallback_fills={fee_sign_fallback_fills}, "
+            f"unknown_fill_ratio={unknown_fill_ratio}, "
+            f"explicit_liquidity_fill_ratio={explicit_liquidity_fill_ratio}, "
+            f"fee_sign_fallback_fill_ratio={fee_sign_fallback_fill_ratio}, "
             f"maker_fee_bps={maker_fee_bps}, taker_fee_bps={taker_fee_bps}, "
             f"maker_fill_ratio={maker_fill_ratio}}}, "
             "execution_quality_guard={enabled=true, "
@@ -184,6 +195,11 @@ class AssessRunLogTest(unittest.TestCase):
                 maker_fills=1,
                 taker_fills=2,
                 unknown_fills=0,
+                explicit_liquidity_fills=3,
+                fee_sign_fallback_fills=0,
+                unknown_fill_ratio=0.0,
+                explicit_liquidity_fill_ratio=1.0,
+                fee_sign_fallback_fill_ratio=0.0,
                 maker_fee_bps=-0.5,
                 taker_fee_bps=9.5,
                 maker_fill_ratio=0.333333,
@@ -197,6 +213,11 @@ class AssessRunLogTest(unittest.TestCase):
                 maker_fills=2,
                 taker_fills=1,
                 unknown_fills=0,
+                explicit_liquidity_fills=2,
+                fee_sign_fallback_fills=1,
+                unknown_fill_ratio=0.0,
+                explicit_liquidity_fill_ratio=2.0 / 3.0,
+                fee_sign_fallback_fill_ratio=1.0 / 3.0,
                 maker_fee_bps=-0.5,
                 taker_fee_bps=8.8,
                 maker_fill_ratio=0.666667,
@@ -218,6 +239,26 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(
             metrics["execution_window_taker_fee_bps_avg"], 9.15, places=6
         )
+        self.assertAlmostEqual(
+            metrics["execution_window_explicit_liquidity_fills_avg"], 2.5, places=6
+        )
+        self.assertAlmostEqual(
+            metrics["execution_window_fee_sign_fallback_fills_avg"], 0.5, places=6
+        )
+        self.assertAlmostEqual(
+            metrics["execution_window_unknown_fill_ratio_avg"], 0.0, places=6
+        )
+        self.assertAlmostEqual(
+            metrics["execution_window_explicit_liquidity_fill_ratio_avg"],
+            (1.0 + (2.0 / 3.0)) / 2.0,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            metrics["execution_window_fee_sign_fallback_fill_ratio_avg"],
+            ((0.0 + (1.0 / 3.0)) / 2.0),
+            places=6,
+        )
+        self.assertEqual(metrics["execution_window_liquidity_source_runtime_count"], 2)
 
     def test_assess_extracts_quality_guard_and_reconcile_metrics(self):
         runtime = (
@@ -255,6 +296,69 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["reconcile_anomaly_streak_nonzero_count"], 1)
         self.assertEqual(metrics["reconcile_anomaly_reduce_only_true_count"], 1)
         self.assertEqual(metrics["reconcile_anomaly_event_count"], 1)
+
+    def test_assess_warn_on_low_explicit_liquidity_ratio(self):
+        runtime = self._runtime_line(
+            20,
+            0.0,
+            maker_fills=1,
+            taker_fills=1,
+            unknown_fills=0,
+            explicit_liquidity_fills=0,
+            fee_sign_fallback_fills=2,
+            unknown_fill_ratio=0.0,
+            explicit_liquidity_fill_ratio=0.0,
+            fee_sign_fallback_fill_ratio=1.0,
+            maker_fee_bps=-0.5,
+            taker_fee_bps=8.5,
+            maker_fill_ratio=0.5,
+        )
+        text = (
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=2, order_intents=2, effective_signals=2, fills=2\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        self.assertEqual(report["verdict"], "PASS_WITH_ACTIONS")
+        self.assertTrue(
+            any("显式流动性标签覆盖率偏低" in x for x in report["warn_reasons"])
+        )
+        self.assertTrue(
+            any("fee 符号兜底占比偏高" in x for x in report["warn_reasons"])
+        )
+
+    def test_assess_warn_on_missing_liquidity_source_fields(self):
+        runtime = self._runtime_line(
+            20,
+            0.0,
+            maker_fills=1,
+            taker_fills=1,
+            unknown_fills=0,
+            explicit_liquidity_fills=2,
+            fee_sign_fallback_fills=0,
+            unknown_fill_ratio=0.0,
+            explicit_liquidity_fill_ratio=1.0,
+            fee_sign_fallback_fill_ratio=0.0,
+            maker_fee_bps=-0.5,
+            taker_fee_bps=8.5,
+            maker_fill_ratio=0.5,
+        )
+        runtime = re.sub(
+            r"explicit_liquidity_fills=\d+, fee_sign_fallback_fills=\d+, "
+            r"unknown_fill_ratio=-?[0-9]+(?:\.[0-9]+)?, "
+            r"explicit_liquidity_fill_ratio=-?[0-9]+(?:\.[0-9]+)?, "
+            r"fee_sign_fallback_fill_ratio=-?[0-9]+(?:\.[0-9]+)?, ",
+            "",
+            runtime,
+        )
+        text = (
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=2, order_intents=2, effective_signals=2, fills=2\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        self.assertEqual(report["verdict"], "PASS_WITH_ACTIONS")
+        self.assertTrue(
+            any("未观测到流动性来源细分字段" in x for x in report["warn_reasons"])
+        )
 
     def test_s5_fail_when_no_gate_pass(self):
         runtime = "".join(

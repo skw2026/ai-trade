@@ -130,6 +130,13 @@ struct OrderIntent {
   double price{0.0};
 };
 
+/// 成交流动性属性：优先使用交易所原始字段，缺失时为未知。
+enum class FillLiquidity {
+  kUnknown,
+  kMaker,
+  kTaker,
+};
+
 /// 成交回报：由交易所返回并驱动 OMS/账户状态更新。
 struct FillEvent {
   std::string fill_id;
@@ -139,6 +146,7 @@ struct FillEvent {
   double qty{0.0};
   double price{0.0};
   double fee{0.0};
+  FillLiquidity liquidity{FillLiquidity::kUnknown};
 };
 
 /// 交易所账户模式快照（用于启动准入与运行时校验）。
@@ -238,6 +246,19 @@ inline const char* ToString(RegimeBucket bucket) {
       return "RANGE";
     case RegimeBucket::kExtreme:
       return "EXTREME";
+  }
+  return "UNKNOWN";
+}
+
+/// FillLiquidity 文本化（用于日志展示）。
+inline const char* ToString(FillLiquidity liquidity) {
+  switch (liquidity) {
+    case FillLiquidity::kUnknown:
+      return "UNKNOWN";
+    case FillLiquidity::kMaker:
+      return "MAKER";
+    case FillLiquidity::kTaker:
+      return "TAKER";
   }
   return "UNKNOWN";
 }

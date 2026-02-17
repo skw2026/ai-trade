@@ -222,6 +222,35 @@ std::int64_t ParseExecTimeMs(const JsonValue* row) {
   return 0;
 }
 
+FillLiquidity ParseFillLiquidity(const JsonValue* row) {
+  if (row == nullptr || row->type != JsonType::kObject) {
+    return FillLiquidity::kUnknown;
+  }
+  const JsonValue* maker_field = JsonObjectField(row, "isMaker");
+  if (maker_field == nullptr) {
+    return FillLiquidity::kUnknown;
+  }
+  if (const auto maker = JsonAsBool(maker_field); maker.has_value()) {
+    return *maker ? FillLiquidity::kMaker : FillLiquidity::kTaker;
+  }
+  if (const auto maker_number = JsonAsNumber(maker_field);
+      maker_number.has_value()) {
+    return *maker_number != 0.0 ? FillLiquidity::kMaker
+                                : FillLiquidity::kTaker;
+  }
+  if (const auto maker_text = JsonAsString(maker_field);
+      maker_text.has_value()) {
+    const std::string normalized = ToUpperCopy(Trim(*maker_text));
+    if (normalized == "TRUE" || normalized == "1") {
+      return FillLiquidity::kMaker;
+    }
+    if (normalized == "FALSE" || normalized == "0") {
+      return FillLiquidity::kTaker;
+    }
+  }
+  return FillLiquidity::kUnknown;
+}
+
 AccountMode ParseAccountMode(const std::string& account_info_body,
                              AccountMode fallback) {
   const std::optional<JsonValue> root = ParseJsonBody(account_info_body);
@@ -1365,6 +1394,7 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
       fill.qty = qty;
       fill.price = price;
       fill.fee = JsonNumberField(&row, "execFee").value_or(0.0);
+      fill.liquidity = ParseFillLiquidity(&row);
       pending_fills_.push_back(std::move(fill));
       if (exec_time_ms > execution_watermark_ms_) {
         execution_watermark_ms_ = exec_time_ms;

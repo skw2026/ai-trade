@@ -3632,7 +3632,7 @@ int main() {
         {ScriptedWsAction::kText, R"({"op":"subscribe","success":true})", ""},
         {ScriptedWsAction::kText, "{", ""},
         {ScriptedWsAction::kText,
-         R"({"topic":"execution","data":[{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01"},{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01"}]})",
+         R"({"topic":"execution","data":[{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01","isMaker":true},{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01","isMaker":true}]})",
          ""},
         {ScriptedWsAction::kClosed, "", "peer closed"},
     };
@@ -3656,7 +3656,8 @@ int main() {
       return 1;
     }
     if (fill.fill_id != "exec-1" || fill.client_order_id != "cid-1" ||
-        fill.direction != 1 || !NearlyEqual(fill.qty, 1.0)) {
+        fill.direction != 1 || !NearlyEqual(fill.qty, 1.0) ||
+        fill.liquidity != ai_trade::FillLiquidity::kMaker) {
       std::cerr << "private ws execution 解析结果不符合预期\n";
       return 1;
     }
@@ -3764,7 +3765,7 @@ int main() {
         "/v5/execution/list",
         ai_trade::BybitHttpResponse{
             .status_code = 200,
-            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"execId":"rest-exec-1","orderLinkId":"cid-rest-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.02"},{"execId":"rest-exec-1","orderLinkId":"cid-rest-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.02"}]}})",
+            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"execId":"rest-exec-1","orderLinkId":"cid-rest-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.02","isMaker":"0"},{"execId":"rest-exec-1","orderLinkId":"cid-rest-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.02","isMaker":"0"}]}})",
             .error = "",
         });
     transport.AddRoute(
@@ -3813,7 +3814,8 @@ int main() {
       return 1;
     }
     if (fill.fill_id != "rest-exec-1" || fill.client_order_id != "cid-rest-1" ||
-        fill.direction != 1 || !NearlyEqual(fill.qty, 1.0)) {
+        fill.direction != 1 || !NearlyEqual(fill.qty, 1.0) ||
+        fill.liquidity != ai_trade::FillLiquidity::kTaker) {
       std::cerr << "private ws 回退 REST 成交解析不符合预期\n";
       return 1;
     }
@@ -3961,7 +3963,7 @@ int main() {
         "/v5/execution/list",
         ai_trade::BybitHttpResponse{
             .status_code = 200,
-            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"execId":"exec-map-1","orderId":"oid-map-1","orderLinkId":"","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01"}]}})",
+            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"execId":"exec-map-1","orderId":"oid-map-1","orderLinkId":"","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01","isMaker":1}]}})",
             .error = "",
         });
 
@@ -4000,7 +4002,8 @@ int main() {
       return 1;
     }
     if (fill.client_order_id != intent.client_order_id ||
-        fill.fill_id != "exec-map-1") {
+        fill.fill_id != "exec-map-1" ||
+        fill.liquidity != ai_trade::FillLiquidity::kMaker) {
       std::cerr << "orderId 映射为 client_order_id 失败\n";
       return 1;
     }

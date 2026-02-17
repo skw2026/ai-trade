@@ -63,6 +63,10 @@ const ui = {
   trendEquityPct: document.getElementById("trend-equity-pct"),
   trendCostFiltered: document.getElementById("trend-cost-filtered"),
   trendMakerFillRatio: document.getElementById("trend-maker-fill-ratio"),
+  trendUnknownFillRatio: document.getElementById("trend-unknown-fill-ratio"),
+  trendExplicitLiquidityFillRatio: document.getElementById(
+    "trend-explicit-liquidity-fill-ratio"
+  ),
   trendFeeBpsPerFill: document.getElementById("trend-fee-bps-per-fill"),
   trendQualityGuardActive: document.getElementById("trend-quality-guard-active"),
   trendReconcileMismatch: document.getElementById("trend-reconcile-mismatch"),
@@ -380,6 +384,13 @@ async function loadTrendMetrics() {
         cost_filtered: asNumber(runtimeMetrics.order_filtered_cost_count, 0),
         maker_fill_ratio:
           asNumber(runtimeMetrics.execution_window_maker_fill_ratio_avg, 0) * 100,
+        unknown_fill_ratio:
+          asNumber(runtimeMetrics.execution_window_unknown_fill_ratio_avg, 0) * 100,
+        explicit_liquidity_fill_ratio:
+          asNumber(
+            runtimeMetrics.execution_window_explicit_liquidity_fill_ratio_avg,
+            0
+          ) * 100,
         fee_bps_per_fill: asNumber(runtimeMetrics.fee_bps_per_fill, 0),
         quality_guard_active: asNumber(
           runtimeMetrics.execution_quality_guard_active_count,
@@ -414,6 +425,10 @@ async function loadTrendMetrics() {
   const equity = points.map((x) => x.equity_change_pct);
   const costFiltered = points.map((x) => x.cost_filtered);
   const makerFillRatio = points.map((x) => x.maker_fill_ratio);
+  const unknownFillRatio = points.map((x) => x.unknown_fill_ratio);
+  const explicitLiquidityFillRatio = points.map(
+    (x) => x.explicit_liquidity_fill_ratio
+  );
   const feeBpsPerFill = points.map((x) => x.fee_bps_per_fill);
   const qualityGuardActive = points.map((x) => x.quality_guard_active);
   const reconcileMismatch = points.map((x) => x.reconcile_mismatch);
@@ -477,6 +492,18 @@ async function loadTrendMetrics() {
   drawLineChart(ui.trendMakerFillRatio, makerFillRatio, {
     label: "execution_window_maker_fill_ratio_avg",
     color: "#005f73",
+    unit: "%",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendUnknownFillRatio, unknownFillRatio, {
+    label: "execution_window_unknown_fill_ratio_avg",
+    color: "#bc6c25",
+    unit: "%",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendExplicitLiquidityFillRatio, explicitLiquidityFillRatio, {
+    label: "execution_window_explicit_liquidity_fill_ratio_avg",
+    color: "#2a9d8f",
     unit: "%",
     decimals: 2,
   });
