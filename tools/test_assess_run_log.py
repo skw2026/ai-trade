@@ -360,6 +360,70 @@ class AssessRunLogTest(unittest.TestCase):
             any("未观测到流动性来源细分字段" in x for x in report["warn_reasons"])
         )
 
+    def test_s5_warn_when_evolution_actions_without_effective_updates(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1 if i == 0 else 0,
+                funnel_fills=1 if i == 1 else 0,
+            )
+            for i in range(60)
+        )
+        actions = "".join(
+            "2026-02-14 15:00:10 [INFO] SELF_EVOLUTION_ACTION: type=skipped, bucket=RANGE, "
+            "reason=EVOLUTION_COUNTERFACTUAL_IMPROVEMENT_TOO_SMALL, counterfactual_search=true, "
+            "learnability={enabled=true, passed=true, t_stat=1.200000, samples=140}\n"
+            for _ in range(35)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=1, effective_signals=10, fills=1\n"
+            "2026-02-14 15:30:01 [INFO] BYBIT_SUBMIT: order_type=Limit, symbol=BTCUSDT\n"
+            + actions
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "PASS_WITH_ACTIONS")
+        self.assertTrue(
+            any("SELF_EVOLUTION 长时间仅评估未更新" in x for x in report["warn_reasons"])
+        )
+
+    def test_s5_no_warn_when_evolution_has_effective_updates(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1 if i == 0 else 0,
+                funnel_fills=1 if i == 1 else 0,
+            )
+            for i in range(60)
+        )
+        update_action = (
+            "2026-02-14 15:00:10 [INFO] SELF_EVOLUTION_ACTION: type=updated, bucket=RANGE, "
+            "reason=EVOLUTION_COUNTERFACTUAL_INCREASE_TREND, counterfactual_search=true, "
+            "learnability={enabled=true, passed=true, t_stat=1.200000, samples=140}\n"
+        )
+        non_update_actions = "".join(
+            "2026-02-14 15:00:10 [INFO] SELF_EVOLUTION_ACTION: type=skipped, bucket=RANGE, "
+            "reason=EVOLUTION_COUNTERFACTUAL_IMPROVEMENT_TOO_SMALL, counterfactual_search=true, "
+            "learnability={enabled=true, passed=true, t_stat=1.200000, samples=140}\n"
+            for _ in range(34)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=1, effective_signals=10, fills=1\n"
+            "2026-02-14 15:30:01 [INFO] BYBIT_SUBMIT: order_type=Limit, symbol=BTCUSDT\n"
+            + update_action
+            + non_update_actions
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertFalse(
+            any("SELF_EVOLUTION 长时间仅评估未更新" in x for x in report["warn_reasons"])
+        )
+
     def test_s5_fail_when_no_gate_pass(self):
         runtime = "".join(
             self._runtime_line(20 + i * 20, 0.0, reduce_only=(i % 2 == 0))

@@ -92,6 +92,8 @@ STAGE_RULES: Dict[str, StageRule] = {
 MIN_EXPLICIT_LIQUIDITY_FILL_RATIO_WARN = 0.70
 MAX_UNKNOWN_FILL_RATIO_WARN = 0.20
 MAX_FEE_SIGN_FALLBACK_FILL_RATIO_WARN = 0.30
+MIN_S5_EVOLUTION_ACTIONS_FOR_UPDATE_WARN = 30
+MIN_S5_LEARNABILITY_PASS_FOR_UPDATE_WARN = 10
 
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -957,6 +959,24 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         ):
             warn_reasons.append(
                 "未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛"
+            )
+        evolution_effective_update_count = (
+            metrics["self_evolution_counterfactual_update_count"]
+            + metrics["self_evolution_factor_ic_action_count"]
+        )
+        if (
+            stage.name == "S5"
+            and metrics["self_evolution_action_count"]
+            >= MIN_S5_EVOLUTION_ACTIONS_FOR_UPDATE_WARN
+            and metrics["self_evolution_learnability_pass_count"]
+            >= MIN_S5_LEARNABILITY_PASS_FOR_UPDATE_WARN
+            and evolution_effective_update_count <= 0
+        ):
+            warn_reasons.append(
+                "SELF_EVOLUTION 长时间仅评估未更新，建议放宽反事实/因子IC更新门槛: "
+                f"action_count={metrics['self_evolution_action_count']}, "
+                f"learnability_pass_count={metrics['self_evolution_learnability_pass_count']}, "
+                f"effective_update_count={evolution_effective_update_count}"
             )
         if (
             metrics["execution_window_runtime_count"] > 0

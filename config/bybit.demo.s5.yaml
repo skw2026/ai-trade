@@ -41,36 +41,36 @@ risk:
     fuse_threshold: 0.20
 
 execution:
-  max_order_notional: 450
+  max_order_notional: 380
   min_rebalance_notional_usd: 80
-  min_order_interval_ms: 3000
-  reverse_signal_cooldown_ticks: 10
+  min_order_interval_ms: 4500
+  reverse_signal_cooldown_ticks: 14
   enable_fee_aware_entry_gate: true
   entry_fee_bps: 5.5
   exit_fee_bps: 5.5
   expected_slippage_bps: 1.0
-  min_expected_edge_bps: 1.0
+  min_expected_edge_bps: 1.2
   # 允许在高费率估计场景下放宽入场边际门槛上限，避免长期“全被成本门挡住”。
   # 加速阶段：降低上限，先恢复成交样本，再用报告回调。
-  required_edge_cap_bps: 5.2
+  required_edge_cap_bps: 5.8
   adaptive_fee_gate_enabled: true
   adaptive_fee_gate_min_samples: 80
   adaptive_fee_gate_trigger_ratio: 0.70
-  adaptive_fee_gate_max_relax_bps: 2.0
+  adaptive_fee_gate_max_relax_bps: 1.2
   maker_entry_enabled: true
-  maker_fallback_to_market: true
-  maker_price_offset_bps: 1.0
+  maker_fallback_to_market: false
+  maker_price_offset_bps: 0.3
   maker_post_only: true
-  maker_edge_relax_bps: 1.0
+  maker_edge_relax_bps: 0.2
   cost_filter_cooldown_trigger_count: 8
   cost_filter_cooldown_ticks: 120
   quality_guard_enabled: true
-  quality_guard_min_fills: 8
+  quality_guard_min_fills: 6
   quality_guard_bad_streak_to_trigger: 2
-  quality_guard_good_streak_to_release: 2
-  quality_guard_min_realized_net_per_fill_usd: -0.4
-  quality_guard_max_fee_bps_per_fill: 7.8
-  quality_guard_required_edge_penalty_bps: 1.0
+  quality_guard_good_streak_to_release: 3
+  quality_guard_min_realized_net_per_fill_usd: -0.01
+  quality_guard_max_fee_bps_per_fill: 0.35
+  quality_guard_required_edge_penalty_bps: 1.8
   protection:
     enabled: false
     require_sl: true
@@ -80,9 +80,9 @@ execution:
     take_profit_ratio: 0.015
 
 strategy:
-  signal_notional_usd: 450
-  signal_deadband_abs: 0.6
-  min_hold_ticks: 4
+  signal_notional_usd: 380
+  signal_deadband_abs: 0.9
+  min_hold_ticks: 6
   defensive_notional_ratio: 0.55
   defensive_entry_score: 1.0
   defensive_trend_scale: 0.25
@@ -109,20 +109,20 @@ self_evolution:
   # 以虚拟PnL学习，避免“零成交=零学习”死锁。
   use_virtual_pnl: true
   use_counterfactual_search: true
-  counterfactual_min_improvement_usd: 0.25
-  counterfactual_improvement_decay_per_filtered_signal_usd: 0.02
-  counterfactual_min_fill_count_for_update: 4
-  counterfactual_min_t_stat_samples_for_update: 120
-  counterfactual_min_t_stat_abs_for_update: 0.8
+  counterfactual_min_improvement_usd: 0.08
+  counterfactual_improvement_decay_per_filtered_signal_usd: 0.04
+  counterfactual_min_fill_count_for_update: 2
+  counterfactual_min_t_stat_samples_for_update: 60
+  counterfactual_min_t_stat_abs_for_update: 0.3
   virtual_cost_bps: 6.5
   # 信号层：基于在线因子IC做权重自适应（与反事实搜索互补观测）。
   enable_factor_ic_adaptive_weights: true
-  factor_ic_min_samples: 120
-  factor_ic_min_abs: 0.01
+  factor_ic_min_samples: 80
+  factor_ic_min_abs: 0.005
   # 元控制层：仅在可学习窗口（|t-stat| 足够）允许更新。
   enable_learnability_gate: true
-  learnability_min_samples: 120
-  learnability_min_t_stat_abs: 1.0
+  learnability_min_samples: 80
+  learnability_min_t_stat_abs: 0.7
   max_single_strategy_weight: 0.55
   max_weight_step: 0.01
   rollback_degrade_windows: 3
