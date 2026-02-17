@@ -115,7 +115,7 @@ const char* OrderStateToString(OrderState state) {
 }
 
 std::string FormatAccountPositions(const AccountState& account) {
-  const auto symbols = account.symbols();
+  const auto symbols = account.GetActiveSymbols();
   if (symbols.empty()) {
     return "flat";
   }
@@ -265,30 +265,7 @@ bool ValidateAccountSnapshot(const AppConfig& config, ExchangeAdapter* adapter) 
 
 BotApplication::BotApplication(const AppConfig& config)
     : config_(config),
-      system_(config.risk_max_abs_notional_usd,
-              config.execution_max_order_notional,
-              config.risk_thresholds,
-              StrategyConfig{
-                  .signal_notional_usd = config.strategy_signal_notional_usd,
-                  .signal_deadband_abs = config.strategy_signal_deadband_abs,
-                  .min_hold_ticks = config.strategy_min_hold_ticks,
-                  .trend_ema_fast = config.trend_ema_fast,
-                  .trend_ema_slow = config.trend_ema_slow,
-                  .vol_target_pct = config.vol_target_pct,
-                  .defensive_notional_ratio =
-                      config.strategy_defensive_notional_ratio,
-                  .defensive_entry_score =
-                      config.strategy_defensive_entry_score,
-                  .defensive_trend_scale =
-                      config.strategy_defensive_trend_scale,
-                  .defensive_range_scale =
-                      config.strategy_defensive_range_scale,
-                  .defensive_extreme_scale =
-                      config.strategy_defensive_extreme_scale,
-              },
-              config.execution_min_rebalance_notional_usd,
-              config.regime,
-              config.integrator),
+      system_(config),
       execution_(config.execution_max_order_notional),
       order_throttle_({
           .min_order_interval_ms = config.execution_min_order_interval_ms,

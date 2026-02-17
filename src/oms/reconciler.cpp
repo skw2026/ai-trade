@@ -81,7 +81,7 @@ std::string Reconciler::BuildSymbolDeltaReport(
       symbols.insert(symbol);
     }
   }
-  for (const auto& symbol : account.symbols()) {
+  for (const auto& symbol : account.GetActiveSymbols()) {
     if (!symbol.empty()) {
       symbols.insert(symbol);
     }

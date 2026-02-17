@@ -123,6 +123,13 @@ struct FillEvent {
   FillLiquidity liquidity{FillLiquidity::kUnknown};
 };
 
+/// Exchange account mode snapshot used for startup/runtime guard checks.
+struct ExchangeAccountSnapshot {
+  AccountMode account_mode{AccountMode::kUnified};
+  MarginMode margin_mode{MarginMode::kIsolated};
+  PositionMode position_mode{PositionMode::kOneWay};
+};
+
 /// Remote State Snapshots
 struct RemotePositionSnapshot {
   std::string symbol{"BTCUSDT"};
@@ -139,6 +146,18 @@ struct RemoteAccountBalanceSnapshot {
   bool has_equity{false};
   bool has_wallet_balance{false};
   bool has_unrealized_pnl{false};
+};
+
+/// Symbol-level trading rule snapshot used by pre-trade checks.
+struct SymbolInfo {
+  std::string symbol{"BTCUSDT"};
+  bool tradable{false};
+  Quantity qty_step{0.0};
+  Quantity min_order_qty{0.0};
+  Money min_notional_usd{0.0};
+  Price price_tick{0.0};
+  int qty_precision{8};
+  int price_precision{8};
 };
 
 struct EvolutionWeights {

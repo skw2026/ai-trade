@@ -37,7 +37,7 @@ double DefensiveBucketScale(const StrategyConfig& config, RegimeBucket bucket) {
 Signal StrategyEngine::OnMarket(const MarketEvent& event,
                                 const AccountState& account,
                                 const RegimeState& regime) {
-  SymbolState& state = symbol_state_[event.symbol];
+  SymbolState& state = symbol_states_[event.symbol];
 
   // 1. 更新特征引擎
   state.feature_engine.OnMarket(event);

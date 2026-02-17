@@ -47,12 +47,38 @@ TradeSystem::TradeSystem(const AppConfig& config)
     : strategy_(config.GetStrategyConfig()),
       regime_(config.regime),
       risk_(config.risk_max_abs_notional_usd, config.risk_thresholds),
-      execution_(config.GetExecutionConfig()),
+      execution_(ExecutionEngineConfig{
+          .max_order_notional_usd = config.execution_max_order_notional,
+          .min_rebalance_notional_usd =
+              config.execution_min_rebalance_notional_usd,
+          .min_order_interval_ms = config.execution_min_order_interval_ms,
+          .reverse_signal_cooldown_ticks =
+              config.execution_reverse_signal_cooldown_ticks,
+      }),
       integrator_shadow_(config.integrator.shadow),
       integrator_config_(config.integrator),
       max_account_gross_notional_usd_(config.risk_max_abs_notional_usd) {
   
   // Initialize default weights
+  evolution_weights_by_bucket_.fill({1.0, 0.0});
+}
+
+TradeSystem::TradeSystem(double risk_cap_usd, double max_order_notional_usd,
+                         RiskThresholds risk_thresholds,
+                         StrategyConfig strategy_config,
+                         double min_rebalance_notional_usd,
+                         RegimeConfig regime_config,
+                         IntegratorConfig integrator_config)
+    : strategy_(strategy_config),
+      regime_(regime_config),
+      risk_(risk_cap_usd, risk_thresholds),
+      execution_(ExecutionEngineConfig{
+          .max_order_notional_usd = max_order_notional_usd,
+          .min_rebalance_notional_usd = min_rebalance_notional_usd,
+      }),
+      integrator_shadow_(integrator_config.shadow),
+      integrator_config_(integrator_config),
+      max_account_gross_notional_usd_(risk_cap_usd) {
   evolution_weights_by_bucket_.fill({1.0, 0.0});
 }
 
@@ -184,6 +210,23 @@ bool TradeSystem::SetEvolutionWeights(double trend_weight,
 
   const EvolutionWeights w{trend_weight, defensive_weight};
   evolution_weights_by_bucket_.fill(w);
+  return true;
+}
+
+bool TradeSystem::SetEvolutionWeightsForBucket(RegimeBucket bucket,
+                                               double trend_weight,
+                                               double defensive_weight,
+                                               std::string* out_error) {
+  if (trend_weight < -kWeightEpsilon || defensive_weight < -kWeightEpsilon) {
+    if (out_error) *out_error = "Weights cannot be negative";
+    return false;
+  }
+  if (std::fabs(trend_weight + defensive_weight - 1.0) > 1e-6) {
+    if (out_error) *out_error = "Weights must sum to 1.0";
+    return false;
+  }
+  evolution_weights_by_bucket_[BucketToIndex(bucket)] = EvolutionWeights{
+      trend_weight, defensive_weight};
   return true;
 }
 

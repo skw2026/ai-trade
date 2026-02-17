@@ -40,6 +40,12 @@ struct MarketDecision {
 class TradeSystem {
  public:
   explicit TradeSystem(const AppConfig& config);
+  TradeSystem(double risk_cap_usd, double max_order_notional_usd,
+              RiskThresholds risk_thresholds = {},
+              StrategyConfig strategy_config = {},
+              double min_rebalance_notional_usd = 0.0,
+              RegimeConfig regime_config = {},
+              IntegratorConfig integrator_config = {});
 
   // --- Main Pipeline ---
 
@@ -78,6 +84,9 @@ class TradeSystem {
   
   bool SetEvolutionWeights(double trend_weight, double defensive_weight,
                            std::string* out_error);
+  bool SetEvolutionWeightsForBucket(RegimeBucket bucket, double trend_weight,
+                                    double defensive_weight,
+                                    std::string* out_error);
                            
   EvolutionWeights GetEvolutionWeights(RegimeBucket bucket) const;
   
@@ -92,6 +101,20 @@ class TradeSystem {
 
   // Accessors
   const AccountState& GetAccount() const { return account_; }
+
+  // Compatibility shims for legacy call sites.
+  const AccountState& account() const { return GetAccount(); }
+  IntegratorMode integrator_mode() const { return GetIntegratorMode(); }
+  RiskMode risk_mode() const { return GetRiskMode(); }
+  EvolutionWeights evolution_weights(RegimeBucket bucket) const {
+    return GetEvolutionWeights(bucket);
+  }
+  std::array<EvolutionWeights, 3> evolution_weights_all() const {
+    return evolution_weights_by_bucket_;
+  }
+  std::string integrator_shadow_model_version() const {
+    return integrator_shadow_.model_version();
+  }
 
  private:
   // Components
