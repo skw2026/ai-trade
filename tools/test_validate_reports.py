@@ -40,6 +40,7 @@ class ValidateReportsTest(unittest.TestCase):
                         "self_evolution_counterfactual_action_count": 0,
                         "self_evolution_counterfactual_update_count": 0,
                         "self_evolution_factor_ic_action_count": 0,
+                        "self_evolution_effective_update_count": 0,
                         "self_evolution_learnability_skip_count": 0,
                     },
                     "fail_reasons": [],
