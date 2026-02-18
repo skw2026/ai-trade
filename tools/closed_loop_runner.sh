@@ -76,6 +76,9 @@ GC_DRY_RUN="false"
 VERIFY_S5_EVOLUTION_SWITCHES="${CLOSED_LOOP_VERIFY_S5_EVOLUTION_SWITCHES:-true}"
 REQUIRE_S5_FACTOR_IC_ACTION="${CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION:-false}"
 REQUIRE_S5_LEARNABILITY_ACTIVITY="${CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY:-false}"
+S5_MIN_EFFECTIVE_UPDATES="${CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES:-1}"
+S5_MIN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD:--0.001}"
+S5_MIN_REALIZED_NET_PER_FILL_WINDOWS="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS:-10}"
 RUNTIME_CONFIG_PATH="${AI_TRADE_CONFIG_PATH:-config/bybit.demo.evolution.yaml}"
 
 usage() {
@@ -134,6 +137,9 @@ Env toggles:
   CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION=true|false    S5 要求 factor-IC 更新动作 >0 (default: false)
   CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY=true|false
                                                        S5 要求 learnability 有 pass/skip 活动 (default: false)
+  CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES=<int>            S5 强门禁：有效学习更新最小次数 (default: 1)
+  CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD=<float>  S5 强门禁：单位成交净收益下限 (default: -0.001)
+  CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS=<int> S5 生效条件：fills>0窗口最小数量 (default: 10)
 EOF
 }
 
@@ -370,19 +376,24 @@ verify_s5_learning_activity() {
   fi
 
   local factor_ic_actions
+  local effective_updates
   local learnability_pass
   local learnability_skip
   factor_ic_actions="$(to_int "$(json_number_value "self_evolution_factor_ic_action_count" "${ASSESS_JSON_PATH}")")"
+  effective_updates="$(to_int "$(json_number_value "self_evolution_effective_update_count" "${ASSESS_JSON_PATH}")")"
   learnability_pass="$(to_int "$(json_number_value "self_evolution_learnability_pass_count" "${ASSESS_JSON_PATH}")")"
   learnability_skip="$(to_int "$(json_number_value "self_evolution_learnability_skip_count" "${ASSESS_JSON_PATH}")")"
   local learnability_total=$((learnability_pass + learnability_skip))
-  echo "[INFO] S5 learning activity: factor_ic_actions=${factor_ic_actions} learnability_pass=${learnability_pass} learnability_skip=${learnability_skip}"
+  echo "[INFO] S5 learning activity: factor_ic_actions=${factor_ic_actions} effective_updates=${effective_updates} learnability_pass=${learnability_pass} learnability_skip=${learnability_skip}"
 
   if (( factor_ic_actions <= 0 )); then
     echo "[WARN] S5 learning activity weak: self_evolution_factor_ic_action_count=0"
   fi
   if (( learnability_total <= 0 )); then
     echo "[WARN] S5 learning activity weak: learnability pass/skip both 0"
+  fi
+  if (( effective_updates < S5_MIN_EFFECTIVE_UPDATES )); then
+    echo "[WARN] S5 learning effective updates below target: effective_updates=${effective_updates}, required=${S5_MIN_EFFECTIVE_UPDATES}"
   fi
 
   if is_true "${REQUIRE_S5_FACTOR_IC_ACTION}" && (( factor_ic_actions <= 0 )); then
@@ -502,6 +513,13 @@ run_assess() {
   )
   if [[ -n "${MIN_RUNTIME_STATUS}" ]]; then
     ASSESS_ARGS+=(--min_runtime_status "${MIN_RUNTIME_STATUS}")
+  fi
+  if [[ "${STAGE}" == "S5" ]]; then
+    ASSESS_ARGS+=(
+      --s5-min-effective-updates "${S5_MIN_EFFECTIVE_UPDATES}"
+      --s5-min-realized-net-per-fill-usd "${S5_MIN_REALIZED_NET_PER_FILL_USD}"
+      --s5-min-realized-net-per-fill-windows "${S5_MIN_REALIZED_NET_PER_FILL_WINDOWS}"
+    )
   fi
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${ASSESS_ARGS[@]}"
   echo "[INFO] runtime assess done"

@@ -384,7 +384,10 @@ class AssessRunLogTest(unittest.TestCase):
             + runtime
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
-        self.assertEqual(report["verdict"], "PASS_WITH_ACTIONS")
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("SELF_EVOLUTION 有评估无有效更新" in x for x in report["fail_reasons"])
+        )
         self.assertTrue(
             any("SELF_EVOLUTION 长时间仅评估未更新" in x for x in report["warn_reasons"])
         )
@@ -422,6 +425,40 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["verdict"], "PASS")
         self.assertFalse(
             any("SELF_EVOLUTION 长时间仅评估未更新" in x for x in report["warn_reasons"])
+        )
+
+    def test_s5_fail_when_realized_net_per_fill_below_threshold(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=-0.02,
+                fee_bps_per_fill=6.0,
+                maker_fills=1,
+                taker_fills=1,
+                unknown_fills=0,
+                explicit_liquidity_fills=2,
+                fee_sign_fallback_fills=0,
+                unknown_fill_ratio=0.0,
+                explicit_liquidity_fill_ratio=1.0,
+                fee_sign_fallback_fill_ratio=0.0,
+                maker_fee_bps=-0.2,
+                taker_fee_bps=6.5,
+                maker_fill_ratio=0.5,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("执行净收益质量未达标" in x for x in report["fail_reasons"])
         )
 
     def test_s5_fail_when_no_gate_pass(self):

@@ -75,6 +75,18 @@ def _validate_runtime_assess(payload: Dict[str, Any], errors: List[str]) -> None
             "runtime_assess.metrics",
             errors,
         )
+        _require_key(
+            metrics_obj,
+            "self_evolution_factor_ic_action_count",
+            "runtime_assess.metrics",
+            errors,
+        )
+        _require_key(
+            metrics_obj,
+            "self_evolution_effective_update_count",
+            "runtime_assess.metrics",
+            errors,
+        )
 
     fail_reasons = _require_key(payload, "fail_reasons", "runtime_assess", errors)
     if fail_reasons is not None and not isinstance(fail_reasons, list):

@@ -779,6 +779,155 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" && key == "dynamic_edge_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_regime_trend_relax_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_regime_trend_relax_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_regime_trend_relax_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_regime_range_penalty_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_regime_range_penalty_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_regime_range_penalty_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_regime_extreme_penalty_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_regime_extreme_penalty_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_regime_extreme_penalty_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_volatility_relax_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_volatility_relax_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_volatility_relax_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_volatility_penalty_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_volatility_penalty_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_volatility_penalty_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_liquidity_maker_ratio_threshold") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_liquidity_maker_ratio_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_liquidity_maker_ratio_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_liquidity_unknown_ratio_threshold") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_liquidity_unknown_ratio_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_liquidity_unknown_ratio_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_liquidity_relax_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_liquidity_relax_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_liquidity_relax_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "dynamic_edge_liquidity_penalty_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.dynamic_edge_liquidity_penalty_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_dynamic_edge_liquidity_penalty_bps = parsed;
+      continue;
+    }
+
     if (current_section == "strategy" &&
         (key == "signal_notional" || key == "signal_notional_usd")) {
       double parsed = 0.0;
@@ -1939,6 +2088,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "counterfactual_fallback_to_factor_ic") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_fallback_to_factor_ic 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_fallback_to_factor_ic = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         key == "counterfactual_min_improvement_usd") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -2775,6 +2939,27 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.execution_quality_guard_required_edge_penalty_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.quality_guard_* bps 参数不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_dynamic_edge_regime_trend_relax_bps < 0.0 ||
+      config.execution_dynamic_edge_regime_range_penalty_bps < 0.0 ||
+      config.execution_dynamic_edge_regime_extreme_penalty_bps < 0.0 ||
+      config.execution_dynamic_edge_volatility_relax_bps < 0.0 ||
+      config.execution_dynamic_edge_volatility_penalty_bps < 0.0 ||
+      config.execution_dynamic_edge_liquidity_relax_bps < 0.0 ||
+      config.execution_dynamic_edge_liquidity_penalty_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.dynamic_edge_* bps 参数不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_dynamic_edge_liquidity_maker_ratio_threshold < 0.0 ||
+      config.execution_dynamic_edge_liquidity_maker_ratio_threshold > 1.0 ||
+      config.execution_dynamic_edge_liquidity_unknown_ratio_threshold < 0.0 ||
+      config.execution_dynamic_edge_liquidity_unknown_ratio_threshold > 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.dynamic_edge_liquidity_*_threshold 必须在 [0,1] 区间";
     }
     return false;
   }

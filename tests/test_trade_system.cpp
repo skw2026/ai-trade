@@ -1780,7 +1780,7 @@ int main() {
   }
 
   {
-    // 自进化控制器：反事实模式下若无有效增益，应直接跳过更新（不回退 factor-IC）。
+    // 自进化控制器：反事实模式下若无有效增益，在禁用 fallback 时应直接跳过更新。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
     config.update_interval_ticks = 3;
@@ -1790,6 +1790,7 @@ int main() {
     config.min_abs_window_pnl_usd = 0.1;
     config.use_virtual_pnl = true;
     config.use_counterfactual_search = true;
+    config.counterfactual_fallback_to_factor_ic = false;
     config.counterfactual_min_improvement_usd = 1000.0;
     config.enable_factor_ic_adaptive_weights = true;
     config.factor_ic_min_samples = 2;
@@ -1856,6 +1857,75 @@ int main() {
         action->trend_factor_ic <= 0.0 ||
         !NearlyEqual(action->trend_weight_after, 0.5, 1e-9)) {
       std::cerr << "反事实严格模式下的跳过行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：反事实无提升时，启用 fallback 可回退到 factor-IC 更新。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.1;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = true;
+    config.counterfactual_fallback_to_factor_ic = true;
+    config.counterfactual_min_improvement_usd = 1000.0;
+    config.enable_factor_ic_adaptive_weights = true;
+    config.factor_ic_min_samples = 2;
+    config.factor_ic_min_abs = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    controller.OnTick(1,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/1000.0,
+                      /*defensive_signal_notional_usd=*/0.0,
+                      /*mark_price_usd=*/100.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    controller.OnTick(2,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/500.0,
+                      /*defensive_signal_notional_usd=*/0.0,
+                      /*mark_price_usd=*/101.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/400.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/101.101,
+        /*signal_symbol=*/"BTCUSDT");
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
+        !action->counterfactual_fallback_to_factor_ic_enabled ||
+        !action->counterfactual_fallback_to_factor_ic_used ||
+        !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
+      std::cerr << "反事实 fallback 到 factor-IC 的更新行为不符合预期\n";
       return 1;
     }
   }
@@ -2100,6 +2170,16 @@ int main() {
         << "  quality_guard_min_realized_net_per_fill_usd: -0.6\n"
         << "  quality_guard_max_fee_bps_per_fill: 7.5\n"
         << "  quality_guard_required_edge_penalty_bps: 1.2\n"
+        << "  dynamic_edge_enabled: true\n"
+        << "  dynamic_edge_regime_trend_relax_bps: 0.7\n"
+        << "  dynamic_edge_regime_range_penalty_bps: 0.4\n"
+        << "  dynamic_edge_regime_extreme_penalty_bps: 1.1\n"
+        << "  dynamic_edge_volatility_relax_bps: 0.8\n"
+        << "  dynamic_edge_volatility_penalty_bps: 1.3\n"
+        << "  dynamic_edge_liquidity_maker_ratio_threshold: 0.6\n"
+        << "  dynamic_edge_liquidity_unknown_ratio_threshold: 0.3\n"
+        << "  dynamic_edge_liquidity_relax_bps: 0.5\n"
+        << "  dynamic_edge_liquidity_penalty_bps: 1.4\n"
         << "strategy:\n"
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
@@ -2139,6 +2219,7 @@ int main() {
         << "  min_bucket_ticks_for_update: 9\n"
         << "  use_virtual_pnl: true\n"
         << "  use_counterfactual_search: true\n"
+        << "  counterfactual_fallback_to_factor_ic: false\n"
         << "  counterfactual_min_improvement_usd: 1.2\n"
         << "  counterfactual_improvement_decay_per_filtered_signal_usd: 0.05\n"
         << "  counterfactual_min_fill_count_for_update: 6\n"
@@ -2193,6 +2274,16 @@ int main() {
         !NearlyEqual(config.execution_quality_guard_max_fee_bps_per_fill, 7.5) ||
         !NearlyEqual(config.execution_quality_guard_required_edge_penalty_bps,
                      1.2) ||
+        config.execution_dynamic_edge_enabled != true ||
+        !NearlyEqual(config.execution_dynamic_edge_regime_trend_relax_bps, 0.7) ||
+        !NearlyEqual(config.execution_dynamic_edge_regime_range_penalty_bps, 0.4) ||
+        !NearlyEqual(config.execution_dynamic_edge_regime_extreme_penalty_bps, 1.1) ||
+        !NearlyEqual(config.execution_dynamic_edge_volatility_relax_bps, 0.8) ||
+        !NearlyEqual(config.execution_dynamic_edge_volatility_penalty_bps, 1.3) ||
+        !NearlyEqual(config.execution_dynamic_edge_liquidity_maker_ratio_threshold, 0.6) ||
+        !NearlyEqual(config.execution_dynamic_edge_liquidity_unknown_ratio_threshold, 0.3) ||
+        !NearlyEqual(config.execution_dynamic_edge_liquidity_relax_bps, 0.5) ||
+        !NearlyEqual(config.execution_dynamic_edge_liquidity_penalty_bps, 1.4) ||
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
         config.strategy_min_hold_ticks != 4 ||
@@ -2277,6 +2368,7 @@ int main() {
         config.self_evolution.min_bucket_ticks_for_update != 9 ||
         config.self_evolution.use_virtual_pnl != true ||
         config.self_evolution.use_counterfactual_search != true ||
+        config.self_evolution.counterfactual_fallback_to_factor_ic != false ||
         !NearlyEqual(config.self_evolution.counterfactual_min_improvement_usd,
                      1.2) ||
         !NearlyEqual(

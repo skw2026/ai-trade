@@ -317,6 +317,9 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
     double* out_base_required_edge_bps,
     double* out_adaptive_relax_bps,
     double* out_maker_relax_bps,
+    double* out_regime_adjust_bps,
+    double* out_volatility_adjust_bps,
+    double* out_liquidity_adjust_bps,
     double* out_quality_guard_penalty_bps,
     double* out_observed_filtered_ratio) const {
   if (out_expected_edge_bps != nullptr) {
@@ -333,6 +336,15 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   }
   if (out_maker_relax_bps != nullptr) {
     *out_maker_relax_bps = 0.0;
+  }
+  if (out_regime_adjust_bps != nullptr) {
+    *out_regime_adjust_bps = 0.0;
+  }
+  if (out_volatility_adjust_bps != nullptr) {
+    *out_volatility_adjust_bps = 0.0;
+  }
+  if (out_liquidity_adjust_bps != nullptr) {
+    *out_liquidity_adjust_bps = 0.0;
   }
   if (out_quality_guard_penalty_bps != nullptr) {
     *out_quality_guard_penalty_bps = 0.0;
@@ -375,11 +387,68 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const double maker_relax_bps =
       maker_entry_candidate ? std::max(0.0, config_.execution_maker_edge_relax_bps)
                             : 0.0;
+  double regime_adjust_bps = 0.0;
+  double volatility_adjust_bps = 0.0;
+  double liquidity_adjust_bps = 0.0;
+  if (config_.execution_dynamic_edge_enabled) {
+    if (decision.regime.bucket == RegimeBucket::kTrend) {
+      regime_adjust_bps =
+          -std::max(0.0, config_.execution_dynamic_edge_regime_trend_relax_bps);
+    } else if (decision.regime.bucket == RegimeBucket::kRange) {
+      regime_adjust_bps =
+          std::max(0.0, config_.execution_dynamic_edge_regime_range_penalty_bps);
+    } else if (decision.regime.bucket == RegimeBucket::kExtreme) {
+      regime_adjust_bps =
+          std::max(0.0, config_.execution_dynamic_edge_regime_extreme_penalty_bps);
+    }
+
+    const double vol_threshold = std::max(1e-9, config_.regime.volatility_threshold);
+    const double vol_ratio =
+        std::clamp(decision.regime.volatility_level / vol_threshold, 0.0, 2.0);
+    if (vol_ratio > 1.0) {
+      volatility_adjust_bps = std::max(
+          0.0, config_.execution_dynamic_edge_volatility_penalty_bps) *
+          (vol_ratio - 1.0);
+    } else if (vol_ratio < 1.0) {
+      volatility_adjust_bps = -std::max(
+          0.0, config_.execution_dynamic_edge_volatility_relax_bps) *
+          (1.0 - vol_ratio);
+    }
+
+    if (recent_execution_window_maker_fill_ratio_ >=
+        config_.execution_dynamic_edge_liquidity_maker_ratio_threshold) {
+      const double maker_den =
+          std::max(1e-9,
+                   1.0 - config_.execution_dynamic_edge_liquidity_maker_ratio_threshold);
+      const double maker_scale = std::clamp(
+          (recent_execution_window_maker_fill_ratio_ -
+           config_.execution_dynamic_edge_liquidity_maker_ratio_threshold) /
+              maker_den,
+          0.0, 1.0);
+      liquidity_adjust_bps -=
+          maker_scale *
+          std::max(0.0, config_.execution_dynamic_edge_liquidity_relax_bps);
+    }
+    if (recent_execution_window_unknown_fill_ratio_ >=
+        config_.execution_dynamic_edge_liquidity_unknown_ratio_threshold) {
+      const double unknown_den = std::max(
+          1e-9, 1.0 - config_.execution_dynamic_edge_liquidity_unknown_ratio_threshold);
+      const double unknown_scale = std::clamp(
+          (recent_execution_window_unknown_fill_ratio_ -
+           config_.execution_dynamic_edge_liquidity_unknown_ratio_threshold) /
+              unknown_den,
+          0.0, 1.0);
+      liquidity_adjust_bps +=
+          unknown_scale *
+          std::max(0.0, config_.execution_dynamic_edge_liquidity_penalty_bps);
+    }
+  }
   const double quality_guard_penalty_bps =
       std::max(0.0, execution_quality_required_edge_penalty_bps_);
   required_edge_bps = std::max(
       0.0,
       required_edge_bps - adaptive_relax_bps - maker_relax_bps +
+          regime_adjust_bps + volatility_adjust_bps + liquidity_adjust_bps +
           quality_guard_penalty_bps);
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = expected_edge_bps;
@@ -395,6 +464,15 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   }
   if (out_maker_relax_bps != nullptr) {
     *out_maker_relax_bps = maker_relax_bps;
+  }
+  if (out_regime_adjust_bps != nullptr) {
+    *out_regime_adjust_bps = regime_adjust_bps;
+  }
+  if (out_volatility_adjust_bps != nullptr) {
+    *out_volatility_adjust_bps = volatility_adjust_bps;
+  }
+  if (out_liquidity_adjust_bps != nullptr) {
+    *out_liquidity_adjust_bps = liquidity_adjust_bps;
   }
   if (out_quality_guard_penalty_bps != nullptr) {
     *out_quality_guard_penalty_bps = quality_guard_penalty_bps;
@@ -624,6 +702,11 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->entry_required_edge_bps_sum += delta.entry_required_edge_bps_sum;
   total->entry_adaptive_relax_bps_sum += delta.entry_adaptive_relax_bps_sum;
   total->entry_maker_relax_bps_sum += delta.entry_maker_relax_bps_sum;
+  total->entry_regime_adjust_bps_sum += delta.entry_regime_adjust_bps_sum;
+  total->entry_volatility_adjust_bps_sum +=
+      delta.entry_volatility_adjust_bps_sum;
+  total->entry_liquidity_adjust_bps_sum +=
+      delta.entry_liquidity_adjust_bps_sum;
   total->entry_quality_guard_penalty_bps_sum +=
       delta.entry_quality_guard_penalty_bps_sum;
   total->trend_notional_abs_sum += delta.trend_notional_abs_sum;
@@ -1123,6 +1206,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     double base_required_edge_bps = 0.0;
     double adaptive_relax_bps = 0.0;
     double maker_relax_bps = 0.0;
+    double regime_adjust_bps = 0.0;
+    double volatility_adjust_bps = 0.0;
+    double liquidity_adjust_bps = 0.0;
     double quality_guard_penalty_bps = 0.0;
     double observed_filtered_ratio = 0.0;
     const bool filtered = ShouldFilterByFeeAwareGate(
@@ -1133,6 +1219,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
         &base_required_edge_bps,
         &adaptive_relax_bps,
         &maker_relax_bps,
+        &regime_adjust_bps,
+        &volatility_adjust_bps,
+        &liquidity_adjust_bps,
         &quality_guard_penalty_bps,
         &observed_filtered_ratio);
     UpdateEntryGateObservedRatio(filtered);
@@ -1142,6 +1231,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     funnel_window_.entry_required_edge_bps_sum += required_edge_bps;
     funnel_window_.entry_adaptive_relax_bps_sum += adaptive_relax_bps;
     funnel_window_.entry_maker_relax_bps_sum += maker_relax_bps;
+    funnel_window_.entry_regime_adjust_bps_sum += regime_adjust_bps;
+    funnel_window_.entry_volatility_adjust_bps_sum += volatility_adjust_bps;
+    funnel_window_.entry_liquidity_adjust_bps_sum += liquidity_adjust_bps;
     funnel_window_.entry_quality_guard_penalty_bps_sum +=
         quality_guard_penalty_bps;
     if (filtered) {
@@ -1155,6 +1247,11 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               std::to_string(base_required_edge_bps) +
               ", adaptive_relax_bps=" + std::to_string(adaptive_relax_bps) +
               ", maker_relax_bps=" + std::to_string(maker_relax_bps) +
+              ", regime_adjust_bps=" + std::to_string(regime_adjust_bps) +
+              ", volatility_adjust_bps=" +
+              std::to_string(volatility_adjust_bps) +
+              ", liquidity_adjust_bps=" +
+              std::to_string(liquidity_adjust_bps) +
               ", quality_guard_penalty_bps=" +
               std::to_string(quality_guard_penalty_bps) +
               ", required_edge_bps=" + std::to_string(required_edge_bps) +
@@ -1872,6 +1969,14 @@ void BotApplication::RunSelfEvolution() {
           std::string(action->used_counterfactual_search ? "true" : "false") +
           ", factor_ic_weighting=" +
           std::string(action->used_factor_ic_adaptive_weighting ? "true" : "false") +
+          ", counterfactual_fallback={enabled=" +
+          std::string(action->counterfactual_fallback_to_factor_ic_enabled
+                          ? "true"
+                          : "false") +
+          ", used=" +
+          std::string(action->counterfactual_fallback_to_factor_ic_used ? "true"
+                                                                         : "false") +
+          "}" +
           ", counterfactual_best_virtual_pnl_usd=" +
           std::to_string(action->counterfactual_best_virtual_pnl_usd) +
           ", counterfactual_best_weight={trend=" +
@@ -1984,6 +2089,21 @@ void BotApplication::LogStatus() {
           ? funnel_window.entry_maker_relax_bps_sum /
                 static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
+  const double entry_regime_adjust_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_regime_adjust_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double entry_volatility_adjust_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_volatility_adjust_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double entry_liquidity_adjust_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_liquidity_adjust_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
   const double entry_quality_guard_penalty_avg_bps =
       funnel_window.entry_edge_samples > 0
           ? funnel_window.entry_quality_guard_penalty_bps_sum /
@@ -2074,6 +2194,8 @@ void BotApplication::LogStatus() {
           ? static_cast<double>(funnel_window.fills_fee_sign_fallback_count) /
                 static_cast<double>(liquidity_classified_fills)
           : 0.0;
+  recent_execution_window_maker_fill_ratio_ = window_maker_fill_ratio;
+  recent_execution_window_unknown_fill_ratio_ = window_unknown_fill_ratio;
   EvaluateExecutionQualityGuard(funnel_window.fills_applied,
                                 window_realized_net_per_fill_usd,
                                 window_fee_bps_per_fill);
@@ -2132,6 +2254,12 @@ void BotApplication::LogStatus() {
           std::to_string(entry_adaptive_relax_avg_bps) +
           ", entry_maker_relax_avg_bps=" +
           std::to_string(entry_maker_relax_avg_bps) +
+          ", entry_regime_adjust_avg_bps=" +
+          std::to_string(entry_regime_adjust_avg_bps) +
+          ", entry_volatility_adjust_avg_bps=" +
+          std::to_string(entry_volatility_adjust_avg_bps) +
+          ", entry_liquidity_adjust_avg_bps=" +
+          std::to_string(entry_liquidity_adjust_avg_bps) +
           ", entry_quality_guard_penalty_avg_bps=" +
           std::to_string(entry_quality_guard_penalty_avg_bps) +
           ", maker_fills=" + std::to_string(funnel_window.fills_maker_count) +

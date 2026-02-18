@@ -94,6 +94,9 @@ MAX_UNKNOWN_FILL_RATIO_WARN = 0.20
 MAX_FEE_SIGN_FALLBACK_FILL_RATIO_WARN = 0.30
 MIN_S5_EVOLUTION_ACTIONS_FOR_UPDATE_WARN = 30
 MIN_S5_LEARNABILITY_PASS_FOR_UPDATE_WARN = 10
+DEFAULT_S5_MIN_EFFECTIVE_UPDATES = 1
+DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_USD = -0.001
+DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS = 10
 
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -149,6 +152,12 @@ RUNTIME_EXECUTION_QUALITY_GUARD_RE = re.compile(
     r"max_fee_bps_per_fill=(?P<max_fee_bps_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
     r"applied_penalty_bps=(?P<applied_penalty_bps>-?[0-9]+(?:\.[0-9]+)?)"
 )
+RUNTIME_ENTRY_EDGE_ADJUST_RE = re.compile(
+    r"RUNTIME_STATUS:.*?funnel_window=\{[^}]*?"
+    r"entry_regime_adjust_avg_bps=(?P<regime_adjust>-?[0-9]+(?:\.[0-9]+)?), "
+    r"entry_volatility_adjust_avg_bps=(?P<volatility_adjust>-?[0-9]+(?:\.[0-9]+)?), "
+    r"entry_liquidity_adjust_avg_bps=(?P<liquidity_adjust>-?[0-9]+(?:\.[0-9]+)?)"
+)
 RUNTIME_RECONCILE_RUNTIME_RE = re.compile(
     r"RUNTIME_STATUS:.*?reconcile_runtime=\{[^}]*?"
     r"anomaly_streak=(?P<anomaly_streak>-?[0-9]+), "
@@ -184,6 +193,27 @@ def parse_args() -> argparse.Namespace:
         "--json_out",
         default="",
         help="可选：将结构化结果输出到 JSON 文件",
+    )
+    parser.add_argument(
+        "--s5-min-effective-updates",
+        type=int,
+        default=DEFAULT_S5_MIN_EFFECTIVE_UPDATES,
+        help=(
+            "S5 硬门槛：有效学习更新最小次数 "
+            "(counterfactual_update + factor_ic_action)"
+        ),
+    )
+    parser.add_argument(
+        "--s5-min-realized-net-per-fill-usd",
+        type=float,
+        default=DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_USD,
+        help="S5 硬门槛：单位成交净收益下限（USD/Fill）",
+    )
+    parser.add_argument(
+        "--s5-min-realized-net-per-fill-windows",
+        type=int,
+        default=DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS,
+        help="S5 生效条件：至少 N 个窗口观测到 fills>0 才检查单位成交净收益门槛",
     )
     return parser.parse_args()
 
@@ -579,6 +609,35 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
     }
 
 
+def extract_entry_edge_adjust_series(text: str) -> Dict[str, float]:
+    regime_adjust_values: list[float] = []
+    volatility_adjust_values: list[float] = []
+    liquidity_adjust_values: list[float] = []
+
+    for m in RUNTIME_ENTRY_EDGE_ADJUST_RE.finditer(text):
+        try:
+            regime_adjust_values.append(float(m.group("regime_adjust")))
+            volatility_adjust_values.append(float(m.group("volatility_adjust")))
+            liquidity_adjust_values.append(float(m.group("liquidity_adjust")))
+        except ValueError:
+            continue
+
+    runtime_count = len(regime_adjust_values)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "regime_adjust_bps_avg": 0.0,
+            "volatility_adjust_bps_avg": 0.0,
+            "liquidity_adjust_bps_avg": 0.0,
+        }
+    return {
+        "runtime_count": float(runtime_count),
+        "regime_adjust_bps_avg": sum(regime_adjust_values) / runtime_count,
+        "volatility_adjust_bps_avg": sum(volatility_adjust_values) / runtime_count,
+        "liquidity_adjust_bps_avg": sum(liquidity_adjust_values) / runtime_count,
+    }
+
+
 def extract_reconcile_runtime_series(text: str) -> Dict[str, float]:
     anomaly_streaks: list[int] = []
     reduce_only_flags: list[float] = []
@@ -613,7 +672,14 @@ def extract_reconcile_runtime_series(text: str) -> Dict[str, float]:
     }
 
 
-def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, object]:
+def assess(
+    text: str,
+    stage: StageRule,
+    min_runtime_status: int,
+    s5_min_effective_updates: int = DEFAULT_S5_MIN_EFFECTIVE_UPDATES,
+    s5_min_realized_net_per_fill_usd: float = DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_USD,
+    s5_min_realized_net_per_fill_windows: int = DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS,
+) -> Dict[str, object]:
     original_text = text
     flat_start_rebased = False
     flat_start_rebase_cutoff_utc = None
@@ -643,6 +709,7 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
     strategy_mix = extract_strategy_mix_series(text)
     execution_window = extract_execution_window_series(text)
     execution_quality_guard = extract_execution_quality_guard_series(text)
+    entry_edge_adjust = extract_entry_edge_adjust_series(text)
     reconcile_runtime = extract_reconcile_runtime_series(text)
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
@@ -690,6 +757,10 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         ),
         "self_evolution_factor_ic_action_count": count(
             r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_FACTOR_IC_(?:INCREASE|DECREASE)_TREND",
+            text,
+        ),
+        "self_evolution_counterfactual_fallback_used_count": count(
+            r"SELF_EVOLUTION_ACTION:.*counterfactual_fallback=\{enabled=true, used=true\}",
             text,
         ),
         "self_evolution_learnability_skip_count": count(
@@ -800,6 +871,14 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         "execution_quality_guard_good_streak_max": int(
             execution_quality_guard["good_streak_max"]
         ),
+        "entry_edge_adjust_runtime_count": int(entry_edge_adjust["runtime_count"]),
+        "entry_regime_adjust_bps_avg": entry_edge_adjust["regime_adjust_bps_avg"],
+        "entry_volatility_adjust_bps_avg": entry_edge_adjust[
+            "volatility_adjust_bps_avg"
+        ],
+        "entry_liquidity_adjust_bps_avg": entry_edge_adjust[
+            "liquidity_adjust_bps_avg"
+        ],
         "execution_quality_guard_enter_count": count(
             r"EXECUTION_QUALITY_GUARD_ENTER", text
         ),
@@ -819,6 +898,10 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
         ],
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
+    metrics["self_evolution_effective_update_count"] = (
+        metrics["self_evolution_counterfactual_update_count"]
+        + metrics["self_evolution_factor_ic_action_count"]
+    )
     if metrics["runtime_status_count"] > 0:
         metrics["trading_halted_true_ratio"] = (
             metrics["trading_halted_true_count"] / metrics["runtime_status_count"]
@@ -927,6 +1010,36 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
                 f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
                 f"threshold={stage.gate_fail_hard_max_fail_ratio:.4f}"
             )
+        if (
+            stage.name == "S5"
+            and metrics["self_evolution_action_count"]
+            >= MIN_S5_EVOLUTION_ACTIONS_FOR_UPDATE_WARN
+            and metrics["self_evolution_learnability_pass_count"]
+            >= MIN_S5_LEARNABILITY_PASS_FOR_UPDATE_WARN
+            and metrics["self_evolution_effective_update_count"]
+            < max(0, s5_min_effective_updates)
+        ):
+            fail_reasons.append(
+                "SELF_EVOLUTION 有评估无有效更新（S5 强门禁）: "
+                f"action_count={metrics['self_evolution_action_count']}, "
+                f"learnability_pass_count={metrics['self_evolution_learnability_pass_count']}, "
+                f"effective_update_count={metrics['self_evolution_effective_update_count']}, "
+                f"required>={max(0, s5_min_effective_updates)}"
+            )
+        if (
+            stage.name == "S5"
+            and metrics["funnel_fills_runtime_count"]
+            >= max(0, s5_min_realized_net_per_fill_windows)
+            and isinstance(metrics["realized_net_per_fill"], (int, float))
+            and metrics["realized_net_per_fill"] < s5_min_realized_net_per_fill_usd
+        ):
+            fail_reasons.append(
+                "执行净收益质量未达标（S5 强门禁）: "
+                f"realized_net_per_fill={metrics['realized_net_per_fill']:.6f}, "
+                f"threshold={s5_min_realized_net_per_fill_usd:.6f}, "
+                f"fill_windows={metrics['funnel_fills_runtime_count']}, "
+                f"required_windows>={max(0, s5_min_realized_net_per_fill_windows)}"
+            )
 
     # 软告警：DEPLOY 仅保留硬失败项，避免上线门禁被策略类黄灯误阻断。
     if stage.name != "DEPLOY":
@@ -960,10 +1073,9 @@ def assess(text: str, stage: StageRule, min_runtime_status: int) -> Dict[str, ob
             warn_reasons.append(
                 "未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛"
             )
-        evolution_effective_update_count = (
-            metrics["self_evolution_counterfactual_update_count"]
-            + metrics["self_evolution_factor_ic_action_count"]
-        )
+        evolution_effective_update_count = metrics[
+            "self_evolution_effective_update_count"
+        ]
         if (
             stage.name == "S5"
             and metrics["self_evolution_action_count"]
@@ -1172,9 +1284,25 @@ def main() -> int:
     if min_runtime_status < 0:
         print("[ERROR] --min_runtime_status 必须大于等于 0", file=sys.stderr)
         return 2
+    if args.s5_min_effective_updates < 0:
+        print("[ERROR] --s5-min-effective-updates 必须大于等于 0", file=sys.stderr)
+        return 2
+    if args.s5_min_realized_net_per_fill_windows < 0:
+        print(
+            "[ERROR] --s5-min-realized-net-per-fill-windows 必须大于等于 0",
+            file=sys.stderr,
+        )
+        return 2
 
     text = load_text(log_path)
-    report = assess(text, stage, min_runtime_status)
+    report = assess(
+        text,
+        stage,
+        min_runtime_status,
+        s5_min_effective_updates=args.s5_min_effective_updates,
+        s5_min_realized_net_per_fill_usd=args.s5_min_realized_net_per_fill_usd,
+        s5_min_realized_net_per_fill_windows=args.s5_min_realized_net_per_fill_windows,
+    )
     print_report(report)
 
     if args.json_out:

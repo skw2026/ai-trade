@@ -293,6 +293,11 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       config_.use_counterfactual_search && use_virtual_pnl;
   action.used_factor_ic_adaptive_weighting =
       config_.enable_factor_ic_adaptive_weights;
+  action.counterfactual_fallback_to_factor_ic_enabled =
+      action.used_counterfactual_search &&
+      action.used_factor_ic_adaptive_weighting &&
+      config_.counterfactual_fallback_to_factor_ic;
+  action.counterfactual_fallback_to_factor_ic_used = false;
   action.counterfactual_required_improvement_usd =
       config_.counterfactual_min_improvement_usd;
   action.counterfactual_best_virtual_pnl_usd = window_virtual_pnl_usd;
@@ -405,6 +410,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.learnability_gate_passed = true;
   }
 
+  bool force_factor_ic_candidate = false;
   if (action.used_counterfactual_search) {
     if (action.window_fill_count <
         config_.counterfactual_min_fill_count_for_update) {
@@ -433,11 +439,16 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       return action;
     }
     if (!best_counterfactual_candidate.has_value() || !counterfactual_improves) {
-      action.type = SelfEvolutionActionType::kSkipped;
-      action.reason_code = "EVOLUTION_COUNTERFACTUAL_IMPROVEMENT_TOO_SMALL";
-      action.degrade_windows = degrade_window_count(eval_bucket);
-      ResetWindowAttribution();
-      return action;
+      if (action.counterfactual_fallback_to_factor_ic_enabled) {
+        force_factor_ic_candidate = true;
+        action.counterfactual_fallback_to_factor_ic_used = true;
+      } else {
+        action.type = SelfEvolutionActionType::kSkipped;
+        action.reason_code = "EVOLUTION_COUNTERFACTUAL_IMPROVEMENT_TOO_SMALL";
+        action.degrade_windows = degrade_window_count(eval_bucket);
+        ResetWindowAttribution();
+        return action;
+      }
     }
   }
 
@@ -472,7 +483,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   };
   CandidateSource candidate_source = CandidateSource::kObjective;
   std::optional<EvolutionWeights> factor_ic_candidate;
-  if (action.used_counterfactual_search) {
+  if (action.used_counterfactual_search && !force_factor_ic_candidate) {
     candidate = *best_counterfactual_candidate;
     candidate_source = CandidateSource::kCounterfactual;
   } else if (action.used_factor_ic_adaptive_weighting) {
@@ -492,6 +503,24 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     }
   } else {
     candidate = ProposeWeights(window_objective_score, runtime);
+  }
+
+  if (std::fabs(candidate.trend_weight - runtime.current_trend_weight) <= kWeightEpsilon &&
+      std::fabs(candidate.defensive_weight - runtime.current_defensive_weight) <=
+          kWeightEpsilon) {
+    if (candidate_source == CandidateSource::kCounterfactual &&
+        action.counterfactual_fallback_to_factor_ic_enabled) {
+      factor_ic_candidate = ProposeFactorIcWeights(eval_index, runtime, &action);
+      if (factor_ic_candidate.has_value() &&
+          (std::fabs(factor_ic_candidate->trend_weight -
+                     runtime.current_trend_weight) > kWeightEpsilon ||
+           std::fabs(factor_ic_candidate->defensive_weight -
+                     runtime.current_defensive_weight) > kWeightEpsilon)) {
+        candidate = *factor_ic_candidate;
+        candidate_source = CandidateSource::kFactorIc;
+        action.counterfactual_fallback_to_factor_ic_used = true;
+      }
+    }
   }
 
   if (std::fabs(candidate.trend_weight - runtime.current_trend_weight) <= kWeightEpsilon &&

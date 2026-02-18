@@ -55,6 +55,12 @@ const ui = {
   trendEvolutionFactorIcActions: document.getElementById(
     "trend-evolution-factor-ic-actions"
   ),
+  trendEvolutionEffectiveUpdates: document.getElementById(
+    "trend-evolution-effective-updates"
+  ),
+  trendEvolutionFallbackUsed: document.getElementById(
+    "trend-evolution-fallback-used"
+  ),
   trendEvolutionLearnabilitySkips: document.getElementById(
     "trend-evolution-learnability-skips"
   ),
@@ -62,6 +68,11 @@ const ui = {
   trendPolicyRatio: document.getElementById("trend-policy-ratio"),
   trendEquityPct: document.getElementById("trend-equity-pct"),
   trendCostFiltered: document.getElementById("trend-cost-filtered"),
+  trendEntryRegimeAdjust: document.getElementById("trend-entry-regime-adjust"),
+  trendEntryVolatilityAdjust: document.getElementById(
+    "trend-entry-volatility-adjust"
+  ),
+  trendEntryLiquidityAdjust: document.getElementById("trend-entry-liquidity-adjust"),
   trendMakerFillRatio: document.getElementById("trend-maker-fill-ratio"),
   trendUnknownFillRatio: document.getElementById("trend-unknown-fill-ratio"),
   trendExplicitLiquidityFillRatio: document.getElementById(
@@ -374,6 +385,14 @@ async function loadTrendMetrics() {
           runtimeMetrics.self_evolution_factor_ic_action_count,
           0
         ),
+        evolution_effective_updates: asNumber(
+          runtimeMetrics.self_evolution_effective_update_count,
+          0
+        ),
+        evolution_fallback_used: asNumber(
+          runtimeMetrics.self_evolution_counterfactual_fallback_used_count,
+          0
+        ),
         evolution_learnability_skips: asNumber(
           runtimeMetrics.self_evolution_learnability_skip_count,
           0
@@ -382,6 +401,18 @@ async function loadTrendMetrics() {
         policy_applied_ratio: asNumber(runtimeMetrics.integrator_policy_applied_ratio, 0) * 100,
         equity_change_pct: asNumber(account.equity_change_pct, 0) * 100,
         cost_filtered: asNumber(runtimeMetrics.order_filtered_cost_count, 0),
+        entry_regime_adjust_bps: asNumber(
+          runtimeMetrics.entry_regime_adjust_bps_avg,
+          0
+        ),
+        entry_volatility_adjust_bps: asNumber(
+          runtimeMetrics.entry_volatility_adjust_bps_avg,
+          0
+        ),
+        entry_liquidity_adjust_bps: asNumber(
+          runtimeMetrics.entry_liquidity_adjust_bps_avg,
+          0
+        ),
         maker_fill_ratio:
           asNumber(runtimeMetrics.execution_window_maker_fill_ratio_avg, 0) * 100,
         unknown_fill_ratio:
@@ -417,6 +448,10 @@ async function loadTrendMetrics() {
     (x) => x.evolution_counterfactual_updates
   );
   const evolutionFactorIcActions = points.map((x) => x.evolution_factor_ic_actions);
+  const evolutionEffectiveUpdates = points.map(
+    (x) => x.evolution_effective_updates
+  );
+  const evolutionFallbackUsed = points.map((x) => x.evolution_fallback_used);
   const evolutionLearnabilitySkips = points.map(
     (x) => x.evolution_learnability_skips
   );
@@ -424,6 +459,9 @@ async function loadTrendMetrics() {
   const policyRatio = points.map((x) => x.policy_applied_ratio);
   const equity = points.map((x) => x.equity_change_pct);
   const costFiltered = points.map((x) => x.cost_filtered);
+  const entryRegimeAdjust = points.map((x) => x.entry_regime_adjust_bps);
+  const entryVolatilityAdjust = points.map((x) => x.entry_volatility_adjust_bps);
+  const entryLiquidityAdjust = points.map((x) => x.entry_liquidity_adjust_bps);
   const makerFillRatio = points.map((x) => x.maker_fill_ratio);
   const unknownFillRatio = points.map((x) => x.unknown_fill_ratio);
   const explicitLiquidityFillRatio = points.map(
@@ -462,6 +500,16 @@ async function loadTrendMetrics() {
     color: "#264653",
     decimals: 2,
   });
+  drawLineChart(ui.trendEvolutionEffectiveUpdates, evolutionEffectiveUpdates, {
+    label: "self_evolution_effective_update_count",
+    color: "#5f0f40",
+    decimals: 2,
+  });
+  drawLineChart(ui.trendEvolutionFallbackUsed, evolutionFallbackUsed, {
+    label: "self_evolution_counterfactual_fallback_used_count",
+    color: "#9a031e",
+    decimals: 2,
+  });
   drawLineChart(ui.trendEvolutionLearnabilitySkips, evolutionLearnabilitySkips, {
     label: "self_evolution_learnability_skip_count",
     color: "#c1121f",
@@ -488,6 +536,21 @@ async function loadTrendMetrics() {
     label: "order_filtered_cost_count",
     color: "#bc6c25",
     decimals: 2,
+  });
+  drawLineChart(ui.trendEntryRegimeAdjust, entryRegimeAdjust, {
+    label: "entry_regime_adjust_bps_avg",
+    color: "#6d597a",
+    decimals: 3,
+  });
+  drawLineChart(ui.trendEntryVolatilityAdjust, entryVolatilityAdjust, {
+    label: "entry_volatility_adjust_bps_avg",
+    color: "#3a5a40",
+    decimals: 3,
+  });
+  drawLineChart(ui.trendEntryLiquidityAdjust, entryLiquidityAdjust, {
+    label: "entry_liquidity_adjust_bps_avg",
+    color: "#9c6644",
+    decimals: 3,
   });
   drawLineChart(ui.trendMakerFillRatio, makerFillRatio, {
     label: "execution_window_maker_fill_ratio_avg",

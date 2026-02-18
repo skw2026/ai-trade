@@ -109,6 +109,9 @@ class BotApplication {
                                   double* out_base_required_edge_bps,
                                   double* out_adaptive_relax_bps,
                                   double* out_maker_relax_bps,
+                                  double* out_regime_adjust_bps,
+                                  double* out_volatility_adjust_bps,
+                                  double* out_liquidity_adjust_bps,
                                   double* out_quality_guard_penalty_bps,
                                   double* out_observed_filtered_ratio) const;
   /// 开仓成本门冷却是否生效（用于避免连续重复无效入场）。
@@ -231,6 +234,9 @@ class BotApplication {
     double entry_required_edge_bps_sum{0.0};
     double entry_adaptive_relax_bps_sum{0.0};
     double entry_maker_relax_bps_sum{0.0};
+    double entry_regime_adjust_bps_sum{0.0};
+    double entry_volatility_adjust_bps_sum{0.0};
+    double entry_liquidity_adjust_bps_sum{0.0};
     double entry_quality_guard_penalty_bps_sum{0.0};
     double trend_notional_abs_sum{0.0};
     double defensive_notional_abs_sum{0.0};
@@ -291,6 +297,8 @@ class BotApplication {
   std::uint64_t entry_gate_observed_samples_{0};
   std::uint64_t entry_gate_observed_filtered_{0};
   double entry_gate_observed_filtered_ratio_{0.0};
+  double recent_execution_window_maker_fill_ratio_{0.0};
+  double recent_execution_window_unknown_fill_ratio_{0.0};
 
   bool protection_forced_reduce_only_{
       false};  ///< 保护单关键路径触发的只减仓开关（高优先级，需人工介入恢复）。

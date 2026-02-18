@@ -79,6 +79,7 @@ struct SelfEvolutionConfig {
   int min_bucket_ticks_for_update{0};
   bool use_virtual_pnl{false};
   bool use_counterfactual_search{false};
+  bool counterfactual_fallback_to_factor_ic{true};
   double counterfactual_min_improvement_usd{0.0};
   double counterfactual_improvement_decay_per_filtered_signal_usd{0.0};
   int counterfactual_min_fill_count_for_update{0};
@@ -195,6 +196,16 @@ struct ExecutionConfig {
   double quality_guard_min_realized_net_per_fill_usd{-0.005};
   double quality_guard_max_fee_bps_per_fill{8.0};
   double quality_guard_required_edge_penalty_bps{1.5};
+  bool dynamic_edge_enabled{true};
+  double dynamic_edge_regime_trend_relax_bps{0.4};
+  double dynamic_edge_regime_range_penalty_bps{0.2};
+  double dynamic_edge_regime_extreme_penalty_bps{0.8};
+  double dynamic_edge_volatility_relax_bps{0.4};
+  double dynamic_edge_volatility_penalty_bps{0.6};
+  double dynamic_edge_liquidity_maker_ratio_threshold{0.55};
+  double dynamic_edge_liquidity_unknown_ratio_threshold{0.20};
+  double dynamic_edge_liquidity_relax_bps{0.4};
+  double dynamic_edge_liquidity_penalty_bps{0.6};
 };
 
 // ============================================================================
@@ -254,6 +265,16 @@ struct AppConfig {
   double execution_quality_guard_min_realized_net_per_fill_usd{-0.005};
   double execution_quality_guard_max_fee_bps_per_fill{8.0};
   double execution_quality_guard_required_edge_penalty_bps{1.5};
+  bool execution_dynamic_edge_enabled{true};
+  double execution_dynamic_edge_regime_trend_relax_bps{0.4};
+  double execution_dynamic_edge_regime_range_penalty_bps{0.2};
+  double execution_dynamic_edge_regime_extreme_penalty_bps{0.8};
+  double execution_dynamic_edge_volatility_relax_bps{0.4};
+  double execution_dynamic_edge_volatility_penalty_bps{0.6};
+  double execution_dynamic_edge_liquidity_maker_ratio_threshold{0.55};
+  double execution_dynamic_edge_liquidity_unknown_ratio_threshold{0.20};
+  double execution_dynamic_edge_liquidity_relax_bps{0.4};
+  double execution_dynamic_edge_liquidity_penalty_bps{0.6};
 
   std::string exchange{"mock"};
   std::string data_path{"data"};
@@ -314,7 +335,17 @@ struct AppConfig {
         execution_quality_guard_good_streak_to_release,
         execution_quality_guard_min_realized_net_per_fill_usd,
         execution_quality_guard_max_fee_bps_per_fill,
-        execution_quality_guard_required_edge_penalty_bps
+        execution_quality_guard_required_edge_penalty_bps,
+        execution_dynamic_edge_enabled,
+        execution_dynamic_edge_regime_trend_relax_bps,
+        execution_dynamic_edge_regime_range_penalty_bps,
+        execution_dynamic_edge_regime_extreme_penalty_bps,
+        execution_dynamic_edge_volatility_relax_bps,
+        execution_dynamic_edge_volatility_penalty_bps,
+        execution_dynamic_edge_liquidity_maker_ratio_threshold,
+        execution_dynamic_edge_liquidity_unknown_ratio_threshold,
+        execution_dynamic_edge_liquidity_relax_bps,
+        execution_dynamic_edge_liquidity_penalty_bps
     };
   }
 };

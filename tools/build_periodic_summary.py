@@ -255,6 +255,8 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "self_evolution_counterfactual_action_count": 0,
             "self_evolution_counterfactual_update_count": 0,
             "self_evolution_factor_ic_action_count": 0,
+            "self_evolution_effective_update_count": 0,
+            "self_evolution_counterfactual_fallback_used_count": 0,
             "self_evolution_learnability_skip_count": 0,
             "self_evolution_learnability_pass_count": 0,
             "flat_start_rebase_applied_count": 0,
@@ -281,6 +283,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "execution_quality_guard_active_count": 0,
             "execution_quality_guard_active_ratio": None,
             "execution_quality_guard_penalty_bps_avg": None,
+            "entry_edge_adjust_runtime_count": 0,
+            "entry_regime_adjust_bps_avg": None,
+            "entry_volatility_adjust_bps_avg": None,
+            "entry_liquidity_adjust_bps_avg": None,
             "reconcile_anomaly_reduce_only_true_count": 0,
             "reconcile_anomaly_reduce_only_true_ratio": None,
             "strategy_mix_runtime_count": 0,
@@ -311,6 +317,13 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     evolution_factor_ic_action = (
         to_int(latest_metrics.get("self_evolution_factor_ic_action_count")) or 0
+    )
+    evolution_effective_update = (
+        to_int(latest_metrics.get("self_evolution_effective_update_count")) or 0
+    )
+    evolution_counterfactual_fallback_used = (
+        to_int(latest_metrics.get("self_evolution_counterfactual_fallback_used_count"))
+        or 0
     )
     evolution_learnability_skip = (
         to_int(latest_metrics.get("self_evolution_learnability_skip_count")) or 0
@@ -373,6 +386,18 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     execution_quality_guard_penalty_bps_avg = to_float(
         latest_metrics.get("execution_quality_guard_penalty_bps_avg")
+    )
+    entry_edge_adjust_runtime_count = (
+        to_int(latest_metrics.get("entry_edge_adjust_runtime_count")) or 0
+    )
+    entry_regime_adjust_bps_avg = to_float(
+        latest_metrics.get("entry_regime_adjust_bps_avg")
+    )
+    entry_volatility_adjust_bps_avg = to_float(
+        latest_metrics.get("entry_volatility_adjust_bps_avg")
+    )
+    entry_liquidity_adjust_bps_avg = to_float(
+        latest_metrics.get("entry_liquidity_adjust_bps_avg")
     )
     reconcile_anomaly_reduce_only_true_count = (
         to_int(latest_metrics.get("reconcile_anomaly_reduce_only_true_count")) or 0
@@ -440,6 +465,8 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "self_evolution_counterfactual_action_count": evolution_counterfactual_action,
         "self_evolution_counterfactual_update_count": evolution_counterfactual_update,
         "self_evolution_factor_ic_action_count": evolution_factor_ic_action,
+        "self_evolution_effective_update_count": evolution_effective_update,
+        "self_evolution_counterfactual_fallback_used_count": evolution_counterfactual_fallback_used,
         "self_evolution_learnability_skip_count": evolution_learnability_skip,
         "self_evolution_learnability_pass_count": evolution_learnability_pass,
         "flat_start_rebase_applied_count": flat_start_rebase_applied,
@@ -466,6 +493,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "execution_quality_guard_active_count": execution_quality_guard_active_count,
         "execution_quality_guard_active_ratio": execution_quality_guard_active_ratio,
         "execution_quality_guard_penalty_bps_avg": execution_quality_guard_penalty_bps_avg,
+        "entry_edge_adjust_runtime_count": entry_edge_adjust_runtime_count,
+        "entry_regime_adjust_bps_avg": entry_regime_adjust_bps_avg,
+        "entry_volatility_adjust_bps_avg": entry_volatility_adjust_bps_avg,
+        "entry_liquidity_adjust_bps_avg": entry_liquidity_adjust_bps_avg,
         "reconcile_anomaly_reduce_only_true_count": reconcile_anomaly_reduce_only_true_count,
         "reconcile_anomaly_reduce_only_true_ratio": reconcile_anomaly_reduce_only_true_ratio,
         "strategy_mix_runtime_count": strategy_mix_runtime_count,

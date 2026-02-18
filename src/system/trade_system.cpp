@@ -47,7 +47,12 @@ TradeSystem::TradeSystem(const AppConfig& config)
     : strategy_(config.GetStrategyConfig()),
       regime_(config.regime),
       risk_(config.risk_max_abs_notional_usd, config.risk_thresholds),
-      execution_(config.GetExecutionConfig()),
+      execution_(ExecutionEngineConfig{
+          .max_order_notional_usd = config.execution_max_order_notional,
+          .min_rebalance_notional_usd = config.execution_min_rebalance_notional_usd,
+          .min_order_interval_ms = config.execution_min_order_interval_ms,
+          .reverse_signal_cooldown_ticks = config.execution_reverse_signal_cooldown_ticks,
+      }),
       integrator_shadow_(config.integrator.shadow),
       integrator_config_(config.integrator),
       max_account_gross_notional_usd_(config.risk_max_abs_notional_usd) {
@@ -65,7 +70,7 @@ TradeSystem::TradeSystem(double risk_cap_usd, double max_order_notional_usd,
     : strategy_(strategy_config),
       regime_(regime_config),
       risk_(risk_cap_usd, risk_thresholds),
-      execution_(ExecutionConfig{
+      execution_(ExecutionEngineConfig{
           .max_order_notional_usd = max_order_notional_usd,
           .min_rebalance_notional_usd = min_rebalance_notional_usd,
       }),

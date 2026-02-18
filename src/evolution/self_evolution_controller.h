@@ -36,6 +36,8 @@ struct SelfEvolutionAction {
   bool used_virtual_pnl{false};
   bool used_counterfactual_search{false};
   bool used_factor_ic_adaptive_weighting{false};
+  bool counterfactual_fallback_to_factor_ic_enabled{false};
+  bool counterfactual_fallback_to_factor_ic_used{false};
   double counterfactual_best_virtual_pnl_usd{0.0};
   double counterfactual_required_improvement_usd{0.0};
   double counterfactual_best_trend_weight{0.0};
