@@ -414,13 +414,21 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   if (action.used_counterfactual_search) {
     if (action.window_fill_count <
         config_.counterfactual_min_fill_count_for_update) {
-      action.type = SelfEvolutionActionType::kSkipped;
-      action.reason_code = "EVOLUTION_COUNTERFACTUAL_FILL_COUNT_TOO_LOW";
-      action.degrade_windows = degrade_window_count(eval_bucket);
-      ResetWindowAttribution();
-      return action;
+      if (action.counterfactual_fallback_to_factor_ic_enabled) {
+        // 低成交窗口下放弃反事实主路径，回退到 factor-IC 调权，
+        // 避免“counterfactual 永久因 fill 不足而空转”。
+        force_factor_ic_candidate = true;
+        action.counterfactual_fallback_to_factor_ic_used = true;
+      } else {
+        action.type = SelfEvolutionActionType::kSkipped;
+        action.reason_code = "EVOLUTION_COUNTERFACTUAL_FILL_COUNT_TOO_LOW";
+        action.degrade_windows = degrade_window_count(eval_bucket);
+        ResetWindowAttribution();
+        return action;
+      }
     }
-    if (config_.counterfactual_min_t_stat_samples_for_update > 0 &&
+    if (!force_factor_ic_candidate &&
+        config_.counterfactual_min_t_stat_samples_for_update > 0 &&
         action.learnability_samples <
             config_.counterfactual_min_t_stat_samples_for_update) {
       action.type = SelfEvolutionActionType::kSkipped;
@@ -429,7 +437,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       ResetWindowAttribution();
       return action;
     }
-    if (config_.counterfactual_min_t_stat_abs_for_update > 0.0 &&
+    if (!force_factor_ic_candidate &&
+        config_.counterfactual_min_t_stat_abs_for_update > 0.0 &&
         std::fabs(action.learnability_t_stat) <
             config_.counterfactual_min_t_stat_abs_for_update) {
       action.type = SelfEvolutionActionType::kSkipped;
@@ -438,7 +447,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       ResetWindowAttribution();
       return action;
     }
-    if (!best_counterfactual_candidate.has_value() || !counterfactual_improves) {
+    if (!force_factor_ic_candidate &&
+        (!best_counterfactual_candidate.has_value() || !counterfactual_improves)) {
       if (action.counterfactual_fallback_to_factor_ic_enabled) {
         force_factor_ic_candidate = true;
         action.counterfactual_fallback_to_factor_ic_used = true;

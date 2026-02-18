@@ -1931,6 +1931,75 @@ int main() {
   }
 
   {
+    // 自进化控制器：反事实 fill 不足时，启用 fallback 仍应走 factor-IC 更新。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.1;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = true;
+    config.counterfactual_fallback_to_factor_ic = true;
+    config.counterfactual_min_fill_count_for_update = 5;
+    config.enable_factor_ic_adaptive_weights = true;
+    config.factor_ic_min_samples = 2;
+    config.factor_ic_min_abs = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    controller.OnTick(1,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/1000.0,
+                      /*defensive_signal_notional_usd=*/0.0,
+                      /*mark_price_usd=*/100.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    controller.OnTick(2,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/500.0,
+                      /*defensive_signal_notional_usd=*/0.0,
+                      /*mark_price_usd=*/101.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/400.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/101.101,
+        /*signal_symbol=*/"BTCUSDT");
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
+        !action->counterfactual_fallback_to_factor_ic_enabled ||
+        !action->counterfactual_fallback_to_factor_ic_used ||
+        !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
+      std::cerr << "低 fill 回退到 factor-IC 的更新行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：可学习性门控在低 t-stat 窗口应冻结学习。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;

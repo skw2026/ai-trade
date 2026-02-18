@@ -49,38 +49,37 @@ execution:
   entry_fee_bps: 5.5
   exit_fee_bps: 5.5
   expected_slippage_bps: 1.0
-  min_expected_edge_bps: 1.2
-  # 允许在高费率估计场景下放宽入场边际门槛上限，避免长期“全被成本门挡住”。
-  # 加速阶段：降低上限，先恢复成交样本，再用报告回调。
-  required_edge_cap_bps: 5.8
+  min_expected_edge_bps: 1.4
+  # 稳态阶段：提高入场边际门槛上限，优先压低低质量成交。
+  required_edge_cap_bps: 6.4
   adaptive_fee_gate_enabled: true
   adaptive_fee_gate_min_samples: 80
   adaptive_fee_gate_trigger_ratio: 0.70
-  adaptive_fee_gate_max_relax_bps: 1.2
+  adaptive_fee_gate_max_relax_bps: 0.9
   dynamic_edge_enabled: true
   dynamic_edge_regime_trend_relax_bps: 0.6
-  dynamic_edge_regime_range_penalty_bps: 0.2
-  dynamic_edge_regime_extreme_penalty_bps: 0.9
-  dynamic_edge_volatility_relax_bps: 0.4
-  dynamic_edge_volatility_penalty_bps: 0.8
-  dynamic_edge_liquidity_maker_ratio_threshold: 0.55
+  dynamic_edge_regime_range_penalty_bps: 0.4
+  dynamic_edge_regime_extreme_penalty_bps: 1.1
+  dynamic_edge_volatility_relax_bps: 0.3
+  dynamic_edge_volatility_penalty_bps: 1.0
+  dynamic_edge_liquidity_maker_ratio_threshold: 0.65
   dynamic_edge_liquidity_unknown_ratio_threshold: 0.20
-  dynamic_edge_liquidity_relax_bps: 0.4
-  dynamic_edge_liquidity_penalty_bps: 0.8
+  dynamic_edge_liquidity_relax_bps: 0.2
+  dynamic_edge_liquidity_penalty_bps: 1.0
   maker_entry_enabled: true
   maker_fallback_to_market: false
   maker_price_offset_bps: 0.3
   maker_post_only: true
-  maker_edge_relax_bps: 0.2
+  maker_edge_relax_bps: 0.1
   cost_filter_cooldown_trigger_count: 8
   cost_filter_cooldown_ticks: 120
   quality_guard_enabled: true
-  quality_guard_min_fills: 6
+  quality_guard_min_fills: 4
   quality_guard_bad_streak_to_trigger: 2
-  quality_guard_good_streak_to_release: 3
-  quality_guard_min_realized_net_per_fill_usd: -0.01
-  quality_guard_max_fee_bps_per_fill: 0.35
-  quality_guard_required_edge_penalty_bps: 1.8
+  quality_guard_good_streak_to_release: 4
+  quality_guard_min_realized_net_per_fill_usd: -0.004
+  quality_guard_max_fee_bps_per_fill: 0.20
+  quality_guard_required_edge_penalty_bps: 2.4
   protection:
     enabled: false
     require_sl: true
@@ -120,11 +119,11 @@ self_evolution:
   use_virtual_pnl: true
   use_counterfactual_search: true
   counterfactual_fallback_to_factor_ic: true
-  counterfactual_min_improvement_usd: 0.08
+  counterfactual_min_improvement_usd: 0.04
   counterfactual_improvement_decay_per_filtered_signal_usd: 0.04
-  counterfactual_min_fill_count_for_update: 2
+  counterfactual_min_fill_count_for_update: 1
   counterfactual_min_t_stat_samples_for_update: 60
-  counterfactual_min_t_stat_abs_for_update: 0.3
+  counterfactual_min_t_stat_abs_for_update: 0.25
   virtual_cost_bps: 6.5
   # 信号层：基于在线因子IC做权重自适应（与反事实搜索互补观测）。
   enable_factor_ic_adaptive_weights: true
