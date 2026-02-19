@@ -49,18 +49,18 @@ execution:
   entry_fee_bps: 5.5
   exit_fee_bps: 5.5
   expected_slippage_bps: 1.0
-  min_expected_edge_bps: 1.4
+  min_expected_edge_bps: 1.3
   # 稳态阶段：提高入场边际门槛上限，优先压低低质量成交。
-  required_edge_cap_bps: 6.4
+  required_edge_cap_bps: 5.8
   adaptive_fee_gate_enabled: true
   adaptive_fee_gate_min_samples: 80
   adaptive_fee_gate_trigger_ratio: 0.70
-  adaptive_fee_gate_max_relax_bps: 0.9
+  adaptive_fee_gate_max_relax_bps: 1.1
   dynamic_edge_enabled: true
   dynamic_edge_regime_trend_relax_bps: 0.6
-  dynamic_edge_regime_range_penalty_bps: 0.4
+  dynamic_edge_regime_range_penalty_bps: 0.25
   dynamic_edge_regime_extreme_penalty_bps: 1.1
-  dynamic_edge_volatility_relax_bps: 0.3
+  dynamic_edge_volatility_relax_bps: 0.4
   dynamic_edge_volatility_penalty_bps: 1.0
   dynamic_edge_liquidity_maker_ratio_threshold: 0.65
   dynamic_edge_liquidity_unknown_ratio_threshold: 0.20
@@ -70,9 +70,9 @@ execution:
   maker_fallback_to_market: false
   maker_price_offset_bps: 0.3
   maker_post_only: true
-  maker_edge_relax_bps: 0.1
-  cost_filter_cooldown_trigger_count: 8
-  cost_filter_cooldown_ticks: 120
+  maker_edge_relax_bps: 0.15
+  cost_filter_cooldown_trigger_count: 12
+  cost_filter_cooldown_ticks: 80
   quality_guard_enabled: true
   quality_guard_min_fills: 4
   quality_guard_bad_streak_to_trigger: 2
