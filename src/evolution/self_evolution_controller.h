@@ -55,6 +55,9 @@ struct SelfEvolutionAction {
   double defensive_weight_before{0.0};
   double trend_weight_after{0.0};
   double defensive_weight_after{0.0};
+  int direction_consistency_required{1};
+  int direction_consistency_streak{0};
+  int direction_consistency_direction{0};  // +1=trend up, -1=trend down, 0=none
   int cooldown_remaining_ticks{0};
   int degrade_windows{0};
 };
@@ -129,6 +132,8 @@ class SelfEvolutionController {
     double rollback_anchor_trend_weight{1.0};
     double rollback_anchor_defensive_weight{0.0};
     std::deque<bool> degrade_windows;
+    int pending_direction{0};  // +1=trend up, -1=trend down, 0=none
+    int pending_direction_streak{0};
   };
   struct CorrelationAccumulator {
     double sum_x{0.0};

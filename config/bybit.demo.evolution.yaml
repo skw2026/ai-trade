@@ -52,6 +52,7 @@ execution:
   min_expected_edge_bps: 1.3
   # 稳态阶段：提高入场边际门槛上限，优先压低低质量成交。
   required_edge_cap_bps: 5.8
+  entry_gate_near_miss_tolerance_bps: 0.20
   adaptive_fee_gate_enabled: true
   adaptive_fee_gate_min_samples: 80
   adaptive_fee_gate_trigger_ratio: 0.70
@@ -122,6 +123,7 @@ self_evolution:
   min_abs_window_pnl_usd: 0.5
   # 单个 Regime bucket 在窗口内样本 tick 不足时，不执行该 bucket 的学习更新。
   min_bucket_ticks_for_update: 60
+  min_consecutive_direction_windows: 2
   # P0/P1：使用虚拟PnL + 反事实搜索，让零成交阶段也可学习。
   use_virtual_pnl: true
   use_counterfactual_search: true

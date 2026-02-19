@@ -87,6 +87,8 @@ bool SelfEvolutionController::Initialize(
     runtime.rollback_anchor_trend_weight = runtime.current_trend_weight;
     runtime.rollback_anchor_defensive_weight = runtime.current_defensive_weight;
     runtime.degrade_windows.clear();
+    runtime.pending_direction = 0;
+    runtime.pending_direction_streak = 0;
   }
 
   last_observed_realized_net_pnl_usd_ = initial_realized_net_pnl_usd;
@@ -323,6 +325,11 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   action.defensive_weight_before = runtime.current_defensive_weight;
   action.trend_weight_after = runtime.current_trend_weight;
   action.defensive_weight_after = runtime.current_defensive_weight;
+  action.direction_consistency_required =
+      std::max(1, config_.min_consecutive_direction_windows);
+  action.direction_consistency_streak =
+      std::max(0, runtime.pending_direction_streak);
+  action.direction_consistency_direction = runtime.pending_direction;
   action.degrade_windows = degrade_window_count(eval_bucket);
   std::optional<EvolutionWeights> best_counterfactual_candidate;
   bool counterfactual_improves = false;
@@ -469,6 +476,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   if (ShouldRollback(runtime)) {
     runtime.current_trend_weight = runtime.rollback_anchor_trend_weight;
     runtime.current_defensive_weight = runtime.rollback_anchor_defensive_weight;
+    runtime.pending_direction = 0;
+    runtime.pending_direction_streak = 0;
     cooldown_until_tick_ = current_tick + config_.rollback_cooldown_ticks;
     runtime.degrade_windows.clear();
 
@@ -476,6 +485,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.reason_code = "EVOLUTION_ROLLBACK_TRIGGERED";
     action.trend_weight_after = runtime.current_trend_weight;
     action.defensive_weight_after = runtime.current_defensive_weight;
+    action.direction_consistency_streak = 0;
+    action.direction_consistency_direction = 0;
     action.cooldown_remaining_ticks = config_.rollback_cooldown_ticks;
     action.degrade_windows = 0;
     ResetWindowAttribution();
@@ -536,6 +547,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   if (std::fabs(candidate.trend_weight - runtime.current_trend_weight) <= kWeightEpsilon &&
       std::fabs(candidate.defensive_weight - runtime.current_defensive_weight) <=
           kWeightEpsilon) {
+    runtime.pending_direction = 0;
+    runtime.pending_direction_streak = 0;
     action.type = SelfEvolutionActionType::kSkipped;
     if (action.used_counterfactual_search) {
       action.reason_code =
@@ -547,14 +560,38 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     } else {
       action.reason_code = "EVOLUTION_WEIGHT_NOOP";
     }
+    action.direction_consistency_streak = 0;
+    action.direction_consistency_direction = 0;
+    ResetWindowAttribution();
+    return action;
+  }
+
+  const int candidate_direction =
+      candidate.trend_weight > runtime.current_trend_weight ? 1 : -1;
+  if (candidate_direction == runtime.pending_direction) {
+    runtime.pending_direction_streak += 1;
+  } else {
+    runtime.pending_direction = candidate_direction;
+    runtime.pending_direction_streak = 1;
+  }
+  action.direction_consistency_streak = runtime.pending_direction_streak;
+  action.direction_consistency_direction = runtime.pending_direction;
+  if (action.direction_consistency_required > 1 &&
+      runtime.pending_direction_streak < action.direction_consistency_required) {
+    action.type = SelfEvolutionActionType::kSkipped;
+    action.reason_code = "EVOLUTION_DIRECTION_CONSISTENCY_PENDING";
     ResetWindowAttribution();
     return action;
   }
 
   std::string error;
   if (!ValidateWeights(candidate.trend_weight, candidate.defensive_weight, &error)) {
+    runtime.pending_direction = 0;
+    runtime.pending_direction_streak = 0;
     action.type = SelfEvolutionActionType::kSkipped;
     action.reason_code = "PORT_WEIGHT_INVALID_REJECTED";
+    action.direction_consistency_streak = 0;
+    action.direction_consistency_direction = 0;
     ResetWindowAttribution();
     return action;
   }

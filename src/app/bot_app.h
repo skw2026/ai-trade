@@ -113,7 +113,9 @@ class BotApplication {
                                   double* out_volatility_adjust_bps,
                                   double* out_liquidity_adjust_bps,
                                   double* out_quality_guard_penalty_bps,
-                                  double* out_observed_filtered_ratio) const;
+                                  double* out_observed_filtered_ratio,
+                                  double* out_edge_gap_bps,
+                                  bool* out_near_miss) const;
   /// 开仓成本门冷却是否生效（用于避免连续重复无效入场）。
   bool IsCostFilterCooldownActive(const std::string& symbol,
                                   int* out_remaining_ticks);
@@ -121,8 +123,8 @@ class BotApplication {
   void OnCostFilterRejected(const std::string& symbol);
   /// 记录一次开仓候选通过（清理连续拦截计数）。
   void OnCostFilterAccepted(const std::string& symbol);
-  /// 更新成本门观测比例（全局），供自适应门槛使用。
-  void UpdateEntryGateObservedRatio(bool filtered);
+  /// 更新成本门观测比例（全局），供自适应门槛与近阈值观测使用。
+  void UpdateEntryGateObservedRatio(bool filtered, bool near_miss);
   /// 执行质量守卫：根据窗口成交质量动态启停开仓惩罚。
   void EvaluateExecutionQualityGuard(std::uint64_t window_fills,
                                      double window_realized_net_per_fill_usd,
@@ -204,6 +206,7 @@ class BotApplication {
     std::uint64_t intents_filtered_inactive_symbol{0};
     std::uint64_t intents_filtered_min_notional{0};
     std::uint64_t intents_filtered_fee_aware{0};
+    std::uint64_t intents_filtered_fee_aware_near_miss{0};
     std::uint64_t intents_throttled_cost_cooldown{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
@@ -238,6 +241,7 @@ class BotApplication {
     double entry_volatility_adjust_bps_sum{0.0};
     double entry_liquidity_adjust_bps_sum{0.0};
     double entry_quality_guard_penalty_bps_sum{0.0};
+    double entry_edge_gap_bps_sum{0.0};
     double trend_notional_abs_sum{0.0};
     double defensive_notional_abs_sum{0.0};
     double blended_notional_abs_sum{0.0};
@@ -296,7 +300,9 @@ class BotApplication {
   std::unordered_map<std::string, int> cost_filter_cooldown_until_tick_by_symbol_;
   std::uint64_t entry_gate_observed_samples_{0};
   std::uint64_t entry_gate_observed_filtered_{0};
+  std::uint64_t entry_gate_observed_near_miss_{0};
   double entry_gate_observed_filtered_ratio_{0.0};
+  double entry_gate_observed_near_miss_ratio_{0.0};
   double recent_execution_window_maker_fill_ratio_{0.0};
   double recent_execution_window_unknown_fill_ratio_{0.0};
 

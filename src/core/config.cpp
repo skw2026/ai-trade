@@ -514,6 +514,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        (key == "entry_gate_near_miss_tolerance_bps" ||
+         key == "fee_gate_near_miss_tolerance_bps")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.entry_gate_near_miss_tolerance_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_entry_gate_near_miss_tolerance_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         (key == "adaptive_fee_gate_enabled" ||
          key == "adaptive_fee_aware_enabled")) {
       bool parsed = false;
@@ -2057,6 +2073,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "min_consecutive_direction_windows") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.min_consecutive_direction_windows 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.min_consecutive_direction_windows = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         key == "use_virtual_pnl") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -2875,6 +2906,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.execution_entry_gate_near_miss_tolerance_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.entry_gate_near_miss_tolerance_bps 不能为负数";
+    }
+    return false;
+  }
   if (config.execution_adaptive_fee_gate_min_samples < 0) {
     if (out_error != nullptr) {
       *out_error = "execution.adaptive_fee_gate_min_samples 不能为负数";
@@ -3041,6 +3078,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "self_evolution.min_bucket_ticks_for_update 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.min_consecutive_direction_windows <= 0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.min_consecutive_direction_windows 必须大于 0";
     }
     return false;
   }

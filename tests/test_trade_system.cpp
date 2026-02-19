@@ -1300,6 +1300,62 @@ int main() {
   }
 
   {
+    // 自进化控制器：方向一致性门控启用后，首个候选方向窗口仅记账不更新。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 2;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 1.0;
+    config.min_consecutive_direction_windows = 2;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller.OnTick(1, 10010.0).has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto pending = controller.OnTick(2, 10020.0);
+    if (!pending.has_value() ||
+        pending->type != ai_trade::SelfEvolutionActionType::kSkipped ||
+        pending->reason_code != "EVOLUTION_DIRECTION_CONSISTENCY_PENDING" ||
+        pending->direction_consistency_required != 2 ||
+        pending->direction_consistency_streak != 1 ||
+        pending->direction_consistency_direction != 1 ||
+        !NearlyEqual(pending->trend_weight_after, 0.50, 1e-9)) {
+      std::cerr << "自进化方向一致性待确认行为不符合预期\n";
+      return 1;
+    }
+    if (controller.OnTick(3, 10030.0).has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto updated = controller.OnTick(4, 10040.0);
+    if (!updated.has_value() ||
+        updated->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        updated->reason_code != "EVOLUTION_WEIGHT_INCREASE_TREND" ||
+        updated->direction_consistency_required != 2 ||
+        updated->direction_consistency_streak < 2 ||
+        updated->direction_consistency_direction != 1 ||
+        !NearlyEqual(updated->trend_weight_after, 0.55, 1e-9)) {
+      std::cerr << "自进化方向一致性二次确认更新行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：bucket 样本 tick 数不足时应跳过更新。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
@@ -2224,6 +2280,7 @@ int main() {
         << "  min_order_interval_ms: 2500\n"
         << "  reverse_signal_cooldown_ticks: 5\n"
         << "  required_edge_cap_bps: 8.5\n"
+        << "  entry_gate_near_miss_tolerance_bps: 0.2\n"
         << "  adaptive_fee_gate_enabled: true\n"
         << "  adaptive_fee_gate_min_samples: 90\n"
         << "  adaptive_fee_gate_trigger_ratio: 0.8\n"
@@ -2286,6 +2343,7 @@ int main() {
         << "  min_update_interval_ticks: 40\n"
         << "  min_abs_window_pnl_usd: 2.5\n"
         << "  min_bucket_ticks_for_update: 9\n"
+        << "  min_consecutive_direction_windows: 3\n"
         << "  use_virtual_pnl: true\n"
         << "  use_counterfactual_search: true\n"
         << "  counterfactual_fallback_to_factor_ic: false\n"
@@ -2325,6 +2383,7 @@ int main() {
         config.execution_min_order_interval_ms != 2500 ||
         config.execution_reverse_signal_cooldown_ticks != 5 ||
         !NearlyEqual(config.execution_required_edge_cap_bps, 8.5) ||
+        !NearlyEqual(config.execution_entry_gate_near_miss_tolerance_bps, 0.2) ||
         config.execution_adaptive_fee_gate_enabled != true ||
         config.execution_adaptive_fee_gate_min_samples != 90 ||
         !NearlyEqual(config.execution_adaptive_fee_gate_trigger_ratio, 0.8) ||
@@ -2435,6 +2494,7 @@ int main() {
         config.self_evolution.min_update_interval_ticks != 40 ||
         !NearlyEqual(config.self_evolution.min_abs_window_pnl_usd, 2.5) ||
         config.self_evolution.min_bucket_ticks_for_update != 9 ||
+        config.self_evolution.min_consecutive_direction_windows != 3 ||
         config.self_evolution.use_virtual_pnl != true ||
         config.self_evolution.use_counterfactual_search != true ||
         config.self_evolution.counterfactual_fallback_to_factor_ic != false ||
@@ -2795,6 +2855,30 @@ int main() {
   {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_entry_gate_near_miss_tolerance.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  entry_gate_near_miss_tolerance_bps: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 execution.entry_gate_near_miss_tolerance_bps 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("entry_gate_near_miss_tolerance_bps") == std::string::npos) {
+      std::cerr
+          << "非法 execution.entry_gate_near_miss_tolerance_bps 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
         "ai_trade_test_invalid_cost_filter_cooldown_pair.yaml";
     std::ofstream out(temp_path);
     out << "execution:\n"
@@ -3084,6 +3168,30 @@ int main() {
     if (error.find("min_bucket_ticks_for_update") == std::string::npos) {
       std::cerr
           << "非法 self_evolution.min_bucket_ticks_for_update 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_min_consecutive_direction_windows.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  min_consecutive_direction_windows: 0\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 self_evolution.min_consecutive_direction_windows 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("min_consecutive_direction_windows") == std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.min_consecutive_direction_windows 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

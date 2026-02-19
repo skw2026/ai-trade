@@ -41,6 +41,8 @@ class AssessRunLogTest(unittest.TestCase):
         strategy_mix_avg_abs_defensive: float = 60.0,
         strategy_mix_avg_abs_blended: float = 120.0,
         filtered_cost_ratio: float = 0.0,
+        filtered_cost_near_miss_ratio: float = 0.0,
+        entry_edge_gap_avg_bps: float = 0.0,
         realized_net_per_fill: float = 0.0,
         fee_bps_per_fill: float = 0.0,
         maker_fills: int = 0,
@@ -54,6 +56,11 @@ class AssessRunLogTest(unittest.TestCase):
         maker_fee_bps: float = 0.0,
         taker_fee_bps: float = 0.0,
         maker_fill_ratio: float = 0.0,
+        entry_gate_near_miss_tolerance_bps: float = 0.0,
+        entry_gate_observed_filtered_ratio: float = 0.0,
+        entry_gate_observed_near_miss_ratio: float = 0.0,
+        concentration_top1_share: float = 0.0,
+        concentration_symbol_count: int = 0,
         execution_quality_guard_active: bool = False,
         execution_quality_guard_penalty_bps: float = 0.0,
         reconcile_anomaly_streak: int = 0,
@@ -81,6 +88,9 @@ class AssessRunLogTest(unittest.TestCase):
             "}, "
             "account={equity=100000.0, drawdown_pct=0.000100, "
             f"notional={notional:.6f}, realized_pnl=0.0, fees=0.0, realized_net=0.0}}, "
+            "concentration={gross_notional_usd=1000.0, top1_abs_notional_usd=800.0, "
+            f"top1_symbol=BTCUSDT, top1_share={concentration_top1_share}, "
+            f"symbol_count={concentration_symbol_count}}}, "
             "funnel_window={raw=1, risk_adjusted=1, intents_generated=1, "
             "intents_filtered_inactive_symbol=0, intents_filtered_min_notional=0, "
             "intents_filtered_fee_aware=0, throttled=0, "
@@ -93,9 +103,14 @@ class AssessRunLogTest(unittest.TestCase):
             f"avg_abs_defensive_notional={strategy_mix_avg_abs_defensive}, avg_abs_blended_notional={strategy_mix_avg_abs_blended}, "
             f"samples={strategy_mix_samples}}}, "
             "entry_gate={enabled=true, round_trip_cost_bps=13.0, "
-            "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0}, "
+            "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0, "
+            f"near_miss_tolerance_bps={entry_gate_near_miss_tolerance_bps}, "
+            "quality_guard_penalty_bps=0.0, "
+            f"observed_filtered_ratio={entry_gate_observed_filtered_ratio}, "
+            f"observed_near_miss_ratio={entry_gate_observed_near_miss_ratio}}}, "
             "execution_window={filtered_cost_ratio="
-            f"{filtered_cost_ratio}, realized_net_delta_usd=0.0, "
+            f"{filtered_cost_ratio}, filtered_cost_near_miss_ratio={filtered_cost_near_miss_ratio}, "
+            f"entry_edge_gap_avg_bps={entry_edge_gap_avg_bps}, realized_net_delta_usd=0.0, "
             f"realized_net_per_fill={realized_net_per_fill}, fee_delta_usd=0.0, "
             f"fee_bps_per_fill={fee_bps_per_fill}, maker_fills={maker_fills}, "
             f"taker_fills={taker_fills}, unknown_fills={unknown_fills}, "
@@ -259,6 +274,71 @@ class AssessRunLogTest(unittest.TestCase):
             places=6,
         )
         self.assertEqual(metrics["execution_window_liquidity_source_runtime_count"], 2)
+
+    def test_assess_extracts_entry_gate_and_near_miss_metrics(self):
+        runtime = (
+            self._runtime_line(
+                20,
+                0.0,
+                filtered_cost_ratio=0.60,
+                filtered_cost_near_miss_ratio=0.20,
+                entry_edge_gap_avg_bps=0.35,
+                entry_gate_near_miss_tolerance_bps=0.30,
+                entry_gate_observed_filtered_ratio=0.45,
+                entry_gate_observed_near_miss_ratio=0.25,
+            )
+            + self._runtime_line(
+                40,
+                0.0,
+                filtered_cost_ratio=0.40,
+                filtered_cost_near_miss_ratio=0.10,
+                entry_edge_gap_avg_bps=0.15,
+                entry_gate_near_miss_tolerance_bps=0.10,
+                entry_gate_observed_filtered_ratio=0.35,
+                entry_gate_observed_near_miss_ratio=0.15,
+            )
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=2, effective_signals=4, fills=1\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=2)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["entry_gate_runtime_count"], 2)
+        self.assertAlmostEqual(
+            metrics["entry_gate_near_miss_tolerance_bps_avg"], 0.20, places=6
+        )
+        self.assertAlmostEqual(
+            metrics["entry_gate_observed_filtered_ratio_avg"], 0.40, places=6
+        )
+        self.assertAlmostEqual(
+            metrics["entry_gate_observed_near_miss_ratio_avg"], 0.20, places=6
+        )
+        self.assertAlmostEqual(
+            metrics["entry_gate_observed_near_miss_ratio"], 0.15, places=6
+        )
+        self.assertAlmostEqual(metrics["filtered_cost_near_miss_ratio_avg"], 0.15, places=6)
+        self.assertAlmostEqual(metrics["entry_edge_gap_avg_bps"], 0.25, places=6)
+
+    def test_assess_warn_on_high_concentration(self):
+        runtime = (
+            self._runtime_line(20, 0.0, concentration_top1_share=0.92, concentration_symbol_count=3)
+            + self._runtime_line(
+                40, 0.0, concentration_top1_share=0.95, concentration_symbol_count=3
+            )
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=2, effective_signals=4, fills=1\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=2)
+        metrics = report["metrics"]
+        self.assertEqual(report["verdict"], "PASS_WITH_ACTIONS")
+        self.assertEqual(metrics["concentration_runtime_count"], 2)
+        self.assertAlmostEqual(metrics["concentration_top1_share_avg"], 0.935, places=6)
+        self.assertAlmostEqual(metrics["concentration_top1_share_max"], 0.95, places=6)
+        self.assertEqual(metrics["concentration_high_count"], 2)
+        self.assertTrue(any("仓位集中度偏高" in x for x in report["warn_reasons"]))
 
     def test_assess_extracts_quality_guard_and_reconcile_metrics(self):
         runtime = (

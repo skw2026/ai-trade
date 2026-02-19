@@ -92,6 +92,7 @@ STAGE_RULES: Dict[str, StageRule] = {
 MIN_EXPLICIT_LIQUIDITY_FILL_RATIO_WARN = 0.70
 MAX_UNKNOWN_FILL_RATIO_WARN = 0.20
 MAX_FEE_SIGN_FALLBACK_FILL_RATIO_WARN = 0.30
+MAX_TOP1_CONCENTRATION_SHARE_WARN = 0.90
 MIN_S5_EVOLUTION_ACTIONS_FOR_UPDATE_WARN = 30
 MIN_S5_LEARNABILITY_PASS_FOR_UPDATE_WARN = 10
 DEFAULT_S5_MIN_EFFECTIVE_UPDATES = 1
@@ -123,6 +124,8 @@ RUNTIME_STRATEGY_MIX_RE = re.compile(
 RUNTIME_EXECUTION_WINDOW_RE = re.compile(
     r"RUNTIME_STATUS:.*?execution_window=\{[^}]*?"
     r"filtered_cost_ratio=(?P<filtered_cost_ratio>-?[0-9]+(?:\.[0-9]+)?), "
+    r"(?:filtered_cost_near_miss_ratio=(?P<filtered_cost_near_miss_ratio>-?[0-9]+(?:\.[0-9]+)?), )?"
+    r"(?:entry_edge_gap_avg_bps=(?P<entry_edge_gap_avg_bps>-?[0-9]+(?:\.[0-9]+)?), )?"
     r"realized_net_delta_usd=(?P<realized_net_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
     r"realized_net_per_fill=(?P<realized_net_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
     r"fee_delta_usd=(?P<fee_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
@@ -138,6 +141,21 @@ RUNTIME_EXECUTION_WINDOW_RE = re.compile(
     r"maker_fee_bps=(?P<maker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
     r"taker_fee_bps=(?P<taker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
     r"maker_fill_ratio=(?P<maker_fill_ratio>-?[0-9]+(?:\.[0-9]+)?))?"
+)
+RUNTIME_ENTRY_GATE_RE = re.compile(
+    r"RUNTIME_STATUS:.*?entry_gate=\{[^}]*?"
+    r"near_miss_tolerance_bps=(?P<near_miss_tolerance_bps>-?[0-9]+(?:\.[0-9]+)?), "
+    r"quality_guard_penalty_bps=(?P<quality_guard_penalty_bps>-?[0-9]+(?:\.[0-9]+)?), "
+    r"observed_filtered_ratio=(?P<observed_filtered_ratio>-?[0-9]+(?:\.[0-9]+)?), "
+    r"observed_near_miss_ratio=(?P<observed_near_miss_ratio>-?[0-9]+(?:\.[0-9]+)?)"
+)
+RUNTIME_CONCENTRATION_RE = re.compile(
+    r"RUNTIME_STATUS:.*?concentration=\{[^}]*?"
+    r"gross_notional_usd=(?P<gross_notional_usd>-?[0-9]+(?:\.[0-9]+)?), "
+    r"top1_abs_notional_usd=(?P<top1_abs_notional_usd>-?[0-9]+(?:\.[0-9]+)?), "
+    r"top1_symbol=(?P<top1_symbol>[^,}]+), "
+    r"top1_share=(?P<top1_share>-?[0-9]+(?:\.[0-9]+)?), "
+    r"symbol_count=(?P<symbol_count>\d+)"
 )
 RUNTIME_EXECUTION_QUALITY_GUARD_RE = re.compile(
     r"RUNTIME_STATUS:.*?execution_quality_guard=\{[^}]*?"
@@ -469,6 +487,8 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
 
 def extract_execution_window_series(text: str) -> Dict[str, float]:
     filtered_cost_ratios: list[float] = []
+    filtered_cost_near_miss_ratios: list[float] = []
+    entry_edge_gap_avg_bps_values: list[float] = []
     realized_net_per_fills: list[float] = []
     fee_bps_per_fills: list[float] = []
     maker_fills: list[float] = []
@@ -487,6 +507,12 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
     for m in RUNTIME_EXECUTION_WINDOW_RE.finditer(text):
         try:
             filtered_cost_ratios.append(float(m.group("filtered_cost_ratio")))
+            filtered_cost_near_miss_ratios.append(
+                float(m.group("filtered_cost_near_miss_ratio") or 0.0)
+            )
+            entry_edge_gap_avg_bps_values.append(
+                float(m.group("entry_edge_gap_avg_bps") or 0.0)
+            )
             realized_net_per_fills.append(float(m.group("realized_net_per_fill")))
             fee_bps_per_fills.append(float(m.group("fee_bps_per_fill")))
             maker_fill_value = float(m.group("maker_fills") or 0.0)
@@ -532,6 +558,9 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
             "runtime_count": 0.0,
             "filtered_cost_ratio_avg": 0.0,
             "filtered_cost_ratio_latest": 0.0,
+            "filtered_cost_near_miss_ratio_avg": 0.0,
+            "filtered_cost_near_miss_ratio_latest": 0.0,
+            "entry_edge_gap_avg_bps_avg": 0.0,
             "realized_net_per_fill_avg": 0.0,
             "fee_bps_per_fill_avg": 0.0,
             "maker_fills_avg": 0.0,
@@ -552,6 +581,11 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
         "runtime_count": float(runtime_count),
         "filtered_cost_ratio_avg": sum(filtered_cost_ratios) / runtime_count,
         "filtered_cost_ratio_latest": filtered_cost_ratios[-1],
+        "filtered_cost_near_miss_ratio_avg": sum(filtered_cost_near_miss_ratios)
+        / runtime_count,
+        "filtered_cost_near_miss_ratio_latest": filtered_cost_near_miss_ratios[-1],
+        "entry_edge_gap_avg_bps_avg": sum(entry_edge_gap_avg_bps_values)
+        / runtime_count,
         "realized_net_per_fill_avg": sum(realized_net_per_fills) / runtime_count,
         "fee_bps_per_fill_avg": sum(fee_bps_per_fills) / runtime_count,
         "maker_fills_avg": sum(maker_fills) / runtime_count,
@@ -606,6 +640,85 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
         "applied_penalty_bps_avg": sum(applied_penalty_bps) / runtime_count,
         "bad_streak_max": float(max(bad_streaks) if bad_streaks else 0),
         "good_streak_max": float(max(good_streaks) if good_streaks else 0),
+    }
+
+
+def extract_entry_gate_series(text: str) -> Dict[str, float]:
+    near_miss_tolerance_values: list[float] = []
+    observed_filtered_ratio_values: list[float] = []
+    observed_near_miss_ratio_values: list[float] = []
+
+    for m in RUNTIME_ENTRY_GATE_RE.finditer(text):
+        try:
+            near_miss_tolerance_values.append(
+                float(m.group("near_miss_tolerance_bps"))
+            )
+            observed_filtered_ratio_values.append(
+                float(m.group("observed_filtered_ratio"))
+            )
+            observed_near_miss_ratio_values.append(
+                float(m.group("observed_near_miss_ratio"))
+            )
+        except ValueError:
+            continue
+
+    runtime_count = len(near_miss_tolerance_values)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "near_miss_tolerance_bps_avg": 0.0,
+            "observed_filtered_ratio_avg": 0.0,
+            "observed_near_miss_ratio_avg": 0.0,
+            "observed_near_miss_ratio_latest": 0.0,
+        }
+    return {
+        "runtime_count": float(runtime_count),
+        "near_miss_tolerance_bps_avg": sum(near_miss_tolerance_values) / runtime_count,
+        "observed_filtered_ratio_avg": sum(observed_filtered_ratio_values)
+        / runtime_count,
+        "observed_near_miss_ratio_avg": sum(observed_near_miss_ratio_values)
+        / runtime_count,
+        "observed_near_miss_ratio_latest": observed_near_miss_ratio_values[-1],
+    }
+
+
+def extract_concentration_series(text: str) -> Dict[str, float]:
+    top1_share_values: list[float] = []
+    symbol_count_values: list[int] = []
+    top1_abs_notional_values: list[float] = []
+    gross_notional_values: list[float] = []
+
+    for m in RUNTIME_CONCENTRATION_RE.finditer(text):
+        try:
+            top1_share_values.append(float(m.group("top1_share")))
+            symbol_count_values.append(int(m.group("symbol_count")))
+            top1_abs_notional_values.append(float(m.group("top1_abs_notional_usd")))
+            gross_notional_values.append(float(m.group("gross_notional_usd")))
+        except ValueError:
+            continue
+
+    runtime_count = len(top1_share_values)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "top1_share_avg": 0.0,
+            "top1_share_max": 0.0,
+            "high_concentration_count": 0.0,
+            "symbol_count_avg": 0.0,
+            "top1_abs_notional_avg": 0.0,
+            "gross_notional_avg": 0.0,
+        }
+    high_concentration_count = sum(
+        1 for share in top1_share_values if share >= MAX_TOP1_CONCENTRATION_SHARE_WARN
+    )
+    return {
+        "runtime_count": float(runtime_count),
+        "top1_share_avg": sum(top1_share_values) / runtime_count,
+        "top1_share_max": max(top1_share_values),
+        "high_concentration_count": float(high_concentration_count),
+        "symbol_count_avg": sum(symbol_count_values) / runtime_count,
+        "top1_abs_notional_avg": sum(top1_abs_notional_values) / runtime_count,
+        "gross_notional_avg": sum(gross_notional_values) / runtime_count,
     }
 
 
@@ -709,6 +822,8 @@ def assess(
     strategy_mix = extract_strategy_mix_series(text)
     execution_window = extract_execution_window_series(text)
     execution_quality_guard = extract_execution_quality_guard_series(text)
+    entry_gate = extract_entry_gate_series(text)
+    concentration = extract_concentration_series(text)
     entry_edge_adjust = extract_entry_edge_adjust_series(text)
     reconcile_runtime = extract_reconcile_runtime_series(text)
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
@@ -771,6 +886,10 @@ def assess(
             r"SELF_EVOLUTION_ACTION:.*learnability=\{enabled=true, passed=true",
             text,
         ),
+        "self_evolution_direction_consistency_pending_count": count(
+            r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_DIRECTION_CONSISTENCY_PENDING",
+            text,
+        ),
         "integrator_policy_applied_count": count(r"INTEGRATOR_POLICY_APPLIED:", text),
         "integrator_policy_canary_count": count(
             r"INTEGRATOR_POLICY_APPLIED:.*mode=canary", text
@@ -822,6 +941,13 @@ def assess(
         "execution_window_runtime_count": int(execution_window["runtime_count"]),
         "filtered_cost_ratio": execution_window["filtered_cost_ratio_latest"],
         "filtered_cost_ratio_avg": execution_window["filtered_cost_ratio_avg"],
+        "filtered_cost_near_miss_ratio": execution_window[
+            "filtered_cost_near_miss_ratio_latest"
+        ],
+        "filtered_cost_near_miss_ratio_avg": execution_window[
+            "filtered_cost_near_miss_ratio_avg"
+        ],
+        "entry_edge_gap_avg_bps": execution_window["entry_edge_gap_avg_bps_avg"],
         "realized_net_per_fill": execution_window["realized_net_per_fill_avg"],
         "fee_bps_per_fill": execution_window["fee_bps_per_fill_avg"],
         "execution_window_maker_fills_avg": execution_window["maker_fills_avg"],
@@ -850,6 +976,24 @@ def assess(
         "execution_window_liquidity_source_runtime_count": int(
             execution_window["liquidity_source_runtime_count"]
         ),
+        "entry_gate_runtime_count": int(entry_gate["runtime_count"]),
+        "entry_gate_near_miss_tolerance_bps_avg": entry_gate[
+            "near_miss_tolerance_bps_avg"
+        ],
+        "entry_gate_observed_filtered_ratio_avg": entry_gate[
+            "observed_filtered_ratio_avg"
+        ],
+        "entry_gate_observed_near_miss_ratio": entry_gate[
+            "observed_near_miss_ratio_latest"
+        ],
+        "entry_gate_observed_near_miss_ratio_avg": entry_gate[
+            "observed_near_miss_ratio_avg"
+        ],
+        "concentration_runtime_count": int(concentration["runtime_count"]),
+        "concentration_top1_share_avg": concentration["top1_share_avg"],
+        "concentration_top1_share_max": concentration["top1_share_max"],
+        "concentration_high_count": int(concentration["high_concentration_count"]),
+        "concentration_symbol_count_avg": concentration["symbol_count_avg"],
         "execution_quality_guard_runtime_count": int(
             execution_quality_guard["runtime_count"]
         ),
@@ -1099,6 +1243,16 @@ def assess(
                 "ORDER_FILTERED_COST 占比较高，建议复核 entry gate 参数: "
                 f"filtered_cost_ratio_avg={metrics['filtered_cost_ratio_avg']:.4f}"
             )
+        if (
+            metrics["execution_window_runtime_count"] > 0
+            and metrics["filtered_cost_ratio_avg"] >= 0.70
+            and metrics["filtered_cost_near_miss_ratio_avg"] >= 0.10
+        ):
+            warn_reasons.append(
+                "成本门近阈值拦截占比偏高，建议复核 near-miss 容差与信号边际估计: "
+                f"filtered_cost_near_miss_ratio_avg={metrics['filtered_cost_near_miss_ratio_avg']:.4f}, "
+                f"entry_edge_gap_avg_bps={metrics['entry_edge_gap_avg_bps']:.4f}"
+            )
         if metrics["execution_quality_guard_active_count"] > 0:
             warn_reasons.append(
                 "执行质量守卫触发，入场门槛已抬升，建议复核手续费与执行路径: "
@@ -1163,6 +1317,17 @@ def assess(
             warn_reasons.append(
                 "对账异常保护触发 reduce-only，建议核查回报链路与对账口径: "
                 f"reduce_only_true_count={metrics['reconcile_anomaly_reduce_only_true_count']}"
+            )
+        if (
+            metrics["concentration_runtime_count"] > 0
+            and metrics["concentration_top1_share_max"]
+            >= MAX_TOP1_CONCENTRATION_SHARE_WARN
+            and metrics["concentration_symbol_count_avg"] >= 1.5
+        ):
+            warn_reasons.append(
+                "仓位集中度偏高，建议复核 Universe 与单币风险预算: "
+                f"top1_share_max={metrics['concentration_top1_share_max']:.4f}, "
+                f"threshold={MAX_TOP1_CONCENTRATION_SHARE_WARN:.4f}"
             )
 
         integrator_takeover_mode_count = (
