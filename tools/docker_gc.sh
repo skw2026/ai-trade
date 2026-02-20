@@ -121,7 +121,13 @@ fi
 
 running_refs=()
 collect_running_refs() {
-  mapfile -t running_refs < <("${DOCKER_BIN}" ps --format '{{.Image}}' 2>/dev/null | awk 'NF' | sort -u)
+  running_refs=()
+  local line=""
+  while IFS= read -r line; do
+    if [[ -n "${line}" ]]; then
+      running_refs+=("${line}")
+    fi
+  done < <("${DOCKER_BIN}" ps --format '{{.Image}}' 2>/dev/null | awk 'NF' | sort -u)
 }
 
 is_running_ref() {
@@ -174,7 +180,12 @@ prune_recent_repo_tags() {
   parse_matchers
 
   local repos=()
-  mapfile -t repos < <("${DOCKER_BIN}" image ls --format '{{.Repository}}' \
+  local line=""
+  while IFS= read -r line; do
+    if [[ -n "${line}" ]]; then
+      repos+=("${line}")
+    fi
+  done < <("${DOCKER_BIN}" image ls --format '{{.Repository}}' \
     | awk 'NF && $0 != "<none>" {print}' | awk '!seen[$0]++')
 
   local repo=""
@@ -184,7 +195,11 @@ prune_recent_repo_tags() {
     fi
 
     local refs=()
-    mapfile -t refs < <("${DOCKER_BIN}" image ls "${repo}" --format '{{.Repository}}:{{.Tag}}' \
+    while IFS= read -r line; do
+      if [[ -n "${line}" ]]; then
+        refs+=("${line}")
+      fi
+    done < <("${DOCKER_BIN}" image ls "${repo}" --format '{{.Repository}}:{{.Tag}}' \
       | awk 'NF && $0 !~ /<none>/ {print}' | awk '!seen[$0]++')
     if (( ${#refs[@]} <= KEEP_RECENT_TAGS )); then
       continue
@@ -205,7 +220,11 @@ prune_recent_repo_tags() {
     fi
 
     local sorted_rows=()
-    mapfile -t sorted_rows < <(printf '%s\n' "${rows[@]}" | sort -r)
+    while IFS= read -r line; do
+      if [[ -n "${line}" ]]; then
+        sorted_rows+=("${line}")
+      fi
+    done < <(printf '%s\n' "${rows[@]}" | sort -r)
     local index=0
     local deleted=0
     for row in "${sorted_rows[@]}"; do

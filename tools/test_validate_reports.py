@@ -103,7 +103,7 @@ class ValidateReportsTest(unittest.TestCase):
                 VALIDATE._validate_one(path, kind, errors)
             self.assertEqual(errors, [])
 
-    def test_validate_runtime_legacy_metrics_pass_by_default(self):
+    def test_validate_runtime_legacy_metrics_fail(self):
         with tempfile.TemporaryDirectory() as td:
             runtime = pathlib.Path(td) / "runtime_assess.json"
             runtime.write_text(
@@ -125,35 +125,6 @@ class ValidateReportsTest(unittest.TestCase):
             )
             errors = []
             VALIDATE._validate_one(runtime, "runtime_assess", errors)
-            self.assertEqual(errors, [])
-
-    def test_validate_runtime_legacy_metrics_fail_in_strict_mode(self):
-        with tempfile.TemporaryDirectory() as td:
-            runtime = pathlib.Path(td) / "runtime_assess.json"
-            runtime.write_text(
-                json.dumps(
-                    {
-                        "stage": "S3",
-                        "verdict": "PASS",
-                        "metrics": {
-                            "runtime_status_count": 10,
-                            "critical_count": 0,
-                            "ws_unhealthy_count": 0,
-                            "self_evolution_action_count": 0,
-                        },
-                        "fail_reasons": [],
-                        "warn_reasons": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            errors = []
-            VALIDATE._validate_one(
-                runtime,
-                "runtime_assess",
-                errors,
-                strict_evolution_metrics=True,
-            )
             self.assertTrue(
                 any("self_evolution_effective_update_count" in item for item in errors)
             )

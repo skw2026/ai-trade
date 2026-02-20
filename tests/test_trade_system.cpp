@@ -2998,6 +2998,54 @@ int main() {
   {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_entry_gate_near_miss_maker_gap.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  entry_gate_near_miss_maker_max_gap_bps: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 execution.entry_gate_near_miss_maker_max_gap_bps 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("entry_gate_near_miss_maker_max_gap_bps") ==
+        std::string::npos) {
+      std::cerr
+          << "非法 execution.entry_gate_near_miss_maker_max_gap_bps 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_unknown_config_key.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  unknown_key_for_test: 1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "未知配置项应加载失败\n";
+      return 1;
+    }
+    if (error.find("未识别配置项") == std::string::npos ||
+        error.find("execution.unknown_key_for_test") == std::string::npos) {
+      std::cerr << "未知配置项错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
         "ai_trade_test_invalid_cost_filter_cooldown_pair.yaml";
     std::ofstream out(temp_path);
     out << "execution:\n"
@@ -3405,6 +3453,32 @@ int main() {
     }
     if (error.find("objective") == std::string::npos) {
       std::cerr << "非法 self_evolution objective 全零错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_enabled_objective_penalty.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  enabled: true\n"
+        << "  objective_alpha_pnl: 1.0\n"
+        << "  objective_beta_drawdown: 0\n"
+        << "  objective_gamma_notional_churn: 0.005\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "self_evolution.enabled=true 且风险惩罚为 0 的配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("objective_beta_drawdown") == std::string::npos) {
+      std::cerr << "self_evolution 风险惩罚错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

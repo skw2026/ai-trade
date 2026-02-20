@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "core/types.h"
+#include "execution/execution_engine.h"
 
 namespace ai_trade {
 
@@ -94,8 +95,8 @@ struct SelfEvolutionConfig {
   int learnability_min_samples{120};
   double learnability_min_t_stat_abs{1.5};
   double objective_alpha_pnl{1.0};
-  double objective_beta_drawdown{0.0};
-  double objective_gamma_notional_churn{0.0};
+  double objective_beta_drawdown{1.0};
+  double objective_gamma_notional_churn{0.005};
   double max_single_strategy_weight{0.60};
   double max_weight_step{0.05};
   int rollback_degrade_windows{2};
@@ -168,22 +169,12 @@ struct StrategyConfig {
   double defensive_extreme_scale{0.55};
 };
 
-struct ExecutionConfig {
-  double max_order_notional_usd{1000.0};
-  double min_rebalance_notional_usd{0.0};
-  int min_order_interval_ms{0};
-  int reverse_signal_cooldown_ticks{0};
-  bool enable_fee_aware_entry_gate{true};
-  double entry_fee_bps{5.5};
-  double exit_fee_bps{5.5};
-  double expected_slippage_bps{1.0};
-};
-
 // ============================================================================
 // Main Application Config
 // ============================================================================
 
 struct AppConfig {
+  std::string system_id{"bot-dev"};
   std::string mode{"replay"};
   std::string primary_symbol{"BTCUSDT"};
   int system_max_ticks{0};
@@ -279,17 +270,21 @@ struct AppConfig {
     };
   }
 
-  // Helper to extract ExecutionConfig
-  ExecutionConfig GetExecutionConfig() const {
-    return ExecutionConfig{
-        execution_max_order_notional,
-        execution_min_rebalance_notional_usd,
-        execution_min_order_interval_ms,
-        execution_reverse_signal_cooldown_ticks,
-        execution_enable_fee_aware_entry_gate,
-        execution_entry_fee_bps,
-        execution_exit_fee_bps,
-        execution_expected_slippage_bps
+  // Helper to extract ExecutionEngineConfig
+  ExecutionEngineConfig GetExecutionEngineConfig() const {
+    return ExecutionEngineConfig{
+        .max_order_notional_usd = execution_max_order_notional,
+        .min_rebalance_notional_usd = execution_min_rebalance_notional_usd,
+        .min_order_interval_ms = execution_min_order_interval_ms,
+        .reverse_signal_cooldown_ticks = execution_reverse_signal_cooldown_ticks,
+        .protection = ExecutionProtectionConfig{
+            .enabled = protection.enabled,
+            .require_sl = protection.require_sl,
+            .enable_tp = protection.enable_tp,
+            .attach_timeout_ms = protection.attach_timeout_ms,
+            .stop_loss_ratio = protection.stop_loss_ratio,
+            .take_profit_ratio = protection.take_profit_ratio,
+        },
     };
   }
 };

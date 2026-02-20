@@ -1414,6 +1414,11 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "system" && key == "id") {
+      config.system_id = value;
+      continue;
+    }
+
     if (current_section == "system" && key == "mode") {
       config.mode = value;
       continue;
@@ -2673,7 +2678,25 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.protection.take_profit_ratio = parsed;
+      continue;
     }
+
+    std::string full_key = current_section;
+    if (!current_subsection.empty()) {
+      if (!full_key.empty()) {
+        full_key += ".";
+      }
+      full_key += current_subsection;
+    }
+    if (!full_key.empty()) {
+      full_key += ".";
+    }
+    full_key += key;
+    if (out_error != nullptr) {
+      *out_error =
+          "未识别配置项: " + full_key + "，行号: " + std::to_string(line_no);
+    }
+    return false;
   }
 
   if (config.exchange.empty()) {
@@ -3196,6 +3219,15 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "self_evolution objective 参数不能同时为 0";
+    }
+    return false;
+  }
+  if (config.self_evolution.enabled &&
+      (config.self_evolution.objective_beta_drawdown <= 0.0 ||
+       config.self_evolution.objective_gamma_notional_churn <= 0.0)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.enabled=true 时 objective_beta_drawdown 与 objective_gamma_notional_churn 必须大于 0";
     }
     return false;
   }

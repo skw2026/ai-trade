@@ -135,6 +135,9 @@ self_evolution:
   enable_learnability_gate: true
   learnability_min_samples: 80
   learnability_min_t_stat_abs: 0.7
+  objective_alpha_pnl: 1.0
+  objective_beta_drawdown: 1.0
+  objective_gamma_notional_churn: 0.005
   max_single_strategy_weight: 0.55
   max_weight_step: 0.01
   rollback_degrade_windows: 3

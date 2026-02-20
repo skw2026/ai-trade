@@ -111,8 +111,8 @@ self_evolution:
   learnability_min_samples: 120
   learnability_min_t_stat_abs: 1.5
   objective_alpha_pnl: 1.0
-  objective_beta_drawdown: 0.0
-  objective_gamma_notional_churn: 0.0
+  objective_beta_drawdown: 1.0
+  objective_gamma_notional_churn: 0.005
   max_single_strategy_weight: 0.60
   max_weight_step: 0.05
   rollback_degrade_windows: 2
