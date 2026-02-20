@@ -2268,6 +2268,14 @@ int main() {
       std::cerr << "首次下单不应触发最小下单间隔拦截\n";
       return 1;
     }
+    const auto& first_stats = throttle.total_stats();
+    if (first_stats.checks != 1 || first_stats.allowed != 1 ||
+        first_stats.rejected != 0) {
+      std::cerr << "首次放行后节流统计不符合预期: checks="
+                << first_stats.checks << ", allowed=" << first_stats.allowed
+                << ", rejected=" << first_stats.rejected << "\n";
+      return 1;
+    }
     throttle.OnAccepted(buy, 1000, 10);
 
     buy.client_order_id = "throttle-interval-2";

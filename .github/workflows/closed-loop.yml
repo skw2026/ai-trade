@@ -57,6 +57,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
           envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE
           script: |
             set -euo pipefail
@@ -104,6 +105,9 @@ jobs:
           PORT="${{ secrets.ECS_PORT || 22 }}"
           HOST="${{ secrets.ECS_HOST }}"
           USER="${{ secrets.ECS_USER }}"
+          EXPECTED_FINGERPRINT_SECRET="${{ secrets.ECS_HOST_FINGERPRINT }}"
+          EXPECTED_FINGERPRINT_VAR="${{ vars.ECS_HOST_FINGERPRINT }}"
+          EXPECTED_FINGERPRINT="${EXPECTED_FINGERPRINT_SECRET:-${EXPECTED_FINGERPRINT_VAR}}"
           if [[ -z "${HOST}" || -z "${USER}" ]]; then
             echo "[closed-loop] ECS_HOST/ECS_USER missing, skip artifact download"
             rm -f .artifacts/ecs_key
@@ -115,6 +119,42 @@ jobs:
           EOF
             exit 0
           fi
+          KNOWN_HOSTS_FILE=".artifacts/known_hosts"
+          if ! ssh-keyscan -p "${PORT}" -t ed25519,ecdsa,rsa "${HOST}" > "${KNOWN_HOSTS_FILE}" 2>/dev/null; then
+            echo "[closed-loop] failed to fetch host key via ssh-keyscan, skip artifact download"
+            rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+            cat > .artifacts/closed_loop_download_status.json <<'EOF'
+          {
+            "status": "SKIPPED",
+            "reason": "ssh_keyscan_failed"
+          }
+          EOF
+            exit 0
+          fi
+          if [[ ! -s "${KNOWN_HOSTS_FILE}" ]]; then
+            echo "[closed-loop] ssh-keyscan returned empty host keys, skip artifact download"
+            rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+            cat > .artifacts/closed_loop_download_status.json <<'EOF'
+          {
+            "status": "SKIPPED",
+            "reason": "ssh_keyscan_empty"
+          }
+          EOF
+            exit 0
+          fi
+          if [[ -n "${EXPECTED_FINGERPRINT}" ]]; then
+            if ! ssh-keygen -lf "${KNOWN_HOSTS_FILE}" | awk '{print $2}' | grep -Fxq "${EXPECTED_FINGERPRINT}"; then
+              echo "[closed-loop] host fingerprint mismatch, skip artifact download"
+              rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+              cat > .artifacts/closed_loop_download_status.json <<'EOF'
+          {
+            "status": "SKIPPED",
+            "reason": "host_fingerprint_mismatch"
+          }
+          EOF
+              exit 0
+            fi
+          fi
 
           downloaded=0
           missing=()
@@ -122,7 +162,10 @@ jobs:
             local remote_path="$1"
             local local_path="$2"
             local label="$3"
-            if scp -i .artifacts/ecs_key -P "${PORT}" -o StrictHostKeyChecking=no "${USER}@${HOST}:${remote_path}" "${local_path}"; then
+            if scp -i .artifacts/ecs_key -P "${PORT}" \
+              -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+              -o StrictHostKeyChecking=yes \
+              "${USER}@${HOST}:${remote_path}" "${local_path}"; then
               echo "[closed-loop] downloaded ${label}: ${remote_path}"
               downloaded=$((downloaded + 1))
             else
@@ -155,7 +198,7 @@ jobs:
           } > .artifacts/closed_loop_download_status.json
 
           echo "[closed-loop] downloaded_count=${downloaded} missing_count=${#missing[@]}"
-          rm -f .artifacts/ecs_key
+          rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
 
       - name: Upload Closed Loop Artifacts
         if: always()

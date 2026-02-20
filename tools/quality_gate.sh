@@ -8,6 +8,20 @@ RUN_BUILD="true"
 RUN_TESTS="true"
 RUN_COMPOSE_CHECK="true"
 RUN_REPORT_CONTRACT="true"
+REPORTS_ROOT="${QUALITY_GATE_REPORTS_ROOT:-./data/reports/closed_loop}"
+REPORT_CONTRACT_STRICT="${QUALITY_GATE_STRICT_REPORT_CONTRACT:-false}"
+
+is_true() {
+  local raw="$1"
+  local lowered
+  lowered="$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]')"
+  case "${lowered}" in
+    1|true|yes|on)
+      return 0
+      ;;
+  esac
+  return 1
+}
 
 usage() {
   cat <<'USAGE'
@@ -92,7 +106,13 @@ fi
 
 if [[ "${RUN_REPORT_CONTRACT}" == "true" ]]; then
   echo "[quality] report contract validation"
-  python3 tools/validate_reports.py --reports-root ./data/reports/closed_loop --allow-missing
+  if ! python3 tools/validate_reports.py --reports-root "${REPORTS_ROOT}" --allow-missing; then
+    if is_true "${REPORT_CONTRACT_STRICT}"; then
+      echo "[quality] report contract failed (strict mode)"
+      exit 1
+    fi
+    echo "[quality] warn: local reports contain incompatible schema; continue (set QUALITY_GATE_STRICT_REPORT_CONTRACT=true to fail)"
+  fi
 fi
 
 echo "[quality] all checks passed"

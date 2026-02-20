@@ -239,6 +239,7 @@ GitHub Secrets（仓库 Settings -> Secrets and variables -> Actions）：
 - `ECS_USER`：SSH 用户（如 `root` / `ubuntu`）
 - `ECS_SSH_KEY`：SSH 私钥
 - `ECS_PORT`：SSH 端口（可选，默认 22）
+- `ECS_HOST_FINGERPRINT`：SSH 主机指纹（可选，建议配置；用于校验远端主机身份，格式示例：`SHA256:...`）
 - `GHCR_USER`：GHCR 拉镜像账号（可选，私有镜像建议配置）
 - `GHCR_TOKEN`：GHCR 拉镜像令牌（可选，私有镜像建议配置）
 
@@ -491,6 +492,7 @@ GitHub Actions 定时闭环：
 - 工作流：`.github/workflows/closed-loop.yml`
 - 支持 `workflow_dispatch` 手动触发（`train/full/assess`）
 - 默认每 6 小时在 ECS 执行一次 `assess` 并输出闭环报告。
+- `train` 只产出训练报告，不会刷新 `latest_*` 运行验收指针（避免覆盖最近一次可发布验收结果）。
 
 说明：默认采用“WS优先、失败自动回退 REST”。
 - 行情通道：`public_ws_enabled=true`，失败可回退 `/v5/market/tickers`

@@ -43,6 +43,7 @@ bool OrderThrottle::Allow(const OrderIntent& intent,
 
   const auto it = state_by_symbol_.find(intent.symbol);
   if (it == state_by_symbol_.end()) {
+    on_allowed();
     return true;
   }
   const SymbolState& state = it->second;

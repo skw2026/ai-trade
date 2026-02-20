@@ -345,6 +345,7 @@ REGISTRY_RESULT_PATH="${RUN_DIR}/model_registry_entry.json"
 ASSESS_LOG_PATH="${RUN_DIR}/runtime.log"
 ASSESS_JSON_PATH="${RUN_DIR}/runtime_assess.json"
 FINAL_REPORT_PATH="${RUN_DIR}/closed_loop_report.json"
+RUN_META_PATH="${RUN_DIR}/run_meta.json"
 LATEST_REPORT_PATH="${OUTPUT_ROOT}/latest_closed_loop_report.json"
 LATEST_RUNTIME_ASSESS_PATH="${OUTPUT_ROOT}/latest_runtime_assess.json"
 LATEST_META_PATH="${OUTPUT_ROOT}/latest_run_meta.json"
@@ -600,18 +601,10 @@ build_summary() {
     tools/build_periodic_summary.py \
     --reports-root "${OUTPUT_ROOT}" \
     --out-dir "${SUMMARY_OUTPUT_DIR}"
-  ln -sfn "${RUN_ID}" "${OUTPUT_ROOT}/latest"
-  cp -f "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
+  local refresh_latest="false"
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
-    cp -f "${ASSESS_JSON_PATH}" "${LATEST_RUNTIME_ASSESS_PATH}"
+    refresh_latest="true"
   fi
-  if [[ -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" ]]; then
-    cp -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" "${LATEST_DAILY_SUMMARY_PATH}"
-  fi
-  if [[ -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" ]]; then
-    cp -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" "${LATEST_WEEKLY_SUMMARY_PATH}"
-  fi
-  printf '%s\n' "${RUN_ID}" > "${LATEST_RUN_ID_PATH}"
 
   OVERALL_STATUS="$(
     grep -m1 -oE '"overall_status"[[:space:]]*:[[:space:]]*"[^"]+"' "${FINAL_REPORT_PATH}" \
@@ -624,9 +617,9 @@ build_summary() {
       grep -m1 -oE '"verdict"[[:space:]]*:[[:space:]]*"[^"]+"' "${ASSESS_JSON_PATH}" \
         | sed -E 's/.*"([^"]+)".*/\1/' \
         || true
-    )"
+      )"
   fi
-  cat > "${LATEST_META_PATH}" <<EOF
+  cat > "${RUN_META_PATH}" <<EOF
 {
   "run_id": "${RUN_ID}",
   "action": "${ACTION}",
@@ -641,6 +634,21 @@ build_summary() {
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }
 EOF
+  if [[ "${refresh_latest}" == "true" ]]; then
+    ln -sfn "${RUN_ID}" "${OUTPUT_ROOT}/latest"
+    cp -f "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
+    cp -f "${ASSESS_JSON_PATH}" "${LATEST_RUNTIME_ASSESS_PATH}"
+    if [[ -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" ]]; then
+      cp -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" "${LATEST_DAILY_SUMMARY_PATH}"
+    fi
+    if [[ -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" ]]; then
+      cp -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" "${LATEST_WEEKLY_SUMMARY_PATH}"
+    fi
+    printf '%s\n' "${RUN_ID}" > "${LATEST_RUN_ID_PATH}"
+    cp -f "${RUN_META_PATH}" "${LATEST_META_PATH}"
+  else
+    echo "[INFO] skip latest pointer refresh: runtime assess missing (action=${ACTION})"
+  fi
   echo "[INFO] summary report done: ${FINAL_REPORT_PATH}"
 }
 
