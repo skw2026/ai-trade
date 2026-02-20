@@ -73,6 +73,11 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("ai-trade-research", self.prod_services)
         self.assertIn("ai-trade-web", self.prod_services)
 
+    def test_prod_ai_trade_mounts_config_and_data(self):
+        runtime = self.prod_services["ai-trade"]
+        self.assertIn("${AI_TRADE_PROJECT_DIR:-.}/data:/app/data", runtime)
+        self.assertIn("${AI_TRADE_PROJECT_DIR:-.}/config:/app/config:ro", runtime)
+
     def test_dev_does_not_include_scheduler_and_watchdog(self):
         self.assertNotIn("watchdog", self.dev_services)
         self.assertNotIn("scheduler", self.dev_services)

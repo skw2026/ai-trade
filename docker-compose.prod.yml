@@ -16,6 +16,7 @@ services:
       AI_TRADE_BYBIT_MAINNET_API_SECRET: ${AI_TRADE_BYBIT_MAINNET_API_SECRET:-}
     volumes:
       - ${AI_TRADE_PROJECT_DIR:-.}/data:/app/data
+      - ${AI_TRADE_PROJECT_DIR:-.}/config:/app/config:ro
     healthcheck:
       test: ["CMD-SHELL", "kill -0 1 || exit 1"]
       interval: 30s
@@ -131,6 +132,8 @@ services:
       DOCKER_GC_PRUNE_BUILD_CACHE: ${DOCKER_GC_PRUNE_BUILD_CACHE:-true}
       DOCKER_GC_PRUNE_NETWORKS: ${DOCKER_GC_PRUNE_NETWORKS:-false}
       DOCKER_GC_PRUNE_VOLUMES: ${DOCKER_GC_PRUNE_VOLUMES:-false}
+      DOCKER_GC_KEEP_RECENT_TAGS: ${DOCKER_GC_KEEP_RECENT_TAGS:-8}
+      DOCKER_GC_KEEP_REPO_MATCHERS: ${DOCKER_GC_KEEP_REPO_MATCHERS:-ai-trade,ai-trade-research,ai-trade-web}
     volumes:
       - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade
       - /var/run/docker.sock:/var/run/docker.sock

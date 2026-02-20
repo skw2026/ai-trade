@@ -530,6 +530,38 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        (key == "entry_gate_near_miss_maker_allow" ||
+         key == "fee_gate_near_miss_maker_allow")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.entry_gate_near_miss_maker_allow 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_entry_gate_near_miss_maker_allow = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        (key == "entry_gate_near_miss_maker_max_gap_bps" ||
+         key == "fee_gate_near_miss_maker_max_gap_bps")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.entry_gate_near_miss_maker_max_gap_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_entry_gate_near_miss_maker_max_gap_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         (key == "adaptive_fee_gate_enabled" ||
          key == "adaptive_fee_aware_enabled")) {
       bool parsed = false;
@@ -2909,6 +2941,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_entry_gate_near_miss_tolerance_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.entry_gate_near_miss_tolerance_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_entry_gate_near_miss_maker_max_gap_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.entry_gate_near_miss_maker_max_gap_bps 不能为负数";
     }
     return false;
   }

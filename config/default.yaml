@@ -51,6 +51,8 @@ execution:
   expected_slippage_bps: 1.0
   min_expected_edge_bps: 1.0
   entry_gate_near_miss_tolerance_bps: 0.0
+  entry_gate_near_miss_maker_allow: false
+  entry_gate_near_miss_maker_max_gap_bps: 0.0
   adaptive_fee_gate_enabled: true
   adaptive_fee_gate_min_samples: 120
   adaptive_fee_gate_trigger_ratio: 0.75

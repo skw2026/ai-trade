@@ -323,7 +323,8 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
     double* out_quality_guard_penalty_bps,
     double* out_observed_filtered_ratio,
     double* out_edge_gap_bps,
-    bool* out_near_miss) const {
+    bool* out_near_miss,
+    bool* out_near_miss_allowed) const {
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = 0.0;
   }
@@ -359,6 +360,9 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   }
   if (out_near_miss != nullptr) {
     *out_near_miss = false;
+  }
+  if (out_near_miss_allowed != nullptr) {
+    *out_near_miss_allowed = false;
   }
   if (!decision.intent.has_value() || !IsOpeningIntent(*decision.intent)) {
     return false;
@@ -491,15 +495,29 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const double edge_gap_bps = required_edge_bps - expected_edge_bps;
   const double near_miss_tolerance_bps =
       std::max(0.0, config_.execution_entry_gate_near_miss_tolerance_bps);
-  const bool filtered = edge_gap_bps > near_miss_tolerance_bps + 1e-9;
-  // 近阈值定义：落在“容差+附加带”内的被拦截样本，用于观测而非放行。
+  bool filtered = edge_gap_bps > near_miss_tolerance_bps + 1e-9;
+  // 近阈值定义：落在“容差+附加带”内的样本，用于观测与可选 maker 放行。
   const double near_miss_band_bps =
       near_miss_tolerance_bps + std::max(0.05, near_miss_tolerance_bps);
+  const bool near_miss = filtered && edge_gap_bps <= near_miss_band_bps;
+  bool near_miss_allowed = false;
+  if (near_miss && config_.execution_entry_gate_near_miss_maker_allow &&
+      maker_entry_candidate && !config_.execution_maker_fallback_to_market) {
+    const double allow_max_gap_bps =
+        std::max(0.0, config_.execution_entry_gate_near_miss_maker_max_gap_bps);
+    if (allow_max_gap_bps <= 0.0 || edge_gap_bps <= allow_max_gap_bps) {
+      filtered = false;
+      near_miss_allowed = true;
+    }
+  }
   if (out_edge_gap_bps != nullptr) {
     *out_edge_gap_bps = edge_gap_bps;
   }
   if (out_near_miss != nullptr) {
-    *out_near_miss = filtered && edge_gap_bps <= near_miss_band_bps;
+    *out_near_miss = near_miss;
+  }
+  if (out_near_miss_allowed != nullptr) {
+    *out_near_miss_allowed = near_miss_allowed;
   }
   return filtered;
 }
@@ -556,13 +574,18 @@ void BotApplication::OnCostFilterAccepted(const std::string& symbol) {
   cost_filter_reject_streak_by_symbol_.erase(symbol);
 }
 
-void BotApplication::UpdateEntryGateObservedRatio(bool filtered, bool near_miss) {
+void BotApplication::UpdateEntryGateObservedRatio(bool filtered,
+                                                  bool near_miss,
+                                                  bool near_miss_allowed) {
   ++entry_gate_observed_samples_;
   if (filtered) {
     ++entry_gate_observed_filtered_;
   }
   if (near_miss) {
     ++entry_gate_observed_near_miss_;
+  }
+  if (near_miss_allowed) {
+    ++entry_gate_observed_near_miss_allowed_;
   }
   if (entry_gate_observed_samples_ > 0) {
     entry_gate_observed_filtered_ratio_ =
@@ -571,9 +594,13 @@ void BotApplication::UpdateEntryGateObservedRatio(bool filtered, bool near_miss)
     entry_gate_observed_near_miss_ratio_ =
         static_cast<double>(entry_gate_observed_near_miss_) /
         static_cast<double>(entry_gate_observed_samples_);
+    entry_gate_observed_near_miss_allowed_ratio_ =
+        static_cast<double>(entry_gate_observed_near_miss_allowed_) /
+        static_cast<double>(entry_gate_observed_samples_);
   } else {
     entry_gate_observed_filtered_ratio_ = 0.0;
     entry_gate_observed_near_miss_ratio_ = 0.0;
+    entry_gate_observed_near_miss_allowed_ratio_ = 0.0;
   }
 }
 
@@ -700,6 +727,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->intents_filtered_fee_aware += delta.intents_filtered_fee_aware;
   total->intents_filtered_fee_aware_near_miss +=
       delta.intents_filtered_fee_aware_near_miss;
+  total->intents_passed_fee_aware_near_miss +=
+      delta.intents_passed_fee_aware_near_miss;
   total->intents_throttled_cost_cooldown +=
       delta.intents_throttled_cost_cooldown;
   total->intents_throttled += delta.intents_throttled;
@@ -1244,6 +1273,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     double observed_filtered_ratio = 0.0;
     double entry_edge_gap_bps = 0.0;
     bool near_miss = false;
+    bool near_miss_allowed = false;
     const bool filtered = ShouldFilterByFeeAwareGate(
         decision,
         event,
@@ -1258,8 +1288,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
         &quality_guard_penalty_bps,
         &observed_filtered_ratio,
         &entry_edge_gap_bps,
-        &near_miss);
-    UpdateEntryGateObservedRatio(filtered, near_miss);
+        &near_miss,
+        &near_miss_allowed);
+    UpdateEntryGateObservedRatio(filtered, near_miss, near_miss_allowed);
     ++funnel_window_.entry_edge_samples;
     funnel_window_.entry_edge_bps_sum += expected_edge_bps;
     funnel_window_.entry_base_required_edge_bps_sum += base_required_edge_bps;
@@ -1307,6 +1338,18 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               std::to_string(observed_filtered_ratio));
       decision.intent.reset();
     } else {
+      if (near_miss_allowed) {
+        ++funnel_window_.intents_passed_fee_aware_near_miss;
+        LogInfo("ORDER_NEAR_MISS_MAKER_ALLOWED: symbol=" + decision.intent->symbol +
+                ", client_order_id=" + decision.intent->client_order_id +
+                ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
+                ", required_edge_bps=" + std::to_string(required_edge_bps) +
+                ", edge_gap_bps=" + std::to_string(entry_edge_gap_bps) +
+                ", near_miss_tolerance_bps=" +
+                std::to_string(config_.execution_entry_gate_near_miss_tolerance_bps) +
+                ", maker_allow_max_gap_bps=" +
+                std::to_string(config_.execution_entry_gate_near_miss_maker_max_gap_bps));
+      }
       OnCostFilterAccepted(decision.intent->symbol);
     }
   }
@@ -2177,6 +2220,11 @@ void BotApplication::LogStatus() {
           ? static_cast<double>(funnel_window.intents_filtered_fee_aware_near_miss) /
                 static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
+  const double passed_cost_near_miss_ratio =
+      funnel_window.entry_edge_samples > 0
+          ? static_cast<double>(funnel_window.intents_passed_fee_aware_near_miss) /
+                static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
   const double strategy_trend_avg_abs_notional =
       funnel_window.strategy_mix_samples > 0
           ? funnel_window.trend_notional_abs_sum /
@@ -2315,6 +2363,8 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.intents_filtered_fee_aware) +
           ", intents_filtered_fee_aware_near_miss=" +
           std::to_string(funnel_window.intents_filtered_fee_aware_near_miss) +
+          ", intents_passed_fee_aware_near_miss=" +
+          std::to_string(funnel_window.intents_passed_fee_aware_near_miss) +
           ", intents_throttled_cost_cooldown=" +
           std::to_string(funnel_window.intents_throttled_cost_cooldown) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
@@ -2478,12 +2528,19 @@ void BotApplication::LogStatus() {
           std::to_string(config_.execution_maker_edge_relax_bps) +
           ", near_miss_tolerance_bps=" +
           std::to_string(config_.execution_entry_gate_near_miss_tolerance_bps) +
+          ", near_miss_maker_allow=" +
+          std::string(config_.execution_entry_gate_near_miss_maker_allow ? "true"
+                                                                          : "false") +
+          ", near_miss_maker_max_gap_bps=" +
+          std::to_string(config_.execution_entry_gate_near_miss_maker_max_gap_bps) +
           ", quality_guard_penalty_bps=" +
           std::to_string(execution_quality_required_edge_penalty_bps_) +
           ", observed_filtered_ratio=" +
           std::to_string(entry_gate_observed_filtered_ratio_) +
           ", observed_near_miss_ratio=" +
           std::to_string(entry_gate_observed_near_miss_ratio_) +
+          ", observed_near_miss_allowed_ratio=" +
+          std::to_string(entry_gate_observed_near_miss_allowed_ratio_) +
           ", cooldown_trigger_count=" +
           std::to_string(config_.execution_cost_filter_cooldown_trigger_count) +
           ", cooldown_ticks=" +
@@ -2494,6 +2551,8 @@ void BotApplication::LogStatus() {
           std::to_string(filtered_cost_ratio) +
           ", filtered_cost_near_miss_ratio=" +
           std::to_string(filtered_cost_near_miss_ratio) +
+          ", passed_cost_near_miss_ratio=" +
+          std::to_string(passed_cost_near_miss_ratio) +
           ", entry_edge_gap_avg_bps=" + std::to_string(entry_edge_gap_avg_bps) +
           ", realized_net_delta_usd=" +
           std::to_string(window_realized_net_delta_usd) +

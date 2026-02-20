@@ -115,7 +115,8 @@ class BotApplication {
                                   double* out_quality_guard_penalty_bps,
                                   double* out_observed_filtered_ratio,
                                   double* out_edge_gap_bps,
-                                  bool* out_near_miss) const;
+                                  bool* out_near_miss,
+                                  bool* out_near_miss_allowed) const;
   /// 开仓成本门冷却是否生效（用于避免连续重复无效入场）。
   bool IsCostFilterCooldownActive(const std::string& symbol,
                                   int* out_remaining_ticks);
@@ -124,7 +125,9 @@ class BotApplication {
   /// 记录一次开仓候选通过（清理连续拦截计数）。
   void OnCostFilterAccepted(const std::string& symbol);
   /// 更新成本门观测比例（全局），供自适应门槛与近阈值观测使用。
-  void UpdateEntryGateObservedRatio(bool filtered, bool near_miss);
+  void UpdateEntryGateObservedRatio(bool filtered,
+                                    bool near_miss,
+                                    bool near_miss_allowed);
   /// 执行质量守卫：根据窗口成交质量动态启停开仓惩罚。
   void EvaluateExecutionQualityGuard(std::uint64_t window_fills,
                                      double window_realized_net_per_fill_usd,
@@ -207,6 +210,7 @@ class BotApplication {
     std::uint64_t intents_filtered_min_notional{0};
     std::uint64_t intents_filtered_fee_aware{0};
     std::uint64_t intents_filtered_fee_aware_near_miss{0};
+    std::uint64_t intents_passed_fee_aware_near_miss{0};
     std::uint64_t intents_throttled_cost_cooldown{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
@@ -301,8 +305,10 @@ class BotApplication {
   std::uint64_t entry_gate_observed_samples_{0};
   std::uint64_t entry_gate_observed_filtered_{0};
   std::uint64_t entry_gate_observed_near_miss_{0};
+  std::uint64_t entry_gate_observed_near_miss_allowed_{0};
   double entry_gate_observed_filtered_ratio_{0.0};
   double entry_gate_observed_near_miss_ratio_{0.0};
+  double entry_gate_observed_near_miss_allowed_ratio_{0.0};
   double recent_execution_window_maker_fill_ratio_{0.0};
   double recent_execution_window_unknown_fill_ratio_{0.0};
 

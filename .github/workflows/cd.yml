@@ -155,12 +155,14 @@ jobs:
           tar -czf deploy_bundle.tgz \
             docker-compose.prod.yml \
             deploy/ecs-deploy.sh \
+            config \
             observability \
             ops \
             tools
           tar -tzf deploy_bundle.tgz > /tmp/deploy_bundle.list
           grep -q '^docker-compose.prod.yml$' /tmp/deploy_bundle.list
           grep -q '^deploy/ecs-deploy.sh$' /tmp/deploy_bundle.list
+          grep -q '^config/' /tmp/deploy_bundle.list
           grep -q '^observability/' /tmp/deploy_bundle.list
           grep -q '^ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
           grep -q '^tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
@@ -230,6 +232,7 @@ jobs:
             for required_file in \
               "${RELEASE_TMP}/docker-compose.prod.yml" \
               "${RELEASE_TMP}/deploy/ecs-deploy.sh" \
+              "${RELEASE_TMP}/config/default.yaml" \
               "${RELEASE_TMP}/tools/closed_loop_runner.sh" \
               "${RELEASE_TMP}/tools/fetch_bybit_kline.py" \
               "${RELEASE_TMP}/tools/integrator_train.py" \
@@ -259,6 +262,8 @@ jobs:
             cp -f "${RELEASE_TMP}/docker-compose.prod.yml" "${DEPLOY_ROOT}/docker-compose.prod.yml"
             mkdir -p "${DEPLOY_ROOT}/deploy"
             cp -f "${RELEASE_TMP}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
+            mkdir -p "${DEPLOY_ROOT}/config"
+            cp -a "${RELEASE_TMP}/config/." "${DEPLOY_ROOT}/config/"
             rm -rf "${DEPLOY_ROOT}/ops"
             cp -a "${RELEASE_TMP}/ops" "${DEPLOY_ROOT}/ops"
             rm -rf "${DEPLOY_ROOT}/tools"
@@ -334,6 +339,7 @@ jobs:
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_closed_loop_report.json" ".artifacts/latest_closed_loop_report.json" "latest_closed_loop_report"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_runtime_assess.json" ".artifacts/latest_runtime_assess.json" "latest_runtime_assess"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime.log" ".artifacts/runtime.log" "runtime_log"
 
           {
             echo "{"
@@ -359,6 +365,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: deploy-closed-loop-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/*.json
+          path: |
+            .artifacts/*.json
+            .artifacts/runtime.log
           include-hidden-files: true
           if-no-files-found: warn

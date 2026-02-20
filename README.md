@@ -159,6 +159,8 @@ docker compose --profile web up -d ai-trade-web
   - `DOCKER_GC_ENABLED`
   - `DOCKER_GC_UNTIL`（默认 `72h`，即仅保留最近 3 天）
   - `DOCKER_GC_PRUNE_IMAGES` / `DOCKER_GC_PRUNE_BUILD_CACHE`
+  - `DOCKER_GC_KEEP_RECENT_TAGS`（按仓库额外保留最近 N 个镜像 tag，默认 `8`）
+  - `DOCKER_GC_KEEP_REPO_MATCHERS`（按仓库名子串匹配清理范围，默认 `ai-trade,ai-trade-research,ai-trade-web`）
   - 默认不清理 volume（`DOCKER_GC_PRUNE_VOLUMES=false`）
 
 可观测性（Prometheus + Grafana + Loki + Promtail）：

@@ -39,7 +39,9 @@ def _require_key(payload: Dict[str, Any], key: str, label: str, errors: List[str
     return payload[key]
 
 
-def _validate_runtime_assess(payload: Dict[str, Any], errors: List[str]) -> None:
+def _validate_runtime_assess(
+    payload: Dict[str, Any], errors: List[str], strict_evolution_metrics: bool = False
+) -> None:
     _require_key(payload, "stage", "runtime_assess", errors)
     verdict = _require_key(payload, "verdict", "runtime_assess", errors)
     if verdict is not None and verdict not in {"PASS", "PASS_WITH_ACTIONS", "FAIL"}:
@@ -57,36 +59,37 @@ def _validate_runtime_assess(payload: Dict[str, Any], errors: List[str]) -> None
             "runtime_assess.metrics",
             errors,
         )
-        _require_key(
-            metrics_obj,
-            "self_evolution_virtual_action_count",
-            "runtime_assess.metrics",
-            errors,
-        )
-        _require_key(
-            metrics_obj,
-            "self_evolution_counterfactual_action_count",
-            "runtime_assess.metrics",
-            errors,
-        )
-        _require_key(
-            metrics_obj,
-            "self_evolution_counterfactual_update_count",
-            "runtime_assess.metrics",
-            errors,
-        )
-        _require_key(
-            metrics_obj,
-            "self_evolution_factor_ic_action_count",
-            "runtime_assess.metrics",
-            errors,
-        )
-        _require_key(
-            metrics_obj,
-            "self_evolution_effective_update_count",
-            "runtime_assess.metrics",
-            errors,
-        )
+        if strict_evolution_metrics:
+            _require_key(
+                metrics_obj,
+                "self_evolution_virtual_action_count",
+                "runtime_assess.metrics",
+                errors,
+            )
+            _require_key(
+                metrics_obj,
+                "self_evolution_counterfactual_action_count",
+                "runtime_assess.metrics",
+                errors,
+            )
+            _require_key(
+                metrics_obj,
+                "self_evolution_counterfactual_update_count",
+                "runtime_assess.metrics",
+                errors,
+            )
+            _require_key(
+                metrics_obj,
+                "self_evolution_factor_ic_action_count",
+                "runtime_assess.metrics",
+                errors,
+            )
+            _require_key(
+                metrics_obj,
+                "self_evolution_effective_update_count",
+                "runtime_assess.metrics",
+                errors,
+            )
 
     fail_reasons = _require_key(payload, "fail_reasons", "runtime_assess", errors)
     if fail_reasons is not None and not isinstance(fail_reasons, list):
@@ -138,7 +141,12 @@ def _validate_summary(payload: Dict[str, Any], label: str, errors: List[str]) ->
         errors.append(f"{label}.overall_status 非法: {overall}")
 
 
-def _validate_one(path: Path, kind: str, errors: List[str]) -> None:
+def _validate_one(
+    path: Path,
+    kind: str,
+    errors: List[str],
+    strict_evolution_metrics: bool = False,
+) -> None:
     try:
         payload = _load_json(path)
     except FileNotFoundError:
@@ -153,7 +161,11 @@ def _validate_one(path: Path, kind: str, errors: List[str]) -> None:
         return
 
     if kind == "runtime_assess":
-        _validate_runtime_assess(obj, errors)
+        _validate_runtime_assess(
+            obj,
+            errors,
+            strict_evolution_metrics=strict_evolution_metrics,
+        )
     elif kind == "closed_loop_report":
         _validate_closed_loop_report(obj, errors)
     elif kind == "run_meta":
@@ -178,6 +190,14 @@ def parse_args() -> argparse.Namespace:
         "--allow-missing",
         action="store_true",
         help="exit 0 when target files are missing",
+    )
+    parser.add_argument(
+        "--strict-evolution-metrics",
+        action="store_true",
+        help=(
+            "require runtime_assess.metrics to include new self-evolution "
+            "fine-grained fields"
+        ),
     )
     return parser.parse_args()
 
@@ -215,7 +235,12 @@ def main() -> int:
 
     errors: List[str] = []
     for path, kind in files:
-        _validate_one(path, kind, errors)
+        _validate_one(
+            path,
+            kind,
+            errors,
+            strict_evolution_metrics=args.strict_evolution_metrics,
+        )
 
     if errors:
         print("[ERROR] report contract validation failed:")

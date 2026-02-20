@@ -133,6 +133,8 @@ jobs:
 
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/closed_loop_report.json" ".artifacts/closed_loop_report.json" "closed_loop_report"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime_assess.json" ".artifacts/runtime_assess.json" "runtime_assess"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime.log" ".artifacts/runtime.log" "runtime_log"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" ".artifacts/daily_summary.json" "daily_summary"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_weekly_summary.json" ".artifacts/weekly_summary.json" "weekly_summary"
 
@@ -160,6 +162,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: closed-loop-report-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/*.json
+          path: |
+            .artifacts/*.json
+            .artifacts/runtime.log
           include-hidden-files: true
           if-no-files-found: warn
