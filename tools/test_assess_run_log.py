@@ -42,6 +42,7 @@ class AssessRunLogTest(unittest.TestCase):
         strategy_mix_avg_abs_blended: float = 120.0,
         filtered_cost_ratio: float = 0.0,
         filtered_cost_near_miss_ratio: float = 0.0,
+        passed_cost_near_miss_ratio: float = 0.0,
         entry_edge_gap_avg_bps: float = 0.0,
         realized_net_per_fill: float = 0.0,
         fee_bps_per_fill: float = 0.0,
@@ -57,14 +58,21 @@ class AssessRunLogTest(unittest.TestCase):
         taker_fee_bps: float = 0.0,
         maker_fill_ratio: float = 0.0,
         entry_gate_near_miss_tolerance_bps: float = 0.0,
+        entry_gate_near_miss_maker_allow: bool = False,
+        entry_gate_near_miss_maker_max_gap_bps: float = 0.0,
         entry_gate_observed_filtered_ratio: float = 0.0,
         entry_gate_observed_near_miss_ratio: float = 0.0,
+        entry_gate_observed_near_miss_allowed_ratio: float = 0.0,
         concentration_top1_share: float = 0.0,
         concentration_symbol_count: int = 0,
         execution_quality_guard_active: bool = False,
         execution_quality_guard_penalty_bps: float = 0.0,
         reconcile_anomaly_streak: int = 0,
         reconcile_anomaly_reduce_only: bool = False,
+        equity: float = 100000.0,
+        realized_pnl: float = 0.0,
+        fees: float = 0.0,
+        realized_net: float = 0.0,
         prefix: str = "",
     ) -> str:
         reduce_only_text = "true" if reduce_only else "false"
@@ -77,6 +85,9 @@ class AssessRunLogTest(unittest.TestCase):
         reconcile_anomaly_reduce_only_text = (
             "true" if reconcile_anomaly_reduce_only else "false"
         )
+        entry_gate_near_miss_maker_allow_text = (
+            "true" if entry_gate_near_miss_maker_allow else "false"
+        )
         ts = (dt.datetime(2026, 2, 14, 15, 0, 0) + dt.timedelta(seconds=tick)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
@@ -86,8 +97,9 @@ class AssessRunLogTest(unittest.TestCase):
             "ws={market_channel=public_ws, fill_channel=private_ws, "
             f"public_ws_healthy={public_ws_healthy_text}, private_ws_healthy={private_ws_healthy_text}"
             "}, "
-            "account={equity=100000.0, drawdown_pct=0.000100, "
-            f"notional={notional:.6f}, realized_pnl=0.0, fees=0.0, realized_net=0.0}}, "
+            f"account={{equity={equity:.6f}, drawdown_pct=0.000100, "
+            f"notional={notional:.6f}, realized_pnl={realized_pnl:.6f}, "
+            f"fees={fees:.6f}, realized_net={realized_net:.6f}}}, "
             "concentration={gross_notional_usd=1000.0, top1_abs_notional_usd=800.0, "
             f"top1_symbol=BTCUSDT, top1_share={concentration_top1_share}, "
             f"symbol_count={concentration_symbol_count}}}, "
@@ -105,11 +117,17 @@ class AssessRunLogTest(unittest.TestCase):
             "entry_gate={enabled=true, round_trip_cost_bps=13.0, "
             "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0, "
             f"near_miss_tolerance_bps={entry_gate_near_miss_tolerance_bps}, "
+            "near_miss_maker_allow="
+            f"{entry_gate_near_miss_maker_allow_text}, "
+            "near_miss_maker_max_gap_bps="
+            f"{entry_gate_near_miss_maker_max_gap_bps}, "
             "quality_guard_penalty_bps=0.0, "
             f"observed_filtered_ratio={entry_gate_observed_filtered_ratio}, "
-            f"observed_near_miss_ratio={entry_gate_observed_near_miss_ratio}}}, "
+            f"observed_near_miss_ratio={entry_gate_observed_near_miss_ratio}, "
+            f"observed_near_miss_allowed_ratio={entry_gate_observed_near_miss_allowed_ratio}}}, "
             "execution_window={filtered_cost_ratio="
             f"{filtered_cost_ratio}, filtered_cost_near_miss_ratio={filtered_cost_near_miss_ratio}, "
+            f"passed_cost_near_miss_ratio={passed_cost_near_miss_ratio}, "
             f"entry_edge_gap_avg_bps={entry_edge_gap_avg_bps}, realized_net_delta_usd=0.0, "
             f"realized_net_per_fill={realized_net_per_fill}, fee_delta_usd=0.0, "
             f"fee_bps_per_fill={fee_bps_per_fill}, maker_fills={maker_fills}, "
@@ -282,20 +300,24 @@ class AssessRunLogTest(unittest.TestCase):
                 0.0,
                 filtered_cost_ratio=0.60,
                 filtered_cost_near_miss_ratio=0.20,
+                passed_cost_near_miss_ratio=0.05,
                 entry_edge_gap_avg_bps=0.35,
                 entry_gate_near_miss_tolerance_bps=0.30,
                 entry_gate_observed_filtered_ratio=0.45,
                 entry_gate_observed_near_miss_ratio=0.25,
+                entry_gate_observed_near_miss_allowed_ratio=0.08,
             )
             + self._runtime_line(
                 40,
                 0.0,
                 filtered_cost_ratio=0.40,
                 filtered_cost_near_miss_ratio=0.10,
+                passed_cost_near_miss_ratio=0.02,
                 entry_edge_gap_avg_bps=0.15,
                 entry_gate_near_miss_tolerance_bps=0.10,
                 entry_gate_observed_filtered_ratio=0.35,
                 entry_gate_observed_near_miss_ratio=0.15,
+                entry_gate_observed_near_miss_allowed_ratio=0.04,
             )
         )
         text = (
@@ -317,7 +339,14 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(
             metrics["entry_gate_observed_near_miss_ratio"], 0.15, places=6
         )
+        self.assertAlmostEqual(
+            metrics["entry_gate_observed_near_miss_allowed_ratio_avg"], 0.06, places=6
+        )
+        self.assertAlmostEqual(
+            metrics["entry_gate_observed_near_miss_allowed_ratio"], 0.04, places=6
+        )
         self.assertAlmostEqual(metrics["filtered_cost_near_miss_ratio_avg"], 0.15, places=6)
+        self.assertAlmostEqual(metrics["passed_cost_near_miss_ratio_avg"], 0.035, places=6)
         self.assertAlmostEqual(metrics["entry_edge_gap_avg_bps"], 0.25, places=6)
 
     def test_assess_warn_on_high_concentration(self):
@@ -539,6 +568,66 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(
             any("执行净收益质量未达标" in x for x in report["fail_reasons"])
+        )
+
+    def test_s5_fail_when_equity_change_below_threshold(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.01,
+                equity=100000.0 - float(i) * 2.0,
+                realized_net=0.0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            + runtime
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_equity_change_usd=-50.0,
+            s5_min_equity_change_samples=10,
+        )
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("权益变化未达标" in x for x in report["fail_reasons"])
+        )
+
+    def test_s5_fail_when_equity_realized_gap_above_threshold(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.01,
+                equity=100000.0 + float(i) * 3.0,
+                realized_net=0.0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            + runtime
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_max_equity_vs_realized_gap_usd=120.0,
+            s5_min_equity_change_samples=10,
+        )
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("权益与已实现净盈亏偏差过大" in x for x in report["fail_reasons"])
         )
 
     def test_s5_fail_when_no_gate_pass(self):

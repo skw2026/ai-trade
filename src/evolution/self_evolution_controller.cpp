@@ -779,13 +779,21 @@ std::optional<EvolutionWeights> SelfEvolutionController::ProposeFactorIcWeights(
     return std::nullopt;
   }
 
-  const double trend_score =
-      std::fabs(trend_ic) >= config_.factor_ic_min_abs ? std::max(0.0, trend_ic)
-                                                       : 0.0;
+  const bool trend_ic_strong =
+      std::fabs(trend_ic) >= config_.factor_ic_min_abs;
+  const bool defensive_ic_strong =
+      std::fabs(defensive_ic) >= config_.factor_ic_min_abs;
+  if (!trend_ic_strong && !defensive_ic_strong) {
+    return std::nullopt;
+  }
+
+  // 将 [-1,1] 的相关性映射为 [0,1] 得分，负相关会显式压低该分量权重。
+  const auto ic_to_score = [](double ic) {
+    return std::clamp(0.5 + 0.5 * ic, 0.0, 1.0);
+  };
+  const double trend_score = trend_ic_strong ? ic_to_score(trend_ic) : 0.5;
   const double defensive_score =
-      std::fabs(defensive_ic) >= config_.factor_ic_min_abs
-          ? std::max(0.0, defensive_ic)
-          : 0.0;
+      defensive_ic_strong ? ic_to_score(defensive_ic) : 0.5;
   const double score_sum = trend_score + defensive_score;
   if (score_sum <= kStatsEpsilon) {
     return std::nullopt;

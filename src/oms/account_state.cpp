@@ -76,7 +76,10 @@ double AccountState::position_qty(const std::string& symbol) const {
 std::vector<std::string> AccountState::GetActiveSymbols() const {
   std::vector<std::string> out;
   out.reserve(positions_.size());
-  for (const auto& [symbol, _] : positions_) {
+  for (const auto& [symbol, position] : positions_) {
+    if (std::fabs(position.qty) <= kEpsilon) {
+      continue;
+    }
     out.push_back(symbol);
   }
   return out;

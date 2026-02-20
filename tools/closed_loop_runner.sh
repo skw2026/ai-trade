@@ -79,6 +79,9 @@ REQUIRE_S5_LEARNABILITY_ACTIVITY="${CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY
 S5_MIN_EFFECTIVE_UPDATES="${CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES:-1}"
 S5_MIN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD:--0.001}"
 S5_MIN_REALIZED_NET_PER_FILL_WINDOWS="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS:-10}"
+S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
+S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
+S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
 RUNTIME_CONFIG_PATH="${AI_TRADE_CONFIG_PATH:-config/bybit.demo.evolution.yaml}"
 
 usage() {
@@ -140,6 +143,9 @@ Env toggles:
   CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES=<int>            S5 强门禁：有效学习更新最小次数 (default: 1)
   CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD=<float>  S5 强门禁：单位成交净收益下限 (default: -0.001)
   CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS=<int> S5 生效条件：fills>0窗口最小数量 (default: 10)
+  CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
+  CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
+  CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
 EOF
 }
 
@@ -262,11 +268,31 @@ trim() {
   echo "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
-yaml_bool_value() {
-  local key="$1"
-  local path="$2"
+yaml_section_bool_value() {
+  local section="$1"
+  local key="$2"
+  local path="$3"
   local line
-  line="$(grep -m1 -E "^[[:space:]]*${key}:[[:space:]]*" "${path}" || true)"
+  line="$(
+    awk -v section="${section}" -v key="${key}" '
+      BEGIN { in_section = 0 }
+      {
+        raw = $0
+        sub(/\r$/, "", raw)
+        if (raw ~ /^[^[:space:]#][^:]*:[[:space:]]*($|#)/) {
+          section_name = raw
+          sub(/[[:space:]]*#.*/, "", section_name)
+          sub(/:.*/, "", section_name)
+          in_section = (section_name == section)
+          next
+        }
+        if (in_section && raw ~ ("^[[:space:]]+" key ":[[:space:]]*")) {
+          print raw
+          exit
+        }
+      }
+    ' "${path}" || true
+  )"
   if [[ -z "${line}" ]]; then
     echo ""
     return 0
@@ -343,9 +369,9 @@ verify_s5_learning_switches() {
   local use_virtual
   local use_factor_ic
   local use_learnability
-  use_virtual="$(yaml_bool_value "use_virtual_pnl" "${RUNTIME_CONFIG_PATH}")"
-  use_factor_ic="$(yaml_bool_value "enable_factor_ic_adaptive_weights" "${RUNTIME_CONFIG_PATH}")"
-  use_learnability="$(yaml_bool_value "enable_learnability_gate" "${RUNTIME_CONFIG_PATH}")"
+  use_virtual="$(yaml_section_bool_value "self_evolution" "use_virtual_pnl" "${RUNTIME_CONFIG_PATH}")"
+  use_factor_ic="$(yaml_section_bool_value "self_evolution" "enable_factor_ic_adaptive_weights" "${RUNTIME_CONFIG_PATH}")"
+  use_learnability="$(yaml_section_bool_value "self_evolution" "enable_learnability_gate" "${RUNTIME_CONFIG_PATH}")"
   echo "[INFO] S5 learning switches: config=${RUNTIME_CONFIG_PATH} use_virtual_pnl=${use_virtual:-missing} enable_factor_ic_adaptive_weights=${use_factor_ic:-missing} enable_learnability_gate=${use_learnability:-missing}"
 
   local failed="false"
@@ -519,7 +545,14 @@ run_assess() {
       --s5-min-effective-updates "${S5_MIN_EFFECTIVE_UPDATES}"
       --s5-min-realized-net-per-fill-usd "${S5_MIN_REALIZED_NET_PER_FILL_USD}"
       --s5-min-realized-net-per-fill-windows "${S5_MIN_REALIZED_NET_PER_FILL_WINDOWS}"
+      --s5-min-equity-change-samples "${S5_MIN_EQUITY_CHANGE_SAMPLES}"
     )
+    if [[ -n "${S5_MIN_EQUITY_CHANGE_USD}" ]]; then
+      ASSESS_ARGS+=(--s5-min-equity-change-usd "${S5_MIN_EQUITY_CHANGE_USD}")
+    fi
+    if [[ -n "${S5_MAX_EQUITY_VS_REALIZED_GAP_USD}" ]]; then
+      ASSESS_ARGS+=(--s5-max-equity-vs-realized-gap-usd "${S5_MAX_EQUITY_VS_REALIZED_GAP_USD}")
+    fi
   fi
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${ASSESS_ARGS[@]}"
   echo "[INFO] runtime assess done"

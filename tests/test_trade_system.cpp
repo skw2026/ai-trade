@@ -530,6 +530,48 @@ int main() {
   }
 
   {
+    // GetActiveSymbols 仅应返回非零仓位 symbol，避免零仓位污染集中度统计。
+    ai_trade::AccountState account;
+    account.OnMarket(ai_trade::MarketEvent{1, "BTCUSDT", 100.0, 100.0});
+    account.OnMarket(ai_trade::MarketEvent{2, "ETHUSDT", 2000.0, 2000.0});
+
+    ai_trade::FillEvent btc_open;
+    btc_open.fill_id = "active-btc-open";
+    btc_open.client_order_id = "active-btc-open-order";
+    btc_open.symbol = "BTCUSDT";
+    btc_open.direction = 1;
+    btc_open.qty = 1.0;
+    btc_open.price = 100.0;
+    account.ApplyFill(btc_open);
+
+    ai_trade::FillEvent btc_close;
+    btc_close.fill_id = "active-btc-close";
+    btc_close.client_order_id = "active-btc-close-order";
+    btc_close.symbol = "BTCUSDT";
+    btc_close.direction = -1;
+    btc_close.qty = 1.0;
+    btc_close.price = 100.0;
+    account.ApplyFill(btc_close);
+
+    ai_trade::FillEvent eth_open;
+    eth_open.fill_id = "active-eth-open";
+    eth_open.client_order_id = "active-eth-open-order";
+    eth_open.symbol = "ETHUSDT";
+    eth_open.direction = -1;
+    eth_open.qty = 0.5;
+    eth_open.price = 2000.0;
+    account.ApplyFill(eth_open);
+
+    const auto active_symbols = account.GetActiveSymbols();
+    const std::unordered_set<std::string> active_set(active_symbols.begin(),
+                                                     active_symbols.end());
+    if (active_set.size() != 1 || active_set.count("ETHUSDT") != 1) {
+      std::cerr << "活跃 symbol 仅应包含非零仓位 ETHUSDT\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::ExecutionEngine execution(/*max_order_notional_usd=*/1000.0);
     const ai_trade::RiskAdjustedPosition reduce_target{
         .adjusted_notional_usd = 100.0, .reduce_only = true};
@@ -1831,6 +1873,83 @@ int main() {
         action->trend_factor_ic <= 0.0 ||
         !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
       std::cerr << "因子 IC 自适应调权行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：trend 因子 IC 为负时，应触发 trend 降权。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.1;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = false;
+    config.enable_factor_ic_adaptive_weights = true;
+    config.factor_ic_min_samples = 2;
+    config.factor_ic_min_abs = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(1,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/1000.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/100.0,
+                    /*signal_symbol=*/"BTCUSDT")
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    if (controller
+            .OnTick(2,
+                    10000.0,
+                    ai_trade::RegimeBucket::kRange,
+                    /*drawdown_pct=*/0.0,
+                    /*account_notional_usd=*/0.0,
+                    /*trend_signal_notional_usd=*/600.0,
+                    /*defensive_signal_notional_usd=*/0.0,
+                    /*mark_price_usd=*/95.0,
+                    /*signal_symbol=*/"BTCUSDT")
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/500.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/94.05,
+        /*signal_symbol=*/"BTCUSDT");
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_FACTOR_IC_DECREASE_TREND" ||
+        !action->used_factor_ic_adaptive_weighting ||
+        action->trend_factor_ic >= 0.0 ||
+        !(action->trend_weight_after < action->trend_weight_before)) {
+      std::cerr << "负相关 IC 下趋势降权行为不符合预期\n";
       return 1;
     }
   }

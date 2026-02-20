@@ -17,7 +17,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -98,6 +98,9 @@ MIN_S5_LEARNABILITY_PASS_FOR_UPDATE_WARN = 10
 DEFAULT_S5_MIN_EFFECTIVE_UPDATES = 1
 DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_USD = -0.001
 DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS = 10
+DEFAULT_S5_MIN_EQUITY_CHANGE_USD: Optional[float] = None
+DEFAULT_S5_MIN_EQUITY_CHANGE_SAMPLES = 0
+DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD: Optional[float] = None
 
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -125,6 +128,7 @@ RUNTIME_EXECUTION_WINDOW_RE = re.compile(
     r"RUNTIME_STATUS:.*?execution_window=\{[^}]*?"
     r"filtered_cost_ratio=(?P<filtered_cost_ratio>-?[0-9]+(?:\.[0-9]+)?), "
     r"(?:filtered_cost_near_miss_ratio=(?P<filtered_cost_near_miss_ratio>-?[0-9]+(?:\.[0-9]+)?), )?"
+    r"(?:passed_cost_near_miss_ratio=(?P<passed_cost_near_miss_ratio>-?[0-9]+(?:\.[0-9]+)?), )?"
     r"(?:entry_edge_gap_avg_bps=(?P<entry_edge_gap_avg_bps>-?[0-9]+(?:\.[0-9]+)?), )?"
     r"realized_net_delta_usd=(?P<realized_net_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
     r"realized_net_per_fill=(?P<realized_net_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
@@ -145,9 +149,14 @@ RUNTIME_EXECUTION_WINDOW_RE = re.compile(
 RUNTIME_ENTRY_GATE_RE = re.compile(
     r"RUNTIME_STATUS:.*?entry_gate=\{[^}]*?"
     r"near_miss_tolerance_bps=(?P<near_miss_tolerance_bps>-?[0-9]+(?:\.[0-9]+)?), "
+    r"[^}]*?"
     r"quality_guard_penalty_bps=(?P<quality_guard_penalty_bps>-?[0-9]+(?:\.[0-9]+)?), "
+    r"[^}]*?"
     r"observed_filtered_ratio=(?P<observed_filtered_ratio>-?[0-9]+(?:\.[0-9]+)?), "
+    r"[^}]*?"
     r"observed_near_miss_ratio=(?P<observed_near_miss_ratio>-?[0-9]+(?:\.[0-9]+)?)"
+    r"(?:, [^}]*?observed_near_miss_allowed_ratio="
+    r"(?P<observed_near_miss_allowed_ratio>-?[0-9]+(?:\.[0-9]+)?))?"
 )
 RUNTIME_CONCENTRATION_RE = re.compile(
     r"RUNTIME_STATUS:.*?concentration=\{[^}]*?"
@@ -232,6 +241,24 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS,
         help="S5 生效条件：至少 N 个窗口观测到 fills>0 才检查单位成交净收益门槛",
+    )
+    parser.add_argument(
+        "--s5-min-equity-change-usd",
+        type=float,
+        default=DEFAULT_S5_MIN_EQUITY_CHANGE_USD,
+        help="S5 可选硬门槛：权益变化下限（USD）；未设置则不校验",
+    )
+    parser.add_argument(
+        "--s5-min-equity-change-samples",
+        type=int,
+        default=DEFAULT_S5_MIN_EQUITY_CHANGE_SAMPLES,
+        help="S5 权益门槛生效条件：至少 N 个账户采样点（默认 0）",
+    )
+    parser.add_argument(
+        "--s5-max-equity-vs-realized-gap-usd",
+        type=float,
+        default=DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD,
+        help="S5 可选硬门槛：|equity_change - realized_net_change| 上限（USD）；未设置则不校验",
     )
     return parser.parse_args()
 
@@ -488,6 +515,7 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
 def extract_execution_window_series(text: str) -> Dict[str, float]:
     filtered_cost_ratios: list[float] = []
     filtered_cost_near_miss_ratios: list[float] = []
+    passed_cost_near_miss_ratios: list[float] = []
     entry_edge_gap_avg_bps_values: list[float] = []
     realized_net_per_fills: list[float] = []
     fee_bps_per_fills: list[float] = []
@@ -509,6 +537,9 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
             filtered_cost_ratios.append(float(m.group("filtered_cost_ratio")))
             filtered_cost_near_miss_ratios.append(
                 float(m.group("filtered_cost_near_miss_ratio") or 0.0)
+            )
+            passed_cost_near_miss_ratios.append(
+                float(m.group("passed_cost_near_miss_ratio") or 0.0)
             )
             entry_edge_gap_avg_bps_values.append(
                 float(m.group("entry_edge_gap_avg_bps") or 0.0)
@@ -560,6 +591,8 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
             "filtered_cost_ratio_latest": 0.0,
             "filtered_cost_near_miss_ratio_avg": 0.0,
             "filtered_cost_near_miss_ratio_latest": 0.0,
+            "passed_cost_near_miss_ratio_avg": 0.0,
+            "passed_cost_near_miss_ratio_latest": 0.0,
             "entry_edge_gap_avg_bps_avg": 0.0,
             "realized_net_per_fill_avg": 0.0,
             "fee_bps_per_fill_avg": 0.0,
@@ -584,6 +617,9 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
         "filtered_cost_near_miss_ratio_avg": sum(filtered_cost_near_miss_ratios)
         / runtime_count,
         "filtered_cost_near_miss_ratio_latest": filtered_cost_near_miss_ratios[-1],
+        "passed_cost_near_miss_ratio_avg": sum(passed_cost_near_miss_ratios)
+        / runtime_count,
+        "passed_cost_near_miss_ratio_latest": passed_cost_near_miss_ratios[-1],
         "entry_edge_gap_avg_bps_avg": sum(entry_edge_gap_avg_bps_values)
         / runtime_count,
         "realized_net_per_fill_avg": sum(realized_net_per_fills) / runtime_count,
@@ -647,6 +683,7 @@ def extract_entry_gate_series(text: str) -> Dict[str, float]:
     near_miss_tolerance_values: list[float] = []
     observed_filtered_ratio_values: list[float] = []
     observed_near_miss_ratio_values: list[float] = []
+    observed_near_miss_allowed_ratio_values: list[float] = []
 
     for m in RUNTIME_ENTRY_GATE_RE.finditer(text):
         try:
@@ -659,6 +696,9 @@ def extract_entry_gate_series(text: str) -> Dict[str, float]:
             observed_near_miss_ratio_values.append(
                 float(m.group("observed_near_miss_ratio"))
             )
+            observed_near_miss_allowed_ratio_values.append(
+                float(m.group("observed_near_miss_allowed_ratio") or 0.0)
+            )
         except ValueError:
             continue
 
@@ -670,6 +710,8 @@ def extract_entry_gate_series(text: str) -> Dict[str, float]:
             "observed_filtered_ratio_avg": 0.0,
             "observed_near_miss_ratio_avg": 0.0,
             "observed_near_miss_ratio_latest": 0.0,
+            "observed_near_miss_allowed_ratio_avg": 0.0,
+            "observed_near_miss_allowed_ratio_latest": 0.0,
         }
     return {
         "runtime_count": float(runtime_count),
@@ -679,6 +721,11 @@ def extract_entry_gate_series(text: str) -> Dict[str, float]:
         "observed_near_miss_ratio_avg": sum(observed_near_miss_ratio_values)
         / runtime_count,
         "observed_near_miss_ratio_latest": observed_near_miss_ratio_values[-1],
+        "observed_near_miss_allowed_ratio_avg": sum(
+            observed_near_miss_allowed_ratio_values
+        )
+        / runtime_count,
+        "observed_near_miss_allowed_ratio_latest": observed_near_miss_allowed_ratio_values[-1],
     }
 
 
@@ -792,6 +839,9 @@ def assess(
     s5_min_effective_updates: int = DEFAULT_S5_MIN_EFFECTIVE_UPDATES,
     s5_min_realized_net_per_fill_usd: float = DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_USD,
     s5_min_realized_net_per_fill_windows: int = DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS,
+    s5_min_equity_change_usd: Optional[float] = DEFAULT_S5_MIN_EQUITY_CHANGE_USD,
+    s5_min_equity_change_samples: int = DEFAULT_S5_MIN_EQUITY_CHANGE_SAMPLES,
+    s5_max_equity_vs_realized_gap_usd: Optional[float] = DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD,
 ) -> Dict[str, object]:
     original_text = text
     flat_start_rebased = False
@@ -947,6 +997,12 @@ def assess(
         "filtered_cost_near_miss_ratio_avg": execution_window[
             "filtered_cost_near_miss_ratio_avg"
         ],
+        "passed_cost_near_miss_ratio": execution_window[
+            "passed_cost_near_miss_ratio_latest"
+        ],
+        "passed_cost_near_miss_ratio_avg": execution_window[
+            "passed_cost_near_miss_ratio_avg"
+        ],
         "entry_edge_gap_avg_bps": execution_window["entry_edge_gap_avg_bps_avg"],
         "realized_net_per_fill": execution_window["realized_net_per_fill_avg"],
         "fee_bps_per_fill": execution_window["fee_bps_per_fill_avg"],
@@ -988,6 +1044,12 @@ def assess(
         ],
         "entry_gate_observed_near_miss_ratio_avg": entry_gate[
             "observed_near_miss_ratio_avg"
+        ],
+        "entry_gate_observed_near_miss_allowed_ratio": entry_gate[
+            "observed_near_miss_allowed_ratio_latest"
+        ],
+        "entry_gate_observed_near_miss_allowed_ratio_avg": entry_gate[
+            "observed_near_miss_allowed_ratio_avg"
         ],
         "concentration_runtime_count": int(concentration["runtime_count"]),
         "concentration_top1_share_avg": concentration["top1_share_avg"],
@@ -1184,6 +1246,44 @@ def assess(
                 f"fill_windows={metrics['funnel_fills_runtime_count']}, "
                 f"required_windows>={max(0, s5_min_realized_net_per_fill_windows)}"
             )
+        if (
+            stage.name == "S5"
+            and s5_min_equity_change_usd is not None
+            and metrics["runtime_account_samples"]
+            >= max(0, s5_min_equity_change_samples)
+        ):
+            equity_change_usd = account_pnl.get("equity_change_usd")
+            if not isinstance(equity_change_usd, (int, float)):
+                fail_reasons.append(
+                    "权益变化门禁无法评估：缺少 equity_change_usd 采样"
+                )
+            elif equity_change_usd < s5_min_equity_change_usd:
+                fail_reasons.append(
+                    "权益变化未达标（S5 强门禁）: "
+                    f"equity_change_usd={equity_change_usd:.6f}, "
+                    f"threshold={s5_min_equity_change_usd:.6f}, "
+                    f"account_samples={metrics['runtime_account_samples']}, "
+                    f"required_samples>={max(0, s5_min_equity_change_samples)}"
+                )
+        if (
+            stage.name == "S5"
+            and s5_max_equity_vs_realized_gap_usd is not None
+            and metrics["runtime_account_samples"]
+            >= max(0, s5_min_equity_change_samples)
+        ):
+            gap_usd = metrics.get("equity_vs_realized_net_gap_usd")
+            if not isinstance(gap_usd, (int, float)):
+                fail_reasons.append(
+                    "权益与已实现净盈亏偏差门禁无法评估：缺少 gap 采样"
+                )
+            elif abs(gap_usd) > s5_max_equity_vs_realized_gap_usd:
+                fail_reasons.append(
+                    "权益与已实现净盈亏偏差过大（S5 强门禁）: "
+                    f"gap_usd={gap_usd:.6f}, "
+                    f"threshold={s5_max_equity_vs_realized_gap_usd:.6f}, "
+                    f"account_samples={metrics['runtime_account_samples']}, "
+                    f"required_samples>={max(0, s5_min_equity_change_samples)}"
+                )
 
     # 软告警：DEPLOY 仅保留硬失败项，避免上线门禁被策略类黄灯误阻断。
     if stage.name != "DEPLOY":
@@ -1458,6 +1558,21 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if args.s5_min_equity_change_samples < 0:
+        print(
+            "[ERROR] --s5-min-equity-change-samples 必须大于等于 0",
+            file=sys.stderr,
+        )
+        return 2
+    if (
+        args.s5_max_equity_vs_realized_gap_usd is not None
+        and args.s5_max_equity_vs_realized_gap_usd < 0
+    ):
+        print(
+            "[ERROR] --s5-max-equity-vs-realized-gap-usd 不能为负数",
+            file=sys.stderr,
+        )
+        return 2
 
     text = load_text(log_path)
     report = assess(
@@ -1467,6 +1582,9 @@ def main() -> int:
         s5_min_effective_updates=args.s5_min_effective_updates,
         s5_min_realized_net_per_fill_usd=args.s5_min_realized_net_per_fill_usd,
         s5_min_realized_net_per_fill_windows=args.s5_min_realized_net_per_fill_windows,
+        s5_min_equity_change_usd=args.s5_min_equity_change_usd,
+        s5_min_equity_change_samples=args.s5_min_equity_change_samples,
+        s5_max_equity_vs_realized_gap_usd=args.s5_max_equity_vs_realized_gap_usd,
     )
     print_report(report)
 
