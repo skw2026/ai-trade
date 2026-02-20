@@ -77,7 +77,6 @@ struct SelfEvolutionConfig {
   int min_update_interval_ticks{120};
   double min_abs_window_pnl_usd{0.0};
   int min_bucket_ticks_for_update{0};
-  int min_consecutive_direction_windows{1};
   bool use_virtual_pnl{false};
   bool use_counterfactual_search{false};
   bool counterfactual_fallback_to_factor_ic{true};
@@ -179,7 +178,6 @@ struct ExecutionConfig {
   double expected_slippage_bps{1.0};
   double min_expected_edge_bps{1.0};
   double required_edge_cap_bps{0.0};
-  double entry_gate_near_miss_tolerance_bps{0.0};
   bool adaptive_fee_gate_enabled{true};
   int adaptive_fee_gate_min_samples{120};
   double adaptive_fee_gate_trigger_ratio{0.75};
@@ -249,7 +247,6 @@ struct AppConfig {
   double execution_expected_slippage_bps{1.0};
   double execution_min_expected_edge_bps{1.0};
   double execution_required_edge_cap_bps{0.0};
-  double execution_entry_gate_near_miss_tolerance_bps{0.0};
   bool execution_adaptive_fee_gate_enabled{true};
   int execution_adaptive_fee_gate_min_samples{120};
   double execution_adaptive_fee_gate_trigger_ratio{0.75};
@@ -321,7 +318,6 @@ struct AppConfig {
         execution_expected_slippage_bps,
         execution_min_expected_edge_bps,
         execution_required_edge_cap_bps,
-        execution_entry_gate_near_miss_tolerance_bps,
         execution_adaptive_fee_gate_enabled,
         execution_adaptive_fee_gate_min_samples,
         execution_adaptive_fee_gate_trigger_ratio,
