@@ -74,32 +74,6 @@ struct UniverseConfig {
 struct SelfEvolutionConfig {
   bool enabled{false};
   int update_interval_ticks{60};
-  int min_update_interval_ticks{120};
-  double min_abs_window_pnl_usd{0.0};
-  int min_bucket_ticks_for_update{0};
-  bool use_virtual_pnl{false};
-  bool use_counterfactual_search{false};
-  bool counterfactual_fallback_to_factor_ic{true};
-  double counterfactual_min_improvement_usd{0.0};
-  double counterfactual_improvement_decay_per_filtered_signal_usd{0.0};
-  int counterfactual_min_fill_count_for_update{0};
-  int counterfactual_min_t_stat_samples_for_update{0};
-  double counterfactual_min_t_stat_abs_for_update{0.0};
-  double virtual_cost_bps{0.0};
-  bool enable_factor_ic_adaptive_weights{false};
-  int factor_ic_min_samples{120};
-  double factor_ic_min_abs{0.01};
-  bool enable_learnability_gate{false};
-  int learnability_min_samples{120};
-  double learnability_min_t_stat_abs{1.5};
-  double objective_alpha_pnl{1.0};
-  double objective_beta_drawdown{0.0};
-  double objective_gamma_notional_churn{0.0};
-  double max_single_strategy_weight{0.60};
-  double max_weight_step{0.05};
-  int rollback_degrade_windows{2};
-  double rollback_degrade_threshold_score{0.0};
-  int rollback_cooldown_ticks{240};
   double initial_trend_weight{0.50};
   double initial_defensive_weight{0.50};
 };
@@ -176,36 +150,6 @@ struct ExecutionConfig {
   double entry_fee_bps{5.5};
   double exit_fee_bps{5.5};
   double expected_slippage_bps{1.0};
-  double min_expected_edge_bps{1.0};
-  double required_edge_cap_bps{0.0};
-  bool adaptive_fee_gate_enabled{true};
-  int adaptive_fee_gate_min_samples{120};
-  double adaptive_fee_gate_trigger_ratio{0.75};
-  double adaptive_fee_gate_max_relax_bps{2.0};
-  bool maker_entry_enabled{false};
-  bool maker_fallback_to_market{true};
-  double maker_price_offset_bps{1.0};
-  bool maker_post_only{true};
-  double maker_edge_relax_bps{0.0};
-  int cost_filter_cooldown_trigger_count{0};
-  int cost_filter_cooldown_ticks{0};
-  bool quality_guard_enabled{false};
-  int quality_guard_min_fills{12};
-  int quality_guard_bad_streak_to_trigger{2};
-  int quality_guard_good_streak_to_release{2};
-  double quality_guard_min_realized_net_per_fill_usd{-0.005};
-  double quality_guard_max_fee_bps_per_fill{8.0};
-  double quality_guard_required_edge_penalty_bps{1.5};
-  bool dynamic_edge_enabled{true};
-  double dynamic_edge_regime_trend_relax_bps{0.4};
-  double dynamic_edge_regime_range_penalty_bps{0.2};
-  double dynamic_edge_regime_extreme_penalty_bps{0.8};
-  double dynamic_edge_volatility_relax_bps{0.4};
-  double dynamic_edge_volatility_penalty_bps{0.6};
-  double dynamic_edge_liquidity_maker_ratio_threshold{0.55};
-  double dynamic_edge_liquidity_unknown_ratio_threshold{0.20};
-  double dynamic_edge_liquidity_relax_bps{0.4};
-  double dynamic_edge_liquidity_penalty_bps{0.6};
 };
 
 // ============================================================================
@@ -245,36 +189,6 @@ struct AppConfig {
   double execution_entry_fee_bps{5.5};
   double execution_exit_fee_bps{5.5};
   double execution_expected_slippage_bps{1.0};
-  double execution_min_expected_edge_bps{1.0};
-  double execution_required_edge_cap_bps{0.0};
-  bool execution_adaptive_fee_gate_enabled{true};
-  int execution_adaptive_fee_gate_min_samples{120};
-  double execution_adaptive_fee_gate_trigger_ratio{0.75};
-  double execution_adaptive_fee_gate_max_relax_bps{2.0};
-  bool execution_maker_entry_enabled{false};
-  bool execution_maker_fallback_to_market{true};
-  double execution_maker_price_offset_bps{1.0};
-  bool execution_maker_post_only{true};
-  double execution_maker_edge_relax_bps{0.0};
-  int execution_cost_filter_cooldown_trigger_count{0};
-  int execution_cost_filter_cooldown_ticks{0};
-  bool execution_quality_guard_enabled{false};
-  int execution_quality_guard_min_fills{12};
-  int execution_quality_guard_bad_streak_to_trigger{2};
-  int execution_quality_guard_good_streak_to_release{2};
-  double execution_quality_guard_min_realized_net_per_fill_usd{-0.005};
-  double execution_quality_guard_max_fee_bps_per_fill{8.0};
-  double execution_quality_guard_required_edge_penalty_bps{1.5};
-  bool execution_dynamic_edge_enabled{true};
-  double execution_dynamic_edge_regime_trend_relax_bps{0.4};
-  double execution_dynamic_edge_regime_range_penalty_bps{0.2};
-  double execution_dynamic_edge_regime_extreme_penalty_bps{0.8};
-  double execution_dynamic_edge_volatility_relax_bps{0.4};
-  double execution_dynamic_edge_volatility_penalty_bps{0.6};
-  double execution_dynamic_edge_liquidity_maker_ratio_threshold{0.55};
-  double execution_dynamic_edge_liquidity_unknown_ratio_threshold{0.20};
-  double execution_dynamic_edge_liquidity_relax_bps{0.4};
-  double execution_dynamic_edge_liquidity_penalty_bps{0.6};
 
   std::string exchange{"mock"};
   std::string data_path{"data"};
@@ -315,37 +229,7 @@ struct AppConfig {
         execution_enable_fee_aware_entry_gate,
         execution_entry_fee_bps,
         execution_exit_fee_bps,
-        execution_expected_slippage_bps,
-        execution_min_expected_edge_bps,
-        execution_required_edge_cap_bps,
-        execution_adaptive_fee_gate_enabled,
-        execution_adaptive_fee_gate_min_samples,
-        execution_adaptive_fee_gate_trigger_ratio,
-        execution_adaptive_fee_gate_max_relax_bps,
-        execution_maker_entry_enabled,
-        execution_maker_fallback_to_market,
-        execution_maker_price_offset_bps,
-        execution_maker_post_only,
-        execution_maker_edge_relax_bps,
-        execution_cost_filter_cooldown_trigger_count,
-        execution_cost_filter_cooldown_ticks,
-        execution_quality_guard_enabled,
-        execution_quality_guard_min_fills,
-        execution_quality_guard_bad_streak_to_trigger,
-        execution_quality_guard_good_streak_to_release,
-        execution_quality_guard_min_realized_net_per_fill_usd,
-        execution_quality_guard_max_fee_bps_per_fill,
-        execution_quality_guard_required_edge_penalty_bps,
-        execution_dynamic_edge_enabled,
-        execution_dynamic_edge_regime_trend_relax_bps,
-        execution_dynamic_edge_regime_range_penalty_bps,
-        execution_dynamic_edge_regime_extreme_penalty_bps,
-        execution_dynamic_edge_volatility_relax_bps,
-        execution_dynamic_edge_volatility_penalty_bps,
-        execution_dynamic_edge_liquidity_maker_ratio_threshold,
-        execution_dynamic_edge_liquidity_unknown_ratio_threshold,
-        execution_dynamic_edge_liquidity_relax_bps,
-        execution_dynamic_edge_liquidity_penalty_bps
+        execution_expected_slippage_bps
     };
   }
 };
