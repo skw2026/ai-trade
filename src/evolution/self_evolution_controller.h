@@ -55,6 +55,7 @@ struct SelfEvolutionAction {
   double defensive_weight_before{0.0};
   double trend_weight_after{0.0};
   double defensive_weight_after{0.0};
+  double candidate_trend_weight_delta{0.0};
   int direction_consistency_required{1};
   int direction_consistency_streak{0};
   int direction_consistency_direction{0};  // +1=trend up, -1=trend down, 0=none

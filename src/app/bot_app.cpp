@@ -141,6 +141,34 @@ std::string FormatAccountPositions(const AccountState& account) {
   return oss.str();
 }
 
+struct ConcentrationSnapshot {
+  double gross_notional_usd{0.0};
+  double top1_abs_notional_usd{0.0};
+  std::string top1_symbol{"n/a"};
+  double top1_share{0.0};
+  std::size_t symbol_count{0};
+};
+
+ConcentrationSnapshot BuildConcentrationSnapshot(const AccountState& account) {
+  ConcentrationSnapshot snapshot;
+  const auto symbols = account.GetActiveSymbols();
+  snapshot.symbol_count = symbols.size();
+  for (const auto& symbol : symbols) {
+    const double symbol_abs_notional =
+        std::fabs(account.current_notional_usd(symbol));
+    snapshot.gross_notional_usd += symbol_abs_notional;
+    if (symbol_abs_notional > snapshot.top1_abs_notional_usd) {
+      snapshot.top1_abs_notional_usd = symbol_abs_notional;
+      snapshot.top1_symbol = symbol;
+    }
+  }
+  if (snapshot.gross_notional_usd > kNotionalEpsilon) {
+    snapshot.top1_share =
+        snapshot.top1_abs_notional_usd / snapshot.gross_notional_usd;
+  }
+  return snapshot;
+}
+
 /**
  * @brief 执行层前置最小名义敞口过滤
  *
@@ -320,6 +348,7 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
     double* out_regime_adjust_bps,
     double* out_volatility_adjust_bps,
     double* out_liquidity_adjust_bps,
+    double* out_concentration_adjust_bps,
     double* out_quality_guard_penalty_bps,
     double* out_observed_filtered_ratio,
     double* out_edge_gap_bps,
@@ -348,6 +377,9 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   }
   if (out_liquidity_adjust_bps != nullptr) {
     *out_liquidity_adjust_bps = 0.0;
+  }
+  if (out_concentration_adjust_bps != nullptr) {
+    *out_concentration_adjust_bps = 0.0;
   }
   if (out_quality_guard_penalty_bps != nullptr) {
     *out_quality_guard_penalty_bps = 0.0;
@@ -396,12 +428,15 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const bool maker_entry_candidate =
       config_.execution_maker_entry_enabled &&
       decision.intent->purpose == OrderPurpose::kEntry && !decision.intent->reduce_only;
+  const bool quality_guard_active = execution_quality_guard_active_;
   const double maker_relax_bps =
-      maker_entry_candidate ? std::max(0.0, config_.execution_maker_edge_relax_bps)
-                            : 0.0;
+      maker_entry_candidate && !quality_guard_active
+          ? std::max(0.0, config_.execution_maker_edge_relax_bps)
+          : 0.0;
   double regime_adjust_bps = 0.0;
   double volatility_adjust_bps = 0.0;
   double liquidity_adjust_bps = 0.0;
+  double concentration_adjust_bps = 0.0;
   if (config_.execution_dynamic_edge_enabled) {
     if (decision.regime.bucket == RegimeBucket::kTrend) {
       regime_adjust_bps =
@@ -455,13 +490,39 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
           std::max(0.0, config_.execution_dynamic_edge_liquidity_penalty_bps);
     }
   }
+  if (config_.execution_concentration_penalty_bps > 0.0 &&
+      config_.execution_concentration_top1_share_threshold < 1.0) {
+    const ConcentrationSnapshot concentration =
+        BuildConcentrationSnapshot(system_.account());
+    const int min_symbols = std::max(1, config_.execution_concentration_min_symbols);
+    if (static_cast<int>(concentration.symbol_count) >= min_symbols &&
+        concentration.top1_symbol == decision.intent->symbol &&
+        concentration.top1_share >
+            config_.execution_concentration_top1_share_threshold) {
+      const double den = std::max(
+          1e-9, 1.0 - config_.execution_concentration_top1_share_threshold);
+      const double scale =
+          std::clamp((concentration.top1_share -
+                      config_.execution_concentration_top1_share_threshold) /
+                         den,
+                     0.0, 1.0);
+      concentration_adjust_bps =
+          scale * std::max(0.0, config_.execution_concentration_penalty_bps);
+    }
+  }
   const double quality_guard_penalty_bps =
       std::max(0.0, execution_quality_required_edge_penalty_bps_);
+  const double quality_guard_floor_bps =
+      quality_guard_active
+          ? std::max(0.0, config_.execution_quality_guard_required_edge_floor_bps)
+          : 0.0;
   required_edge_bps = std::max(
       0.0,
       required_edge_bps - adaptive_relax_bps - maker_relax_bps +
           regime_adjust_bps + volatility_adjust_bps + liquidity_adjust_bps +
+          concentration_adjust_bps +
           quality_guard_penalty_bps);
+  required_edge_bps = std::max(required_edge_bps, quality_guard_floor_bps);
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = expected_edge_bps;
   }
@@ -486,6 +547,9 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   if (out_liquidity_adjust_bps != nullptr) {
     *out_liquidity_adjust_bps = liquidity_adjust_bps;
   }
+  if (out_concentration_adjust_bps != nullptr) {
+    *out_concentration_adjust_bps = concentration_adjust_bps;
+  }
   if (out_quality_guard_penalty_bps != nullptr) {
     *out_quality_guard_penalty_bps = quality_guard_penalty_bps;
   }
@@ -502,7 +566,8 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const bool near_miss = filtered && edge_gap_bps <= near_miss_band_bps;
   bool near_miss_allowed = false;
   if (near_miss && config_.execution_entry_gate_near_miss_maker_allow &&
-      maker_entry_candidate && !config_.execution_maker_fallback_to_market) {
+      maker_entry_candidate && !config_.execution_maker_fallback_to_market &&
+      !quality_guard_active) {
     const double allow_extra_gap_bps =
         std::max(0.0, config_.execution_entry_gate_near_miss_maker_max_gap_bps);
     const double allow_upper_gap_bps =
@@ -770,6 +835,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.entry_volatility_adjust_bps_sum;
   total->entry_liquidity_adjust_bps_sum +=
       delta.entry_liquidity_adjust_bps_sum;
+  total->entry_concentration_adjust_bps_sum +=
+      delta.entry_concentration_adjust_bps_sum;
   total->entry_quality_guard_penalty_bps_sum +=
       delta.entry_quality_guard_penalty_bps_sum;
   total->entry_edge_gap_bps_sum += delta.entry_edge_gap_bps_sum;
@@ -1273,6 +1340,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     double regime_adjust_bps = 0.0;
     double volatility_adjust_bps = 0.0;
     double liquidity_adjust_bps = 0.0;
+    double concentration_adjust_bps = 0.0;
     double quality_guard_penalty_bps = 0.0;
     double observed_filtered_ratio = 0.0;
     double entry_edge_gap_bps = 0.0;
@@ -1289,6 +1357,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
         &regime_adjust_bps,
         &volatility_adjust_bps,
         &liquidity_adjust_bps,
+        &concentration_adjust_bps,
         &quality_guard_penalty_bps,
         &observed_filtered_ratio,
         &entry_edge_gap_bps,
@@ -1304,6 +1373,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     funnel_window_.entry_regime_adjust_bps_sum += regime_adjust_bps;
     funnel_window_.entry_volatility_adjust_bps_sum += volatility_adjust_bps;
     funnel_window_.entry_liquidity_adjust_bps_sum += liquidity_adjust_bps;
+    funnel_window_.entry_concentration_adjust_bps_sum += concentration_adjust_bps;
     funnel_window_.entry_quality_guard_penalty_bps_sum +=
         quality_guard_penalty_bps;
     funnel_window_.entry_edge_gap_bps_sum += entry_edge_gap_bps;
@@ -1326,6 +1396,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               std::to_string(volatility_adjust_bps) +
               ", liquidity_adjust_bps=" +
               std::to_string(liquidity_adjust_bps) +
+              ", concentration_adjust_bps=" +
+              std::to_string(concentration_adjust_bps) +
               ", quality_guard_penalty_bps=" +
               std::to_string(quality_guard_penalty_bps) +
               ", required_edge_bps=" + std::to_string(required_edge_bps) +
@@ -2116,7 +2188,9 @@ void BotApplication::RunSelfEvolution() {
           "}, weight_after={trend=" +
           std::to_string(action->trend_weight_after) +
           ",defensive=" + std::to_string(action->defensive_weight_after) +
-          "}, degrade_windows=" + std::to_string(action->degrade_windows) +
+          "}, candidate_trend_weight_delta=" +
+          std::to_string(action->candidate_trend_weight_delta) +
+          ", degrade_windows=" + std::to_string(action->degrade_windows) +
           ", cooldown_remaining_ticks=" +
           std::to_string(action->cooldown_remaining_ticks));
 }
@@ -2315,22 +2389,12 @@ void BotApplication::LogStatus() {
           ? static_cast<double>(funnel_window.fills_fee_sign_fallback_count) /
                 static_cast<double>(liquidity_classified_fills)
           : 0.0;
-  double concentration_gross_notional_usd = 0.0;
-  double concentration_top1_abs_notional_usd = 0.0;
-  std::string concentration_top1_symbol = "n/a";
-  const auto active_symbols = system_.account().GetActiveSymbols();
-  for (const auto& symbol : active_symbols) {
-    const double symbol_abs_notional =
-        std::fabs(system_.account().current_notional_usd(symbol));
-    concentration_gross_notional_usd += symbol_abs_notional;
-    if (symbol_abs_notional > concentration_top1_abs_notional_usd) {
-      concentration_top1_abs_notional_usd = symbol_abs_notional;
-      concentration_top1_symbol = symbol;
-    }
-  }
-  const double concentration_top1_share =
-      concentration_gross_notional_usd > 1e-9
-          ? concentration_top1_abs_notional_usd / concentration_gross_notional_usd
+  const ConcentrationSnapshot concentration =
+      BuildConcentrationSnapshot(system_.account());
+  const double entry_concentration_adjust_avg_bps =
+      funnel_window.entry_edge_samples > 0
+          ? funnel_window.entry_concentration_adjust_bps_sum /
+                static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
   recent_execution_window_maker_fill_ratio_ = window_maker_fill_ratio;
   recent_execution_window_unknown_fill_ratio_ = window_unknown_fill_ratio;
@@ -2354,12 +2418,12 @@ void BotApplication::LogStatus() {
           std::to_string(system_.account().cumulative_realized_net_pnl_usd()) +
           ", positions=" + FormatAccountPositions(system_.account()) + "}" +
           ", concentration={gross_notional_usd=" +
-          std::to_string(concentration_gross_notional_usd) +
+          std::to_string(concentration.gross_notional_usd) +
           ", top1_abs_notional_usd=" +
-          std::to_string(concentration_top1_abs_notional_usd) +
-          ", top1_symbol=" + concentration_top1_symbol +
-          ", top1_share=" + std::to_string(concentration_top1_share) +
-          ", symbol_count=" + std::to_string(active_symbols.size()) + "}" +
+          std::to_string(concentration.top1_abs_notional_usd) +
+          ", top1_symbol=" + concentration.top1_symbol +
+          ", top1_share=" + std::to_string(concentration.top1_share) +
+          ", symbol_count=" + std::to_string(concentration.symbol_count) + "}" +
           ", funnel_window={raw=" + std::to_string(funnel_window.raw_signals) +
           ", risk_adjusted=" +
           std::to_string(funnel_window.risk_adjusted_signals) +
@@ -2409,6 +2473,8 @@ void BotApplication::LogStatus() {
           std::to_string(entry_volatility_adjust_avg_bps) +
           ", entry_liquidity_adjust_avg_bps=" +
           std::to_string(entry_liquidity_adjust_avg_bps) +
+          ", entry_concentration_adjust_avg_bps=" +
+          std::to_string(entry_concentration_adjust_avg_bps) +
           ", entry_quality_guard_penalty_avg_bps=" +
           std::to_string(entry_quality_guard_penalty_avg_bps) +
           ", maker_fills=" + std::to_string(funnel_window.fills_maker_count) +
@@ -2547,6 +2613,14 @@ void BotApplication::LogStatus() {
           std::to_string(config_.execution_entry_gate_near_miss_maker_max_gap_bps) +
           ", quality_guard_penalty_bps=" +
           std::to_string(execution_quality_required_edge_penalty_bps_) +
+          ", quality_guard_floor_bps=" +
+          std::to_string(config_.execution_quality_guard_required_edge_floor_bps) +
+          ", concentration_top1_share_threshold=" +
+          std::to_string(config_.execution_concentration_top1_share_threshold) +
+          ", concentration_penalty_bps=" +
+          std::to_string(config_.execution_concentration_penalty_bps) +
+          ", concentration_min_symbols=" +
+          std::to_string(config_.execution_concentration_min_symbols) +
           ", observed_filtered_ratio=" +
           std::to_string(entry_gate_observed_filtered_ratio_) +
           ", observed_near_miss_ratio=" +
@@ -2646,6 +2720,8 @@ void BotApplication::LogStatus() {
           std::to_string(config_.self_evolution.learnability_min_samples) +
           ", learnability_min_t_stat_abs=" +
           std::to_string(config_.self_evolution.learnability_min_t_stat_abs) +
+          ", min_effective_weight_delta=" +
+          std::to_string(config_.self_evolution.min_effective_weight_delta) +
           ", active_bucket=" + std::string(ToString(active_bucket)) +
           ", active_trend_weight=" +
           std::to_string(active_evolution_weights.trend_weight) +

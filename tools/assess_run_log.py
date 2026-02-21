@@ -184,6 +184,8 @@ RUNTIME_ENTRY_EDGE_ADJUST_RE = re.compile(
     r"entry_regime_adjust_avg_bps=(?P<regime_adjust>-?[0-9]+(?:\.[0-9]+)?), "
     r"entry_volatility_adjust_avg_bps=(?P<volatility_adjust>-?[0-9]+(?:\.[0-9]+)?), "
     r"entry_liquidity_adjust_avg_bps=(?P<liquidity_adjust>-?[0-9]+(?:\.[0-9]+)?)"
+    r"(?:, entry_concentration_adjust_avg_bps="
+    r"(?P<concentration_adjust>-?[0-9]+(?:\.[0-9]+)?))?"
 )
 RUNTIME_RECONCILE_RUNTIME_RE = re.compile(
     r"RUNTIME_STATUS:.*?reconcile_runtime=\{[^}]*?"
@@ -773,12 +775,16 @@ def extract_entry_edge_adjust_series(text: str) -> Dict[str, float]:
     regime_adjust_values: list[float] = []
     volatility_adjust_values: list[float] = []
     liquidity_adjust_values: list[float] = []
+    concentration_adjust_values: list[float] = []
 
     for m in RUNTIME_ENTRY_EDGE_ADJUST_RE.finditer(text):
         try:
             regime_adjust_values.append(float(m.group("regime_adjust")))
             volatility_adjust_values.append(float(m.group("volatility_adjust")))
             liquidity_adjust_values.append(float(m.group("liquidity_adjust")))
+            concentration_adjust_values.append(
+                float(m.group("concentration_adjust") or 0.0)
+            )
         except ValueError:
             continue
 
@@ -789,12 +795,15 @@ def extract_entry_edge_adjust_series(text: str) -> Dict[str, float]:
             "regime_adjust_bps_avg": 0.0,
             "volatility_adjust_bps_avg": 0.0,
             "liquidity_adjust_bps_avg": 0.0,
+            "concentration_adjust_bps_avg": 0.0,
         }
     return {
         "runtime_count": float(runtime_count),
         "regime_adjust_bps_avg": sum(regime_adjust_values) / runtime_count,
         "volatility_adjust_bps_avg": sum(volatility_adjust_values) / runtime_count,
         "liquidity_adjust_bps_avg": sum(liquidity_adjust_values) / runtime_count,
+        "concentration_adjust_bps_avg": sum(concentration_adjust_values)
+        / runtime_count,
     }
 
 
@@ -1084,6 +1093,9 @@ def assess(
         ],
         "entry_liquidity_adjust_bps_avg": entry_edge_adjust[
             "liquidity_adjust_bps_avg"
+        ],
+        "entry_concentration_adjust_bps_avg": entry_edge_adjust[
+            "concentration_adjust_bps_avg"
         ],
         "execution_quality_guard_enter_count": count(
             r"EXECUTION_QUALITY_GUARD_ENTER", text

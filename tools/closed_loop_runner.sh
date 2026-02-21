@@ -332,6 +332,22 @@ is_true() {
   return 1
 }
 
+atomic_copy_file() {
+  local src="$1"
+  local dest="$2"
+  local tmp="${dest}.tmp.${RUN_ID}.$$"
+  cp -f "${src}" "${tmp}"
+  mv -f "${tmp}" "${dest}"
+}
+
+atomic_write_text_file() {
+  local dest="$1"
+  local content="$2"
+  local tmp="${dest}.tmp.${RUN_ID}.$$"
+  printf '%s\n' "${content}" > "${tmp}"
+  mv -f "${tmp}" "${dest}"
+}
+
 RUN_DIR="${OUTPUT_ROOT}/${RUN_ID}"
 mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
 
@@ -636,16 +652,16 @@ build_summary() {
 EOF
   if [[ "${refresh_latest}" == "true" ]]; then
     ln -sfn "${RUN_ID}" "${OUTPUT_ROOT}/latest"
-    cp -f "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
-    cp -f "${ASSESS_JSON_PATH}" "${LATEST_RUNTIME_ASSESS_PATH}"
+    atomic_copy_file "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
+    atomic_copy_file "${ASSESS_JSON_PATH}" "${LATEST_RUNTIME_ASSESS_PATH}"
     if [[ -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" ]]; then
-      cp -f "${SUMMARY_OUTPUT_DIR}/daily_latest.json" "${LATEST_DAILY_SUMMARY_PATH}"
+      atomic_copy_file "${SUMMARY_OUTPUT_DIR}/daily_latest.json" "${LATEST_DAILY_SUMMARY_PATH}"
     fi
     if [[ -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" ]]; then
-      cp -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" "${LATEST_WEEKLY_SUMMARY_PATH}"
+      atomic_copy_file "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" "${LATEST_WEEKLY_SUMMARY_PATH}"
     fi
-    printf '%s\n' "${RUN_ID}" > "${LATEST_RUN_ID_PATH}"
-    cp -f "${RUN_META_PATH}" "${LATEST_META_PATH}"
+    atomic_write_text_file "${LATEST_RUN_ID_PATH}" "${RUN_ID}"
+    atomic_copy_file "${RUN_META_PATH}" "${LATEST_META_PATH}"
   else
     echo "[INFO] skip latest pointer refresh: runtime assess missing (action=${ACTION})"
   fi

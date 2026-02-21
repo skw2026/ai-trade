@@ -94,6 +94,7 @@ struct SelfEvolutionConfig {
   bool enable_learnability_gate{false};
   int learnability_min_samples{120};
   double learnability_min_t_stat_abs{1.5};
+  double min_effective_weight_delta{0.0};
   double objective_alpha_pnl{1.0};
   double objective_beta_drawdown{1.0};
   double objective_gamma_notional_churn{0.005};
@@ -230,6 +231,10 @@ struct AppConfig {
   double execution_quality_guard_min_realized_net_per_fill_usd{-0.005};
   double execution_quality_guard_max_fee_bps_per_fill{8.0};
   double execution_quality_guard_required_edge_penalty_bps{1.5};
+  double execution_quality_guard_required_edge_floor_bps{0.0};
+  double execution_concentration_top1_share_threshold{1.0};
+  double execution_concentration_penalty_bps{0.0};
+  int execution_concentration_min_symbols{2};
   bool execution_dynamic_edge_enabled{false};
   double execution_dynamic_edge_regime_trend_relax_bps{0.0};
   double execution_dynamic_edge_regime_range_penalty_bps{0.0};

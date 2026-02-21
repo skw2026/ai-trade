@@ -112,6 +112,7 @@ class BotApplication {
                                   double* out_regime_adjust_bps,
                                   double* out_volatility_adjust_bps,
                                   double* out_liquidity_adjust_bps,
+                                  double* out_concentration_adjust_bps,
                                   double* out_quality_guard_penalty_bps,
                                   double* out_observed_filtered_ratio,
                                   double* out_edge_gap_bps,
@@ -244,6 +245,7 @@ class BotApplication {
     double entry_regime_adjust_bps_sum{0.0};
     double entry_volatility_adjust_bps_sum{0.0};
     double entry_liquidity_adjust_bps_sum{0.0};
+    double entry_concentration_adjust_bps_sum{0.0};
     double entry_quality_guard_penalty_bps_sum{0.0};
     double entry_edge_gap_bps_sum{0.0};
     double trend_notional_abs_sum{0.0};

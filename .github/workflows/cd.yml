@@ -364,31 +364,57 @@ jobs:
 
           downloaded=0
           missing=()
+          invalid=()
+          validate_json_file() {
+            local path="$1"
+            if [[ ! -s "${path}" ]]; then
+              return 1
+            fi
+            if command -v jq >/dev/null 2>&1; then
+              jq -e . "${path}" >/dev/null 2>&1
+            else
+              python3 -m json.tool "${path}" >/dev/null 2>&1
+            fi
+          }
           fetch_report() {
             local remote_path="$1"
             local local_path="$2"
             local label="$3"
+            local kind="${4:-json}"
+            local tmp_path="${local_path}.tmp"
+            rm -f "${tmp_path}" "${local_path}"
             if scp -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
               -o StrictHostKeyChecking=yes \
-              "${USER}@${HOST}:${remote_path}" "${local_path}"; then
+              "${USER}@${HOST}:${remote_path}" "${tmp_path}"; then
+              if [[ "${kind}" == "json" ]]; then
+                if ! validate_json_file "${tmp_path}"; then
+                  echo "[deploy] invalid ${label}: downloaded but JSON is malformed/empty"
+                  invalid+=("${label}")
+                  rm -f "${tmp_path}" "${local_path}"
+                  return
+                fi
+              fi
+              mv -f "${tmp_path}" "${local_path}"
               echo "[deploy] downloaded ${label}: ${remote_path}"
               downloaded=$((downloaded + 1))
             else
               echo "[deploy] missing or inaccessible ${label}: ${remote_path}"
               missing+=("${label}")
+              rm -f "${tmp_path}" "${local_path}"
             fi
           }
 
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_closed_loop_report.json" ".artifacts/latest_closed_loop_report.json" "latest_closed_loop_report"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_runtime_assess.json" ".artifacts/latest_runtime_assess.json" "latest_runtime_assess"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime.log" ".artifacts/runtime.log" "runtime_log"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_closed_loop_report.json" ".artifacts/latest_closed_loop_report.json" "latest_closed_loop_report" "json"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_runtime_assess.json" ".artifacts/latest_runtime_assess.json" "latest_runtime_assess" "json"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta" "json"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"
 
           {
             echo "{"
             echo "  \"status\": \"DONE\","
             echo "  \"downloaded_count\": ${downloaded},"
+            echo "  \"invalid_count\": ${#invalid[@]},"
             echo "  \"missing\": ["
             for i in "${!missing[@]}"; do
               sep=","
@@ -397,11 +423,20 @@ jobs:
               fi
               echo "    \"${missing[$i]}\"${sep}"
             done
+            echo "  ],"
+            echo "  \"invalid\": ["
+            for i in "${!invalid[@]}"; do
+              sep=","
+              if [[ "${i}" -eq $((${#invalid[@]} - 1)) ]]; then
+                sep=""
+              fi
+              echo "    \"${invalid[$i]}\"${sep}"
+            done
             echo "  ]"
             echo "}"
           } > .artifacts/deploy_gate_download_status.json
 
-          echo "[deploy] downloaded_count=${downloaded} missing_count=${#missing[@]}"
+          echo "[deploy] downloaded_count=${downloaded} missing_count=${#missing[@]} invalid_count=${#invalid[@]}"
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
 
       - name: Upload Deploy Gate Artifacts

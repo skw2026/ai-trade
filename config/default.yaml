@@ -71,6 +71,10 @@ execution:
   quality_guard_min_realized_net_per_fill_usd: -0.005
   quality_guard_max_fee_bps_per_fill: 8.0
   quality_guard_required_edge_penalty_bps: 1.5
+  quality_guard_required_edge_floor_bps: 0.0
+  concentration_top1_share_threshold: 1.0
+  concentration_penalty_bps: 0.0
+  concentration_min_symbols: 2
   protection:
     enabled: false
     require_sl: true
@@ -110,6 +114,7 @@ self_evolution:
   enable_learnability_gate: false
   learnability_min_samples: 120
   learnability_min_t_stat_abs: 1.5
+  min_effective_weight_delta: 0.0
   objective_alpha_pnl: 1.0
   objective_beta_drawdown: 1.0
   objective_gamma_notional_churn: 0.005

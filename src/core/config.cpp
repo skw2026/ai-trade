@@ -827,6 +827,66 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" &&
+        key == "quality_guard_required_edge_floor_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.quality_guard_required_edge_floor_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_quality_guard_required_edge_floor_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "concentration_top1_share_threshold") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.concentration_top1_share_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_concentration_top1_share_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "concentration_penalty_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.concentration_penalty_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_concentration_penalty_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "concentration_min_symbols") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.concentration_min_symbols 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_concentration_min_symbols = parsed;
+      continue;
+    }
+
     if (current_section == "execution" && key == "dynamic_edge_enabled") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -2355,6 +2415,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "min_effective_weight_delta") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.min_effective_weight_delta 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.min_effective_weight_delta = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         (key == "objective_alpha_pnl" || key == "alpha_pnl")) {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -3035,9 +3110,30 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     return false;
   }
   if (config.execution_quality_guard_max_fee_bps_per_fill < 0.0 ||
-      config.execution_quality_guard_required_edge_penalty_bps < 0.0) {
+      config.execution_quality_guard_required_edge_penalty_bps < 0.0 ||
+      config.execution_quality_guard_required_edge_floor_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.quality_guard_* bps 参数不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_concentration_top1_share_threshold < 0.0 ||
+      config.execution_concentration_top1_share_threshold > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.concentration_top1_share_threshold 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.execution_concentration_penalty_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.concentration_penalty_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_concentration_min_symbols <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.concentration_min_symbols 必须大于 0";
     }
     return false;
   }
@@ -3201,6 +3297,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.self_evolution.learnability_min_t_stat_abs < 0.0) {
     if (out_error != nullptr) {
       *out_error = "self_evolution.learnability_min_t_stat_abs 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.min_effective_weight_delta < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.min_effective_weight_delta 不能为负数";
     }
     return false;
   }

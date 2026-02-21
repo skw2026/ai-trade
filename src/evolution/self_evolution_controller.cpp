@@ -325,6 +325,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   action.defensive_weight_before = runtime.current_defensive_weight;
   action.trend_weight_after = runtime.current_trend_weight;
   action.defensive_weight_after = runtime.current_defensive_weight;
+  action.candidate_trend_weight_delta = 0.0;
   action.direction_consistency_required =
       std::max(1, config_.min_consecutive_direction_windows);
   action.direction_consistency_streak =
@@ -560,6 +561,20 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     } else {
       action.reason_code = "EVOLUTION_WEIGHT_NOOP";
     }
+    action.direction_consistency_streak = 0;
+    action.direction_consistency_direction = 0;
+    ResetWindowAttribution();
+    return action;
+  }
+
+  action.candidate_trend_weight_delta =
+      std::fabs(candidate.trend_weight - runtime.current_trend_weight);
+  if (action.candidate_trend_weight_delta + kWeightEpsilon <
+      std::max(0.0, config_.min_effective_weight_delta)) {
+    runtime.pending_direction = 0;
+    runtime.pending_direction_streak = 0;
+    action.type = SelfEvolutionActionType::kSkipped;
+    action.reason_code = "EVOLUTION_WEIGHT_DELTA_TOO_SMALL";
     action.direction_consistency_streak = 0;
     action.direction_consistency_direction = 0;
     ResetWindowAttribution();
