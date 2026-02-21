@@ -2220,6 +2220,15 @@ void BotApplication::RunSelfEvolution() {
           std::to_string(action->counterfactual_best_trend_weight) +
           ",defensive=" +
           std::to_string(action->counterfactual_best_defensive_weight) + "}" +
+          ", counterfactual_superiority={enabled=" +
+          std::string(action->counterfactual_superiority_gate_enabled ? "true"
+                                                                      : "false") +
+          ", passed=" +
+          std::string(action->counterfactual_superiority_gate_passed ? "true"
+                                                                     : "false") +
+          ", t_stat=" + std::to_string(action->counterfactual_superiority_t_stat) +
+          ", samples=" +
+          std::to_string(action->counterfactual_superiority_samples) + "}" +
           ", factor_ic={trend=" + std::to_string(action->trend_factor_ic) +
           ", defensive=" + std::to_string(action->defensive_factor_ic) +
           ", samples=" + std::to_string(action->factor_ic_samples) + "}" +

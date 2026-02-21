@@ -2587,6 +2587,38 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "counterfactual_superiority_min_samples_for_update") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_superiority_min_samples_for_update 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_superiority_min_samples_for_update =
+          parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "counterfactual_superiority_min_t_stat_for_update") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_superiority_min_t_stat_for_update 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_superiority_min_t_stat_for_update =
+          parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         key == "virtual_cost_bps") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -3779,6 +3811,16 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "self_evolution.counterfactual_*_for_update 参数不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.counterfactual_superiority_min_samples_for_update <
+          0 ||
+      config.self_evolution.counterfactual_superiority_min_t_stat_for_update <
+          0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.counterfactual_superiority_min_samples_for_update / self_evolution.counterfactual_superiority_min_t_stat_for_update 不能为负数";
     }
     return false;
   }

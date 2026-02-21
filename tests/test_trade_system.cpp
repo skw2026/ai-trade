@@ -2306,6 +2306,149 @@ int main() {
   }
 
   {
+    // 自进化控制器：反事实优越性配对统计 t-stat 不达标时应跳过。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.0;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = true;
+    config.counterfactual_fallback_to_factor_ic = false;
+    config.counterfactual_min_improvement_usd = 0.0;
+    config.counterfactual_superiority_min_samples_for_update = 2;
+    config.counterfactual_superiority_min_t_stat_for_update = 1000.0;
+    config.virtual_cost_bps = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    controller.OnTick(1,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/1000.0,
+                      /*defensive_signal_notional_usd=*/-1000.0,
+                      /*mark_price_usd=*/100.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    controller.OnTick(2,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/1000.0,
+                      /*defensive_signal_notional_usd=*/-1000.0,
+                      /*mark_price_usd=*/99.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/1000.0,
+        /*defensive_signal_notional_usd=*/-1000.0,
+        /*mark_price_usd=*/98.5,
+        /*signal_symbol=*/"BTCUSDT");
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kSkipped ||
+        action->reason_code != "EVOLUTION_COUNTERFACTUAL_SUPERIORITY_TSTAT_TOO_LOW" ||
+        !action->counterfactual_superiority_gate_enabled ||
+        action->counterfactual_superiority_gate_passed ||
+        action->counterfactual_superiority_samples < 2) {
+      std::cerr << "反事实优越性门控跳过行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：反事实优越性门控不通过且启用 fallback 时，应回退到 factor-IC。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.0;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = true;
+    config.counterfactual_fallback_to_factor_ic = true;
+    config.counterfactual_min_improvement_usd = 0.0;
+    config.counterfactual_superiority_min_samples_for_update = 2;
+    config.counterfactual_superiority_min_t_stat_for_update = 1000.0;
+    config.enable_factor_ic_adaptive_weights = true;
+    config.factor_ic_min_samples = 2;
+    config.factor_ic_min_abs = 0.0;
+    config.virtual_cost_bps = 0.0;
+    config.rollback_degrade_windows = 2;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 5;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    controller.OnTick(1,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/1000.0,
+                      /*defensive_signal_notional_usd=*/0.0,
+                      /*mark_price_usd=*/100.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    controller.OnTick(2,
+                      10000.0,
+                      ai_trade::RegimeBucket::kRange,
+                      /*drawdown_pct=*/0.0,
+                      /*account_notional_usd=*/0.0,
+                      /*trend_signal_notional_usd=*/500.0,
+                      /*defensive_signal_notional_usd=*/0.0,
+                      /*mark_price_usd=*/101.0,
+                      /*signal_symbol=*/"BTCUSDT");
+    const auto action = controller.OnTick(
+        3,
+        10000.0,
+        ai_trade::RegimeBucket::kRange,
+        /*drawdown_pct=*/0.0,
+        /*account_notional_usd=*/0.0,
+        /*trend_signal_notional_usd=*/400.0,
+        /*defensive_signal_notional_usd=*/0.0,
+        /*mark_price_usd=*/101.101,
+        /*signal_symbol=*/"BTCUSDT");
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        action->reason_code != "EVOLUTION_FACTOR_IC_INCREASE_TREND" ||
+        !action->counterfactual_fallback_to_factor_ic_enabled ||
+        !action->counterfactual_fallback_to_factor_ic_used ||
+        !action->counterfactual_superiority_gate_enabled ||
+        action->counterfactual_superiority_gate_passed ||
+        !NearlyEqual(action->trend_weight_after, 0.55, 1e-9)) {
+      std::cerr << "反事实优越性门控 fallback 行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：可学习性门控在低 t-stat 窗口应冻结学习。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
@@ -2628,6 +2771,8 @@ int main() {
         << "  counterfactual_min_fill_count_for_update: 6\n"
         << "  counterfactual_min_t_stat_samples_for_update: 160\n"
         << "  counterfactual_min_t_stat_abs_for_update: 1.1\n"
+        << "  counterfactual_superiority_min_samples_for_update: 120\n"
+        << "  counterfactual_superiority_min_t_stat_for_update: 0.45\n"
         << "  virtual_cost_bps: 6.5\n"
         << "  virtual_cost_dynamic_enabled: true\n"
         << "  virtual_cost_dynamic_max_multiplier: 2.5\n"
@@ -2818,6 +2963,11 @@ int main() {
         !NearlyEqual(
             config.self_evolution.counterfactual_min_t_stat_abs_for_update,
             1.1) ||
+        config.self_evolution.counterfactual_superiority_min_samples_for_update !=
+            120 ||
+        !NearlyEqual(
+            config.self_evolution.counterfactual_superiority_min_t_stat_for_update,
+            0.45) ||
         !NearlyEqual(config.self_evolution.virtual_cost_bps, 6.5) ||
         config.self_evolution.virtual_cost_dynamic_enabled != true ||
         !NearlyEqual(config.self_evolution.virtual_cost_dynamic_max_multiplier,
@@ -3598,6 +3748,31 @@ int main() {
         std::string::npos) {
       std::cerr
           << "非法 self_evolution.counterfactual_min_improvement_ratio_of_equity 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_counterfactual_superiority_tstat.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  counterfactual_superiority_min_t_stat_for_update: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 self_evolution.counterfactual_superiority_min_t_stat_for_update 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("counterfactual_superiority") ==
+        std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.counterfactual_superiority_min_t_stat_for_update 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

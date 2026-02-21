@@ -937,6 +937,10 @@ def assess(
             r"SELF_EVOLUTION_ACTION:.*counterfactual_fallback=\{enabled=true, used=true\}",
             text,
         ),
+        "self_evolution_counterfactual_superiority_skip_count": count(
+            r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_COUNTERFACTUAL_SUPERIORITY_(?:SAMPLES|TSTAT)_TOO_LOW",
+            text,
+        ),
         "self_evolution_learnability_skip_count": count(
             r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_LEARNABILITY_(?:INSUFFICIENT_SAMPLES|TSTAT_TOO_LOW)",
             text,

@@ -42,6 +42,10 @@ struct SelfEvolutionAction {
   double counterfactual_required_improvement_usd{0.0};
   double counterfactual_best_trend_weight{0.0};
   double counterfactual_best_defensive_weight{0.0};
+  bool counterfactual_superiority_gate_enabled{false};
+  bool counterfactual_superiority_gate_passed{true};
+  double counterfactual_superiority_t_stat{0.0};
+  int counterfactual_superiority_samples{0};
   int window_fill_count{0};
   int window_cost_filtered_signals{0};
   double trend_factor_ic{0.0};
@@ -177,7 +181,8 @@ class SelfEvolutionController {
   void InitializeCounterfactualGrid();
   std::optional<EvolutionWeights> BestCounterfactualWeights(
       std::size_t bucket_index,
-      double* out_best_virtual_pnl_usd) const;
+      double* out_best_virtual_pnl_usd,
+      std::size_t* out_best_index) const;
   double CorrelationFromAccumulator(
       const CorrelationAccumulator& accumulator) const;
   double TStatFromAccumulator(const SampleAccumulator& accumulator) const;
@@ -204,6 +209,8 @@ class SelfEvolutionController {
   std::array<double, 3> bucket_window_realized_pnl_usd_{};
   std::array<double, 3> bucket_window_virtual_pnl_usd_{};
   std::array<std::vector<double>, 3> bucket_window_virtual_pnl_by_candidate_{};
+  std::array<std::vector<SampleAccumulator>, 3>
+      bucket_window_counterfactual_diff_stats_by_candidate_{};
   std::array<CorrelationAccumulator, 3> bucket_window_trend_factor_ic_{};
   std::array<CorrelationAccumulator, 3> bucket_window_defensive_factor_ic_{};
   std::array<SampleAccumulator, 3> bucket_window_learnability_stats_{};

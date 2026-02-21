@@ -256,6 +256,14 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
             counterfactual_trend_weight_grid_.size()) {
           bucket_counterfactual.assign(counterfactual_trend_weight_grid_.size(), 0.0);
         }
+        auto& bucket_counterfactual_diff_stats =
+            bucket_window_counterfactual_diff_stats_by_candidate_[active_index];
+        if (bucket_counterfactual_diff_stats.size() !=
+            counterfactual_trend_weight_grid_.size()) {
+          bucket_counterfactual_diff_stats.assign(
+              counterfactual_trend_weight_grid_.size(),
+              SampleAccumulator{});
+        }
         for (std::size_t i = 0; i < counterfactual_trend_weight_grid_.size();
              ++i) {
           const double trend_weight = counterfactual_trend_weight_grid_[i];
@@ -269,11 +277,18 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
                             trend_weight);
           const double counterfactual_funding_pnl =
               -prev_counterfactual_notional * funding_rate_per_tick;
-          bucket_counterfactual[i] +=
+          const double counterfactual_tick_virtual_pnl =
               prev_counterfactual_notional * forward_return +
               counterfactual_funding_pnl -
               std::fabs(curr_counterfactual_notional - prev_counterfactual_notional) *
                   turnover_cost_rate;
+          bucket_counterfactual[i] += counterfactual_tick_virtual_pnl;
+          auto& diff_stats = bucket_counterfactual_diff_stats[i];
+          const double diff_vs_current =
+              counterfactual_tick_virtual_pnl - tick_virtual_pnl;
+          diff_stats.sum += diff_vs_current;
+          diff_stats.sum_sq += diff_vs_current * diff_vs_current;
+          ++diff_stats.samples;
         }
       }
     }
@@ -341,6 +356,14 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   action.counterfactual_best_virtual_pnl_usd = window_virtual_pnl_usd;
   action.counterfactual_best_trend_weight = runtime.current_trend_weight;
   action.counterfactual_best_defensive_weight = runtime.current_defensive_weight;
+  action.counterfactual_superiority_gate_enabled =
+      action.used_counterfactual_search &&
+      (config_.counterfactual_superiority_min_samples_for_update > 0 ||
+       config_.counterfactual_superiority_min_t_stat_for_update > 0.0);
+  action.counterfactual_superiority_gate_passed =
+      !action.counterfactual_superiority_gate_enabled;
+  action.counterfactual_superiority_t_stat = 0.0;
+  action.counterfactual_superiority_samples = 0;
   action.window_fill_count = bucket_window_fill_count_[eval_index];
   action.window_cost_filtered_signals =
       bucket_window_cost_filtered_signals_[eval_index];
@@ -390,8 +413,10 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           std::max(0.0, relaxed_threshold);
     }
     double best_virtual_pnl_usd = window_virtual_pnl_usd;
+    std::size_t best_index = 0;
     best_counterfactual_candidate =
-        BestCounterfactualWeights(eval_index, &best_virtual_pnl_usd);
+        BestCounterfactualWeights(
+            eval_index, &best_virtual_pnl_usd, &best_index);
     action.counterfactual_best_virtual_pnl_usd = best_virtual_pnl_usd;
     if (best_counterfactual_candidate.has_value()) {
       action.counterfactual_best_trend_weight =
@@ -401,6 +426,16 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       counterfactual_improves =
           best_virtual_pnl_usd >
           window_virtual_pnl_usd + action.counterfactual_required_improvement_usd;
+      if (eval_index < bucket_window_counterfactual_diff_stats_by_candidate_.size()) {
+        const auto& bucket_diff_stats =
+            bucket_window_counterfactual_diff_stats_by_candidate_[eval_index];
+        if (best_index < bucket_diff_stats.size()) {
+          const auto& diff_stats = bucket_diff_stats[best_index];
+          action.counterfactual_superiority_t_stat =
+              TStatFromAccumulator(diff_stats);
+          action.counterfactual_superiority_samples = diff_stats.samples;
+        }
+      }
     }
   }
 
@@ -510,6 +545,36 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
         action.degrade_windows = degrade_window_count(eval_bucket);
         ResetWindowAttribution();
         return action;
+      }
+    }
+    if (!force_factor_ic_candidate && action.counterfactual_superiority_gate_enabled) {
+      if (action.counterfactual_superiority_samples <
+          config_.counterfactual_superiority_min_samples_for_update) {
+        if (action.counterfactual_fallback_to_factor_ic_enabled) {
+          force_factor_ic_candidate = true;
+          action.counterfactual_fallback_to_factor_ic_used = true;
+        } else {
+          action.type = SelfEvolutionActionType::kSkipped;
+          action.reason_code =
+              "EVOLUTION_COUNTERFACTUAL_SUPERIORITY_SAMPLES_TOO_LOW";
+          action.degrade_windows = degrade_window_count(eval_bucket);
+          ResetWindowAttribution();
+          return action;
+        }
+      } else if (action.counterfactual_superiority_t_stat <
+                 config_.counterfactual_superiority_min_t_stat_for_update) {
+        if (action.counterfactual_fallback_to_factor_ic_enabled) {
+          force_factor_ic_candidate = true;
+          action.counterfactual_fallback_to_factor_ic_used = true;
+        } else {
+          action.type = SelfEvolutionActionType::kSkipped;
+          action.reason_code = "EVOLUTION_COUNTERFACTUAL_SUPERIORITY_TSTAT_TOO_LOW";
+          action.degrade_windows = degrade_window_count(eval_bucket);
+          ResetWindowAttribution();
+          return action;
+        }
+      } else {
+        action.counterfactual_superiority_gate_passed = true;
       }
     }
   }
@@ -746,6 +811,9 @@ void SelfEvolutionController::InitializeCounterfactualGrid() {
     for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_) {
       bucket_window.clear();
     }
+    for (auto& bucket_stats : bucket_window_counterfactual_diff_stats_by_candidate_) {
+      bucket_stats.clear();
+    }
     return;
   }
 
@@ -766,11 +834,16 @@ void SelfEvolutionController::InitializeCounterfactualGrid() {
   for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_) {
     bucket_window.assign(counterfactual_trend_weight_grid_.size(), 0.0);
   }
+  for (auto& bucket_stats : bucket_window_counterfactual_diff_stats_by_candidate_) {
+    bucket_stats.assign(counterfactual_trend_weight_grid_.size(),
+                        SampleAccumulator{});
+  }
 }
 
 std::optional<EvolutionWeights> SelfEvolutionController::BestCounterfactualWeights(
     std::size_t bucket_index,
-    double* out_best_virtual_pnl_usd) const {
+    double* out_best_virtual_pnl_usd,
+    std::size_t* out_best_index) const {
   if (bucket_index >= bucket_window_virtual_pnl_by_candidate_.size() ||
       counterfactual_trend_weight_grid_.empty()) {
     return std::nullopt;
@@ -793,6 +866,9 @@ std::optional<EvolutionWeights> SelfEvolutionController::BestCounterfactualWeigh
 
   if (out_best_virtual_pnl_usd != nullptr) {
     *out_best_virtual_pnl_usd = best_virtual_pnl;
+  }
+  if (out_best_index != nullptr) {
+    *out_best_index = best_index;
   }
   const double trend_weight = counterfactual_trend_weight_grid_[best_index];
   return EvolutionWeights{
@@ -908,6 +984,9 @@ void SelfEvolutionController::ResetWindowAttribution() {
   bucket_window_virtual_pnl_usd_.fill(0.0);
   for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_) {
     std::fill(bucket_window.begin(), bucket_window.end(), 0.0);
+  }
+  for (auto& bucket_stats : bucket_window_counterfactual_diff_stats_by_candidate_) {
+    std::fill(bucket_stats.begin(), bucket_stats.end(), SampleAccumulator{});
   }
   for (auto& trend_ic : bucket_window_trend_factor_ic_) {
     trend_ic = CorrelationAccumulator{};

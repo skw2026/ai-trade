@@ -121,6 +121,8 @@ self_evolution:
   counterfactual_min_fill_count_for_update: 0
   counterfactual_min_t_stat_samples_for_update: 0
   counterfactual_min_t_stat_abs_for_update: 0.0
+  counterfactual_superiority_min_samples_for_update: 0
+  counterfactual_superiority_min_t_stat_for_update: 0.0
   virtual_cost_bps: 0.0
   virtual_cost_dynamic_enabled: true
   virtual_cost_dynamic_max_multiplier: 3.0

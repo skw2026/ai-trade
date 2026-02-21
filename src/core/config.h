@@ -88,6 +88,8 @@ struct SelfEvolutionConfig {
   int counterfactual_min_fill_count_for_update{0};
   int counterfactual_min_t_stat_samples_for_update{0};
   double counterfactual_min_t_stat_abs_for_update{0.0};
+  int counterfactual_superiority_min_samples_for_update{0};
+  double counterfactual_superiority_min_t_stat_for_update{0.0};
   double virtual_cost_bps{0.0};
   bool virtual_cost_dynamic_enabled{true};
   double virtual_cost_dynamic_max_multiplier{3.0};
