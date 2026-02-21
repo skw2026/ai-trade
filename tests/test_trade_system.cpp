@@ -1437,7 +1437,7 @@ int main() {
   }
 
   {
-    // 自进化控制器：连续退化窗口触发回滚，并进入冷却期。
+    // 自进化控制器：连续退化窗口触发回滚，并默认回到初始基线权重。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
     config.update_interval_ticks = 2;
@@ -1447,6 +1447,7 @@ int main() {
     config.rollback_degrade_windows = 1;
     config.rollback_degrade_threshold_score = 0.0;
     config.rollback_cooldown_ticks = 3;
+    config.rollback_to_baseline_on_trigger = true;
 
     ai_trade::SelfEvolutionController controller(config);
     std::string error;
@@ -1466,24 +1467,70 @@ int main() {
       std::cerr << "自进化首个更新结果不符合预期\n";
       return 1;
     }
+    // 第二个窗口继续正收益，权重上调到 0.60，回滚锚点更新为 0.55。
+    const auto up2 = controller.OnTick(4, 10040.0);
+    if (!up2.has_value() ||
+        up2->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        !NearlyEqual(up2->trend_weight_after, 0.60, 1e-9)) {
+      std::cerr << "自进化第二次更新结果不符合预期\n";
+      return 1;
+    }
 
-    // 第二个窗口退化，触发回滚到锚点 0.50。
-    const auto rollback = controller.OnTick(4, 10010.0);
+    // 第三个窗口退化，触发回滚到基线 0.50（而不是上一锚点 0.55）。
+    const auto rollback = controller.OnTick(6, 10010.0);
     if (!rollback.has_value() ||
         rollback->type != ai_trade::SelfEvolutionActionType::kRolledBack ||
         rollback->reason_code != "EVOLUTION_ROLLBACK_TRIGGERED" ||
         !NearlyEqual(rollback->trend_weight_after, 0.50, 1e-9) ||
+        !rollback->rolled_back_to_baseline ||
         rollback->cooldown_remaining_ticks != 3) {
       std::cerr << "自进化回滚行为不符合预期\n";
       return 1;
     }
 
     // 冷却期内到达评估点时应跳过更新。
-    const auto cooldown = controller.OnTick(6, 10030.0);
+    const auto cooldown = controller.OnTick(8, 10030.0);
     if (!cooldown.has_value() ||
         cooldown->type != ai_trade::SelfEvolutionActionType::kSkipped ||
         cooldown->reason_code != "EVOLUTION_COOLDOWN_ACTIVE") {
       std::cerr << "自进化冷却期行为不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    // 自进化控制器：当 rollback_to_baseline_on_trigger=false 时回滚到上一锚点。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 2;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.rollback_degrade_windows = 1;
+    config.rollback_degrade_threshold_score = 0.0;
+    config.rollback_cooldown_ticks = 3;
+    config.rollback_to_baseline_on_trigger = false;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    const auto up = controller.OnTick(2, 10020.0);
+    const auto up2 = controller.OnTick(4, 10040.0);
+    const auto rollback = controller.OnTick(6, 10010.0);
+    if (!up.has_value() || up->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        !up2.has_value() || up2->type != ai_trade::SelfEvolutionActionType::kUpdated ||
+        !rollback.has_value() ||
+        rollback->type != ai_trade::SelfEvolutionActionType::kRolledBack ||
+        !NearlyEqual(rollback->trend_weight_after, 0.55, 1e-9) ||
+        rollback->rolled_back_to_baseline) {
+      std::cerr << "自进化锚点回滚行为不符合预期\n";
       return 1;
     }
   }
@@ -2407,6 +2454,8 @@ int main() {
         << "execution:\n"
         << "  max_order_notional: 876\n"
         << "  min_rebalance_notional_usd: 45\n"
+        << "  include_inflight_notional_in_position: true\n"
+        << "  max_inflight_orders_per_symbol_direction: 3\n"
         << "  min_order_interval_ms: 2500\n"
         << "  reverse_signal_cooldown_ticks: 5\n"
         << "  required_edge_cap_bps: 8.5\n"
@@ -2459,6 +2508,8 @@ int main() {
         << "  canary_confidence_threshold: 0.62\n"
         << "  canary_allow_countertrend: true\n"
         << "  active_confidence_threshold: 0.57\n"
+        << "  active_partial_notional_ratio: 0.4\n"
+        << "  active_full_notional_confidence_threshold: 0.82\n"
         << "  shadow:\n"
         << "    enabled: true\n"
         << "    log_model_score: false\n"
@@ -2489,6 +2540,9 @@ int main() {
         << "  counterfactual_min_t_stat_samples_for_update: 160\n"
         << "  counterfactual_min_t_stat_abs_for_update: 1.1\n"
         << "  virtual_cost_bps: 6.5\n"
+        << "  virtual_cost_dynamic_enabled: true\n"
+        << "  virtual_cost_dynamic_max_multiplier: 2.5\n"
+        << "  virtual_funding_rate_per_tick: 0.0001\n"
         << "  enable_factor_ic_adaptive_weights: true\n"
         << "  factor_ic_min_samples: 180\n"
         << "  factor_ic_min_abs: 0.015\n"
@@ -2502,6 +2556,7 @@ int main() {
         << "  max_weight_step: 0.03\n"
         << "  rollback_degrade_windows: 3\n"
         << "  rollback_degrade_threshold_score: -5\n"
+        << "  rollback_to_baseline_on_trigger: false\n"
         << "  rollback_cooldown_ticks: 66\n"
         << "  initial_trend_weight: 0.55\n"
         << "  initial_defensive_weight: 0.45\n";
@@ -2516,6 +2571,8 @@ int main() {
     if (!NearlyEqual(config.risk_max_abs_notional_usd, 4321.0) ||
         !NearlyEqual(config.execution_max_order_notional, 876.0) ||
         !NearlyEqual(config.execution_min_rebalance_notional_usd, 45.0) ||
+        config.execution_include_inflight_notional_in_position != true ||
+        config.execution_max_inflight_orders_per_symbol_direction != 3 ||
         config.execution_min_order_interval_ms != 2500 ||
         config.execution_reverse_signal_cooldown_ticks != 5 ||
         !NearlyEqual(config.execution_required_edge_cap_bps, 8.5) ||
@@ -2615,6 +2672,9 @@ int main() {
         !NearlyEqual(config.integrator.canary_confidence_threshold, 0.62) ||
         config.integrator.canary_allow_countertrend != true ||
         !NearlyEqual(config.integrator.active_confidence_threshold, 0.57) ||
+        !NearlyEqual(config.integrator.active_partial_notional_ratio, 0.4) ||
+        !NearlyEqual(
+            config.integrator.active_full_notional_confidence_threshold, 0.82) ||
         config.integrator.shadow.enabled != true ||
         config.integrator.shadow.log_model_score != false ||
         config.integrator.shadow.model_report_path !=
@@ -2653,6 +2713,11 @@ int main() {
             config.self_evolution.counterfactual_min_t_stat_abs_for_update,
             1.1) ||
         !NearlyEqual(config.self_evolution.virtual_cost_bps, 6.5) ||
+        config.self_evolution.virtual_cost_dynamic_enabled != true ||
+        !NearlyEqual(config.self_evolution.virtual_cost_dynamic_max_multiplier,
+                     2.5) ||
+        !NearlyEqual(config.self_evolution.virtual_funding_rate_per_tick,
+                     0.0001) ||
         config.self_evolution.enable_factor_ic_adaptive_weights != true ||
         config.self_evolution.factor_ic_min_samples != 180 ||
         !NearlyEqual(config.self_evolution.factor_ic_min_abs, 0.015) ||
@@ -2667,6 +2732,7 @@ int main() {
         !NearlyEqual(config.self_evolution.max_weight_step, 0.03) ||
         config.self_evolution.rollback_degrade_windows != 3 ||
         !NearlyEqual(config.self_evolution.rollback_degrade_threshold_score, -5.0) ||
+        config.self_evolution.rollback_to_baseline_on_trigger != false ||
         config.self_evolution.rollback_cooldown_ticks != 66 ||
         !NearlyEqual(config.self_evolution.initial_trend_weight, 0.55) ||
         !NearlyEqual(config.self_evolution.initial_defensive_weight, 0.45) ||
@@ -2793,6 +2859,33 @@ int main() {
     }
     if (error.find("integrator.canary_notional_ratio") == std::string::npos) {
       std::cerr << "非法 Integrator 配置错误信息不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_integrator_active_thresholds.yaml";
+    std::ofstream out(temp_path);
+    out << "integrator:\n"
+        << "  enabled: true\n"
+        << "  mode: \"active\"\n"
+        << "  active_confidence_threshold: 0.70\n"
+        << "  active_full_notional_confidence_threshold: 0.65\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 Integrator active 阈值配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("active_full_notional_confidence_threshold") ==
+        std::string::npos) {
+      std::cerr << "非法 Integrator active 阈值错误信息不符合预期\n";
       return 1;
     }
 
@@ -2970,6 +3063,31 @@ int main() {
     }
     if (error.find("min_order_interval_ms") == std::string::npos) {
       std::cerr << "非法 execution.min_order_interval_ms 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_execution_inflight_limit.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  max_inflight_orders_per_symbol_direction: -1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 execution.max_inflight_orders_per_symbol_direction 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("max_inflight_orders_per_symbol_direction") ==
+        std::string::npos) {
+      std::cerr
+          << "非法 execution.max_inflight_orders_per_symbol_direction 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -3408,6 +3526,52 @@ int main() {
     if (error.find("virtual_cost_bps") == std::string::npos) {
       std::cerr
           << "非法 self_evolution.virtual_cost_bps 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_virtual_cost_multiplier.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  virtual_cost_dynamic_max_multiplier: 0.9\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 self_evolution.virtual_cost_dynamic_max_multiplier 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("virtual_cost_dynamic_max_multiplier") == std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.virtual_cost_dynamic_max_multiplier 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_virtual_funding_rate.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  virtual_funding_rate_per_tick: 0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 self_evolution.virtual_funding_rate_per_tick 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("virtual_funding_rate_per_tick") == std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.virtual_funding_rate_per_tick 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -5228,7 +5392,7 @@ int main() {
   }
 
   {
-    // canary：高置信同向时应按比例接管。
+    // 模型运行时不可用时，canary 应显式降级为 shadow_unavailable，不得伪造打分。
     const std::filesystem::path report_path =
         std::filesystem::temp_directory_path() /
         "ai_trade_test_integrator_report_canary_applied.json";
@@ -5251,6 +5415,10 @@ int main() {
     integrator.canary_allow_countertrend = false;
     integrator.shadow.enabled = true;
     integrator.shadow.model_report_path = report_path.string();
+    integrator.shadow.model_path =
+        (std::filesystem::temp_directory_path() /
+         "ai_trade_test_integrator_model_missing_canary_1.cbm")
+            .string();
     integrator.shadow.active_meta_path.clear();
     integrator.shadow.score_gain = 1.0;
 
@@ -5273,14 +5441,15 @@ int main() {
     (void)system.Evaluate(ai_trade::MarketEvent{1, "BTCUSDT", 100.0, 100.0}, true);
     const auto decision =
         system.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0}, true);
-    if (!decision.integrator_policy_applied ||
-        decision.integrator_policy_reason != "canary_applied") {
-      std::cerr << "canary 高置信同向预期应接管\n";
+    if (decision.integrator_policy_applied ||
+        decision.integrator_policy_reason != "shadow_unavailable") {
+      std::cerr << "canary 在模型不可用时应降级为 shadow_unavailable\n";
       return 1;
     }
-    if (!NearlyEqual(decision.base_signal.suggested_notional_usd, 1000.0) ||
-        !NearlyEqual(decision.signal.suggested_notional_usd, 350.0)) {
-      std::cerr << "canary 接管后名义值不符合预期\n";
+    if (!NearlyEqual(decision.base_signal.suggested_notional_usd,
+                     decision.signal.suggested_notional_usd,
+                     1e-9)) {
+      std::cerr << "canary 降级后不应修改原策略信号\n";
       return 1;
     }
 
@@ -5288,7 +5457,7 @@ int main() {
   }
 
   {
-    // canary：若不允许反向且模型方向与原策略相反，应拒绝接管。
+    // 模型运行时不可用时，canary 不应触发 countertrend 逻辑，而应统一降级。
     const std::filesystem::path report_path =
         std::filesystem::temp_directory_path() /
         "ai_trade_test_integrator_report_canary_countertrend.json";
@@ -5311,8 +5480,12 @@ int main() {
     integrator.canary_allow_countertrend = false;
     integrator.shadow.enabled = true;
     integrator.shadow.model_report_path = report_path.string();
+    integrator.shadow.model_path =
+        (std::filesystem::temp_directory_path() /
+         "ai_trade_test_integrator_model_missing_canary_2.cbm")
+            .string();
     integrator.shadow.active_meta_path.clear();
-    // 负增益用于构造“与 base 反向”的模型输出，验证拦截逻辑。
+    // 即使配置负增益，模型不可用时也不应执行伪造推理路径。
     integrator.shadow.score_gain = -1.0;
 
     ai_trade::RegimeConfig regime_config;
@@ -5335,8 +5508,8 @@ int main() {
     const auto decision =
         system.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0}, true);
     if (decision.integrator_policy_applied ||
-        decision.integrator_policy_reason != "canary_countertrend_blocked") {
-      std::cerr << "canary 反向拦截逻辑不符合预期\n";
+        decision.integrator_policy_reason != "shadow_unavailable") {
+      std::cerr << "canary 模型不可用降级逻辑不符合预期\n";
       return 1;
     }
     if (!NearlyEqual(decision.signal.suggested_notional_usd,
@@ -5349,7 +5522,7 @@ int main() {
   }
 
   {
-    // active：低置信应归零；高置信应按 |confidence| 缩放接管。
+    // active：模型运行时不可用时应显式降级，不得执行线性缩放。
     const std::filesystem::path report_path =
         std::filesystem::temp_directory_path() /
         "ai_trade_test_integrator_report_active_policy.json";
@@ -5374,6 +5547,10 @@ int main() {
       integrator_low.active_confidence_threshold = 0.60;
       integrator_low.shadow.enabled = true;
       integrator_low.shadow.model_report_path = report_path.string();
+      integrator_low.shadow.model_path =
+          (std::filesystem::temp_directory_path() /
+           "ai_trade_test_integrator_model_missing_active_low.cbm")
+              .string();
       integrator_low.shadow.active_meta_path.clear();
       integrator_low.shadow.score_gain = 1.0;
 
@@ -5395,11 +5572,12 @@ int main() {
       const auto decision_low =
           system_low.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0},
                               true);
-      if (!decision_low.integrator_policy_applied ||
-          decision_low.integrator_policy_reason != "active_low_confidence_to_flat" ||
-          !NearlyEqual(decision_low.signal.suggested_notional_usd, 0.0) ||
-          decision_low.signal.direction != 0) {
-        std::cerr << "active 低置信归零逻辑不符合预期\n";
+      if (decision_low.integrator_policy_applied ||
+          decision_low.integrator_policy_reason != "shadow_unavailable" ||
+          !NearlyEqual(decision_low.signal.suggested_notional_usd,
+                       decision_low.base_signal.suggested_notional_usd,
+                       1e-9)) {
+        std::cerr << "active 低置信在模型不可用时应降级\n";
         return 1;
       }
     }
@@ -5411,6 +5589,10 @@ int main() {
       integrator_high.active_confidence_threshold = 0.20;
       integrator_high.shadow.enabled = true;
       integrator_high.shadow.model_report_path = report_path.string();
+      integrator_high.shadow.model_path =
+          (std::filesystem::temp_directory_path() /
+           "ai_trade_test_integrator_model_missing_active_high.cbm")
+              .string();
       integrator_high.shadow.active_meta_path.clear();
       integrator_high.shadow.score_gain = 2.0;
 
@@ -5432,17 +5614,12 @@ int main() {
       const auto decision_high =
           system_high.Evaluate(ai_trade::MarketEvent{2, "BTCUSDT", 101.0, 101.0},
                                true);
-      const double expected_notional =
-          std::fabs(decision_high.integrator_confidence) *
-          std::fabs(decision_high.base_signal.suggested_notional_usd);
-      if (!decision_high.integrator_policy_applied ||
-          decision_high.integrator_policy_reason != "active_applied" ||
-          decision_high.integrator_confidence <=
-              integrator_high.active_confidence_threshold ||
-          !NearlyEqual(std::fabs(decision_high.signal.suggested_notional_usd),
-                       expected_notional,
-                       1e-6)) {
-        std::cerr << "active 高置信缩放接管逻辑不符合预期\n";
+      if (decision_high.integrator_policy_applied ||
+          decision_high.integrator_policy_reason != "shadow_unavailable" ||
+          !NearlyEqual(decision_high.signal.suggested_notional_usd,
+                       decision_high.base_signal.suggested_notional_usd,
+                       1e-9)) {
+        std::cerr << "active 高置信在模型不可用时应降级\n";
         return 1;
       }
     }

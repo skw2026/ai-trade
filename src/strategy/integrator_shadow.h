@@ -36,6 +36,7 @@ class IntegratorShadow {
   std::vector<std::string> feature_names_;
   std::vector<std::string> feature_expressions_;
   void* model_handle_{nullptr}; // CatBoost ModelCalcerHandle (void* to avoid header dependency)
+  bool model_runtime_ready_{false};
 };
 
 }  // namespace ai_trade

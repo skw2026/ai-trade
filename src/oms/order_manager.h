@@ -98,6 +98,13 @@ class OrderManager {
    */
   bool HasPendingNetPositionOrderForSymbolDirection(const std::string& symbol,
                                                     int direction) const;
+  /// 返回“同 symbol 同方向”的在途净仓位订单数量（Entry + Reduce）。
+  int PendingNetPositionOrderCountForSymbolDirection(
+      const std::string& symbol,
+      int direction) const;
+  /// 返回“同 symbol 同方向”的在途开仓订单数量（仅 Entry）。
+  int PendingEntryOrderCountForSymbolDirection(const std::string& symbol,
+                                               int direction) const;
   /**
    * @brief 是否存在“同 symbol（任意方向）”的在途净仓位订单
    *
@@ -105,6 +112,16 @@ class OrderManager {
    * - 在 Universe 场景下，inactive symbol 若仍有在途净仓位订单，不应跳过决策/对账收敛。
    */
   bool HasPendingNetPositionOrderForSymbol(const std::string& symbol) const;
+  /**
+   * @brief 估算同 symbol 在途净仓位剩余数量（signed qty）
+   *
+   * 口径：
+   * - 仅统计净仓位相关订单（Entry/Reduce）；
+   * - 仅统计非终态订单（New/Sent/Partial）；
+   * - 使用剩余未成交量 `max(intent.qty - filled_qty, 0)` 聚合。
+   */
+  double PendingNetPositionRemainingQtyForSymbol(
+      const std::string& symbol) const;
 
   /// 全局净成交数量（跨 symbol 聚合，signed qty）。
   double net_filled_qty() const { return net_filled_qty_; }

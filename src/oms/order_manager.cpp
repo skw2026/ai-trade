@@ -1,5 +1,6 @@
 #include "oms/order_manager.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace ai_trade {
@@ -213,10 +214,17 @@ std::vector<std::string> OrderManager::PendingNetPositionOrderIds() const {
 bool OrderManager::HasPendingNetPositionOrderForSymbolDirection(
     const std::string& symbol,
     int direction) const {
+  return PendingNetPositionOrderCountForSymbolDirection(symbol, direction) > 0;
+}
+
+int OrderManager::PendingNetPositionOrderCountForSymbolDirection(
+    const std::string& symbol,
+    int direction) const {
   if (symbol.empty() || direction == 0) {
-    return false;
+    return 0;
   }
   const int normalized_direction = direction > 0 ? 1 : -1;
+  int count = 0;
   for (const auto& [order_id, record] : orders_) {
     (void)order_id;
     if (!IsNetPositionMutating(record.intent.purpose)) {
@@ -225,18 +233,42 @@ bool OrderManager::HasPendingNetPositionOrderForSymbolDirection(
     if (IsTerminalState(record.state)) {
       continue;
     }
-    if (record.intent.symbol != symbol) {
-      continue;
-    }
-    if (record.intent.direction == 0) {
+    if (record.intent.symbol != symbol || record.intent.direction == 0) {
       continue;
     }
     const int pending_direction = record.intent.direction > 0 ? 1 : -1;
     if (pending_direction == normalized_direction) {
-      return true;
+      ++count;
     }
   }
-  return false;
+  return count;
+}
+
+int OrderManager::PendingEntryOrderCountForSymbolDirection(
+    const std::string& symbol,
+    int direction) const {
+  if (symbol.empty() || direction == 0) {
+    return 0;
+  }
+  const int normalized_direction = direction > 0 ? 1 : -1;
+  int count = 0;
+  for (const auto& [order_id, record] : orders_) {
+    (void)order_id;
+    if (record.intent.purpose != OrderPurpose::kEntry) {
+      continue;
+    }
+    if (IsTerminalState(record.state)) {
+      continue;
+    }
+    if (record.intent.symbol != symbol || record.intent.direction == 0) {
+      continue;
+    }
+    const int pending_direction = record.intent.direction > 0 ? 1 : -1;
+    if (pending_direction == normalized_direction) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 bool OrderManager::HasPendingNetPositionOrderForSymbol(
@@ -257,6 +289,33 @@ bool OrderManager::HasPendingNetPositionOrderForSymbol(
     }
   }
   return false;
+}
+
+double OrderManager::PendingNetPositionRemainingQtyForSymbol(
+    const std::string& symbol) const {
+  if (symbol.empty()) {
+    return 0.0;
+  }
+  double remaining_signed_qty = 0.0;
+  for (const auto& [order_id, record] : orders_) {
+    (void)order_id;
+    if (!IsNetPositionMutating(record.intent.purpose)) {
+      continue;
+    }
+    if (IsTerminalState(record.state)) {
+      continue;
+    }
+    if (record.intent.symbol != symbol || record.intent.direction == 0) {
+      continue;
+    }
+    const double remaining_qty = std::max(0.0, record.intent.qty - record.filled_qty);
+    if (remaining_qty <= kEpsilon) {
+      continue;
+    }
+    const double direction = record.intent.direction > 0 ? 1.0 : -1.0;
+    remaining_signed_qty += direction * remaining_qty;
+  }
+  return remaining_signed_qty;
 }
 
 }  // namespace ai_trade

@@ -88,6 +88,9 @@ struct SelfEvolutionConfig {
   int counterfactual_min_t_stat_samples_for_update{0};
   double counterfactual_min_t_stat_abs_for_update{0.0};
   double virtual_cost_bps{0.0};
+  bool virtual_cost_dynamic_enabled{true};
+  double virtual_cost_dynamic_max_multiplier{3.0};
+  double virtual_funding_rate_per_tick{0.0};
   bool enable_factor_ic_adaptive_weights{false};
   int factor_ic_min_samples{120};
   double factor_ic_min_abs{0.01};
@@ -102,6 +105,7 @@ struct SelfEvolutionConfig {
   double max_weight_step{0.05};
   int rollback_degrade_windows{2};
   double rollback_degrade_threshold_score{0.0};
+  bool rollback_to_baseline_on_trigger{true};
   int rollback_cooldown_ticks{240};
   double initial_trend_weight{0.50};
   double initial_defensive_weight{0.50};
@@ -145,6 +149,8 @@ struct IntegratorConfig {
   double canary_confidence_threshold{0.60};
   bool canary_allow_countertrend{false};
   double active_confidence_threshold{0.55};
+  double active_partial_notional_ratio{0.5};
+  double active_full_notional_confidence_threshold{0.80};
   IntegratorShadowConfig shadow{};
 };
 
@@ -211,6 +217,8 @@ struct AppConfig {
   // Execution
   double execution_max_order_notional{1000.0};
   double execution_min_rebalance_notional_usd{0.0};
+  bool execution_include_inflight_notional_in_position{true};
+  int execution_max_inflight_orders_per_symbol_direction{2};
   int execution_min_order_interval_ms{0};
   int execution_reverse_signal_cooldown_ticks{0};
   bool execution_enable_fee_aware_entry_gate{true};

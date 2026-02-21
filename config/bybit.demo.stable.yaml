@@ -43,6 +43,8 @@ risk:
 execution:
   max_order_notional: 600
   min_rebalance_notional_usd: 120
+  include_inflight_notional_in_position: true
+  max_inflight_orders_per_symbol_direction: 2
   min_order_interval_ms: 8000
   reverse_signal_cooldown_ticks: 8
   enable_fee_aware_entry_gate: true
@@ -80,10 +82,15 @@ self_evolution:
   enabled: false
   update_interval_ticks: 120
   min_update_interval_ticks: 120
+  virtual_cost_bps: 0.0
+  virtual_cost_dynamic_enabled: true
+  virtual_cost_dynamic_max_multiplier: 3.0
+  virtual_funding_rate_per_tick: 0.0
   max_single_strategy_weight: 0.55
   max_weight_step: 0.02
   rollback_degrade_windows: 2
   rollback_degrade_threshold_score: 0.0
+  rollback_to_baseline_on_trigger: true
   rollback_cooldown_ticks: 360
   initial_trend_weight: 0.50
   initial_defensive_weight: 0.50

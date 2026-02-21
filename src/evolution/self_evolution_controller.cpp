@@ -86,6 +86,8 @@ bool SelfEvolutionController::Initialize(
     runtime.current_defensive_weight = initial_weights.second;
     runtime.rollback_anchor_trend_weight = runtime.current_trend_weight;
     runtime.rollback_anchor_defensive_weight = runtime.current_defensive_weight;
+    runtime.baseline_trend_weight = runtime.current_trend_weight;
+    runtime.baseline_defensive_weight = runtime.current_defensive_weight;
     runtime.degrade_windows.clear();
     runtime.pending_direction = 0;
     runtime.pending_direction_streak = 0;
@@ -93,6 +95,8 @@ bool SelfEvolutionController::Initialize(
 
   last_observed_realized_net_pnl_usd_ = initial_realized_net_pnl_usd;
   has_last_observed_realized_net_pnl_ = true;
+  last_observed_equity_usd_ = initial_equity_usd;
+  has_last_observed_equity_ = true;
   last_observed_notional_usd_ = 0.0;
   has_last_observed_notional_ = false;
   signal_states_by_symbol_.clear();
@@ -131,12 +135,20 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     double mark_price_usd,
     const std::string& signal_symbol,
     bool entry_filtered_by_cost,
-    int fill_count) {
+    int fill_count,
+    double account_equity_usd,
+    double observed_turnover_cost_bps) {
   if (!config_.enabled || !initialized_) {
     return std::nullopt;
   }
 
   const std::size_t active_index = BucketIndex(regime_bucket);
+  if (account_equity_usd > 0.0 && std::isfinite(account_equity_usd)) {
+    last_observed_equity_usd_ = account_equity_usd;
+    has_last_observed_equity_ = true;
+  }
+  const double objective_equity_usd =
+      has_last_observed_equity_ ? last_observed_equity_usd_ : 1.0;
   double delta_realized_net_pnl_usd = 0.0;
   if (has_last_observed_realized_net_pnl_) {
     delta_realized_net_pnl_usd =
@@ -165,7 +177,25 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
         std::fabs(account_notional_usd - last_observed_notional_usd_);
   }
 
-  const double turnover_cost_rate = std::max(0.0, config_.virtual_cost_bps) / 10000.0;
+  double effective_turnover_cost_bps = std::max(0.0, config_.virtual_cost_bps);
+  if (std::isfinite(observed_turnover_cost_bps) &&
+      observed_turnover_cost_bps > 0.0) {
+    effective_turnover_cost_bps =
+        std::max(effective_turnover_cost_bps, observed_turnover_cost_bps);
+  }
+  if (config_.virtual_cost_dynamic_enabled &&
+      bucket_window_ticks_[active_index] > 0) {
+    const double cost_filtered_ratio =
+        static_cast<double>(bucket_window_cost_filtered_signals_[active_index]) /
+        static_cast<double>(bucket_window_ticks_[active_index]);
+    const double max_multiplier =
+        std::max(1.0, config_.virtual_cost_dynamic_max_multiplier);
+    const double dynamic_multiplier =
+        1.0 + std::clamp(cost_filtered_ratio, 0.0, 1.0) * (max_multiplier - 1.0);
+    effective_turnover_cost_bps *= dynamic_multiplier;
+  }
+  const double turnover_cost_rate = effective_turnover_cost_bps / 10000.0;
+  const double funding_rate_per_tick = config_.virtual_funding_rate_per_tick;
   const bool has_current_signal_state = !signal_symbol.empty() &&
                                         std::isfinite(mark_price_usd) &&
                                         mark_price_usd > 0.0;
@@ -182,12 +212,13 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           BlendNotional(trend_signal_notional_usd,
                         defensive_signal_notional_usd,
                         runtime.current_trend_weight);
+      const double funding_pnl = -prev_blended_notional * funding_rate_per_tick;
       bucket_window_virtual_pnl_usd_[active_index] +=
-          prev_blended_notional * forward_return -
+          prev_blended_notional * forward_return + funding_pnl -
           std::fabs(curr_blended_notional - prev_blended_notional) *
               turnover_cost_rate;
       const double tick_virtual_pnl =
-          prev_blended_notional * forward_return -
+          prev_blended_notional * forward_return + funding_pnl -
           std::fabs(curr_blended_notional - prev_blended_notional) *
               turnover_cost_rate;
       if (config_.use_virtual_pnl) {
@@ -236,8 +267,11 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
               BlendNotional(trend_signal_notional_usd,
                             defensive_signal_notional_usd,
                             trend_weight);
+          const double counterfactual_funding_pnl =
+              -prev_counterfactual_notional * funding_rate_per_tick;
           bucket_counterfactual[i] +=
-              prev_counterfactual_notional * forward_return -
+              prev_counterfactual_notional * forward_return +
+              counterfactual_funding_pnl -
               std::fabs(curr_counterfactual_notional - prev_counterfactual_notional) *
                   turnover_cost_rate;
         }
@@ -272,7 +306,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   const double window_objective_score =
       ComputeObjectiveScore(window_pnl_usd,
                             window_max_drawdown_pct,
-                            window_notional_churn_usd);
+                            window_notional_churn_usd,
+                            objective_equity_usd);
   const int window_bucket_ticks = bucket_window_ticks_[eval_index];
 
   // 固定周期评估：先结算窗口，再推进下一个评估点。
@@ -325,6 +360,9 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   action.defensive_weight_before = runtime.current_defensive_weight;
   action.trend_weight_after = runtime.current_trend_weight;
   action.defensive_weight_after = runtime.current_defensive_weight;
+  action.effective_turnover_cost_bps = effective_turnover_cost_bps;
+  action.funding_rate_per_tick = funding_rate_per_tick;
+  action.rolled_back_to_baseline = false;
   action.candidate_trend_weight_delta = 0.0;
   action.direction_consistency_required =
       std::max(1, config_.min_consecutive_direction_windows);
@@ -475,8 +513,14 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   action.degrade_windows = degrade_window_count(eval_bucket);
 
   if (ShouldRollback(runtime)) {
-    runtime.current_trend_weight = runtime.rollback_anchor_trend_weight;
-    runtime.current_defensive_weight = runtime.rollback_anchor_defensive_weight;
+    const bool rollback_to_baseline = config_.rollback_to_baseline_on_trigger;
+    if (rollback_to_baseline) {
+      runtime.current_trend_weight = runtime.baseline_trend_weight;
+      runtime.current_defensive_weight = runtime.baseline_defensive_weight;
+    } else {
+      runtime.current_trend_weight = runtime.rollback_anchor_trend_weight;
+      runtime.current_defensive_weight = runtime.rollback_anchor_defensive_weight;
+    }
     runtime.pending_direction = 0;
     runtime.pending_direction_streak = 0;
     cooldown_until_tick_ = current_tick + config_.rollback_cooldown_ticks;
@@ -484,6 +528,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
 
     action.type = SelfEvolutionActionType::kRolledBack;
     action.reason_code = "EVOLUTION_ROLLBACK_TRIGGERED";
+    action.rolled_back_to_baseline = rollback_to_baseline;
     action.trend_weight_after = runtime.current_trend_weight;
     action.defensive_weight_after = runtime.current_defensive_weight;
     action.direction_consistency_streak = 0;
@@ -658,12 +703,17 @@ std::size_t SelfEvolutionController::SelectEvalBucket(
 double SelfEvolutionController::ComputeObjectiveScore(
     double window_pnl_usd,
     double window_max_drawdown_pct,
-    double window_notional_churn_usd) const {
+    double window_notional_churn_usd,
+    double account_equity_usd) const {
+  const double normalized_equity =
+      std::max(1.0, std::fabs(account_equity_usd));
+  const double pnl_bps = window_pnl_usd / normalized_equity * 10000.0;
   const double drawdown_bps = std::max(0.0, window_max_drawdown_pct) * 10000.0;
-  const double churn_usd = std::max(0.0, window_notional_churn_usd);
-  return config_.objective_alpha_pnl * window_pnl_usd -
+  const double churn_bps =
+      std::max(0.0, window_notional_churn_usd) / normalized_equity * 10000.0;
+  return config_.objective_alpha_pnl * pnl_bps -
          config_.objective_beta_drawdown * drawdown_bps -
-         config_.objective_gamma_notional_churn * churn_usd;
+         config_.objective_gamma_notional_churn * churn_bps;
 }
 
 void SelfEvolutionController::InitializeCounterfactualGrid() {

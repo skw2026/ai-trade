@@ -55,6 +55,9 @@ struct SelfEvolutionAction {
   double defensive_weight_before{0.0};
   double trend_weight_after{0.0};
   double defensive_weight_after{0.0};
+  double effective_turnover_cost_bps{0.0};
+  double funding_rate_per_tick{0.0};
+  bool rolled_back_to_baseline{false};
   double candidate_trend_weight_delta{0.0};
   int direction_consistency_required{1};
   int direction_consistency_streak{0};
@@ -107,7 +110,9 @@ class SelfEvolutionController {
                                             double mark_price_usd = 0.0,
                                             const std::string& signal_symbol = "",
                                             bool entry_filtered_by_cost = false,
-                                            int fill_count = 0);
+                                            int fill_count = 0,
+                                            double account_equity_usd = 0.0,
+                                            double observed_turnover_cost_bps = 0.0);
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
@@ -132,6 +137,8 @@ class SelfEvolutionController {
     double current_defensive_weight{0.0};
     double rollback_anchor_trend_weight{1.0};
     double rollback_anchor_defensive_weight{0.0};
+    double baseline_trend_weight{1.0};
+    double baseline_defensive_weight{0.0};
     std::deque<bool> degrade_windows;
     int pending_direction{0};  // +1=trend up, -1=trend down, 0=none
     int pending_direction_streak{0};
@@ -164,7 +171,8 @@ class SelfEvolutionController {
   std::size_t SelectEvalBucket(std::size_t preferred_index) const;
   double ComputeObjectiveScore(double window_pnl_usd,
                                double window_max_drawdown_pct,
-                               double window_notional_churn_usd) const;
+                               double window_notional_churn_usd,
+                               double account_equity_usd) const;
   void InitializeCounterfactualGrid();
   std::optional<EvolutionWeights> BestCounterfactualWeights(
       std::size_t bucket_index,
@@ -207,6 +215,8 @@ class SelfEvolutionController {
 
   double last_observed_realized_net_pnl_usd_{0.0};
   bool has_last_observed_realized_net_pnl_{false};
+  double last_observed_equity_usd_{0.0};
+  bool has_last_observed_equity_{false};
   double last_observed_notional_usd_{0.0};
   bool has_last_observed_notional_{false};
   std::unordered_map<std::string, SignalState> signal_states_by_symbol_;

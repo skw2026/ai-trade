@@ -446,6 +446,37 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" &&
+        (key == "include_inflight_notional_in_position" ||
+         key == "position_with_inflight")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.include_inflight_notional_in_position 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_include_inflight_notional_in_position = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "max_inflight_orders_per_symbol_direction") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.max_inflight_orders_per_symbol_direction 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_max_inflight_orders_per_symbol_direction = parsed;
+      continue;
+    }
+
     if (current_section == "execution" && key == "min_order_interval_ms") {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {
@@ -2058,6 +2089,36 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "active_partial_notional_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.active_partial_notional_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.active_partial_notional_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "active_full_notional_confidence_threshold") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.active_full_notional_confidence_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.active_full_notional_confidence_threshold = parsed;
+      continue;
+    }
+
     if (current_section == "integrator" && current_subsection == "shadow" &&
         key == "enabled") {
       bool parsed = false;
@@ -2463,6 +2524,51 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "virtual_cost_dynamic_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.virtual_cost_dynamic_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.virtual_cost_dynamic_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "virtual_cost_dynamic_max_multiplier") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.virtual_cost_dynamic_max_multiplier 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.virtual_cost_dynamic_max_multiplier = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "virtual_funding_rate_per_tick") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.virtual_funding_rate_per_tick 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.virtual_funding_rate_per_tick = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         (key == "enable_factor_ic_adaptive_weights" ||
          key == "use_factor_ic_adaptive_weights")) {
       bool parsed = false;
@@ -2673,6 +2779,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.self_evolution.rollback_degrade_threshold_score = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "rollback_to_baseline_on_trigger") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.rollback_to_baseline_on_trigger 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.rollback_to_baseline_on_trigger = parsed;
       continue;
     }
 
@@ -3118,6 +3239,30 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.integrator.active_partial_notional_ratio < 0.0 ||
+      config.integrator.active_partial_notional_ratio > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.active_partial_notional_ratio 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.integrator.active_full_notional_confidence_threshold < 0.0 ||
+      config.integrator.active_full_notional_confidence_threshold > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.active_full_notional_confidence_threshold 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.integrator.active_full_notional_confidence_threshold <
+      config.integrator.active_confidence_threshold) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.active_full_notional_confidence_threshold 不能小于 active_confidence_threshold";
+    }
+    return false;
+  }
   if (config.integrator.mode == IntegratorMode::kCanary &&
       config.integrator.canary_confidence_threshold < 0.5) {
     if (out_error != nullptr) {
@@ -3187,6 +3332,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_min_rebalance_notional_usd < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.min_rebalance_notional_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_max_inflight_orders_per_symbol_direction < 0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.max_inflight_orders_per_symbol_direction 不能为负数";
     }
     return false;
   }
@@ -3495,6 +3647,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.self_evolution.virtual_cost_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "self_evolution.virtual_cost_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.virtual_cost_dynamic_max_multiplier < 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.virtual_cost_dynamic_max_multiplier 必须 >= 1";
+    }
+    return false;
+  }
+  if (!std::isfinite(config.self_evolution.virtual_funding_rate_per_tick) ||
+      std::fabs(config.self_evolution.virtual_funding_rate_per_tick) > 0.01) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.virtual_funding_rate_per_tick 必须是有限值且绝对值 <= 0.01";
     }
     return false;
   }

@@ -132,6 +132,7 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
   model_version_ = "n/a";
   feature_names_.clear();
   feature_expressions_.clear();
+  model_runtime_ready_ = false;
 
   if (!config_.enabled) {
     initialized_ = true;
@@ -252,12 +253,21 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     return fail("integrator 报告治理门槛未通过: " + JoinReasons(quality_failures));
   }
 
-  if (require_model_file) {
-    std::string file_error;
-    if (!IsRegularFileNonEmpty(config_.model_path, &file_error)) {
-      return fail("integrator 模型文件校验失败: " + file_error);
+  const bool has_model_path = !config_.model_path.empty();
+  bool model_file_ok = false;
+  std::string model_file_error;
+  if (has_model_path) {
+    model_file_ok = IsRegularFileNonEmpty(config_.model_path, &model_file_error);
+  } else {
+    model_file_error = "model_path 为空";
+  }
+  if (!model_file_ok) {
+    if (require_model_file) {
+      return fail("integrator 模型文件校验失败: " + model_file_error);
     }
-
+    LogInfo("INTEGRATOR_DEGRADED: 模型文件不可用，shadow 推理将降级关闭: " +
+            model_file_error);
+  } else {
 #ifdef AI_TRADE_ENABLE_CATBOOST
     // 1. 延迟加载库
     if (!g_catboost_lib_loaded) {
@@ -267,34 +277,53 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
              g_catboost_lib_handle = dlopen("/usr/local/lib/libcatboostmodel.so", RTLD_LAZY | RTLD_GLOBAL);
         }
         if (!g_catboost_lib_handle) {
-            return fail("无法加载 libcatboostmodel.so: " + std::string(dlerror()));
+            if (require_model_file) {
+              return fail("无法加载 libcatboostmodel.so: " + std::string(dlerror()));
+            }
+            LogInfo("INTEGRATOR_DEGRADED: 无法加载 libcatboostmodel.so，shadow 推理将降级关闭");
+        } else {
+          g_catboost_lib_loaded = true;
         }
-        g_catboost_lib_loaded = true;
     }
 
-    // 2. 获取函数指针
-    auto p_Create = reinterpret_cast<Proc_ModelCalcerCreate>(dlsym(g_catboost_lib_handle, "ModelCalcerCreate"));
-    auto p_Delete = reinterpret_cast<Proc_ModelCalcerDelete>(dlsym(g_catboost_lib_handle, "ModelCalcerDelete"));
-    auto p_Load = reinterpret_cast<Proc_ModelCalcerLoadSingleModelFromFile>(dlsym(g_catboost_lib_handle, "ModelCalcerLoadSingleModelFromFile"));
-    auto p_Error = reinterpret_cast<Proc_ModelCalcerGetErrorString>(dlsym(g_catboost_lib_handle, "ModelCalcerGetErrorString"));
+    if (g_catboost_lib_handle) {
+      // 2. 获取函数指针
+      auto p_Create = reinterpret_cast<Proc_ModelCalcerCreate>(dlsym(g_catboost_lib_handle, "ModelCalcerCreate"));
+      auto p_Delete = reinterpret_cast<Proc_ModelCalcerDelete>(dlsym(g_catboost_lib_handle, "ModelCalcerDelete"));
+      auto p_Load = reinterpret_cast<Proc_ModelCalcerLoadSingleModelFromFile>(dlsym(g_catboost_lib_handle, "ModelCalcerLoadSingleModelFromFile"));
+      auto p_Error = reinterpret_cast<Proc_ModelCalcerGetErrorString>(dlsym(g_catboost_lib_handle, "ModelCalcerGetErrorString"));
 
-    if (!p_Create || !p_Delete || !p_Load || !p_Error) {
-        return fail("libcatboostmodel.so 缺少必要符号");
+      if (!p_Create || !p_Delete || !p_Load || !p_Error) {
+        if (require_model_file) {
+          return fail("libcatboostmodel.so 缺少必要符号");
+        }
+        LogInfo("INTEGRATOR_DEGRADED: libcatboostmodel.so 缺少必要符号，shadow 推理将降级关闭");
+      } else {
+        if (model_handle_) {
+          p_Delete(static_cast<ModelCalcerHandle>(model_handle_));
+          model_handle_ = nullptr;
+        }
+        model_handle_ = p_Create();
+        if (!p_Load(static_cast<ModelCalcerHandle>(model_handle_),
+                    config_.model_path.c_str())) {
+          const char* msg = p_Error(static_cast<ModelCalcerHandle>(model_handle_));
+          if (require_model_file) {
+            return fail("CatBoost 模型加载失败: " + std::string(msg ? msg : "unknown error"));
+          }
+          LogInfo("INTEGRATOR_DEGRADED: CatBoost 模型加载失败，shadow 推理将降级关闭");
+          model_handle_ = nullptr;
+        } else {
+          model_runtime_ready_ = true;
+          LogInfo("CatBoost 模型加载成功: " + config_.model_path);
+        }
+      }
     }
-
-    if (model_handle_) {
-      p_Delete(static_cast<ModelCalcerHandle>(model_handle_));
-      model_handle_ = nullptr;
+#else
+    if (require_model_file) {
+      return fail(
+          "当前构建未启用 AI_TRADE_ENABLE_CATBOOST，无法加载模型进入接管模式");
     }
-    
-    model_handle_ = p_Create();
-    if (!p_Load(static_cast<ModelCalcerHandle>(model_handle_), 
-                                            config_.model_path.c_str())) {
-      const char* msg = "";
-      msg = p_Error(static_cast<ModelCalcerHandle>(model_handle_));
-      return fail("CatBoost 模型加载失败: " + std::string(msg ? msg : "unknown error"));
-    }
-    LogInfo("CatBoost 模型加载成功: " + config_.model_path);
+    LogInfo("INTEGRATOR_DEGRADED: 未启用 AI_TRADE_ENABLE_CATBOOST，shadow 推理将降级关闭");
 #endif
   }
 
@@ -407,18 +436,26 @@ void IntegratorShadow::OnMarket(const MarketEvent& event) {
 ShadowInference IntegratorShadow::Infer(const Signal& signal,
                                         const RegimeState& regime) const {
   ShadowInference out;
+  (void)signal;
+  (void)regime;
   if (!enabled()) {
     return out;
   }
 
-  out.enabled = true;
   out.model_version = model_version_;
+  if (!model_runtime_ready_ || model_handle_ == nullptr) {
+    out.enabled = false;
+    return out;
+  }
 
   // 1. 计算特征向量
-  // 注意：如果数据不足，EvaluateBatch 会返回 0 或 NaN
   std::vector<double> features;
   if (feature_engine_.IsReady()) {
     features = feature_engine_.EvaluateBatch(feature_expressions_);
+  }
+  if (features.empty()) {
+    out.enabled = false;
+    return out;
   }
 
   // 关键防御：检查特征向量是否存在 NaN/Inf。
@@ -436,68 +473,49 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
     }
   }
 
-  // 2. 模型推理 (Real vs Mock)
+  // 2. 模型推理
   double raw = 0.0;
 
 #ifdef AI_TRADE_ENABLE_CATBOOST
-  if (model_handle_ && !features.empty()) {
-    // CatBoost C API 需要 float 数组
-    std::vector<float> float_features(features.begin(), features.end());
-    const float* row_ptr = float_features.data();
-    double result = 0.0;
-    
-    auto p_Calc = reinterpret_cast<Proc_ModelCalcerCalc>(dlsym(g_catboost_lib_handle, "ModelCalcerCalc"));
-    if (p_Calc && p_Calc(static_cast<ModelCalcerHandle>(model_handle_), 
-                        row_ptr, features.size(), &result, 1)) {
-      raw = result;
-    } else {
-      LogInfo("INTEGRATOR_ERROR: CatBoost inference failed");
-    }
-  } else {
-    // Fallback if model not loaded
-    raw = std::clamp(signal.suggested_notional_usd / 1000.0, -2.0, 2.0);
+  if (!g_catboost_lib_handle || !model_handle_) {
+    out.enabled = false;
+    return out;
   }
+  std::vector<float> float_features(features.begin(), features.end());
+  const float* row_ptr = float_features.data();
+  double result = 0.0;
+
+  auto p_Calc = reinterpret_cast<Proc_ModelCalcerCalc>(
+      dlsym(g_catboost_lib_handle, "ModelCalcerCalc"));
+  if (!p_Calc ||
+      !p_Calc(static_cast<ModelCalcerHandle>(model_handle_),
+              row_ptr,
+              features.size(),
+              &result,
+              1)) {
+    LogInfo("INTEGRATOR_ERROR: CatBoost inference failed");
+    out.enabled = false;
+    return out;
+  }
+  raw = result;
 #else
-  // Mock 逻辑：混合原始信号与特征计算结果
-  raw = std::clamp(signal.suggested_notional_usd / 1000.0, -2.0, 2.0);
+  out.enabled = false;
+  return out;
 #endif
 
-  // 3. Regime 修正
-  if (regime.regime == Regime::kUptrend) {
-    raw += 0.20;
-  } else if (regime.regime == Regime::kDowntrend) {
-    raw -= 0.20;
-  }
-  if (regime.bucket == RegimeBucket::kRange) {
-    raw *= 0.75;
-  } else if (regime.bucket == RegimeBucket::kExtreme) {
-    raw *= 0.55;
-  }
-  if (regime.warmup) {
-    raw *= 0.60;
-  }
-
-  // 4. 特征影响 (Mock): 如果计算出了有效特征，微调分数
-  if (!features.empty()) {
-    // 简单示例：如果 ret_1 (通常是列表后部的特征) 为正，略微增加分数
-    // 仅用于验证 pipeline 连通性
-    if (features.size() > 5 && features.back() > 0.001) {
-      raw += 0.1;
+  if (config_.log_model_score) {
+    std::ostringstream oss;
+    oss << "FEATURES: ";
+    for (size_t i = 0; i < std::min<size_t>(5, features.size()); ++i) {
+      if (i > 0) oss << ", ";
+      const std::string feature_name =
+          i < feature_names_.size() ? feature_names_[i] : ("f" + std::to_string(i));
+      oss << feature_name << "=" << features[i];
     }
-
-    // 增加特征值日志 (Sample logging)
-    if (config_.log_model_score) {
-      std::ostringstream oss;
-      oss << "FEATURES: ";
-      for (size_t i = 0; i < std::min<size_t>(5, features.size()); ++i) {
-        if (i > 0) oss << ", ";
-        oss << feature_names_[i] << "=" << features[i];
-      }
-      // 仅在调试或详细模式下输出特征值
-      LogInfo(oss.str());
-    }
+    LogInfo(oss.str());
   }
 
+  out.enabled = true;
   out.model_score = std::clamp(raw * config_.score_gain, -6.0, 6.0);
   out.p_up = Sigmoid(out.model_score);
   out.p_down = 1.0 - out.p_up;

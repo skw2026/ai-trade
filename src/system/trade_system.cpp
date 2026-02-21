@@ -77,7 +77,7 @@ TradeSystem::TradeSystem(double risk_cap_usd, double max_order_notional_usd,
 
 bool TradeSystem::OnPrice(double price, bool trade_ok) {
   const MarketEvent event = market_generator_.Next(price);
-  const auto decision = Evaluate(event, trade_ok);
+  const auto decision = Evaluate(event, trade_ok, 0.0);
   
   if (!decision.intent.has_value()) {
     return false;
@@ -97,11 +97,16 @@ bool TradeSystem::OnPrice(double price, bool trade_ok) {
   return true;
 }
 
-std::optional<OrderIntent> TradeSystem::OnMarket(const MarketEvent& event, bool trade_ok) {
-  return Evaluate(event, trade_ok).intent;
+std::optional<OrderIntent> TradeSystem::OnMarket(
+    const MarketEvent& event,
+    bool trade_ok,
+    double symbol_inflight_notional_usd) {
+  return Evaluate(event, trade_ok, symbol_inflight_notional_usd).intent;
 }
 
-MarketDecision TradeSystem::Evaluate(const MarketEvent& event, bool trade_ok) {
+MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
+                                     bool trade_ok,
+                                     double symbol_inflight_notional_usd) {
   MarketDecision decision;
 
   // 1. Update Account Valuation
@@ -142,9 +147,17 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event, bool trade_ok) {
   decision.risk_adjusted = risk_.Apply(decision.target, trade_ok, account_.drawdown_pct(), liq_dist);
 
   // 5.1. Global Account Gross Notional Check
-  const double symbol_current_notional = account_.current_notional_usd(decision.risk_adjusted.symbol);
-  const double gross_notional = account_.gross_notional_usd();
-  const double other_symbols_gross = std::max(0.0, gross_notional - std::fabs(symbol_current_notional));
+  const double settled_symbol_notional =
+      account_.current_notional_usd(decision.risk_adjusted.symbol);
+  const double symbol_current_notional =
+      settled_symbol_notional + symbol_inflight_notional_usd;
+  const double settled_gross_notional = account_.gross_notional_usd();
+  const double gross_notional =
+      std::max(0.0, settled_gross_notional +
+                        std::fabs(symbol_current_notional) -
+                        std::fabs(settled_symbol_notional));
+  const double other_symbols_gross =
+      std::max(0.0, gross_notional - std::fabs(symbol_current_notional));
   const double symbol_budget = std::max(0.0, max_account_gross_notional_usd_ - other_symbols_gross);
   
   if (std::fabs(decision.risk_adjusted.adjusted_notional_usd) > symbol_budget) {
@@ -329,7 +342,16 @@ bool TradeSystem::ApplyIntegratorPolicy(const ShadowInference& shadow,
     return true;
   }
 
-  const double scaled_abs_notional = base_abs_notional * confidence_abs;
+  const double active_full_notional_threshold = std::clamp(
+      integrator_config_.active_full_notional_confidence_threshold,
+      integrator_config_.active_confidence_threshold, 1.0);
+  const double active_partial_notional_ratio =
+      std::clamp(integrator_config_.active_partial_notional_ratio, 0.0, 1.0);
+  const double notional_scale =
+      confidence_abs >= active_full_notional_threshold
+          ? 1.0
+          : active_partial_notional_ratio;
+  const double scaled_abs_notional = base_abs_notional * notional_scale;
   const double final_notional = static_cast<double>(shadow_direction) * scaled_abs_notional;
   
   if (!HasExposure(final_notional - inout_signal->suggested_notional_usd)) {
@@ -339,7 +361,9 @@ bool TradeSystem::ApplyIntegratorPolicy(const ShadowInference& shadow,
   
   inout_signal->suggested_notional_usd = final_notional;
   inout_signal->direction = SignOf(final_notional);
-  set_out(confidence, "active_applied");
+  set_out(confidence,
+          notional_scale >= 1.0 - kNotionalEpsilon ? "active_applied_full"
+                                                    : "active_applied_partial");
   return true;
 }
 

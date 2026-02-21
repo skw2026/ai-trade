@@ -46,6 +46,8 @@ risk:
 execution:
   max_order_notional: 450
   min_rebalance_notional_usd: 60
+  include_inflight_notional_in_position: true
+  max_inflight_orders_per_symbol_direction: 3
   min_order_interval_ms: 3200
   reverse_signal_cooldown_ticks: 10
   enable_fee_aware_entry_gate: true
@@ -115,6 +117,9 @@ strategy:
 integrator:
   enabled: true
   model_type: "catboost"
+  active_confidence_threshold: 0.55
+  active_partial_notional_ratio: 0.5
+  active_full_notional_confidence_threshold: 0.80
   canary_min_notional_usd: 50
   shadow:
     enabled: true
@@ -138,6 +143,9 @@ self_evolution:
   counterfactual_min_t_stat_samples_for_update: 40
   counterfactual_min_t_stat_abs_for_update: 0.15
   virtual_cost_bps: 5.5
+  virtual_cost_dynamic_enabled: true
+  virtual_cost_dynamic_max_multiplier: 3.0
+  virtual_funding_rate_per_tick: 0.0
   enable_factor_ic_adaptive_weights: true
   factor_ic_min_samples: 60
   factor_ic_min_abs: 0.003
@@ -152,6 +160,7 @@ self_evolution:
   max_weight_step: 0.015
   rollback_degrade_windows: 4
   rollback_degrade_threshold_score: -20.0
+  rollback_to_baseline_on_trigger: true
   rollback_cooldown_ticks: 2400
   initial_trend_weight: 0.50
   initial_defensive_weight: 0.50

@@ -798,6 +798,9 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.intents_filtered_fee_aware_near_miss;
   total->intents_passed_fee_aware_near_miss +=
       delta.intents_passed_fee_aware_near_miss;
+  total->rebalance_gap_samples += delta.rebalance_gap_samples;
+  total->rebalance_converged_within_min_notional +=
+      delta.rebalance_converged_within_min_notional;
   total->intents_throttled_cost_cooldown +=
       delta.intents_throttled_cost_cooldown;
   total->intents_throttled += delta.intents_throttled;
@@ -840,6 +843,11 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->entry_quality_guard_penalty_bps_sum +=
       delta.entry_quality_guard_penalty_bps_sum;
   total->entry_edge_gap_bps_sum += delta.entry_edge_gap_bps_sum;
+  total->rebalance_gap_abs_usd_sum += delta.rebalance_gap_abs_usd_sum;
+  total->rebalance_gap_abs_usd_max =
+      std::max(total->rebalance_gap_abs_usd_max, delta.rebalance_gap_abs_usd_max);
+  total->rebalance_gap_within_min_notional_abs_usd_sum +=
+      delta.rebalance_gap_within_min_notional_abs_usd_sum;
   total->trend_notional_abs_sum += delta.trend_notional_abs_sum;
   total->defensive_notional_abs_sum += delta.defensive_notional_abs_sum;
   total->blended_notional_abs_sum += delta.blended_notional_abs_sum;
@@ -1198,7 +1206,44 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
 
   const bool trade_ok = adapter_->TradeOk() && !IsForceReduceOnlyActive();
-  auto decision = system_.Evaluate(event, trade_ok);
+  double symbol_inflight_notional_usd = 0.0;
+  if (config_.execution_include_inflight_notional_in_position) {
+    const double effective_price =
+        event.mark_price > 0.0 ? event.mark_price : event.price;
+    if (std::isfinite(effective_price) && effective_price > 0.0) {
+      const double inflight_qty =
+          oms_.PendingNetPositionRemainingQtyForSymbol(event.symbol);
+      symbol_inflight_notional_usd = inflight_qty * effective_price;
+    }
+  }
+  auto decision =
+      system_.Evaluate(event, trade_ok, symbol_inflight_notional_usd);
+  constexpr double kRebalanceGapEpsilon = 1e-6;
+  if (!decision.risk_adjusted.symbol.empty()) {
+    const double settled_symbol_notional =
+        system_.account().current_notional_usd(decision.risk_adjusted.symbol);
+    const double effective_symbol_notional =
+        config_.execution_include_inflight_notional_in_position
+            ? settled_symbol_notional + symbol_inflight_notional_usd
+            : settled_symbol_notional;
+    const double rebalance_gap_abs_usd = std::fabs(
+        decision.risk_adjusted.adjusted_notional_usd - effective_symbol_notional);
+    if (!decision.risk_adjusted.reduce_only &&
+        rebalance_gap_abs_usd > kRebalanceGapEpsilon) {
+      ++funnel_window_.rebalance_gap_samples;
+      funnel_window_.rebalance_gap_abs_usd_sum += rebalance_gap_abs_usd;
+      funnel_window_.rebalance_gap_abs_usd_max =
+          std::max(funnel_window_.rebalance_gap_abs_usd_max, rebalance_gap_abs_usd);
+      if (!decision.intent.has_value() &&
+          config_.execution_min_rebalance_notional_usd > 0.0 &&
+          rebalance_gap_abs_usd + kRebalanceGapEpsilon <
+              config_.execution_min_rebalance_notional_usd) {
+        ++funnel_window_.rebalance_converged_within_min_notional;
+        funnel_window_.rebalance_gap_within_min_notional_abs_usd_sum +=
+            rebalance_gap_abs_usd;
+      }
+    }
+  }
   if (decision.regime.warmup) {
     ++funnel_window_.regime_warmup_ticks;
   }
@@ -1463,15 +1508,30 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
 
   if (decision.intent.has_value()) {
-    // 同币种同方向已有在途净仓位订单时，不再重复入队，避免 pending 堆积和超时撤单抖动。
-    if (IsNetPositionOrderPurpose(decision.intent->purpose) &&
-        oms_.HasPendingNetPositionOrderForSymbolDirection(
-            decision.intent->symbol, decision.intent->direction)) {
-      ++funnel_window_.intents_throttled;
-      LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
-              ", client_order_id=" + decision.intent->client_order_id +
-              ", reason=pending_same_side_inflight");
-      return;
+    // 同币种同方向在途单限额控制：
+    // - Entry 仅统计同方向 Entry，在“先平后开”场景允许与同方向 Reduce 并存；
+    // - Reduce 仍按净仓位在途单统计，避免连续平仓风暴。
+    const int inflight_limit =
+        std::max(0, config_.execution_max_inflight_orders_per_symbol_direction);
+    if (inflight_limit > 0 && IsNetPositionOrderPurpose(decision.intent->purpose)) {
+      int pending_same_direction = 0;
+      if (decision.intent->purpose == OrderPurpose::kEntry &&
+          !decision.intent->reduce_only) {
+        pending_same_direction = oms_.PendingEntryOrderCountForSymbolDirection(
+            decision.intent->symbol, decision.intent->direction);
+      } else {
+        pending_same_direction =
+            oms_.PendingNetPositionOrderCountForSymbolDirection(
+                decision.intent->symbol, decision.intent->direction);
+      }
+      if (pending_same_direction >= inflight_limit) {
+        ++funnel_window_.intents_throttled;
+        LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+                ", client_order_id=" + decision.intent->client_order_id +
+                ", reason=pending_same_side_inflight_limit_reached=" +
+                std::to_string(inflight_limit));
+        return;
+      }
     }
 
     std::string reason;
@@ -2081,6 +2141,7 @@ void BotApplication::RunSelfEvolution() {
   const double mark_price_usd = has_latest_mark_price_ ? latest_mark_price_usd_ : 0.0;
   const std::string signal_symbol =
       has_tick_strategy_signal_ ? tick_strategy_signal_symbol_ : std::string();
+  const double observed_turnover_cost_bps = std::max(0.0, 0.5 * RoundTripCostBps());
   const auto action =
       self_evolution_.OnTick(market_tick_count_,
                              system_.account().cumulative_realized_net_pnl_usd(),
@@ -2092,7 +2153,9 @@ void BotApplication::RunSelfEvolution() {
                              mark_price_usd,
                              signal_symbol,
                              tick_cost_filtered_signal_,
-                             std::max(0, pending_fills_for_evolution_));
+                             std::max(0, pending_fills_for_evolution_),
+                             system_.account().equity_usd(),
+                             observed_turnover_cost_bps);
   pending_fills_for_evolution_ = 0;
   if (!action.has_value()) {
     return;
@@ -2182,6 +2245,12 @@ void BotApplication::RunSelfEvolution() {
           std::to_string(action->window_max_drawdown_pct) +
           ", window_notional_churn_usd=" +
           std::to_string(action->window_notional_churn_usd) +
+          ", effective_turnover_cost_bps=" +
+          std::to_string(action->effective_turnover_cost_bps) +
+          ", funding_rate_per_tick=" +
+          std::to_string(action->funding_rate_per_tick) +
+          ", rollback_to_baseline=" +
+          std::string(action->rolled_back_to_baseline ? "true" : "false") +
           ", weight_before={trend=" +
           std::to_string(action->trend_weight_before) +
           ",defensive=" + std::to_string(action->defensive_weight_before) +
@@ -2308,6 +2377,22 @@ void BotApplication::LogStatus() {
       funnel_window.entry_edge_samples > 0
           ? static_cast<double>(funnel_window.intents_passed_fee_aware_near_miss) /
                 static_cast<double>(funnel_window.entry_edge_samples)
+          : 0.0;
+  const double rebalance_gap_avg_abs_usd =
+      funnel_window.rebalance_gap_samples > 0
+          ? funnel_window.rebalance_gap_abs_usd_sum /
+                static_cast<double>(funnel_window.rebalance_gap_samples)
+          : 0.0;
+  const double rebalance_gap_within_min_notional_avg_abs_usd =
+      funnel_window.rebalance_converged_within_min_notional > 0
+          ? funnel_window.rebalance_gap_within_min_notional_abs_usd_sum /
+                static_cast<double>(
+                    funnel_window.rebalance_converged_within_min_notional)
+          : 0.0;
+  const double rebalance_gap_within_min_notional_ratio =
+      funnel_window.rebalance_gap_samples > 0
+          ? static_cast<double>(funnel_window.rebalance_converged_within_min_notional) /
+                static_cast<double>(funnel_window.rebalance_gap_samples)
           : 0.0;
   const double strategy_trend_avg_abs_notional =
       funnel_window.strategy_mix_samples > 0
@@ -2439,6 +2524,10 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.intents_filtered_fee_aware_near_miss) +
           ", intents_passed_fee_aware_near_miss=" +
           std::to_string(funnel_window.intents_passed_fee_aware_near_miss) +
+          ", rebalance_gap_samples=" +
+          std::to_string(funnel_window.rebalance_gap_samples) +
+          ", rebalance_converged_within_min_notional=" +
+          std::to_string(funnel_window.rebalance_converged_within_min_notional) +
           ", intents_throttled_cost_cooldown=" +
           std::to_string(funnel_window.intents_throttled_cost_cooldown) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
@@ -2639,6 +2728,16 @@ void BotApplication::LogStatus() {
           std::to_string(filtered_cost_near_miss_ratio) +
           ", passed_cost_near_miss_ratio=" +
           std::to_string(passed_cost_near_miss_ratio) +
+          ", rebalance_gap_avg_abs_usd=" +
+          std::to_string(rebalance_gap_avg_abs_usd) +
+          ", rebalance_gap_max_abs_usd=" +
+          std::to_string(funnel_window.rebalance_gap_abs_usd_max) +
+          ", rebalance_within_min_notional_avg_abs_usd=" +
+          std::to_string(rebalance_gap_within_min_notional_avg_abs_usd) +
+          ", rebalance_within_min_notional_ratio=" +
+          std::to_string(rebalance_gap_within_min_notional_ratio) +
+          ", min_rebalance_notional_usd=" +
+          std::to_string(config_.execution_min_rebalance_notional_usd) +
           ", entry_edge_gap_avg_bps=" + std::to_string(entry_edge_gap_avg_bps) +
           ", realized_net_delta_usd=" +
           std::to_string(window_realized_net_delta_usd) +

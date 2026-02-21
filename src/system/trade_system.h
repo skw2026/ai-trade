@@ -50,10 +50,14 @@ class TradeSystem {
   // --- Main Pipeline ---
 
   /// Processes a market event and returns the full decision context.
-  MarketDecision Evaluate(const MarketEvent& event, bool trade_ok = true);
+  MarketDecision Evaluate(const MarketEvent& event,
+                          bool trade_ok = true,
+                          double symbol_inflight_notional_usd = 0.0);
 
   /// Simplified entry point returning just the order intent (if any).
-  std::optional<OrderIntent> OnMarket(const MarketEvent& event, bool trade_ok = true);
+  std::optional<OrderIntent> OnMarket(const MarketEvent& event,
+                                      bool trade_ok = true,
+                                      double symbol_inflight_notional_usd = 0.0);
 
   /// Helper for local replay/testing: generates event from price and processes it.
   bool OnPrice(double price, bool trade_ok = true);

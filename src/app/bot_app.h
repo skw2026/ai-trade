@@ -212,6 +212,8 @@ class BotApplication {
     std::uint64_t intents_filtered_fee_aware{0};
     std::uint64_t intents_filtered_fee_aware_near_miss{0};
     std::uint64_t intents_passed_fee_aware_near_miss{0};
+    std::uint64_t rebalance_gap_samples{0};
+    std::uint64_t rebalance_converged_within_min_notional{0};
     std::uint64_t intents_throttled_cost_cooldown{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
@@ -248,6 +250,9 @@ class BotApplication {
     double entry_concentration_adjust_bps_sum{0.0};
     double entry_quality_guard_penalty_bps_sum{0.0};
     double entry_edge_gap_bps_sum{0.0};
+    double rebalance_gap_abs_usd_sum{0.0};
+    double rebalance_gap_abs_usd_max{0.0};
+    double rebalance_gap_within_min_notional_abs_usd_sum{0.0};
     double trend_notional_abs_sum{0.0};
     double defensive_notional_abs_sum{0.0};
     double blended_notional_abs_sum{0.0};
