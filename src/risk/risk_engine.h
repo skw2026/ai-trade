@@ -40,7 +40,7 @@ class RiskEngine {
   RiskMode mode() const { return mode_; }
 
  private:
-  RiskMode ResolveMode(bool trade_ok, double drawdown_pct, double liq_distance_pct) const;
+  RiskMode ResolveMode(bool trade_ok, double drawdown_pct, double liq_distance_pct);
 
   double max_abs_notional_usd_{3000.0};  ///< 单 symbol 净名义敞口绝对值上限（USD）。
   RiskThresholds thresholds_{};  ///< 回撤与强平距离阈值集合。

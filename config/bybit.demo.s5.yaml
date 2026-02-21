@@ -37,8 +37,11 @@ risk:
   max_abs_notional_usd: 1800
   max_drawdown:
     degraded_threshold: 0.08
+    degraded_recover_threshold: 0.06
     cooldown_threshold: 0.12
+    cooldown_recover_threshold: 0.10
     fuse_threshold: 0.20
+    fuse_recover_threshold: 0.16
 
 execution:
   max_order_notional: 380
@@ -97,6 +100,11 @@ strategy:
   signal_notional_usd: 380
   signal_deadband_abs: 0.9
   min_hold_ticks: 6
+  vol_target_pct: 0.35
+  vol_target_max_leverage: 2.2
+  vol_target_low_vol_leverage_cap_enabled: true
+  vol_target_low_vol_annual_threshold: 0.12
+  vol_target_low_vol_max_leverage: 1.1
   defensive_notional_ratio: 0.55
   defensive_entry_score: 1.0
   defensive_trend_scale: 0.25
@@ -106,6 +114,7 @@ strategy:
 integrator:
   enabled: true
   model_type: "catboost"
+  canary_min_notional_usd: 50
   shadow:
     enabled: true
     log_model_score: true

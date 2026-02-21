@@ -12,7 +12,9 @@ namespace ai_trade {
  * 2. 强平距离不足；
  * 3. 回撤阈值分级。
  */
-RiskMode RiskEngine::ResolveMode(bool trade_ok, double drawdown_pct, double liq_distance_pct) const {
+RiskMode RiskEngine::ResolveMode(bool trade_ok,
+                                 double drawdown_pct,
+                                 double liq_distance_pct) {
   // 1. 外部硬开关或交易通道异常 -> 强制只减仓
   if (!trade_ok || forced_reduce_only_) {
     return RiskMode::kReduceOnly;
@@ -27,10 +29,23 @@ RiskMode RiskEngine::ResolveMode(bool trade_ok, double drawdown_pct, double liq_
   if (drawdown_pct >= thresholds_.fuse_drawdown) {
     return RiskMode::kFuse;
   }
+  // 4. 恢复阈值（滞回）：避免在边界附近发生 Normal/Degraded/Cooldown/Fuse 来回抖动。
+  if (mode_ == RiskMode::kFuse &&
+      drawdown_pct >= thresholds_.fuse_recover_drawdown) {
+    return RiskMode::kFuse;
+  }
   if (drawdown_pct >= thresholds_.cooldown_drawdown) {
     return RiskMode::kCooldown;
   }
+  if (mode_ == RiskMode::kCooldown &&
+      drawdown_pct >= thresholds_.cooldown_recover_drawdown) {
+    return RiskMode::kCooldown;
+  }
   if (drawdown_pct >= thresholds_.degraded_drawdown) {
+    return RiskMode::kDegraded;
+  }
+  if (mode_ == RiskMode::kDegraded &&
+      drawdown_pct >= thresholds_.degraded_recover_drawdown) {
     return RiskMode::kDegraded;
   }
   return RiskMode::kNormal;

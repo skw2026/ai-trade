@@ -323,6 +323,23 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
 
     if (current_section == "risk" &&
         current_subsection == "max_drawdown" &&
+        (key == "degraded_recover_threshold" ||
+         key == "degraded_resume_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "risk.max_drawdown.degraded_recover_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.risk_thresholds.degraded_recover_drawdown = parsed;
+      continue;
+    }
+
+    if (current_section == "risk" &&
+        current_subsection == "max_drawdown" &&
         key == "cooldown_threshold") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -338,6 +355,23 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
 
     if (current_section == "risk" &&
         current_subsection == "max_drawdown" &&
+        (key == "cooldown_recover_threshold" ||
+         key == "cooldown_resume_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "risk.max_drawdown.cooldown_recover_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.risk_thresholds.cooldown_recover_drawdown = parsed;
+      continue;
+    }
+
+    if (current_section == "risk" &&
+        current_subsection == "max_drawdown" &&
         key == "fuse_threshold") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -348,6 +382,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.risk_thresholds.fuse_drawdown = parsed;
+      continue;
+    }
+
+    if (current_section == "risk" &&
+        current_subsection == "max_drawdown" &&
+        (key == "fuse_recover_threshold" || key == "fuse_resume_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "risk.max_drawdown.fuse_recover_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.risk_thresholds.fuse_recover_drawdown = parsed;
       continue;
     }
 
@@ -1176,6 +1226,82 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "strategy" &&
+        (key == "vol_target_pct" || key == "target_vol")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.vol_target_pct 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.vol_target_pct = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "vol_target_max_leverage") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.vol_target_max_leverage 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_vol_target_max_leverage = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        (key == "vol_target_low_vol_leverage_cap_enabled" ||
+         key == "low_vol_leverage_cap_enabled")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.vol_target_low_vol_leverage_cap_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_vol_target_low_vol_leverage_cap_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        (key == "vol_target_low_vol_annual_threshold" ||
+         key == "low_vol_annual_threshold")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.vol_target_low_vol_annual_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_vol_target_low_vol_annual_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        (key == "vol_target_low_vol_max_leverage" ||
+         key == "low_vol_max_leverage")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.vol_target_low_vol_max_leverage 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_vol_target_low_vol_max_leverage = parsed;
+      continue;
+    }
+
     if (current_section == "execution" && key == "exchange") {
       config.exchange = NormalizeExchange(value);
       continue;
@@ -1869,6 +1995,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.integrator.canary_notional_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "canary_min_notional_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.canary_min_notional_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.canary_min_notional_usd = parsed;
       continue;
     }
 
@@ -2830,6 +2971,49 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  // 向后兼容：历史配置未显式提供 recover 阈值时，自动退化为与触发阈值一致。
+  config.risk_thresholds.degraded_recover_drawdown = std::min(
+      config.risk_thresholds.degraded_recover_drawdown,
+      config.risk_thresholds.degraded_drawdown);
+  config.risk_thresholds.cooldown_recover_drawdown = std::min(
+      config.risk_thresholds.cooldown_recover_drawdown,
+      config.risk_thresholds.cooldown_drawdown);
+  config.risk_thresholds.fuse_recover_drawdown =
+      std::min(config.risk_thresholds.fuse_recover_drawdown,
+               config.risk_thresholds.fuse_drawdown);
+  if (config.risk_thresholds.degraded_drawdown < 0.0 ||
+      config.risk_thresholds.degraded_recover_drawdown < 0.0 ||
+      config.risk_thresholds.cooldown_drawdown < 0.0 ||
+      config.risk_thresholds.cooldown_recover_drawdown < 0.0 ||
+      config.risk_thresholds.fuse_drawdown < 0.0 ||
+      config.risk_thresholds.fuse_recover_drawdown < 0.0 ||
+      config.risk_thresholds.min_liquidation_distance < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "risk 阈值参数不能为负数";
+    }
+    return false;
+  }
+  if (config.risk_thresholds.degraded_drawdown >
+      config.risk_thresholds.cooldown_drawdown ||
+      config.risk_thresholds.cooldown_drawdown >
+          config.risk_thresholds.fuse_drawdown) {
+    if (out_error != nullptr) {
+      *out_error =
+          "risk.max_drawdown 阈值必须满足 degraded <= cooldown <= fuse";
+    }
+    return false;
+  }
+  if (config.risk_thresholds.degraded_recover_drawdown >
+          config.risk_thresholds.degraded_drawdown ||
+      config.risk_thresholds.cooldown_recover_drawdown >
+          config.risk_thresholds.cooldown_drawdown ||
+      config.risk_thresholds.fuse_recover_drawdown >
+          config.risk_thresholds.fuse_drawdown) {
+    if (out_error != nullptr) {
+      *out_error = "risk.max_drawdown.*_recover_threshold 必须小于等于触发阈值";
+    }
+    return false;
+  }
   if (config.gate.window_ticks <= 0) {
     if (out_error != nullptr) {
       *out_error = "gate.window_ticks 必须大于 0";
@@ -2909,6 +3093,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.integrator.canary_notional_ratio > 1.0) {
     if (out_error != nullptr) {
       *out_error = "integrator.canary_notional_ratio 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.integrator.canary_min_notional_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.canary_min_notional_usd 不能为负数";
     }
     return false;
   }
@@ -3167,6 +3357,38 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.strategy_signal_deadband_abs < 0.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.signal_deadband_abs 不能为负数";
+    }
+    return false;
+  }
+  if (config.vol_target_pct < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.vol_target_pct 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_vol_target_max_leverage <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.vol_target_max_leverage 必须大于 0";
+    }
+    return false;
+  }
+  if (config.strategy_vol_target_low_vol_annual_threshold < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.vol_target_low_vol_annual_threshold 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_vol_target_low_vol_max_leverage <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.vol_target_low_vol_max_leverage 必须大于 0";
+    }
+    return false;
+  }
+  if (config.strategy_vol_target_low_vol_max_leverage >
+      config.strategy_vol_target_max_leverage + 1e-9) {
+    if (out_error != nullptr) {
+      *out_error =
+          "strategy.vol_target_low_vol_max_leverage 不能大于 strategy.vol_target_max_leverage";
     }
     return false;
   }

@@ -87,6 +87,7 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
     close_intent.symbol = target.symbol;
     close_intent.reduce_only = true;
     close_intent.purpose = OrderPurpose::kReduce;
+    close_intent.liquidity_preference = LiquidityPreference::kTaker;
     close_intent.direction = (current_notional_usd > 0.0) ? -1 : 1;
     close_intent.qty = close_notional / price;
     close_intent.price = price;
@@ -102,6 +103,9 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
   intent.symbol = target.symbol;
   intent.reduce_only = target.reduce_only;
   intent.purpose = target.reduce_only ? OrderPurpose::kReduce : OrderPurpose::kEntry;
+  intent.liquidity_preference =
+      target.reduce_only ? LiquidityPreference::kTaker
+                         : LiquidityPreference::kMaker;
   intent.direction = (total_delta > 0.0) ? 1 : -1;
   const double order_notional =
       std::min(std::fabs(total_delta), config_.max_order_notional_usd);
@@ -142,6 +146,7 @@ std::optional<OrderIntent> ExecutionEngine::BuildProtectionIntent(
   intent.parent_order_id = entry_fill.client_order_id;
   intent.symbol = entry_fill.symbol;
   intent.purpose = purpose;
+  intent.liquidity_preference = LiquidityPreference::kTaker;
   intent.reduce_only = true;
   intent.direction = -entry_fill.direction;
   intent.qty = entry_fill.qty;

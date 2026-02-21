@@ -41,6 +41,7 @@ enum class RegimeBucket { kTrend, kRange, kExtreme };
 enum class RiskMode { kNormal, kDegraded, kCooldown, kFuse, kReduceOnly };
 enum class OrderPurpose { kEntry, kTp, kSl, kReduce };
 enum class FillLiquidity { kUnknown, kMaker, kTaker };
+enum class LiquidityPreference { kAuto, kMaker, kTaker };
 
 // ============================================================================
 // Data Structures
@@ -105,6 +106,7 @@ struct OrderIntent {
   std::string parent_order_id;
   std::string symbol{"BTCUSDT"};
   OrderPurpose purpose{OrderPurpose::kEntry};
+  LiquidityPreference liquidity_preference{LiquidityPreference::kAuto};
   bool reduce_only{false};
   int direction{0};
   Quantity qty{0.0};
@@ -167,8 +169,11 @@ struct EvolutionWeights {
 
 struct RiskThresholds {
   double degraded_drawdown{0.08};
+  double degraded_recover_drawdown{0.06};
   double cooldown_drawdown{0.12};
+  double cooldown_recover_drawdown{0.10};
   double fuse_drawdown{0.20};
+  double fuse_recover_drawdown{0.16};
   double min_liquidation_distance{0.08};
 };
 
@@ -210,6 +215,11 @@ inline const char* ToString(FillLiquidity l) {
   if (l == FillLiquidity::kMaker) return "MAKER";
   if (l == FillLiquidity::kTaker) return "TAKER";
   return "UNKNOWN";
+}
+inline const char* ToString(LiquidityPreference p) {
+  if (p == LiquidityPreference::kMaker) return "maker";
+  if (p == LiquidityPreference::kTaker) return "taker";
+  return "auto";
 }
 
 }  // namespace ai_trade

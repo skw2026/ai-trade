@@ -1540,7 +1540,27 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   std::string order_type = "Market";
   double submit_price = 0.0;
   std::string time_in_force;
+  double trigger_price = 0.0;
+  int trigger_direction = 0;
+  const bool conditional_protection_order =
+      intent.purpose == OrderPurpose::kSl || intent.purpose == OrderPurpose::kTp;
+  if (conditional_protection_order) {
+    trigger_price = intent.price;
+    if (trigger_price <= 0.0) {
+      LogInfo("Bybit 下单拒绝：保护单 trigger_price 非法, symbol=" +
+              normalized_symbol + ", client_order_id=" + intent.client_order_id);
+      return false;
+    }
+    if (intent.purpose == OrderPurpose::kSl) {
+      trigger_direction = intent.direction < 0 ? 2 : 1;
+    } else {
+      trigger_direction = intent.direction < 0 ? 1 : 2;
+    }
+  }
+  const bool allow_maker =
+      intent.liquidity_preference != LiquidityPreference::kTaker;
   const bool maker_entry_order =
+      !conditional_protection_order && allow_maker &&
       options_.maker_entry_enabled && !intent.reduce_only &&
       intent.purpose == OrderPurpose::kEntry;
   if (maker_entry_order) {
@@ -1576,7 +1596,10 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   const std::string side = intent.direction > 0 ? "Buy" : "Sell";
   auto build_order_body = [&](const std::string& submit_order_type,
                               double limit_price,
-                              const std::string& submit_time_in_force) {
+                              const std::string& submit_time_in_force,
+                              double submit_trigger_price,
+                              int submit_trigger_direction,
+                              bool close_on_trigger) {
     std::string body =
         "{\"category\":\"" + EscapeJson(options_.category) +
         "\",\"symbol\":\"" + EscapeJson(normalized_symbol) +
@@ -1592,22 +1615,43 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
         body += ",\"timeInForce\":\"" + submit_time_in_force + "\"";
       }
     }
+    if (submit_trigger_price > 0.0 && submit_trigger_direction > 0) {
+      body += ",\"triggerPrice\":\"" +
+              ToDecimalString(submit_trigger_price, price_precision) + "\"";
+      body += ",\"triggerDirection\":" + std::to_string(submit_trigger_direction);
+      body += ",\"triggerBy\":\"MarkPrice\"";
+      if (close_on_trigger) {
+        body += ",\"closeOnTrigger\":true";
+      }
+    }
     body += "}";
     return body;
   };
 
   LogInfo("BYBIT_SUBMIT: symbol=" + normalized_symbol +
           ", client_order_id=" + intent.client_order_id +
+          ", purpose=" + std::to_string(static_cast<int>(intent.purpose)) +
           ", order_type=" + order_type +
+          ", liquidity_preference=" + std::string(ToString(intent.liquidity_preference)) +
           ", reduce_only=" + (intent.reduce_only ? std::string("true")
                                                  : std::string("false")) +
           ", qty=" + ToDecimalString(submit_qty, qty_precision) +
           (order_type == "Limit"
                ? ", price=" + ToDecimalString(submit_price, price_precision) +
                      ", time_in_force=" + time_in_force
+               : std::string()) +
+          (trigger_price > 0.0
+               ? ", trigger_price=" +
+                     ToDecimalString(trigger_price, price_precision) +
+                     ", trigger_direction=" + std::to_string(trigger_direction)
                : std::string()));
 
-  std::string body = build_order_body(order_type, submit_price, time_in_force);
+  std::string body = build_order_body(order_type,
+                                      submit_price,
+                                      time_in_force,
+                                      trigger_price,
+                                      trigger_direction,
+                                      conditional_protection_order);
   std::string response;
   std::string error;
   if (!rest_client_->PostPrivate("/v5/order/create", body, &response, &error)) {
@@ -1631,7 +1675,8 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
                                   : std::string("false")) +
               ", qty=" + ToDecimalString(submit_qty, qty_precision) +
               ", reason=maker_fallback_post_only");
-      const std::string market_body = build_order_body("Market", 0.0, "");
+      const std::string market_body =
+          build_order_body("Market", 0.0, "", 0.0, 0, false);
       if (!rest_client_->PostPrivate("/v5/order/create", market_body,
                                      &fallback_response, &fallback_error)) {
         LogInfo("Bybit 下单失败: client_order_id=" + intent.client_order_id +

@@ -21,6 +21,8 @@ std::string SerializeIntent(const OrderIntent& order) {
       << '\t'
       << static_cast<int>(order.purpose)
       << '\t'
+      << static_cast<int>(order.liquidity_preference)
+      << '\t'
       << (order.reduce_only ? 1 : 0)
       << '\t'
       << order.direction
@@ -71,7 +73,7 @@ bool ParseIntent(const std::vector<std::string>& fields,
     }
     return false;
   }
-  if (fields.size() != 8) {
+  if (fields.size() != 8 && fields.size() != 9) {
     if (out_error != nullptr) {
       *out_error = "INTENT WAL 字段数异常";
     }
@@ -84,10 +86,24 @@ bool ParseIntent(const std::vector<std::string>& fields,
 
   try {
     intent.purpose = static_cast<OrderPurpose>(std::stoi(fields[3]));
-    intent.reduce_only = std::stoi(fields[4]) != 0;
-    intent.direction = std::stoi(fields[5]);
-    intent.qty = std::stod(fields[6]);
-    intent.price = std::stod(fields[7]);
+    std::size_t cursor = 4;
+    if (fields.size() == 9) {
+      const int raw_pref = std::stoi(fields[cursor++]);
+      if (raw_pref < static_cast<int>(LiquidityPreference::kAuto) ||
+          raw_pref > static_cast<int>(LiquidityPreference::kTaker)) {
+        if (out_error != nullptr) {
+          *out_error = "INTENT WAL liquidity_preference 字段非法";
+        }
+        return false;
+      }
+      intent.liquidity_preference = static_cast<LiquidityPreference>(raw_pref);
+    } else {
+      intent.liquidity_preference = LiquidityPreference::kAuto;
+    }
+    intent.reduce_only = std::stoi(fields[cursor++]) != 0;
+    intent.direction = std::stoi(fields[cursor++]);
+    intent.qty = std::stod(fields[cursor++]);
+    intent.price = std::stod(fields[cursor++]);
   } catch (const std::exception&) {
     if (out_error != nullptr) {
       *out_error = "INTENT WAL 字段解析失败";

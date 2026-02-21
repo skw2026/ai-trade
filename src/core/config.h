@@ -141,6 +141,7 @@ struct IntegratorConfig {
   std::string model_type{"catboost"};
   IntegratorMode mode{IntegratorMode::kShadow};
   double canary_notional_ratio{0.30};
+  double canary_min_notional_usd{0.0};
   double canary_confidence_threshold{0.60};
   bool canary_allow_countertrend{false};
   double active_confidence_threshold{0.55};
@@ -163,6 +164,10 @@ struct StrategyConfig {
   int trend_ema_fast{12};
   int trend_ema_slow{26};
   double vol_target_pct{0.40};
+  double vol_target_max_leverage{3.0};
+  bool vol_target_low_vol_leverage_cap_enabled{false};
+  double vol_target_low_vol_annual_threshold{0.10};
+  double vol_target_low_vol_max_leverage{1.0};
   double defensive_notional_ratio{0.0};
   double defensive_entry_score{1.25};
   double defensive_trend_scale{0.35};
@@ -189,6 +194,10 @@ struct AppConfig {
   int trend_ema_fast{12};
   int trend_ema_slow{26};
   double vol_target_pct{0.40};
+  double strategy_vol_target_max_leverage{3.0};
+  bool strategy_vol_target_low_vol_leverage_cap_enabled{false};
+  double strategy_vol_target_low_vol_annual_threshold{0.10};
+  double strategy_vol_target_low_vol_max_leverage{1.0};
   double strategy_defensive_notional_ratio{0.0};
   double strategy_defensive_entry_score{1.25};
   double strategy_defensive_trend_scale{0.35};
@@ -267,6 +276,10 @@ struct AppConfig {
         trend_ema_fast,
         trend_ema_slow,
         vol_target_pct,
+        strategy_vol_target_max_leverage,
+        strategy_vol_target_low_vol_leverage_cap_enabled,
+        strategy_vol_target_low_vol_annual_threshold,
+        strategy_vol_target_low_vol_max_leverage,
         strategy_defensive_notional_ratio,
         strategy_defensive_entry_score,
         strategy_defensive_trend_scale,

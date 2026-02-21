@@ -2399,8 +2399,11 @@ int main() {
         << "  max_abs_notional_usd: 4321\n"
         << "  max_drawdown:\n"
         << "    degraded_threshold: 0.05\n"
+        << "    degraded_recover_threshold: 0.04\n"
         << "    cooldown_threshold: 0.10\n"
+        << "    cooldown_recover_threshold: 0.08\n"
         << "    fuse_threshold: 0.18\n"
+        << "    fuse_recover_threshold: 0.15\n"
         << "execution:\n"
         << "  max_order_notional: 876\n"
         << "  min_rebalance_notional_usd: 45\n"
@@ -2437,6 +2440,11 @@ int main() {
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
         << "  min_hold_ticks: 4\n"
+        << "  vol_target_pct: 0.35\n"
+        << "  vol_target_max_leverage: 2.5\n"
+        << "  vol_target_low_vol_leverage_cap_enabled: true\n"
+        << "  vol_target_low_vol_annual_threshold: 0.12\n"
+        << "  vol_target_low_vol_max_leverage: 1.3\n"
         << "  defensive_notional_ratio: 0.4\n"
         << "  defensive_entry_score: 1.1\n"
         << "  defensive_trend_scale: 0.3\n"
@@ -2447,6 +2455,7 @@ int main() {
         << "  model_type: \"catboost\"\n"
         << "  mode: \"canary\"\n"
         << "  canary_notional_ratio: 0.35\n"
+        << "  canary_min_notional_usd: 50\n"
         << "  canary_confidence_threshold: 0.62\n"
         << "  canary_allow_countertrend: true\n"
         << "  active_confidence_threshold: 0.57\n"
@@ -2542,6 +2551,11 @@ int main() {
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
         config.strategy_min_hold_ticks != 4 ||
+        !NearlyEqual(config.vol_target_pct, 0.35) ||
+        !NearlyEqual(config.strategy_vol_target_max_leverage, 2.5) ||
+        config.strategy_vol_target_low_vol_leverage_cap_enabled != true ||
+        !NearlyEqual(config.strategy_vol_target_low_vol_annual_threshold, 0.12) ||
+        !NearlyEqual(config.strategy_vol_target_low_vol_max_leverage, 1.3) ||
         !NearlyEqual(config.strategy_defensive_notional_ratio, 0.4) ||
         !NearlyEqual(config.strategy_defensive_entry_score, 1.1) ||
         !NearlyEqual(config.strategy_defensive_trend_scale, 0.3) ||
@@ -2597,6 +2611,7 @@ int main() {
         config.integrator.model_type != "catboost" ||
         config.integrator.mode != ai_trade::IntegratorMode::kCanary ||
         !NearlyEqual(config.integrator.canary_notional_ratio, 0.35) ||
+        !NearlyEqual(config.integrator.canary_min_notional_usd, 50.0) ||
         !NearlyEqual(config.integrator.canary_confidence_threshold, 0.62) ||
         config.integrator.canary_allow_countertrend != true ||
         !NearlyEqual(config.integrator.active_confidence_threshold, 0.57) ||
@@ -2656,8 +2671,11 @@ int main() {
         !NearlyEqual(config.self_evolution.initial_trend_weight, 0.55) ||
         !NearlyEqual(config.self_evolution.initial_defensive_weight, 0.45) ||
         !NearlyEqual(config.risk_thresholds.degraded_drawdown, 0.05) ||
+        !NearlyEqual(config.risk_thresholds.degraded_recover_drawdown, 0.04) ||
         !NearlyEqual(config.risk_thresholds.cooldown_drawdown, 0.10) ||
-        !NearlyEqual(config.risk_thresholds.fuse_drawdown, 0.18)) {
+        !NearlyEqual(config.risk_thresholds.cooldown_recover_drawdown, 0.08) ||
+        !NearlyEqual(config.risk_thresholds.fuse_drawdown, 0.18) ||
+        !NearlyEqual(config.risk_thresholds.fuse_recover_drawdown, 0.15)) {
       std::cerr << "配置字段解析结果不符合预期\n";
       return 1;
     }
@@ -3603,6 +3621,50 @@ int main() {
     if (forced.risk_mode != ai_trade::RiskMode::kReduceOnly ||
         !forced.reduce_only) {
       std::cerr << "风控强制 reduce-only 模式不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::RiskThresholds thresholds;
+    thresholds.degraded_drawdown = 0.08;
+    thresholds.degraded_recover_drawdown = 0.06;
+    thresholds.cooldown_drawdown = 0.12;
+    thresholds.cooldown_recover_drawdown = 0.10;
+    thresholds.fuse_drawdown = 0.20;
+    thresholds.fuse_recover_drawdown = 0.16;
+    ai_trade::RiskEngine risk(/*max_abs_notional_usd=*/500.0, thresholds);
+    const ai_trade::TargetPosition target{"BTCUSDT", 500.0};
+
+    const auto degraded_enter = risk.Apply(target, /*trade_ok=*/true, /*dd=*/0.081);
+    if (degraded_enter.risk_mode != ai_trade::RiskMode::kDegraded) {
+      std::cerr << "风控滞回：degraded 进入失败\n";
+      return 1;
+    }
+    const auto degraded_hold = risk.Apply(target, /*trade_ok=*/true, /*dd=*/0.079);
+    if (degraded_hold.risk_mode != ai_trade::RiskMode::kDegraded) {
+      std::cerr << "风控滞回：degraded 保持失败\n";
+      return 1;
+    }
+    const auto degraded_exit = risk.Apply(target, /*trade_ok=*/true, /*dd=*/0.059);
+    if (degraded_exit.risk_mode != ai_trade::RiskMode::kNormal) {
+      std::cerr << "风控滞回：degraded 恢复失败\n";
+      return 1;
+    }
+
+    const auto fuse_enter = risk.Apply(target, /*trade_ok=*/true, /*dd=*/0.21);
+    if (fuse_enter.risk_mode != ai_trade::RiskMode::kFuse) {
+      std::cerr << "风控滞回：fuse 进入失败\n";
+      return 1;
+    }
+    const auto fuse_hold = risk.Apply(target, /*trade_ok=*/true, /*dd=*/0.17);
+    if (fuse_hold.risk_mode != ai_trade::RiskMode::kFuse) {
+      std::cerr << "风控滞回：fuse 保持失败\n";
+      return 1;
+    }
+    const auto fuse_release = risk.Apply(target, /*trade_ok=*/true, /*dd=*/0.15);
+    if (fuse_release.risk_mode != ai_trade::RiskMode::kCooldown) {
+      std::cerr << "风控滞回：fuse 释放到 cooldown 失败\n";
       return 1;
     }
   }

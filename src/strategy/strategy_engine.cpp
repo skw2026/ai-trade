@@ -149,8 +149,13 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
     const double annual_factor = 2500.0;
     const double current_vol_annual = regime.volatility_level * annual_factor;
 
-    // 限制杠杆倍数，防止低波动率时仓位过大
-    const double max_leverage = 3.0;
+    // 限制杠杆倍数，防止低波动率时仓位过大。
+    double max_leverage = std::max(0.1, config_.vol_target_max_leverage);
+    if (config_.vol_target_low_vol_leverage_cap_enabled &&
+        current_vol_annual <= config_.vol_target_low_vol_annual_threshold) {
+      max_leverage =
+          std::min(max_leverage, config_.vol_target_low_vol_max_leverage);
+    }
     double leverage = config_.vol_target_pct / current_vol_annual;
     leverage = std::clamp(leverage, 0.1, max_leverage);
 

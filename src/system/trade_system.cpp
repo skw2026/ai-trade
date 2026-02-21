@@ -289,7 +289,22 @@ bool TradeSystem::ApplyIntegratorPolicy(const ShadowInference& shadow,
     }
     
     const double canary_ratio = std::clamp(integrator_config_.canary_notional_ratio, 0.0, 1.0);
-    const double final_notional = static_cast<double>(shadow_direction) * base_abs_notional * canary_ratio;
+    const double scaled_abs_notional = base_abs_notional * canary_ratio;
+    const double canary_min_notional_usd =
+        std::max(0.0, integrator_config_.canary_min_notional_usd);
+    if (canary_min_notional_usd > 0.0 &&
+        scaled_abs_notional + kNotionalEpsilon < canary_min_notional_usd) {
+      if (!HasExposure(inout_signal->suggested_notional_usd)) {
+        set_out(confidence, "canary_below_min_notional_no_change");
+        return false;
+      }
+      inout_signal->suggested_notional_usd = 0.0;
+      inout_signal->direction = 0;
+      set_out(confidence, "canary_below_min_notional_to_flat");
+      return true;
+    }
+    const double final_notional =
+        static_cast<double>(shadow_direction) * scaled_abs_notional;
     
     if (!HasExposure(final_notional - inout_signal->suggested_notional_usd)) {
       set_out(confidence, "canary_no_change");
