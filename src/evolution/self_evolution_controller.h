@@ -172,7 +172,8 @@ class SelfEvolutionController {
   double ComputeObjectiveScore(double window_pnl_usd,
                                double window_max_drawdown_pct,
                                double window_notional_churn_usd,
-                               double account_equity_usd) const;
+                               double account_equity_usd,
+                               int window_ticks) const;
   void InitializeCounterfactualGrid();
   std::optional<EvolutionWeights> BestCounterfactualWeights(
       std::size_t bucket_index,

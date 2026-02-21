@@ -2623,6 +2623,7 @@ int main() {
         << "  use_counterfactual_search: true\n"
         << "  counterfactual_fallback_to_factor_ic: false\n"
         << "  counterfactual_min_improvement_usd: 1.2\n"
+        << "  counterfactual_min_improvement_ratio_of_equity: 0.002\n"
         << "  counterfactual_improvement_decay_per_filtered_signal_usd: 0.05\n"
         << "  counterfactual_min_fill_count_for_update: 6\n"
         << "  counterfactual_min_t_stat_samples_for_update: 160\n"
@@ -2640,6 +2641,7 @@ int main() {
         << "  objective_alpha_pnl: 1.5\n"
         << "  objective_beta_drawdown: 0.7\n"
         << "  objective_gamma_notional_churn: 0.02\n"
+        << "  objective_use_sharpe_like: true\n"
         << "  max_single_strategy_weight: 0.7\n"
         << "  max_weight_step: 0.03\n"
         << "  rollback_degrade_windows: 3\n"
@@ -2647,7 +2649,15 @@ int main() {
         << "  rollback_to_baseline_on_trigger: false\n"
         << "  rollback_cooldown_ticks: 66\n"
         << "  initial_trend_weight: 0.55\n"
-        << "  initial_defensive_weight: 0.45\n";
+        << "  initial_defensive_weight: 0.45\n"
+        << "regime:\n"
+        << "  enabled: true\n"
+        << "  warmup_ticks: 18\n"
+        << "  ewma_alpha: 0.18\n"
+        << "  switch_confirm_ticks: 6\n"
+        << "  trend_threshold: 0.0015\n"
+        << "  extreme_threshold: 0.006\n"
+        << "  volatility_threshold: 0.003\n";
     out.close();
 
     ai_trade::AppConfig config;
@@ -2796,6 +2806,10 @@ int main() {
                      1.2) ||
         !NearlyEqual(
             config.self_evolution
+                .counterfactual_min_improvement_ratio_of_equity,
+            0.002) ||
+        !NearlyEqual(
+            config.self_evolution
                 .counterfactual_improvement_decay_per_filtered_signal_usd,
             0.05) ||
         config.self_evolution.counterfactual_min_fill_count_for_update != 6 ||
@@ -2820,6 +2834,7 @@ int main() {
         !NearlyEqual(config.self_evolution.objective_beta_drawdown, 0.7) ||
         !NearlyEqual(config.self_evolution.objective_gamma_notional_churn,
                      0.02) ||
+        config.self_evolution.objective_use_sharpe_like != true ||
         !NearlyEqual(config.self_evolution.max_single_strategy_weight, 0.7) ||
         !NearlyEqual(config.self_evolution.max_weight_step, 0.03) ||
         config.self_evolution.rollback_degrade_windows != 3 ||
@@ -2833,7 +2848,14 @@ int main() {
         !NearlyEqual(config.risk_thresholds.cooldown_drawdown, 0.10) ||
         !NearlyEqual(config.risk_thresholds.cooldown_recover_drawdown, 0.08) ||
         !NearlyEqual(config.risk_thresholds.fuse_drawdown, 0.18) ||
-        !NearlyEqual(config.risk_thresholds.fuse_recover_drawdown, 0.15)) {
+        !NearlyEqual(config.risk_thresholds.fuse_recover_drawdown, 0.15) ||
+        config.regime.enabled != true ||
+        config.regime.warmup_ticks != 18 ||
+        !NearlyEqual(config.regime.ewma_alpha, 0.18) ||
+        config.regime.switch_confirm_ticks != 6 ||
+        !NearlyEqual(config.regime.trend_threshold, 0.0015) ||
+        !NearlyEqual(config.regime.extreme_threshold, 0.006) ||
+        !NearlyEqual(config.regime.volatility_threshold, 0.003)) {
       std::cerr << "配置字段解析结果不符合预期\n";
       return 1;
     }
@@ -3551,6 +3573,53 @@ int main() {
     if (error.find("active_min_notional_usd") == std::string::npos) {
       std::cerr
           << "非法 integrator.active_min_notional_usd 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_self_evolution_counterfactual_ratio.yaml";
+    std::ofstream out(temp_path);
+    out << "self_evolution:\n"
+        << "  counterfactual_min_improvement_ratio_of_equity: 1.2\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 self_evolution.counterfactual_min_improvement_ratio_of_equity 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("counterfactual_min_improvement_ratio_of_equity") ==
+        std::string::npos) {
+      std::cerr
+          << "非法 self_evolution.counterfactual_min_improvement_ratio_of_equity 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_regime_switch_confirm_ticks.yaml";
+    std::ofstream out(temp_path);
+    out << "regime:\n"
+        << "  switch_confirm_ticks: -1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 regime.switch_confirm_ticks 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("regime.switch_confirm_ticks") == std::string::npos) {
+      std::cerr << "非法 regime.switch_confirm_ticks 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -5432,6 +5501,48 @@ int main() {
   }
 
   {
+    ai_trade::RegimeConfig config;
+    config.enabled = true;
+    config.warmup_ticks = 1;
+    config.ewma_alpha = 1.0;
+    config.switch_confirm_ticks = 3;
+    config.trend_threshold = 0.001;
+    config.extreme_threshold = 0.050;
+    config.volatility_threshold = 0.050;
+
+    ai_trade::RegimeEngine engine(config);
+    ai_trade::MarketEvent event;
+    event.symbol = "ETHUSDT";
+    event.price = 100.0;
+    (void)engine.OnMarket(event);  // warmup
+
+    event.price = 100.3;  // uptrend
+    const auto up = engine.OnMarket(event);
+    if (up.regime != ai_trade::Regime::kUptrend) {
+      std::cerr << "Regime 初始确认态应进入上升趋势\n";
+      return 1;
+    }
+
+    event.price = 100.0;  // downtrend pending #1
+    const auto pending_1 = engine.OnMarket(event);
+    event.price = 99.7;   // downtrend pending #2
+    const auto pending_2 = engine.OnMarket(event);
+    if (pending_1.regime != ai_trade::Regime::kUptrend ||
+        pending_2.regime != ai_trade::Regime::kUptrend) {
+      std::cerr << "Regime 切换确认期内应保持已确认状态\n";
+      return 1;
+    }
+
+    event.price = 99.4;  // downtrend pending #3 -> switch
+    const auto switched = engine.OnMarket(event);
+    if (switched.regime != ai_trade::Regime::kDowntrend ||
+        switched.bucket != ai_trade::RegimeBucket::kTrend) {
+      std::cerr << "Regime 连续确认达到阈值后应完成切换\n";
+      return 1;
+    }
+  }
+
+  {
     const std::filesystem::path cfg_path =
         std::filesystem::temp_directory_path() / "ai_trade_test_regime_valid.yaml";
     std::ofstream out(cfg_path);
@@ -5439,6 +5550,7 @@ int main() {
         << "  enabled: true\n"
         << "  warmup_ticks: 12\n"
         << "  ewma_alpha: 0.25\n"
+        << "  switch_confirm_ticks: 4\n"
         << "  trend_threshold: 0.0012\n"
         << "  extreme_threshold: 0.006\n"
         << "  volatility_threshold: 0.0025\n";
@@ -5452,6 +5564,7 @@ int main() {
     }
     if (!config.regime.enabled || config.regime.warmup_ticks != 12 ||
         !NearlyEqual(config.regime.ewma_alpha, 0.25) ||
+        config.regime.switch_confirm_ticks != 4 ||
         !NearlyEqual(config.regime.trend_threshold, 0.0012) ||
         !NearlyEqual(config.regime.extreme_threshold, 0.006) ||
         !NearlyEqual(config.regime.volatility_threshold, 0.0025)) {

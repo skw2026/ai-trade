@@ -2510,6 +2510,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "counterfactual_min_improvement_ratio_of_equity") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_min_improvement_ratio_of_equity 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_min_improvement_ratio_of_equity =
+          parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         key == "counterfactual_improvement_decay_per_filtered_signal_usd") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -2785,6 +2801,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        (key == "objective_use_sharpe_like" ||
+         key == "use_sharpe_like_objective")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.objective_use_sharpe_like 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.objective_use_sharpe_like = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         key == "max_single_strategy_weight") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -2941,6 +2973,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.regime.ewma_alpha = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
+        (key == "switch_confirm_ticks" || key == "confirm_ticks")) {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.switch_confirm_ticks 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.switch_confirm_ticks = parsed;
       continue;
     }
 
@@ -3709,6 +3755,16 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.self_evolution.counterfactual_min_improvement_ratio_of_equity <
+          0.0 ||
+      config.self_evolution.counterfactual_min_improvement_ratio_of_equity >
+          1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.counterfactual_min_improvement_ratio_of_equity 必须在 [0,1] 区间";
+    }
+    return false;
+  }
   if (config.self_evolution
           .counterfactual_improvement_decay_per_filtered_signal_usd < 0.0) {
     if (out_error != nullptr) {
@@ -3866,6 +3922,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.regime.warmup_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "regime.warmup_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.regime.switch_confirm_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "regime.switch_confirm_ticks 不能为负数";
     }
     return false;
   }

@@ -303,12 +303,13 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   const double window_max_drawdown_pct = bucket_window_max_drawdown_pct_[eval_index];
   const double window_notional_churn_usd =
       bucket_window_notional_churn_usd_[eval_index];
+  const int window_bucket_ticks = bucket_window_ticks_[eval_index];
   const double window_objective_score =
       ComputeObjectiveScore(window_pnl_usd,
                             window_max_drawdown_pct,
                             window_notional_churn_usd,
-                            objective_equity_usd);
-  const int window_bucket_ticks = bucket_window_ticks_[eval_index];
+                            objective_equity_usd,
+                            window_bucket_ticks);
 
   // 固定周期评估：先结算窗口，再推进下一个评估点。
   next_eval_tick_ = current_tick + EffectiveUpdateIntervalTicks();
@@ -373,12 +374,17 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   std::optional<EvolutionWeights> best_counterfactual_candidate;
   bool counterfactual_improves = false;
   if (action.used_counterfactual_search) {
+    const double required_by_ratio =
+        std::max(0.0, config_.counterfactual_min_improvement_ratio_of_equity) *
+        std::max(0.0, objective_equity_usd);
+    action.counterfactual_required_improvement_usd =
+        std::max(config_.counterfactual_min_improvement_usd, required_by_ratio);
     if (action.window_cost_filtered_signals > 0) {
       const double decay =
           std::max(0.0,
                    config_.counterfactual_improvement_decay_per_filtered_signal_usd);
       const double relaxed_threshold =
-          config_.counterfactual_min_improvement_usd -
+          action.counterfactual_required_improvement_usd -
           decay * static_cast<double>(action.window_cost_filtered_signals);
       action.counterfactual_required_improvement_usd =
           std::max(0.0, relaxed_threshold);
@@ -704,9 +710,27 @@ double SelfEvolutionController::ComputeObjectiveScore(
     double window_pnl_usd,
     double window_max_drawdown_pct,
     double window_notional_churn_usd,
-    double account_equity_usd) const {
+    double account_equity_usd,
+    int window_ticks) const {
   const double normalized_equity =
       std::max(1.0, std::fabs(account_equity_usd));
+  if (config_.objective_use_sharpe_like) {
+    const int safe_ticks = std::max(1, window_ticks);
+    const double window_return = window_pnl_usd / normalized_equity;
+    const double per_tick_return =
+        window_return / static_cast<double>(safe_ticks);
+    const double drawdown_proxy =
+        std::max(0.0, window_max_drawdown_pct) /
+        std::sqrt(static_cast<double>(safe_ticks));
+    const double sharpe_like =
+        per_tick_return / std::max(drawdown_proxy, 1e-9);
+    const double drawdown_penalty = std::max(0.0, window_max_drawdown_pct);
+    const double churn_penalty =
+        std::max(0.0, window_notional_churn_usd) / normalized_equity;
+    return config_.objective_alpha_pnl * sharpe_like -
+           config_.objective_beta_drawdown * drawdown_penalty -
+           config_.objective_gamma_notional_churn * churn_penalty;
+  }
   const double pnl_bps = window_pnl_usd / normalized_equity * 10000.0;
   const double drawdown_bps = std::max(0.0, window_max_drawdown_pct) * 10000.0;
   const double churn_bps =

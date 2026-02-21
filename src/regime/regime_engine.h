@@ -30,6 +30,10 @@ class RegimeEngine {
     int sample_ticks{0};            ///< 已处理样本数（用于 warmup）。
     double ewma_return{0.0};        ///< EWMA 收益率（有方向）。
     double ewma_abs_return{0.0};    ///< EWMA 绝对收益率（波动代理）。
+    bool has_confirmed_regime{false};  ///< 是否已有确认态（非 warmup 后）。
+    Regime confirmed_regime{Regime::kRange};  ///< 已确认 Regime。
+    Regime pending_regime{Regime::kRange};    ///< 待确认 Regime。
+    int pending_regime_ticks{0};  ///< 待确认 Regime 连续计数。
   };
 
   static RegimeBucket ToBucket(Regime regime);

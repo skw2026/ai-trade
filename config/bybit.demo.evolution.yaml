@@ -104,7 +104,7 @@ strategy:
   vol_target_low_vol_annual_threshold: 0.12
   vol_target_low_vol_max_leverage: 1.1
   defensive_notional_ratio: 0.55
-  defensive_entry_score: 1.0
+  defensive_entry_score: 2.0
   defensive_trend_scale: 0.25
   defensive_range_scale: 1.00
   defensive_extreme_scale: 0.45
@@ -130,18 +130,19 @@ integrator:
 
 self_evolution:
   enabled: true
-  # 提高动作可观测性：缩短窗口并放宽最小盈亏阈值，避免长期 skipped。
-  update_interval_ticks: 600
-  min_update_interval_ticks: 600
-  min_abs_window_pnl_usd: 0.5
+  # 降噪窗口：以 5h 级别评估，降低短窗过拟合。
+  update_interval_ticks: 3600
+  min_update_interval_ticks: 3600
+  min_abs_window_pnl_usd: 5.0
   # 单个 Regime bucket 在窗口内样本 tick 不足时，不执行该 bucket 的学习更新。
-  min_bucket_ticks_for_update: 60
-  min_consecutive_direction_windows: 2
+  min_bucket_ticks_for_update: 600
+  min_consecutive_direction_windows: 3
   # P0/P1：使用虚拟PnL + 反事实搜索，让零成交阶段也可学习。
   use_virtual_pnl: true
   use_counterfactual_search: true
   counterfactual_fallback_to_factor_ic: true
-  counterfactual_min_improvement_usd: 0.04
+  counterfactual_min_improvement_usd: 2.0
+  counterfactual_min_improvement_ratio_of_equity: 0.001
   counterfactual_improvement_decay_per_filtered_signal_usd: 0.04
   counterfactual_min_fill_count_for_update: 1
   counterfactual_min_t_stat_samples_for_update: 60
@@ -157,14 +158,15 @@ self_evolution:
   enable_learnability_gate: true
   learnability_min_samples: 80
   learnability_min_t_stat_abs: 0.7
-  # 风险调整目标函数（score = alpha*pnl_bps - beta*drawdown_bps - gamma*churn_bps）
+  # 风险调整目标函数（Sharpe-like 主项 + 回撤/换手惩罚）
   objective_alpha_pnl: 1.0
-  objective_beta_drawdown: 1.0
+  objective_beta_drawdown: 0.3
   objective_gamma_notional_churn: 0.005
+  objective_use_sharpe_like: true
   max_single_strategy_weight: 0.55
-  max_weight_step: 0.01
-  rollback_degrade_windows: 3
-  rollback_degrade_threshold_score: -15.0
+  max_weight_step: 0.02
+  rollback_degrade_windows: 5
+  rollback_degrade_threshold_score: 0.0
   rollback_to_baseline_on_trigger: true
   rollback_cooldown_ticks: 3600
   initial_trend_weight: 0.50
@@ -173,9 +175,10 @@ self_evolution:
 regime:
   enabled: true
   warmup_ticks: 30
-  ewma_alpha: 0.20
-  trend_threshold: 0.0010
-  extreme_threshold: 0.0040
+  ewma_alpha: 0.05
+  switch_confirm_ticks: 12
+  trend_threshold: 0.0015
+  extreme_threshold: 0.0080
   volatility_threshold: 0.0025
 
 gate:

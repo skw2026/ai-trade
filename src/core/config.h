@@ -83,6 +83,7 @@ struct SelfEvolutionConfig {
   bool use_counterfactual_search{false};
   bool counterfactual_fallback_to_factor_ic{false};
   double counterfactual_min_improvement_usd{0.0};
+  double counterfactual_min_improvement_ratio_of_equity{0.0};
   double counterfactual_improvement_decay_per_filtered_signal_usd{0.0};
   int counterfactual_min_fill_count_for_update{0};
   int counterfactual_min_t_stat_samples_for_update{0};
@@ -101,6 +102,7 @@ struct SelfEvolutionConfig {
   double objective_alpha_pnl{1.0};
   double objective_beta_drawdown{1.0};
   double objective_gamma_notional_churn{0.005};
+  bool objective_use_sharpe_like{false};
   double max_single_strategy_weight{0.60};
   double max_weight_step{0.05};
   int rollback_degrade_windows{2};
@@ -159,6 +161,7 @@ struct RegimeConfig {
   bool enabled{true};
   int warmup_ticks{20};
   double ewma_alpha{0.20};
+  int switch_confirm_ticks{0};
   double trend_threshold{0.0008};
   double extreme_threshold{0.0030};
   double volatility_threshold{0.0018};

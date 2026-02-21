@@ -116,6 +116,7 @@ self_evolution:
   use_virtual_pnl: false
   use_counterfactual_search: false
   counterfactual_min_improvement_usd: 0.0
+  counterfactual_min_improvement_ratio_of_equity: 0.0
   counterfactual_improvement_decay_per_filtered_signal_usd: 0.0
   counterfactual_min_fill_count_for_update: 0
   counterfactual_min_t_stat_samples_for_update: 0
@@ -134,6 +135,7 @@ self_evolution:
   objective_alpha_pnl: 1.0
   objective_beta_drawdown: 1.0
   objective_gamma_notional_churn: 0.005
+  objective_use_sharpe_like: false
   max_single_strategy_weight: 0.60
   max_weight_step: 0.05
   rollback_degrade_windows: 2
@@ -147,6 +149,7 @@ regime:
   enabled: true
   warmup_ticks: 20
   ewma_alpha: 0.20
+  switch_confirm_ticks: 0
   trend_threshold: 0.0008
   extreme_threshold: 0.0030
   volatility_threshold: 0.0018

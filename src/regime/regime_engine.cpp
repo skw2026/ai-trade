@@ -64,19 +64,47 @@ RegimeState RegimeEngine::OnMarket(const MarketEvent& event) {
   state.volatility_level = symbol_state.ewma_abs_return;
   state.warmup = symbol_state.sample_ticks < std::max(0, config_.warmup_ticks);
 
-  Regime regime = Regime::kRange;
+  Regime raw_regime = Regime::kRange;
   if (!state.warmup) {
     const bool extreme_by_jump =
         std::fabs(instant_return) >= config_.extreme_threshold;
     const bool extreme_by_vol =
         symbol_state.ewma_abs_return >= config_.volatility_threshold;
     if (extreme_by_jump || extreme_by_vol) {
-      regime = Regime::kExtreme;
+      raw_regime = Regime::kExtreme;
     } else if (symbol_state.ewma_return >= config_.trend_threshold) {
-      regime = Regime::kUptrend;
+      raw_regime = Regime::kUptrend;
     } else if (symbol_state.ewma_return <= -config_.trend_threshold) {
-      regime = Regime::kDowntrend;
+      raw_regime = Regime::kDowntrend;
     }
+  }
+
+  Regime regime = Regime::kRange;
+  if (state.warmup) {
+    regime = Regime::kRange;
+  } else {
+    const int confirm_ticks = std::max(1, config_.switch_confirm_ticks);
+    if (!symbol_state.has_confirmed_regime || confirm_ticks <= 1) {
+      symbol_state.has_confirmed_regime = true;
+      symbol_state.confirmed_regime = raw_regime;
+      symbol_state.pending_regime = raw_regime;
+      symbol_state.pending_regime_ticks = 0;
+    } else if (raw_regime == symbol_state.confirmed_regime) {
+      symbol_state.pending_regime = raw_regime;
+      symbol_state.pending_regime_ticks = 0;
+    } else {
+      if (symbol_state.pending_regime != raw_regime) {
+        symbol_state.pending_regime = raw_regime;
+        symbol_state.pending_regime_ticks = 1;
+      } else {
+        ++symbol_state.pending_regime_ticks;
+      }
+      if (symbol_state.pending_regime_ticks >= confirm_ticks) {
+        symbol_state.confirmed_regime = raw_regime;
+        symbol_state.pending_regime_ticks = 0;
+      }
+    }
+    regime = symbol_state.confirmed_regime;
   }
 
   state.regime = regime;
