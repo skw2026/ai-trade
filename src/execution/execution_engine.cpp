@@ -72,13 +72,30 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
     return std::nullopt;
   }
 
-  // 反向切仓：先只减仓（reduce-only）平仓，避免单笔订单跨方向导致复杂状态。
+  // 反向切仓：
+  // - 默认：先平后开，降低单笔跨方向复杂性；
+  // - 可选 direct_flip：允许直接按净差额发单，减少 2x RTT。
   if (!target.reduce_only &&
       std::fabs(current_notional_usd) >= kEpsilon &&
       std::fabs(effective_target) >= kEpsilon &&
       (current_notional_usd * effective_target < -kEpsilon)) {
-    
-    // 第一步只平旧仓，不在同一笔意图中携带新方向开仓。
+    if (config_.direct_flip_entry_enabled) {
+      OrderIntent flip_intent;
+      flip_intent.client_order_id = BuildClientOrderId(target.symbol);
+      flip_intent.symbol = target.symbol;
+      flip_intent.reduce_only = false;
+      flip_intent.purpose = OrderPurpose::kEntry;
+      // 反手窗口优先成交，避免先平后开导致的延迟累积。
+      flip_intent.liquidity_preference = LiquidityPreference::kTaker;
+      flip_intent.direction = (total_delta > 0.0) ? 1 : -1;
+      const double flip_notional =
+          std::min(std::fabs(total_delta), config_.max_order_notional_usd);
+      flip_intent.qty = flip_notional / price;
+      flip_intent.price = price;
+      return flip_intent;
+    }
+
+    // 默认模式：第一步只平旧仓，不在同一笔意图中携带新方向开仓。
     const double close_notional =
         std::min(std::fabs(current_notional_usd), config_.max_order_notional_usd);
 

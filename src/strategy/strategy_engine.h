@@ -50,6 +50,10 @@ class StrategyEngine {
     // Defensive Logic State
     int defensive_effective_direction{0};
     int defensive_ticks_since_direction_change{0};
+
+    // VolTarget 防抖状态：记录上次生效的目标名义值，抑制微小抖动反复调仓。
+    bool has_last_target_notional{false};
+    double last_target_notional{0.0};
     
     // Feature Engine
     research::OnlineFeatureEngine feature_engine{100};

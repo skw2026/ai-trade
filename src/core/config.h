@@ -149,6 +149,7 @@ struct IntegratorConfig {
   double canary_confidence_threshold{0.60};
   bool canary_allow_countertrend{false};
   double active_confidence_threshold{0.55};
+  double active_min_notional_usd{0.0};
   double active_partial_notional_ratio{0.5};
   double active_full_notional_confidence_threshold{0.80};
   IntegratorShadowConfig shadow{};
@@ -174,6 +175,8 @@ struct StrategyConfig {
   bool vol_target_low_vol_leverage_cap_enabled{false};
   double vol_target_low_vol_annual_threshold{0.10};
   double vol_target_low_vol_max_leverage{1.0};
+  double vol_target_rebalance_min_abs_usd{0.0};
+  double vol_target_rebalance_min_ratio{0.0};
   double defensive_notional_ratio{0.0};
   double defensive_entry_score{1.25};
   double defensive_trend_scale{0.35};
@@ -204,6 +207,8 @@ struct AppConfig {
   bool strategy_vol_target_low_vol_leverage_cap_enabled{false};
   double strategy_vol_target_low_vol_annual_threshold{0.10};
   double strategy_vol_target_low_vol_max_leverage{1.0};
+  double strategy_vol_target_rebalance_min_abs_usd{0.0};
+  double strategy_vol_target_rebalance_min_ratio{0.0};
   double strategy_defensive_notional_ratio{0.0};
   double strategy_defensive_entry_score{1.25};
   double strategy_defensive_trend_scale{0.35};
@@ -218,6 +223,7 @@ struct AppConfig {
   double execution_max_order_notional{1000.0};
   double execution_min_rebalance_notional_usd{0.0};
   bool execution_include_inflight_notional_in_position{true};
+  bool execution_direct_flip_entry_enabled{false};
   int execution_max_inflight_orders_per_symbol_direction{2};
   int execution_min_order_interval_ms{0};
   int execution_reverse_signal_cooldown_ticks{0};
@@ -288,6 +294,8 @@ struct AppConfig {
         strategy_vol_target_low_vol_leverage_cap_enabled,
         strategy_vol_target_low_vol_annual_threshold,
         strategy_vol_target_low_vol_max_leverage,
+        strategy_vol_target_rebalance_min_abs_usd,
+        strategy_vol_target_rebalance_min_ratio,
         strategy_defensive_notional_ratio,
         strategy_defensive_entry_score,
         strategy_defensive_trend_scale,
@@ -301,6 +309,7 @@ struct AppConfig {
     return ExecutionEngineConfig{
         .max_order_notional_usd = execution_max_order_notional,
         .min_rebalance_notional_usd = execution_min_rebalance_notional_usd,
+        .direct_flip_entry_enabled = execution_direct_flip_entry_enabled,
         .min_order_interval_ms = execution_min_order_interval_ms,
         .reverse_signal_cooldown_ticks = execution_reverse_signal_cooldown_ticks,
         .protection = ExecutionProtectionConfig{

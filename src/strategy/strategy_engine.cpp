@@ -162,6 +162,31 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
     target_notional = equity * leverage;
   }
 
+  // VolTarget 防抖：目标名义变化未超过绝对/相对阈值时，沿用上次目标，
+  // 避免权益和波动率微小抖动触发连续小额调仓。
+  const double proposed_target_notional = target_notional;
+  if (!state.has_last_target_notional) {
+    state.has_last_target_notional = true;
+    state.last_target_notional = proposed_target_notional;
+  } else {
+    const double delta_abs =
+        std::fabs(proposed_target_notional - state.last_target_notional);
+    const double abs_threshold =
+        std::max(0.0, config_.vol_target_rebalance_min_abs_usd);
+    const double ratio_threshold =
+        std::max(0.0, config_.vol_target_rebalance_min_ratio);
+    const double denom = std::max(std::fabs(state.last_target_notional), 1.0);
+    const double delta_ratio = delta_abs / denom;
+    const bool abs_triggered =
+        (abs_threshold <= 0.0) || (delta_abs >= abs_threshold);
+    const bool ratio_triggered =
+        (ratio_threshold <= 0.0) || (delta_ratio >= ratio_threshold);
+    if (abs_triggered || ratio_triggered) {
+      state.last_target_notional = proposed_target_notional;
+    }
+    target_notional = state.last_target_notional;
+  }
+
   double trend_notional = 0.0;
   if (final_direction != 0) {
     trend_notional = static_cast<double>(final_direction) * target_notional;

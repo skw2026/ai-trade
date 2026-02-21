@@ -46,6 +46,7 @@ risk:
 execution:
   max_order_notional: 1000
   min_rebalance_notional_usd: 25
+  direct_flip_entry_enabled: false
   include_inflight_notional_in_position: true
   max_inflight_orders_per_symbol_direction: 2
   min_order_interval_ms: 3000
@@ -97,6 +98,8 @@ strategy:
   vol_target_low_vol_leverage_cap_enabled: false
   vol_target_low_vol_annual_threshold: 0.10
   vol_target_low_vol_max_leverage: 1.0
+  vol_target_rebalance_min_abs_usd: 0.0
+  vol_target_rebalance_min_ratio: 0.0
   defensive_notional_ratio: 0.55
   defensive_entry_score: 1.25
   defensive_trend_scale: 0.25

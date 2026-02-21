@@ -641,6 +641,34 @@ int main() {
   }
 
   {
+    ai_trade::ExecutionEngine execution(ai_trade::ExecutionEngineConfig{
+        .max_order_notional_usd = 500.0,
+        .min_rebalance_notional_usd = 0.0,
+        .direct_flip_entry_enabled = true,
+    });
+    const ai_trade::RiskAdjustedPosition reverse_target{
+        .symbol = "BTCUSDT",
+        .adjusted_notional_usd = 300.0,
+        .reduce_only = false,
+    };
+    const auto flip_intent = execution.BuildIntent(reverse_target,
+                                                   /*current_notional_usd=*/-400.0,
+                                                   /*price=*/100.0);
+    if (!flip_intent.has_value()) {
+      std::cerr << "开启 direct_flip 时反向切仓应直接产生净差额订单\n";
+      return 1;
+    }
+    if (flip_intent->reduce_only ||
+        flip_intent->purpose != ai_trade::OrderPurpose::kEntry ||
+        flip_intent->liquidity_preference != ai_trade::LiquidityPreference::kTaker ||
+        flip_intent->direction != 1 ||
+        !NearlyEqual(flip_intent->qty, 5.0)) {
+      std::cerr << "direct_flip 反手意图语义不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::OrderIntent opening_intent;
     opening_intent.purpose = ai_trade::OrderPurpose::kEntry;
     opening_intent.reduce_only = false;
@@ -803,6 +831,62 @@ int main() {
     if (signal.trend_notional_usd <= 0.0 ||
         !NearlyEqual(signal.defensive_notional_usd, 0.0, 1e-9)) {
       std::cerr << "防御阈值过高时不应产生 defensive 分量\n";
+      return 1;
+    }
+  }
+
+  {
+    // VolTarget 防抖：目标名义变化低于阈值时应保持上次目标值。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .vol_target_pct = 0.40,
+        .vol_target_max_leverage = 3.0,
+        .vol_target_rebalance_min_abs_usd = 100.0,
+        .vol_target_rebalance_min_ratio = 0.05,
+        .defensive_notional_ratio = 0.0,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kTrend;
+    regime.warmup = false;
+    regime.volatility_level = 0.0002;
+
+    for (int i = 0; i < 40; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          500 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, regime);
+    }
+
+    const auto base_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        600, "BTCUSDT", 101.0, 101.0}, dummy_account, regime);
+    if (base_signal.direction == 0) {
+      std::cerr << "VolTarget 防抖测试预热后应产生非空方向\n";
+      return 1;
+    }
+    const double base_abs_notional = std::fabs(base_signal.suggested_notional_usd);
+
+    // 小幅波动（约 0.5%）不足以跨过 abs/ratio 阈值，目标应保持不变。
+    regime.volatility_level = 0.000201;
+    const auto held_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        601, "BTCUSDT", 102.0, 102.0}, dummy_account, regime);
+    if (!NearlyEqual(std::fabs(held_signal.suggested_notional_usd),
+                     base_abs_notional,
+                     1e-6)) {
+      std::cerr << "VolTarget 小幅抖动应保持上次目标名义值\n";
+      return 1;
+    }
+
+    // 较大波动（>5%）应触发目标更新。
+    regime.volatility_level = 0.00023;
+    const auto updated_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        602, "BTCUSDT", 103.0, 103.0}, dummy_account, regime);
+    if (NearlyEqual(std::fabs(updated_signal.suggested_notional_usd),
+                    base_abs_notional,
+                    1e-6)) {
+      std::cerr << "VolTarget 大幅变化时应更新目标名义值\n";
       return 1;
     }
   }
@@ -2454,6 +2538,7 @@ int main() {
         << "execution:\n"
         << "  max_order_notional: 876\n"
         << "  min_rebalance_notional_usd: 45\n"
+        << "  direct_flip_entry_enabled: true\n"
         << "  include_inflight_notional_in_position: true\n"
         << "  max_inflight_orders_per_symbol_direction: 3\n"
         << "  min_order_interval_ms: 2500\n"
@@ -2494,6 +2579,8 @@ int main() {
         << "  vol_target_low_vol_leverage_cap_enabled: true\n"
         << "  vol_target_low_vol_annual_threshold: 0.12\n"
         << "  vol_target_low_vol_max_leverage: 1.3\n"
+        << "  vol_target_rebalance_min_abs_usd: 90\n"
+        << "  vol_target_rebalance_min_ratio: 0.03\n"
         << "  defensive_notional_ratio: 0.4\n"
         << "  defensive_entry_score: 1.1\n"
         << "  defensive_trend_scale: 0.3\n"
@@ -2508,6 +2595,7 @@ int main() {
         << "  canary_confidence_threshold: 0.62\n"
         << "  canary_allow_countertrend: true\n"
         << "  active_confidence_threshold: 0.57\n"
+        << "  active_min_notional_usd: 80\n"
         << "  active_partial_notional_ratio: 0.4\n"
         << "  active_full_notional_confidence_threshold: 0.82\n"
         << "  shadow:\n"
@@ -2571,6 +2659,7 @@ int main() {
     if (!NearlyEqual(config.risk_max_abs_notional_usd, 4321.0) ||
         !NearlyEqual(config.execution_max_order_notional, 876.0) ||
         !NearlyEqual(config.execution_min_rebalance_notional_usd, 45.0) ||
+        config.execution_direct_flip_entry_enabled != true ||
         config.execution_include_inflight_notional_in_position != true ||
         config.execution_max_inflight_orders_per_symbol_direction != 3 ||
         config.execution_min_order_interval_ms != 2500 ||
@@ -2613,6 +2702,8 @@ int main() {
         config.strategy_vol_target_low_vol_leverage_cap_enabled != true ||
         !NearlyEqual(config.strategy_vol_target_low_vol_annual_threshold, 0.12) ||
         !NearlyEqual(config.strategy_vol_target_low_vol_max_leverage, 1.3) ||
+        !NearlyEqual(config.strategy_vol_target_rebalance_min_abs_usd, 90.0) ||
+        !NearlyEqual(config.strategy_vol_target_rebalance_min_ratio, 0.03) ||
         !NearlyEqual(config.strategy_defensive_notional_ratio, 0.4) ||
         !NearlyEqual(config.strategy_defensive_entry_score, 1.1) ||
         !NearlyEqual(config.strategy_defensive_trend_scale, 0.3) ||
@@ -2672,6 +2763,7 @@ int main() {
         !NearlyEqual(config.integrator.canary_confidence_threshold, 0.62) ||
         config.integrator.canary_allow_countertrend != true ||
         !NearlyEqual(config.integrator.active_confidence_threshold, 0.57) ||
+        !NearlyEqual(config.integrator.active_min_notional_usd, 80.0) ||
         !NearlyEqual(config.integrator.active_partial_notional_ratio, 0.4) ||
         !NearlyEqual(
             config.integrator.active_full_notional_confidence_threshold, 0.82) ||
@@ -3410,6 +3502,55 @@ int main() {
     }
     if (error.find("strategy.defensive_entry_score") == std::string::npos) {
       std::cerr << "非法 strategy.defensive_entry_score 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_vol_target_rebalance_ratio.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  vol_target_rebalance_min_ratio: 1.2\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 strategy.vol_target_rebalance_min_ratio 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("vol_target_rebalance_min_ratio") == std::string::npos) {
+      std::cerr
+          << "非法 strategy.vol_target_rebalance_min_ratio 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_integrator_active_min_notional.yaml";
+    std::ofstream out(temp_path);
+    out << "integrator:\n"
+        << "  enabled: true\n"
+        << "  active_min_notional_usd: -10\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 integrator.active_min_notional_usd 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("active_min_notional_usd") == std::string::npos) {
+      std::cerr
+          << "非法 integrator.active_min_notional_usd 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

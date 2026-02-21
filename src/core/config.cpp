@@ -447,6 +447,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        (key == "direct_flip_entry_enabled" ||
+         key == "enable_direct_flip_entry")) {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.direct_flip_entry_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_direct_flip_entry_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         (key == "include_inflight_notional_in_position" ||
          key == "position_with_inflight")) {
       bool parsed = false;
@@ -1333,6 +1349,37 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "strategy" &&
+        (key == "vol_target_rebalance_min_abs_usd" ||
+         key == "vol_target_rebalance_min_notional_usd")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.vol_target_rebalance_min_abs_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_vol_target_rebalance_min_abs_usd = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "vol_target_rebalance_min_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.vol_target_rebalance_min_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_vol_target_rebalance_min_ratio = parsed;
+      continue;
+    }
+
     if (current_section == "execution" && key == "exchange") {
       config.exchange = NormalizeExchange(value);
       continue;
@@ -2086,6 +2133,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.integrator.active_confidence_threshold = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "active_min_notional_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.active_min_notional_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.active_min_notional_usd = parsed;
       continue;
     }
 
@@ -3239,6 +3301,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.integrator.active_min_notional_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "integrator.active_min_notional_usd 不能为负数";
+    }
+    return false;
+  }
   if (config.integrator.active_partial_notional_ratio < 0.0 ||
       config.integrator.active_partial_notional_ratio > 1.0) {
     if (out_error != nullptr) {
@@ -3541,6 +3609,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "strategy.vol_target_low_vol_max_leverage 不能大于 strategy.vol_target_max_leverage";
+    }
+    return false;
+  }
+  if (config.strategy_vol_target_rebalance_min_abs_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.vol_target_rebalance_min_abs_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_vol_target_rebalance_min_ratio < 0.0 ||
+      config.strategy_vol_target_rebalance_min_ratio > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "strategy.vol_target_rebalance_min_ratio 必须在 [0,1] 区间";
     }
     return false;
   }
