@@ -120,6 +120,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_data_pipeline_tools.py)
     add_test(NAME run_data_pipeline_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_data_pipeline.py)
+    add_test(NAME integrator_train_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_integrator_train.py)
     add_test(NAME web_report_store_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/apps/ai_trade_web/backend/tests/test_report_store.py)
     add_test(NAME web_governance_test

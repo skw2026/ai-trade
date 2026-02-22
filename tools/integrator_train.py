@@ -377,9 +377,10 @@ def build_label(close: np.ndarray, horizon: int) -> Tuple[np.ndarray, np.ndarray
     forward_return = np.full(n, np.nan, dtype=np.float64)
     if horizon <= 0:
         return forward_return, np.full(n, np.nan, dtype=np.float64)
-    for i in range(n - horizon):
-        base = close[i]
-        future = close[i + horizon]
+    # 反泄漏口径：t 时刻特征，标签使用 (t+1)->(t+h+1) 的前瞻收益。
+    for i in range(n - horizon - 1):
+        base = close[i + 1]
+        future = close[i + horizon + 1]
         if not math.isfinite(float(base)) or abs(base) < 1e-12 or not math.isfinite(float(future)):
             continue
         forward_return[i] = future / base - 1.0
@@ -514,12 +515,19 @@ def evaluate_governance(
     min_delta_auc_vs_baseline: float,
     min_split_trained_count: int,
     min_split_trained_ratio: float,
+    max_auc_stdev: float,
+    max_train_test_auc_gap: float,
+    run_random_label_control: bool,
+    max_random_label_auc: float,
 ) -> Tuple[bool, List[str]]:
     fail_reasons: List[str] = []
     auc_mean = metrics_oos.get("auc_mean", float("nan"))
     delta_auc = metrics_oos.get("delta_auc_vs_baseline", float("nan"))
     split_trained_count = metrics_oos.get("split_trained_count", float("nan"))
     split_trained_ratio = metrics_oos.get("split_trained_ratio", float("nan"))
+    auc_stdev = metrics_oos.get("auc_stdev", float("nan"))
+    train_test_auc_gap_mean = metrics_oos.get("train_test_auc_gap_mean", float("nan"))
+    random_label_auc = metrics_oos.get("random_label_auc", float("nan"))
 
     if not math.isfinite(auc_mean):
         fail_reasons.append("缺少或无效 metrics_oos.auc_mean")
@@ -551,6 +559,24 @@ def evaluate_governance(
             "split_trained_ratio="
             f"{split_trained_ratio:.6f} < min_split_trained_ratio={min_split_trained_ratio:.6f}"
         )
+
+    if math.isfinite(auc_stdev) and auc_stdev > max_auc_stdev:
+        fail_reasons.append(f"auc_stdev={auc_stdev:.6f} > max_auc_stdev={max_auc_stdev:.6f}")
+
+    if math.isfinite(train_test_auc_gap_mean) and train_test_auc_gap_mean > max_train_test_auc_gap:
+        fail_reasons.append(
+            "train_test_auc_gap_mean="
+            f"{train_test_auc_gap_mean:.6f} > max_train_test_auc_gap={max_train_test_auc_gap:.6f}"
+        )
+
+    if run_random_label_control:
+        if not math.isfinite(random_label_auc):
+            fail_reasons.append("缺少或无效 metrics_oos.random_label_auc")
+        elif random_label_auc > max_random_label_auc:
+            fail_reasons.append(
+                "random_label_auc="
+                f"{random_label_auc:.6f} > max_random_label_auc={max_random_label_auc:.6f}"
+            )
 
     return len(fail_reasons) == 0, fail_reasons
 
@@ -597,6 +623,35 @@ def main() -> int:
         help="治理门槛：最小成功训练 split 比例",
     )
     parser.add_argument(
+        "--max_auc_stdev",
+        type=float,
+        default=0.08,
+        help="治理门槛：AUC 标准差上限（过滤不稳定模型）",
+    )
+    parser.add_argument(
+        "--max_train_test_auc_gap",
+        type=float,
+        default=0.10,
+        help="治理门槛：train/test AUC gap 上限（抑制过拟合）",
+    )
+    parser.add_argument(
+        "--disable_random_label_control",
+        action="store_true",
+        help="关闭随机标签对照测试（默认启用）",
+    )
+    parser.add_argument(
+        "--max_random_label_auc",
+        type=float,
+        default=0.55,
+        help="治理门槛：随机标签对照 AUC 上限",
+    )
+    parser.add_argument(
+        "--random_label_iterations",
+        type=int,
+        default=80,
+        help="随机标签对照模型迭代次数（用于控制开销）",
+    )
+    parser.add_argument(
         "--fail_on_governance",
         action="store_true",
         help="治理门槛不通过时返回非零退出码",
@@ -635,6 +690,14 @@ def main() -> int:
         raise ValueError("--min_split_trained_ratio 必须在 [0,1] 范围")
     if int(args.min_split_trained_count) <= 0:
         raise ValueError("--min_split_trained_count 必须大于 0")
+    if float(args.max_auc_stdev) < 0.0:
+        raise ValueError("--max_auc_stdev 不能为负数")
+    if float(args.max_train_test_auc_gap) < 0.0:
+        raise ValueError("--max_train_test_auc_gap 不能为负数")
+    if not (0.0 <= float(args.max_random_label_auc) <= 1.0):
+        raise ValueError("--max_random_label_auc 必须在 [0,1] 范围")
+    if int(args.random_label_iterations) <= 0:
+        raise ValueError("--random_label_iterations 必须大于 0")
 
     series = load_ohlcv_csv(csv_path)
     factor_set_version, factor_specs = load_factor_specs(miner_report_path, max(1, args.top_k))
@@ -679,10 +742,13 @@ def main() -> int:
 
     split_reports: List[dict] = []
     auc_values: List[float] = []
+    train_auc_values: List[float] = []
+    train_test_auc_gap_values: List[float] = []
     logloss_values: List[float] = []
     acc_values: List[float] = []
     baseline_auc_values: List[float] = []
     trained_split_count = 0
+    first_trained_split: Dict[str, np.ndarray] | None = None
 
     for split_id, split in enumerate(splits, start=1):
         X_train = X[split.train_start : split.train_end]
@@ -732,19 +798,31 @@ def main() -> int:
             allow_writing_files=False,
         )
         model.fit(X_train, y_train)
+        train_score = model.predict_proba(X_train)[:, 1]
         score = model.predict_proba(X_test)[:, 1]
         baseline_score = np.where(np.isfinite(test_ret1), np.where(test_ret1 > 0.0, 0.9, 0.1), 0.5)
 
+        train_auc = auc_score(y_train, train_score)
         auc = auc_score(y_test, score)
         ll = logloss_score(y_test, score)
         acc = accuracy_score(y_test, score)
         base_auc = auc_score(y_test, baseline_score)
 
+        train_auc_values.append(train_auc)
         auc_values.append(auc)
+        if math.isfinite(train_auc) and math.isfinite(auc):
+            train_test_auc_gap_values.append(max(0.0, train_auc - auc))
         logloss_values.append(ll)
         acc_values.append(acc)
         baseline_auc_values.append(base_auc)
         trained_split_count += 1
+        if first_trained_split is None:
+            first_trained_split = {
+                "x_train": X_train,
+                "y_train": y_train,
+                "x_test": X_test,
+                "y_test": y_test,
+            }
 
         split_reports.append(
             {
@@ -765,6 +843,7 @@ def main() -> int:
                     "ts_end": to_iso_utc(int(ts_valid[split.test_end - 1])),
                 },
                 "metrics": {
+                    "train_auc": train_auc,
                     "auc": auc,
                     "logloss": ll,
                     "accuracy": acc,
@@ -775,7 +854,8 @@ def main() -> int:
         log_info(
             "INTEGRATOR_SPLIT: "
             f"id={split_id}, train=[{split.train_start},{split.train_end}), "
-            f"test=[{split.test_start},{split.test_end}), auc={auc:.6f}, baseline_auc={base_auc:.6f}"
+            f"test=[{split.test_start},{split.test_end}), "
+            f"train_auc={train_auc:.6f}, auc={auc:.6f}, baseline_auc={base_auc:.6f}"
         )
 
     if trained_split_count == 0:
@@ -790,6 +870,31 @@ def main() -> int:
         raise ValueError(
             f"全量有效样本标签只有单一类别: {full_counts}。"
             "无法训练最终模型，请增加样本或调整标签口径。"
+        )
+
+    random_label_auc = float("nan")
+    run_random_label_control = not bool(args.disable_random_label_control)
+    if run_random_label_control and first_trained_split is not None:
+        control = first_trained_split
+        y_train_control = control["y_train"].copy()
+        rng = np.random.default_rng(int(args.random_seed) + 20260222)
+        rng.shuffle(y_train_control)
+        control_model = CatBoostClassifier(
+            loss_function="Logloss",
+            eval_metric="AUC",
+            random_seed=int(args.random_seed) + 17,
+            iterations=min(int(args.iterations), int(args.random_label_iterations)),
+            depth=max(2, int(args.depth) // 2),
+            learning_rate=float(args.learning_rate),
+            verbose=False,
+            allow_writing_files=False,
+        )
+        control_model.fit(control["x_train"], y_train_control)
+        control_score = control_model.predict_proba(control["x_test"])[:, 1]
+        random_label_auc = auc_score(control["y_test"], control_score)
+        log_info(
+            "INTEGRATOR_RANDOM_LABEL_CONTROL: "
+            f"auc={random_label_auc:.6f}, max_allowed={float(args.max_random_label_auc):.6f}"
         )
 
     # 用全部有效样本训练最终模型并导出（供后续影子推理使用）。
@@ -829,13 +934,17 @@ def main() -> int:
     feature_schema_version = f"feature_schema_v1_{schema_hash}"
 
     metrics_oos = {
+        "train_auc_mean": mean_ignore_nan(train_auc_values),
+        "train_auc_stdev": stdev_ignore_nan(train_auc_values),
         "auc_mean": mean_ignore_nan(auc_values),
         "auc_stdev": stdev_ignore_nan(auc_values),
+        "train_test_auc_gap_mean": mean_ignore_nan(train_test_auc_gap_values),
         "logloss_mean": mean_ignore_nan(logloss_values),
         "accuracy_mean": mean_ignore_nan(acc_values),
         "baseline_auc_mean": mean_ignore_nan(baseline_auc_values),
         "delta_auc_vs_baseline": mean_ignore_nan(auc_values)
         - mean_ignore_nan(baseline_auc_values),
+        "random_label_auc": random_label_auc,
         "split_trained_count": trained_split_count,
         "split_count": len(split_reports),
         "split_trained_ratio": (
@@ -851,6 +960,10 @@ def main() -> int:
         min_delta_auc_vs_baseline=float(args.min_delta_auc_vs_baseline),
         min_split_trained_count=int(args.min_split_trained_count),
         min_split_trained_ratio=float(args.min_split_trained_ratio),
+        max_auc_stdev=float(args.max_auc_stdev),
+        max_train_test_auc_gap=float(args.max_train_test_auc_gap),
+        run_random_label_control=run_random_label_control,
+        max_random_label_auc=float(args.max_random_label_auc),
     )
     governance = {
         "pass": governance_pass,
@@ -860,6 +973,10 @@ def main() -> int:
             "min_delta_auc_vs_baseline": float(args.min_delta_auc_vs_baseline),
             "min_split_trained_count": int(args.min_split_trained_count),
             "min_split_trained_ratio": float(args.min_split_trained_ratio),
+            "max_auc_stdev": float(args.max_auc_stdev),
+            "max_train_test_auc_gap": float(args.max_train_test_auc_gap),
+            "run_random_label_control": run_random_label_control,
+            "max_random_label_auc": float(args.max_random_label_auc),
         },
     }
 
@@ -877,10 +994,11 @@ def main() -> int:
         },
         "anti_leakage": {
             "feature_time": "t",
-            "label_time": f"t+1..t+{args.predict_horizon_bars}",
+            "label_time": f"t+1..t+{args.predict_horizon_bars + 1}",
             "split_method": args.split_method,
             "random_kfold_forbidden": True,
             "window_boundary_logged": True,
+            "random_label_control_enabled": run_random_label_control,
         },
         "train_config": {
             "split_method": args.split_method,

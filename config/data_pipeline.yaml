@@ -50,3 +50,8 @@ walkforward:
   max_leverage: 1.5
   pred_scale: 0.002
   interval_minutes: 5
+  model: linear
+  catboost_iterations: 300
+  catboost_depth: 6
+  catboost_learning_rate: 0.05
+  random_seed: 42

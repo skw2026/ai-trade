@@ -15,6 +15,11 @@ from typing import Dict, List
 
 import numpy as np
 
+try:
+    from catboost import CatBoostRegressor
+except ImportError:  # pragma: no cover
+    CatBoostRegressor = None
+
 
 FEATURE_COLUMNS = [
     "ema_diff",
@@ -137,6 +142,11 @@ def run_split(
     max_leverage: float,
     pred_scale: float,
     interval_minutes: int,
+    model: str = "linear",
+    catboost_iterations: int = 300,
+    catboost_depth: int = 6,
+    catboost_learning_rate: float = 0.05,
+    random_seed: int = 42,
 ) -> SplitResult:
     valid_train = np.all(np.isfinite(x_train), axis=1) & np.isfinite(y_train)
     x_train_v = x_train[valid_train]
@@ -156,8 +166,26 @@ def run_split(
             max_drawdown=0.0,
         )
 
-    w = fit_linear_ridge(x_train_v, y_train_v, l2=1e-6)
-    pred = predict_linear(x_test, w)
+    model = model.lower()
+    if model == "linear":
+        w = fit_linear_ridge(x_train_v, y_train_v, l2=1e-6)
+        pred = predict_linear(x_test, w)
+    elif model == "catboost":
+        if CatBoostRegressor is None:
+            raise RuntimeError("catboost 未安装，无法使用 --model catboost")
+        reg = CatBoostRegressor(
+            loss_function="RMSE",
+            random_seed=int(random_seed),
+            iterations=max(10, int(catboost_iterations)),
+            depth=max(2, int(catboost_depth)),
+            learning_rate=float(catboost_learning_rate),
+            verbose=False,
+            allow_writing_files=False,
+        )
+        reg.fit(x_train_v, y_train_v)
+        pred = np.asarray(reg.predict(x_test), dtype=np.float64)
+    else:
+        raise ValueError(f"unsupported model: {model}")
 
     fees = (fee_bps + slippage_bps) / 10000.0
     equity = 1.0
@@ -237,11 +265,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-leverage", type=float, default=1.5)
     parser.add_argument("--pred-scale", type=float, default=0.002)
     parser.add_argument("--interval-minutes", type=int, default=5)
+    parser.add_argument("--model", choices=("linear", "catboost"), default="linear")
+    parser.add_argument("--catboost-iterations", type=int, default=300)
+    parser.add_argument("--catboost-depth", type=int, default=6)
+    parser.add_argument("--catboost-learning-rate", type=float, default=0.05)
+    parser.add_argument("--random-seed", type=int, default=42)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.model == "catboost" and CatBoostRegressor is None:
+        print("[ERROR] catboost is required for --model catboost")
+        return 2
     feature_path = pathlib.Path(args.features)
     output_path = pathlib.Path(args.output)
     data = load_feature_rows(feature_path)
@@ -281,6 +317,11 @@ def main() -> int:
             max_leverage=float(args.max_leverage),
             pred_scale=float(args.pred_scale),
             interval_minutes=max(1, int(args.interval_minutes)),
+            model=str(args.model),
+            catboost_iterations=int(args.catboost_iterations),
+            catboost_depth=int(args.catboost_depth),
+            catboost_learning_rate=float(args.catboost_learning_rate),
+            random_seed=int(args.random_seed) + split_index,
         )
         split_results.append(split)
         split_index += 1
@@ -313,6 +354,11 @@ def main() -> int:
             "max_leverage": float(args.max_leverage),
             "pred_scale": float(args.pred_scale),
             "interval_minutes": int(args.interval_minutes),
+            "model": str(args.model),
+            "catboost_iterations": int(args.catboost_iterations),
+            "catboost_depth": int(args.catboost_depth),
+            "catboost_learning_rate": float(args.catboost_learning_rate),
+            "random_seed": int(args.random_seed),
         },
         "summary": {
             "split_count": len(split_results),

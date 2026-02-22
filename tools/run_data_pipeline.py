@@ -327,6 +327,26 @@ def main() -> int:
                 str(as_float(deep_get(config, ["walkforward", "pred_scale"], 0.002), 0.002)),
                 "--interval-minutes",
                 str(as_int(deep_get(config, ["walkforward", "interval_minutes"], 5), 5)),
+                "--model",
+                str(deep_get(config, ["walkforward", "model"], "linear")),
+                "--catboost-iterations",
+                str(
+                    as_int(
+                        deep_get(config, ["walkforward", "catboost_iterations"], 300),
+                        300,
+                    )
+                ),
+                "--catboost-depth",
+                str(as_int(deep_get(config, ["walkforward", "catboost_depth"], 6), 6)),
+                "--catboost-learning-rate",
+                str(
+                    as_float(
+                        deep_get(config, ["walkforward", "catboost_learning_rate"], 0.05),
+                        0.05,
+                    )
+                ),
+                "--random-seed",
+                str(as_int(deep_get(config, ["walkforward", "random_seed"], 42), 42)),
             ],
         )
     )
