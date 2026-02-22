@@ -1,0 +1,52 @@
+version: 1
+
+common:
+  symbol: BTCUSDT
+  interval_minutes: 5
+  category: linear
+
+paths:
+  ohlcv_csv: data/research/ohlcv_5m.csv
+  feature_csv: data/research/feature_store_5m.csv
+  backtest_report: data/reports/closed_loop/data_pipeline/walkforward_report.json
+
+archive:
+  enabled: true
+  market: futures_um
+  interval: 5m
+  days: 365
+  base_url: https://data.binance.vision
+  # start_date: 2025-01-01
+  # end_date: 2026-01-01
+
+incremental:
+  enabled: true
+  interval_minutes: 5
+  category: linear
+  bars: 240
+  iterations: 1
+  sleep_sec: 5.0
+
+gap_fill:
+  enabled: true
+  interval_minutes: 5
+  category: linear
+  max_ranges: 200
+  strict: false
+
+feature_store:
+  enabled: true
+  forward_bars: 12
+  keep_na: false
+
+walkforward:
+  enabled: true
+  train_window: 2400
+  test_window: 480
+  step_window: 480
+  fee_bps: 6.0
+  slippage_bps: 1.5
+  signal_threshold: 0.0002
+  max_leverage: 1.5
+  pred_scale: 0.002
+  interval_minutes: 5

@@ -91,7 +91,7 @@ services:
         SCHEDULER_ACTION_VALUE="$${SCHEDULER_ACTION:-full}"
         SCHEDULER_INTERVAL_VALUE="$${SCHEDULER_INTERVAL_SECONDS:-86400}"
         case "$${SCHEDULER_ACTION_VALUE}" in
-          train|assess|full) ;;
+          train|assess|full|data) ;;
           *)
             echo "[Scheduler] invalid SCHEDULER_ACTION=$${SCHEDULER_ACTION_VALUE}, fallback=full"
             SCHEDULER_ACTION_VALUE="full"
@@ -114,6 +114,7 @@ services:
       AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
       AI_TRADE_PROJECT_DIR: ${AI_TRADE_PROJECT_DIR:-}
       AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}
+      DATA_PIPELINE_CONFIG: ${DATA_PIPELINE_CONFIG:-config/data_pipeline.yaml}
       SCHEDULER_ACTION: ${SCHEDULER_ACTION:-full}
       SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}
       CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}

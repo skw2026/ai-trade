@@ -42,6 +42,7 @@
 - **[配置手册 (Configuration)](docs/配置手册.md)**: 系统配置模板、风控参数硬约束说明。
 - **[实现验收检查清单](docs/验收清单.md)**: P0 设计修复项与闭环保障的开发/测试打勾清单。
 - **[AI 自闭环实现路径](docs/实现路径.md)**: 先跑通闭环、再基于报告优化的执行路线图。
+- **[数据加速链路](docs/数据加速链路.md)**: 归档下载、增量同步、缺口回补、特征构建与 walk-forward 回测。
 - **[全工程重构蓝图](docs/重构蓝图.md)**: 前瞻性重构路线、目标架构与阶段计划。
 
 ---
@@ -210,6 +211,14 @@ set -a && source .env.runtime && set +a
 export AI_TRADE_PROJECT_DIR=/opt/ai-trade
 export AI_TRADE_ENV_FILE=.env.runtime
 docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d ai-trade watchdog scheduler
+```
+
+数据加速链路（归档 + 增量 + 回补 + 特征 + 回测）：
+```bash
+tools/closed_loop_runner.sh data \
+  --compose-file docker-compose.prod.yml \
+  --env-file .env.runtime \
+  --data-config config/data_pipeline.yaml
 ```
 
 ### GitHub Actions + 阿里云 ECS 自动部署

@@ -79,6 +79,8 @@ jobs:
           grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
           grep -q "docker_gc_test" /tmp/ctest-list.txt
           grep -q "validate_reports_test" /tmp/ctest-list.txt
+          grep -q "data_pipeline_tools_test" /tmp/ctest-list.txt
+          grep -q "run_data_pipeline_test" /tmp/ctest-list.txt
           grep -q "web_report_store_test" /tmp/ctest-list.txt
           grep -q "web_governance_test" /tmp/ctest-list.txt
           grep -q "web_static_test" /tmp/ctest-list.txt
@@ -163,10 +165,17 @@ jobs:
           grep -q '^docker-compose.prod.yml$' /tmp/deploy_bundle.list
           grep -q '^deploy/ecs-deploy.sh$' /tmp/deploy_bundle.list
           grep -q '^config/' /tmp/deploy_bundle.list
+          grep -q '^config/data_pipeline.yaml$' /tmp/deploy_bundle.list
           grep -q '^observability/' /tmp/deploy_bundle.list
           grep -q '^ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
           grep -q '^tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
           grep -q '^tools/fetch_bybit_kline.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/fetch_binance_archive.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/stream_market_ws.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/gap_fill_klines.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/build_feature_store.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/backtest_walkforward.py$' /tmp/deploy_bundle.list
+          grep -q '^tools/run_data_pipeline.py$' /tmp/deploy_bundle.list
           grep -q '^tools/integrator_train.py$' /tmp/deploy_bundle.list
           grep -q '^tools/assess_run_log.py$' /tmp/deploy_bundle.list
           grep -q '^tools/model_registry.py$' /tmp/deploy_bundle.list
@@ -235,8 +244,15 @@ jobs:
               "${RELEASE_TMP}/docker-compose.prod.yml" \
               "${RELEASE_TMP}/deploy/ecs-deploy.sh" \
               "${RELEASE_TMP}/config/default.yaml" \
+              "${RELEASE_TMP}/config/data_pipeline.yaml" \
               "${RELEASE_TMP}/tools/closed_loop_runner.sh" \
               "${RELEASE_TMP}/tools/fetch_bybit_kline.py" \
+              "${RELEASE_TMP}/tools/fetch_binance_archive.py" \
+              "${RELEASE_TMP}/tools/stream_market_ws.py" \
+              "${RELEASE_TMP}/tools/gap_fill_klines.py" \
+              "${RELEASE_TMP}/tools/build_feature_store.py" \
+              "${RELEASE_TMP}/tools/backtest_walkforward.py" \
+              "${RELEASE_TMP}/tools/run_data_pipeline.py" \
               "${RELEASE_TMP}/tools/integrator_train.py" \
               "${RELEASE_TMP}/tools/assess_run_log.py" \
               "${RELEASE_TMP}/tools/model_registry.py" \

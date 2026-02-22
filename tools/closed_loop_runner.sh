@@ -5,11 +5,13 @@ set -euo pipefail
 # 1) train  : 执行 R0/R1/R2 + 模型注册 + 汇总报告
 # 2) assess : 导出运行日志并做 DEPLOY/S3/S5 自动验收 + 汇总报告
 # 3) full   : train + assess
+# 4) data   : 归档下载 + 增量更新 + 缺口回补 + 特征构建 + walk-forward 回测
 #
 # 示例：
 #   tools/closed_loop_runner.sh train
 #   tools/closed_loop_runner.sh assess --stage S5 --since 4h
 #   tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml --env-file /opt/ai-trade/.env.runtime
+#   tools/closed_loop_runner.sh data --data-config config/data_pipeline.yaml
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   ACTION="help"
@@ -21,8 +23,8 @@ if [[ "${ACTION}" == "help" ]]; then
   NEED_HELP="true"
 else
   NEED_HELP="false"
-  if [[ "${ACTION}" != "train" && "${ACTION}" != "assess" && "${ACTION}" != "full" ]]; then
-    echo "[ERROR] 首个参数必须是 train|assess|full"
+  if [[ "${ACTION}" != "train" && "${ACTION}" != "assess" && "${ACTION}" != "full" && "${ACTION}" != "data" ]]; then
+    echo "[ERROR] 首个参数必须是 train|assess|full|data"
     exit 2
   fi
 fi
@@ -83,11 +85,12 @@ S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
 RUNTIME_CONFIG_PATH="${AI_TRADE_CONFIG_PATH:-config/bybit.demo.evolution.yaml}"
+DATA_CONFIG_PATH="${DATA_PIPELINE_CONFIG:-config/data_pipeline.yaml}"
 
 usage() {
   cat <<'EOF'
 Usage:
-  tools/closed_loop_runner.sh <train|assess|full> [options]
+  tools/closed_loop_runner.sh <train|assess|full|data> [options]
 
 Options:
   --compose-file <path>              docker compose 文件 (default: docker-compose.yml)
@@ -124,6 +127,8 @@ Options:
   --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
   --max-model-versions <int>         模型历史保留数 (default: 20)
   --activate-on-pass <true|false>    门槛通过后是否激活 (default: true)
+
+  --data-config <path>               数据加速链路配置文件 (default: config/data_pipeline.yaml)
 
   --gc-enabled <true|false>          启用产物回收 (default: true)
   --gc-keep-run-dirs <int>           保留最近 run 目录数 (default: 120)
@@ -213,6 +218,8 @@ while [[ $# -gt 0 ]]; do
       MAX_MODEL_VERSIONS="$2"; shift 2;;
     --activate-on-pass)
       ACTIVATE_ON_PASS="$2"; shift 2;;
+    --data-config)
+      DATA_CONFIG_PATH="$2"; shift 2;;
     --gc-enabled)
       GC_ENABLED="$2"; shift 2;;
     --gc-keep-run-dirs)
@@ -545,6 +552,18 @@ run_registry() {
   echo "[INFO] model registry done"
 }
 
+run_data_pipeline() {
+  echo "[INFO] data pipeline start"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_data_pipeline.py \
+    --config "${DATA_CONFIG_PATH}" \
+    --run-dir "${RUN_DIR}/data_pipeline" \
+    --ohlcv-out "${CSV_PATH}" \
+    --feature-out "${RUN_DIR}/feature_store_5m.csv" \
+    --backtest-report "${RUN_DIR}/walkforward_report.json"
+  echo "[INFO] data pipeline done"
+}
+
 run_assess() {
   echo "[INFO] runtime assess start"
   compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade > "${ASSESS_LOG_PATH}" || true
@@ -703,6 +722,10 @@ run_gc() {
 
 run_main() {
   case "${ACTION}" in
+    data)
+      run_data_pipeline
+      build_summary
+      ;;
     train)
       run_freeze_baseline
       run_fetch

@@ -116,6 +116,10 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_docker_gc.py)
     add_test(NAME validate_reports_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_reports.py)
+    add_test(NAME data_pipeline_tools_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_data_pipeline_tools.py)
+    add_test(NAME run_data_pipeline_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_data_pipeline.py)
     add_test(NAME web_report_store_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/apps/ai_trade_web/backend/tests/test_report_store.py)
     add_test(NAME web_governance_test

@@ -102,7 +102,12 @@ class ComposeConsistencyTest(unittest.TestCase):
             'tools/closed_loop_runner.sh "$${SCHEDULER_ACTION_VALUE}" --compose-file docker-compose.prod.yml',
             scheduler,
         )
+        self.assertIn("train|assess|full|data", scheduler)
         self.assertIn("AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}", scheduler)
+        self.assertIn(
+            "DATA_PIPELINE_CONFIG: ${DATA_PIPELINE_CONFIG:-config/data_pipeline.yaml}",
+            scheduler,
+        )
         self.assertIn("SCHEDULER_ACTION: ${SCHEDULER_ACTION:-full}", scheduler)
         self.assertIn("SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}", scheduler)
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)

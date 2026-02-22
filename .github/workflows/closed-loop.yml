@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "闭环动作（assess/full/train）"
+        description: "闭环动作（assess/full/train/data）"
         required: true
         default: "assess"
         type: choice
@@ -12,6 +12,7 @@ on:
           - assess
           - full
           - train
+          - data
       stage:
         description: "运行验收阶段（S3/S5）"
         required: true
