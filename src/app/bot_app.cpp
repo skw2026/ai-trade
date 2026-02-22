@@ -170,43 +170,87 @@ ConcentrationSnapshot BuildConcentrationSnapshot(const AccountState& account) {
 }
 
 /**
- * @brief 执行层前置最小名义敞口过滤
+ * @brief 交易所规则前置守卫（量化后数量 + 最小数量 + 最小名义金额）
  *
  * 目的：
- * - 在下单入队前提前拦截“达不到交易所最小名义金额”的订单；
- * - 避免反复触发交易所拒单导致抖动与无效重试。
+ * - 在下单入队前按交易规则先做数量量化，提前拦截 qty=0 与 min qty/min notional 违规；
+ * - 尽量与交易所规则保持一致，减少“提交后才被交易所拒绝”的噪声与重试抖动。
+ *
+ * 返回值：
+ * - true: 命中守卫（应拦截）
+ * - false: 可继续下单
+ *
+ * 副作用：
+ * - 若量化后数量有效，会将 intent->qty 下修为量化后的可提交数量。
  */
-bool ViolatesMinNotionalGuard(const ExchangeAdapter* adapter,
-                              const OrderIntent& intent,
-                              const MarketEvent& event,
-                              std::string* out_reason) {
-  if (adapter == nullptr || intent.reduce_only) {
+bool ViolatesExchangePretradeGuard(const ExchangeAdapter* adapter,
+                                   OrderIntent* intent,
+                                   const MarketEvent& event,
+                                   std::string* out_reason) {
+  constexpr double kQtyEpsilon = 1e-12;
+  if (adapter == nullptr || intent == nullptr) {
     return false;
   }
+  if (!std::isfinite(intent->qty) || intent->qty <= 0.0) {
+    if (out_reason != nullptr) {
+      *out_reason = "invalid_qty(qty=" + std::to_string(intent->qty) + ")";
+    }
+    return true;
+  }
+
   SymbolInfo info;
-  if (!adapter->GetSymbolInfo(intent.symbol, &info)) {
+  if (!adapter->GetSymbolInfo(intent->symbol, &info)) {
     return false;
   }
-  if (!info.tradable || info.min_notional_usd <= 0.0) {
-    return false;
-  }
-  const double ref_price =
-      intent.price > 0.0 ? intent.price
-                         : (event.mark_price > 0.0 ? event.mark_price : event.price);
-  if (ref_price <= 0.0) {
-    return false;
-  }
-  const double order_notional = intent.qty * ref_price;
-  if (order_notional + 1e-9 >= info.min_notional_usd) {
+  if (!info.tradable) {
     return false;
   }
 
-  if (out_reason != nullptr) {
-    *out_reason = "min_notional_guard(order_notional=" +
-                  std::to_string(order_notional) +
-                  ", min_notional=" + std::to_string(info.min_notional_usd) + ")";
+  double submit_qty = intent->qty;
+  if (info.qty_step > 0.0) {
+    const double steps = std::floor((submit_qty + kQtyEpsilon) / info.qty_step);
+    submit_qty = steps > 0.0 ? steps * info.qty_step : 0.0;
   }
-  return true;
+  if (!std::isfinite(submit_qty) || submit_qty <= kQtyEpsilon) {
+    if (out_reason != nullptr) {
+      *out_reason = "qty_guard_quantized_zero(raw_qty=" +
+                    std::to_string(intent->qty) + ", qty_step=" +
+                    std::to_string(info.qty_step) + ")";
+    }
+    return true;
+  }
+
+  if (!intent->reduce_only && info.min_order_qty > 0.0 &&
+      submit_qty + kQtyEpsilon < info.min_order_qty) {
+    if (out_reason != nullptr) {
+      *out_reason = "min_qty_guard(order_qty=" + std::to_string(submit_qty) +
+                    ", min_order_qty=" + std::to_string(info.min_order_qty) + ")";
+    }
+    return true;
+  }
+
+  if (!intent->reduce_only && info.min_notional_usd > 0.0) {
+    const double ref_price =
+        intent->price > 0.0
+            ? intent->price
+            : (event.mark_price > 0.0 ? event.mark_price : event.price);
+    if (ref_price > 0.0) {
+      const double order_notional = submit_qty * ref_price;
+      if (order_notional + 1e-9 < info.min_notional_usd) {
+        if (out_reason != nullptr) {
+          *out_reason = "min_notional_guard(order_notional=" +
+                        std::to_string(order_notional) +
+                        ", min_notional=" + std::to_string(info.min_notional_usd) +
+                        ")";
+        }
+        return true;
+      }
+    }
+  }
+
+  // 量化后回写，确保后续执行链路使用与交易所一致的可提交数量。
+  intent->qty = submit_qty;
+  return false;
 }
 
 /**
@@ -1350,10 +1394,11 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     decision.intent.reset();
   }
 
-  // 交易所最小名义敞口前置保护：避免“买不起/卖不动”导致的拒单循环。
+  // 交易所规则前置保护：避免 qty=0/min_qty/min_notional 拒单循环。
   if (decision.intent.has_value()) {
     std::string guard_reason;
-    if (ViolatesMinNotionalGuard(adapter_.get(), *decision.intent, event, &guard_reason)) {
+    if (ViolatesExchangePretradeGuard(adapter_.get(), &*decision.intent, event,
+                                      &guard_reason)) {
       LogInfo("EXEC_FILTER_IGNORE: symbol=" + decision.intent->symbol +
               ", client_order_id=" + decision.intent->client_order_id +
               ", reason=" + guard_reason);

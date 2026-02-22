@@ -58,6 +58,10 @@ execution:
   # 稳态阶段：提高入场边际门槛上限，优先压低低质量成交。
   required_edge_cap_bps: 5.8
   entry_gate_near_miss_tolerance_bps: 0.20
+  # 允许 near-miss 样本走 maker 放行，提升样本流量（仅 demo）。
+  entry_gate_near_miss_maker_allow: true
+  # 语义：在 tolerance 之上的附加 gap（不是绝对 gap）。
+  entry_gate_near_miss_maker_max_gap_bps: 0.35
   adaptive_fee_gate_enabled: true
   adaptive_fee_gate_min_samples: 80
   adaptive_fee_gate_trigger_ratio: 0.70
@@ -142,7 +146,8 @@ self_evolution:
   use_counterfactual_search: true
   counterfactual_fallback_to_factor_ic: true
   counterfactual_min_improvement_usd: 2.0
-  counterfactual_min_improvement_ratio_of_equity: 0.001
+  # 维持与绝对阈值同量级，避免高权益账户被比例阈值“卡死”。
+  counterfactual_min_improvement_ratio_of_equity: 0.00002
   counterfactual_improvement_decay_per_filtered_signal_usd: 0.04
   counterfactual_min_fill_count_for_update: 1
   counterfactual_min_t_stat_samples_for_update: 60

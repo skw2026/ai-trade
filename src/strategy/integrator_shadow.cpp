@@ -4,6 +4,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 #include <unordered_map>
 #include <utility>
@@ -24,12 +25,168 @@ typedef void* ModelCalcerHandle;
 typedef ModelCalcerHandle (*Proc_ModelCalcerCreate)();
 typedef void (*Proc_ModelCalcerDelete)(ModelCalcerHandle handle);
 typedef bool (*Proc_ModelCalcerLoadSingleModelFromFile)(ModelCalcerHandle handle, const char* filename);
+typedef bool (*Proc_LoadFullModelFromFile)(ModelCalcerHandle handle, const char* filename);
 typedef bool (*Proc_ModelCalcerCalc)(ModelCalcerHandle handle, const float* features, size_t featuresSize, double* result, size_t resultSize);
+typedef bool (*Proc_CalcModelPredictionSingle)(ModelCalcerHandle handle,
+                                                const float* features,
+                                                size_t features_size,
+                                                const char** cat_features,
+                                                size_t cat_features_size,
+                                                double* result,
+                                                size_t result_size);
 typedef const char* (*Proc_ModelCalcerGetErrorString)(ModelCalcerHandle handle);
+typedef const char* (*Proc_GetErrorString)();
+
+struct CatBoostDynamicApi {
+  Proc_ModelCalcerCreate create{nullptr};
+  Proc_ModelCalcerDelete remove{nullptr};
+  Proc_ModelCalcerLoadSingleModelFromFile load_single{nullptr};
+  Proc_LoadFullModelFromFile load_full{nullptr};
+  Proc_ModelCalcerCalc calc{nullptr};
+  Proc_CalcModelPredictionSingle calc_single{nullptr};
+  Proc_ModelCalcerGetErrorString error_with_handle{nullptr};
+  Proc_GetErrorString error_global{nullptr};
+  std::string load_symbol_name;
+  std::string calc_symbol_name;
+  std::string error_symbol_name;
+  bool resolved{false};
+};
 
 // 全局持有 dlopen 句柄，避免重复加载
 static void* g_catboost_lib_handle = nullptr;
 static bool g_catboost_lib_loaded = false;
+static CatBoostDynamicApi g_catboost_api;
+
+void* ResolveSymbol(void* handle, const char* symbol) {
+  if (handle == nullptr || symbol == nullptr) {
+    return nullptr;
+  }
+  dlerror();
+  void* ptr = dlsym(handle, symbol);
+  if (dlerror() != nullptr) {
+    return nullptr;
+  }
+  return ptr;
+}
+
+template <typename Fn>
+Fn ResolveFirstSymbol(void* handle,
+                      std::initializer_list<const char*> candidates,
+                      std::string* out_name) {
+  for (const char* symbol : candidates) {
+    void* ptr = ResolveSymbol(handle, symbol);
+    if (ptr != nullptr) {
+      if (out_name != nullptr) {
+        *out_name = symbol;
+      }
+      return reinterpret_cast<Fn>(ptr);
+    }
+  }
+  return nullptr;
+}
+
+bool ResolveCatBoostApi(void* handle, CatBoostDynamicApi* out_api, std::string* out_error) {
+  if (handle == nullptr || out_api == nullptr) {
+    if (out_error != nullptr) {
+      *out_error = "catboost 动态库句柄无效";
+    }
+    return false;
+  }
+  CatBoostDynamicApi api;
+  api.create = ResolveFirstSymbol<Proc_ModelCalcerCreate>(
+      handle, {"ModelCalcerCreate"}, nullptr);
+  api.remove = ResolveFirstSymbol<Proc_ModelCalcerDelete>(
+      handle, {"ModelCalcerDelete"}, nullptr);
+  api.load_single = ResolveFirstSymbol<Proc_ModelCalcerLoadSingleModelFromFile>(
+      handle, {"ModelCalcerLoadSingleModelFromFile"}, &api.load_symbol_name);
+  if (api.load_single == nullptr) {
+    api.load_full = ResolveFirstSymbol<Proc_LoadFullModelFromFile>(
+        handle, {"LoadFullModelFromFile"}, &api.load_symbol_name);
+  }
+  api.calc = ResolveFirstSymbol<Proc_ModelCalcerCalc>(
+      handle, {"ModelCalcerCalc"}, &api.calc_symbol_name);
+  if (api.calc == nullptr) {
+    api.calc_single = ResolveFirstSymbol<Proc_CalcModelPredictionSingle>(
+        handle, {"CalcModelPredictionSingle"}, &api.calc_symbol_name);
+  }
+  api.error_with_handle = ResolveFirstSymbol<Proc_ModelCalcerGetErrorString>(
+      handle, {"ModelCalcerGetErrorString"}, &api.error_symbol_name);
+  if (api.error_with_handle == nullptr) {
+    api.error_global = ResolveFirstSymbol<Proc_GetErrorString>(
+        handle, {"GetErrorString"}, &api.error_symbol_name);
+  }
+
+  std::vector<std::string> missing;
+  if (api.create == nullptr) {
+    missing.push_back("ModelCalcerCreate");
+  }
+  if (api.remove == nullptr) {
+    missing.push_back("ModelCalcerDelete");
+  }
+  if (api.load_single == nullptr && api.load_full == nullptr) {
+    missing.push_back("ModelCalcerLoadSingleModelFromFile/LoadFullModelFromFile");
+  }
+  if (api.calc == nullptr && api.calc_single == nullptr) {
+    missing.push_back("ModelCalcerCalc/CalcModelPredictionSingle");
+  }
+  if (api.error_with_handle == nullptr && api.error_global == nullptr) {
+    missing.push_back("ModelCalcerGetErrorString/GetErrorString");
+  }
+
+  if (!missing.empty()) {
+    if (out_error != nullptr) {
+      std::ostringstream oss;
+      oss << "libcatboostmodel.so 缺少必要符号: ";
+      for (std::size_t i = 0; i < missing.size(); ++i) {
+        if (i > 0) {
+          oss << ", ";
+        }
+        oss << missing[i];
+      }
+      *out_error = oss.str();
+    }
+    return false;
+  }
+
+  api.resolved = true;
+  *out_api = std::move(api);
+  return true;
+}
+
+const char* CatBoostErrorString(ModelCalcerHandle handle) {
+  if (g_catboost_api.error_with_handle != nullptr) {
+    return g_catboost_api.error_with_handle(handle);
+  }
+  if (g_catboost_api.error_global != nullptr) {
+    return g_catboost_api.error_global();
+  }
+  return nullptr;
+}
+
+bool CatBoostLoadModel(ModelCalcerHandle handle, const char* model_path) {
+  if (g_catboost_api.load_single != nullptr) {
+    return g_catboost_api.load_single(handle, model_path);
+  }
+  if (g_catboost_api.load_full != nullptr) {
+    return g_catboost_api.load_full(handle, model_path);
+  }
+  return false;
+}
+
+bool CatBoostCalcPrediction(ModelCalcerHandle handle,
+                            const float* features,
+                            std::size_t features_size,
+                            double* result,
+                            std::size_t result_size) {
+  if (g_catboost_api.calc != nullptr) {
+    return g_catboost_api.calc(handle, features, features_size, result, result_size);
+  }
+  if (g_catboost_api.calc_single != nullptr) {
+    return g_catboost_api.calc_single(handle, features, features_size,
+                                      nullptr, 0, result, result_size);
+  }
+  return false;
+}
 #endif
 
 namespace ai_trade {
@@ -118,9 +275,8 @@ IntegratorShadow::~IntegratorShadow() {
     // 析构时需要确保库还未卸载，或者容忍泄漏。
     // 为简单起见，我们不 dlclose，让 OS 回收。
     // 如果 g_catboost_lib_handle 有效，则调用 Delete。
-    if (g_catboost_lib_handle) {
-        auto func = reinterpret_cast<Proc_ModelCalcerDelete>(dlsym(g_catboost_lib_handle, "ModelCalcerDelete"));
-        if (func) func(static_cast<ModelCalcerHandle>(model_handle_));
+    if (g_catboost_lib_handle && g_catboost_api.remove != nullptr) {
+      g_catboost_api.remove(static_cast<ModelCalcerHandle>(model_handle_));
     }
     model_handle_ = nullptr;
   }
@@ -286,36 +442,46 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
         }
     }
 
-    if (g_catboost_lib_handle) {
-      // 2. 获取函数指针
-      auto p_Create = reinterpret_cast<Proc_ModelCalcerCreate>(dlsym(g_catboost_lib_handle, "ModelCalcerCreate"));
-      auto p_Delete = reinterpret_cast<Proc_ModelCalcerDelete>(dlsym(g_catboost_lib_handle, "ModelCalcerDelete"));
-      auto p_Load = reinterpret_cast<Proc_ModelCalcerLoadSingleModelFromFile>(dlsym(g_catboost_lib_handle, "ModelCalcerLoadSingleModelFromFile"));
-      auto p_Error = reinterpret_cast<Proc_ModelCalcerGetErrorString>(dlsym(g_catboost_lib_handle, "ModelCalcerGetErrorString"));
-
-      if (!p_Create || !p_Delete || !p_Load || !p_Error) {
+    if (g_catboost_lib_handle && !g_catboost_api.resolved) {
+      std::string resolve_error;
+      if (!ResolveCatBoostApi(g_catboost_lib_handle, &g_catboost_api,
+                              &resolve_error)) {
         if (require_model_file) {
-          return fail("libcatboostmodel.so 缺少必要符号");
+          return fail(resolve_error);
         }
-        LogInfo("INTEGRATOR_DEGRADED: libcatboostmodel.so 缺少必要符号，shadow 推理将降级关闭");
+        LogInfo("INTEGRATOR_DEGRADED: " + resolve_error +
+                "，shadow 推理将降级关闭");
       } else {
-        if (model_handle_) {
-          p_Delete(static_cast<ModelCalcerHandle>(model_handle_));
-          model_handle_ = nullptr;
+        LogInfo("INTEGRATOR_CATBOOST_API_READY: load_symbol=" +
+                g_catboost_api.load_symbol_name +
+                ", calc_symbol=" + g_catboost_api.calc_symbol_name +
+                ", error_symbol=" + g_catboost_api.error_symbol_name);
+      }
+    }
+
+    if (g_catboost_lib_handle && g_catboost_api.resolved) {
+      if (model_handle_) {
+        g_catboost_api.remove(static_cast<ModelCalcerHandle>(model_handle_));
+        model_handle_ = nullptr;
+      }
+      model_handle_ = g_catboost_api.create();
+      if (model_handle_ == nullptr) {
+        if (require_model_file) {
+          return fail("CatBoost 模型句柄创建失败");
         }
-        model_handle_ = p_Create();
-        if (!p_Load(static_cast<ModelCalcerHandle>(model_handle_),
-                    config_.model_path.c_str())) {
-          const char* msg = p_Error(static_cast<ModelCalcerHandle>(model_handle_));
-          if (require_model_file) {
-            return fail("CatBoost 模型加载失败: " + std::string(msg ? msg : "unknown error"));
-          }
-          LogInfo("INTEGRATOR_DEGRADED: CatBoost 模型加载失败，shadow 推理将降级关闭");
-          model_handle_ = nullptr;
-        } else {
-          model_runtime_ready_ = true;
-          LogInfo("CatBoost 模型加载成功: " + config_.model_path);
+        LogInfo("INTEGRATOR_DEGRADED: CatBoost 模型句柄创建失败，shadow 推理将降级关闭");
+      } else if (!CatBoostLoadModel(static_cast<ModelCalcerHandle>(model_handle_),
+                                    config_.model_path.c_str())) {
+        const char* msg = CatBoostErrorString(static_cast<ModelCalcerHandle>(model_handle_));
+        if (require_model_file) {
+          return fail("CatBoost 模型加载失败: " +
+                      std::string(msg ? msg : "unknown error"));
         }
+        LogInfo("INTEGRATOR_DEGRADED: CatBoost 模型加载失败，shadow 推理将降级关闭");
+        model_handle_ = nullptr;
+      } else {
+        model_runtime_ready_ = true;
+        LogInfo("CatBoost 模型加载成功: " + config_.model_path);
       }
     }
 #else
@@ -477,7 +643,7 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   double raw = 0.0;
 
 #ifdef AI_TRADE_ENABLE_CATBOOST
-  if (!g_catboost_lib_handle || !model_handle_) {
+  if (!g_catboost_lib_handle || !g_catboost_api.resolved || !model_handle_) {
     out.enabled = false;
     return out;
   }
@@ -485,14 +651,11 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   const float* row_ptr = float_features.data();
   double result = 0.0;
 
-  auto p_Calc = reinterpret_cast<Proc_ModelCalcerCalc>(
-      dlsym(g_catboost_lib_handle, "ModelCalcerCalc"));
-  if (!p_Calc ||
-      !p_Calc(static_cast<ModelCalcerHandle>(model_handle_),
-              row_ptr,
-              features.size(),
-              &result,
-              1)) {
+  if (!CatBoostCalcPrediction(static_cast<ModelCalcerHandle>(model_handle_),
+                              row_ptr,
+                              features.size(),
+                              &result,
+                              1)) {
     LogInfo("INTEGRATOR_ERROR: CatBoost inference failed");
     out.enabled = false;
     return out;
