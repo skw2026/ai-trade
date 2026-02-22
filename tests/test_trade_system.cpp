@@ -997,6 +997,7 @@ int main() {
     ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
         .signal_notional_usd = 1000.0,
         .signal_deadband_abs = 0.0,
+        .default_tick_interval_ms = 5000,
         .trend_ema_fast = 1,
         .trend_ema_slow = 2,
         .vol_target_pct = 0.35,
@@ -1004,7 +1005,6 @@ int main() {
         .vol_target_rebalance_min_abs_usd = 0.0,
         .vol_target_rebalance_min_ratio = 0.0,
         .defensive_notional_ratio = 0.0,
-        .default_tick_interval_ms = 5000,
     });
     ai_trade::AccountState dummy_account;
     ai_trade::RegimeState regime;
