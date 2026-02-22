@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
+#include <deque>
 
 #include "core/config.h"
 #include "core/types.h"
@@ -42,10 +43,12 @@ class StrategyEngine {
   struct SymbolState {
     double last_price{0.0};
     bool has_last{false};
+    std::int64_t last_event_ts_ms{0};
     
     // Trend Logic State
     int effective_direction{0};
     int ticks_since_direction_change{0};
+    std::deque<double> ema_slow_history{};
     
     // Defensive Logic State
     int defensive_effective_direction{0};

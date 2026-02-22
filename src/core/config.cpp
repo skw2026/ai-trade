@@ -1162,6 +1162,34 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "strategy" &&
+        key == "signal_valid_for_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.signal_valid_for_ms 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_signal_valid_for_ms = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "default_tick_interval_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.default_tick_interval_ms 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_default_tick_interval_ms = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
         (key == "min_hold_ticks" || key == "reverse_min_hold_ticks")) {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {
@@ -1261,6 +1289,90 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       if (ParseInt(value, &parsed)) {
         config.trend_ema_slow = parsed;
       }
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_breakout_lookback_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_breakout_lookback_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_breakout_lookback_ticks = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_breakout_rank_threshold") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_breakout_rank_threshold 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_breakout_rank_threshold = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_slope_lookback_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_slope_lookback_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_slope_lookback_ticks = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_slope_min_abs") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_slope_min_abs 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_slope_min_abs = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_vol_cap_annual") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_vol_cap_annual 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_vol_cap_annual = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_strength_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_strength_scale 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_strength_scale = parsed;
       continue;
     }
     if (current_section == "strategy" &&
@@ -2725,6 +2837,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "self_evolution" &&
+        key == "factor_ic_deadzone_abs") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.factor_ic_deadzone_abs 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.factor_ic_deadzone_abs = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
         (key == "enable_learnability_gate" ||
          key == "learnability_gate_enabled")) {
       bool parsed = false;
@@ -3019,6 +3146,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.regime.switch_confirm_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
+        key == "extreme_requires_both") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.extreme_requires_both 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.extreme_requires_both = parsed;
       continue;
     }
 
@@ -3658,6 +3799,18 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.strategy_signal_valid_for_ms <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.signal_valid_for_ms 必须大于 0";
+    }
+    return false;
+  }
+  if (config.strategy_default_tick_interval_ms <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.default_tick_interval_ms 必须大于 0";
+    }
+    return false;
+  }
   if (config.vol_target_pct < 0.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.vol_target_pct 不能为负数";
@@ -3707,6 +3860,44 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.strategy_min_hold_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "strategy.min_hold_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_trend_breakout_lookback_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.trend_breakout_lookback_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_trend_breakout_rank_threshold < 0.5 ||
+      config.strategy_trend_breakout_rank_threshold > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "strategy.trend_breakout_rank_threshold 必须在 [0.5,1.0] 区间";
+    }
+    return false;
+  }
+  if (config.strategy_trend_slope_lookback_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.trend_slope_lookback_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_trend_slope_min_abs < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.trend_slope_min_abs 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_trend_vol_cap_annual < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.trend_vol_cap_annual 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_trend_strength_scale < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.trend_strength_scale 不能为负数";
     }
     return false;
   }
@@ -3854,6 +4045,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.self_evolution.factor_ic_min_abs < 0.0) {
     if (out_error != nullptr) {
       *out_error = "self_evolution.factor_ic_min_abs 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.factor_ic_deadzone_abs < 0.0 ||
+      config.self_evolution.factor_ic_deadzone_abs > 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.factor_ic_deadzone_abs 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.self_evolution.factor_ic_deadzone_abs + 1e-9 <
+      config.self_evolution.factor_ic_min_abs) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.factor_ic_deadzone_abs 不能小于 factor_ic_min_abs";
     }
     return false;
   }

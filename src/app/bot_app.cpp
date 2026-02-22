@@ -2176,6 +2176,15 @@ void BotApplication::RunSelfEvolution() {
   if (!config_.self_evolution.enabled) {
     return;
   }
+  if (system_.integrator_mode() == IntegratorMode::kCanary ||
+      system_.integrator_mode() == IntegratorMode::kActive) {
+    if (market_tick_count_ == self_evolution_.next_eval_tick()) {
+      ++funnel_window_.self_evolution_skipped;
+      LogInfo("SELF_EVOLUTION_ACTION: type=skipped, reason=EVOLUTION_INTEGRATOR_ACTIVE_MODE, integrator_mode=" +
+              std::string(ToString(system_.integrator_mode())));
+    }
+    return;
+  }
 
   const RegimeBucket active_bucket =
       has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange;

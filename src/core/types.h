@@ -54,6 +54,7 @@ struct MarketEvent {
   Price price{0.0};
   Price mark_price{0.0};
   Quantity volume{0.0};
+  std::int64_t interval_ms{0};  // 与上一条同 symbol 行情的时间间隔
 };
 
 /// Regime Analysis Snapshot
@@ -75,6 +76,8 @@ struct Signal {
   Money defensive_notional_usd{0.0};
   int direction{0}; // Kept as int for JSON compatibility (-1, 0, 1)
   double confidence{0.0}; // 0.0 to 1.0
+  Timestamp valid_until_ms{0};
+  std::vector<std::string> reason_codes{};
 };
 
 /// Integrator / ML Model Inference

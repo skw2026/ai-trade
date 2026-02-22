@@ -70,7 +70,10 @@ RegimeState RegimeEngine::OnMarket(const MarketEvent& event) {
         std::fabs(instant_return) >= config_.extreme_threshold;
     const bool extreme_by_vol =
         symbol_state.ewma_abs_return >= config_.volatility_threshold;
-    if (extreme_by_jump || extreme_by_vol) {
+    const bool extreme_hit = config_.extreme_requires_both
+                                 ? (extreme_by_jump && extreme_by_vol)
+                                 : (extreme_by_jump || extreme_by_vol);
+    if (extreme_hit) {
       raw_regime = Regime::kExtreme;
     } else if (symbol_state.ewma_return >= config_.trend_threshold) {
       raw_regime = Regime::kUptrend;

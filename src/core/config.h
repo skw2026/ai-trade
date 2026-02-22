@@ -97,6 +97,7 @@ struct SelfEvolutionConfig {
   bool enable_factor_ic_adaptive_weights{false};
   int factor_ic_min_samples{120};
   double factor_ic_min_abs{0.01};
+  double factor_ic_deadzone_abs{0.02};
   bool enable_learnability_gate{false};
   int learnability_min_samples{120};
   double learnability_min_t_stat_abs{1.5};
@@ -164,6 +165,7 @@ struct RegimeConfig {
   int warmup_ticks{20};
   double ewma_alpha{0.20};
   int switch_confirm_ticks{0};
+  bool extreme_requires_both{false};
   double trend_threshold{0.0008};
   double extreme_threshold{0.0030};
   double volatility_threshold{0.0018};
@@ -172,9 +174,17 @@ struct RegimeConfig {
 struct StrategyConfig {
   double signal_notional_usd{1000.0};
   double signal_deadband_abs{0.1};
+  int signal_valid_for_ms{15000};
+  int default_tick_interval_ms{5000};
   int min_hold_ticks{0};
   int trend_ema_fast{12};
   int trend_ema_slow{26};
+  int trend_breakout_lookback_ticks{0};
+  double trend_breakout_rank_threshold{0.98};
+  int trend_slope_lookback_ticks{0};
+  double trend_slope_min_abs{0.0};
+  double trend_vol_cap_annual{0.0};
+  double trend_strength_scale{0.0};
   double vol_target_pct{0.40};
   double vol_target_max_leverage{3.0};
   bool vol_target_low_vol_leverage_cap_enabled{false};
@@ -204,9 +214,17 @@ struct AppConfig {
   // Flattened Strategy Config (for YAML compatibility)
   double strategy_signal_notional_usd{1000.0};
   double strategy_signal_deadband_abs{0.1};
+  int strategy_signal_valid_for_ms{15000};
+  int strategy_default_tick_interval_ms{5000};
   int strategy_min_hold_ticks{0};
   int trend_ema_fast{12};
   int trend_ema_slow{26};
+  int strategy_trend_breakout_lookback_ticks{0};
+  double strategy_trend_breakout_rank_threshold{0.98};
+  int strategy_trend_slope_lookback_ticks{0};
+  double strategy_trend_slope_min_abs{0.0};
+  double strategy_trend_vol_cap_annual{0.0};
+  double strategy_trend_strength_scale{0.0};
   double vol_target_pct{0.40};
   double strategy_vol_target_max_leverage{3.0};
   bool strategy_vol_target_low_vol_leverage_cap_enabled{false};
@@ -291,9 +309,17 @@ struct AppConfig {
     return StrategyConfig{
         strategy_signal_notional_usd,
         strategy_signal_deadband_abs,
+        strategy_signal_valid_for_ms,
+        strategy_default_tick_interval_ms,
         strategy_min_hold_ticks,
         trend_ema_fast,
         trend_ema_slow,
+        strategy_trend_breakout_lookback_ticks,
+        strategy_trend_breakout_rank_threshold,
+        strategy_trend_slope_lookback_ticks,
+        strategy_trend_slope_min_abs,
+        strategy_trend_vol_cap_annual,
+        strategy_trend_strength_scale,
         vol_target_pct,
         strategy_vol_target_max_leverage,
         strategy_vol_target_low_vol_leverage_cap_enabled,

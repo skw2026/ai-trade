@@ -961,6 +961,79 @@ int main() {
   }
 
   {
+    // Signal 必须携带有效期与 reason_codes，满足审计约束。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .signal_valid_for_ms = 12000,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kTrend;
+    regime.warmup = false;
+    regime.volatility_level = 0.001;
+
+    for (int i = 0; i < 20; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          1000 + i * 5000, "BTCUSDT", 100.0, 100.0, 1000.0, 5000},
+                        dummy_account,
+                        regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        1000 + 20 * 5000, "BTCUSDT", 101.0, 101.0, 1000.0, 5000},
+                                          dummy_account,
+                                          regime);
+    if (signal.valid_until_ms <= (1000 + 20 * 5000) ||
+        signal.reason_codes.empty()) {
+      std::cerr << "Signal 应包含有效期与非空 reason_codes\n";
+      return 1;
+    }
+  }
+
+  {
+    // VolTarget 年化因子应基于实际 tick 间隔动态计算，间隔变长时允许更高目标仓位。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .vol_target_pct = 0.35,
+        .vol_target_max_leverage = 3.0,
+        .vol_target_rebalance_min_abs_usd = 0.0,
+        .vol_target_rebalance_min_ratio = 0.0,
+        .defensive_notional_ratio = 0.0,
+        .default_tick_interval_ms = 5000,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kTrend;
+    regime.warmup = false;
+    regime.volatility_level = 0.0002;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          2000 + i * 5000, "BTCUSDT", 100.0, 100.0, 1000.0, 5000},
+                        dummy_account,
+                        regime);
+    }
+    const auto short_interval_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        2000 + 30 * 5000, "BTCUSDT", 101.0, 101.0, 1000.0, 1000},
+                                                         dummy_account,
+                                                         regime);
+    const auto long_interval_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        2000 + 40 * 5000, "BTCUSDT", 102.0, 102.0, 1000.0, 10000},
+                                                        dummy_account,
+                                                        regime);
+    if (std::fabs(long_interval_signal.suggested_notional_usd) <=
+        std::fabs(short_interval_signal.suggested_notional_usd)) {
+      std::cerr << "tick 间隔变长时 VolTarget 目标仓位应增大\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::AccountState account;
     const std::vector<ai_trade::RemotePositionSnapshot> remote_positions = {
         ai_trade::RemotePositionSnapshot{
@@ -2716,7 +2789,15 @@ int main() {
         << "strategy:\n"
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
+        << "  signal_valid_for_ms: 18000\n"
+        << "  default_tick_interval_ms: 4000\n"
         << "  min_hold_ticks: 4\n"
+        << "  trend_breakout_lookback_ticks: 22\n"
+        << "  trend_breakout_rank_threshold: 0.96\n"
+        << "  trend_slope_lookback_ticks: 5\n"
+        << "  trend_slope_min_abs: 0.00003\n"
+        << "  trend_vol_cap_annual: 1.4\n"
+        << "  trend_strength_scale: 1.2\n"
         << "  vol_target_pct: 0.35\n"
         << "  vol_target_max_leverage: 2.5\n"
         << "  vol_target_low_vol_leverage_cap_enabled: true\n"
@@ -2780,6 +2861,7 @@ int main() {
         << "  enable_factor_ic_adaptive_weights: true\n"
         << "  factor_ic_min_samples: 180\n"
         << "  factor_ic_min_abs: 0.015\n"
+        << "  factor_ic_deadzone_abs: 0.02\n"
         << "  enable_learnability_gate: true\n"
         << "  learnability_min_samples: 200\n"
         << "  learnability_min_t_stat_abs: 1.8\n"
@@ -2800,6 +2882,7 @@ int main() {
         << "  warmup_ticks: 18\n"
         << "  ewma_alpha: 0.18\n"
         << "  switch_confirm_ticks: 6\n"
+        << "  extreme_requires_both: true\n"
         << "  trend_threshold: 0.0015\n"
         << "  extreme_threshold: 0.006\n"
         << "  volatility_threshold: 0.003\n";
@@ -2851,7 +2934,15 @@ int main() {
         !NearlyEqual(config.execution_dynamic_edge_liquidity_penalty_bps, 1.4) ||
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
+        config.strategy_signal_valid_for_ms != 18000 ||
+        config.strategy_default_tick_interval_ms != 4000 ||
         config.strategy_min_hold_ticks != 4 ||
+        config.strategy_trend_breakout_lookback_ticks != 22 ||
+        !NearlyEqual(config.strategy_trend_breakout_rank_threshold, 0.96) ||
+        config.strategy_trend_slope_lookback_ticks != 5 ||
+        !NearlyEqual(config.strategy_trend_slope_min_abs, 0.00003) ||
+        !NearlyEqual(config.strategy_trend_vol_cap_annual, 1.4) ||
+        !NearlyEqual(config.strategy_trend_strength_scale, 1.2) ||
         !NearlyEqual(config.vol_target_pct, 0.35) ||
         !NearlyEqual(config.strategy_vol_target_max_leverage, 2.5) ||
         config.strategy_vol_target_low_vol_leverage_cap_enabled != true ||
@@ -2977,6 +3068,7 @@ int main() {
         config.self_evolution.enable_factor_ic_adaptive_weights != true ||
         config.self_evolution.factor_ic_min_samples != 180 ||
         !NearlyEqual(config.self_evolution.factor_ic_min_abs, 0.015) ||
+        !NearlyEqual(config.self_evolution.factor_ic_deadzone_abs, 0.02) ||
         config.self_evolution.enable_learnability_gate != true ||
         config.self_evolution.learnability_min_samples != 200 ||
         !NearlyEqual(config.self_evolution.learnability_min_t_stat_abs, 1.8) ||
@@ -3003,6 +3095,7 @@ int main() {
         config.regime.warmup_ticks != 18 ||
         !NearlyEqual(config.regime.ewma_alpha, 0.18) ||
         config.regime.switch_confirm_ticks != 6 ||
+        config.regime.extreme_requires_both != true ||
         !NearlyEqual(config.regime.trend_threshold, 0.0015) ||
         !NearlyEqual(config.regime.extreme_threshold, 0.006) ||
         !NearlyEqual(config.regime.volatility_threshold, 0.003)) {
@@ -5718,6 +5811,40 @@ int main() {
   }
 
   {
+    ai_trade::RegimeConfig config;
+    config.enabled = true;
+    config.warmup_ticks = 1;
+    config.ewma_alpha = 1.0;
+    config.switch_confirm_ticks = 1;
+    config.trend_threshold = 0.001;
+    config.extreme_threshold = 0.010;
+    config.volatility_threshold = 0.020;
+    config.extreme_requires_both = true;
+
+    ai_trade::RegimeEngine engine(config);
+    ai_trade::MarketEvent event;
+    event.symbol = "SOLUSDT";
+    event.price = 100.0;
+    (void)engine.OnMarket(event);  // warmup
+
+    // jump 命中但 vol 未命中：在 requires_both=true 下不应进入 EXTREME。
+    event.price = 101.2;  // +1.2%
+    const auto jump_only = engine.OnMarket(event);
+    if (jump_only.regime == ai_trade::Regime::kExtreme) {
+      std::cerr << "extreme_requires_both=true 时 jump-only 不应触发 EXTREME\n";
+      return 1;
+    }
+
+    // jump 与 vol 同时命中：应进入 EXTREME。
+    event.price = 103.5;  // +2.27%
+    const auto both_hit = engine.OnMarket(event);
+    if (both_hit.regime != ai_trade::Regime::kExtreme) {
+      std::cerr << "extreme_requires_both=true 时双命中应触发 EXTREME\n";
+      return 1;
+    }
+  }
+
+  {
     const std::filesystem::path cfg_path =
         std::filesystem::temp_directory_path() / "ai_trade_test_regime_valid.yaml";
     std::ofstream out(cfg_path);
@@ -5726,6 +5853,7 @@ int main() {
         << "  warmup_ticks: 12\n"
         << "  ewma_alpha: 0.25\n"
         << "  switch_confirm_ticks: 4\n"
+        << "  extreme_requires_both: true\n"
         << "  trend_threshold: 0.0012\n"
         << "  extreme_threshold: 0.006\n"
         << "  volatility_threshold: 0.0025\n";
@@ -5740,6 +5868,7 @@ int main() {
     if (!config.regime.enabled || config.regime.warmup_ticks != 12 ||
         !NearlyEqual(config.regime.ewma_alpha, 0.25) ||
         config.regime.switch_confirm_ticks != 4 ||
+        config.regime.extreme_requires_both != true ||
         !NearlyEqual(config.regime.trend_threshold, 0.0012) ||
         !NearlyEqual(config.regime.extreme_threshold, 0.006) ||
         !NearlyEqual(config.regime.volatility_threshold, 0.0025)) {

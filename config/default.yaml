@@ -92,7 +92,15 @@ execution:
 strategy:
   signal_notional_usd: 1000
   signal_deadband_abs: 0.5
+  signal_valid_for_ms: 15000
+  default_tick_interval_ms: 5000
   min_hold_ticks: 3
+  trend_breakout_lookback_ticks: 0
+  trend_breakout_rank_threshold: 0.98
+  trend_slope_lookback_ticks: 0
+  trend_slope_min_abs: 0.0
+  trend_vol_cap_annual: 0.0
+  trend_strength_scale: 0.0
   vol_target_pct: 0.40
   vol_target_max_leverage: 3.0
   vol_target_low_vol_leverage_cap_enabled: false
@@ -130,6 +138,7 @@ self_evolution:
   enable_factor_ic_adaptive_weights: false
   factor_ic_min_samples: 120
   factor_ic_min_abs: 0.01
+  factor_ic_deadzone_abs: 0.02
   enable_learnability_gate: false
   learnability_min_samples: 120
   learnability_min_t_stat_abs: 1.5
@@ -152,6 +161,7 @@ regime:
   warmup_ticks: 20
   ewma_alpha: 0.20
   switch_confirm_ticks: 0
+  extreme_requires_both: false
   trend_threshold: 0.0008
   extreme_threshold: 0.0030
   volatility_threshold: 0.0018

@@ -101,7 +101,15 @@ execution:
 strategy:
   signal_notional_usd: 380
   signal_deadband_abs: 0.9
+  signal_valid_for_ms: 15000
+  default_tick_interval_ms: 5000
   min_hold_ticks: 6
+  trend_breakout_lookback_ticks: 24
+  trend_breakout_rank_threshold: 0.97
+  trend_slope_lookback_ticks: 6
+  trend_slope_min_abs: 0.00002
+  trend_vol_cap_annual: 1.20
+  trend_strength_scale: 1.5
   vol_target_pct: 0.35
   vol_target_max_leverage: 2.2
   vol_target_low_vol_leverage_cap_enabled: true
@@ -147,11 +155,12 @@ self_evolution:
   virtual_cost_bps: 6.5
   virtual_cost_dynamic_enabled: true
   virtual_cost_dynamic_max_multiplier: 3.0
-  virtual_funding_rate_per_tick: 0.0
+  virtual_funding_rate_per_tick: 0.00000002
   # 信号层：基于在线因子IC做权重自适应（与反事实搜索互补观测）。
   enable_factor_ic_adaptive_weights: true
   factor_ic_min_samples: 80
   factor_ic_min_abs: 0.005
+  factor_ic_deadzone_abs: 0.02
   # 元控制层：仅在可学习窗口（|t-stat| 足够）允许更新。
   enable_learnability_gate: true
   learnability_min_samples: 80
@@ -164,10 +173,20 @@ self_evolution:
   max_weight_step: 0.01
   rollback_degrade_windows: 3
   rollback_degrade_threshold_score: -15.0
-  rollback_to_baseline_on_trigger: true
+  rollback_to_baseline_on_trigger: false
   rollback_cooldown_ticks: 3600
   initial_trend_weight: 0.50
   initial_defensive_weight: 0.50
+
+regime:
+  enabled: true
+  warmup_ticks: 30
+  ewma_alpha: 0.05
+  switch_confirm_ticks: 12
+  extreme_requires_both: true
+  trend_threshold: 0.0015
+  extreme_threshold: 0.0080
+  volatility_threshold: 0.0025
 
 gate:
   # S5 稳态 soak：更关注“策略持续运行”而不是强交易频次。

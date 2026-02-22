@@ -17,6 +17,15 @@ bool HasExposure(double notional_usd) {
   return std::fabs(notional_usd) > kNotionalEpsilon;
 }
 
+void PushReason(std::vector<std::string>* reasons, const std::string& code) {
+  if (reasons == nullptr || code.empty()) {
+    return;
+  }
+  if (std::find(reasons->begin(), reasons->end(), code) == reasons->end()) {
+    reasons->push_back(code);
+  }
+}
+
 int SignOf(double value) {
   if (value > kNotionalEpsilon) return 1;
   if (value < -kNotionalEpsilon) return -1;
@@ -120,6 +129,15 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   if (decision.base_signal.symbol.empty()) {
     decision.base_signal.symbol = event.symbol;
   }
+  if (decision.base_signal.valid_until_ms > 0 &&
+      event.ts_ms > decision.base_signal.valid_until_ms) {
+    decision.base_signal.suggested_notional_usd = 0.0;
+    decision.base_signal.trend_notional_usd = 0.0;
+    decision.base_signal.defensive_notional_usd = 0.0;
+    decision.base_signal.direction = 0;
+    decision.base_signal.confidence = 0.0;
+    PushReason(&decision.base_signal.reason_codes, "STR_SIGNAL_EXPIRED");
+  }
 
   // 3.1. Evolution Weighting (Optional)
   if (evolution_enabled_) {
@@ -127,6 +145,7 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
     decision.base_signal.suggested_notional_usd =
         BlendSignalNotional(decision.base_signal, weights);
     decision.base_signal.direction = SignOf(decision.base_signal.suggested_notional_usd);
+    PushReason(&decision.base_signal.reason_codes, "PORT_EVOLUTION_BLEND");
   }
 
   // 4. Integrator / ML Overlay
@@ -139,6 +158,13 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
       &decision.signal,
       &decision.integrator_confidence,
       &decision.integrator_policy_reason);
+  if (!decision.integrator_policy_reason.empty()) {
+    PushReason(&decision.signal.reason_codes,
+               "MODEL_" + decision.integrator_policy_reason);
+  }
+  if (decision.signal.reason_codes.empty()) {
+    PushReason(&decision.signal.reason_codes, "STR_NO_REASON");
+  }
 
   // 5. Risk Management
   decision.target = TargetPosition{decision.signal.symbol, decision.signal.suggested_notional_usd};

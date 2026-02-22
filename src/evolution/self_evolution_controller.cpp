@@ -952,9 +952,22 @@ std::optional<EvolutionWeights> SelfEvolutionController::ProposeFactorIcWeights(
     return std::nullopt;
   }
 
-  // 将 [-1,1] 的相关性映射为 [0,1] 得分，负相关会显式压低该分量权重。
-  const auto ic_to_score = [](double ic) {
-    return std::clamp(0.5 + 0.5 * ic, 0.0, 1.0);
+  // deadzone 内视为噪声，不驱动权重；超出 deadzone 后再线性放大。
+  const double deadzone =
+      std::clamp(std::max(config_.factor_ic_min_abs,
+                          config_.factor_ic_deadzone_abs),
+                 0.0, 0.99);
+  const auto ic_to_score = [deadzone](double ic) {
+    if (!std::isfinite(ic)) {
+      return 0.5;
+    }
+    const double abs_ic = std::fabs(ic);
+    if (abs_ic <= deadzone) {
+      return 0.5;
+    }
+    const double signed_excess =
+        std::copysign((abs_ic - deadzone) / std::max(1e-9, 1.0 - deadzone), ic);
+    return std::clamp(0.5 + 0.5 * signed_excess, 0.0, 1.0);
   };
   const double trend_score = trend_ic_strong ? ic_to_score(trend_ic) : 0.5;
   const double defensive_score =
