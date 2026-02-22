@@ -77,6 +77,23 @@ class IntegratorTrainTest(unittest.TestCase):
         self.assertFalse(passed)
         self.assertTrue(any("train_test_auc_gap_mean" in reason for reason in reasons))
 
+        metrics_missing_stdev = dict(metrics_ok)
+        metrics_missing_stdev["split_trained_count"] = 3
+        metrics_missing_stdev["auc_stdev"] = float("nan")
+        passed, reasons = TRAIN.evaluate_governance(
+            metrics_oos=metrics_missing_stdev,
+            min_auc_mean=0.55,
+            min_delta_auc_vs_baseline=0.0,
+            min_split_trained_count=2,
+            min_split_trained_ratio=0.5,
+            max_auc_stdev=0.08,
+            max_train_test_auc_gap=0.10,
+            run_random_label_control=True,
+            max_random_label_auc=0.55,
+        )
+        self.assertFalse(passed)
+        self.assertTrue(any("auc_stdev" in reason for reason in reasons))
+
         metrics_random_bad = dict(metrics_ok)
         metrics_random_bad["random_label_auc"] = 0.61
         passed, reasons = TRAIN.evaluate_governance(

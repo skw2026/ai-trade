@@ -130,6 +130,18 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertTrue(RECYCLE_SCRIPT.is_file())
         self.assertTrue(DOCKER_GC_SCRIPT.is_file())
 
+    def test_closed_loop_runner_exposes_integrator_governance_flags(self):
+        script = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("--max-auc-stdev", script)
+        self.assertIn("--max-train-test-auc-gap", script)
+        self.assertIn("--max-random-label-auc", script)
+        self.assertIn("--random-label-iterations", script)
+        self.assertIn("--disable-random-label-control", script)
+        self.assertIn("--max_auc_stdev", script)
+        self.assertIn("--max_train_test_auc_gap", script)
+        self.assertIn("--max_random_label_auc", script)
+        self.assertIn("--random_label_iterations", script)
+
     def test_web_service_paths_are_consistent(self):
         dev_web = self.dev_services["ai-trade-web"]
         prod_web = self.prod_services["ai-trade-web"]

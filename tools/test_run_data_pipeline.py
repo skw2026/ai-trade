@@ -86,6 +86,14 @@ class RunDataPipelineTest(unittest.TestCase):
             self.assertEqual(len(report["steps"]), 5)
             planned_count = sum(1 for item in report["steps"] if item["status"] == "planned")
             self.assertEqual(planned_count, 5)
+            walk_step = next(item for item in report["steps"] if item["name"] == "walkforward_backtest")
+            walk_cmd = walk_step["command"]
+            self.assertIn("--model", walk_cmd)
+            self.assertIn("linear", walk_cmd)
+            self.assertIn("--catboost-iterations", walk_cmd)
+            self.assertIn("--catboost-depth", walk_cmd)
+            self.assertIn("--catboost-learning-rate", walk_cmd)
+            self.assertIn("--random-seed", walk_cmd)
 
 
 if __name__ == "__main__":

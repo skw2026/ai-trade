@@ -62,6 +62,11 @@ MIN_AUC_MEAN="0.50"
 MIN_DELTA_AUC_VS_BASELINE="0.0"
 MIN_SPLIT_TRAINED_COUNT="1"
 MIN_SPLIT_TRAINED_RATIO="0.50"
+MAX_AUC_STDEV="0.08"
+MAX_TRAIN_TEST_AUC_GAP="0.10"
+MAX_RANDOM_LABEL_AUC="0.55"
+RANDOM_LABEL_ITERATIONS="80"
+DISABLE_RANDOM_LABEL_CONTROL="false"
 FAIL_ON_GOVERNANCE="false"
 MAX_MODEL_VERSIONS="20"
 ACTIVATE_ON_PASS="true"
@@ -124,6 +129,12 @@ Options:
   --min-delta-auc-vs-baseline <f>    模型激活门槛 Delta AUC (default: 0.0)
   --min-split-trained-count <int>    模型激活门槛 split 训练成功数 (default: 1)
   --min-split-trained-ratio <float>  模型激活门槛 split 训练成功比例 (default: 0.50)
+  --max-auc-stdev <float>            R2 治理门槛 AUC 波动上限 (default: 0.08)
+  --max-train-test-auc-gap <float>   R2 治理门槛 train-test AUC gap 上限 (default: 0.10)
+  --max-random-label-auc <float>     R2 治理门槛 随机标签对照 AUC 上限 (default: 0.55)
+  --random-label-iterations <int>    随机标签对照迭代数 (default: 80)
+  --disable-random-label-control <true|false>
+                                      是否关闭随机标签对照门禁 (default: false)
   --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
   --max-model-versions <int>         模型历史保留数 (default: 20)
   --activate-on-pass <true|false>    门槛通过后是否激活 (default: true)
@@ -212,6 +223,16 @@ while [[ $# -gt 0 ]]; do
       MIN_SPLIT_TRAINED_COUNT="$2"; shift 2;;
     --min-split-trained-ratio)
       MIN_SPLIT_TRAINED_RATIO="$2"; shift 2;;
+    --max-auc-stdev)
+      MAX_AUC_STDEV="$2"; shift 2;;
+    --max-train-test-auc-gap)
+      MAX_TRAIN_TEST_AUC_GAP="$2"; shift 2;;
+    --max-random-label-auc)
+      MAX_RANDOM_LABEL_AUC="$2"; shift 2;;
+    --random-label-iterations)
+      RANDOM_LABEL_ITERATIONS="$2"; shift 2;;
+    --disable-random-label-control)
+      DISABLE_RANDOM_LABEL_CONTROL="$2"; shift 2;;
     --fail-on-governance)
       FAIL_ON_GOVERNANCE="$2"; shift 2;;
     --max-model-versions)
@@ -523,7 +544,14 @@ run_integrator() {
     --min_delta_auc_vs_baseline="${MIN_DELTA_AUC_VS_BASELINE}"
     --min_split_trained_count="${MIN_SPLIT_TRAINED_COUNT}"
     --min_split_trained_ratio="${MIN_SPLIT_TRAINED_RATIO}"
+    --max_auc_stdev="${MAX_AUC_STDEV}"
+    --max_train_test_auc_gap="${MAX_TRAIN_TEST_AUC_GAP}"
+    --max_random_label_auc="${MAX_RANDOM_LABEL_AUC}"
+    --random_label_iterations="${RANDOM_LABEL_ITERATIONS}"
   )
+  if [[ "${DISABLE_RANDOM_LABEL_CONTROL}" == "true" ]]; then
+    INTEGRATOR_ARGS+=(--disable_random_label_control)
+  fi
   if [[ "${FAIL_ON_GOVERNANCE}" == "true" ]]; then
     INTEGRATOR_ARGS+=(--fail_on_governance)
   fi

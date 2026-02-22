@@ -525,6 +525,9 @@ def evaluate_governance(
     delta_auc = metrics_oos.get("delta_auc_vs_baseline", float("nan"))
     split_trained_count = metrics_oos.get("split_trained_count", float("nan"))
     split_trained_ratio = metrics_oos.get("split_trained_ratio", float("nan"))
+    split_trained_count_int = (
+        int(round(split_trained_count)) if math.isfinite(split_trained_count) else 0
+    )
     auc_stdev = metrics_oos.get("auc_stdev", float("nan"))
     train_test_auc_gap_mean = metrics_oos.get("train_test_auc_gap_mean", float("nan"))
     random_label_auc = metrics_oos.get("random_label_auc", float("nan"))
@@ -560,10 +563,14 @@ def evaluate_governance(
             f"{split_trained_ratio:.6f} < min_split_trained_ratio={min_split_trained_ratio:.6f}"
         )
 
-    if math.isfinite(auc_stdev) and auc_stdev > max_auc_stdev:
+    if split_trained_count_int >= 2 and not math.isfinite(auc_stdev):
+        fail_reasons.append("缺少或无效 metrics_oos.auc_stdev")
+    elif math.isfinite(auc_stdev) and auc_stdev > max_auc_stdev:
         fail_reasons.append(f"auc_stdev={auc_stdev:.6f} > max_auc_stdev={max_auc_stdev:.6f}")
 
-    if math.isfinite(train_test_auc_gap_mean) and train_test_auc_gap_mean > max_train_test_auc_gap:
+    if split_trained_count_int >= 1 and not math.isfinite(train_test_auc_gap_mean):
+        fail_reasons.append("缺少或无效 metrics_oos.train_test_auc_gap_mean")
+    elif math.isfinite(train_test_auc_gap_mean) and train_test_auc_gap_mean > max_train_test_auc_gap:
         fail_reasons.append(
             "train_test_auc_gap_mean="
             f"{train_test_auc_gap_mean:.6f} > max_train_test_auc_gap={max_train_test_auc_gap:.6f}"
