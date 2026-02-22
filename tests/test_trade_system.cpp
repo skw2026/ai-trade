@@ -875,7 +875,10 @@ int main() {
     if (!NearlyEqual(std::fabs(held_signal.suggested_notional_usd),
                      base_abs_notional,
                      1e-6)) {
-      std::cerr << "VolTarget 小幅抖动应保持上次目标名义值\n";
+      std::cerr << "VolTarget 小幅抖动应保持上次目标名义值, base="
+                << base_abs_notional
+                << ", held=" << std::fabs(held_signal.suggested_notional_usd)
+                << "\n";
       return 1;
     }
 
@@ -887,6 +890,46 @@ int main() {
                     base_abs_notional,
                     1e-6)) {
       std::cerr << "VolTarget 大幅变化时应更新目标名义值\n";
+      return 1;
+    }
+  }
+
+  {
+    // 防御分支（rank独立信号）：启用 defensive_rank_lookback_ticks 后，
+    // 应可在超买段触发反向 defensive 分量，且不依赖 slow EMA 偏离。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .defensive_notional_ratio = 1.0,
+        .defensive_entry_score = 1.2,
+        .defensive_rank_lookback_ticks = 8,
+        .defensive_trend_scale = 1.0,
+        .defensive_range_scale = 1.0,
+        .defensive_extreme_scale = 1.0,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kRange;
+    regime.warmup = false;
+    regime.volatility_level = 0.001;
+
+    for (int i = 0; i < 20; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          700 + i, "BTCUSDT", 100.0 + static_cast<double>(i), 100.0 + static_cast<double>(i)},
+                        dummy_account,
+                        regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        900, "BTCUSDT", 121.0, 121.0}, dummy_account, regime);
+    const bool has_rank_reason = std::find(signal.reason_codes.begin(),
+                                           signal.reason_codes.end(),
+                                           "STR_DEFENSIVE_RANK_TRIGGER") !=
+                                 signal.reason_codes.end();
+    if (signal.defensive_notional_usd >= 0.0 || !has_rank_reason) {
+      std::cerr << "defensive_rank 信号应触发反向防御分量并输出 rank reason\n";
       return 1;
     }
   }
@@ -994,18 +1037,18 @@ int main() {
 
   {
     // VolTarget 年化因子应基于实际 tick 间隔动态计算，间隔变长时允许更高目标仓位。
-    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
-        .signal_notional_usd = 1000.0,
-        .signal_deadband_abs = 0.0,
-        .default_tick_interval_ms = 5000,
-        .trend_ema_fast = 1,
-        .trend_ema_slow = 2,
-        .vol_target_pct = 0.35,
-        .vol_target_max_leverage = 3.0,
-        .vol_target_rebalance_min_abs_usd = 0.0,
-        .vol_target_rebalance_min_ratio = 0.0,
-        .defensive_notional_ratio = 0.0,
-    });
+    ai_trade::StrategyConfig strategy_config;
+    strategy_config.signal_notional_usd = 1000.0;
+    strategy_config.signal_deadband_abs = 0.0;
+    strategy_config.default_tick_interval_ms = 5000;
+    strategy_config.trend_ema_fast = 1;
+    strategy_config.trend_ema_slow = 2;
+    strategy_config.vol_target_pct = 0.35;
+    strategy_config.vol_target_max_leverage = 3.0;
+    strategy_config.vol_target_rebalance_min_abs_usd = 0.0;
+    strategy_config.vol_target_rebalance_min_ratio = 0.0;
+    strategy_config.defensive_notional_ratio = 0.0;
+    ai_trade::StrategyEngine strategy(strategy_config);
     ai_trade::AccountState dummy_account;
     ai_trade::RegimeState regime;
     regime.bucket = ai_trade::RegimeBucket::kTrend;
@@ -1693,7 +1736,7 @@ int main() {
   }
 
   {
-    // 自进化控制器：窗口按 bucket 归因，评估应选择样本 tick 数最多的 bucket。
+    // 自进化控制器：窗口评估优先使用当前 active bucket，避免跨 bucket 污染。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
     config.update_interval_ticks = 3;
@@ -1701,7 +1744,7 @@ int main() {
     config.max_single_strategy_weight = 0.60;
     config.max_weight_step = 0.05;
     config.min_abs_window_pnl_usd = 1.0;
-    config.min_bucket_ticks_for_update = 2;
+    config.min_bucket_ticks_for_update = 1;
     config.rollback_degrade_windows = 2;
     config.rollback_degrade_threshold_score = 0.0;
     config.rollback_cooldown_ticks = 5;
@@ -1717,7 +1760,7 @@ int main() {
       return 1;
     }
 
-    // trend 桶 2 tick: +30；range 桶 1 tick: -15 => 应选择 trend 桶评估。
+    // trend 桶 2 tick: +30；range 桶 1 tick: -15，评估点在 range 桶，应优先归因 range。
     if (controller.OnTick(1, 10010.0, ai_trade::RegimeBucket::kTrend).has_value()) {
       std::cerr << "未到更新周期前不应返回自进化动作\n";
       return 1;
@@ -1730,9 +1773,9 @@ int main() {
         3, 10015.0, ai_trade::RegimeBucket::kRange);
     if (!action.has_value() ||
         action->type != ai_trade::SelfEvolutionActionType::kUpdated ||
-        action->regime_bucket != ai_trade::RegimeBucket::kTrend ||
-        action->window_bucket_ticks != 2 ||
-        !NearlyEqual(action->window_pnl_usd, 30.0, 1e-9)) {
+        action->regime_bucket != ai_trade::RegimeBucket::kRange ||
+        action->window_bucket_ticks != 1 ||
+        !NearlyEqual(action->window_pnl_usd, -15.0, 1e-9)) {
       std::cerr << "自进化 bucket 归因行为不符合预期\n";
       return 1;
     }
@@ -2807,6 +2850,7 @@ int main() {
         << "  vol_target_rebalance_min_ratio: 0.03\n"
         << "  defensive_notional_ratio: 0.4\n"
         << "  defensive_entry_score: 1.1\n"
+        << "  defensive_rank_lookback_ticks: 64\n"
         << "  defensive_trend_scale: 0.3\n"
         << "  defensive_range_scale: 0.9\n"
         << "  defensive_extreme_scale: 0.5\n"
@@ -2883,6 +2927,7 @@ int main() {
         << "  ewma_alpha: 0.18\n"
         << "  switch_confirm_ticks: 6\n"
         << "  extreme_requires_both: true\n"
+        << "  volume_extreme_multiplier: 5.5\n"
         << "  trend_threshold: 0.0015\n"
         << "  extreme_threshold: 0.006\n"
         << "  volatility_threshold: 0.003\n";
@@ -2952,6 +2997,7 @@ int main() {
         !NearlyEqual(config.strategy_vol_target_rebalance_min_ratio, 0.03) ||
         !NearlyEqual(config.strategy_defensive_notional_ratio, 0.4) ||
         !NearlyEqual(config.strategy_defensive_entry_score, 1.1) ||
+        config.strategy_defensive_rank_lookback_ticks != 64 ||
         !NearlyEqual(config.strategy_defensive_trend_scale, 0.3) ||
         !NearlyEqual(config.strategy_defensive_range_scale, 0.9) ||
         !NearlyEqual(config.strategy_defensive_extreme_scale, 0.5) ||
@@ -3096,6 +3142,7 @@ int main() {
         !NearlyEqual(config.regime.ewma_alpha, 0.18) ||
         config.regime.switch_confirm_ticks != 6 ||
         config.regime.extreme_requires_both != true ||
+        !NearlyEqual(config.regime.volume_extreme_multiplier, 5.5) ||
         !NearlyEqual(config.regime.trend_threshold, 0.0015) ||
         !NearlyEqual(config.regime.extreme_threshold, 0.006) ||
         !NearlyEqual(config.regime.volatility_threshold, 0.003)) {
@@ -3888,6 +3935,52 @@ int main() {
     }
     if (error.find("regime.switch_confirm_ticks") == std::string::npos) {
       std::cerr << "非法 regime.switch_confirm_ticks 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_regime_volume_extreme_multiplier.yaml";
+    std::ofstream out(temp_path);
+    out << "regime:\n"
+        << "  volume_extreme_multiplier: 1.0\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 regime.volume_extreme_multiplier 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("regime.volume_extreme_multiplier") == std::string::npos) {
+      std::cerr << "非法 regime.volume_extreme_multiplier 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_defensive_rank_lookback.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  defensive_rank_lookback_ticks: -8\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 strategy.defensive_rank_lookback_ticks 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.defensive_rank_lookback_ticks") ==
+        std::string::npos) {
+      std::cerr
+          << "非法 strategy.defensive_rank_lookback_ticks 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -4885,7 +4978,13 @@ int main() {
         {ScriptedWsAction::kText, R"({"op":"subscribe","success":true})", ""},
         {ScriptedWsAction::kText, "{", ""},
         {ScriptedWsAction::kText,
-         R"({"topic":"tickers.BTCUSDT","type":"snapshot","data":{"symbol":"BTCUSDT","lastPrice":"123.4","markPrice":"123.5"}})",
+         R"({"ts":1700000000100,"topic":"tickers.BTCUSDT","type":"snapshot","data":{"symbol":"BTCUSDT","lastPrice":"123.4","markPrice":"123.5","volume24h":"1000","fundingRate":"0.0004"}})",
+         ""},
+        {ScriptedWsAction::kText,
+         R"({"ts":1700000000300,"topic":"tickers.BTCUSDT","type":"delta","data":{"symbol":"BTCUSDT","lastPrice":"123.6","markPrice":"123.7","volume24h":"1002","fundingRate":"0.0004"}})",
+         ""},
+        {ScriptedWsAction::kText,
+         R"({"ts":1700000000500,"topic":"tickers.BTCUSDT","type":"delta","data":{"symbol":"BTCUSDT","lastPrice":"123.5","markPrice":"123.6","volume24h":"999","fundingRate":"0.0004"}})",
          ""},
     };
     ai_trade::BybitPublicStream stream(
@@ -4907,8 +5006,38 @@ int main() {
       return 1;
     }
     if (event.symbol != "BTCUSDT" || !NearlyEqual(event.price, 123.4) ||
-        !NearlyEqual(event.mark_price, 123.5)) {
+        !NearlyEqual(event.mark_price, 123.5) || event.ts_ms != 1700000000100LL ||
+        !NearlyEqual(event.volume, 0.0) || event.interval_ms != 0 ||
+        std::isfinite(event.funding_rate_per_interval)) {
       std::cerr << "public ws ticker 解析结果不符合预期\n";
+      return 1;
+    }
+    if (!stream.PollTicker(&event)) {
+      std::cerr << "第二条 ticker 消息应产出行情\n";
+      return 1;
+    }
+    if (!NearlyEqual(event.price, 123.6) || !NearlyEqual(event.mark_price, 123.7) ||
+        event.interval_ms != 200 || !NearlyEqual(event.volume, 2.0)) {
+      std::cerr << "public ws ticker interval/volume 语义不符合预期\n";
+      return 1;
+    }
+    constexpr double kExpectedFundingPerInterval =
+        0.0004 * (200.0 / (8.0 * 60.0 * 60.0 * 1000.0));
+    if (!NearlyEqual(event.funding_rate_per_interval, kExpectedFundingPerInterval,
+                     1e-12)) {
+      std::cerr << "public ws ticker funding_rate_per_interval 语义不符合预期\n";
+      return 1;
+    }
+    if (!stream.PollTicker(&event)) {
+      std::cerr << "第三条 ticker 消息应产出行情\n";
+      return 1;
+    }
+    constexpr double kExpectedRollingFallbackVolume =
+        999.0 * (200.0 / (24.0 * 60.0 * 60.0 * 1000.0));
+    if (!NearlyEqual(event.price, 123.5) || !NearlyEqual(event.mark_price, 123.6) ||
+        event.interval_ms != 200 ||
+        !NearlyEqual(event.volume, kExpectedRollingFallbackVolume, 1e-12)) {
+      std::cerr << "public ws ticker rolling volume 回退语义不符合预期\n";
       return 1;
     }
   }
@@ -5264,7 +5393,7 @@ int main() {
         "/v5/market/tickers",
         ai_trade::BybitHttpResponse{
             .status_code = 200,
-            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","lastPrice":"101.2","markPrice":"101.3"}]}})",
+            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","lastPrice":"101.2","markPrice":"101.3","volume24h":"888","time":"1700000001000"}]}})",
             .error = "",
         });
 
@@ -5301,8 +5430,13 @@ int main() {
       return 1;
     }
     if (event.symbol != "BTCUSDT" || !NearlyEqual(event.price, 101.2) ||
-        !NearlyEqual(event.mark_price, 101.3)) {
-      std::cerr << "public ws 回退 REST 行情解析不符合预期\n";
+        !NearlyEqual(event.mark_price, 101.3) || event.ts_ms != 1700000001000LL ||
+        !NearlyEqual(event.volume, 0.0)) {
+      std::cerr << "public ws 回退 REST 行情解析不符合预期: symbol="
+                << event.symbol << ", price=" << event.price
+                << ", mark=" << event.mark_price << ", ts=" << event.ts_ms
+                << ", volume=" << event.volume << ", interval=" << event.interval_ms
+                << "\n";
       return 1;
     }
     if (!adapter.TradeOk()) {
@@ -5845,6 +5979,51 @@ int main() {
   }
 
   {
+    ai_trade::RegimeConfig config;
+    config.enabled = true;
+    config.warmup_ticks = 3;
+    config.ewma_alpha = 0.2;
+    config.switch_confirm_ticks = 1;
+    config.trend_threshold = 0.10;
+    config.extreme_threshold = 0.20;
+    config.volatility_threshold = 0.20;
+    config.extreme_requires_both = true;
+    config.volume_extreme_multiplier = 4.0;
+
+    ai_trade::RegimeEngine engine(config);
+    ai_trade::MarketEvent event;
+    event.symbol = "BTCUSDT";
+    event.price = 100.0;
+    event.volume = 100.0;
+    (void)engine.OnMarket(event);  // warmup #1
+
+    event.price = 100.01;
+    event.volume = 100.0;
+    const auto warmup_2 = engine.OnMarket(event);  // warmup #2
+    if (!warmup_2.warmup) {
+      std::cerr << "volume extreme 测试中 warmup #2 应仍处于预热\n";
+      return 1;
+    }
+
+    event.price = 100.02;
+    event.volume = 100.0;
+    const auto baseline = engine.OnMarket(event);  // warmup 结束
+    if (baseline.regime == ai_trade::Regime::kExtreme) {
+      std::cerr << "volume extreme 基准样本不应触发 EXTREME\n";
+      return 1;
+    }
+
+    event.price = 100.03;
+    event.volume = 1000.0;
+    const auto volume_spike = engine.OnMarket(event);
+    if (volume_spike.regime != ai_trade::Regime::kExtreme ||
+        volume_spike.bucket != ai_trade::RegimeBucket::kExtreme) {
+      std::cerr << "volume_extreme_multiplier 命中时应触发 EXTREME\n";
+      return 1;
+    }
+  }
+
+  {
     const std::filesystem::path cfg_path =
         std::filesystem::temp_directory_path() / "ai_trade_test_regime_valid.yaml";
     std::ofstream out(cfg_path);
@@ -5854,6 +6033,7 @@ int main() {
         << "  ewma_alpha: 0.25\n"
         << "  switch_confirm_ticks: 4\n"
         << "  extreme_requires_both: true\n"
+        << "  volume_extreme_multiplier: 5.0\n"
         << "  trend_threshold: 0.0012\n"
         << "  extreme_threshold: 0.006\n"
         << "  volatility_threshold: 0.0025\n";
@@ -5869,6 +6049,7 @@ int main() {
         !NearlyEqual(config.regime.ewma_alpha, 0.25) ||
         config.regime.switch_confirm_ticks != 4 ||
         config.regime.extreme_requires_both != true ||
+        !NearlyEqual(config.regime.volume_extreme_multiplier, 5.0) ||
         !NearlyEqual(config.regime.trend_threshold, 0.0012) ||
         !NearlyEqual(config.regime.extreme_threshold, 0.006) ||
         !NearlyEqual(config.regime.volatility_threshold, 0.0025)) {
@@ -6182,6 +6363,64 @@ int main() {
       }
     }
 
+    std::filesystem::remove(report_path);
+  }
+
+  {
+    // Integrator 报告声明未知经典特征时应初始化失败，避免静默退化为常数特征。
+    const std::filesystem::path report_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_integrator_report_unknown_feature.json";
+    std::ofstream out(report_path);
+    if (!out.is_open()) {
+      std::cerr << "无法写入 integrator unknown feature 报告\n";
+      return 1;
+    }
+    out << "{\n"
+        << "  \"model_version\": \"integrator_cb_v1_test\",\n"
+        << "  \"feature_names\": [\"ret_1\", \"unknown_feature_x\"],\n"
+        << "  \"metrics_oos\": {\n"
+        << "    \"auc_mean\": 0.62,\n"
+        << "    \"delta_auc_vs_baseline\": 0.03,\n"
+        << "    \"split_trained_count\": 5,\n"
+        << "    \"split_count\": 5\n"
+        << "  }\n"
+        << "}\n";
+    out.close();
+
+    ai_trade::IntegratorConfig integrator;
+    integrator.enabled = true;
+    integrator.mode = ai_trade::IntegratorMode::kShadow;
+    integrator.shadow.enabled = true;
+    integrator.shadow.model_report_path = report_path.string();
+    integrator.shadow.model_path =
+        (std::filesystem::temp_directory_path() /
+         "ai_trade_test_integrator_model_missing_unknown_feature.cbm")
+            .string();
+    integrator.shadow.active_meta_path.clear();
+    integrator.shadow.require_model_file = false;
+    integrator.shadow.require_active_meta = false;
+    integrator.shadow.require_gate_pass = false;
+
+    ai_trade::RegimeConfig regime_config;
+    regime_config.enabled = false;
+    ai_trade::TradeSystem system(/*risk_cap_usd=*/3000.0,
+                                 /*max_order_notional_usd=*/1000.0,
+                                 ai_trade::RiskThresholds{},
+                                 ai_trade::StrategyConfig{},
+                                 /*min_rebalance_notional_usd=*/0.0,
+                                 regime_config,
+                                 integrator);
+    std::string init_error;
+    if (system.InitializeIntegratorShadow(&init_error)) {
+      std::cerr << "包含未知特征名的 Integrator 报告应初始化失败\n";
+      return 1;
+    }
+    if (init_error.find("不受支持") == std::string::npos &&
+        init_error.find("缺失") == std::string::npos) {
+      std::cerr << "未知特征初始化失败错误信息不符合预期: " << init_error << "\n";
+      return 1;
+    }
     std::filesystem::remove(report_path);
   }
 

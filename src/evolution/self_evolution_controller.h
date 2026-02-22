@@ -116,7 +116,8 @@ class SelfEvolutionController {
                                             bool entry_filtered_by_cost = false,
                                             int fill_count = 0,
                                             double account_equity_usd = 0.0,
-                                            double observed_turnover_cost_bps = 0.0);
+                                            double observed_turnover_cost_bps = 0.0,
+                                            double observed_funding_rate_per_tick = 0.0);
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
@@ -193,7 +194,8 @@ class SelfEvolutionController {
   double ObjectiveThreshold() const {
     return config_.rollback_degrade_threshold_score;
   }
-  void ResetWindowAttribution();
+  void ResetWindowAttribution(std::optional<std::size_t> bucket_index =
+                                  std::nullopt);
   bool ValidateWeights(double trend_weight,
                        double defensive_weight,
                        std::string* out_error) const;
@@ -208,9 +210,19 @@ class SelfEvolutionController {
   std::array<BucketRuntime, 3> bucket_runtime_{};
   std::array<double, 3> bucket_window_realized_pnl_usd_{};
   std::array<double, 3> bucket_window_virtual_pnl_usd_{};
+  std::array<double, 3> bucket_window_virtual_pnl_train_usd_{};
+  std::array<double, 3> bucket_window_virtual_pnl_holdout_usd_{};
+  std::array<int, 3> bucket_window_virtual_pnl_train_samples_{};
+  std::array<int, 3> bucket_window_virtual_pnl_holdout_samples_{};
   std::array<std::vector<double>, 3> bucket_window_virtual_pnl_by_candidate_{};
+  std::array<std::vector<double>, 3>
+      bucket_window_virtual_pnl_by_candidate_train_{};
+  std::array<std::vector<double>, 3>
+      bucket_window_virtual_pnl_by_candidate_holdout_{};
   std::array<std::vector<SampleAccumulator>, 3>
       bucket_window_counterfactual_diff_stats_by_candidate_{};
+  std::array<std::vector<SampleAccumulator>, 3>
+      bucket_window_counterfactual_holdout_diff_stats_by_candidate_{};
   std::array<CorrelationAccumulator, 3> bucket_window_trend_factor_ic_{};
   std::array<CorrelationAccumulator, 3> bucket_window_defensive_factor_ic_{};
   std::array<SampleAccumulator, 3> bucket_window_learnability_stats_{};

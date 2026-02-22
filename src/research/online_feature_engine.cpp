@@ -352,9 +352,8 @@ OnlineFeatureEngine::OnlineFeatureEngine(size_t window_size)
 }
 
 void OnlineFeatureEngine::OnMarket(const MarketEvent& event) {
-  // 注意：MarketEvent 目前仅包含 price/mark_price。
-  // 为了支持 Miner 的 OHLCV 因子，我们暂时将 price 映射到 OHLC，volume 设为 0。
-  // 生产环境应通过 BarAggregator 或扩展 MarketEvent 来提供真实的 OHLCV。
+  // MarketEvent 是逐 tick 事件，当前将 price 映射到 OHLC。
+  // volume 约定为“事件间隔内增量成交量”，由上游适配器统一转换。
   series_.at("open").Add(event.price);
   series_.at("high").Add(event.price);
   series_.at("low").Add(event.price);

@@ -26,6 +26,15 @@ TRAIN = load_module("integrator_train")
 
 @unittest.skipIf(TRAIN.np is None, "numpy is required")
 class IntegratorTrainTest(unittest.TestCase):
+    def test_ts_rank_matches_online_feature_engine_semantics(self):
+        values = TRAIN.np.asarray([1.0, 2.0, 3.0, 4.0, 5.0], dtype=TRAIN.np.float64)
+        rank = TRAIN.ts_rank(values, window=5)
+        self.assertAlmostEqual(float(rank[-1]), 0.9, places=12)
+
+        flat = TRAIN.np.asarray([7.0, 7.0, 7.0, 7.0, 7.0], dtype=TRAIN.np.float64)
+        flat_rank = TRAIN.ts_rank(flat, window=5)
+        self.assertAlmostEqual(float(flat_rank[-1]), 0.5, places=12)
+
     def test_build_label_uses_t_plus_1_base(self):
         close = TRAIN.np.asarray([100.0, 101.0, 102.0, 103.0, 104.0], dtype=TRAIN.np.float64)
         label, forward = TRAIN.build_label(close, horizon=2)

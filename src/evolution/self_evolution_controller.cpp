@@ -137,7 +137,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     bool entry_filtered_by_cost,
     int fill_count,
     double account_equity_usd,
-    double observed_turnover_cost_bps) {
+    double observed_turnover_cost_bps,
+    double observed_funding_rate_per_tick) {
   if (!config_.enabled || !initialized_) {
     return std::nullopt;
   }
@@ -195,7 +196,11 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     effective_turnover_cost_bps *= dynamic_multiplier;
   }
   const double turnover_cost_rate = effective_turnover_cost_bps / 10000.0;
-  const double funding_rate_per_tick = config_.virtual_funding_rate_per_tick;
+  double funding_rate_per_tick = config_.virtual_funding_rate_per_tick;
+  if (std::isfinite(observed_funding_rate_per_tick)) {
+    funding_rate_per_tick =
+        std::clamp(observed_funding_rate_per_tick, -0.01, 0.01);
+  }
   const bool has_current_signal_state = !signal_symbol.empty() &&
                                         std::isfinite(mark_price_usd) &&
                                         mark_price_usd > 0.0;
@@ -204,6 +209,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     if (signal_state.has_state && signal_state.mark_price_usd > 0.0) {
       const double forward_return = mark_price_usd / signal_state.mark_price_usd - 1.0;
       const BucketRuntime& runtime = bucket_runtime_[active_index];
+      // 反事实过拟合抑制：按 tick 奇偶交织切分 train/holdout（约 50/50）。
+      const bool holdout_sample = (bucket_window_ticks_[active_index] % 2 == 0);
       const double prev_blended_notional =
           BlendNotional(signal_state.trend_notional_usd,
                         signal_state.defensive_notional_usd,
@@ -221,6 +228,13 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           prev_blended_notional * forward_return + funding_pnl -
           std::fabs(curr_blended_notional - prev_blended_notional) *
               turnover_cost_rate;
+      if (holdout_sample) {
+        bucket_window_virtual_pnl_holdout_usd_[active_index] += tick_virtual_pnl;
+        ++bucket_window_virtual_pnl_holdout_samples_[active_index];
+      } else {
+        bucket_window_virtual_pnl_train_usd_[active_index] += tick_virtual_pnl;
+        ++bucket_window_virtual_pnl_train_samples_[active_index];
+      }
       if (config_.use_virtual_pnl) {
         auto& learnability_stats = bucket_window_learnability_stats_[active_index];
         learnability_stats.sum += tick_virtual_pnl;
@@ -256,11 +270,33 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
             counterfactual_trend_weight_grid_.size()) {
           bucket_counterfactual.assign(counterfactual_trend_weight_grid_.size(), 0.0);
         }
+        auto& bucket_counterfactual_train =
+            bucket_window_virtual_pnl_by_candidate_train_[active_index];
+        if (bucket_counterfactual_train.size() !=
+            counterfactual_trend_weight_grid_.size()) {
+          bucket_counterfactual_train.assign(
+              counterfactual_trend_weight_grid_.size(), 0.0);
+        }
+        auto& bucket_counterfactual_holdout =
+            bucket_window_virtual_pnl_by_candidate_holdout_[active_index];
+        if (bucket_counterfactual_holdout.size() !=
+            counterfactual_trend_weight_grid_.size()) {
+          bucket_counterfactual_holdout.assign(
+              counterfactual_trend_weight_grid_.size(), 0.0);
+        }
         auto& bucket_counterfactual_diff_stats =
             bucket_window_counterfactual_diff_stats_by_candidate_[active_index];
         if (bucket_counterfactual_diff_stats.size() !=
             counterfactual_trend_weight_grid_.size()) {
           bucket_counterfactual_diff_stats.assign(
+              counterfactual_trend_weight_grid_.size(),
+              SampleAccumulator{});
+        }
+        auto& bucket_counterfactual_holdout_diff_stats =
+            bucket_window_counterfactual_holdout_diff_stats_by_candidate_[active_index];
+        if (bucket_counterfactual_holdout_diff_stats.size() !=
+            counterfactual_trend_weight_grid_.size()) {
+          bucket_counterfactual_holdout_diff_stats.assign(
               counterfactual_trend_weight_grid_.size(),
               SampleAccumulator{});
         }
@@ -283,12 +319,23 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
               std::fabs(curr_counterfactual_notional - prev_counterfactual_notional) *
                   turnover_cost_rate;
           bucket_counterfactual[i] += counterfactual_tick_virtual_pnl;
+          if (holdout_sample) {
+            bucket_counterfactual_holdout[i] += counterfactual_tick_virtual_pnl;
+          } else {
+            bucket_counterfactual_train[i] += counterfactual_tick_virtual_pnl;
+          }
           auto& diff_stats = bucket_counterfactual_diff_stats[i];
           const double diff_vs_current =
               counterfactual_tick_virtual_pnl - tick_virtual_pnl;
           diff_stats.sum += diff_vs_current;
           diff_stats.sum_sq += diff_vs_current * diff_vs_current;
           ++diff_stats.samples;
+          if (holdout_sample) {
+            auto& holdout_diff_stats = bucket_counterfactual_holdout_diff_stats[i];
+            holdout_diff_stats.sum += diff_vs_current;
+            holdout_diff_stats.sum_sq += diff_vs_current * diff_vs_current;
+            ++holdout_diff_stats.samples;
+          }
         }
       }
     }
@@ -396,6 +443,10 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   action.degrade_windows = degrade_window_count(eval_bucket);
   std::optional<EvolutionWeights> best_counterfactual_candidate;
   bool counterfactual_improves = false;
+  const bool use_counterfactual_holdout =
+      action.used_counterfactual_search &&
+      bucket_window_virtual_pnl_train_samples_[eval_index] >= 10 &&
+      bucket_window_virtual_pnl_holdout_samples_[eval_index] >= 10;
   if (action.used_counterfactual_search) {
     const double required_by_ratio =
         std::max(0.0, config_.counterfactual_min_improvement_ratio_of_equity) *
@@ -412,28 +463,64 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       action.counterfactual_required_improvement_usd =
           std::max(0.0, relaxed_threshold);
     }
-    double best_virtual_pnl_usd = window_virtual_pnl_usd;
-    std::size_t best_index = 0;
-    best_counterfactual_candidate =
-        BestCounterfactualWeights(
-            eval_index, &best_virtual_pnl_usd, &best_index);
-    action.counterfactual_best_virtual_pnl_usd = best_virtual_pnl_usd;
-    if (best_counterfactual_candidate.has_value()) {
+    const auto& candidate_scores = use_counterfactual_holdout
+                                       ? bucket_window_virtual_pnl_by_candidate_train_[eval_index]
+                                       : bucket_window_virtual_pnl_by_candidate_[eval_index];
+    if (!candidate_scores.empty() &&
+        candidate_scores.size() == counterfactual_trend_weight_grid_.size()) {
+      std::size_t best_index = 0;
+      double best_score = candidate_scores[0];
+      for (std::size_t i = 1; i < candidate_scores.size(); ++i) {
+        if (candidate_scores[i] > best_score) {
+          best_score = candidate_scores[i];
+          best_index = i;
+        }
+      }
+      const double best_trend_weight = counterfactual_trend_weight_grid_[best_index];
+      best_counterfactual_candidate = EvolutionWeights{
+          best_trend_weight,
+          1.0 - best_trend_weight,
+      };
       action.counterfactual_best_trend_weight =
           best_counterfactual_candidate->trend_weight;
       action.counterfactual_best_defensive_weight =
           best_counterfactual_candidate->defensive_weight;
-      counterfactual_improves =
-          best_virtual_pnl_usd >
-          window_virtual_pnl_usd + action.counterfactual_required_improvement_usd;
-      if (eval_index < bucket_window_counterfactual_diff_stats_by_candidate_.size()) {
-        const auto& bucket_diff_stats =
-            bucket_window_counterfactual_diff_stats_by_candidate_[eval_index];
-        if (best_index < bucket_diff_stats.size()) {
-          const auto& diff_stats = bucket_diff_stats[best_index];
-          action.counterfactual_superiority_t_stat =
-              TStatFromAccumulator(diff_stats);
-          action.counterfactual_superiority_samples = diff_stats.samples;
+      if (use_counterfactual_holdout) {
+        const auto& holdout_scores =
+            bucket_window_virtual_pnl_by_candidate_holdout_[eval_index];
+        const double holdout_current_pnl =
+            bucket_window_virtual_pnl_holdout_usd_[eval_index];
+        const double holdout_best_pnl =
+            (best_index < holdout_scores.size()) ? holdout_scores[best_index] : 0.0;
+        action.counterfactual_best_virtual_pnl_usd = holdout_best_pnl;
+        counterfactual_improves =
+            holdout_best_pnl >
+            holdout_current_pnl + action.counterfactual_required_improvement_usd;
+        if (eval_index <
+            bucket_window_counterfactual_holdout_diff_stats_by_candidate_.size()) {
+          const auto& holdout_diff_stats =
+              bucket_window_counterfactual_holdout_diff_stats_by_candidate_[eval_index];
+          if (best_index < holdout_diff_stats.size()) {
+            const auto& diff_stats = holdout_diff_stats[best_index];
+            action.counterfactual_superiority_t_stat =
+                TStatFromAccumulator(diff_stats);
+            action.counterfactual_superiority_samples = diff_stats.samples;
+          }
+        }
+      } else {
+        action.counterfactual_best_virtual_pnl_usd = best_score;
+        counterfactual_improves =
+            best_score >
+            window_virtual_pnl_usd + action.counterfactual_required_improvement_usd;
+        if (eval_index < bucket_window_counterfactual_diff_stats_by_candidate_.size()) {
+          const auto& bucket_diff_stats =
+              bucket_window_counterfactual_diff_stats_by_candidate_[eval_index];
+          if (best_index < bucket_diff_stats.size()) {
+            const auto& diff_stats = bucket_diff_stats[best_index];
+            action.counterfactual_superiority_t_stat =
+                TStatFromAccumulator(diff_stats);
+            action.counterfactual_superiority_samples = diff_stats.samples;
+          }
         }
       }
     }
@@ -442,14 +529,14 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   if (window_bucket_ticks <= 0) {
     action.type = SelfEvolutionActionType::kSkipped;
     action.reason_code = "EVOLUTION_EMPTY_WINDOW";
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
   if (window_bucket_ticks < config_.min_bucket_ticks_for_update) {
     action.type = SelfEvolutionActionType::kSkipped;
     action.reason_code = "EVOLUTION_BUCKET_TICKS_INSUFFICIENT";
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -459,7 +546,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.cooldown_remaining_ticks =
         static_cast<int>(cooldown_until_tick_ - current_tick);
     action.degrade_windows = degrade_window_count(eval_bucket);
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -474,7 +561,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.type = SelfEvolutionActionType::kSkipped;
     action.reason_code = "EVOLUTION_WINDOW_PNL_TOO_SMALL";
     action.degrade_windows = degrade_window_count(eval_bucket);
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -483,7 +570,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       action.type = SelfEvolutionActionType::kSkipped;
       action.reason_code = "EVOLUTION_LEARNABILITY_INSUFFICIENT_SAMPLES";
       action.degrade_windows = degrade_window_count(eval_bucket);
-      ResetWindowAttribution();
+      ResetWindowAttribution(eval_index);
       return action;
     }
     if (std::fabs(action.learnability_t_stat) <
@@ -491,7 +578,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       action.type = SelfEvolutionActionType::kSkipped;
       action.reason_code = "EVOLUTION_LEARNABILITY_TSTAT_TOO_LOW";
       action.degrade_windows = degrade_window_count(eval_bucket);
-      ResetWindowAttribution();
+      ResetWindowAttribution(eval_index);
       return action;
     }
     action.learnability_gate_passed = true;
@@ -510,28 +597,28 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
         action.type = SelfEvolutionActionType::kSkipped;
         action.reason_code = "EVOLUTION_COUNTERFACTUAL_FILL_COUNT_TOO_LOW";
         action.degrade_windows = degrade_window_count(eval_bucket);
-        ResetWindowAttribution();
+        ResetWindowAttribution(eval_index);
         return action;
       }
     }
     if (!force_factor_ic_candidate &&
         config_.counterfactual_min_t_stat_samples_for_update > 0 &&
-        action.learnability_samples <
+        action.counterfactual_superiority_samples <
             config_.counterfactual_min_t_stat_samples_for_update) {
       action.type = SelfEvolutionActionType::kSkipped;
       action.reason_code = "EVOLUTION_COUNTERFACTUAL_TSTAT_SAMPLES_TOO_LOW";
       action.degrade_windows = degrade_window_count(eval_bucket);
-      ResetWindowAttribution();
+      ResetWindowAttribution(eval_index);
       return action;
     }
     if (!force_factor_ic_candidate &&
         config_.counterfactual_min_t_stat_abs_for_update > 0.0 &&
-        std::fabs(action.learnability_t_stat) <
+        std::fabs(action.counterfactual_superiority_t_stat) <
             config_.counterfactual_min_t_stat_abs_for_update) {
       action.type = SelfEvolutionActionType::kSkipped;
       action.reason_code = "EVOLUTION_COUNTERFACTUAL_TSTAT_TOO_LOW";
       action.degrade_windows = degrade_window_count(eval_bucket);
-      ResetWindowAttribution();
+      ResetWindowAttribution(eval_index);
       return action;
     }
     if (!force_factor_ic_candidate &&
@@ -543,7 +630,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
         action.type = SelfEvolutionActionType::kSkipped;
         action.reason_code = "EVOLUTION_COUNTERFACTUAL_IMPROVEMENT_TOO_SMALL";
         action.degrade_windows = degrade_window_count(eval_bucket);
-        ResetWindowAttribution();
+        ResetWindowAttribution(eval_index);
         return action;
       }
     }
@@ -558,7 +645,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           action.reason_code =
               "EVOLUTION_COUNTERFACTUAL_SUPERIORITY_SAMPLES_TOO_LOW";
           action.degrade_windows = degrade_window_count(eval_bucket);
-          ResetWindowAttribution();
+          ResetWindowAttribution(eval_index);
           return action;
         }
       } else if (action.counterfactual_superiority_t_stat <
@@ -570,7 +657,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           action.type = SelfEvolutionActionType::kSkipped;
           action.reason_code = "EVOLUTION_COUNTERFACTUAL_SUPERIORITY_TSTAT_TOO_LOW";
           action.degrade_windows = degrade_window_count(eval_bucket);
-          ResetWindowAttribution();
+          ResetWindowAttribution(eval_index);
           return action;
         }
       } else {
@@ -606,7 +693,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.direction_consistency_direction = 0;
     action.cooldown_remaining_ticks = config_.rollback_cooldown_ticks;
     action.degrade_windows = 0;
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -636,7 +723,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
           action.factor_ic_samples < config_.factor_ic_min_samples
               ? "EVOLUTION_FACTOR_IC_INSUFFICIENT_SAMPLES"
               : "EVOLUTION_FACTOR_IC_SIGNAL_WEAK";
-      ResetWindowAttribution();
+      ResetWindowAttribution(eval_index);
       return action;
     }
   } else {
@@ -679,7 +766,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     }
     action.direction_consistency_streak = 0;
     action.direction_consistency_direction = 0;
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -693,7 +780,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.reason_code = "EVOLUTION_WEIGHT_DELTA_TOO_SMALL";
     action.direction_consistency_streak = 0;
     action.direction_consistency_direction = 0;
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -711,7 +798,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       runtime.pending_direction_streak < action.direction_consistency_required) {
     action.type = SelfEvolutionActionType::kSkipped;
     action.reason_code = "EVOLUTION_DIRECTION_CONSISTENCY_PENDING";
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -723,7 +810,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.reason_code = "PORT_WEIGHT_INVALID_REJECTED";
     action.direction_consistency_streak = 0;
     action.direction_consistency_direction = 0;
-    ResetWindowAttribution();
+    ResetWindowAttribution(eval_index);
     return action;
   }
 
@@ -749,7 +836,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   }
   action.trend_weight_after = runtime.current_trend_weight;
   action.defensive_weight_after = runtime.current_defensive_weight;
-  ResetWindowAttribution();
+  ResetWindowAttribution(eval_index);
   return action;
 }
 
@@ -760,8 +847,16 @@ int SelfEvolutionController::EffectiveUpdateIntervalTicks() const {
 
 std::size_t SelfEvolutionController::SelectEvalBucket(
     std::size_t preferred_index) const {
-  std::size_t selected = preferred_index;
-  int max_ticks = bucket_window_ticks_[preferred_index];
+  if (preferred_index < bucket_window_ticks_.size() &&
+      bucket_window_ticks_[preferred_index] > 0) {
+    return preferred_index;
+  }
+  std::size_t selected = preferred_index < bucket_window_ticks_.size()
+                             ? preferred_index
+                             : static_cast<std::size_t>(0);
+  int max_ticks = selected < bucket_window_ticks_.size()
+                      ? bucket_window_ticks_[selected]
+                      : 0;
   for (std::size_t i = 0; i < bucket_window_ticks_.size(); ++i) {
     if (bucket_window_ticks_[i] > max_ticks) {
       max_ticks = bucket_window_ticks_[i];
@@ -811,7 +906,17 @@ void SelfEvolutionController::InitializeCounterfactualGrid() {
     for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_) {
       bucket_window.clear();
     }
+    for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_train_) {
+      bucket_window.clear();
+    }
+    for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_holdout_) {
+      bucket_window.clear();
+    }
     for (auto& bucket_stats : bucket_window_counterfactual_diff_stats_by_candidate_) {
+      bucket_stats.clear();
+    }
+    for (auto& bucket_stats :
+         bucket_window_counterfactual_holdout_diff_stats_by_candidate_) {
       bucket_stats.clear();
     }
     return;
@@ -834,7 +939,18 @@ void SelfEvolutionController::InitializeCounterfactualGrid() {
   for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_) {
     bucket_window.assign(counterfactual_trend_weight_grid_.size(), 0.0);
   }
+  for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_train_) {
+    bucket_window.assign(counterfactual_trend_weight_grid_.size(), 0.0);
+  }
+  for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_holdout_) {
+    bucket_window.assign(counterfactual_trend_weight_grid_.size(), 0.0);
+  }
   for (auto& bucket_stats : bucket_window_counterfactual_diff_stats_by_candidate_) {
+    bucket_stats.assign(counterfactual_trend_weight_grid_.size(),
+                        SampleAccumulator{});
+  }
+  for (auto& bucket_stats :
+       bucket_window_counterfactual_holdout_diff_stats_by_candidate_) {
     bucket_stats.assign(counterfactual_trend_weight_grid_.size(),
                         SampleAccumulator{});
   }
@@ -992,29 +1108,57 @@ std::optional<EvolutionWeights> SelfEvolutionController::ProposeFactorIcWeights(
   return EvolutionWeights{trend_weight, 1.0 - trend_weight};
 }
 
-void SelfEvolutionController::ResetWindowAttribution() {
-  bucket_window_realized_pnl_usd_.fill(0.0);
-  bucket_window_virtual_pnl_usd_.fill(0.0);
-  for (auto& bucket_window : bucket_window_virtual_pnl_by_candidate_) {
-    std::fill(bucket_window.begin(), bucket_window.end(), 0.0);
+void SelfEvolutionController::ResetWindowAttribution(
+    std::optional<std::size_t> bucket_index) {
+  auto reset_one = [&](std::size_t index) {
+    if (index >= bucket_window_realized_pnl_usd_.size()) {
+      return;
+    }
+    bucket_window_realized_pnl_usd_[index] = 0.0;
+    bucket_window_virtual_pnl_usd_[index] = 0.0;
+    bucket_window_virtual_pnl_train_usd_[index] = 0.0;
+    bucket_window_virtual_pnl_holdout_usd_[index] = 0.0;
+    bucket_window_virtual_pnl_train_samples_[index] = 0;
+    bucket_window_virtual_pnl_holdout_samples_[index] = 0;
+    if (index < bucket_window_virtual_pnl_by_candidate_.size()) {
+      auto& bucket_window = bucket_window_virtual_pnl_by_candidate_[index];
+      std::fill(bucket_window.begin(), bucket_window.end(), 0.0);
+    }
+    if (index < bucket_window_virtual_pnl_by_candidate_train_.size()) {
+      auto& bucket_window = bucket_window_virtual_pnl_by_candidate_train_[index];
+      std::fill(bucket_window.begin(), bucket_window.end(), 0.0);
+    }
+    if (index < bucket_window_virtual_pnl_by_candidate_holdout_.size()) {
+      auto& bucket_window = bucket_window_virtual_pnl_by_candidate_holdout_[index];
+      std::fill(bucket_window.begin(), bucket_window.end(), 0.0);
+    }
+    if (index < bucket_window_counterfactual_diff_stats_by_candidate_.size()) {
+      auto& bucket_stats = bucket_window_counterfactual_diff_stats_by_candidate_[index];
+      std::fill(bucket_stats.begin(), bucket_stats.end(), SampleAccumulator{});
+    }
+    if (index <
+        bucket_window_counterfactual_holdout_diff_stats_by_candidate_.size()) {
+      auto& bucket_stats =
+          bucket_window_counterfactual_holdout_diff_stats_by_candidate_[index];
+      std::fill(bucket_stats.begin(), bucket_stats.end(), SampleAccumulator{});
+    }
+    bucket_window_trend_factor_ic_[index] = CorrelationAccumulator{};
+    bucket_window_defensive_factor_ic_[index] = CorrelationAccumulator{};
+    bucket_window_learnability_stats_[index] = SampleAccumulator{};
+    bucket_window_fill_count_[index] = 0;
+    bucket_window_cost_filtered_signals_[index] = 0;
+    bucket_window_max_drawdown_pct_[index] = 0.0;
+    bucket_window_notional_churn_usd_[index] = 0.0;
+    bucket_window_ticks_[index] = 0;
+  };
+
+  if (bucket_index.has_value()) {
+    reset_one(*bucket_index);
+    return;
   }
-  for (auto& bucket_stats : bucket_window_counterfactual_diff_stats_by_candidate_) {
-    std::fill(bucket_stats.begin(), bucket_stats.end(), SampleAccumulator{});
+  for (std::size_t i = 0; i < bucket_window_realized_pnl_usd_.size(); ++i) {
+    reset_one(i);
   }
-  for (auto& trend_ic : bucket_window_trend_factor_ic_) {
-    trend_ic = CorrelationAccumulator{};
-  }
-  for (auto& defensive_ic : bucket_window_defensive_factor_ic_) {
-    defensive_ic = CorrelationAccumulator{};
-  }
-  for (auto& learnability_stats : bucket_window_learnability_stats_) {
-    learnability_stats = SampleAccumulator{};
-  }
-  bucket_window_fill_count_.fill(0);
-  bucket_window_cost_filtered_signals_.fill(0);
-  bucket_window_max_drawdown_pct_.fill(0.0);
-  bucket_window_notional_churn_usd_.fill(0.0);
-  bucket_window_ticks_.fill(0);
 }
 
 bool SelfEvolutionController::ValidateWeights(double trend_weight,

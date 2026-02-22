@@ -4,6 +4,7 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core/types.h"
@@ -76,6 +77,10 @@ class BybitPublicStream {
   std::deque<MarketEvent> pending_events_;  ///< 已解析待消费行情队列。
   std::int64_t seq_{0};  ///< 本地生成的行情序号。
   std::int64_t last_ping_ts_ms_{0};  ///< 最近一次发送 ping 的时间戳。
+  std::unordered_map<std::string, std::int64_t>
+      last_event_ts_ms_by_symbol_;  ///< 每个 symbol 最近事件时间（用于 interval）。
+  std::unordered_map<std::string, double>
+      last_volume_24h_by_symbol_;  ///< 每个 symbol 最近 volume24h（用于增量 volume）。
 };
 
 }  // namespace ai_trade

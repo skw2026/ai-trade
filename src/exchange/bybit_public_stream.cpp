@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <deque>
+#include <exception>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <thread>
@@ -58,6 +61,25 @@ std::optional<std::string> JsonStringField(const JsonValue* object,
     return std::nullopt;
   }
   return JsonAsString(field);
+}
+
+std::optional<std::int64_t> JsonInt64Field(const JsonValue* object,
+                                           const std::string& key) {
+  const JsonValue* field = JsonObjectField(object, key);
+  if (field == nullptr) {
+    return std::nullopt;
+  }
+  if (const auto number = JsonAsNumber(field); number.has_value()) {
+    return static_cast<std::int64_t>(*number);
+  }
+  if (const auto text = JsonAsString(field); text.has_value()) {
+    try {
+      return std::stoll(*text);
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
 }
 
 std::string EscapeJson(const std::string& raw) {
@@ -120,6 +142,8 @@ bool BybitPublicStream::Connect(std::string* out_error) {
   last_error_.clear();
   pending_events_.clear();
   seq_ = 0;
+  last_event_ts_ms_by_symbol_.clear();
+  last_volume_24h_by_symbol_.clear();
 
   options_.symbols = NormalizeSymbols(options_.symbols);
 
@@ -335,12 +359,72 @@ bool BybitPublicStream::ParseMessage(const std::string& message) {
     }
     const double mark_price =
         JsonNumberField(item, "markPrice").value_or(last_price);
-    const double volume = JsonNumberField(item, "volume24h").value_or(0.0);
+    const double volume_24h = JsonNumberField(item, "volume24h").value_or(0.0);
+    const double funding_rate_8h =
+        JsonNumberField(item, "fundingRate")
+            .value_or(std::numeric_limits<double>::quiet_NaN());
+
+    std::int64_t event_ts_ms = 0;
+    if (const auto row_ts = JsonInt64Field(item, "ts"); row_ts.has_value()) {
+      event_ts_ms = *row_ts;
+    } else if (const auto root_ts = JsonInt64Field(&root, "ts");
+               root_ts.has_value()) {
+      event_ts_ms = *root_ts;
+    }
+    if (event_ts_ms <= 0) {
+      event_ts_ms = CurrentTimestampMs();
+    }
+    std::int64_t interval_ms = 0;
+    const auto ts_it = last_event_ts_ms_by_symbol_.find(symbol);
+    if (ts_it != last_event_ts_ms_by_symbol_.end() &&
+        event_ts_ms > ts_it->second) {
+      interval_ms = event_ts_ms - ts_it->second;
+    }
+    last_event_ts_ms_by_symbol_[symbol] = event_ts_ms;
+
+    double interval_volume = 0.0;
+    const auto volume_it = last_volume_24h_by_symbol_.find(symbol);
+    if (std::isfinite(volume_24h) && volume_24h >= 0.0) {
+      // volume24h 为滚动 24h 指标，不保证单调递增：
+      // 1) 若单调上升，优先使用差分估算区间成交量；
+      // 2) 若回落或跳变，回退到按 24h 均速折算，避免长时间被错误压成 0。
+      constexpr double kOneDayMs = 24.0 * 60.0 * 60.0 * 1000.0;
+      if (volume_it != last_volume_24h_by_symbol_.end() &&
+          std::isfinite(volume_it->second)) {
+        if (volume_24h >= volume_it->second) {
+          interval_volume = volume_24h - volume_it->second;
+        } else if (interval_ms > 0) {
+          interval_volume =
+              std::max(0.0, volume_24h) *
+              (static_cast<double>(interval_ms) / kOneDayMs);
+        }
+      } else if (interval_ms > 0) {
+        interval_volume =
+            std::max(0.0, volume_24h) *
+            (static_cast<double>(interval_ms) / kOneDayMs);
+      }
+      last_volume_24h_by_symbol_[symbol] = volume_24h;
+    }
 
     ++seq_;
-    // 统一转成内部标准行情事件，交由上游策略/风控复用。
-    pending_events_.push_back(
-        MarketEvent{CurrentTimestampMs(), symbol, last_price, mark_price, volume});
+    double funding_rate_per_interval =
+        std::numeric_limits<double>::quiet_NaN();
+    if (std::isfinite(funding_rate_8h) && interval_ms > 0) {
+      constexpr double kEightHoursMs = 8.0 * 60.0 * 60.0 * 1000.0;
+      funding_rate_per_interval =
+          funding_rate_8h *
+          (static_cast<double>(interval_ms) / kEightHoursMs);
+    }
+    // volume 统一口径为“该事件间隔内的增量成交量”，避免把 24h 累计值喂给在线特征。
+    pending_events_.push_back(MarketEvent{
+        event_ts_ms,
+        symbol,
+        last_price,
+        mark_price,
+        std::max(0.0, interval_volume),
+        interval_ms,
+        funding_rate_per_interval,
+    });
   };
 
   if (data->type == JsonType::kObject) {

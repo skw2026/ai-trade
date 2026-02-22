@@ -74,12 +74,18 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
   SymbolState& state = symbol_states_[event.symbol];
   const int signal_valid_ms = std::max(1000, config_.signal_valid_for_ms);
   std::int64_t event_interval_ms = event.interval_ms;
-  if (event_interval_ms <= 0 && state.last_event_ts_ms > 0 &&
+  // 仅在 ts 符合“真实 epoch 毫秒”口径时才用 ts 差值推导间隔；
+  // 避免测试/回放中的逻辑序号（1,2,3...）污染波动率年化。
+  constexpr std::int64_t kEpochMsFloor = 946684800000LL;  // 2000-01-01
+  const bool ts_looks_epoch =
+      event.ts_ms >= kEpochMsFloor && state.last_event_ts_ms >= kEpochMsFloor;
+  if (event_interval_ms <= 0 && ts_looks_epoch &&
       event.ts_ms > state.last_event_ts_ms) {
     event_interval_ms = event.ts_ms - state.last_event_ts_ms;
   }
-  // 回放/测试场景可能使用逻辑序号做 ts，过小间隔会导致年化波动异常放大。
-  if (event_interval_ms <= 0 || event_interval_ms < 100 ||
+  // 回放/测试场景可能提供逻辑序号 ts（1,2,3...）；<10ms 视为无效间隔并回退。
+  // 保留 10ms~100ms 的真实高频数据，不再一刀切回退到默认 5s。
+  if (event_interval_ms <= 0 || event_interval_ms < 10 ||
       event_interval_ms > 600000) {
     event_interval_ms = std::max(1, config_.default_tick_interval_ms);
   }
@@ -236,10 +242,32 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
   }
 
   // 3. 防御策略 (Defensive Mean-Reversion)
-  // 偏离评分：price 相对 slow EMA 的偏离，按 regime 波动率归一化。
+  // 优先采用独立信号源（ts_rank），降低与 trend(EMA) 的同源耦合；
+  // 当 rank 信号未启用或尚未就绪时，回退 legacy 偏离法以保持连续运行。
   int raw_defensive_direction = 0;
   double defensive_score_abs = 0.0;
-  if (std::isfinite(ema_slow)) {
+  bool defensive_signal_ready = false;
+  if (config_.defensive_rank_lookback_ticks > 1) {
+    const int rank_window = config_.defensive_rank_lookback_ticks;
+    const double rank = state.feature_engine.Evaluate(
+        "ts_rank(close," + std::to_string(rank_window) + ")");
+    if (std::isfinite(rank)) {
+      // rank∈[0,1] -> centered∈[-0.5,0.5]；放大到[-2,2]，便于复用 entry_score 阈值。
+      const double centered = std::clamp(0.5 - rank, -0.5, 0.5);
+      const double defensive_score = centered * 4.0;
+      defensive_score_abs = std::fabs(defensive_score);
+      if (defensive_score_abs >= std::max(config_.defensive_entry_score, kEpsilon)) {
+        raw_defensive_direction = SignOf(defensive_score);
+        PushReason(&signal.reason_codes, "STR_DEFENSIVE_RANK_TRIGGER");
+      } else {
+        PushReason(&signal.reason_codes, "STR_DEFENSIVE_RANK_WEAK");
+      }
+      defensive_signal_ready = true;
+    } else {
+      PushReason(&signal.reason_codes, "STR_DEFENSIVE_RANK_NOT_READY");
+    }
+  }
+  if (!defensive_signal_ready && std::isfinite(ema_slow)) {
     const double deviation_ratio = (event.price - ema_slow) / safe_price;
     const double fallback_scale =
         std::max(config_.signal_deadband_abs / safe_price, 1e-4);
@@ -249,7 +277,9 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
     defensive_score_abs = std::fabs(defensive_score);
     if (defensive_score_abs >= std::max(config_.defensive_entry_score, kEpsilon)) {
       raw_defensive_direction = -SignOf(defensive_score);
-      PushReason(&signal.reason_codes, "STR_DEFENSIVE_TRIGGER");
+      PushReason(&signal.reason_codes, "STR_DEFENSIVE_LEGACY_TRIGGER");
+    } else {
+      PushReason(&signal.reason_codes, "STR_DEFENSIVE_LEGACY_WEAK");
     }
   }
   if (config_.signal_deadband_abs > 0.0 &&

@@ -166,6 +166,8 @@ struct RegimeConfig {
   double ewma_alpha{0.20};
   int switch_confirm_ticks{0};
   bool extreme_requires_both{false};
+  // >1 时启用成交量尖峰触发 EXTREME（event.volume > ewma_volume * multiplier）。
+  double volume_extreme_multiplier{0.0};
   double trend_threshold{0.0008};
   double extreme_threshold{0.0030};
   double volatility_threshold{0.0018};
@@ -194,6 +196,8 @@ struct StrategyConfig {
   double vol_target_rebalance_min_ratio{0.0};
   double defensive_notional_ratio{0.0};
   double defensive_entry_score{1.25};
+  // >0 时启用基于 ts_rank 的独立 defensive 信号源；0 表示回退到 legacy 偏离法。
+  int defensive_rank_lookback_ticks{0};
   double defensive_trend_scale{0.35};
   double defensive_range_scale{1.00};
   double defensive_extreme_scale{0.55};
@@ -234,6 +238,7 @@ struct AppConfig {
   double strategy_vol_target_rebalance_min_ratio{0.0};
   double strategy_defensive_notional_ratio{0.0};
   double strategy_defensive_entry_score{1.25};
+  int strategy_defensive_rank_lookback_ticks{0};
   double strategy_defensive_trend_scale{0.35};
   double strategy_defensive_range_scale{1.00};
   double strategy_defensive_extreme_scale{0.55};
@@ -329,6 +334,7 @@ struct AppConfig {
         strategy_vol_target_rebalance_min_ratio,
         strategy_defensive_notional_ratio,
         strategy_defensive_entry_score,
+        strategy_defensive_rank_lookback_ticks,
         strategy_defensive_trend_scale,
         strategy_defensive_range_scale,
         strategy_defensive_extreme_scale

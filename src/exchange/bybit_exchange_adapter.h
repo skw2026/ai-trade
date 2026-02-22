@@ -174,6 +174,10 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   std::unordered_set<std::string> observed_exec_ids_;  ///< 已处理 execution id 去重集合。
   std::deque<MarketEvent> pending_markets_;  ///< REST 批量行情待消费队列。
   std::unordered_map<std::string, double> last_price_by_symbol_;  ///< 最近标记价格缓存。
+  std::unordered_map<std::string, std::int64_t>
+      last_market_ts_ms_by_symbol_;  ///< 每个 symbol 最近行情时间戳（用于 interval）。
+  std::unordered_map<std::string, double>
+      last_volume_24h_by_symbol_;  ///< 每个 symbol 最近 volume24h（用于增量 volume）。
   std::unordered_map<std::string, double> remote_position_qty_by_symbol_;  ///< 远端仓位数量（signed）。
   std::unordered_map<std::string, BybitSymbolTradeRule> symbol_trade_rules_;  ///< symbol 交易规则缓存。
   std::deque<FillEvent> pending_fills_;  ///< 待消费成交队列。

@@ -72,6 +72,7 @@ class MockExchangeAdapter : public ExchangeAdapter {
   std::uint64_t fill_seq_{0};
   bool connected_{false};
   std::unordered_map<std::string, double> last_price_by_symbol_;
+  std::unordered_map<std::string, std::int64_t> last_market_ts_ms_by_symbol_;
   std::unordered_map<std::string, double> remote_position_qty_by_symbol_;
   std::deque<FillEvent> pending_fills_;
 };

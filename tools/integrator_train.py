@@ -82,8 +82,8 @@ def ts_rank(x: np.ndarray, window: int) -> np.ndarray:
         last = sample[-1]
         smaller = float(np.sum(sample < last))
         equal = float(np.sum(sample == last))
-        # 归一化秩：1/window ~ 1.0
-        out[i] = (smaller + 0.5 * (equal - 1.0) + 1.0) / float(window)
+        # 与 C++ OnlineFeatureEngine 对齐：tie-aware 百分位秩。
+        out[i] = (smaller + 0.5 * equal) / float(window)
     return out
 
 

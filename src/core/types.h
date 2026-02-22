@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 #include <array>
@@ -55,6 +56,8 @@ struct MarketEvent {
   Price mark_price{0.0};
   Quantity volume{0.0};
   std::int64_t interval_ms{0};  // 与上一条同 symbol 行情的时间间隔
+  // 当前行情间隔对应的资金费率（按 interval 已折算）；缺失时为 NaN。
+  double funding_rate_per_interval{std::numeric_limits<double>::quiet_NaN()};
 };
 
 /// Regime Analysis Snapshot

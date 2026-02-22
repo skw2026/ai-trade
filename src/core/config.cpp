@@ -1232,6 +1232,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "strategy" &&
+        key == "defensive_rank_lookback_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.defensive_rank_lookback_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_defensive_rank_lookback_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
         key == "defensive_trend_scale") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -3164,6 +3179,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "regime" &&
+        key == "volume_extreme_multiplier") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "regime.volume_extreme_multiplier 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.volume_extreme_multiplier = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
         (key == "trend_threshold" || key == "trend_return_threshold")) {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -3913,6 +3943,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.strategy_defensive_rank_lookback_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.defensive_rank_lookback_ticks 不能为负数";
+    }
+    return false;
+  }
   if (config.strategy_defensive_trend_scale < 0.0 ||
       config.strategy_defensive_range_scale < 0.0 ||
       config.strategy_defensive_extreme_scale < 0.0) {
@@ -4182,6 +4218,19 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.regime.ewma_alpha <= 0.0 || config.regime.ewma_alpha > 1.0) {
     if (out_error != nullptr) {
       *out_error = "regime.ewma_alpha 必须在 (0,1] 范围内";
+    }
+    return false;
+  }
+  if (config.regime.volume_extreme_multiplier < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "regime.volume_extreme_multiplier 不能为负数";
+    }
+    return false;
+  }
+  if (config.regime.volume_extreme_multiplier > 0.0 &&
+      config.regime.volume_extreme_multiplier <= 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "regime.volume_extreme_multiplier 启用时必须 > 1";
     }
     return false;
   }

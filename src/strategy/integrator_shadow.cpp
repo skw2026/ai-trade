@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <utility>
@@ -233,7 +234,7 @@ bool IsRegularFileNonEmpty(const std::string& path, std::string* out_error) {
 }
 
 // 将经典特征名映射为 OnlineFeatureEngine 支持的表达式
-std::string MapClassicFeatureToExpression(const std::string& name) {
+std::optional<std::string> MapClassicFeatureToExpression(const std::string& name) {
   if (name == "ret_1") {
     return "ts_delta(close,1)/(abs(ts_delay(close,1))+1e-9)";
   }
@@ -259,8 +260,7 @@ std::string MapClassicFeatureToExpression(const std::string& name) {
   if (name == "macd_hist") {
     return "(ema(close,12)-ema(close,26))-ema(ema(close,12)-ema(close,26),9)";
   }
-  // 默认返回 0
-  return "0";
+  return std::nullopt;
 }
 
 }  // namespace
@@ -576,9 +576,16 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
   for (const auto& name : feature_names_) {
     if (name.rfind("miner_", 0) == 0) {
       auto it = miner_expressions.find(name);
-      feature_expressions_.push_back(it != miner_expressions.end() ? it->second : "0");
+      if (it == miner_expressions.end() || it->second.empty()) {
+        return fail("integrator 特征映射缺失: " + name);
+      }
+      feature_expressions_.push_back(it->second);
     } else {
-      feature_expressions_.push_back(MapClassicFeatureToExpression(name));
+      const auto expression = MapClassicFeatureToExpression(name);
+      if (!expression.has_value() || expression->empty()) {
+        return fail("integrator 经典特征不受支持: " + name);
+      }
+      feature_expressions_.push_back(*expression);
     }
   }
 

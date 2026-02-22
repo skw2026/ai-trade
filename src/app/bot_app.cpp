@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <thread>
 #include <unordered_set>
@@ -1230,6 +1231,12 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   } else {
     has_latest_mark_price_ = false;
   }
+  if (std::isfinite(event.funding_rate_per_interval)) {
+    latest_funding_rate_per_tick_ = event.funding_rate_per_interval;
+    has_latest_funding_rate_per_tick_ = true;
+  } else {
+    has_latest_funding_rate_per_tick_ = false;
+  }
 
   // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
   if (reconcile_halted_) {
@@ -2193,6 +2200,10 @@ void BotApplication::RunSelfEvolution() {
   const double defensive_signal_notional_usd =
       has_tick_strategy_signal_ ? tick_defensive_notional_usd_ : 0.0;
   const double mark_price_usd = has_latest_mark_price_ ? latest_mark_price_usd_ : 0.0;
+  const double observed_funding_rate_per_tick =
+      has_latest_funding_rate_per_tick_
+          ? latest_funding_rate_per_tick_
+          : std::numeric_limits<double>::quiet_NaN();
   const std::string signal_symbol =
       has_tick_strategy_signal_ ? tick_strategy_signal_symbol_ : std::string();
   const double observed_turnover_cost_bps = std::max(0.0, 0.5 * RoundTripCostBps());
@@ -2209,7 +2220,8 @@ void BotApplication::RunSelfEvolution() {
                              tick_cost_filtered_signal_,
                              std::max(0, pending_fills_for_evolution_),
                              system_.account().equity_usd(),
-                             observed_turnover_cost_bps);
+                             observed_turnover_cost_bps,
+                             observed_funding_rate_per_tick);
   pending_fills_for_evolution_ = 0;
   if (!action.has_value()) {
     return;

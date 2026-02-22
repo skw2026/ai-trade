@@ -8,6 +8,7 @@ bool MockExchangeAdapter::Connect() {
   if (symbols_.empty()) {
     symbols_.push_back("BTCUSDT");
   }
+  last_market_ts_ms_by_symbol_.clear();
   connected_ = true;
   return true;
 }
@@ -23,7 +24,23 @@ bool MockExchangeAdapter::PollMarket(MarketEvent* out_event) {
   const std::string& symbol = symbols_[symbol_cursor_ % symbols_.size()];
   ++symbol_cursor_;
   last_price_by_symbol_[symbol] = price;
-  *out_event = MarketEvent{seq_, symbol, price, price, 1000.0};
+  constexpr std::int64_t kMockIntervalMs = 5000;
+  std::int64_t event_ts_ms = kMockIntervalMs;
+  std::int64_t interval_ms = kMockIntervalMs;
+  const auto ts_it = last_market_ts_ms_by_symbol_.find(symbol);
+  if (ts_it != last_market_ts_ms_by_symbol_.end()) {
+    event_ts_ms = ts_it->second + kMockIntervalMs;
+    interval_ms = event_ts_ms - ts_it->second;
+  }
+  last_market_ts_ms_by_symbol_[symbol] = event_ts_ms;
+  *out_event = MarketEvent{
+      event_ts_ms,
+      symbol,
+      price,
+      price,
+      1000.0,
+      interval_ms,
+  };
   return true;
 }
 

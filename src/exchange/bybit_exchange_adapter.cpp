@@ -205,6 +205,26 @@ std::optional<int> JsonIntField(const JsonValue* object,
   return std::nullopt;
 }
 
+std::optional<std::int64_t> JsonInt64Field(const JsonValue* object,
+                                           const std::string& key) {
+  const JsonValue* field = JsonObjectField(object, key);
+  if (field == nullptr) {
+    return std::nullopt;
+  }
+  if (const auto text = JsonAsString(field); text.has_value()) {
+    try {
+      return std::stoll(*text);
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  }
+  if (const auto number = JsonAsNumber(field); number.has_value() &&
+      std::isfinite(*number)) {
+    return static_cast<std::int64_t>(*number);
+  }
+  return std::nullopt;
+}
+
 std::int64_t ParseExecTimeMs(const JsonValue* row) {
   if (row == nullptr || row->type != JsonType::kObject) {
     return 0;
@@ -736,6 +756,8 @@ bool BybitExchangeAdapter::Connect() {
   observed_exec_ids_.clear();
   pending_fills_.clear();
   pending_markets_.clear();
+  last_market_ts_ms_by_symbol_.clear();
+  last_volume_24h_by_symbol_.clear();
   last_public_ws_reconnect_attempt_ms_ = 0;
   last_private_ws_reconnect_attempt_ms_ = 0;
   execution_watermark_ms_ = 0;
@@ -1087,6 +1109,7 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
 
   if (pending_markets_.empty()) {
     // 批量拉取 symbol 行情，写入 pending 队列后逐条吐出。
+    const std::int64_t batch_ts_ms = CurrentTimestampMs();
     for (const auto& symbol : options_.symbols) {
       const std::string query =
           "category=" + options_.category + "&symbol=" + symbol;
@@ -1119,12 +1142,68 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
       const double mark_price =
           JsonNumberField(row, "markPrice").value_or(last_price);
       const double final_mark = mark_price > 0.0 ? mark_price : last_price;
-      const double volume = JsonNumberField(row, "volume24h").value_or(0.0);
+      const double volume_24h = JsonNumberField(row, "volume24h").value_or(0.0);
+      const double funding_rate_8h =
+          JsonNumberField(row, "fundingRate")
+              .value_or(std::numeric_limits<double>::quiet_NaN());
+      std::int64_t event_ts_ms =
+          JsonInt64Field(row, "time").value_or(batch_ts_ms);
+      if (event_ts_ms <= 0) {
+        event_ts_ms = JsonInt64Field(row, "ts").value_or(batch_ts_ms);
+      }
+      if (event_ts_ms <= 0) {
+        event_ts_ms = batch_ts_ms;
+      }
+      std::int64_t interval_ms = 0;
+      const auto ts_it = last_market_ts_ms_by_symbol_.find(symbol);
+      if (ts_it != last_market_ts_ms_by_symbol_.end() &&
+          event_ts_ms > ts_it->second) {
+        interval_ms = event_ts_ms - ts_it->second;
+      }
+      last_market_ts_ms_by_symbol_[symbol] = event_ts_ms;
+
+      double interval_volume = 0.0;
+      const auto volume_it = last_volume_24h_by_symbol_.find(symbol);
+      if (std::isfinite(volume_24h) && volume_24h >= 0.0) {
+        // volume24h 是滚动窗口口径，不保证单调。
+        // 单调上升用差分；回落时按 24h 均速折算，避免 interval_volume 长时间归零。
+        constexpr double kOneDayMs = 24.0 * 60.0 * 60.0 * 1000.0;
+        if (volume_it != last_volume_24h_by_symbol_.end() &&
+            std::isfinite(volume_it->second)) {
+          if (volume_24h >= volume_it->second) {
+            interval_volume = volume_24h - volume_it->second;
+          } else if (interval_ms > 0) {
+            interval_volume =
+                std::max(0.0, volume_24h) *
+                (static_cast<double>(interval_ms) / kOneDayMs);
+          }
+        } else if (interval_ms > 0) {
+          interval_volume =
+              std::max(0.0, volume_24h) *
+              (static_cast<double>(interval_ms) / kOneDayMs);
+        }
+        last_volume_24h_by_symbol_[symbol] = volume_24h;
+      }
       last_price_by_symbol_[symbol] = final_mark;
+      double funding_rate_per_interval =
+          std::numeric_limits<double>::quiet_NaN();
+      if (std::isfinite(funding_rate_8h) && interval_ms > 0) {
+        constexpr double kEightHoursMs = 8.0 * 60.0 * 60.0 * 1000.0;
+        funding_rate_per_interval =
+            funding_rate_8h *
+            (static_cast<double>(interval_ms) / kEightHoursMs);
+      }
 
       ++replay_seq_;
-      pending_markets_.push_back(
-          MarketEvent{replay_seq_, symbol, last_price, final_mark, volume});
+      pending_markets_.push_back(MarketEvent{
+          event_ts_ms,
+          symbol,
+          last_price,
+          final_mark,
+          std::max(0.0, interval_volume),
+          interval_ms,
+          funding_rate_per_interval,
+      });
     }
   }
 
@@ -1158,12 +1237,41 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
     const double price = options_.replay_prices[replay_cursor_++];
     last_price_by_symbol_[symbol] = price;
     ++replay_seq_;
-    *out_event = MarketEvent{replay_seq_, symbol, price, price, 10000.0}; // Mock volume
+    constexpr std::int64_t kReplayIntervalMs = 5000;
+    const std::int64_t now_ms = CurrentTimestampMs();
+    std::int64_t event_ts_ms = now_ms;
+    std::int64_t interval_ms = kReplayIntervalMs;
+    const auto ts_it = last_market_ts_ms_by_symbol_.find(symbol);
+    if (ts_it != last_market_ts_ms_by_symbol_.end()) {
+      event_ts_ms = ts_it->second + kReplayIntervalMs;
+      interval_ms = event_ts_ms - ts_it->second;
+    }
+    last_market_ts_ms_by_symbol_[symbol] = event_ts_ms;
+    *out_event = MarketEvent{
+        event_ts_ms,
+        symbol,
+        price,
+        price,
+        0.0,
+        interval_ms,
+        std::numeric_limits<double>::quiet_NaN(),
+    };
     return true;
   }
 
   if (market_channel_ == MarketChannel::kPublicWs) {
     if (public_stream_ != nullptr && public_stream_->PollTicker(out_event)) {
+      if (out_event->ts_ms <= 0) {
+        out_event->ts_ms = CurrentTimestampMs();
+      }
+      if (out_event->interval_ms <= 0) {
+        const auto ts_it = last_market_ts_ms_by_symbol_.find(out_event->symbol);
+        if (ts_it != last_market_ts_ms_by_symbol_.end() &&
+            out_event->ts_ms > ts_it->second) {
+          out_event->interval_ms = out_event->ts_ms - ts_it->second;
+        }
+      }
+      last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
       last_price_by_symbol_[out_event->symbol] =
           out_event->mark_price > 0.0 ? out_event->mark_price : out_event->price;
       return true;
@@ -1187,6 +1295,17 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
   }
   if (market_channel_ == MarketChannel::kPublicWs) {
     if (public_stream_ != nullptr && public_stream_->PollTicker(out_event)) {
+      if (out_event->ts_ms <= 0) {
+        out_event->ts_ms = CurrentTimestampMs();
+      }
+      if (out_event->interval_ms <= 0) {
+        const auto ts_it = last_market_ts_ms_by_symbol_.find(out_event->symbol);
+        if (ts_it != last_market_ts_ms_by_symbol_.end() &&
+            out_event->ts_ms > ts_it->second) {
+          out_event->interval_ms = out_event->ts_ms - ts_it->second;
+        }
+      }
+      last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
       last_price_by_symbol_[out_event->symbol] =
           out_event->mark_price > 0.0 ? out_event->mark_price : out_event->price;
       return true;

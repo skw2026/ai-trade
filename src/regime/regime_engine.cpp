@@ -13,6 +13,20 @@ double ClampAlpha(double alpha) {
   return std::clamp(alpha, 1e-6, 1.0);
 }
 
+double IntervalAwareAlpha(double base_alpha, std::int64_t interval_ms) {
+  const double clamped_alpha = ClampAlpha(base_alpha);
+  if (interval_ms <= 0) {
+    return clamped_alpha;
+  }
+  // 基准按 5s tick 口径配置；间隔变长时提升等效 alpha，变短时降低。
+  constexpr double kReferenceIntervalMs = 5000.0;
+  const double ratio =
+      std::clamp(static_cast<double>(interval_ms) / kReferenceIntervalMs,
+                 0.02, 120.0);
+  const double effective_alpha = 1.0 - std::pow(1.0 - clamped_alpha, ratio);
+  return std::clamp(effective_alpha, 1e-6, 1.0);
+}
+
 }  // namespace
 
 RegimeBucket RegimeEngine::ToBucket(Regime regime) {
@@ -52,12 +66,15 @@ RegimeState RegimeEngine::OnMarket(const MarketEvent& event) {
   symbol_state.last_price = event.price;
   ++symbol_state.sample_ticks;
 
-  const double alpha = ClampAlpha(config_.ewma_alpha);
+  const double alpha = IntervalAwareAlpha(config_.ewma_alpha, event.interval_ms);
   symbol_state.ewma_return =
       (1.0 - alpha) * symbol_state.ewma_return + alpha * instant_return;
   symbol_state.ewma_abs_return =
       (1.0 - alpha) * symbol_state.ewma_abs_return +
       alpha * std::fabs(instant_return);
+  const double volume = std::max(0.0, event.volume);
+  symbol_state.ewma_volume =
+      (1.0 - alpha) * symbol_state.ewma_volume + alpha * volume;
 
   state.instant_return = instant_return;
   state.trend_strength = symbol_state.ewma_return;
@@ -70,9 +87,15 @@ RegimeState RegimeEngine::OnMarket(const MarketEvent& event) {
         std::fabs(instant_return) >= config_.extreme_threshold;
     const bool extreme_by_vol =
         symbol_state.ewma_abs_return >= config_.volatility_threshold;
+    const bool extreme_by_volume =
+        config_.volume_extreme_multiplier > 1.0 &&
+        symbol_state.ewma_volume > kEpsilon &&
+        volume >= symbol_state.ewma_volume * config_.volume_extreme_multiplier;
     const bool extreme_hit = config_.extreme_requires_both
-                                 ? (extreme_by_jump && extreme_by_vol)
-                                 : (extreme_by_jump || extreme_by_vol);
+                                 ? ((extreme_by_jump && extreme_by_vol) ||
+                                    extreme_by_volume)
+                                 : (extreme_by_jump || extreme_by_vol ||
+                                    extreme_by_volume);
     if (extreme_hit) {
       raw_regime = Regime::kExtreme;
     } else if (symbol_state.ewma_return >= config_.trend_threshold) {

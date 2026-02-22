@@ -117,6 +117,7 @@ strategy:
   vol_target_low_vol_max_leverage: 1.1
   defensive_notional_ratio: 0.55
   defensive_entry_score: 2.0
+  defensive_rank_lookback_ticks: 96
   defensive_trend_scale: 0.25
   defensive_range_scale: 1.00
   defensive_extreme_scale: 0.45
@@ -195,6 +196,7 @@ regime:
   ewma_alpha: 0.05
   switch_confirm_ticks: 12
   extreme_requires_both: true
+  volume_extreme_multiplier: 6.0
   trend_threshold: 0.0015
   extreme_threshold: 0.0080
   volatility_threshold: 0.0025
