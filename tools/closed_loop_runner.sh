@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 说明：
-# 1) train  : 执行 R0/R1/R2 + 模型注册 + 汇总报告
+# 1) train  : 数据加速(可开关) + R0/R1/R2 + 模型注册 + 汇总报告
 # 2) assess : 导出运行日志并做 DEPLOY/S3/S5 自动验收 + 汇总报告
 # 3) full   : train + assess
 # 4) data   : 归档下载 + 增量更新 + 缺口回补 + 特征构建 + walk-forward 回测
@@ -91,6 +91,10 @@ S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
 RUNTIME_CONFIG_PATH="${AI_TRADE_CONFIG_PATH:-config/bybit.demo.evolution.yaml}"
 DATA_CONFIG_PATH="${DATA_PIPELINE_CONFIG:-config/data_pipeline.yaml}"
+DATA_PIPELINE_BEFORE_TRAIN="${CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN:-true}"
+DATA_PIPELINE_REQUIRED="${CLOSED_LOOP_DATA_PIPELINE_REQUIRED:-false}"
+DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS="${CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS:-true}"
+DATA_PIPELINE_LAST_STATUS="not_run"
 
 usage() {
   cat <<'EOF'
@@ -140,6 +144,10 @@ Options:
   --activate-on-pass <true|false>    门槛通过后是否激活 (default: true)
 
   --data-config <path>               数据加速链路配置文件 (default: config/data_pipeline.yaml)
+  --data-before-train <true|false>   train/full 前是否先跑数据加速链路 (default: true)
+  --data-required <true|false>       数据加速失败是否直接失败（false=回退到R0）(default: false)
+  --data-skip-fetch-on-success <true|false>
+                                      数据加速成功后是否跳过 R0 fetch (default: true)
 
   --gc-enabled <true|false>          启用产物回收 (default: true)
   --gc-keep-run-dirs <int>           保留最近 run 目录数 (default: 120)
@@ -162,6 +170,10 @@ Env toggles:
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
   CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
+  CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN=true|false      train/full 前是否先跑数据加速链路 (default: true)
+  CLOSED_LOOP_DATA_PIPELINE_REQUIRED=true|false          数据加速失败是否直接失败（false=回退R0）(default: false)
+  CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS=true|false
+                                                       数据加速成功后是否跳过 R0 fetch (default: true)
 EOF
 }
 
@@ -241,6 +253,12 @@ while [[ $# -gt 0 ]]; do
       ACTIVATE_ON_PASS="$2"; shift 2;;
     --data-config)
       DATA_CONFIG_PATH="$2"; shift 2;;
+    --data-before-train)
+      DATA_PIPELINE_BEFORE_TRAIN="$2"; shift 2;;
+    --data-required)
+      DATA_PIPELINE_REQUIRED="$2"; shift 2;;
+    --data-skip-fetch-on-success)
+      DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS="$2"; shift 2;;
     --gc-enabled)
       GC_ENABLED="$2"; shift 2;;
     --gc-keep-run-dirs)
@@ -379,6 +397,9 @@ atomic_write_text_file() {
 RUN_DIR="${OUTPUT_ROOT}/${RUN_ID}"
 mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
 
+DATA_PIPELINE_RUN_DIR="${RUN_DIR}/data_pipeline"
+DATA_PIPELINE_REPORT_PATH="${DATA_PIPELINE_RUN_DIR}/data_pipeline_report.json"
+WALKFORWARD_REPORT_PATH="${RUN_DIR}/walkforward_report.json"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
 BASELINE_REPORT_PATH="${RUN_DIR}/baseline_report.json"
 BASELINE_SNAPSHOT_DIR="${RUN_DIR}/baseline_snapshot"
@@ -582,14 +603,46 @@ run_registry() {
 
 run_data_pipeline() {
   echo "[INFO] data pipeline start"
-  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/run_data_pipeline.py \
     --config "${DATA_CONFIG_PATH}" \
-    --run-dir "${RUN_DIR}/data_pipeline" \
+    --run-dir "${DATA_PIPELINE_RUN_DIR}" \
     --ohlcv-out "${CSV_PATH}" \
     --feature-out "${RUN_DIR}/feature_store_5m.csv" \
-    --backtest-report "${RUN_DIR}/walkforward_report.json"
-  echo "[INFO] data pipeline done"
+    --backtest-report "${WALKFORWARD_REPORT_PATH}"; then
+    DATA_PIPELINE_LAST_STATUS="pass"
+    echo "[INFO] data pipeline done"
+    return 0
+  fi
+  DATA_PIPELINE_LAST_STATUS="fail"
+  echo "[WARN] data pipeline failed"
+  return 1
+}
+
+prepare_training_data() {
+  if ! is_true "${DATA_PIPELINE_BEFORE_TRAIN}"; then
+    echo "[INFO] data pipeline pre-train disabled, fallback to R0 fetch"
+    run_fetch
+    return 0
+  fi
+
+  if run_data_pipeline; then
+    if is_true "${DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS}"; then
+      echo "[INFO] data pipeline succeeded, skip R0 fetch"
+      return 0
+    fi
+    echo "[INFO] data pipeline succeeded, continue with R0 fetch"
+    run_fetch
+    return 0
+  fi
+
+  echo "[WARN] data pipeline failed"
+  if is_true "${DATA_PIPELINE_REQUIRED}"; then
+    echo "[ERROR] data pipeline required=true, abort train/full"
+    return 1
+  fi
+  echo "[WARN] fallback to R0 fetch after data pipeline failure"
+  run_fetch
 }
 
 run_assess() {
@@ -641,6 +694,9 @@ build_summary() {
     tools/build_closed_loop_report.py
     --output="${FINAL_REPORT_PATH}"
   )
+  if [[ "${ACTION}" == "assess" && -f "${LATEST_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--inherit_report "${LATEST_REPORT_PATH}")
+  fi
   if [[ -f "${MINER_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--miner_report "${MINER_REPORT_PATH}")
   fi
@@ -655,6 +711,12 @@ build_summary() {
   fi
   if [[ -f "${REGISTRY_RESULT_PATH}" ]]; then
     SUMMARY_ARGS+=(--registry_report "${REGISTRY_RESULT_PATH}")
+  fi
+  if [[ "${DATA_PIPELINE_LAST_STATUS}" == "pass" && -f "${DATA_PIPELINE_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--data_pipeline_report "${DATA_PIPELINE_REPORT_PATH}")
+  fi
+  if [[ "${DATA_PIPELINE_LAST_STATUS}" == "pass" && -f "${WALKFORWARD_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--walkforward_report "${WALKFORWARD_REPORT_PATH}")
   fi
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
     SUMMARY_ARGS+=(--runtime_assess_report "${ASSESS_JSON_PATH}")
@@ -756,7 +818,7 @@ run_main() {
       ;;
     train)
       run_freeze_baseline
-      run_fetch
+      prepare_training_data
       run_data_quality
       run_miner
       run_integrator
@@ -772,7 +834,7 @@ run_main() {
       ;;
     full)
       run_freeze_baseline
-      run_fetch
+      prepare_training_data
       run_data_quality
       run_miner
       run_integrator

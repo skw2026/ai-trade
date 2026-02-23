@@ -43,6 +43,11 @@ class AssessRunLogTest(unittest.TestCase):
         filtered_cost_ratio: float = 0.0,
         filtered_cost_near_miss_ratio: float = 0.0,
         passed_cost_near_miss_ratio: float = 0.0,
+        rebalance_gap_avg_abs_usd: float = 0.0,
+        rebalance_gap_max_abs_usd: float = 0.0,
+        rebalance_within_min_notional_avg_abs_usd: float = 0.0,
+        rebalance_within_min_notional_ratio: float = 0.0,
+        min_rebalance_notional_usd: float = 25.0,
         entry_edge_gap_avg_bps: float = 0.0,
         realized_net_per_fill: float = 0.0,
         fee_bps_per_fill: float = 0.0,
@@ -128,6 +133,12 @@ class AssessRunLogTest(unittest.TestCase):
             "execution_window={filtered_cost_ratio="
             f"{filtered_cost_ratio}, filtered_cost_near_miss_ratio={filtered_cost_near_miss_ratio}, "
             f"passed_cost_near_miss_ratio={passed_cost_near_miss_ratio}, "
+            f"rebalance_gap_avg_abs_usd={rebalance_gap_avg_abs_usd}, "
+            f"rebalance_gap_max_abs_usd={rebalance_gap_max_abs_usd}, "
+            "rebalance_within_min_notional_avg_abs_usd="
+            f"{rebalance_within_min_notional_avg_abs_usd}, "
+            f"rebalance_within_min_notional_ratio={rebalance_within_min_notional_ratio}, "
+            f"min_rebalance_notional_usd={min_rebalance_notional_usd}, "
             f"entry_edge_gap_avg_bps={entry_edge_gap_avg_bps}, realized_net_delta_usd=0.0, "
             f"realized_net_per_fill={realized_net_per_fill}, fee_delta_usd=0.0, "
             f"fee_bps_per_fill={fee_bps_per_fill}, maker_fills={maker_fills}, "
@@ -568,6 +579,33 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(
             any("执行净收益质量未达标" in x for x in report["fail_reasons"])
+        )
+
+    def test_s5_fail_when_fill_windows_exist_but_execution_window_missing(self):
+        runtime = "".join(
+            re.sub(
+                r", execution_window=\{[^}]*\},",
+                ",",
+                self._runtime_line(
+                    20 + i * 20,
+                    0.0,
+                    funnel_enqueued=1,
+                    funnel_fills=1,
+                    realized_net_per_fill=-0.02,
+                    fee_bps_per_fill=6.0,
+                ),
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("执行净收益质量门禁无法评估" in x for x in report["fail_reasons"])
         )
 
     def test_s5_fail_when_equity_change_below_threshold(self):

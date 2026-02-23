@@ -116,6 +116,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_docker_gc.py)
     add_test(NAME validate_reports_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_reports.py)
+    add_test(NAME build_closed_loop_report_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_build_closed_loop_report.py)
     add_test(NAME data_pipeline_tools_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_data_pipeline_tools.py)
     add_test(NAME run_data_pipeline_test

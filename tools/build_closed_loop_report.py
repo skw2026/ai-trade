@@ -14,6 +14,16 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+INHERITABLE_SECTION_NAMES = [
+    "miner",
+    "baseline",
+    "data_quality",
+    "integrator",
+    "registry",
+    "data_pipeline",
+    "walkforward",
+]
+
 
 def now_utc_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -151,6 +161,101 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_data_pipeline(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    status_raw = str(payload.get("status", "")).upper()
+    steps = payload.get("steps", [])
+    if not isinstance(steps, list):
+        steps = []
+    failed_steps = [
+        str(step.get("name", "unknown"))
+        for step in steps
+        if isinstance(step, dict)
+        and bool(step.get("enabled", False))
+        and str(step.get("status", "")).lower() == "fail"
+    ]
+    warns: List[str] = []
+    if status_raw == "PLANNED":
+        warns.append("数据加速链路为 dry-run（PLANNED），未执行真实更新")
+    ok = status_raw in {"PASS", "PLANNED"} and not failed_steps
+    status, fails = status_tuple(ok, f"数据加速链路未通过: status={status_raw or 'UNKNOWN'}")
+    if failed_steps:
+        fails.append("失败步骤: " + ", ".join(failed_steps))
+    return {
+        "status": status,
+        "fail_reasons": fails,
+        "warn_reasons": warns,
+        "pipeline_status": status_raw or "UNKNOWN",
+        "step_count": len(steps),
+        "failed_step_count": len(failed_steps),
+        "failed_steps": failed_steps,
+        "outputs": payload.get("outputs", {}),
+    }
+
+
+def assess_walkforward(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    summary = payload.get("summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+    valid_split_count = summary.get("valid_split_count", 0)
+    total_bars = summary.get("total_bars", 0)
+    avg_split_sharpe = summary.get("avg_split_sharpe")
+    ok = isinstance(valid_split_count, int) and valid_split_count > 0
+    ok = ok and isinstance(total_bars, int) and total_bars > 0
+    status, fails = status_tuple(ok, "walk-forward 报告无有效 split 或 bars")
+    warns: List[str] = []
+    if isinstance(avg_split_sharpe, (int, float)) and avg_split_sharpe < 0:
+        warns.append("walk-forward 平均 Sharpe<0，建议复核特征/模型参数")
+    return {
+        "status": status,
+        "fail_reasons": fails,
+        "warn_reasons": warns,
+        "rows": payload.get("rows"),
+        "summary": summary,
+    }
+
+
+def parse_section_names(raw: str) -> List[str]:
+    if not raw:
+        return list(INHERITABLE_SECTION_NAMES)
+    values = [item.strip() for item in raw.split(",") if item.strip()]
+    unique: List[str] = []
+    for item in values:
+        if item not in unique:
+            unique.append(item)
+    return unique
+
+
+def inherit_sections(
+    sections: Dict[str, Dict[str, Any]],
+    inherit_report_path: Path,
+    inherit_section_names: List[str],
+) -> Tuple[List[str], str]:
+    if not inherit_report_path.is_file():
+        return [], f"inherit report not found: {inherit_report_path}"
+
+    try:
+        payload = read_json(inherit_report_path)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        return [], f"failed to read inherit report: {inherit_report_path}: {exc}"
+
+    report_sections = payload.get("sections")
+    if not isinstance(report_sections, dict):
+        return [], f"inherit report has no sections object: {inherit_report_path}"
+
+    inherited: List[str] = []
+    for name in inherit_section_names:
+        if name in sections:
+            continue
+        candidate = report_sections.get(name)
+        if not isinstance(candidate, dict):
+            continue
+        sections[name] = candidate
+        inherited.append(name)
+    return inherited, ""
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成闭环汇总报告")
     parser.add_argument("--output", required=True, help="输出 JSON 路径")
@@ -161,6 +266,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--integrator_report", default="", help="integrator_report.json 路径")
     parser.add_argument("--registry_report", default="", help="model_registry 结果 JSON 路径")
     parser.add_argument("--runtime_assess_report", default="", help="assess_run_log 输出 JSON 路径")
+    parser.add_argument("--data_pipeline_report", default="", help="data_pipeline_report.json 路径")
+    parser.add_argument("--walkforward_report", default="", help="walkforward_report.json 路径")
+    parser.add_argument(
+        "--inherit_report",
+        default="",
+        help="可选：从历史 closed_loop_report 继承缺失 sections（默认仅补离线段）",
+    )
+    parser.add_argument(
+        "--inherit_sections",
+        default="",
+        help=(
+            "可选：继承 section 名称，逗号分隔；默认 "
+            + ",".join(INHERITABLE_SECTION_NAMES)
+        ),
+    )
     return parser.parse_args()
 
 
@@ -227,7 +347,45 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {runtime_path}"],
             }
 
+    if args.data_pipeline_report:
+        data_pipeline_path = Path(args.data_pipeline_report)
+        if data_pipeline_path.is_file():
+            sections["data_pipeline"] = assess_data_pipeline(data_pipeline_path)
+        else:
+            sections["data_pipeline"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {data_pipeline_path}"],
+            }
+
+    if args.walkforward_report:
+        walkforward_path = Path(args.walkforward_report)
+        if walkforward_path.is_file():
+            sections["walkforward"] = assess_walkforward(walkforward_path)
+        else:
+            sections["walkforward"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {walkforward_path}"],
+            }
+
+    inherited_sections: List[str] = []
+    inherit_status = ""
+    inherit_source_report = ""
+    if args.inherit_report:
+        inherit_path = Path(args.inherit_report)
+        if inherit_path.resolve() != Path(args.output).resolve():
+            inherit_source_report = str(inherit_path)
+            inherited_sections, inherit_status = inherit_sections(
+                sections=sections,
+                inherit_report_path=inherit_path,
+                inherit_section_names=parse_section_names(args.inherit_sections),
+            )
+        else:
+            inherit_status = "inherit report equals output path, skip"
+
+    inherited_section_names = set(inherited_sections)
     for section_name, section in sections.items():
+        if section_name in inherited_section_names:
+            continue
         if section.get("status") == "fail":
             for item in section.get("fail_reasons", []):
                 fail_reasons.append(f"{section_name}: {item}")
@@ -302,6 +460,11 @@ def main() -> int:
         "overall_status": overall_status,
         "account_outcome": account_outcome,
         "sections": sections,
+        "inherit": {
+            "source_report": inherit_source_report,
+            "status": inherit_status or "ok",
+            "inherited_sections": inherited_sections,
+        },
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
     }

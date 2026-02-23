@@ -119,8 +119,8 @@ strategy:
   vol_target_low_vol_annual_threshold: 0.12
   vol_target_low_vol_max_leverage: 1.1
   defensive_notional_ratio: 0.55
-  defensive_entry_score: 2.0
-  defensive_rank_lookback_ticks: 96
+  defensive_entry_score: 1.2
+  defensive_rank_lookback_ticks: 72
   defensive_trend_scale: 0.25
   defensive_range_scale: 1.00
   defensive_extreme_scale: 0.45
@@ -157,15 +157,15 @@ self_evolution:
   use_virtual_pnl: true
   use_counterfactual_search: true
   counterfactual_fallback_to_factor_ic: true
-  counterfactual_min_improvement_usd: 1.2
+  counterfactual_min_improvement_usd: 0.6
   # 维持与绝对阈值同量级，避免高权益账户被比例阈值“卡死”。
-  counterfactual_min_improvement_ratio_of_equity: 0.00002
+  counterfactual_min_improvement_ratio_of_equity: 0.000005
   counterfactual_improvement_decay_per_filtered_signal_usd: 0.08
   counterfactual_min_fill_count_for_update: 1
   counterfactual_min_t_stat_samples_for_update: 60
-  counterfactual_min_t_stat_abs_for_update: 0.20
-  counterfactual_superiority_min_samples_for_update: 80
-  counterfactual_superiority_min_t_stat_for_update: 0.25
+  counterfactual_min_t_stat_abs_for_update: 0.10
+  counterfactual_superiority_min_samples_for_update: 60
+  counterfactual_superiority_min_t_stat_for_update: 0.10
   virtual_cost_bps: 6.5
   virtual_cost_dynamic_enabled: true
   virtual_cost_dynamic_max_multiplier: 3.0
@@ -174,19 +174,19 @@ self_evolution:
   # P2(3+6)：在线因子IC自适应 + 可学习性门控。
   enable_factor_ic_adaptive_weights: true
   factor_ic_min_samples: 60
-  factor_ic_min_abs: 0.005
-  factor_ic_deadzone_abs: 0.02
+  factor_ic_min_abs: 0.003
+  factor_ic_deadzone_abs: 0.01
   enable_learnability_gate: true
   learnability_min_samples: 60
   learnability_min_t_stat_abs: 0.6
-  min_effective_weight_delta: 0.002
+  min_effective_weight_delta: 0.001
   # 风险调整目标函数（Sharpe-like 主项 + 回撤/换手惩罚）
   objective_alpha_pnl: 1.0
   objective_beta_drawdown: 0.3
   objective_gamma_notional_churn: 0.008
   objective_use_sharpe_like: true
-  max_single_strategy_weight: 0.55
-  max_weight_step: 0.02
+  max_single_strategy_weight: 0.60
+  max_weight_step: 0.03
   rollback_degrade_windows: 5
   rollback_degrade_threshold_score: 0.0
   rollback_to_baseline_on_trigger: false

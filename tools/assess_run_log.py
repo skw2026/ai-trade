@@ -125,26 +125,7 @@ RUNTIME_STRATEGY_MIX_RE = re.compile(
     r"samples=(?P<samples>\d+)"
 )
 RUNTIME_EXECUTION_WINDOW_RE = re.compile(
-    r"RUNTIME_STATUS:.*?execution_window=\{[^}]*?"
-    r"filtered_cost_ratio=(?P<filtered_cost_ratio>-?[0-9]+(?:\.[0-9]+)?), "
-    r"(?:filtered_cost_near_miss_ratio=(?P<filtered_cost_near_miss_ratio>-?[0-9]+(?:\.[0-9]+)?), )?"
-    r"(?:passed_cost_near_miss_ratio=(?P<passed_cost_near_miss_ratio>-?[0-9]+(?:\.[0-9]+)?), )?"
-    r"(?:entry_edge_gap_avg_bps=(?P<entry_edge_gap_avg_bps>-?[0-9]+(?:\.[0-9]+)?), )?"
-    r"realized_net_delta_usd=(?P<realized_net_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
-    r"realized_net_per_fill=(?P<realized_net_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
-    r"fee_delta_usd=(?P<fee_delta_usd>-?[0-9]+(?:\.[0-9]+)?), "
-    r"fee_bps_per_fill=(?P<fee_bps_per_fill>-?[0-9]+(?:\.[0-9]+)?)"
-    r"(?:, maker_fills=(?P<maker_fills>\d+), "
-    r"taker_fills=(?P<taker_fills>\d+), "
-    r"unknown_fills=(?P<unknown_fills>\d+), "
-    r"(?:explicit_liquidity_fills=(?P<explicit_liquidity_fills>\d+), "
-    r"fee_sign_fallback_fills=(?P<fee_sign_fallback_fills>\d+), "
-    r"unknown_fill_ratio=(?P<unknown_fill_ratio>-?[0-9]+(?:\.[0-9]+)?), "
-    r"explicit_liquidity_fill_ratio=(?P<explicit_liquidity_fill_ratio>-?[0-9]+(?:\.[0-9]+)?), "
-    r"fee_sign_fallback_fill_ratio=(?P<fee_sign_fallback_fill_ratio>-?[0-9]+(?:\.[0-9]+)?), )?"
-    r"maker_fee_bps=(?P<maker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
-    r"taker_fee_bps=(?P<taker_fee_bps>-?[0-9]+(?:\.[0-9]+)?), "
-    r"maker_fill_ratio=(?P<maker_fill_ratio>-?[0-9]+(?:\.[0-9]+)?))?"
+    r"RUNTIME_STATUS:.*?execution_window=\{(?P<body>[^}]*)\}"
 )
 RUNTIME_ENTRY_GATE_RE = re.compile(
     r"RUNTIME_STATUS:.*?entry_gate=\{[^}]*?"
@@ -515,6 +496,25 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
 
 
 def extract_execution_window_series(text: str) -> Dict[str, float]:
+    def parse_kv_map(raw: str) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        for item in raw.split(","):
+            token = item.strip()
+            if not token or "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            out[key.strip()] = value.strip()
+        return out
+
+    def map_float(raw_map: Dict[str, str], key: str, default: float = 0.0) -> float:
+        raw = raw_map.get(key)
+        if raw is None or raw == "":
+            return default
+        try:
+            return float(raw)
+        except ValueError:
+            return default
+
     filtered_cost_ratios: list[float] = []
     filtered_cost_near_miss_ratios: list[float] = []
     passed_cost_near_miss_ratios: list[float] = []
@@ -535,55 +535,55 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
     liquidity_source_runtime_count = 0
 
     for m in RUNTIME_EXECUTION_WINDOW_RE.finditer(text):
-        try:
-            filtered_cost_ratios.append(float(m.group("filtered_cost_ratio")))
-            filtered_cost_near_miss_ratios.append(
-                float(m.group("filtered_cost_near_miss_ratio") or 0.0)
-            )
-            passed_cost_near_miss_ratios.append(
-                float(m.group("passed_cost_near_miss_ratio") or 0.0)
-            )
-            entry_edge_gap_avg_bps_values.append(
-                float(m.group("entry_edge_gap_avg_bps") or 0.0)
-            )
-            realized_net_per_fills.append(float(m.group("realized_net_per_fill")))
-            fee_bps_per_fills.append(float(m.group("fee_bps_per_fill")))
-            maker_fill_value = float(m.group("maker_fills") or 0.0)
-            taker_fill_value = float(m.group("taker_fills") or 0.0)
-            unknown_fill_value = float(m.group("unknown_fills") or 0.0)
-            maker_fills.append(maker_fill_value)
-            taker_fills.append(taker_fill_value)
-            unknown_fills.append(unknown_fill_value)
-            explicit_fill_value = float(m.group("explicit_liquidity_fills") or 0.0)
-            fallback_fill_value = float(m.group("fee_sign_fallback_fills") or 0.0)
-            explicit_liquidity_fills.append(explicit_fill_value)
-            fee_sign_fallback_fills.append(fallback_fill_value)
-            if m.group("explicit_liquidity_fills") is not None:
-                liquidity_source_runtime_count += 1
-            total_liquidity_samples = maker_fill_value + taker_fill_value + unknown_fill_value
-            unknown_ratio_value = (
-                float(m.group("unknown_fill_ratio"))
-                if m.group("unknown_fill_ratio") is not None
-                else (unknown_fill_value / total_liquidity_samples if total_liquidity_samples > 0 else 0.0)
-            )
-            explicit_ratio_value = (
-                float(m.group("explicit_liquidity_fill_ratio"))
-                if m.group("explicit_liquidity_fill_ratio") is not None
-                else 0.0
-            )
-            fallback_ratio_value = (
-                float(m.group("fee_sign_fallback_fill_ratio"))
-                if m.group("fee_sign_fallback_fill_ratio") is not None
-                else 0.0
-            )
-            unknown_fill_ratios.append(unknown_ratio_value)
-            explicit_liquidity_fill_ratios.append(explicit_ratio_value)
-            fee_sign_fallback_fill_ratios.append(fallback_ratio_value)
-            maker_fee_bps_values.append(float(m.group("maker_fee_bps") or 0.0))
-            taker_fee_bps_values.append(float(m.group("taker_fee_bps") or 0.0))
-            maker_fill_ratios.append(float(m.group("maker_fill_ratio") or 0.0))
-        except ValueError:
+        values = parse_kv_map(m.group("body"))
+        if "filtered_cost_ratio" not in values:
             continue
+        filtered_cost_ratios.append(map_float(values, "filtered_cost_ratio", 0.0))
+        filtered_cost_near_miss_ratios.append(
+            map_float(values, "filtered_cost_near_miss_ratio", 0.0)
+        )
+        passed_cost_near_miss_ratios.append(
+            map_float(values, "passed_cost_near_miss_ratio", 0.0)
+        )
+        entry_edge_gap_avg_bps_values.append(
+            map_float(values, "entry_edge_gap_avg_bps", 0.0)
+        )
+        realized_net_per_fills.append(map_float(values, "realized_net_per_fill", 0.0))
+        fee_bps_per_fills.append(map_float(values, "fee_bps_per_fill", 0.0))
+
+        maker_fill_value = map_float(values, "maker_fills", 0.0)
+        taker_fill_value = map_float(values, "taker_fills", 0.0)
+        unknown_fill_value = map_float(values, "unknown_fills", 0.0)
+        maker_fills.append(maker_fill_value)
+        taker_fills.append(taker_fill_value)
+        unknown_fills.append(unknown_fill_value)
+
+        explicit_fill_value = map_float(values, "explicit_liquidity_fills", 0.0)
+        fallback_fill_value = map_float(values, "fee_sign_fallback_fills", 0.0)
+        explicit_liquidity_fills.append(explicit_fill_value)
+        fee_sign_fallback_fills.append(fallback_fill_value)
+        if "explicit_liquidity_fills" in values:
+            liquidity_source_runtime_count += 1
+
+        total_liquidity_samples = maker_fill_value + taker_fill_value + unknown_fill_value
+        unknown_fill_ratios.append(
+            map_float(
+                values,
+                "unknown_fill_ratio",
+                (unknown_fill_value / total_liquidity_samples)
+                if total_liquidity_samples > 0
+                else 0.0,
+            )
+        )
+        explicit_liquidity_fill_ratios.append(
+            map_float(values, "explicit_liquidity_fill_ratio", 0.0)
+        )
+        fee_sign_fallback_fill_ratios.append(
+            map_float(values, "fee_sign_fallback_fill_ratio", 0.0)
+        )
+        maker_fee_bps_values.append(map_float(values, "maker_fee_bps", 0.0))
+        taker_fee_bps_values.append(map_float(values, "taker_fee_bps", 0.0))
+        maker_fill_ratios.append(map_float(values, "maker_fill_ratio", 0.0))
 
     runtime_count = len(filtered_cost_ratios)
     if runtime_count <= 0:
@@ -1249,6 +1249,17 @@ def assess(
                 f"required>={max(0, s5_min_effective_updates)}"
             )
         if (
+            stage.name == "S5"
+            and metrics["funnel_fills_runtime_count"]
+            >= max(0, s5_min_realized_net_per_fill_windows)
+            and metrics["execution_window_runtime_count"] <= 0
+        ):
+            fail_reasons.append(
+                "执行净收益质量门禁无法评估（S5 强门禁）: "
+                "fills 窗口已达标但 execution_window 指标缺失，"
+                "请检查运行时日志字段与 assess 解析口径是否一致"
+            )
+        elif (
             stage.name == "S5"
             and metrics["funnel_fills_runtime_count"]
             >= max(0, s5_min_realized_net_per_fill_windows)

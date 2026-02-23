@@ -110,6 +110,18 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("SCHEDULER_ACTION: ${SCHEDULER_ACTION:-full}", scheduler)
         self.assertIn("SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}", scheduler)
+        self.assertIn(
+            "CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN: ${CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN:-true}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_DATA_PIPELINE_REQUIRED: ${CLOSED_LOOP_DATA_PIPELINE_REQUIRED:-false}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS: ${CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS:-true}",
+            scheduler,
+        )
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
         self.assertIn("CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}", scheduler)
