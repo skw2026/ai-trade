@@ -361,6 +361,8 @@ class BotApplication {
   bool has_latest_mark_price_{false};  ///< 是否已有可用估值价格。
   double latest_funding_rate_per_tick_{0.0};  ///< 最近一笔行情对应资金费率（按tick折算）。
   bool has_latest_funding_rate_per_tick_{false};  ///< 是否已有可用资金费率观测。
+  int latest_funding_rate_observed_tick_{
+      -1000000};  ///< 最近一次收到有效 funding 观测的 tick。
   double tick_trend_notional_usd_{0.0};  ///< 当前 tick 的趋势分支目标名义值。
   double tick_defensive_notional_usd_{0.0};  ///< 当前 tick 的防御分支目标名义值。
   std::string tick_strategy_signal_symbol_;  ///< 当前 tick 的策略信号 symbol。

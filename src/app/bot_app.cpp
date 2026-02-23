@@ -24,6 +24,8 @@ constexpr double kNotionalEpsilon = 1e-9;
 constexpr int kReconcileRecentFillGraceTicks = 2;
 // 自动远端重对齐最小间隔，避免短时间重复覆盖本地状态。
 constexpr int kReconcileAutoResyncCooldownTicks = 40;
+// funding 观测缺失时，保留最近有效值的最长 tick（默认约 1 小时@5s）。
+constexpr int kFundingObservationStaleTicks = 720;
 
 // 统一毫秒时间戳，供节流、日志和心跳逻辑复用。
 std::int64_t CurrentTimestampMs() {
@@ -150,17 +152,40 @@ struct ConcentrationSnapshot {
   std::size_t symbol_count{0};
 };
 
-ConcentrationSnapshot BuildConcentrationSnapshot(const AccountState& account) {
+ConcentrationSnapshot BuildConcentrationSnapshot(
+    const AccountState& account,
+    const std::string* override_symbol = nullptr,
+    double override_symbol_notional_usd = 0.0) {
   ConcentrationSnapshot snapshot;
+  const bool has_override =
+      override_symbol != nullptr && !override_symbol->empty();
+  bool override_seen = false;
   const auto symbols = account.GetActiveSymbols();
-  snapshot.symbol_count = symbols.size();
   for (const auto& symbol : symbols) {
-    const double symbol_abs_notional =
-        std::fabs(account.current_notional_usd(symbol));
+    double symbol_notional = account.current_notional_usd(symbol);
+    if (has_override && symbol == *override_symbol) {
+      symbol_notional = override_symbol_notional_usd;
+      override_seen = true;
+    }
+    const double symbol_abs_notional = std::fabs(symbol_notional);
+    if (symbol_abs_notional <= kNotionalEpsilon) {
+      continue;
+    }
+    ++snapshot.symbol_count;
     snapshot.gross_notional_usd += symbol_abs_notional;
     if (symbol_abs_notional > snapshot.top1_abs_notional_usd) {
       snapshot.top1_abs_notional_usd = symbol_abs_notional;
       snapshot.top1_symbol = symbol;
+    }
+  }
+  if (has_override && !override_seen &&
+      std::fabs(override_symbol_notional_usd) > kNotionalEpsilon) {
+    const double symbol_abs_notional = std::fabs(override_symbol_notional_usd);
+    ++snapshot.symbol_count;
+    snapshot.gross_notional_usd += symbol_abs_notional;
+    if (symbol_abs_notional > snapshot.top1_abs_notional_usd) {
+      snapshot.top1_abs_notional_usd = symbol_abs_notional;
+      snapshot.top1_symbol = *override_symbol;
     }
   }
   if (snapshot.gross_notional_usd > kNotionalEpsilon) {
@@ -539,20 +564,45 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
       config_.execution_concentration_top1_share_threshold < 1.0) {
     const ConcentrationSnapshot concentration =
         BuildConcentrationSnapshot(system_.account());
+    const double current_symbol_notional =
+        system_.account().current_notional_usd(decision.intent->symbol);
+    double projected_symbol_notional = current_symbol_notional;
+    const double reference_price =
+        decision.intent->price > 0.0
+            ? decision.intent->price
+            : (event.mark_price > 0.0 ? event.mark_price : event.price);
+    if (reference_price > 0.0 && decision.intent->qty > 0.0) {
+      projected_symbol_notional += static_cast<double>(decision.intent->direction) *
+                                   decision.intent->qty * reference_price;
+    }
+    const bool concentration_widening =
+        std::fabs(projected_symbol_notional) >
+        std::fabs(current_symbol_notional) + kNotionalEpsilon;
+    const ConcentrationSnapshot concentration_projected =
+        concentration_widening
+            ? BuildConcentrationSnapshot(system_.account(),
+                                         &decision.intent->symbol,
+                                         projected_symbol_notional)
+            : concentration;
+    const ConcentrationSnapshot& concentration_for_penalty =
+        concentration_widening ? concentration_projected : concentration;
     const int min_symbols = std::max(1, config_.execution_concentration_min_symbols);
-    if (static_cast<int>(concentration.symbol_count) >= min_symbols &&
-        concentration.top1_symbol == decision.intent->symbol &&
-        concentration.top1_share >
+    if (static_cast<int>(concentration_for_penalty.symbol_count) >= min_symbols &&
+        concentration_for_penalty.top1_symbol == decision.intent->symbol &&
+        concentration_for_penalty.top1_share >
             config_.execution_concentration_top1_share_threshold) {
       const double den = std::max(
           1e-9, 1.0 - config_.execution_concentration_top1_share_threshold);
-      const double scale =
-          std::clamp((concentration.top1_share -
+      const double linear_scale =
+          std::clamp((concentration_for_penalty.top1_share -
                       config_.execution_concentration_top1_share_threshold) /
                          den,
                      0.0, 1.0);
+      // 用凸性放大高集中区间惩罚，避免 top1 占比长期高位却惩罚过弱。
+      const double boosted_scale =
+          std::clamp(linear_scale * linear_scale + 0.35 * linear_scale, 0.0, 1.0);
       concentration_adjust_bps =
-          scale * std::max(0.0, config_.execution_concentration_penalty_bps);
+          boosted_scale * std::max(0.0, config_.execution_concentration_penalty_bps);
     }
   }
   const double quality_guard_penalty_bps =
@@ -605,9 +655,10 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const double near_miss_tolerance_bps =
       std::max(0.0, config_.execution_entry_gate_near_miss_tolerance_bps);
   bool filtered = edge_gap_bps > near_miss_tolerance_bps + 1e-9;
-  // 近阈值定义：落在“容差+附加带”内的样本，用于观测与可选 maker 放行。
+  // 近阈值定义：落在“容差+附加带+自适应放宽”内的样本，用于观测与可选 maker 放行。
   const double near_miss_band_bps =
-      near_miss_tolerance_bps + std::max(0.05, near_miss_tolerance_bps);
+      near_miss_tolerance_bps + std::max(0.05, near_miss_tolerance_bps) +
+      std::max(0.0, adaptive_relax_bps);
   const bool near_miss = filtered && edge_gap_bps <= near_miss_band_bps;
   bool near_miss_allowed = false;
   if (near_miss && config_.execution_entry_gate_near_miss_maker_allow &&
@@ -616,7 +667,8 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
     const double allow_extra_gap_bps =
         std::max(0.0, config_.execution_entry_gate_near_miss_maker_max_gap_bps);
     const double allow_upper_gap_bps =
-        near_miss_tolerance_bps + allow_extra_gap_bps;
+        near_miss_tolerance_bps + allow_extra_gap_bps +
+        std::max(0.0, adaptive_relax_bps);
     // 语义：maker_allow 配置是“在 tolerance 之上的附加 gap”。
     if (allow_extra_gap_bps > 0.0 &&
         edge_gap_bps <= allow_upper_gap_bps + 1e-9) {
@@ -1234,7 +1286,10 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   if (std::isfinite(event.funding_rate_per_interval)) {
     latest_funding_rate_per_tick_ = event.funding_rate_per_interval;
     has_latest_funding_rate_per_tick_ = true;
-  } else {
+    latest_funding_rate_observed_tick_ = market_tick_count_;
+  } else if (has_latest_funding_rate_per_tick_ &&
+             market_tick_count_ - latest_funding_rate_observed_tick_ >
+                 kFundingObservationStaleTicks) {
     has_latest_funding_rate_per_tick_ = false;
   }
 
@@ -1524,7 +1579,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 std::to_string(config_.execution_entry_gate_near_miss_maker_max_gap_bps) +
                 ", maker_allow_upper_gap_bps=" +
                 std::to_string(config_.execution_entry_gate_near_miss_tolerance_bps +
-                               config_.execution_entry_gate_near_miss_maker_max_gap_bps) +
+                               config_.execution_entry_gate_near_miss_maker_max_gap_bps +
+                               adaptive_relax_bps) +
                 ", maker_allow_config_key=entry_gate_near_miss_maker_max_gap_bps" +
                 ", maker_allow_config_value_bps=" +
                 std::to_string(config_.execution_entry_gate_near_miss_maker_max_gap_bps));
