@@ -193,7 +193,7 @@ def assess_data_pipeline(path: Path) -> Dict[str, Any]:
     }
 
 
-def assess_walkforward(path: Path) -> Dict[str, Any]:
+def assess_walkforward(path: Path, min_avg_split_sharpe: float = 0.0) -> Dict[str, Any]:
     payload = read_json(path)
     summary = payload.get("summary", {})
     if not isinstance(summary, dict):
@@ -201,12 +201,21 @@ def assess_walkforward(path: Path) -> Dict[str, Any]:
     valid_split_count = summary.get("valid_split_count", 0)
     total_bars = summary.get("total_bars", 0)
     avg_split_sharpe = summary.get("avg_split_sharpe")
-    ok = isinstance(valid_split_count, int) and valid_split_count > 0
-    ok = ok and isinstance(total_bars, int) and total_bars > 0
-    status, fails = status_tuple(ok, "walk-forward 报告无有效 split 或 bars")
+    fails: List[str] = []
     warns: List[str] = []
-    if isinstance(avg_split_sharpe, (int, float)) and avg_split_sharpe < 0:
-        warns.append("walk-forward 平均 Sharpe<0，建议复核特征/模型参数")
+    if not (isinstance(valid_split_count, int) and valid_split_count > 0):
+        fails.append("walk-forward 报告无有效 split")
+    if not (isinstance(total_bars, int) and total_bars > 0):
+        fails.append("walk-forward 报告无有效 bars")
+    if isinstance(avg_split_sharpe, (int, float)):
+        if avg_split_sharpe < min_avg_split_sharpe:
+            fails.append(
+                "walk-forward 平均 Sharpe 未达门槛: "
+                f"{float(avg_split_sharpe):.6f} < {float(min_avg_split_sharpe):.6f}"
+            )
+    else:
+        warns.append("walk-forward 缺少 avg_split_sharpe，无法评估收益质量")
+    status = "pass" if not fails else "fail"
     return {
         "status": status,
         "fail_reasons": fails,
@@ -268,6 +277,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime_assess_report", default="", help="assess_run_log 输出 JSON 路径")
     parser.add_argument("--data_pipeline_report", default="", help="data_pipeline_report.json 路径")
     parser.add_argument("--walkforward_report", default="", help="walkforward_report.json 路径")
+    parser.add_argument(
+        "--walkforward_min_avg_sharpe",
+        type=float,
+        default=0.0,
+        help="walk-forward 平均 Sharpe 最低门槛（默认 0.0，低于即 FAIL）",
+    )
     parser.add_argument(
         "--inherit_report",
         default="",
@@ -360,7 +375,10 @@ def main() -> int:
     if args.walkforward_report:
         walkforward_path = Path(args.walkforward_report)
         if walkforward_path.is_file():
-            sections["walkforward"] = assess_walkforward(walkforward_path)
+            sections["walkforward"] = assess_walkforward(
+                walkforward_path,
+                min_avg_split_sharpe=float(args.walkforward_min_avg_sharpe),
+            )
         else:
             sections["walkforward"] = {
                 "status": "fail",

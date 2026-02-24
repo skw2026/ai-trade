@@ -255,6 +255,7 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "self_evolution_counterfactual_action_count": 0,
             "self_evolution_counterfactual_update_count": 0,
             "self_evolution_factor_ic_action_count": 0,
+            "self_evolution_objective_update_count": 0,
             "self_evolution_effective_update_count": 0,
             "self_evolution_counterfactual_fallback_used_count": 0,
             "self_evolution_learnability_skip_count": 0,
@@ -317,6 +318,9 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     evolution_factor_ic_action = (
         to_int(latest_metrics.get("self_evolution_factor_ic_action_count")) or 0
+    )
+    evolution_objective_update = (
+        to_int(latest_metrics.get("self_evolution_objective_update_count")) or 0
     )
     evolution_effective_update = (
         to_int(latest_metrics.get("self_evolution_effective_update_count")) or 0
@@ -465,6 +469,7 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "self_evolution_counterfactual_action_count": evolution_counterfactual_action,
         "self_evolution_counterfactual_update_count": evolution_counterfactual_update,
         "self_evolution_factor_ic_action_count": evolution_factor_ic_action,
+        "self_evolution_objective_update_count": evolution_objective_update,
         "self_evolution_effective_update_count": evolution_effective_update,
         "self_evolution_counterfactual_fallback_used_count": evolution_counterfactual_fallback_used,
         "self_evolution_learnability_skip_count": evolution_learnability_skip,

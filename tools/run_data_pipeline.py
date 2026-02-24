@@ -347,6 +347,15 @@ def main() -> int:
                 ),
                 "--random-seed",
                 str(as_int(deep_get(config, ["walkforward", "random_seed"], 42), 42)),
+                "--min-hold-bars",
+                str(as_int(deep_get(config, ["walkforward", "min_hold_bars"], 3), 3)),
+                "--rebalance-deadband",
+                str(
+                    as_float(
+                        deep_get(config, ["walkforward", "rebalance_deadband"], 0.10),
+                        0.10,
+                    )
+                ),
             ],
         )
     )

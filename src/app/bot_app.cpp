@@ -779,19 +779,51 @@ void BotApplication::EvaluateExecutionQualityGuard(
     execution_quality_required_edge_penalty_bps_ = 0.0;
     execution_quality_bad_streak_ = 0;
     execution_quality_good_streak_ = 0;
+    execution_quality_pending_fills_ = 0;
+    execution_quality_pending_realized_net_sum_usd_ = 0.0;
+    execution_quality_pending_fee_bps_weighted_sum_ = 0.0;
     return;
+  }
+
+  if (window_fills > 0) {
+    execution_quality_pending_fills_ += window_fills;
+    execution_quality_pending_realized_net_sum_usd_ +=
+        window_realized_net_per_fill_usd * static_cast<double>(window_fills);
+    execution_quality_pending_fee_bps_weighted_sum_ +=
+        window_fee_bps_per_fill * static_cast<double>(window_fills);
   }
 
   const std::uint64_t min_fills = static_cast<std::uint64_t>(std::max(
       0, config_.execution_quality_guard_min_fills));
-  if (window_fills < min_fills || window_fills == 0) {
+  const bool severe_bad_window =
+      window_fills > 0 &&
+      (window_realized_net_per_fill_usd <
+           config_.execution_quality_guard_min_realized_net_per_fill_usd * 3.0 ||
+       window_fee_bps_per_fill >
+           std::max(0.0, config_.execution_quality_guard_max_fee_bps_per_fill) *
+               2.0);
+  if (execution_quality_pending_fills_ == 0) {
+    return;
+  }
+  if (!severe_bad_window && execution_quality_pending_fills_ < min_fills) {
     return;
   }
 
+  const double eval_fills = static_cast<double>(execution_quality_pending_fills_);
+  const double eval_realized_net_per_fill_usd =
+      eval_fills > 0.0 ? execution_quality_pending_realized_net_sum_usd_ / eval_fills
+                       : 0.0;
+  const double eval_fee_bps_per_fill =
+      eval_fills > 0.0 ? execution_quality_pending_fee_bps_weighted_sum_ / eval_fills
+                       : 0.0;
+  execution_quality_pending_fills_ = 0;
+  execution_quality_pending_realized_net_sum_usd_ = 0.0;
+  execution_quality_pending_fee_bps_weighted_sum_ = 0.0;
+
   const bool bad_quality =
-      window_realized_net_per_fill_usd <
+      eval_realized_net_per_fill_usd <
           config_.execution_quality_guard_min_realized_net_per_fill_usd ||
-      window_fee_bps_per_fill >
+      eval_fee_bps_per_fill >
           config_.execution_quality_guard_max_fee_bps_per_fill;
   if (bad_quality) {
     ++execution_quality_bad_streak_;
@@ -805,6 +837,10 @@ void BotApplication::EvaluateExecutionQualityGuard(
           0.0, config_.execution_quality_guard_required_edge_penalty_bps);
       LogInfo("EXECUTION_QUALITY_GUARD_ENTER: bad_streak=" +
               std::to_string(execution_quality_bad_streak_) +
+              ", eval_fills=" + std::to_string(static_cast<int>(eval_fills)) +
+              ", eval_realized_net_per_fill_usd=" +
+              std::to_string(eval_realized_net_per_fill_usd) +
+              ", eval_fee_bps_per_fill=" + std::to_string(eval_fee_bps_per_fill) +
               ", min_realized_net_per_fill_usd=" +
               std::to_string(
                   config_.execution_quality_guard_min_realized_net_per_fill_usd) +
@@ -830,7 +866,11 @@ void BotApplication::EvaluateExecutionQualityGuard(
     execution_quality_required_edge_penalty_bps_ = 0.0;
     execution_quality_good_streak_ = 0;
     LogInfo("EXECUTION_QUALITY_GUARD_EXIT: release_streak=" +
-            std::to_string(release_streak));
+            std::to_string(release_streak) +
+            ", eval_fills=" + std::to_string(static_cast<int>(eval_fills)) +
+            ", eval_realized_net_per_fill_usd=" +
+            std::to_string(eval_realized_net_per_fill_usd) +
+            ", eval_fee_bps_per_fill=" + std::to_string(eval_fee_bps_per_fill));
   }
 }
 

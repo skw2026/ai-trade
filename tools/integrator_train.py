@@ -606,9 +606,28 @@ def main() -> int:
     parser.add_argument("--train_window_bars", type=int, default=0, help="rolling 训练窗口")
     parser.add_argument("--test_window_bars", type=int, default=120, help="测试窗口")
     parser.add_argument("--rolling_step_bars", type=int, default=120, help="rolling 步长")
-    parser.add_argument("--iterations", type=int, default=300, help="CatBoost 迭代次数")
-    parser.add_argument("--depth", type=int, default=6, help="CatBoost 树深")
-    parser.add_argument("--learning_rate", type=float, default=0.05, help="CatBoost 学习率")
+    parser.add_argument("--iterations", type=int, default=180, help="CatBoost 迭代次数")
+    parser.add_argument("--depth", type=int, default=4, help="CatBoost 树深")
+    parser.add_argument("--learning_rate", type=float, default=0.03, help="CatBoost 学习率")
+    parser.add_argument("--l2_leaf_reg", type=float, default=30.0, help="CatBoost L2 正则")
+    parser.add_argument(
+        "--random_strength",
+        type=float,
+        default=2.0,
+        help="CatBoost 随机强度（增大可抑制过拟合）",
+    )
+    parser.add_argument(
+        "--subsample",
+        type=float,
+        default=0.80,
+        help="CatBoost 行采样比例 (0,1]",
+    )
+    parser.add_argument(
+        "--rsm",
+        type=float,
+        default=0.80,
+        help="CatBoost 列采样比例 (0,1]",
+    )
     parser.add_argument("--random_seed", type=int, default=42, help="随机种子")
     parser.add_argument("--min_auc_mean", type=float, default=0.50, help="治理门槛：最小 AUC 均值")
     parser.add_argument(
@@ -705,6 +724,14 @@ def main() -> int:
         raise ValueError("--max_random_label_auc 必须在 [0,1] 范围")
     if int(args.random_label_iterations) <= 0:
         raise ValueError("--random_label_iterations 必须大于 0")
+    if float(args.l2_leaf_reg) < 0.0:
+        raise ValueError("--l2_leaf_reg 不能为负数")
+    if float(args.random_strength) < 0.0:
+        raise ValueError("--random_strength 不能为负数")
+    if not (0.0 < float(args.subsample) <= 1.0):
+        raise ValueError("--subsample 必须在 (0,1] 范围")
+    if not (0.0 < float(args.rsm) <= 1.0):
+        raise ValueError("--rsm 必须在 (0,1] 范围")
 
     series = load_ohlcv_csv(csv_path)
     factor_set_version, factor_specs = load_factor_specs(miner_report_path, max(1, args.top_k))
@@ -801,6 +828,11 @@ def main() -> int:
             iterations=args.iterations,
             depth=args.depth,
             learning_rate=args.learning_rate,
+            l2_leaf_reg=float(args.l2_leaf_reg),
+            random_strength=float(args.random_strength),
+            bootstrap_type="Bernoulli",
+            subsample=float(args.subsample),
+            rsm=float(args.rsm),
             verbose=False,
             allow_writing_files=False,
         )
@@ -893,6 +925,11 @@ def main() -> int:
             iterations=min(int(args.iterations), int(args.random_label_iterations)),
             depth=max(2, int(args.depth) // 2),
             learning_rate=float(args.learning_rate),
+            l2_leaf_reg=max(3.0, float(args.l2_leaf_reg)),
+            random_strength=max(1.0, float(args.random_strength)),
+            bootstrap_type="Bernoulli",
+            subsample=float(args.subsample),
+            rsm=float(args.rsm),
             verbose=False,
             allow_writing_files=False,
         )
@@ -912,6 +949,11 @@ def main() -> int:
         iterations=args.iterations,
         depth=args.depth,
         learning_rate=args.learning_rate,
+        l2_leaf_reg=float(args.l2_leaf_reg),
+        random_strength=float(args.random_strength),
+        bootstrap_type="Bernoulli",
+        subsample=float(args.subsample),
+        rsm=float(args.rsm),
         verbose=False,
         allow_writing_files=False,
     )
@@ -1016,6 +1058,10 @@ def main() -> int:
             "iterations": int(args.iterations),
             "depth": int(args.depth),
             "learning_rate": float(args.learning_rate),
+            "l2_leaf_reg": float(args.l2_leaf_reg),
+            "random_strength": float(args.random_strength),
+            "subsample": float(args.subsample),
+            "rsm": float(args.rsm),
             "random_seed": int(args.random_seed),
         },
         "metrics_oos": metrics_oos,

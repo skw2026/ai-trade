@@ -730,6 +730,23 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     candidate = ProposeWeights(window_objective_score, runtime);
   }
 
+  auto try_objective_fallback = [&]() -> bool {
+    if (candidate_source == CandidateSource::kObjective) {
+      return false;
+    }
+    const EvolutionWeights objective_candidate =
+        ProposeWeights(window_objective_score, runtime);
+    if (std::fabs(objective_candidate.trend_weight -
+                  runtime.current_trend_weight) <= kWeightEpsilon &&
+        std::fabs(objective_candidate.defensive_weight -
+                  runtime.current_defensive_weight) <= kWeightEpsilon) {
+      return false;
+    }
+    candidate = objective_candidate;
+    candidate_source = CandidateSource::kObjective;
+    return true;
+  };
+
   if (std::fabs(candidate.trend_weight - runtime.current_trend_weight) <= kWeightEpsilon &&
       std::fabs(candidate.defensive_weight - runtime.current_defensive_weight) <=
           kWeightEpsilon) {
@@ -745,6 +762,12 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
         candidate_source = CandidateSource::kFactorIc;
         action.counterfactual_fallback_to_factor_ic_used = true;
       }
+    }
+    if (std::fabs(candidate.trend_weight - runtime.current_trend_weight) <=
+            kWeightEpsilon &&
+        std::fabs(candidate.defensive_weight - runtime.current_defensive_weight) <=
+            kWeightEpsilon) {
+      try_objective_fallback();
     }
   }
 
@@ -772,6 +795,13 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
 
   action.candidate_trend_weight_delta =
       std::fabs(candidate.trend_weight - runtime.current_trend_weight);
+  if (action.candidate_trend_weight_delta + kWeightEpsilon <
+      std::max(0.0, config_.min_effective_weight_delta)) {
+    if (try_objective_fallback()) {
+      action.candidate_trend_weight_delta =
+          std::fabs(candidate.trend_weight - runtime.current_trend_weight);
+    }
+  }
   if (action.candidate_trend_weight_delta + kWeightEpsilon <
       std::max(0.0, config_.min_effective_weight_delta)) {
     runtime.pending_direction = 0;

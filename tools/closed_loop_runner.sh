@@ -54,9 +54,9 @@ DQ_MAX_DUPLICATE_TS_RATIO="0.0"
 DQ_MAX_ZERO_VOLUME_RATIO="1.0"
 PREDICT_HORIZON_BARS="1"
 N_SPLITS="5"
-TRAIN_WINDOW_BARS="800"
-TEST_WINDOW_BARS="120"
-ROLLING_STEP_BARS="120"
+TRAIN_WINDOW_BARS="2400"
+TEST_WINDOW_BARS="240"
+ROLLING_STEP_BARS="240"
 
 MIN_AUC_MEAN="0.50"
 MIN_DELTA_AUC_VS_BASELINE="0.0"
@@ -86,6 +86,7 @@ REQUIRE_S5_LEARNABILITY_ACTIVITY="${CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY
 S5_MIN_EFFECTIVE_UPDATES="${CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES:-1}"
 S5_MIN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD:--0.001}"
 S5_MIN_REALIZED_NET_PER_FILL_WINDOWS="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS:-10}"
+WALKFORWARD_MIN_AVG_SHARPE="${CLOSED_LOOP_WALKFORWARD_MIN_AVG_SHARPE:-0.0}"
 S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
@@ -125,9 +126,9 @@ Options:
 
   --predict-horizon-bars <int>       R2 预测 horizon (default: 1)
   --n-splits <int>                   R2 split 数量 (default: 5)
-  --train-window-bars <int>          R2 train 窗口 (default: 800)
-  --test-window-bars <int>           R2 test 窗口 (default: 120)
-  --rolling-step-bars <int>          R2 rolling 步长 (default: 120)
+  --train-window-bars <int>          R2 train 窗口 (default: 2400)
+  --test-window-bars <int>           R2 test 窗口 (default: 240)
+  --rolling-step-bars <int>          R2 rolling 步长 (default: 240)
 
   --min-auc-mean <float>             模型激活门槛 AUC (default: 0.50)
   --min-delta-auc-vs-baseline <f>    模型激活门槛 Delta AUC (default: 0.0)
@@ -167,6 +168,7 @@ Env toggles:
   CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES=<int>            S5 强门禁：有效学习更新最小次数 (default: 1)
   CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD=<float>  S5 强门禁：单位成交净收益下限 (default: -0.001)
   CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS=<int> S5 生效条件：fills>0窗口最小数量 (default: 10)
+  CLOSED_LOOP_WALKFORWARD_MIN_AVG_SHARPE=<float>         walk-forward 平均 Sharpe 下限 (default: 0.0)
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
   CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
@@ -693,6 +695,7 @@ build_summary() {
   SUMMARY_ARGS=(
     tools/build_closed_loop_report.py
     --output="${FINAL_REPORT_PATH}"
+    --walkforward_min_avg_sharpe="${WALKFORWARD_MIN_AVG_SHARPE}"
   )
   if [[ "${ACTION}" == "assess" && -f "${LATEST_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--inherit_report "${LATEST_REPORT_PATH}")

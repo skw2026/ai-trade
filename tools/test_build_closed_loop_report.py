@@ -217,6 +217,61 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(payload["fail_reasons"], [])
             self.assertIn("miner", payload["sections"])
 
+    def test_walkforward_negative_sharpe_is_fail(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            walkforward_report = root / "walkforward_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "rows": 5000,
+                        "summary": {
+                            "valid_split_count": 12,
+                            "total_bars": 4800,
+                            "avg_split_sharpe": -0.21,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--walkforward_report",
+                    str(walkforward_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["sections"]["walkforward"]["status"], "fail")
+            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertTrue(
+                any("walk-forward 平均 Sharpe 未达门槛" in x for x in payload["fail_reasons"])
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

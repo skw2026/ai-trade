@@ -147,6 +147,8 @@ def run_split(
     catboost_depth: int = 6,
     catboost_learning_rate: float = 0.05,
     random_seed: int = 42,
+    min_hold_bars: int = 0,
+    rebalance_deadband: float = 0.0,
 ) -> SplitResult:
     valid_train = np.all(np.isfinite(x_train), axis=1) & np.isfinite(y_train)
     x_train_v = x_train[valid_train]
@@ -194,6 +196,7 @@ def run_split(
     bar_returns: List[float] = []
     equity_curve = [equity]
     trades = 0
+    bars_since_last_trade = max(0, int(min_hold_bars))
 
     for i in range(x_test.shape[0]):
         r = y_test[i]
@@ -206,9 +209,21 @@ def run_split(
             confidence = min(1.0, abs(p) / max(pred_scale, 1e-8))
             target = math.copysign(confidence * max_leverage, p)
 
+        if abs(target - position) < max(0.0, rebalance_deadband):
+            target = position
+        if (
+            abs(target - position) > 1e-12
+            and int(min_hold_bars) > 0
+            and bars_since_last_trade < int(min_hold_bars)
+        ):
+            target = position
+
         turnover = abs(target - position)
         if turnover > 1e-12:
             trades += 1
+            bars_since_last_trade = 0
+        else:
+            bars_since_last_trade += 1
         pnl = position * float(r) - turnover * fees
         bar_returns.append(pnl)
         turnovers.append(turnover)
@@ -270,6 +285,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--catboost-depth", type=int, default=6)
     parser.add_argument("--catboost-learning-rate", type=float, default=0.05)
     parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument("--min-hold-bars", type=int, default=3)
+    parser.add_argument("--rebalance-deadband", type=float, default=0.10)
     return parser.parse_args()
 
 
@@ -322,6 +339,8 @@ def main() -> int:
             catboost_depth=int(args.catboost_depth),
             catboost_learning_rate=float(args.catboost_learning_rate),
             random_seed=int(args.random_seed) + split_index,
+            min_hold_bars=max(0, int(args.min_hold_bars)),
+            rebalance_deadband=max(0.0, float(args.rebalance_deadband)),
         )
         split_results.append(split)
         split_index += 1
@@ -359,6 +378,8 @@ def main() -> int:
             "catboost_depth": int(args.catboost_depth),
             "catboost_learning_rate": float(args.catboost_learning_rate),
             "random_seed": int(args.random_seed),
+            "min_hold_bars": int(args.min_hold_bars),
+            "rebalance_deadband": float(args.rebalance_deadband),
         },
         "summary": {
             "split_count": len(split_results),

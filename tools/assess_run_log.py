@@ -210,7 +210,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_S5_MIN_EFFECTIVE_UPDATES,
         help=(
             "S5 硬门槛：有效学习更新最小次数 "
-            "(counterfactual_update + factor_ic_action)"
+            "(counterfactual_update + factor_ic_action + objective_update)"
         ),
     )
     parser.add_argument(
@@ -933,6 +933,10 @@ def assess(
             r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_FACTOR_IC_(?:INCREASE|DECREASE)_TREND",
             text,
         ),
+        "self_evolution_objective_update_count": count(
+            r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_WEIGHT_(?:INCREASE|DECREASE)_TREND",
+            text,
+        ),
         "self_evolution_counterfactual_fallback_used_count": count(
             r"SELF_EVOLUTION_ACTION:.*counterfactual_fallback=\{enabled=true, used=true\}",
             text,
@@ -1123,6 +1127,7 @@ def assess(
     metrics["self_evolution_effective_update_count"] = (
         metrics["self_evolution_counterfactual_update_count"]
         + metrics["self_evolution_factor_ic_action_count"]
+        + metrics["self_evolution_objective_update_count"]
     )
     if metrics["runtime_status_count"] > 0:
         metrics["trading_halted_true_ratio"] = (

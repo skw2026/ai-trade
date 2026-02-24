@@ -347,6 +347,12 @@ class BotApplication {
   bool execution_quality_guard_active_{false};  ///< 执行质量守卫是否处于激活态。
   double execution_quality_required_edge_penalty_bps_{
       0.0};  ///< 执行质量守卫施加的额外入场边际门槛。
+  std::uint64_t execution_quality_pending_fills_{
+      0};  ///< 累积 fill 样本（跨日志窗口），用于避免低频成交导致守卫失效。
+  double execution_quality_pending_realized_net_sum_usd_{
+      0.0};  ///< 累积 realized_net（按 fill 加权），用于守卫判定。
+  double execution_quality_pending_fee_bps_weighted_sum_{
+      0.0};  ///< 累积 fee_bps（按 fill 加权），用于守卫判定。
   int reconcile_anomaly_streak_{0};  ///< 连续对账异常窗口计数。
   int reconcile_healthy_streak_{0};  ///< 对账连续健康窗口计数。
   int reconcile_tick_{0};          ///< 对账定时器计数
