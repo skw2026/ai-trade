@@ -802,6 +802,33 @@ void BotApplication::EvaluateExecutionQualityGuard(
        window_fee_bps_per_fill >
            std::max(0.0, config_.execution_quality_guard_max_fee_bps_per_fill) *
                2.0);
+  // 若守卫激活后长期无成交，且入场门观测显示高比例被过滤，
+  // 允许按更长 release 窗口自动退出守卫，避免“无成交=>无法评估=>永远不释放”锁死。
+  if (execution_quality_guard_active_ && execution_quality_pending_fills_ == 0 &&
+      window_fills == 0) {
+    const double trigger_ratio =
+        std::clamp(config_.execution_adaptive_fee_gate_trigger_ratio, 0.0, 1.0);
+    if (entry_gate_observed_filtered_ratio_ >= trigger_ratio) {
+      ++execution_quality_good_streak_;
+    } else {
+      execution_quality_good_streak_ = 0;
+    }
+    const int base_release_streak =
+        std::max(1, config_.execution_quality_guard_good_streak_to_release);
+    const int stale_release_streak = base_release_streak * 12;
+    if (execution_quality_good_streak_ >= stale_release_streak) {
+      execution_quality_guard_active_ = false;
+      execution_quality_required_edge_penalty_bps_ = 0.0;
+      execution_quality_bad_streak_ = 0;
+      execution_quality_good_streak_ = 0;
+      LogInfo("EXECUTION_QUALITY_GUARD_EXIT_STALE: release_streak=" +
+              std::to_string(stale_release_streak) +
+              ", observed_filtered_ratio=" +
+              std::to_string(entry_gate_observed_filtered_ratio_) +
+              ", trigger_ratio=" + std::to_string(trigger_ratio));
+    }
+    return;
+  }
   if (execution_quality_pending_fills_ == 0) {
     return;
   }
