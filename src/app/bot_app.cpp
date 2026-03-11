@@ -662,15 +662,20 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const bool near_miss = filtered && edge_gap_bps <= near_miss_band_bps;
   bool near_miss_allowed = false;
   if (near_miss && config_.execution_entry_gate_near_miss_maker_allow &&
-      maker_entry_candidate && !config_.execution_maker_fallback_to_market &&
-      !quality_guard_active) {
+      maker_entry_candidate && !config_.execution_maker_fallback_to_market) {
     const double allow_extra_gap_bps =
         std::max(0.0, config_.execution_entry_gate_near_miss_maker_max_gap_bps);
+    // 质量守卫开启时仍允许 near-miss maker 放行，但附加 gap 更严格，避免过度放宽。
+    const double effective_allow_extra_gap_bps =
+        quality_guard_active
+            ? std::min(allow_extra_gap_bps,
+                       std::max(0.05, quality_guard_penalty_bps * 0.5))
+            : allow_extra_gap_bps;
     const double allow_upper_gap_bps =
-        near_miss_tolerance_bps + allow_extra_gap_bps +
+        near_miss_tolerance_bps + effective_allow_extra_gap_bps +
         std::max(0.0, adaptive_relax_bps);
     // 语义：maker_allow 配置是“在 tolerance 之上的附加 gap”。
-    if (allow_extra_gap_bps > 0.0 &&
+    if (effective_allow_extra_gap_bps > 0.0 &&
         edge_gap_bps <= allow_upper_gap_bps + 1e-9) {
       filtered = false;
       near_miss_allowed = true;
