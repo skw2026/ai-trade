@@ -665,11 +665,14 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
       maker_entry_candidate && !config_.execution_maker_fallback_to_market) {
     const double allow_extra_gap_bps =
         std::max(0.0, config_.execution_entry_gate_near_miss_maker_max_gap_bps);
-    // 质量守卫开启时仍允许 near-miss maker 放行，但附加 gap 更严格，避免过度放宽。
+    // 质量守卫开启且尚未进入恢复窗口时，禁止 near-miss 放行，避免在低质量阶段继续加仓磨损。
+    // 一旦守卫期出现连续 good_streak，再允许“更严格版本”的 near-miss 放行用于恢复流量。
     const double effective_allow_extra_gap_bps =
         quality_guard_active
-            ? std::min(allow_extra_gap_bps,
-                       std::max(0.05, quality_guard_penalty_bps * 0.5))
+            ? (execution_quality_good_streak_ > 0
+                   ? std::min(allow_extra_gap_bps,
+                              std::max(0.05, quality_guard_penalty_bps * 0.5))
+                   : 0.0)
             : allow_extra_gap_bps;
     const double allow_upper_gap_bps =
         near_miss_tolerance_bps + effective_allow_extra_gap_bps +

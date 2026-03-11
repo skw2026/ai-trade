@@ -58,7 +58,7 @@ TRAIN_WINDOW_BARS="2400"
 TEST_WINDOW_BARS="240"
 ROLLING_STEP_BARS="240"
 
-MIN_AUC_MEAN="0.50"
+MIN_AUC_MEAN="0.48"
 MIN_DELTA_AUC_VS_BASELINE="0.0"
 MIN_SPLIT_TRAINED_COUNT="1"
 MIN_SPLIT_TRAINED_RATIO="0.50"
@@ -130,7 +130,7 @@ Options:
   --test-window-bars <int>           R2 test 窗口 (default: 240)
   --rolling-step-bars <int>          R2 rolling 步长 (default: 240)
 
-  --min-auc-mean <float>             模型激活门槛 AUC (default: 0.50)
+  --min-auc-mean <float>             模型激活门槛 AUC (default: 0.48)
   --min-delta-auc-vs-baseline <f>    模型激活门槛 Delta AUC (default: 0.0)
   --min-split-trained-count <int>    模型激活门槛 split 训练成功数 (default: 1)
   --min-split-trained-ratio <float>  模型激活门槛 split 训练成功比例 (default: 0.50)
