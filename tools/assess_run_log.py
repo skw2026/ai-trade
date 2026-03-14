@@ -855,6 +855,7 @@ def assess(
     original_text = text
     flat_start_rebased = False
     flat_start_rebase_cutoff_utc = None
+    flat_start_rebase_fallback = False
     if stage.require_flat_start:
         notional_samples = extract_runtime_notional_samples(text)
         if notional_samples:
@@ -877,14 +878,60 @@ def assess(
                             "%Y-%m-%dT%H:%M:%SZ"
                         )
 
-    account_pnl = extract_runtime_account_series(text)
-    strategy_mix = extract_strategy_mix_series(text)
-    execution_window = extract_execution_window_series(text)
-    execution_quality_guard = extract_execution_quality_guard_series(text)
-    entry_gate = extract_entry_gate_series(text)
-    concentration = extract_concentration_series(text)
-    entry_edge_adjust = extract_entry_edge_adjust_series(text)
-    reconcile_runtime = extract_reconcile_runtime_series(text)
+    def extract_views(
+        raw_text: str,
+    ) -> tuple[
+        Dict[str, object],
+        Dict[str, float],
+        Dict[str, float],
+        Dict[str, float],
+        Dict[str, float],
+        Dict[str, float],
+        Dict[str, float],
+        Dict[str, float],
+    ]:
+        return (
+            extract_runtime_account_series(raw_text),
+            extract_strategy_mix_series(raw_text),
+            extract_execution_window_series(raw_text),
+            extract_execution_quality_guard_series(raw_text),
+            extract_entry_gate_series(raw_text),
+            extract_concentration_series(raw_text),
+            extract_entry_edge_adjust_series(raw_text),
+            extract_reconcile_runtime_series(raw_text),
+        )
+
+    (
+        account_pnl,
+        strategy_mix,
+        execution_window,
+        execution_quality_guard,
+        entry_gate,
+        concentration,
+        entry_edge_adjust,
+        reconcile_runtime,
+    ) = extract_views(text)
+
+    if flat_start_rebased:
+        original_strategy_mix = extract_strategy_mix_series(original_text)
+        rebased_nonzero = int(strategy_mix.get("nonzero_window_count", 0.0))
+        original_nonzero = int(original_strategy_mix.get("nonzero_window_count", 0.0))
+        if rebased_nonzero <= 0 and original_nonzero > 0:
+            text = original_text
+            flat_start_rebased = False
+            flat_start_rebase_cutoff_utc = None
+            flat_start_rebase_fallback = True
+            (
+                account_pnl,
+                strategy_mix,
+                execution_window,
+                execution_quality_guard,
+                entry_gate,
+                concentration,
+                entry_edge_adjust,
+                reconcile_runtime,
+            ) = extract_views(text)
+
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
     metrics = {
@@ -1169,6 +1216,11 @@ def assess(
 
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
+    if flat_start_rebase_fallback:
+        warn_reasons.append(
+            "FLAT_START_REBASE 已回退原始窗口：rebase 后 strategy_mix 非零窗口被清零，"
+            "已避免误判"
+        )
 
     if metrics["critical_count"] > 0:
         fail_reasons.append(f"出现 CRITICAL: {metrics['critical_count']}")
@@ -1499,6 +1551,7 @@ def assess(
         "warn_reasons": warn_reasons,
         "flat_start_rebased": flat_start_rebased,
         "flat_start_rebase_cutoff_utc": flat_start_rebase_cutoff_utc,
+        "flat_start_rebase_fallback": flat_start_rebase_fallback,
     }
 
 
@@ -1515,6 +1568,8 @@ def print_report(report: Dict[str, object]) -> None:
             "FLAT_START_REBASE: "
             f"applied=true, cutoff_utc={report.get('flat_start_rebase_cutoff_utc')}"
         )
+    if bool(report.get("flat_start_rebase_fallback")):
+        print("FLAT_START_REBASE: applied=false, fallback_to_original=true")
 
     account_pnl = report.get("account_pnl", {})
     if isinstance(account_pnl, dict):

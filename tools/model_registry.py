@@ -141,6 +141,11 @@ def parse_args() -> argparse.Namespace:
         help="激活报告写入路径",
     )
     register.add_argument(
+        "--active_miner_report_path",
+        default="./data/research/miner_report.json",
+        help="激活 miner 报告写入路径（供运行期稳定引用）",
+    )
+    register.add_argument(
         "--active_meta_path",
         default="./data/models/integrator_active.json",
         help="激活元信息写入路径",
@@ -331,11 +336,22 @@ def run_register(args: argparse.Namespace) -> int:
     activated = bool(args.activate_on_pass and gate_pass)
     active_model_path = Path(args.active_model_path)
     active_report_path = Path(args.active_report_path)
+    active_miner_report_path = Path(args.active_miner_report_path)
     active_meta_path = Path(args.active_meta_path)
 
     if activated:
         atomic_copy(model_file, active_model_path)
-        atomic_copy(integrator_report_path, active_report_path)
+        active_report_payload = json.loads(
+            json.dumps(report, ensure_ascii=False)
+        )
+        data_section = active_report_payload.get("data")
+        if not isinstance(data_section, dict):
+            data_section = {}
+            active_report_payload["data"] = data_section
+        if miner_report_path is not None:
+            atomic_copy(miner_report_path, active_miner_report_path)
+            data_section["miner_report_path"] = str(active_miner_report_path)
+        write_json(active_report_path, active_report_payload)
         active_payload = {
             "active_entry_id": entry_id,
             "model_version": model_version,

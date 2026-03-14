@@ -8,6 +8,7 @@
 #include <optional>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -227,6 +228,75 @@ bool IsRegularFileNonEmpty(const std::string& path, std::string* out_error) {
   if (ec || size == 0U) {
     if (out_error != nullptr) {
       *out_error = "文件为空: " + path;
+    }
+    return false;
+  }
+  return true;
+}
+
+std::string MinerFeatureKey(int idx) {
+  std::ostringstream oss;
+  oss << "miner_";
+  if (idx < 10) {
+    oss << "0";
+  }
+  oss << idx;
+  return oss.str();
+}
+
+bool LoadMinerExpressionsFromReport(
+    const std::filesystem::path& report_path,
+    std::unordered_map<std::string, std::string>* out_expressions,
+    std::string* out_error) {
+  if (out_expressions == nullptr) {
+    if (out_error != nullptr) {
+      *out_error = "out_expressions 为空";
+    }
+    return false;
+  }
+  std::ifstream miner_input(report_path);
+  if (!miner_input.is_open()) {
+    if (out_error != nullptr) {
+      *out_error = "无法打开文件";
+    }
+    return false;
+  }
+  std::ostringstream miner_buffer;
+  miner_buffer << miner_input.rdbuf();
+  JsonValue miner_root;
+  std::string miner_err;
+  if (!ParseJson(miner_buffer.str(), &miner_root, &miner_err)) {
+    if (out_error != nullptr) {
+      *out_error = "JSON 解析失败: " + miner_err;
+    }
+    return false;
+  }
+
+  const JsonValue* factors = JsonObjectField(&miner_root, "factors");
+  if (factors == nullptr || factors->type != JsonType::kArray) {
+    if (out_error != nullptr) {
+      *out_error = "缺少 factors 数组";
+    }
+    return false;
+  }
+
+  out_expressions->clear();
+  int idx = 0;
+  for (const auto& factor : factors->array_value) {
+    auto expr = JsonAsString(JsonObjectField(&factor, "expression"));
+    auto invert = JsonAsBool(JsonObjectField(&factor, "invert_signal"));
+    if (expr.has_value() && !expr->empty()) {
+      std::string final_expr = *expr;
+      if (invert.value_or(false)) {
+        final_expr = "-(" + final_expr + ")";
+      }
+      (*out_expressions)[MinerFeatureKey(idx)] = std::move(final_expr);
+    }
+    ++idx;
+  }
+  if (out_expressions->empty()) {
+    if (out_error != nullptr) {
+      *out_error = "factors 为空或表达式缺失";
     }
     return false;
   }
@@ -542,42 +612,71 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
 
   // 3. 加载 Miner 报告并构建特征表达式映射
   std::unordered_map<std::string, std::string> miner_expressions;
+  std::vector<std::string> miner_candidate_paths;
+  std::vector<std::string> miner_load_errors;
+  std::string resolved_miner_report_path;
+  std::unordered_set<std::string> miner_candidate_dedup;
+  auto append_candidate = [&](const std::filesystem::path& candidate) {
+    if (candidate.empty()) {
+      return;
+    }
+    const std::string normalized = candidate.lexically_normal().string();
+    if (normalized.empty()) {
+      return;
+    }
+    if (miner_candidate_dedup.insert(normalized).second) {
+      miner_candidate_paths.push_back(normalized);
+    }
+  };
+
+  // 优先采用 integrator_report 记录的路径。
   if (!miner_report_path.empty()) {
-    std::ifstream miner_input(miner_report_path);
-    if (miner_input.is_open()) {
-      std::ostringstream miner_buffer;
-      miner_buffer << miner_input.rdbuf();
-      JsonValue miner_root;
-      std::string miner_err;
-      if (ParseJson(miner_buffer.str(), &miner_root, &miner_err)) {
-        const JsonValue* factors = JsonObjectField(&miner_root, "factors");
-        if (factors != nullptr && factors->type == JsonType::kArray) {
-          int idx = 0;
-          for (const auto& factor : factors->array_value) {
-            auto expr = JsonAsString(JsonObjectField(&factor, "expression"));
-            auto invert = JsonAsBool(JsonObjectField(&factor, "invert_signal"));
-            if (expr.has_value()) {
-              std::string final_expr = *expr;
-              if (invert.value_or(false)) {
-                final_expr = "-(" + final_expr + ")";
-              }
-              // key 格式需与 integrator_train.py 中的命名一致: miner_00, miner_01...
-              std::string key = std::string("miner_") + (idx < 10 ? "0" : "") + std::to_string(idx);
-              miner_expressions[key] = final_expr;
-            }
-            idx++;
-          }
-        }
+    const std::filesystem::path raw_path(miner_report_path);
+    append_candidate(raw_path);
+    // 如果是相对路径，同时尝试“相对 model_report 所在目录”的解析。
+    if (raw_path.is_relative() && !config_.model_report_path.empty()) {
+      const std::filesystem::path report_dir =
+          std::filesystem::path(config_.model_report_path).parent_path();
+      if (!report_dir.empty()) {
+        append_candidate(report_dir / raw_path);
       }
     }
   }
+  // 兼容路径 1：和 active report 同目录。
+  if (!config_.model_report_path.empty()) {
+    const std::filesystem::path report_dir =
+        std::filesystem::path(config_.model_report_path).parent_path();
+    if (!report_dir.empty()) {
+      append_candidate(report_dir / "miner_report.json");
+    }
+  }
+  // 兼容路径 2：固定稳定路径（激活时由 model_registry 同步）。
+  append_candidate(std::filesystem::path("./data/research/miner_report.json"));
+
+  for (const auto& candidate : miner_candidate_paths) {
+    std::string load_error;
+    if (!LoadMinerExpressionsFromReport(candidate, &miner_expressions, &load_error)) {
+      if (!load_error.empty()) {
+        miner_load_errors.push_back(candidate + ": " + load_error);
+      }
+      continue;
+    }
+    resolved_miner_report_path = candidate;
+    break;
+  }
+  if (!resolved_miner_report_path.empty()) {
+    LogInfo("INTEGRATOR_MINER_REPORT_RESOLVED: path=" + resolved_miner_report_path +
+            ", expression_count=" + std::to_string(miner_expressions.size()));
+  }
 
   // 4. 构建最终的表达式列表
+  std::vector<std::string> missing_miner_features;
   for (const auto& name : feature_names_) {
     if (name.rfind("miner_", 0) == 0) {
       auto it = miner_expressions.find(name);
       if (it == miner_expressions.end() || it->second.empty()) {
-        return fail("integrator 特征映射缺失: " + name);
+        missing_miner_features.push_back(name);
+        continue;
       }
       feature_expressions_.push_back(it->second);
     } else {
@@ -587,6 +686,19 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
       }
       feature_expressions_.push_back(*expression);
     }
+  }
+  if (!missing_miner_features.empty()) {
+    std::ostringstream oss;
+    oss << "integrator 特征映射缺失: " << JoinReasons(missing_miner_features);
+    if (!resolved_miner_report_path.empty()) {
+      oss << ", resolved_miner_report=" << resolved_miner_report_path;
+    } else {
+      oss << ", miner_report_candidates=" << JoinReasons(miner_candidate_paths);
+    }
+    if (!miner_load_errors.empty()) {
+      oss << ", load_errors=" << JoinReasons(miner_load_errors);
+    }
+    return fail(oss.str());
   }
 
   initialized_ = true;
