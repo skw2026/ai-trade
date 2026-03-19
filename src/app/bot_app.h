@@ -318,6 +318,8 @@ class BotApplication {
   double entry_gate_observed_near_miss_allowed_ratio_{0.0};
   double recent_execution_window_maker_fill_ratio_{0.0};
   double recent_execution_window_unknown_fill_ratio_{0.0};
+  std::uint64_t recent_execution_window_liquidity_fill_count_{
+      0};  ///< 最近一个状态窗口内已分类成交样本数（maker+taker+unknown）。
 
   bool protection_forced_reduce_only_{
       false};  ///< 保护单关键路径触发的只减仓开关（高优先级，需人工介入恢复）。

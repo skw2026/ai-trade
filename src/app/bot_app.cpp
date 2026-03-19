@@ -403,8 +403,24 @@ double BotApplication::EstimateEntryEdgeBps(const MarketDecision& decision,
       0.0, decision.regime.trend_strength * static_cast<double>(direction) * 10000.0);
   const double instant_edge_bps = std::max(
       0.0, decision.regime.instant_return * static_cast<double>(direction) * 10000.0);
-  const double regime_edge_bps = 0.6 * trend_edge_bps + 0.4 * instant_edge_bps;
-  return std::max(deadband_bps, regime_edge_bps);
+  const double raw_regime_edge_bps = 0.6 * trend_edge_bps + 0.4 * instant_edge_bps;
+
+  // 用信号置信度与分支净合成比降噪，避免“分支互相对冲 + 低置信”样本被高估。
+  const double confidence_scale =
+      std::clamp(std::fabs(decision.signal.confidence), 0.0, 1.0);
+  const double branch_abs_sum =
+      std::fabs(decision.base_signal.trend_notional_usd) +
+      std::fabs(decision.base_signal.defensive_notional_usd);
+  double net_blend_scale = 1.0;
+  if (branch_abs_sum > kNotionalEpsilon) {
+    net_blend_scale = std::clamp(
+        std::fabs(decision.signal.suggested_notional_usd) / branch_abs_sum, 0.0,
+        1.0);
+  }
+  const double regime_edge_bps =
+      raw_regime_edge_bps * confidence_scale * net_blend_scale;
+  const double deadband_edge_bps = deadband_bps * std::max(0.25, confidence_scale);
+  return std::max(deadband_edge_bps, regime_edge_bps);
 }
 
 bool BotApplication::ShouldFilterByFeeAwareGate(
@@ -480,6 +496,7 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
         std::min(required_edge_bps, config_.execution_required_edge_cap_bps);
   }
   double adaptive_relax_bps = 0.0;
+  const bool quality_guard_active = execution_quality_guard_active_;
   if (config_.execution_adaptive_fee_gate_enabled &&
       static_cast<int>(entry_gate_observed_samples_) >=
           config_.execution_adaptive_fee_gate_min_samples) {
@@ -495,10 +512,13 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
           std::max(0.0, config_.execution_adaptive_fee_gate_max_relax_bps);
     }
   }
+  // 执行质量守卫激活时，关闭“自适应放宽”，避免在低质量阶段继续放行弱边际样本。
+  if (quality_guard_active) {
+    adaptive_relax_bps = 0.0;
+  }
   const bool maker_entry_candidate =
       config_.execution_maker_entry_enabled &&
       decision.intent->purpose == OrderPurpose::kEntry && !decision.intent->reduce_only;
-  const bool quality_guard_active = execution_quality_guard_active_;
   const double maker_relax_bps =
       maker_entry_candidate && !quality_guard_active
           ? std::max(0.0, config_.execution_maker_edge_relax_bps)
@@ -545,6 +565,18 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
       liquidity_adjust_bps -=
           maker_scale *
           std::max(0.0, config_.execution_dynamic_edge_liquidity_relax_bps);
+    } else if (recent_execution_window_liquidity_fill_count_ > 0 &&
+               config_.execution_dynamic_edge_liquidity_maker_ratio_threshold >
+                   kNotionalEpsilon) {
+      // 在已有成交样本但 maker 占比持续偏低时，提高 required_edge，抑制低质量成交。
+      const double maker_deficit_scale = std::clamp(
+          (config_.execution_dynamic_edge_liquidity_maker_ratio_threshold -
+           recent_execution_window_maker_fill_ratio_) /
+              config_.execution_dynamic_edge_liquidity_maker_ratio_threshold,
+          0.0, 1.0);
+      liquidity_adjust_bps +=
+          maker_deficit_scale *
+          std::max(0.0, config_.execution_dynamic_edge_liquidity_penalty_bps);
     }
     if (recent_execution_window_unknown_fill_ratio_ >=
         config_.execution_dynamic_edge_liquidity_unknown_ratio_threshold) {
@@ -663,6 +695,23 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   bool near_miss_allowed = false;
   if (near_miss && config_.execution_entry_gate_near_miss_maker_allow &&
       maker_entry_candidate && !config_.execution_maker_fallback_to_market) {
+    const bool has_liquidity_window =
+        recent_execution_window_liquidity_fill_count_ >= 6;
+    const double maker_quality_threshold = std::clamp(
+        std::max(0.45,
+                 config_.execution_dynamic_edge_liquidity_maker_ratio_threshold),
+        0.0, 1.0);
+    const bool maker_quality_ok =
+        !has_liquidity_window ||
+        recent_execution_window_maker_fill_ratio_ + 1e-9 >=
+            maker_quality_threshold;
+    const double unknown_quality_threshold = std::clamp(
+        config_.execution_dynamic_edge_liquidity_unknown_ratio_threshold + 0.10,
+        0.10, 1.0);
+    const bool unknown_quality_ok =
+        !has_liquidity_window ||
+        recent_execution_window_unknown_fill_ratio_ <=
+            unknown_quality_threshold + 1e-9;
     const double allow_extra_gap_bps =
         std::max(0.0, config_.execution_entry_gate_near_miss_maker_max_gap_bps);
     // 质量守卫开启且尚未进入恢复窗口时，禁止 near-miss 放行，避免在低质量阶段继续加仓磨损。
@@ -678,7 +727,8 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
         near_miss_tolerance_bps + effective_allow_extra_gap_bps +
         std::max(0.0, adaptive_relax_bps);
     // 语义：maker_allow 配置是“在 tolerance 之上的附加 gap”。
-    if (effective_allow_extra_gap_bps > 0.0 &&
+    if (effective_allow_extra_gap_bps > 0.0 && maker_quality_ok &&
+        unknown_quality_ok &&
         edge_gap_bps <= allow_upper_gap_bps + 1e-9) {
       filtered = false;
       near_miss_allowed = true;
@@ -806,10 +856,10 @@ void BotApplication::EvaluateExecutionQualityGuard(
   const bool severe_bad_window =
       window_fills > 0 &&
       (window_realized_net_per_fill_usd <
-           config_.execution_quality_guard_min_realized_net_per_fill_usd * 3.0 ||
+           config_.execution_quality_guard_min_realized_net_per_fill_usd * 2.0 ||
        window_fee_bps_per_fill >
            std::max(0.0, config_.execution_quality_guard_max_fee_bps_per_fill) *
-               2.0);
+               1.5);
   // 若守卫激活后长期无成交，且入场门观测显示高比例被过滤，
   // 允许按更长 release 窗口自动退出守卫，避免“无成交=>无法评估=>永远不释放”锁死。
   if (execution_quality_guard_active_ && execution_quality_pending_fills_ == 0 &&
@@ -2689,6 +2739,7 @@ void BotApplication::LogStatus() {
           : 0.0;
   recent_execution_window_maker_fill_ratio_ = window_maker_fill_ratio;
   recent_execution_window_unknown_fill_ratio_ = window_unknown_fill_ratio;
+  recent_execution_window_liquidity_fill_count_ = liquidity_classified_fills;
   EvaluateExecutionQualityGuard(funnel_window.fills_applied,
                                 window_realized_net_per_fill_usd,
                                 window_fee_bps_per_fill);

@@ -356,6 +356,13 @@ def main() -> int:
                         0.10,
                     )
                 ),
+                "--min-calibration-ic",
+                str(
+                    as_float(
+                        deep_get(config, ["walkforward", "min_calibration_ic"], 0.0),
+                        0.0,
+                    )
+                ),
             ],
         )
     )

@@ -45,6 +45,8 @@ class SplitResult:
     total_return: float
     sharpe: float
     max_drawdown: float
+    calibration_ic: float
+    trading_enabled: bool
 
 
 def annualization_factor(interval_minutes: int) -> float:
@@ -125,6 +127,18 @@ def compute_max_drawdown(equity_curve: List[float]) -> float:
     return max_dd
 
 
+def safe_corr(a: np.ndarray, b: np.ndarray) -> float:
+    if a.size == 0 or b.size == 0 or a.size != b.size:
+        return 0.0
+    if not (np.all(np.isfinite(a)) and np.all(np.isfinite(b))):
+        return 0.0
+    a_std = float(np.std(a))
+    b_std = float(np.std(b))
+    if a_std <= 1e-12 or b_std <= 1e-12:
+        return 0.0
+    return float(np.corrcoef(a, b)[0, 1])
+
+
 def run_split(
     *,
     split_index: int,
@@ -149,6 +163,7 @@ def run_split(
     random_seed: int = 42,
     min_hold_bars: int = 0,
     rebalance_deadband: float = 0.0,
+    min_calibration_ic: float = 0.0,
 ) -> SplitResult:
     valid_train = np.all(np.isfinite(x_train), axis=1) & np.isfinite(y_train)
     x_train_v = x_train[valid_train]
@@ -166,28 +181,50 @@ def run_split(
             total_return=0.0,
             sharpe=0.0,
             max_drawdown=0.0,
+            calibration_ic=0.0,
+            trading_enabled=False,
         )
 
     model = model.lower()
-    if model == "linear":
-        w = fit_linear_ridge(x_train_v, y_train_v, l2=1e-6)
-        pred = predict_linear(x_test, w)
-    elif model == "catboost":
-        if CatBoostRegressor is None:
-            raise RuntimeError("catboost 未安装，无法使用 --model catboost")
-        reg = CatBoostRegressor(
-            loss_function="RMSE",
-            random_seed=int(random_seed),
-            iterations=max(10, int(catboost_iterations)),
-            depth=max(2, int(catboost_depth)),
-            learning_rate=float(catboost_learning_rate),
-            verbose=False,
-            allow_writing_files=False,
-        )
-        reg.fit(x_train_v, y_train_v)
-        pred = np.asarray(reg.predict(x_test), dtype=np.float64)
-    else:
+    calibration_ic = 0.0
+    trading_enabled = True
+
+    def fit_predict(x_fit: np.ndarray, y_fit: np.ndarray, x_eval: np.ndarray) -> np.ndarray:
+        if model == "linear":
+            w = fit_linear_ridge(x_fit, y_fit, l2=1e-6)
+            return predict_linear(x_eval, w)
+        if model == "catboost":
+            if CatBoostRegressor is None:
+                raise RuntimeError("catboost 未安装，无法使用 --model catboost")
+            reg = CatBoostRegressor(
+                loss_function="RMSE",
+                random_seed=int(random_seed),
+                iterations=max(10, int(catboost_iterations)),
+                depth=max(2, int(catboost_depth)),
+                learning_rate=float(catboost_learning_rate),
+                verbose=False,
+                allow_writing_files=False,
+            )
+            reg.fit(x_fit, y_fit)
+            return np.asarray(reg.predict(x_eval), dtype=np.float64)
         raise ValueError(f"unsupported model: {model}")
+
+    if min_calibration_ic > 0.0:
+        calib_rows = max(40, int(x_train_v.shape[0] * 0.2))
+        min_fit_rows = max(40, x_train_v.shape[1] * 4)
+        if x_train_v.shape[0] >= calib_rows + min_fit_rows:
+            fit_end = x_train_v.shape[0] - calib_rows
+            pred_calib = fit_predict(x_train_v[:fit_end], y_train_v[:fit_end], x_train_v[fit_end:])
+            calibration_ic = safe_corr(pred_calib, y_train_v[fit_end:])
+            if not math.isfinite(calibration_ic):
+                calibration_ic = 0.0
+            if calibration_ic < min_calibration_ic:
+                trading_enabled = False
+
+    if trading_enabled:
+        pred = fit_predict(x_train_v, y_train_v, x_test)
+    else:
+        pred = np.zeros((x_test.shape[0],), dtype=np.float64)
 
     fees = (fee_bps + slippage_bps) / 10000.0
     equity = 1.0
@@ -245,6 +282,8 @@ def run_split(
             total_return=0.0,
             sharpe=0.0,
             max_drawdown=0.0,
+            calibration_ic=calibration_ic,
+            trading_enabled=trading_enabled,
         )
 
     ret_arr = np.asarray(bar_returns, dtype=np.float64)
@@ -264,6 +303,8 @@ def run_split(
         total_return=equity - 1.0,
         sharpe=sharpe,
         max_drawdown=compute_max_drawdown(equity_curve),
+        calibration_ic=calibration_ic,
+        trading_enabled=trading_enabled,
     )
 
 
@@ -287,6 +328,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument("--min-hold-bars", type=int, default=3)
     parser.add_argument("--rebalance-deadband", type=float, default=0.10)
+    parser.add_argument("--min-calibration-ic", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -341,6 +383,7 @@ def main() -> int:
             random_seed=int(args.random_seed) + split_index,
             min_hold_bars=max(0, int(args.min_hold_bars)),
             rebalance_deadband=max(0.0, float(args.rebalance_deadband)),
+            min_calibration_ic=max(0.0, float(args.min_calibration_ic)),
         )
         split_results.append(split)
         split_index += 1
@@ -359,6 +402,12 @@ def main() -> int:
     avg_turnover = float(
         np.mean(np.asarray([item.avg_turnover for item in valid], dtype=np.float64))
     )
+    finite_ic = np.asarray(
+        [item.calibration_ic for item in valid if np.isfinite(item.calibration_ic)],
+        dtype=np.float64,
+    )
+    avg_calibration_ic = float(np.mean(finite_ic)) if finite_ic.size > 0 else 0.0
+    traded_split_count = int(sum(1 for item in valid if item.trading_enabled))
 
     report = {
         "features": str(feature_path),
@@ -380,14 +429,17 @@ def main() -> int:
             "random_seed": int(args.random_seed),
             "min_hold_bars": int(args.min_hold_bars),
             "rebalance_deadband": float(args.rebalance_deadband),
+            "min_calibration_ic": float(args.min_calibration_ic),
         },
         "summary": {
             "split_count": len(split_results),
             "valid_split_count": len(valid),
+            "traded_split_count": traded_split_count,
             "total_bars": total_bars,
             "total_trades": total_trades,
             "avg_split_return": avg_ret,
             "avg_split_sharpe": avg_sharpe,
+            "avg_calibration_ic": avg_calibration_ic,
             "worst_split_max_drawdown": worst_dd,
             "avg_turnover": avg_turnover,
         },
@@ -404,6 +456,8 @@ def main() -> int:
                 "total_return": item.total_return,
                 "sharpe": item.sharpe,
                 "max_drawdown": item.max_drawdown,
+                "calibration_ic": item.calibration_ic,
+                "trading_enabled": item.trading_enabled,
             }
             for item in split_results
         ],

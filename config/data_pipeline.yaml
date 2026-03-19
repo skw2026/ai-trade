@@ -46,14 +46,15 @@ walkforward:
   step_window: 480
   fee_bps: 6.0
   slippage_bps: 1.5
-  signal_threshold: 0.003
-  max_leverage: 0.2
+  signal_threshold: 0.0035
+  max_leverage: 0.15
   pred_scale: 0.008
-  min_hold_bars: 12
-  rebalance_deadband: 0.20
+  min_hold_bars: 16
+  rebalance_deadband: 0.25
   interval_minutes: 5
-  model: linear
+  model: catboost
   catboost_iterations: 300
   catboost_depth: 6
   catboost_learning_rate: 0.05
+  min_calibration_ic: 0.01
   random_seed: 42
