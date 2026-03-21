@@ -58,14 +58,14 @@ execution:
   # 稳态阶段：提高入场边际门槛上限，优先压低低质量成交。
   required_edge_cap_bps: 5.8
   entry_gate_near_miss_tolerance_bps: 0.30
-  # 允许 near-miss 样本走 maker 放行，提升样本流量（仅 demo）。
-  entry_gate_near_miss_maker_allow: true
+  # 稳态收敛阶段：关闭 near-miss 额外放行，优先保证成交质量。
+  entry_gate_near_miss_maker_allow: false
   # 语义：在 tolerance 之上的附加 gap（不是绝对 gap）。
-  entry_gate_near_miss_maker_max_gap_bps: 0.40
+  entry_gate_near_miss_maker_max_gap_bps: 0.20
   adaptive_fee_gate_enabled: true
   adaptive_fee_gate_min_samples: 80
-  adaptive_fee_gate_trigger_ratio: 0.58
-  adaptive_fee_gate_max_relax_bps: 2.4
+  adaptive_fee_gate_trigger_ratio: 0.62
+  adaptive_fee_gate_max_relax_bps: 1.2
   dynamic_edge_enabled: true
   dynamic_edge_regime_trend_relax_bps: 0.8
   dynamic_edge_regime_range_penalty_bps: 0.25
@@ -84,13 +84,13 @@ execution:
   cost_filter_cooldown_trigger_count: 24
   cost_filter_cooldown_ticks: 40
   quality_guard_enabled: true
-  quality_guard_min_fills: 8
+  quality_guard_min_fills: 12
   quality_guard_bad_streak_to_trigger: 3
   quality_guard_good_streak_to_release: 3
   quality_guard_min_realized_net_per_fill_usd: -0.010
   quality_guard_max_fee_bps_per_fill: 0.35
-  quality_guard_required_edge_penalty_bps: 0.8
-  quality_guard_required_edge_floor_bps: 5.8
+  quality_guard_required_edge_penalty_bps: 1.0
+  quality_guard_required_edge_floor_bps: 6.2
   concentration_top1_share_threshold: 0.62
   concentration_penalty_bps: 2.8
   concentration_min_symbols: 2

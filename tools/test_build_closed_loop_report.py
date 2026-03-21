@@ -272,6 +272,70 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 any("walk-forward 平均 Sharpe 未达门槛" in x for x in payload["fail_reasons"])
             )
 
+    def test_walkforward_low_activity_is_fail(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            walkforward_report = root / "walkforward_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "rows": 5000,
+                        "summary": {
+                            "valid_split_count": 12,
+                            "traded_split_count": 0,
+                            "total_trades": 0,
+                            "total_bars": 4800,
+                            "avg_split_sharpe": 0.10,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--walkforward_report",
+                    str(walkforward_report),
+                    "--walkforward_min_traded_split_count",
+                    "1",
+                    "--walkforward_min_total_trades",
+                    "1",
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["sections"]["walkforward"]["status"], "fail")
+            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertTrue(
+                any("walk-forward 交易活跃 split 数未达门槛" in x for x in payload["fail_reasons"])
+            )
+            self.assertTrue(
+                any("walk-forward 总交易次数未达门槛" in x for x in payload["fail_reasons"])
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -193,12 +193,19 @@ def assess_data_pipeline(path: Path) -> Dict[str, Any]:
     }
 
 
-def assess_walkforward(path: Path, min_avg_split_sharpe: float = 0.0) -> Dict[str, Any]:
+def assess_walkforward(
+    path: Path,
+    min_avg_split_sharpe: float = 0.0,
+    min_traded_split_count: int = 0,
+    min_total_trades: int = 0,
+) -> Dict[str, Any]:
     payload = read_json(path)
     summary = payload.get("summary", {})
     if not isinstance(summary, dict):
         summary = {}
     valid_split_count = summary.get("valid_split_count", 0)
+    traded_split_count = summary.get("traded_split_count", 0)
+    total_trades = summary.get("total_trades", 0)
     total_bars = summary.get("total_bars", 0)
     avg_split_sharpe = summary.get("avg_split_sharpe")
     fails: List[str] = []
@@ -207,6 +214,19 @@ def assess_walkforward(path: Path, min_avg_split_sharpe: float = 0.0) -> Dict[st
         fails.append("walk-forward 报告无有效 split")
     if not (isinstance(total_bars, int) and total_bars > 0):
         fails.append("walk-forward 报告无有效 bars")
+    if (
+        isinstance(traded_split_count, int)
+        and traded_split_count < int(min_traded_split_count)
+    ):
+        fails.append(
+            "walk-forward 交易活跃 split 数未达门槛: "
+            f"{int(traded_split_count)} < {int(min_traded_split_count)}"
+        )
+    if isinstance(total_trades, int) and total_trades < int(min_total_trades):
+        fails.append(
+            "walk-forward 总交易次数未达门槛: "
+            f"{int(total_trades)} < {int(min_total_trades)}"
+        )
     if isinstance(avg_split_sharpe, (int, float)):
         if avg_split_sharpe < min_avg_split_sharpe:
             fails.append(
@@ -282,6 +302,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.0,
         help="walk-forward 平均 Sharpe 最低门槛（默认 0.0，低于即 FAIL）",
+    )
+    parser.add_argument(
+        "--walkforward_min_traded_split_count",
+        type=int,
+        default=0,
+        help="walk-forward 最小交易活跃 split 数（默认 0）",
+    )
+    parser.add_argument(
+        "--walkforward_min_total_trades",
+        type=int,
+        default=0,
+        help="walk-forward 最小总交易次数（默认 0）",
     )
     parser.add_argument(
         "--inherit_report",
@@ -378,6 +410,8 @@ def main() -> int:
             sections["walkforward"] = assess_walkforward(
                 walkforward_path,
                 min_avg_split_sharpe=float(args.walkforward_min_avg_sharpe),
+                min_traded_split_count=int(args.walkforward_min_traded_split_count),
+                min_total_trades=int(args.walkforward_min_total_trades),
             )
         else:
             sections["walkforward"] = {

@@ -132,7 +132,8 @@ class BotApplication {
   /// 执行质量守卫：根据窗口成交质量动态启停开仓惩罚。
   void EvaluateExecutionQualityGuard(std::uint64_t window_fills,
                                      double window_realized_net_per_fill_usd,
-                                     double window_fee_bps_per_fill);
+                                     double window_fee_delta_usd,
+                                     double window_notional_abs_usd);
   /// 对账异常保护：连续异常触发 reduce-only / halt，自恢复窗口退出。
   void UpdateReconcileAnomalyProtection(bool anomaly_detected,
                                         const std::string& reason_code);
@@ -353,8 +354,10 @@ class BotApplication {
       0};  ///< 累积 fill 样本（跨日志窗口），用于避免低频成交导致守卫失效。
   double execution_quality_pending_realized_net_sum_usd_{
       0.0};  ///< 累积 realized_net（按 fill 加权），用于守卫判定。
-  double execution_quality_pending_fee_bps_weighted_sum_{
-      0.0};  ///< 累积 fee_bps（按 fill 加权），用于守卫判定。
+  double execution_quality_pending_fee_usd_sum_{
+      0.0};  ///< 累积 fee_usd，用于稳定计算费率。
+  double execution_quality_pending_notional_abs_usd_sum_{
+      0.0};  ///< 累积成交名义值，用于稳定计算费率。
   int reconcile_anomaly_streak_{0};  ///< 连续对账异常窗口计数。
   int reconcile_healthy_streak_{0};  ///< 对账连续健康窗口计数。
   int reconcile_tick_{0};          ///< 对账定时器计数
