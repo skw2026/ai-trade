@@ -98,6 +98,7 @@ MIN_S5_LEARNABILITY_PASS_FOR_UPDATE_WARN = 10
 DEFAULT_S5_MIN_EFFECTIVE_UPDATES = 1
 DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_USD = -0.005
 DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS = 10
+DEFAULT_S5_MIN_FILL_WINDOWS = 10
 DEFAULT_S5_MIN_EQUITY_CHANGE_USD: Optional[float] = None
 DEFAULT_S5_MIN_EQUITY_CHANGE_SAMPLES = 0
 DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD: Optional[float] = None
@@ -224,6 +225,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS,
         help="S5 生效条件：至少 N 个窗口观测到 fills>0 才检查单位成交净收益门槛",
+    )
+    parser.add_argument(
+        "--s5-min-fill-windows",
+        type=int,
+        default=DEFAULT_S5_MIN_FILL_WINDOWS,
+        help="S5 强门槛：至少 N 个窗口观测到 fills>0，避免低成交弱通过",
     )
     parser.add_argument(
         "--s5-min-equity-change-usd",
@@ -848,6 +855,7 @@ def assess(
     s5_min_effective_updates: int = DEFAULT_S5_MIN_EFFECTIVE_UPDATES,
     s5_min_realized_net_per_fill_usd: float = DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_USD,
     s5_min_realized_net_per_fill_windows: int = DEFAULT_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS,
+    s5_min_fill_windows: int = DEFAULT_S5_MIN_FILL_WINDOWS,
     s5_min_equity_change_usd: Optional[float] = DEFAULT_S5_MIN_EQUITY_CHANGE_USD,
     s5_min_equity_change_samples: int = DEFAULT_S5_MIN_EQUITY_CHANGE_SAMPLES,
     s5_max_equity_vs_realized_gap_usd: Optional[float] = DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD,
@@ -1307,6 +1315,15 @@ def assess(
             )
         if (
             stage.name == "S5"
+            and metrics["funnel_fills_runtime_count"] < max(0, s5_min_fill_windows)
+        ):
+            fail_reasons.append(
+                "执行样本不足（S5 强门禁）: "
+                f"fill_windows={metrics['funnel_fills_runtime_count']}, "
+                f"required>={max(0, s5_min_fill_windows)}"
+            )
+        if (
+            stage.name == "S5"
             and metrics["funnel_fills_runtime_count"]
             >= max(0, s5_min_realized_net_per_fill_windows)
             and metrics["execution_window_runtime_count"] <= 0
@@ -1645,6 +1662,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+    if args.s5_min_fill_windows < 0:
+        print("[ERROR] --s5-min-fill-windows 必须大于等于 0", file=sys.stderr)
+        return 2
     if args.s5_min_equity_change_samples < 0:
         print(
             "[ERROR] --s5-min-equity-change-samples 必须大于等于 0",
@@ -1669,6 +1689,7 @@ def main() -> int:
         s5_min_effective_updates=args.s5_min_effective_updates,
         s5_min_realized_net_per_fill_usd=args.s5_min_realized_net_per_fill_usd,
         s5_min_realized_net_per_fill_windows=args.s5_min_realized_net_per_fill_windows,
+        s5_min_fill_windows=args.s5_min_fill_windows,
         s5_min_equity_change_usd=args.s5_min_equity_change_usd,
         s5_min_equity_change_samples=args.s5_min_equity_change_samples,
         s5_max_equity_vs_realized_gap_usd=args.s5_max_equity_vs_realized_gap_usd,

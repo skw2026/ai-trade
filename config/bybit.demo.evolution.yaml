@@ -89,8 +89,8 @@ execution:
   quality_guard_good_streak_to_release: 3
   quality_guard_min_realized_net_per_fill_usd: -0.010
   quality_guard_max_fee_bps_per_fill: 0.35
-  quality_guard_required_edge_penalty_bps: 1.0
-  quality_guard_required_edge_floor_bps: 6.2
+  quality_guard_required_edge_penalty_bps: 0.7
+  quality_guard_required_edge_floor_bps: 5.8
   concentration_top1_share_threshold: 0.62
   concentration_penalty_bps: 2.8
   concentration_min_symbols: 2
@@ -119,11 +119,11 @@ strategy:
   vol_target_low_vol_leverage_cap_enabled: true
   vol_target_low_vol_annual_threshold: 0.12
   vol_target_low_vol_max_leverage: 1.1
-  defensive_notional_ratio: 0.55
-  defensive_entry_score: 1.5
+  defensive_notional_ratio: 0.40
+  defensive_entry_score: 1.8
   defensive_rank_lookback_ticks: 72
   defensive_trend_scale: 0.25
-  defensive_range_scale: 1.00
+  defensive_range_scale: 0.75
   defensive_extreme_scale: 0.45
 
 integrator:

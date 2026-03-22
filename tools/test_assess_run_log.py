@@ -503,7 +503,12 @@ class AssessRunLogTest(unittest.TestCase):
             + actions
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(
             any("SELF_EVOLUTION 有评估无有效更新" in x for x in report["fail_reasons"])
@@ -541,7 +546,12 @@ class AssessRunLogTest(unittest.TestCase):
             + non_update_actions
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "PASS")
         self.assertFalse(
             any("SELF_EVOLUTION 长时间仅评估未更新" in x for x in report["warn_reasons"])
@@ -576,7 +586,12 @@ class AssessRunLogTest(unittest.TestCase):
             + non_update_actions
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["metrics"]["self_evolution_objective_update_count"], 1)
         self.assertEqual(report["metrics"]["self_evolution_effective_update_count"], 1)
@@ -609,11 +624,48 @@ class AssessRunLogTest(unittest.TestCase):
             "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(
             any("执行净收益质量未达标" in x for x in report["fail_reasons"])
         )
+
+    def test_s5_fail_when_fill_windows_below_minimum(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.02,
+                fee_bps_per_fill=1.5,
+                maker_fills=1,
+                taker_fills=0,
+                unknown_fills=0,
+                explicit_liquidity_fills=1,
+                fee_sign_fallback_fills=0,
+                unknown_fill_ratio=0.0,
+                explicit_liquidity_fill_ratio=1.0,
+                fee_sign_fallback_fill_ratio=0.0,
+                maker_fee_bps=-0.2,
+                taker_fee_bps=6.5,
+                maker_fill_ratio=1.0,
+            )
+            for i in range(8)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=8\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=5)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(any("执行样本不足" in x for x in report["fail_reasons"]))
 
     def test_s5_fail_when_fill_windows_exist_but_execution_window_missing(self):
         runtime = "".join(
@@ -636,7 +688,12 @@ class AssessRunLogTest(unittest.TestCase):
             "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(
             any("执行净收益质量门禁无法评估" in x for x in report["fail_reasons"])
@@ -712,7 +769,12 @@ class AssessRunLogTest(unittest.TestCase):
             "2026-02-14 15:30:00 [INFO] GATE_CHECK_FAILED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, fail_reasons=[FAIL_LOW_ACTIVITY_SIGNALS,FAIL_LOW_ACTIVITY_FILLS]\n"
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(
             any("未检测到 GATE_CHECK_PASSED" in x for x in report["fail_reasons"])
@@ -733,7 +795,12 @@ class AssessRunLogTest(unittest.TestCase):
             "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=4, effective_signals=4, fills=1\n"
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["fail_reasons"], [])
         self.assertEqual(report["metrics"]["flat_start_rebase_applied_count"], 1)
@@ -755,7 +822,12 @@ class AssessRunLogTest(unittest.TestCase):
             "ai-trade  | 2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=4, order_intents=4, effective_signals=4, fills=1\n"
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["fail_reasons"], [])
         self.assertEqual(report["metrics"]["flat_start_rebase_applied_count"], 1)
@@ -791,7 +863,12 @@ class AssessRunLogTest(unittest.TestCase):
             "2026-02-14 15:30:01 [INFO] BYBIT_SUBMIT: order_type=Limit, symbol=BTCUSDT\n"
             + runtime
         )
-        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=50)
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["fail_reasons"], [])
 
