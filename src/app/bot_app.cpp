@@ -845,6 +845,7 @@ void BotApplication::EvaluateExecutionQualityGuard(
     execution_quality_required_edge_penalty_bps_ = 0.0;
     execution_quality_bad_streak_ = 0;
     execution_quality_good_streak_ = 0;
+    execution_quality_no_fill_windows_ = 0;
     execution_quality_pending_fills_ = 0;
     execution_quality_pending_realized_net_sum_usd_ = 0.0;
     execution_quality_pending_fee_usd_sum_ = 0.0;
@@ -853,6 +854,7 @@ void BotApplication::EvaluateExecutionQualityGuard(
   }
 
   if (window_fills > 0) {
+    execution_quality_no_fill_windows_ = 0;
     execution_quality_pending_fills_ += window_fills;
     execution_quality_pending_realized_net_sum_usd_ +=
         window_realized_net_per_fill_usd * static_cast<double>(window_fills);
@@ -870,10 +872,12 @@ void BotApplication::EvaluateExecutionQualityGuard(
         window_fee_bps >
             std::max(0.0, config_.execution_quality_guard_max_fee_bps_per_fill) *
                 1.5));
-  // 若守卫激活后长期无成交，且入场门观测显示高比例被过滤，
-  // 允许按更长 release 窗口自动退出守卫，避免“无成交=>无法评估=>永远不释放”锁死。
-  if (execution_quality_guard_active_ && execution_quality_pending_fills_ == 0 &&
-      window_fills == 0) {
+  // 若守卫激活后长期无成交，且待评估 fills 仍不足以形成有效结论，
+  // 允许按更长 release 窗口自动退出守卫并清空陈旧 pending 状态，
+  // 避免“上一轮差成交残留 => 本轮无成交 => 永远不释放”锁死。
+  if (execution_quality_guard_active_ && window_fills == 0 &&
+      execution_quality_pending_fills_ < min_fills) {
+    ++execution_quality_no_fill_windows_;
     const double trigger_ratio =
         std::clamp(config_.execution_adaptive_fee_gate_trigger_ratio, 0.0, 1.0);
     if (entry_gate_observed_filtered_ratio_ >= trigger_ratio) {
@@ -884,18 +888,36 @@ void BotApplication::EvaluateExecutionQualityGuard(
     const int base_release_streak =
         std::max(1, config_.execution_quality_guard_good_streak_to_release);
     const int stale_release_streak = base_release_streak * 12;
-    if (execution_quality_good_streak_ >= stale_release_streak) {
+    if (execution_quality_good_streak_ >= stale_release_streak ||
+        execution_quality_no_fill_windows_ >= stale_release_streak) {
+      const int stale_no_fill_windows = execution_quality_no_fill_windows_;
+      const auto stale_pending_fills = execution_quality_pending_fills_;
+      const double stale_filtered_ratio = entry_gate_observed_filtered_ratio_;
       execution_quality_guard_active_ = false;
       execution_quality_required_edge_penalty_bps_ = 0.0;
       execution_quality_bad_streak_ = 0;
       execution_quality_good_streak_ = 0;
+      execution_quality_no_fill_windows_ = 0;
+      execution_quality_pending_fills_ = 0;
+      execution_quality_pending_realized_net_sum_usd_ = 0.0;
+      execution_quality_pending_fee_usd_sum_ = 0.0;
+      execution_quality_pending_notional_abs_usd_sum_ = 0.0;
+      cost_filter_reject_streak_by_symbol_.clear();
+      cost_filter_cooldown_until_tick_by_symbol_.clear();
       LogInfo("EXECUTION_QUALITY_GUARD_EXIT_STALE: release_streak=" +
               std::to_string(stale_release_streak) +
+              ", no_fill_windows=" +
+              std::to_string(stale_no_fill_windows) +
+              ", pending_fills=" +
+              std::to_string(stale_pending_fills) +
               ", observed_filtered_ratio=" +
-              std::to_string(entry_gate_observed_filtered_ratio_) +
+              std::to_string(stale_filtered_ratio) +
               ", trigger_ratio=" + std::to_string(trigger_ratio));
     }
     return;
+  }
+  if (window_fills == 0) {
+    execution_quality_no_fill_windows_ = 0;
   }
   if (execution_quality_pending_fills_ == 0) {
     return;
@@ -928,6 +950,7 @@ void BotApplication::EvaluateExecutionQualityGuard(
       (eval_has_fee_bps_sample &&
        eval_fee_bps_per_fill > config_.execution_quality_guard_max_fee_bps_per_fill);
   if (bad_quality) {
+    execution_quality_no_fill_windows_ = 0;
     ++execution_quality_bad_streak_;
     execution_quality_good_streak_ = 0;
     const int trigger_streak =
@@ -960,16 +983,19 @@ void BotApplication::EvaluateExecutionQualityGuard(
   execution_quality_bad_streak_ = 0;
   if (!execution_quality_guard_active_) {
     execution_quality_good_streak_ = 0;
+    execution_quality_no_fill_windows_ = 0;
     execution_quality_required_edge_penalty_bps_ = 0.0;
     return;
   }
   ++execution_quality_good_streak_;
+  execution_quality_no_fill_windows_ = 0;
   const int release_streak =
       std::max(0, config_.execution_quality_guard_good_streak_to_release);
   if (release_streak == 0 || execution_quality_good_streak_ >= release_streak) {
     execution_quality_guard_active_ = false;
     execution_quality_required_edge_penalty_bps_ = 0.0;
     execution_quality_good_streak_ = 0;
+    execution_quality_no_fill_windows_ = 0;
     LogInfo("EXECUTION_QUALITY_GUARD_EXIT: release_streak=" +
             std::to_string(release_streak) +
             ", eval_fills=" + std::to_string(static_cast<int>(eval_fills)) +
@@ -3050,6 +3076,8 @@ void BotApplication::LogStatus() {
           std::string(execution_quality_guard_active_ ? "true" : "false") +
           ", bad_streak=" + std::to_string(execution_quality_bad_streak_) +
           ", good_streak=" + std::to_string(execution_quality_good_streak_) +
+          ", no_fill_windows=" +
+          std::to_string(execution_quality_no_fill_windows_) +
           ", min_fills=" +
           std::to_string(config_.execution_quality_guard_min_fills) +
           ", trigger_streak=" +

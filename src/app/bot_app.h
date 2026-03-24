@@ -347,6 +347,8 @@ class BotApplication {
   int pending_fills_for_evolution_{0};  ///< 待注入自进化的成交样本计数。
   int execution_quality_bad_streak_{0};  ///< 执行质量连续劣化窗口计数。
   int execution_quality_good_streak_{0};  ///< 执行质量连续恢复窗口计数。
+  int execution_quality_no_fill_windows_{
+      0};  ///< 守卫激活期间连续无成交窗口计数（用于释放陈旧守卫状态）。
   bool execution_quality_guard_active_{false};  ///< 执行质量守卫是否处于激活态。
   double execution_quality_required_edge_penalty_bps_{
       0.0};  ///< 执行质量守卫施加的额外入场边际门槛。
