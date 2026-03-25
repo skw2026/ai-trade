@@ -163,7 +163,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             )
             self.assertNotIn("integrator", payload["inherit"]["inherited_sections"])
 
-    def test_inherited_fail_section_is_non_blocking(self):
+    def test_inherited_fail_section_blocks_overall_status(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             output = root / "closed_loop_report.json"
@@ -211,10 +211,13 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             finally:
                 sys.argv = old_argv
 
-            self.assertEqual(code, 0)
+            self.assertEqual(code, 1)
             payload = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(payload["overall_status"], "PASS")
-            self.assertEqual(payload["fail_reasons"], [])
+            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertEqual(
+                payload["fail_reasons"],
+                ["miner: legacy miner failure"],
+            )
             self.assertIn("miner", payload["sections"])
 
     def test_walkforward_negative_sharpe_is_fail(self):

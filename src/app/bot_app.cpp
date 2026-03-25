@@ -1132,6 +1132,22 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->fills_taker_fee_usd_sum += delta.fills_taker_fee_usd_sum;
   total->fills_maker_notional_abs_usd_sum += delta.fills_maker_notional_abs_usd_sum;
   total->fills_taker_notional_abs_usd_sum += delta.fills_taker_notional_abs_usd_sum;
+  total->entry_fills_applied += delta.entry_fills_applied;
+  total->entry_fills_notional_abs_usd_sum += delta.entry_fills_notional_abs_usd_sum;
+  total->entry_fills_maker_count += delta.entry_fills_maker_count;
+  total->entry_fills_taker_count += delta.entry_fills_taker_count;
+  total->entry_fills_unknown_liquidity_count +=
+      delta.entry_fills_unknown_liquidity_count;
+  total->entry_fills_explicit_liquidity_count +=
+      delta.entry_fills_explicit_liquidity_count;
+  total->entry_fills_fee_sign_fallback_count +=
+      delta.entry_fills_fee_sign_fallback_count;
+  total->entry_fills_maker_fee_usd_sum += delta.entry_fills_maker_fee_usd_sum;
+  total->entry_fills_taker_fee_usd_sum += delta.entry_fills_taker_fee_usd_sum;
+  total->entry_fills_maker_notional_abs_usd_sum +=
+      delta.entry_fills_maker_notional_abs_usd_sum;
+  total->entry_fills_taker_notional_abs_usd_sum +=
+      delta.entry_fills_taker_notional_abs_usd_sum;
 }
 
 bool BotApplication::IsForceReduceOnlyActive() const {
@@ -1948,6 +1964,10 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   if (std::isfinite(fill.price) && fill.price > 0.0 && std::isfinite(fill.qty)) {
     const double fill_notional_abs_usd = std::fabs(fill.price * std::fabs(fill.qty));
     funnel_window_.fills_notional_abs_usd_sum += fill_notional_abs_usd;
+    const bool entry_fill =
+        fill_order_record != nullptr &&
+        fill_order_record->intent.purpose == OrderPurpose::kEntry &&
+        !fill_order_record->intent.reduce_only;
     constexpr double kFeeSignEpsilon = 1e-12;
     const bool explicit_liquidity =
         fill.liquidity == FillLiquidity::kMaker ||
@@ -1978,6 +1998,28 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
       funnel_window_.fills_taker_notional_abs_usd_sum += fill_notional_abs_usd;
     } else {
       ++funnel_window_.fills_unknown_liquidity_count;
+    }
+    if (entry_fill) {
+      ++funnel_window_.entry_fills_applied;
+      funnel_window_.entry_fills_notional_abs_usd_sum += fill_notional_abs_usd;
+      if (explicit_liquidity) {
+        ++funnel_window_.entry_fills_explicit_liquidity_count;
+      } else if (fallback_by_fee) {
+        ++funnel_window_.entry_fills_fee_sign_fallback_count;
+      }
+      if (maker_fill) {
+        ++funnel_window_.entry_fills_maker_count;
+        funnel_window_.entry_fills_maker_fee_usd_sum += fill.fee;
+        funnel_window_.entry_fills_maker_notional_abs_usd_sum +=
+            fill_notional_abs_usd;
+      } else if (taker_fill) {
+        ++funnel_window_.entry_fills_taker_count;
+        funnel_window_.entry_fills_taker_fee_usd_sum += fill.fee;
+        funnel_window_.entry_fills_taker_notional_abs_usd_sum +=
+            fill_notional_abs_usd;
+      } else {
+        ++funnel_window_.entry_fills_unknown_liquidity_count;
+      }
     }
   }
 
@@ -2741,11 +2783,19 @@ void BotApplication::LogStatus() {
           ? window_realized_net_delta_usd /
                 static_cast<double>(funnel_window.fills_applied)
           : 0.0;
+  const double window_realized_net_per_entry_fill_usd =
+      funnel_window.entry_fills_applied > 0
+          ? window_realized_net_delta_usd /
+                static_cast<double>(funnel_window.entry_fills_applied)
+          : 0.0;
   const double window_fee_bps_per_fill =
       funnel_window.fills_notional_abs_usd_sum > 1e-9
           ? window_fee_delta_usd / funnel_window.fills_notional_abs_usd_sum *
                 10000.0
           : 0.0;
+  const double window_entry_fee_delta_usd =
+      funnel_window.entry_fills_maker_fee_usd_sum +
+      funnel_window.entry_fills_taker_fee_usd_sum;
   const double window_maker_fee_bps =
       funnel_window.fills_maker_notional_abs_usd_sum > 1e-9
           ? funnel_window.fills_maker_fee_usd_sum /
@@ -2759,15 +2809,28 @@ void BotApplication::LogStatus() {
   const std::uint64_t liquidity_classified_fills =
       funnel_window.fills_maker_count + funnel_window.fills_taker_count +
       funnel_window.fills_unknown_liquidity_count;
+  const std::uint64_t entry_liquidity_classified_fills =
+      funnel_window.entry_fills_maker_count + funnel_window.entry_fills_taker_count +
+      funnel_window.entry_fills_unknown_liquidity_count;
   const double window_maker_fill_ratio =
       liquidity_classified_fills > 0
           ? static_cast<double>(funnel_window.fills_maker_count) /
                 static_cast<double>(liquidity_classified_fills)
           : 0.0;
+  const double window_entry_maker_fill_ratio =
+      entry_liquidity_classified_fills > 0
+          ? static_cast<double>(funnel_window.entry_fills_maker_count) /
+                static_cast<double>(entry_liquidity_classified_fills)
+          : 0.0;
   const double window_unknown_fill_ratio =
       liquidity_classified_fills > 0
           ? static_cast<double>(funnel_window.fills_unknown_liquidity_count) /
                 static_cast<double>(liquidity_classified_fills)
+          : 0.0;
+  const double window_entry_unknown_fill_ratio =
+      entry_liquidity_classified_fills > 0
+          ? static_cast<double>(funnel_window.entry_fills_unknown_liquidity_count) /
+                static_cast<double>(entry_liquidity_classified_fills)
           : 0.0;
   const double window_explicit_liquidity_fill_ratio =
       liquidity_classified_fills > 0
@@ -2786,13 +2849,14 @@ void BotApplication::LogStatus() {
           ? funnel_window.entry_concentration_adjust_bps_sum /
                 static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
-  recent_execution_window_maker_fill_ratio_ = window_maker_fill_ratio;
-  recent_execution_window_unknown_fill_ratio_ = window_unknown_fill_ratio;
-  recent_execution_window_liquidity_fill_count_ = liquidity_classified_fills;
-  EvaluateExecutionQualityGuard(funnel_window.fills_applied,
-                                window_realized_net_per_fill_usd,
-                                window_fee_delta_usd,
-                                funnel_window.fills_notional_abs_usd_sum);
+  // 运行时开仓门控只参考开仓成交质量，不让 reduce-only / 保护出场污染 entry 质量反馈。
+  recent_execution_window_maker_fill_ratio_ = window_entry_maker_fill_ratio;
+  recent_execution_window_unknown_fill_ratio_ = window_entry_unknown_fill_ratio;
+  recent_execution_window_liquidity_fill_count_ = entry_liquidity_classified_fills;
+  EvaluateExecutionQualityGuard(funnel_window.entry_fills_applied,
+                                window_realized_net_per_entry_fill_usd,
+                                window_entry_fee_delta_usd,
+                                funnel_window.entry_fills_notional_abs_usd_sum);
 
   LogInfo("RUNTIME_STATUS: ticks=" + std::to_string(market_tick_count_) +
           ", trade_ok=" + std::string(trade_ok ? "true" : "false") +

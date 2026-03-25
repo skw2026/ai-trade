@@ -72,6 +72,7 @@ class AssessRunLogTest(unittest.TestCase):
         concentration_symbol_count: int = 0,
         execution_quality_guard_active: bool = False,
         execution_quality_guard_penalty_bps: float = 0.0,
+        execution_quality_guard_no_fill_windows: int = 0,
         reconcile_anomaly_streak: int = 0,
         reconcile_anomaly_reduce_only: bool = False,
         equity: float = 100000.0,
@@ -152,6 +153,7 @@ class AssessRunLogTest(unittest.TestCase):
             f"maker_fill_ratio={maker_fill_ratio}}}, "
             "execution_quality_guard={enabled=true, "
             f"active={execution_quality_guard_active_text}, bad_streak=0, good_streak=0, "
+            f"no_fill_windows={execution_quality_guard_no_fill_windows}, "
             "min_fills=12, trigger_streak=2, release_streak=2, "
             "min_realized_net_per_fill_usd=-0.005, max_fee_bps_per_fill=8.0, "
             f"applied_penalty_bps={execution_quality_guard_penalty_bps}}}, "
@@ -387,6 +389,7 @@ class AssessRunLogTest(unittest.TestCase):
                 0.0,
                 execution_quality_guard_active=True,
                 execution_quality_guard_penalty_bps=1.5,
+                execution_quality_guard_no_fill_windows=4,
                 reconcile_anomaly_streak=2,
                 reconcile_anomaly_reduce_only=True,
             )
@@ -409,6 +412,7 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["execution_quality_guard_runtime_count"], 2)
         self.assertEqual(metrics["execution_quality_guard_active_count"], 1)
         self.assertEqual(metrics["execution_quality_guard_enter_count"], 1)
+        self.assertEqual(metrics["execution_quality_guard_no_fill_windows_max"], 4)
         self.assertAlmostEqual(
             metrics["execution_quality_guard_penalty_bps_avg"], 0.75, places=6
         )

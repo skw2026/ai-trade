@@ -154,6 +154,7 @@ RUNTIME_EXECUTION_QUALITY_GUARD_RE = re.compile(
     r"active=(?P<active>true|false), "
     r"bad_streak=(?P<bad_streak>-?[0-9]+), "
     r"good_streak=(?P<good_streak>-?[0-9]+), "
+    r"no_fill_windows=(?P<no_fill_windows>-?[0-9]+), "
     r"min_fills=(?P<min_fills>-?[0-9]+), "
     r"trigger_streak=(?P<trigger_streak>-?[0-9]+), "
     r"release_streak=(?P<release_streak>-?[0-9]+), "
@@ -654,6 +655,7 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
     applied_penalty_bps: list[float] = []
     bad_streaks: list[int] = []
     good_streaks: list[int] = []
+    no_fill_windows: list[int] = []
 
     for m in RUNTIME_EXECUTION_QUALITY_GUARD_RE.finditer(text):
         active_flags.append(1.0 if m.group("active") == "true" else 0.0)
@@ -662,6 +664,7 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
             applied_penalty_bps.append(float(m.group("applied_penalty_bps")))
             bad_streaks.append(int(m.group("bad_streak")))
             good_streaks.append(int(m.group("good_streak")))
+            no_fill_windows.append(int(m.group("no_fill_windows")))
         except ValueError:
             continue
 
@@ -675,6 +678,7 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
             "applied_penalty_bps_avg": 0.0,
             "bad_streak_max": 0.0,
             "good_streak_max": 0.0,
+            "no_fill_windows_max": 0.0,
         }
 
     return {
@@ -685,6 +689,7 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
         "applied_penalty_bps_avg": sum(applied_penalty_bps) / runtime_count,
         "bad_streak_max": float(max(bad_streaks) if bad_streaks else 0),
         "good_streak_max": float(max(good_streaks) if good_streaks else 0),
+        "no_fill_windows_max": float(max(no_fill_windows) if no_fill_windows else 0),
     }
 
 
@@ -1148,6 +1153,9 @@ def assess(
         ),
         "execution_quality_guard_good_streak_max": int(
             execution_quality_guard["good_streak_max"]
+        ),
+        "execution_quality_guard_no_fill_windows_max": int(
+            execution_quality_guard["no_fill_windows_max"]
         ),
         "entry_edge_adjust_runtime_count": int(entry_edge_adjust["runtime_count"]),
         "entry_regime_adjust_bps_avg": entry_edge_adjust["regime_adjust_bps_avg"],

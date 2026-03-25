@@ -267,6 +267,18 @@ class BotApplication {
     double fills_taker_fee_usd_sum{0.0};
     double fills_maker_notional_abs_usd_sum{0.0};
     double fills_taker_notional_abs_usd_sum{0.0};
+    // 仅统计开仓成交，供 entry gate / quality guard 使用。
+    std::uint64_t entry_fills_applied{0};
+    double entry_fills_notional_abs_usd_sum{0.0};
+    std::uint64_t entry_fills_maker_count{0};
+    std::uint64_t entry_fills_taker_count{0};
+    std::uint64_t entry_fills_unknown_liquidity_count{0};
+    std::uint64_t entry_fills_explicit_liquidity_count{0};
+    std::uint64_t entry_fills_fee_sign_fallback_count{0};
+    double entry_fills_maker_fee_usd_sum{0.0};
+    double entry_fills_taker_fee_usd_sum{0.0};
+    double entry_fills_maker_notional_abs_usd_sum{0.0};
+    double entry_fills_taker_notional_abs_usd_sum{0.0};
   };
 
   static void AccumulateStats(DecisionFunnelStats* total,
@@ -320,7 +332,7 @@ class BotApplication {
   double recent_execution_window_maker_fill_ratio_{0.0};
   double recent_execution_window_unknown_fill_ratio_{0.0};
   std::uint64_t recent_execution_window_liquidity_fill_count_{
-      0};  ///< 最近一个状态窗口内已分类成交样本数（maker+taker+unknown）。
+      0};  ///< 最近一个状态窗口内开仓侧已分类成交样本数（maker+taker+unknown）。
 
   bool protection_forced_reduce_only_{
       false};  ///< 保护单关键路径触发的只减仓开关（高优先级，需人工介入恢复）。

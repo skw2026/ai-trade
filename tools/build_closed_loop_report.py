@@ -434,10 +434,7 @@ def main() -> int:
         else:
             inherit_status = "inherit report equals output path, skip"
 
-    inherited_section_names = set(inherited_sections)
     for section_name, section in sections.items():
-        if section_name in inherited_section_names:
-            continue
         if section.get("status") == "fail":
             for item in section.get("fail_reasons", []):
                 fail_reasons.append(f"{section_name}: {item}")
