@@ -202,10 +202,12 @@ run_closed_loop_gate() {
   if [[ "${output_root}" != /* ]]; then
     output_root="${COMPOSE_DIR}/${output_root#./}"
   fi
+  local stage_name="${CLOSED_LOOP_STAGE^^}"
   local assess_json="${output_root}/latest_runtime_assess.json"
   local report_json="${output_root}/latest_closed_loop_report.json"
   local verdict=""
   local overall_status=""
+  local gate_status=0
 
   if [[ ! -f "${runner}" ]]; then
     echo "[deploy] closed-loop gate failed: runner not found: ${runner}"
@@ -226,14 +228,38 @@ run_closed_loop_gate() {
   fi
 
   echo "[deploy] closed-loop gate start: action=${CLOSED_LOOP_ACTION}, stage=${CLOSED_LOOP_STAGE}, since=${CLOSED_LOOP_SINCE}, output_root=${output_root}"
-  if ! "${gate_cmd[@]}"; then
-    echo "[deploy] closed-loop gate command exited non-zero"
-    return 1
+  "${gate_cmd[@]}" || gate_status=$?
+  if (( gate_status != 0 )); then
+    echo "[deploy] closed-loop gate command exited non-zero: status=${gate_status}"
   fi
 
   verdict="$(extract_json_string_field "verdict" "${assess_json}")"
   overall_status="$(extract_json_string_field "overall_status" "${report_json}")"
   echo "[deploy] closed-loop gate result: verdict=${verdict:-<empty>}, overall_status=${overall_status:-<empty>}"
+
+  if [[ "${stage_name}" == "DEPLOY" ]]; then
+    echo "[deploy] DEPLOY stage gate uses runtime verdict only; overall_status is audit-only"
+    if [[ -z "${verdict}" ]]; then
+      echo "[deploy] DEPLOY gate failed: runtime verdict missing"
+      return 1
+    fi
+    if is_true "${CLOSED_LOOP_STRICT_PASS}"; then
+      if [[ "${verdict}" != "PASS" ]]; then
+        echo "[deploy] DEPLOY strict gate failed"
+        return 1
+      fi
+      return 0
+    fi
+    if [[ "${verdict}" == "FAIL" ]]; then
+      echo "[deploy] DEPLOY gate failed"
+      return 1
+    fi
+    return 0
+  fi
+
+  if (( gate_status != 0 )); then
+    return 1
+  fi
 
   if is_true "${CLOSED_LOOP_STRICT_PASS}"; then
     if [[ "${verdict}" != "PASS" || "${overall_status}" != "PASS" ]]; then

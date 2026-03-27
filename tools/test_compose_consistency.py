@@ -204,6 +204,17 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertEqual(prod_container_names.get("watchdog"), "ai-trade-watchdog")
         self.assertEqual(prod_container_names.get("scheduler"), "ai-trade-scheduler")
 
+    def test_deploy_gate_uses_runtime_verdict_only_for_deploy_stage(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('local stage_name="${CLOSED_LOOP_STAGE^^}"', script)
+        self.assertIn('if [[ "${stage_name}" == "DEPLOY" ]]; then', script)
+        self.assertIn(
+            'DEPLOY stage gate uses runtime verdict only; overall_status is audit-only',
+            script,
+        )
+        self.assertIn('if [[ "${verdict}" != "PASS" ]]; then', script)
+        self.assertIn('if [[ "${verdict}" == "FAIL" ]]; then', script)
+
     def test_optional_compose_config_validation(self):
         docker_bin = shutil.which("docker")
         if docker_bin is None:

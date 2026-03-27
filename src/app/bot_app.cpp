@@ -834,12 +834,17 @@ void BotApplication::EvaluateExecutionQualityGuard(
     double window_fee_delta_usd,
     double window_notional_abs_usd) {
   constexpr double kMinNotionalForFeeBpsUsd = 1000.0;
+  const double min_notional_for_net_quality_usd =
+      std::max(kMinNotionalForFeeBpsUsd,
+               std::max(0.0, config_.strategy_signal_notional_usd) * 3.0);
   const double window_fee_bps =
       window_notional_abs_usd > 1e-9
           ? window_fee_delta_usd / window_notional_abs_usd * 10000.0
           : 0.0;
   const bool window_has_fee_bps_sample =
       window_notional_abs_usd >= kMinNotionalForFeeBpsUsd;
+  const bool window_has_net_quality_sample =
+      window_notional_abs_usd >= min_notional_for_net_quality_usd;
   if (!config_.execution_quality_guard_enabled) {
     execution_quality_guard_active_ = false;
     execution_quality_required_edge_penalty_bps_ = 0.0;
@@ -866,8 +871,9 @@ void BotApplication::EvaluateExecutionQualityGuard(
       0, config_.execution_quality_guard_min_fills));
   const bool severe_bad_window =
       window_fills > 0 &&
-      (window_realized_net_per_fill_usd <
-           config_.execution_quality_guard_min_realized_net_per_fill_usd * 2.0 ||
+      ((window_has_net_quality_sample &&
+        window_realized_net_per_fill_usd <
+            config_.execution_quality_guard_min_realized_net_per_fill_usd * 2.0) ||
        (window_has_fee_bps_sample &&
         window_fee_bps >
             std::max(0.0, config_.execution_quality_guard_max_fee_bps_per_fill) *
@@ -932,6 +938,9 @@ void BotApplication::EvaluateExecutionQualityGuard(
                        : 0.0;
   const bool eval_has_fee_bps_sample =
       execution_quality_pending_notional_abs_usd_sum_ >= kMinNotionalForFeeBpsUsd;
+  const bool eval_has_net_quality_sample =
+      execution_quality_pending_notional_abs_usd_sum_ >=
+      min_notional_for_net_quality_usd;
   const double eval_fee_bps_per_fill =
       execution_quality_pending_notional_abs_usd_sum_ > 1e-9
           ? execution_quality_pending_fee_usd_sum_ /
@@ -945,8 +954,9 @@ void BotApplication::EvaluateExecutionQualityGuard(
   execution_quality_pending_notional_abs_usd_sum_ = 0.0;
 
   const bool bad_quality =
-      eval_realized_net_per_fill_usd <
-          config_.execution_quality_guard_min_realized_net_per_fill_usd ||
+      (eval_has_net_quality_sample &&
+       eval_realized_net_per_fill_usd <
+           config_.execution_quality_guard_min_realized_net_per_fill_usd) ||
       (eval_has_fee_bps_sample &&
        eval_fee_bps_per_fill > config_.execution_quality_guard_max_fee_bps_per_fill);
   if (bad_quality) {
@@ -969,6 +979,8 @@ void BotApplication::EvaluateExecutionQualityGuard(
               ", eval_notional_abs_usd=" + std::to_string(eval_notional_abs_usd) +
               ", eval_fee_bps_has_sample=" +
               std::string(eval_has_fee_bps_sample ? "true" : "false") +
+              ", eval_net_quality_has_sample=" +
+              std::string(eval_has_net_quality_sample ? "true" : "false") +
               ", min_realized_net_per_fill_usd=" +
               std::to_string(
                   config_.execution_quality_guard_min_realized_net_per_fill_usd) +
@@ -1004,7 +1016,9 @@ void BotApplication::EvaluateExecutionQualityGuard(
             ", eval_fee_bps_per_fill=" + std::to_string(eval_fee_bps_per_fill) +
             ", eval_notional_abs_usd=" + std::to_string(eval_notional_abs_usd) +
             ", eval_fee_bps_has_sample=" +
-            std::string(eval_has_fee_bps_sample ? "true" : "false"));
+            std::string(eval_has_fee_bps_sample ? "true" : "false") +
+            ", eval_net_quality_has_sample=" +
+            std::string(eval_has_net_quality_sample ? "true" : "false"));
   }
 }
 
