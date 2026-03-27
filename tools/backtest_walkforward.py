@@ -49,6 +49,20 @@ class SplitResult:
     trading_enabled: bool
 
 
+def normalize_execution_controls(max_leverage: float, rebalance_deadband: float) -> tuple[float, float, list[str]]:
+    effective_max_leverage = max(0.0, float(max_leverage))
+    effective_rebalance_deadband = max(0.0, float(rebalance_deadband))
+    warnings: list[str] = []
+    if effective_max_leverage > 0.0 and effective_rebalance_deadband >= effective_max_leverage:
+        original = effective_rebalance_deadband
+        effective_rebalance_deadband = max(0.01, effective_max_leverage * 0.5)
+        warnings.append(
+            "rebalance_deadband >= max_leverage; "
+            f"clamped from {original:.6f} to {effective_rebalance_deadband:.6f}"
+        )
+    return effective_max_leverage, effective_rebalance_deadband, warnings
+
+
 def annualization_factor(interval_minutes: int) -> float:
     bars_per_year = (365.0 * 24.0 * 60.0) / float(max(1, interval_minutes))
     return math.sqrt(bars_per_year)
@@ -349,6 +363,10 @@ def main() -> int:
     y = data["forward_return"].astype(np.float64)
 
     split_results: List[SplitResult] = []
+    effective_max_leverage, effective_rebalance_deadband, config_warnings = normalize_execution_controls(
+        float(args.max_leverage),
+        float(args.rebalance_deadband),
+    )
     split_index = 0
     start = int(args.train_window)
     test_window = max(20, int(args.test_window))
@@ -373,7 +391,7 @@ def main() -> int:
             fee_bps=float(args.fee_bps),
             slippage_bps=float(args.slippage_bps),
             signal_threshold=float(args.signal_threshold),
-            max_leverage=float(args.max_leverage),
+            max_leverage=effective_max_leverage,
             pred_scale=float(args.pred_scale),
             interval_minutes=max(1, int(args.interval_minutes)),
             model=str(args.model),
@@ -382,7 +400,7 @@ def main() -> int:
             catboost_learning_rate=float(args.catboost_learning_rate),
             random_seed=int(args.random_seed) + split_index,
             min_hold_bars=max(0, int(args.min_hold_bars)),
-            rebalance_deadband=max(0.0, float(args.rebalance_deadband)),
+            rebalance_deadband=effective_rebalance_deadband,
             min_calibration_ic=max(0.0, float(args.min_calibration_ic)),
         )
         split_results.append(split)
@@ -421,6 +439,7 @@ def main() -> int:
             "slippage_bps": float(args.slippage_bps),
             "signal_threshold": float(args.signal_threshold),
             "max_leverage": float(args.max_leverage),
+            "effective_max_leverage": effective_max_leverage,
             "pred_scale": float(args.pred_scale),
             "interval_minutes": int(args.interval_minutes),
             "model": str(args.model),
@@ -430,8 +449,10 @@ def main() -> int:
             "random_seed": int(args.random_seed),
             "min_hold_bars": int(args.min_hold_bars),
             "rebalance_deadband": float(args.rebalance_deadband),
+            "effective_rebalance_deadband": effective_rebalance_deadband,
             "min_calibration_ic": float(args.min_calibration_ic),
         },
+        "warnings": config_warnings,
         "summary": {
             "split_count": len(split_results),
             "valid_split_count": len(valid),

@@ -50,7 +50,7 @@ walkforward:
   max_leverage: 0.15
   pred_scale: 0.008
   min_hold_bars: 16
-  rebalance_deadband: 0.25
+  rebalance_deadband: 0.05
   interval_minutes: 5
   model: catboost
   catboost_iterations: 300

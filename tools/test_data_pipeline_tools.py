@@ -91,6 +91,13 @@ class StreamAndGapToolsTest(unittest.TestCase):
 
 @unittest.skipUnless(HAS_NUMPY, "numpy is required for feature/backtest script tests")
 class FeatureAndBacktestTest(unittest.TestCase):
+    def test_normalize_execution_controls_clamps_deadband(self):
+        max_leverage, deadband, warnings = BACKTEST.normalize_execution_controls(0.15, 0.25)
+        self.assertAlmostEqual(max_leverage, 0.15)
+        self.assertAlmostEqual(deadband, 0.075)
+        self.assertTrue(warnings)
+        self.assertIn("rebalance_deadband >= max_leverage", warnings[0])
+
     def test_feature_builder_and_backtest_split(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
