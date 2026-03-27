@@ -201,6 +201,8 @@ struct StrategyConfig {
   double defensive_trend_scale{0.35};
   double defensive_range_scale{1.00};
   double defensive_extreme_scale{0.55};
+  double range_min_confidence{0.0};
+  double eth_range_defensive_scale_multiplier{1.0};
 };
 
 // ============================================================================
@@ -242,6 +244,8 @@ struct AppConfig {
   double strategy_defensive_trend_scale{0.35};
   double strategy_defensive_range_scale{1.00};
   double strategy_defensive_extreme_scale{0.55};
+  double strategy_range_min_confidence{0.0};
+  double strategy_eth_range_defensive_scale_multiplier{1.0};
 
   // Risk
   double risk_max_abs_notional_usd{3000.0};
@@ -337,7 +341,9 @@ struct AppConfig {
         strategy_defensive_rank_lookback_ticks,
         strategy_defensive_trend_scale,
         strategy_defensive_range_scale,
-        strategy_defensive_extreme_scale
+        strategy_defensive_extreme_scale,
+        strategy_range_min_confidence,
+        strategy_eth_range_defensive_scale_multiplier
     };
   }
 

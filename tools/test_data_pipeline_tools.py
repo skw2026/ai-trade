@@ -141,6 +141,47 @@ class FeatureAndBacktestTest(unittest.TestCase):
             self.assertGreater(split.bars, 0)
             self.assertTrue(np.isfinite(split.sharpe))
 
+    def test_walkforward_summary_counts_actual_traded_splits(self):
+        valid = [
+            BACKTEST.SplitResult(
+                split_index=0,
+                train_start=0,
+                train_end=10,
+                test_start=10,
+                test_end=20,
+                bars=10,
+                trades=0,
+                avg_turnover=0.0,
+                total_return=0.0,
+                sharpe=0.0,
+                max_drawdown=0.0,
+                calibration_ic=0.01,
+                trading_enabled=True,
+            ),
+            BACKTEST.SplitResult(
+                split_index=1,
+                train_start=10,
+                train_end=20,
+                test_start=20,
+                test_end=30,
+                bars=10,
+                trades=3,
+                avg_turnover=0.1,
+                total_return=0.02,
+                sharpe=0.5,
+                max_drawdown=0.01,
+                calibration_ic=0.03,
+                trading_enabled=True,
+            ),
+        ]
+        enabled_split_count = int(sum(1 for item in valid if item.trading_enabled))
+        traded_split_count = int(sum(1 for item in valid if item.trades > 0))
+        total_trades = sum(item.trades for item in valid)
+
+        self.assertEqual(enabled_split_count, 2)
+        self.assertEqual(traded_split_count, 1)
+        self.assertEqual(total_trades, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

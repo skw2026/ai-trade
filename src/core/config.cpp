@@ -1289,6 +1289,35 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "strategy" &&
+        key == "range_min_confidence") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.range_min_confidence 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_range_min_confidence = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
+        key == "eth_range_defensive_scale_multiplier") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.eth_range_defensive_scale_multiplier 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_eth_range_defensive_scale_multiplier = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
         current_subsection == "params" &&
         key == "ema_fast") {
       int parsed = 0;
@@ -3954,6 +3983,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.strategy_defensive_extreme_scale < 0.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.defensive_*_scale 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_range_min_confidence < 0.0 ||
+      config.strategy_range_min_confidence > 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.range_min_confidence 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  if (config.strategy_eth_range_defensive_scale_multiplier < 0.0 ||
+      config.strategy_eth_range_defensive_scale_multiplier > 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "strategy.eth_range_defensive_scale_multiplier 必须在 [0,1] 区间";
     }
     return false;
   }

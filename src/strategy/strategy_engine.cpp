@@ -377,6 +377,13 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
     const double intensity =
         std::clamp(defensive_score_abs / score_threshold, 0.0, 1.0);
     double bucket_scale = DefensiveBucketScale(config_, regime.bucket);
+    if (regime.bucket == RegimeBucket::kRange &&
+        event.symbol == "ETHUSDT" &&
+        config_.eth_range_defensive_scale_multiplier < 1.0) {
+      bucket_scale *=
+          std::clamp(config_.eth_range_defensive_scale_multiplier, 0.0, 1.0);
+      PushReason(&signal.reason_codes, "STR_DEFENSIVE_ETH_RANGE_SCALED");
+    }
     if (regime.warmup) {
       bucket_scale *= 0.5;
     }
@@ -394,6 +401,17 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
       std::clamp(std::fabs(signal.suggested_notional_usd) /
                      std::max(1.0, std::fabs(target_notional)),
                  0.0, 1.0);
+  if (regime.bucket == RegimeBucket::kRange &&
+      signal.direction != 0 &&
+      config_.range_min_confidence > 0.0 &&
+      signal.confidence < config_.range_min_confidence) {
+    signal.trend_notional_usd = 0.0;
+    signal.defensive_notional_usd = 0.0;
+    signal.suggested_notional_usd = 0.0;
+    signal.direction = 0;
+    signal.confidence = 0.0;
+    PushReason(&signal.reason_codes, "STR_RANGE_CONFIDENCE_BLOCK");
+  }
   if (signal.direction == 0) {
     PushReason(&signal.reason_codes, "STR_FLAT_SIGNAL");
   } else {

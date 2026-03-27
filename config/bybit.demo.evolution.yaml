@@ -108,6 +108,7 @@ strategy:
   signal_valid_for_ms: 15000
   default_tick_interval_ms: 5000
   min_hold_ticks: 8
+  range_min_confidence: 0.30
   trend_breakout_lookback_ticks: 24
   trend_breakout_rank_threshold: 0.97
   trend_slope_lookback_ticks: 6
@@ -125,6 +126,7 @@ strategy:
   defensive_trend_scale: 0.25
   defensive_range_scale: 0.75
   defensive_extreme_scale: 0.45
+  eth_range_defensive_scale_multiplier: 0.25
 
 integrator:
   enabled: true

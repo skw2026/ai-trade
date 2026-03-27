@@ -407,7 +407,8 @@ def main() -> int:
         dtype=np.float64,
     )
     avg_calibration_ic = float(np.mean(finite_ic)) if finite_ic.size > 0 else 0.0
-    traded_split_count = int(sum(1 for item in valid if item.trading_enabled))
+    enabled_split_count = int(sum(1 for item in valid if item.trading_enabled))
+    traded_split_count = int(sum(1 for item in valid if item.trades > 0))
 
     report = {
         "features": str(feature_path),
@@ -434,6 +435,7 @@ def main() -> int:
         "summary": {
             "split_count": len(split_results),
             "valid_split_count": len(valid),
+            "enabled_split_count": enabled_split_count,
             "traded_split_count": traded_split_count,
             "total_bars": total_bars,
             "total_trades": total_trades,

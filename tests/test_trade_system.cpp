@@ -1004,6 +1004,91 @@ int main() {
   }
 
   {
+    // RANGE 桶下，净信号置信度过低时应直接清零，避免弱边际意图进入执行层。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .defensive_notional_ratio = 0.5,
+        .defensive_entry_score = 0.5,
+        .defensive_trend_scale = 1.0,
+        .defensive_range_scale = 1.0,
+        .defensive_extreme_scale = 1.0,
+        .range_min_confidence = 0.6,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kRange;
+    regime.warmup = false;
+    regime.volatility_level = 0.001;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          800 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        900, "BTCUSDT", 101.0, 101.0}, dummy_account, regime);
+    const bool blocked = std::find(signal.reason_codes.begin(),
+                                   signal.reason_codes.end(),
+                                   "STR_RANGE_CONFIDENCE_BLOCK") !=
+                         signal.reason_codes.end();
+    if (signal.direction != 0 ||
+        !NearlyEqual(signal.suggested_notional_usd, 0.0, 1e-9) ||
+        signal.confidence != 0.0 || !blocked) {
+      std::cerr << "RANGE 弱信号应被 range_min_confidence 阈值阻断\n";
+      return 1;
+    }
+  }
+
+  {
+    // ETHUSDT 在 RANGE 桶应应用额外的 defensive 缩放，降低低边际防御意图。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .defensive_notional_ratio = 1.0,
+        .defensive_entry_score = 0.5,
+        .defensive_trend_scale = 1.0,
+        .defensive_range_scale = 1.0,
+        .defensive_extreme_scale = 1.0,
+        .eth_range_defensive_scale_multiplier = 0.25,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kRange;
+    regime.warmup = false;
+    regime.volatility_level = 0.001;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          1200 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, regime);
+      strategy.OnMarket(ai_trade::MarketEvent{
+          2200 + i, "ETHUSDT", 100.0, 100.0}, dummy_account, regime);
+    }
+    const auto btc_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        1300, "BTCUSDT", 101.0, 101.0}, dummy_account, regime);
+    const auto eth_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        2300, "ETHUSDT", 101.0, 101.0}, dummy_account, regime);
+    const bool eth_scaled = std::find(eth_signal.reason_codes.begin(),
+                                      eth_signal.reason_codes.end(),
+                                      "STR_DEFENSIVE_ETH_RANGE_SCALED") !=
+                            eth_signal.reason_codes.end();
+    if (!(std::fabs(eth_signal.defensive_notional_usd) <
+          std::fabs(btc_signal.defensive_notional_usd)) ||
+        !NearlyEqual(std::fabs(eth_signal.defensive_notional_usd),
+                     std::fabs(btc_signal.defensive_notional_usd) * 0.25,
+                     1e-6) ||
+        !eth_scaled) {
+      std::cerr << "ETH RANGE defensive 分量应按 multiplier 缩放\n";
+      return 1;
+    }
+  }
+
+  {
     // Signal 必须携带有效期与 reason_codes，满足审计约束。
     ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
         .signal_notional_usd = 1000.0,
@@ -2835,6 +2920,8 @@ int main() {
         << "  signal_valid_for_ms: 18000\n"
         << "  default_tick_interval_ms: 4000\n"
         << "  min_hold_ticks: 4\n"
+        << "  range_min_confidence: 0.28\n"
+        << "  eth_range_defensive_scale_multiplier: 0.35\n"
         << "  trend_breakout_lookback_ticks: 22\n"
         << "  trend_breakout_rank_threshold: 0.96\n"
         << "  trend_slope_lookback_ticks: 5\n"
@@ -2982,6 +3069,8 @@ int main() {
         config.strategy_signal_valid_for_ms != 18000 ||
         config.strategy_default_tick_interval_ms != 4000 ||
         config.strategy_min_hold_ticks != 4 ||
+        !NearlyEqual(config.strategy_range_min_confidence, 0.28) ||
+        !NearlyEqual(config.strategy_eth_range_defensive_scale_multiplier, 0.35) ||
         config.strategy_trend_breakout_lookback_ticks != 22 ||
         !NearlyEqual(config.strategy_trend_breakout_rank_threshold, 0.96) ||
         config.strategy_trend_slope_lookback_ticks != 5 ||
@@ -3838,6 +3927,53 @@ int main() {
     if (error.find("vol_target_rebalance_min_ratio") == std::string::npos) {
       std::cerr
           << "非法 strategy.vol_target_rebalance_min_ratio 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_range_min_confidence.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  range_min_confidence: 1.2\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 strategy.range_min_confidence 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.range_min_confidence") == std::string::npos) {
+      std::cerr << "非法 strategy.range_min_confidence 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_eth_range_defensive_scale_multiplier.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  eth_range_defensive_scale_multiplier: 1.2\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "非法 strategy.eth_range_defensive_scale_multiplier 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.eth_range_defensive_scale_multiplier") ==
+        std::string::npos) {
+      std::cerr
+          << "非法 strategy.eth_range_defensive_scale_multiplier 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
