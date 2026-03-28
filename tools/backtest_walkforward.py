@@ -425,8 +425,15 @@ def main() -> int:
         dtype=np.float64,
     )
     avg_calibration_ic = float(np.mean(finite_ic)) if finite_ic.size > 0 else 0.0
-    enabled_split_count = int(sum(1 for item in valid if item.trading_enabled))
-    traded_split_count = int(sum(1 for item in valid if item.trades > 0))
+    enabled = [item for item in valid if item.trading_enabled]
+    traded = [item for item in valid if item.trades > 0]
+    enabled_split_count = int(len(enabled))
+    traded_split_count = int(len(traded))
+
+    def mean_metric(items: List[SplitResult], attr: str) -> float:
+        if not items:
+            return 0.0
+        return float(np.mean(np.asarray([getattr(item, attr) for item in items], dtype=np.float64)))
 
     report = {
         "features": str(feature_path),
@@ -462,6 +469,10 @@ def main() -> int:
             "total_trades": total_trades,
             "avg_split_return": avg_ret,
             "avg_split_sharpe": avg_sharpe,
+            "enabled_avg_split_return": mean_metric(enabled, "total_return"),
+            "enabled_avg_split_sharpe": mean_metric(enabled, "sharpe"),
+            "traded_avg_split_return": mean_metric(traded, "total_return"),
+            "traded_avg_split_sharpe": mean_metric(traded, "sharpe"),
             "avg_calibration_ic": avg_calibration_ic,
             "worst_split_max_drawdown": worst_dd,
             "avg_turnover": avg_turnover,

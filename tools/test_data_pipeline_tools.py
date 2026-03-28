@@ -184,10 +184,18 @@ class FeatureAndBacktestTest(unittest.TestCase):
         enabled_split_count = int(sum(1 for item in valid if item.trading_enabled))
         traded_split_count = int(sum(1 for item in valid if item.trades > 0))
         total_trades = sum(item.trades for item in valid)
+        enabled_avg_split_sharpe = float(
+            np.mean(np.asarray([item.sharpe for item in valid if item.trading_enabled], dtype=np.float64))
+        )
+        traded_avg_split_sharpe = float(
+            np.mean(np.asarray([item.sharpe for item in valid if item.trades > 0], dtype=np.float64))
+        )
 
         self.assertEqual(enabled_split_count, 2)
         self.assertEqual(traded_split_count, 1)
         self.assertEqual(total_trades, 3)
+        self.assertAlmostEqual(enabled_avg_split_sharpe, 0.25)
+        self.assertAlmostEqual(traded_avg_split_sharpe, 0.5)
 
 
 if __name__ == "__main__":
