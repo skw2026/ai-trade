@@ -16,6 +16,20 @@ struct ExecutionProtectionConfig {
   int attach_timeout_ms{1500};
   double stop_loss_ratio{0.01};
   double take_profit_ratio{0.015};
+  bool dynamic_distance_enabled{false};
+  double dynamic_distance_volatility_multiplier{0.0};
+  double dynamic_stop_loss_min_ratio{0.0};
+  double dynamic_stop_loss_max_ratio{0.0};
+  double dynamic_take_profit_min_ratio{0.0};
+  double dynamic_take_profit_max_ratio{0.0};
+  double dynamic_take_profit_rr_multiplier{1.5};
+  bool break_even_enabled{false};
+  double break_even_trigger_ratio{0.0};
+  double break_even_offset_ratio{0.0};
+  bool trailing_enabled{false};
+  double trailing_trigger_ratio{0.0};
+  double trailing_distance_ratio{0.0};
+  double profit_protection_min_update_ratio{0.001};
   bool cancel_opposite_on_fill{true};
 };
 
@@ -91,8 +105,46 @@ class ExecutionEngine {
                                                    OrderPurpose purpose,
                                                    double distance_ratio) const;
 
+  /**
+   * @brief 以显式触发价格构建保护单（用于 break-even / trailing）
+   */
+  std::optional<OrderIntent> BuildProtectionIntentAtPrice(
+      const FillEvent& entry_fill,
+      OrderPurpose purpose,
+      double trigger_price) const;
+
  private:
   ExecutionEngineConfig config_{};  ///< 执行层参数。
 };
+
+/**
+ * @brief 计算保护单触发价格
+ */
+double ComputeProtectionPrice(int entry_direction,
+                              Price anchor_price,
+                              OrderPurpose purpose,
+                              double distance_ratio);
+
+/**
+ * @brief 合并基础距离与动态距离，输出最终保护距离比例
+ */
+double ComputeEffectiveProtectionDistanceRatio(double base_ratio,
+                                               double dynamic_ratio,
+                                               double min_ratio,
+                                               double max_ratio);
+
+/**
+ * @brief 计算盈利保护应抬升到的止损价格（仅返回盈利保护候选，不含初始止损）
+ */
+std::optional<double> ComputeProfitProtectionStopPrice(
+    int entry_direction,
+    double entry_price,
+    double best_price,
+    bool break_even_enabled,
+    double break_even_trigger_ratio,
+    double break_even_offset_ratio,
+    bool trailing_enabled,
+    double trailing_trigger_ratio,
+    double trailing_distance_ratio);
 
 }  // namespace ai_trade

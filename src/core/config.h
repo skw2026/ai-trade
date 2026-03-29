@@ -18,6 +18,20 @@ struct ProtectionConfig {
   int attach_timeout_ms{1500};
   double stop_loss_ratio{0.01};
   double take_profit_ratio{0.015};
+  bool dynamic_distance_enabled{false};
+  double dynamic_distance_volatility_multiplier{0.0};
+  double dynamic_stop_loss_min_ratio{0.0};
+  double dynamic_stop_loss_max_ratio{0.0};
+  double dynamic_take_profit_min_ratio{0.0};
+  double dynamic_take_profit_max_ratio{0.0};
+  double dynamic_take_profit_rr_multiplier{1.5};
+  bool break_even_enabled{false};
+  double break_even_trigger_ratio{0.0};
+  double break_even_offset_ratio{0.0};
+  bool trailing_enabled{false};
+  double trailing_trigger_ratio{0.0};
+  double trailing_distance_ratio{0.0};
+  double profit_protection_min_update_ratio{0.001};
 };
 
 struct ReconcileConfig {
@@ -365,6 +379,27 @@ struct AppConfig {
             .attach_timeout_ms = protection.attach_timeout_ms,
             .stop_loss_ratio = protection.stop_loss_ratio,
             .take_profit_ratio = protection.take_profit_ratio,
+            .dynamic_distance_enabled = protection.dynamic_distance_enabled,
+            .dynamic_distance_volatility_multiplier =
+                protection.dynamic_distance_volatility_multiplier,
+            .dynamic_stop_loss_min_ratio =
+                protection.dynamic_stop_loss_min_ratio,
+            .dynamic_stop_loss_max_ratio =
+                protection.dynamic_stop_loss_max_ratio,
+            .dynamic_take_profit_min_ratio =
+                protection.dynamic_take_profit_min_ratio,
+            .dynamic_take_profit_max_ratio =
+                protection.dynamic_take_profit_max_ratio,
+            .dynamic_take_profit_rr_multiplier =
+                protection.dynamic_take_profit_rr_multiplier,
+            .break_even_enabled = protection.break_even_enabled,
+            .break_even_trigger_ratio = protection.break_even_trigger_ratio,
+            .break_even_offset_ratio = protection.break_even_offset_ratio,
+            .trailing_enabled = protection.trailing_enabled,
+            .trailing_trigger_ratio = protection.trailing_trigger_ratio,
+            .trailing_distance_ratio = protection.trailing_distance_ratio,
+            .profit_protection_min_update_ratio =
+                protection.profit_protection_min_update_ratio,
         },
     };
   }

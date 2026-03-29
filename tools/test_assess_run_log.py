@@ -639,6 +639,116 @@ class AssessRunLogTest(unittest.TestCase):
             any("执行净收益质量未达标" in x for x in report["fail_reasons"])
         )
 
+    def test_s5_fail_when_protection_missing_event_observed(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.01,
+                fee_bps_per_fill=1.0,
+                maker_fills=1,
+                explicit_liquidity_fills=1,
+                explicit_liquidity_fill_ratio=1.0,
+                maker_fill_ratio=1.0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            "2026-02-14 15:30:01 [INFO] EXEC_PROTECTIVE_ORDER_MISSING: reason=managed_sl_enqueue_failed, symbol=BTCUSDT\n"
+            + runtime
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+            s5_protection_enabled=True,
+        )
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["metrics"]["protective_order_missing_count"], 1)
+        self.assertTrue(
+            any("保护单缺失事件超阈值" in x for x in report["fail_reasons"])
+        )
+
+    def test_s5_ignore_protection_missing_gate_when_protection_disabled(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.01,
+                fee_bps_per_fill=1.0,
+                maker_fills=1,
+                explicit_liquidity_fills=1,
+                explicit_liquidity_fill_ratio=1.0,
+                maker_fill_ratio=1.0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            "2026-02-14 15:30:01 [INFO] EXEC_PROTECTIVE_ORDER_MISSING: reason=managed_sl_enqueue_failed, symbol=BTCUSDT\n"
+            + runtime
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+            s5_protection_enabled=False,
+        )
+        self.assertNotEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["metrics"]["protective_order_missing_count"], 1)
+        self.assertFalse(
+            any("保护单缺失事件超阈值" in x for x in report["fail_reasons"])
+        )
+
+    def test_s5_warn_when_tp_attach_failed_with_protection_enabled(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.01,
+                fee_bps_per_fill=1.0,
+                maker_fills=1,
+                explicit_liquidity_fills=1,
+                explicit_liquidity_fill_ratio=1.0,
+                maker_fill_ratio=1.0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            "2026-02-14 15:30:01 [INFO] PROTECTION_REFRESH: symbol=BTCUSDT, qty=0.01, direction=1\n"
+            "2026-02-14 15:30:02 [ERROR] EXEC_TP_ATTACH_FAILED: reason=managed_tp_enqueue_failed, symbol=BTCUSDT\n"
+            "2026-02-14 15:30:03 [INFO] PROFIT_PROTECTION_UPDATE: symbol=BTCUSDT, stop_price=101.0\n"
+            + runtime
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+            s5_protection_enabled=True,
+            s5_profit_protection_enabled=True,
+        )
+        self.assertEqual(report["verdict"], "PASS_WITH_ACTIONS")
+        self.assertEqual(report["metrics"]["tp_attach_failed_count"], 1)
+        self.assertEqual(report["metrics"]["protection_refresh_count"], 1)
+        self.assertEqual(report["metrics"]["profit_protection_update_count"], 1)
+        self.assertTrue(
+            any("TP 挂单失败事件已观测到" in x for x in report["warn_reasons"])
+        )
+
     def test_s5_fail_when_fill_windows_below_minimum(self):
         runtime = "".join(
             self._runtime_line(

@@ -356,6 +356,50 @@ yaml_section_bool_value() {
   trim "${value}"
 }
 
+yaml_nested_bool_value() {
+  local section="$1"
+  local subsection="$2"
+  local key="$3"
+  local path="$4"
+  local line
+  line="$(
+    awk -v section="${section}" -v subsection="${subsection}" -v key="${key}" '
+      BEGIN { in_section = 0; in_subsection = 0 }
+      {
+        raw = $0
+        sub(/\r$/, "", raw)
+        if (raw ~ /^[^[:space:]#][^:]*:[[:space:]]*($|#)/) {
+          section_name = raw
+          sub(/[[:space:]]*#.*/, "", section_name)
+          sub(/:.*/, "", section_name)
+          in_section = (section_name == section)
+          in_subsection = 0
+          next
+        }
+        if (in_section && raw ~ /^[[:space:]]{2}[^[:space:]#][^:]*:[[:space:]]*($|#)/) {
+          subsection_name = raw
+          sub(/^[[:space:]]+/, "", subsection_name)
+          sub(/[[:space:]]*#.*/, "", subsection_name)
+          sub(/:.*/, "", subsection_name)
+          in_subsection = (subsection_name == subsection)
+          next
+        }
+        if (in_section && in_subsection && raw ~ ("^[[:space:]]{4}" key ":[[:space:]]*")) {
+          print raw
+          exit
+        }
+      }
+    ' "${path}" || true
+  )"
+  if [[ -z "${line}" ]]; then
+    echo ""
+    return 0
+  fi
+  local value
+  value="$(echo "${line}" | sed -E 's/^[^:]+:[[:space:]]*([^#[:space:]]+).*/\1/' | tr '[:upper:]' '[:lower:]')"
+  trim "${value}"
+}
+
 json_number_value() {
   local key="$1"
   local path="$2"
@@ -656,6 +700,27 @@ prepare_training_data() {
 run_assess() {
   echo "[INFO] runtime assess start"
   compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade > "${ASSESS_LOG_PATH}" || true
+  local protection_enabled="false"
+  local break_even_enabled="false"
+  local trailing_enabled="false"
+  if [[ -f "${RUNTIME_CONFIG_PATH}" ]]; then
+    protection_enabled="$(
+      yaml_nested_bool_value "execution" "protection" "enabled" "${RUNTIME_CONFIG_PATH}"
+    )"
+    break_even_enabled="$(
+      yaml_nested_bool_value "execution" "protection" "break_even_enabled" "${RUNTIME_CONFIG_PATH}"
+    )"
+    trailing_enabled="$(
+      yaml_nested_bool_value "execution" "protection" "trailing_enabled" "${RUNTIME_CONFIG_PATH}"
+    )"
+  fi
+  local profit_protection_enabled="false"
+  if is_true "${break_even_enabled}" || is_true "${trailing_enabled}"; then
+    profit_protection_enabled="true"
+  fi
+  if [[ "${STAGE}" == "S5" ]]; then
+    echo "[INFO] S5 protection switches: config=${RUNTIME_CONFIG_PATH} protection_enabled=${protection_enabled:-false} profit_protection_enabled=${profit_protection_enabled}"
+  fi
   ASSESS_ARGS=(
     tools/assess_run_log.py
     --log="${ASSESS_LOG_PATH}"
@@ -671,6 +736,8 @@ run_assess() {
       --s5-min-realized-net-per-fill-usd "${S5_MIN_REALIZED_NET_PER_FILL_USD}"
       --s5-min-realized-net-per-fill-windows "${S5_MIN_REALIZED_NET_PER_FILL_WINDOWS}"
       --s5-min-fill-windows "${S5_MIN_FILL_WINDOWS}"
+      --s5-protection-enabled "${protection_enabled:-false}"
+      --s5-profit-protection-enabled "${profit_protection_enabled}"
       --s5-min-equity-change-samples "${S5_MIN_EQUITY_CHANGE_SAMPLES}"
     )
     if [[ -n "${S5_MIN_EQUITY_CHANGE_USD}" ]]; then

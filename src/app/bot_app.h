@@ -148,9 +148,21 @@ class BotApplication {
 
   /**
    * @brief 处理成交后的保护单逻辑 (止盈/止损)
-   * 针对开仓成交，挂出 SL/TP；针对保护单成交，撤销对侧单 (OCO)。
+   * 采用 symbol 级保护状态：
+   * - 策略退出继续通过目标仓位 / reduce_only 主链路处理；
+   * - 开仓后维护动态 SL/TP；
+   * - 浮盈后通过 break-even / trailing 更新 SL。
    */
   void HandleProtectionOrders(const FillEvent& fill);
+  /// 基于 symbol 当前净持仓刷新 SL/TP（开仓/减仓/平仓后调用）。
+  void RefreshManagedProtectionForSymbol(const std::string& symbol,
+                                         double reference_price,
+                                         const std::string& reason);
+  /// 撤销并清理 symbol 级保护状态。
+  void CancelManagedProtectionForSymbol(const std::string& symbol,
+                                        const std::string& reason);
+  /// 基于最新行情推进盈利保护（break-even / trailing）。
+  void UpdateProfitProtection(const MarketEvent& event);
   /// 检查“required SL 挂单确认”是否超时，超时则触发强制只减仓并审计。
   void CheckPendingRequiredSlTimeouts();
   /// 注册 required SL 的确认等待项（key=SL client_order_id）。
@@ -320,6 +332,24 @@ class BotApplication {
   };
   std::unordered_map<std::string, PendingRequiredSlAttach>
       pending_required_sl_attach_;
+  struct ManagedProtectionState {
+    std::string symbol;
+    std::string protection_group_id;
+    int direction{0};
+    double qty{0.0};
+    double avg_entry_price{0.0};
+    double best_price{0.0};
+    double stop_loss_ratio{0.0};
+    double take_profit_ratio{0.0};
+    double active_sl_price{0.0};
+    double active_tp_price{0.0};
+    std::string active_sl_client_order_id;
+    std::string active_tp_client_order_id;
+  };
+  std::unordered_map<std::string, ManagedProtectionState>
+      managed_protection_by_symbol_;
+  std::unordered_map<std::string, double> latest_mark_price_by_symbol_;
+  std::unordered_map<std::string, RegimeState> regime_state_by_symbol_;
   std::unordered_map<std::string, int> cost_filter_reject_streak_by_symbol_;
   std::unordered_map<std::string, int> cost_filter_cooldown_until_tick_by_symbol_;
   std::uint64_t entry_gate_observed_samples_{0};

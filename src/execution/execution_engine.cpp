@@ -35,6 +35,88 @@ std::string BuildClientOrderId(const std::string& symbol) {
 
 }  // namespace
 
+double ComputeProtectionPrice(int entry_direction,
+                              Price anchor_price,
+                              OrderPurpose purpose,
+                              double distance_ratio) {
+  if ((purpose != OrderPurpose::kSl && purpose != OrderPurpose::kTp) ||
+      anchor_price <= 0.0 || distance_ratio <= 0.0 || entry_direction == 0) {
+    return 0.0;
+  }
+  if (entry_direction > 0) {
+    return (purpose == OrderPurpose::kSl)
+               ? anchor_price * (1.0 - distance_ratio)
+               : anchor_price * (1.0 + distance_ratio);
+  }
+  return (purpose == OrderPurpose::kSl)
+             ? anchor_price * (1.0 + distance_ratio)
+             : anchor_price * (1.0 - distance_ratio);
+}
+
+double ComputeEffectiveProtectionDistanceRatio(double base_ratio,
+                                               double dynamic_ratio,
+                                               double min_ratio,
+                                               double max_ratio) {
+  double effective_ratio = std::max(base_ratio, dynamic_ratio);
+  if (min_ratio > 0.0) {
+    effective_ratio = std::max(effective_ratio, min_ratio);
+  }
+  if (max_ratio > 0.0) {
+    effective_ratio = std::min(effective_ratio, max_ratio);
+  }
+  return effective_ratio;
+}
+
+std::optional<double> ComputeProfitProtectionStopPrice(
+    int entry_direction,
+    double entry_price,
+    double best_price,
+    bool break_even_enabled,
+    double break_even_trigger_ratio,
+    double break_even_offset_ratio,
+    bool trailing_enabled,
+    double trailing_trigger_ratio,
+    double trailing_distance_ratio) {
+  if (entry_direction == 0 || entry_price <= 0.0 || best_price <= 0.0) {
+    return std::nullopt;
+  }
+
+  const bool is_long = entry_direction > 0;
+  const double favorable_return =
+      is_long ? (best_price / entry_price - 1.0)
+              : (entry_price / best_price - 1.0);
+  double candidate_stop = 0.0;
+  bool has_candidate = false;
+
+  if (break_even_enabled && break_even_trigger_ratio > 0.0 &&
+      favorable_return >= break_even_trigger_ratio) {
+    candidate_stop = is_long ? entry_price * (1.0 + break_even_offset_ratio)
+                             : entry_price * (1.0 - break_even_offset_ratio);
+    has_candidate = true;
+  }
+
+  if (trailing_enabled && trailing_trigger_ratio > 0.0 &&
+      trailing_distance_ratio > 0.0 &&
+      favorable_return >= trailing_trigger_ratio) {
+    const double trailing_stop =
+        is_long ? best_price * (1.0 - trailing_distance_ratio)
+                : best_price * (1.0 + trailing_distance_ratio);
+    if (!has_candidate) {
+      candidate_stop = trailing_stop;
+      has_candidate = true;
+    } else if (is_long) {
+      candidate_stop = std::max(candidate_stop, trailing_stop);
+    } else {
+      candidate_stop = std::min(candidate_stop, trailing_stop);
+    }
+  }
+
+  if (!has_candidate || candidate_stop <= 0.0) {
+    return std::nullopt;
+  }
+  return candidate_stop;
+}
+
 /**
  * @brief 根据目标仓位与当前仓位生成下单意图
  *
@@ -155,18 +237,21 @@ std::optional<OrderIntent> ExecutionEngine::BuildProtectionIntent(
     return std::nullopt;
   }
 
-  // 多头与空头的 SL/TP 价格方向相反，按成交方向分别计算。
-  double protection_price = entry_fill.price;
-  if (entry_fill.direction > 0) {
-    protection_price = (purpose == OrderPurpose::kSl)
-                           ? entry_fill.price * (1.0 - distance_ratio)
-                           : entry_fill.price * (1.0 + distance_ratio);
-  } else {
-    protection_price = (purpose == OrderPurpose::kSl)
-                           ? entry_fill.price * (1.0 + distance_ratio)
-                           : entry_fill.price * (1.0 - distance_ratio);
-  }
-  if (protection_price <= 0.0) {
+  const double protection_price = ComputeProtectionPrice(entry_fill.direction,
+                                                         entry_fill.price,
+                                                         purpose,
+                                                         distance_ratio);
+  return BuildProtectionIntentAtPrice(entry_fill, purpose, protection_price);
+}
+
+std::optional<OrderIntent> ExecutionEngine::BuildProtectionIntentAtPrice(
+    const FillEvent& entry_fill,
+    OrderPurpose purpose,
+    double trigger_price) const {
+  if ((purpose != OrderPurpose::kSl && purpose != OrderPurpose::kTp) ||
+      entry_fill.qty <= 0.0 ||
+      entry_fill.direction == 0 ||
+      trigger_price <= 0.0) {
     return std::nullopt;
   }
 
@@ -179,7 +264,7 @@ std::optional<OrderIntent> ExecutionEngine::BuildProtectionIntent(
   intent.reduce_only = true;
   intent.direction = -entry_fill.direction;
   intent.qty = entry_fill.qty;
-  intent.price = protection_price;
+  intent.price = trigger_price;
   return intent;
 }
 

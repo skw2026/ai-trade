@@ -780,6 +780,65 @@ int main() {
   }
 
   {
+    const double stop_ratio = ai_trade::ComputeEffectiveProtectionDistanceRatio(
+        /*base_ratio=*/0.01,
+        /*dynamic_ratio=*/0.018,
+        /*min_ratio=*/0.012,
+        /*max_ratio=*/0.02);
+    if (!NearlyEqual(stop_ratio, 0.018)) {
+      std::cerr << "动态保护距离计算不符合预期\n";
+      return 1;
+    }
+
+    const double long_sl = ai_trade::ComputeProtectionPrice(
+        /*entry_direction=*/1,
+        /*anchor_price=*/100.0,
+        ai_trade::OrderPurpose::kSl,
+        /*distance_ratio=*/0.02);
+    const double short_tp = ai_trade::ComputeProtectionPrice(
+        /*entry_direction=*/-1,
+        /*anchor_price=*/100.0,
+        ai_trade::OrderPurpose::kTp,
+        /*distance_ratio=*/0.03);
+    if (!NearlyEqual(long_sl, 98.0) || !NearlyEqual(short_tp, 97.0)) {
+      std::cerr << "保护单触发价格计算不符合预期\n";
+      return 1;
+    }
+
+    const auto profit_stop = ai_trade::ComputeProfitProtectionStopPrice(
+        /*entry_direction=*/1,
+        /*entry_price=*/100.0,
+        /*best_price=*/112.0,
+        /*break_even_enabled=*/true,
+        /*break_even_trigger_ratio=*/0.05,
+        /*break_even_offset_ratio=*/0.001,
+        /*trailing_enabled=*/true,
+        /*trailing_trigger_ratio=*/0.08,
+        /*trailing_distance_ratio=*/0.03);
+    if (!profit_stop.has_value() || !NearlyEqual(*profit_stop, 108.64)) {
+      std::cerr << "盈利保护 stop 价格计算不符合预期\n";
+      return 1;
+    }
+
+    ai_trade::ExecutionEngine execution(ai_trade::ExecutionEngineConfig{
+        .max_order_notional_usd = 1000.0,
+    });
+    ai_trade::FillEvent entry_fill;
+    entry_fill.client_order_id = "protect-parent";
+    entry_fill.symbol = "BTCUSDT";
+    entry_fill.direction = 1;
+    entry_fill.qty = 1.0;
+    entry_fill.price = 100.0;
+    const auto stop_intent = execution.BuildProtectionIntentAtPrice(
+        entry_fill, ai_trade::OrderPurpose::kSl, /*trigger_price=*/101.0);
+    if (!stop_intent.has_value() || !stop_intent->reduce_only ||
+        stop_intent->direction != -1 || !NearlyEqual(stop_intent->price, 101.0)) {
+      std::cerr << "显式价格保护单构建不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
         .signal_notional_usd = 1000.0,
         .signal_deadband_abs = 0.2,
@@ -3340,6 +3399,66 @@ int main() {
   {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
+        "ai_trade_test_dynamic_protection_config.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  primary_symbol: BTCUSDT\n"
+        << "universe:\n"
+        << "  fallback_symbols: [BTCUSDT]\n"
+        << "execution:\n"
+        << "  protection:\n"
+        << "    enabled: true\n"
+        << "    require_sl: true\n"
+        << "    enable_tp: true\n"
+        << "    attach_timeout_ms: 1200\n"
+        << "    stop_loss_ratio: 0.01\n"
+        << "    take_profit_ratio: 0.015\n"
+        << "    dynamic_distance_enabled: true\n"
+        << "    dynamic_distance_volatility_multiplier: 72.0\n"
+        << "    dynamic_stop_loss_min_ratio: 0.008\n"
+        << "    dynamic_stop_loss_max_ratio: 0.025\n"
+        << "    dynamic_take_profit_min_ratio: 0.012\n"
+        << "    dynamic_take_profit_max_ratio: 0.04\n"
+        << "    dynamic_take_profit_rr_multiplier: 2.2\n"
+        << "    break_even_enabled: true\n"
+        << "    break_even_trigger_ratio: 0.01\n"
+        << "    break_even_offset_ratio: 0.001\n"
+        << "    trailing_enabled: true\n"
+        << "    trailing_trigger_ratio: 0.02\n"
+        << "    trailing_distance_ratio: 0.006\n"
+        << "    profit_protection_min_update_ratio: 0.0008\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (!ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "动态保护配置应加载成功: " << error << "\n";
+      return 1;
+    }
+    if (!config.protection.dynamic_distance_enabled ||
+        !NearlyEqual(config.protection.dynamic_distance_volatility_multiplier, 72.0) ||
+        !NearlyEqual(config.protection.dynamic_stop_loss_min_ratio, 0.008) ||
+        !NearlyEqual(config.protection.dynamic_stop_loss_max_ratio, 0.025) ||
+        !NearlyEqual(config.protection.dynamic_take_profit_min_ratio, 0.012) ||
+        !NearlyEqual(config.protection.dynamic_take_profit_max_ratio, 0.04) ||
+        !NearlyEqual(config.protection.dynamic_take_profit_rr_multiplier, 2.2) ||
+        !config.protection.break_even_enabled ||
+        !NearlyEqual(config.protection.break_even_trigger_ratio, 0.01) ||
+        !NearlyEqual(config.protection.break_even_offset_ratio, 0.001) ||
+        !config.protection.trailing_enabled ||
+        !NearlyEqual(config.protection.trailing_trigger_ratio, 0.02) ||
+        !NearlyEqual(config.protection.trailing_distance_ratio, 0.006) ||
+        !NearlyEqual(config.protection.profit_protection_min_update_ratio, 0.0008)) {
+      std::cerr << "动态保护配置字段解析结果不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
         "ai_trade_test_invalid_protection_ratio.yaml";
     std::ofstream out(temp_path);
     out << "system:\n"
@@ -3362,6 +3481,37 @@ int main() {
     }
     if (error.find("stop_loss_ratio") == std::string::npos) {
       std::cerr << "非法 stop_loss_ratio 错误信息不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_profit_protection_config.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  primary_symbol: BTCUSDT\n"
+        << "universe:\n"
+        << "  fallback_symbols: [BTCUSDT]\n"
+        << "execution:\n"
+        << "  protection:\n"
+        << "    enabled: false\n"
+        << "    require_sl: true\n"
+        << "    break_even_enabled: true\n"
+        << "    break_even_trigger_ratio: 0.01\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "盈利保护依赖主保护链路，非法配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("execution.protection") == std::string::npos) {
+      std::cerr << "盈利保护非法配置错误信息不符合预期\n";
       return 1;
     }
 

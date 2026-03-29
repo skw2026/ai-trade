@@ -91,6 +91,21 @@ class StreamAndGapToolsTest(unittest.TestCase):
 
 @unittest.skipUnless(HAS_NUMPY, "numpy is required for feature/backtest script tests")
 class FeatureAndBacktestTest(unittest.TestCase):
+    def empty_bucket_metrics(self):
+        return {
+            bucket: {
+                "bars": 0,
+                "trades": 0,
+                "avg_turnover": 0.0,
+                "avg_bar_return": 0.0,
+                "sharpe": 0.0,
+                "turnover_sum": 0.0,
+                "sum_bar_return": 0.0,
+                "sum_sq_bar_return": 0.0,
+            }
+            for bucket in BACKTEST.REGIME_BUCKETS
+        }
+
     def test_normalize_execution_controls_clamps_deadband(self):
         max_leverage, deadband, warnings = BACKTEST.normalize_execution_controls(0.15, 0.25)
         self.assertAlmostEqual(max_leverage, 0.15)
@@ -147,6 +162,7 @@ class FeatureAndBacktestTest(unittest.TestCase):
             )
             self.assertGreater(split.bars, 0)
             self.assertTrue(np.isfinite(split.sharpe))
+            self.assertIn("range", split.bucket_metrics)
 
     def test_walkforward_summary_counts_actual_traded_splits(self):
         valid = [
@@ -164,6 +180,7 @@ class FeatureAndBacktestTest(unittest.TestCase):
                 max_drawdown=0.0,
                 calibration_ic=0.01,
                 trading_enabled=True,
+                bucket_metrics=self.empty_bucket_metrics(),
             ),
             BACKTEST.SplitResult(
                 split_index=1,
@@ -179,6 +196,7 @@ class FeatureAndBacktestTest(unittest.TestCase):
                 max_drawdown=0.01,
                 calibration_ic=0.03,
                 trading_enabled=True,
+                bucket_metrics=self.empty_bucket_metrics(),
             ),
         ]
         enabled_split_count = int(sum(1 for item in valid if item.trading_enabled))
@@ -196,6 +214,85 @@ class FeatureAndBacktestTest(unittest.TestCase):
         self.assertEqual(total_trades, 3)
         self.assertAlmostEqual(enabled_avg_split_sharpe, 0.25)
         self.assertAlmostEqual(traded_avg_split_sharpe, 0.5)
+
+    def test_regime_bucket_summary_aggregates_split_metrics(self):
+        metrics_a = self.empty_bucket_metrics()
+        metrics_a["trend"] = {
+            "bars": 10,
+            "trades": 2,
+            "avg_turnover": 0.1,
+            "avg_bar_return": 0.01,
+            "sharpe": 1.0,
+            "turnover_sum": 1.0,
+            "sum_bar_return": 0.10,
+            "sum_sq_bar_return": 0.002,
+        }
+        metrics_b = self.empty_bucket_metrics()
+        metrics_b["trend"] = {
+            "bars": 20,
+            "trades": 3,
+            "avg_turnover": 0.2,
+            "avg_bar_return": 0.005,
+            "sharpe": 0.5,
+            "turnover_sum": 4.0,
+            "sum_bar_return": 0.10,
+            "sum_sq_bar_return": 0.004,
+        }
+        splits = [
+            BACKTEST.SplitResult(
+                split_index=0,
+                train_start=0,
+                train_end=10,
+                test_start=10,
+                test_end=20,
+                bars=10,
+                trades=2,
+                avg_turnover=0.1,
+                total_return=0.01,
+                sharpe=0.5,
+                max_drawdown=0.0,
+                calibration_ic=0.01,
+                trading_enabled=True,
+                bucket_metrics=metrics_a,
+            ),
+            BACKTEST.SplitResult(
+                split_index=1,
+                train_start=10,
+                train_end=20,
+                test_start=20,
+                test_end=30,
+                bars=20,
+                trades=3,
+                avg_turnover=0.2,
+                total_return=0.02,
+                sharpe=0.4,
+                max_drawdown=0.01,
+                calibration_ic=0.03,
+                trading_enabled=True,
+                bucket_metrics=metrics_b,
+            ),
+        ]
+        summary = BACKTEST.summarize_regime_buckets(splits, interval_minutes=5)
+        self.assertEqual(summary["trend"]["bars"], 30)
+        self.assertEqual(summary["trend"]["trades"], 5)
+        self.assertEqual(summary["trend"]["splits"], 2)
+        self.assertEqual(summary["trend"]["traded_splits"], 2)
+        self.assertAlmostEqual(summary["trend"]["avg_bar_return"], 0.20 / 30.0)
+        self.assertAlmostEqual(summary["trend"]["avg_turnover"], 5.0 / 30.0)
+
+    def test_classify_regime_bucket_heuristic(self):
+        thresholds = BACKTEST.RegimeThresholds(
+            trend_abs_ema_diff=0.001,
+            trend_abs_mom_48=0.004,
+            extreme_vol_12=0.003,
+            extreme_range_pct=0.01,
+        )
+        row = np.zeros((len(BACKTEST.FEATURE_COLUMNS),), dtype=np.float64)
+        row[BACKTEST.FEATURE_INDEX["ema_diff"]] = 0.002
+        row[BACKTEST.FEATURE_INDEX["mom_48"]] = 0.006
+        self.assertEqual(BACKTEST.classify_regime_bucket(row, thresholds), "trend")
+        row[BACKTEST.FEATURE_INDEX["vol_12"]] = 0.004
+        self.assertEqual(BACKTEST.classify_regime_bucket(row, thresholds), "extreme")
 
 
 if __name__ == "__main__":

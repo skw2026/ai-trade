@@ -102,6 +102,9 @@ DEFAULT_S5_MIN_FILL_WINDOWS = 10
 DEFAULT_S5_MIN_EQUITY_CHANGE_USD: Optional[float] = None
 DEFAULT_S5_MIN_EQUITY_CHANGE_SAMPLES = 0
 DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD: Optional[float] = None
+DEFAULT_S5_PROTECTION_ENABLED = False
+DEFAULT_S5_PROFIT_PROTECTION_ENABLED = False
+DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT = 0
 
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -182,6 +185,15 @@ RUNTIME_RECONCILE_RUNTIME_RE = re.compile(
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
+def parse_bool_arg(raw: str) -> bool:
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"非法布尔值: {raw}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ai-trade 运行日志自动验收")
     parser.add_argument(
@@ -250,6 +262,24 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD,
         help="S5 可选硬门槛：|equity_change - realized_net_change| 上限（USD）；未设置则不校验",
+    )
+    parser.add_argument(
+        "--s5-protection-enabled",
+        type=parse_bool_arg,
+        default=DEFAULT_S5_PROTECTION_ENABLED,
+        help="S5 主链是否启用保护单必检项（默认 false）",
+    )
+    parser.add_argument(
+        "--s5-profit-protection-enabled",
+        type=parse_bool_arg,
+        default=DEFAULT_S5_PROFIT_PROTECTION_ENABLED,
+        help="S5 是否启用盈利保护观测项（默认 false）",
+    )
+    parser.add_argument(
+        "--s5-max-protective-order-missing-count",
+        type=int,
+        default=DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT,
+        help="S5 强门禁：保护单缺失事件最大允许次数（默认 0）",
     )
     return parser.parse_args()
 
@@ -864,6 +894,9 @@ def assess(
     s5_min_equity_change_usd: Optional[float] = DEFAULT_S5_MIN_EQUITY_CHANGE_USD,
     s5_min_equity_change_samples: int = DEFAULT_S5_MIN_EQUITY_CHANGE_SAMPLES,
     s5_max_equity_vs_realized_gap_usd: Optional[float] = DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD,
+    s5_protection_enabled: bool = DEFAULT_S5_PROTECTION_ENABLED,
+    s5_profit_protection_enabled: bool = DEFAULT_S5_PROFIT_PROTECTION_ENABLED,
+    s5_max_protective_order_missing_count: int = DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT,
 ) -> Dict[str, object]:
     original_text = text
     flat_start_rebased = False
@@ -1049,6 +1082,19 @@ def assess(
         ),
         "bybit_submit_limit_count": count(r"BYBIT_SUBMIT:.*order_type=Limit", text),
         "bybit_submit_market_count": count(r"BYBIT_SUBMIT:.*order_type=Market", text),
+        "protective_order_missing_count": count(
+            r"EXEC_PROTECTIVE_ORDER_MISSING", text
+        ),
+        "tp_attach_failed_count": count(r"EXEC_TP_ATTACH_FAILED", text),
+        "protection_refresh_count": count(r"PROTECTION_REFRESH", text),
+        "protection_cancelled_count": count(r"PROTECTION_CANCELLED", text),
+        "profit_protection_update_count": count(
+            r"PROFIT_PROTECTION_UPDATE", text
+        ),
+        "s5_protection_enabled": 1 if s5_protection_enabled else 0,
+        "s5_profit_protection_enabled": 1
+        if s5_profit_protection_enabled
+        else 0,
         "runtime_account_samples": account_pnl["samples"],
         "start_flat": account_pnl["start_flat"],
         "start_abs_notional_usd": account_pnl["first_abs_notional_usd"],
@@ -1393,6 +1439,17 @@ def assess(
                     f"account_samples={metrics['runtime_account_samples']}, "
                     f"required_samples>={max(0, s5_min_equity_change_samples)}"
                 )
+        if (
+            stage.name == "S5"
+            and s5_protection_enabled
+            and metrics["protective_order_missing_count"]
+            > max(0, s5_max_protective_order_missing_count)
+        ):
+            fail_reasons.append(
+                "保护单缺失事件超阈值（S5 必检项）: "
+                f"protective_order_missing_count={metrics['protective_order_missing_count']}, "
+                f"threshold<={max(0, s5_max_protective_order_missing_count)}"
+            )
 
     # 软告警：DEPLOY 仅保留硬失败项，避免上线门禁被策略类黄灯误阻断。
     if stage.name != "DEPLOY":
@@ -1467,6 +1524,21 @@ def assess(
                 "执行质量守卫触发，入场门槛已抬升，建议复核手续费与执行路径: "
                 f"active_count={metrics['execution_quality_guard_active_count']}, "
                 f"penalty_bps_avg={metrics['execution_quality_guard_penalty_bps_avg']:.4f}"
+            )
+        if (
+            s5_protection_enabled
+            and metrics["funnel_fills_runtime_count"] > 0
+            and metrics["protection_refresh_count"] <= 0
+            and metrics["protection_cancelled_count"] <= 0
+        ):
+            warn_reasons.append(
+                "保护单已启用但未观测到 PROTECTION_REFRESH/PROTECTION_CANCELLED，"
+                "建议核查保护挂单主链是否生效"
+            )
+        if s5_protection_enabled and metrics["tp_attach_failed_count"] > 0:
+            warn_reasons.append(
+                "TP 挂单失败事件已观测到（S5 观测项）: "
+                f"tp_attach_failed_count={metrics['tp_attach_failed_count']}"
             )
         if (
             metrics["execution_window_runtime_count"] > 0
@@ -1673,6 +1745,12 @@ def main() -> int:
     if args.s5_min_fill_windows < 0:
         print("[ERROR] --s5-min-fill-windows 必须大于等于 0", file=sys.stderr)
         return 2
+    if args.s5_max_protective_order_missing_count < 0:
+        print(
+            "[ERROR] --s5-max-protective-order-missing-count 必须大于等于 0",
+            file=sys.stderr,
+        )
+        return 2
     if args.s5_min_equity_change_samples < 0:
         print(
             "[ERROR] --s5-min-equity-change-samples 必须大于等于 0",
@@ -1701,6 +1779,9 @@ def main() -> int:
         s5_min_equity_change_usd=args.s5_min_equity_change_usd,
         s5_min_equity_change_samples=args.s5_min_equity_change_samples,
         s5_max_equity_vs_realized_gap_usd=args.s5_max_equity_vs_realized_gap_usd,
+        s5_protection_enabled=args.s5_protection_enabled,
+        s5_profit_protection_enabled=args.s5_profit_protection_enabled,
+        s5_max_protective_order_missing_count=args.s5_max_protective_order_missing_count,
     )
     print_report(report)
 

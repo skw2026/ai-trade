@@ -34,6 +34,22 @@ std::int64_t CurrentTimestampMs() {
   return now.time_since_epoch().count();
 }
 
+int SignOf(double value) {
+  if (value > kNotionalEpsilon) {
+    return 1;
+  }
+  if (value < -kNotionalEpsilon) {
+    return -1;
+  }
+  return 0;
+}
+
+std::string BuildProtectionGroupId(const std::string& symbol) {
+  static std::uint64_t seq = 0;
+  return symbol + "-protect-" + std::to_string(CurrentTimestampMs()) + "-" +
+         std::to_string(seq++);
+}
+
 // 去重并保序：确保 symbol 列表可直接用于配置下发与日志展示。
 std::vector<std::string> UniqueSymbols(const std::vector<std::string>& symbols) {
   std::vector<std::string> out;
@@ -1484,6 +1500,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   if (std::isfinite(mark_price_for_evolution) && mark_price_for_evolution > 0.0) {
     latest_mark_price_usd_ = mark_price_for_evolution;
     has_latest_mark_price_ = true;
+    latest_mark_price_by_symbol_[event.symbol] = mark_price_for_evolution;
   } else {
     has_latest_mark_price_ = false;
   }
@@ -1496,6 +1513,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                  kFundingObservationStaleTicks) {
     has_latest_funding_rate_per_tick_ = false;
   }
+
+  UpdateProfitProtection(event);
 
   // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
   if (reconcile_halted_) {
@@ -1588,6 +1607,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
   last_regime_state_ = decision.regime;
   has_last_regime_state_ = true;
+  regime_state_by_symbol_[decision.regime.symbol] = decision.regime;
   last_strategy_signal_ = decision.base_signal;
   has_last_strategy_signal_ = true;
   const auto executable_components =
@@ -2041,49 +2061,11 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
 }
 
 /**
- * @brief 保护单编排（Entry -> SL/TP，SL/TP 成交 -> OCO 撤单）
+ * @brief 保护单编排（symbol 级持仓 -> 动态 SL/TP -> 盈利保护）
  */
 void BotApplication::HandleProtectionOrders(const FillEvent& fill) {
   const auto* record = oms_.Find(fill.client_order_id);
   if (!record) return;
-
-  // 开仓成交后挂保护单；若强制要求 SL 但挂单失败，进入强制只减仓。
-  if (record->intent.purpose == OrderPurpose::kEntry &&
-      config_.protection.enabled &&
-      !oms_.HasOpenProtection(fill.client_order_id)) {
-    auto sl = execution_.BuildProtectionIntent(
-        fill, OrderPurpose::kSl, config_.protection.stop_loss_ratio);
-    bool sl_ok = false;
-    if (sl) {
-      sl_ok = EnqueueIntent(*sl);
-      if (sl_ok && config_.protection.require_sl) {
-        TrackPendingRequiredSl(sl->client_order_id, fill.client_order_id);
-      }
-    }
-
-    if (!sl_ok && config_.protection.require_sl) {
-      protection_forced_reduce_only_ = true;
-      RefreshReduceOnlyMode();
-      LogError("EXEC_PROTECTIVE_ORDER_MISSING: reason=sl_enqueue_failed"
-               ", parent_order_id=" + fill.client_order_id +
-               ", forcing=reduce_only");
-    }
-
-    if (config_.protection.enable_tp) {
-      auto tp = execution_.BuildProtectionIntent(
-          fill, OrderPurpose::kTp, config_.protection.take_profit_ratio);
-      if (tp) {
-        const bool tp_ok = EnqueueIntent(*tp);
-        if (!tp_ok) {
-          LogError("EXEC_TP_ATTACH_FAILED: reason=tp_enqueue_failed"
-                   ", parent_order_id=" + fill.client_order_id);
-        }
-      } else {
-        LogError("EXEC_TP_ATTACH_FAILED: reason=tp_intent_invalid"
-                 ", parent_order_id=" + fill.client_order_id);
-      }
-    }
-  }
 
   // 保护单任一侧成交后撤销另一侧，避免重复平仓（OCO）。
   if (record->intent.purpose == OrderPurpose::kSl ||
@@ -2093,8 +2075,337 @@ void BotApplication::HandleProtectionOrders(const FillEvent& fill) {
     if (sibling) {
       executor_->Cancel(*sibling);
       oms_.MarkCancelled(*sibling);
+      ClearPendingRequiredSl(*sibling);
     }
   }
+
+  if (!config_.protection.enabled) {
+    return;
+  }
+
+  if (record->intent.purpose == OrderPurpose::kEntry ||
+      record->intent.purpose == OrderPurpose::kReduce ||
+      record->intent.purpose == OrderPurpose::kSl ||
+      record->intent.purpose == OrderPurpose::kTp) {
+    RefreshManagedProtectionForSymbol(
+        fill.symbol,
+        fill.price,
+        record->intent.purpose == OrderPurpose::kEntry
+            ? "entry_fill"
+            : (record->intent.purpose == OrderPurpose::kReduce
+                   ? "strategy_exit_fill"
+                   : (record->intent.purpose == OrderPurpose::kSl
+                          ? "stop_loss_fill"
+                          : "take_profit_fill")));
+  }
+}
+
+void BotApplication::RefreshManagedProtectionForSymbol(
+    const std::string& symbol,
+    double reference_price,
+    const std::string& reason) {
+  if (!config_.protection.enabled || symbol.empty()) {
+    return;
+  }
+
+  const double position_qty = system_.account().position_qty(symbol);
+  if (std::fabs(position_qty) <= kNotionalEpsilon) {
+    CancelManagedProtectionForSymbol(symbol, reason + "_flat");
+    return;
+  }
+
+  const double avg_entry_price = system_.account().avg_entry_price(symbol);
+  if (!std::isfinite(avg_entry_price) || avg_entry_price <= 0.0) {
+    return;
+  }
+
+  const double market_price =
+      (latest_mark_price_by_symbol_.count(symbol) > 0 &&
+       latest_mark_price_by_symbol_.at(symbol) > 0.0)
+          ? latest_mark_price_by_symbol_.at(symbol)
+          : reference_price;
+  const int direction = SignOf(position_qty);
+  if (const auto existing = managed_protection_by_symbol_.find(symbol);
+      existing != managed_protection_by_symbol_.end() &&
+      existing->second.direction != 0 &&
+      existing->second.direction != direction) {
+    CancelManagedProtectionForSymbol(symbol, reason + "_direction_flip");
+  }
+  auto& state = managed_protection_by_symbol_[symbol];
+  const bool new_group =
+      state.protection_group_id.empty() || state.direction != direction;
+  if (new_group) {
+    state = ManagedProtectionState{};
+    state.symbol = symbol;
+    state.protection_group_id = BuildProtectionGroupId(symbol);
+    state.direction = direction;
+    state.best_price = market_price > 0.0 ? market_price : avg_entry_price;
+  }
+
+  if (market_price > 0.0) {
+    if (state.direction > 0) {
+      state.best_price = std::max(state.best_price, market_price);
+    } else {
+      if (state.best_price <= 0.0) {
+        state.best_price = market_price;
+      } else {
+        state.best_price = std::min(state.best_price, market_price);
+      }
+    }
+  }
+
+  const bool qty_changed = std::fabs(state.qty - std::fabs(position_qty)) > 1e-9;
+  const bool price_changed =
+      std::fabs(state.avg_entry_price - avg_entry_price) >
+      std::max(1e-6, avg_entry_price * 1e-6);
+  const bool need_attach =
+      new_group || qty_changed || price_changed ||
+      state.active_sl_client_order_id.empty() ||
+      (config_.protection.enable_tp && state.active_tp_client_order_id.empty());
+  if (!need_attach) {
+    return;
+  }
+
+  if (!state.active_sl_client_order_id.empty()) {
+    if (const auto* sl_record = oms_.Find(state.active_sl_client_order_id);
+        sl_record != nullptr && !OrderManager::IsTerminalState(sl_record->state)) {
+      executor_->Cancel(state.active_sl_client_order_id);
+      oms_.MarkCancelled(state.active_sl_client_order_id);
+    }
+    ClearPendingRequiredSl(state.active_sl_client_order_id);
+    state.active_sl_client_order_id.clear();
+    state.active_sl_price = 0.0;
+  }
+  if (!state.active_tp_client_order_id.empty()) {
+    if (const auto* tp_record = oms_.Find(state.active_tp_client_order_id);
+        tp_record != nullptr && !OrderManager::IsTerminalState(tp_record->state)) {
+      executor_->Cancel(state.active_tp_client_order_id);
+      oms_.MarkCancelled(state.active_tp_client_order_id);
+    }
+    state.active_tp_client_order_id.clear();
+    state.active_tp_price = 0.0;
+  }
+
+  const auto regime_it = regime_state_by_symbol_.find(symbol);
+  const double dynamic_distance_ratio =
+      (config_.protection.dynamic_distance_enabled &&
+       config_.protection.dynamic_distance_volatility_multiplier > 0.0 &&
+       regime_it != regime_state_by_symbol_.end())
+          ? std::max(0.0,
+                     regime_it->second.volatility_level *
+                         config_.protection.dynamic_distance_volatility_multiplier)
+          : 0.0;
+  const double stop_loss_ratio = ComputeEffectiveProtectionDistanceRatio(
+      config_.protection.stop_loss_ratio,
+      dynamic_distance_ratio,
+      config_.protection.dynamic_stop_loss_min_ratio,
+      config_.protection.dynamic_stop_loss_max_ratio);
+  const double take_profit_dynamic_ratio =
+      stop_loss_ratio * config_.protection.dynamic_take_profit_rr_multiplier;
+  const double take_profit_ratio = ComputeEffectiveProtectionDistanceRatio(
+      config_.protection.take_profit_ratio,
+      config_.protection.dynamic_distance_enabled ? take_profit_dynamic_ratio : 0.0,
+      config_.protection.dynamic_take_profit_min_ratio,
+      config_.protection.dynamic_take_profit_max_ratio);
+
+  FillEvent synthetic_entry_fill;
+  synthetic_entry_fill.client_order_id = state.protection_group_id;
+  synthetic_entry_fill.symbol = symbol;
+  synthetic_entry_fill.direction = direction;
+  synthetic_entry_fill.qty = std::fabs(position_qty);
+  synthetic_entry_fill.price = avg_entry_price;
+
+  auto sl = execution_.BuildProtectionIntent(
+      synthetic_entry_fill, OrderPurpose::kSl, stop_loss_ratio);
+  bool sl_ok = false;
+  if (sl) {
+    sl_ok = EnqueueIntent(*sl);
+    if (sl_ok && config_.protection.require_sl) {
+      TrackPendingRequiredSl(sl->client_order_id, state.protection_group_id);
+      state.active_sl_client_order_id = sl->client_order_id;
+      state.active_sl_price = sl->price;
+    }
+  }
+  if (!sl_ok && config_.protection.require_sl) {
+    protection_forced_reduce_only_ = true;
+    RefreshReduceOnlyMode();
+    LogError("EXEC_PROTECTIVE_ORDER_MISSING: reason=managed_sl_enqueue_failed"
+             ", symbol=" + symbol +
+             ", protection_group_id=" + state.protection_group_id +
+             ", context=" + reason +
+             ", forcing=reduce_only");
+    return;
+  }
+
+  if (config_.protection.enable_tp) {
+    auto tp = execution_.BuildProtectionIntent(
+        synthetic_entry_fill, OrderPurpose::kTp, take_profit_ratio);
+    if (tp) {
+      if (EnqueueIntent(*tp)) {
+        state.active_tp_client_order_id = tp->client_order_id;
+        state.active_tp_price = tp->price;
+      } else {
+        LogError("EXEC_TP_ATTACH_FAILED: reason=managed_tp_enqueue_failed"
+                 ", symbol=" + symbol +
+                 ", protection_group_id=" + state.protection_group_id +
+                 ", context=" + reason);
+      }
+    } else {
+      LogError("EXEC_TP_ATTACH_FAILED: reason=managed_tp_intent_invalid"
+               ", symbol=" + symbol +
+               ", protection_group_id=" + state.protection_group_id +
+               ", context=" + reason);
+    }
+  }
+
+  state.qty = std::fabs(position_qty);
+  state.avg_entry_price = avg_entry_price;
+  state.stop_loss_ratio = stop_loss_ratio;
+  state.take_profit_ratio = take_profit_ratio;
+
+  LogInfo("PROTECTION_REFRESH: symbol=" + symbol +
+          ", reason=" + reason +
+          ", direction=" + std::to_string(direction) +
+          ", qty=" + std::to_string(state.qty) +
+          ", avg_entry_price=" + std::to_string(state.avg_entry_price) +
+          ", stop_loss_ratio=" + std::to_string(state.stop_loss_ratio) +
+          ", take_profit_ratio=" + std::to_string(state.take_profit_ratio) +
+          ", sl_price=" + std::to_string(state.active_sl_price) +
+          ", tp_price=" + std::to_string(state.active_tp_price));
+}
+
+void BotApplication::CancelManagedProtectionForSymbol(
+    const std::string& symbol,
+    const std::string& reason) {
+  auto it = managed_protection_by_symbol_.find(symbol);
+  if (it == managed_protection_by_symbol_.end()) {
+    return;
+  }
+  auto& state = it->second;
+  if (!state.active_sl_client_order_id.empty()) {
+    if (const auto* sl_record = oms_.Find(state.active_sl_client_order_id);
+        sl_record != nullptr && !OrderManager::IsTerminalState(sl_record->state)) {
+      executor_->Cancel(state.active_sl_client_order_id);
+      oms_.MarkCancelled(state.active_sl_client_order_id);
+    }
+    ClearPendingRequiredSl(state.active_sl_client_order_id);
+  }
+  if (!state.active_tp_client_order_id.empty()) {
+    if (const auto* tp_record = oms_.Find(state.active_tp_client_order_id);
+        tp_record != nullptr && !OrderManager::IsTerminalState(tp_record->state)) {
+      executor_->Cancel(state.active_tp_client_order_id);
+      oms_.MarkCancelled(state.active_tp_client_order_id);
+    }
+  }
+  LogInfo("PROTECTION_CANCELLED: symbol=" + symbol +
+          ", reason=" + reason +
+          ", protection_group_id=" + state.protection_group_id);
+  managed_protection_by_symbol_.erase(it);
+}
+
+void BotApplication::UpdateProfitProtection(const MarketEvent& event) {
+  if (!config_.protection.enabled || event.symbol.empty()) {
+    return;
+  }
+  auto it = managed_protection_by_symbol_.find(event.symbol);
+  if (it == managed_protection_by_symbol_.end()) {
+    return;
+  }
+  auto& state = it->second;
+  if (state.active_sl_client_order_id.empty() || state.avg_entry_price <= 0.0 ||
+      state.qty <= 0.0) {
+    return;
+  }
+
+  const double current_price =
+      event.mark_price > 0.0 ? event.mark_price : event.price;
+  if (!std::isfinite(current_price) || current_price <= 0.0) {
+    return;
+  }
+
+  bool best_improved = false;
+  if (state.direction > 0) {
+    if (current_price > state.best_price + 1e-9) {
+      state.best_price = current_price;
+      best_improved = true;
+    }
+  } else if (state.direction < 0) {
+    if (state.best_price <= 0.0 || current_price < state.best_price - 1e-9) {
+      state.best_price = current_price;
+      best_improved = true;
+    }
+  }
+  if (!best_improved) {
+    return;
+  }
+
+  double trailing_distance_ratio = config_.protection.trailing_distance_ratio;
+  if (trailing_distance_ratio <= 0.0) {
+    trailing_distance_ratio = state.stop_loss_ratio;
+  }
+  const auto candidate_stop = ComputeProfitProtectionStopPrice(
+      state.direction,
+      state.avg_entry_price,
+      state.best_price,
+      config_.protection.break_even_enabled,
+      config_.protection.break_even_trigger_ratio,
+      config_.protection.break_even_offset_ratio,
+      config_.protection.trailing_enabled,
+      config_.protection.trailing_trigger_ratio,
+      trailing_distance_ratio);
+  if (!candidate_stop.has_value() || *candidate_stop <= 0.0) {
+    return;
+  }
+
+  const double min_update_abs =
+      std::max(state.avg_entry_price *
+                   config_.protection.profit_protection_min_update_ratio,
+               1e-6);
+  const bool tighter_stop =
+      state.direction > 0
+          ? (*candidate_stop > state.active_sl_price + min_update_abs)
+          : (*candidate_stop < state.active_sl_price - min_update_abs);
+  if (!tighter_stop) {
+    return;
+  }
+
+  if (const auto* sl_record = oms_.Find(state.active_sl_client_order_id);
+      sl_record != nullptr && !OrderManager::IsTerminalState(sl_record->state)) {
+    executor_->Cancel(state.active_sl_client_order_id);
+    oms_.MarkCancelled(state.active_sl_client_order_id);
+  }
+  ClearPendingRequiredSl(state.active_sl_client_order_id);
+
+  FillEvent synthetic_entry_fill;
+  synthetic_entry_fill.client_order_id = state.protection_group_id;
+  synthetic_entry_fill.symbol = state.symbol;
+  synthetic_entry_fill.direction = state.direction;
+  synthetic_entry_fill.qty = state.qty;
+  synthetic_entry_fill.price = state.avg_entry_price;
+  auto sl = execution_.BuildProtectionIntentAtPrice(
+      synthetic_entry_fill, OrderPurpose::kSl, *candidate_stop);
+  if (!sl || !EnqueueIntent(*sl)) {
+    protection_forced_reduce_only_ = true;
+    RefreshReduceOnlyMode();
+    LogError("EXEC_PROTECTIVE_ORDER_MISSING: reason=profit_protection_sl_update_failed"
+             ", symbol=" + state.symbol +
+             ", protection_group_id=" + state.protection_group_id +
+             ", forcing=reduce_only");
+    return;
+  }
+
+  TrackPendingRequiredSl(sl->client_order_id, state.protection_group_id);
+  state.active_sl_client_order_id = sl->client_order_id;
+  state.active_sl_price = sl->price;
+
+  LogInfo("PROFIT_PROTECTION_UPDATE: symbol=" + state.symbol +
+          ", protection_group_id=" + state.protection_group_id +
+          ", best_price=" + std::to_string(state.best_price) +
+          ", new_sl_price=" + std::to_string(state.active_sl_price) +
+          ", break_even_enabled=" +
+          std::string(config_.protection.break_even_enabled ? "true" : "false") +
+          ", trailing_enabled=" +
+          std::string(config_.protection.trailing_enabled ? "true" : "false"));
 }
 
 void BotApplication::TrackPendingRequiredSl(

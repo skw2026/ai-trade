@@ -73,6 +73,12 @@ double AccountState::position_qty(const std::string& symbol) const {
   return it->second.qty;
 }
 
+double AccountState::avg_entry_price(const std::string& symbol) const {
+  const auto it = positions_.find(symbol);
+  if (it == positions_.end()) return 0.0;
+  return it->second.avg_entry_price;
+}
+
 std::vector<std::string> AccountState::GetActiveSymbols() const {
   std::vector<std::string> out;
   out.reserve(positions_.size());

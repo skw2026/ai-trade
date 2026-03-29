@@ -46,11 +46,11 @@ risk:
 execution:
   max_order_notional: 380
   min_rebalance_notional_usd: 80
-  same_side_rebalance_multiplier: 1.75
+  same_side_rebalance_multiplier: 2.0
   include_inflight_notional_in_position: true
   max_inflight_orders_per_symbol_direction: 2
-  min_order_interval_ms: 5000
-  reverse_signal_cooldown_ticks: 14
+  min_order_interval_ms: 7000
+  reverse_signal_cooldown_ticks: 22
   enable_fee_aware_entry_gate: true
   entry_fee_bps: 5.5
   exit_fee_bps: 5.5
@@ -102,14 +102,28 @@ execution:
     attach_timeout_ms: 1500
     stop_loss_ratio: 0.01
     take_profit_ratio: 0.015
+    dynamic_distance_enabled: false
+    dynamic_distance_volatility_multiplier: 0.0
+    dynamic_stop_loss_min_ratio: 0.0
+    dynamic_stop_loss_max_ratio: 0.0
+    dynamic_take_profit_min_ratio: 0.0
+    dynamic_take_profit_max_ratio: 0.0
+    dynamic_take_profit_rr_multiplier: 1.5
+    break_even_enabled: false
+    break_even_trigger_ratio: 0.0
+    break_even_offset_ratio: 0.0
+    trailing_enabled: false
+    trailing_trigger_ratio: 0.0
+    trailing_distance_ratio: 0.0
+    profit_protection_min_update_ratio: 0.001
 
 strategy:
   signal_notional_usd: 380
-  signal_deadband_abs: 0.8
+  signal_deadband_abs: 1.0
   signal_valid_for_ms: 15000
   default_tick_interval_ms: 5000
-  min_hold_ticks: 8
-  range_min_confidence: 0.30
+  min_hold_ticks: 14
+  range_min_confidence: 0.34
   trend_breakout_lookback_ticks: 24
   trend_breakout_rank_threshold: 0.97
   trend_slope_lookback_ticks: 6

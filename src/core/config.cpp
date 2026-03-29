@@ -3373,6 +3373,230 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "dynamic_distance_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.dynamic_distance_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.dynamic_distance_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "dynamic_distance_volatility_multiplier") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.dynamic_distance_volatility_multiplier 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.dynamic_distance_volatility_multiplier = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "dynamic_stop_loss_min_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.dynamic_stop_loss_min_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.dynamic_stop_loss_min_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "dynamic_stop_loss_max_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.dynamic_stop_loss_max_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.dynamic_stop_loss_max_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "dynamic_take_profit_min_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.dynamic_take_profit_min_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.dynamic_take_profit_min_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "dynamic_take_profit_max_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.dynamic_take_profit_max_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.dynamic_take_profit_max_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "dynamic_take_profit_rr_multiplier") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.dynamic_take_profit_rr_multiplier 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.dynamic_take_profit_rr_multiplier = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "break_even_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.break_even_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.break_even_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "break_even_trigger_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.break_even_trigger_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.break_even_trigger_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "break_even_offset_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.break_even_offset_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.break_even_offset_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "trailing_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.trailing_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.trailing_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "trailing_trigger_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.trailing_trigger_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.trailing_trigger_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "trailing_distance_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.trailing_distance_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.trailing_distance_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "profit_protection_min_update_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.profit_protection_min_update_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.profit_protection_min_update_ratio = parsed;
+      continue;
+    }
+
     std::string full_key = current_section;
     if (!current_subsection.empty()) {
       if (!full_key.empty()) {
@@ -3681,6 +3905,68 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.protection.take_profit_ratio <= 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.protection.take_profit_ratio 必须大于 0";
+    }
+    return false;
+  }
+  if (config.protection.dynamic_distance_volatility_multiplier < 0.0 ||
+      config.protection.dynamic_stop_loss_min_ratio < 0.0 ||
+      config.protection.dynamic_stop_loss_max_ratio < 0.0 ||
+      config.protection.dynamic_take_profit_min_ratio < 0.0 ||
+      config.protection.dynamic_take_profit_max_ratio < 0.0 ||
+      config.protection.dynamic_take_profit_rr_multiplier <= 0.0 ||
+      config.protection.break_even_trigger_ratio < 0.0 ||
+      config.protection.break_even_offset_ratio < 0.0 ||
+      config.protection.trailing_trigger_ratio < 0.0 ||
+      config.protection.trailing_distance_ratio < 0.0 ||
+      config.protection.profit_protection_min_update_ratio < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.protection 动态保护/盈利保护参数不能为负数，且 dynamic_take_profit_rr_multiplier 必须大于 0";
+    }
+    return false;
+  }
+  if (config.protection.dynamic_stop_loss_max_ratio > 0.0 &&
+      config.protection.dynamic_stop_loss_min_ratio > 0.0 &&
+      config.protection.dynamic_stop_loss_max_ratio <
+          config.protection.dynamic_stop_loss_min_ratio) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.protection.dynamic_stop_loss_max_ratio 不能小于 dynamic_stop_loss_min_ratio";
+    }
+    return false;
+  }
+  if (config.protection.dynamic_take_profit_max_ratio > 0.0 &&
+      config.protection.dynamic_take_profit_min_ratio > 0.0 &&
+      config.protection.dynamic_take_profit_max_ratio <
+          config.protection.dynamic_take_profit_min_ratio) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.protection.dynamic_take_profit_max_ratio 不能小于 dynamic_take_profit_min_ratio";
+    }
+    return false;
+  }
+  if ((config.protection.break_even_enabled ||
+       config.protection.trailing_enabled) &&
+      (!config.protection.enabled || !config.protection.require_sl)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.protection 开启盈利保护时必须同时 enabled=true 且 require_sl=true";
+    }
+    return false;
+  }
+  if (config.protection.break_even_enabled &&
+      config.protection.break_even_trigger_ratio <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.protection.break_even_trigger_ratio 必须大于 0";
+    }
+    return false;
+  }
+  if (config.protection.trailing_enabled &&
+      (config.protection.trailing_trigger_ratio <= 0.0 ||
+       config.protection.trailing_distance_ratio <= 0.0)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.protection.trailing_trigger_ratio 与 trailing_distance_ratio 必须大于 0";
     }
     return false;
   }

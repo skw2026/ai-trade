@@ -30,6 +30,9 @@ FEATURE_COLUMNS = [
     "range_pct",
     "vol_12",
 ]
+FEATURE_INDEX = {name: idx for idx, name in enumerate(FEATURE_COLUMNS)}
+
+REGIME_BUCKETS = ("trend", "range", "extreme")
 
 
 @dataclass
@@ -47,6 +50,15 @@ class SplitResult:
     max_drawdown: float
     calibration_ic: float
     trading_enabled: bool
+    bucket_metrics: Dict[str, Dict[str, float]]
+
+
+@dataclass
+class RegimeThresholds:
+    trend_abs_ema_diff: float
+    trend_abs_mom_48: float
+    extreme_vol_12: float
+    extreme_range_pct: float
 
 
 def normalize_execution_controls(max_leverage: float, rebalance_deadband: float) -> tuple[float, float, list[str]]:
@@ -153,6 +165,156 @@ def safe_corr(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(a, b)[0, 1])
 
 
+def safe_quantile(values: np.ndarray, q: float, fallback: float) -> float:
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return float(fallback)
+    return float(np.quantile(finite, q))
+
+
+def derive_regime_thresholds(data: Dict[str, np.ndarray]) -> RegimeThresholds:
+    return RegimeThresholds(
+        trend_abs_ema_diff=max(5e-4, safe_quantile(np.abs(data["ema_diff"]), 0.65, 5e-4)),
+        trend_abs_mom_48=max(2e-3, safe_quantile(np.abs(data["mom_48"]), 0.65, 2e-3)),
+        extreme_vol_12=max(1.5e-3, safe_quantile(data["vol_12"], 0.90, 1.5e-3)),
+        extreme_range_pct=max(3e-3, safe_quantile(data["range_pct"], 0.90, 3e-3)),
+    )
+
+
+def classify_regime_bucket(features_row: np.ndarray, thresholds: RegimeThresholds) -> str:
+    ema_diff = float(features_row[FEATURE_INDEX["ema_diff"]])
+    mom_48 = float(features_row[FEATURE_INDEX["mom_48"]])
+    vol_12 = float(features_row[FEATURE_INDEX["vol_12"]])
+    range_pct = float(features_row[FEATURE_INDEX["range_pct"]])
+
+    if (
+        math.isfinite(vol_12)
+        and vol_12 >= thresholds.extreme_vol_12
+    ) or (
+        math.isfinite(range_pct)
+        and range_pct >= thresholds.extreme_range_pct
+    ):
+        return "extreme"
+
+    if (
+        math.isfinite(ema_diff)
+        and math.isfinite(mom_48)
+        and abs(ema_diff) >= thresholds.trend_abs_ema_diff
+        and abs(mom_48) >= thresholds.trend_abs_mom_48
+        and ema_diff * mom_48 > 0.0
+    ):
+        return "trend"
+
+    return "range"
+
+
+def build_bucket_metrics(
+    *,
+    bucket_returns: Dict[str, List[float]],
+    bucket_turnovers: Dict[str, List[float]],
+    bucket_trade_flags: Dict[str, List[int]],
+    interval_minutes: int,
+) -> Dict[str, Dict[str, float]]:
+    metrics: Dict[str, Dict[str, float]] = {}
+    ann = annualization_factor(interval_minutes)
+    for bucket in REGIME_BUCKETS:
+        returns = np.asarray(bucket_returns[bucket], dtype=np.float64)
+        turnovers = np.asarray(bucket_turnovers[bucket], dtype=np.float64)
+        trade_flags = np.asarray(bucket_trade_flags[bucket], dtype=np.int64)
+        if returns.size == 0:
+            metrics[bucket] = {
+                "bars": 0,
+                "trades": 0,
+                "avg_turnover": 0.0,
+                "avg_bar_return": 0.0,
+                "sharpe": 0.0,
+                "turnover_sum": 0.0,
+                "sum_bar_return": 0.0,
+                "sum_sq_bar_return": 0.0,
+            }
+            continue
+        mean = float(np.mean(returns))
+        std = float(np.std(returns))
+        sharpe = (mean / std * ann) if std > 1e-12 else 0.0
+        metrics[bucket] = {
+            "bars": int(returns.size),
+            "trades": int(np.sum(trade_flags)),
+            "avg_turnover": float(np.mean(turnovers)) if turnovers.size > 0 else 0.0,
+            "avg_bar_return": mean,
+            "sharpe": sharpe,
+            "turnover_sum": float(np.sum(turnovers)) if turnovers.size > 0 else 0.0,
+            "sum_bar_return": float(np.sum(returns)),
+            "sum_sq_bar_return": float(np.sum(returns * returns)),
+        }
+    return metrics
+
+
+def summarize_regime_buckets(
+    split_results: List[SplitResult], interval_minutes: int
+) -> Dict[str, Dict[str, float]]:
+    summary: Dict[str, Dict[str, float]] = {}
+    for bucket in REGIME_BUCKETS:
+        splits = 0
+        traded_splits = 0
+        trades = 0
+        bars = 0
+        turnover_sum = 0.0
+        sum_bar_return = 0.0
+        sum_sq_bar_return = 0.0
+        for item in split_results:
+            metrics = item.bucket_metrics.get(bucket, {})
+            item_bars = int(metrics.get("bars", 0))
+            if item_bars <= 0:
+                continue
+            splits += 1
+            bars += item_bars
+            turnover_sum += float(metrics.get("turnover_sum", 0.0))
+            sum_bar_return += float(metrics.get("sum_bar_return", 0.0))
+            sum_sq_bar_return += float(metrics.get("sum_sq_bar_return", 0.0))
+            bucket_trades = int(metrics.get("trades", 0))
+            trades += bucket_trades
+            if bucket_trades > 0:
+                traded_splits += 1
+        if bars == 0:
+            summary[bucket] = {
+                "splits": 0,
+                "traded_splits": 0,
+                "bars": 0,
+                "trades": 0,
+                "avg_bar_return": 0.0,
+                "avg_turnover": 0.0,
+                "sharpe": 0.0,
+            }
+            continue
+        mean = sum_bar_return / float(bars)
+        variance = max(0.0, (sum_sq_bar_return / float(bars)) - mean * mean)
+        std = math.sqrt(variance)
+        summary[bucket] = {
+            "splits": splits,
+            "traded_splits": traded_splits,
+            "bars": bars,
+            "trades": trades,
+            "avg_bar_return": mean,
+            "avg_turnover": turnover_sum / float(bars),
+            "sharpe": (mean / std * annualization_factor(interval_minutes)) if std > 1e-12 else 0.0,
+        }
+    return summary
+
+
+def public_bucket_metrics(metrics: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
+    exposed: Dict[str, Dict[str, float]] = {}
+    for bucket in REGIME_BUCKETS:
+        item = metrics.get(bucket, {})
+        exposed[bucket] = {
+            "bars": int(item.get("bars", 0)),
+            "trades": int(item.get("trades", 0)),
+            "avg_turnover": float(item.get("avg_turnover", 0.0)),
+            "avg_bar_return": float(item.get("avg_bar_return", 0.0)),
+            "sharpe": float(item.get("sharpe", 0.0)),
+        }
+    return exposed
+
+
 def run_split(
     *,
     split_index: int,
@@ -178,6 +340,7 @@ def run_split(
     min_hold_bars: int = 0,
     rebalance_deadband: float = 0.0,
     min_calibration_ic: float = 0.0,
+    regime_thresholds: RegimeThresholds | None = None,
 ) -> SplitResult:
     valid_train = np.all(np.isfinite(x_train), axis=1) & np.isfinite(y_train)
     x_train_v = x_train[valid_train]
@@ -197,11 +360,26 @@ def run_split(
             max_drawdown=0.0,
             calibration_ic=0.0,
             trading_enabled=False,
+            bucket_metrics=build_bucket_metrics(
+                bucket_returns={bucket: [] for bucket in REGIME_BUCKETS},
+                bucket_turnovers={bucket: [] for bucket in REGIME_BUCKETS},
+                bucket_trade_flags={bucket: [] for bucket in REGIME_BUCKETS},
+                interval_minutes=max(1, interval_minutes),
+            ),
         )
 
     model = model.lower()
     calibration_ic = 0.0
     trading_enabled = True
+    if regime_thresholds is None:
+        regime_thresholds = derive_regime_thresholds(
+            {
+                "ema_diff": x_test[:, FEATURE_INDEX["ema_diff"]],
+                "mom_48": x_test[:, FEATURE_INDEX["mom_48"]],
+                "vol_12": x_test[:, FEATURE_INDEX["vol_12"]],
+                "range_pct": x_test[:, FEATURE_INDEX["range_pct"]],
+            }
+        )
 
     def fit_predict(x_fit: np.ndarray, y_fit: np.ndarray, x_eval: np.ndarray) -> np.ndarray:
         if model == "linear":
@@ -248,12 +426,16 @@ def run_split(
     equity_curve = [equity]
     trades = 0
     bars_since_last_trade = max(0, int(min_hold_bars))
+    bucket_returns: Dict[str, List[float]] = {bucket: [] for bucket in REGIME_BUCKETS}
+    bucket_turnovers: Dict[str, List[float]] = {bucket: [] for bucket in REGIME_BUCKETS}
+    bucket_trade_flags: Dict[str, List[int]] = {bucket: [] for bucket in REGIME_BUCKETS}
 
     for i in range(x_test.shape[0]):
         r = y_test[i]
         p = pred[i]
         if not (math.isfinite(float(r)) and math.isfinite(float(p))):
             continue
+        bucket = classify_regime_bucket(x_test[i], regime_thresholds)
         if abs(p) < signal_threshold:
             target = 0.0
         else:
@@ -278,6 +460,9 @@ def run_split(
         pnl = position * float(r) - turnover * fees
         bar_returns.append(pnl)
         turnovers.append(turnover)
+        bucket_returns[bucket].append(pnl)
+        bucket_turnovers[bucket].append(turnover)
+        bucket_trade_flags[bucket].append(1 if turnover > 1e-12 else 0)
         equity *= max(1e-6, 1.0 + pnl)
         position = target
         equity_curve.append(equity)
@@ -298,6 +483,12 @@ def run_split(
             max_drawdown=0.0,
             calibration_ic=calibration_ic,
             trading_enabled=trading_enabled,
+            bucket_metrics=build_bucket_metrics(
+                bucket_returns=bucket_returns,
+                bucket_turnovers=bucket_turnovers,
+                bucket_trade_flags=bucket_trade_flags,
+                interval_minutes=max(1, interval_minutes),
+            ),
         )
 
     ret_arr = np.asarray(bar_returns, dtype=np.float64)
@@ -319,6 +510,12 @@ def run_split(
         max_drawdown=compute_max_drawdown(equity_curve),
         calibration_ic=calibration_ic,
         trading_enabled=trading_enabled,
+        bucket_metrics=build_bucket_metrics(
+            bucket_returns=bucket_returns,
+            bucket_turnovers=bucket_turnovers,
+            bucket_trade_flags=bucket_trade_flags,
+            interval_minutes=max(1, interval_minutes),
+        ),
     )
 
 
@@ -361,6 +558,7 @@ def main() -> int:
 
     x = np.column_stack([data[col] for col in FEATURE_COLUMNS]).astype(np.float64)
     y = data["forward_return"].astype(np.float64)
+    regime_thresholds = derive_regime_thresholds(data)
 
     split_results: List[SplitResult] = []
     effective_max_leverage, effective_rebalance_deadband, config_warnings = normalize_execution_controls(
@@ -402,6 +600,7 @@ def main() -> int:
             min_hold_bars=max(0, int(args.min_hold_bars)),
             rebalance_deadband=effective_rebalance_deadband,
             min_calibration_ic=max(0.0, float(args.min_calibration_ic)),
+            regime_thresholds=regime_thresholds,
         )
         split_results.append(split)
         split_index += 1
@@ -429,6 +628,7 @@ def main() -> int:
     traded = [item for item in valid if item.trades > 0]
     enabled_split_count = int(len(enabled))
     traded_split_count = int(len(traded))
+    regime_bucket_summary = summarize_regime_buckets(valid, max(1, int(args.interval_minutes)))
 
     def mean_metric(items: List[SplitResult], attr: str) -> float:
         if not items:
@@ -458,6 +658,12 @@ def main() -> int:
             "rebalance_deadband": float(args.rebalance_deadband),
             "effective_rebalance_deadband": effective_rebalance_deadband,
             "min_calibration_ic": float(args.min_calibration_ic),
+            "regime_thresholds": {
+                "trend_abs_ema_diff": regime_thresholds.trend_abs_ema_diff,
+                "trend_abs_mom_48": regime_thresholds.trend_abs_mom_48,
+                "extreme_vol_12": regime_thresholds.extreme_vol_12,
+                "extreme_range_pct": regime_thresholds.extreme_range_pct,
+            },
         },
         "warnings": config_warnings,
         "summary": {
@@ -476,6 +682,7 @@ def main() -> int:
             "avg_calibration_ic": avg_calibration_ic,
             "worst_split_max_drawdown": worst_dd,
             "avg_turnover": avg_turnover,
+            "regime_bucket_summary": regime_bucket_summary,
         },
         "splits": [
             {
@@ -492,6 +699,7 @@ def main() -> int:
                 "max_drawdown": item.max_drawdown,
                 "calibration_ic": item.calibration_ic,
                 "trading_enabled": item.trading_enabled,
+                "bucket_metrics": public_bucket_metrics(item.bucket_metrics),
             }
             for item in split_results
         ],

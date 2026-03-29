@@ -72,6 +72,7 @@ class AccountState {
 
   double mark_price(const std::string& symbol) const;
   double position_qty(const std::string& symbol) const;
+  double avg_entry_price(const std::string& symbol) const;
   
   std::vector<std::string> GetActiveSymbols() const;
 
