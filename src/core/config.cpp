@@ -447,6 +447,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "same_side_rebalance_multiplier") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.same_side_rebalance_multiplier 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_same_side_rebalance_multiplier = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         (key == "direct_flip_entry_enabled" ||
          key == "enable_direct_flip_entry")) {
       bool parsed = false;
@@ -3678,6 +3693,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_min_rebalance_notional_usd < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.min_rebalance_notional_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_same_side_rebalance_multiplier < 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.same_side_rebalance_multiplier 不能小于 1.0";
     }
     return false;
   }

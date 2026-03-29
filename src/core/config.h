@@ -254,6 +254,7 @@ struct AppConfig {
   // Execution
   double execution_max_order_notional{1000.0};
   double execution_min_rebalance_notional_usd{0.0};
+  double execution_same_side_rebalance_multiplier{1.0};
   bool execution_include_inflight_notional_in_position{true};
   bool execution_direct_flip_entry_enabled{false};
   int execution_max_inflight_orders_per_symbol_direction{2};
@@ -352,6 +353,8 @@ struct AppConfig {
     return ExecutionEngineConfig{
         .max_order_notional_usd = execution_max_order_notional,
         .min_rebalance_notional_usd = execution_min_rebalance_notional_usd,
+        .same_side_rebalance_multiplier =
+            execution_same_side_rebalance_multiplier,
         .direct_flip_entry_enabled = execution_direct_flip_entry_enabled,
         .min_order_interval_ms = execution_min_order_interval_ms,
         .reverse_signal_cooldown_ticks = execution_reverse_signal_cooldown_ticks,

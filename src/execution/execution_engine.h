@@ -30,6 +30,7 @@ struct RetryPolicyConfig {
 struct ExecutionEngineConfig {
   double max_order_notional_usd{5000.0};  ///< 单笔订单最大名义敞口（USD）。
   double min_rebalance_notional_usd{0.0};  ///< 小于该净名义敞口差值则忽略调仓。
+  double same_side_rebalance_multiplier{1.0};  ///< 同向加仓时对最小调仓门槛的额外倍率。
   bool direct_flip_entry_enabled{false};  ///< true=反手时允许直接按净差额发开仓单（非先平后开）。
   int min_order_interval_ms{3000};
   int reverse_signal_cooldown_ticks{4};

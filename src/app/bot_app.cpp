@@ -3123,6 +3123,8 @@ void BotApplication::LogStatus() {
           std::to_string(rebalance_gap_within_min_notional_ratio) +
           ", min_rebalance_notional_usd=" +
           std::to_string(config_.execution_min_rebalance_notional_usd) +
+          ", same_side_rebalance_multiplier=" +
+          std::to_string(config_.execution_same_side_rebalance_multiplier) +
           ", entry_edge_gap_avg_bps=" + std::to_string(entry_edge_gap_avg_bps) +
           ", realized_net_delta_usd=" +
           std::to_string(window_realized_net_delta_usd) +

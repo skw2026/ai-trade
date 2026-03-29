@@ -46,6 +46,7 @@ risk:
 execution:
   max_order_notional: 1000
   min_rebalance_notional_usd: 25
+  same_side_rebalance_multiplier: 1.0
   direct_flip_entry_enabled: false
   include_inflight_notional_in_position: true
   max_inflight_orders_per_symbol_direction: 2

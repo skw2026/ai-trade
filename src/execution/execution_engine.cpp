@@ -67,8 +67,20 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
   }
 
   const double total_delta = effective_target - current_notional_usd;
+  const bool same_side_add =
+      !target.reduce_only &&
+      std::fabs(current_notional_usd) >= kEpsilon &&
+      std::fabs(effective_target) >= kEpsilon &&
+      current_notional_usd * effective_target > kEpsilon &&
+      std::fabs(effective_target) > std::fabs(current_notional_usd) + kEpsilon;
+  double min_rebalance_notional_usd = config_.min_rebalance_notional_usd;
+  if (same_side_add && min_rebalance_notional_usd > 0.0) {
+    min_rebalance_notional_usd *=
+        std::max(1.0, config_.same_side_rebalance_multiplier);
+  }
   // 防抖：净名义敞口总变动过小则不下单，减少无效交易和手续费磨损。
-  if (!target.reduce_only && std::fabs(total_delta) < config_.min_rebalance_notional_usd) {
+  if (!target.reduce_only &&
+      std::fabs(total_delta) < min_rebalance_notional_usd) {
     return std::nullopt;
   }
 

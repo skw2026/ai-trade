@@ -46,6 +46,7 @@ risk:
 execution:
   max_order_notional: 380
   min_rebalance_notional_usd: 80
+  same_side_rebalance_multiplier: 1.75
   include_inflight_notional_in_position: true
   max_inflight_orders_per_symbol_direction: 2
   min_order_interval_ms: 5000

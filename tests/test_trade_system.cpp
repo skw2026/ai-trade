@@ -747,6 +747,39 @@ int main() {
   }
 
   {
+    ai_trade::ExecutionEngine execution(ai_trade::ExecutionEngineConfig{
+        .max_order_notional_usd = 1000.0,
+        .min_rebalance_notional_usd = 80.0,
+        .same_side_rebalance_multiplier = 2.0,
+    });
+    const ai_trade::RiskAdjustedPosition same_side_add{
+        .symbol = "ETHUSDT",
+        .adjusted_notional_usd = 1120.0,
+        .reduce_only = false,
+    };
+    const auto skipped = execution.BuildIntent(same_side_add,
+                                               /*current_notional_usd=*/1000.0,
+                                               /*price=*/100.0);
+    if (skipped.has_value()) {
+      std::cerr << "同向小幅加仓应受更高 rebalance 门槛抑制\n";
+      return 1;
+    }
+
+    const ai_trade::RiskAdjustedPosition first_entry{
+        .symbol = "ETHUSDT",
+        .adjusted_notional_usd = 120.0,
+        .reduce_only = false,
+    };
+    const auto first_entry_intent = execution.BuildIntent(first_entry,
+                                                          /*current_notional_usd=*/0.0,
+                                                          /*price=*/100.0);
+    if (!first_entry_intent.has_value()) {
+      std::cerr << "首笔建仓不应受同向加仓门槛抑制\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
         .signal_notional_usd = 1000.0,
         .signal_deadband_abs = 0.2,
@@ -2882,6 +2915,7 @@ int main() {
         << "execution:\n"
         << "  max_order_notional: 876\n"
         << "  min_rebalance_notional_usd: 45\n"
+        << "  same_side_rebalance_multiplier: 1.8\n"
         << "  direct_flip_entry_enabled: true\n"
         << "  include_inflight_notional_in_position: true\n"
         << "  max_inflight_orders_per_symbol_direction: 3\n"
@@ -3029,6 +3063,7 @@ int main() {
     if (!NearlyEqual(config.risk_max_abs_notional_usd, 4321.0) ||
         !NearlyEqual(config.execution_max_order_notional, 876.0) ||
         !NearlyEqual(config.execution_min_rebalance_notional_usd, 45.0) ||
+        !NearlyEqual(config.execution_same_side_rebalance_multiplier, 1.8) ||
         config.execution_direct_flip_entry_enabled != true ||
         config.execution_include_inflight_notional_in_position != true ||
         config.execution_max_inflight_orders_per_symbol_direction != 3 ||
@@ -3846,6 +3881,7 @@ int main() {
     std::ofstream out(temp_path);
     out << "execution:\n"
         << "  min_rebalance_notional_usd: -10\n"
+        << "  same_side_rebalance_multiplier: 0.5\n"
         << "strategy:\n"
         << "  min_hold_ticks: -1\n";
     out.close();
@@ -3857,6 +3893,7 @@ int main() {
       return 1;
     }
     if (error.find("min_rebalance_notional_usd") == std::string::npos &&
+        error.find("same_side_rebalance_multiplier") == std::string::npos &&
         error.find("strategy.min_hold_ticks") == std::string::npos) {
       std::cerr << "非法 strategy/execution 防抖配置错误信息不符合预期\n";
       return 1;
