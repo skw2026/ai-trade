@@ -67,8 +67,8 @@ execution:
   adaptive_fee_gate_max_relax_bps: 2.4
   dynamic_edge_enabled: true
   dynamic_edge_regime_trend_relax_bps: 0.8
-  dynamic_edge_regime_range_penalty_bps: 0.25
-  dynamic_edge_regime_extreme_penalty_bps: 1.1
+  dynamic_edge_regime_range_penalty_bps: 0.45
+  dynamic_edge_regime_extreme_penalty_bps: 2.0
   dynamic_edge_volatility_relax_bps: 0.6
   dynamic_edge_volatility_penalty_bps: 1.0
   dynamic_edge_liquidity_maker_ratio_threshold: 0.65
@@ -121,7 +121,8 @@ strategy:
   signal_valid_for_ms: 15000
   default_tick_interval_ms: 5000
   min_hold_ticks: 18
-  range_min_confidence: 0.34
+  range_min_confidence: 0.45
+  extreme_block_signals: true
   trend_breakout_lookback_ticks: 24
   trend_breakout_rank_threshold: 0.97
   trend_slope_lookback_ticks: 6
@@ -133,11 +134,13 @@ strategy:
   vol_target_low_vol_leverage_cap_enabled: true
   vol_target_low_vol_annual_threshold: 0.12
   vol_target_low_vol_max_leverage: 1.1
-  defensive_notional_ratio: 0.55
-  defensive_entry_score: 1.5
+  defensive_notional_ratio: 0.30
+  defensive_entry_score: 2.2
+  defensive_rank_lookback_ticks: 72
   defensive_trend_scale: 0.25
-  defensive_range_scale: 1.00
-  defensive_extreme_scale: 0.45
+  defensive_range_scale: 0.40
+  defensive_extreme_scale: 0.00
+  eth_range_defensive_scale_multiplier: 0.10
 
 integrator:
   enabled: true

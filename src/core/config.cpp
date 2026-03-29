@@ -1333,6 +1333,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "strategy" &&
+        key == "extreme_block_signals") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.extreme_block_signals 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_extreme_block_signals = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
         current_subsection == "params" &&
         key == "ema_fast") {
       int parsed = 0;

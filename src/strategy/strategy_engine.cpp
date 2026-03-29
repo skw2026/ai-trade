@@ -401,6 +401,15 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
       std::clamp(std::fabs(signal.suggested_notional_usd) /
                      std::max(1.0, std::fabs(target_notional)),
                  0.0, 1.0);
+  if (regime.bucket == RegimeBucket::kExtreme &&
+      config_.extreme_block_signals) {
+    signal.trend_notional_usd = 0.0;
+    signal.defensive_notional_usd = 0.0;
+    signal.suggested_notional_usd = 0.0;
+    signal.direction = 0;
+    signal.confidence = 0.0;
+    PushReason(&signal.reason_codes, "STR_EXTREME_BLOCK");
+  }
   if (regime.bucket == RegimeBucket::kRange &&
       signal.direction != 0 &&
       config_.range_min_confidence > 0.0 &&

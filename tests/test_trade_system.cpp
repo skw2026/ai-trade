@@ -1181,6 +1181,46 @@ int main() {
   }
 
   {
+    // EXTREME 桶可显式配置为不交易，避免高波动阶段继续输出弱边际意图。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .defensive_notional_ratio = 1.0,
+        .defensive_entry_score = 0.5,
+        .defensive_trend_scale = 1.0,
+        .defensive_range_scale = 1.0,
+        .defensive_extreme_scale = 1.0,
+        .extreme_block_signals = true,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState regime;
+    regime.bucket = ai_trade::RegimeBucket::kExtreme;
+    regime.regime = ai_trade::Regime::kExtreme;
+    regime.warmup = false;
+    regime.volatility_level = 0.003;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          3200 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        3300, "BTCUSDT", 101.0, 101.0}, dummy_account, regime);
+    const bool blocked = std::find(signal.reason_codes.begin(),
+                                   signal.reason_codes.end(),
+                                   "STR_EXTREME_BLOCK") !=
+                         signal.reason_codes.end();
+    if (signal.direction != 0 ||
+        !NearlyEqual(signal.suggested_notional_usd, 0.0, 1e-9) ||
+        signal.confidence != 0.0 || !blocked) {
+      std::cerr << "EXTREME 桶应在 extreme_block_signals=true 时直接平掉信号\n";
+      return 1;
+    }
+  }
+
+  {
     // Signal 必须携带有效期与 reason_codes，满足审计约束。
     ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
         .signal_notional_usd = 1000.0,
@@ -3015,6 +3055,7 @@ int main() {
         << "  min_hold_ticks: 4\n"
         << "  range_min_confidence: 0.28\n"
         << "  eth_range_defensive_scale_multiplier: 0.35\n"
+        << "  extreme_block_signals: true\n"
         << "  trend_breakout_lookback_ticks: 22\n"
         << "  trend_breakout_rank_threshold: 0.96\n"
         << "  trend_slope_lookback_ticks: 5\n"
@@ -3165,6 +3206,7 @@ int main() {
         config.strategy_min_hold_ticks != 4 ||
         !NearlyEqual(config.strategy_range_min_confidence, 0.28) ||
         !NearlyEqual(config.strategy_eth_range_defensive_scale_multiplier, 0.35) ||
+        config.strategy_extreme_block_signals != true ||
         config.strategy_trend_breakout_lookback_ticks != 22 ||
         !NearlyEqual(config.strategy_trend_breakout_rank_threshold, 0.96) ||
         config.strategy_trend_slope_lookback_ticks != 5 ||

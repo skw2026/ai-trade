@@ -217,6 +217,7 @@ struct StrategyConfig {
   double defensive_extreme_scale{0.55};
   double range_min_confidence{0.0};
   double eth_range_defensive_scale_multiplier{1.0};
+  bool extreme_block_signals{false};
 };
 
 // ============================================================================
@@ -260,6 +261,7 @@ struct AppConfig {
   double strategy_defensive_extreme_scale{0.55};
   double strategy_range_min_confidence{0.0};
   double strategy_eth_range_defensive_scale_multiplier{1.0};
+  bool strategy_extreme_block_signals{false};
 
   // Risk
   double risk_max_abs_notional_usd{3000.0};
@@ -358,7 +360,8 @@ struct AppConfig {
         strategy_defensive_range_scale,
         strategy_defensive_extreme_scale,
         strategy_range_min_confidence,
-        strategy_eth_range_defensive_scale_multiplier
+        strategy_eth_range_defensive_scale_multiplier,
+        strategy_extreme_block_signals
     };
   }
 
