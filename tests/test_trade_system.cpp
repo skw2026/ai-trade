@@ -1135,6 +1135,50 @@ int main() {
   }
 
   {
+    // RANGE 桶下应缩小 trend 名义值，用于 regime-aware 持仓去风险。
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 0.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+        .trend_trend_scale = 1.0,
+        .trend_range_scale = 0.25,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState trend_regime;
+    trend_regime.bucket = ai_trade::RegimeBucket::kTrend;
+    trend_regime.regime = ai_trade::Regime::kUptrend;
+    trend_regime.warmup = false;
+    trend_regime.volatility_level = 0.001;
+    ai_trade::RegimeState range_regime = trend_regime;
+    range_regime.bucket = ai_trade::RegimeBucket::kRange;
+    range_regime.regime = ai_trade::Regime::kRange;
+
+    for (int i = 0; i < 30; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          1150 + i, "BTCUSDT", 100.0, 100.0}, dummy_account, trend_regime);
+    }
+    const auto trend_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        1250, "BTCUSDT", 101.0, 101.0}, dummy_account, trend_regime);
+    const auto range_signal = strategy.OnMarket(ai_trade::MarketEvent{
+        1251, "BTCUSDT", 101.2, 101.2}, dummy_account, range_regime);
+    const bool scaled = std::find(range_signal.reason_codes.begin(),
+                                  range_signal.reason_codes.end(),
+                                  "STR_TREND_BUCKET_SCALED") !=
+                        range_signal.reason_codes.end();
+    if (!(std::fabs(range_signal.trend_notional_usd) <
+          std::fabs(trend_signal.trend_notional_usd)) ||
+        !NearlyEqual(std::fabs(range_signal.trend_notional_usd),
+                     std::fabs(trend_signal.trend_notional_usd) * 0.25,
+                     1e-6) ||
+        !scaled) {
+      std::cerr << "RANGE 桶下 trend 名义值应按 trend_range_scale 缩放\n";
+      return 1;
+    }
+  }
+
+  {
     // ETHUSDT 在 RANGE 桶应应用额外的 defensive 缩放，降低低边际防御意图。
     ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
         .signal_notional_usd = 1000.0,
@@ -3062,6 +3106,9 @@ int main() {
         << "  trend_slope_min_abs: 0.00003\n"
         << "  trend_vol_cap_annual: 1.4\n"
         << "  trend_strength_scale: 1.2\n"
+        << "  trend_trend_scale: 1.0\n"
+        << "  trend_range_scale: 0.35\n"
+        << "  trend_extreme_scale: 0.1\n"
         << "  vol_target_pct: 0.35\n"
         << "  vol_target_max_leverage: 2.5\n"
         << "  vol_target_low_vol_leverage_cap_enabled: true\n"
@@ -3213,6 +3260,9 @@ int main() {
         !NearlyEqual(config.strategy_trend_slope_min_abs, 0.00003) ||
         !NearlyEqual(config.strategy_trend_vol_cap_annual, 1.4) ||
         !NearlyEqual(config.strategy_trend_strength_scale, 1.2) ||
+        !NearlyEqual(config.strategy_trend_trend_scale, 1.0) ||
+        !NearlyEqual(config.strategy_trend_range_scale, 0.35) ||
+        !NearlyEqual(config.strategy_trend_extreme_scale, 0.1) ||
         !NearlyEqual(config.vol_target_pct, 0.35) ||
         !NearlyEqual(config.strategy_vol_target_max_leverage, 2.5) ||
         config.strategy_vol_target_low_vol_leverage_cap_enabled != true ||
@@ -4203,6 +4253,28 @@ int main() {
         std::string::npos) {
       std::cerr
           << "非法 strategy.eth_range_defensive_scale_multiplier 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_trend_range_scale.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  trend_range_scale: 1.2\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 strategy.trend_range_scale 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.trend_*_scale") == std::string::npos) {
+      std::cerr << "非法 strategy.trend_range_scale 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

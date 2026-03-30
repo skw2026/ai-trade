@@ -33,6 +33,18 @@ double DefensiveBucketScale(const StrategyConfig& config, RegimeBucket bucket) {
   return config.defensive_range_scale;
 }
 
+double TrendBucketScale(const StrategyConfig& config, RegimeBucket bucket) {
+  switch (bucket) {
+    case RegimeBucket::kTrend:
+      return config.trend_trend_scale;
+    case RegimeBucket::kRange:
+      return config.trend_range_scale;
+    case RegimeBucket::kExtreme:
+      return config.trend_extreme_scale;
+  }
+  return config.trend_range_scale;
+}
+
 void PushReason(std::vector<std::string>* reasons, const std::string& code) {
   if (reasons == nullptr || code.empty()) {
     return;
@@ -367,8 +379,13 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
           std::max(1e-6, config_.trend_strength_scale * vol_proxy);
       trend_strength = std::clamp(normalized, 0.0, 1.0);
     }
+    const double bucket_scale =
+        std::max(0.0, TrendBucketScale(config_, regime.bucket));
+    if (bucket_scale < 1.0) {
+      PushReason(&signal.reason_codes, "STR_TREND_BUCKET_SCALED");
+    }
     trend_notional = static_cast<double>(final_direction) * target_notional *
-                     std::clamp(trend_strength, 0.0, 1.0);
+                     std::clamp(trend_strength, 0.0, 1.0) * bucket_scale;
   }
 
   double defensive_notional = 0.0;

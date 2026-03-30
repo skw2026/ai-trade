@@ -1450,6 +1450,48 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
     if (current_section == "strategy" &&
+        key == "trend_trend_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_trend_scale 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_trend_scale = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_range_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_range_scale 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_range_scale = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
+        key == "trend_extreme_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "strategy.trend_extreme_scale 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_trend_extreme_scale = parsed;
+      continue;
+    }
+    if (current_section == "strategy" &&
         current_subsection == "params" &&
         key == "target_vol") {
       double parsed = 0.0;
@@ -4280,6 +4322,17 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.strategy_trend_strength_scale < 0.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.trend_strength_scale 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_trend_trend_scale < 0.0 ||
+      config.strategy_trend_trend_scale > 1.0 ||
+      config.strategy_trend_range_scale < 0.0 ||
+      config.strategy_trend_range_scale > 1.0 ||
+      config.strategy_trend_extreme_scale < 0.0 ||
+      config.strategy_trend_extreme_scale > 1.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.trend_*_scale 必须在 [0,1] 区间";
     }
     return false;
   }

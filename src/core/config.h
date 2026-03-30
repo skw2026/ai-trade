@@ -201,6 +201,9 @@ struct StrategyConfig {
   double trend_slope_min_abs{0.0};
   double trend_vol_cap_annual{0.0};
   double trend_strength_scale{0.0};
+  double trend_trend_scale{1.0};
+  double trend_range_scale{1.0};
+  double trend_extreme_scale{1.0};
   double vol_target_pct{0.40};
   double vol_target_max_leverage{3.0};
   bool vol_target_low_vol_leverage_cap_enabled{false};
@@ -246,6 +249,9 @@ struct AppConfig {
   double strategy_trend_slope_min_abs{0.0};
   double strategy_trend_vol_cap_annual{0.0};
   double strategy_trend_strength_scale{0.0};
+  double strategy_trend_trend_scale{1.0};
+  double strategy_trend_range_scale{1.0};
+  double strategy_trend_extreme_scale{1.0};
   double vol_target_pct{0.40};
   double strategy_vol_target_max_leverage{3.0};
   bool strategy_vol_target_low_vol_leverage_cap_enabled{false};
@@ -346,6 +352,9 @@ struct AppConfig {
         strategy_trend_slope_min_abs,
         strategy_trend_vol_cap_annual,
         strategy_trend_strength_scale,
+        strategy_trend_trend_scale,
+        strategy_trend_range_scale,
+        strategy_trend_extreme_scale,
         vol_target_pct,
         strategy_vol_target_max_leverage,
         strategy_vol_target_low_vol_leverage_cap_enabled,
