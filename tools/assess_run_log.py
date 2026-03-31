@@ -127,6 +127,7 @@ RUNTIME_STRATEGY_MIX_RE = re.compile(
     r"avg_abs_defensive_notional=(?P<avg_defensive>[0-9]+(?:\.[0-9]+)?), "
     r"avg_abs_blended_notional=(?P<avg_blended>[0-9]+(?:\.[0-9]+)?), "
     r"samples=(?P<samples>\d+)"
+    r"(?:, policy_flat_samples=(?P<policy_flat_samples>\d+))?"
 )
 RUNTIME_EXECUTION_WINDOW_RE = re.compile(
     r"RUNTIME_STATUS:.*?execution_window=\{(?P<body>[^}]*)\}"
@@ -482,6 +483,7 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
     avg_defensive_values: list[float] = []
     avg_blended_values: list[float] = []
     sample_values: list[int] = []
+    policy_flat_values: list[int] = []
 
     for m in RUNTIME_STRATEGY_MIX_RE.finditer(text):
         try:
@@ -491,6 +493,7 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
             avg_defensive_values.append(float(m.group("avg_defensive")))
             avg_blended_values.append(float(m.group("avg_blended")))
             sample_values.append(int(m.group("samples")))
+            policy_flat_values.append(int(m.group("policy_flat_samples") or "0"))
         except ValueError:
             continue
 
@@ -499,6 +502,7 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
         return {
             "runtime_count": 0.0,
             "nonzero_window_count": 0.0,
+            "policy_flat_window_count": 0.0,
             "defensive_active_count": 0.0,
             "avg_abs_trend_notional": 0.0,
             "avg_abs_defensive_notional": 0.0,
@@ -507,6 +511,7 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
         }
 
     nonzero_window_count = sum(1 for x in sample_values if x > 0)
+    policy_flat_window_count = sum(1 for x in policy_flat_values if x > 0)
     defensive_active_count = sum(
         1
         for avg_defensive, window_samples in zip(avg_defensive_values, sample_values)
@@ -525,6 +530,7 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
     return {
         "runtime_count": float(runtime_count),
         "nonzero_window_count": float(nonzero_window_count),
+        "policy_flat_window_count": float(policy_flat_window_count),
         "defensive_active_count": float(defensive_active_count),
         "avg_abs_trend_notional": avg_abs_trend_notional,
         "avg_abs_defensive_notional": avg_abs_defensive_notional,
@@ -993,6 +999,9 @@ def assess(
         ),
         "ws_degraded_count": count(r"\bDEGRADED\b", text),
         "gate_check_passed_count": count(r"GATE_CHECK_PASSED", text),
+        "gate_policy_flat_pass_count": count(
+            r"GATE_CHECK_PASSED:.*policy_flat=true", text
+        ),
         "gate_check_failed_count": count(r"GATE_CHECK_FAILED", text),
         "gate_alert_count": count(r"GATE_ALERT", text),
         "reconcile_mismatch_count": count(r"OMS_RECONCILE_MISMATCH", text),
@@ -1100,6 +1109,9 @@ def assess(
         "start_abs_notional_usd": account_pnl["first_abs_notional_usd"],
         "strategy_mix_runtime_count": int(strategy_mix["runtime_count"]),
         "strategy_mix_nonzero_window_count": int(strategy_mix["nonzero_window_count"]),
+        "strategy_mix_policy_flat_window_count": int(
+            strategy_mix["policy_flat_window_count"]
+        ),
         "strategy_mix_defensive_active_count": int(
             strategy_mix["defensive_active_count"]
         ),
@@ -1293,6 +1305,13 @@ def assess(
             f"RUNTIME_STATUS 条数不足: {metrics['runtime_status_count']} < {min_runtime_status}"
         )
 
+    policy_flat_window_count = int(metrics["strategy_mix_policy_flat_window_count"])
+    policy_flat_dominant = (
+        policy_flat_window_count > 0
+        and metrics["strategy_mix_nonzero_window_count"] <= 0
+        and metrics["gate_policy_flat_pass_count"] > 0
+    )
+
     # DEPLOY 门禁仅看“健康硬指标”，避免冷启动阶段的策略类指标误触发回滚。
     if stage.name != "DEPLOY":
         if metrics["trading_halted_true_ratio"] > stage.max_trading_halted_true_ratio:
@@ -1318,12 +1337,17 @@ def assess(
         ):
             fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
 
-        if stage.require_execution_activity and execution_activity_count <= 0:
+        if (
+            stage.require_execution_activity
+            and execution_activity_count <= 0
+            and not policy_flat_dominant
+        ):
             fail_reasons.append("未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）")
         if (
             stage.min_strategy_mix_nonzero_windows > 0
             and metrics["strategy_mix_nonzero_window_count"]
             < stage.min_strategy_mix_nonzero_windows
+            and not policy_flat_dominant
         ):
             fail_reasons.append(
                 "未检测到有效策略信号窗口（strategy_mix.samples>0），"
@@ -1370,6 +1394,7 @@ def assess(
         if (
             stage.name == "S5"
             and metrics["funnel_fills_runtime_count"] < max(0, s5_min_fill_windows)
+            and not policy_flat_dominant
         ):
             fail_reasons.append(
                 "执行样本不足（S5 强门禁）: "
@@ -1594,6 +1619,11 @@ def assess(
                         f"{metrics['execution_window_fee_sign_fallback_fill_ratio_avg']:.4f}, "
                         f"threshold={MAX_FEE_SIGN_FALLBACK_FILL_RATIO_WARN:.4f}"
                     )
+        if policy_flat_dominant:
+            warn_reasons.append(
+                "策略窗口以 policy-flat 为主：本轮主要反映 RANGE/EXTREME 主动空仓保护，"
+                f"policy_flat_window_count={policy_flat_window_count}"
+            )
         if metrics["reconcile_anomaly_reduce_only_true_count"] > 0:
             warn_reasons.append(
                 "对账异常保护触发 reduce-only，建议核查回报链路与对账口径: "

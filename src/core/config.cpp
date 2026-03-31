@@ -2147,6 +2147,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "gate" && key == "allow_policy_flat_windows") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "gate.allow_policy_flat_windows 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.gate.allow_policy_flat_windows = parsed;
+      continue;
+    }
+
     if (current_section == "gate" && key == "enforce_runtime_actions") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {

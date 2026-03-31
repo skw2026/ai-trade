@@ -192,6 +192,7 @@ gate:
   min_fills_per_day: 4
   heartbeat_empty_signal_ticks: 12
   window_ticks: 288
+  allow_policy_flat_windows: false
   enforce_runtime_actions: false
   fail_to_reduce_only_windows: 0
   fail_to_halt_windows: 0

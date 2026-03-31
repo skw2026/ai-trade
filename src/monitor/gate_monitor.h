@@ -16,6 +16,8 @@ struct GateWindowResult {
   int order_intents{0};
   int effective_signals{0};
   int fills{0};
+  int policy_flat_signals{0};
+  bool policy_flat_pass{false};
   std::vector<std::string> fail_reasons;
 };
 
@@ -50,6 +52,10 @@ class GateMonitor {
  private:
   /// 判定是否存在非零净名义敞口。
   static bool HasExposure(double notional_usd);
+  /// 判定本 tick 是否属于“策略主动 flat”的政策性空仓。
+  static bool IsPolicyFlatSignal(const Signal& signal,
+                                 const RiskAdjustedPosition& adjusted,
+                                 const std::optional<OrderIntent>& intent);
   /// 重置窗口计数器。
   void ResetWindow();
 
@@ -60,6 +66,7 @@ class GateMonitor {
   int order_intents_{0};  ///< 订单意图计数。
   int effective_signals_{0};  ///< 有效信号计数（风控后仍有敞口）。
   int fills_{0};  ///< 成交计数。
+  int policy_flat_signals_{0};  ///< 策略主动空仓信号计数。
 };
 
 }  // namespace ai_trade

@@ -34,6 +34,7 @@ class AssessRunLogTest(unittest.TestCase):
         funnel_enqueued: int = 0,
         funnel_fills: int = 0,
         strategy_mix_samples: int = 1,
+        strategy_mix_policy_flat_samples: int = 0,
         strategy_mix_latest_trend: float = 180.0,
         strategy_mix_latest_defensive: float = -60.0,
         strategy_mix_latest_blended: float = 120.0,
@@ -119,7 +120,7 @@ class AssessRunLogTest(unittest.TestCase):
             f"{strategy_mix_latest_trend}, latest_defensive_notional={strategy_mix_latest_defensive}, "
             f"latest_blended_notional={strategy_mix_latest_blended}, avg_abs_trend_notional={strategy_mix_avg_abs_trend}, "
             f"avg_abs_defensive_notional={strategy_mix_avg_abs_defensive}, avg_abs_blended_notional={strategy_mix_avg_abs_blended}, "
-            f"samples={strategy_mix_samples}}}, "
+            f"samples={strategy_mix_samples}, policy_flat_samples={strategy_mix_policy_flat_samples}}}, "
             "entry_gate={enabled=true, round_trip_cost_bps=13.0, "
             "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0, "
             f"near_miss_tolerance_bps={entry_gate_near_miss_tolerance_bps}, "
@@ -209,6 +210,21 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(series["nonzero_window_count"], 1.0)
         self.assertEqual(series["defensive_active_count"], 0.0)
 
+    def test_extract_strategy_mix_series_tracks_policy_flat(self):
+        text = (
+            "2026-02-14 15:02:18 [INFO] RUNTIME_STATUS: ticks=180, trade_ok=true, "
+            "trading_halted=false, account={equity=168070.0, drawdown_pct=0.000210, "
+            "notional=0.0, realized_pnl=0.0, fees=0.0, realized_net=0.0}, "
+            "strategy_mix={latest_trend_notional=0.0, latest_defensive_notional=0.0, "
+            "latest_blended_notional=0.0, avg_abs_trend_notional=0.0, "
+            "avg_abs_defensive_notional=0.0, avg_abs_blended_notional=0.0, "
+            "samples=0, policy_flat_samples=12}, integrator_mode=shadow\n"
+        )
+        series = ASSESS.extract_strategy_mix_series(text)
+        self.assertEqual(series["runtime_count"], 1.0)
+        self.assertEqual(series["nonzero_window_count"], 0.0)
+        self.assertEqual(series["policy_flat_window_count"], 1.0)
+
     def test_assess_contains_strategy_mix_metrics(self):
         text = (
             "2026-02-14 15:02:18 [INFO] RUNTIME_STATUS: ticks=200, trade_ok=true, "
@@ -225,10 +241,35 @@ class AssessRunLogTest(unittest.TestCase):
         metrics = report["metrics"]
         self.assertEqual(metrics["strategy_mix_runtime_count"], 1)
         self.assertEqual(metrics["strategy_mix_defensive_active_count"], 1)
+        self.assertEqual(metrics["strategy_mix_policy_flat_window_count"], 0)
         self.assertGreater(metrics["strategy_mix_avg_abs_defensive_notional"], 0.0)
         self.assertEqual(metrics["execution_window_runtime_count"], 1)
         self.assertEqual(metrics["filtered_cost_ratio"], 0.0)
         self.assertEqual(report["verdict"], "PASS")
+
+    def test_s5_policy_flat_window_is_warn_not_fail(self):
+        text = (
+            self._runtime_line(
+                20,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=12,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+            )
+            + "2026-02-14 15:00:20 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=12, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertNotIn("未检测到 GATE_CHECK_PASSED（S5 要求至少一个通过窗口）", report["fail_reasons"])
+        self.assertNotIn("未检测到有效策略信号窗口（strategy_mix.samples>0），S5 至少要求 1 个窗口", report["fail_reasons"])
+        self.assertNotIn("执行样本不足（S5 强门禁）", "\n".join(report["fail_reasons"]))
+        self.assertIn("策略窗口以 policy-flat 为主", "\n".join(report["warn_reasons"]))
 
     def test_assess_extracts_execution_window_metrics(self):
         runtime = (

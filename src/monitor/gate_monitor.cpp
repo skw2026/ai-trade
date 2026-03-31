@@ -1,5 +1,6 @@
 #include "monitor/gate_monitor.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace ai_trade {
@@ -12,6 +13,23 @@ constexpr double kNotionalEpsilon = 1e-6;
 
 bool GateMonitor::HasExposure(double notional_usd) {
   return std::fabs(notional_usd) > kNotionalEpsilon;
+}
+
+bool GateMonitor::IsPolicyFlatSignal(
+    const Signal& signal,
+    const RiskAdjustedPosition& adjusted,
+    const std::optional<OrderIntent>& intent) {
+  if (HasExposure(signal.suggested_notional_usd) ||
+      HasExposure(adjusted.adjusted_notional_usd) || intent.has_value()) {
+    return false;
+  }
+  const auto has_reason = [&signal](const char* code) {
+    return std::find(signal.reason_codes.begin(),
+                     signal.reason_codes.end(),
+                     std::string(code)) != signal.reason_codes.end();
+  };
+  return has_reason("STR_RANGE_CONFIDENCE_BLOCK") ||
+         has_reason("STR_EXTREME_BLOCK");
 }
 
 /**
@@ -27,6 +45,9 @@ std::optional<std::string> GateMonitor::OnDecision(
   }
   if (intent.has_value()) {
     ++order_intents_;
+  }
+  if (IsPolicyFlatSignal(signal, adjusted, intent)) {
+    ++policy_flat_signals_;
   }
 
   std::optional<std::string> alert;
@@ -66,14 +87,22 @@ std::optional<GateWindowResult> GateMonitor::OnTick() {
   result.order_intents = order_intents_;
   result.effective_signals = effective_signals_;
   result.fills = fills_;
+  result.policy_flat_signals = policy_flat_signals_;
+
+  const bool policy_flat_pass =
+      config_.allow_policy_flat_windows &&
+      policy_flat_signals_ >= config_.min_effective_signals_per_window &&
+      raw_signals_ == 0 && order_intents_ == 0 && fills_ == 0;
+  result.policy_flat_pass = policy_flat_pass;
 
   // 检查 1: 有效信号数量是否达标 (防止策略“装死”)
-  if (effective_signals_ < config_.min_effective_signals_per_window) {
+  if (!policy_flat_pass &&
+      effective_signals_ < config_.min_effective_signals_per_window) {
     result.pass = false;
     result.fail_reasons.push_back("FAIL_LOW_ACTIVITY_SIGNALS");
   }
   // 检查 2: 成交数量是否达标 (防止策略只发信号不成交)
-  if (fills_ < config_.min_fills_per_window) {
+  if (!policy_flat_pass && fills_ < config_.min_fills_per_window) {
     result.pass = false;
     result.fail_reasons.push_back("FAIL_LOW_ACTIVITY_FILLS");
   }
@@ -88,6 +117,7 @@ void GateMonitor::ResetWindow() {
   order_intents_ = 0;
   effective_signals_ = 0;
   fills_ = 0;
+  policy_flat_signals_ = 0;
 }
 
 }  // namespace ai_trade

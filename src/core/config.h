@@ -50,6 +50,7 @@ struct GateConfig {
   int min_fills_per_window{4};
   int heartbeat_empty_signal_ticks{12};
   int window_ticks{288};
+  bool allow_policy_flat_windows{false};
   bool enforce_runtime_actions{false};
   int fail_to_reduce_only_windows{0};
   int fail_to_halt_windows{0};

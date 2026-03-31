@@ -249,6 +249,7 @@ class BotApplication {
     std::uint64_t integrator_policy_active{0};
     std::uint64_t entry_edge_samples{0};
     std::uint64_t strategy_mix_samples{0};
+    std::uint64_t strategy_policy_flat_samples{0};
     double integrator_model_score_sum{0.0};
     double integrator_p_up_sum{0.0};
     double integrator_p_down_sum{0.0};

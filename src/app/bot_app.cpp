@@ -66,6 +66,23 @@ bool HasExposure(double notional_usd) {
   return std::fabs(notional_usd) > kNotionalEpsilon;
 }
 
+bool HasReasonCode(const Signal& signal, const char* code) {
+  if (code == nullptr || *code == '\0') {
+    return false;
+  }
+  return std::find(signal.reason_codes.begin(),
+                   signal.reason_codes.end(),
+                   std::string(code)) != signal.reason_codes.end();
+}
+
+bool IsPolicySuppressedFlatSignal(const Signal& signal) {
+  if (HasExposure(signal.suggested_notional_usd)) {
+    return false;
+  }
+  return HasReasonCode(signal, "STR_RANGE_CONFIDENCE_BLOCK") ||
+         HasReasonCode(signal, "STR_EXTREME_BLOCK");
+}
+
 // 将策略分支名义值按“可执行目标名义值”缩放，减少学习输入与执行结果的偏离。
 std::pair<double, double> ScaleStrategyComponentsForExecution(
     const MarketDecision& decision) {
@@ -1125,6 +1142,7 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->integrator_policy_active += delta.integrator_policy_active;
   total->entry_edge_samples += delta.entry_edge_samples;
   total->strategy_mix_samples += delta.strategy_mix_samples;
+  total->strategy_policy_flat_samples += delta.strategy_policy_flat_samples;
   total->integrator_model_score_sum += delta.integrator_model_score_sum;
   total->integrator_p_up_sum += delta.integrator_p_up_sum;
   total->integrator_p_down_sum += delta.integrator_p_down_sum;
@@ -1627,6 +1645,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
         std::fabs(decision.base_signal.defensive_notional_usd);
     funnel_window_.blended_notional_abs_sum +=
         std::fabs(decision.base_signal.suggested_notional_usd);
+  } else if (IsPolicySuppressedFlatSignal(decision.base_signal)) {
+    ++funnel_window_.strategy_policy_flat_samples;
   }
   if (decision.shadow.enabled) {
     ++funnel_window_.integrator_scored;
@@ -2702,6 +2722,8 @@ void BotApplication::RunGateMonitor() {
               ", effective_signals=" +
               std::to_string(res->effective_signals) +
               ", fills=" + std::to_string(res->fills) +
+              ", policy_flat_signals=" +
+              std::to_string(res->policy_flat_signals) +
               ", fail_reasons=[" + reasons.str() + "]");
     } else {
       LogInfo("GATE_CHECK_PASSED: raw_signals=" +
@@ -2709,7 +2731,11 @@ void BotApplication::RunGateMonitor() {
               ", order_intents=" + std::to_string(res->order_intents) +
               ", effective_signals=" +
               std::to_string(res->effective_signals) +
-              ", fills=" + std::to_string(res->fills));
+              ", fills=" + std::to_string(res->fills) +
+              ", policy_flat_signals=" +
+              std::to_string(res->policy_flat_signals) +
+              ", policy_flat=" +
+              std::string(res->policy_flat_pass ? "true" : "false"));
     }
 
     if (res->pass) {
@@ -3343,7 +3369,9 @@ void BotApplication::LogStatus() {
           std::to_string(strategy_defensive_avg_abs_notional) +
           ", avg_abs_blended_notional=" +
           std::to_string(strategy_blended_avg_abs_notional) +
-          ", samples=" + std::to_string(funnel_window.strategy_mix_samples) + "}" +
+          ", samples=" + std::to_string(funnel_window.strategy_mix_samples) +
+          ", policy_flat_samples=" +
+          std::to_string(funnel_window.strategy_policy_flat_samples) + "}" +
           ", integrator_mode=" +
           std::string(ToString(system_.integrator_mode())) +
           ", gate_runtime={enabled=" +
