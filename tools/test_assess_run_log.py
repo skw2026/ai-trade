@@ -76,6 +76,7 @@ class AssessRunLogTest(unittest.TestCase):
         execution_quality_guard_no_fill_windows: int = 0,
         reconcile_anomaly_streak: int = 0,
         reconcile_anomaly_reduce_only: bool = False,
+        regime_bucket: str = "RANGE",
         equity: float = 100000.0,
         realized_pnl: float = 0.0,
         fees: float = 0.0,
@@ -121,6 +122,7 @@ class AssessRunLogTest(unittest.TestCase):
             f"latest_blended_notional={strategy_mix_latest_blended}, avg_abs_trend_notional={strategy_mix_avg_abs_trend}, "
             f"avg_abs_defensive_notional={strategy_mix_avg_abs_defensive}, avg_abs_blended_notional={strategy_mix_avg_abs_blended}, "
             f"samples={strategy_mix_samples}, policy_flat_samples={strategy_mix_policy_flat_samples}}}, "
+            f"regime_current={{symbol=BTCUSDT, regime={regime_bucket}, bucket={regime_bucket}, warmup=false}}, "
             "entry_gate={enabled=true, round_trip_cost_bps=13.0, "
             "min_expected_edge_bps=1.0, required_edge_cap_bps=8.0, "
             f"near_miss_tolerance_bps={entry_gate_near_miss_tolerance_bps}, "
@@ -249,7 +251,9 @@ class AssessRunLogTest(unittest.TestCase):
 
     def test_s5_policy_flat_window_is_warn_not_fail(self):
         text = (
-            self._runtime_line(
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: bucket=RANGE\n"
+            "2026-02-14 15:00:01 [INFO] SELF_EVOLUTION_ACTION: source=counterfactual\n"
+            + self._runtime_line(
                 20,
                 0.0,
                 funnel_enqueued=0,
@@ -269,7 +273,74 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertNotIn("未检测到 GATE_CHECK_PASSED（S5 要求至少一个通过窗口）", report["fail_reasons"])
         self.assertNotIn("未检测到有效策略信号窗口（strategy_mix.samples>0），S5 至少要求 1 个窗口", report["fail_reasons"])
         self.assertNotIn("执行样本不足（S5 强门禁）", "\n".join(report["fail_reasons"]))
+        self.assertEqual(report["protection_status"], "PASS")
+        self.assertEqual(report["execution_status"], "NOT_EVALUATED")
+        self.assertEqual(report["runtime_validation_mode"], "POLICY_FLAT_PROTECTION")
         self.assertIn("策略窗口以 policy-flat 为主", "\n".join(report["warn_reasons"]))
+        self.assertIn("执行质量未完成验证", "\n".join(report["warn_reasons"]))
+
+    def test_s5_execution_active_window_sets_execution_pass(self):
+        runtime = "".join(
+            self._runtime_line(
+                tick,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                strategy_mix_samples=10,
+                strategy_mix_policy_flat_samples=0,
+                realized_net_per_fill=-0.001,
+                fee_bps_per_fill=0.1,
+                maker_fills=1,
+                regime_bucket="TREND",
+            )
+            for tick in range(20, 240, 20)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: bucket=TREND\n"
+            "2026-02-14 15:00:01 [INFO] SELF_EVOLUTION_ACTION: source=counterfactual\n"
+            "2026-02-14 15:00:10 [INFO] GATE_CHECK_PASSED: raw_signals=2, order_intents=1, effective_signals=2, fills=1\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertEqual(report["protection_status"], "PASS")
+        self.assertEqual(report["execution_status"], "PASS")
+        self.assertEqual(report["runtime_validation_mode"], "EXECUTION_ACTIVE")
+
+    def test_s5_trend_runtime_without_participation_fails_execution(self):
+        text = "".join(
+            self._runtime_line(
+                tick,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=0,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+                regime_bucket="TREND",
+            )
+            for tick in range(20, 220, 20)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: bucket=TREND\n"
+            "2026-02-14 15:00:01 [INFO] SELF_EVOLUTION_ACTION: source=counterfactual\n"
+            "2026-02-14 15:00:10 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=0, policy_flat=false\n"
+            + text
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=1,
+            s5_min_fill_windows=0,
+            s5_min_trend_runtime_windows=5,
+        )
+        self.assertEqual(report["protection_status"], "PASS")
+        self.assertEqual(report["execution_status"], "FAIL")
+        self.assertIn("TREND 桶出现但未形成策略参与或执行样本", "\n".join(report["execution_fail_reasons"]))
 
     def test_assess_extracts_execution_window_metrics(self):
         runtime = (

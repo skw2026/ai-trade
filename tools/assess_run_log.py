@@ -105,6 +105,7 @@ DEFAULT_S5_MAX_EQUITY_VS_REALIZED_GAP_USD: Optional[float] = None
 DEFAULT_S5_PROTECTION_ENABLED = False
 DEFAULT_S5_PROFIT_PROTECTION_ENABLED = False
 DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT = 0
+DEFAULT_S5_MIN_TREND_RUNTIME_WINDOWS = 60
 
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -182,6 +183,9 @@ RUNTIME_RECONCILE_RUNTIME_RE = re.compile(
     r"anomaly_reduce_only_threshold=(?P<anomaly_reduce_only_threshold>-?[0-9]+), "
     r"anomaly_halt_threshold=(?P<anomaly_halt_threshold>-?[0-9]+), "
     r"anomaly_resume_threshold=(?P<anomaly_resume_threshold>-?[0-9]+)"
+)
+RUNTIME_REGIME_CURRENT_RE = re.compile(
+    r"RUNTIME_STATUS:.*?regime_current=\{[^}]*?bucket=(?P<bucket>[A-Z_]+)"
 )
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
@@ -281,6 +285,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT,
         help="S5 强门禁：保护单缺失事件最大允许次数（默认 0）",
+    )
+    parser.add_argument(
+        "--s5-min-trend-runtime-windows",
+        type=int,
+        default=DEFAULT_S5_MIN_TREND_RUNTIME_WINDOWS,
+        help="S5 反退化门禁：若 TREND 桶窗口达到该数量，必须形成策略参与或执行样本",
     )
     return parser.parse_args()
 
@@ -537,6 +547,15 @@ def extract_strategy_mix_series(text: str) -> Dict[str, float]:
         "avg_abs_blended_notional": avg_abs_blended_notional,
         "avg_defensive_share": avg_defensive_share,
     }
+
+
+def extract_regime_current_counts(text: str) -> Dict[str, int]:
+    counts = {"TREND": 0, "RANGE": 0, "EXTREME": 0}
+    for m in RUNTIME_REGIME_CURRENT_RE.finditer(text):
+        bucket = str(m.group("bucket") or "").upper()
+        if bucket in counts:
+            counts[bucket] += 1
+    return counts
 
 
 def extract_execution_window_series(text: str) -> Dict[str, float]:
@@ -903,6 +922,7 @@ def assess(
     s5_protection_enabled: bool = DEFAULT_S5_PROTECTION_ENABLED,
     s5_profit_protection_enabled: bool = DEFAULT_S5_PROFIT_PROTECTION_ENABLED,
     s5_max_protective_order_missing_count: int = DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT,
+    s5_min_trend_runtime_windows: int = DEFAULT_S5_MIN_TREND_RUNTIME_WINDOWS,
 ) -> Dict[str, object]:
     original_text = text
     flat_start_rebased = False
@@ -963,6 +983,7 @@ def assess(
         entry_edge_adjust,
         reconcile_runtime,
     ) = extract_views(text)
+    regime_current_counts = extract_regime_current_counts(text)
 
     if flat_start_rebased:
         original_strategy_mix = extract_strategy_mix_series(original_text)
@@ -1243,6 +1264,9 @@ def assess(
         "reconcile_anomaly_reduce_only_true_ratio": reconcile_runtime[
             "anomaly_reduce_only_true_ratio"
         ],
+        "regime_trend_runtime_count": int(regime_current_counts["TREND"]),
+        "regime_range_runtime_count": int(regime_current_counts["RANGE"]),
+        "regime_extreme_runtime_count": int(regime_current_counts["EXTREME"]),
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
     metrics["self_evolution_effective_update_count"] = (
@@ -1288,6 +1312,8 @@ def assess(
     else:
         metrics["equity_vs_realized_net_gap_usd"] = None
 
+    protection_fail_reasons: list[str] = []
+    execution_fail_reasons: list[str] = []
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
     if flat_start_rebase_fallback:
@@ -1297,11 +1323,13 @@ def assess(
         )
 
     if metrics["critical_count"] > 0:
-        fail_reasons.append(f"出现 CRITICAL: {metrics['critical_count']}")
+        protection_fail_reasons.append(f"出现 CRITICAL: {metrics['critical_count']}")
     if metrics["ws_unhealthy_count"] > 0:
-        fail_reasons.append(f"运行态 WS 健康检查失败次数: {metrics['ws_unhealthy_count']}")
+        protection_fail_reasons.append(
+            f"运行态 WS 健康检查失败次数: {metrics['ws_unhealthy_count']}"
+        )
     if metrics["runtime_status_count"] < min_runtime_status:
-        fail_reasons.append(
+        protection_fail_reasons.append(
             f"RUNTIME_STATUS 条数不足: {metrics['runtime_status_count']} < {min_runtime_status}"
         )
 
@@ -1315,41 +1343,41 @@ def assess(
     # DEPLOY 门禁仅看“健康硬指标”，避免冷启动阶段的策略类指标误触发回滚。
     if stage.name != "DEPLOY":
         if metrics["trading_halted_true_ratio"] > stage.max_trading_halted_true_ratio:
-            fail_reasons.append(
+            protection_fail_reasons.append(
                 "trading_halted=true 占比超阈值: "
                 f"{metrics['trading_halted_true_ratio']:.4f} > "
                 f"{stage.max_trading_halted_true_ratio:.4f}"
             )
 
         if stage.require_gate_window and gate_window_count <= 0:
-            fail_reasons.append("未检测到 Gate 窗口判定（GATE_CHECK_PASSED/FAILED）")
+            protection_fail_reasons.append("未检测到 Gate 窗口判定（GATE_CHECK_PASSED/FAILED）")
         if (
             stage.require_gate_pass
             and gate_window_count > 0
             and metrics["gate_check_passed_count"] <= 0
         ):
-            fail_reasons.append("未检测到 GATE_CHECK_PASSED（S5 要求至少一个通过窗口）")
+            protection_fail_reasons.append("未检测到 GATE_CHECK_PASSED（S5 要求至少一个通过窗口）")
 
         if (
             stage.require_evolution_init
             and metrics["self_evolution_init_total_count"] <= 0
             and metrics["self_evolution_action_total_count"] <= 0
         ):
-            fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
+            protection_fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
 
         if (
             stage.require_execution_activity
             and execution_activity_count <= 0
             and not policy_flat_dominant
         ):
-            fail_reasons.append("未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）")
+            execution_fail_reasons.append("未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）")
         if (
             stage.min_strategy_mix_nonzero_windows > 0
             and metrics["strategy_mix_nonzero_window_count"]
             < stage.min_strategy_mix_nonzero_windows
             and not policy_flat_dominant
         ):
-            fail_reasons.append(
+            execution_fail_reasons.append(
                 "未检测到有效策略信号窗口（strategy_mix.samples>0），"
                 f"S5 至少要求 {stage.min_strategy_mix_nonzero_windows} 个窗口"
             )
@@ -1360,7 +1388,7 @@ def assess(
             and isinstance(start_abs_notional, (int, float))
             and start_abs_notional > stage.max_start_abs_notional_usd
         ):
-            fail_reasons.append(
+            protection_fail_reasons.append(
                 "运行窗口起点非平仓状态，S5 验收要求平仓起跑: "
                 f"abs_notional={start_abs_notional:.6f} > "
                 f"threshold={stage.max_start_abs_notional_usd:.6f}"
@@ -1370,7 +1398,7 @@ def assess(
             gate_window_count >= stage.gate_fail_hard_min_windows
             and metrics["gate_check_fail_ratio"] > stage.gate_fail_hard_max_fail_ratio
         ):
-            fail_reasons.append(
+            protection_fail_reasons.append(
                 "Gate 失败率过高（强闭环阻断）: "
                 f"fail_ratio={metrics['gate_check_fail_ratio']:.4f}, "
                 f"threshold={stage.gate_fail_hard_max_fail_ratio:.4f}"
@@ -1384,7 +1412,7 @@ def assess(
             and metrics["self_evolution_effective_update_count"]
             < max(0, s5_min_effective_updates)
         ):
-            fail_reasons.append(
+            protection_fail_reasons.append(
                 "SELF_EVOLUTION 有评估无有效更新（S5 强门禁）: "
                 f"action_count={metrics['self_evolution_action_count']}, "
                 f"learnability_pass_count={metrics['self_evolution_learnability_pass_count']}, "
@@ -1396,10 +1424,21 @@ def assess(
             and metrics["funnel_fills_runtime_count"] < max(0, s5_min_fill_windows)
             and not policy_flat_dominant
         ):
-            fail_reasons.append(
+            execution_fail_reasons.append(
                 "执行样本不足（S5 强门禁）: "
                 f"fill_windows={metrics['funnel_fills_runtime_count']}, "
                 f"required>={max(0, s5_min_fill_windows)}"
+            )
+        if (
+            stage.name == "S5"
+            and metrics["regime_trend_runtime_count"] >= max(0, s5_min_trend_runtime_windows)
+            and metrics["strategy_mix_nonzero_window_count"] <= 0
+            and execution_activity_count <= 0
+        ):
+            execution_fail_reasons.append(
+                "TREND 桶出现但未形成策略参与或执行样本（S5 反退化门禁）: "
+                f"trend_runtime_windows={metrics['regime_trend_runtime_count']}, "
+                f"required>={max(0, s5_min_trend_runtime_windows)}"
             )
         if (
             stage.name == "S5"
@@ -1407,7 +1446,7 @@ def assess(
             >= max(0, s5_min_realized_net_per_fill_windows)
             and metrics["execution_window_runtime_count"] <= 0
         ):
-            fail_reasons.append(
+            execution_fail_reasons.append(
                 "执行净收益质量门禁无法评估（S5 强门禁）: "
                 "fills 窗口已达标但 execution_window 指标缺失，"
                 "请检查运行时日志字段与 assess 解析口径是否一致"
@@ -1419,7 +1458,7 @@ def assess(
             and isinstance(metrics["realized_net_per_fill"], (int, float))
             and metrics["realized_net_per_fill"] < s5_min_realized_net_per_fill_usd
         ):
-            fail_reasons.append(
+            execution_fail_reasons.append(
                 "执行净收益质量未达标（S5 强门禁）: "
                 f"realized_net_per_fill={metrics['realized_net_per_fill']:.6f}, "
                 f"threshold={s5_min_realized_net_per_fill_usd:.6f}, "
@@ -1434,11 +1473,11 @@ def assess(
         ):
             equity_change_usd = account_pnl.get("equity_change_usd")
             if not isinstance(equity_change_usd, (int, float)):
-                fail_reasons.append(
+                protection_fail_reasons.append(
                     "权益变化门禁无法评估：缺少 equity_change_usd 采样"
                 )
             elif equity_change_usd < s5_min_equity_change_usd:
-                fail_reasons.append(
+                protection_fail_reasons.append(
                     "权益变化未达标（S5 强门禁）: "
                     f"equity_change_usd={equity_change_usd:.6f}, "
                     f"threshold={s5_min_equity_change_usd:.6f}, "
@@ -1453,11 +1492,11 @@ def assess(
         ):
             gap_usd = metrics.get("equity_vs_realized_net_gap_usd")
             if not isinstance(gap_usd, (int, float)):
-                fail_reasons.append(
+                protection_fail_reasons.append(
                     "权益与已实现净盈亏偏差门禁无法评估：缺少 gap 采样"
                 )
             elif abs(gap_usd) > s5_max_equity_vs_realized_gap_usd:
-                fail_reasons.append(
+                protection_fail_reasons.append(
                     "权益与已实现净盈亏偏差过大（S5 强门禁）: "
                     f"gap_usd={gap_usd:.6f}, "
                     f"threshold={s5_max_equity_vs_realized_gap_usd:.6f}, "
@@ -1470,11 +1509,39 @@ def assess(
             and metrics["protective_order_missing_count"]
             > max(0, s5_max_protective_order_missing_count)
         ):
-            fail_reasons.append(
+            protection_fail_reasons.append(
                 "保护单缺失事件超阈值（S5 必检项）: "
                 f"protective_order_missing_count={metrics['protective_order_missing_count']}, "
                 f"threshold<={max(0, s5_max_protective_order_missing_count)}"
             )
+
+    fail_reasons.extend(protection_fail_reasons)
+    fail_reasons.extend(execution_fail_reasons)
+
+    if protection_fail_reasons:
+        protection_status = "FAIL"
+    else:
+        protection_status = "PASS"
+
+    if policy_flat_dominant:
+        execution_status = "NOT_EVALUATED"
+    elif execution_fail_reasons:
+        execution_status = "FAIL"
+    elif (
+        execution_activity_count > 0
+        or metrics["strategy_mix_nonzero_window_count"] > 0
+        or metrics["funnel_fills_runtime_count"] > 0
+    ):
+        execution_status = "PASS"
+    else:
+        execution_status = "NOT_EVALUATED"
+
+    if policy_flat_dominant:
+        runtime_validation_mode = "POLICY_FLAT_PROTECTION"
+    elif execution_status == "PASS":
+        runtime_validation_mode = "EXECUTION_ACTIVE"
+    else:
+        runtime_validation_mode = "IDLE_OR_INSUFFICIENT_SAMPLE"
 
     # 软告警：DEPLOY 仅保留硬失败项，避免上线门禁被策略类黄灯误阻断。
     if stage.name != "DEPLOY":
@@ -1624,6 +1691,9 @@ def assess(
                 "策略窗口以 policy-flat 为主：本轮主要反映 RANGE/EXTREME 主动空仓保护，"
                 f"policy_flat_window_count={policy_flat_window_count}"
             )
+            warn_reasons.append(
+                "本轮 runtime 通过仅代表保护逻辑通过，执行质量未完成验证"
+            )
         if metrics["reconcile_anomaly_reduce_only_true_count"] > 0:
             warn_reasons.append(
                 "对账异常保护触发 reduce-only，建议核查回报链路与对账口径: "
@@ -1672,9 +1742,14 @@ def assess(
     return {
         "stage": stage.name,
         "verdict": verdict,
+        "runtime_validation_mode": runtime_validation_mode,
+        "protection_status": protection_status,
+        "execution_status": execution_status,
         "metrics": metrics,
         "account_pnl": account_pnl,
         "fail_reasons": fail_reasons,
+        "protection_fail_reasons": protection_fail_reasons,
+        "execution_fail_reasons": execution_fail_reasons,
         "warn_reasons": warn_reasons,
         "flat_start_rebased": flat_start_rebased,
         "flat_start_rebase_cutoff_utc": flat_start_rebase_cutoff_utc,
@@ -1685,6 +1760,12 @@ def assess(
 def print_report(report: Dict[str, object]) -> None:
     print(f"STAGE: {report['stage']}")
     print(f"VERDICT: {report['verdict']}")
+    if "runtime_validation_mode" in report:
+        print(f"RUNTIME_VALIDATION_MODE: {report['runtime_validation_mode']}")
+    if "protection_status" in report:
+        print(f"PROTECTION_STATUS: {report['protection_status']}")
+    if "execution_status" in report:
+        print(f"EXECUTION_STATUS: {report['execution_status']}")
     print("METRICS:")
     metrics = report["metrics"]
     assert isinstance(metrics, dict)
@@ -1812,6 +1893,7 @@ def main() -> int:
         s5_protection_enabled=args.s5_protection_enabled,
         s5_profit_protection_enabled=args.s5_profit_protection_enabled,
         s5_max_protective_order_missing_count=args.s5_max_protective_order_missing_count,
+        s5_min_trend_runtime_windows=args.s5_min_trend_runtime_windows,
     )
     print_report(report)
 

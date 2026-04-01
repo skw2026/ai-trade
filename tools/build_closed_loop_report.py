@@ -150,12 +150,20 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
     warns: List[str] = []
     if verdict == "PASS_WITH_ACTIONS":
         warns.append("运行验收为 PASS_WITH_ACTIONS，建议执行告警项整改")
+    execution_status = str(payload.get("execution_status", ""))
+    if execution_status == "NOT_EVALUATED":
+        warns.append("运行保护通过，但执行质量未完成验证")
     return {
         "status": status,
         "fail_reasons": fails,
         "warn_reasons": warns,
         "stage": payload.get("stage"),
         "verdict": verdict,
+        "runtime_validation_mode": payload.get("runtime_validation_mode"),
+        "protection_status": payload.get("protection_status"),
+        "execution_status": payload.get("execution_status"),
+        "protection_fail_reasons": payload.get("protection_fail_reasons", []),
+        "execution_fail_reasons": payload.get("execution_fail_reasons", []),
         "metrics": payload.get("metrics", {}),
         "account_pnl": payload.get("account_pnl", {}),
     }
@@ -198,6 +206,8 @@ def assess_walkforward(
     min_avg_split_sharpe: float = 0.0,
     min_traded_split_count: int = 0,
     min_total_trades: int = 0,
+    min_trend_bucket_bars: int = 0,
+    min_trend_bucket_trades: int = 0,
 ) -> Dict[str, Any]:
     payload = read_json(path)
     summary = payload.get("summary", {})
@@ -208,6 +218,8 @@ def assess_walkforward(
     total_trades = summary.get("total_trades", 0)
     total_bars = summary.get("total_bars", 0)
     avg_split_sharpe = summary.get("avg_split_sharpe")
+    regime_bucket_summary = summary.get("regime_bucket_summary", {})
+    trend_bucket = regime_bucket_summary.get("trend", {}) if isinstance(regime_bucket_summary, dict) else {}
     fails: List[str] = []
     warns: List[str] = []
     if not (isinstance(valid_split_count, int) and valid_split_count > 0):
@@ -226,6 +238,14 @@ def assess_walkforward(
         fails.append(
             "walk-forward 总交易次数未达门槛: "
             f"{int(total_trades)} < {int(min_total_trades)}"
+        )
+    trend_bars = int(trend_bucket.get("bars", 0)) if isinstance(trend_bucket, dict) else 0
+    trend_trades = int(trend_bucket.get("trades", 0)) if isinstance(trend_bucket, dict) else 0
+    if trend_bars >= int(min_trend_bucket_bars) and trend_trades < int(min_trend_bucket_trades):
+        fails.append(
+            "walk-forward TREND 桶交易次数未达门槛: "
+            f"trend_trades={trend_trades} < {int(min_trend_bucket_trades)}, "
+            f"trend_bars={trend_bars}, required_bars>={int(min_trend_bucket_bars)}"
         )
     if isinstance(avg_split_sharpe, (int, float)):
         if avg_split_sharpe < min_avg_split_sharpe:
@@ -314,6 +334,18 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="walk-forward 最小总交易次数（默认 0）",
+    )
+    parser.add_argument(
+        "--walkforward_min_trend_bucket_bars",
+        type=int,
+        default=0,
+        help="walk-forward TREND 桶最小 bars 门槛（达到后开始要求最小交易数）",
+    )
+    parser.add_argument(
+        "--walkforward_min_trend_bucket_trades",
+        type=int,
+        default=0,
+        help="walk-forward TREND 桶最小交易次数（默认 0）",
     )
     parser.add_argument(
         "--inherit_report",
@@ -412,6 +444,8 @@ def main() -> int:
                 min_avg_split_sharpe=float(args.walkforward_min_avg_sharpe),
                 min_traded_split_count=int(args.walkforward_min_traded_split_count),
                 min_total_trades=int(args.walkforward_min_total_trades),
+                min_trend_bucket_bars=int(args.walkforward_min_trend_bucket_bars),
+                min_trend_bucket_trades=int(args.walkforward_min_trend_bucket_trades),
             )
         else:
             sections["walkforward"] = {
