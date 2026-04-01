@@ -56,14 +56,24 @@ jobs:
       - name: Install Build Dependencies
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            ninja-build \
-            pkg-config \
-            libcurl4-openssl-dev \
-            libssl-dev
+          for attempt in 1 2 3; do
+            sudo rm -rf /var/lib/apt/lists/*
+            if sudo apt-get update -o Acquire::Retries=3 && \
+               sudo apt-get install -y --no-install-recommends \
+                 build-essential \
+                 cmake \
+                 ninja-build \
+                 pkg-config \
+                 libcurl4-openssl-dev \
+                 libssl-dev; then
+              break
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "apt dependency install failed after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 5))"
+          done
 
       - name: Configure
         run: cmake -S . -B build -G Ninja

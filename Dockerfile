@@ -4,8 +4,33 @@ FROM ubuntu:24.04 AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+RUN cat > /usr/local/bin/apt-install <<'SCRIPT' && \
+    chmod +x /usr/local/bin/apt-install
+#!/usr/bin/env bash
+set -euo pipefail
+
+attempts=5
+for attempt in $(seq 1 "${attempts}"); do
+  rm -rf /var/lib/apt/lists/*
+  apt-get update \
+    -o Acquire::Retries=3 \
+    -o Acquire::http::No-Cache=true \
+    -o Acquire::https::No-Cache=true
+  if apt-get install -y --no-install-recommends "$@"; then
+    rm -rf /var/lib/apt/lists/*
+    exit 0
+  fi
+  if [[ "${attempt}" -eq "${attempts}" ]]; then
+    exit 1
+  fi
+  echo "apt install failed on attempt ${attempt}/${attempts}; retrying..." >&2
+  sleep $((attempt * 5))
+done
+SCRIPT
+
+RUN /usr/local/bin/apt-install \
       build-essential \
       cmake \
       ninja-build \
@@ -15,8 +40,7 @@ RUN apt-get update && \
       git \
       libcurl4-openssl-dev \
       libssl-dev \
-      libboost-all-dev && \
-    rm -rf /var/lib/apt/lists/*
+      libboost-all-dev
 
 # [新增] 下载 CatBoost C++ 推理库 (自动适配 amd64/arm64)
 RUN mkdir -p /usr/local/include/model_interface && \
@@ -43,15 +67,17 @@ FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+COPY --from=build /usr/local/bin/apt-install /usr/local/bin/apt-install
+
+RUN /usr/local/bin/apt-install \
       ca-certificates \
       libcurl4 \
       libssl3 \
       libboost-system1.83.0 \
       python3 \
-      python3-dev && \
-    rm -rf /var/lib/apt/lists/*
+      python3-dev
 
 WORKDIR /app
 
@@ -70,8 +96,7 @@ RUN mkdir -p /app/data
 # [新增] Research 阶段：基于运行时镜像，额外安装训练所需的 Python 库
 # 这确保了 ai-trade-research 服务能运行 integrator_train.py
 FROM runtime AS research
-RUN apt-get update && apt-get install -y --no-install-recommends python3-pip && \
-    rm -rf /var/lib/apt/lists/*
+RUN /usr/local/bin/apt-install python3-pip
 RUN pip3 install --no-cache-dir --break-system-packages numpy catboost
 
 # [修改] 默认目标恢复为 runtime，确保主服务轻量
