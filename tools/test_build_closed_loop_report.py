@@ -353,8 +353,14 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                         "runtime_validation_mode": "POLICY_FLAT_PROTECTION",
                         "protection_status": "PASS",
                         "execution_status": "NOT_EVALUATED",
+                        "market_context_status": "RANGE_ONLY",
+                        "account_sync_status": "NOISY_WHILE_FLAT",
                         "protection_fail_reasons": [],
                         "execution_fail_reasons": [],
+                        "warn_reasons": [
+                            "当前窗口未出现 TREND 样本：runtime 通过仅代表保护逻辑通过，执行质量仍处于等待趋势样本阶段",
+                            "权益变化与已实现净盈亏偏差较大且无执行活动，建议检查资金同步/统计口径: gap_usd=120.0",
+                        ],
                         "metrics": {"runtime_status_count": 80},
                         "account_pnl": {"samples": 80},
                     }
@@ -381,8 +387,13 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(runtime["runtime_validation_mode"], "POLICY_FLAT_PROTECTION")
             self.assertEqual(runtime["protection_status"], "PASS")
             self.assertEqual(runtime["execution_status"], "NOT_EVALUATED")
+            self.assertEqual(runtime["market_context_status"], "RANGE_ONLY")
+            self.assertEqual(runtime["account_sync_status"], "NOISY_WHILE_FLAT")
             self.assertTrue(
                 any("执行质量未完成验证" in item for item in runtime["warn_reasons"])
+            )
+            self.assertTrue(
+                any("等待趋势样本阶段" in item for item in runtime["warn_reasons"])
             )
 
     def test_walkforward_trend_bucket_low_participation_is_fail(self):

@@ -150,9 +150,19 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
     warns: List[str] = []
     if verdict == "PASS_WITH_ACTIONS":
         warns.append("运行验收为 PASS_WITH_ACTIONS，建议执行告警项整改")
+    for item in payload.get("warn_reasons", []):
+        item_text = str(item)
+        if item_text and item_text not in warns:
+            warns.append(item_text)
     execution_status = str(payload.get("execution_status", ""))
     if execution_status == "NOT_EVALUATED":
-        warns.append("运行保护通过，但执行质量未完成验证")
+        market_context_status = str(payload.get("market_context_status", ""))
+        if market_context_status in {"RANGE_ONLY", "EXTREME_ONLY", "RANGE_EXTREME_ONLY"}:
+            extra = "运行保护通过，但当前窗口未形成可交易趋势样本，执行质量未完成验证"
+        else:
+            extra = "运行保护通过，但执行质量未完成验证"
+        if extra not in warns:
+            warns.append(extra)
     return {
         "status": status,
         "fail_reasons": fails,
@@ -162,6 +172,8 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
         "runtime_validation_mode": payload.get("runtime_validation_mode"),
         "protection_status": payload.get("protection_status"),
         "execution_status": payload.get("execution_status"),
+        "market_context_status": payload.get("market_context_status"),
+        "account_sync_status": payload.get("account_sync_status"),
         "protection_fail_reasons": payload.get("protection_fail_reasons", []),
         "execution_fail_reasons": payload.get("execution_fail_reasons", []),
         "metrics": payload.get("metrics", {}),

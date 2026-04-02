@@ -1301,6 +1301,26 @@ def assess(
     else:
         metrics["gate_check_fail_ratio"] = 0.0
 
+    regime_runtime_total = (
+        metrics["regime_trend_runtime_count"]
+        + metrics["regime_range_runtime_count"]
+        + metrics["regime_extreme_runtime_count"]
+    )
+    if regime_runtime_total > 0:
+        metrics["regime_trend_runtime_ratio"] = (
+            metrics["regime_trend_runtime_count"] / regime_runtime_total
+        )
+        metrics["regime_range_runtime_ratio"] = (
+            metrics["regime_range_runtime_count"] / regime_runtime_total
+        )
+        metrics["regime_extreme_runtime_ratio"] = (
+            metrics["regime_extreme_runtime_count"] / regime_runtime_total
+        )
+    else:
+        metrics["regime_trend_runtime_ratio"] = 0.0
+        metrics["regime_range_runtime_ratio"] = 0.0
+        metrics["regime_extreme_runtime_ratio"] = 0.0
+
     equity_change_usd = account_pnl.get("equity_change_usd")
     realized_net_change_usd = account_pnl.get("realized_net_pnl_change_usd")
     if isinstance(equity_change_usd, (int, float)) and isinstance(
@@ -1311,6 +1331,29 @@ def assess(
         )
     else:
         metrics["equity_vs_realized_net_gap_usd"] = None
+
+    if metrics["regime_trend_runtime_count"] > 0:
+        market_context_status = "TREND_PRESENT"
+    elif (
+        metrics["regime_range_runtime_count"] > 0
+        and metrics["regime_extreme_runtime_count"] > 0
+    ):
+        market_context_status = "RANGE_EXTREME_ONLY"
+    elif metrics["regime_range_runtime_count"] > 0:
+        market_context_status = "RANGE_ONLY"
+    elif metrics["regime_extreme_runtime_count"] > 0:
+        market_context_status = "EXTREME_ONLY"
+    else:
+        market_context_status = "UNKNOWN"
+
+    gap_usd = metrics["equity_vs_realized_net_gap_usd"]
+    if isinstance(gap_usd, (int, float)) and abs(gap_usd) >= 50.0:
+        if execution_activity_count <= 0:
+            account_sync_status = "NOISY_WHILE_FLAT"
+        else:
+            account_sync_status = "NOISY"
+    else:
+        account_sync_status = "OK"
 
     protection_fail_reasons: list[str] = []
     execution_fail_reasons: list[str] = []
@@ -1691,9 +1734,15 @@ def assess(
                 "策略窗口以 policy-flat 为主：本轮主要反映 RANGE/EXTREME 主动空仓保护，"
                 f"policy_flat_window_count={policy_flat_window_count}"
             )
-            warn_reasons.append(
-                "本轮 runtime 通过仅代表保护逻辑通过，执行质量未完成验证"
-            )
+            if metrics["regime_trend_runtime_count"] <= 0:
+                warn_reasons.append(
+                    "当前窗口未出现 TREND 样本：runtime 通过仅代表保护逻辑通过，"
+                    "执行质量仍处于等待趋势样本阶段"
+                )
+            else:
+                warn_reasons.append(
+                    "本轮 runtime 通过仅代表保护逻辑通过，执行质量未完成验证"
+                )
         if metrics["reconcile_anomaly_reduce_only_true_count"] > 0:
             warn_reasons.append(
                 "对账异常保护触发 reduce-only，建议核查回报链路与对账口径: "
@@ -1745,6 +1794,8 @@ def assess(
         "runtime_validation_mode": runtime_validation_mode,
         "protection_status": protection_status,
         "execution_status": execution_status,
+        "market_context_status": market_context_status,
+        "account_sync_status": account_sync_status,
         "metrics": metrics,
         "account_pnl": account_pnl,
         "fail_reasons": fail_reasons,
@@ -1766,6 +1817,10 @@ def print_report(report: Dict[str, object]) -> None:
         print(f"PROTECTION_STATUS: {report['protection_status']}")
     if "execution_status" in report:
         print(f"EXECUTION_STATUS: {report['execution_status']}")
+    if "market_context_status" in report:
+        print(f"MARKET_CONTEXT_STATUS: {report['market_context_status']}")
+    if "account_sync_status" in report:
+        print(f"ACCOUNT_SYNC_STATUS: {report['account_sync_status']}")
     print("METRICS:")
     metrics = report["metrics"]
     assert isinstance(metrics, dict)

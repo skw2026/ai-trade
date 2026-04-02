@@ -276,8 +276,56 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["protection_status"], "PASS")
         self.assertEqual(report["execution_status"], "NOT_EVALUATED")
         self.assertEqual(report["runtime_validation_mode"], "POLICY_FLAT_PROTECTION")
+        self.assertEqual(report["market_context_status"], "RANGE_ONLY")
+        self.assertEqual(report["account_sync_status"], "OK")
         self.assertIn("策略窗口以 policy-flat 为主", "\n".join(report["warn_reasons"]))
-        self.assertIn("执行质量未完成验证", "\n".join(report["warn_reasons"]))
+        self.assertIn("等待趋势样本阶段", "\n".join(report["warn_reasons"]))
+
+    def test_flat_without_execution_but_large_equity_gap_marks_account_noise(self):
+        text = (
+            self._runtime_line(
+                20,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=8,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+                regime_bucket="RANGE",
+                equity=100000.0,
+                realized_pnl=0.0,
+                fees=0.0,
+                realized_net=0.0,
+            )
+            + self._runtime_line(
+                40,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=8,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+                regime_bucket="RANGE",
+                equity=100120.0,
+                realized_pnl=0.0,
+                fees=0.0,
+                realized_net=0.0,
+            )
+            + "2026-02-14 15:00:20 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=8, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertEqual(report["account_sync_status"], "NOISY_WHILE_FLAT")
+        self.assertIn("权益变化与已实现净盈亏偏差较大且无执行活动", "\n".join(report["warn_reasons"]))
 
     def test_s5_execution_active_window_sets_execution_pass(self):
         runtime = "".join(
