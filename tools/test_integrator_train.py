@@ -46,6 +46,40 @@ class IntegratorTrainTest(unittest.TestCase):
         self.assertEqual(int(label[0]), 1)
         self.assertEqual(int(label[1]), 1)
 
+    def test_split_temporal_train_validation_uses_tail_and_preserves_classes(self):
+        x = TRAIN.np.arange(20, dtype=TRAIN.np.float64).reshape(-1, 1)
+        y = TRAIN.np.asarray([0, 1] * 10, dtype=TRAIN.np.float64)
+        x_fit, y_fit, x_val, y_val, meta = TRAIN.split_temporal_train_validation(
+            x,
+            y,
+            validation_fraction=0.2,
+            min_validation_samples=4,
+        )
+        self.assertIsNotNone(x_val)
+        self.assertIsNotNone(y_val)
+        self.assertEqual(meta["train_fit_count"], 16)
+        self.assertEqual(meta["validation_count"], 4)
+        self.assertEqual(int(x_fit.shape[0]), 16)
+        self.assertEqual(int(x_val.shape[0]), 4)
+        self.assertEqual(TRAIN.class_count(y_fit), {0: 8, 1: 8})
+        self.assertEqual(TRAIN.class_count(y_val), {0: 2, 1: 2})
+
+    def test_split_temporal_train_validation_disables_when_tail_single_class(self):
+        x = TRAIN.np.arange(12, dtype=TRAIN.np.float64).reshape(-1, 1)
+        y = TRAIN.np.asarray([0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1], dtype=TRAIN.np.float64)
+        x_fit, y_fit, x_val, y_val, meta = TRAIN.split_temporal_train_validation(
+            x,
+            y,
+            validation_fraction=0.25,
+            min_validation_samples=3,
+        )
+        self.assertIsNone(x_val)
+        self.assertIsNone(y_val)
+        self.assertEqual(meta["train_fit_count"], 12)
+        self.assertEqual(meta["validation_count"], 0)
+        self.assertEqual(int(x_fit.shape[0]), 12)
+        self.assertEqual(TRAIN.class_count(y_fit), {0: 4, 1: 8})
+
     def test_evaluate_governance_extended_thresholds(self):
         metrics_ok = {
             "auc_mean": 0.58,

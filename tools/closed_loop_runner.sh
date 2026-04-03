@@ -70,6 +70,16 @@ DISABLE_RANDOM_LABEL_CONTROL="false"
 FAIL_ON_GOVERNANCE="false"
 MAX_MODEL_VERSIONS="20"
 ACTIVATE_ON_PASS="true"
+INTEGRATOR_ITERATIONS="${CLOSED_LOOP_INTEGRATOR_ITERATIONS:-120}"
+INTEGRATOR_DEPTH="${CLOSED_LOOP_INTEGRATOR_DEPTH:-3}"
+INTEGRATOR_LEARNING_RATE="${CLOSED_LOOP_INTEGRATOR_LEARNING_RATE:-0.025}"
+INTEGRATOR_L2_LEAF_REG="${CLOSED_LOOP_INTEGRATOR_L2_LEAF_REG:-45.0}"
+INTEGRATOR_RANDOM_STRENGTH="${CLOSED_LOOP_INTEGRATOR_RANDOM_STRENGTH:-3.0}"
+INTEGRATOR_SUBSAMPLE="${CLOSED_LOOP_INTEGRATOR_SUBSAMPLE:-0.70}"
+INTEGRATOR_RSM="${CLOSED_LOOP_INTEGRATOR_RSM:-0.70}"
+INTEGRATOR_VALIDATION_FRACTION="${CLOSED_LOOP_INTEGRATOR_VALIDATION_FRACTION:-0.15}"
+INTEGRATOR_MIN_VALIDATION_SAMPLES="${CLOSED_LOOP_INTEGRATOR_MIN_VALIDATION_SAMPLES:-60}"
+INTEGRATOR_EARLY_STOPPING_ROUNDS="${CLOSED_LOOP_INTEGRATOR_EARLY_STOPPING_ROUNDS:-30}"
 
 GC_ENABLED="${CLOSED_LOOP_GC_ENABLED:-true}"
 GC_KEEP_RUN_DIRS="${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}"
@@ -147,6 +157,19 @@ Options:
   --disable-random-label-control <true|false>
                                       是否关闭随机标签对照门禁 (default: false)
   --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
+  --integrator-iterations <int>      R2 CatBoost 迭代数 (default: 120)
+  --integrator-depth <int>           R2 CatBoost 树深 (default: 3)
+  --integrator-learning-rate <f>     R2 CatBoost 学习率 (default: 0.025)
+  --integrator-l2-leaf-reg <float>   R2 CatBoost L2 正则 (default: 45.0)
+  --integrator-random-strength <f>   R2 CatBoost 随机强度 (default: 3.0)
+  --integrator-subsample <float>     R2 CatBoost 行采样比例 (default: 0.70)
+  --integrator-rsm <float>           R2 CatBoost 列采样比例 (default: 0.70)
+  --integrator-validation-fraction <float>
+                                      R2 训练窗口内验证集比例 (default: 0.15)
+  --integrator-min-validation-samples <int>
+                                      R2 训练窗口内最小验证样本数 (default: 60)
+  --integrator-early-stopping-rounds <int>
+                                      R2 训练窗口内早停轮数 (default: 30)
   --max-model-versions <int>         模型历史保留数 (default: 20)
   --activate-on-pass <true|false>    门槛通过后是否激活 (default: true)
 
@@ -261,6 +284,26 @@ while [[ $# -gt 0 ]]; do
       DISABLE_RANDOM_LABEL_CONTROL="$2"; shift 2;;
     --fail-on-governance)
       FAIL_ON_GOVERNANCE="$2"; shift 2;;
+    --integrator-iterations)
+      INTEGRATOR_ITERATIONS="$2"; shift 2;;
+    --integrator-depth)
+      INTEGRATOR_DEPTH="$2"; shift 2;;
+    --integrator-learning-rate)
+      INTEGRATOR_LEARNING_RATE="$2"; shift 2;;
+    --integrator-l2-leaf-reg)
+      INTEGRATOR_L2_LEAF_REG="$2"; shift 2;;
+    --integrator-random-strength)
+      INTEGRATOR_RANDOM_STRENGTH="$2"; shift 2;;
+    --integrator-subsample)
+      INTEGRATOR_SUBSAMPLE="$2"; shift 2;;
+    --integrator-rsm)
+      INTEGRATOR_RSM="$2"; shift 2;;
+    --integrator-validation-fraction)
+      INTEGRATOR_VALIDATION_FRACTION="$2"; shift 2;;
+    --integrator-min-validation-samples)
+      INTEGRATOR_MIN_VALIDATION_SAMPLES="$2"; shift 2;;
+    --integrator-early-stopping-rounds)
+      INTEGRATOR_EARLY_STOPPING_ROUNDS="$2"; shift 2;;
     --max-model-versions)
       MAX_MODEL_VERSIONS="$2"; shift 2;;
     --activate-on-pass)
@@ -627,6 +670,16 @@ run_integrator() {
     --max_train_test_auc_gap="${MAX_TRAIN_TEST_AUC_GAP}"
     --max_random_label_auc="${MAX_RANDOM_LABEL_AUC}"
     --random_label_iterations="${RANDOM_LABEL_ITERATIONS}"
+    --iterations="${INTEGRATOR_ITERATIONS}"
+    --depth="${INTEGRATOR_DEPTH}"
+    --learning_rate="${INTEGRATOR_LEARNING_RATE}"
+    --l2_leaf_reg="${INTEGRATOR_L2_LEAF_REG}"
+    --random_strength="${INTEGRATOR_RANDOM_STRENGTH}"
+    --subsample="${INTEGRATOR_SUBSAMPLE}"
+    --rsm="${INTEGRATOR_RSM}"
+    --validation_fraction="${INTEGRATOR_VALIDATION_FRACTION}"
+    --min_validation_samples="${INTEGRATOR_MIN_VALIDATION_SAMPLES}"
+    --early_stopping_rounds="${INTEGRATOR_EARLY_STOPPING_ROUNDS}"
   )
   if [[ "${DISABLE_RANDOM_LABEL_CONTROL}" == "true" ]]; then
     INTEGRATOR_ARGS+=(--disable_random_label_control)

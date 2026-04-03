@@ -509,6 +509,76 @@ def class_count(values: np.ndarray) -> Dict[int, int]:
     return result
 
 
+def split_temporal_train_validation(
+    x: np.ndarray,
+    y: np.ndarray,
+    validation_fraction: float,
+    min_validation_samples: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, Dict[str, int]]:
+    sample_count = int(len(x))
+    metadata = {
+        "train_fit_count": sample_count,
+        "validation_count": 0,
+    }
+    if sample_count <= 0 or validation_fraction <= 0.0 or min_validation_samples <= 0:
+        return x, y, None, None, metadata
+
+    candidate_validation = max(
+        int(round(sample_count * validation_fraction)),
+        int(min_validation_samples),
+    )
+    max_validation = sample_count - max(int(min_validation_samples), 2)
+    if max_validation <= 0:
+        return x, y, None, None, metadata
+    candidate_validation = min(candidate_validation, max_validation)
+
+    for validation_size in range(candidate_validation, int(min_validation_samples) - 1, -1):
+        fit_size = sample_count - validation_size
+        if fit_size < max(int(min_validation_samples), 2):
+            continue
+        x_fit = x[:fit_size]
+        y_fit = y[:fit_size]
+        x_val = x[fit_size:]
+        y_val = y[fit_size:]
+        if len(class_count(y_fit).keys()) < 2:
+            continue
+        if len(class_count(y_val).keys()) < 2:
+            continue
+        metadata["train_fit_count"] = int(len(x_fit))
+        metadata["validation_count"] = int(len(x_val))
+        return x_fit, y_fit, x_val, y_val, metadata
+
+    return x, y, None, None, metadata
+
+
+def build_catboost_classifier(
+    *,
+    random_seed: int,
+    iterations: int,
+    depth: int,
+    learning_rate: float,
+    l2_leaf_reg: float,
+    random_strength: float,
+    subsample: float,
+    rsm: float,
+) -> CatBoostClassifier:
+    return CatBoostClassifier(
+        loss_function="Logloss",
+        eval_metric="AUC",
+        random_seed=random_seed,
+        iterations=iterations,
+        depth=depth,
+        learning_rate=learning_rate,
+        l2_leaf_reg=l2_leaf_reg,
+        random_strength=random_strength,
+        bootstrap_type="Bernoulli",
+        subsample=subsample,
+        rsm=rsm,
+        verbose=False,
+        allow_writing_files=False,
+    )
+
+
 def evaluate_governance(
     metrics_oos: Dict[str, float],
     min_auc_mean: float,
@@ -628,6 +698,24 @@ def main() -> int:
         default=0.80,
         help="CatBoost 列采样比例 (0,1]",
     )
+    parser.add_argument(
+        "--validation_fraction",
+        type=float,
+        default=0.15,
+        help="训练窗口内尾部验证集比例（0=关闭，启用早停）",
+    )
+    parser.add_argument(
+        "--min_validation_samples",
+        type=int,
+        default=60,
+        help="训练窗口内验证集最小样本数",
+    )
+    parser.add_argument(
+        "--early_stopping_rounds",
+        type=int,
+        default=30,
+        help="训练窗口内验证集早停轮数（需 validation_fraction > 0）",
+    )
     parser.add_argument("--random_seed", type=int, default=42, help="随机种子")
     parser.add_argument("--min_auc_mean", type=float, default=0.50, help="治理门槛：最小 AUC 均值")
     parser.add_argument(
@@ -732,6 +820,12 @@ def main() -> int:
         raise ValueError("--subsample 必须在 (0,1] 范围")
     if not (0.0 < float(args.rsm) <= 1.0):
         raise ValueError("--rsm 必须在 (0,1] 范围")
+    if not (0.0 <= float(args.validation_fraction) < 1.0):
+        raise ValueError("--validation_fraction 必须在 [0,1) 范围")
+    if int(args.min_validation_samples) < 0:
+        raise ValueError("--min_validation_samples 不能为负数")
+    if int(args.early_stopping_rounds) <= 0:
+        raise ValueError("--early_stopping_rounds 必须大于 0")
 
     series = load_ohlcv_csv(csv_path)
     factor_set_version, factor_specs = load_factor_specs(miner_report_path, max(1, args.top_k))
@@ -777,10 +871,12 @@ def main() -> int:
     split_reports: List[dict] = []
     auc_values: List[float] = []
     train_auc_values: List[float] = []
+    validation_auc_values: List[float] = []
     train_test_auc_gap_values: List[float] = []
     logloss_values: List[float] = []
     acc_values: List[float] = []
     baseline_auc_values: List[float] = []
+    best_iteration_values: List[float] = []
     trained_split_count = 0
     first_trained_split: Dict[str, np.ndarray] | None = None
 
@@ -821,31 +917,53 @@ def main() -> int:
             )
             continue
 
-        model = CatBoostClassifier(
-            loss_function="Logloss",
-            eval_metric="AUC",
-            random_seed=args.random_seed,
-            iterations=args.iterations,
-            depth=args.depth,
-            learning_rate=args.learning_rate,
+        (
+            X_fit,
+            y_fit,
+            X_val,
+            y_val,
+            fit_meta,
+        ) = split_temporal_train_validation(
+            X_train,
+            y_train,
+            validation_fraction=float(args.validation_fraction),
+            min_validation_samples=int(args.min_validation_samples),
+        )
+        model = build_catboost_classifier(
+            random_seed=int(args.random_seed),
+            iterations=int(args.iterations),
+            depth=int(args.depth),
+            learning_rate=float(args.learning_rate),
             l2_leaf_reg=float(args.l2_leaf_reg),
             random_strength=float(args.random_strength),
-            bootstrap_type="Bernoulli",
             subsample=float(args.subsample),
             rsm=float(args.rsm),
-            verbose=False,
-            allow_writing_files=False,
         )
-        model.fit(X_train, y_train)
-        train_score = model.predict_proba(X_train)[:, 1]
+        fit_kwargs = {}
+        validation_auc = float("nan")
+        if X_val is not None and y_val is not None:
+            fit_kwargs = {
+                "eval_set": (X_val, y_val),
+                "use_best_model": True,
+                "early_stopping_rounds": int(args.early_stopping_rounds),
+            }
+        model.fit(X_fit, y_fit, **fit_kwargs)
+        train_score = model.predict_proba(X_fit)[:, 1]
         score = model.predict_proba(X_test)[:, 1]
+        if X_val is not None and y_val is not None:
+            validation_score = model.predict_proba(X_val)[:, 1]
+            validation_auc = auc_score(y_val, validation_score)
         baseline_score = np.where(np.isfinite(test_ret1), np.where(test_ret1 > 0.0, 0.9, 0.1), 0.5)
 
-        train_auc = auc_score(y_train, train_score)
+        train_auc = auc_score(y_fit, train_score)
         auc = auc_score(y_test, score)
+        validation_auc_values.append(validation_auc)
         ll = logloss_score(y_test, score)
         acc = accuracy_score(y_test, score)
         base_auc = auc_score(y_test, baseline_score)
+        best_iteration = model.get_best_iteration()
+        if isinstance(best_iteration, int) and best_iteration >= 0:
+            best_iteration_values.append(float(best_iteration + 1))
 
         train_auc_values.append(train_auc)
         auc_values.append(auc)
@@ -857,8 +975,8 @@ def main() -> int:
         trained_split_count += 1
         if first_trained_split is None:
             first_trained_split = {
-                "x_train": X_train,
-                "y_train": y_train,
+                "x_train": X_fit,
+                "y_train": y_fit,
                 "x_test": X_test,
                 "y_test": y_test,
             }
@@ -883,18 +1001,22 @@ def main() -> int:
                 },
                 "metrics": {
                     "train_auc": train_auc,
+                    "validation_auc": validation_auc,
                     "auc": auc,
                     "logloss": ll,
                     "accuracy": acc,
                     "baseline_auc": base_auc,
+                    "best_iteration": int(best_iteration + 1) if isinstance(best_iteration, int) and best_iteration >= 0 else None,
                 },
+                "fit_window": fit_meta,
             }
         )
         log_info(
             "INTEGRATOR_SPLIT: "
             f"id={split_id}, train=[{split.train_start},{split.train_end}), "
             f"test=[{split.test_start},{split.test_end}), "
-            f"train_auc={train_auc:.6f}, auc={auc:.6f}, baseline_auc={base_auc:.6f}"
+            f"train_auc={train_auc:.6f}, validation_auc={validation_auc:.6f}, "
+            f"auc={auc:.6f}, baseline_auc={base_auc:.6f}"
         )
 
     if trained_split_count == 0:
@@ -942,20 +1064,49 @@ def main() -> int:
         )
 
     # 用全部有效样本训练最终模型并导出（供后续影子推理使用）。
-    final_model = CatBoostClassifier(
-        loss_function="Logloss",
-        eval_metric="AUC",
-        random_seed=args.random_seed,
-        iterations=args.iterations,
-        depth=args.depth,
-        learning_rate=args.learning_rate,
+    (
+        X_final_fit,
+        y_final_fit,
+        X_final_val,
+        y_final_val,
+        final_fit_meta,
+    ) = split_temporal_train_validation(
+        X,
+        y,
+        validation_fraction=float(args.validation_fraction),
+        min_validation_samples=int(args.min_validation_samples),
+    )
+    final_iterations = int(args.iterations)
+    if X_final_val is not None and y_final_val is not None:
+        tune_model = build_catboost_classifier(
+            random_seed=int(args.random_seed),
+            iterations=int(args.iterations),
+            depth=int(args.depth),
+            learning_rate=float(args.learning_rate),
+            l2_leaf_reg=float(args.l2_leaf_reg),
+            random_strength=float(args.random_strength),
+            subsample=float(args.subsample),
+            rsm=float(args.rsm),
+        )
+        tune_model.fit(
+            X_final_fit,
+            y_final_fit,
+            eval_set=(X_final_val, y_final_val),
+            use_best_model=True,
+            early_stopping_rounds=int(args.early_stopping_rounds),
+        )
+        tuned_best_iteration = tune_model.get_best_iteration()
+        if isinstance(tuned_best_iteration, int) and tuned_best_iteration >= 0:
+            final_iterations = min(int(args.iterations), tuned_best_iteration + 1)
+    final_model = build_catboost_classifier(
+        random_seed=int(args.random_seed),
+        iterations=final_iterations,
+        depth=int(args.depth),
+        learning_rate=float(args.learning_rate),
         l2_leaf_reg=float(args.l2_leaf_reg),
         random_strength=float(args.random_strength),
-        bootstrap_type="Bernoulli",
         subsample=float(args.subsample),
         rsm=float(args.rsm),
-        verbose=False,
-        allow_writing_files=False,
     )
     final_model.fit(X, y)
     final_model.save_model(str(model_out_path))
@@ -987,10 +1138,12 @@ def main() -> int:
         "train_auc_stdev": stdev_ignore_nan(train_auc_values),
         "auc_mean": mean_ignore_nan(auc_values),
         "auc_stdev": stdev_ignore_nan(auc_values),
+        "validation_auc_mean": mean_ignore_nan(validation_auc_values),
         "train_test_auc_gap_mean": mean_ignore_nan(train_test_auc_gap_values),
         "logloss_mean": mean_ignore_nan(logloss_values),
         "accuracy_mean": mean_ignore_nan(acc_values),
         "baseline_auc_mean": mean_ignore_nan(baseline_auc_values),
+        "best_iteration_mean": mean_ignore_nan(best_iteration_values),
         "delta_auc_vs_baseline": mean_ignore_nan(auc_values)
         - mean_ignore_nan(baseline_auc_values),
         "random_label_auc": random_label_auc,
@@ -1062,6 +1215,10 @@ def main() -> int:
             "random_strength": float(args.random_strength),
             "subsample": float(args.subsample),
             "rsm": float(args.rsm),
+            "validation_fraction": float(args.validation_fraction),
+            "min_validation_samples": int(args.min_validation_samples),
+            "early_stopping_rounds": int(args.early_stopping_rounds),
+            "final_model_iterations": int(final_iterations),
             "random_seed": int(args.random_seed),
         },
         "metrics_oos": metrics_oos,
@@ -1069,6 +1226,7 @@ def main() -> int:
         "feature_importance": feature_importance,
         "feature_names": feature_names,
         "model_out": str(model_out_path),
+        "final_fit_window": final_fit_meta,
     }
 
     with output_path.open("w", encoding="utf-8") as fp:

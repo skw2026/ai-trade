@@ -30,6 +30,9 @@ class ModelRegistryTest(unittest.TestCase):
                     "split_trained_count": 5,
                     "split_count": 5,
                     "split_trained_ratio": 1.0,
+                    "auc_stdev": 0.12,
+                    "train_test_auc_gap_mean": 0.18,
+                    "random_label_auc": 0.58,
                 },
                 "governance": {
                     "pass": False,
@@ -56,6 +59,9 @@ class ModelRegistryTest(unittest.TestCase):
             fail_reasons,
         )
         self.assertEqual(summary["auc_mean"], 0.51)
+        self.assertEqual(summary["auc_stdev"], 0.12)
+        self.assertEqual(summary["train_test_auc_gap_mean"], 0.18)
+        self.assertEqual(summary["random_label_auc"], 0.58)
 
 
 if __name__ == "__main__":

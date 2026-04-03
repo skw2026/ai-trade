@@ -257,6 +257,9 @@ def gate_integrator_report(
         "split_trained_count": trained_count,
         "split_count": split_count,
         "split_trained_ratio": split_trained_ratio,
+        "auc_stdev": metrics.get("auc_stdev"),
+        "train_test_auc_gap_mean": metrics.get("train_test_auc_gap_mean"),
+        "random_label_auc": metrics.get("random_label_auc"),
     }
     return gate_pass, fail_reasons, summary
 
