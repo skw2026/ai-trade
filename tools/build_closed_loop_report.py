@@ -139,6 +139,14 @@ def assess_registry(path: Path) -> Dict[str, Any]:
         "model_version": payload.get("model_version"),
         "gate_pass": gate_pass,
         "activated": activated,
+        "gate_fail_reasons": gate.get("fail_reasons", []),
+        "gate_metric_summary": gate.get("metric_summary", {}),
+        "gate_thresholds": {
+            "min_auc_mean": gate.get("min_auc_mean"),
+            "min_delta_auc_vs_baseline": gate.get("min_delta_auc_vs_baseline"),
+            "min_split_trained_count": gate.get("min_split_trained_count"),
+            "min_split_trained_ratio": gate.get("min_split_trained_ratio"),
+        },
     }
 
 
@@ -489,7 +497,13 @@ def main() -> int:
 
     account_outcome: Dict[str, Any] = {}
     runtime_section = sections.get("runtime", {})
+    runtime_verdict = None
+    runtime_validation_mode = None
+    runtime_health_status = "NOT_EVALUATED"
     if isinstance(runtime_section, dict):
+        runtime_verdict = runtime_section.get("verdict")
+        runtime_validation_mode = runtime_section.get("runtime_validation_mode")
+        runtime_health_status = str(runtime_verdict or runtime_section.get("status", "unknown")).upper()
         runtime_account_pnl = runtime_section.get("account_pnl", {})
         if isinstance(runtime_account_pnl, dict):
             account_outcome = {
@@ -543,6 +557,20 @@ def main() -> int:
                 ),
             }
 
+    registry_section = sections.get("registry", {})
+    promotion_readiness_status = "NOT_EVALUATED"
+    if isinstance(registry_section, dict) and registry_section:
+        if registry_section.get("status") == "fail":
+            promotion_readiness_status = "FAIL"
+        elif bool(registry_section.get("gate_pass")) and bool(
+            registry_section.get("activated")
+        ):
+            promotion_readiness_status = "PASS"
+        elif bool(registry_section.get("gate_pass")):
+            promotion_readiness_status = "PASS_NOT_ACTIVATED"
+        else:
+            promotion_readiness_status = "FAIL"
+
     overall_status = "PASS"
     if fail_reasons:
         overall_status = "FAIL"
@@ -553,6 +581,10 @@ def main() -> int:
         "pipeline_name": args.pipeline_name,
         "generated_at_utc": now_utc_iso(),
         "overall_status": overall_status,
+        "runtime_verdict": runtime_verdict,
+        "runtime_validation_mode": runtime_validation_mode,
+        "runtime_health_status": runtime_health_status,
+        "promotion_readiness_status": promotion_readiness_status,
         "account_outcome": account_outcome,
         "sections": sections,
         "inherit": {

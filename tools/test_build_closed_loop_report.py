@@ -384,6 +384,13 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
             runtime = payload["sections"]["runtime"]
+            self.assertEqual(payload["runtime_verdict"], "PASS_WITH_ACTIONS")
+            self.assertEqual(
+                payload["runtime_health_status"], "PASS_WITH_ACTIONS"
+            )
+            self.assertEqual(
+                payload["promotion_readiness_status"], "NOT_EVALUATED"
+            )
             self.assertEqual(runtime["runtime_validation_mode"], "POLICY_FLAT_PROTECTION")
             self.assertEqual(runtime["protection_status"], "PASS")
             self.assertEqual(runtime["execution_status"], "NOT_EVALUATED")
@@ -459,6 +466,91 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(payload["sections"]["walkforward"]["status"], "fail")
             self.assertTrue(
                 any("walk-forward TREND 桶交易次数未达门槛" in x for x in payload["fail_reasons"])
+            )
+
+    def test_registry_gate_details_are_exposed_and_split_top_level_status(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            registry_report = root / "model_registry_entry.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            registry_report.write_text(
+                json.dumps(
+                    {
+                        "entry_id": "entry_1",
+                        "model_version": "integrator_v_test",
+                        "activated": False,
+                        "gate": {
+                            "pass": False,
+                            "min_auc_mean": 0.48,
+                            "min_delta_auc_vs_baseline": 0.0,
+                            "min_split_trained_count": 1,
+                            "min_split_trained_ratio": 0.5,
+                            "fail_reasons": [
+                                "governance: auc_stdev=0.120000 > max_auc_stdev=0.080000",
+                                "governance: random_label_auc=0.580000 > max_random_label_auc=0.550000",
+                            ],
+                            "metric_summary": {
+                                "auc_mean": 0.513,
+                                "delta_auc_vs_baseline": 0.032,
+                                "split_trained_count": 5,
+                                "split_count": 5,
+                                "split_trained_ratio": 1.0,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--registry_report",
+                    str(registry_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertEqual(payload["runtime_verdict"], "PASS")
+            self.assertEqual(payload["runtime_health_status"], "PASS")
+            self.assertEqual(payload["promotion_readiness_status"], "FAIL")
+            registry = payload["sections"]["registry"]
+            self.assertEqual(registry["status"], "fail")
+            self.assertEqual(
+                registry["gate_fail_reasons"],
+                [
+                    "governance: auc_stdev=0.120000 > max_auc_stdev=0.080000",
+                    "governance: random_label_auc=0.580000 > max_random_label_auc=0.550000",
+                ],
+            )
+            self.assertEqual(
+                registry["gate_metric_summary"]["auc_mean"],
+                0.513,
             )
 
 

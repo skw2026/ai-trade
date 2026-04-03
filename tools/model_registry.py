@@ -243,6 +243,12 @@ def gate_integrator_report(
         governance_pass = governance.get("pass")
         if isinstance(governance_pass, bool) and not governance_pass:
             fail_reasons.append("integrator_report.governance.pass=false")
+            governance_fail_reasons = governance.get("fail_reasons", [])
+            if isinstance(governance_fail_reasons, list):
+                for item in governance_fail_reasons:
+                    item_text = str(item).strip()
+                    if item_text:
+                        fail_reasons.append(f"governance: {item_text}")
 
     gate_pass = len(fail_reasons) == 0
     summary = {
