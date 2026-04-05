@@ -468,6 +468,154 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 any("walk-forward TREND 桶交易次数未达门槛" in x for x in payload["fail_reasons"])
             )
 
+    def test_trend_validation_is_reported_and_run_id_is_preserved(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            walkforward_report = root / "walkforward_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS_WITH_ACTIONS",
+                        "runtime_validation_mode": "POLICY_FLAT_PROTECTION",
+                        "protection_status": "PASS",
+                        "execution_status": "NOT_EVALUATED",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "rows": 5000,
+                        "summary": {
+                            "valid_split_count": 12,
+                            "traded_split_count": 3,
+                            "total_trades": 10,
+                            "total_bars": 4800,
+                            "avg_split_sharpe": 0.10,
+                            "regime_bucket_summary": {
+                                "trend": {"bars": 1200, "trades": 5, "sharpe": 1.2},
+                                "range": {"bars": 2000, "trades": 5, "sharpe": -0.5},
+                                "extreme": {"bars": 1600, "trades": 0, "sharpe": -1.0},
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--run_id",
+                    "20260406T000000Z",
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--walkforward_report",
+                    str(walkforward_report),
+                    "--trend_validation_min_bars",
+                    "1000",
+                    "--trend_validation_min_trades",
+                    "1",
+                    "--trend_validation_min_sharpe",
+                    "0.0",
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["run_id"], "20260406T000000Z")
+            self.assertEqual(payload["trend_readiness_status"], "PASS")
+            self.assertEqual(payload["sections"]["trend_validation"]["status"], "pass")
+            self.assertEqual(
+                payload["sections"]["trend_validation"]["summary"]["bars"], 1200
+            )
+
+    def test_trend_validation_negative_trend_sharpe_is_fail(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            walkforward_report = root / "walkforward_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "rows": 5000,
+                        "summary": {
+                            "valid_split_count": 12,
+                            "traded_split_count": 5,
+                            "total_trades": 12,
+                            "total_bars": 4800,
+                            "avg_split_sharpe": 0.10,
+                            "regime_bucket_summary": {
+                                "trend": {"bars": 1500, "trades": 4, "sharpe": -0.2},
+                                "range": {"bars": 2000, "trades": 8, "sharpe": -0.5},
+                                "extreme": {"bars": 1300, "trades": 0, "sharpe": -1.0},
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--walkforward_report",
+                    str(walkforward_report),
+                    "--trend_validation_min_bars",
+                    "1000",
+                    "--trend_validation_min_trades",
+                    "1",
+                    "--trend_validation_min_sharpe",
+                    "0.0",
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["trend_readiness_status"], "FAIL")
+            self.assertEqual(payload["sections"]["trend_validation"]["status"], "fail")
+            self.assertTrue(
+                any(
+                    "trend-validation TREND 桶 Sharpe 未达门槛" in x
+                    for x in payload["fail_reasons"]
+                )
+            )
+
     def test_registry_gate_details_are_exposed_and_split_top_level_status(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

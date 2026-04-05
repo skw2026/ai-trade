@@ -144,6 +144,13 @@ class ComposeConsistencyTest(unittest.TestCase):
 
     def test_closed_loop_runner_exposes_integrator_governance_flags(self):
         script = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("--run_id", script)
+        self.assertIn("--trend_validation_min_sharpe", script)
+        self.assertIn("--trend_validation_min_bars", script)
+        self.assertIn("--trend_validation_min_trades", script)
+        self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE", script)
+        self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_BARS", script)
+        self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES", script)
         self.assertIn("--max-auc-stdev", script)
         self.assertIn("--max-train-test-auc-gap", script)
         self.assertIn("--max-random-label-auc", script)

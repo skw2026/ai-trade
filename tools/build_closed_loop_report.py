@@ -22,6 +22,7 @@ INHERITABLE_SECTION_NAMES = [
     "registry",
     "data_pipeline",
     "walkforward",
+    "trend_validation",
 ]
 
 
@@ -285,6 +286,76 @@ def assess_walkforward(
     }
 
 
+def assess_trend_validation(
+    path: Path,
+    min_trend_bucket_sharpe: float = 0.0,
+    min_trend_bucket_bars: int = 0,
+    min_trend_bucket_trades: int = 0,
+) -> Dict[str, Any]:
+    payload = read_json(path)
+    summary = payload.get("summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+    regime_bucket_summary = summary.get("regime_bucket_summary", {})
+    trend_bucket = (
+        regime_bucket_summary.get("trend", {})
+        if isinstance(regime_bucket_summary, dict)
+        else {}
+    )
+    if not isinstance(trend_bucket, dict):
+        trend_bucket = {}
+
+    trend_bars = int(trend_bucket.get("bars", 0) or 0)
+    trend_trades = int(trend_bucket.get("trades", 0) or 0)
+    trend_sharpe = trend_bucket.get("sharpe")
+    warns: List[str] = []
+    fails: List[str] = []
+
+    if trend_bars < int(min_trend_bucket_bars):
+        warns.append(
+            "trend-validation TREND 桶 bars 未达建议门槛: "
+            f"{trend_bars} < {int(min_trend_bucket_bars)}"
+        )
+    else:
+        if trend_trades < int(min_trend_bucket_trades):
+            fails.append(
+                "trend-validation TREND 桶交易次数未达门槛: "
+                f"{trend_trades} < {int(min_trend_bucket_trades)}"
+            )
+        if not isinstance(trend_sharpe, (int, float)):
+            fails.append("trend-validation 缺少 TREND 桶 Sharpe")
+        elif float(trend_sharpe) < float(min_trend_bucket_sharpe):
+            fails.append(
+                "trend-validation TREND 桶 Sharpe 未达门槛: "
+                f"{float(trend_sharpe):.6f} < {float(min_trend_bucket_sharpe):.6f}"
+            )
+
+    status = "pass" if not fails else "fail"
+    readiness_status = (
+        "NOT_EVALUATED" if trend_bars < int(min_trend_bucket_bars) else status.upper()
+    )
+    return {
+        "status": status,
+        "fail_reasons": fails,
+        "warn_reasons": warns,
+        "readiness_status": readiness_status,
+        "summary": {
+            "bars": trend_bars,
+            "trades": trend_trades,
+            "sharpe": trend_sharpe,
+            "avg_bar_return": trend_bucket.get("avg_bar_return"),
+            "avg_turnover": trend_bucket.get("avg_turnover"),
+            "splits": trend_bucket.get("splits"),
+            "traded_splits": trend_bucket.get("traded_splits"),
+        },
+        "thresholds": {
+            "min_trend_bucket_sharpe": float(min_trend_bucket_sharpe),
+            "min_trend_bucket_bars": int(min_trend_bucket_bars),
+            "min_trend_bucket_trades": int(min_trend_bucket_trades),
+        },
+    }
+
+
 def parse_section_names(raw: str) -> List[str]:
     if not raw:
         return list(INHERITABLE_SECTION_NAMES)
@@ -329,6 +400,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成闭环汇总报告")
     parser.add_argument("--output", required=True, help="输出 JSON 路径")
     parser.add_argument("--pipeline_name", default="ai-trade-closed-loop", help="流水线名称")
+    parser.add_argument("--run_id", default="", help="可选：闭环运行 ID")
     parser.add_argument("--miner_report", default="", help="miner_report.json 路径")
     parser.add_argument("--baseline_report", default="", help="baseline_report.json 路径")
     parser.add_argument("--data_quality_report", default="", help="data_quality_report.json 路径")
@@ -366,6 +438,24 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="walk-forward TREND 桶最小交易次数（默认 0）",
+    )
+    parser.add_argument(
+        "--trend_validation_min_sharpe",
+        type=float,
+        default=0.0,
+        help="trend-validation TREND 桶 Sharpe 最低门槛（默认 0.0）",
+    )
+    parser.add_argument(
+        "--trend_validation_min_bars",
+        type=int,
+        default=0,
+        help="trend-validation TREND 桶最小 bars 门槛（默认 0）",
+    )
+    parser.add_argument(
+        "--trend_validation_min_trades",
+        type=int,
+        default=0,
+        help="trend-validation TREND 桶最小交易次数（默认 0）",
     )
     parser.add_argument(
         "--inherit_report",
@@ -467,8 +557,18 @@ def main() -> int:
                 min_trend_bucket_bars=int(args.walkforward_min_trend_bucket_bars),
                 min_trend_bucket_trades=int(args.walkforward_min_trend_bucket_trades),
             )
+            sections["trend_validation"] = assess_trend_validation(
+                walkforward_path,
+                min_trend_bucket_sharpe=float(args.trend_validation_min_sharpe),
+                min_trend_bucket_bars=int(args.trend_validation_min_bars),
+                min_trend_bucket_trades=int(args.trend_validation_min_trades),
+            )
         else:
             sections["walkforward"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {walkforward_path}"],
+            }
+            sections["trend_validation"] = {
                 "status": "fail",
                 "fail_reasons": [f"文件不存在: {walkforward_path}"],
             }
@@ -571,6 +671,15 @@ def main() -> int:
         else:
             promotion_readiness_status = "FAIL"
 
+    trend_validation_section = sections.get("trend_validation", {})
+    trend_readiness_status = "NOT_EVALUATED"
+    if isinstance(trend_validation_section, dict) and trend_validation_section:
+        trend_readiness_status = str(
+            trend_validation_section.get(
+                "readiness_status", trend_validation_section.get("status", "unknown")
+            )
+        ).upper()
+
     overall_status = "PASS"
     if fail_reasons:
         overall_status = "FAIL"
@@ -578,6 +687,7 @@ def main() -> int:
         overall_status = "PASS_WITH_ACTIONS"
 
     report = {
+        "run_id": args.run_id or None,
         "pipeline_name": args.pipeline_name,
         "generated_at_utc": now_utc_iso(),
         "overall_status": overall_status,
@@ -585,6 +695,7 @@ def main() -> int:
         "runtime_validation_mode": runtime_validation_mode,
         "runtime_health_status": runtime_health_status,
         "promotion_readiness_status": promotion_readiness_status,
+        "trend_readiness_status": trend_readiness_status,
         "account_outcome": account_outcome,
         "sections": sections,
         "inherit": {

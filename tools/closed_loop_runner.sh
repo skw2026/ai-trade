@@ -104,6 +104,9 @@ WALKFORWARD_MIN_TRADED_SPLIT_COUNT="${CLOSED_LOOP_WALKFORWARD_MIN_TRADED_SPLIT_C
 WALKFORWARD_MIN_TOTAL_TRADES="${CLOSED_LOOP_WALKFORWARD_MIN_TOTAL_TRADES:-1}"
 WALKFORWARD_MIN_TREND_BUCKET_BARS="${CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_BARS:-1000}"
 WALKFORWARD_MIN_TREND_BUCKET_TRADES="${CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_TRADES:-1}"
+TREND_VALIDATION_MIN_SHARPE="${CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE:-0.0}"
+TREND_VALIDATION_MIN_BARS="${CLOSED_LOOP_TREND_VALIDATION_MIN_BARS:-1000}"
+TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
@@ -206,6 +209,9 @@ Env toggles:
   CLOSED_LOOP_WALKFORWARD_MIN_TOTAL_TRADES=<int>         walk-forward 最小总交易次数 (default: 1)
   CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_BARS=<int>    walk-forward TREND 桶最小 bars 门槛 (default: 1000)
   CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_TRADES=<int>  walk-forward TREND 桶最小交易次数 (default: 1)
+  CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE=<float>        trend-validation TREND 桶 Sharpe 下限 (default: 0.0)
+  CLOSED_LOOP_TREND_VALIDATION_MIN_BARS=<int>            trend-validation TREND 桶 bars 门槛 (default: 1000)
+  CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES=<int>          trend-validation TREND 桶交易次数门槛 (default: 1)
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
   CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
@@ -834,11 +840,15 @@ build_summary() {
   SUMMARY_ARGS=(
     tools/build_closed_loop_report.py
     --output="${FINAL_REPORT_PATH}"
+    --run_id="${RUN_ID}"
     --walkforward_min_avg_sharpe="${WALKFORWARD_MIN_AVG_SHARPE}"
     --walkforward_min_traded_split_count="${WALKFORWARD_MIN_TRADED_SPLIT_COUNT}"
     --walkforward_min_total_trades="${WALKFORWARD_MIN_TOTAL_TRADES}"
     --walkforward_min_trend_bucket_bars="${WALKFORWARD_MIN_TREND_BUCKET_BARS}"
     --walkforward_min_trend_bucket_trades="${WALKFORWARD_MIN_TREND_BUCKET_TRADES}"
+    --trend_validation_min_sharpe="${TREND_VALIDATION_MIN_SHARPE}"
+    --trend_validation_min_bars="${TREND_VALIDATION_MIN_BARS}"
+    --trend_validation_min_trades="${TREND_VALIDATION_MIN_TRADES}"
   )
   if [[ "${ACTION}" == "assess" && -f "${LATEST_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--inherit_report "${LATEST_REPORT_PATH}")
