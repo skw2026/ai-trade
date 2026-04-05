@@ -260,6 +260,9 @@ def gate_integrator_report(
         "auc_stdev": metrics.get("auc_stdev"),
         "train_test_auc_gap_mean": metrics.get("train_test_auc_gap_mean"),
         "random_label_auc": metrics.get("random_label_auc"),
+        "random_label_auc_mean": metrics.get("random_label_auc_mean"),
+        "random_label_auc_stdev": metrics.get("random_label_auc_stdev"),
+        "random_label_auc_max": metrics.get("random_label_auc_max"),
     }
     return gate_pass, fail_reasons, summary
 

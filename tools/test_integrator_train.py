@@ -89,6 +89,8 @@ class IntegratorTrainTest(unittest.TestCase):
             "auc_stdev": 0.03,
             "train_test_auc_gap_mean": 0.04,
             "random_label_auc": 0.50,
+            "random_label_auc_mean": 0.50,
+            "random_label_auc_max": 0.53,
         }
         passed, reasons = TRAIN.evaluate_governance(
             metrics_oos=metrics_ok,
@@ -139,6 +141,7 @@ class IntegratorTrainTest(unittest.TestCase):
 
         metrics_random_bad = dict(metrics_ok)
         metrics_random_bad["random_label_auc"] = 0.61
+        metrics_random_bad["random_label_auc_mean"] = 0.61
         passed, reasons = TRAIN.evaluate_governance(
             metrics_oos=metrics_random_bad,
             min_auc_mean=0.55,
@@ -151,7 +154,47 @@ class IntegratorTrainTest(unittest.TestCase):
             max_random_label_auc=0.55,
         )
         self.assertFalse(passed)
-        self.assertTrue(any("random_label_auc" in reason for reason in reasons))
+        self.assertTrue(any("random_label_auc_mean" in reason for reason in reasons))
+
+        metrics_random_spike = dict(metrics_ok)
+        metrics_random_spike["random_label_auc_max"] = 0.59
+        passed, reasons = TRAIN.evaluate_governance(
+            metrics_oos=metrics_random_spike,
+            min_auc_mean=0.55,
+            min_delta_auc_vs_baseline=0.0,
+            min_split_trained_count=2,
+            min_split_trained_ratio=0.5,
+            max_auc_stdev=0.08,
+            max_train_test_auc_gap=0.10,
+            run_random_label_control=True,
+            max_random_label_auc=0.55,
+        )
+        self.assertFalse(passed)
+        self.assertTrue(any("random_label_auc_max" in reason for reason in reasons))
+
+    def test_run_random_label_control_trials_returns_requested_count(self):
+        if TRAIN.CatBoostClassifier is None:
+            self.skipTest("catboost is required")
+        x_train = TRAIN.np.arange(24, dtype=TRAIN.np.float64).reshape(-1, 2)
+        y_train = TRAIN.np.asarray([0, 1] * 6, dtype=TRAIN.np.float64)
+        x_test = TRAIN.np.arange(12, dtype=TRAIN.np.float64).reshape(-1, 2)
+        y_test = TRAIN.np.asarray([0, 1, 0, 1, 0, 1], dtype=TRAIN.np.float64)
+        aucs = TRAIN.run_random_label_control_trials(
+            x_train=x_train,
+            y_train=y_train,
+            x_test=x_test,
+            y_test=y_test,
+            random_seed=42,
+            iterations=4,
+            depth=2,
+            learning_rate=0.03,
+            l2_leaf_reg=3.0,
+            random_strength=1.0,
+            subsample=0.8,
+            rsm=0.8,
+            trials=3,
+        )
+        self.assertEqual(len(aucs), 3)
 
 
 if __name__ == "__main__":

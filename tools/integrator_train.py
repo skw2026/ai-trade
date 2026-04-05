@@ -579,6 +579,45 @@ def build_catboost_classifier(
     )
 
 
+def run_random_label_control_trials(
+    *,
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_test: np.ndarray,
+    y_test: np.ndarray,
+    random_seed: int,
+    iterations: int,
+    depth: int,
+    learning_rate: float,
+    l2_leaf_reg: float,
+    random_strength: float,
+    subsample: float,
+    rsm: float,
+    trials: int,
+) -> List[float]:
+    auc_values: List[float] = []
+    if trials <= 0:
+        return auc_values
+    for trial_idx in range(trials):
+        shuffled_y = y_train.copy()
+        rng = np.random.default_rng(int(random_seed) + 20260222 + trial_idx)
+        rng.shuffle(shuffled_y)
+        control_model = build_catboost_classifier(
+            random_seed=int(random_seed) + 17 + trial_idx,
+            iterations=iterations,
+            depth=max(2, depth // 2),
+            learning_rate=learning_rate,
+            l2_leaf_reg=max(3.0, l2_leaf_reg),
+            random_strength=max(1.0, random_strength),
+            subsample=subsample,
+            rsm=rsm,
+        )
+        control_model.fit(x_train, shuffled_y)
+        control_score = control_model.predict_proba(x_test)[:, 1]
+        auc_values.append(auc_score(y_test, control_score))
+    return auc_values
+
+
 def evaluate_governance(
     metrics_oos: Dict[str, float],
     min_auc_mean: float,
@@ -601,6 +640,8 @@ def evaluate_governance(
     auc_stdev = metrics_oos.get("auc_stdev", float("nan"))
     train_test_auc_gap_mean = metrics_oos.get("train_test_auc_gap_mean", float("nan"))
     random_label_auc = metrics_oos.get("random_label_auc", float("nan"))
+    random_label_auc_mean = metrics_oos.get("random_label_auc_mean", random_label_auc)
+    random_label_auc_max = metrics_oos.get("random_label_auc_max", random_label_auc)
 
     if not math.isfinite(auc_mean):
         fail_reasons.append("缺少或无效 metrics_oos.auc_mean")
@@ -647,12 +688,20 @@ def evaluate_governance(
         )
 
     if run_random_label_control:
-        if not math.isfinite(random_label_auc):
-            fail_reasons.append("缺少或无效 metrics_oos.random_label_auc")
-        elif random_label_auc > max_random_label_auc:
+        if not math.isfinite(random_label_auc_mean):
+            fail_reasons.append("缺少或无效 metrics_oos.random_label_auc_mean")
+        elif random_label_auc_mean > max_random_label_auc:
             fail_reasons.append(
-                "random_label_auc="
-                f"{random_label_auc:.6f} > max_random_label_auc={max_random_label_auc:.6f}"
+                "random_label_auc_mean="
+                f"{random_label_auc_mean:.6f} > max_random_label_auc={max_random_label_auc:.6f}"
+            )
+        elif (
+            math.isfinite(random_label_auc_max)
+            and random_label_auc_max > max_random_label_auc + 0.03
+        ):
+            fail_reasons.append(
+                "random_label_auc_max="
+                f"{random_label_auc_max:.6f} > soft_cap={max_random_label_auc + 0.03:.6f}"
             )
 
     return len(fail_reasons) == 0, fail_reasons
@@ -766,6 +815,12 @@ def main() -> int:
         help="随机标签对照模型迭代次数（用于控制开销）",
     )
     parser.add_argument(
+        "--random_label_trials",
+        type=int,
+        default=5,
+        help="随机标签对照重复次数（统计均值/波动，降低单次噪声）",
+    )
+    parser.add_argument(
         "--fail_on_governance",
         action="store_true",
         help="治理门槛不通过时返回非零退出码",
@@ -812,6 +867,8 @@ def main() -> int:
         raise ValueError("--max_random_label_auc 必须在 [0,1] 范围")
     if int(args.random_label_iterations) <= 0:
         raise ValueError("--random_label_iterations 必须大于 0")
+    if int(args.random_label_trials) <= 0:
+        raise ValueError("--random_label_trials 必须大于 0")
     if float(args.l2_leaf_reg) < 0.0:
         raise ValueError("--l2_leaf_reg 不能为负数")
     if float(args.random_strength) < 0.0:
@@ -1034,33 +1091,38 @@ def main() -> int:
         )
 
     random_label_auc = float("nan")
+    random_label_auc_mean = float("nan")
+    random_label_auc_stdev = float("nan")
+    random_label_auc_max = float("nan")
+    random_label_auc_values: List[float] = []
     run_random_label_control = not bool(args.disable_random_label_control)
     if run_random_label_control and first_trained_split is not None:
         control = first_trained_split
-        y_train_control = control["y_train"].copy()
-        rng = np.random.default_rng(int(args.random_seed) + 20260222)
-        rng.shuffle(y_train_control)
-        control_model = CatBoostClassifier(
-            loss_function="Logloss",
-            eval_metric="AUC",
-            random_seed=int(args.random_seed) + 17,
+        random_label_auc_values = run_random_label_control_trials(
+            x_train=control["x_train"],
+            y_train=control["y_train"],
+            x_test=control["x_test"],
+            y_test=control["y_test"],
+            random_seed=int(args.random_seed),
             iterations=min(int(args.iterations), int(args.random_label_iterations)),
-            depth=max(2, int(args.depth) // 2),
+            depth=int(args.depth),
             learning_rate=float(args.learning_rate),
-            l2_leaf_reg=max(3.0, float(args.l2_leaf_reg)),
-            random_strength=max(1.0, float(args.random_strength)),
-            bootstrap_type="Bernoulli",
+            l2_leaf_reg=float(args.l2_leaf_reg),
+            random_strength=float(args.random_strength),
             subsample=float(args.subsample),
             rsm=float(args.rsm),
-            verbose=False,
-            allow_writing_files=False,
+            trials=int(args.random_label_trials),
         )
-        control_model.fit(control["x_train"], y_train_control)
-        control_score = control_model.predict_proba(control["x_test"])[:, 1]
-        random_label_auc = auc_score(control["y_test"], control_score)
+        random_label_auc_mean = mean_ignore_nan(random_label_auc_values)
+        random_label_auc_stdev = stdev_ignore_nan(random_label_auc_values)
+        finite_control_auc = [v for v in random_label_auc_values if math.isfinite(v)]
+        if finite_control_auc:
+            random_label_auc_max = float(max(finite_control_auc))
+        random_label_auc = random_label_auc_mean
         log_info(
             "INTEGRATOR_RANDOM_LABEL_CONTROL: "
-            f"auc={random_label_auc:.6f}, max_allowed={float(args.max_random_label_auc):.6f}"
+            f"trials={int(args.random_label_trials)}, mean_auc={random_label_auc_mean:.6f}, "
+            f"max_auc={random_label_auc_max:.6f}, max_allowed={float(args.max_random_label_auc):.6f}"
         )
 
     # 用全部有效样本训练最终模型并导出（供后续影子推理使用）。
@@ -1147,6 +1209,10 @@ def main() -> int:
         "delta_auc_vs_baseline": mean_ignore_nan(auc_values)
         - mean_ignore_nan(baseline_auc_values),
         "random_label_auc": random_label_auc,
+        "random_label_auc_mean": random_label_auc_mean,
+        "random_label_auc_stdev": random_label_auc_stdev,
+        "random_label_auc_max": random_label_auc_max,
+        "random_label_trials": int(args.random_label_trials) if run_random_label_control else 0,
         "split_trained_count": trained_split_count,
         "split_count": len(split_reports),
         "split_trained_ratio": (
@@ -1179,6 +1245,7 @@ def main() -> int:
             "max_train_test_auc_gap": float(args.max_train_test_auc_gap),
             "run_random_label_control": run_random_label_control,
             "max_random_label_auc": float(args.max_random_label_auc),
+            "random_label_trials": int(args.random_label_trials),
         },
     }
 

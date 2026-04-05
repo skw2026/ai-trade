@@ -66,6 +66,7 @@ MAX_AUC_STDEV="0.08"
 MAX_TRAIN_TEST_AUC_GAP="0.10"
 MAX_RANDOM_LABEL_AUC="0.55"
 RANDOM_LABEL_ITERATIONS="80"
+RANDOM_LABEL_TRIALS="${CLOSED_LOOP_RANDOM_LABEL_TRIALS:-5}"
 DISABLE_RANDOM_LABEL_CONTROL="false"
 FAIL_ON_GOVERNANCE="false"
 MAX_MODEL_VERSIONS="20"
@@ -154,6 +155,7 @@ Options:
   --max-train-test-auc-gap <float>   R2 治理门槛 train-test AUC gap 上限 (default: 0.10)
   --max-random-label-auc <float>     R2 治理门槛 随机标签对照 AUC 上限 (default: 0.55)
   --random-label-iterations <int>    随机标签对照迭代数 (default: 80)
+  --random-label-trials <int>        随机标签对照重复次数 (default: 5)
   --disable-random-label-control <true|false>
                                       是否关闭随机标签对照门禁 (default: false)
   --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
@@ -280,6 +282,8 @@ while [[ $# -gt 0 ]]; do
       MAX_RANDOM_LABEL_AUC="$2"; shift 2;;
     --random-label-iterations)
       RANDOM_LABEL_ITERATIONS="$2"; shift 2;;
+    --random-label-trials)
+      RANDOM_LABEL_TRIALS="$2"; shift 2;;
     --disable-random-label-control)
       DISABLE_RANDOM_LABEL_CONTROL="$2"; shift 2;;
     --fail-on-governance)
@@ -670,6 +674,7 @@ run_integrator() {
     --max_train_test_auc_gap="${MAX_TRAIN_TEST_AUC_GAP}"
     --max_random_label_auc="${MAX_RANDOM_LABEL_AUC}"
     --random_label_iterations="${RANDOM_LABEL_ITERATIONS}"
+    --random_label_trials="${RANDOM_LABEL_TRIALS}"
     --iterations="${INTEGRATOR_ITERATIONS}"
     --depth="${INTEGRATOR_DEPTH}"
     --learning_rate="${INTEGRATOR_LEARNING_RATE}"
