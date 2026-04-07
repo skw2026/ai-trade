@@ -13,6 +13,14 @@ namespace {
 struct RuntimeOptions {
   std::string config_path{"config/default.yaml"};
   std::string exchange_override;
+  std::string replay_market_data_path;
+  std::string replay_price_column;
+  std::string replay_volume_column;
+  std::string replay_timestamp_column;
+  std::string replay_symbol_column;
+  std::string replay_interval_column;
+  std::string replay_funding_rate_column;
+  std::optional<int> replay_default_interval_ms;
   std::optional<int> max_ticks;
   std::optional<int> status_log_interval_ticks;
   std::optional<int> remote_risk_refresh_interval_ticks;
@@ -64,6 +72,14 @@ void ParseOptionalIntArg(const std::string& raw_value,
  * 支持：
  * - `--config=...`
  * - `--exchange=...`
+ * - `--replay_market_data=...`
+ * - `--replay_price_column=...`
+ * - `--replay_volume_column=...`
+ * - `--replay_timestamp_column=...`
+ * - `--replay_symbol_column=...`
+ * - `--replay_interval_column=...`
+ * - `--replay_funding_rate_column=...`
+ * - `--replay_default_interval_ms=...` / `--replay_default_interval_ms ...`
  * - `--max_ticks=...` / `--max_ticks ...`
  * - `--status_log_interval_ticks=...` / `--status_log_interval_ticks ...`
  * - `--remote_risk_refresh_interval_ticks=...` / `--remote_risk_refresh_interval_ticks ...`
@@ -82,6 +98,60 @@ RuntimeOptions ParseOptions(int argc, char** argv) {
     }
     if (arg.rfind("--exchange=", 0) == 0) {
       options.exchange_override = arg.substr(std::string("--exchange=").size());
+      continue;
+    }
+    if (arg.rfind("--replay_market_data=", 0) == 0) {
+      options.replay_market_data_path =
+          arg.substr(std::string("--replay_market_data=").size());
+      continue;
+    }
+    if (arg == "--replay_market_data" && i + 1 < argc) {
+      ++i;
+      options.replay_market_data_path = argv[i];
+      continue;
+    }
+    if (arg.rfind("--replay_price_column=", 0) == 0) {
+      options.replay_price_column =
+          arg.substr(std::string("--replay_price_column=").size());
+      continue;
+    }
+    if (arg.rfind("--replay_volume_column=", 0) == 0) {
+      options.replay_volume_column =
+          arg.substr(std::string("--replay_volume_column=").size());
+      continue;
+    }
+    if (arg.rfind("--replay_timestamp_column=", 0) == 0) {
+      options.replay_timestamp_column =
+          arg.substr(std::string("--replay_timestamp_column=").size());
+      continue;
+    }
+    if (arg.rfind("--replay_symbol_column=", 0) == 0) {
+      options.replay_symbol_column =
+          arg.substr(std::string("--replay_symbol_column=").size());
+      continue;
+    }
+    if (arg.rfind("--replay_interval_column=", 0) == 0) {
+      options.replay_interval_column =
+          arg.substr(std::string("--replay_interval_column=").size());
+      continue;
+    }
+    if (arg.rfind("--replay_funding_rate_column=", 0) == 0) {
+      options.replay_funding_rate_column =
+          arg.substr(std::string("--replay_funding_rate_column=").size());
+      continue;
+    }
+    if (arg.rfind("--replay_default_interval_ms=", 0) == 0) {
+      ParseOptionalIntArg(
+          arg.substr(std::string("--replay_default_interval_ms=").size()),
+          "--replay_default_interval_ms",
+          &options.replay_default_interval_ms);
+      continue;
+    }
+    if (arg == "--replay_default_interval_ms" && i + 1 < argc) {
+      ++i;
+      ParseOptionalIntArg(argv[i],
+                          "--replay_default_interval_ms",
+                          &options.replay_default_interval_ms);
       continue;
     }
     if (arg.rfind("--max_ticks=", 0) == 0) {
@@ -207,6 +277,32 @@ void ApplyRuntimeOverrides(const RuntimeOptions& options,
   }
   if (!options.exchange_override.empty()) {
     config->exchange = options.exchange_override;
+  }
+  if (!options.replay_market_data_path.empty()) {
+    config->bybit.replay_market_data_path = options.replay_market_data_path;
+  }
+  if (!options.replay_price_column.empty()) {
+    config->bybit.replay_price_column = options.replay_price_column;
+  }
+  if (!options.replay_volume_column.empty()) {
+    config->bybit.replay_volume_column = options.replay_volume_column;
+  }
+  if (!options.replay_timestamp_column.empty()) {
+    config->bybit.replay_timestamp_column = options.replay_timestamp_column;
+  }
+  if (!options.replay_symbol_column.empty()) {
+    config->bybit.replay_symbol_column = options.replay_symbol_column;
+  }
+  if (!options.replay_interval_column.empty()) {
+    config->bybit.replay_interval_column = options.replay_interval_column;
+  }
+  if (!options.replay_funding_rate_column.empty()) {
+    config->bybit.replay_funding_rate_column =
+        options.replay_funding_rate_column;
+  }
+  if (options.replay_default_interval_ms.has_value()) {
+    config->bybit.replay_default_interval_ms =
+        *options.replay_default_interval_ms;
   }
   if (options.max_ticks.has_value()) {
     config->system_max_ticks = *options.max_ticks;

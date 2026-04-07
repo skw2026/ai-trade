@@ -616,6 +616,136 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 )
             )
 
+    def test_replay_validation_is_reported(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS_WITH_ACTIONS",
+                        "runtime_validation_mode": "POLICY_FLAT_PROTECTION",
+                        "protection_status": "PASS",
+                        "execution_status": "NOT_EVALUATED",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "target_bucket": "trend",
+                        "symbol": "BTCUSDT",
+                        "selection": {"segments_ran": 4, "coverage_targets_met": True},
+                        "aggregate_summary": {
+                            "execution_active_runs": 4,
+                            "execution_pass_runs": 4,
+                            "total_fills": 3,
+                            "mean_realized_net_per_fill": 0.0,
+                            "mean_filtered_cost_ratio_avg": 0.24,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["replay_readiness_status"], "PASS")
+            replay_section = payload["sections"]["replay_validation"]
+            self.assertEqual(replay_section["status"], "pass")
+            self.assertEqual(replay_section["aggregate_summary"]["total_fills"], 3)
+
+    def test_replay_validation_fail_blocks_overall_status(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "target_bucket": "trend",
+                        "symbol": "BTCUSDT",
+                        "selection": {"segments_ran": 2, "coverage_targets_met": False},
+                        "aggregate_summary": {
+                            "execution_active_runs": 1,
+                            "execution_pass_runs": 1,
+                            "total_fills": 1,
+                            "mean_realized_net_per_fill": -0.02,
+                        },
+                        "aggregate_validation": {
+                            "status": "fail",
+                            "fail_reasons": ["total_fills=1 < 3"],
+                            "warn_reasons": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertEqual(payload["replay_readiness_status"], "FAIL")
+            self.assertIn("replay_validation: total_fills=1 < 3", payload["fail_reasons"])
+
     def test_registry_gate_details_are_exposed_and_split_top_level_status(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

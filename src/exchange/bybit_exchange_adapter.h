@@ -63,6 +63,16 @@ struct BybitAdapterOptions {
   bool maker_post_only{true};  ///< maker 模式是否强制 PostOnly。
   std::vector<std::string> symbols{"BTCUSDT"};  ///< 启动时关注的 symbol 列表。
   std::vector<double> replay_prices{100.0, 100.5, 100.3, 100.8, 100.4, 100.9};  ///< replay 行情序列。
+  std::string replay_market_data_path;  ///< replay 行情 CSV 路径（优先于 replay_prices）。
+  std::string replay_timestamp_column{"timestamp"};  ///< replay CSV 时间列名（毫秒）。
+  std::string replay_symbol_column{"symbol"};  ///< replay CSV symbol 列名（可缺省）。
+  std::string replay_price_column{"price"};  ///< replay CSV 价格列名。
+  std::string replay_volume_column{"volume"};  ///< replay CSV 成交量列名（可缺省）。
+  std::string replay_interval_column{"interval_ms"};  ///< replay CSV bar 间隔列名（可缺省）。
+  std::string replay_funding_rate_column{
+      "funding_rate_per_interval"};  ///< replay CSV 资金费列名（可缺省）。
+  int replay_default_interval_ms{
+      5000};  ///< replay CSV 缺失 interval 时的默认 bar 间隔。
   AccountMode remote_account_mode{AccountMode::kUnified};  ///< 期望远端账户模式。
   MarginMode remote_margin_mode{MarginMode::kIsolated};  ///< 期望远端保证金模式。
   PositionMode remote_position_mode{PositionMode::kOneWay};  ///< 期望远端持仓模式。
@@ -178,6 +188,7 @@ class BybitExchangeAdapter : public ExchangeAdapter {
       last_market_ts_ms_by_symbol_;  ///< 每个 symbol 最近行情时间戳（用于 interval）。
   std::unordered_map<std::string, double>
       last_volume_24h_by_symbol_;  ///< 每个 symbol 最近 volume24h（用于增量 volume）。
+  std::vector<MarketEvent> replay_market_events_;  ///< 来自 CSV 的 replay 行情。
   std::unordered_map<std::string, double> remote_position_qty_by_symbol_;  ///< 远端仓位数量（signed）。
   std::unordered_map<std::string, BybitSymbolTradeRule> symbol_trade_rules_;  ///< symbol 交易规则缓存。
   std::deque<FillEvent> pending_fills_;  ///< 待消费成交队列。

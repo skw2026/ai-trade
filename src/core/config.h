@@ -75,6 +75,14 @@ struct BybitConfig {
   bool private_ws_rest_fallback{true};
   int ws_reconnect_interval_ms{15000};
   int execution_poll_limit{50};
+  std::string replay_market_data_path{};
+  std::string replay_timestamp_column{"timestamp"};
+  std::string replay_symbol_column{"symbol"};
+  std::string replay_price_column{"price"};
+  std::string replay_volume_column{"volume"};
+  std::string replay_interval_column{"interval_ms"};
+  std::string replay_funding_rate_column{"funding_rate_per_interval"};
+  int replay_default_interval_ms{5000};
 };
 
 struct UniverseConfig {

@@ -514,6 +514,64 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def compute_replay_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    latest_item: Optional[Dict[str, Any]] = None
+    latest_replay: Optional[Dict[str, Any]] = None
+    for item in reversed(runs):
+        replay = item["report"].get("sections", {}).get("replay_validation", {})
+        if not isinstance(replay, dict) or not replay:
+            continue
+        latest_item = item
+        latest_replay = replay
+        break
+
+    if latest_item is None or latest_replay is None:
+        return {
+            "aggregation_mode": "latest_run_snapshot",
+            "source_run_id": None,
+            "source_generated_at_utc": None,
+            "status": None,
+            "readiness_status": None,
+            "target_bucket": None,
+            "symbol": None,
+            "segments_ran": 0,
+            "coverage_targets_met": None,
+            "execution_active_runs": 0,
+            "execution_pass_runs": 0,
+            "total_fills": 0,
+            "mean_realized_net_per_fill": None,
+            "mean_filtered_cost_ratio_avg": None,
+        }
+
+    selection = latest_replay.get("selection", {})
+    if not isinstance(selection, dict):
+        selection = {}
+    aggregate_summary = latest_replay.get("aggregate_summary", {})
+    if not isinstance(aggregate_summary, dict):
+        aggregate_summary = {}
+
+    return {
+        "aggregation_mode": "latest_run_snapshot",
+        "source_run_id": latest_item["run_id"],
+        "source_generated_at_utc": to_iso_utc(latest_item["generated_at_utc"]),
+        "status": latest_replay.get("status"),
+        "readiness_status": latest_replay.get("readiness_status"),
+        "target_bucket": latest_replay.get("target_bucket"),
+        "symbol": latest_replay.get("symbol"),
+        "segments_ran": to_int(selection.get("segments_ran")) or 0,
+        "coverage_targets_met": selection.get("coverage_targets_met"),
+        "execution_active_runs": to_int(aggregate_summary.get("execution_active_runs")) or 0,
+        "execution_pass_runs": to_int(aggregate_summary.get("execution_pass_runs")) or 0,
+        "total_fills": to_int(aggregate_summary.get("total_fills")) or 0,
+        "mean_realized_net_per_fill": to_float(
+            aggregate_summary.get("mean_realized_net_per_fill")
+        ),
+        "mean_filtered_cost_ratio_avg": to_float(
+            aggregate_summary.get("mean_filtered_cost_ratio_avg")
+        ),
+    }
+
+
 def top_warn_reasons(runs: List[Dict[str, Any]], top_n: int = 10) -> List[Dict[str, Any]]:
     counter: Counter[str] = Counter()
     for item in runs:
@@ -585,6 +643,7 @@ def build_period_summary(
         "latest_run": latest_run,
         "account_outcome": compute_account_summary(runs),
         "runtime_metrics": compute_runtime_summary(runs),
+        "replay_metrics": compute_replay_summary(runs),
         "top_warn_reasons": top_warn_reasons(runs),
         "runs_brief": runs_brief,
     }

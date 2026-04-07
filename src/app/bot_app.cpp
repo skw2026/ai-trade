@@ -350,6 +350,14 @@ std::unique_ptr<ExchangeAdapter> CreateAdapter(const AppConfig& config) {
     options.maker_fallback_to_market = config.execution_maker_fallback_to_market;
     options.maker_price_offset_bps = config.execution_maker_price_offset_bps;
     options.maker_post_only = config.execution_maker_post_only;
+    options.replay_market_data_path = config.bybit.replay_market_data_path;
+    options.replay_timestamp_column = config.bybit.replay_timestamp_column;
+    options.replay_symbol_column = config.bybit.replay_symbol_column;
+    options.replay_price_column = config.bybit.replay_price_column;
+    options.replay_volume_column = config.bybit.replay_volume_column;
+    options.replay_interval_column = config.bybit.replay_interval_column;
+    options.replay_funding_rate_column = config.bybit.replay_funding_rate_column;
+    options.replay_default_interval_ms = config.bybit.replay_default_interval_ms;
     options.symbols = collect_symbols();
     options.remote_account_mode = config.bybit.expected_account_mode;
     options.remote_margin_mode = config.bybit.expected_margin_mode;

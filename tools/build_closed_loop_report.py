@@ -23,6 +23,7 @@ INHERITABLE_SECTION_NAMES = [
     "data_pipeline",
     "walkforward",
     "trend_validation",
+    "replay_validation",
 ]
 
 
@@ -356,6 +357,52 @@ def assess_trend_validation(
     }
 
 
+def assess_replay_validation(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    aggregate_validation = payload.get("aggregate_validation", {})
+    if not isinstance(aggregate_validation, dict):
+        aggregate_validation = {}
+    aggregate_summary = payload.get("aggregate_summary", {})
+    if not isinstance(aggregate_summary, dict):
+        aggregate_summary = {}
+    selection = payload.get("selection", {})
+    if not isinstance(selection, dict):
+        selection = {}
+
+    status_raw = str(aggregate_validation.get("status", "")).lower()
+    if status_raw == "pass_with_actions":
+        status = "pass"
+    elif status_raw in {"pass", "fail"}:
+        status = status_raw
+    else:
+        status = "fail"
+
+    fail_reasons = [str(item) for item in aggregate_validation.get("fail_reasons", [])]
+    warn_reasons = [str(item) for item in aggregate_validation.get("warn_reasons", [])]
+    for item in payload.get("warnings", []):
+        item_text = str(item)
+        if item_text and item_text not in warn_reasons:
+            warn_reasons.append(item_text)
+    if status_raw == "pass_with_actions":
+        extra = "replay-validation 为 PASS_WITH_ACTIONS，建议继续优化趋势 execution / cost filter"
+        if extra not in warn_reasons:
+            warn_reasons.append(extra)
+    if status_raw not in {"pass", "pass_with_actions", "fail"}:
+        fail_reasons.append("replay-validation 缺少 aggregate_validation.status")
+
+    return {
+        "status": status,
+        "fail_reasons": fail_reasons if status == "fail" else [],
+        "warn_reasons": warn_reasons,
+        "readiness_status": str(status_raw or "unknown").upper(),
+        "target_bucket": payload.get("target_bucket"),
+        "symbol": payload.get("symbol"),
+        "selection": selection,
+        "aggregate_summary": aggregate_summary,
+        "aggregate_validation": aggregate_validation,
+    }
+
+
 def parse_section_names(raw: str) -> List[str]:
     if not raw:
         return list(INHERITABLE_SECTION_NAMES)
@@ -409,6 +456,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime_assess_report", default="", help="assess_run_log 输出 JSON 路径")
     parser.add_argument("--data_pipeline_report", default="", help="data_pipeline_report.json 路径")
     parser.add_argument("--walkforward_report", default="", help="walkforward_report.json 路径")
+    parser.add_argument(
+        "--replay_validation_report",
+        default="",
+        help="replay_validation_report.json 路径",
+    )
     parser.add_argument(
         "--walkforward_min_avg_sharpe",
         type=float,
@@ -573,6 +625,16 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {walkforward_path}"],
             }
 
+    if args.replay_validation_report:
+        replay_path = Path(args.replay_validation_report)
+        if replay_path.is_file():
+            sections["replay_validation"] = assess_replay_validation(replay_path)
+        else:
+            sections["replay_validation"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {replay_path}"],
+            }
+
     inherited_sections: List[str] = []
     inherit_status = ""
     inherit_source_report = ""
@@ -680,6 +742,15 @@ def main() -> int:
             )
         ).upper()
 
+    replay_validation_section = sections.get("replay_validation", {})
+    replay_readiness_status = "NOT_EVALUATED"
+    if isinstance(replay_validation_section, dict) and replay_validation_section:
+        replay_readiness_status = str(
+            replay_validation_section.get(
+                "readiness_status", replay_validation_section.get("status", "unknown")
+            )
+        ).upper()
+
     overall_status = "PASS"
     if fail_reasons:
         overall_status = "FAIL"
@@ -696,6 +767,7 @@ def main() -> int:
         "runtime_health_status": runtime_health_status,
         "promotion_readiness_status": promotion_readiness_status,
         "trend_readiness_status": trend_readiness_status,
+        "replay_readiness_status": replay_readiness_status,
         "account_outcome": account_outcome,
         "sections": sections,
         "inherit": {

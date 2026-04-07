@@ -107,6 +107,18 @@ WALKFORWARD_MIN_TREND_BUCKET_TRADES="${CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_
 TREND_VALIDATION_MIN_SHARPE="${CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE:-0.0}"
 TREND_VALIDATION_MIN_BARS="${CLOSED_LOOP_TREND_VALIDATION_MIN_BARS:-1000}"
 TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
+REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
+REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}"
+REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
+REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-trend}"
+REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-8}"
+REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-60}"
+REPLAY_VALIDATION_MIN_RUNTIME_STATUS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_RUNTIME_STATUS:-10}"
+REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}"
+REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
+REPLAY_VALIDATION_MIN_TOTAL_FILLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-3}"
+REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:--0.005}"
+REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO="${CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO:-0.80}"
 S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
@@ -183,6 +195,25 @@ Options:
   --data-required <true|false>       数据加速失败是否直接失败（false=回退到R0）(default: false)
   --data-skip-fetch-on-success <true|false>
                                       数据加速成功后是否跳过 R0 fetch (default: true)
+  --replay-validation-enabled <true|false>
+                                      是否运行 replay-validation (default: true)
+  --replay-validation-config <path>   replay-validation 配置模板 (default: config/bybit.replay.assess.yaml)
+  --replay-validation-target-bucket <bucket>
+                                      replay-validation 目标 bucket (default: trend)
+  --replay-validation-max-segments <int>
+                                      replay-validation 最大片段数 (default: 8)
+  --replay-validation-min-segment-bars <int>
+                                      replay-validation 单片段最小 bars (default: 60)
+  --replay-validation-min-execution-active-runs <int>
+                                      replay-validation 至少多少片段进入 EXECUTION_ACTIVE (default: 3)
+  --replay-validation-min-execution-pass-runs <int>
+                                      replay-validation 至少多少片段 execution_status=PASS (default: 3)
+  --replay-validation-min-total-fills <int>
+                                      replay-validation 聚合 fills 下限 (default: 3)
+  --replay-validation-min-mean-realized-net-per-fill <float>
+                                      replay-validation realized_net_per_fill 均值下限 (default: -0.005)
+  --replay-validation-warn-mean-filtered-cost-ratio <float>
+                                      replay-validation filtered_cost_ratio_avg 均值告警线 (default: 0.80)
 
   --gc-enabled <true|false>          启用产物回收 (default: true)
   --gc-keep-run-dirs <int>           保留最近 run 目录数 (default: 120)
@@ -212,6 +243,20 @@ Env toggles:
   CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE=<float>        trend-validation TREND 桶 Sharpe 下限 (default: 0.0)
   CLOSED_LOOP_TREND_VALIDATION_MIN_BARS=<int>            trend-validation TREND 桶 bars 门槛 (default: 1000)
   CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES=<int>          trend-validation TREND 桶交易次数门槛 (default: 1)
+  CLOSED_LOOP_REPLAY_VALIDATION_ENABLED=true|false       是否在 data/train/full 中运行 replay-validation (default: true)
+  CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.yaml)
+  CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET=<bucket>   replay-validation 目标桶 (default: trend)
+  CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS=<int>       replay-validation 最大片段数 (default: 8)
+  CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS=<int>   replay-validation 单片段最小 bars (default: 60)
+  CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS=<int>
+                                                       replay-validation 至少多少片段进入 EXECUTION_ACTIVE (default: 3)
+  CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS=<int>
+                                                       replay-validation 至少多少片段 execution_status=PASS (default: 3)
+  CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS=<int>    replay-validation 聚合 fills 下限 (default: 3)
+  CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL=<float>
+                                                       replay-validation realized_net_per_fill 均值下限 (default: -0.005)
+  CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO=<float>
+                                                       replay-validation filtered_cost_ratio_avg 均值告警线 (default: 0.80)
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
   CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
@@ -326,6 +371,26 @@ while [[ $# -gt 0 ]]; do
       DATA_PIPELINE_REQUIRED="$2"; shift 2;;
     --data-skip-fetch-on-success)
       DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS="$2"; shift 2;;
+    --replay-validation-enabled)
+      REPLAY_VALIDATION_ENABLED="$2"; shift 2;;
+    --replay-validation-config)
+      REPLAY_VALIDATION_CONFIG_PATH="$2"; shift 2;;
+    --replay-validation-target-bucket)
+      REPLAY_VALIDATION_TARGET_BUCKET="$2"; shift 2;;
+    --replay-validation-max-segments)
+      REPLAY_VALIDATION_MAX_SEGMENTS="$2"; shift 2;;
+    --replay-validation-min-segment-bars)
+      REPLAY_VALIDATION_MIN_SEGMENT_BARS="$2"; shift 2;;
+    --replay-validation-min-execution-active-runs)
+      REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="$2"; shift 2;;
+    --replay-validation-min-execution-pass-runs)
+      REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="$2"; shift 2;;
+    --replay-validation-min-total-fills)
+      REPLAY_VALIDATION_MIN_TOTAL_FILLS="$2"; shift 2;;
+    --replay-validation-min-mean-realized-net-per-fill)
+      REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="$2"; shift 2;;
+    --replay-validation-warn-mean-filtered-cost-ratio)
+      REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO="$2"; shift 2;;
     --gc-enabled)
       GC_ENABLED="$2"; shift 2;;
     --gc-keep-run-dirs)
@@ -352,6 +417,10 @@ while [[ $# -gt 0 ]]; do
       exit 2;;
   esac
 done
+
+if [[ -z "${REPLAY_VALIDATION_SYMBOL}" ]]; then
+  REPLAY_VALIDATION_SYMBOL="${SYMBOL}"
+fi
 
 if [[ "${NEED_HELP}" == "true" ]]; then
   usage
@@ -511,6 +580,10 @@ mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
 DATA_PIPELINE_RUN_DIR="${RUN_DIR}/data_pipeline"
 DATA_PIPELINE_REPORT_PATH="${DATA_PIPELINE_RUN_DIR}/data_pipeline_report.json"
 WALKFORWARD_REPORT_PATH="${RUN_DIR}/walkforward_report.json"
+FEATURE_STORE_PATH="${RUN_DIR}/feature_store_5m.csv"
+REPLAY_VALIDATION_DIR="${RUN_DIR}/replay_validation"
+REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report.json"
+REPLAY_VALIDATION_LAST_STATUS="not_run"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
 BASELINE_REPORT_PATH="${RUN_DIR}/baseline_report.json"
 BASELINE_SNAPSHOT_DIR="${RUN_DIR}/baseline_snapshot"
@@ -730,7 +803,7 @@ run_data_pipeline() {
     --config "${DATA_CONFIG_PATH}" \
     --run-dir "${DATA_PIPELINE_RUN_DIR}" \
     --ohlcv-out "${CSV_PATH}" \
-    --feature-out "${RUN_DIR}/feature_store_5m.csv" \
+    --feature-out "${FEATURE_STORE_PATH}" \
     --backtest-report "${WALKFORWARD_REPORT_PATH}"; then
     DATA_PIPELINE_LAST_STATUS="pass"
     echo "[INFO] data pipeline done"
@@ -739,6 +812,141 @@ run_data_pipeline() {
   DATA_PIPELINE_LAST_STATUS="fail"
   echo "[WARN] data pipeline failed"
   return 1
+}
+
+write_replay_validation_skip_report() {
+  mkdir -p "${REPLAY_VALIDATION_DIR}"
+  cat > "${REPLAY_VALIDATION_REPORT_PATH}" <<EOF
+{
+  "target_bucket": "${REPLAY_VALIDATION_TARGET_BUCKET}",
+  "symbol": "${REPLAY_VALIDATION_SYMBOL}",
+  "warnings": ["replay validation skipped: feature store not available for current run"],
+  "selection": {
+    "eligible_segment_count": 0,
+    "requested_max_segments": ${REPLAY_VALIDATION_MAX_SEGMENTS},
+    "segments_ran": 0,
+    "stopped_early": false,
+    "stop_reason": "feature_store_missing",
+    "coverage_targets_met": false
+  },
+  "aggregate_summary": {
+    "segment_count": 0,
+    "execution_active_runs": 0,
+    "execution_pass_runs": 0,
+    "protection_pass_runs": 0,
+    "trend_present_runs": 0,
+    "pass_with_actions_runs": 0,
+    "failed_runs": 0,
+    "total_execution_activity_count": 0,
+    "total_fills": 0,
+    "mean_realized_net_per_fill": null,
+    "median_realized_net_per_fill": null,
+    "mean_filtered_cost_ratio_avg": null,
+    "max_filtered_cost_ratio_avg": null
+  },
+  "aggregate_validation": {
+    "status": "pass_with_actions",
+    "fail_reasons": [],
+    "warn_reasons": ["replay validation skipped: feature store not available for current run"],
+    "thresholds": {
+      "min_execution_active_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS},
+      "min_execution_pass_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS},
+      "min_total_fills": ${REPLAY_VALIDATION_MIN_TOTAL_FILLS},
+      "min_mean_realized_net_per_fill": ${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL},
+      "warn_mean_filtered_cost_ratio": ${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}
+    }
+  }
+}
+EOF
+}
+
+write_replay_validation_fail_report() {
+  mkdir -p "${REPLAY_VALIDATION_DIR}"
+  cat > "${REPLAY_VALIDATION_REPORT_PATH}" <<EOF
+{
+  "target_bucket": "${REPLAY_VALIDATION_TARGET_BUCKET}",
+  "symbol": "${REPLAY_VALIDATION_SYMBOL}",
+  "warnings": [],
+  "selection": {
+    "eligible_segment_count": 0,
+    "requested_max_segments": ${REPLAY_VALIDATION_MAX_SEGMENTS},
+    "segments_ran": 0,
+    "stopped_early": false,
+    "stop_reason": "command_failed",
+    "coverage_targets_met": false
+  },
+  "aggregate_summary": {
+    "segment_count": 0,
+    "execution_active_runs": 0,
+    "execution_pass_runs": 0,
+    "protection_pass_runs": 0,
+    "trend_present_runs": 0,
+    "pass_with_actions_runs": 0,
+    "failed_runs": 0,
+    "total_execution_activity_count": 0,
+    "total_fills": 0,
+    "mean_realized_net_per_fill": null,
+    "median_realized_net_per_fill": null,
+    "mean_filtered_cost_ratio_avg": null,
+    "max_filtered_cost_ratio_avg": null
+  },
+  "aggregate_validation": {
+    "status": "fail",
+    "fail_reasons": ["replay validation command failed"],
+    "warn_reasons": [],
+    "thresholds": {
+      "min_execution_active_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS},
+      "min_execution_pass_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS},
+      "min_total_fills": ${REPLAY_VALIDATION_MIN_TOTAL_FILLS},
+      "min_mean_realized_net_per_fill": ${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL},
+      "warn_mean_filtered_cost_ratio": ${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}
+    }
+  }
+}
+EOF
+}
+
+run_replay_validation() {
+  if ! is_true "${REPLAY_VALIDATION_ENABLED}"; then
+    echo "[INFO] replay validation skipped (disabled)"
+    REPLAY_VALIDATION_LAST_STATUS="disabled"
+    return 0
+  fi
+
+  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
+    echo "[WARN] replay validation skipped: feature store missing (${FEATURE_STORE_PATH})"
+    write_replay_validation_skip_report
+    REPLAY_VALIDATION_LAST_STATUS="skipped"
+    return 0
+  fi
+
+  echo "[INFO] replay validation start"
+  mkdir -p "${REPLAY_VALIDATION_DIR}"
+  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_replay_validation.py \
+    --feature_csv "${FEATURE_STORE_PATH}" \
+    --base_config "${REPLAY_VALIDATION_CONFIG_PATH}" \
+    --trade_bot "/app/trade_bot" \
+    --output_dir "${REPLAY_VALIDATION_DIR}" \
+    --symbol "${REPLAY_VALIDATION_SYMBOL}" \
+    --target_bucket "${REPLAY_VALIDATION_TARGET_BUCKET}" \
+    --max_segments "${REPLAY_VALIDATION_MAX_SEGMENTS}" \
+    --min_segment_bars "${REPLAY_VALIDATION_MIN_SEGMENT_BARS}" \
+    --min_runtime_status "${REPLAY_VALIDATION_MIN_RUNTIME_STATUS}" \
+    --min_execution_active_runs "${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS}" \
+    --min_execution_pass_runs "${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS}" \
+    --min_total_fills "${REPLAY_VALIDATION_MIN_TOTAL_FILLS}" \
+    --min_mean_realized_net_per_fill "${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL}" \
+    --warn_mean_filtered_cost_ratio "${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}"; then
+    REPLAY_VALIDATION_LAST_STATUS="pass"
+    echo "[INFO] replay validation done"
+    return 0
+  fi
+
+  echo "[WARN] replay validation failed"
+  write_replay_validation_fail_report
+  REPLAY_VALIDATION_LAST_STATUS="fail"
+  return 0
 }
 
 prepare_training_data() {
@@ -874,6 +1082,9 @@ build_summary() {
   if [[ "${DATA_PIPELINE_LAST_STATUS}" == "pass" && -f "${WALKFORWARD_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--walkforward_report "${WALKFORWARD_REPORT_PATH}")
   fi
+  if [[ -f "${REPLAY_VALIDATION_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--replay_validation_report "${REPLAY_VALIDATION_REPORT_PATH}")
+  fi
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
     SUMMARY_ARGS+=(--runtime_assess_report "${ASSESS_JSON_PATH}")
   fi
@@ -911,6 +1122,7 @@ build_summary() {
   "run_dir": "${RUN_DIR}",
   "final_report": "${FINAL_REPORT_PATH}",
   "runtime_assess_report": "${ASSESS_JSON_PATH}",
+  "replay_validation_report": "${REPLAY_VALIDATION_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }
@@ -970,6 +1182,7 @@ run_main() {
   case "${ACTION}" in
     data)
       run_data_pipeline
+      run_replay_validation
       build_summary
       ;;
     train)
@@ -979,6 +1192,7 @@ run_main() {
       run_miner
       run_integrator
       run_registry
+      run_replay_validation
       build_summary
       restart_if_activated
       ;;
@@ -995,6 +1209,7 @@ run_main() {
       run_miner
       run_integrator
       run_registry
+      run_replay_validation
       verify_s5_learning_switches
       run_assess
       verify_s5_learning_activity

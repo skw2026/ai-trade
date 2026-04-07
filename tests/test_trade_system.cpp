@@ -3046,6 +3046,14 @@ int main() {
         << "    private_ws_rest_fallback: false\n"
         << "    ws_reconnect_interval_ms: 17000\n"
         << "    execution_poll_limit: 25\n"
+        << "    replay_market_data_path: \"./data/replay/replay_market.csv\"\n"
+        << "    replay_timestamp_column: \"timestamp\"\n"
+        << "    replay_symbol_column: \"symbol\"\n"
+        << "    replay_price_column: \"price\"\n"
+        << "    replay_volume_column: \"volume\"\n"
+        << "    replay_interval_column: \"interval_ms\"\n"
+        << "    replay_funding_rate_column: \"funding_rate_per_interval\"\n"
+        << "    replay_default_interval_ms: 300000\n"
         << "risk:\n"
         << "  max_abs_notional_usd: 4321\n"
         << "  max_drawdown:\n"
@@ -3246,6 +3254,14 @@ int main() {
         !NearlyEqual(config.execution_dynamic_edge_liquidity_unknown_ratio_threshold, 0.3) ||
         !NearlyEqual(config.execution_dynamic_edge_liquidity_relax_bps, 0.5) ||
         !NearlyEqual(config.execution_dynamic_edge_liquidity_penalty_bps, 1.4) ||
+        config.bybit.replay_market_data_path != "./data/replay/replay_market.csv" ||
+        config.bybit.replay_timestamp_column != "timestamp" ||
+        config.bybit.replay_symbol_column != "symbol" ||
+        config.bybit.replay_price_column != "price" ||
+        config.bybit.replay_volume_column != "volume" ||
+        config.bybit.replay_interval_column != "interval_ms" ||
+        config.bybit.replay_funding_rate_column != "funding_rate_per_interval" ||
+        config.bybit.replay_default_interval_ms != 300000 ||
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
         config.strategy_signal_valid_for_ms != 18000 ||
@@ -4160,6 +4176,31 @@ int main() {
     }
     if (error.find("strategy.defensive_notional_ratio") == std::string::npos) {
       std::cerr << "非法 strategy.defensive_notional_ratio 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_replay_interval.yaml";
+    std::ofstream out(temp_path);
+    out << "exchange:\n"
+        << "  platform: \"bybit\"\n"
+        << "  bybit:\n"
+        << "    execution_poll_limit: 50\n"
+        << "    replay_default_interval_ms: 0\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 exchange.bybit.replay_default_interval_ms 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("replay_default_interval_ms") == std::string::npos) {
+      std::cerr << "非法 replay_default_interval_ms 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -6218,6 +6259,54 @@ int main() {
       std::cerr << "bybit 账户快照字段不符合预期\n";
       return 1;
     }
+  }
+
+  {
+    const std::filesystem::path replay_path =
+        std::filesystem::temp_directory_path() / "ai_trade_replay_market.csv";
+    {
+      std::ofstream out(replay_path);
+      out << "timestamp,symbol,price,volume,interval_ms,funding_rate_per_interval\n"
+          << "1700000000000,BTCUSDT,50000,12.5,300000,\n"
+          << "1700000300000,BTCUSDT,50120,10.0,300000,0.00001\n";
+    }
+    ai_trade::BybitAdapterOptions options;
+    options.mode = "replay";
+    options.allow_no_auth_in_replay = true;
+    options.symbols = {"BTCUSDT"};
+    options.replay_market_data_path = replay_path.string();
+    options.replay_price_column = "price";
+    options.replay_volume_column = "volume";
+    options.replay_timestamp_column = "timestamp";
+    options.replay_symbol_column = "symbol";
+    options.replay_interval_column = "interval_ms";
+    options.replay_funding_rate_column = "funding_rate_per_interval";
+    options.replay_default_interval_ms = 300000;
+
+    ai_trade::BybitExchangeAdapter adapter(options);
+    if (!adapter.Connect()) {
+      std::cerr << "bybit CSV replay 连接失败\n";
+      return 1;
+    }
+
+    ai_trade::MarketEvent first;
+    ai_trade::MarketEvent second;
+    if (!adapter.PollMarket(&first) || !adapter.PollMarket(&second)) {
+      std::cerr << "bybit CSV replay 行情拉取失败\n";
+      return 1;
+    }
+    if (!NearlyEqual(first.price, 50000.0) || !NearlyEqual(first.volume, 12.5) ||
+        first.interval_ms != 300000) {
+      std::cerr << "bybit CSV replay 第一条行情不符合预期\n";
+      return 1;
+    }
+    if (!NearlyEqual(second.price, 50120.0) || !NearlyEqual(second.volume, 10.0) ||
+        second.interval_ms != 300000 ||
+        !NearlyEqual(second.funding_rate_per_interval, 0.00001)) {
+      std::cerr << "bybit CSV replay 第二条行情不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(replay_path);
   }
 
   {

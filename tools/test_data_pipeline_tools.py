@@ -34,6 +34,7 @@ def load_module(name: str):
 FETCH = load_module("fetch_binance_archive")
 STREAM = load_module("stream_market_ws")
 GAP = load_module("gap_fill_klines")
+REPLAY = load_module("run_replay_validation")
 if HAS_NUMPY:
     FEATURE = load_module("build_feature_store")
     BACKTEST = load_module("backtest_walkforward")
@@ -87,6 +88,184 @@ class StreamAndGapToolsTest(unittest.TestCase):
         self.assertEqual(missing, [2000, 5000, 6000])
         grouped = GAP.group_missing_ranges(missing, 1000)
         self.assertEqual(grouped, [(2000, 2000), (5000, 6000)])
+
+
+class ReplayValidationToolsTest(unittest.TestCase):
+    def test_find_segments_identifies_longest_trend_run(self):
+        thresholds = REPLAY.RegimeThresholds(
+            trend_abs_ema_diff=0.001,
+            trend_abs_mom_48=0.004,
+            extreme_vol_12=0.01,
+            extreme_range_pct=0.02,
+        )
+        rows = [
+            REPLAY.FeatureRow(
+                timestamp=base,
+                close=100.0,
+                volume=10.0,
+                features={
+                    "ema_diff": ema,
+                    "zscore_48": 0.0,
+                    "mom_12": 0.0,
+                    "mom_48": mom,
+                    "ret_1": 0.0,
+                    "range_pct": 0.001,
+                    "vol_12": 0.001,
+                },
+            )
+            for base, ema, mom in [
+                (0, 0.0, 0.0),
+                (300000, 0.002, 0.005),
+                (600000, 0.002, 0.006),
+                (900000, 0.002, 0.007),
+                (1200000, 0.0, 0.0),
+                (1500000, 0.002, 0.005),
+            ]
+        ]
+        segments = REPLAY.find_segments(rows, thresholds, "trend", 300000)
+        self.assertEqual(len(segments), 2)
+        self.assertEqual(segments[0].bars, 3)
+        self.assertEqual(segments[0].start_index, 1)
+        self.assertEqual(segments[0].end_index, 3)
+
+    def test_write_replay_csv_emits_expected_columns(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "replay.csv"
+            rows = [
+                REPLAY.FeatureRow(
+                    timestamp=1000,
+                    close=101.5,
+                    volume=12.0,
+                    features={name: 0.0 for name in REPLAY.FEATURE_COLUMNS},
+                ),
+                REPLAY.FeatureRow(
+                    timestamp=4000,
+                    close=102.0,
+                    volume=9.0,
+                    features={name: 0.0 for name in REPLAY.FEATURE_COLUMNS},
+                ),
+            ]
+            REPLAY.write_replay_csv(
+                rows,
+                REPLAY.ReplaySegment(0, 1, 1000, 4000, 2),
+                "BTCUSDT",
+                output,
+                3000,
+            )
+            content = output.read_text(encoding="utf-8").strip().splitlines()
+            self.assertEqual(
+                content[0],
+                "timestamp,symbol,price,volume,interval_ms,funding_rate_per_interval",
+            )
+            self.assertEqual(content[1], "1000,BTCUSDT,101.5000000000,12.0000000000,3000,")
+            self.assertEqual(content[2], "4000,BTCUSDT,102.0000000000,9.0000000000,3000,")
+
+    def test_aggregate_run_summaries_reports_pass_with_actions(self):
+        runs = [
+            {
+                "assess_summary": {
+                    "verdict": "PASS",
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "protection_status": "PASS",
+                    "execution_status": "PASS",
+                    "market_context_status": "TREND_PRESENT",
+                    "execution_activity_count": 8,
+                    "funnel_fills_runtime_count": 3,
+                    "regime_trend_runtime_count": 10,
+                    "realized_net_per_fill": -0.002,
+                    "filtered_cost_ratio_avg": 0.30,
+                }
+            },
+            {
+                "assess_summary": {
+                    "verdict": "PASS_WITH_ACTIONS",
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "protection_status": "PASS",
+                    "execution_status": "PASS",
+                    "market_context_status": "TREND_PRESENT",
+                    "execution_activity_count": 5,
+                    "funnel_fills_runtime_count": 2,
+                    "regime_trend_runtime_count": 6,
+                    "realized_net_per_fill": 0.0,
+                    "filtered_cost_ratio_avg": 0.92,
+                }
+            },
+        ]
+        summary, validation = REPLAY.aggregate_run_summaries(
+            runs,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=3,
+            min_mean_realized_net_per_fill=-0.005,
+            warn_mean_filtered_cost_ratio=0.60,
+        )
+        self.assertEqual(summary["segment_count"], 2)
+        self.assertEqual(summary["execution_active_runs"], 2)
+        self.assertEqual(summary["execution_pass_runs"], 2)
+        self.assertEqual(summary["total_fills"], 5)
+        self.assertAlmostEqual(summary["mean_realized_net_per_fill"], -0.001)
+        self.assertEqual(validation["status"], "pass_with_actions")
+        self.assertTrue(
+            any("ORDER_FILTERED_COST" in reason for reason in validation["warn_reasons"])
+        )
+
+    def test_aggregate_run_summaries_fails_when_execution_is_too_weak(self):
+        runs = [
+            {
+                "assess_summary": {
+                    "verdict": "PASS",
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "protection_status": "PASS",
+                    "execution_status": "PASS",
+                    "market_context_status": "TREND_PRESENT",
+                    "execution_activity_count": 4,
+                    "funnel_fills_runtime_count": 1,
+                    "regime_trend_runtime_count": 4,
+                    "realized_net_per_fill": -0.02,
+                    "filtered_cost_ratio_avg": 0.20,
+                }
+            }
+        ]
+        _, validation = REPLAY.aggregate_run_summaries(
+            runs,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=3,
+            min_mean_realized_net_per_fill=-0.005,
+            warn_mean_filtered_cost_ratio=0.80,
+        )
+        self.assertEqual(validation["status"], "fail")
+        self.assertIn("total_fills=1 < 3", validation["fail_reasons"])
+        self.assertTrue(
+            any("mean_realized_net_per_fill" in reason for reason in validation["fail_reasons"])
+        )
+
+    def test_has_met_replay_coverage_targets(self):
+        self.assertTrue(
+            REPLAY.has_met_replay_coverage_targets(
+                {
+                    "execution_active_runs": 2,
+                    "execution_pass_runs": 2,
+                    "total_fills": 4,
+                },
+                min_execution_active_runs=1,
+                min_execution_pass_runs=1,
+                min_total_fills=3,
+            )
+        )
+        self.assertFalse(
+            REPLAY.has_met_replay_coverage_targets(
+                {
+                    "execution_active_runs": 1,
+                    "execution_pass_runs": 1,
+                    "total_fills": 2,
+                },
+                min_execution_active_runs=1,
+                min_execution_pass_runs=1,
+                min_total_fills=3,
+            )
+        )
 
 
 @unittest.skipUnless(HAS_NUMPY, "numpy is required for feature/backtest script tests")

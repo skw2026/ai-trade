@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <optional>
@@ -88,6 +89,17 @@ std::string ToUpperCopy(const std::string& text) {
   return out;
 }
 
+std::string ToLowerCopy(const std::string& text) {
+  std::string out = text;
+  std::transform(out.begin(),
+                 out.end(),
+                 out.begin(),
+                 [](unsigned char ch) {
+                   return static_cast<char>(std::tolower(ch));
+                 });
+  return out;
+}
+
 std::string Trim(const std::string& text) {
   std::size_t begin = 0;
   while (begin < text.size() &&
@@ -101,6 +113,256 @@ std::string Trim(const std::string& text) {
     --end;
   }
   return text.substr(begin, end - begin);
+}
+
+std::vector<std::string> SplitCsvLine(const std::string& line) {
+  std::vector<std::string> fields;
+  std::string current;
+  bool in_quotes = false;
+  for (std::size_t i = 0; i < line.size(); ++i) {
+    const char ch = line[i];
+    if (ch == '"') {
+      if (in_quotes && i + 1 < line.size() && line[i + 1] == '"') {
+        current.push_back('"');
+        ++i;
+      } else {
+        in_quotes = !in_quotes;
+      }
+      continue;
+    }
+    if (ch == ',' && !in_quotes) {
+      fields.push_back(Trim(current));
+      current.clear();
+      continue;
+    }
+    current.push_back(ch);
+  }
+  fields.push_back(Trim(current));
+  return fields;
+}
+
+std::string NormalizeHeaderKey(const std::string& text) {
+  return ToLowerCopy(Trim(text));
+}
+
+bool ParseReplayInt64(const std::string& raw, std::int64_t* out_value) {
+  if (out_value == nullptr) {
+    return false;
+  }
+  try {
+    std::size_t consumed = 0;
+    const std::int64_t parsed = std::stoll(Trim(raw), &consumed);
+    if (consumed != Trim(raw).size()) {
+      return false;
+    }
+    *out_value = parsed;
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+bool ParseReplayDouble(const std::string& raw, double* out_value) {
+  if (out_value == nullptr) {
+    return false;
+  }
+  try {
+    std::size_t consumed = 0;
+    const double parsed = std::stod(Trim(raw), &consumed);
+    if (consumed != Trim(raw).size()) {
+      return false;
+    }
+    *out_value = parsed;
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+std::optional<std::size_t> LookupHeaderIndex(
+    const std::unordered_map<std::string, std::size_t>& header_map,
+    const std::string& key) {
+  if (key.empty()) {
+    return std::nullopt;
+  }
+  const auto it = header_map.find(NormalizeHeaderKey(key));
+  if (it == header_map.end()) {
+    return std::nullopt;
+  }
+  return it->second;
+}
+
+std::string CsvFieldAt(const std::vector<std::string>& fields, std::size_t index) {
+  if (index >= fields.size()) {
+    return {};
+  }
+  return Trim(fields[index]);
+}
+
+bool LoadReplayMarketData(const BybitAdapterOptions& options,
+                          std::vector<MarketEvent>* out_events,
+                          std::string* out_error) {
+  if (out_events == nullptr) {
+    if (out_error != nullptr) {
+      *out_error = "replay 输出事件容器为空";
+    }
+    return false;
+  }
+  out_events->clear();
+  if (options.replay_market_data_path.empty()) {
+    return true;
+  }
+
+  std::ifstream input(options.replay_market_data_path);
+  if (!input.is_open()) {
+    if (out_error != nullptr) {
+      *out_error = "无法打开 replay 行情文件: " + options.replay_market_data_path;
+    }
+    return false;
+  }
+
+  std::string header_line;
+  if (!std::getline(input, header_line)) {
+    if (out_error != nullptr) {
+      *out_error = "replay 行情文件为空: " + options.replay_market_data_path;
+    }
+    return false;
+  }
+  std::vector<std::string> header_fields = SplitCsvLine(header_line);
+  std::unordered_map<std::string, std::size_t> header_map;
+  for (std::size_t i = 0; i < header_fields.size(); ++i) {
+    const std::string key = NormalizeHeaderKey(header_fields[i]);
+    if (!key.empty()) {
+      header_map[key] = i;
+    }
+  }
+
+  const auto timestamp_idx =
+      LookupHeaderIndex(header_map, options.replay_timestamp_column);
+  const auto price_idx = LookupHeaderIndex(header_map, options.replay_price_column);
+  if (!timestamp_idx.has_value() || !price_idx.has_value()) {
+    if (out_error != nullptr) {
+      *out_error = "replay 行情文件缺少必要列: timestamp/price";
+    }
+    return false;
+  }
+  const auto symbol_idx = LookupHeaderIndex(header_map, options.replay_symbol_column);
+  const auto volume_idx = LookupHeaderIndex(header_map, options.replay_volume_column);
+  const auto interval_idx =
+      LookupHeaderIndex(header_map, options.replay_interval_column);
+  const auto funding_idx =
+      LookupHeaderIndex(header_map, options.replay_funding_rate_column);
+  const std::string default_symbol =
+      options.symbols.empty() ? std::string("BTCUSDT") : options.symbols.front();
+
+  std::unordered_map<std::string, std::int64_t> previous_ts_by_symbol;
+  std::string line;
+  int line_no = 1;
+  while (std::getline(input, line)) {
+    ++line_no;
+    if (Trim(line).empty()) {
+      continue;
+    }
+    const std::vector<std::string> fields = SplitCsvLine(line);
+
+    std::int64_t ts_ms = 0;
+    if (!ParseReplayInt64(CsvFieldAt(fields, *timestamp_idx), &ts_ms) ||
+        ts_ms <= 0) {
+      if (out_error != nullptr) {
+        *out_error = "replay timestamp 解析失败，行号: " +
+                     std::to_string(line_no);
+      }
+      return false;
+    }
+
+    double price = 0.0;
+    if (!ParseReplayDouble(CsvFieldAt(fields, *price_idx), &price) ||
+        !std::isfinite(price) || price <= 0.0) {
+      if (out_error != nullptr) {
+        *out_error = "replay price 解析失败，行号: " +
+                     std::to_string(line_no);
+      }
+      return false;
+    }
+
+    std::string symbol = default_symbol;
+    if (symbol_idx.has_value()) {
+      const std::string raw_symbol = CsvFieldAt(fields, *symbol_idx);
+      if (!raw_symbol.empty()) {
+        symbol = ToUpperCopy(raw_symbol);
+      }
+    }
+
+    double volume = 0.0;
+    if (volume_idx.has_value()) {
+      const std::string raw_volume = CsvFieldAt(fields, *volume_idx);
+      if (!raw_volume.empty() && !ParseReplayDouble(raw_volume, &volume)) {
+        if (out_error != nullptr) {
+          *out_error = "replay volume 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      if (!std::isfinite(volume) || volume < 0.0) {
+        volume = 0.0;
+      }
+    }
+
+    std::int64_t interval_ms = 0;
+    if (interval_idx.has_value()) {
+      const std::string raw_interval = CsvFieldAt(fields, *interval_idx);
+      if (!raw_interval.empty() &&
+          (!ParseReplayInt64(raw_interval, &interval_ms) || interval_ms <= 0)) {
+        if (out_error != nullptr) {
+          *out_error = "replay interval_ms 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+    }
+    if (interval_ms <= 0) {
+      const auto ts_it = previous_ts_by_symbol.find(symbol);
+      if (ts_it != previous_ts_by_symbol.end() && ts_ms > ts_it->second) {
+        interval_ms = ts_ms - ts_it->second;
+      } else {
+        interval_ms = std::max(1, options.replay_default_interval_ms);
+      }
+    }
+    previous_ts_by_symbol[symbol] = ts_ms;
+
+    double funding_rate_per_interval =
+        std::numeric_limits<double>::quiet_NaN();
+    if (funding_idx.has_value()) {
+      const std::string raw_funding = CsvFieldAt(fields, *funding_idx);
+      if (!raw_funding.empty() &&
+          !ParseReplayDouble(raw_funding, &funding_rate_per_interval)) {
+        if (out_error != nullptr) {
+          *out_error = "replay funding_rate_per_interval 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+    }
+
+    out_events->push_back(MarketEvent{
+        ts_ms,
+        symbol,
+        price,
+        price,
+        volume,
+        interval_ms,
+        funding_rate_per_interval,
+    });
+  }
+
+  if (out_events->empty()) {
+    if (out_error != nullptr) {
+      *out_error = "replay 行情文件未解析出有效数据: " +
+                   options.replay_market_data_path;
+    }
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -756,13 +1018,22 @@ bool BybitExchangeAdapter::Connect() {
   observed_exec_ids_.clear();
   pending_fills_.clear();
   pending_markets_.clear();
+  replay_market_events_.clear();
   last_market_ts_ms_by_symbol_.clear();
   last_volume_24h_by_symbol_.clear();
   last_public_ws_reconnect_attempt_ms_ = 0;
   last_private_ws_reconnect_attempt_ms_ = 0;
   execution_watermark_ms_ = 0;
   execution_cursor_primed_ = false;
-  if (options_.replay_prices.empty()) {
+  if (!options_.replay_market_data_path.empty()) {
+    std::string replay_error;
+    if (!LoadReplayMarketData(options_, &replay_market_events_, &replay_error)) {
+      connected_ = false;
+      LogInfo("Bybit replay 行情加载失败: " + replay_error);
+      return false;
+    }
+  }
+  if (replay_market_events_.empty() && options_.replay_prices.empty()) {
     // 回放模式兜底价格序列
     options_.replay_prices = {100.0, 100.5, 100.3, 100.8, 100.4, 100.9};
   }
@@ -1227,6 +1498,17 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
   }
 
   if (IsReplayMode(options_)) {
+    if (!replay_market_events_.empty()) {
+      if (replay_cursor_ >= replay_market_events_.size()) {
+        return false;
+      }
+      *out_event = replay_market_events_[replay_cursor_++];
+      last_price_by_symbol_[out_event->symbol] = out_event->price;
+      last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
+      ++replay_seq_;
+      return true;
+    }
+
     if (replay_cursor_ >= options_.replay_prices.size()) {
       return false;
     }

@@ -122,6 +122,22 @@ class ComposeConsistencyTest(unittest.TestCase):
             "CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS: ${CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS:-true}",
             scheduler,
         )
+        self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_ENABLED: ${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: ${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-3}",
+            scheduler,
+        )
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
         self.assertIn("CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}", scheduler)
@@ -151,6 +167,13 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_BARS", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_ENABLED", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS", script)
+        self.assertIn("--replay_validation_report", script)
+        self.assertIn("tools/run_replay_validation.py", script)
         self.assertIn("--max-auc-stdev", script)
         self.assertIn("--max-train-test-auc-gap", script)
         self.assertIn("--max-random-label-auc", script)

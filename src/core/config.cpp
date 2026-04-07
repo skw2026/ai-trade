@@ -1803,6 +1803,71 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_market_data_path") {
+      config.bybit.replay_market_data_path = value;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_timestamp_column") {
+      config.bybit.replay_timestamp_column = value;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_symbol_column") {
+      config.bybit.replay_symbol_column = value;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_price_column") {
+      config.bybit.replay_price_column = value;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_volume_column") {
+      config.bybit.replay_volume_column = value;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_interval_column") {
+      config.bybit.replay_interval_column = value;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_funding_rate_column") {
+      config.bybit.replay_funding_rate_column = value;
+      continue;
+    }
+
+    if (current_section == "exchange" &&
+        current_subsection == "bybit" &&
+        key == "replay_default_interval_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "exchange.bybit.replay_default_interval_ms 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.bybit.replay_default_interval_ms = parsed;
+      continue;
+    }
+
     if (current_section == "universe" && key == "enabled") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -3732,6 +3797,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.bybit.ws_reconnect_interval_ms < 0) {
     if (out_error != nullptr) {
       *out_error = "exchange.bybit.ws_reconnect_interval_ms 不能为负数";
+    }
+    return false;
+  }
+  if (config.bybit.replay_default_interval_ms <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "exchange.bybit.replay_default_interval_ms 必须大于 0";
     }
     return false;
   }
