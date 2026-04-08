@@ -398,6 +398,7 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "target_bucket": payload.get("target_bucket"),
         "symbol": payload.get("symbol"),
         "selection": selection,
+        "summary": aggregate_summary,
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
     }

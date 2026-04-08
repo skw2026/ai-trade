@@ -680,6 +680,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(payload["replay_readiness_status"], "PASS")
             replay_section = payload["sections"]["replay_validation"]
             self.assertEqual(replay_section["status"], "pass")
+            self.assertEqual(replay_section["summary"]["total_fills"], 3)
             self.assertEqual(replay_section["aggregate_summary"]["total_fills"], 3)
 
     def test_replay_validation_fail_blocks_overall_status(self):
