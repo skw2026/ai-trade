@@ -126,7 +126,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.research
+          file: Dockerfile
+          target: research
           push: true
           tags: |
             ${{ steps.meta.outputs.research_image_uri }}:${{ steps.meta.outputs.research_image_tag }}

@@ -33,7 +33,8 @@ services:
   ai-trade-research:
     build:
       context: .
-      dockerfile: Dockerfile.research
+      dockerfile: Dockerfile
+      target: research
     image: ai-trade-research:latest
     container_name: ai-trade-research
     restart: "no"

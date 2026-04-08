@@ -31,7 +31,7 @@ services:
 
   ai-trade-research:
     image: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
-    # 如果是本地构建，取消注释下面两行以使用 Dockerfile 中的 research 阶段
+    # 如果是本地构建，取消注释下面两行以使用 Dockerfile 的 research target
     # build: { context: ., target: research }
     container_name: ai-trade-research
     restart: "no"

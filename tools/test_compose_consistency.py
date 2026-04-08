@@ -73,6 +73,18 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("ai-trade-research", self.prod_services)
         self.assertIn("ai-trade-web", self.prod_services)
 
+    def test_research_image_uses_dockerfile_research_target(self):
+        dev_research = self.dev_services["ai-trade-research"]
+        self.assertIn("dockerfile: Dockerfile", dev_research)
+        self.assertIn("target: research", dev_research)
+        self.assertNotIn("dockerfile: Dockerfile.research", dev_research)
+
+        cd_workflow = (ROOT / ".github" / "workflows" / "cd.yml").read_text(encoding="utf-8")
+        self.assertIn("Build and Push Research Image", cd_workflow)
+        self.assertIn("file: Dockerfile", cd_workflow)
+        self.assertIn("target: research", cd_workflow)
+        self.assertNotIn("file: Dockerfile.research", cd_workflow)
+
     def test_prod_ai_trade_mounts_config_and_data(self):
         runtime = self.prod_services["ai-trade"]
         self.assertIn("${AI_TRADE_PROJECT_DIR:-.}/data:/app/data", runtime)
