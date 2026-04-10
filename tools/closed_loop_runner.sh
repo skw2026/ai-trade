@@ -113,6 +113,8 @@ REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-trend}"
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
+REPLAY_VALIDATION_CORPUS_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH:-}"
+REPLAY_VALIDATION_REFRESH_CORPUS="${CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS:-false}"
 REPLAY_VALIDATION_MIN_RUNTIME_STATUS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_RUNTIME_STATUS:-10}"
 REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}"
 REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
@@ -248,6 +250,10 @@ Env toggles:
   CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET=<bucket>   replay-validation 目标桶 (default: trend)
   CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS=<int>       replay-validation 最大片段数 (default: 16)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS=<int>   replay-validation 单片段最小 bars (default: 40)
+  CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH=<path>       replay-validation 固定语料 manifest 路径
+                                                       (default: data/research/replay_validation_<bucket>_corpus.json)
+  CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS=true|false
+                                                       是否强制重建 replay-validation 语料 manifest (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS=<int>
                                                        replay-validation 至少多少片段进入 EXECUTION_ACTIVE (default: 3)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS=<int>
@@ -381,6 +387,10 @@ while [[ $# -gt 0 ]]; do
       REPLAY_VALIDATION_MAX_SEGMENTS="$2"; shift 2;;
     --replay-validation-min-segment-bars)
       REPLAY_VALIDATION_MIN_SEGMENT_BARS="$2"; shift 2;;
+    --replay-validation-corpus-path)
+      REPLAY_VALIDATION_CORPUS_PATH="$2"; shift 2;;
+    --replay-validation-refresh-corpus)
+      REPLAY_VALIDATION_REFRESH_CORPUS="$2"; shift 2;;
     --replay-validation-min-execution-active-runs)
       REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="$2"; shift 2;;
     --replay-validation-min-execution-pass-runs)
@@ -420,6 +430,9 @@ done
 
 if [[ -z "${REPLAY_VALIDATION_SYMBOL}" ]]; then
   REPLAY_VALIDATION_SYMBOL="${SYMBOL}"
+fi
+if [[ -z "${REPLAY_VALIDATION_CORPUS_PATH}" ]]; then
+  REPLAY_VALIDATION_CORPUS_PATH="data/research/replay_validation_${REPLAY_VALIDATION_TARGET_BUCKET}_corpus.json"
 fi
 
 if [[ "${NEED_HELP}" == "true" ]]; then
@@ -822,8 +835,14 @@ write_replay_validation_skip_report() {
   "symbol": "${REPLAY_VALIDATION_SYMBOL}",
   "warnings": ["replay validation skipped: feature store not available for current run"],
   "selection": {
+    "selection_mode": "not_run",
     "eligible_segment_count": 0,
     "requested_max_segments": ${REPLAY_VALIDATION_MAX_SEGMENTS},
+    "corpus_manifest": "${REPLAY_VALIDATION_CORPUS_PATH}",
+    "corpus_loaded": false,
+    "corpus_written": false,
+    "corpus_refreshed": false,
+    "corpus_resolved_segment_count": 0,
     "segments_ran": 0,
     "stopped_early": false,
     "stop_reason": "feature_store_missing",
@@ -868,8 +887,14 @@ write_replay_validation_fail_report() {
   "symbol": "${REPLAY_VALIDATION_SYMBOL}",
   "warnings": [],
   "selection": {
+    "selection_mode": "not_run",
     "eligible_segment_count": 0,
     "requested_max_segments": ${REPLAY_VALIDATION_MAX_SEGMENTS},
+    "corpus_manifest": "${REPLAY_VALIDATION_CORPUS_PATH}",
+    "corpus_loaded": false,
+    "corpus_written": false,
+    "corpus_refreshed": false,
+    "corpus_resolved_segment_count": 0,
     "segments_ran": 0,
     "stopped_early": false,
     "stop_reason": "command_failed",
@@ -922,22 +947,28 @@ run_replay_validation() {
 
   echo "[INFO] replay validation start"
   mkdir -p "${REPLAY_VALIDATION_DIR}"
-  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
-    tools/run_replay_validation.py \
-    --feature_csv "${FEATURE_STORE_PATH}" \
-    --base_config "${REPLAY_VALIDATION_CONFIG_PATH}" \
-    --trade_bot "/app/trade_bot" \
-    --output_dir "${REPLAY_VALIDATION_DIR}" \
-    --symbol "${REPLAY_VALIDATION_SYMBOL}" \
-    --target_bucket "${REPLAY_VALIDATION_TARGET_BUCKET}" \
-    --max_segments "${REPLAY_VALIDATION_MAX_SEGMENTS}" \
-    --min_segment_bars "${REPLAY_VALIDATION_MIN_SEGMENT_BARS}" \
-    --min_runtime_status "${REPLAY_VALIDATION_MIN_RUNTIME_STATUS}" \
-    --min_execution_active_runs "${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS}" \
-    --min_execution_pass_runs "${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS}" \
-    --min_total_fills "${REPLAY_VALIDATION_MIN_TOTAL_FILLS}" \
-    --min_mean_realized_net_per_fill "${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL}" \
-    --warn_mean_filtered_cost_ratio "${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}"; then
+  REPLAY_ARGS=(
+    tools/run_replay_validation.py
+    --feature_csv "${FEATURE_STORE_PATH}"
+    --base_config "${REPLAY_VALIDATION_CONFIG_PATH}"
+    --trade_bot "/app/trade_bot"
+    --output_dir "${REPLAY_VALIDATION_DIR}"
+    --symbol "${REPLAY_VALIDATION_SYMBOL}"
+    --target_bucket "${REPLAY_VALIDATION_TARGET_BUCKET}"
+    --max_segments "${REPLAY_VALIDATION_MAX_SEGMENTS}"
+    --min_segment_bars "${REPLAY_VALIDATION_MIN_SEGMENT_BARS}"
+    --corpus_manifest "${REPLAY_VALIDATION_CORPUS_PATH}"
+    --min_runtime_status "${REPLAY_VALIDATION_MIN_RUNTIME_STATUS}"
+    --min_execution_active_runs "${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS}"
+    --min_execution_pass_runs "${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS}"
+    --min_total_fills "${REPLAY_VALIDATION_MIN_TOTAL_FILLS}"
+    --min_mean_realized_net_per_fill "${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL}"
+    --warn_mean_filtered_cost_ratio "${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}"
+  )
+  if is_true "${REPLAY_VALIDATION_REFRESH_CORPUS}"; then
+    REPLAY_ARGS+=(--refresh_corpus_manifest)
+  fi
+  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${REPLAY_ARGS[@]}"; then
     REPLAY_VALIDATION_LAST_STATUS="pass"
     echo "[INFO] replay validation done"
     return 0

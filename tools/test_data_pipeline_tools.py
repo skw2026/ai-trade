@@ -2,6 +2,7 @@
 
 import importlib.util
 import io
+import json
 import pathlib
 import sys
 import tempfile
@@ -91,7 +92,7 @@ class StreamAndGapToolsTest(unittest.TestCase):
 
 
 class ReplayValidationToolsTest(unittest.TestCase):
-    def test_find_segments_identifies_longest_trend_run(self):
+    def build_trend_rows(self):
         thresholds = REPLAY.RegimeThresholds(
             trend_abs_ema_diff=0.001,
             trend_abs_mom_48=0.004,
@@ -101,7 +102,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
         rows = [
             REPLAY.FeatureRow(
                 timestamp=base,
-                close=100.0,
+                close=100.0 + idx,
                 volume=10.0,
                 features={
                     "ema_diff": ema,
@@ -113,20 +114,117 @@ class ReplayValidationToolsTest(unittest.TestCase):
                     "vol_12": 0.001,
                 },
             )
-            for base, ema, mom in [
-                (0, 0.0, 0.0),
-                (300000, 0.002, 0.005),
-                (600000, 0.002, 0.006),
-                (900000, 0.002, 0.007),
-                (1200000, 0.0, 0.0),
-                (1500000, 0.002, 0.005),
-            ]
+            for idx, (base, ema, mom) in enumerate(
+                [
+                    (0, 0.0, 0.0),
+                    (300000, 0.002, 0.005),
+                    (600000, 0.002, 0.006),
+                    (900000, 0.002, 0.007),
+                    (1200000, 0.0, 0.0),
+                    (1500000, 0.002, 0.005),
+                    (1800000, 0.002, 0.006),
+                ]
+            )
         ]
+        return thresholds, rows
+
+    def test_find_segments_identifies_longest_trend_run(self):
+        thresholds, rows = self.build_trend_rows()
         segments = REPLAY.find_segments(rows, thresholds, "trend", 300000)
         self.assertEqual(len(segments), 2)
         self.assertEqual(segments[0].bars, 3)
         self.assertEqual(segments[0].start_index, 1)
         self.assertEqual(segments[0].end_index, 3)
+
+    def test_corpus_manifest_round_trip(self):
+        thresholds, rows = self.build_trend_rows()
+        segments = REPLAY.find_segments(rows, thresholds, "trend", 300000)
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            feature_csv = root / "feature.csv"
+            feature_csv.write_text("timestamp,close,volume\n", encoding="utf-8")
+            manifest = root / "trend_corpus.json"
+            REPLAY.write_corpus_manifest(
+                manifest,
+                feature_csv=feature_csv,
+                target_bucket="trend",
+                base_interval_ms=300000,
+                thresholds=thresholds,
+                max_segments=4,
+                min_segment_bars=2,
+                selected_segments=segments[:1],
+            )
+            payload = REPLAY.load_corpus_manifest(manifest)
+            resolved, warnings = REPLAY.resolve_corpus_segments(
+                rows,
+                payload,
+                target_bucket="trend",
+                base_interval_ms=300000,
+            )
+            self.assertFalse(warnings)
+            self.assertEqual(len(resolved), 1)
+            self.assertEqual(resolved[0].start_timestamp, segments[0].start_timestamp)
+            self.assertEqual(resolved[0].end_timestamp, segments[0].end_timestamp)
+
+    def test_select_replay_segments_prefers_corpus_manifest(self):
+        thresholds, rows = self.build_trend_rows()
+        segments = REPLAY.find_segments(rows, thresholds, "trend", 300000)
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            feature_csv = root / "feature.csv"
+            feature_csv.write_text("timestamp,close,volume\n", encoding="utf-8")
+            manifest = root / "trend_corpus.json"
+            REPLAY.write_corpus_manifest(
+                manifest,
+                feature_csv=feature_csv,
+                target_bucket="trend",
+                base_interval_ms=300000,
+                thresholds=thresholds,
+                max_segments=2,
+                min_segment_bars=2,
+                selected_segments=[segments[1]],
+            )
+            selected, eligible, selection, warnings = REPLAY.select_replay_segments(
+                rows,
+                thresholds,
+                feature_csv=feature_csv,
+                target_bucket="trend",
+                base_interval_ms=300000,
+                max_segments=2,
+                min_segment_bars=2,
+                corpus_manifest=manifest,
+                refresh_corpus_manifest=False,
+            )
+            self.assertFalse(warnings)
+            self.assertEqual(selection["selection_mode"], "corpus_manifest")
+            self.assertTrue(selection["corpus_loaded"])
+            self.assertEqual(selection["corpus_resolved_segment_count"], 1)
+            self.assertEqual(selected[0].start_timestamp, segments[1].start_timestamp)
+            self.assertEqual(len(eligible), 2)
+
+    def test_select_replay_segments_writes_corpus_manifest_on_dynamic_selection(self):
+        thresholds, rows = self.build_trend_rows()
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            feature_csv = root / "feature.csv"
+            feature_csv.write_text("timestamp,close,volume\n", encoding="utf-8")
+            manifest = root / "trend_corpus.json"
+            selected, _, selection, _ = REPLAY.select_replay_segments(
+                rows,
+                thresholds,
+                feature_csv=feature_csv,
+                target_bucket="trend",
+                base_interval_ms=300000,
+                max_segments=2,
+                min_segment_bars=2,
+                corpus_manifest=manifest,
+                refresh_corpus_manifest=False,
+            )
+            self.assertEqual(selection["selection_mode"], "dynamic_top_n")
+            self.assertTrue(selection["corpus_written"])
+            self.assertTrue(manifest.is_file())
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(len(payload["segments"]), len(selected))
 
     def test_write_replay_csv_emits_expected_columns(self):
         with tempfile.TemporaryDirectory() as td:

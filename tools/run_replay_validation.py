@@ -244,6 +244,206 @@ def isoformat_ms(timestamp_ms: int) -> str:
     return datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc).isoformat()
 
 
+def segment_to_payload(segment: ReplaySegment) -> dict[str, Any]:
+    return {
+        "start_index": segment.start_index,
+        "end_index": segment.end_index,
+        "bars": segment.bars,
+        "start_timestamp": segment.start_timestamp,
+        "end_timestamp": segment.end_timestamp,
+        "start_time_utc": isoformat_ms(segment.start_timestamp),
+        "end_time_utc": isoformat_ms(segment.end_timestamp),
+    }
+
+
+def load_corpus_manifest(path: pathlib.Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_corpus_manifest(
+    path: pathlib.Path,
+    *,
+    feature_csv: pathlib.Path,
+    target_bucket: str,
+    base_interval_ms: int,
+    thresholds: RegimeThresholds,
+    max_segments: int,
+    min_segment_bars: int,
+    selected_segments: list[ReplaySegment],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": 1,
+        "generated_at": now_utc_iso(),
+        "source_feature_csv": str(feature_csv),
+        "target_bucket": target_bucket,
+        "base_interval_ms": int(base_interval_ms),
+        "thresholds": {
+            "trend_abs_ema_diff": thresholds.trend_abs_ema_diff,
+            "trend_abs_mom_48": thresholds.trend_abs_mom_48,
+            "extreme_vol_12": thresholds.extreme_vol_12,
+            "extreme_range_pct": thresholds.extreme_range_pct,
+        },
+        "constraints": {
+            "max_segments": int(max(1, max_segments)),
+            "min_segment_bars": int(max(1, min_segment_bars)),
+        },
+        "segments": [segment_to_payload(segment) for segment in selected_segments],
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def resolve_corpus_segments(
+    rows: list[FeatureRow],
+    manifest: dict[str, Any],
+    *,
+    target_bucket: str,
+    base_interval_ms: int,
+) -> tuple[list[ReplaySegment], list[str]]:
+    warnings: list[str] = []
+    manifest_bucket = str(manifest.get("target_bucket") or "").lower()
+    if manifest_bucket and manifest_bucket != target_bucket.lower():
+        warnings.append(
+            "corpus manifest 目标桶不匹配: "
+            f"manifest={manifest_bucket}, requested={target_bucket.lower()}"
+        )
+        return [], warnings
+
+    manifest_interval = int(manifest.get("base_interval_ms") or 0)
+    if manifest_interval > 0 and manifest_interval != int(base_interval_ms):
+        warnings.append(
+            "corpus manifest 基础间隔与当前数据不一致: "
+            f"manifest={manifest_interval}, current={int(base_interval_ms)}"
+        )
+
+    index_by_timestamp = {row.timestamp: idx for idx, row in enumerate(rows)}
+    segments_raw = manifest.get("segments", [])
+    if not isinstance(segments_raw, list):
+        warnings.append("corpus manifest 缺少 segments 列表")
+        return [], warnings
+
+    resolved: list[ReplaySegment] = []
+    for idx, item in enumerate(segments_raw, start=1):
+        if not isinstance(item, dict):
+            warnings.append(f"corpus segment #{idx} 不是对象，已跳过")
+            continue
+        start_timestamp = item.get("start_timestamp")
+        end_timestamp = item.get("end_timestamp")
+        if not isinstance(start_timestamp, int) or not isinstance(end_timestamp, int):
+            warnings.append(f"corpus segment #{idx} 时间戳无效，已跳过")
+            continue
+        start_index = index_by_timestamp.get(start_timestamp)
+        end_index = index_by_timestamp.get(end_timestamp)
+        if start_index is None or end_index is None:
+            warnings.append(
+                f"corpus segment #{idx} 无法在当前 feature csv 中解析: "
+                f"{start_timestamp}->{end_timestamp}"
+            )
+            continue
+        if start_index > end_index:
+            warnings.append(f"corpus segment #{idx} 起止索引倒置，已跳过")
+            continue
+        contiguous = True
+        for current in range(start_index + 1, end_index + 1):
+            if rows[current].timestamp - rows[current - 1].timestamp != int(base_interval_ms):
+                contiguous = False
+                break
+        if not contiguous:
+            warnings.append(f"corpus segment #{idx} 在当前数据中已不连续，已跳过")
+            continue
+        resolved.append(
+            ReplaySegment(
+                start_index=start_index,
+                end_index=end_index,
+                start_timestamp=start_timestamp,
+                end_timestamp=end_timestamp,
+                bars=end_index - start_index + 1,
+            )
+        )
+    return resolved, warnings
+
+
+def now_utc_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def select_replay_segments(
+    rows: list[FeatureRow],
+    thresholds: RegimeThresholds,
+    *,
+    feature_csv: pathlib.Path,
+    target_bucket: str,
+    base_interval_ms: int,
+    max_segments: int,
+    min_segment_bars: int,
+    corpus_manifest: pathlib.Path | None,
+    refresh_corpus_manifest: bool,
+) -> tuple[list[ReplaySegment], list[ReplaySegment], dict[str, Any], list[str]]:
+    warnings: list[str] = []
+    all_segments = find_segments(rows, thresholds, target_bucket, base_interval_ms)
+    eligible = [segment for segment in all_segments if segment.bars >= max(1, min_segment_bars)]
+
+    selection: dict[str, Any] = {
+        "selection_mode": "dynamic_top_n",
+        "eligible_segment_count": len(eligible),
+        "requested_max_segments": max(1, max_segments),
+        "corpus_manifest": str(corpus_manifest) if corpus_manifest else "",
+        "corpus_loaded": False,
+        "corpus_written": False,
+        "corpus_refreshed": False,
+        "corpus_resolved_segment_count": 0,
+    }
+
+    if corpus_manifest and corpus_manifest.is_file() and not refresh_corpus_manifest:
+        try:
+            manifest = load_corpus_manifest(corpus_manifest)
+            resolved_segments, corpus_warnings = resolve_corpus_segments(
+                rows,
+                manifest,
+                target_bucket=target_bucket,
+                base_interval_ms=base_interval_ms,
+            )
+            warnings.extend(corpus_warnings)
+            if resolved_segments:
+                selection["selection_mode"] = "corpus_manifest"
+                selection["corpus_loaded"] = True
+                selection["corpus_resolved_segment_count"] = len(resolved_segments)
+                return (
+                    resolved_segments[: max(1, max_segments)],
+                    eligible,
+                    selection,
+                    warnings,
+                )
+            warnings.append("corpus manifest 未解析到有效片段，回退到动态选段")
+        except Exception as exc:
+            warnings.append(f"corpus manifest 读取失败，回退到动态选段: {exc}")
+
+    if not eligible and all_segments:
+        eligible = [all_segments[0]]
+        warnings.append(
+            f"未找到 bars >= {min_segment_bars} 的 {target_bucket} 片段，退化为最长片段 {all_segments[0].bars} bars"
+        )
+    selected = eligible[: max(1, max_segments)]
+    if not selected:
+        raise RuntimeError(f"未找到可用的 {target_bucket} replay 片段")
+
+    corpus_existed_before_write = bool(corpus_manifest and corpus_manifest.exists())
+    if corpus_manifest:
+        write_corpus_manifest(
+            corpus_manifest,
+            feature_csv=feature_csv,
+            target_bucket=target_bucket,
+            base_interval_ms=base_interval_ms,
+            thresholds=thresholds,
+            max_segments=max_segments,
+            min_segment_bars=min_segment_bars,
+            selected_segments=selected,
+        )
+        selection["corpus_written"] = True
+        selection["corpus_refreshed"] = bool(refresh_corpus_manifest or corpus_existed_before_write)
+    return selected, eligible, selection, warnings
+
+
 def run_command(command: list[str], output_path: pathlib.Path) -> int:
     result = subprocess.run(
         command,
@@ -447,6 +647,16 @@ def main() -> int:
     parser.add_argument("--max_segments", type=int, default=8, help="最多验证多少个片段")
     parser.add_argument("--min_segment_bars", type=int, default=60, help="片段最少 bars")
     parser.add_argument(
+        "--corpus_manifest",
+        default="",
+        help="可选：固定 replay 片段 manifest；存在时优先使用，不存在时动态生成并写入",
+    )
+    parser.add_argument(
+        "--refresh_corpus_manifest",
+        action="store_true",
+        help="忽略已有 corpus manifest，重新按当前 feature csv 选段并覆盖写入",
+    )
+    parser.add_argument(
         "--assess_stage",
         choices=("DEPLOY", "S3", "S5"),
         default="S3",
@@ -495,6 +705,13 @@ def main() -> int:
     base_config = (root / args.base_config).resolve() if not pathlib.Path(args.base_config).is_absolute() else pathlib.Path(args.base_config)
     trade_bot = (root / args.trade_bot).resolve() if not pathlib.Path(args.trade_bot).is_absolute() else pathlib.Path(args.trade_bot)
     output_dir = (root / args.output_dir).resolve() if not pathlib.Path(args.output_dir).is_absolute() else pathlib.Path(args.output_dir)
+    corpus_manifest = None
+    if args.corpus_manifest:
+        corpus_manifest = (
+            (root / args.corpus_manifest).resolve()
+            if not pathlib.Path(args.corpus_manifest).is_absolute()
+            else pathlib.Path(args.corpus_manifest)
+        )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not feature_csv.is_file():
@@ -510,16 +727,17 @@ def main() -> int:
     thresholds = derive_regime_thresholds(rows)
     base_interval_ms = infer_base_interval_ms(rows)
     segments = find_segments(rows, thresholds, args.target_bucket, base_interval_ms)
-    eligible = [segment for segment in segments if segment.bars >= max(1, args.min_segment_bars)]
-    warnings: list[str] = []
-    if not eligible and segments:
-        eligible = [segments[0]]
-        warnings.append(
-            f"未找到 bars >= {args.min_segment_bars} 的 {args.target_bucket} 片段，退化为最长片段 {segments[0].bars} bars"
-        )
-    selected = eligible[: max(1, args.max_segments)]
-    if not selected:
-        raise RuntimeError(f"未找到可用的 {args.target_bucket} replay 片段")
+    selected, eligible, selection, warnings = select_replay_segments(
+        rows,
+        thresholds,
+        feature_csv=feature_csv,
+        target_bucket=args.target_bucket,
+        base_interval_ms=base_interval_ms,
+        max_segments=max(1, args.max_segments),
+        min_segment_bars=max(1, args.min_segment_bars),
+        corpus_manifest=corpus_manifest,
+        refresh_corpus_manifest=bool(args.refresh_corpus_manifest),
+    )
 
     run_summaries: list[dict[str, Any]] = []
     stopped_early = False
@@ -567,15 +785,7 @@ def main() -> int:
         run_summaries.append(
             {
                 "segment_index": idx,
-                "segment": {
-                    "start_index": segment.start_index,
-                    "end_index": segment.end_index,
-                    "bars": segment.bars,
-                    "start_timestamp": segment.start_timestamp,
-                    "end_timestamp": segment.end_timestamp,
-                    "start_time_utc": isoformat_ms(segment.start_timestamp),
-                    "end_time_utc": isoformat_ms(segment.end_timestamp),
-                },
+                "segment": segment_to_payload(segment),
                 "replay_csv": str(replay_csv),
                 "runtime_log": str(runtime_log),
                 "runtime_assess": str(runtime_assess),
@@ -625,18 +835,11 @@ def main() -> int:
             "extreme_range_pct": thresholds.extreme_range_pct,
         },
         "available_segments": [
-            {
-                "bars": segment.bars,
-                "start_timestamp": segment.start_timestamp,
-                "end_timestamp": segment.end_timestamp,
-                "start_time_utc": isoformat_ms(segment.start_timestamp),
-                "end_time_utc": isoformat_ms(segment.end_timestamp),
-            }
+            segment_to_payload(segment)
             for segment in segments[:10]
         ],
         "selection": {
-            "eligible_segment_count": len(eligible),
-            "requested_max_segments": max(1, args.max_segments),
+            **selection,
             "segments_ran": len(run_summaries),
             "stopped_early": stopped_early,
             "stop_reason": stop_reason,
