@@ -130,7 +130,7 @@ def assess_registry(path: Path) -> Dict[str, Any]:
     activated = bool(payload.get("activated", False))
     ok = gate_pass
     status, fails = status_tuple(ok, "模型注册门槛未通过（gate.pass=false）")
-    warnings: List[str] = []
+    warnings: List[str] = [str(item) for item in gate.get("warn_reasons", []) if str(item)]
     if gate_pass and not activated:
         warnings.append("注册门槛通过但未激活（可能是未开启 activate_on_pass）")
     return {
@@ -142,6 +142,7 @@ def assess_registry(path: Path) -> Dict[str, Any]:
         "gate_pass": gate_pass,
         "activated": activated,
         "gate_fail_reasons": gate.get("fail_reasons", []),
+        "gate_warn_reasons": gate.get("warn_reasons", []),
         "gate_metric_summary": gate.get("metric_summary", {}),
         "gate_thresholds": {
             "min_auc_mean": gate.get("min_auc_mean"),

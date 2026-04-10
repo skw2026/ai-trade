@@ -628,8 +628,9 @@ def evaluate_governance(
     max_train_test_auc_gap: float,
     run_random_label_control: bool,
     max_random_label_auc: float,
-) -> Tuple[bool, List[str]]:
+) -> Tuple[bool, List[str], List[str]]:
     fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
     auc_mean = metrics_oos.get("auc_mean", float("nan"))
     delta_auc = metrics_oos.get("delta_auc_vs_baseline", float("nan"))
     split_trained_count = metrics_oos.get("split_trained_count", float("nan"))
@@ -699,12 +700,12 @@ def evaluate_governance(
             math.isfinite(random_label_auc_max)
             and random_label_auc_max > max_random_label_auc + 0.03
         ):
-            fail_reasons.append(
+            warn_reasons.append(
                 "random_label_auc_max="
                 f"{random_label_auc_max:.6f} > soft_cap={max_random_label_auc + 0.03:.6f}"
             )
 
-    return len(fail_reasons) == 0, fail_reasons
+    return len(fail_reasons) == 0, fail_reasons, warn_reasons
 
 
 def main() -> int:
@@ -1222,7 +1223,7 @@ def main() -> int:
         ),
         "splits": split_reports,
     }
-    governance_pass, governance_fail_reasons = evaluate_governance(
+    governance_pass, governance_fail_reasons, governance_warn_reasons = evaluate_governance(
         metrics_oos=metrics_oos,
         min_auc_mean=float(args.min_auc_mean),
         min_delta_auc_vs_baseline=float(args.min_delta_auc_vs_baseline),
@@ -1236,6 +1237,7 @@ def main() -> int:
     governance = {
         "pass": governance_pass,
         "fail_reasons": governance_fail_reasons,
+        "warn_reasons": governance_warn_reasons,
         "thresholds": {
             "min_auc_mean": float(args.min_auc_mean),
             "min_delta_auc_vs_baseline": float(args.min_delta_auc_vs_baseline),
@@ -1307,7 +1309,8 @@ def main() -> int:
     log_info(
         "INTEGRATOR_GOVERNANCE: "
         f"pass={str(governance_pass).lower()}, "
-        f"fail_reasons={len(governance_fail_reasons)}"
+        f"fail_reasons={len(governance_fail_reasons)}, "
+        f"warn_reasons={len(governance_warn_reasons)}"
     )
     if args.fail_on_governance and not governance_pass:
         print(

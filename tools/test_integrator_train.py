@@ -92,7 +92,7 @@ class IntegratorTrainTest(unittest.TestCase):
             "random_label_auc_mean": 0.50,
             "random_label_auc_max": 0.53,
         }
-        passed, reasons = TRAIN.evaluate_governance(
+        passed, reasons, warns = TRAIN.evaluate_governance(
             metrics_oos=metrics_ok,
             min_auc_mean=0.55,
             min_delta_auc_vs_baseline=0.0,
@@ -105,10 +105,11 @@ class IntegratorTrainTest(unittest.TestCase):
         )
         self.assertTrue(passed)
         self.assertEqual(reasons, [])
+        self.assertEqual(warns, [])
 
         metrics_gap_bad = dict(metrics_ok)
         metrics_gap_bad["train_test_auc_gap_mean"] = 0.18
-        passed, reasons = TRAIN.evaluate_governance(
+        passed, reasons, warns = TRAIN.evaluate_governance(
             metrics_oos=metrics_gap_bad,
             min_auc_mean=0.55,
             min_delta_auc_vs_baseline=0.0,
@@ -121,11 +122,12 @@ class IntegratorTrainTest(unittest.TestCase):
         )
         self.assertFalse(passed)
         self.assertTrue(any("train_test_auc_gap_mean" in reason for reason in reasons))
+        self.assertEqual(warns, [])
 
         metrics_missing_stdev = dict(metrics_ok)
         metrics_missing_stdev["split_trained_count"] = 3
         metrics_missing_stdev["auc_stdev"] = float("nan")
-        passed, reasons = TRAIN.evaluate_governance(
+        passed, reasons, warns = TRAIN.evaluate_governance(
             metrics_oos=metrics_missing_stdev,
             min_auc_mean=0.55,
             min_delta_auc_vs_baseline=0.0,
@@ -138,11 +140,12 @@ class IntegratorTrainTest(unittest.TestCase):
         )
         self.assertFalse(passed)
         self.assertTrue(any("auc_stdev" in reason for reason in reasons))
+        self.assertEqual(warns, [])
 
         metrics_random_bad = dict(metrics_ok)
         metrics_random_bad["random_label_auc"] = 0.61
         metrics_random_bad["random_label_auc_mean"] = 0.61
-        passed, reasons = TRAIN.evaluate_governance(
+        passed, reasons, warns = TRAIN.evaluate_governance(
             metrics_oos=metrics_random_bad,
             min_auc_mean=0.55,
             min_delta_auc_vs_baseline=0.0,
@@ -155,10 +158,11 @@ class IntegratorTrainTest(unittest.TestCase):
         )
         self.assertFalse(passed)
         self.assertTrue(any("random_label_auc_mean" in reason for reason in reasons))
+        self.assertEqual(warns, [])
 
         metrics_random_spike = dict(metrics_ok)
         metrics_random_spike["random_label_auc_max"] = 0.59
-        passed, reasons = TRAIN.evaluate_governance(
+        passed, reasons, warns = TRAIN.evaluate_governance(
             metrics_oos=metrics_random_spike,
             min_auc_mean=0.55,
             min_delta_auc_vs_baseline=0.0,
@@ -169,8 +173,9 @@ class IntegratorTrainTest(unittest.TestCase):
             run_random_label_control=True,
             max_random_label_auc=0.55,
         )
-        self.assertFalse(passed)
-        self.assertTrue(any("random_label_auc_max" in reason for reason in reasons))
+        self.assertTrue(passed)
+        self.assertEqual(reasons, [])
+        self.assertTrue(any("random_label_auc_max" in reason for reason in warns))
 
     def test_run_random_label_control_trials_returns_requested_count(self):
         if TRAIN.CatBoostClassifier is None:

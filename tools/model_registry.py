@@ -188,7 +188,7 @@ def gate_integrator_report(
     min_delta_auc_vs_baseline: float,
     min_split_trained_count: int,
     min_split_trained_ratio: float,
-) -> Tuple[bool, List[str], Dict[str, Any]]:
+) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
     metrics = report.get("metrics_oos", {})
     governance = report.get("governance", {})
     auc_mean = metrics.get("auc_mean")
@@ -198,6 +198,7 @@ def gate_integrator_report(
     split_trained_ratio = metrics.get("split_trained_ratio")
 
     fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
 
     if not isinstance(auc_mean, (float, int)):
         fail_reasons.append("缺少 metrics_oos.auc_mean")
@@ -249,6 +250,12 @@ def gate_integrator_report(
                     item_text = str(item).strip()
                     if item_text:
                         fail_reasons.append(f"governance: {item_text}")
+        governance_warn_reasons = governance.get("warn_reasons", [])
+        if isinstance(governance_warn_reasons, list):
+            for item in governance_warn_reasons:
+                item_text = str(item).strip()
+                if item_text:
+                    warn_reasons.append(f"governance: {item_text}")
 
     gate_pass = len(fail_reasons) == 0
     summary = {
@@ -264,7 +271,7 @@ def gate_integrator_report(
         "random_label_auc_stdev": metrics.get("random_label_auc_stdev"),
         "random_label_auc_max": metrics.get("random_label_auc_max"),
     }
-    return gate_pass, fail_reasons, summary
+    return gate_pass, fail_reasons, warn_reasons, summary
 
 
 def prune_old_versions(
@@ -314,7 +321,7 @@ def run_register(args: argparse.Namespace) -> int:
     feature_schema_version = str(report.get("feature_schema_version", "unknown_schema"))
     factor_set_version = str(report.get("factor_set_version", "unknown_factor_set"))
 
-    gate_pass, gate_fail_reasons, metric_summary = gate_integrator_report(
+    gate_pass, gate_fail_reasons, gate_warn_reasons, metric_summary = gate_integrator_report(
         report,
         args.min_auc_mean,
         args.min_delta_auc_vs_baseline,
@@ -379,6 +386,7 @@ def run_register(args: argparse.Namespace) -> int:
                 "min_split_trained_count": args.min_split_trained_count,
                 "min_split_trained_ratio": args.min_split_trained_ratio,
                 "fail_reasons": gate_fail_reasons,
+                "warn_reasons": gate_warn_reasons,
             },
         }
         write_json(active_meta_path, active_payload)
@@ -412,6 +420,7 @@ def run_register(args: argparse.Namespace) -> int:
             "min_split_trained_count": args.min_split_trained_count,
             "min_split_trained_ratio": args.min_split_trained_ratio,
             "fail_reasons": gate_fail_reasons,
+            "warn_reasons": gate_warn_reasons,
             "metric_summary": metric_summary,
         },
         "activated": activated,

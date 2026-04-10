@@ -784,6 +784,9 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                                 "governance: auc_stdev=0.120000 > max_auc_stdev=0.080000",
                                 "governance: random_label_auc=0.580000 > max_random_label_auc=0.550000",
                             ],
+                            "warn_reasons": [
+                                "governance: random_label_auc_max=0.610000 > soft_cap=0.580000",
+                            ],
                             "metric_summary": {
                                 "auc_mean": 0.513,
                                 "delta_auc_vs_baseline": 0.032,
@@ -825,6 +828,12 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 [
                     "governance: auc_stdev=0.120000 > max_auc_stdev=0.080000",
                     "governance: random_label_auc=0.580000 > max_random_label_auc=0.550000",
+                ],
+            )
+            self.assertEqual(
+                registry["gate_warn_reasons"],
+                [
+                    "governance: random_label_auc_max=0.610000 > soft_cap=0.580000",
                 ],
             )
             self.assertEqual(

@@ -22,7 +22,7 @@ REGISTRY = load_module()
 
 class ModelRegistryTest(unittest.TestCase):
     def test_gate_integrator_report_propagates_governance_fail_reasons(self):
-        gate_pass, fail_reasons, summary = REGISTRY.gate_integrator_report(
+        gate_pass, fail_reasons, warn_reasons, summary = REGISTRY.gate_integrator_report(
             report={
                 "metrics_oos": {
                     "auc_mean": 0.51,
@@ -43,6 +43,9 @@ class ModelRegistryTest(unittest.TestCase):
                         "auc_stdev=0.120000 > max_auc_stdev=0.080000",
                         "random_label_auc=0.580000 > max_random_label_auc=0.550000",
                     ],
+                    "warn_reasons": [
+                        "random_label_auc_max=0.610000 > soft_cap=0.580000",
+                    ],
                 },
             },
             min_auc_mean=0.48,
@@ -60,6 +63,10 @@ class ModelRegistryTest(unittest.TestCase):
         self.assertIn(
             "governance: random_label_auc=0.580000 > max_random_label_auc=0.550000",
             fail_reasons,
+        )
+        self.assertIn(
+            "governance: random_label_auc_max=0.610000 > soft_cap=0.580000",
+            warn_reasons,
         )
         self.assertEqual(summary["auc_mean"], 0.51)
         self.assertEqual(summary["auc_stdev"], 0.12)
