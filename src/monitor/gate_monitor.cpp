@@ -89,11 +89,14 @@ std::optional<GateWindowResult> GateMonitor::OnTick() {
   result.fills = fills_;
   result.policy_flat_signals = policy_flat_signals_;
 
-  const bool policy_flat_pass =
-      config_.allow_policy_flat_windows &&
-      policy_flat_signals_ >= config_.min_effective_signals_per_window &&
+  const bool policy_flat_observed =
+      config_.allow_policy_flat_windows && policy_flat_signals_ > 0 &&
       raw_signals_ == 0 && order_intents_ == 0 && fills_ == 0;
+  const bool policy_flat_pass =
+      policy_flat_observed &&
+      policy_flat_signals_ >= config_.min_effective_signals_per_window;
   result.policy_flat_pass = policy_flat_pass;
+  result.policy_flat_runtime_exempt = policy_flat_observed;
 
   // 检查 1: 有效信号数量是否达标 (防止策略“装死”)
   if (!policy_flat_pass &&

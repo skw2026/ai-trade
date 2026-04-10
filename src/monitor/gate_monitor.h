@@ -18,6 +18,7 @@ struct GateWindowResult {
   int fills{0};
   int policy_flat_signals{0};
   bool policy_flat_pass{false};
+  bool policy_flat_runtime_exempt{false};
   std::vector<std::string> fail_reasons;
 };
 

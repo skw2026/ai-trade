@@ -1024,6 +1024,9 @@ def assess(
             r"GATE_CHECK_PASSED:.*policy_flat=true", text
         ),
         "gate_check_failed_count": count(r"GATE_CHECK_FAILED", text),
+        "gate_runtime_policy_flat_exempt_count": count(
+            r"GATE_RUNTIME_POLICY_FLAT_EXEMPT", text
+        ),
         "gate_alert_count": count(r"GATE_ALERT", text),
         "reconcile_mismatch_count": count(r"OMS_RECONCILE_MISMATCH", text),
         "reconcile_autoresync_count": count(r"OMS_RECONCILE_AUTORESYNC", text),
@@ -1734,6 +1737,12 @@ def assess(
                 "策略窗口以 policy-flat 为主：本轮主要反映 RANGE/EXTREME 主动空仓保护，"
                 f"policy_flat_window_count={policy_flat_window_count}"
             )
+            if metrics["gate_runtime_policy_flat_exempt_count"] > 0:
+                warn_reasons.append(
+                    "Gate runtime 已豁免 policy-flat 部分窗口，未将其计入 reduce-only/halt 失败连击: "
+                    "gate_runtime_policy_flat_exempt_count="
+                    f"{metrics['gate_runtime_policy_flat_exempt_count']}"
+                )
             if metrics["regime_trend_runtime_count"] <= 0:
                 warn_reasons.append(
                     "当前窗口未出现 TREND 样本：runtime 通过仅代表保护逻辑通过，"

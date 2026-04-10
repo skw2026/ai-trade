@@ -6424,6 +6424,38 @@ int main() {
   }
 
   {
+    ai_trade::GateConfig gate_config;
+    gate_config.min_effective_signals_per_window = 3;
+    gate_config.min_fills_per_window = 1;
+    gate_config.heartbeat_empty_signal_ticks = 10;
+    gate_config.window_ticks = 3;
+    gate_config.allow_policy_flat_windows = true;
+    ai_trade::GateMonitor monitor(gate_config);
+
+    ai_trade::Signal signal;
+    signal.reason_codes = {"STR_RANGE_CONFIDENCE_BLOCK", "STR_FLAT_SIGNAL", "REG_RANGE"};
+    ai_trade::RiskAdjustedPosition adjusted;
+    std::optional<ai_trade::OrderIntent> intent;
+
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    const auto gate_result = monitor.OnTick();
+    if (!gate_result.has_value() || gate_result->pass ||
+        gate_result->policy_flat_pass ||
+        !gate_result->policy_flat_runtime_exempt) {
+      std::cerr << "预期 Gate 为 policy-flat 部分窗口失败但应豁免 runtime 动作\n";
+      return 1;
+    }
+    if (gate_result->policy_flat_signals != 2 ||
+        gate_result->fail_reasons.size() != 2) {
+      std::cerr << "policy-flat 部分窗口统计结果不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::RegimeConfig config;
     config.enabled = true;
     config.warmup_ticks = 2;

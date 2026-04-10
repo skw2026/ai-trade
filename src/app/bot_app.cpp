@@ -2732,6 +2732,8 @@ void BotApplication::RunGateMonitor() {
               ", fills=" + std::to_string(res->fills) +
               ", policy_flat_signals=" +
               std::to_string(res->policy_flat_signals) +
+              ", runtime_action_exempt=" +
+              std::string(res->policy_flat_runtime_exempt ? "true" : "false") +
               ", fail_reasons=[" + reasons.str() + "]");
     } else {
       LogInfo("GATE_CHECK_PASSED: raw_signals=" +
@@ -2746,7 +2748,15 @@ void BotApplication::RunGateMonitor() {
               std::string(res->policy_flat_pass ? "true" : "false"));
     }
 
-    if (res->pass) {
+    const bool runtime_action_pass =
+        res->pass || res->policy_flat_runtime_exempt;
+    if (runtime_action_pass) {
+      if (!res->pass && res->policy_flat_runtime_exempt) {
+        LogInfo("GATE_RUNTIME_POLICY_FLAT_EXEMPT: policy_flat_signals=" +
+                std::to_string(res->policy_flat_signals) +
+                ", fail_streak_before=" +
+                std::to_string(gate_fail_windows_streak_));
+      }
       gate_fail_windows_streak_ = 0;
       ++gate_pass_windows_streak_;
     } else {
@@ -2758,7 +2768,7 @@ void BotApplication::RunGateMonitor() {
       return;
     }
 
-    if (!res->pass) {
+    if (!runtime_action_pass) {
       if (!gate_forced_reduce_only_ &&
           config_.gate.fail_to_reduce_only_windows > 0 &&
           gate_fail_windows_streak_ >=

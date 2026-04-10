@@ -281,6 +281,33 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertIn("策略窗口以 policy-flat 为主", "\n".join(report["warn_reasons"]))
         self.assertIn("等待趋势样本阶段", "\n".join(report["warn_reasons"]))
 
+    def test_policy_flat_runtime_exempt_count_is_reported(self):
+        text = (
+            self._runtime_line(
+                20,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=2,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+            )
+            + "2026-02-14 15:00:20 [INFO] GATE_CHECK_FAILED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=2, runtime_action_exempt=true, fail_reasons=[FAIL_LOW_ACTIVITY_SIGNALS,FAIL_LOW_ACTIVITY_FILLS]\n"
+            + "2026-02-14 15:00:21 [INFO] GATE_RUNTIME_POLICY_FLAT_EXEMPT: policy_flat_signals=2, fail_streak_before=1\n"
+            + "2026-02-14 15:00:22 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=2, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertEqual(report["metrics"]["gate_runtime_policy_flat_exempt_count"], 1)
+        self.assertIn(
+            "Gate runtime 已豁免 policy-flat 部分窗口",
+            "\n".join(report["warn_reasons"]),
+        )
+
     def test_flat_without_execution_but_large_equity_gap_marks_account_noise(self):
         text = (
             self._runtime_line(
