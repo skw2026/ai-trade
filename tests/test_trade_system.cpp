@@ -6425,6 +6425,38 @@ int main() {
 
   {
     ai_trade::GateConfig gate_config;
+    gate_config.min_effective_signals_per_window = 2;
+    gate_config.min_fills_per_window = 1;
+    gate_config.heartbeat_empty_signal_ticks = 10;
+    gate_config.window_ticks = 3;
+    gate_config.allow_policy_flat_windows = true;
+    ai_trade::GateMonitor monitor(gate_config);
+
+    ai_trade::Signal signal;
+    signal.reason_codes = {"STR_FLAT_SIGNAL", "REG_RANGE"};
+    ai_trade::RiskAdjustedPosition adjusted;
+    std::optional<ai_trade::OrderIntent> intent;
+
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    monitor.OnDecision(signal, adjusted, intent);
+    const auto gate_result = monitor.OnTick();
+    if (!gate_result.has_value() || !gate_result->pass ||
+        !gate_result->policy_flat_pass) {
+      std::cerr << "预期 RANGE silent flat 也应作为 policy-flat 通过\n";
+      return 1;
+    }
+    if (gate_result->policy_flat_signals != 3 ||
+        !gate_result->fail_reasons.empty()) {
+      std::cerr << "RANGE silent flat policy-flat 统计结果不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::GateConfig gate_config;
     gate_config.min_effective_signals_per_window = 3;
     gate_config.min_fills_per_window = 1;
     gate_config.heartbeat_empty_signal_ticks = 10;
@@ -6451,6 +6483,72 @@ int main() {
     if (gate_result->policy_flat_signals != 2 ||
         gate_result->fail_reasons.size() != 2) {
       std::cerr << "policy-flat 部分窗口统计结果不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::GateConfig gate_config;
+    gate_config.min_effective_signals_per_window = 3;
+    gate_config.min_fills_per_window = 1;
+    gate_config.heartbeat_empty_signal_ticks = 10;
+    gate_config.window_ticks = 3;
+    gate_config.allow_policy_flat_windows = true;
+    ai_trade::GateMonitor monitor(gate_config);
+
+    ai_trade::Signal signal;
+    signal.reason_codes = {"STR_FLAT_SIGNAL", "REG_EXTREME"};
+    ai_trade::RiskAdjustedPosition adjusted;
+    std::optional<ai_trade::OrderIntent> intent;
+
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    const auto gate_result = monitor.OnTick();
+    if (!gate_result.has_value() || gate_result->pass ||
+        gate_result->policy_flat_pass ||
+        !gate_result->policy_flat_runtime_exempt) {
+      std::cerr << "预期 EXTREME silent flat 部分窗口失败但应豁免 runtime 动作\n";
+      return 1;
+    }
+    if (gate_result->policy_flat_signals != 2 ||
+        gate_result->fail_reasons.size() != 2) {
+      std::cerr << "EXTREME silent flat policy-flat 统计结果不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::GateConfig gate_config;
+    gate_config.min_effective_signals_per_window = 2;
+    gate_config.min_fills_per_window = 1;
+    gate_config.heartbeat_empty_signal_ticks = 10;
+    gate_config.window_ticks = 3;
+    gate_config.allow_policy_flat_windows = true;
+    ai_trade::GateMonitor monitor(gate_config);
+
+    ai_trade::Signal signal;
+    signal.trend_notional_usd = 120.0;
+    signal.defensive_notional_usd = -120.0;
+    signal.reason_codes = {"STR_FLAT_SIGNAL", "REG_RANGE"};
+    ai_trade::RiskAdjustedPosition adjusted;
+    std::optional<ai_trade::OrderIntent> intent;
+
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    monitor.OnDecision(signal, adjusted, intent);
+    monitor.OnTick();
+    const auto gate_result = monitor.OnTick();
+    if (!gate_result.has_value() || gate_result->pass ||
+        gate_result->policy_flat_pass ||
+        gate_result->policy_flat_runtime_exempt) {
+      std::cerr << "预期分支互相抵消的净 flat 不应计作 policy-flat\n";
+      return 1;
+    }
+    if (gate_result->policy_flat_signals != 0 ||
+        gate_result->fail_reasons.size() != 2) {
+      std::cerr << "净额抵消场景的 Gate 统计结果不符合预期\n";
       return 1;
     }
   }

@@ -76,11 +76,18 @@ bool HasReasonCode(const Signal& signal, const char* code) {
 }
 
 bool IsPolicySuppressedFlatSignal(const Signal& signal) {
-  if (HasExposure(signal.suggested_notional_usd)) {
+  if (HasExposure(signal.suggested_notional_usd) ||
+      HasExposure(signal.trend_notional_usd) ||
+      HasExposure(signal.defensive_notional_usd)) {
     return false;
   }
-  return HasReasonCode(signal, "STR_RANGE_CONFIDENCE_BLOCK") ||
-         HasReasonCode(signal, "STR_EXTREME_BLOCK");
+  if (HasReasonCode(signal, "STR_RANGE_CONFIDENCE_BLOCK") ||
+      HasReasonCode(signal, "STR_EXTREME_BLOCK")) {
+    return true;
+  }
+  return HasReasonCode(signal, "STR_FLAT_SIGNAL") &&
+         (HasReasonCode(signal, "REG_RANGE") ||
+          HasReasonCode(signal, "REG_EXTREME"));
 }
 
 // 将策略分支名义值按“可执行目标名义值”缩放，减少学习输入与执行结果的偏离。

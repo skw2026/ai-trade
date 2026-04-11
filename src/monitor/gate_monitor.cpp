@@ -20,6 +20,8 @@ bool GateMonitor::IsPolicyFlatSignal(
     const RiskAdjustedPosition& adjusted,
     const std::optional<OrderIntent>& intent) {
   if (HasExposure(signal.suggested_notional_usd) ||
+      HasExposure(signal.trend_notional_usd) ||
+      HasExposure(signal.defensive_notional_usd) ||
       HasExposure(adjusted.adjusted_notional_usd) || intent.has_value()) {
     return false;
   }
@@ -28,8 +30,12 @@ bool GateMonitor::IsPolicyFlatSignal(
                      signal.reason_codes.end(),
                      std::string(code)) != signal.reason_codes.end();
   };
-  return has_reason("STR_RANGE_CONFIDENCE_BLOCK") ||
-         has_reason("STR_EXTREME_BLOCK");
+  if (has_reason("STR_RANGE_CONFIDENCE_BLOCK") ||
+      has_reason("STR_EXTREME_BLOCK")) {
+    return true;
+  }
+  return has_reason("STR_FLAT_SIGNAL") &&
+         (has_reason("REG_RANGE") || has_reason("REG_EXTREME"));
 }
 
 /**
