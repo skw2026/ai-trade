@@ -38,6 +38,9 @@ RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 STAGE="S5"
 LOG_SINCE="4h"
 MIN_RUNTIME_STATUS=""
+ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS="${CLOSED_LOOP_ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS:-true}"
+ASSESS_WAIT_TIMEOUT_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS:-900}"
+ASSESS_WAIT_POLL_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS:-15}"
 
 SYMBOL="BTCUSDT"
 INTERVAL="5"
@@ -266,6 +269,10 @@ Env toggles:
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
   CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
+  CLOSED_LOOP_ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS=true|false
+                                                       assess/full 前是否等待最小 runtime 样本数 (default: true)
+  CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS=<int>        等待最小 runtime 样本数的最长秒数 (default: 900)
+  CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS=<int>           等待期间轮询日志的间隔秒数 (default: 15)
   CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN=true|false      train/full 前是否先跑数据加速链路 (default: true)
   CLOSED_LOOP_DATA_PIPELINE_REQUIRED=true|false          数据加速失败是否直接失败（false=回退R0）(default: false)
   CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS=true|false
@@ -457,6 +464,40 @@ fi
 
 compose_cmd() {
   "${COMPOSE_BASE[@]}" "$@"
+}
+
+default_min_runtime_status_for_stage() {
+  case "${STAGE}" in
+    DEPLOY)
+      echo 0
+      ;;
+    S3)
+      echo 10
+      ;;
+    S5)
+      echo 50
+      ;;
+    *)
+      echo 0
+      ;;
+  esac
+}
+
+required_min_runtime_status() {
+  if [[ -n "${MIN_RUNTIME_STATUS}" ]]; then
+    echo "${MIN_RUNTIME_STATUS}"
+    return 0
+  fi
+  default_min_runtime_status_for_stage
+}
+
+count_runtime_status_in_log() {
+  local path="$1"
+  if [[ ! -f "${path}" ]]; then
+    echo 0
+    return 0
+  fi
+  grep -c "RUNTIME_STATUS:" "${path}" || true
 }
 
 trim() {
@@ -1008,7 +1049,38 @@ prepare_training_data() {
 
 run_assess() {
   echo "[INFO] runtime assess start"
-  compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade > "${ASSESS_LOG_PATH}" || true
+  local assess_required_min_runtime_status
+  assess_required_min_runtime_status="$(required_min_runtime_status)"
+  local wait_enabled="false"
+  if [[ "${STAGE}" == "S5" ]] && is_true "${ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS}" &&
+      [[ "${assess_required_min_runtime_status}" =~ ^[0-9]+$ ]] &&
+      (( assess_required_min_runtime_status > 0 )); then
+    wait_enabled="true"
+  fi
+
+  local assess_deadline=0
+  if [[ "${wait_enabled}" == "true" ]]; then
+    assess_deadline=$(( $(date +%s) + ASSESS_WAIT_TIMEOUT_SECONDS ))
+  fi
+
+  while true; do
+    compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade > "${ASSESS_LOG_PATH}" || true
+    local runtime_status_count
+    runtime_status_count="$(count_runtime_status_in_log "${ASSESS_LOG_PATH}")"
+    if [[ "${wait_enabled}" != "true" ]] ||
+        (( runtime_status_count >= assess_required_min_runtime_status )); then
+      if [[ "${wait_enabled}" == "true" ]]; then
+        echo "[INFO] runtime assess sample ready: runtime_status_count=${runtime_status_count}, required=${assess_required_min_runtime_status}"
+      fi
+      break
+    fi
+    if (( $(date +%s) >= assess_deadline )); then
+      echo "[WARN] runtime assess sample still insufficient before timeout: runtime_status_count=${runtime_status_count}, required=${assess_required_min_runtime_status}, timeout_seconds=${ASSESS_WAIT_TIMEOUT_SECONDS}"
+      break
+    fi
+    echo "[INFO] waiting runtime samples before assess: runtime_status_count=${runtime_status_count}, required=${assess_required_min_runtime_status}, poll_seconds=${ASSESS_WAIT_POLL_SECONDS}"
+    sleep "${ASSESS_WAIT_POLL_SECONDS}"
+  done
   local protection_enabled="false"
   local break_even_enabled="false"
   local trailing_enabled="false"
