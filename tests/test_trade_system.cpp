@@ -1803,6 +1803,66 @@ int main() {
   }
 
   {
+    // 自进化控制器：全空 policy-flat 窗口应静默跳过，不输出无意义 skipped action。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 2;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 1.0;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/10000.0)) {
+      std::cerr << "自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    if (controller.OnTick(/*current_tick=*/1,
+                          /*realized_net_pnl_usd=*/10000.0,
+                          ai_trade::RegimeBucket::kRange,
+                          /*drawdown_pct=*/0.0,
+                          /*account_notional_usd=*/0.0,
+                          /*trend_signal_notional_usd=*/0.0,
+                          /*defensive_signal_notional_usd=*/0.0,
+                          /*mark_price_usd=*/0.0,
+                          /*signal_symbol=*/"",
+                          /*entry_filtered_by_cost=*/false,
+                          /*fill_count=*/0,
+                          /*account_equity_usd=*/10040.0,
+                          /*observed_turnover_cost_bps=*/0.0,
+                          /*observed_funding_rate_per_tick=*/0.0)
+            .has_value()) {
+      std::cerr << "未到更新周期前不应返回自进化动作\n";
+      return 1;
+    }
+    const auto action = controller.OnTick(/*current_tick=*/2,
+                                          /*realized_net_pnl_usd=*/10000.0,
+                                          ai_trade::RegimeBucket::kRange,
+                                          /*drawdown_pct=*/0.0,
+                                          /*account_notional_usd=*/0.0,
+                                          /*trend_signal_notional_usd=*/0.0,
+                                          /*defensive_signal_notional_usd=*/0.0,
+                                          /*mark_price_usd=*/0.0,
+                                          /*signal_symbol=*/"",
+                                          /*entry_filtered_by_cost=*/false,
+                                          /*fill_count=*/0,
+                                          /*account_equity_usd=*/10025.0,
+                                          /*observed_turnover_cost_bps=*/0.0,
+                                          /*observed_funding_rate_per_tick=*/0.0);
+    if (action.has_value() || controller.next_eval_tick() != 4 ||
+        !NearlyEqual(controller.current_weights().trend_weight, 0.50, 1e-9) ||
+        !NearlyEqual(controller.current_weights().defensive_weight, 0.50, 1e-9)) {
+      std::cerr << "全空 policy-flat 窗口不应触发自进化动作\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：方向一致性门控启用后，首个候选方向窗口仅记账不更新。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;

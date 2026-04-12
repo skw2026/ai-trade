@@ -709,12 +709,21 @@ verify_s5_learning_activity() {
   local effective_updates
   local learnability_pass
   local learnability_skip
+  local runtime_validation_mode
+  local strategy_mix_nonzero_windows
   factor_ic_actions="$(to_int "$(json_number_value "self_evolution_factor_ic_action_count" "${ASSESS_JSON_PATH}")")"
   effective_updates="$(to_int "$(json_number_value "self_evolution_effective_update_count" "${ASSESS_JSON_PATH}")")"
   learnability_pass="$(to_int "$(json_number_value "self_evolution_learnability_pass_count" "${ASSESS_JSON_PATH}")")"
   learnability_skip="$(to_int "$(json_number_value "self_evolution_learnability_skip_count" "${ASSESS_JSON_PATH}")")"
+  runtime_validation_mode="$(json_string_value "runtime_validation_mode" "${ASSESS_JSON_PATH}")"
+  strategy_mix_nonzero_windows="$(to_int "$(json_number_value "strategy_mix_nonzero_window_count" "${ASSESS_JSON_PATH}")")"
   local learnability_total=$((learnability_pass + learnability_skip))
   echo "[INFO] S5 learning activity: factor_ic_actions=${factor_ic_actions} effective_updates=${effective_updates} learnability_pass=${learnability_pass} learnability_skip=${learnability_skip}"
+
+  if [[ "${runtime_validation_mode}" == "POLICY_FLAT_PROTECTION" ]] && (( strategy_mix_nonzero_windows <= 0 )); then
+    echo "[INFO] S5 learning activity skipped: policy-flat dominant and no nonzero strategy windows"
+    return 0
+  fi
 
   if (( factor_ic_actions <= 0 )); then
     echo "[WARN] S5 learning activity weak: self_evolution_factor_ic_action_count=0"

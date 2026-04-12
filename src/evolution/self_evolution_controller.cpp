@@ -164,6 +164,10 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     ++learnability_stats.samples;
   }
   bucket_window_ticks_[active_index] += 1;
+  if (std::fabs(trend_signal_notional_usd) > kWeightEpsilon ||
+      std::fabs(defensive_signal_notional_usd) > kWeightEpsilon) {
+    bucket_window_strategy_signal_samples_[active_index] += 1;
+  }
   if (fill_count > 0) {
     bucket_window_fill_count_[active_index] += fill_count;
   }
@@ -375,6 +379,11 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
 
   // 固定周期评估：先结算窗口，再推进下一个评估点。
   next_eval_tick_ = current_tick + EffectiveUpdateIntervalTicks();
+
+  if (ShouldSkipPassiveWindow(eval_index)) {
+    ResetWindowAttribution(eval_index);
+    return std::nullopt;
+  }
 
   BucketRuntime& runtime = RuntimeFor(eval_bucket);
 
@@ -1177,6 +1186,7 @@ void SelfEvolutionController::ResetWindowAttribution(
     bucket_window_learnability_stats_[index] = SampleAccumulator{};
     bucket_window_fill_count_[index] = 0;
     bucket_window_cost_filtered_signals_[index] = 0;
+    bucket_window_strategy_signal_samples_[index] = 0;
     bucket_window_max_drawdown_pct_[index] = 0.0;
     bucket_window_notional_churn_usd_[index] = 0.0;
     bucket_window_ticks_[index] = 0;
@@ -1229,6 +1239,23 @@ EvolutionWeights SelfEvolutionController::ProposeWeights(
   trend_weight = std::clamp(trend_weight, min_trend_weight, max_trend_weight);
   const double defensive_weight = 1.0 - trend_weight;
   return EvolutionWeights{trend_weight, defensive_weight};
+}
+
+bool SelfEvolutionController::ShouldSkipPassiveWindow(
+    std::size_t bucket_index) const {
+  if (bucket_index >= bucket_window_ticks_.size()) {
+    return false;
+  }
+  return bucket_window_ticks_[bucket_index] > 0 &&
+         bucket_window_strategy_signal_samples_[bucket_index] <= 0 &&
+         bucket_window_fill_count_[bucket_index] <= 0 &&
+         bucket_window_cost_filtered_signals_[bucket_index] <= 0 &&
+         std::fabs(bucket_window_realized_pnl_usd_[bucket_index]) <=
+             kWeightEpsilon &&
+         std::fabs(bucket_window_virtual_pnl_usd_[bucket_index]) <=
+             kWeightEpsilon &&
+         std::fabs(bucket_window_notional_churn_usd_[bucket_index]) <=
+             kWeightEpsilon;
 }
 
 void SelfEvolutionController::PushDegradeWindow(BucketRuntime* runtime,

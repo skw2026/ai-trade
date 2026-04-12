@@ -203,6 +203,7 @@ class SelfEvolutionController {
                                   const BucketRuntime& runtime) const;
   void PushDegradeWindow(BucketRuntime* runtime, bool degraded);
   bool ShouldRollback(const BucketRuntime& runtime) const;
+  bool ShouldSkipPassiveWindow(std::size_t bucket_index) const;
 
   SelfEvolutionConfig config_;
 
@@ -228,6 +229,7 @@ class SelfEvolutionController {
   std::array<SampleAccumulator, 3> bucket_window_learnability_stats_{};
   std::array<int, 3> bucket_window_fill_count_{};
   std::array<int, 3> bucket_window_cost_filtered_signals_{};
+  std::array<int, 3> bucket_window_strategy_signal_samples_{};
   std::array<double, 3> bucket_window_max_drawdown_pct_{};
   std::array<double, 3> bucket_window_notional_churn_usd_{};
   std::array<int, 3> bucket_window_ticks_{};

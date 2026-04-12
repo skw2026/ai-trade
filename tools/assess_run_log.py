@@ -1350,8 +1350,20 @@ def assess(
         market_context_status = "UNKNOWN"
 
     gap_usd = metrics["equity_vs_realized_net_gap_usd"]
+    flat_no_execution_balance_drift = (
+        execution_activity_count <= 0
+        and bool(account_pnl.get("start_flat"))
+        and isinstance(account_pnl.get("max_abs_notional_usd_observed"), (int, float))
+        and abs(account_pnl["max_abs_notional_usd_observed"]) <= 1e-9
+        and isinstance(account_pnl.get("realized_net_pnl_change_usd"), (int, float))
+        and abs(account_pnl["realized_net_pnl_change_usd"]) <= 1e-9
+        and isinstance(account_pnl.get("fee_change_usd"), (int, float))
+        and abs(account_pnl["fee_change_usd"]) <= 1e-9
+    )
     if isinstance(gap_usd, (int, float)) and abs(gap_usd) >= 50.0:
-        if execution_activity_count <= 0:
+        if flat_no_execution_balance_drift:
+            account_sync_status = "EQUITY_DRIFT_WHILE_FLAT"
+        elif execution_activity_count <= 0:
             account_sync_status = "NOISY_WHILE_FLAT"
         else:
             account_sync_status = "NOISY"
@@ -1617,6 +1629,7 @@ def assess(
             stage.name == "S5"
             and metrics["self_evolution_action_count"] <= 0
             and metrics["self_evolution_init_count"] > 0
+            and not policy_flat_dominant
         ):
             warn_reasons.append(
                 "未观测到 SELF_EVOLUTION_ACTION，建议检查 update_interval 与样本门槛"
@@ -1786,10 +1799,16 @@ def assess(
         if execution_activity_count <= 0:
             gap_usd = metrics.get("equity_vs_realized_net_gap_usd")
             if isinstance(gap_usd, (int, float)) and abs(gap_usd) >= 50.0:
-                warn_reasons.append(
-                    "权益变化与已实现净盈亏偏差较大且无执行活动，建议检查资金同步/统计口径: "
-                    f"gap_usd={gap_usd:.6f}"
-                )
+                if account_sync_status == "NOISY_WHILE_FLAT":
+                    warn_reasons.append(
+                        "权益变化与已实现净盈亏偏差较大且无执行活动，建议检查资金同步/统计口径: "
+                        f"gap_usd={gap_usd:.6f}"
+                    )
+                elif account_sync_status == "EQUITY_DRIFT_WHILE_FLAT":
+                    warn_reasons.append(
+                        "平仓且零执行窗口出现权益漂移，当前更像账户余额/资金口径变化而非策略执行结果: "
+                        f"gap_usd={gap_usd:.6f}"
+                    )
     if fail_reasons:
         verdict = "FAIL"
     elif warn_reasons:

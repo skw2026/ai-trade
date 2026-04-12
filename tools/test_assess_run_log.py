@@ -351,8 +351,42 @@ class AssessRunLogTest(unittest.TestCase):
             + "2026-02-14 15:00:20 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=8, policy_flat=true\n"
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
-        self.assertEqual(report["account_sync_status"], "NOISY_WHILE_FLAT")
-        self.assertIn("权益变化与已实现净盈亏偏差较大且无执行活动", "\n".join(report["warn_reasons"]))
+        self.assertEqual(report["account_sync_status"], "EQUITY_DRIFT_WHILE_FLAT")
+        self.assertIn("平仓且零执行窗口出现权益漂移", "\n".join(report["warn_reasons"]))
+
+    def test_policy_flat_dominant_without_evolution_action_skips_missing_action_warn(self):
+        runtime = "".join(
+            self._runtime_line(
+                tick,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=8,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+                regime_bucket="RANGE",
+                equity=100000.0,
+                realized_pnl=0.0,
+                fees=0.0,
+                realized_net=0.0,
+            )
+            for tick in range(20, 140, 20)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:00:20 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=8, policy_flat=true\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertEqual(report["runtime_validation_mode"], "POLICY_FLAT_PROTECTION")
+        self.assertFalse(
+            any("未观测到 SELF_EVOLUTION_ACTION" in x for x in report["warn_reasons"])
+        )
 
     def test_s5_execution_active_window_sets_execution_pass(self):
         runtime = "".join(
