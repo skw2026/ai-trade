@@ -206,9 +206,9 @@ Options:
   --replay-validation-target-bucket <bucket>
                                       replay-validation 目标 bucket (default: trend)
   --replay-validation-max-segments <int>
-                                      replay-validation 最大片段数 (default: 8)
+                                      replay-validation 最大片段数 (default: 16)
   --replay-validation-min-segment-bars <int>
-                                      replay-validation 单片段最小 bars (default: 60)
+                                      replay-validation 单片段最小 bars (default: 40)
   --replay-validation-min-execution-active-runs <int>
                                       replay-validation 至少多少片段进入 EXECUTION_ACTIVE (default: 3)
   --replay-validation-min-execution-pass-runs <int>

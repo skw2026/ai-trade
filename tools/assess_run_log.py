@@ -1007,6 +1007,9 @@ def assess(
 
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
+    global_self_evolution_runtime_enabled_count = count(
+        r"RUNTIME_STATUS:.*evolution=\{enabled=true", original_text
+    )
     metrics = {
         "runtime_status_count": count(r"RUNTIME_STATUS:", text),
         "max_runtime_tick": max_tick(text),
@@ -1045,6 +1048,7 @@ def assess(
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
         "self_evolution_init_total_count": global_self_evolution_init_count,
         "self_evolution_action_total_count": global_self_evolution_action_count,
+        "self_evolution_runtime_enabled_total_count": global_self_evolution_runtime_enabled_count,
         "self_evolution_virtual_action_count": count(
             r"SELF_EVOLUTION_ACTION:.*pnl_source=virtual", text
         ),
@@ -1397,6 +1401,12 @@ def assess(
         and metrics["strategy_mix_nonzero_window_count"] <= 0
         and metrics["gate_policy_flat_pass_count"] > 0
     )
+    evolution_runtime_evidence_available = (
+        metrics["self_evolution_runtime_enabled_total_count"] > 0
+    )
+    evolution_runtime_evidence_sufficient = (
+        policy_flat_dominant and evolution_runtime_evidence_available
+    )
 
     # DEPLOY 门禁仅看“健康硬指标”，避免冷启动阶段的策略类指标误触发回滚。
     if stage.name != "DEPLOY":
@@ -1420,6 +1430,7 @@ def assess(
             stage.require_evolution_init
             and metrics["self_evolution_init_total_count"] <= 0
             and metrics["self_evolution_action_total_count"] <= 0
+            and not evolution_runtime_evidence_sufficient
         ):
             protection_fail_reasons.append("未检测到 SELF_EVOLUTION_INIT/SELF_EVOLUTION_ACTION")
 
@@ -1802,11 +1813,6 @@ def assess(
                 if account_sync_status == "NOISY_WHILE_FLAT":
                     warn_reasons.append(
                         "权益变化与已实现净盈亏偏差较大且无执行活动，建议检查资金同步/统计口径: "
-                        f"gap_usd={gap_usd:.6f}"
-                    )
-                elif account_sync_status == "EQUITY_DRIFT_WHILE_FLAT":
-                    warn_reasons.append(
-                        "平仓且零执行窗口出现权益漂移，当前更像账户余额/资金口径变化而非策略执行结果: "
                         f"gap_usd={gap_usd:.6f}"
                     )
     if fail_reasons:

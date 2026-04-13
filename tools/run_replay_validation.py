@@ -28,6 +28,12 @@ FEATURE_COLUMNS = [
     "vol_12",
 ]
 
+DEFAULT_MAX_SEGMENTS = 16
+DEFAULT_MIN_SEGMENT_BARS = 40
+MIN_RECOMMENDED_EXECUTION_ACTIVE_RUNS = 4
+MIN_RECOMMENDED_EXECUTION_PASS_RUNS = 4
+MIN_RECOMMENDED_TOTAL_FILLS = 6
+
 
 @dataclass
 class RegimeThresholds:
@@ -202,6 +208,116 @@ def find_segments(
     return sorted(segments, key=lambda item: item.bars, reverse=True)
 
 
+def build_segment_priority_payload(
+    segment: ReplaySegment,
+    rows: list[FeatureRow],
+    thresholds: RegimeThresholds,
+    *,
+    target_bucket: str,
+    volume_baseline: float,
+) -> dict[str, float]:
+    segment_rows = rows[segment.start_index : segment.end_index + 1]
+    avg_abs_ema_diff = finite_mean(
+        [abs(row.features["ema_diff"]) for row in segment_rows]
+    ) or 0.0
+    avg_abs_mom_48 = finite_mean(
+        [abs(row.features["mom_48"]) for row in segment_rows]
+    ) or 0.0
+    avg_vol_12 = finite_mean([row.features["vol_12"] for row in segment_rows]) or 0.0
+    avg_range_pct = finite_mean([row.features["range_pct"] for row in segment_rows]) or 0.0
+    avg_volume = finite_mean([row.volume for row in segment_rows]) or 0.0
+
+    start_close = segment_rows[0].close if segment_rows else float("nan")
+    end_close = segment_rows[-1].close if segment_rows else float("nan")
+    if (
+        math.isfinite(start_close)
+        and math.isfinite(end_close)
+        and abs(start_close) > 1e-12
+    ):
+        price_return_abs = abs(end_close / start_close - 1.0)
+    else:
+        price_return_abs = 0.0
+
+    if target_bucket == "trend":
+        strength_score = 0.5 * (
+            avg_abs_ema_diff / max(thresholds.trend_abs_ema_diff, 1e-9)
+        ) + 0.5 * (avg_abs_mom_48 / max(thresholds.trend_abs_mom_48, 1e-9))
+        path_scale = max(thresholds.trend_abs_mom_48, 1e-9)
+    elif target_bucket == "extreme":
+        strength_score = 0.5 * (
+            avg_vol_12 / max(thresholds.extreme_vol_12, 1e-9)
+        ) + 0.5 * (
+            avg_range_pct / max(thresholds.extreme_range_pct, 1e-9)
+        )
+        path_scale = max(thresholds.extreme_range_pct, 1e-9)
+    else:
+        quiet_trend_score = 1.0 / (
+            1.0
+            + 0.5 * (avg_abs_ema_diff / max(thresholds.trend_abs_ema_diff, 1e-9))
+            + 0.5 * (avg_abs_mom_48 / max(thresholds.trend_abs_mom_48, 1e-9))
+        )
+        quiet_range_score = 1.0 / (
+            1.0 + avg_range_pct / max(thresholds.extreme_range_pct, 1e-9)
+        )
+        strength_score = quiet_trend_score + quiet_range_score
+        path_scale = max(thresholds.trend_abs_mom_48, 1e-9)
+
+    path_score = min(3.0, price_return_abs / path_scale)
+    liquidity_score = min(3.0, avg_volume / max(volume_baseline, 1e-9))
+    length_score = min(3.0, segment.bars / max(1.0, float(DEFAULT_MIN_SEGMENT_BARS)))
+    priority_score = (
+        strength_score + 0.35 * path_score + 0.15 * liquidity_score + 0.10 * length_score
+    )
+    return {
+        "priority_score": float(priority_score),
+        "strength_score": float(strength_score),
+        "path_score": float(path_score),
+        "liquidity_score": float(liquidity_score),
+        "length_score": float(length_score),
+        "avg_abs_ema_diff": float(avg_abs_ema_diff),
+        "avg_abs_mom_48": float(avg_abs_mom_48),
+        "avg_vol_12": float(avg_vol_12),
+        "avg_range_pct": float(avg_range_pct),
+        "avg_volume": float(avg_volume),
+        "price_return_abs": float(price_return_abs),
+    }
+
+
+def rank_replay_segments(
+    segments: list[ReplaySegment],
+    rows: list[FeatureRow],
+    thresholds: RegimeThresholds,
+    *,
+    target_bucket: str,
+) -> list[ReplaySegment]:
+    positive_volumes = [row.volume for row in rows if math.isfinite(row.volume) and row.volume > 0.0]
+    volume_baseline = finite_median(positive_volumes) or 1.0
+    scored_segments: list[tuple[ReplaySegment, dict[str, float]]] = []
+    for segment in segments:
+        scored_segments.append(
+            (
+                segment,
+                build_segment_priority_payload(
+                    segment,
+                    rows,
+                    thresholds,
+                    target_bucket=target_bucket,
+                    volume_baseline=volume_baseline,
+                ),
+            )
+        )
+    scored_segments.sort(
+        key=lambda item: (
+            item[1]["priority_score"],
+            item[1]["strength_score"],
+            item[0].bars,
+            -item[0].start_timestamp,
+        ),
+        reverse=True,
+    )
+    return [segment for segment, _ in scored_segments]
+
+
 def write_replay_csv(
     rows: list[FeatureRow],
     segment: ReplaySegment,
@@ -244,8 +360,14 @@ def isoformat_ms(timestamp_ms: int) -> str:
     return datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc).isoformat()
 
 
-def segment_to_payload(segment: ReplaySegment) -> dict[str, Any]:
-    return {
+def segment_to_payload(
+    segment: ReplaySegment,
+    *,
+    rows: list[FeatureRow] | None = None,
+    thresholds: RegimeThresholds | None = None,
+    target_bucket: str | None = None,
+) -> dict[str, Any]:
+    payload = {
         "start_index": segment.start_index,
         "end_index": segment.end_index,
         "bars": segment.bars,
@@ -254,6 +376,19 @@ def segment_to_payload(segment: ReplaySegment) -> dict[str, Any]:
         "start_time_utc": isoformat_ms(segment.start_timestamp),
         "end_time_utc": isoformat_ms(segment.end_timestamp),
     }
+    if rows is not None and thresholds is not None and target_bucket:
+        positive_volumes = [row.volume for row in rows if math.isfinite(row.volume) and row.volume > 0.0]
+        volume_baseline = finite_median(positive_volumes) or 1.0
+        payload.update(
+            build_segment_priority_payload(
+                segment,
+                rows,
+                thresholds,
+                target_bucket=target_bucket,
+                volume_baseline=volume_baseline,
+            )
+        )
+    return payload
 
 
 def load_corpus_manifest(path: pathlib.Path) -> dict[str, Any]:
@@ -381,7 +516,12 @@ def select_replay_segments(
 ) -> tuple[list[ReplaySegment], list[ReplaySegment], dict[str, Any], list[str]]:
     warnings: list[str] = []
     all_segments = find_segments(rows, thresholds, target_bucket, base_interval_ms)
-    eligible = [segment for segment in all_segments if segment.bars >= max(1, min_segment_bars)]
+    eligible = rank_replay_segments(
+        [segment for segment in all_segments if segment.bars >= max(1, min_segment_bars)],
+        rows,
+        thresholds,
+        target_bucket=target_bucket,
+    )
 
     selection: dict[str, Any] = {
         "selection_mode": "dynamic_top_n",
@@ -392,6 +532,7 @@ def select_replay_segments(
         "corpus_written": False,
         "corpus_refreshed": False,
         "corpus_resolved_segment_count": 0,
+        "dynamic_appended_segment_count": 0,
     }
 
     if corpus_manifest and corpus_manifest.is_file() and not refresh_corpus_manifest:
@@ -405,11 +546,32 @@ def select_replay_segments(
             )
             warnings.extend(corpus_warnings)
             if resolved_segments:
-                selection["selection_mode"] = "corpus_manifest"
+                selected = list(resolved_segments[: max(1, max_segments)])
+                if len(selected) < max(1, max_segments):
+                    selected_keys = {
+                        (segment.start_timestamp, segment.end_timestamp)
+                        for segment in selected
+                    }
+                    appended_segments = [
+                        segment
+                        for segment in eligible
+                        if (segment.start_timestamp, segment.end_timestamp)
+                        not in selected_keys
+                    ][: max(1, max_segments) - len(selected)]
+                    if appended_segments:
+                        selected.extend(appended_segments)
+                        selection["dynamic_appended_segment_count"] = len(
+                            appended_segments
+                        )
+                        selection["selection_mode"] = "corpus_manifest_plus_dynamic"
+                    else:
+                        selection["selection_mode"] = "corpus_manifest"
+                else:
+                    selection["selection_mode"] = "corpus_manifest"
                 selection["corpus_loaded"] = True
                 selection["corpus_resolved_segment_count"] = len(resolved_segments)
                 return (
-                    resolved_segments[: max(1, max_segments)],
+                    selected,
                     eligible,
                     selection,
                     warnings,
@@ -419,7 +581,12 @@ def select_replay_segments(
             warnings.append(f"corpus manifest 读取失败，回退到动态选段: {exc}")
 
     if not eligible and all_segments:
-        eligible = [all_segments[0]]
+        eligible = rank_replay_segments(
+            [all_segments[0]],
+            rows,
+            thresholds,
+            target_bucket=target_bucket,
+        )
         warnings.append(
             f"未找到 bars >= {min_segment_bars} 的 {target_bucket} 片段，退化为最长片段 {all_segments[0].bars} bars"
         )
@@ -488,6 +655,25 @@ def finite_median(values: list[float]) -> float | None:
     return float(statistics.median(finite))
 
 
+def derive_recommended_coverage_thresholds(
+    *,
+    min_execution_active_runs: int,
+    min_execution_pass_runs: int,
+    min_total_fills: int,
+) -> dict[str, int]:
+    return {
+        "min_execution_active_runs": max(
+            max(1, min_execution_active_runs),
+            MIN_RECOMMENDED_EXECUTION_ACTIVE_RUNS,
+        ),
+        "min_execution_pass_runs": max(
+            max(1, min_execution_pass_runs),
+            MIN_RECOMMENDED_EXECUTION_PASS_RUNS,
+        ),
+        "min_total_fills": max(max(1, min_total_fills), MIN_RECOMMENDED_TOTAL_FILLS),
+    }
+
+
 def aggregate_run_summaries(
     run_summaries: list[dict[str, Any]],
     *,
@@ -498,6 +684,11 @@ def aggregate_run_summaries(
     warn_mean_filtered_cost_ratio: float,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     summaries = [run.get("assess_summary", {}) for run in run_summaries]
+    recommended_thresholds = derive_recommended_coverage_thresholds(
+        min_execution_active_runs=min_execution_active_runs,
+        min_execution_pass_runs=min_execution_pass_runs,
+        min_total_fills=min_total_fills,
+    )
     execution_active_runs = sum(
         1 for summary in summaries if summary.get("runtime_validation_mode") == "EXECUTION_ACTIVE"
     )
@@ -541,16 +732,28 @@ def aggregate_run_summaries(
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
 
-    if execution_active_runs < max(1, min_execution_active_runs):
+    minimum_thresholds = {
+        "min_execution_active_runs": max(1, min_execution_active_runs),
+        "min_execution_pass_runs": max(1, min_execution_pass_runs),
+        "min_total_fills": max(1, min_total_fills),
+        "min_mean_realized_net_per_fill": float(min_mean_realized_net_per_fill),
+        "warn_mean_filtered_cost_ratio": float(warn_mean_filtered_cost_ratio),
+    }
+
+    if execution_active_runs < minimum_thresholds["min_execution_active_runs"]:
         fail_reasons.append(
-            f"execution_active_runs={execution_active_runs} < {max(1, min_execution_active_runs)}"
+            "execution_active_runs="
+            f"{execution_active_runs} < {minimum_thresholds['min_execution_active_runs']}"
         )
     if execution_pass_runs < max(1, min_execution_pass_runs):
         fail_reasons.append(
-            f"execution_pass_runs={execution_pass_runs} < {max(1, min_execution_pass_runs)}"
+            "execution_pass_runs="
+            f"{execution_pass_runs} < {minimum_thresholds['min_execution_pass_runs']}"
         )
-    if total_fills < max(1, min_total_fills):
-        fail_reasons.append(f"total_fills={total_fills} < {max(1, min_total_fills)}")
+    if total_fills < minimum_thresholds["min_total_fills"]:
+        fail_reasons.append(
+            f"total_fills={total_fills} < {minimum_thresholds['min_total_fills']}"
+        )
 
     mean_realized_net_per_fill = aggregate_summary.get("mean_realized_net_per_fill")
     if isinstance(mean_realized_net_per_fill, (int, float)):
@@ -577,6 +780,27 @@ def aggregate_run_summaries(
     if failed_runs > 0:
         warn_reasons.append(f"存在 {failed_runs} 个 FAIL 片段，需检查单段日志与 assess 口径")
 
+    minimum_coverage_targets_met = not (
+        execution_active_runs < minimum_thresholds["min_execution_active_runs"]
+        or execution_pass_runs < minimum_thresholds["min_execution_pass_runs"]
+        or total_fills < minimum_thresholds["min_total_fills"]
+    )
+    recommended_coverage_targets_met = has_met_replay_coverage_targets(
+        aggregate_summary,
+        min_execution_active_runs=recommended_thresholds["min_execution_active_runs"],
+        min_execution_pass_runs=recommended_thresholds["min_execution_pass_runs"],
+        min_total_fills=recommended_thresholds["min_total_fills"],
+    )
+    if minimum_coverage_targets_met and not recommended_coverage_targets_met:
+        warn_reasons.append(
+            "replay 覆盖仅达到最小门槛，建议继续补足更稳健的 execution 样本: "
+            "recommended_active_runs>="
+            f"{recommended_thresholds['min_execution_active_runs']}, "
+            "recommended_pass_runs>="
+            f"{recommended_thresholds['min_execution_pass_runs']}, "
+            f"recommended_total_fills>={recommended_thresholds['min_total_fills']}"
+        )
+
     status = "pass"
     if fail_reasons:
         status = "fail"
@@ -587,13 +811,17 @@ def aggregate_run_summaries(
         "status": status,
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
-        "thresholds": {
-            "min_execution_active_runs": max(1, min_execution_active_runs),
-            "min_execution_pass_runs": max(1, min_execution_pass_runs),
-            "min_total_fills": max(1, min_total_fills),
-            "min_mean_realized_net_per_fill": float(min_mean_realized_net_per_fill),
-            "warn_mean_filtered_cost_ratio": float(warn_mean_filtered_cost_ratio),
-        },
+        "thresholds": minimum_thresholds,
+        "recommended_thresholds": recommended_thresholds,
+        "minimum_coverage_targets_met": minimum_coverage_targets_met,
+        "recommended_coverage_targets_met": recommended_coverage_targets_met,
+        "coverage_strength_status": (
+            "INSUFFICIENT"
+            if fail_reasons
+            else "ROBUST"
+            if recommended_coverage_targets_met
+            else "MINIMUM_ONLY"
+        ),
     }
     return aggregate_summary, aggregate_validation
 
@@ -644,8 +872,18 @@ def main() -> int:
         default="trend",
         help="要验证的 regime bucket",
     )
-    parser.add_argument("--max_segments", type=int, default=8, help="最多验证多少个片段")
-    parser.add_argument("--min_segment_bars", type=int, default=60, help="片段最少 bars")
+    parser.add_argument(
+        "--max_segments",
+        type=int,
+        default=DEFAULT_MAX_SEGMENTS,
+        help="最多验证多少个片段",
+    )
+    parser.add_argument(
+        "--min_segment_bars",
+        type=int,
+        default=DEFAULT_MIN_SEGMENT_BARS,
+        help="片段最少 bars",
+    )
     parser.add_argument(
         "--corpus_manifest",
         default="",
@@ -727,6 +965,12 @@ def main() -> int:
     thresholds = derive_regime_thresholds(rows)
     base_interval_ms = infer_base_interval_ms(rows)
     segments = find_segments(rows, thresholds, args.target_bucket, base_interval_ms)
+    ranked_segments = rank_replay_segments(
+        segments,
+        rows,
+        thresholds,
+        target_bucket=args.target_bucket,
+    )
     selected, eligible, selection, warnings = select_replay_segments(
         rows,
         thresholds,
@@ -742,6 +986,11 @@ def main() -> int:
     run_summaries: list[dict[str, Any]] = []
     stopped_early = False
     stop_reason = ""
+    recommended_thresholds = derive_recommended_coverage_thresholds(
+        min_execution_active_runs=args.min_execution_active_runs,
+        min_execution_pass_runs=args.min_execution_pass_runs,
+        min_total_fills=args.min_total_fills,
+    )
     for idx, segment in enumerate(selected, start=1):
         segment_dir = output_dir / f"segment_{idx:02d}"
         segment_dir.mkdir(parents=True, exist_ok=True)
@@ -785,7 +1034,12 @@ def main() -> int:
         run_summaries.append(
             {
                 "segment_index": idx,
-                "segment": segment_to_payload(segment),
+                "segment": segment_to_payload(
+                    segment,
+                    rows=rows,
+                    thresholds=thresholds,
+                    target_bucket=args.target_bucket,
+                ),
                 "replay_csv": str(replay_csv),
                 "runtime_log": str(runtime_log),
                 "runtime_assess": str(runtime_assess),
@@ -804,12 +1058,12 @@ def main() -> int:
         )
         if has_met_replay_coverage_targets(
             aggregate_summary,
-            min_execution_active_runs=args.min_execution_active_runs,
-            min_execution_pass_runs=args.min_execution_pass_runs,
-            min_total_fills=args.min_total_fills,
+            min_execution_active_runs=recommended_thresholds["min_execution_active_runs"],
+            min_execution_pass_runs=recommended_thresholds["min_execution_pass_runs"],
+            min_total_fills=recommended_thresholds["min_total_fills"],
         ):
             stopped_early = True
-            stop_reason = "coverage_targets_met"
+            stop_reason = "recommended_coverage_targets_met"
             break
 
     aggregate_summary, aggregate_validation = aggregate_run_summaries(
@@ -835,8 +1089,13 @@ def main() -> int:
             "extreme_range_pct": thresholds.extreme_range_pct,
         },
         "available_segments": [
-            segment_to_payload(segment)
-            for segment in segments[:10]
+            segment_to_payload(
+                segment,
+                rows=rows,
+                thresholds=thresholds,
+                target_bucket=args.target_bucket,
+            )
+            for segment in ranked_segments[:10]
         ],
         "selection": {
             **selection,
@@ -848,6 +1107,18 @@ def main() -> int:
                 min_execution_active_runs=args.min_execution_active_runs,
                 min_execution_pass_runs=args.min_execution_pass_runs,
                 min_total_fills=args.min_total_fills,
+            ),
+            "minimum_coverage_targets_met": has_met_replay_coverage_targets(
+                aggregate_summary,
+                min_execution_active_runs=args.min_execution_active_runs,
+                min_execution_pass_runs=args.min_execution_pass_runs,
+                min_total_fills=args.min_total_fills,
+            ),
+            "recommended_coverage_targets_met": has_met_replay_coverage_targets(
+                aggregate_summary,
+                min_execution_active_runs=recommended_thresholds["min_execution_active_runs"],
+                min_execution_pass_runs=recommended_thresholds["min_execution_pass_runs"],
+                min_total_fills=recommended_thresholds["min_total_fills"],
             ),
         },
         "warnings": warnings,

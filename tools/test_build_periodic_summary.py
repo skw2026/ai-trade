@@ -52,6 +52,8 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                 "selection": {
                                     "segments_ran": 4,
                                     "coverage_targets_met": True,
+                                    "minimum_coverage_targets_met": True,
+                                    "recommended_coverage_targets_met": False,
                                 },
                                 "aggregate_summary": {
                                     "execution_active_runs": 4,
@@ -59,6 +61,9 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                     "total_fills": 3,
                                     "mean_realized_net_per_fill": 0.0,
                                     "mean_filtered_cost_ratio_avg": 0.25,
+                                },
+                                "aggregate_validation": {
+                                    "coverage_strength_status": "MINIMUM_ONLY"
                                 },
                             },
                         },
@@ -89,6 +94,9 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             self.assertEqual(replay_metrics["status"], "pass")
             self.assertEqual(replay_metrics["readiness_status"], "PASS")
             self.assertEqual(replay_metrics["segments_ran"], 4)
+            self.assertTrue(replay_metrics["minimum_coverage_targets_met"])
+            self.assertFalse(replay_metrics["recommended_coverage_targets_met"])
+            self.assertEqual(replay_metrics["coverage_strength_status"], "MINIMUM_ONLY")
             self.assertEqual(replay_metrics["execution_active_runs"], 4)
             self.assertEqual(replay_metrics["total_fills"], 3)
             self.assertAlmostEqual(replay_metrics["mean_filtered_cost_ratio_avg"], 0.25)

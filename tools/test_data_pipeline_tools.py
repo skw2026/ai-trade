@@ -136,6 +136,59 @@ class ReplayValidationToolsTest(unittest.TestCase):
         self.assertEqual(segments[0].start_index, 1)
         self.assertEqual(segments[0].end_index, 3)
 
+    def test_rank_replay_segments_prefers_stronger_trend_segment(self):
+        thresholds = REPLAY.RegimeThresholds(
+            trend_abs_ema_diff=0.001,
+            trend_abs_mom_48=0.004,
+            extreme_vol_12=0.01,
+            extreme_range_pct=0.02,
+        )
+        rows = [
+            REPLAY.FeatureRow(
+                timestamp=idx * 300000,
+                close=close,
+                volume=volume,
+                features={
+                    "ema_diff": ema,
+                    "zscore_48": 0.0,
+                    "mom_12": 0.0,
+                    "mom_48": mom,
+                    "ret_1": 0.0,
+                    "range_pct": 0.001,
+                    "vol_12": 0.001,
+                },
+            )
+            for idx, (close, volume, ema, mom) in enumerate(
+                [
+                    (100.0, 10.0, 0.0, 0.0),
+                    (101.0, 10.0, 0.0015, 0.0045),
+                    (102.0, 10.0, 0.0016, 0.0048),
+                    (103.0, 10.0, 0.0017, 0.0050),
+                    (103.1, 10.0, 0.0, 0.0),
+                    (104.5, 25.0, 0.0035, 0.0095),
+                    (106.0, 25.0, 0.0038, 0.0105),
+                    (107.2, 25.0, 0.0040, 0.0110),
+                ]
+            )
+        ]
+        segments = REPLAY.find_segments(rows, thresholds, "trend", 300000)
+        ranked = REPLAY.rank_replay_segments(
+            segments,
+            rows,
+            thresholds,
+            target_bucket="trend",
+        )
+        self.assertEqual(ranked[0].start_index, 5)
+        priority = REPLAY.build_segment_priority_payload(
+            ranked[0],
+            rows,
+            thresholds,
+            target_bucket="trend",
+            volume_baseline=10.0,
+        )
+        self.assertGreater(priority["priority_score"], 0.0)
+        self.assertGreater(priority["strength_score"], 1.0)
+
     def test_corpus_manifest_round_trip(self):
         thresholds, rows = self.build_trend_rows()
         segments = REPLAY.find_segments(rows, thresholds, "trend", 300000)
@@ -166,7 +219,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
             self.assertEqual(resolved[0].start_timestamp, segments[0].start_timestamp)
             self.assertEqual(resolved[0].end_timestamp, segments[0].end_timestamp)
 
-    def test_select_replay_segments_prefers_corpus_manifest(self):
+    def test_select_replay_segments_uses_corpus_manifest_and_appends_dynamic_tail(self):
         thresholds, rows = self.build_trend_rows()
         segments = REPLAY.find_segments(rows, thresholds, "trend", 300000)
         with tempfile.TemporaryDirectory() as td:
@@ -196,10 +249,12 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 refresh_corpus_manifest=False,
             )
             self.assertFalse(warnings)
-            self.assertEqual(selection["selection_mode"], "corpus_manifest")
+            self.assertEqual(selection["selection_mode"], "corpus_manifest_plus_dynamic")
             self.assertTrue(selection["corpus_loaded"])
             self.assertEqual(selection["corpus_resolved_segment_count"], 1)
+            self.assertEqual(selection["dynamic_appended_segment_count"], 1)
             self.assertEqual(selected[0].start_timestamp, segments[1].start_timestamp)
+            self.assertEqual(selected[1].start_timestamp, segments[0].start_timestamp)
             self.assertEqual(len(eligible), 2)
 
     def test_select_replay_segments_writes_corpus_manifest_on_dynamic_selection(self):
@@ -304,8 +359,13 @@ class ReplayValidationToolsTest(unittest.TestCase):
         self.assertEqual(summary["total_fills"], 5)
         self.assertAlmostEqual(summary["mean_realized_net_per_fill"], -0.001)
         self.assertEqual(validation["status"], "pass_with_actions")
+        self.assertEqual(validation["coverage_strength_status"], "MINIMUM_ONLY")
+        self.assertFalse(validation["recommended_coverage_targets_met"])
         self.assertTrue(
             any("ORDER_FILTERED_COST" in reason for reason in validation["warn_reasons"])
+        )
+        self.assertTrue(
+            any("仅达到最小门槛" in reason for reason in validation["warn_reasons"])
         )
 
     def test_aggregate_run_summaries_fails_when_execution_is_too_weak(self):
@@ -352,6 +412,16 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 min_total_fills=3,
             )
         )
+
+    def test_derive_recommended_coverage_thresholds_never_below_baseline(self):
+        recommended = REPLAY.derive_recommended_coverage_thresholds(
+            min_execution_active_runs=1,
+            min_execution_pass_runs=2,
+            min_total_fills=3,
+        )
+        self.assertEqual(recommended["min_execution_active_runs"], 4)
+        self.assertEqual(recommended["min_execution_pass_runs"], 4)
+        self.assertEqual(recommended["min_total_fills"], 6)
         self.assertFalse(
             REPLAY.has_met_replay_coverage_targets(
                 {

@@ -536,6 +536,9 @@ def compute_replay_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "symbol": None,
             "segments_ran": 0,
             "coverage_targets_met": None,
+            "minimum_coverage_targets_met": None,
+            "recommended_coverage_targets_met": None,
+            "coverage_strength_status": None,
             "execution_active_runs": 0,
             "execution_pass_runs": 0,
             "total_fills": 0,
@@ -549,6 +552,9 @@ def compute_replay_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     aggregate_summary = latest_replay.get("aggregate_summary", {})
     if not isinstance(aggregate_summary, dict):
         aggregate_summary = {}
+    aggregate_validation = latest_replay.get("aggregate_validation", {})
+    if not isinstance(aggregate_validation, dict):
+        aggregate_validation = {}
 
     return {
         "aggregation_mode": "latest_run_snapshot",
@@ -560,6 +566,14 @@ def compute_replay_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "symbol": latest_replay.get("symbol"),
         "segments_ran": to_int(selection.get("segments_ran")) or 0,
         "coverage_targets_met": selection.get("coverage_targets_met"),
+        "minimum_coverage_targets_met": selection.get(
+            "minimum_coverage_targets_met",
+            selection.get("coverage_targets_met"),
+        ),
+        "recommended_coverage_targets_met": selection.get(
+            "recommended_coverage_targets_met"
+        ),
+        "coverage_strength_status": aggregate_validation.get("coverage_strength_status"),
         "execution_active_runs": to_int(aggregate_summary.get("execution_active_runs")) or 0,
         "execution_pass_runs": to_int(aggregate_summary.get("execution_pass_runs")) or 0,
         "total_fills": to_int(aggregate_summary.get("total_fills")) or 0,
