@@ -235,4 +235,5 @@ universe:
   max_active_symbols: 2
   min_active_symbols: 1
   fallback_symbols: ["BTCUSDT", "ETHUSDT"]
-  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  # 保守扩展候选池，先提高 live TREND 样本命中概率，不直接增加同时激活标的数量。
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]

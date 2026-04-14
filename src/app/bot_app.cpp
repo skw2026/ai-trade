@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 #include <thread>
@@ -180,6 +181,40 @@ std::string FormatAccountPositions(const AccountState& account) {
   }
   if (first) {
     return "flat";
+  }
+  return oss.str();
+}
+
+std::string FormatSymbolList(const std::vector<std::string>& symbols) {
+  if (symbols.empty()) {
+    return "n/a";
+  }
+  std::ostringstream oss;
+  for (std::size_t i = 0; i < symbols.size(); ++i) {
+    if (i > 0) {
+      oss << ",";
+    }
+    oss << symbols[i];
+  }
+  return oss.str();
+}
+
+std::string FormatSymbolScores(const std::vector<SymbolScore>& scores,
+                               std::size_t max_items) {
+  if (scores.empty()) {
+    return "n/a";
+  }
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(4);
+  const std::size_t limit = std::min(max_items, scores.size());
+  for (std::size_t i = 0; i < limit; ++i) {
+    if (i > 0) {
+      oss << ",";
+    }
+    oss << scores[i].symbol << ":" << scores[i].score;
+  }
+  if (limit < scores.size()) {
+    oss << ",...";
   }
   return oss.str();
 }
@@ -1525,7 +1560,17 @@ void BotApplication::RunRemoteRiskRefresh() {
  */
 void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   if (const auto update = universe_selector_.OnMarket(event); update.has_value()) {
-    LogInfo("Universe Updated: active_count=" + std::to_string(update->active_symbols.size()));
+    std::string message =
+        "Universe Updated: active_count=" +
+        std::to_string(update->active_symbols.size()) +
+        ", active_symbols=[" + FormatSymbolList(update->active_symbols) + "]" +
+        ", degraded_to_fallback=" +
+        std::string(update->degraded_to_fallback ? "true" : "false");
+    if (!update->reason_code.empty()) {
+      message += ", reason=" + update->reason_code;
+    }
+    message += ", top_scores=[" + FormatSymbolScores(update->symbol_scores, 5) + "]";
+    LogInfo(message);
   }
 
   const double mark_price_for_evolution =
