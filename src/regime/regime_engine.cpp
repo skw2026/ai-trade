@@ -27,6 +27,13 @@ double IntervalAwareAlpha(double base_alpha, std::int64_t interval_ms) {
   return std::clamp(effective_alpha, 1e-6, 1.0);
 }
 
+double SanitizeVolume(double volume) {
+  if (!std::isfinite(volume)) {
+    return 0.0;
+  }
+  return std::max(0.0, volume);
+}
+
 }  // namespace
 
 RegimeBucket RegimeEngine::ToBucket(Regime regime) {
@@ -42,37 +49,37 @@ RegimeBucket RegimeEngine::ToBucket(Regime regime) {
   return RegimeBucket::kRange;
 }
 
-RegimeState RegimeEngine::OnMarket(const MarketEvent& event) {
+RegimeState RegimeEngine::ProcessSample(SymbolState& symbol_state,
+                                        const std::string& symbol,
+                                        double price,
+                                        double volume,
+                                        std::int64_t interval_ms,
+                                        int aggregated_event_count) {
   RegimeState state;
-  state.symbol = event.symbol;
-
-  if (!config_.enabled) {
-    state.warmup = false;
-    return state;
-  }
-
-  SymbolState& symbol_state = symbol_state_[event.symbol];
+  state.symbol = symbol;
+  state.decision_interval_ms = std::max<std::int64_t>(0, interval_ms);
+  state.aggregated_event_count = std::max(aggregated_event_count, 1);
   if (!symbol_state.has_last_price || symbol_state.last_price <= kEpsilon ||
-      event.price <= kEpsilon) {
+      price <= kEpsilon) {
     symbol_state.has_last_price = true;
-    symbol_state.last_price = event.price;
+    symbol_state.last_price = price;
     symbol_state.sample_ticks = 1;
     state.warmup = true;
+    symbol_state.last_emitted_state = state;
+    symbol_state.has_last_emitted_state = true;
     return state;
   }
 
-  const double instant_return =
-      (event.price - symbol_state.last_price) / symbol_state.last_price;
-  symbol_state.last_price = event.price;
+  const double instant_return = (price - symbol_state.last_price) / symbol_state.last_price;
+  symbol_state.last_price = price;
   ++symbol_state.sample_ticks;
 
-  const double alpha = IntervalAwareAlpha(config_.ewma_alpha, event.interval_ms);
+  const double alpha = IntervalAwareAlpha(config_.ewma_alpha, interval_ms);
   symbol_state.ewma_return =
       (1.0 - alpha) * symbol_state.ewma_return + alpha * instant_return;
   symbol_state.ewma_abs_return =
       (1.0 - alpha) * symbol_state.ewma_abs_return +
       alpha * std::fabs(instant_return);
-  const double volume = std::max(0.0, event.volume);
   symbol_state.ewma_volume =
       (1.0 - alpha) * symbol_state.ewma_volume + alpha * volume;
 
@@ -135,7 +142,59 @@ RegimeState RegimeEngine::OnMarket(const MarketEvent& event) {
 
   state.regime = regime;
   state.bucket = ToBucket(regime);
+  symbol_state.last_emitted_state = state;
+  symbol_state.has_last_emitted_state = true;
   return state;
+}
+
+RegimeState RegimeEngine::OnMarket(const MarketEvent& event) {
+  RegimeState state;
+  state.symbol = event.symbol;
+
+  if (!config_.enabled) {
+    state.warmup = false;
+    return state;
+  }
+
+  SymbolState& symbol_state = symbol_state_[event.symbol];
+  if (config_.bar_interval_ms <= 0) {
+    return ProcessSample(symbol_state,
+                         event.symbol,
+                         event.price,
+                         SanitizeVolume(event.volume),
+                         event.interval_ms,
+                         1);
+  }
+
+  symbol_state.pending_price = event.price;
+  symbol_state.pending_volume += SanitizeVolume(event.volume);
+  symbol_state.pending_interval_ms += std::max<std::int64_t>(0, event.interval_ms);
+  ++symbol_state.pending_event_count;
+
+  if (symbol_state.pending_interval_ms < config_.bar_interval_ms) {
+    if (symbol_state.has_last_emitted_state) {
+      return symbol_state.last_emitted_state;
+    }
+    state.warmup = true;
+    return state;
+  }
+
+  const double aggregated_price = symbol_state.pending_price;
+  const double aggregated_volume = symbol_state.pending_volume;
+  const std::int64_t aggregated_interval_ms = symbol_state.pending_interval_ms;
+  const int aggregated_event_count = symbol_state.pending_event_count;
+
+  symbol_state.pending_interval_ms = 0;
+  symbol_state.pending_volume = 0.0;
+  symbol_state.pending_price = 0.0;
+  symbol_state.pending_event_count = 0;
+
+  return ProcessSample(symbol_state,
+                       event.symbol,
+                       aggregated_price,
+                       aggregated_volume,
+                       aggregated_interval_ms,
+                       aggregated_event_count);
 }
 
 }  // namespace ai_trade

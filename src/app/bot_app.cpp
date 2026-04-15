@@ -1676,6 +1676,10 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             ", regime=" + std::string(ToString(decision.regime.regime)) +
             ", bucket=" + std::string(ToString(decision.regime.bucket)) +
             ", warmup=" + (decision.regime.warmup ? "true" : "false") +
+            ", decision_interval_ms=" +
+            std::to_string(decision.regime.decision_interval_ms) +
+            ", aggregated_events=" +
+            std::to_string(decision.regime.aggregated_event_count) +
             ", instant_return=" +
             std::to_string(decision.regime.instant_return) +
             ", trend_strength=" +
@@ -3386,6 +3390,14 @@ void BotApplication::LogStatus() {
           ", warmup=" +
           std::string(has_last_regime_state_ && last_regime_state_.warmup ? "true"
                                                                             : "false") +
+          ", decision_interval_ms=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.decision_interval_ms
+                             : 0) +
+          ", aggregated_events=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.aggregated_event_count
+                             : 0) +
           "}" +
           ", shadow_latest={enabled=" +
           std::string(has_last_shadow_inference_ &&

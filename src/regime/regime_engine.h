@@ -31,6 +31,12 @@ class RegimeEngine {
     double ewma_return{0.0};        ///< EWMA 收益率（有方向）。
     double ewma_abs_return{0.0};    ///< EWMA 绝对收益率（波动代理）。
     double ewma_volume{0.0};        ///< EWMA 成交量（用于识别流动性/事件尖峰）。
+    std::int64_t pending_interval_ms{0};  ///< 尚未输出 Regime 样本的累计间隔。
+    double pending_volume{0.0};           ///< 尚未输出样本的累计成交量。
+    double pending_price{0.0};            ///< 尚未输出样本的最新价格。
+    int pending_event_count{0};           ///< 尚未输出样本累计的底层事件数。
+    bool has_last_emitted_state{false};   ///< 是否已有最近一次对外输出状态。
+    RegimeState last_emitted_state{};     ///< 最近一次对外输出状态。
     bool has_confirmed_regime{false};  ///< 是否已有确认态（非 warmup 后）。
     Regime confirmed_regime{Regime::kRange};  ///< 已确认 Regime。
     Regime pending_regime{Regime::kRange};    ///< 待确认 Regime。
@@ -38,6 +44,12 @@ class RegimeEngine {
   };
 
   static RegimeBucket ToBucket(Regime regime);
+  RegimeState ProcessSample(SymbolState& symbol_state,
+                            const std::string& symbol,
+                            double price,
+                            double volume,
+                            std::int64_t interval_ms,
+                            int aggregated_event_count);
 
   RegimeConfig config_;  ///< Regime 识别配置快照。
   std::unordered_map<std::string, SymbolState> symbol_state_;  ///< 多币对运行态。

@@ -3331,6 +3331,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "regime" &&
+        (key == "bar_interval_ms" || key == "decision_bar_interval_ms")) {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "regime.bar_interval_ms 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.regime.bar_interval_ms = parsed;
+      continue;
+    }
+
+    if (current_section == "regime" &&
         (key == "switch_confirm_ticks" || key == "confirm_ticks")) {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {
@@ -4736,6 +4750,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.regime.volume_extreme_multiplier <= 1.0) {
     if (out_error != nullptr) {
       *out_error = "regime.volume_extreme_multiplier 启用时必须 > 1";
+    }
+    return false;
+  }
+  if (config.regime.bar_interval_ms < 0) {
+    if (out_error != nullptr) {
+      *out_error = "regime.bar_interval_ms 不能为负数";
     }
     return false;
   }

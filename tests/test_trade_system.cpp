@@ -6779,6 +6779,7 @@ int main() {
         << "  enabled: true\n"
         << "  warmup_ticks: 12\n"
         << "  ewma_alpha: 0.25\n"
+        << "  bar_interval_ms: 5000\n"
         << "  switch_confirm_ticks: 4\n"
         << "  extreme_requires_both: true\n"
         << "  volume_extreme_multiplier: 5.0\n"
@@ -6795,6 +6796,7 @@ int main() {
     }
     if (!config.regime.enabled || config.regime.warmup_ticks != 12 ||
         !NearlyEqual(config.regime.ewma_alpha, 0.25) ||
+        config.regime.bar_interval_ms != 5000 ||
         config.regime.switch_confirm_ticks != 4 ||
         config.regime.extreme_requires_both != true ||
         !NearlyEqual(config.regime.volume_extreme_multiplier, 5.0) ||
@@ -6802,6 +6804,61 @@ int main() {
         !NearlyEqual(config.regime.extreme_threshold, 0.006) ||
         !NearlyEqual(config.regime.volatility_threshold, 0.0025)) {
       std::cerr << "Regime 配置解析结果不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::RegimeConfig config;
+    config.enabled = true;
+    config.warmup_ticks = 1;
+    config.ewma_alpha = 1.0;
+    config.bar_interval_ms = 5000;
+    config.switch_confirm_ticks = 1;
+    config.trend_threshold = 0.001;
+    config.extreme_threshold = 0.050;
+    config.volatility_threshold = 0.050;
+
+    ai_trade::RegimeEngine engine(config);
+    ai_trade::MarketEvent event;
+    event.symbol = "BTCUSDT";
+    event.interval_ms = 1000;
+
+    event.price = 100.0;
+    for (int i = 0; i < 4; ++i) {
+      const auto pending = engine.OnMarket(event);
+      if (!pending.warmup || pending.decision_interval_ms != 0 ||
+          pending.aggregated_event_count != 0) {
+        std::cerr << "bar_interval_ms 聚合前不应提前输出决策样本\n";
+        return 1;
+      }
+      event.price += 0.1;
+    }
+
+    const auto seeded = engine.OnMarket(event);
+    if (!seeded.warmup || seeded.decision_interval_ms != 5000 ||
+        seeded.aggregated_event_count != 5) {
+      std::cerr << "bar_interval_ms 首个聚合样本应作为 warmup 基准输出\n";
+      return 1;
+    }
+
+    event.price += 0.1;
+    for (int i = 0; i < 4; ++i) {
+      const auto held = engine.OnMarket(event);
+      if (!held.warmup || held.decision_interval_ms != 5000 ||
+          held.aggregated_event_count != 5) {
+        std::cerr << "bar_interval_ms 未满窗口时应保持最近一次聚合状态\n";
+        return 1;
+      }
+      event.price += 0.1;
+    }
+
+    const auto trend = engine.OnMarket(event);
+    if (trend.warmup || trend.regime != ai_trade::Regime::kUptrend ||
+        trend.bucket != ai_trade::RegimeBucket::kTrend ||
+        trend.decision_interval_ms != 5000 ||
+        trend.aggregated_event_count != 5) {
+      std::cerr << "bar_interval_ms 聚合后应按 5s 样本触发趋势判定\n";
       return 1;
     }
   }

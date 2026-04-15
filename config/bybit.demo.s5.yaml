@@ -209,6 +209,7 @@ regime:
   enabled: true
   warmup_ticks: 30
   ewma_alpha: 0.05
+  bar_interval_ms: 5000
   switch_confirm_ticks: 12
   extreme_requires_both: true
   trend_threshold: 0.0015

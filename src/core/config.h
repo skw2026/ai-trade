@@ -187,6 +187,8 @@ struct RegimeConfig {
   bool enabled{true};
   int warmup_ticks{20};
   double ewma_alpha{0.20};
+  // >0 时，Regime 按累计市场间隔聚合后再判定，避免逐笔 tick 口径过细。
+  int bar_interval_ms{0};
   int switch_confirm_ticks{0};
   bool extreme_requires_both{false};
   // >1 时启用成交量尖峰触发 EXTREME（event.volume > ewma_volume * multiplier）。
