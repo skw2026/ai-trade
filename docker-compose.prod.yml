@@ -4,7 +4,7 @@ services:
     container_name: ai-trade
     restart: unless-stopped
     command:
-      - "--config=${AI_TRADE_CONFIG_PATH:-config/bybit.demo.evolution.yaml}"
+      - "--config=${AI_TRADE_CONFIG_PATH:-config/bybit.demo.s5.yaml}"
       - "--exchange=${AI_TRADE_EXCHANGE:-bybit}"
       - "--run_forever"
     environment:

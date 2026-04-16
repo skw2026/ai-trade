@@ -90,6 +90,25 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("${AI_TRADE_PROJECT_DIR:-.}/data:/app/data", runtime)
         self.assertIn("${AI_TRADE_PROJECT_DIR:-.}/config:/app/config:ro", runtime)
 
+    def test_closed_loop_runtime_defaults_to_s5_config(self):
+        dev_runtime = self.dev_services["ai-trade"]
+        prod_runtime = self.prod_services["ai-trade"]
+        self.assertIn(
+            "--config=${AI_TRADE_CONFIG_PATH:-config/bybit.demo.s5.yaml}",
+            dev_runtime,
+        )
+        self.assertIn(
+            "--config=${AI_TRADE_CONFIG_PATH:-config/bybit.demo.s5.yaml}",
+            prod_runtime,
+        )
+        script = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn(
+            'DEFAULT_S5_RUNTIME_CONFIG_PATH="config/bybit.demo.s5.yaml"',
+            script,
+        )
+        self.assertIn("closed-loop runtime config resolved", script)
+        self.assertIn('export AI_TRADE_CONFIG_PATH="${RUNTIME_CONFIG_PATH}"', script)
+
     def test_dev_does_not_include_scheduler_and_watchdog(self):
         self.assertNotIn("watchdog", self.dev_services)
         self.assertNotIn("scheduler", self.dev_services)

@@ -1,4 +1,6 @@
+#include <iomanip>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -49,6 +51,26 @@ bool ParseNonNegativeInt(const std::string& raw, int* out_value) {
   } catch (...) {
     return false;
   }
+}
+
+std::string FormatSymbolList(const std::vector<std::string>& symbols) {
+  if (symbols.empty()) {
+    return "n/a";
+  }
+  std::ostringstream oss;
+  for (std::size_t i = 0; i < symbols.size(); ++i) {
+    if (i > 0) {
+      oss << ",";
+    }
+    oss << symbols[i];
+  }
+  return oss.str();
+}
+
+std::string FormatDouble(double value) {
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(6) << value;
+  return oss.str();
 }
 
 // 解析形如 `--max_ticks=100` 或独立值字符串中的整型参数。
@@ -397,6 +419,25 @@ int main(int argc, char** argv) {
   }
   // 3) 应用 CLI 覆盖参数并启动应用。
   ApplyRuntimeOverrides(options, &config);
+  ai_trade::LogInfo(
+      "CONFIG_LOADED: path=" + options.config_path +
+      ", exchange=" + config.exchange +
+      ", regime={enabled=" + std::string(config.regime.enabled ? "true" : "false") +
+      ", warmup_ticks=" + std::to_string(config.regime.warmup_ticks) +
+      ", ewma_alpha=" + FormatDouble(config.regime.ewma_alpha) +
+      ", bar_interval_ms=" + std::to_string(config.regime.bar_interval_ms) +
+      ", switch_confirm_ticks=" +
+      std::to_string(config.regime.switch_confirm_ticks) +
+      ", trend_threshold=" + FormatDouble(config.regime.trend_threshold) +
+      ", extreme_threshold=" + FormatDouble(config.regime.extreme_threshold) +
+      ", volatility_threshold=" +
+      FormatDouble(config.regime.volatility_threshold) +
+      "}, universe={enabled=" +
+      std::string(config.universe.enabled ? "true" : "false") +
+      ", max_active_symbols=" +
+      std::to_string(config.universe.max_active_symbols) +
+      ", candidate_symbols=[" +
+      FormatSymbolList(config.universe.candidate_symbols) + "]}");
 
   ai_trade::BotApplication app(config);
   return app.Run();
