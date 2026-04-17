@@ -201,6 +201,7 @@ struct RegimeConfig {
 struct StrategyConfig {
   double signal_notional_usd{1000.0};
   double signal_deadband_abs{0.1};
+  double signal_deadband_bps{0.0};
   int signal_valid_for_ms{15000};
   int default_tick_interval_ms{5000};
   int min_hold_ticks{0};
@@ -249,6 +250,7 @@ struct AppConfig {
   // Flattened Strategy Config (for YAML compatibility)
   double strategy_signal_notional_usd{1000.0};
   double strategy_signal_deadband_abs{0.1};
+  double strategy_signal_deadband_bps{0.0};
   int strategy_signal_valid_for_ms{15000};
   int strategy_default_tick_interval_ms{5000};
   int strategy_min_hold_ticks{0};
@@ -350,38 +352,43 @@ struct AppConfig {
   // Helper to extract StrategyConfig
   StrategyConfig GetStrategyConfig() const {
     return StrategyConfig{
-        strategy_signal_notional_usd,
-        strategy_signal_deadband_abs,
-        strategy_signal_valid_for_ms,
-        strategy_default_tick_interval_ms,
-        strategy_min_hold_ticks,
-        trend_ema_fast,
-        trend_ema_slow,
-        strategy_trend_breakout_lookback_ticks,
-        strategy_trend_breakout_rank_threshold,
-        strategy_trend_slope_lookback_ticks,
-        strategy_trend_slope_min_abs,
-        strategy_trend_vol_cap_annual,
-        strategy_trend_strength_scale,
-        strategy_trend_trend_scale,
-        strategy_trend_range_scale,
-        strategy_trend_extreme_scale,
-        vol_target_pct,
-        strategy_vol_target_max_leverage,
-        strategy_vol_target_low_vol_leverage_cap_enabled,
-        strategy_vol_target_low_vol_annual_threshold,
-        strategy_vol_target_low_vol_max_leverage,
-        strategy_vol_target_rebalance_min_abs_usd,
-        strategy_vol_target_rebalance_min_ratio,
-        strategy_defensive_notional_ratio,
-        strategy_defensive_entry_score,
-        strategy_defensive_rank_lookback_ticks,
-        strategy_defensive_trend_scale,
-        strategy_defensive_range_scale,
-        strategy_defensive_extreme_scale,
-        strategy_range_min_confidence,
-        strategy_eth_range_defensive_scale_multiplier,
-        strategy_extreme_block_signals
+        .signal_notional_usd = strategy_signal_notional_usd,
+        .signal_deadband_abs = strategy_signal_deadband_abs,
+        .signal_deadband_bps = strategy_signal_deadband_bps,
+        .signal_valid_for_ms = strategy_signal_valid_for_ms,
+        .default_tick_interval_ms = strategy_default_tick_interval_ms,
+        .min_hold_ticks = strategy_min_hold_ticks,
+        .trend_ema_fast = trend_ema_fast,
+        .trend_ema_slow = trend_ema_slow,
+        .trend_breakout_lookback_ticks = strategy_trend_breakout_lookback_ticks,
+        .trend_breakout_rank_threshold = strategy_trend_breakout_rank_threshold,
+        .trend_slope_lookback_ticks = strategy_trend_slope_lookback_ticks,
+        .trend_slope_min_abs = strategy_trend_slope_min_abs,
+        .trend_vol_cap_annual = strategy_trend_vol_cap_annual,
+        .trend_strength_scale = strategy_trend_strength_scale,
+        .trend_trend_scale = strategy_trend_trend_scale,
+        .trend_range_scale = strategy_trend_range_scale,
+        .trend_extreme_scale = strategy_trend_extreme_scale,
+        .vol_target_pct = vol_target_pct,
+        .vol_target_max_leverage = strategy_vol_target_max_leverage,
+        .vol_target_low_vol_leverage_cap_enabled =
+            strategy_vol_target_low_vol_leverage_cap_enabled,
+        .vol_target_low_vol_annual_threshold =
+            strategy_vol_target_low_vol_annual_threshold,
+        .vol_target_low_vol_max_leverage = strategy_vol_target_low_vol_max_leverage,
+        .vol_target_rebalance_min_abs_usd =
+            strategy_vol_target_rebalance_min_abs_usd,
+        .vol_target_rebalance_min_ratio = strategy_vol_target_rebalance_min_ratio,
+        .defensive_notional_ratio = strategy_defensive_notional_ratio,
+        .defensive_entry_score = strategy_defensive_entry_score,
+        .defensive_rank_lookback_ticks = strategy_defensive_rank_lookback_ticks,
+        .defensive_trend_scale = strategy_defensive_trend_scale,
+        .defensive_range_scale = strategy_defensive_range_scale,
+        .defensive_extreme_scale = strategy_defensive_extreme_scale,
+        .range_min_confidence = strategy_range_min_confidence,
+        .eth_range_defensive_scale_multiplier =
+            strategy_eth_range_defensive_scale_multiplier,
+        .extreme_block_signals = strategy_extreme_block_signals,
     };
   }
 

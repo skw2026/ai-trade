@@ -515,6 +515,7 @@ GitHub Actions 定时闭环：
 
 策略防抖参数（`strategy`）：
 - `signal_deadband_abs`：价格变化绝对死区
+- `signal_deadband_bps`：价格变化相对死区（bps，配置后优先于 `signal_deadband_abs`，更适合多币种）
 - `min_hold_ticks`：反向信号最小持有 tick
 - `signal_notional_usd`：信号输出目标名义值
 

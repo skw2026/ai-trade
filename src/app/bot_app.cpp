@@ -477,10 +477,13 @@ double BotApplication::EstimateEntryEdgeBps(const MarketDecision& decision,
     return 0.0;
   }
   const double price = event.price > 0.0 ? event.price : decision.intent->price;
-  const double deadband_bps =
-      (price > 0.0 && config_.strategy_signal_deadband_abs > 0.0)
-          ? std::fabs(config_.strategy_signal_deadband_abs) / price * 10000.0
-          : 0.0;
+  double deadband_bps = 0.0;
+  if (config_.strategy_signal_deadband_bps > 0.0) {
+    deadband_bps = std::fabs(config_.strategy_signal_deadband_bps);
+  } else if (price > 0.0 && config_.strategy_signal_deadband_abs > 0.0) {
+    deadband_bps =
+        std::fabs(config_.strategy_signal_deadband_abs) / price * 10000.0;
+  }
 
   const double trend_edge_bps = std::max(
       0.0, decision.regime.trend_strength * static_cast<double>(direction) * 10000.0);

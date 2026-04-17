@@ -1177,6 +1177,20 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "strategy" &&
+        (key == "signal_deadband_bps" || key == "deadband_bps")) {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "strategy.signal_deadband_bps 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.strategy_signal_deadband_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "strategy" &&
         key == "signal_valid_for_ms") {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {
@@ -4319,6 +4333,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.strategy_signal_deadband_abs < 0.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.signal_deadband_abs 不能为负数";
+    }
+    return false;
+  }
+  if (config.strategy_signal_deadband_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "strategy.signal_deadband_bps 不能为负数";
     }
     return false;
   }

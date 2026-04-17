@@ -895,6 +895,30 @@ int main() {
   }
 
   {
+    ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
+        .signal_notional_usd = 1000.0,
+        .signal_deadband_abs = 10.0,
+        .signal_deadband_bps = 10.0,
+        .min_hold_ticks = 0,
+        .trend_ema_fast = 1,
+        .trend_ema_slow = 2,
+    });
+    ai_trade::AccountState dummy_account;
+    ai_trade::RegimeState dummy_regime;
+
+    for (int i = 0; i < 10; ++i) {
+      strategy.OnMarket(ai_trade::MarketEvent{
+          1, "BTCUSDT", 100.0, 100.0}, dummy_account, dummy_regime);
+    }
+    const auto signal = strategy.OnMarket(ai_trade::MarketEvent{
+        2, "BTCUSDT", 100.2, 100.2}, dummy_account, dummy_regime);
+    if (signal.direction != 1) {
+      std::cerr << "signal_deadband_bps 启用后应优先按相对死区判定\n";
+      return 1;
+    }
+  }
+
+  {
     // 防御分支：当阈值过高时，不应产生 defensive 分量。
     ai_trade::StrategyEngine strategy(ai_trade::StrategyConfig{
         .signal_notional_usd = 1000.0,
@@ -3162,6 +3186,7 @@ int main() {
         << "strategy:\n"
         << "  signal_notional_usd: 1500\n"
         << "  signal_deadband_abs: 0.3\n"
+        << "  signal_deadband_bps: 2.5\n"
         << "  signal_valid_for_ms: 18000\n"
         << "  default_tick_interval_ms: 4000\n"
         << "  min_hold_ticks: 4\n"
@@ -3324,6 +3349,7 @@ int main() {
         config.bybit.replay_default_interval_ms != 300000 ||
         !NearlyEqual(config.strategy_signal_notional_usd, 1500.0) ||
         !NearlyEqual(config.strategy_signal_deadband_abs, 0.3) ||
+        !NearlyEqual(config.strategy_signal_deadband_bps, 2.5) ||
         config.strategy_signal_valid_for_ms != 18000 ||
         config.strategy_default_tick_interval_ms != 4000 ||
         config.strategy_min_hold_ticks != 4 ||
@@ -4214,6 +4240,28 @@ int main() {
         error.find("same_side_rebalance_multiplier") == std::string::npos &&
         error.find("strategy.min_hold_ticks") == std::string::npos) {
       std::cerr << "非法 strategy/execution 防抖配置错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_signal_deadband_bps.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  signal_deadband_bps: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 strategy.signal_deadband_bps 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.signal_deadband_bps") == std::string::npos) {
+      std::cerr << "非法 strategy.signal_deadband_bps 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

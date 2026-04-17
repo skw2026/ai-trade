@@ -11,6 +11,14 @@ namespace {
 
 constexpr double kEpsilon = 1e-9;
 
+double EffectiveDeadbandAbs(const StrategyConfig& config, double price) {
+  const double abs_deadband = std::max(0.0, config.signal_deadband_abs);
+  if (price > kEpsilon && config.signal_deadband_bps > 0.0) {
+    return std::max(0.0, config.signal_deadband_bps) * price / 10000.0;
+  }
+  return abs_deadband;
+}
+
 int SignOf(double value) {
   if (value > kEpsilon) {
     return 1;
@@ -130,6 +138,7 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
   }
   const double safe_price = std::max(std::fabs(event.price), kEpsilon);
   const double price_delta_abs = std::fabs(event.price - state.last_price);
+  const double effective_deadband_abs = EffectiveDeadbandAbs(config_, safe_price);
   state.last_price = event.price;
 
   // 2. 计算 EMA 指标 (Trend Strategy)
@@ -227,8 +236,8 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
   }
 
   // 价格变化不足 deadband 时沿用当前方向，避免在微小波动中频繁反手。
-  if (config_.signal_deadband_abs > 0.0 &&
-      price_delta_abs < config_.signal_deadband_abs) {
+  if (effective_deadband_abs > 0.0 &&
+      price_delta_abs < effective_deadband_abs) {
     raw_direction = state.effective_direction;
     PushReason(&signal.reason_codes, "STR_DEADBAND_HOLD");
   }
@@ -282,7 +291,7 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
   if (!defensive_signal_ready && std::isfinite(ema_slow)) {
     const double deviation_ratio = (event.price - ema_slow) / safe_price;
     const double fallback_scale =
-        std::max(config_.signal_deadband_abs / safe_price, 1e-4);
+        std::max(effective_deadband_abs / safe_price, 1e-4);
     const double vol_scale =
         regime.volatility_level > kEpsilon ? regime.volatility_level : fallback_scale;
     const double defensive_score = deviation_ratio / std::max(vol_scale, kEpsilon);
@@ -294,8 +303,8 @@ Signal StrategyEngine::OnMarket(const MarketEvent& event,
       PushReason(&signal.reason_codes, "STR_DEFENSIVE_LEGACY_WEAK");
     }
   }
-  if (config_.signal_deadband_abs > 0.0 &&
-      price_delta_abs < config_.signal_deadband_abs) {
+  if (effective_deadband_abs > 0.0 &&
+      price_delta_abs < effective_deadband_abs) {
     raw_defensive_direction = state.defensive_effective_direction;
     PushReason(&signal.reason_codes, "STR_DEFENSIVE_DEADBAND_HOLD");
   }

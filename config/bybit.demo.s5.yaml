@@ -117,7 +117,8 @@ execution:
 
 strategy:
   signal_notional_usd: 380
-  signal_deadband_abs: 1.4
+  signal_deadband_abs: 0.0
+  signal_deadband_bps: 3.0
   signal_valid_for_ms: 15000
   default_tick_interval_ms: 5000
   min_hold_ticks: 18
