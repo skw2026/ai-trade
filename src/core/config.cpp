@@ -4447,6 +4447,14 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.strategy_defensive_rank_lookback_ticks > 1 &&
+      config.strategy_defensive_entry_score > 2.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "strategy.defensive_entry_score 在 defensive_rank_lookback_ticks 启用时不能大于 2.0";
+    }
+    return false;
+  }
   if (config.strategy_defensive_rank_lookback_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "strategy.defensive_rank_lookback_ticks 不能为负数";
@@ -4465,6 +4473,19 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.strategy_range_min_confidence > 1.0) {
     if (out_error != nullptr) {
       *out_error = "strategy.range_min_confidence 必须在 [0,1] 区间";
+    }
+    return false;
+  }
+  const double range_confidence_cap =
+      std::min(1.0, std::max(0.0, config.strategy_trend_range_scale) +
+                        std::max(0.0, config.strategy_defensive_notional_ratio) *
+                            std::max(0.0, config.strategy_defensive_range_scale));
+  if (config.strategy_range_min_confidence > range_confidence_cap + 1e-12) {
+    if (out_error != nullptr) {
+      std::ostringstream oss;
+      oss << "strategy.range_min_confidence 超过 RANGE 桶理论最大置信度 "
+          << range_confidence_cap;
+      *out_error = oss.str();
     }
     return false;
   }

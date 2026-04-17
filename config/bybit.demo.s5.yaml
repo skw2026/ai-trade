@@ -121,10 +121,11 @@ strategy:
   signal_valid_for_ms: 15000
   default_tick_interval_ms: 5000
   min_hold_ticks: 18
-  range_min_confidence: 0.45
+  # RANGE 桶保留小样本通道，避免 defensive 分支被结构性清零。
+  range_min_confidence: 0.10
   extreme_block_signals: true
   trend_breakout_lookback_ticks: 24
-  trend_breakout_rank_threshold: 0.97
+  trend_breakout_rank_threshold: 0.95
   trend_slope_lookback_ticks: 6
   trend_slope_min_abs: 0.00002
   trend_vol_cap_annual: 1.20
@@ -138,7 +139,8 @@ strategy:
   vol_target_low_vol_annual_threshold: 0.12
   vol_target_low_vol_max_leverage: 1.1
   defensive_notional_ratio: 0.30
-  defensive_entry_score: 2.2
+  # rank 信号范围固定在 [-2,2]；门槛需留在可触达区间。
+  defensive_entry_score: 1.40
   defensive_rank_lookback_ticks: 72
   defensive_trend_scale: 0.25
   defensive_range_scale: 0.40
@@ -210,9 +212,10 @@ regime:
   warmup_ticks: 30
   ewma_alpha: 0.05
   bar_interval_ms: 5000
-  switch_confirm_ticks: 12
+  switch_confirm_ticks: 5
   extreme_requires_both: true
-  trend_threshold: 0.0015
+  # 5s 聚合后按 live 实测波动下调到可触达区间，优先恢复 TREND 样本。
+  trend_threshold: 0.0004
   extreme_threshold: 0.0080
   volatility_threshold: 0.0025
 

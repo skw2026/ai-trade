@@ -4337,6 +4337,58 @@ int main() {
   {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
+        "ai_trade_test_unreachable_strategy_defensive_rank_score.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  defensive_entry_score: 2.1\n"
+        << "  defensive_rank_lookback_ticks: 72\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "不可达 strategy.defensive_entry_score/rank 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.defensive_entry_score") == std::string::npos) {
+      std::cerr
+          << "不可达 strategy.defensive_entry_score/rank 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_unreachable_strategy_range_confidence.yaml";
+    std::ofstream out(temp_path);
+    out << "strategy:\n"
+        << "  range_min_confidence: 0.40\n"
+        << "  trend_range_scale: 0.25\n"
+        << "  defensive_notional_ratio: 0.30\n"
+        << "  defensive_range_scale: 0.40\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr
+          << "不可达 strategy.range_min_confidence 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy.range_min_confidence") == std::string::npos) {
+      std::cerr
+          << "不可达 strategy.range_min_confidence 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
         "ai_trade_test_invalid_strategy_eth_range_defensive_scale_multiplier.yaml";
     std::ofstream out(temp_path);
     out << "strategy:\n"
