@@ -220,6 +220,7 @@ regime:
   enabled: true
   warmup_ticks: 30
   ewma_alpha: 0.05
+  bar_interval_ms: 5000
   switch_confirm_ticks: 12
   extreme_requires_both: true
   volume_extreme_multiplier: 6.0
@@ -246,5 +247,8 @@ universe:
   update_interval_ticks: 20
   max_active_symbols: 2
   min_active_symbols: 1
+  trend_reserve_enabled: true
+  trend_reserve_slots: 1
+  reset_stats_on_refresh: true
   fallback_symbols: ["BTCUSDT", "ETHUSDT"]
-  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]

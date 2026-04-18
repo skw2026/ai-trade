@@ -3099,6 +3099,9 @@ int main() {
         << "  update_interval_minutes: 30\n"
         << "  max_active_symbols: 2\n"
         << "  min_active_symbols: 1\n"
+        << "  trend_reserve_enabled: true\n"
+        << "  trend_reserve_slots: 1\n"
+        << "  reset_stats_on_refresh: true\n"
         << "  fallback_symbols: [\"ETHUSDT\"]\n"
         << "  candidate_symbols: [\"ETHUSDT\", \"BTCUSDT\"]\n"
         << "gate:\n"
@@ -3406,6 +3409,9 @@ int main() {
         config.universe.update_interval_ticks != 30 ||
         config.universe.max_active_symbols != 2 ||
         config.universe.min_active_symbols != 1 ||
+        config.universe.trend_reserve_enabled != true ||
+        config.universe.trend_reserve_slots != 1 ||
+        config.universe.reset_stats_on_refresh != true ||
         config.universe.fallback_symbols.size() != 1 ||
         config.universe.fallback_symbols[0] != "ETHUSDT" ||
         config.universe.candidate_symbols.size() != 2 ||
@@ -3836,6 +3842,33 @@ int main() {
     }
     if (error.find("universe") == std::string::npos) {
       std::cerr << "非法 Universe 配置错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_universe_trend_reserve.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  primary_symbol: \"BTCUSDT\"\n"
+        << "universe:\n"
+        << "  max_active_symbols: 2\n"
+        << "  trend_reserve_enabled: true\n"
+        << "  trend_reserve_slots: 3\n"
+        << "  fallback_symbols: [\"BTCUSDT\"]\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 Universe 趋势保留槽配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("trend_reserve_slots") == std::string::npos) {
+      std::cerr << "非法 Universe 趋势保留槽错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -5304,6 +5337,99 @@ int main() {
     }
     if (update->active_symbols.size() != 2U) {
       std::cerr << "Universe fallback 后活跃币对应满足最小数量\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::UniverseConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 14;
+    config.max_active_symbols = 2;
+    config.min_active_symbols = 1;
+    config.min_turnover_usd = 1000.0;
+    config.trend_reserve_enabled = true;
+    config.trend_reserve_slots = 1;
+    config.fallback_symbols = {"BTCUSDT"};
+    config.candidate_symbols = {"CHOPUSDT", "TRENDUSDT", "QUIETUSDT"};
+
+    ai_trade::UniverseSelector selector(config, "BTCUSDT");
+    std::optional<ai_trade::UniverseUpdate> update;
+    const auto push = [&selector, &update](std::int64_t ts,
+                                           const std::string& symbol,
+                                           double price) {
+      update = selector.OnMarket(
+          ai_trade::MarketEvent{ts, symbol, price, price, 20.0});
+    };
+
+    push(1, "TRENDUSDT", 100.0);
+    push(2, "QUIETUSDT", 100.0);
+    push(3, "CHOPUSDT", 100.0);
+    push(4, "CHOPUSDT", 102.0);
+    push(5, "CHOPUSDT", 100.0);
+    push(6, "CHOPUSDT", 102.0);
+    push(7, "CHOPUSDT", 100.0);
+    push(8, "CHOPUSDT", 102.0);
+    push(9, "CHOPUSDT", 100.0);
+    push(10, "CHOPUSDT", 102.0);
+    push(11, "CHOPUSDT", 100.0);
+    push(12, "TRENDUSDT", 101.0);
+    push(13, "TRENDUSDT", 102.0);
+    push(14, "QUIETUSDT", 100.01);
+
+    if (!update.has_value()) {
+      std::cerr << "Universe 趋势保留槽测试应触发刷新\n";
+      return 1;
+    }
+    if (!selector.IsActive("CHOPUSDT")) {
+      std::cerr << "Universe 稳健槽应保留高活跃高波动币对\n";
+      return 1;
+    }
+    if (!selector.IsActive("TRENDUSDT")) {
+      std::cerr << "Universe 趋势保留槽应补充持续单边币对\n";
+      return 1;
+    }
+    if (selector.IsActive("QUIETUSDT")) {
+      std::cerr << "Universe 不应选入安静币对\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::UniverseConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 2;
+    config.max_active_symbols = 1;
+    config.min_active_symbols = 1;
+    config.min_turnover_usd = 1000.0;
+    config.reset_stats_on_refresh = true;
+    config.fallback_symbols = {"BTCUSDT"};
+    config.candidate_symbols = {"CHOPUSDT", "TRENDUSDT"};
+
+    ai_trade::UniverseSelector selector(config, "BTCUSDT");
+    auto update = selector.OnMarket(
+        ai_trade::MarketEvent{1, "CHOPUSDT", 100.0, 100.0, 20.0});
+    if (update.has_value()) {
+      std::cerr << "Universe reset_stats_on_refresh 测试首个 tick 不应刷新\n";
+      return 1;
+    }
+    update = selector.OnMarket(
+        ai_trade::MarketEvent{2, "CHOPUSDT", 102.0, 102.0, 20.0});
+    if (!update.has_value() || !selector.IsActive("CHOPUSDT")) {
+      std::cerr << "Universe 第一窗口应选出 CHOPUSDT\n";
+      return 1;
+    }
+
+    update = selector.OnMarket(
+        ai_trade::MarketEvent{3, "TRENDUSDT", 100.0, 100.0, 20.0});
+    if (update.has_value()) {
+      std::cerr << "Universe 第二窗口首个 tick 不应提前刷新\n";
+      return 1;
+    }
+    update = selector.OnMarket(
+        ai_trade::MarketEvent{4, "TRENDUSDT", 101.0, 101.0, 20.0});
+    if (!update.has_value() || !selector.IsActive("TRENDUSDT")) {
+      std::cerr << "Universe reset_stats_on_refresh 后应根据新窗口重选币对\n";
       return 1;
     }
   }
@@ -6788,6 +6914,41 @@ int main() {
     if (switched.regime != ai_trade::Regime::kDowntrend ||
         switched.bucket != ai_trade::RegimeBucket::kTrend) {
       std::cerr << "Regime 连续确认达到阈值后应完成切换\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::RegimeConfig config;
+    config.enabled = true;
+    config.warmup_ticks = 1;
+    config.ewma_alpha = 1.0;
+    config.bar_interval_ms = 5000;
+    config.switch_confirm_ticks = 5;
+    config.trend_threshold = 0.001;
+    config.extreme_threshold = 0.050;
+    config.volatility_threshold = 0.050;
+
+    ai_trade::RegimeEngine engine(config);
+    ai_trade::MarketEvent event;
+    event.symbol = "BTCUSDT";
+    event.interval_ms = 5000;
+    event.price = 100.0;
+    (void)engine.OnMarket(event);  // warmup
+
+    event.price = 100.01;
+    const auto baseline = engine.OnMarket(event);
+    if (baseline.warmup || baseline.regime != ai_trade::Regime::kRange) {
+      std::cerr << "Regime 时间确认测试的基准态应先维持 RANGE\n";
+      return 1;
+    }
+
+    event.price = 100.25;
+    event.interval_ms = 30000;
+    const auto switched = engine.OnMarket(event);
+    if (switched.regime != ai_trade::Regime::kUptrend ||
+        switched.bucket != ai_trade::RegimeBucket::kTrend) {
+      std::cerr << "Regime 应在长间隔样本下按真实时间完成确认切换\n";
       return 1;
     }
   }

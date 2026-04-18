@@ -41,6 +41,7 @@ class RegimeEngine {
     Regime confirmed_regime{Regime::kRange};  ///< 已确认 Regime。
     Regime pending_regime{Regime::kRange};    ///< 待确认 Regime。
     int pending_regime_ticks{0};  ///< 待确认 Regime 连续计数。
+    std::int64_t pending_regime_elapsed_ms{0};  ///< 待确认 Regime 已累计真实时间。
   };
 
   static RegimeBucket ToBucket(Regime regime);

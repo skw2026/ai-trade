@@ -10,6 +10,12 @@ namespace {
 
 constexpr double kEpsilon = 1e-9;
 
+struct CandidateScore {
+  std::string symbol;
+  double score{0.0};
+  double trend_score{0.0};
+};
+
 double Clamp01(double value) {
   return std::clamp(value, 0.0, 1.0);
 }
@@ -44,8 +50,10 @@ std::optional<UniverseUpdate> UniverseSelector::OnMarket(const MarketEvent& even
   const double price = (event.mark_price > 0.0) ? event.mark_price : event.price;
   if (price > 0.0) {
     if (stats.has_last_price && stats.last_price > kEpsilon) {
-      const double abs_ret = std::fabs((price - stats.last_price) / stats.last_price);
+      const double ret = (price - stats.last_price) / stats.last_price;
+      const double abs_ret = std::fabs(ret);
       stats.abs_return_sum += abs_ret;
+      stats.signed_return_sum += ret;
       ++stats.return_count;
     }
     stats.last_price = price;
@@ -91,15 +99,15 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
     candidates = UniqueSymbols(candidates);
   }
 
-  std::vector<SymbolScore> scores;
-  scores.reserve(candidates.size());
+  std::vector<CandidateScore> candidate_scores;
+  candidate_scores.reserve(candidates.size());
   for (const auto& symbol : candidates) {
     if (!IsAllowed(symbol)) {
       continue;
     }
     const auto it = stats_by_symbol_.find(symbol);
     if (it == stats_by_symbol_.end()) {
-      scores.push_back(SymbolScore{symbol, 0.0});
+      candidate_scores.push_back(CandidateScore{symbol, 0.0, 0.0});
       continue;
     }
     const MarketStats& stats = it->second;
@@ -107,20 +115,28 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
     if (stats.last_turnover < config_.min_turnover_usd) {
       continue;
     }
-    // 评分公式：0.6 * 活跃度 + 0.4 * 波动率
+    // 主评分偏向稳健成交与波动；趋势评分用于保留探索槽，避免 live 长期锁死在
+    // “高活跃但无趋势”的币对上。
     const double activity = Clamp01(static_cast<double>(stats.tick_count) / 10.0);
     const double volatility =
         (stats.return_count <= 0)
             ? 0.0
             : Clamp01((stats.abs_return_sum / static_cast<double>(stats.return_count)) *
                       200.0);
-    const double score = 0.6 * activity + 0.4 * volatility;
-    scores.push_back(SymbolScore{symbol, score});
+    const double trendiness =
+        (stats.return_count <= 0 || stats.abs_return_sum <= kEpsilon)
+            ? 0.0
+            : Clamp01(std::fabs(stats.signed_return_sum) /
+                      (stats.abs_return_sum + kEpsilon));
+    const double score = 0.50 * activity + 0.30 * volatility + 0.20 * trendiness;
+    const double trend_score =
+        0.35 * activity + 0.15 * volatility + 0.50 * trendiness;
+    candidate_scores.push_back(CandidateScore{symbol, score, trend_score});
   }
 
   // 按分数降序排列
-  std::sort(scores.begin(), scores.end(),
-            [](const SymbolScore& lhs, const SymbolScore& rhs) {
+  std::sort(candidate_scores.begin(), candidate_scores.end(),
+            [](const CandidateScore& lhs, const CandidateScore& rhs) {
               if (std::fabs(lhs.score - rhs.score) > 1e-12) {
                 return lhs.score > rhs.score;
               }
@@ -129,11 +145,40 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
 
   std::vector<std::string> selected;
   selected.reserve(static_cast<std::size_t>(config_.max_active_symbols));
-  for (const auto& score : scores) {
-    if (static_cast<int>(selected.size()) >= config_.max_active_symbols) {
+  const int reserve_slots =
+      (config_.trend_reserve_enabled ? config_.trend_reserve_slots : 0);
+  const int core_slots = std::max(0, config_.max_active_symbols - reserve_slots);
+
+  for (const auto& candidate : candidate_scores) {
+    if (static_cast<int>(selected.size()) >= core_slots) {
       break;
     }
-    selected.push_back(score.symbol);
+    selected.push_back(candidate.symbol);
+  }
+
+  if (reserve_slots > 0 &&
+      static_cast<int>(selected.size()) < config_.max_active_symbols) {
+    std::vector<CandidateScore> trend_candidates = candidate_scores;
+    std::sort(trend_candidates.begin(), trend_candidates.end(),
+              [](const CandidateScore& lhs, const CandidateScore& rhs) {
+                if (std::fabs(lhs.trend_score - rhs.trend_score) > 1e-12) {
+                  return lhs.trend_score > rhs.trend_score;
+                }
+                if (std::fabs(lhs.score - rhs.score) > 1e-12) {
+                  return lhs.score > rhs.score;
+                }
+                return lhs.symbol < rhs.symbol;
+              });
+    for (const auto& candidate : trend_candidates) {
+      if (static_cast<int>(selected.size()) >= config_.max_active_symbols) {
+        break;
+      }
+      if (std::find(selected.begin(), selected.end(), candidate.symbol) !=
+          selected.end()) {
+        continue;
+      }
+      selected.push_back(candidate.symbol);
+    }
   }
 
   bool degraded = false;
@@ -181,12 +226,32 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
   active_symbols_ = std::move(selected);
   RebuildActiveSet();
 
+  std::vector<SymbolScore> scores;
+  scores.reserve(candidate_scores.size());
+  for (const auto& candidate : candidate_scores) {
+    scores.push_back(SymbolScore{candidate.symbol, candidate.score});
+  }
+
+  if (config_.reset_stats_on_refresh) {
+    ResetWindowStats();
+  }
+
   UniverseUpdate update;
   update.degraded_to_fallback = degraded;
   update.reason_code = reason_code;
   update.active_symbols = active_symbols_;
   update.symbol_scores = std::move(scores);
   return update;
+}
+
+void UniverseSelector::ResetWindowStats() {
+  for (auto& [symbol, stats] : stats_by_symbol_) {
+    (void)symbol;
+    stats.abs_return_sum = 0.0;
+    stats.signed_return_sum = 0.0;
+    stats.return_count = 0;
+    stats.tick_count = 0;
+  }
 }
 
 std::vector<std::string> UniverseSelector::UniqueSymbols(

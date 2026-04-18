@@ -47,12 +47,14 @@ class UniverseSelector {
     bool has_last_price{false};  ///< 是否已有上一价格（用于收益率计算）。
     double last_price{0.0};  ///< 最近价格。
     double abs_return_sum{0.0};  ///< 绝对收益率累积和（波动度近似）。
+    double signed_return_sum{0.0};  ///< 有方向收益率累积和（趋势性近似）。
     int return_count{0};  ///< 有效收益率样本数。
     int tick_count{0};  ///< 观测到的行情 tick 数（活跃度近似）。
     double last_turnover{0.0}; ///< 最近一次观测到的 24h 成交额 (USD)。
   };
 
   std::optional<UniverseUpdate> Refresh();
+  void ResetWindowStats();
   static std::vector<std::string> UniqueSymbols(
       const std::vector<std::string>& symbols);
   bool IsAllowed(const std::string& symbol) const;

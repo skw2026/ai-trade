@@ -117,24 +117,38 @@ RegimeState RegimeEngine::ProcessSample(SymbolState& symbol_state,
     regime = Regime::kRange;
   } else {
     const int confirm_ticks = std::max(1, config_.switch_confirm_ticks);
+    const std::int64_t confirm_elapsed_ms =
+        (config_.bar_interval_ms > 0 && confirm_ticks > 1)
+            ? static_cast<std::int64_t>(confirm_ticks) *
+                  static_cast<std::int64_t>(config_.bar_interval_ms)
+            : 0;
     if (!symbol_state.has_confirmed_regime || confirm_ticks <= 1) {
       symbol_state.has_confirmed_regime = true;
       symbol_state.confirmed_regime = raw_regime;
       symbol_state.pending_regime = raw_regime;
       symbol_state.pending_regime_ticks = 0;
+      symbol_state.pending_regime_elapsed_ms = 0;
     } else if (raw_regime == symbol_state.confirmed_regime) {
       symbol_state.pending_regime = raw_regime;
       symbol_state.pending_regime_ticks = 0;
+      symbol_state.pending_regime_elapsed_ms = 0;
     } else {
       if (symbol_state.pending_regime != raw_regime) {
         symbol_state.pending_regime = raw_regime;
         symbol_state.pending_regime_ticks = 1;
+        symbol_state.pending_regime_elapsed_ms =
+            std::max<std::int64_t>(0, interval_ms);
       } else {
         ++symbol_state.pending_regime_ticks;
+        symbol_state.pending_regime_elapsed_ms +=
+            std::max<std::int64_t>(0, interval_ms);
       }
-      if (symbol_state.pending_regime_ticks >= confirm_ticks) {
+      if (symbol_state.pending_regime_ticks >= confirm_ticks ||
+          (confirm_elapsed_ms > 0 &&
+           symbol_state.pending_regime_elapsed_ms >= confirm_elapsed_ms)) {
         symbol_state.confirmed_regime = raw_regime;
         symbol_state.pending_regime_ticks = 0;
+        symbol_state.pending_regime_elapsed_ms = 0;
       }
     }
     regime = symbol_state.confirmed_regime;

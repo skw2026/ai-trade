@@ -1953,6 +1953,48 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "universe" &&
+        key == "trend_reserve_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "universe.trend_reserve_enabled 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.universe.trend_reserve_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "universe" &&
+        key == "trend_reserve_slots") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "universe.trend_reserve_slots 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.universe.trend_reserve_slots = parsed;
+      continue;
+    }
+
+    if (current_section == "universe" &&
+        key == "reset_stats_on_refresh") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "universe.reset_stats_on_refresh 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.universe.reset_stats_on_refresh = parsed;
+      continue;
+    }
+
+    if (current_section == "universe" &&
         key == "fallback_symbols") {
       std::vector<std::string> parsed;
       if (!ParseStringList(raw_value, &parsed)) {
@@ -3815,6 +3857,18 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   }
   if (config.universe.candidate_symbols.empty()) {
     config.universe.candidate_symbols = config.universe.fallback_symbols;
+  }
+  if (config.universe.trend_reserve_slots < 0) {
+    if (out_error != nullptr) {
+      *out_error = "universe.trend_reserve_slots 不能为负数";
+    }
+    return false;
+  }
+  if (config.universe.trend_reserve_slots > config.universe.max_active_symbols) {
+    if (out_error != nullptr) {
+      *out_error = "universe.trend_reserve_slots 不能大于 max_active_symbols";
+    }
+    return false;
   }
   if (config.bybit.execution_poll_limit <= 0) {
     if (out_error != nullptr) {
