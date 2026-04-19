@@ -11,6 +11,16 @@
 #include <utility>
 #include <vector>
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wkeyword-macro"
+#endif
+#define private public
+#include "app/bot_app.h"
+#undef private
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 #include "app/intent_policy.h"
 #include "core/config.h"
 #include "exchange/bybit_exchange_adapter.h"
@@ -1750,6 +1760,204 @@ int main() {
                      1e-6) ||
         !NearlyEqual(blended.target.target_notional_usd, expected_blended, 1e-6)) {
       std::cerr << "双分支加权混合结果不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::AppConfig config;
+    config.strategy_signal_deadband_bps = 3.0;
+    ai_trade::BotApplication app(config);
+
+    ai_trade::MarketDecision trend_decision;
+    trend_decision.regime.bucket = ai_trade::RegimeBucket::kTrend;
+    trend_decision.regime.regime = ai_trade::Regime::kDowntrend;
+    trend_decision.regime.trend_strength = -0.00028;
+    trend_decision.regime.instant_return = -0.00018;
+    trend_decision.base_signal.symbol = "BTCUSDT";
+    trend_decision.base_signal.trend_notional_usd = -1200.0;
+    trend_decision.base_signal.defensive_notional_usd = 200.0;
+    trend_decision.base_signal.suggested_notional_usd = -1000.0;
+    trend_decision.base_signal.confidence = 0.35;
+    trend_decision.signal = trend_decision.base_signal;
+    trend_decision.risk_adjusted.symbol = "BTCUSDT";
+    trend_decision.risk_adjusted.adjusted_notional_usd = -1000.0;
+    trend_decision.intent = ai_trade::OrderIntent{
+        .client_order_id = "trend-edge-test",
+        .symbol = "BTCUSDT",
+        .purpose = ai_trade::OrderPurpose::kEntry,
+        .direction = -1,
+        .qty = 0.01,
+        .price = 75000.0,
+    };
+    const ai_trade::MarketEvent trend_event{
+        1, "BTCUSDT", 75000.0, 75000.0, 0.0, 5000};
+    const double trend_edge = app.EstimateEntryEdgeBps(trend_decision, trend_event);
+
+    ai_trade::MarketDecision range_decision;
+    range_decision.regime.bucket = ai_trade::RegimeBucket::kRange;
+    range_decision.regime.regime = ai_trade::Regime::kRange;
+    range_decision.regime.trend_strength = -0.00005;
+    range_decision.regime.instant_return = -0.00008;
+    range_decision.base_signal.symbol = "ETHUSDT";
+    range_decision.base_signal.trend_notional_usd = 0.0;
+    range_decision.base_signal.defensive_notional_usd = -260.0;
+    range_decision.base_signal.suggested_notional_usd = -260.0;
+    range_decision.base_signal.confidence = 0.60;
+    range_decision.signal = range_decision.base_signal;
+    range_decision.risk_adjusted.symbol = "ETHUSDT";
+    range_decision.risk_adjusted.adjusted_notional_usd = -260.0;
+    range_decision.intent = ai_trade::OrderIntent{
+        .client_order_id = "range-edge-test",
+        .symbol = "ETHUSDT",
+        .purpose = ai_trade::OrderPurpose::kEntry,
+        .direction = -1,
+        .qty = 0.2,
+        .price = 2400.0,
+    };
+    const ai_trade::MarketEvent range_event{
+        2, "ETHUSDT", 2400.0, 2400.0, 0.0, 5000};
+    const double range_edge = app.EstimateEntryEdgeBps(range_decision, range_event);
+
+    if (!(trend_edge > 2.0) ||
+        !(trend_edge > range_edge + 0.6) ||
+        !(range_edge < 1.5)) {
+      std::cerr << "TREND / RANGE 的 entry edge 分层不符合预期: trend="
+                << trend_edge << ", range=" << range_edge << "\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::AppConfig config;
+    config.strategy_signal_deadband_bps = 3.0;
+    config.execution_enable_fee_aware_entry_gate = true;
+    config.execution_entry_fee_bps = 5.5;
+    config.execution_exit_fee_bps = 5.5;
+    config.execution_expected_slippage_bps = 1.0;
+    config.execution_min_expected_edge_bps = 1.3;
+    config.execution_required_edge_cap_bps = 5.8;
+    config.execution_entry_gate_near_miss_tolerance_bps = 0.30;
+    config.execution_entry_gate_near_miss_maker_allow = true;
+    config.execution_entry_gate_near_miss_maker_max_gap_bps = 0.40;
+    config.execution_adaptive_fee_gate_enabled = true;
+    config.execution_adaptive_fee_gate_min_samples = 80;
+    config.execution_adaptive_fee_gate_trigger_ratio = 0.58;
+    config.execution_adaptive_fee_gate_max_relax_bps = 2.4;
+    config.execution_maker_entry_enabled = true;
+    config.execution_maker_fallback_to_market = false;
+    config.execution_maker_edge_relax_bps = 0.35;
+    config.execution_dynamic_edge_enabled = true;
+    config.execution_dynamic_edge_regime_trend_relax_bps = 0.8;
+    config.execution_dynamic_edge_regime_range_penalty_bps = 0.45;
+    config.execution_dynamic_edge_regime_extreme_penalty_bps = 1.1;
+    config.execution_dynamic_edge_volatility_relax_bps = 0.8;
+    config.execution_dynamic_edge_volatility_penalty_bps = 1.3;
+    ai_trade::BotApplication app(config);
+    app.entry_gate_observed_samples_ = 120;
+    app.entry_gate_observed_filtered_ratio_ = 0.93;
+    app.recent_execution_window_liquidity_fill_count_ = 0;
+    app.execution_quality_guard_active_ = false;
+
+    ai_trade::MarketDecision trend_decision;
+    trend_decision.regime.bucket = ai_trade::RegimeBucket::kTrend;
+    trend_decision.regime.regime = ai_trade::Regime::kDowntrend;
+    trend_decision.regime.trend_strength = -0.00030;
+    trend_decision.regime.instant_return = -0.00020;
+    trend_decision.regime.volatility_level = 0.00010;
+    trend_decision.base_signal.symbol = "BTCUSDT";
+    trend_decision.base_signal.trend_notional_usd = -1200.0;
+    trend_decision.base_signal.defensive_notional_usd = 150.0;
+    trend_decision.base_signal.suggested_notional_usd = -1050.0;
+    trend_decision.base_signal.confidence = 0.40;
+    trend_decision.signal = trend_decision.base_signal;
+    trend_decision.risk_adjusted.symbol = "BTCUSDT";
+    trend_decision.risk_adjusted.adjusted_notional_usd = -1000.0;
+    trend_decision.intent = ai_trade::OrderIntent{
+        .client_order_id = "trend-gate-test",
+        .symbol = "BTCUSDT",
+        .purpose = ai_trade::OrderPurpose::kEntry,
+        .direction = -1,
+        .qty = 0.01,
+        .price = 75000.0,
+    };
+    const ai_trade::MarketEvent trend_event{
+        3, "BTCUSDT", 75000.0, 75000.0, 0.0, 5000};
+    double expected_edge_bps = 0.0;
+    double required_edge_bps = 0.0;
+    double base_required_edge_bps = 0.0;
+    double adaptive_relax_bps = 0.0;
+    double maker_relax_bps = 0.0;
+    double regime_adjust_bps = 0.0;
+    double volatility_adjust_bps = 0.0;
+    double liquidity_adjust_bps = 0.0;
+    double concentration_adjust_bps = 0.0;
+    double quality_guard_penalty_bps = 0.0;
+    double observed_filtered_ratio = 0.0;
+    double edge_gap_bps = 0.0;
+    bool near_miss = false;
+    bool near_miss_allowed = false;
+    const bool trend_filtered = app.ShouldFilterByFeeAwareGate(
+        trend_decision,
+        trend_event,
+        &expected_edge_bps,
+        &required_edge_bps,
+        &base_required_edge_bps,
+        &adaptive_relax_bps,
+        &maker_relax_bps,
+        &regime_adjust_bps,
+        &volatility_adjust_bps,
+        &liquidity_adjust_bps,
+        &concentration_adjust_bps,
+        &quality_guard_penalty_bps,
+        &observed_filtered_ratio,
+        &edge_gap_bps,
+        &near_miss,
+        &near_miss_allowed);
+
+    ai_trade::MarketDecision range_decision = trend_decision;
+    range_decision.regime.bucket = ai_trade::RegimeBucket::kRange;
+    range_decision.regime.regime = ai_trade::Regime::kRange;
+    range_decision.regime.trend_strength = -0.00005;
+    range_decision.regime.instant_return = -0.00008;
+    range_decision.base_signal.trend_notional_usd = 0.0;
+    range_decision.base_signal.defensive_notional_usd = -260.0;
+    range_decision.base_signal.suggested_notional_usd = -260.0;
+    range_decision.base_signal.confidence = 0.60;
+    range_decision.signal = range_decision.base_signal;
+    range_decision.risk_adjusted.adjusted_notional_usd = -260.0;
+    range_decision.intent->client_order_id = "range-gate-test";
+    range_decision.intent->symbol = "ETHUSDT";
+    range_decision.intent->price = 2400.0;
+    range_decision.intent->qty = 0.2;
+    const ai_trade::MarketEvent range_event{
+        4, "ETHUSDT", 2400.0, 2400.0, 0.0, 5000};
+    const bool range_filtered = app.ShouldFilterByFeeAwareGate(
+        range_decision,
+        range_event,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr);
+
+    if (trend_filtered || !range_filtered || expected_edge_bps <= 2.0 ||
+        adaptive_relax_bps <= 0.0 || regime_adjust_bps >= 0.0) {
+      std::cerr << "TREND fee-aware gate 优化不符合预期: trend_filtered="
+                << trend_filtered << ", range_filtered=" << range_filtered
+                << ", expected=" << expected_edge_bps
+                << ", required=" << required_edge_bps
+                << ", adaptive_relax=" << adaptive_relax_bps
+                << ", regime_adjust=" << regime_adjust_bps << "\n";
       return 1;
     }
   }

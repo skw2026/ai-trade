@@ -67,6 +67,21 @@ bool HasExposure(double notional_usd) {
   return std::fabs(notional_usd) > kNotionalEpsilon;
 }
 
+double ClampNonNegative(double value) {
+  if (!std::isfinite(value)) {
+    return 0.0;
+  }
+  return std::max(0.0, value);
+}
+
+double SafeRatio(double numerator, double denominator) {
+  if (!std::isfinite(numerator) || !std::isfinite(denominator) ||
+      std::fabs(denominator) <= kNotionalEpsilon) {
+    return 0.0;
+  }
+  return numerator / denominator;
+}
+
 bool HasReasonCode(const Signal& signal, const char* code) {
   if (code == nullptr || *code == '\0') {
     return false;
@@ -490,23 +505,100 @@ double BotApplication::EstimateEntryEdgeBps(const MarketDecision& decision,
   const double instant_edge_bps = std::max(
       0.0, decision.regime.instant_return * static_cast<double>(direction) * 10000.0);
   const double raw_regime_edge_bps = 0.6 * trend_edge_bps + 0.4 * instant_edge_bps;
+  const double raw_trend_regime_edge_bps = 0.7 * trend_edge_bps + 0.3 * instant_edge_bps;
+  const double raw_range_regime_edge_bps = 0.35 * trend_edge_bps + 0.65 * instant_edge_bps;
 
   // 用信号置信度与分支净合成比降噪，避免“分支互相对冲 + 低置信”样本被高估。
   const double confidence_scale =
       std::clamp(std::fabs(decision.signal.confidence), 0.0, 1.0);
-  const double branch_abs_sum =
-      std::fabs(decision.base_signal.trend_notional_usd) +
-      std::fabs(decision.base_signal.defensive_notional_usd);
+  const double trend_abs = std::fabs(decision.base_signal.trend_notional_usd);
+  const double defensive_abs = std::fabs(decision.base_signal.defensive_notional_usd);
+  const double branch_abs_sum = trend_abs + defensive_abs;
   double net_blend_scale = 1.0;
   if (branch_abs_sum > kNotionalEpsilon) {
     net_blend_scale = std::clamp(
         std::fabs(decision.signal.suggested_notional_usd) / branch_abs_sum, 0.0,
         1.0);
   }
-  const double regime_edge_bps =
-      raw_regime_edge_bps * confidence_scale * net_blend_scale;
-  const double deadband_edge_bps = deadband_bps * std::max(0.25, confidence_scale);
-  return std::max(deadband_edge_bps, regime_edge_bps);
+  const double trend_aligned_abs =
+      SignOf(decision.base_signal.trend_notional_usd) == direction ? trend_abs : 0.0;
+  const double defensive_aligned_abs =
+      SignOf(decision.base_signal.defensive_notional_usd) == direction ? defensive_abs
+                                                                       : 0.0;
+  const double aligned_abs = trend_aligned_abs + defensive_aligned_abs;
+  const double aligned_share =
+      std::clamp(SafeRatio(aligned_abs, std::max(branch_abs_sum, kNotionalEpsilon)),
+                 0.0, 1.0);
+  const double executable_abs =
+      std::max(std::fabs(decision.risk_adjusted.adjusted_notional_usd),
+               std::fabs(decision.signal.suggested_notional_usd));
+  const double trend_exec_scale =
+      std::clamp(SafeRatio(trend_aligned_abs, std::max(1.0, executable_abs)),
+                 0.0, 1.5);
+  const double defensive_exec_scale =
+      std::clamp(SafeRatio(defensive_aligned_abs, std::max(1.0, executable_abs)),
+                 0.0, 1.25);
+
+  const double fallback_regime_edge_bps =
+      raw_regime_edge_bps * confidence_scale *
+      std::max(net_blend_scale, aligned_share * 0.5);
+  double fallback_deadband_scale = std::max(0.25, confidence_scale);
+  if (decision.regime.bucket == RegimeBucket::kRange &&
+      defensive_aligned_abs > kNotionalEpsilon) {
+    fallback_deadband_scale = std::clamp(
+        0.12 + 0.22 * confidence_scale + 0.08 * defensive_exec_scale, 0.12,
+        0.42);
+  } else if (decision.regime.bucket == RegimeBucket::kTrend &&
+             trend_aligned_abs > kNotionalEpsilon) {
+    fallback_deadband_scale = std::clamp(
+        0.22 + 0.20 * confidence_scale + 0.10 * trend_exec_scale, 0.22, 0.85);
+  }
+  const double fallback_deadband_edge_bps =
+      deadband_bps * fallback_deadband_scale;
+  double expected_edge_bps =
+      std::max(fallback_deadband_edge_bps, fallback_regime_edge_bps);
+
+  if (decision.regime.bucket == RegimeBucket::kTrend &&
+      trend_aligned_abs > kNotionalEpsilon) {
+    const double trend_confidence = std::clamp(
+        std::max(confidence_scale, trend_exec_scale) *
+            std::max(0.35, aligned_share),
+        0.0, 1.35);
+    const double trend_dominance = std::clamp(
+        SafeRatio(trend_aligned_abs, std::max(aligned_abs, kNotionalEpsilon)),
+        0.0, 1.0);
+    const double trend_deadband_floor =
+        deadband_bps *
+        std::clamp(0.25 + 0.45 * trend_dominance, 0.0, 0.75) *
+        std::clamp(0.55 + 0.45 * trend_confidence, 0.0, 1.20);
+    const double trend_regime_edge =
+        raw_trend_regime_edge_bps *
+        std::clamp(0.55 + 0.65 * trend_confidence, 0.0, 1.45);
+    expected_edge_bps =
+        std::max(expected_edge_bps,
+                 std::max(trend_deadband_floor, trend_regime_edge));
+  } else if (decision.regime.bucket == RegimeBucket::kRange &&
+             defensive_aligned_abs > kNotionalEpsilon) {
+    const double defensive_confidence = std::clamp(
+        std::max(confidence_scale * 0.75, defensive_exec_scale) *
+            std::max(0.25, aligned_share),
+        0.0, 1.10);
+    const double defensive_dominance = std::clamp(
+        SafeRatio(defensive_aligned_abs, std::max(aligned_abs, kNotionalEpsilon)),
+        0.0, 1.0);
+    const double defensive_deadband_floor =
+        deadband_bps *
+        std::clamp(0.10 + 0.25 * defensive_dominance, 0.0, 0.45) *
+        std::clamp(0.40 + 0.35 * defensive_confidence, 0.0, 0.85);
+    const double defensive_regime_edge =
+        raw_range_regime_edge_bps *
+        std::clamp(0.35 + 0.45 * defensive_confidence, 0.0, 0.90);
+    expected_edge_bps =
+        std::max(expected_edge_bps,
+                 std::max(defensive_deadband_floor, defensive_regime_edge));
+  }
+
+  return ClampNonNegative(expected_edge_bps);
 }
 
 bool BotApplication::ShouldFilterByFeeAwareGate(
@@ -598,16 +690,34 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
           std::max(0.0, config_.execution_adaptive_fee_gate_max_relax_bps);
     }
   }
+  double relax_regime_scale = 0.65;
+  if (decision.regime.bucket == RegimeBucket::kTrend) {
+    relax_regime_scale = 1.0;
+  } else if (decision.regime.bucket == RegimeBucket::kRange) {
+    relax_regime_scale = 0.35;
+  } else if (decision.regime.bucket == RegimeBucket::kExtreme) {
+    relax_regime_scale = 0.15;
+  }
+  adaptive_relax_bps *= relax_regime_scale;
   // 执行质量守卫激活时，关闭“自适应放宽”，避免在低质量阶段继续放行弱边际样本。
   if (quality_guard_active) {
     adaptive_relax_bps = 0.0;
+  }
+  double maker_relax_scale = 0.7;
+  if (decision.regime.bucket == RegimeBucket::kTrend) {
+    maker_relax_scale = 1.0;
+  } else if (decision.regime.bucket == RegimeBucket::kRange) {
+    maker_relax_scale = 0.45;
+  } else if (decision.regime.bucket == RegimeBucket::kExtreme) {
+    maker_relax_scale = 0.0;
   }
   const bool maker_entry_candidate =
       config_.execution_maker_entry_enabled &&
       decision.intent->purpose == OrderPurpose::kEntry && !decision.intent->reduce_only;
   const double maker_relax_bps =
       maker_entry_candidate && !quality_guard_active
-          ? std::max(0.0, config_.execution_maker_edge_relax_bps)
+          ? std::max(0.0, config_.execution_maker_edge_relax_bps) *
+                maker_relax_scale
           : 0.0;
   double regime_adjust_bps = 0.0;
   double volatility_adjust_bps = 0.0;
@@ -632,7 +742,8 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
       volatility_adjust_bps = std::max(
           0.0, config_.execution_dynamic_edge_volatility_penalty_bps) *
           (vol_ratio - 1.0);
-    } else if (vol_ratio < 1.0) {
+    } else if (vol_ratio < 1.0 &&
+               decision.regime.bucket == RegimeBucket::kTrend) {
       volatility_adjust_bps = -std::max(
           0.0, config_.execution_dynamic_edge_volatility_relax_bps) *
           (1.0 - vol_ratio);
