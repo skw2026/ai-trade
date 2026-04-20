@@ -113,6 +113,16 @@ RUNTIME_ACCOUNT_RE = re.compile(
     r"drawdown_pct=(?P<drawdown_pct>-?[0-9]+(?:\.[0-9]+)?), "
     r"notional=(?P<notional>-?[0-9]+(?:\.[0-9]+)?)"
 )
+RUNTIME_ACCOUNT_SAMPLE_RE = re.compile(
+    r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
+    r"RUNTIME_STATUS:\s*ticks=(?P<tick>\d+),.*?"
+    r"account=\{equity=(?P<equity>-?[0-9]+(?:\.[0-9]+)?), "
+    r"drawdown_pct=(?P<drawdown_pct>-?[0-9]+(?:\.[0-9]+)?), "
+    r"notional=(?P<notional>-?[0-9]+(?:\.[0-9]+)?), "
+    r"realized_pnl=(?P<realized>-?[0-9]+(?:\.[0-9]+)?), "
+    r"fees=(?P<fees>-?[0-9]+(?:\.[0-9]+)?), "
+    r"realized_net=(?P<net>-?[0-9]+(?:\.[0-9]+)?)"
+)
 RUNTIME_ACCOUNT_REALIZED_RE = re.compile(
     r"RUNTIME_STATUS:.*?account=\{[^}]*?"
     r"realized_pnl=(?P<realized>-?[0-9]+(?:\.[0-9]+)?), "
@@ -353,23 +363,51 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
     realized_pnls: list[float] = []
     fees: list[float] = []
     realized_nets: list[float] = []
+    account_samples: list[Dict[str, float | dt.datetime]] = []
 
-    for m in RUNTIME_ACCOUNT_RE.finditer(text):
+    for m in RUNTIME_ACCOUNT_SAMPLE_RE.finditer(text):
         try:
-            timestamps.append(dt.datetime.strptime(m.group("ts"), "%Y-%m-%d %H:%M:%S"))
-            equities.append(float(m.group("equity")))
-            drawdowns.append(float(m.group("drawdown_pct")))
-            notionals.append(float(m.group("notional")))
+            ts = dt.datetime.strptime(m.group("ts"), "%Y-%m-%d %H:%M:%S")
+            sample = {
+                "ts": ts,
+                "tick": int(m.group("tick")),
+                "equity": float(m.group("equity")),
+                "drawdown_pct": float(m.group("drawdown_pct")),
+                "notional": float(m.group("notional")),
+                "realized_pnl": float(m.group("realized")),
+                "fees": float(m.group("fees")),
+                "realized_net": float(m.group("net")),
+            }
         except ValueError:
             continue
+        account_samples.append(sample)
+        timestamps.append(ts)
+        equities.append(float(sample["equity"]))
+        drawdowns.append(float(sample["drawdown_pct"]))
+        notionals.append(float(sample["notional"]))
+        realized_pnls.append(float(sample["realized_pnl"]))
+        fees.append(float(sample["fees"]))
+        realized_nets.append(float(sample["realized_net"]))
 
-    for m in RUNTIME_ACCOUNT_REALIZED_RE.finditer(text):
-        try:
-            realized_pnls.append(float(m.group("realized")))
-            fees.append(float(m.group("fees")))
-            realized_nets.append(float(m.group("net")))
-        except ValueError:
-            continue
+    if not account_samples:
+        for m in RUNTIME_ACCOUNT_RE.finditer(text):
+            try:
+                timestamps.append(
+                    dt.datetime.strptime(m.group("ts"), "%Y-%m-%d %H:%M:%S")
+                )
+                equities.append(float(m.group("equity")))
+                drawdowns.append(float(m.group("drawdown_pct")))
+                notionals.append(float(m.group("notional")))
+            except ValueError:
+                continue
+
+        for m in RUNTIME_ACCOUNT_REALIZED_RE.finditer(text):
+            try:
+                realized_pnls.append(float(m.group("realized")))
+                fees.append(float(m.group("fees")))
+                realized_nets.append(float(m.group("net")))
+            except ValueError:
+                continue
 
     if not equities:
         return {
@@ -397,9 +435,14 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
             "first_fee_usd": None,
             "last_fee_usd": None,
             "fee_change_usd": None,
+            "fee_change_raw_usd": None,
             "first_realized_net_pnl_usd": None,
             "last_realized_net_pnl_usd": None,
             "realized_net_pnl_change_usd": None,
+            "realized_pnl_change_raw_usd": None,
+            "realized_net_pnl_change_raw_usd": None,
+            "account_counter_reset_count": 0,
+            "account_counter_reset_detected": False,
         }
 
     first_equity = equities[0]
@@ -435,25 +478,61 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
 
     first_realized = realized_pnls[0] if realized_pnls else None
     last_realized = realized_pnls[-1] if realized_pnls else None
-    realized_change = (
+    raw_realized_change = (
         (last_realized - first_realized)
         if first_realized is not None and last_realized is not None
         else None
     )
     first_fee = fees[0] if fees else None
     last_fee = fees[-1] if fees else None
-    fee_change = (
+    raw_fee_change = (
         (last_fee - first_fee)
         if first_fee is not None and last_fee is not None
         else None
     )
     first_realized_net = realized_nets[0] if realized_nets else None
     last_realized_net = realized_nets[-1] if realized_nets else None
-    realized_net_change = (
+    raw_realized_net_change = (
         (last_realized_net - first_realized_net)
         if first_realized_net is not None and last_realized_net is not None
         else None
     )
+    realized_change = raw_realized_change
+    fee_change = raw_fee_change
+    realized_net_change = raw_realized_net_change
+    account_counter_reset_count = 0
+    if account_samples:
+        segment_start = account_samples[0]
+        previous_sample = account_samples[0]
+        realized_change = 0.0
+        fee_change = 0.0
+        realized_net_change = 0.0
+        reset_tolerance = 1e-9
+        for sample in account_samples[1:]:
+            tick_reset = int(sample["tick"]) < int(previous_sample["tick"])
+            fee_reset = float(sample["fees"]) + reset_tolerance < float(
+                previous_sample["fees"]
+            )
+            if tick_reset or fee_reset:
+                realized_change += float(previous_sample["realized_pnl"]) - float(
+                    segment_start["realized_pnl"]
+                )
+                fee_change += float(previous_sample["fees"]) - float(
+                    segment_start["fees"]
+                )
+                realized_net_change += float(previous_sample["realized_net"]) - float(
+                    segment_start["realized_net"]
+                )
+                account_counter_reset_count += 1
+                segment_start = sample
+            previous_sample = sample
+        realized_change += float(previous_sample["realized_pnl"]) - float(
+            segment_start["realized_pnl"]
+        )
+        fee_change += float(previous_sample["fees"]) - float(segment_start["fees"])
+        realized_net_change += float(previous_sample["realized_net"]) - float(
+            segment_start["realized_net"]
+        )
 
     return {
         "samples": len(equities),
@@ -477,12 +556,17 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
         "first_realized_pnl_usd": first_realized,
         "last_realized_pnl_usd": last_realized,
         "realized_pnl_change_usd": realized_change,
+        "realized_pnl_change_raw_usd": raw_realized_change,
         "first_fee_usd": first_fee,
         "last_fee_usd": last_fee,
         "fee_change_usd": fee_change,
+        "fee_change_raw_usd": raw_fee_change,
         "first_realized_net_pnl_usd": first_realized_net,
         "last_realized_net_pnl_usd": last_realized_net,
         "realized_net_pnl_change_usd": realized_net_change,
+        "realized_net_pnl_change_raw_usd": raw_realized_net_change,
+        "account_counter_reset_count": account_counter_reset_count,
+        "account_counter_reset_detected": account_counter_reset_count > 0,
     }
 
 
@@ -1893,12 +1977,17 @@ def print_report(report: Dict[str, object]) -> None:
             "first_realized_pnl_usd",
             "last_realized_pnl_usd",
             "realized_pnl_change_usd",
+            "realized_pnl_change_raw_usd",
             "first_fee_usd",
             "last_fee_usd",
             "fee_change_usd",
+            "fee_change_raw_usd",
             "first_realized_net_pnl_usd",
             "last_realized_net_pnl_usd",
             "realized_net_pnl_change_usd",
+            "realized_net_pnl_change_raw_usd",
+            "account_counter_reset_count",
+            "account_counter_reset_detected",
         ):
             print(f"  - {key}: {account_pnl.get(key)}")
 

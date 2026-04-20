@@ -415,6 +415,35 @@ class AssessRunLogTest(unittest.TestCase):
             any("平仓且零执行窗口出现权益漂移" in x for x in report["warn_reasons"])
         )
 
+    def test_extract_runtime_account_series_rebases_cumulative_counters_after_restart(self):
+        text = (
+            "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, "
+            "account={equity=100000.000000, drawdown_pct=0.000100, notional=0.000000, "
+            "realized_pnl=5.000000, fees=10.000000, realized_net=-5.000000}\n"
+            "2026-02-14 15:00:40 [INFO] RUNTIME_STATUS: ticks=40, "
+            "account={equity=99990.000000, drawdown_pct=0.000200, notional=0.000000, "
+            "realized_pnl=1.000000, fees=12.000000, realized_net=-11.000000}\n"
+            "2026-02-14 15:01:00 [INFO] RUNTIME_STATUS: ticks=5, "
+            "account={equity=99980.000000, drawdown_pct=0.000300, notional=0.000000, "
+            "realized_pnl=0.500000, fees=0.200000, realized_net=0.300000}\n"
+            "2026-02-14 15:01:20 [INFO] RUNTIME_STATUS: ticks=25, "
+            "account={equity=99970.000000, drawdown_pct=0.000400, notional=0.000000, "
+            "realized_pnl=0.700000, fees=0.600000, realized_net=0.100000}\n"
+        )
+        series = ASSESS.extract_runtime_account_series(text)
+        self.assertEqual(series["account_counter_reset_count"], 1)
+        self.assertTrue(series["account_counter_reset_detected"])
+        self.assertAlmostEqual(series["realized_pnl_change_raw_usd"], -4.3, places=6)
+        self.assertAlmostEqual(series["fee_change_raw_usd"], -9.4, places=6)
+        self.assertAlmostEqual(
+            series["realized_net_pnl_change_raw_usd"], 5.1, places=6
+        )
+        self.assertAlmostEqual(series["realized_pnl_change_usd"], -3.8, places=6)
+        self.assertAlmostEqual(series["fee_change_usd"], 2.4, places=6)
+        self.assertAlmostEqual(
+            series["realized_net_pnl_change_usd"], -6.2, places=6
+        )
+
     def test_policy_flat_dominant_without_evolution_action_skips_missing_action_warn(self):
         runtime = "".join(
             self._runtime_line(
