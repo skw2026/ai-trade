@@ -197,6 +197,15 @@ RUNTIME_RECONCILE_RUNTIME_RE = re.compile(
 RUNTIME_REGIME_CURRENT_RE = re.compile(
     r"RUNTIME_STATUS:.*?regime_current=\{[^}]*?bucket=(?P<bucket>[A-Z_]+)"
 )
+REGIME_CHANGE_RE = re.compile(
+    r"REGIME_CHANGE: symbol=(?P<symbol>[^,]+), "
+    r"regime=(?P<regime>[A-Z_]+), bucket=(?P<bucket>[A-Z_]+), "
+    r"warmup=(?P<warmup>true|false), decision_interval_ms=(?P<decision_interval_ms>-?\d+), "
+    r"aggregated_events=(?P<aggregated_events>\d+), "
+    r"instant_return=(?P<instant_return>-?[0-9]+(?:\.[0-9]+)?), "
+    r"trend_strength=(?P<trend_strength>-?[0-9]+(?:\.[0-9]+)?), "
+    r"volatility=(?P<volatility>-?[0-9]+(?:\.[0-9]+)?)"
+)
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
 
@@ -323,6 +332,17 @@ def max_tick(text: str) -> int:
     return max(int(x) for x in matches)
 
 
+def percentile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    clamped_q = min(1.0, max(0.0, q))
+    index = min(
+        len(sorted_values) - 1, max(0, int(round(clamped_q * (len(sorted_values) - 1))))
+    )
+    return sorted_values[index]
+
+
 def extract_runtime_notional_samples(text: str) -> list[tuple[dt.datetime, float]]:
     samples: list[tuple[dt.datetime, float]] = []
     for match in RUNTIME_ACCOUNT_RE.finditer(text):
@@ -427,7 +447,10 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
             "max_abs_notional_usd_observed": None,
             "first_notional_usd": None,
             "first_abs_notional_usd": None,
+            "last_notional_usd": None,
+            "last_abs_notional_usd": None,
             "start_flat": None,
+            "end_flat": None,
             "fee_samples": 0,
             "first_realized_pnl_usd": None,
             "last_realized_pnl_usd": None,
@@ -475,6 +498,8 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
     max_abs_notional_observed = max(abs(x) for x in notionals) if notionals else None
     first_notional = notionals[0] if notionals else None
     first_abs_notional = abs(first_notional) if first_notional is not None else None
+    last_notional = notionals[-1] if notionals else None
+    last_abs_notional = abs(last_notional) if last_notional is not None else None
 
     first_realized = realized_pnls[0] if realized_pnls else None
     last_realized = realized_pnls[-1] if realized_pnls else None
@@ -551,7 +576,10 @@ def extract_runtime_account_series(text: str) -> Dict[str, object]:
         "max_abs_notional_usd_observed": max_abs_notional_observed,
         "first_notional_usd": first_notional,
         "first_abs_notional_usd": first_abs_notional,
+        "last_notional_usd": last_notional,
+        "last_abs_notional_usd": last_abs_notional,
         "start_flat": bool(first_abs_notional is not None and first_abs_notional <= 1e-6),
+        "end_flat": bool(last_abs_notional is not None and last_abs_notional <= 1e-6),
         "fee_samples": len(fees),
         "first_realized_pnl_usd": first_realized,
         "last_realized_pnl_usd": last_realized,
@@ -640,6 +668,54 @@ def extract_regime_current_counts(text: str) -> Dict[str, int]:
         if bucket in counts:
             counts[bucket] += 1
     return counts
+
+
+def extract_regime_change_series(text: str) -> Dict[str, float]:
+    abs_trend_strength_values: list[float] = []
+    abs_instant_return_values: list[float] = []
+    volatility_values: list[float] = []
+
+    for match in REGIME_CHANGE_RE.finditer(text):
+        try:
+            abs_instant_return_values.append(abs(float(match.group("instant_return"))))
+            abs_trend_strength_values.append(abs(float(match.group("trend_strength"))))
+            volatility_values.append(float(match.group("volatility")))
+        except ValueError:
+            continue
+
+    runtime_count = len(abs_trend_strength_values)
+    if runtime_count <= 0:
+        return {
+            "runtime_count": 0.0,
+            "trend_strength_abs_p50": 0.0,
+            "trend_strength_abs_p95": 0.0,
+            "trend_strength_abs_p99": 0.0,
+            "trend_strength_abs_max": 0.0,
+            "instant_return_abs_p50": 0.0,
+            "instant_return_abs_p95": 0.0,
+            "instant_return_abs_p99": 0.0,
+            "instant_return_abs_max": 0.0,
+            "volatility_level_p50": 0.0,
+            "volatility_level_p95": 0.0,
+            "volatility_level_p99": 0.0,
+            "volatility_level_max": 0.0,
+        }
+
+    return {
+        "runtime_count": float(runtime_count),
+        "trend_strength_abs_p50": percentile(abs_trend_strength_values, 0.50),
+        "trend_strength_abs_p95": percentile(abs_trend_strength_values, 0.95),
+        "trend_strength_abs_p99": percentile(abs_trend_strength_values, 0.99),
+        "trend_strength_abs_max": max(abs_trend_strength_values),
+        "instant_return_abs_p50": percentile(abs_instant_return_values, 0.50),
+        "instant_return_abs_p95": percentile(abs_instant_return_values, 0.95),
+        "instant_return_abs_p99": percentile(abs_instant_return_values, 0.99),
+        "instant_return_abs_max": max(abs_instant_return_values),
+        "volatility_level_p50": percentile(volatility_values, 0.50),
+        "volatility_level_p95": percentile(volatility_values, 0.95),
+        "volatility_level_p99": percentile(volatility_values, 0.99),
+        "volatility_level_max": max(volatility_values),
+    }
 
 
 def extract_execution_window_series(text: str) -> Dict[str, float]:
@@ -1045,6 +1121,7 @@ def assess(
         Dict[str, float],
         Dict[str, float],
         Dict[str, float],
+        Dict[str, float],
     ]:
         return (
             extract_runtime_account_series(raw_text),
@@ -1055,6 +1132,7 @@ def assess(
             extract_concentration_series(raw_text),
             extract_entry_edge_adjust_series(raw_text),
             extract_reconcile_runtime_series(raw_text),
+            extract_regime_change_series(raw_text),
         )
 
     (
@@ -1066,6 +1144,7 @@ def assess(
         concentration,
         entry_edge_adjust,
         reconcile_runtime,
+        regime_change,
     ) = extract_views(text)
     regime_current_counts = extract_regime_current_counts(text)
 
@@ -1087,6 +1166,7 @@ def assess(
                 concentration,
                 entry_edge_adjust,
                 reconcile_runtime,
+                regime_change,
             ) = extract_views(text)
 
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
@@ -1338,6 +1418,19 @@ def assess(
         "entry_concentration_adjust_bps_avg": entry_edge_adjust[
             "concentration_adjust_bps_avg"
         ],
+        "regime_change_count": int(regime_change["runtime_count"]),
+        "trend_strength_abs_p50": regime_change["trend_strength_abs_p50"],
+        "trend_strength_abs_p95": regime_change["trend_strength_abs_p95"],
+        "trend_strength_abs_p99": regime_change["trend_strength_abs_p99"],
+        "trend_strength_abs_max": regime_change["trend_strength_abs_max"],
+        "instant_return_abs_p50": regime_change["instant_return_abs_p50"],
+        "instant_return_abs_p95": regime_change["instant_return_abs_p95"],
+        "instant_return_abs_p99": regime_change["instant_return_abs_p99"],
+        "instant_return_abs_max": regime_change["instant_return_abs_max"],
+        "volatility_level_p50": regime_change["volatility_level_p50"],
+        "volatility_level_p95": regime_change["volatility_level_p95"],
+        "volatility_level_p99": regime_change["volatility_level_p99"],
+        "volatility_level_max": regime_change["volatility_level_max"],
         "execution_quality_guard_enter_count": count(
             r"EXECUTION_QUALITY_GUARD_ENTER", text
         ),
@@ -1438,6 +1531,8 @@ def assess(
         market_context_status = "UNKNOWN"
 
     gap_usd = metrics["equity_vs_realized_net_gap_usd"]
+    end_flat = bool(account_pnl.get("end_flat"))
+    last_abs_notional_usd = account_pnl.get("last_abs_notional_usd")
     flat_no_execution_balance_drift = (
         execution_activity_count <= 0
         and bool(account_pnl.get("start_flat"))
@@ -1449,7 +1544,13 @@ def assess(
         and abs(account_pnl["fee_change_usd"]) <= 1e-9
     )
     if isinstance(gap_usd, (int, float)) and abs(gap_usd) >= 50.0:
-        if flat_no_execution_balance_drift:
+        if (
+            isinstance(last_abs_notional_usd, (int, float))
+            and last_abs_notional_usd > 1e-9
+            and not end_flat
+        ):
+            account_sync_status = "OPEN_POSITION_GAP"
+        elif flat_no_execution_balance_drift:
             account_sync_status = "EQUITY_DRIFT_WHILE_FLAT"
         elif execution_activity_count <= 0:
             account_sync_status = "NOISY_WHILE_FLAT"
@@ -1899,6 +2000,11 @@ def assess(
                         "权益变化与已实现净盈亏偏差较大且无执行活动，建议检查资金同步/统计口径: "
                         f"gap_usd={gap_usd:.6f}"
                     )
+        if account_sync_status == "OPEN_POSITION_GAP":
+            warn_reasons.append(
+                "权益变化与已实现净盈亏偏差较大且末尾仍有持仓，偏差可能包含未实现盈亏或资金项: "
+                f"gap_usd={gap_usd:.6f}, last_abs_notional_usd={float(last_abs_notional_usd):.6f}"
+            )
     if fail_reasons:
         verdict = "FAIL"
     elif warn_reasons:
@@ -1972,7 +2078,10 @@ def print_report(report: Dict[str, object]) -> None:
             "max_abs_notional_usd_observed",
             "first_notional_usd",
             "first_abs_notional_usd",
+            "last_notional_usd",
+            "last_abs_notional_usd",
             "start_flat",
+            "end_flat",
             "fee_samples",
             "first_realized_pnl_usd",
             "last_realized_pnl_usd",

@@ -116,7 +116,7 @@ regime:
   bar_interval_ms: 5000
   switch_confirm_ticks: 5
   extreme_requires_both: true
-  trend_threshold: 0.0004
+  trend_threshold: 0.0003
   extreme_threshold: 0.0080
   volatility_threshold: 0.0025
 

@@ -403,6 +403,64 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 any("等待趋势样本阶段" in item for item in runtime["warn_reasons"])
             )
 
+    def test_account_outcome_exposes_open_position_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS_WITH_ACTIONS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "account_sync_status": "OPEN_POSITION_GAP",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {
+                            "samples": 80,
+                            "last_notional_usd": 377.256,
+                            "last_abs_notional_usd": 377.256,
+                            "start_flat": True,
+                            "end_flat": False,
+                            "account_counter_reset_count": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                payload["sections"]["runtime"]["account_sync_status"],
+                "OPEN_POSITION_GAP",
+            )
+            self.assertEqual(payload["account_outcome"]["last_notional_usd"], 377.256)
+            self.assertEqual(
+                payload["account_outcome"]["last_abs_notional_usd"], 377.256
+            )
+            self.assertTrue(payload["account_outcome"]["start_flat"])
+            self.assertFalse(payload["account_outcome"]["end_flat"])
+            self.assertEqual(
+                payload["account_outcome"]["account_counter_reset_count"], 1
+            )
+
     def test_walkforward_trend_bucket_low_participation_is_fail(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

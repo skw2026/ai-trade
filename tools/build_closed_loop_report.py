@@ -696,6 +696,15 @@ def main() -> int:
                 "max_abs_notional_usd_observed": runtime_account_pnl.get(
                     "max_abs_notional_usd_observed"
                 ),
+                "last_notional_usd": runtime_account_pnl.get("last_notional_usd"),
+                "last_abs_notional_usd": runtime_account_pnl.get(
+                    "last_abs_notional_usd"
+                ),
+                "start_flat": runtime_account_pnl.get("start_flat"),
+                "end_flat": runtime_account_pnl.get("end_flat"),
+                "account_counter_reset_count": runtime_account_pnl.get(
+                    "account_counter_reset_count"
+                ),
                 "samples": runtime_account_pnl.get("samples"),
                 "fee_samples": runtime_account_pnl.get("fee_samples"),
                 "first_realized_pnl_usd": runtime_account_pnl.get(

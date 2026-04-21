@@ -444,6 +444,56 @@ class AssessRunLogTest(unittest.TestCase):
             series["realized_net_pnl_change_usd"], -6.2, places=6
         )
 
+    def test_open_position_gap_is_not_marked_as_noisy(self):
+        text = (
+            self._runtime_line(
+                20,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=1,
+                strategy_mix_policy_flat_samples=0,
+                regime_bucket="RANGE",
+                equity=100000.0,
+                realized_pnl=0.0,
+                fees=0.0,
+                realized_net=0.0,
+            )
+            + self._runtime_line(
+                40,
+                120.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=1,
+                strategy_mix_policy_flat_samples=0,
+                regime_bucket="RANGE",
+                equity=100120.0,
+                realized_pnl=0.0,
+                fees=0.0,
+                realized_net=0.0,
+            )
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        self.assertEqual(report["account_sync_status"], "OPEN_POSITION_GAP")
+        self.assertTrue(
+            any("末尾仍有持仓" in item for item in report["warn_reasons"])
+        )
+
+    def test_assess_extracts_regime_change_distribution_metrics(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] REGIME_CHANGE: symbol=BTCUSDT, regime=RANGE, bucket=RANGE, warmup=false, decision_interval_ms=5000, aggregated_events=5, instant_return=0.001000, trend_strength=0.000100, volatility=0.000200\n"
+            "2026-02-14 15:00:06 [INFO] REGIME_CHANGE: symbol=ETHUSDT, regime=RANGE, bucket=RANGE, warmup=false, decision_interval_ms=5000, aggregated_events=7, instant_return=-0.002000, trend_strength=-0.000200, volatility=0.000300\n"
+            "2026-02-14 15:00:11 [INFO] REGIME_CHANGE: symbol=SOLUSDT, regime=RANGE, bucket=RANGE, warmup=false, decision_interval_ms=5000, aggregated_events=9, instant_return=0.001500, trend_strength=0.000300, volatility=0.000500\n"
+            + self._runtime_line(20, 0.0)
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["regime_change_count"], 3)
+        self.assertAlmostEqual(metrics["trend_strength_abs_max"], 0.0003, places=8)
+        self.assertAlmostEqual(metrics["trend_strength_abs_p50"], 0.0002, places=8)
+        self.assertAlmostEqual(metrics["instant_return_abs_max"], 0.0020, places=8)
+        self.assertAlmostEqual(metrics["volatility_level_p50"], 0.0003, places=8)
+
     def test_policy_flat_dominant_without_evolution_action_skips_missing_action_warn(self):
         runtime = "".join(
             self._runtime_line(

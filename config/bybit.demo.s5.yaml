@@ -215,8 +215,9 @@ regime:
   bar_interval_ms: 5000
   switch_confirm_ticks: 5
   extreme_requires_both: true
-  # 5s 聚合后按 live 实测波动下调到可触达区间，优先恢复 TREND 样本。
-  trend_threshold: 0.0004
+  # 5s 聚合下 live 的 trend_strength 峰值长期落在 0.0002~0.00037 区间；
+  # 先小幅下调阈值，恢复 TREND 样本而不过早放松 fee gate。
+  trend_threshold: 0.0003
   extreme_threshold: 0.0080
   volatility_threshold: 0.0025
 
