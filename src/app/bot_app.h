@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -176,6 +177,11 @@ class BotApplication {
    * 比较本地 OMS 状态与交易所远端状态，发现不一致时触发报警或熔断。
    */
   void RunReconcile();
+  bool RecentFillsExplainReconcileMismatch(
+      const std::vector<RemotePositionSnapshot>& remote_positions,
+      std::string* out_explanation) const;
+  void RememberRecentFillForReconcile(const FillEvent& fill);
+  void PruneRecentFillObservations(int current_tick);
 
   /**
    * @brief 周期刷新远端风险字段
@@ -384,6 +390,13 @@ class BotApplication {
       0};  ///< Gate 停机冷却剩余 tick（0 表示已结束）。
   int gate_flat_ticks_streak_{0};  ///< 账户空仓且无净仓位在途订单的连续 tick 计数。
 
+  struct RecentFillObservation {
+    std::string symbol;
+    double signed_qty{0.0};
+    double abs_notional_usd{0.0};
+    int tick{-1000000};
+  };
+
   int market_tick_count_{0};       ///< 接收到的行情 tick 计数
   int last_fill_tick_{-1000000};   ///< 最近一次成交处理时的行情 tick（用于对账短暂宽限）
   int last_auto_resync_tick_{-1000000};  ///< 最近一次远端权威重对齐 tick（防抖）。
@@ -428,6 +441,8 @@ class BotApplication {
   bool has_last_shadow_inference_{false};  ///< 是否已有影子推理结果可展示。
   bool has_last_status_account_snapshot_{false};
   double last_status_realized_net_pnl_usd_{0.0};
+  std::deque<RecentFillObservation>
+      recent_fill_observations_;  ///< 最近若干笔成交，用于识别远端仓位快照的最终一致性延迟。
   double last_status_fee_usd_{0.0};
 };
 

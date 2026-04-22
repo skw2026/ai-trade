@@ -61,6 +61,8 @@ class AccountState {
   double current_notional_usd(const std::string& symbol) const;
   
   double equity_usd() const;
+  double cash_usd() const;
+  double unrealized_pnl_usd() const;
   double cumulative_realized_pnl_usd() const;
   double cumulative_fee_usd() const;
   double cumulative_realized_net_pnl_usd() const;

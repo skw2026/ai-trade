@@ -23,8 +23,11 @@ namespace {
 constexpr double kNotionalEpsilon = 1e-9;
 // 成交落地后，给远端持仓快照一个极短收敛窗口，避免瞬时对账误判。
 constexpr int kReconcileRecentFillGraceTicks = 2;
+// 若 symbol 级 delta 能被最近成交精确解释，则再给一段短暂宽限，避免刚撤出 pending 状态就被误重对齐。
+constexpr int kReconcileFillLagExplainGraceTicks = 6;
 // 自动远端重对齐最小间隔，避免短时间重复覆盖本地状态。
 constexpr int kReconcileAutoResyncCooldownTicks = 40;
+constexpr std::size_t kRecentFillObservationLimit = 32;
 // funding 观测缺失时，保留最近有效值的最长 tick（默认约 1 小时@5s）。
 constexpr int kFundingObservationStaleTicks = 720;
 
@@ -198,6 +201,127 @@ std::string FormatAccountPositions(const AccountState& account) {
     return "flat";
   }
   return oss.str();
+}
+
+std::string FormatRemoteBalanceSummary(const RemoteAccountBalanceSnapshot& balance) {
+  std::ostringstream oss;
+  oss << "remote={equity=";
+  if (balance.has_equity) {
+    oss << balance.equity_usd;
+  } else {
+    oss << "n/a";
+  }
+  oss << ", wallet=";
+  if (balance.has_wallet_balance) {
+    oss << balance.wallet_balance_usd;
+  } else {
+    oss << "n/a";
+  }
+  oss << ", unrealized=";
+  if (balance.has_unrealized_pnl) {
+    oss << balance.unrealized_pnl_usd;
+  } else {
+    oss << "n/a";
+  }
+  oss << "}";
+  return oss.str();
+}
+
+std::string FormatLocalAccountLedgerSummary(const AccountState& account) {
+  std::ostringstream oss;
+  oss << "local={cash=" << account.cash_usd()
+      << ", equity=" << account.equity_usd()
+      << ", unrealized=" << account.unrealized_pnl_usd()
+      << ", realized_pnl=" << account.cumulative_realized_pnl_usd()
+      << ", fees=" << account.cumulative_fee_usd()
+      << ", realized_net=" << account.cumulative_realized_net_pnl_usd()
+      << ", positions=" << FormatAccountPositions(account) << "}";
+  return oss.str();
+}
+
+void LogAccountSyncSnapshot(const std::string& stage,
+                            const RemoteAccountBalanceSnapshot& balance,
+                            const AccountState& account) {
+  LogInfo("ACCOUNT_SYNC_SNAPSHOT: stage=" + stage + ", " +
+          FormatRemoteBalanceSummary(balance) + ", " +
+          FormatLocalAccountLedgerSummary(account));
+}
+
+struct SymbolQtyDelta {
+  std::string symbol;
+  double local_qty{0.0};
+  double remote_qty{0.0};
+  double delta_qty{0.0};
+  double delta_notional_usd{0.0};
+};
+
+std::vector<SymbolQtyDelta> CollectSymbolQtyDeltas(
+    const AccountState& account,
+    const std::vector<RemotePositionSnapshot>& remote_positions,
+    const std::vector<std::string>& tracked_symbols,
+    double min_abs_notional_delta_usd) {
+  std::unordered_map<std::string, RemotePositionSnapshot> remote_by_symbol;
+  for (const auto& position : remote_positions) {
+    if (!position.symbol.empty()) {
+      remote_by_symbol[position.symbol] = position;
+    }
+  }
+
+  std::unordered_set<std::string> symbols;
+  for (const auto& symbol : tracked_symbols) {
+    if (!symbol.empty()) {
+      symbols.insert(symbol);
+    }
+  }
+  for (const auto& symbol : account.GetActiveSymbols()) {
+    if (!symbol.empty()) {
+      symbols.insert(symbol);
+    }
+  }
+  for (const auto& [symbol, _] : remote_by_symbol) {
+    if (!symbol.empty()) {
+      symbols.insert(symbol);
+    }
+  }
+
+  std::vector<SymbolQtyDelta> deltas;
+  deltas.reserve(symbols.size());
+  for (const auto& symbol : symbols) {
+    const double local_qty = account.position_qty(symbol);
+    const double local_mark = account.mark_price(symbol);
+    const double local_notional = account.current_notional_usd(symbol);
+
+    double remote_qty = 0.0;
+    double remote_mark = local_mark;
+    if (const auto it = remote_by_symbol.find(symbol); it != remote_by_symbol.end()) {
+      remote_qty = it->second.qty;
+      remote_mark = it->second.mark_price > 0.0 ? it->second.mark_price
+                                                : it->second.avg_entry_price;
+      if (remote_mark <= 0.0) {
+        remote_mark = local_mark;
+      }
+    }
+    const double remote_notional = remote_qty * remote_mark;
+    const double delta_qty = local_qty - remote_qty;
+    const double delta_notional = local_notional - remote_notional;
+    if (std::fabs(delta_qty) <= kNotionalEpsilon &&
+        std::fabs(delta_notional) < min_abs_notional_delta_usd) {
+      continue;
+    }
+    deltas.push_back(SymbolQtyDelta{
+        .symbol = symbol,
+        .local_qty = local_qty,
+        .remote_qty = remote_qty,
+        .delta_qty = delta_qty,
+        .delta_notional_usd = delta_notional,
+    });
+  }
+
+  std::sort(deltas.begin(), deltas.end(), [](const SymbolQtyDelta& lhs,
+                                             const SymbolQtyDelta& rhs) {
+    return lhs.symbol < rhs.symbol;
+  });
+  return deltas;
 }
 
 std::string FormatSymbolList(const std::vector<std::string>& symbols) {
@@ -1568,6 +1692,7 @@ void BotApplication::SyncRemotePositions() {
   if (adapter_->GetRemoteAccountBalance(&balance)) {
     // 启动阶段重置回撤峰值基线到远端权益，避免固定初始值引入伪回撤。
     system_.SyncAccountFromRemoteBalance(balance, /*reset_peak_to_equity=*/true);
+    LogAccountSyncSnapshot("startup", balance, system_.account());
     if (balance.has_equity) {
       LogInfo("远端资金同步完成: equity=" + std::to_string(balance.equity_usd));
     } else if (balance.has_wallet_balance) {
@@ -1658,6 +1783,7 @@ void BotApplication::RunRemoteRiskRefresh() {
   if (adapter_->GetRemoteAccountBalance(&balance)) {
     // 运行中只上调峰值，不重置峰值，避免人为清零回撤统计。
     system_.SyncAccountFromRemoteBalance(balance, /*reset_peak_to_equity=*/false);
+    LogAccountSyncSnapshot("runtime_refresh", balance, system_.account());
   }
   LogInfo("REMOTE_RISK_REFRESH: count=" + std::to_string(remote_positions.size()));
 }
@@ -2191,6 +2317,7 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   }
   // 记录最近成交 tick，供对账阶段应用短暂宽限窗口。
   last_fill_tick_ = market_tick_count_;
+  RememberRecentFillForReconcile(fill);
   ++funnel_window_.fills_applied;
   ++pending_fills_for_evolution_;
   if (std::isfinite(fill.price) && fill.price > 0.0 && std::isfinite(fill.qty)) {
@@ -2256,6 +2383,101 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   }
 
   HandleProtectionOrders(fill);
+}
+
+void BotApplication::RememberRecentFillForReconcile(const FillEvent& fill) {
+  const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
+  if (fill.symbol.empty() || std::fabs(signed_qty) <= kNotionalEpsilon) {
+    return;
+  }
+  recent_fill_observations_.push_back(RecentFillObservation{
+      .symbol = fill.symbol,
+      .signed_qty = signed_qty,
+      .abs_notional_usd = std::fabs(fill.price * std::fabs(fill.qty)),
+      .tick = market_tick_count_,
+  });
+  PruneRecentFillObservations(market_tick_count_);
+  while (recent_fill_observations_.size() > kRecentFillObservationLimit) {
+    recent_fill_observations_.pop_front();
+  }
+}
+
+void BotApplication::PruneRecentFillObservations(int current_tick) {
+  while (!recent_fill_observations_.empty() &&
+         current_tick - recent_fill_observations_.front().tick >
+             kReconcileFillLagExplainGraceTicks) {
+    recent_fill_observations_.pop_front();
+  }
+}
+
+bool BotApplication::RecentFillsExplainReconcileMismatch(
+    const std::vector<RemotePositionSnapshot>& remote_positions,
+    std::string* out_explanation) const {
+  const auto deltas = CollectSymbolQtyDeltas(system_.account(),
+                                             remote_positions,
+                                             tracked_symbols_,
+                                             /*min_abs_notional_delta_usd=*/1.0);
+  if (deltas.empty() || recent_fill_observations_.empty()) {
+    return false;
+  }
+
+  std::ostringstream explanation;
+  bool first = true;
+  for (const auto& delta : deltas) {
+    if (std::fabs(delta.delta_qty) <= kNotionalEpsilon) {
+      continue;
+    }
+
+    double matched_qty = 0.0;
+    double matched_abs_notional = 0.0;
+    int matched_count = 0;
+    for (auto it = recent_fill_observations_.rbegin();
+         it != recent_fill_observations_.rend(); ++it) {
+      if (market_tick_count_ - it->tick > kReconcileFillLagExplainGraceTicks) {
+        continue;
+      }
+      if (it->symbol != delta.symbol ||
+          SignOf(it->signed_qty) != SignOf(delta.delta_qty)) {
+        continue;
+      }
+      matched_qty += it->signed_qty;
+      matched_abs_notional += it->abs_notional_usd;
+      ++matched_count;
+      const double qty_tolerance =
+          std::max(1e-6, std::fabs(delta.delta_qty) * 0.02);
+      if (std::fabs(std::fabs(matched_qty) - std::fabs(delta.delta_qty)) <=
+          qty_tolerance) {
+        break;
+      }
+    }
+
+    const double qty_tolerance =
+        std::max(1e-6, std::fabs(delta.delta_qty) * 0.02);
+    const double notional_tolerance =
+        std::max(1.0, std::fabs(delta.delta_notional_usd) * 0.15);
+    if (matched_count == 0 ||
+        std::fabs(matched_qty - delta.delta_qty) > qty_tolerance ||
+        matched_abs_notional + notional_tolerance <
+            std::fabs(delta.delta_notional_usd)) {
+      return false;
+    }
+
+    if (!first) {
+      explanation << ";";
+    }
+    first = false;
+    explanation << delta.symbol << "{delta_qty=" << delta.delta_qty
+                << ", matched_recent_fill_qty=" << matched_qty
+                << ", matched_recent_fill_count=" << matched_count << "}";
+  }
+
+  if (first) {
+    return false;
+  }
+  if (out_explanation != nullptr) {
+    *out_explanation = explanation.str();
+  }
+  return true;
 }
 
 /**
@@ -2685,6 +2907,7 @@ void BotApplication::RunReconcile() {
   if (!config_.reconcile.enabled || config_.reconcile.interval_ticks <= 0) return;
   if (reconcile_halted_) return;
   if (++reconcile_tick_ % config_.reconcile.interval_ticks != 0) return;
+  PruneRecentFillObservations(market_tick_count_);
 
   // 净仓位变更订单仍在途时，远端与本地可能天然存在短时偏差。
   // 但若订单长期未收敛（例如 reduce-only 部分成交尾量未终态），需要主动收敛以解除永久阻塞。
@@ -2788,6 +3011,18 @@ void BotApplication::RunReconcile() {
     }
 
     if (!result.ok) {
+      std::string recent_fill_explanation;
+      if (remote_positions_fresh &&
+          RecentFillsExplainReconcileMismatch(remote_positions,
+                                             &recent_fill_explanation)) {
+        reconcile_streak_ = 0;
+        LogInfo("OMS_RECONCILE_FILL_LAG_GRACE: delta_notional=" +
+                std::to_string(result.delta_notional_usd) +
+                ", recent_fills=" + recent_fill_explanation);
+        UpdateReconcileAnomalyProtection(false, "RECONCILE_FILL_LAG_GRACE");
+        return;
+      }
+
       const double second_delta = result.delta_notional_usd;
       const std::string symbol_delta_report = remote_positions_fresh
                                                   ? reconciler_.BuildSymbolDeltaReport(
@@ -2818,6 +3053,8 @@ void BotApplication::RunReconcile() {
         if (adapter_->GetRemoteAccountBalance(&balance)) {
           system_.SyncAccountFromRemoteBalance(balance,
                                                /*reset_peak_to_equity=*/false);
+          LogAccountSyncSnapshot("reconcile_autoresync", balance,
+                                 system_.account());
         }
         last_auto_resync_tick_ = market_tick_count_;
         reconcile_streak_ = 0;

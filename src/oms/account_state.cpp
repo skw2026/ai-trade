@@ -27,6 +27,14 @@ double AccountState::equity_usd() const {
   return cash_usd_ + UnrealizedPnlUsd();
 }
 
+double AccountState::cash_usd() const {
+  return cash_usd_;
+}
+
+double AccountState::unrealized_pnl_usd() const {
+  return UnrealizedPnlUsd();
+}
+
 double AccountState::cumulative_realized_pnl_usd() const {
   return cumulative_realized_pnl_usd_;
 }

@@ -5457,6 +5457,60 @@ int main() {
   }
 
   {
+    ai_trade::AppConfig config;
+    ai_trade::BotApplication app(config);
+    app.market_tick_count_ = 100;
+    app.tracked_symbols_ = {"BTCUSDT"};
+    app.system_.SyncAccountFromRemotePositions(
+        std::vector<ai_trade::RemotePositionSnapshot>{
+            ai_trade::RemotePositionSnapshot{
+                .symbol = "BTCUSDT",
+                .qty = -0.01,
+                .avg_entry_price = 75620.0,
+                .mark_price = 75620.0,
+            }},
+        /*baseline_cash_usd=*/10000.0);
+    app.recent_fill_observations_.push_back(
+        ai_trade::BotApplication::RecentFillObservation{
+            .symbol = "BTCUSDT",
+            .signed_qty = -0.005,
+            .abs_notional_usd = 378.1,
+            .tick = 99,
+        });
+    std::string explanation;
+    const bool explained = app.RecentFillsExplainReconcileMismatch(
+        std::vector<ai_trade::RemotePositionSnapshot>{
+            ai_trade::RemotePositionSnapshot{
+                .symbol = "BTCUSDT",
+                .qty = -0.005,
+                .avg_entry_price = 75620.0,
+                .mark_price = 75620.0,
+            }},
+        &explanation);
+    if (!explained || explanation.find("BTCUSDT") == std::string::npos) {
+      std::cerr << "recent fill 应解释 symbol 级对账差异\n";
+      return 1;
+    }
+
+    app.market_tick_count_ = 108;
+    app.PruneRecentFillObservations(app.market_tick_count_);
+    explanation.clear();
+    const bool stale_explained = app.RecentFillsExplainReconcileMismatch(
+        std::vector<ai_trade::RemotePositionSnapshot>{
+            ai_trade::RemotePositionSnapshot{
+                .symbol = "BTCUSDT",
+                .qty = -0.005,
+                .avg_entry_price = 75620.0,
+                .mark_price = 75620.0,
+            }},
+        &explanation);
+    if (stale_explained) {
+      std::cerr << "过期 recent fill 不应继续豁免对账差异\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::UniverseConfig config;
     config.enabled = true;
     config.update_interval_ticks = 2;
