@@ -76,7 +76,8 @@ void OrderManager::MarkCancelled(const std::string& client_order_id) {
  * 规则：
  * 1. 先更新净成交统计（对账依赖）；
  * 2. 再更新对应订单填充量与状态；
- * 3. 终态订单收到重复回报时只保留净成交统计，状态不回滚。
+ * 3. Cancel 与成交回报可能竞态到达，Cancelled 订单仍允许记录 late fill；
+ * 4. Filled/Rejected 终态订单不回滚状态。
  */
 void OrderManager::OnFill(const FillEvent& fill) {
   // 净成交仓位是对账基准之一，先更新聚合统计。
@@ -85,7 +86,8 @@ void OrderManager::OnFill(const FillEvent& fill) {
   net_filled_qty_by_symbol_[fill.symbol] += signed_qty;
 
   auto* record = FindMutable(fill.client_order_id);
-  if (record == nullptr || IsTerminalState(record->state)) {
+  if (record == nullptr || record->state == OrderState::kFilled ||
+      record->state == OrderState::kRejected) {
     return;
   }
 

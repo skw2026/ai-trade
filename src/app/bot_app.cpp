@@ -182,6 +182,22 @@ double FillOverrunToleranceQty(const OrderRecord& record) {
   return std::max(kFillOverrunToleranceMinQty, std::fabs(record.intent.qty) * 1e-6);
 }
 
+bool AccountAlreadyReflectsFill(const FillEvent& fill,
+                                double local_qty_before,
+                                double oms_net_qty_before) {
+  const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
+  const double tolerance_qty =
+      std::max(kFillOverrunToleranceMinQty, std::fabs(fill.qty) * 1e-6);
+  if (std::fabs(signed_qty) <= tolerance_qty) {
+    return false;
+  }
+  const double local_oms_delta = local_qty_before - oms_net_qty_before;
+  if (std::fabs(local_oms_delta) <= tolerance_qty) {
+    return false;
+  }
+  return std::fabs(local_oms_delta - signed_qty) <= tolerance_qty;
+}
+
 std::string FormatFillSummary(const FillEvent& fill) {
   std::ostringstream oss;
   oss << "fill_id=" << fill.fill_id << ", client_order_id=" << fill.client_order_id
@@ -2325,6 +2341,8 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   const OrderState order_state_before =
       fill_order_record_before != nullptr ? fill_order_record_before->state
                                           : OrderState::kNew;
+  const bool account_already_reflects_fill =
+      AccountAlreadyReflectsFill(fill, local_qty_before, oms_net_qty_before);
   if (fill_order_record_before != nullptr &&
       fill_order_record_before->intent.qty > kFillQtyAuditEpsilon) {
     const double projected_filled_qty = order_filled_qty_before + fill.qty;
@@ -2351,7 +2369,14 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   }
   fill_ids_.insert(fill.fill_id);
   oms_.OnFill(fill);
-  system_.OnFill(fill);
+  if (account_already_reflects_fill) {
+    LogInfo("FILL_ACCOUNT_ALREADY_REFLECTED: " + FormatFillSummary(fill) +
+            ", order_state_before=" + OrderStateToString(order_state_before) +
+            ", local_qty_before=" + std::to_string(local_qty_before) +
+            ", oms_net_qty_before=" + std::to_string(oms_net_qty_before));
+  } else {
+    system_.OnFill(fill);
+  }
   gate_monitor_.OnFill(fill);
   const auto* fill_order_record = oms_.Find(fill.client_order_id);
   const double local_qty_after = system_.account().position_qty(fill.symbol);
@@ -2369,7 +2394,9 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
           ", local_qty_before=" + std::to_string(local_qty_before) +
           ", local_qty_after=" + std::to_string(local_qty_after) +
           ", oms_net_qty_before=" + std::to_string(oms_net_qty_before) +
-          ", oms_net_qty_after=" + std::to_string(oms_net_qty_after));
+          ", oms_net_qty_after=" + std::to_string(oms_net_qty_after) +
+          ", account_already_reflected=" +
+          std::string(account_already_reflects_fill ? "true" : "false"));
   if (fill_order_record != nullptr &&
       fill_order_record->intent.purpose == OrderPurpose::kSl) {
     ClearPendingRequiredSl(fill.client_order_id);

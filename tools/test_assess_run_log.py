@@ -766,6 +766,9 @@ class AssessRunLogTest(unittest.TestCase):
         text = (
             "2026-02-14 15:00:00 [INFO] EXECUTION_QUALITY_GUARD_ENTER: bad_streak=2\n"
             "2026-02-14 15:00:20 [INFO] OMS_RECONCILE_ANOMALY_STREAK: streak=2\n"
+            "2026-02-14 15:00:21 [INFO] FILL_ACCOUNT_ALREADY_REFLECTED: fill_id=f1\n"
+            "2026-02-14 15:00:22 [INFO] FILL_APPLIED: fill_id=f1, "
+            "order_state_before=cancelled, account_already_reflected=true\n"
             + runtime
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=2)
@@ -781,6 +784,9 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["reconcile_anomaly_streak_nonzero_count"], 1)
         self.assertEqual(metrics["reconcile_anomaly_reduce_only_true_count"], 1)
         self.assertEqual(metrics["reconcile_anomaly_event_count"], 1)
+        self.assertEqual(metrics["fill_account_already_reflected_count"], 1)
+        self.assertEqual(metrics["fill_applied_account_already_reflected_count"], 1)
+        self.assertEqual(metrics["fill_cancelled_order_applied_count"], 1)
 
     def test_assess_warn_on_low_explicit_liquidity_ratio(self):
         runtime = self._runtime_line(

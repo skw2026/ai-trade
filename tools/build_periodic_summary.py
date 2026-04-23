@@ -250,6 +250,9 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "runtime_status_count": 0,
             "reconcile_mismatch_count": 0,
             "reconcile_autoresync_count": 0,
+            "fill_account_already_reflected_count": 0,
+            "fill_applied_account_already_reflected_count": 0,
+            "fill_cancelled_order_applied_count": 0,
             "self_evolution_action_count": 0,
             "self_evolution_virtual_action_count": 0,
             "self_evolution_counterfactual_action_count": 0,
@@ -306,6 +309,15 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     runtime_status = to_int(latest_metrics.get("runtime_status_count")) or 0
     reconcile_mismatch = to_int(latest_metrics.get("reconcile_mismatch_count")) or 0
     reconcile_autoresync = to_int(latest_metrics.get("reconcile_autoresync_count")) or 0
+    fill_account_already_reflected = (
+        to_int(latest_metrics.get("fill_account_already_reflected_count")) or 0
+    )
+    fill_applied_account_already_reflected = (
+        to_int(latest_metrics.get("fill_applied_account_already_reflected_count")) or 0
+    )
+    fill_cancelled_order_applied = (
+        to_int(latest_metrics.get("fill_cancelled_order_applied_count")) or 0
+    )
     evolution_action = to_int(latest_metrics.get("self_evolution_action_count")) or 0
     evolution_virtual_action = (
         to_int(latest_metrics.get("self_evolution_virtual_action_count")) or 0
@@ -464,6 +476,9 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "runtime_status_count": runtime_status,
         "reconcile_mismatch_count": reconcile_mismatch,
         "reconcile_autoresync_count": reconcile_autoresync,
+        "fill_account_already_reflected_count": fill_account_already_reflected,
+        "fill_applied_account_already_reflected_count": fill_applied_account_already_reflected,
+        "fill_cancelled_order_applied_count": fill_cancelled_order_applied,
         "self_evolution_action_count": evolution_action,
         "self_evolution_virtual_action_count": evolution_virtual_action,
         "self_evolution_counterfactual_action_count": evolution_counterfactual_action,

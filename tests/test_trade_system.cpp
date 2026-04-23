@@ -5576,6 +5576,112 @@ int main() {
   }
 
   {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() / "ai_trade_cancelled_late_fill_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "cancelled late fill 测试 WAL 初始化失败: " << error << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent intent;
+    intent.client_order_id = "cancelled-late-fill";
+    intent.symbol = "SOLUSDT";
+    intent.direction = -1;
+    intent.qty = 4.4;
+    intent.price = 85.0;
+    intent.purpose = ai_trade::OrderPurpose::kEntry;
+    if (!app.oms_.RegisterIntent(intent)) {
+      std::cerr << "cancelled late fill 测试 OMS 注册失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(intent.client_order_id);
+    app.oms_.MarkCancelled(intent.client_order_id);
+
+    ai_trade::FillEvent fill = ToFill(intent, "cancelled-late-fill-1");
+    app.ProcessFillEvent(fill);
+    const auto* record = app.oms_.Find(intent.client_order_id);
+    if (record == nullptr || record->state != ai_trade::OrderState::kFilled ||
+        !NearlyEqual(record->filled_qty, 4.4) ||
+        !NearlyEqual(app.system_.account().position_qty("SOLUSDT"), -4.4) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -4.4) ||
+        app.fill_ids_.size() != 1U) {
+      std::cerr << "cancelled late fill 应合法落地一次并补齐 OMS 状态\n";
+      return 1;
+    }
+
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_account_reflected_fill_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "account reflected fill 测试 WAL 初始化失败: " << error << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent intent;
+    intent.client_order_id = "account-reflected-fill";
+    intent.symbol = "SOLUSDT";
+    intent.direction = -1;
+    intent.qty = 4.4;
+    intent.price = 85.0;
+    intent.purpose = ai_trade::OrderPurpose::kEntry;
+    if (!app.oms_.RegisterIntent(intent)) {
+      std::cerr << "account reflected fill 测试 OMS 注册失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(intent.client_order_id);
+    app.oms_.MarkCancelled(intent.client_order_id);
+    app.system_.SyncAccountFromRemotePositions(
+        {ai_trade::RemotePositionSnapshot{
+             .symbol = "SOLUSDT",
+             .qty = -4.4,
+             .avg_entry_price = 85.0,
+             .mark_price = 85.0,
+         }},
+        10000.0);
+
+    ai_trade::FillEvent fill = ToFill(intent, "account-reflected-fill-1");
+    app.ProcessFillEvent(fill);
+    const auto* record = app.oms_.Find(intent.client_order_id);
+    if (record == nullptr || record->state != ai_trade::OrderState::kFilled ||
+        !NearlyEqual(record->filled_qty, 4.4) ||
+        !NearlyEqual(app.system_.account().position_qty("SOLUSDT"), -4.4) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -4.4) ||
+        app.fill_ids_.size() != 1U) {
+      std::cerr << "已由账户同步反映的 late fill 不应再次扩大本地仓位\n";
+      return 1;
+    }
+
+    ai_trade::FillEvent duplicate_fill = ToFill(intent, "account-reflected-fill-2");
+    app.ProcessFillEvent(duplicate_fill);
+    if (!NearlyEqual(app.system_.account().position_qty("SOLUSDT"), -4.4) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -4.4) ||
+        app.fill_ids_.size() != 1U) {
+      std::cerr << "已补齐订单数量后的 late fill 重复回报应被拦截\n";
+      return 1;
+    }
+
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
     ai_trade::UniverseConfig config;
     config.enabled = true;
     config.update_interval_ticks = 2;

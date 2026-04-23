@@ -1208,6 +1208,15 @@ def assess(
         "reconcile_anomaly_halt_enter_count": count(
             r"OMS_RECONCILE_ANOMALY_HALT_ENTER", text
         ),
+        "fill_account_already_reflected_count": count(
+            r"FILL_ACCOUNT_ALREADY_REFLECTED", text
+        ),
+        "fill_applied_account_already_reflected_count": count(
+            r"FILL_APPLIED:.*account_already_reflected=true", text
+        ),
+        "fill_cancelled_order_applied_count": count(
+            r"FILL_APPLIED:.*order_state_before=cancelled", text
+        ),
         "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
         "self_evolution_init_total_count": global_self_evolution_init_count,
