@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-运行日志自动验收脚本（DEPLOY/S3/S5）。
+运行日志自动验收脚本（DEPLOY/SMOKE/S3/S5）。
 
 用途：
 1. 对 `run_s3.log` / `run_s5.log` 做统一 PASS/FAIL 判定；
@@ -53,6 +53,22 @@ STAGE_RULES: Dict[str, StageRule] = {
         gate_fail_hard_max_fail_ratio=1.10,
         gate_warn_min_windows=10,
         gate_warn_max_fail_ratio=0.95,
+        min_strategy_mix_nonzero_windows=0,
+    ),
+    "SMOKE": StageRule(
+        name="SMOKE",
+        min_runtime_status=30,
+        require_gate_window=False,
+        require_gate_pass=False,
+        require_evolution_init=False,
+        require_execution_activity=False,
+        require_flat_start=False,
+        max_start_abs_notional_usd=0.0,
+        max_trading_halted_true_ratio=0.0,
+        gate_fail_hard_min_windows=0,
+        gate_fail_hard_max_fail_ratio=1.10,
+        gate_warn_min_windows=0,
+        gate_warn_max_fail_ratio=1.10,
         min_strategy_mix_nonzero_windows=0,
     ),
     "S3": StageRule(
@@ -1208,6 +1224,9 @@ def assess(
         "reconcile_anomaly_halt_enter_count": count(
             r"OMS_RECONCILE_ANOMALY_HALT_ENTER", text
         ),
+        "fill_overfill_drop_count": count(r"FILL_OVERFILL_DROP", text),
+        "fill_duplicate_drop_count": count(r"FILL_DUPLICATE_DROP", text),
+        "bybit_exec_dedup_drop_count": count(r"BYBIT_EXEC_DEDUP_DROP", text),
         "fill_account_already_reflected_count": count(
             r"FILL_ACCOUNT_ALREADY_REFLECTED", text
         ),
@@ -1588,6 +1607,32 @@ def assess(
         protection_fail_reasons.append(
             f"RUNTIME_STATUS 条数不足: {metrics['runtime_status_count']} < {min_runtime_status}"
         )
+    if stage.name == "SMOKE":
+        if metrics["gate_reduce_only_true_count"] > 0:
+            protection_fail_reasons.append(
+                "SMOKE 检测到 gate reduce_only=true: "
+                f"count={metrics['gate_reduce_only_true_count']}"
+            )
+        if metrics["gate_halted_true_count"] > 0:
+            protection_fail_reasons.append(
+                "SMOKE 检测到 gate_halted=true: "
+                f"count={metrics['gate_halted_true_count']}"
+            )
+        if metrics["reconcile_mismatch_count"] > 0:
+            protection_fail_reasons.append(
+                "SMOKE 检测到对账不一致: "
+                f"reconcile_mismatch_count={metrics['reconcile_mismatch_count']}"
+            )
+        if metrics["reconcile_autoresync_count"] > 0:
+            protection_fail_reasons.append(
+                "SMOKE 检测到自动重对齐: "
+                f"reconcile_autoresync_count={metrics['reconcile_autoresync_count']}"
+            )
+        if metrics["fill_overfill_drop_count"] > 0:
+            protection_fail_reasons.append(
+                "SMOKE 检测到 fill overfill 防线触发: "
+                f"fill_overfill_drop_count={metrics['fill_overfill_drop_count']}"
+            )
 
     policy_flat_window_count = int(metrics["strategy_mix_policy_flat_window_count"])
     policy_flat_dominant = (

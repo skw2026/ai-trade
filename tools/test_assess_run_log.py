@@ -1438,6 +1438,68 @@ class AssessRunLogTest(unittest.TestCase):
         )
         self.assertEqual(report["verdict"], "PASS")
 
+    def test_smoke_allows_short_health_window_without_strategy_activity(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+            )
+            for i in range(3)
+        )
+        report = ASSESS.assess(
+            runtime,
+            ASSESS.STAGE_RULES["SMOKE"],
+            min_runtime_status=3,
+            s5_min_fill_windows=1,
+        )
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertFalse(
+            any("未检测到执行活动" in x for x in report["fail_reasons"])
+        )
+        self.assertFalse(
+            any("未检测到有效策略信号窗口" in x for x in report["fail_reasons"])
+        )
+
+    def test_smoke_fail_on_reconcile_mismatch(self):
+        text = (
+            self._runtime_line(20, 0.0)
+            + "2026-02-14 15:00:21 [WARN] OMS_RECONCILE_MISMATCH: symbol=BTCUSDT\n"
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["SMOKE"],
+            min_runtime_status=1,
+        )
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertTrue(
+            any("SMOKE 检测到对账不一致" in x for x in report["fail_reasons"])
+        )
+
+    def test_smoke_fail_on_overfill_guard(self):
+        text = (
+            self._runtime_line(20, 0.0)
+            + "2026-02-14 15:00:22 [WARN] FILL_OVERFILL_DROP: order_id=abc\n"
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["SMOKE"],
+            min_runtime_status=1,
+        )
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["metrics"]["fill_overfill_drop_count"], 1)
+        self.assertTrue(
+            any("SMOKE 检测到 fill overfill 防线触发" in x for x in report["fail_reasons"])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

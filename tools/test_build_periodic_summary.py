@@ -42,7 +42,12 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                             "runtime": {
                                 "status": "pass",
                                 "verdict": "PASS_WITH_ACTIONS",
-                                "metrics": {"runtime_status_count": 88},
+                                "metrics": {
+                                    "runtime_status_count": 88,
+                                    "fill_overfill_drop_count": 1,
+                                    "fill_duplicate_drop_count": 2,
+                                    "bybit_exec_dedup_drop_count": 3,
+                                },
                             },
                             "replay_validation": {
                                 "status": "pass",
@@ -100,6 +105,10 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             self.assertEqual(replay_metrics["execution_active_runs"], 4)
             self.assertEqual(replay_metrics["total_fills"], 3)
             self.assertAlmostEqual(replay_metrics["mean_filtered_cost_ratio_avg"], 0.25)
+            runtime_metrics = daily_latest["runtime_metrics"]
+            self.assertEqual(runtime_metrics["fill_overfill_drop_count"], 1)
+            self.assertEqual(runtime_metrics["fill_duplicate_drop_count"], 2)
+            self.assertEqual(runtime_metrics["bybit_exec_dedup_drop_count"], 3)
 
 
 if __name__ == "__main__":

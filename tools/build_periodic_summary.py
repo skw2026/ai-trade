@@ -250,6 +250,9 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "runtime_status_count": 0,
             "reconcile_mismatch_count": 0,
             "reconcile_autoresync_count": 0,
+            "fill_overfill_drop_count": 0,
+            "fill_duplicate_drop_count": 0,
+            "bybit_exec_dedup_drop_count": 0,
             "fill_account_already_reflected_count": 0,
             "fill_applied_account_already_reflected_count": 0,
             "fill_cancelled_order_applied_count": 0,
@@ -309,6 +312,11 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     runtime_status = to_int(latest_metrics.get("runtime_status_count")) or 0
     reconcile_mismatch = to_int(latest_metrics.get("reconcile_mismatch_count")) or 0
     reconcile_autoresync = to_int(latest_metrics.get("reconcile_autoresync_count")) or 0
+    fill_overfill_drop = to_int(latest_metrics.get("fill_overfill_drop_count")) or 0
+    fill_duplicate_drop = to_int(latest_metrics.get("fill_duplicate_drop_count")) or 0
+    bybit_exec_dedup_drop = (
+        to_int(latest_metrics.get("bybit_exec_dedup_drop_count")) or 0
+    )
     fill_account_already_reflected = (
         to_int(latest_metrics.get("fill_account_already_reflected_count")) or 0
     )
@@ -476,6 +484,9 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "runtime_status_count": runtime_status,
         "reconcile_mismatch_count": reconcile_mismatch,
         "reconcile_autoresync_count": reconcile_autoresync,
+        "fill_overfill_drop_count": fill_overfill_drop,
+        "fill_duplicate_drop_count": fill_duplicate_drop,
+        "bybit_exec_dedup_drop_count": bybit_exec_dedup_drop,
         "fill_account_already_reflected_count": fill_account_already_reflected,
         "fill_applied_account_already_reflected_count": fill_applied_account_already_reflected,
         "fill_cancelled_order_applied_count": fill_cancelled_order_applied,

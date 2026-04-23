@@ -3,12 +3,13 @@ set -euo pipefail
 
 # 说明：
 # 1) train  : 数据加速(可开关) + R0/R1/R2 + 模型注册 + 汇总报告
-# 2) assess : 导出运行日志并做 DEPLOY/S3/S5 自动验收 + 汇总报告
+# 2) assess : 导出运行日志并做 DEPLOY/SMOKE/S3/S5 自动验收 + 汇总报告
 # 3) full   : train + assess
 # 4) data   : 归档下载 + 增量更新 + 缺口回补 + 特征构建 + walk-forward 回测
 #
 # 示例：
 #   tools/closed_loop_runner.sh train
+#   tools/closed_loop_runner.sh assess --stage SMOKE --since 15m
 #   tools/closed_loop_runner.sh assess --stage S5 --since 4h
 #   tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml --env-file /opt/ai-trade/.env.runtime
 #   tools/closed_loop_runner.sh data --data-config config/data_pipeline.yaml
@@ -146,7 +147,7 @@ Options:
   --compose-file <path>              docker compose 文件 (default: docker-compose.yml)
   --env-file <path>                  compose env 文件 (default: .env)
   --output-root <dir>                报告输出目录 (default: ./data/reports/closed_loop)
-  --stage <DEPLOY|S3|S5>             运行日志验收阶段 (default: S5)
+  --stage <DEPLOY|SMOKE|S3|S5>       运行日志验收阶段 (default: S5)
   --since <duration>                 导出日志窗口 (default: 4h)
   --min-runtime-status <int>         覆盖日志验收最小 RUNTIME_STATUS 条数
 
@@ -489,6 +490,9 @@ default_min_runtime_status_for_stage() {
   case "${STAGE}" in
     DEPLOY)
       echo 0
+      ;;
+    SMOKE)
+      echo 30
       ;;
     S3)
       echo 10
@@ -1080,7 +1084,7 @@ run_assess() {
   local assess_required_min_runtime_status
   assess_required_min_runtime_status="$(required_min_runtime_status)"
   local wait_enabled="false"
-  if [[ "${STAGE}" == "S5" ]] && is_true "${ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS}" &&
+  if is_true "${ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS}" &&
       [[ "${assess_required_min_runtime_status}" =~ ^[0-9]+$ ]] &&
       (( assess_required_min_runtime_status > 0 )); then
     wait_enabled="true"

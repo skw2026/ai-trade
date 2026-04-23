@@ -1,0 +1,134 @@
+name: Closed Loop Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "日志窗口（例如 15m / 30m）"
+        required: true
+        default: "15m"
+        type: string
+      min_runtime_status:
+        description: "最小 RUNTIME_STATUS 条数"
+        required: true
+        default: "30"
+        type: string
+  workflow_run:
+    workflows:
+      - CD
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: closed-loop-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
+      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '30' }}
+      SMOKE_OUTPUT_ROOT: ./data/reports/closed_loop_smoke
+    steps:
+      - name: Check deploy secrets
+        run: |
+          set -euo pipefail
+          test -n "${{ secrets.ECS_HOST }}"
+          test -n "${{ secrets.ECS_USER }}"
+          test -n "${{ secrets.ECS_SSH_KEY }}"
+
+      - name: Run Smoke on ECS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          SMOKE_SINCE: ${{ env.SMOKE_SINCE }}
+          SMOKE_MIN_RUNTIME_STATUS: ${{ env.SMOKE_MIN_RUNTIME_STATUS }}
+          SMOKE_OUTPUT_ROOT: ${{ env.SMOKE_OUTPUT_ROOT }}
+          CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS: "900"
+          CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS: "15"
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          envs: SMOKE_SINCE,SMOKE_MIN_RUNTIME_STATUS,SMOKE_OUTPUT_ROOT,CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS,CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS
+          script: |
+            set -euo pipefail
+            cd /opt/ai-trade
+            set -a && source .env.runtime && set +a
+            chmod +x tools/closed_loop_runner.sh
+            tools/closed_loop_runner.sh assess \
+              --compose-file docker-compose.prod.yml \
+              --env-file .env.runtime \
+              --output-root "${SMOKE_OUTPUT_ROOT}" \
+              --stage SMOKE \
+              --since "${SMOKE_SINCE}" \
+              --min-runtime-status "${SMOKE_MIN_RUNTIME_STATUS}"
+            echo "=== smoke closed_loop_report ==="
+            cat "${SMOKE_OUTPUT_ROOT}/latest/closed_loop_report.json"
+
+      - name: Download Smoke Reports
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          umask 077
+          cat > .artifacts/ecs_key <<'EOF'
+          ${{ secrets.ECS_SSH_KEY }}
+          EOF
+          sed -i 's/\r$//' .artifacts/ecs_key
+          chmod 600 .artifacts/ecs_key
+          PORT="${{ secrets.ECS_PORT || 22 }}"
+          HOST="${{ secrets.ECS_HOST }}"
+          USER="${{ secrets.ECS_USER }}"
+          REPORT_ROOT="/opt/ai-trade/data/reports/closed_loop_smoke"
+          KNOWN_HOSTS_FILE=".artifacts/known_hosts"
+          if [[ -z "${HOST}" || -z "${USER}" ]] || \
+             ! ssh-keygen -y -f .artifacts/ecs_key >/dev/null 2>&1 || \
+             ! ssh-keyscan -p "${PORT}" -t ed25519,ecdsa,rsa "${HOST}" > "${KNOWN_HOSTS_FILE}" 2>/dev/null; then
+            cat > .artifacts/smoke_download_status.json <<'EOF'
+          {
+            "status": "SKIPPED"
+          }
+          EOF
+            rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+            exit 0
+          fi
+          scp -i .artifacts/ecs_key -P "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}:${REPORT_ROOT}/latest/closed_loop_report.json" \
+            ".artifacts/closed_loop_report.json" || true
+          scp -i .artifacts/ecs_key -P "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}:${REPORT_ROOT}/latest/runtime_assess.json" \
+            ".artifacts/runtime_assess.json" || true
+          scp -i .artifacts/ecs_key -P "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}:${REPORT_ROOT}/latest/runtime.log" \
+            ".artifacts/runtime.log" || true
+          cat > .artifacts/smoke_download_status.json <<'EOF'
+          {
+            "status": "DONE"
+          }
+          EOF
+          rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+
+      - name: Upload Smoke Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/*.json
+            .artifacts/runtime.log
+          include-hidden-files: true
+          if-no-files-found: warn
