@@ -5511,6 +5511,71 @@ int main() {
   }
 
   {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() / "ai_trade_fill_guard_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "fill guard 测试 WAL 初始化失败: " << error << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent intent;
+    intent.client_order_id = "guard-order";
+    intent.symbol = "BTCUSDT";
+    intent.direction = 1;
+    intent.qty = 1.0;
+    intent.price = 100.0;
+    intent.purpose = ai_trade::OrderPurpose::kEntry;
+    if (!app.oms_.RegisterIntent(intent)) {
+      std::cerr << "fill guard 测试 OMS 注册失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(intent.client_order_id);
+
+    ai_trade::FillEvent first_fill = ToFill(intent, "guard-fill-1");
+    app.ProcessFillEvent(first_fill);
+    if (!NearlyEqual(app.system_.account().position_qty("BTCUSDT"), 1.0) ||
+        !NearlyEqual(app.oms_.net_filled_qty("BTCUSDT"), 1.0) ||
+        app.fill_ids_.size() != 1U) {
+      std::cerr << "首笔 fill 应正常落地\n";
+      return 1;
+    }
+
+    ai_trade::FillEvent duplicate_semantic_fill = ToFill(intent, "guard-fill-2");
+    app.ProcessFillEvent(duplicate_semantic_fill);
+    const auto* record = app.oms_.Find(intent.client_order_id);
+    if (record == nullptr || record->state != ai_trade::OrderState::kFilled ||
+        !NearlyEqual(record->filled_qty, 1.0) ||
+        !NearlyEqual(app.system_.account().position_qty("BTCUSDT"), 1.0) ||
+        !NearlyEqual(app.oms_.net_filled_qty("BTCUSDT"), 1.0) ||
+        app.fill_ids_.size() != 1U) {
+      std::cerr << "超出订单数量的重复语义 fill 应被拦截\n";
+      return 1;
+    }
+
+    std::unordered_set<std::string> intent_ids;
+    std::unordered_set<std::string> fill_ids;
+    std::vector<ai_trade::FillEvent> fills;
+    if (!app.wal_.LoadState(&intent_ids, &fill_ids, &fills, &error)) {
+      std::cerr << "fill guard 测试 WAL 回放失败: " << error << "\n";
+      return 1;
+    }
+    if (fill_ids.size() != 1U || fills.size() != 1U ||
+        fill_ids.count("guard-fill-2") != 0U) {
+      std::cerr << "被拦截的重复 fill 不应写入 WAL\n";
+      return 1;
+    }
+
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
     ai_trade::UniverseConfig config;
     config.enabled = true;
     config.update_interval_ticks = 2;

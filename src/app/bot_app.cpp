@@ -30,6 +30,8 @@ constexpr int kReconcileAutoResyncCooldownTicks = 40;
 constexpr std::size_t kRecentFillObservationLimit = 32;
 // funding 观测缺失时，保留最近有效值的最长 tick（默认约 1 小时@5s）。
 constexpr int kFundingObservationStaleTicks = 720;
+constexpr double kFillQtyAuditEpsilon = 1e-9;
+constexpr double kFillOverrunToleranceMinQty = 1e-6;
 
 // 统一毫秒时间戳，供节流、日志和心跳逻辑复用。
 std::int64_t CurrentTimestampMs() {
@@ -174,6 +176,19 @@ const char* OrderStateToString(OrderState state) {
       return "cancelled";
   }
   return "unknown";
+}
+
+double FillOverrunToleranceQty(const OrderRecord& record) {
+  return std::max(kFillOverrunToleranceMinQty, std::fabs(record.intent.qty) * 1e-6);
+}
+
+std::string FormatFillSummary(const FillEvent& fill) {
+  std::ostringstream oss;
+  oss << "fill_id=" << fill.fill_id << ", client_order_id=" << fill.client_order_id
+      << ", symbol=" << fill.symbol << ", direction=" << fill.direction
+      << ", qty=" << fill.qty << ", price=" << fill.price << ", fee=" << fill.fee
+      << ", liquidity=" << ToString(fill.liquidity);
+  return oss.str();
 }
 
 std::string FormatAccountPositions(const AccountState& account) {
@@ -2295,7 +2310,39 @@ void BotApplication::ProcessAsyncResults() {
  * - 触发保护单逻辑。
  */
 void BotApplication::ProcessFillEvent(const FillEvent& fill) {
-  if (fill_ids_.count(fill.fill_id)) return;
+  if (fill_ids_.count(fill.fill_id)) {
+    LogInfo("FILL_DUPLICATE_DROP: stage=fill_id_dedupe, " +
+            FormatFillSummary(fill));
+    return;
+  }
+
+  const OrderRecord* fill_order_record_before = oms_.Find(fill.client_order_id);
+  const double local_qty_before = system_.account().position_qty(fill.symbol);
+  const double oms_net_qty_before = oms_.net_filled_qty(fill.symbol);
+  const double order_filled_qty_before =
+      fill_order_record_before != nullptr ? fill_order_record_before->filled_qty
+                                         : 0.0;
+  const OrderState order_state_before =
+      fill_order_record_before != nullptr ? fill_order_record_before->state
+                                          : OrderState::kNew;
+  if (fill_order_record_before != nullptr &&
+      fill_order_record_before->intent.qty > kFillQtyAuditEpsilon) {
+    const double projected_filled_qty = order_filled_qty_before + fill.qty;
+    const double tolerance_qty = FillOverrunToleranceQty(*fill_order_record_before);
+    if (projected_filled_qty >
+        fill_order_record_before->intent.qty + tolerance_qty) {
+      LogError("FILL_OVERFILL_DROP: " + FormatFillSummary(fill) +
+               ", order_state=" + OrderStateToString(order_state_before) +
+               ", order_qty=" +
+               std::to_string(fill_order_record_before->intent.qty) +
+               ", filled_qty_before=" + std::to_string(order_filled_qty_before) +
+               ", projected_filled_qty=" + std::to_string(projected_filled_qty) +
+               ", tolerance_qty=" + std::to_string(tolerance_qty) +
+               ", local_qty_before=" + std::to_string(local_qty_before) +
+               ", oms_net_qty_before=" + std::to_string(oms_net_qty_before));
+      return;
+    }
+  }
 
   std::string wal_err;
   if (!wal_.AppendFill(fill, &wal_err)) {
@@ -2307,6 +2354,22 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   system_.OnFill(fill);
   gate_monitor_.OnFill(fill);
   const auto* fill_order_record = oms_.Find(fill.client_order_id);
+  const double local_qty_after = system_.account().position_qty(fill.symbol);
+  const double oms_net_qty_after = oms_.net_filled_qty(fill.symbol);
+  const double order_filled_qty_after =
+      fill_order_record != nullptr ? fill_order_record->filled_qty : 0.0;
+  const char* order_state_after =
+      fill_order_record != nullptr ? OrderStateToString(fill_order_record->state)
+                                   : "missing";
+  LogInfo("FILL_APPLIED: " + FormatFillSummary(fill) +
+          ", order_state_before=" + OrderStateToString(order_state_before) +
+          ", order_state_after=" + std::string(order_state_after) +
+          ", order_filled_qty_before=" + std::to_string(order_filled_qty_before) +
+          ", order_filled_qty_after=" + std::to_string(order_filled_qty_after) +
+          ", local_qty_before=" + std::to_string(local_qty_before) +
+          ", local_qty_after=" + std::to_string(local_qty_after) +
+          ", oms_net_qty_before=" + std::to_string(oms_net_qty_before) +
+          ", oms_net_qty_after=" + std::to_string(oms_net_qty_after));
   if (fill_order_record != nullptr &&
       fill_order_record->intent.purpose == OrderPurpose::kSl) {
     ClearPendingRequiredSl(fill.client_order_id);

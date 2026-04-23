@@ -115,6 +115,16 @@ std::string Trim(const std::string& text) {
   return text.substr(begin, end - begin);
 }
 
+std::string FormatFillSummary(const FillEvent& fill, const char* channel) {
+  std::ostringstream oss;
+  oss << "channel=" << channel << ", fill_id=" << fill.fill_id
+      << ", client_order_id=" << fill.client_order_id << ", symbol=" << fill.symbol
+      << ", direction=" << fill.direction << ", qty=" << fill.qty
+      << ", price=" << fill.price << ", fee=" << fill.fee
+      << ", liquidity=" << ToString(fill.liquidity);
+  return oss.str();
+}
+
 std::vector<std::string> SplitCsvLine(const std::string& line) {
   std::vector<std::string> fields;
   std::string current;
@@ -1756,6 +1766,8 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
       }
       // 去重检查：如果已处理过该 exec_id，跳过
       if (!observed_exec_ids_.insert(exec_id).second) {
+        LogInfo("BYBIT_EXEC_DEDUP_DROP: channel=rest_polling, exec_id=" + exec_id +
+                ", stage=rest_batch");
         continue;
       }
       const std::int64_t exec_time_ms = ParseExecTimeMs(&row);
@@ -2177,8 +2189,12 @@ bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
       CanonicalizeFillClientOrderId(out_fill);
       // Private WS 重连后可能重复推送历史 execution，这里做全局去重保护。
       if (!observed_exec_ids_.insert(out_fill->fill_id).second) {
+        LogInfo("BYBIT_EXEC_DEDUP_DROP: " +
+                FormatFillSummary(*out_fill, "private_ws"));
         return false;
       }
+      LogInfo("BYBIT_FILL_OBSERVED: " +
+              FormatFillSummary(*out_fill, "private_ws"));
       remote_position_qty_by_symbol_[out_fill->symbol] +=
           static_cast<double>(out_fill->direction) * out_fill->qty;
       return true;
@@ -2203,8 +2219,12 @@ bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
     if (private_stream_ != nullptr && private_stream_->PollExecution(out_fill)) {
       CanonicalizeFillClientOrderId(out_fill);
       if (!observed_exec_ids_.insert(out_fill->fill_id).second) {
+        LogInfo("BYBIT_EXEC_DEDUP_DROP: " +
+                FormatFillSummary(*out_fill, "private_ws"));
         return false;
       }
+      LogInfo("BYBIT_FILL_OBSERVED: " +
+              FormatFillSummary(*out_fill, "private_ws"));
       remote_position_qty_by_symbol_[out_fill->symbol] +=
           static_cast<double>(out_fill->direction) * out_fill->qty;
       return true;
@@ -2219,6 +2239,7 @@ bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
     return false;
   }
   CanonicalizeFillClientOrderId(out_fill);
+  LogInfo("BYBIT_FILL_OBSERVED: " + FormatFillSummary(*out_fill, "rest_polling"));
   return true;
 }
 
