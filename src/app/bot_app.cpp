@@ -1066,8 +1066,11 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
       std::max(0.0, adaptive_relax_bps);
   const bool near_miss = filtered && edge_gap_bps <= near_miss_band_bps;
   bool near_miss_allowed = false;
+  const bool near_miss_maker_regime_allowed =
+      decision.regime.bucket == RegimeBucket::kTrend;
   if (near_miss && config_.execution_entry_gate_near_miss_maker_allow &&
-      maker_entry_candidate && !config_.execution_maker_fallback_to_market) {
+      near_miss_maker_regime_allowed && maker_entry_candidate &&
+      !config_.execution_maker_fallback_to_market) {
     const bool has_liquidity_window =
         recent_execution_window_liquidity_fill_count_ >= 6;
     const double maker_quality_threshold = std::clamp(

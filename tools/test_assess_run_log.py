@@ -494,6 +494,20 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["instant_return_abs_max"], 0.0020, places=8)
         self.assertAlmostEqual(metrics["volatility_level_p50"], 0.0003, places=8)
 
+    def test_transient_trend_regime_change_is_reported_separately(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] REGIME_CHANGE: symbol=BNBUSDT, regime=DOWNTREND, bucket=TREND, warmup=false, decision_interval_ms=5000, aggregated_events=5, instant_return=-0.001000, trend_strength=-0.000320, volatility=0.000200\n"
+            "2026-02-14 15:00:06 [INFO] REGIME_CHANGE: symbol=BTCUSDT, regime=RANGE, bucket=RANGE, warmup=false, decision_interval_ms=5000, aggregated_events=7, instant_return=0.000200, trend_strength=0.000020, volatility=0.000100\n"
+            + self._runtime_line(20, 0.0, regime_bucket="RANGE")
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["regime_trend_runtime_count"], 0)
+        self.assertEqual(metrics["regime_change_trend_count"], 1)
+        self.assertEqual(metrics["regime_change_trend_symbol_count"], 1)
+        self.assertEqual(metrics["regime_change_trend_symbols"], ["BNBUSDT"])
+        self.assertEqual(report["market_context_status"], "TREND_TRANSIENT")
+
     def test_policy_flat_dominant_without_evolution_action_skips_missing_action_warn(self):
         runtime = "".join(
             self._runtime_line(

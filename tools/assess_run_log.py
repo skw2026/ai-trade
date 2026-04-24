@@ -17,7 +17,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -686,12 +686,19 @@ def extract_regime_current_counts(text: str) -> Dict[str, int]:
     return counts
 
 
-def extract_regime_change_series(text: str) -> Dict[str, float]:
+def extract_regime_change_series(text: str) -> Dict[str, Any]:
     abs_trend_strength_values: list[float] = []
     abs_instant_return_values: list[float] = []
     volatility_values: list[float] = []
+    bucket_counts = {"TREND": 0, "RANGE": 0, "EXTREME": 0}
+    trend_symbols: set[str] = set()
 
     for match in REGIME_CHANGE_RE.finditer(text):
+        bucket = str(match.group("bucket") or "").upper()
+        if bucket in bucket_counts:
+            bucket_counts[bucket] += 1
+        if bucket == "TREND":
+            trend_symbols.add(str(match.group("symbol") or ""))
         try:
             abs_instant_return_values.append(abs(float(match.group("instant_return"))))
             abs_trend_strength_values.append(abs(float(match.group("trend_strength"))))
@@ -715,6 +722,11 @@ def extract_regime_change_series(text: str) -> Dict[str, float]:
             "volatility_level_p95": 0.0,
             "volatility_level_p99": 0.0,
             "volatility_level_max": 0.0,
+            "trend_count": 0,
+            "range_count": 0,
+            "extreme_count": 0,
+            "trend_symbol_count": 0,
+            "trend_symbols": [],
         }
 
     return {
@@ -731,6 +743,11 @@ def extract_regime_change_series(text: str) -> Dict[str, float]:
         "volatility_level_p95": percentile(volatility_values, 0.95),
         "volatility_level_p99": percentile(volatility_values, 0.99),
         "volatility_level_max": max(volatility_values),
+        "trend_count": bucket_counts["TREND"],
+        "range_count": bucket_counts["RANGE"],
+        "extreme_count": bucket_counts["EXTREME"],
+        "trend_symbol_count": len(trend_symbols),
+        "trend_symbols": sorted(x for x in trend_symbols if x),
     }
 
 
@@ -1447,6 +1464,13 @@ def assess(
             "concentration_adjust_bps_avg"
         ],
         "regime_change_count": int(regime_change["runtime_count"]),
+        "regime_change_trend_count": int(regime_change["trend_count"]),
+        "regime_change_range_count": int(regime_change["range_count"]),
+        "regime_change_extreme_count": int(regime_change["extreme_count"]),
+        "regime_change_trend_symbol_count": int(
+            regime_change["trend_symbol_count"]
+        ),
+        "regime_change_trend_symbols": regime_change["trend_symbols"],
         "trend_strength_abs_p50": regime_change["trend_strength_abs_p50"],
         "trend_strength_abs_p95": regime_change["trend_strength_abs_p95"],
         "trend_strength_abs_p99": regime_change["trend_strength_abs_p99"],
@@ -1546,6 +1570,8 @@ def assess(
 
     if metrics["regime_trend_runtime_count"] > 0:
         market_context_status = "TREND_PRESENT"
+    elif metrics["regime_change_trend_count"] > 0:
+        market_context_status = "TREND_TRANSIENT"
     elif (
         metrics["regime_range_runtime_count"] > 0
         and metrics["regime_extreme_runtime_count"] > 0
@@ -2008,10 +2034,19 @@ def assess(
                     f"{metrics['gate_runtime_policy_flat_exempt_count']}"
                 )
             if metrics["regime_trend_runtime_count"] <= 0:
-                warn_reasons.append(
-                    "当前窗口未出现 TREND 样本：runtime 通过仅代表保护逻辑通过，"
-                    "执行质量仍处于等待趋势样本阶段"
-                )
+                if metrics["regime_change_trend_count"] > 0:
+                    warn_reasons.append(
+                        "当前窗口仅出现短暂 TREND 样本但未进入 runtime 状态窗口："
+                        "执行质量仍处于等待稳定趋势样本阶段, "
+                        f"regime_change_trend_count={metrics['regime_change_trend_count']}, "
+                        "symbols="
+                        f"{','.join(metrics['regime_change_trend_symbols'])}"
+                    )
+                else:
+                    warn_reasons.append(
+                        "当前窗口未出现 TREND 样本：runtime 通过仅代表保护逻辑通过，"
+                        "执行质量仍处于等待趋势样本阶段"
+                    )
             else:
                 warn_reasons.append(
                     "本轮 runtime 通过仅代表保护逻辑通过，执行质量未完成验证"

@@ -1932,6 +1932,8 @@ int main() {
     range_decision.intent->qty = 0.2;
     const ai_trade::MarketEvent range_event{
         4, "ETHUSDT", 2400.0, 2400.0, 0.0, 5000};
+    bool range_near_miss = false;
+    bool range_near_miss_allowed = false;
     const bool range_filtered = app.ShouldFilterByFeeAwareGate(
         range_decision,
         range_event,
@@ -1947,13 +1949,16 @@ int main() {
         nullptr,
         nullptr,
         nullptr,
-        nullptr,
-        nullptr);
+        &range_near_miss,
+        &range_near_miss_allowed);
 
-    if (trend_filtered || !range_filtered || expected_edge_bps <= 2.0 ||
+    if (trend_filtered || !range_filtered || range_near_miss_allowed ||
+        expected_edge_bps <= 2.0 ||
         adaptive_relax_bps <= 0.0 || regime_adjust_bps >= 0.0) {
       std::cerr << "TREND fee-aware gate 优化不符合预期: trend_filtered="
                 << trend_filtered << ", range_filtered=" << range_filtered
+                << ", range_near_miss=" << range_near_miss
+                << ", range_near_miss_allowed=" << range_near_miss_allowed
                 << ", expected=" << expected_edge_bps
                 << ", required=" << required_edge_bps
                 << ", adaptive_relax=" << adaptive_relax_bps

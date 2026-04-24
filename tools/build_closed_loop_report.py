@@ -168,7 +168,9 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
     execution_status = str(payload.get("execution_status", ""))
     if execution_status == "NOT_EVALUATED":
         market_context_status = str(payload.get("market_context_status", ""))
-        if market_context_status in {"RANGE_ONLY", "EXTREME_ONLY", "RANGE_EXTREME_ONLY"}:
+        if market_context_status == "TREND_TRANSIENT":
+            extra = "运行保护通过，但当前窗口仅出现短暂 TREND 样本，执行质量未完成稳定趋势验证"
+        elif market_context_status in {"RANGE_ONLY", "EXTREME_ONLY", "RANGE_EXTREME_ONLY"}:
             extra = "运行保护通过，但当前窗口未形成可交易趋势样本，执行质量未完成验证"
         else:
             extra = "运行保护通过，但执行质量未完成验证"

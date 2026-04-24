@@ -59,6 +59,7 @@ execution:
   # 稳态阶段：提高入场边际门槛上限，优先压低低质量成交。
   required_edge_cap_bps: 5.8
   entry_gate_near_miss_tolerance_bps: 0.30
+  # 运行时代码仅允许 TREND 桶 near-miss maker 放行；RANGE 继续强过滤。
   entry_gate_near_miss_maker_allow: true
   entry_gate_near_miss_maker_max_gap_bps: 0.40
   adaptive_fee_gate_enabled: true
@@ -67,7 +68,7 @@ execution:
   adaptive_fee_gate_max_relax_bps: 2.4
   dynamic_edge_enabled: true
   dynamic_edge_regime_trend_relax_bps: 0.8
-  dynamic_edge_regime_range_penalty_bps: 0.45
+  dynamic_edge_regime_range_penalty_bps: 0.80
   dynamic_edge_regime_extreme_penalty_bps: 2.0
   dynamic_edge_volatility_relax_bps: 0.6
   dynamic_edge_volatility_penalty_bps: 1.0
@@ -123,7 +124,7 @@ strategy:
   default_tick_interval_ms: 5000
   min_hold_ticks: 18
   # RANGE 桶保留小样本通道，避免 defensive 分支被结构性清零。
-  range_min_confidence: 0.10
+  range_min_confidence: 0.25
   extreme_block_signals: true
   trend_breakout_lookback_ticks: 24
   trend_breakout_rank_threshold: 0.95
@@ -132,7 +133,7 @@ strategy:
   trend_vol_cap_annual: 1.20
   trend_strength_scale: 1.5
   trend_trend_scale: 1.0
-  trend_range_scale: 0.25
+  trend_range_scale: 0.10
   trend_extreme_scale: 0.0
   vol_target_pct: 0.35
   vol_target_max_leverage: 2.2
@@ -144,7 +145,7 @@ strategy:
   defensive_entry_score: 1.40
   defensive_rank_lookback_ticks: 72
   defensive_trend_scale: 0.25
-  defensive_range_scale: 0.40
+  defensive_range_scale: 0.18
   defensive_extreme_scale: 0.00
   eth_range_defensive_scale_multiplier: 0.10
 

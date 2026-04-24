@@ -110,6 +110,90 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             self.assertEqual(runtime_metrics["fill_duplicate_drop_count"], 2)
             self.assertEqual(runtime_metrics["bybit_exec_dedup_drop_count"], 3)
 
+    def test_account_summary_clips_samples_to_summary_window(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            reports_root = root / "reports"
+            out_dir = root / "summary"
+
+            run1 = reports_root / "20260423T110000Z"
+            run1.mkdir(parents=True, exist_ok=True)
+            (run1 / "closed_loop_report.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at_utc": "2026-04-23T11:00:00Z",
+                        "overall_status": "PASS",
+                        "account_outcome": {
+                            "first_sample_utc": "2026-04-23T01:00:00Z",
+                            "first_equity_usd": 1000.0,
+                            "last_sample_utc": "2026-04-23T11:00:00Z",
+                            "last_equity_usd": 1100.0,
+                            "equity_change_usd": 100.0,
+                            "realized_net_pnl_change_usd": 2.0,
+                            "fee_change_usd": 1.0,
+                        },
+                        "warn_reasons": [],
+                        "sections": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            run2 = reports_root / "20260424T100000Z"
+            run2.mkdir(parents=True, exist_ok=True)
+            (run2 / "closed_loop_report.json").write_text(
+                json.dumps(
+                    {
+                        "generated_at_utc": "2026-04-24T10:00:00Z",
+                        "overall_status": "PASS",
+                        "account_outcome": {
+                            "first_sample_utc": "2026-04-24T09:00:00Z",
+                            "first_equity_usd": 1200.0,
+                            "last_sample_utc": "2026-04-24T10:00:00Z",
+                            "last_equity_usd": 1300.0,
+                            "equity_change_usd": 100.0,
+                            "realized_net_pnl_change_usd": 3.0,
+                            "fee_change_usd": 2.0,
+                        },
+                        "warn_reasons": [],
+                        "sections": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_periodic_summary.py",
+                    "--reports-root",
+                    str(reports_root),
+                    "--out-dir",
+                    str(out_dir),
+                    "--now-utc",
+                    "2026-04-24T10:00:00Z",
+                ]
+                code = SUMMARY.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            daily_latest = json.loads(
+                (out_dir / "daily_latest.json").read_text(encoding="utf-8")
+            )
+            account = daily_latest["account_outcome"]
+            self.assertEqual(account["earliest_sample_utc"], "2026-04-23T11:00:00Z")
+            self.assertEqual(account["first_equity_usd"], 1100.0)
+            self.assertEqual(account["latest_sample_utc"], "2026-04-24T10:00:00Z")
+            self.assertEqual(account["last_equity_usd"], 1300.0)
+            self.assertEqual(account["equity_change_usd"], 200.0)
+            self.assertEqual(account["sample_points_total"], 4)
+            self.assertEqual(account["sample_points_used"], 3)
+            self.assertEqual(account["sample_points_outside_window"], 1)
+            self.assertTrue(account["window_clipped"])
+            self.assertEqual(account["sum_run_realized_net_change_usd"], 5.0)
+            self.assertEqual(account["sum_run_fee_change_usd"], 3.0)
+
 
 if __name__ == "__main__":
     unittest.main()

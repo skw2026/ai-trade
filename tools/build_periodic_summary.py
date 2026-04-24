@@ -122,7 +122,25 @@ def iter_reports(reports_root: Path) -> Iterable[Dict[str, Any]]:
         }
 
 
-def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
+def in_window(
+    value: Optional[dt.datetime],
+    window_start: Optional[dt.datetime],
+    window_end: Optional[dt.datetime],
+) -> bool:
+    if value is None:
+        return False
+    if window_start is not None and value < window_start:
+        return False
+    if window_end is not None and value > window_end:
+        return False
+    return True
+
+
+def compute_account_summary(
+    runs: List[Dict[str, Any]],
+    window_start: Optional[dt.datetime] = None,
+    window_end: Optional[dt.datetime] = None,
+) -> Dict[str, Any]:
     earliest_ts: Optional[dt.datetime] = None
     earliest_eq: Optional[float] = None
     latest_ts: Optional[dt.datetime] = None
@@ -135,25 +153,39 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     pnl_changes: List[float] = []
     realized_net_changes: List[float] = []
     fee_changes: List[float] = []
+    sample_points_total = 0
+    sample_points_used = 0
+    sample_points_outside_window = 0
 
     for item in runs:
         account = item["report"].get("account_outcome", {})
         if not isinstance(account, dict):
             continue
 
-        first_ts = parse_utc(str(account.get("first_sample_utc", "")))
-        first_eq = to_float(account.get("first_equity_usd"))
-        if first_ts is not None and first_eq is not None:
-            if earliest_ts is None or first_ts < earliest_ts:
-                earliest_ts = first_ts
-                earliest_eq = first_eq
-
-        last_ts = parse_utc(str(account.get("last_sample_utc", "")))
-        last_eq = to_float(account.get("last_equity_usd"))
-        if last_ts is not None and last_eq is not None:
-            if latest_ts is None or last_ts > latest_ts:
-                latest_ts = last_ts
-                latest_eq = last_eq
+        sample_points = [
+            (
+                parse_utc(str(account.get("first_sample_utc", ""))),
+                to_float(account.get("first_equity_usd")),
+            ),
+            (
+                parse_utc(str(account.get("last_sample_utc", ""))),
+                to_float(account.get("last_equity_usd")),
+            ),
+        ]
+        for sample_ts, sample_eq in sample_points:
+            if sample_ts is None or sample_eq is None:
+                continue
+            sample_points_total += 1
+            if not in_window(sample_ts, window_start, window_end):
+                sample_points_outside_window += 1
+                continue
+            sample_points_used += 1
+            if earliest_ts is None or sample_ts < earliest_ts:
+                earliest_ts = sample_ts
+                earliest_eq = sample_eq
+            if latest_ts is None or sample_ts > latest_ts:
+                latest_ts = sample_ts
+                latest_eq = sample_eq
 
         drawdown = to_float(account.get("max_drawdown_pct_observed"))
         if drawdown is not None:
@@ -194,6 +226,11 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         if abs(earliest_eq) > 1e-12:
             net_change_pct = net_change / earliest_eq
 
+    sum_change = sum(pnl_changes) if pnl_changes else None
+    sum_realized_net_change = (
+        sum(realized_net_changes) if realized_net_changes else None
+    )
+    sum_fee_change = sum(fee_changes) if fee_changes else None
     avg_change = sum(pnl_changes) / len(pnl_changes) if pnl_changes else None
     avg_realized_net_change = (
         sum(realized_net_changes) / len(realized_net_changes)
@@ -202,6 +239,10 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     avg_fee_change = sum(fee_changes) / len(fee_changes) if fee_changes else None
 
+    equity_vs_realized_net_gap = None
+    if net_change is not None and sum_realized_net_change is not None:
+        equity_vs_realized_net_gap = net_change - sum_realized_net_change
+
     return {
         "earliest_sample_utc": to_iso_utc(earliest_ts) if earliest_ts else None,
         "latest_sample_utc": to_iso_utc(latest_ts) if latest_ts else None,
@@ -209,9 +250,17 @@ def compute_account_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "last_equity_usd": latest_eq,
         "equity_change_usd": net_change,
         "equity_change_pct": net_change_pct,
+        "sum_run_equity_change_usd": sum_change,
+        "sum_run_realized_net_change_usd": sum_realized_net_change,
+        "sum_run_fee_change_usd": sum_fee_change,
         "avg_run_equity_change_usd": avg_change,
         "avg_run_realized_net_change_usd": avg_realized_net_change,
         "avg_run_fee_change_usd": avg_fee_change,
+        "equity_vs_realized_net_gap_usd": equity_vs_realized_net_gap,
+        "sample_points_total": sample_points_total,
+        "sample_points_used": sample_points_used,
+        "sample_points_outside_window": sample_points_outside_window,
+        "window_clipped": sample_points_outside_window > 0,
         "max_drawdown_pct_observed": max_drawdown,
         "max_abs_notional_usd_observed": max_abs_notional,
         "max_equity_usd_observed": max_equity_observed,
@@ -681,7 +730,7 @@ def build_period_summary(
             "FAIL": status_counts.get("FAIL", 0),
         },
         "latest_run": latest_run,
-        "account_outcome": compute_account_summary(runs),
+        "account_outcome": compute_account_summary(runs, since, now_utc),
         "runtime_metrics": compute_runtime_summary(runs),
         "replay_metrics": compute_replay_summary(runs),
         "top_warn_reasons": top_warn_reasons(runs),
