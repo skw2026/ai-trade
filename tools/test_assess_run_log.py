@@ -1469,6 +1469,36 @@ class AssessRunLogTest(unittest.TestCase):
             any("未检测到有效策略信号窗口" in x for x in report["fail_reasons"])
         )
 
+    def test_smoke_strategy_activity_without_execution_uses_strategy_active_mode(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=6,
+                strategy_mix_policy_flat_samples=0,
+                strategy_mix_latest_trend=180.0,
+                strategy_mix_latest_defensive=-60.0,
+                strategy_mix_latest_blended=120.0,
+                strategy_mix_avg_abs_trend=180.0,
+                strategy_mix_avg_abs_defensive=60.0,
+                strategy_mix_avg_abs_blended=120.0,
+            )
+            for i in range(3)
+        )
+        report = ASSESS.assess(
+            runtime,
+            ASSESS.STAGE_RULES["SMOKE"],
+            min_runtime_status=3,
+        )
+        self.assertEqual(report["execution_status"], "PASS")
+        self.assertEqual(
+            report["runtime_validation_mode"], "STRATEGY_ACTIVE_NO_EXECUTION"
+        )
+        self.assertEqual(report["metrics"]["execution_activity_count"], 0)
+        self.assertGreater(report["metrics"]["strategy_mix_nonzero_window_count"], 0)
+
     def test_smoke_fail_on_reconcile_mismatch(self):
         text = (
             self._runtime_line(20, 0.0)

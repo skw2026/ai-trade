@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ctime>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -38,6 +39,24 @@ std::int64_t CurrentTimestampMs() {
   const auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
       std::chrono::system_clock::now());
   return now.time_since_epoch().count();
+}
+
+std::string CurrentUtcIsoTimestamp() {
+  const auto now = std::chrono::system_clock::now();
+  const std::time_t t = std::chrono::system_clock::to_time_t(now);
+  std::tm tm{};
+#if defined(_WIN32)
+  gmtime_s(&tm, &t);
+#else
+  gmtime_r(&t, &tm);
+#endif
+  std::ostringstream oss;
+  oss << std::put_time(&tm, "%FT%TZ");
+  return oss.str();
+}
+
+std::string BuildBootId() {
+  return "boot-" + std::to_string(CurrentTimestampMs());
 }
 
 int SignOf(double value) {
@@ -616,6 +635,8 @@ bool ValidateAccountSnapshot(const AppConfig& config, ExchangeAdapter* adapter) 
 
 BotApplication::BotApplication(const AppConfig& config)
     : config_(config),
+      startup_utc_(CurrentUtcIsoTimestamp()),
+      boot_id_(BuildBootId()),
       system_(config),
       execution_(config.execution_max_order_notional),
       order_throttle_({
@@ -1545,6 +1566,8 @@ void BotApplication::TickGateRuntimeCooldown() {
  * 执行顺序：Initialize -> RunLoop -> Shutdown。
  */
 int BotApplication::Run() {
+  LogInfo("PROCESS_START: boot_id=" + boot_id_ + ", startup_utc=" +
+          startup_utc_ + ", primary_symbol=" + config_.primary_symbol);
   if (!Initialize()) {
     return 1;
   }
@@ -3729,6 +3752,7 @@ void BotApplication::LogStatus() {
           ", trading_halted=" +
           std::string(trading_halted_ ? "true" : "false") +
           ", risk_mode=" + RiskModeToString(system_.risk_mode()) +
+          ", boot={id=" + boot_id_ + ", startup_utc=" + startup_utc_ + "}" +
           ", ws={" + ws_summary + "}" +
           ", account={equity=" + std::to_string(system_.account().equity_usd()) +
           ", drawdown_pct=" + std::to_string(system_.account().drawdown_pct()) +

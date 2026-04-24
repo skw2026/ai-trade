@@ -34,6 +34,7 @@ jobs:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
       SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '30' }}
       SMOKE_OUTPUT_ROOT: ./data/reports/closed_loop_smoke
+      SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS: "5400"
     steps:
       - name: Check deploy secrets
         run: |
@@ -115,12 +116,189 @@ jobs:
             -o StrictHostKeyChecking=yes \
             "${USER}@${HOST}:${REPORT_ROOT}/latest/runtime.log" \
             ".artifacts/runtime.log" || true
+          ssh -i .artifacts/ecs_key -p "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}" \
+            "docker inspect --format '{{.Config.Image}}|{{.State.StartedAt}}|{{.State.Status}}|{{.RestartCount}}' ai-trade 2>/dev/null || true" \
+            > ".artifacts/container_state.txt" || true
+          ssh -i .artifacts/ecs_key -p "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}" \
+            "grep '^AI_TRADE_IMAGE=' /opt/ai-trade/.env.runtime | tail -n1 | cut -d= -f2- || true" \
+            > ".artifacts/env_image.txt" || true
           cat > .artifacts/smoke_download_status.json <<'EOF'
           {
             "status": "DONE"
           }
           EOF
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+
+      - name: Evaluate Deploy Freshness
+        if: always()
+        env:
+          SMOKE_TRIGGER_MODE: ${{ github.event_name }}
+          SMOKE_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS: ${{ env.SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from datetime import datetime, timezone
+
+          artifacts_dir = ".artifacts"
+          trigger_mode = os.environ.get("SMOKE_TRIGGER_MODE", "").strip() or "unknown"
+          expected_sha = os.environ.get("SMOKE_EXPECTED_SHA", "").strip()
+          max_age_seconds = int(
+              os.environ.get("SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS", "5400")
+          )
+
+          def parse_iso_utc(value: str):
+              value = (value or "").strip()
+              if not value:
+                  return None
+              if value.endswith("Z"):
+                  body = value[:-1]
+                  if "." in body:
+                      head, frac = body.split(".", 1)
+                      frac = (frac + "000000")[:6]
+                      value = f"{head}.{frac}+00:00"
+                  else:
+                      value = body + "+00:00"
+              return datetime.fromisoformat(value).astimezone(timezone.utc)
+
+          def read_text(path: str) -> str:
+              if not os.path.exists(path):
+                  return ""
+              with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                  return handle.read().strip()
+
+          container_state_raw = read_text(os.path.join(artifacts_dir, "container_state.txt"))
+          env_image = read_text(os.path.join(artifacts_dir, "env_image.txt"))
+          runtime_log = read_text(os.path.join(artifacts_dir, "runtime.log"))
+
+          container_image = ""
+          container_started_at = ""
+          container_status = ""
+          container_restart_count = None
+          if container_state_raw:
+              parts = container_state_raw.split("|")
+              if len(parts) >= 4:
+                  container_image = parts[0].strip()
+                  container_started_at = parts[1].strip()
+                  container_status = parts[2].strip()
+                  try:
+                      container_restart_count = int(parts[3].strip())
+                  except ValueError:
+                      container_restart_count = None
+
+          boot_matches = re.findall(
+              r"boot=\{id=([^,}]+), startup_utc=([^}]+)\}", runtime_log
+          )
+          boot_ids = sorted({item[0] for item in boot_matches if item[0]})
+          startup_values = sorted({item[1] for item in boot_matches if item[1]})
+          runtime_startup_utc = startup_values[0] if len(startup_values) == 1 else ""
+
+          container_started_dt = parse_iso_utc(container_started_at)
+          runtime_started_dt = parse_iso_utc(runtime_startup_utc)
+          now_utc = datetime.now(timezone.utc)
+          container_age_seconds = None
+          startup_container_delta_seconds = None
+          if container_started_dt is not None:
+              container_age_seconds = max(
+                  0, int((now_utc - container_started_dt).total_seconds())
+              )
+          if container_started_dt is not None and runtime_started_dt is not None:
+              startup_container_delta_seconds = int(
+                  abs((runtime_started_dt - container_started_dt).total_seconds())
+              )
+
+          fail_reasons = []
+          warn_reasons = []
+
+          if not container_image:
+              fail_reasons.append("missing_container_image")
+          if not container_started_at:
+              fail_reasons.append("missing_container_started_at")
+          if container_status and container_status != "running":
+              fail_reasons.append(f"container_status={container_status}")
+          if container_restart_count is not None and container_restart_count > 0:
+              warn_reasons.append(f"container_restart_count={container_restart_count}")
+          if not boot_ids:
+              warn_reasons.append("missing_boot_marker_in_runtime_log")
+          elif len(boot_ids) > 1:
+              warn_reasons.append(
+                  f"multiple_boot_ids_detected={','.join(boot_ids)}"
+              )
+          if (
+              startup_container_delta_seconds is not None
+              and startup_container_delta_seconds > 300
+          ):
+              warn_reasons.append(
+                  "runtime_startup_vs_container_started_delta_seconds="
+                  f"{startup_container_delta_seconds}"
+              )
+
+          image_tag_match = None
+          if expected_sha:
+              image_tag_match = container_image.endswith(f":{expected_sha}")
+
+          if trigger_mode == "workflow_run":
+              if image_tag_match is False:
+                  fail_reasons.append(
+                      f"container_image_mismatch={container_image} expected_sha={expected_sha}"
+                  )
+              if (
+                  container_age_seconds is not None
+                  and container_age_seconds > max_age_seconds
+              ):
+                  fail_reasons.append(
+                      f"container_age_seconds={container_age_seconds} > {max_age_seconds}"
+                  )
+
+          if fail_reasons:
+              status = "FAIL"
+          elif trigger_mode == "workflow_run":
+              status = "PASS"
+          else:
+              status = "NOT_EVALUATED_MANUAL"
+
+          payload = {
+              "status": status,
+              "trigger_mode": trigger_mode,
+              "expected_sha": expected_sha or None,
+              "expected_image_tag_suffix": f":{expected_sha}" if expected_sha else None,
+              "container_image": container_image or None,
+              "env_runtime_image": env_image or None,
+              "container_started_at_utc": container_started_at or None,
+              "container_status": container_status or None,
+              "container_restart_count": container_restart_count,
+              "container_age_seconds": container_age_seconds,
+              "deploy_freshness_max_age_seconds": max_age_seconds,
+              "image_tag_match": image_tag_match,
+              "runtime_boot_id": boot_ids[0] if len(boot_ids) == 1 else None,
+              "runtime_boot_id_unique_count": len(boot_ids),
+              "runtime_startup_utc": runtime_startup_utc or None,
+              "startup_vs_container_started_delta_seconds": startup_container_delta_seconds,
+              "fail_reasons": fail_reasons,
+              "warn_reasons": warn_reasons,
+          }
+          os.makedirs(artifacts_dir, exist_ok=True)
+          with open(
+              os.path.join(artifacts_dir, "deploy_freshness.json"),
+              "w",
+              encoding="utf-8",
+          ) as handle:
+              json.dump(payload, handle, ensure_ascii=False, indent=2)
+          print(json.dumps(payload, ensure_ascii=False))
+          if status == "FAIL":
+              sys.exit(1)
+          PY
 
       - name: Upload Smoke Artifacts
         if: always()
@@ -129,6 +307,7 @@ jobs:
           name: smoke-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .artifacts/*.json
+            .artifacts/*.txt
             .artifacts/runtime.log
           include-hidden-files: true
           if-no-files-found: warn

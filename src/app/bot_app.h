@@ -314,6 +314,8 @@ class BotApplication {
 
   // --- 成员变量 ---
   AppConfig config_;  ///< 应用级配置快照。
+  std::string startup_utc_;  ///< 进程启动 UTC 时间（用于部署新鲜度与日志对齐）。
+  std::string boot_id_;  ///< 进程启动唯一标识（同一进程内稳定，便于识别日志是否跨重启）。
   TradeSystem system_;  ///< 策略->风控->执行决策流水线。
   ExecutionEngine execution_;  ///< 保护单意图生成等执行辅助逻辑。
   OrderThrottle order_throttle_;  ///< 下单节流器（最小间隔/反向冷却）。

@@ -270,6 +270,7 @@ GitHub Variables（可选，用于覆盖 CD 强闭环默认值）：
 - `CI`：PR 和非 main 分支 push 自动触发
 - `CD`：push 到 `main` 或手动 `workflow_dispatch` 触发
 - `Closed Loop Smoke`：CD 成功后自动触发，或手动触发；用于 5-15 分钟部署冒烟，不替代 4h/12h/24h S5 验收；报告写入 `/opt/ai-trade/data/reports/closed_loop_smoke`
+- `Closed Loop Smoke` artifact 额外包含 `deploy_freshness.json`，用于核对当前 `ai-trade` 容器镜像 tag、启动时间、`boot_id/startup_utc` 是否与本次部署一致
 
 发布结果：
 - 新镜像 tag：`ghcr.io/<owner>/ai-trade:<commit_sha>`
@@ -505,7 +506,7 @@ ops/cron/install_closed_loop_cron.sh uninstall
 GitHub Actions 定时闭环：
 - 工作流：`.github/workflows/closed-loop.yml`
 - 支持 `workflow_dispatch` 手动触发（`train/full/assess`）
-- 部署冒烟工作流：`.github/workflows/smoke.yml`，CD 成功后自动运行 `SMOKE` 阶段，报告根目录为 `data/reports/closed_loop_smoke`，避免覆盖长周期 S5 的 `latest` 指针。
+- 部署冒烟工作流：`.github/workflows/smoke.yml`，CD 成功后自动运行 `SMOKE` 阶段，报告根目录为 `data/reports/closed_loop_smoke`，避免覆盖长周期 S5 的 `latest` 指针；artifact 同步输出 `deploy_freshness.json`。
 - 默认每 6 小时在 ECS 执行一次 `assess` 并输出闭环报告。
 - `train` 只产出训练报告，不会刷新 `latest_*` 运行验收指针（避免覆盖最近一次可发布验收结果）。
 

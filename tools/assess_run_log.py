@@ -1831,23 +1831,24 @@ def assess(
     else:
         protection_status = "PASS"
 
+    has_execution_activity = execution_activity_count > 0
+    has_strategy_activity = metrics["strategy_mix_nonzero_window_count"] > 0
+
     if policy_flat_dominant:
         execution_status = "NOT_EVALUATED"
     elif execution_fail_reasons:
         execution_status = "FAIL"
-    elif (
-        execution_activity_count > 0
-        or metrics["strategy_mix_nonzero_window_count"] > 0
-        or metrics["funnel_fills_runtime_count"] > 0
-    ):
+    elif has_execution_activity or has_strategy_activity:
         execution_status = "PASS"
     else:
         execution_status = "NOT_EVALUATED"
 
     if policy_flat_dominant:
         runtime_validation_mode = "POLICY_FLAT_PROTECTION"
-    elif execution_status == "PASS":
+    elif has_execution_activity:
         runtime_validation_mode = "EXECUTION_ACTIVE"
+    elif execution_status == "PASS":
+        runtime_validation_mode = "STRATEGY_ACTIVE_NO_EXECUTION"
     else:
         runtime_validation_mode = "IDLE_OR_INSUFFICIENT_SAMPLE"
 
