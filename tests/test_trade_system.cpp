@@ -3750,6 +3750,47 @@ int main() {
   }
 
   {
+    std::filesystem::path config_root;
+    for (const auto& candidate : {
+             std::filesystem::current_path() / "config",
+             std::filesystem::current_path() / ".." / "config",
+         }) {
+      if (std::filesystem::exists(candidate / "default.yaml")) {
+        config_root = candidate;
+        break;
+      }
+    }
+    if (config_root.empty()) {
+      std::cerr << "无法定位仓库 config 目录，当前路径: "
+                << std::filesystem::current_path() << "\n";
+      return 1;
+    }
+
+    for (const auto& file_name : {
+             "default.yaml",
+             "bybit.demo.aggressive.yaml",
+             "bybit.demo.evolution.yaml",
+             "bybit.demo.s5.yaml",
+             "bybit.demo.stable.yaml",
+             "bybit.demo.yaml",
+             "bybit.paper.stable.yaml",
+             "bybit.paper.yaml",
+             "bybit.replay.yaml",
+             "bybit.replay.assess.yaml",
+         }) {
+      ai_trade::AppConfig config;
+      std::string error;
+      const auto config_path = config_root / file_name;
+      if (!ai_trade::LoadAppConfigFromYaml(
+              config_path.string(), &config, &error)) {
+        std::cerr << "仓库配置加载失败: " << config_path
+                  << ", error=" << error << "\n";
+        return 1;
+      }
+    }
+  }
+
+  {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
         "ai_trade_test_invalid_config.yaml";

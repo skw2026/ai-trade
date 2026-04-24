@@ -124,7 +124,8 @@ strategy:
   default_tick_interval_ms: 5000
   min_hold_ticks: 18
   # RANGE 桶保留小样本通道，避免 defensive 分支被结构性清零。
-  range_min_confidence: 0.25
+  # 当前 RANGE 理论置信上限 = trend_range_scale + defensive_notional_ratio * defensive_range_scale = 0.154。
+  range_min_confidence: 0.15
   extreme_block_signals: true
   trend_breakout_lookback_ticks: 24
   trend_breakout_rank_threshold: 0.95

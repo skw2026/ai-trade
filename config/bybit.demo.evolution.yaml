@@ -123,7 +123,7 @@ strategy:
   signal_valid_for_ms: 15000
   default_tick_interval_ms: 5000
   min_hold_ticks: 14
-  range_min_confidence: 0.45
+  range_min_confidence: 0.35
   extreme_block_signals: true
   trend_breakout_lookback_ticks: 24
   trend_breakout_rank_threshold: 0.97
@@ -140,7 +140,8 @@ strategy:
   vol_target_low_vol_annual_threshold: 0.12
   vol_target_low_vol_max_leverage: 1.1
   defensive_notional_ratio: 0.30
-  defensive_entry_score: 2.2
+  # rank 信号范围固定在 [-2,2]；门槛需留在可触达区间。
+  defensive_entry_score: 1.90
   defensive_rank_lookback_ticks: 72
   defensive_trend_scale: 0.25
   defensive_range_scale: 0.40
