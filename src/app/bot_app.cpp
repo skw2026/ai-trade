@@ -2357,6 +2357,15 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
             FormatFillSummary(fill));
     return;
   }
+  if (fill.client_order_id.empty()) {
+    if (!fill.fill_id.empty()) {
+      fill_ids_.insert(fill.fill_id);
+    }
+    LogError("FILL_UNMAPPED_DROP: stage=empty_client_order_id, " +
+             FormatFillSummary(fill) +
+             ", reason=missing_orderLinkId_and_orderId");
+    return;
+  }
 
   const OrderRecord* fill_order_record_before = oms_.Find(fill.client_order_id);
   const double local_qty_before = system_.account().position_qty(fill.symbol);

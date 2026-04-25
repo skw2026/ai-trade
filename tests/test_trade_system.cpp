@@ -3781,14 +3781,23 @@ int main() {
       ai_trade::AppConfig config;
       std::string error;
       const auto config_path = config_root / file_name;
-      if (!ai_trade::LoadAppConfigFromYaml(
-              config_path.string(), &config, &error)) {
-        std::cerr << "仓库配置加载失败: " << config_path
-                  << ", error=" << error << "\n";
-        return 1;
-      }
-    }
-  }
+	      if (!ai_trade::LoadAppConfigFromYaml(
+	              config_path.string(), &config, &error)) {
+	        std::cerr << "仓库配置加载失败: " << config_path
+	                  << ", error=" << error << "\n";
+	        return 1;
+	      }
+	      if (std::string(file_name) == "bybit.demo.s5.yaml" &&
+	          (!config.protection.enabled ||
+	           !config.protection.dynamic_distance_enabled ||
+	           !config.protection.break_even_enabled ||
+	           !config.protection.trailing_enabled)) {
+	        std::cerr << "S5 主链配置必须启用动态保护与盈利保护: "
+	                  << config_path << "\n";
+	        return 1;
+	      }
+	    }
+	  }
 
   {
     const std::filesystem::path temp_path =
@@ -5623,6 +5632,57 @@ int main() {
 
   {
     const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_unmapped_fill_guard_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "unmapped fill guard 测试 WAL 初始化失败: " << error
+                << "\n";
+      return 1;
+    }
+
+    ai_trade::FillEvent fill;
+    fill.fill_id = "unmapped-empty-client-order";
+    fill.client_order_id = "";
+    fill.symbol = "BNBUSDT";
+    fill.direction = 1;
+    fill.qty = 0.59;
+    fill.price = 638.1;
+    fill.fee = 0.0375;
+    fill.liquidity = ai_trade::FillLiquidity::kTaker;
+    app.ProcessFillEvent(fill);
+    if (!NearlyEqual(app.system_.account().position_qty("BNBUSDT"), 0.0) ||
+        !NearlyEqual(app.oms_.net_filled_qty("BNBUSDT"), 0.0) ||
+        app.funnel_window_.fills_applied != 0 ||
+        app.pending_fills_for_evolution_ != 0 ||
+        app.fill_ids_.count(fill.fill_id) != 1U) {
+      std::cerr << "无法归因的空 client_order_id fill 不应污染本地账户/OMS/样本\n";
+      return 1;
+    }
+
+    std::unordered_set<std::string> intent_ids;
+    std::unordered_set<std::string> fill_ids;
+    std::vector<ai_trade::FillEvent> fills;
+    if (!app.wal_.LoadState(&intent_ids, &fill_ids, &fills, &error)) {
+      std::cerr << "unmapped fill guard 测试 WAL 回放失败: " << error << "\n";
+      return 1;
+    }
+    if (!fill_ids.empty() || !fills.empty()) {
+      std::cerr << "无法归因的 fill 不应写入 WAL 成为可回放策略成交\n";
+      return 1;
+    }
+
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
+    const std::filesystem::path data_dir =
         std::filesystem::temp_directory_path() / "ai_trade_cancelled_late_fill_test";
     std::error_code ec;
     std::filesystem::remove_all(data_dir, ec);
@@ -6142,7 +6202,7 @@ int main() {
         {ScriptedWsAction::kText, R"({"op":"subscribe","success":true})", ""},
         {ScriptedWsAction::kText, "{", ""},
         {ScriptedWsAction::kText,
-         R"({"topic":"execution","data":[{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01","isMaker":true},{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01","isMaker":true}]})",
+         R"({"topic":"execution","data":[{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01","isMaker":true},{"execId":"exec-2","orderLinkId":"","orderId":"oid-2","symbol":"ETHUSDT","side":"Sell","execQty":"2","execPrice":"101","execFee":"0.02","isMaker":false},{"execId":"exec-1","orderLinkId":"cid-1","symbol":"BTCUSDT","side":"Buy","execQty":"1","execPrice":"100","execFee":"0.01","isMaker":true}]})",
          ""},
         {ScriptedWsAction::kClosed, "", "peer closed"},
     };
@@ -6169,6 +6229,17 @@ int main() {
         fill.direction != 1 || !NearlyEqual(fill.qty, 1.0) ||
         fill.liquidity != ai_trade::FillLiquidity::kMaker) {
       std::cerr << "private ws execution 解析结果不符合预期\n";
+      return 1;
+    }
+    if (!stream.PollExecution(&fill)) {
+      std::cerr << "空 orderLinkId 但有 orderId 的 execution 应产生成交\n";
+      return 1;
+    }
+    if (fill.fill_id != "exec-2" || fill.client_order_id != "oid-2" ||
+        fill.symbol != "ETHUSDT" || fill.direction != -1 ||
+        !NearlyEqual(fill.qty, 2.0) ||
+        fill.liquidity != ai_trade::FillLiquidity::kTaker) {
+      std::cerr << "private ws execution 应在 orderLinkId 为空时 fallback 到 orderId\n";
       return 1;
     }
     if (stream.PollExecution(&fill)) {

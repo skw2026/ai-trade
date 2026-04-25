@@ -95,25 +95,25 @@ execution:
   concentration_penalty_bps: 2.8
   concentration_min_symbols: 2
   protection:
-    enabled: false
+    enabled: true
     require_sl: true
     enable_tp: true
     attach_timeout_ms: 1500
     stop_loss_ratio: 0.01
     take_profit_ratio: 0.015
-    dynamic_distance_enabled: false
-    dynamic_distance_volatility_multiplier: 0.0
-    dynamic_stop_loss_min_ratio: 0.0
-    dynamic_stop_loss_max_ratio: 0.0
-    dynamic_take_profit_min_ratio: 0.0
-    dynamic_take_profit_max_ratio: 0.0
+    dynamic_distance_enabled: true
+    dynamic_distance_volatility_multiplier: 72.0
+    dynamic_stop_loss_min_ratio: 0.008
+    dynamic_stop_loss_max_ratio: 0.025
+    dynamic_take_profit_min_ratio: 0.012
+    dynamic_take_profit_max_ratio: 0.040
     dynamic_take_profit_rr_multiplier: 1.5
-    break_even_enabled: false
-    break_even_trigger_ratio: 0.0
-    break_even_offset_ratio: 0.0
-    trailing_enabled: false
-    trailing_trigger_ratio: 0.0
-    trailing_distance_ratio: 0.0
+    break_even_enabled: true
+    break_even_trigger_ratio: 0.010
+    break_even_offset_ratio: 0.001
+    trailing_enabled: true
+    trailing_trigger_ratio: 0.020
+    trailing_distance_ratio: 0.006
     profit_protection_min_update_ratio: 0.001
 
 strategy:

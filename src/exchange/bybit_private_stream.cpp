@@ -43,6 +43,15 @@ std::optional<std::string> JsonStringField(const JsonValue* object,
   return JsonAsString(field);
 }
 
+std::optional<std::string> JsonNonEmptyStringField(const JsonValue* object,
+                                                   const std::string& key) {
+  auto value = JsonStringField(object, key);
+  if (!value.has_value() || value->empty()) {
+    return std::nullopt;
+  }
+  return value;
+}
+
 FillLiquidity ParseFillLiquidity(const JsonValue* object) {
   if (object == nullptr || object->type != JsonType::kObject) {
     return FillLiquidity::kUnknown;
@@ -389,8 +398,9 @@ bool BybitPrivateStream::ParseExecutionPayload(const JsonValue* data) {
     FillEvent fill;
     fill.fill_id = exec_id;
     fill.client_order_id =
-        JsonStringField(item, "orderLinkId")
-            .value_or(JsonStringField(item, "orderId").value_or(std::string()));
+        JsonNonEmptyStringField(item, "orderLinkId")
+            .value_or(JsonNonEmptyStringField(item, "orderId")
+                          .value_or(std::string()));
     fill.symbol = JsonStringField(item, "symbol").value_or("BTCUSDT");
     fill.direction = direction;
     fill.qty = qty;
