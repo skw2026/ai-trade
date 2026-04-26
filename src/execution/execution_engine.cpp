@@ -135,9 +135,14 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
   }
 
   double effective_target = target.adjusted_notional_usd;
-  // ReduceOnly 模式下，目标仓位必须向 0 收敛，禁止反向或加仓。
-  if (target.reduce_only) {
-    // reduce_only 语义：只能向 0 方向减仓，禁止加仓和反手开仓。
+  // 任何“目标归零”的现有仓位收敛都应按 reduce-only 表达；否则 inactive
+  // symbol 的 policy-flat 残余仓位会被误判成开仓意图并被 Universe 过滤。
+  const bool flatten_to_zero =
+      !target.reduce_only && std::fabs(effective_target) < kEpsilon &&
+      std::fabs(current_notional_usd) >= kEpsilon;
+  const bool risk_converging_only = target.reduce_only || flatten_to_zero;
+  // ReduceOnly/归零收敛语义：只能向 0 方向减仓，禁止加仓和反手开仓。
+  if (risk_converging_only) {
     if (std::fabs(current_notional_usd) < kEpsilon) {
       return std::nullopt;
     }
@@ -150,7 +155,7 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
 
   const double total_delta = effective_target - current_notional_usd;
   const bool same_side_add =
-      !target.reduce_only &&
+      !risk_converging_only &&
       std::fabs(current_notional_usd) >= kEpsilon &&
       std::fabs(effective_target) >= kEpsilon &&
       current_notional_usd * effective_target > kEpsilon &&
@@ -161,7 +166,7 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
         std::max(1.0, config_.same_side_rebalance_multiplier);
   }
   // 防抖：净名义敞口总变动过小则不下单，减少无效交易和手续费磨损。
-  if (!target.reduce_only &&
+  if (!risk_converging_only &&
       std::fabs(total_delta) < min_rebalance_notional_usd) {
     return std::nullopt;
   }
@@ -169,7 +174,7 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
   // 反向切仓：
   // - 默认：先平后开，降低单笔跨方向复杂性；
   // - 可选 direct_flip：允许直接按净差额发单，减少 2x RTT。
-  if (!target.reduce_only &&
+  if (!risk_converging_only &&
       std::fabs(current_notional_usd) >= kEpsilon &&
       std::fabs(effective_target) >= kEpsilon &&
       (current_notional_usd * effective_target < -kEpsilon)) {
@@ -212,11 +217,11 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
   OrderIntent intent;
   intent.client_order_id = BuildClientOrderId(target.symbol);
   intent.symbol = target.symbol;
-  intent.reduce_only = target.reduce_only;
-  intent.purpose = target.reduce_only ? OrderPurpose::kReduce : OrderPurpose::kEntry;
+  intent.reduce_only = risk_converging_only;
+  intent.purpose = risk_converging_only ? OrderPurpose::kReduce : OrderPurpose::kEntry;
   intent.liquidity_preference =
-      target.reduce_only ? LiquidityPreference::kTaker
-                         : LiquidityPreference::kMaker;
+      risk_converging_only ? LiquidityPreference::kTaker
+                           : LiquidityPreference::kMaker;
   intent.direction = (total_delta > 0.0) ? 1 : -1;
   const double order_notional =
       std::min(std::fabs(total_delta), config_.max_order_notional_usd);

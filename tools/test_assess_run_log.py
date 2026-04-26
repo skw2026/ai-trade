@@ -281,6 +281,34 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertIn("策略窗口以 policy-flat 为主", "\n".join(report["warn_reasons"]))
         self.assertIn("等待趋势样本阶段", "\n".join(report["warn_reasons"]))
 
+    def test_s5_policy_flat_open_position_fails(self):
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: bucket=RANGE\n"
+            "2026-02-14 15:00:01 [INFO] SELF_EVOLUTION_ACTION: source=counterfactual\n"
+            "2026-02-14 15:00:10 [INFO] POLICY_FLAT_RESIDUAL_POSITION: symbol=BNBUSDT, current_notional=-378.000000, has_reduce_intent=false\n"
+            + self._runtime_line(
+                20,
+                378.0,
+                funnel_enqueued=0,
+                funnel_fills=0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=12,
+                strategy_mix_latest_trend=0.0,
+                strategy_mix_latest_defensive=0.0,
+                strategy_mix_latest_blended=0.0,
+                strategy_mix_avg_abs_trend=0.0,
+                strategy_mix_avg_abs_defensive=0.0,
+                strategy_mix_avg_abs_blended=0.0,
+            )
+            + "2026-02-14 15:00:20 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=12, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertEqual(report["account_sync_status"], "POLICY_FLAT_OPEN_POSITION")
+        self.assertEqual(report["execution_status"], "FAIL")
+        self.assertEqual(report["metrics"]["policy_flat_residual_position_count"], 1)
+        self.assertIn("policy-flat 窗口结束仍有残余仓位", "\n".join(report["fail_reasons"]))
+        self.assertIn("policy-flat 窗口仍检测到残余仓位", "\n".join(report["warn_reasons"]))
+
     def test_s5_policy_flat_window_accepts_runtime_evolution_enabled_as_init_evidence(self):
         runtime_line = self._runtime_line(
             20,

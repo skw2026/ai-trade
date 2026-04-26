@@ -614,6 +614,32 @@ int main() {
         .max_order_notional_usd = 500.0,
         .min_rebalance_notional_usd = 0.0,
     });
+    const ai_trade::RiskAdjustedPosition flat_target{
+        .symbol = "BNBUSDT",
+        .adjusted_notional_usd = 0.0,
+        .reduce_only = false,
+    };
+    const auto flat_intent = execution.BuildIntent(flat_target,
+                                                   /*current_notional_usd=*/-378.0,
+                                                   /*price=*/630.0);
+    if (!flat_intent.has_value()) {
+      std::cerr << "policy-flat 残余仓位应产生平仓意图\n";
+      return 1;
+    }
+    if (!flat_intent->reduce_only ||
+        flat_intent->purpose != ai_trade::OrderPurpose::kReduce ||
+        flat_intent->direction != 1 ||
+        ai_trade::ShouldFilterInactiveSymbolIntent(*flat_intent)) {
+      std::cerr << "policy-flat 残余仓位平仓意图应为 reduce-only 且不被 inactive 过滤\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::ExecutionEngine execution(ai_trade::ExecutionEngineConfig{
+        .max_order_notional_usd = 500.0,
+        .min_rebalance_notional_usd = 0.0,
+    });
     const ai_trade::RiskAdjustedPosition reverse_target{
         .symbol = "BTCUSDT",
         .adjusted_notional_usd = 300.0,

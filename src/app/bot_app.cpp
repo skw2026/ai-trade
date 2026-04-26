@@ -2019,6 +2019,16 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   } else if (IsPolicySuppressedFlatSignal(decision.base_signal)) {
     ++funnel_window_.strategy_policy_flat_samples;
   }
+  if (IsPolicySuppressedFlatSignal(decision.base_signal) &&
+      std::fabs(symbol_notional) > kNotionalEpsilon) {
+    LogInfo("POLICY_FLAT_RESIDUAL_POSITION: symbol=" + event.symbol +
+            ", current_notional=" + std::to_string(symbol_notional) +
+            ", has_reduce_intent=" +
+            std::string(decision.intent.has_value() &&
+                                decision.intent->reduce_only
+                            ? "true"
+                            : "false"));
+  }
   if (decision.shadow.enabled) {
     ++funnel_window_.integrator_scored;
     funnel_window_.integrator_model_score_sum += decision.shadow.model_score;

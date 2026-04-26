@@ -1341,6 +1341,9 @@ def assess(
         "gate_runtime_policy_flat_exempt_count": count(
             r"GATE_RUNTIME_POLICY_FLAT_EXEMPT", text
         ),
+        "policy_flat_residual_position_count": count(
+            r"POLICY_FLAT_RESIDUAL_POSITION", text
+        ),
         "gate_alert_count": count(r"GATE_ALERT", text),
         "reconcile_mismatch_count": count(r"OMS_RECONCILE_MISMATCH", text),
         "reconcile_autoresync_count": count(r"OMS_RECONCILE_AUTORESYNC", text),
@@ -1828,6 +1831,15 @@ def assess(
         and metrics["strategy_mix_nonzero_window_count"] <= 0
         and metrics["gate_policy_flat_pass_count"] > 0
     )
+    policy_flat_open_position = (
+        policy_flat_window_count > 0
+        and metrics["strategy_mix_nonzero_window_count"] <= 0
+        and not end_flat
+        and isinstance(last_abs_notional_usd, (int, float))
+        and last_abs_notional_usd > 1e-9
+    )
+    if policy_flat_open_position:
+        account_sync_status = "POLICY_FLAT_OPEN_POSITION"
     evolution_runtime_evidence_available = (
         metrics["self_evolution_runtime_enabled_total_count"] > 0
     )
@@ -1867,6 +1879,12 @@ def assess(
             and not policy_flat_dominant
         ):
             execution_fail_reasons.append("未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）")
+        if stage.name == "S5" and policy_flat_open_position:
+            execution_fail_reasons.append(
+                "policy-flat 窗口结束仍有残余仓位（S5 强门禁）: "
+                f"last_abs_notional_usd={last_abs_notional_usd:.6f}, "
+                f"policy_flat_window_count={policy_flat_window_count}"
+            )
         if (
             stage.min_strategy_mix_nonzero_windows > 0
             and metrics["strategy_mix_nonzero_window_count"]
@@ -2022,10 +2040,10 @@ def assess(
     has_execution_activity = execution_activity_count > 0
     has_strategy_activity = metrics["strategy_mix_nonzero_window_count"] > 0
 
-    if policy_flat_dominant:
-        execution_status = "NOT_EVALUATED"
-    elif execution_fail_reasons:
+    if execution_fail_reasons:
         execution_status = "FAIL"
+    elif policy_flat_dominant:
+        execution_status = "NOT_EVALUATED"
     elif has_execution_activity or has_strategy_activity:
         execution_status = "PASS"
     else:
@@ -2189,6 +2207,13 @@ def assess(
                 "策略窗口以 policy-flat 为主：本轮主要反映 RANGE/EXTREME 主动空仓保护，"
                 f"policy_flat_window_count={policy_flat_window_count}"
             )
+            if policy_flat_open_position:
+                warn_reasons.append(
+                    "policy-flat 窗口仍检测到残余仓位，系统应生成 reduce-only 回收单: "
+                    f"last_abs_notional_usd={last_abs_notional_usd:.6f}, "
+                    "policy_flat_residual_position_count="
+                    f"{metrics['policy_flat_residual_position_count']}"
+                )
             if metrics["gate_runtime_policy_flat_exempt_count"] > 0:
                 warn_reasons.append(
                     "Gate runtime 已豁免 policy-flat 部分窗口，未将其计入 reduce-only/halt 失败连击: "
