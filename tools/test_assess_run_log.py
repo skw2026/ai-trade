@@ -494,6 +494,23 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(metrics["instant_return_abs_max"], 0.0020, places=8)
         self.assertAlmostEqual(metrics["volatility_level_p50"], 0.0003, places=8)
 
+    def test_trend_candidate_regime_context_is_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] REGIME_CHANGE: symbol=BTCUSDT, regime=RANGE, bucket=RANGE, warmup=false, decision_interval_ms=5000, aggregated_events=5, instant_return=0.000200, trend_strength=0.000210, volatility=0.000090, trend_threshold_ratio=0.700000, volatility_threshold_ratio=0.036000, trend_candidate=true\n"
+            "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, trade_ok=true, trading_halted=false, account={equity=100000.000000, drawdown_pct=0.000000, notional=0.000000, realized_pnl=0.000000, fees=0.000000, realized_net=0.000000}, regime_window={trend_ticks=0, range_ticks=4, extreme_ticks=0, warmup_ticks=0, trend_candidate_ticks=4}, regime_current={symbol=BTCUSDT, regime=RANGE, bucket=RANGE, warmup=false, decision_interval_ms=5000, aggregated_events=5, trend_threshold_ratio=0.700000, volatility_threshold_ratio=0.036000, trend_candidate=true}\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(report["market_context_status"], "TREND_CANDIDATE")
+        self.assertEqual(metrics["regime_change_trend_candidate_count"], 1)
+        self.assertEqual(metrics["regime_change_trend_candidate_symbols"], ["BTCUSDT"])
+        self.assertEqual(metrics["regime_trend_candidate_runtime_count"], 1)
+        self.assertEqual(metrics["regime_current_trend_candidate_count"], 1)
+        self.assertAlmostEqual(metrics["trend_threshold_ratio_max"], 0.7, places=6)
+        self.assertAlmostEqual(
+            metrics["regime_current_trend_threshold_ratio_max"], 0.7, places=6
+        )
+
     def test_transient_trend_regime_change_is_reported_separately(self):
         text = (
             "2026-02-14 15:00:01 [INFO] REGIME_CHANGE: symbol=BNBUSDT, regime=DOWNTREND, bucket=TREND, warmup=false, decision_interval_ms=5000, aggregated_events=5, instant_return=-0.001000, trend_strength=-0.000320, volatility=0.000200\n"

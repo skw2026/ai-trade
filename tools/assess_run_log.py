@@ -213,6 +213,16 @@ RUNTIME_RECONCILE_RUNTIME_RE = re.compile(
 RUNTIME_REGIME_CURRENT_RE = re.compile(
     r"RUNTIME_STATUS:.*?regime_current=\{[^}]*?bucket=(?P<bucket>[A-Z_]+)"
 )
+RUNTIME_REGIME_CURRENT_DIAGNOSTICS_RE = re.compile(
+    r"RUNTIME_STATUS:.*?regime_current=\{[^}]*?"
+    r"trend_threshold_ratio=(?P<trend_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
+    r"volatility_threshold_ratio=(?P<volatility_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
+    r"trend_candidate=(?P<trend_candidate>true|false)"
+)
+RUNTIME_REGIME_WINDOW_CANDIDATE_RE = re.compile(
+    r"RUNTIME_STATUS:.*?regime_window=\{[^}]*?"
+    r"trend_candidate_ticks=(?P<trend_candidate_ticks>[0-9]+)"
+)
 REGIME_CHANGE_RE = re.compile(
     r"REGIME_CHANGE: symbol=(?P<symbol>[^,]+), "
     r"regime=(?P<regime>[A-Z_]+), bucket=(?P<bucket>[A-Z_]+), "
@@ -221,6 +231,9 @@ REGIME_CHANGE_RE = re.compile(
     r"instant_return=(?P<instant_return>-?[0-9]+(?:\.[0-9]+)?), "
     r"trend_strength=(?P<trend_strength>-?[0-9]+(?:\.[0-9]+)?), "
     r"volatility=(?P<volatility>-?[0-9]+(?:\.[0-9]+)?)"
+    r"(?:, trend_threshold_ratio=(?P<trend_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
+    r"volatility_threshold_ratio=(?P<volatility_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
+    r"trend_candidate=(?P<trend_candidate>true|false))?"
 )
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 
@@ -686,25 +699,92 @@ def extract_regime_current_counts(text: str) -> Dict[str, int]:
     return counts
 
 
+def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
+    trend_threshold_ratios: list[float] = []
+    volatility_threshold_ratios: list[float] = []
+    current_candidate_count = 0
+    window_candidate_count = 0
+
+    for match in RUNTIME_REGIME_CURRENT_DIAGNOSTICS_RE.finditer(text):
+        try:
+            trend_threshold_ratios.append(
+                float(match.group("trend_threshold_ratio"))
+            )
+            volatility_threshold_ratios.append(
+                float(match.group("volatility_threshold_ratio"))
+            )
+        except ValueError:
+            continue
+        if str(match.group("trend_candidate")).lower() == "true":
+            current_candidate_count += 1
+
+    for match in RUNTIME_REGIME_WINDOW_CANDIDATE_RE.finditer(text):
+        try:
+            if int(match.group("trend_candidate_ticks")) > 0:
+                window_candidate_count += 1
+        except ValueError:
+            continue
+
+    if not trend_threshold_ratios:
+        return {
+            "runtime_count": 0,
+            "current_candidate_count": 0,
+            "window_candidate_count": window_candidate_count,
+            "trend_threshold_ratio_avg": 0.0,
+            "trend_threshold_ratio_max": 0.0,
+            "volatility_threshold_ratio_avg": 0.0,
+            "volatility_threshold_ratio_max": 0.0,
+        }
+
+    return {
+        "runtime_count": len(trend_threshold_ratios),
+        "current_candidate_count": current_candidate_count,
+        "window_candidate_count": window_candidate_count,
+        "trend_threshold_ratio_avg": sum(trend_threshold_ratios)
+        / len(trend_threshold_ratios),
+        "trend_threshold_ratio_max": max(trend_threshold_ratios),
+        "volatility_threshold_ratio_avg": sum(volatility_threshold_ratios)
+        / len(volatility_threshold_ratios),
+        "volatility_threshold_ratio_max": max(volatility_threshold_ratios),
+    }
+
+
 def extract_regime_change_series(text: str) -> Dict[str, Any]:
     abs_trend_strength_values: list[float] = []
     abs_instant_return_values: list[float] = []
     volatility_values: list[float] = []
+    trend_threshold_ratios: list[float] = []
+    volatility_threshold_ratios: list[float] = []
     bucket_counts = {"TREND": 0, "RANGE": 0, "EXTREME": 0}
     trend_symbols: set[str] = set()
+    trend_candidate_count = 0
+    trend_candidate_symbols: set[str] = set()
 
     for match in REGIME_CHANGE_RE.finditer(text):
         bucket = str(match.group("bucket") or "").upper()
+        symbol = str(match.group("symbol") or "")
         if bucket in bucket_counts:
             bucket_counts[bucket] += 1
         if bucket == "TREND":
-            trend_symbols.add(str(match.group("symbol") or ""))
+            trend_symbols.add(symbol)
         try:
             abs_instant_return_values.append(abs(float(match.group("instant_return"))))
             abs_trend_strength_values.append(abs(float(match.group("trend_strength"))))
             volatility_values.append(float(match.group("volatility")))
+            if match.group("trend_threshold_ratio") is not None:
+                trend_threshold_ratios.append(
+                    float(match.group("trend_threshold_ratio"))
+                )
+            if match.group("volatility_threshold_ratio") is not None:
+                volatility_threshold_ratios.append(
+                    float(match.group("volatility_threshold_ratio"))
+                )
         except ValueError:
             continue
+        if str(match.group("trend_candidate") or "").lower() == "true":
+            trend_candidate_count += 1
+            if symbol:
+                trend_candidate_symbols.add(symbol)
 
     runtime_count = len(abs_trend_strength_values)
     if runtime_count <= 0:
@@ -727,6 +807,17 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
             "extreme_count": 0,
             "trend_symbol_count": 0,
             "trend_symbols": [],
+            "trend_candidate_count": 0,
+            "trend_candidate_symbol_count": 0,
+            "trend_candidate_symbols": [],
+            "trend_threshold_ratio_p50": 0.0,
+            "trend_threshold_ratio_p95": 0.0,
+            "trend_threshold_ratio_p99": 0.0,
+            "trend_threshold_ratio_max": 0.0,
+            "volatility_threshold_ratio_p50": 0.0,
+            "volatility_threshold_ratio_p95": 0.0,
+            "volatility_threshold_ratio_p99": 0.0,
+            "volatility_threshold_ratio_max": 0.0,
         }
 
     return {
@@ -748,6 +839,27 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
         "extreme_count": bucket_counts["EXTREME"],
         "trend_symbol_count": len(trend_symbols),
         "trend_symbols": sorted(x for x in trend_symbols if x),
+        "trend_candidate_count": trend_candidate_count,
+        "trend_candidate_symbol_count": len(trend_candidate_symbols),
+        "trend_candidate_symbols": sorted(x for x in trend_candidate_symbols if x),
+        "trend_threshold_ratio_p50": percentile(trend_threshold_ratios, 0.50),
+        "trend_threshold_ratio_p95": percentile(trend_threshold_ratios, 0.95),
+        "trend_threshold_ratio_p99": percentile(trend_threshold_ratios, 0.99),
+        "trend_threshold_ratio_max": max(trend_threshold_ratios)
+        if trend_threshold_ratios
+        else 0.0,
+        "volatility_threshold_ratio_p50": percentile(
+            volatility_threshold_ratios, 0.50
+        ),
+        "volatility_threshold_ratio_p95": percentile(
+            volatility_threshold_ratios, 0.95
+        ),
+        "volatility_threshold_ratio_p99": percentile(
+            volatility_threshold_ratios, 0.99
+        ),
+        "volatility_threshold_ratio_max": max(volatility_threshold_ratios)
+        if volatility_threshold_ratios
+        else 0.0,
     }
 
 
@@ -1179,7 +1291,6 @@ def assess(
         reconcile_runtime,
         regime_change,
     ) = extract_views(text)
-    regime_current_counts = extract_regime_current_counts(text)
 
     if flat_start_rebased:
         original_strategy_mix = extract_strategy_mix_series(original_text)
@@ -1201,6 +1312,9 @@ def assess(
                 reconcile_runtime,
                 regime_change,
             ) = extract_views(text)
+
+    regime_current_counts = extract_regime_current_counts(text)
+    regime_runtime_diagnostics = extract_regime_runtime_diagnostics(text)
 
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
@@ -1471,10 +1585,23 @@ def assess(
             regime_change["trend_symbol_count"]
         ),
         "regime_change_trend_symbols": regime_change["trend_symbols"],
+        "regime_change_trend_candidate_count": int(
+            regime_change["trend_candidate_count"]
+        ),
+        "regime_change_trend_candidate_symbol_count": int(
+            regime_change["trend_candidate_symbol_count"]
+        ),
+        "regime_change_trend_candidate_symbols": regime_change[
+            "trend_candidate_symbols"
+        ],
         "trend_strength_abs_p50": regime_change["trend_strength_abs_p50"],
         "trend_strength_abs_p95": regime_change["trend_strength_abs_p95"],
         "trend_strength_abs_p99": regime_change["trend_strength_abs_p99"],
         "trend_strength_abs_max": regime_change["trend_strength_abs_max"],
+        "trend_threshold_ratio_p50": regime_change["trend_threshold_ratio_p50"],
+        "trend_threshold_ratio_p95": regime_change["trend_threshold_ratio_p95"],
+        "trend_threshold_ratio_p99": regime_change["trend_threshold_ratio_p99"],
+        "trend_threshold_ratio_max": regime_change["trend_threshold_ratio_max"],
         "instant_return_abs_p50": regime_change["instant_return_abs_p50"],
         "instant_return_abs_p95": regime_change["instant_return_abs_p95"],
         "instant_return_abs_p99": regime_change["instant_return_abs_p99"],
@@ -1483,6 +1610,18 @@ def assess(
         "volatility_level_p95": regime_change["volatility_level_p95"],
         "volatility_level_p99": regime_change["volatility_level_p99"],
         "volatility_level_max": regime_change["volatility_level_max"],
+        "volatility_threshold_ratio_p50": regime_change[
+            "volatility_threshold_ratio_p50"
+        ],
+        "volatility_threshold_ratio_p95": regime_change[
+            "volatility_threshold_ratio_p95"
+        ],
+        "volatility_threshold_ratio_p99": regime_change[
+            "volatility_threshold_ratio_p99"
+        ],
+        "volatility_threshold_ratio_max": regime_change[
+            "volatility_threshold_ratio_max"
+        ],
         "execution_quality_guard_enter_count": count(
             r"EXECUTION_QUALITY_GUARD_ENTER", text
         ),
@@ -1503,6 +1642,24 @@ def assess(
         "regime_trend_runtime_count": int(regime_current_counts["TREND"]),
         "regime_range_runtime_count": int(regime_current_counts["RANGE"]),
         "regime_extreme_runtime_count": int(regime_current_counts["EXTREME"]),
+        "regime_trend_candidate_runtime_count": int(
+            regime_runtime_diagnostics["window_candidate_count"]
+        ),
+        "regime_current_trend_candidate_count": int(
+            regime_runtime_diagnostics["current_candidate_count"]
+        ),
+        "regime_current_trend_threshold_ratio_avg": regime_runtime_diagnostics[
+            "trend_threshold_ratio_avg"
+        ],
+        "regime_current_trend_threshold_ratio_max": regime_runtime_diagnostics[
+            "trend_threshold_ratio_max"
+        ],
+        "regime_current_volatility_threshold_ratio_avg": regime_runtime_diagnostics[
+            "volatility_threshold_ratio_avg"
+        ],
+        "regime_current_volatility_threshold_ratio_max": regime_runtime_diagnostics[
+            "volatility_threshold_ratio_max"
+        ],
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
     metrics["self_evolution_effective_update_count"] = (
@@ -1572,6 +1729,11 @@ def assess(
         market_context_status = "TREND_PRESENT"
     elif metrics["regime_change_trend_count"] > 0:
         market_context_status = "TREND_TRANSIENT"
+    elif (
+        metrics["regime_trend_candidate_runtime_count"] > 0
+        or metrics["regime_change_trend_candidate_count"] > 0
+    ):
+        market_context_status = "TREND_CANDIDATE"
     elif (
         metrics["regime_range_runtime_count"] > 0
         and metrics["regime_extreme_runtime_count"] > 0
@@ -2041,6 +2203,20 @@ def assess(
                         f"regime_change_trend_count={metrics['regime_change_trend_count']}, "
                         "symbols="
                         f"{','.join(metrics['regime_change_trend_symbols'])}"
+                    )
+                elif (
+                    metrics["regime_trend_candidate_runtime_count"] > 0
+                    or metrics["regime_change_trend_candidate_count"] > 0
+                ):
+                    warn_reasons.append(
+                        "当前窗口出现 TREND_CANDIDATE 但未确认 TREND："
+                        "建议复核 regime 门槛/确认周期与多周期趋势口径, "
+                        "candidate_windows="
+                        f"{metrics['regime_trend_candidate_runtime_count']}, "
+                        "candidate_events="
+                        f"{metrics['regime_change_trend_candidate_count']}, "
+                        "trend_ratio_max="
+                        f"{metrics['trend_threshold_ratio_max']:.4f}"
                     )
                 else:
                     warn_reasons.append(

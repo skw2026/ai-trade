@@ -7675,6 +7675,31 @@ int main() {
   }
 
   {
+    ai_trade::RegimeConfig config;
+    config.enabled = true;
+    config.warmup_ticks = 2;
+    config.ewma_alpha = 1.0;
+    config.trend_threshold = 0.001;
+    config.extreme_threshold = 0.010;
+    config.volatility_threshold = 0.050;
+
+    ai_trade::RegimeEngine engine(config);
+    ai_trade::MarketEvent event;
+    event.symbol = "BTCUSDT";
+    event.price = 100.0;
+    (void)engine.OnMarket(event);
+
+    event.price = 100.06;  // +0.06%，达到趋势门槛 60%，但不进入 TREND。
+    const auto candidate = engine.OnMarket(event);
+    if (candidate.warmup || candidate.bucket != ai_trade::RegimeBucket::kRange ||
+        !candidate.trend_candidate ||
+        !NearlyEqual(candidate.trend_threshold_ratio, 0.6)) {
+      std::cerr << "Regime TREND_CANDIDATE 诊断不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
     const std::filesystem::path cfg_path =
         std::filesystem::temp_directory_path() / "ai_trade_test_regime_invalid.yaml";
     std::ofstream out(cfg_path);

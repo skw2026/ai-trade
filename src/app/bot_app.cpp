@@ -1477,6 +1477,7 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->regime_range_ticks += delta.regime_range_ticks;
   total->regime_extreme_ticks += delta.regime_extreme_ticks;
   total->regime_warmup_ticks += delta.regime_warmup_ticks;
+  total->regime_trend_candidate_ticks += delta.regime_trend_candidate_ticks;
   total->integrator_scored += delta.integrator_scored;
   total->integrator_pred_up += delta.integrator_pred_up;
   total->integrator_pred_down += delta.integrator_pred_down;
@@ -1951,6 +1952,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   if (decision.regime.warmup) {
     ++funnel_window_.regime_warmup_ticks;
   }
+  if (decision.regime.trend_candidate) {
+    ++funnel_window_.regime_trend_candidate_ticks;
+  }
   switch (decision.regime.bucket) {
     case RegimeBucket::kTrend:
       ++funnel_window_.regime_trend_ticks;
@@ -1982,7 +1986,13 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             ", trend_strength=" +
             std::to_string(decision.regime.trend_strength) +
             ", volatility=" +
-            std::to_string(decision.regime.volatility_level));
+            std::to_string(decision.regime.volatility_level) +
+            ", trend_threshold_ratio=" +
+            std::to_string(decision.regime.trend_threshold_ratio) +
+            ", volatility_threshold_ratio=" +
+            std::to_string(decision.regime.volatility_threshold_ratio) +
+            ", trend_candidate=" +
+            std::string(decision.regime.trend_candidate ? "true" : "false"));
   }
   last_regime_state_ = decision.regime;
   has_last_regime_state_ = true;
@@ -3853,7 +3863,9 @@ void BotApplication::LogStatus() {
           ", extreme_ticks=" +
           std::to_string(funnel_window.regime_extreme_ticks) +
           ", warmup_ticks=" +
-          std::to_string(funnel_window.regime_warmup_ticks) + "}" +
+          std::to_string(funnel_window.regime_warmup_ticks) +
+          ", trend_candidate_ticks=" +
+          std::to_string(funnel_window.regime_trend_candidate_ticks) + "}" +
           ", regime_current={symbol=" +
           std::string(has_last_regime_state_ ? last_regime_state_.symbol : "n/a") +
           ", regime=" +
@@ -3875,6 +3887,19 @@ void BotApplication::LogStatus() {
           std::to_string(has_last_regime_state_
                              ? last_regime_state_.aggregated_event_count
                              : 0) +
+          ", trend_threshold_ratio=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.trend_threshold_ratio
+                             : 0.0) +
+          ", volatility_threshold_ratio=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.volatility_threshold_ratio
+                             : 0.0) +
+          ", trend_candidate=" +
+          std::string(has_last_regime_state_ &&
+                              last_regime_state_.trend_candidate
+                          ? "true"
+                          : "false") +
           "}" +
           ", shadow_latest={enabled=" +
           std::string(has_last_shadow_inference_ &&

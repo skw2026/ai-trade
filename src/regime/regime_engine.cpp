@@ -8,6 +8,7 @@ namespace ai_trade {
 namespace {
 
 constexpr double kEpsilon = 1e-12;
+constexpr double kTrendCandidateMinThresholdRatio = 0.60;
 
 double ClampAlpha(double alpha) {
   return std::clamp(alpha, 1e-6, 1.0);
@@ -86,6 +87,14 @@ RegimeState RegimeEngine::ProcessSample(SymbolState& symbol_state,
   state.instant_return = instant_return;
   state.trend_strength = symbol_state.ewma_return;
   state.volatility_level = symbol_state.ewma_abs_return;
+  state.trend_threshold_ratio =
+      config_.trend_threshold > kEpsilon
+          ? std::fabs(state.trend_strength) / config_.trend_threshold
+          : 0.0;
+  state.volatility_threshold_ratio =
+      config_.volatility_threshold > kEpsilon
+          ? state.volatility_level / config_.volatility_threshold
+          : 0.0;
   state.warmup = symbol_state.sample_ticks < std::max(0, config_.warmup_ticks);
 
   Regime raw_regime = Regime::kRange;
@@ -156,6 +165,9 @@ RegimeState RegimeEngine::ProcessSample(SymbolState& symbol_state,
 
   state.regime = regime;
   state.bucket = ToBucket(regime);
+  state.trend_candidate =
+      !state.warmup && state.bucket == RegimeBucket::kRange &&
+      state.trend_threshold_ratio >= kTrendCandidateMinThresholdRatio;
   symbol_state.last_emitted_state = state;
   symbol_state.has_last_emitted_state = true;
   return state;

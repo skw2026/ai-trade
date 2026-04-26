@@ -68,8 +68,11 @@ struct RegimeState {
   double instant_return{0.0};
   double trend_strength{0.0};
   double volatility_level{0.0};
+  double trend_threshold_ratio{0.0};
+  double volatility_threshold_ratio{0.0};
   std::int64_t decision_interval_ms{0};
   int aggregated_event_count{0};
+  bool trend_candidate{false};
   bool warmup{true};
 };
 
