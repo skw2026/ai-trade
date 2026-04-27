@@ -669,6 +669,8 @@ INTEGRATOR_REPORT_PATH="${RUN_DIR}/integrator_report.json"
 MODEL_OUTPUT_PATH="${RUN_DIR}/integrator_latest.cbm"
 REGISTRY_RESULT_PATH="${RUN_DIR}/model_registry_entry.json"
 ASSESS_LOG_PATH="${RUN_DIR}/runtime.log"
+ASSESS_RAW_LOG_PATH="${RUN_DIR}/runtime.raw.log"
+ASSESS_LOG_FILTER_META_PATH="${RUN_DIR}/runtime_log_filter.json"
 ASSESS_JSON_PATH="${RUN_DIR}/runtime_assess.json"
 FINAL_REPORT_PATH="${RUN_DIR}/closed_loop_report.json"
 RUN_META_PATH="${RUN_DIR}/run_meta.json"
@@ -716,6 +718,67 @@ verify_s5_learning_switches() {
   fi
   if [[ "${failed}" == "true" ]]; then
     return 1
+  fi
+}
+
+filter_runtime_log_to_current_boot() {
+  local raw_log="$1"
+  local filtered_log="$2"
+  local meta_path="$3"
+
+  if [[ ! -f "${raw_log}" ]]; then
+    : > "${filtered_log}"
+    cat > "${meta_path}" <<EOF
+{"status":"missing_raw_log","selected_reason":"none","input_lines":0,"output_lines":0,"dropped_lines":0}
+EOF
+    return 0
+  fi
+
+  local input_lines
+  input_lines="$(wc -l < "${raw_log}" | tr -d ' ')"
+  local start_line
+  start_line="$(
+    awk '/PROCESS_START:/ {line=NR} END {print line + 0}' "${raw_log}"
+  )"
+  local selected_reason="full_log"
+  if [[ "${start_line}" =~ ^[0-9]+$ ]] && (( start_line > 0 )); then
+    awk -v start="${start_line}" 'NR >= start {print}' "${raw_log}" > "${filtered_log}"
+    selected_reason="last_process_start"
+  else
+    cp -f "${raw_log}" "${filtered_log}"
+    start_line=1
+  fi
+
+  local output_lines
+  output_lines="$(wc -l < "${filtered_log}" | tr -d ' ')"
+  local dropped_lines=$(( input_lines - output_lines ))
+  local boot_ids
+  boot_ids="$(
+    grep -oE 'boot=\{id=[^,}]+' "${filtered_log}" 2>/dev/null \
+      | sed -E 's/^boot=\{id=//' \
+      | sort -u \
+      | paste -sd ',' - \
+      || true
+  )"
+  local boot_count=0
+  if [[ -n "${boot_ids}" ]]; then
+    boot_count="$(printf '%s\n' "${boot_ids}" | tr ',' '\n' | grep -c . || true)"
+  fi
+
+  cat > "${meta_path}" <<EOF
+{
+  "status": "ok",
+  "selected_reason": "${selected_reason}",
+  "selected_start_line": ${start_line},
+  "input_lines": ${input_lines},
+  "output_lines": ${output_lines},
+  "dropped_lines": ${dropped_lines},
+  "runtime_boot_ids": "${boot_ids}",
+  "runtime_boot_id_unique_count": ${boot_count}
+}
+EOF
+  if (( dropped_lines > 0 )); then
+    echo "[INFO] runtime log filtered to current boot: reason=${selected_reason}, dropped_lines=${dropped_lines}, boot_ids=${boot_ids:-n/a}"
   fi
 }
 
@@ -1096,7 +1159,10 @@ run_assess() {
   fi
 
   while true; do
-    compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade > "${ASSESS_LOG_PATH}" || true
+    compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade > "${ASSESS_RAW_LOG_PATH}" || true
+    filter_runtime_log_to_current_boot "${ASSESS_RAW_LOG_PATH}" \
+      "${ASSESS_LOG_PATH}" \
+      "${ASSESS_LOG_FILTER_META_PATH}"
     local runtime_status_count
     runtime_status_count="$(count_runtime_status_in_log "${ASSESS_LOG_PATH}")"
     if [[ "${wait_enabled}" != "true" ]] ||
@@ -1256,6 +1322,9 @@ build_summary() {
   "runtime_verdict": "${RUNTIME_VERDICT}",
   "run_dir": "${RUN_DIR}",
   "final_report": "${FINAL_REPORT_PATH}",
+  "runtime_log": "${ASSESS_LOG_PATH}",
+  "runtime_raw_log": "${ASSESS_RAW_LOG_PATH}",
+  "runtime_log_filter_meta": "${ASSESS_LOG_FILTER_META_PATH}",
   "runtime_assess_report": "${ASSESS_JSON_PATH}",
   "replay_validation_report": "${REPLAY_VALIDATION_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
