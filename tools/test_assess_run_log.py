@@ -539,6 +539,22 @@ class AssessRunLogTest(unittest.TestCase):
             metrics["regime_current_trend_threshold_ratio_max"], 0.7, places=6
         )
 
+    def test_trend_candidate_probe_metrics_are_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=BTCUSDT, client_order_id=BTCUSDT-1, direction=1, notional_usd=120.0, trend_threshold_ratio=0.91\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_FEE_OVERRIDE: symbol=BTCUSDT, client_order_id=BTCUSDT-1, expected_edge_bps=1.2, required_edge_bps=5.2, edge_gap_bps=4.0, max_edge_gap_bps=4.5\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_ENQUEUED: symbol=BTCUSDT, client_order_id=BTCUSDT-1, direction=1, qty=0.001, price=100000.0\n"
+            "2026-02-14 15:00:02 [INFO] TREND_CANDIDATE_PROBE_FILL: fill_id=f1, client_order_id=BTCUSDT-1, symbol=BTCUSDT, direction=1, qty=0.001, price=100000.0, fee=-0.01, liquidity=maker, notional_abs_usd=100.0\n"
+            "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, trade_ok=true, trading_halted=false, account={equity=100000.000000, drawdown_pct=0.000000, notional=0.000000, realized_pnl=0.000000, fees=0.000000, realized_net=0.000000}, funnel_window={raw=1, risk_adjusted=1, intents_generated=1, candidate_probe_signals=1, candidate_probe_intents=1, candidate_probe_fee_overrides=1, candidate_probe_enqueued=1, candidate_probe_fills=1, fills=1}, regime_window={trend_ticks=0, range_ticks=4, extreme_ticks=0, warmup_ticks=0, trend_candidate_ticks=4}, regime_current={symbol=BTCUSDT, regime=RANGE, bucket=RANGE, warmup=false, trend_threshold_ratio=0.910000, trend_candidate=true}\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["trend_candidate_probe_signal_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_fee_override_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_enqueued_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_fill_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_runtime_count"], 1)
+
     def test_transient_trend_regime_change_is_reported_separately(self):
         text = (
             "2026-02-14 15:00:01 [INFO] REGIME_CHANGE: symbol=BNBUSDT, regime=DOWNTREND, bucket=TREND, warmup=false, decision_interval_ms=5000, aggregated_events=5, instant_return=-0.001000, trend_strength=-0.000320, volatility=0.000200\n"

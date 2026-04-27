@@ -1434,6 +1434,29 @@ def assess(
             r"RUNTIME_STATUS:.*shadow_window=\{[^}]*scored=(?:[1-9][0-9]*)", text
         ),
         "order_filtered_cost_count": count(r"ORDER_FILTERED_COST:", text),
+        "trend_candidate_probe_signal_count": count(
+            r"TREND_CANDIDATE_PROBE_SIGNAL:", text
+        ),
+        "trend_candidate_probe_cost_cooldown_bypass_count": count(
+            r"TREND_CANDIDATE_PROBE_COST_COOLDOWN_BYPASS:", text
+        ),
+        "trend_candidate_probe_fee_override_count": count(
+            r"TREND_CANDIDATE_PROBE_FEE_OVERRIDE:", text
+        ),
+        "trend_candidate_probe_filtered_fee_count": count(
+            r"TREND_CANDIDATE_PROBE_FILTERED_FEE:",
+            text,
+        ),
+        "trend_candidate_probe_enqueued_count": count(
+            r"TREND_CANDIDATE_PROBE_ENQUEUED:", text
+        ),
+        "trend_candidate_probe_fill_count": count(
+            r"TREND_CANDIDATE_PROBE_FILL:", text
+        ),
+        "trend_candidate_probe_runtime_count": count(
+            r"RUNTIME_STATUS:.*funnel_window=\{[^}]*candidate_probe_signals=(?:[1-9][0-9]*)",
+            text,
+        ),
         "entry_gate_enabled_count": count(r"RUNTIME_STATUS:.*entry_gate=\{enabled=true", text),
         "funnel_enqueued_runtime_count": count(
             r"RUNTIME_STATUS:.*funnel_window=\{[^}]*enqueued=(?:[1-9][0-9]*)",
@@ -2243,6 +2266,30 @@ def assess(
                         "trend_ratio_max="
                         f"{metrics['trend_threshold_ratio_max']:.4f}"
                     )
+                    if metrics["trend_candidate_probe_signal_count"] <= 0:
+                        warn_reasons.append(
+                            "TREND_CANDIDATE 未产生探针信号：建议检查 "
+                            "execution.candidate_probe_* 配置、候选强度阈值、"
+                            "空仓/在途订单约束与 Universe 活跃池"
+                        )
+                    elif metrics["trend_candidate_probe_enqueued_count"] <= 0:
+                        warn_reasons.append(
+                            "TREND_CANDIDATE 探针已生成但未入队：建议检查最小下单量、"
+                            "成本门 gap、同向在途单限额与节流配置, "
+                            "probe_signal_count="
+                            f"{metrics['trend_candidate_probe_signal_count']}, "
+                            "fee_override_count="
+                            f"{metrics['trend_candidate_probe_fee_override_count']}, "
+                            "filtered_fee_count="
+                            f"{metrics['trend_candidate_probe_filtered_fee_count']}"
+                        )
+                    elif metrics["trend_candidate_probe_fill_count"] <= 0:
+                        warn_reasons.append(
+                            "TREND_CANDIDATE 探针已入队但未成交：建议检查 maker post-only "
+                            "挂单偏移、撤单/超时、BYBIT_SUBMIT 与流动性标签, "
+                            "probe_enqueued_count="
+                            f"{metrics['trend_candidate_probe_enqueued_count']}"
+                        )
                 else:
                     warn_reasons.append(
                         "当前窗口未出现 TREND 样本：runtime 通过仅代表保护逻辑通过，"

@@ -339,6 +339,11 @@ struct AppConfig {
   double execution_dynamic_edge_liquidity_unknown_ratio_threshold{1.0};
   double execution_dynamic_edge_liquidity_relax_bps{0.0};
   double execution_dynamic_edge_liquidity_penalty_bps{0.0};
+  bool execution_candidate_probe_enabled{false};
+  double execution_candidate_probe_min_trend_ratio{0.0};
+  double execution_candidate_probe_notional_usd{0.0};
+  double execution_candidate_probe_max_edge_gap_bps{0.0};
+  int execution_candidate_probe_cooldown_ticks{0};
 
   std::string exchange{"mock"};
   std::string data_path{"data"};

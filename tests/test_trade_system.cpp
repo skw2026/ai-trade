@@ -3408,6 +3408,11 @@ int main() {
         << "  maker_edge_relax_bps: 0.9\n"
         << "  cost_filter_cooldown_trigger_count: 6\n"
         << "  cost_filter_cooldown_ticks: 120\n"
+        << "  candidate_probe_enabled: true\n"
+        << "  candidate_probe_min_trend_ratio: 0.82\n"
+        << "  candidate_probe_notional_usd: 120.0\n"
+        << "  candidate_probe_max_edge_gap_bps: 4.5\n"
+        << "  candidate_probe_cooldown_ticks: 1800\n"
         << "  quality_guard_enabled: true\n"
         << "  quality_guard_min_fills: 10\n"
         << "  quality_guard_bad_streak_to_trigger: 2\n"
@@ -3561,6 +3566,11 @@ int main() {
         !NearlyEqual(config.execution_maker_edge_relax_bps, 0.9) ||
         config.execution_cost_filter_cooldown_trigger_count != 6 ||
         config.execution_cost_filter_cooldown_ticks != 120 ||
+        config.execution_candidate_probe_enabled != true ||
+        !NearlyEqual(config.execution_candidate_probe_min_trend_ratio, 0.82) ||
+        !NearlyEqual(config.execution_candidate_probe_notional_usd, 120.0) ||
+        !NearlyEqual(config.execution_candidate_probe_max_edge_gap_bps, 4.5) ||
+        config.execution_candidate_probe_cooldown_ticks != 1800 ||
         config.execution_quality_guard_enabled != true ||
         config.execution_quality_guard_min_fills != 10 ||
         config.execution_quality_guard_bad_streak_to_trigger != 2 ||

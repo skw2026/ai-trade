@@ -130,6 +130,14 @@ bool IsPolicySuppressedFlatSignal(const Signal& signal) {
           HasReasonCode(signal, "REG_EXTREME"));
 }
 
+int TrendCandidateProbeDirection(const RegimeState& regime) {
+  const int trend_direction = SignOf(regime.trend_strength);
+  if (trend_direction != 0) {
+    return trend_direction;
+  }
+  return SignOf(regime.instant_return);
+}
+
 // 将策略分支名义值按“可执行目标名义值”缩放，减少学习输入与执行结果的偏离。
 std::pair<double, double> ScaleStrategyComponentsForExecution(
     const MarketDecision& decision) {
@@ -1204,6 +1212,135 @@ void BotApplication::UpdateEntryGateObservedRatio(bool filtered,
   }
 }
 
+bool BotApplication::TryApplyTrendCandidateProbe(
+    MarketDecision* decision,
+    const MarketEvent& event,
+    bool trade_ok,
+    double effective_symbol_notional_usd,
+    bool has_pending_symbol_net_orders) {
+  if (decision == nullptr || !config_.execution_candidate_probe_enabled) {
+    return false;
+  }
+  if (!trade_ok || decision->intent.has_value() || decision->regime.warmup ||
+      !decision->regime.trend_candidate || has_pending_symbol_net_orders) {
+    return false;
+  }
+  if (HasExposure(effective_symbol_notional_usd) ||
+      HasExposure(decision->base_signal.suggested_notional_usd) ||
+      HasExposure(decision->base_signal.trend_notional_usd) ||
+      HasExposure(decision->base_signal.defensive_notional_usd) ||
+      HasExposure(decision->risk_adjusted.adjusted_notional_usd)) {
+    return false;
+  }
+  if (decision->regime.trend_threshold_ratio + 1e-9 <
+      config_.execution_candidate_probe_min_trend_ratio) {
+    return false;
+  }
+
+  const auto cooldown_it =
+      candidate_probe_cooldown_until_tick_by_symbol_.find(event.symbol);
+  if (cooldown_it != candidate_probe_cooldown_until_tick_by_symbol_.end()) {
+    if (market_tick_count_ < cooldown_it->second) {
+      return false;
+    }
+    candidate_probe_cooldown_until_tick_by_symbol_.erase(cooldown_it);
+  }
+
+  const int direction = TrendCandidateProbeDirection(decision->regime);
+  if (direction == 0) {
+    return false;
+  }
+  const double price = event.price > 0.0 ? event.price : event.mark_price;
+  if (!std::isfinite(price) || price <= 0.0) {
+    return false;
+  }
+  const double configured_notional =
+      std::max(0.0, config_.execution_candidate_probe_notional_usd);
+  if (configured_notional <= kNotionalEpsilon) {
+    return false;
+  }
+
+  const double settled_gross_notional = system_.account().gross_notional_usd();
+  const double settled_symbol_notional =
+      system_.account().current_notional_usd(event.symbol);
+  const double gross_with_inflight =
+      std::max(0.0, settled_gross_notional +
+                        std::fabs(effective_symbol_notional_usd) -
+                        std::fabs(settled_symbol_notional));
+  const double other_symbols_gross =
+      std::max(0.0, gross_with_inflight - std::fabs(effective_symbol_notional_usd));
+  const double symbol_budget =
+      std::max(0.0, config_.risk_max_abs_notional_usd - other_symbols_gross);
+  const double capped_notional =
+      std::min({configured_notional,
+                std::max(0.0, config_.execution_max_order_notional),
+                symbol_budget});
+  if (capped_notional <= kNotionalEpsilon) {
+    return false;
+  }
+
+  Signal probe_signal;
+  probe_signal.symbol = event.symbol;
+  probe_signal.suggested_notional_usd = direction * capped_notional;
+  probe_signal.trend_notional_usd = direction * capped_notional;
+  probe_signal.defensive_notional_usd = 0.0;
+  probe_signal.direction = direction;
+  probe_signal.confidence =
+      std::clamp(decision->regime.trend_threshold_ratio, 0.0, 1.0);
+  probe_signal.valid_until_ms =
+      event.ts_ms +
+      std::max<std::int64_t>(decision->regime.decision_interval_ms, 0);
+  probe_signal.reason_codes = {
+      "STR_TREND_CANDIDATE_PROBE",
+      "REG_TREND_CANDIDATE",
+      "EXEC_MAKER_PROBE",
+  };
+
+  decision->base_signal = probe_signal;
+  decision->signal = probe_signal;
+  decision->target = TargetPosition{event.symbol, probe_signal.suggested_notional_usd};
+  decision->risk_adjusted = RiskAdjustedPosition{
+      .symbol = event.symbol,
+      .adjusted_notional_usd = probe_signal.suggested_notional_usd,
+      .reduce_only = false,
+      .risk_mode = system_.risk_mode(),
+  };
+  decision->intent =
+      execution_.BuildIntent(decision->risk_adjusted,
+                             effective_symbol_notional_usd,
+                             price);
+  if (!decision->intent.has_value() || !IsOpeningIntent(*decision->intent)) {
+    decision->intent.reset();
+    return false;
+  }
+
+  candidate_probe_intent_ids_.insert(decision->intent->client_order_id);
+  if (config_.execution_candidate_probe_cooldown_ticks > 0) {
+    candidate_probe_cooldown_until_tick_by_symbol_[event.symbol] =
+        market_tick_count_ + config_.execution_candidate_probe_cooldown_ticks;
+  }
+  ++funnel_window_.candidate_probe_signals;
+  ++funnel_window_.candidate_probe_intents;
+  funnel_window_.candidate_probe_notional_abs_usd_sum += capped_notional;
+  LogInfo("TREND_CANDIDATE_PROBE_SIGNAL: symbol=" + event.symbol +
+          ", client_order_id=" + decision->intent->client_order_id +
+          ", direction=" + std::to_string(direction) +
+          ", notional_usd=" + std::to_string(capped_notional) +
+          ", trend_threshold_ratio=" +
+          std::to_string(decision->regime.trend_threshold_ratio) +
+          ", instant_return=" + std::to_string(decision->regime.instant_return) +
+          ", trend_strength=" + std::to_string(decision->regime.trend_strength) +
+          ", current_notional_usd=" +
+          std::to_string(effective_symbol_notional_usd));
+  return true;
+}
+
+bool BotApplication::IsTrendCandidateProbeIntent(
+    const std::string& client_order_id) const {
+  return !client_order_id.empty() &&
+         candidate_probe_intent_ids_.count(client_order_id) > 0;
+}
+
 void BotApplication::EvaluateExecutionQualityGuard(
     std::uint64_t window_fills,
     double window_realized_net_per_fill_usd,
@@ -1466,6 +1603,14 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.intents_throttled_cost_cooldown;
   total->intents_throttled += delta.intents_throttled;
   total->intents_enqueued += delta.intents_enqueued;
+  total->candidate_probe_signals += delta.candidate_probe_signals;
+  total->candidate_probe_intents += delta.candidate_probe_intents;
+  total->candidate_probe_cost_cooldown_bypass +=
+      delta.candidate_probe_cost_cooldown_bypass;
+  total->candidate_probe_fee_overrides += delta.candidate_probe_fee_overrides;
+  total->candidate_probe_filtered_fee += delta.candidate_probe_filtered_fee;
+  total->candidate_probe_enqueued += delta.candidate_probe_enqueued;
+  total->candidate_probe_fills += delta.candidate_probe_fills;
   total->async_submit_ok += delta.async_submit_ok;
   total->async_submit_failed += delta.async_submit_failed;
   total->fills_applied += delta.fills_applied;
@@ -1511,6 +1656,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       std::max(total->rebalance_gap_abs_usd_max, delta.rebalance_gap_abs_usd_max);
   total->rebalance_gap_within_min_notional_abs_usd_sum +=
       delta.rebalance_gap_within_min_notional_abs_usd_sum;
+  total->candidate_probe_notional_abs_usd_sum +=
+      delta.candidate_probe_notional_abs_usd_sum;
   total->trend_notional_abs_sum += delta.trend_notional_abs_sum;
   total->defensive_notional_abs_sum += delta.defensive_notional_abs_sum;
   total->blended_notional_abs_sum += delta.blended_notional_abs_sum;
@@ -2063,6 +2210,15 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             ", final_notional=" +
             std::to_string(decision.signal.suggested_notional_usd));
   }
+  const double effective_symbol_notional_for_probe =
+      config_.execution_include_inflight_notional_in_position
+          ? symbol_notional + symbol_inflight_notional_usd
+          : symbol_notional;
+  TryApplyTrendCandidateProbe(&decision,
+                              event,
+                              trade_ok,
+                              effective_symbol_notional_for_probe,
+                              has_pending_symbol_net_orders);
   if (HasExposure(decision.base_signal.suggested_notional_usd)) {
     ++funnel_window_.raw_signals;
   }
@@ -2095,16 +2251,27 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
 
   if (decision.intent.has_value() && IsOpeningIntent(*decision.intent)) {
+    const bool candidate_probe_intent =
+        IsTrendCandidateProbeIntent(decision.intent->client_order_id);
     int cooldown_ticks_remaining = 0;
     if (IsCostFilterCooldownActive(decision.intent->symbol,
                                    &cooldown_ticks_remaining)) {
-      ++funnel_window_.intents_throttled;
-      ++funnel_window_.intents_throttled_cost_cooldown;
-      LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
-              ", client_order_id=" + decision.intent->client_order_id +
-              ", reason=cost_filter_cooldown_ticks_remaining=" +
-              std::to_string(cooldown_ticks_remaining));
-      decision.intent.reset();
+      if (candidate_probe_intent) {
+        ++funnel_window_.candidate_probe_cost_cooldown_bypass;
+        LogInfo("TREND_CANDIDATE_PROBE_COST_COOLDOWN_BYPASS: symbol=" +
+                decision.intent->symbol +
+                ", client_order_id=" + decision.intent->client_order_id +
+                ", cost_filter_cooldown_ticks_remaining=" +
+                std::to_string(cooldown_ticks_remaining));
+      } else {
+        ++funnel_window_.intents_throttled;
+        ++funnel_window_.intents_throttled_cost_cooldown;
+        LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+                ", client_order_id=" + decision.intent->client_order_id +
+                ", reason=cost_filter_cooldown_ticks_remaining=" +
+                std::to_string(cooldown_ticks_remaining));
+        decision.intent.reset();
+      }
     }
   }
 
@@ -2123,7 +2290,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     double entry_edge_gap_bps = 0.0;
     bool near_miss = false;
     bool near_miss_allowed = false;
-    const bool filtered = ShouldFilterByFeeAwareGate(
+    bool filtered = ShouldFilterByFeeAwareGate(
         decision,
         event,
         &expected_edge_bps,
@@ -2140,6 +2307,35 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
         &entry_edge_gap_bps,
         &near_miss,
         &near_miss_allowed);
+    const bool candidate_probe_intent =
+        IsTrendCandidateProbeIntent(decision.intent->client_order_id);
+    bool candidate_probe_fee_override = false;
+    if (filtered && candidate_probe_intent) {
+      const double max_edge_gap_bps =
+          std::max(0.0, config_.execution_candidate_probe_max_edge_gap_bps);
+      if (entry_edge_gap_bps <= max_edge_gap_bps + 1e-9) {
+        filtered = false;
+        near_miss_allowed = true;
+        candidate_probe_fee_override = true;
+        ++funnel_window_.candidate_probe_fee_overrides;
+        LogInfo("TREND_CANDIDATE_PROBE_FEE_OVERRIDE: symbol=" +
+                decision.intent->symbol +
+                ", client_order_id=" + decision.intent->client_order_id +
+                ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
+                ", required_edge_bps=" + std::to_string(required_edge_bps) +
+                ", edge_gap_bps=" + std::to_string(entry_edge_gap_bps) +
+                ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps));
+      } else {
+        ++funnel_window_.candidate_probe_filtered_fee;
+        LogInfo("TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=" +
+                decision.intent->symbol +
+                ", client_order_id=" + decision.intent->client_order_id +
+                ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
+                ", required_edge_bps=" + std::to_string(required_edge_bps) +
+                ", edge_gap_bps=" + std::to_string(entry_edge_gap_bps) +
+                ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps));
+      }
+    }
     UpdateEntryGateObservedRatio(filtered, near_miss, near_miss_allowed);
     ++funnel_window_.entry_edge_samples;
     funnel_window_.entry_edge_bps_sum += expected_edge_bps;
@@ -2191,7 +2387,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               std::to_string(observed_filtered_ratio));
       decision.intent.reset();
     } else {
-      if (near_miss_allowed) {
+      if (near_miss_allowed && !candidate_probe_fee_override) {
         ++funnel_window_.intents_passed_fee_aware_near_miss;
         LogInfo("ORDER_NEAR_MISS_MAKER_ALLOWED: symbol=" + decision.intent->symbol +
                 ", client_order_id=" + decision.intent->client_order_id +
@@ -2308,6 +2504,14 @@ bool BotApplication::EnqueueIntent(const OrderIntent& intent) {
   }
   executor_->Submit(intent);
   ++funnel_window_.intents_enqueued;
+  if (IsTrendCandidateProbeIntent(intent.client_order_id)) {
+    ++funnel_window_.candidate_probe_enqueued;
+    LogInfo("TREND_CANDIDATE_PROBE_ENQUEUED: symbol=" + intent.symbol +
+            ", client_order_id=" + intent.client_order_id +
+            ", direction=" + std::to_string(intent.direction) +
+            ", qty=" + std::to_string(intent.qty) +
+            ", price=" + std::to_string(intent.price));
+  }
   return true;
 }
 
@@ -2434,6 +2638,8 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   }
   gate_monitor_.OnFill(fill);
   const auto* fill_order_record = oms_.Find(fill.client_order_id);
+  const bool candidate_probe_fill =
+      IsTrendCandidateProbeIntent(fill.client_order_id);
   const double local_qty_after = system_.account().position_qty(fill.symbol);
   const double oms_net_qty_after = oms_.net_filled_qty(fill.symbol);
   const double order_filled_qty_after =
@@ -2468,6 +2674,11 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   if (std::isfinite(fill.price) && fill.price > 0.0 && std::isfinite(fill.qty)) {
     const double fill_notional_abs_usd = std::fabs(fill.price * std::fabs(fill.qty));
     funnel_window_.fills_notional_abs_usd_sum += fill_notional_abs_usd;
+    if (candidate_probe_fill) {
+      ++funnel_window_.candidate_probe_fills;
+      LogInfo("TREND_CANDIDATE_PROBE_FILL: " + FormatFillSummary(fill) +
+              ", notional_abs_usd=" + std::to_string(fill_notional_abs_usd));
+    }
     const bool entry_fill =
         fill_order_record != nullptr &&
         fill_order_record->intent.purpose == OrderPurpose::kEntry &&
@@ -3825,6 +4036,22 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.intents_throttled_cost_cooldown) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
           ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
+          ", candidate_probe_signals=" +
+          std::to_string(funnel_window.candidate_probe_signals) +
+          ", candidate_probe_intents=" +
+          std::to_string(funnel_window.candidate_probe_intents) +
+          ", candidate_probe_cost_cooldown_bypass=" +
+          std::to_string(funnel_window.candidate_probe_cost_cooldown_bypass) +
+          ", candidate_probe_fee_overrides=" +
+          std::to_string(funnel_window.candidate_probe_fee_overrides) +
+          ", candidate_probe_filtered_fee=" +
+          std::to_string(funnel_window.candidate_probe_filtered_fee) +
+          ", candidate_probe_enqueued=" +
+          std::to_string(funnel_window.candidate_probe_enqueued) +
+          ", candidate_probe_fills=" +
+          std::to_string(funnel_window.candidate_probe_fills) +
+          ", candidate_probe_notional_abs_usd=" +
+          std::to_string(funnel_window.candidate_probe_notional_abs_usd_sum) +
           ", async_ok=" + std::to_string(funnel_window.async_submit_ok) +
           ", async_failed=" +
           std::to_string(funnel_window.async_submit_failed) +

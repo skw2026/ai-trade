@@ -83,6 +83,11 @@ execution:
   maker_edge_relax_bps: 0.35
   cost_filter_cooldown_trigger_count: 24
   cost_filter_cooldown_ticks: 40
+  candidate_probe_enabled: true
+  candidate_probe_min_trend_ratio: 0.85
+  candidate_probe_notional_usd: 120.0
+  candidate_probe_max_edge_gap_bps: 5.5
+  candidate_probe_cooldown_ticks: 1800
   quality_guard_enabled: true
   quality_guard_min_fills: 8
   quality_guard_bad_streak_to_trigger: 3

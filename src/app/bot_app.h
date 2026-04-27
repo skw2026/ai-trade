@@ -130,6 +130,14 @@ class BotApplication {
   void UpdateEntryGateObservedRatio(bool filtered,
                                     bool near_miss,
                                     bool near_miss_allowed);
+  /// 将高置信 TREND_CANDIDATE 转成小额 maker 探针，走完整执行与保护链路。
+  bool TryApplyTrendCandidateProbe(MarketDecision* decision,
+                                   const MarketEvent& event,
+                                   bool trade_ok,
+                                   double effective_symbol_notional_usd,
+                                   bool has_pending_symbol_net_orders);
+  /// 当前订单是否来源于 TREND_CANDIDATE 探针。
+  bool IsTrendCandidateProbeIntent(const std::string& client_order_id) const;
   /// 执行质量守卫：根据窗口成交质量动态启停开仓惩罚。
   void EvaluateExecutionQualityGuard(std::uint64_t window_fills,
                                      double window_realized_net_per_fill_usd,
@@ -236,6 +244,13 @@ class BotApplication {
     std::uint64_t intents_throttled_cost_cooldown{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
+    std::uint64_t candidate_probe_signals{0};
+    std::uint64_t candidate_probe_intents{0};
+    std::uint64_t candidate_probe_cost_cooldown_bypass{0};
+    std::uint64_t candidate_probe_fee_overrides{0};
+    std::uint64_t candidate_probe_filtered_fee{0};
+    std::uint64_t candidate_probe_enqueued{0};
+    std::uint64_t candidate_probe_fills{0};
     std::uint64_t async_submit_ok{0};
     std::uint64_t async_submit_failed{0};
     std::uint64_t fills_applied{0};
@@ -274,6 +289,7 @@ class BotApplication {
     double rebalance_gap_abs_usd_sum{0.0};
     double rebalance_gap_abs_usd_max{0.0};
     double rebalance_gap_within_min_notional_abs_usd_sum{0.0};
+    double candidate_probe_notional_abs_usd_sum{0.0};
     double trend_notional_abs_sum{0.0};
     double defensive_notional_abs_sum{0.0};
     double blended_notional_abs_sum{0.0};
@@ -362,6 +378,9 @@ class BotApplication {
   std::unordered_map<std::string, RegimeState> regime_state_by_symbol_;
   std::unordered_map<std::string, int> cost_filter_reject_streak_by_symbol_;
   std::unordered_map<std::string, int> cost_filter_cooldown_until_tick_by_symbol_;
+  std::unordered_set<std::string> candidate_probe_intent_ids_;
+  std::unordered_map<std::string, int>
+      candidate_probe_cooldown_until_tick_by_symbol_;
   std::uint64_t entry_gate_observed_samples_{0};
   std::uint64_t entry_gate_observed_filtered_{0};
   std::uint64_t entry_gate_observed_near_miss_{0};
