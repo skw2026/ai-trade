@@ -162,6 +162,14 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}",
+            scheduler,
+        )
+        self.assertIn(
             "CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS: ${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}",
             scheduler,
         )
@@ -216,6 +224,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_ENABLED", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS", script)
@@ -223,6 +233,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS", script)
         self.assertIn("--corpus_manifest", script)
         self.assertIn("--refresh_corpus_manifest", script)
+        self.assertIn("--symbols", script)
+        self.assertIn("--source_symbol", script)
         self.assertIn("--replay_validation_report", script)
         self.assertIn("tools/run_replay_validation.py", script)
         self.assertIn("--max-auc-stdev", script)

@@ -413,6 +413,35 @@ class ReplayValidationToolsTest(unittest.TestCase):
             )
         )
 
+    def test_normalize_symbols_deduplicates_csv(self):
+        self.assertEqual(
+            REPLAY.normalize_symbols(" solusdt, XRPUSDT;solusdt ", "BTCUSDT"),
+            ["SOLUSDT", "XRPUSDT"],
+        )
+        self.assertEqual(REPLAY.normalize_symbols("", "btcusdt"), ["BTCUSDT"])
+
+    def test_merge_symbol_validations_promotes_symbol_failure(self):
+        merged = REPLAY.merge_symbol_validations(
+            {
+                "status": "pass",
+                "fail_reasons": [],
+                "warn_reasons": [],
+                "coverage_strength_status": "ROBUST",
+            },
+            {
+                "SOLUSDT": {
+                    "aggregate_validation": {
+                        "status": "fail",
+                        "fail_reasons": ["total_fills=0 < 3"],
+                        "warn_reasons": [],
+                    }
+                }
+            },
+        )
+        self.assertEqual(merged["status"], "fail")
+        self.assertEqual(merged["coverage_strength_status"], "INSUFFICIENT")
+        self.assertIn("SOLUSDT: total_fills=0 < 3", merged["fail_reasons"])
+
     def test_derive_recommended_coverage_thresholds_never_below_baseline(self):
         recommended = REPLAY.derive_recommended_coverage_thresholds(
             min_execution_active_runs=1,

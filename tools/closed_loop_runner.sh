@@ -114,6 +114,8 @@ TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
 REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
+REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
+REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
 REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-trend}"
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
@@ -254,6 +256,9 @@ Env toggles:
   CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES=<int>          trend-validation TREND 桶交易次数门槛 (default: 1)
   CLOSED_LOOP_REPLAY_VALIDATION_ENABLED=true|false       是否在 data/train/full 中运行 replay-validation (default: true)
   CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.yaml)
+  CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
+  CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
+  CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol>   feature store 源行情币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET=<bucket>   replay-validation 目标桶 (default: trend)
   CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS=<int>       replay-validation 最大片段数 (default: 16)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS=<int>   replay-validation 单片段最小 bars (default: 40)
@@ -442,6 +447,13 @@ done
 if [[ -z "${REPLAY_VALIDATION_SYMBOL}" ]]; then
   REPLAY_VALIDATION_SYMBOL="${SYMBOL}"
 fi
+if [[ -z "${REPLAY_VALIDATION_SOURCE_SYMBOL}" ]]; then
+  REPLAY_VALIDATION_SOURCE_SYMBOL="${SYMBOL}"
+fi
+if [[ -z "${REPLAY_VALIDATION_SYMBOLS}" ]]; then
+  REPLAY_VALIDATION_SYMBOLS="${REPLAY_VALIDATION_SYMBOL}"
+fi
+REPLAY_VALIDATION_SYMBOLS_JSON="$(python3 -c 'import json,sys; print(json.dumps([x.strip().upper() for x in sys.argv[1].replace(";", ",").split(",") if x.strip()]))' "${REPLAY_VALIDATION_SYMBOLS}")"
 if [[ -z "${REPLAY_VALIDATION_CORPUS_PATH}" ]]; then
   REPLAY_VALIDATION_CORPUS_PATH="data/research/replay_validation_${REPLAY_VALIDATION_TARGET_BUCKET}_corpus.json"
 fi
@@ -968,7 +980,9 @@ write_replay_validation_skip_report() {
   cat > "${REPLAY_VALIDATION_REPORT_PATH}" <<EOF
 {
   "target_bucket": "${REPLAY_VALIDATION_TARGET_BUCKET}",
+  "source_symbol": "${REPLAY_VALIDATION_SOURCE_SYMBOL}",
   "symbol": "${REPLAY_VALIDATION_SYMBOL}",
+  "symbols": ${REPLAY_VALIDATION_SYMBOLS_JSON},
   "warnings": ["replay validation skipped: feature store not available for current run"],
   "selection": {
     "selection_mode": "not_run",
@@ -1020,7 +1034,9 @@ write_replay_validation_fail_report() {
   cat > "${REPLAY_VALIDATION_REPORT_PATH}" <<EOF
 {
   "target_bucket": "${REPLAY_VALIDATION_TARGET_BUCKET}",
+  "source_symbol": "${REPLAY_VALIDATION_SOURCE_SYMBOL}",
   "symbol": "${REPLAY_VALIDATION_SYMBOL}",
+  "symbols": ${REPLAY_VALIDATION_SYMBOLS_JSON},
   "warnings": [],
   "selection": {
     "selection_mode": "not_run",
@@ -1090,6 +1106,8 @@ run_replay_validation() {
     --trade_bot "/app/trade_bot"
     --output_dir "${REPLAY_VALIDATION_DIR}"
     --symbol "${REPLAY_VALIDATION_SYMBOL}"
+    --symbols "${REPLAY_VALIDATION_SYMBOLS}"
+    --source_symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL}"
     --target_bucket "${REPLAY_VALIDATION_TARGET_BUCKET}"
     --max_segments "${REPLAY_VALIDATION_MAX_SEGMENTS}"
     --min_segment_bars "${REPLAY_VALIDATION_MIN_SEGMENT_BARS}"

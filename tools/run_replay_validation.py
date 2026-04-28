@@ -843,6 +843,199 @@ def has_met_replay_coverage_targets(
     )
 
 
+def normalize_symbols(raw_symbols: str, fallback_symbol: str) -> list[str]:
+    source = raw_symbols if raw_symbols.strip() else fallback_symbol
+    symbols: list[str] = []
+    for raw_item in source.replace(";", ",").split(","):
+        symbol = raw_item.strip().upper()
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+    if not symbols:
+        symbols.append((fallback_symbol or "BTCUSDT").strip().upper())
+    return symbols
+
+
+def merge_symbol_validations(
+    aggregate_validation: dict[str, Any],
+    symbol_reports: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    merged = dict(aggregate_validation)
+    fail_reasons = list(merged.get("fail_reasons", []))
+    warn_reasons = list(merged.get("warn_reasons", []))
+
+    for symbol, symbol_report in symbol_reports.items():
+        validation = symbol_report.get("aggregate_validation", {})
+        if not isinstance(validation, dict):
+            continue
+        status = str(validation.get("status", "")).lower()
+        if status == "fail":
+            for reason in validation.get("fail_reasons", []):
+                fail_reasons.append(f"{symbol}: {reason}")
+        elif status == "pass_with_actions":
+            for reason in validation.get("warn_reasons", []):
+                warn_reasons.append(f"{symbol}: {reason}")
+
+    if fail_reasons:
+        merged["status"] = "fail"
+        merged["coverage_strength_status"] = "INSUFFICIENT"
+    elif warn_reasons and str(merged.get("status", "")).lower() == "pass":
+        merged["status"] = "pass_with_actions"
+        if merged.get("coverage_strength_status") == "ROBUST":
+            merged["coverage_strength_status"] = "MINIMUM_ONLY"
+    merged["fail_reasons"] = fail_reasons
+    merged["warn_reasons"] = warn_reasons
+    return merged
+
+
+def run_replay_for_symbol(
+    *,
+    symbol: str,
+    output_dir: pathlib.Path,
+    rows: list[FeatureRow],
+    thresholds: RegimeThresholds,
+    selected_segments: list[ReplaySegment],
+    target_bucket: str,
+    base_interval_ms: int,
+    root: pathlib.Path,
+    base_config: pathlib.Path,
+    trade_bot: pathlib.Path,
+    assess_stage: str,
+    min_runtime_status: int,
+    min_execution_active_runs: int,
+    min_execution_pass_runs: int,
+    min_total_fills: int,
+    min_mean_realized_net_per_fill: float,
+    warn_mean_filtered_cost_ratio: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any], dict[str, Any]]:
+    run_summaries: list[dict[str, Any]] = []
+    stopped_early = False
+    stop_reason = ""
+    recommended_thresholds = derive_recommended_coverage_thresholds(
+        min_execution_active_runs=min_execution_active_runs,
+        min_execution_pass_runs=min_execution_pass_runs,
+        min_total_fills=min_total_fills,
+    )
+
+    for idx, segment in enumerate(selected_segments, start=1):
+        segment_dir = output_dir / f"segment_{idx:02d}"
+        segment_dir.mkdir(parents=True, exist_ok=True)
+        replay_csv = segment_dir / "replay_market.csv"
+        runtime_log = segment_dir / "runtime.log"
+        runtime_assess = segment_dir / "runtime_assess.json"
+        write_replay_csv(rows, segment, symbol, replay_csv, base_interval_ms)
+
+        trade_cmd = [
+            str(trade_bot),
+            f"--config={base_config}",
+            "--exchange=bybit",
+            f"--replay_market_data={replay_csv}",
+            "--replay_timestamp_column=timestamp",
+            "--replay_symbol_column=symbol",
+            "--replay_price_column=price",
+            "--replay_volume_column=volume",
+            "--replay_interval_column=interval_ms",
+            "--replay_funding_rate_column=funding_rate_per_interval",
+            f"--replay_default_interval_ms={base_interval_ms}",
+        ]
+        trade_exit = run_command(trade_cmd, runtime_log)
+
+        assess_cmd = [
+            sys.executable,
+            str(root / "tools" / "assess_run_log.py"),
+            "--log",
+            str(runtime_log),
+            "--stage",
+            assess_stage,
+            "--min_runtime_status",
+            str(max(1, min_runtime_status)),
+            "--json_out",
+            str(runtime_assess),
+        ]
+        assess_exit = subprocess.run(assess_cmd, check=False).returncode
+        assess_payload: dict[str, Any] = {}
+        if runtime_assess.is_file():
+            assess_payload = json.loads(runtime_assess.read_text(encoding="utf-8"))
+
+        run_summaries.append(
+            {
+                "symbol": symbol,
+                "segment_index": idx,
+                "segment": segment_to_payload(
+                    segment,
+                    rows=rows,
+                    thresholds=thresholds,
+                    target_bucket=target_bucket,
+                ),
+                "replay_csv": str(replay_csv),
+                "runtime_log": str(runtime_log),
+                "runtime_assess": str(runtime_assess),
+                "trade_bot_exit_code": trade_exit,
+                "assess_exit_code": int(assess_exit),
+                "assess_summary": summarize_assess(assess_payload)
+                if assess_payload
+                else {},
+            }
+        )
+        aggregate_summary, _ = aggregate_run_summaries(
+            run_summaries,
+            min_execution_active_runs=min_execution_active_runs,
+            min_execution_pass_runs=min_execution_pass_runs,
+            min_total_fills=min_total_fills,
+            min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+            warn_mean_filtered_cost_ratio=warn_mean_filtered_cost_ratio,
+        )
+        if has_met_replay_coverage_targets(
+            aggregate_summary,
+            min_execution_active_runs=recommended_thresholds[
+                "min_execution_active_runs"
+            ],
+            min_execution_pass_runs=recommended_thresholds[
+                "min_execution_pass_runs"
+            ],
+            min_total_fills=recommended_thresholds["min_total_fills"],
+        ):
+            stopped_early = True
+            stop_reason = "recommended_coverage_targets_met"
+            break
+
+    aggregate_summary, aggregate_validation = aggregate_run_summaries(
+        run_summaries,
+        min_execution_active_runs=min_execution_active_runs,
+        min_execution_pass_runs=min_execution_pass_runs,
+        min_total_fills=min_total_fills,
+        min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        warn_mean_filtered_cost_ratio=warn_mean_filtered_cost_ratio,
+    )
+    symbol_selection = {
+        "segments_ran": len(run_summaries),
+        "stopped_early": stopped_early,
+        "stop_reason": stop_reason,
+        "coverage_targets_met": has_met_replay_coverage_targets(
+            aggregate_summary,
+            min_execution_active_runs=min_execution_active_runs,
+            min_execution_pass_runs=min_execution_pass_runs,
+            min_total_fills=min_total_fills,
+        ),
+        "minimum_coverage_targets_met": has_met_replay_coverage_targets(
+            aggregate_summary,
+            min_execution_active_runs=min_execution_active_runs,
+            min_execution_pass_runs=min_execution_pass_runs,
+            min_total_fills=min_total_fills,
+        ),
+        "recommended_coverage_targets_met": has_met_replay_coverage_targets(
+            aggregate_summary,
+            min_execution_active_runs=recommended_thresholds[
+                "min_execution_active_runs"
+            ],
+            min_execution_pass_runs=recommended_thresholds[
+                "min_execution_pass_runs"
+            ],
+            min_total_fills=recommended_thresholds["min_total_fills"],
+        ),
+    }
+    return run_summaries, symbol_selection, aggregate_summary, aggregate_validation
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run TREND replay validation on archived feature data.")
     parser.add_argument(
@@ -866,6 +1059,16 @@ def main() -> int:
         help="replay 验证输出目录",
     )
     parser.add_argument("--symbol", default="BTCUSDT", help="写入 replay CSV 的 symbol")
+    parser.add_argument(
+        "--symbols",
+        default="",
+        help="逗号分隔的 replay symbol 列表；为空时回退 --symbol",
+    )
+    parser.add_argument(
+        "--source_symbol",
+        default="",
+        help="feature_csv 对应的源行情币对；为空时回退 --symbol",
+    )
     parser.add_argument(
         "--target_bucket",
         choices=("trend", "range", "extreme"),
@@ -983,88 +1186,62 @@ def main() -> int:
         refresh_corpus_manifest=bool(args.refresh_corpus_manifest),
     )
 
-    run_summaries: list[dict[str, Any]] = []
-    stopped_early = False
-    stop_reason = ""
-    recommended_thresholds = derive_recommended_coverage_thresholds(
-        min_execution_active_runs=args.min_execution_active_runs,
-        min_execution_pass_runs=args.min_execution_pass_runs,
-        min_total_fills=args.min_total_fills,
-    )
-    for idx, segment in enumerate(selected, start=1):
-        segment_dir = output_dir / f"segment_{idx:02d}"
-        segment_dir.mkdir(parents=True, exist_ok=True)
-        replay_csv = segment_dir / "replay_market.csv"
-        runtime_log = segment_dir / "runtime.log"
-        runtime_assess = segment_dir / "runtime_assess.json"
-        write_replay_csv(rows, segment, args.symbol, replay_csv, base_interval_ms)
-
-        trade_cmd = [
-            str(trade_bot),
-            f"--config={base_config}",
-            "--exchange=bybit",
-            f"--replay_market_data={replay_csv}",
-            "--replay_timestamp_column=timestamp",
-            "--replay_symbol_column=symbol",
-            "--replay_price_column=price",
-            "--replay_volume_column=volume",
-            "--replay_interval_column=interval_ms",
-            "--replay_funding_rate_column=funding_rate_per_interval",
-            f"--replay_default_interval_ms={base_interval_ms}",
-        ]
-        trade_exit = run_command(trade_cmd, runtime_log)
-
-        assess_cmd = [
-            sys.executable,
-            str(root / "tools" / "assess_run_log.py"),
-            "--log",
-            str(runtime_log),
-            "--stage",
-            args.assess_stage,
-            "--min_runtime_status",
-            str(max(1, args.min_runtime_status)),
-            "--json_out",
-            str(runtime_assess),
-        ]
-        assess_exit = subprocess.run(assess_cmd, check=False).returncode
-        assess_payload: dict[str, Any] = {}
-        if runtime_assess.is_file():
-            assess_payload = json.loads(runtime_assess.read_text(encoding="utf-8"))
-
-        run_summaries.append(
-            {
-                "segment_index": idx,
-                "segment": segment_to_payload(
-                    segment,
-                    rows=rows,
-                    thresholds=thresholds,
-                    target_bucket=args.target_bucket,
-                ),
-                "replay_csv": str(replay_csv),
-                "runtime_log": str(runtime_log),
-                "runtime_assess": str(runtime_assess),
-                "trade_bot_exit_code": trade_exit,
-                "assess_exit_code": int(assess_exit),
-                "assess_summary": summarize_assess(assess_payload) if assess_payload else {},
-            }
+    symbols = normalize_symbols(args.symbols, args.symbol)
+    source_symbol = str(args.source_symbol or args.symbol).strip().upper()
+    if source_symbol and any(symbol != source_symbol for symbol in symbols):
+        warnings.append(
+            "multi-symbol replay 当前复用同一份 feature_csv: "
+            f"source_symbol={source_symbol}, target_symbols={','.join(symbols)}；"
+            "该结果适合验证执行链路和配置覆盖，不等同于目标币对真实历史行情验证"
         )
-        aggregate_summary, _ = aggregate_run_summaries(
-            run_summaries,
+    run_summaries: list[dict[str, Any]] = []
+    symbol_reports: dict[str, dict[str, Any]] = {}
+    per_symbol_segments_ran: dict[str, int] = {}
+    per_symbol_coverage_targets_met: dict[str, bool] = {}
+    per_symbol_recommended_coverage_targets_met: dict[str, bool] = {}
+
+    for symbol in symbols:
+        symbol_output_dir = output_dir if len(symbols) == 1 else output_dir / symbol
+        (
+            symbol_runs,
+            symbol_selection,
+            symbol_aggregate_summary,
+            symbol_aggregate_validation,
+        ) = run_replay_for_symbol(
+            symbol=symbol,
+            output_dir=symbol_output_dir,
+            rows=rows,
+            thresholds=thresholds,
+            selected_segments=selected,
+            target_bucket=args.target_bucket,
+            base_interval_ms=base_interval_ms,
+            root=root,
+            base_config=base_config,
+            trade_bot=trade_bot,
+            assess_stage=args.assess_stage,
+            min_runtime_status=max(1, args.min_runtime_status),
             min_execution_active_runs=args.min_execution_active_runs,
             min_execution_pass_runs=args.min_execution_pass_runs,
             min_total_fills=args.min_total_fills,
             min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
             warn_mean_filtered_cost_ratio=args.warn_mean_filtered_cost_ratio,
         )
-        if has_met_replay_coverage_targets(
-            aggregate_summary,
-            min_execution_active_runs=recommended_thresholds["min_execution_active_runs"],
-            min_execution_pass_runs=recommended_thresholds["min_execution_pass_runs"],
-            min_total_fills=recommended_thresholds["min_total_fills"],
-        ):
-            stopped_early = True
-            stop_reason = "recommended_coverage_targets_met"
-            break
+        run_summaries.extend(symbol_runs)
+        per_symbol_segments_ran[symbol] = int(symbol_selection["segments_ran"])
+        per_symbol_coverage_targets_met[symbol] = bool(
+            symbol_selection["minimum_coverage_targets_met"]
+        )
+        per_symbol_recommended_coverage_targets_met[symbol] = bool(
+            symbol_selection["recommended_coverage_targets_met"]
+        )
+        symbol_reports[symbol] = {
+            "symbol": symbol,
+            "output_dir": str(symbol_output_dir),
+            "selection": symbol_selection,
+            "aggregate_summary": symbol_aggregate_summary,
+            "aggregate_validation": symbol_aggregate_validation,
+            "runs": symbol_runs,
+        }
 
     aggregate_summary, aggregate_validation = aggregate_run_summaries(
         run_summaries,
@@ -1074,13 +1251,24 @@ def main() -> int:
         min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
         warn_mean_filtered_cost_ratio=args.warn_mean_filtered_cost_ratio,
     )
+    aggregate_validation = merge_symbol_validations(
+        aggregate_validation,
+        symbol_reports,
+    )
+    recommended_thresholds = derive_recommended_coverage_thresholds(
+        min_execution_active_runs=args.min_execution_active_runs,
+        min_execution_pass_runs=args.min_execution_pass_runs,
+        min_total_fills=args.min_total_fills,
+    )
 
     report = {
         "feature_csv": str(feature_csv),
         "base_config": str(base_config),
         "trade_bot": str(trade_bot),
         "target_bucket": args.target_bucket,
-        "symbol": args.symbol,
+        "source_symbol": source_symbol,
+        "symbol": symbols[0],
+        "symbols": symbols,
         "base_interval_ms": base_interval_ms,
         "thresholds": {
             "trend_abs_ema_diff": thresholds.trend_abs_ema_diff,
@@ -1100,8 +1288,21 @@ def main() -> int:
         "selection": {
             **selection,
             "segments_ran": len(run_summaries),
-            "stopped_early": stopped_early,
-            "stop_reason": stop_reason,
+            "per_symbol_segments_ran": per_symbol_segments_ran,
+            "stopped_early": all(
+                bool(item.get("selection", {}).get("stopped_early"))
+                for item in symbol_reports.values()
+            ),
+            "stop_reason": "recommended_coverage_targets_met"
+            if all(
+                bool(item.get("selection", {}).get("stopped_early"))
+                for item in symbol_reports.values()
+            )
+            else "",
+            "per_symbol_coverage_targets_met": per_symbol_coverage_targets_met,
+            "per_symbol_recommended_coverage_targets_met": (
+                per_symbol_recommended_coverage_targets_met
+            ),
             "coverage_targets_met": has_met_replay_coverage_targets(
                 aggregate_summary,
                 min_execution_active_runs=args.min_execution_active_runs,
@@ -1124,6 +1325,7 @@ def main() -> int:
         "warnings": warnings,
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
+        "symbol_reports": symbol_reports,
         "runs": run_summaries,
     }
     report_path = output_dir / "replay_validation_report.json"

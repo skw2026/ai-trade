@@ -144,4 +144,4 @@ universe:
   max_active_symbols: 3
   min_active_symbols: 1
   fallback_symbols: ["BTCUSDT", "ETHUSDT"]
-  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]
