@@ -420,6 +420,15 @@ class ReplayValidationToolsTest(unittest.TestCase):
         )
         self.assertEqual(REPLAY.normalize_symbols("", "btcusdt"), ["BTCUSDT"])
 
+    def test_parse_feature_csv_by_symbol_resolves_mapping(self):
+        root = pathlib.Path("/tmp/replay-root")
+        mapping = REPLAY.parse_feature_csv_by_symbol(
+            " solusdt=data/sol.csv;XRPUSDT=/tmp/xrp.csv ",
+            root,
+        )
+        self.assertEqual(mapping["SOLUSDT"], (root / "data/sol.csv").resolve())
+        self.assertEqual(mapping["XRPUSDT"], pathlib.Path("/tmp/xrp.csv"))
+
     def test_merge_symbol_validations_promotes_symbol_failure(self):
         merged = REPLAY.merge_symbol_validations(
             {

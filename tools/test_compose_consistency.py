@@ -170,6 +170,10 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: ${CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES:-true}",
+            scheduler,
+        )
+        self.assertIn(
             "CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS: ${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}",
             scheduler,
         )
@@ -226,6 +230,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS", script)
@@ -235,6 +240,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--refresh_corpus_manifest", script)
         self.assertIn("--symbols", script)
         self.assertIn("--source_symbol", script)
+        self.assertIn("--feature_csv_by_symbol", script)
         self.assertIn("--replay_validation_report", script)
         self.assertIn("tools/run_replay_validation.py", script)
         self.assertIn("--max-auc-stdev", script)

@@ -116,6 +116,7 @@ REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/by
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
+REPLAY_VALIDATION_REAL_MARKET_FEATURES="${CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES:-true}"
 REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-trend}"
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
@@ -139,6 +140,7 @@ DATA_PIPELINE_BEFORE_TRAIN="${CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN:-true}"
 DATA_PIPELINE_REQUIRED="${CLOSED_LOOP_DATA_PIPELINE_REQUIRED:-false}"
 DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS="${CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS:-true}"
 DATA_PIPELINE_LAST_STATUS="not_run"
+REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
 
 usage() {
   cat <<'EOF'
@@ -259,6 +261,8 @@ Env toggles:
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
   CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol>   feature store 源行情币对 (default: --symbol)
+  CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES=true|false
+                                                         是否为 replay symbols 生成各自 feature store (default: true)
   CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET=<bucket>   replay-validation 目标桶 (default: trend)
   CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS=<int>       replay-validation 最大片段数 (default: 16)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS=<int>   replay-validation 单片段最小 bars (default: 40)
@@ -671,6 +675,7 @@ DATA_PIPELINE_REPORT_PATH="${DATA_PIPELINE_RUN_DIR}/data_pipeline_report.json"
 WALKFORWARD_REPORT_PATH="${RUN_DIR}/walkforward_report.json"
 FEATURE_STORE_PATH="${RUN_DIR}/feature_store_5m.csv"
 REPLAY_VALIDATION_DIR="${RUN_DIR}/replay_validation"
+REPLAY_VALIDATION_FEATURE_DIR="${REPLAY_VALIDATION_DIR}/features"
 REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report.json"
 REPLAY_VALIDATION_LAST_STATUS="not_run"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
@@ -975,6 +980,79 @@ run_data_pipeline() {
   return 1
 }
 
+build_replay_validation_feature_map() {
+  REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
+  if ! is_true "${REPLAY_VALIDATION_REAL_MARKET_FEATURES}"; then
+    echo "[INFO] replay validation real-market feature build skipped (disabled)"
+    return 0
+  fi
+
+  local symbol_lines
+  symbol_lines="$(
+    python3 -c 'import sys
+seen = []
+for item in sys.argv[1].replace(";", ",").split(","):
+    symbol = item.strip().upper()
+    if symbol and symbol not in seen:
+        seen.append(symbol)
+print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
+  )"
+  if [[ -z "${symbol_lines}" ]]; then
+    echo "[INFO] replay validation real-market feature build skipped (no symbols)"
+    return 0
+  fi
+
+  echo "[INFO] replay validation per-symbol feature build start"
+  mkdir -p "${REPLAY_VALIDATION_FEATURE_DIR}"
+  local mapping_parts=()
+  local symbol
+  while IFS= read -r symbol; do
+    if [[ -z "${symbol}" ]]; then
+      continue
+    fi
+    local symbol_dir="${REPLAY_VALIDATION_FEATURE_DIR}/${symbol}"
+    local ohlcv_path="${symbol_dir}/ohlcv_5m.csv"
+    local feature_path="${symbol_dir}/feature_store_5m.csv"
+    local backtest_path="${symbol_dir}/walkforward_report.json"
+    mkdir -p "${symbol_dir}"
+
+    if [[ "${symbol}" == "${REPLAY_VALIDATION_SOURCE_SYMBOL}" && -f "${FEATURE_STORE_PATH}" ]]; then
+      mapping_parts+=("${symbol}=${FEATURE_STORE_PATH}")
+      echo "[INFO] replay validation reuse source feature store: symbol=${symbol} feature=${FEATURE_STORE_PATH}"
+      continue
+    fi
+
+    echo "[INFO] replay validation build feature store: symbol=${symbol}"
+    if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+      tools/run_data_pipeline.py \
+      --config "${DATA_CONFIG_PATH}" \
+      --symbol "${symbol}" \
+      --run-dir "${symbol_dir}" \
+      --ohlcv-out "${ohlcv_path}" \
+      --feature-out "${feature_path}" \
+      --backtest-report "${backtest_path}" \
+      --skip-walkforward; then
+      if [[ -f "${feature_path}" ]]; then
+        mapping_parts+=("${symbol}=${feature_path}")
+      else
+        echo "[WARN] replay validation feature store missing after build: symbol=${symbol} path=${feature_path}"
+      fi
+    else
+      echo "[WARN] replay validation feature build failed: symbol=${symbol}"
+    fi
+  done <<< "${symbol_lines}"
+
+  if (( ${#mapping_parts[@]} > 0 )); then
+    local old_ifs="${IFS}"
+    IFS=","
+    REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL="${mapping_parts[*]}"
+    IFS="${old_ifs}"
+    echo "[INFO] replay validation feature map: ${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+  else
+    echo "[WARN] replay validation feature map empty; fallback to source feature store"
+  fi
+}
+
 write_replay_validation_skip_report() {
   mkdir -p "${REPLAY_VALIDATION_DIR}"
   cat > "${REPLAY_VALIDATION_REPORT_PATH}" <<EOF
@@ -1097,6 +1175,8 @@ run_replay_validation() {
     return 0
   fi
 
+  build_replay_validation_feature_map
+
   echo "[INFO] replay validation start"
   mkdir -p "${REPLAY_VALIDATION_DIR}"
   REPLAY_ARGS=(
@@ -1108,6 +1188,7 @@ run_replay_validation() {
     --symbol "${REPLAY_VALIDATION_SYMBOL}"
     --symbols "${REPLAY_VALIDATION_SYMBOLS}"
     --source_symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL}"
+    --feature_csv_by_symbol "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
     --target_bucket "${REPLAY_VALIDATION_TARGET_BUCKET}"
     --max_segments "${REPLAY_VALIDATION_MAX_SEGMENTS}"
     --min_segment_bars "${REPLAY_VALIDATION_MIN_SEGMENT_BARS}"

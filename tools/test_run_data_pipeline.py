@@ -72,6 +72,9 @@ class RunDataPipelineTest(unittest.TestCase):
                     str(config),
                     "--run-dir",
                     str(run_dir),
+                    "--symbol",
+                    "SOLUSDT",
+                    "--skip-walkforward",
                     "--dry-run",
                 ]
                 code = PIPELINE.main()
@@ -83,10 +86,15 @@ class RunDataPipelineTest(unittest.TestCase):
             self.assertTrue(report_path.exists())
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["status"], "PLANNED")
+            self.assertEqual(report["symbol"], "SOLUSDT")
+            self.assertTrue(report["skip_walkforward"])
             self.assertEqual(len(report["steps"]), 5)
             planned_count = sum(1 for item in report["steps"] if item["status"] == "planned")
-            self.assertEqual(planned_count, 5)
+            skipped_count = sum(1 for item in report["steps"] if item["status"] == "skipped")
+            self.assertEqual(planned_count, 4)
+            self.assertEqual(skipped_count, 1)
             walk_step = next(item for item in report["steps"] if item["name"] == "walkforward_backtest")
+            self.assertEqual(walk_step["status"], "skipped")
             walk_cmd = walk_step["command"]
             self.assertIn("--model", walk_cmd)
             self.assertIn("linear", walk_cmd)

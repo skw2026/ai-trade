@@ -53,7 +53,11 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                 "status": "pass",
                                 "readiness_status": "PASS",
                                 "target_bucket": "trend",
-                                "symbol": "BTCUSDT",
+                                "source_symbol": "SOLUSDT",
+                                "source_symbols": {"SOLUSDT": "SOLUSDT"},
+                                "source_symbol_matches_target": True,
+                                "real_market_replay": True,
+                                "symbol": "SOLUSDT",
                                 "selection": {
                                     "segments_ran": 4,
                                     "coverage_targets_met": True,
@@ -98,6 +102,8 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             self.assertEqual(replay_metrics["source_run_id"], "20260407T010203Z")
             self.assertEqual(replay_metrics["status"], "pass")
             self.assertEqual(replay_metrics["readiness_status"], "PASS")
+            self.assertTrue(replay_metrics["real_market_replay"])
+            self.assertTrue(replay_metrics["source_symbol_matches_target"])
             self.assertEqual(replay_metrics["segments_ran"], 4)
             self.assertTrue(replay_metrics["minimum_coverage_targets_met"])
             self.assertFalse(replay_metrics["recommended_coverage_targets_met"])

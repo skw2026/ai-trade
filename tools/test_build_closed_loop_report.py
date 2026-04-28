@@ -699,7 +699,22 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 json.dumps(
                     {
                         "target_bucket": "trend",
-                        "symbol": "BTCUSDT",
+                        "source_symbol": "SOLUSDT",
+                        "source_symbols": {"SOLUSDT": "SOLUSDT"},
+                        "source_symbol_matches_target": True,
+                        "real_market_replay": True,
+                        "per_symbol_source": {
+                            "SOLUSDT": {
+                                "source_symbol": "SOLUSDT",
+                                "feature_csv": "data/SOLUSDT/feature_store_5m.csv",
+                                "source_symbol_matches_target": True,
+                                "real_market_replay": True,
+                            }
+                        },
+                        "feature_csv_by_symbol": {
+                            "SOLUSDT": "data/SOLUSDT/feature_store_5m.csv"
+                        },
+                        "symbol": "SOLUSDT",
                         "selection": {"segments_ran": 4, "coverage_targets_met": True},
                         "aggregate_summary": {
                             "execution_active_runs": 4,
@@ -738,6 +753,12 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(payload["replay_readiness_status"], "PASS")
             replay_section = payload["sections"]["replay_validation"]
             self.assertEqual(replay_section["status"], "pass")
+            self.assertTrue(replay_section["real_market_replay"])
+            self.assertTrue(replay_section["source_symbol_matches_target"])
+            self.assertEqual(
+                replay_section["per_symbol_source"]["SOLUSDT"]["source_symbol"],
+                "SOLUSDT",
+            )
             self.assertEqual(replay_section["summary"]["total_fills"], 3)
             self.assertEqual(replay_section["aggregate_summary"]["total_fills"], 3)
 

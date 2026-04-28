@@ -166,6 +166,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ohlcv-out", default="")
     parser.add_argument("--feature-out", default="")
     parser.add_argument("--backtest-report", default="")
+    parser.add_argument("--symbol", default="", help="override common.symbol")
+    parser.add_argument(
+        "--skip-walkforward",
+        action="store_true",
+        help="build data/feature outputs without running walk-forward",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -193,7 +199,7 @@ def main() -> int:
         or deep_get(config, ["paths", "backtest_report"], str(run_dir / "walkforward_report.json"))
     )
 
-    symbol = str(deep_get(config, ["common", "symbol"], "BTCUSDT")).upper()
+    symbol = str(args.symbol or deep_get(config, ["common", "symbol"], "BTCUSDT")).upper()
     interval_min = str(deep_get(config, ["common", "interval_minutes"], 5))
     category = str(deep_get(config, ["common", "category"], "linear"))
 
@@ -295,7 +301,10 @@ def main() -> int:
         feature_cmd.append("--keep-na")
     steps.append(StepResult(name="feature_store", enabled=feature_enabled, command=feature_cmd))
 
-    walk_enabled = as_bool(deep_get(config, ["walkforward", "enabled"], True), True)
+    walk_enabled = (
+        as_bool(deep_get(config, ["walkforward", "enabled"], True), True)
+        and not bool(args.skip_walkforward)
+    )
     steps.append(
         StepResult(
             name="walkforward_backtest",
@@ -383,6 +392,8 @@ def main() -> int:
             "feature_csv": str(feature_path),
             "backtest_report": str(backtest_path),
         },
+        "symbol": symbol,
+        "skip_walkforward": bool(args.skip_walkforward),
         "steps": [
             {
                 "name": item.name,

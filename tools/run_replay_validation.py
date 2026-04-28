@@ -855,6 +855,62 @@ def normalize_symbols(raw_symbols: str, fallback_symbol: str) -> list[str]:
     return symbols
 
 
+def resolve_path(raw_path: str, root: pathlib.Path) -> pathlib.Path:
+    path = pathlib.Path(raw_path)
+    if path.is_absolute():
+        return path
+    return (root / path).resolve()
+
+
+def parse_feature_csv_by_symbol(
+    raw_mapping: str,
+    root: pathlib.Path,
+) -> dict[str, pathlib.Path]:
+    mapping: dict[str, pathlib.Path] = {}
+    for raw_item in raw_mapping.replace(";", ",").split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(
+                "feature_csv_by_symbol 项必须使用 SYMBOL=PATH 格式: "
+                f"{item}"
+            )
+        symbol_raw, path_raw = item.split("=", 1)
+        symbol = symbol_raw.strip().upper()
+        path_text = path_raw.strip()
+        if not symbol or not path_text:
+            raise ValueError(
+                "feature_csv_by_symbol 项必须包含非空 SYMBOL 和 PATH: "
+                f"{item}"
+            )
+        mapping[symbol] = resolve_path(path_text, root)
+    return mapping
+
+
+def corpus_manifest_for_symbol(
+    corpus_manifest: pathlib.Path | None,
+    symbol: str,
+    *,
+    per_symbol: bool,
+) -> pathlib.Path | None:
+    if corpus_manifest is None:
+        return None
+    if not per_symbol:
+        return corpus_manifest
+    suffix = corpus_manifest.suffix or ".json"
+    return corpus_manifest.with_name(f"{corpus_manifest.stem}_{symbol}{suffix}")
+
+
+def thresholds_to_payload(thresholds: RegimeThresholds) -> dict[str, float]:
+    return {
+        "trend_abs_ema_diff": thresholds.trend_abs_ema_diff,
+        "trend_abs_mom_48": thresholds.trend_abs_mom_48,
+        "extreme_vol_12": thresholds.extreme_vol_12,
+        "extreme_range_pct": thresholds.extreme_range_pct,
+    }
+
+
 def merge_symbol_validations(
     aggregate_validation: dict[str, Any],
     symbol_reports: dict[str, dict[str, Any]],
@@ -1044,6 +1100,11 @@ def main() -> int:
         help="包含 close/volume/feature 列的特征 CSV",
     )
     parser.add_argument(
+        "--feature_csv_by_symbol",
+        default="",
+        help="逗号分隔 SYMBOL=feature_csv 映射；命中时按目标币对自己的特征数据 replay",
+    )
+    parser.add_argument(
         "--base_config",
         default="config/bybit.replay.assess.yaml",
         help="replay 运行配置模板",
@@ -1142,16 +1203,18 @@ def main() -> int:
     args = parser.parse_args()
 
     root = pathlib.Path(__file__).resolve().parent.parent
-    feature_csv = (root / args.feature_csv).resolve() if not pathlib.Path(args.feature_csv).is_absolute() else pathlib.Path(args.feature_csv)
-    base_config = (root / args.base_config).resolve() if not pathlib.Path(args.base_config).is_absolute() else pathlib.Path(args.base_config)
-    trade_bot = (root / args.trade_bot).resolve() if not pathlib.Path(args.trade_bot).is_absolute() else pathlib.Path(args.trade_bot)
-    output_dir = (root / args.output_dir).resolve() if not pathlib.Path(args.output_dir).is_absolute() else pathlib.Path(args.output_dir)
+    feature_csv = resolve_path(args.feature_csv, root)
+    feature_csv_by_symbol = parse_feature_csv_by_symbol(
+        args.feature_csv_by_symbol,
+        root,
+    )
+    base_config = resolve_path(args.base_config, root)
+    trade_bot = resolve_path(args.trade_bot, root)
+    output_dir = resolve_path(args.output_dir, root)
     corpus_manifest = None
     if args.corpus_manifest:
         corpus_manifest = (
-            (root / args.corpus_manifest).resolve()
-            if not pathlib.Path(args.corpus_manifest).is_absolute()
-            else pathlib.Path(args.corpus_manifest)
+            resolve_path(args.corpus_manifest, root)
         )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1162,45 +1225,107 @@ def main() -> int:
     if not trade_bot.is_file():
         raise FileNotFoundError(f"trade_bot 不存在: {trade_bot}")
 
-    rows = load_feature_rows(feature_csv)
-    if not rows:
-        raise RuntimeError(f"feature csv 无有效行: {feature_csv}")
-    thresholds = derive_regime_thresholds(rows)
-    base_interval_ms = infer_base_interval_ms(rows)
-    segments = find_segments(rows, thresholds, args.target_bucket, base_interval_ms)
-    ranked_segments = rank_replay_segments(
-        segments,
-        rows,
-        thresholds,
-        target_bucket=args.target_bucket,
-    )
-    selected, eligible, selection, warnings = select_replay_segments(
-        rows,
-        thresholds,
-        feature_csv=feature_csv,
-        target_bucket=args.target_bucket,
-        base_interval_ms=base_interval_ms,
-        max_segments=max(1, args.max_segments),
-        min_segment_bars=max(1, args.min_segment_bars),
-        corpus_manifest=corpus_manifest,
-        refresh_corpus_manifest=bool(args.refresh_corpus_manifest),
-    )
-
     symbols = normalize_symbols(args.symbols, args.symbol)
     source_symbol = str(args.source_symbol or args.symbol).strip().upper()
-    if source_symbol and any(symbol != source_symbol for symbol in symbols):
-        warnings.append(
-            "multi-symbol replay 当前复用同一份 feature_csv: "
-            f"source_symbol={source_symbol}, target_symbols={','.join(symbols)}；"
-            "该结果适合验证执行链路和配置覆盖，不等同于目标币对真实历史行情验证"
-        )
+    warnings: list[str] = []
     run_summaries: list[dict[str, Any]] = []
     symbol_reports: dict[str, dict[str, Any]] = {}
+    symbol_contexts: dict[str, dict[str, Any]] = {}
+    source_symbols: dict[str, str] = {}
+    per_symbol_source: dict[str, dict[str, Any]] = {}
     per_symbol_segments_ran: dict[str, int] = {}
+    per_symbol_eligible_segment_count: dict[str, int] = {}
     per_symbol_coverage_targets_met: dict[str, bool] = {}
     per_symbol_recommended_coverage_targets_met: dict[str, bool] = {}
+    base_interval_ms_by_symbol: dict[str, int] = {}
+    thresholds_by_symbol: dict[str, dict[str, float]] = {}
+    available_segments_by_symbol: dict[str, list[dict[str, Any]]] = {}
+
+    use_per_symbol_corpus = bool(feature_csv_by_symbol)
+    for symbol in symbols:
+        symbol_feature_csv = feature_csv_by_symbol.get(symbol, feature_csv)
+        symbol_source = symbol if symbol in feature_csv_by_symbol else source_symbol
+        source_symbols[symbol] = symbol_source
+        source_matches_target = symbol_source == symbol
+        per_symbol_source[symbol] = {
+            "source_symbol": symbol_source,
+            "feature_csv": str(symbol_feature_csv),
+            "source_symbol_matches_target": source_matches_target,
+            "real_market_replay": source_matches_target,
+        }
+        if not symbol_feature_csv.is_file():
+            raise FileNotFoundError(
+                f"{symbol} feature csv 不存在: {symbol_feature_csv}"
+            )
+        rows = load_feature_rows(symbol_feature_csv)
+        if not rows:
+            raise RuntimeError(f"{symbol} feature csv 无有效行: {symbol_feature_csv}")
+        thresholds = derive_regime_thresholds(rows)
+        base_interval_ms = infer_base_interval_ms(rows)
+        segments = find_segments(rows, thresholds, args.target_bucket, base_interval_ms)
+        ranked_segments = rank_replay_segments(
+            segments,
+            rows,
+            thresholds,
+            target_bucket=args.target_bucket,
+        )
+        symbol_corpus_manifest = corpus_manifest_for_symbol(
+            corpus_manifest,
+            symbol,
+            per_symbol=use_per_symbol_corpus,
+        )
+        selected, eligible, symbol_base_selection, symbol_warnings = (
+            select_replay_segments(
+                rows,
+                thresholds,
+                feature_csv=symbol_feature_csv,
+                target_bucket=args.target_bucket,
+                base_interval_ms=base_interval_ms,
+                max_segments=max(1, args.max_segments),
+                min_segment_bars=max(1, args.min_segment_bars),
+                corpus_manifest=symbol_corpus_manifest,
+                refresh_corpus_manifest=bool(args.refresh_corpus_manifest),
+            )
+        )
+        warnings.extend(f"{symbol}: {reason}" for reason in symbol_warnings)
+        per_symbol_eligible_segment_count[symbol] = len(eligible)
+        base_interval_ms_by_symbol[symbol] = base_interval_ms
+        thresholds_by_symbol[symbol] = thresholds_to_payload(thresholds)
+        available_segments_by_symbol[symbol] = [
+            segment_to_payload(
+                segment,
+                rows=rows,
+                thresholds=thresholds,
+                target_bucket=args.target_bucket,
+            )
+            for segment in ranked_segments[:10]
+        ]
+        symbol_contexts[symbol] = {
+            "feature_csv": symbol_feature_csv,
+            "rows": rows,
+            "thresholds": thresholds,
+            "base_interval_ms": base_interval_ms,
+            "selected": selected,
+            "eligible": eligible,
+            "base_selection": symbol_base_selection,
+            "available_segments": available_segments_by_symbol[symbol],
+        }
+
+    unmatched_symbols = [
+        symbol
+        for symbol, source in source_symbols.items()
+        if source != symbol
+    ]
+    if unmatched_symbols:
+        warnings.append(
+            "multi-symbol replay 当前仍有目标币对复用非本币对 feature_csv: "
+            f"unmatched_symbols={','.join(unmatched_symbols)}；"
+            "这些结果适合验证执行链路和配置覆盖，不等同于目标币对真实历史行情验证"
+        )
+    real_market_replay = not unmatched_symbols
 
     for symbol in symbols:
+        context = symbol_contexts[symbol]
         symbol_output_dir = output_dir if len(symbols) == 1 else output_dir / symbol
         (
             symbol_runs,
@@ -1210,11 +1335,11 @@ def main() -> int:
         ) = run_replay_for_symbol(
             symbol=symbol,
             output_dir=symbol_output_dir,
-            rows=rows,
-            thresholds=thresholds,
-            selected_segments=selected,
+            rows=context["rows"],
+            thresholds=context["thresholds"],
+            selected_segments=context["selected"],
             target_bucket=args.target_bucket,
-            base_interval_ms=base_interval_ms,
+            base_interval_ms=context["base_interval_ms"],
             root=root,
             base_config=base_config,
             trade_bot=trade_bot,
@@ -1226,6 +1351,10 @@ def main() -> int:
             min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
             warn_mean_filtered_cost_ratio=args.warn_mean_filtered_cost_ratio,
         )
+        symbol_selection = {
+            **context["base_selection"],
+            **symbol_selection,
+        }
         run_summaries.extend(symbol_runs)
         per_symbol_segments_ran[symbol] = int(symbol_selection["segments_ran"])
         per_symbol_coverage_targets_met[symbol] = bool(
@@ -1237,6 +1366,11 @@ def main() -> int:
         symbol_reports[symbol] = {
             "symbol": symbol,
             "output_dir": str(symbol_output_dir),
+            "source": per_symbol_source[symbol],
+            "feature_csv": str(context["feature_csv"]),
+            "base_interval_ms": context["base_interval_ms"],
+            "thresholds": thresholds_by_symbol[symbol],
+            "available_segments": context["available_segments"],
             "selection": symbol_selection,
             "aggregate_summary": symbol_aggregate_summary,
             "aggregate_validation": symbol_aggregate_validation,
@@ -1260,34 +1394,43 @@ def main() -> int:
         min_execution_pass_runs=args.min_execution_pass_runs,
         min_total_fills=args.min_total_fills,
     )
+    first_symbol = symbols[0]
+    first_context = symbol_contexts[first_symbol]
+    first_selection = first_context["base_selection"]
 
     report = {
         "feature_csv": str(feature_csv),
+        "feature_csv_by_symbol": {
+            symbol: str(path)
+            for symbol, path in feature_csv_by_symbol.items()
+        },
+        "per_symbol_source": per_symbol_source,
+        "source_symbols": source_symbols,
+        "source_symbol_matches_target": real_market_replay,
+        "real_market_replay": real_market_replay,
         "base_config": str(base_config),
         "trade_bot": str(trade_bot),
         "target_bucket": args.target_bucket,
-        "source_symbol": source_symbol,
+        "source_symbol": source_symbols.get(first_symbol, source_symbol),
         "symbol": symbols[0],
         "symbols": symbols,
-        "base_interval_ms": base_interval_ms,
-        "thresholds": {
-            "trend_abs_ema_diff": thresholds.trend_abs_ema_diff,
-            "trend_abs_mom_48": thresholds.trend_abs_mom_48,
-            "extreme_vol_12": thresholds.extreme_vol_12,
-            "extreme_range_pct": thresholds.extreme_range_pct,
-        },
-        "available_segments": [
-            segment_to_payload(
-                segment,
-                rows=rows,
-                thresholds=thresholds,
-                target_bucket=args.target_bucket,
-            )
-            for segment in ranked_segments[:10]
-        ],
+        "base_interval_ms": first_context["base_interval_ms"],
+        "base_interval_ms_by_symbol": base_interval_ms_by_symbol,
+        "thresholds": thresholds_by_symbol[first_symbol],
+        "thresholds_by_symbol": thresholds_by_symbol,
+        "available_segments": available_segments_by_symbol[first_symbol],
+        "available_segments_by_symbol": available_segments_by_symbol,
         "selection": {
-            **selection,
+            **first_selection,
+            "selection_mode": "per_symbol"
+            if len(symbols) > 1 or bool(feature_csv_by_symbol)
+            else first_selection.get("selection_mode"),
             "segments_ran": len(run_summaries),
+            "per_symbol_selection": {
+                symbol: symbol_report.get("selection", {})
+                for symbol, symbol_report in symbol_reports.items()
+            },
+            "per_symbol_eligible_segment_count": per_symbol_eligible_segment_count,
             "per_symbol_segments_ran": per_symbol_segments_ran,
             "stopped_early": all(
                 bool(item.get("selection", {}).get("stopped_early"))
