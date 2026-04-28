@@ -27,6 +27,16 @@ on:
         required: true
         default: "4h"
         type: string
+      replay_symbols:
+        description: "replay-validation 目标币对，逗号分隔；留空则使用 ECS .env.runtime"
+        required: false
+        default: "SOLUSDT,XRPUSDT,BNBUSDT"
+        type: string
+      replay_source_symbol:
+        description: "replay-validation feature store 源币对；留空则使用 ECS .env.runtime"
+        required: false
+        default: "BTCUSDT"
+        type: string
   schedule:
     - cron: "15 */6 * * *" # 每6小时一次
 
@@ -54,17 +64,27 @@ jobs:
           CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
           CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && '' || inputs.replay_symbols }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && '' || inputs.replay_source_symbol }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE
+          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL
           script: |
             set -euo pipefail
             cd /opt/ai-trade
+            WORKFLOW_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
+            WORKFLOW_REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
             set -a && source .env.runtime && set +a
+            if [[ -n "${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}" ]]; then
+              export CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS="${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}"
+            fi
+            if [[ -n "${WORKFLOW_REPLAY_VALIDATION_SOURCE_SYMBOL}" ]]; then
+              export CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL="${WORKFLOW_REPLAY_VALIDATION_SOURCE_SYMBOL}"
+            fi
             chmod +x tools/closed_loop_runner.sh
             tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
               --compose-file docker-compose.prod.yml \
