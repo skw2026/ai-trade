@@ -741,6 +741,159 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(replay_section["summary"]["total_fills"], 3)
             self.assertEqual(replay_section["aggregate_summary"]["total_fills"], 3)
 
+    def test_replay_live_symbol_alignment_warns_on_uncovered_live_trend(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "market_context_status": "TREND_PRESENT",
+                        "metrics": {
+                            "runtime_status_count": 80,
+                            "regime_change_trend_symbols": ["BNBUSDT", "SOLUSDT"],
+                            "regime_change_trend_candidate_symbols": [
+                                "BNBUSDT",
+                                "ETHUSDT",
+                                "SOLUSDT",
+                                "XRPUSDT",
+                            ],
+                        },
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "target_bucket": "trend",
+                        "symbol": "BTCUSDT",
+                        "selection": {"segments_ran": 4, "coverage_targets_met": True},
+                        "aggregate_summary": {
+                            "execution_active_runs": 4,
+                            "execution_pass_runs": 4,
+                            "total_fills": 6,
+                            "mean_realized_net_per_fill": 0.0,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["overall_status"], "PASS_WITH_ACTIONS")
+            self.assertEqual(
+                payload["replay_symbol_alignment_status"], "PASS_WITH_ACTIONS"
+            )
+            alignment = payload["sections"]["replay_symbol_alignment"]
+            self.assertEqual(
+                alignment["uncovered_live_trend_symbols"], ["BNBUSDT", "SOLUSDT"]
+            )
+            self.assertTrue(
+                any("未覆盖 live TREND 符号" in item for item in payload["warn_reasons"])
+            )
+
+    def test_replay_live_symbol_alignment_passes_when_replay_covers_live_trend(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "market_context_status": "TREND_PRESENT",
+                        "metrics": {
+                            "runtime_status_count": 80,
+                            "regime_change_trend_symbols": ["SOLUSDT"],
+                            "regime_change_trend_candidate_symbols": ["SOLUSDT"],
+                        },
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "target_bucket": "trend",
+                        "symbol": "SOLUSDT",
+                        "selection": {"segments_ran": 4, "coverage_targets_met": True},
+                        "aggregate_summary": {
+                            "execution_active_runs": 4,
+                            "execution_pass_runs": 4,
+                            "total_fills": 6,
+                            "mean_realized_net_per_fill": 0.0,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["overall_status"], "PASS")
+            self.assertEqual(payload["replay_symbol_alignment_status"], "PASS")
+            alignment = payload["sections"]["replay_symbol_alignment"]
+            self.assertEqual(alignment["uncovered_live_trend_symbols"], [])
+            self.assertEqual(payload["warn_reasons"], [])
+
     def test_replay_validation_fail_blocks_overall_status(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

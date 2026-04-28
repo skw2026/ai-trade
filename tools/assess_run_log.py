@@ -361,6 +361,223 @@ def max_tick(text: str) -> int:
     return max(int(x) for x in matches)
 
 
+def extract_log_field(line: str, key: str) -> Optional[str]:
+    match = re.search(rf"\b{re.escape(key)}=([^,\s}}]+)", line)
+    if not match:
+        return None
+    value = match.group(1).strip()
+    return value if value else None
+
+
+def extract_float_log_field(line: str, key: str) -> Optional[float]:
+    raw_value = extract_log_field(line, key)
+    if raw_value is None:
+        return None
+    try:
+        return float(raw_value)
+    except ValueError:
+        return None
+
+
+def bump_counter(counter: Dict[str, int], key: Optional[str], amount: int = 1) -> None:
+    normalized = str(key or "UNKNOWN").strip().upper()
+    if not normalized:
+        normalized = "UNKNOWN"
+    counter[normalized] = int(counter.get(normalized, 0)) + int(amount)
+
+
+def rounded(value: float) -> float:
+    return round(float(value), 8)
+
+
+def new_fill_bucket() -> Dict[str, object]:
+    return {
+        "total": 0,
+        "fee_usd": 0.0,
+        "notional_abs_usd": 0.0,
+        "by_symbol": {},
+        "by_liquidity": {},
+    }
+
+
+def record_fill(
+    bucket: Dict[str, object],
+    symbol: Optional[str],
+    liquidity: Optional[str],
+    fee_usd: float,
+    notional_abs_usd: float,
+) -> None:
+    bucket["total"] = int(bucket.get("total", 0)) + 1
+    bucket["fee_usd"] = rounded(float(bucket.get("fee_usd", 0.0)) + abs(fee_usd))
+    bucket["notional_abs_usd"] = rounded(
+        float(bucket.get("notional_abs_usd", 0.0)) + abs(notional_abs_usd)
+    )
+    by_symbol = bucket.setdefault("by_symbol", {})
+    by_liquidity = bucket.setdefault("by_liquidity", {})
+    if isinstance(by_symbol, dict):
+        bump_counter(by_symbol, symbol)
+    if isinstance(by_liquidity, dict):
+        bump_counter(by_liquidity, liquidity)
+
+
+def extract_execution_attribution(text: str) -> Dict[str, object]:
+    probe_client_order_ids: set[str] = set()
+    probe_fill_ids: set[str] = set()
+
+    for line in text.splitlines():
+        if (
+            "TREND_CANDIDATE_PROBE_SIGNAL:" in line
+            or "TREND_CANDIDATE_PROBE_ENQUEUED:" in line
+            or "TREND_CANDIDATE_PROBE_FILL:" in line
+        ):
+            client_order_id = extract_log_field(line, "client_order_id")
+            if client_order_id:
+                probe_client_order_ids.add(client_order_id)
+        if "TREND_CANDIDATE_PROBE_FILL:" in line:
+            fill_id = extract_log_field(line, "fill_id")
+            if fill_id:
+                probe_fill_ids.add(fill_id)
+
+    attribution: Dict[str, object] = {
+        "submit": {
+            "total": 0,
+            "by_symbol": {},
+            "by_order_type": {},
+            "by_liquidity": {},
+            "by_purpose": {},
+        },
+        "fills": {
+            "total": 0,
+            "fee_usd": 0.0,
+            "notional_abs_usd": 0.0,
+            "maker_count": 0,
+            "taker_count": 0,
+            "unknown_liquidity_count": 0,
+            "by_symbol": {},
+            "by_liquidity": {},
+            "probe": new_fill_bucket(),
+            "main": new_fill_bucket(),
+        },
+        "orders": {
+            "filtered_cost_by_symbol": {},
+            "near_miss_maker_allowed_by_symbol": {},
+            "throttled_by_symbol": {},
+        },
+        "runtime_fill_windows": {
+            "count": 0,
+            "fills": 0,
+            "maker_fills": 0,
+            "taker_fills": 0,
+            "unknown_fills": 0,
+            "realized_net_delta_usd": 0.0,
+            "fee_delta_usd": 0.0,
+        },
+    }
+
+    submit = attribution["submit"]
+    fills = attribution["fills"]
+    orders = attribution["orders"]
+    runtime_fill_windows = attribution["runtime_fill_windows"]
+    assert isinstance(submit, dict)
+    assert isinstance(fills, dict)
+    assert isinstance(orders, dict)
+    assert isinstance(runtime_fill_windows, dict)
+
+    for line in text.splitlines():
+        if "BYBIT_SUBMIT:" in line:
+            submit["total"] = int(submit.get("total", 0)) + 1
+            for field_name, counter_name in (
+                ("symbol", "by_symbol"),
+                ("order_type", "by_order_type"),
+                ("liquidity_preference", "by_liquidity"),
+                ("purpose", "by_purpose"),
+            ):
+                counter = submit.get(counter_name)
+                if isinstance(counter, dict):
+                    bump_counter(counter, extract_log_field(line, field_name))
+
+        if "ORDER_FILTERED_COST:" in line:
+            counter = orders.get("filtered_cost_by_symbol")
+            if isinstance(counter, dict):
+                bump_counter(counter, extract_log_field(line, "symbol"))
+        if "ORDER_NEAR_MISS_MAKER_ALLOWED:" in line:
+            counter = orders.get("near_miss_maker_allowed_by_symbol")
+            if isinstance(counter, dict):
+                bump_counter(counter, extract_log_field(line, "symbol"))
+        if "ORDER_THROTTLED:" in line:
+            counter = orders.get("throttled_by_symbol")
+            if isinstance(counter, dict):
+                bump_counter(counter, extract_log_field(line, "symbol"))
+
+        if "FILL_APPLIED:" in line:
+            symbol = extract_log_field(line, "symbol")
+            liquidity = extract_log_field(line, "liquidity")
+            fill_id = extract_log_field(line, "fill_id")
+            client_order_id = extract_log_field(line, "client_order_id")
+            fee_usd = extract_float_log_field(line, "fee") or 0.0
+            notional_abs_usd = extract_float_log_field(line, "notional_abs_usd")
+            if notional_abs_usd is None:
+                qty = extract_float_log_field(line, "qty")
+                price = extract_float_log_field(line, "price")
+                if qty is not None and price is not None:
+                    notional_abs_usd = abs(qty * price)
+                else:
+                    notional_abs_usd = 0.0
+
+            fills["total"] = int(fills.get("total", 0)) + 1
+            fills["fee_usd"] = rounded(float(fills.get("fee_usd", 0.0)) + abs(fee_usd))
+            fills["notional_abs_usd"] = rounded(
+                float(fills.get("notional_abs_usd", 0.0)) + abs(notional_abs_usd)
+            )
+            fill_by_symbol = fills.get("by_symbol")
+            fill_by_liquidity = fills.get("by_liquidity")
+            if isinstance(fill_by_symbol, dict):
+                bump_counter(fill_by_symbol, symbol)
+            if isinstance(fill_by_liquidity, dict):
+                bump_counter(fill_by_liquidity, liquidity)
+
+            liquidity_normalized = str(liquidity or "UNKNOWN").upper()
+            if liquidity_normalized == "MAKER":
+                fills["maker_count"] = int(fills.get("maker_count", 0)) + 1
+            elif liquidity_normalized == "TAKER":
+                fills["taker_count"] = int(fills.get("taker_count", 0)) + 1
+            else:
+                fills["unknown_liquidity_count"] = int(
+                    fills.get("unknown_liquidity_count", 0)
+                ) + 1
+
+            bucket_name = (
+                "probe"
+                if (fill_id and fill_id in probe_fill_ids)
+                or (client_order_id and client_order_id in probe_client_order_ids)
+                else "main"
+            )
+            bucket = fills.get(bucket_name)
+            if isinstance(bucket, dict):
+                record_fill(bucket, symbol, liquidity, fee_usd, notional_abs_usd)
+
+        if "RUNTIME_STATUS:" in line:
+            window_fills = int(extract_float_log_field(line, "fills") or 0)
+            if window_fills > 0:
+                runtime_fill_windows["count"] = int(
+                    runtime_fill_windows.get("count", 0)
+                ) + 1
+                runtime_fill_windows["fills"] = int(
+                    runtime_fill_windows.get("fills", 0)
+                ) + window_fills
+                for field in ("maker_fills", "taker_fills", "unknown_fills"):
+                    runtime_fill_windows[field] = int(
+                        runtime_fill_windows.get(field, 0)
+                    ) + int(extract_float_log_field(line, field) or 0)
+                for field in ("realized_net_delta_usd", "fee_delta_usd"):
+                    runtime_fill_windows[field] = rounded(
+                        float(runtime_fill_windows.get(field, 0.0))
+                        + float(extract_float_log_field(line, field) or 0.0)
+                    )
+
+    return attribution
+
+
 def percentile(values: list[float], q: float) -> float:
     if not values:
         return 0.0
@@ -1315,6 +1532,7 @@ def assess(
 
     regime_current_counts = extract_regime_current_counts(text)
     regime_runtime_diagnostics = extract_regime_runtime_diagnostics(text)
+    execution_attribution = extract_execution_attribution(text)
 
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
@@ -1688,6 +1906,64 @@ def assess(
         ],
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
+    attribution_fills = execution_attribution.get("fills", {})
+    attribution_submit = execution_attribution.get("submit", {})
+    attribution_runtime_windows = execution_attribution.get("runtime_fill_windows", {})
+    if isinstance(attribution_fills, dict) and isinstance(
+        attribution_submit, dict
+    ) and isinstance(attribution_runtime_windows, dict):
+        probe_fills = attribution_fills.get("probe", {})
+        main_fills = attribution_fills.get("main", {})
+        if not isinstance(probe_fills, dict):
+            probe_fills = {}
+        if not isinstance(main_fills, dict):
+            main_fills = {}
+        metrics.update(
+            {
+                "execution_attribution_submit_count": int(
+                    attribution_submit.get("total", 0)
+                ),
+                "execution_attribution_fill_count": int(
+                    attribution_fills.get("total", 0)
+                ),
+                "execution_attribution_probe_fill_count": int(
+                    probe_fills.get("total", 0)
+                ),
+                "execution_attribution_main_fill_count": int(
+                    main_fills.get("total", 0)
+                ),
+                "execution_attribution_maker_fill_count": int(
+                    attribution_fills.get("maker_count", 0)
+                ),
+                "execution_attribution_taker_fill_count": int(
+                    attribution_fills.get("taker_count", 0)
+                ),
+                "execution_attribution_unknown_liquidity_fill_count": int(
+                    attribution_fills.get("unknown_liquidity_count", 0)
+                ),
+                "execution_attribution_fee_usd": float(
+                    attribution_fills.get("fee_usd", 0.0)
+                ),
+                "execution_attribution_probe_fee_usd": float(
+                    probe_fills.get("fee_usd", 0.0)
+                ),
+                "execution_attribution_main_fee_usd": float(
+                    main_fills.get("fee_usd", 0.0)
+                ),
+                "execution_attribution_runtime_fill_window_count": int(
+                    attribution_runtime_windows.get("count", 0)
+                ),
+                "execution_attribution_runtime_fills": int(
+                    attribution_runtime_windows.get("fills", 0)
+                ),
+                "execution_attribution_runtime_realized_net_delta_usd": float(
+                    attribution_runtime_windows.get("realized_net_delta_usd", 0.0)
+                ),
+                "execution_attribution_runtime_fee_delta_usd": float(
+                    attribution_runtime_windows.get("fee_delta_usd", 0.0)
+                ),
+            }
+        )
     metrics["self_evolution_effective_update_count"] = (
         metrics["self_evolution_counterfactual_update_count"]
         + metrics["self_evolution_factor_ic_action_count"]
@@ -2360,6 +2636,7 @@ def assess(
         "account_sync_status": account_sync_status,
         "metrics": metrics,
         "account_pnl": account_pnl,
+        "execution_attribution": execution_attribution,
         "fail_reasons": fail_reasons,
         "protection_fail_reasons": protection_fail_reasons,
         "execution_fail_reasons": execution_fail_reasons,
@@ -2437,6 +2714,29 @@ def print_report(report: Dict[str, object]) -> None:
             "account_counter_reset_detected",
         ):
             print(f"  - {key}: {account_pnl.get(key)}")
+
+    execution_attribution = report.get("execution_attribution", {})
+    if isinstance(execution_attribution, dict) and execution_attribution:
+        fills = execution_attribution.get("fills", {})
+        submit = execution_attribution.get("submit", {})
+        runtime_fill_windows = execution_attribution.get("runtime_fill_windows", {})
+        print("EXECUTION_ATTRIBUTION:")
+        if isinstance(submit, dict):
+            print(f"  - submit_total: {submit.get('total')}")
+            print(f"  - submit_by_symbol: {submit.get('by_symbol')}")
+            print(f"  - submit_by_order_type: {submit.get('by_order_type')}")
+            print(f"  - submit_by_liquidity: {submit.get('by_liquidity')}")
+            print(f"  - submit_by_purpose: {submit.get('by_purpose')}")
+        if isinstance(fills, dict):
+            print(f"  - fill_total: {fills.get('total')}")
+            print(f"  - fill_fee_usd: {fills.get('fee_usd')}")
+            print(f"  - fill_notional_abs_usd: {fills.get('notional_abs_usd')}")
+            print(f"  - fill_by_symbol: {fills.get('by_symbol')}")
+            print(f"  - fill_by_liquidity: {fills.get('by_liquidity')}")
+            print(f"  - probe: {fills.get('probe')}")
+            print(f"  - main: {fills.get('main')}")
+        if isinstance(runtime_fill_windows, dict):
+            print(f"  - runtime_fill_windows: {runtime_fill_windows}")
 
     fail_reasons = report["fail_reasons"]
     warn_reasons = report["warn_reasons"]

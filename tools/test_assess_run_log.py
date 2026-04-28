@@ -555,6 +555,41 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["trend_candidate_probe_fill_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_runtime_count"], 1)
 
+    def test_execution_attribution_is_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=BTCUSDT, client_order_id=BTCUSDT-probe-1, direction=1, notional_usd=120.0, trend_threshold_ratio=0.91\n"
+            "2026-02-14 15:00:02 [INFO] BYBIT_SUBMIT: symbol=BTCUSDT, client_order_id=BTCUSDT-probe-1, side=Buy, order_type=Limit, liquidity_preference=maker, purpose=0\n"
+            "2026-02-14 15:00:03 [INFO] FILL_APPLIED: fill_id=probe-fill-1, client_order_id=BTCUSDT-probe-1, symbol=BTCUSDT, side=Buy, qty=0.001, price=100000.0, fee=-0.020000, liquidity=maker\n"
+            "2026-02-14 15:00:03 [INFO] TREND_CANDIDATE_PROBE_FILL: fill_id=probe-fill-1, client_order_id=BTCUSDT-probe-1, symbol=BTCUSDT, direction=1, qty=0.001, price=100000.0, fee=-0.020000, liquidity=maker, notional_abs_usd=100.0\n"
+            "2026-02-14 15:00:04 [INFO] BYBIT_SUBMIT: symbol=BTCUSDT, client_order_id=BTCUSDT-main-1, side=Sell, order_type=Market, liquidity_preference=taker, purpose=3\n"
+            "2026-02-14 15:00:05 [INFO] FILL_APPLIED: fill_id=main-fill-1, client_order_id=BTCUSDT-main-1, symbol=BTCUSDT, side=Sell, qty=0.001, price=100010.0, fee=-0.055000, liquidity=taker\n"
+            + self._runtime_line(
+                20,
+                0.0,
+                funnel_fills=2,
+                maker_fills=1,
+                taker_fills=1,
+                explicit_liquidity_fills=2,
+                explicit_liquidity_fill_ratio=1.0,
+            )
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        attribution = report["execution_attribution"]
+        self.assertEqual(metrics["execution_attribution_submit_count"], 2)
+        self.assertEqual(metrics["execution_attribution_fill_count"], 2)
+        self.assertEqual(metrics["execution_attribution_probe_fill_count"], 1)
+        self.assertEqual(metrics["execution_attribution_main_fill_count"], 1)
+        self.assertEqual(metrics["execution_attribution_maker_fill_count"], 1)
+        self.assertEqual(metrics["execution_attribution_taker_fill_count"], 1)
+        self.assertAlmostEqual(metrics["execution_attribution_fee_usd"], 0.075)
+        self.assertEqual(attribution["submit"]["by_purpose"]["0"], 1)
+        self.assertEqual(attribution["submit"]["by_purpose"]["3"], 1)
+        self.assertEqual(attribution["fills"]["by_liquidity"]["MAKER"], 1)
+        self.assertEqual(attribution["fills"]["by_liquidity"]["TAKER"], 1)
+        self.assertAlmostEqual(attribution["fills"]["probe"]["fee_usd"], 0.02)
+        self.assertAlmostEqual(attribution["fills"]["main"]["fee_usd"], 0.055)
+
     def test_transient_trend_regime_change_is_reported_separately(self):
         text = (
             "2026-02-14 15:00:01 [INFO] REGIME_CHANGE: symbol=BNBUSDT, regime=DOWNTREND, bucket=TREND, warmup=false, decision_interval_ms=5000, aggregated_events=5, instant_return=-0.001000, trend_strength=-0.000320, volatility=0.000200\n"

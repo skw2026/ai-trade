@@ -193,6 +193,7 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
         "execution_fail_reasons": payload.get("execution_fail_reasons", []),
         "metrics": payload.get("metrics", {}),
         "account_pnl": payload.get("account_pnl", {}),
+        "execution_attribution": payload.get("execution_attribution", {}),
     }
 
 
@@ -406,6 +407,107 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "summary": aggregate_summary,
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
+    }
+
+
+def unique_symbols(raw_value: Any) -> List[str]:
+    if raw_value is None:
+        return []
+    raw_items: List[Any]
+    if isinstance(raw_value, list):
+        raw_items = raw_value
+    elif isinstance(raw_value, str):
+        raw_items = raw_value.split(",")
+    else:
+        raw_items = [raw_value]
+    symbols: List[str] = []
+    for item in raw_items:
+        symbol = str(item).strip().upper()
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+    return symbols
+
+
+def assess_replay_live_symbol_alignment(
+    runtime_section: Dict[str, Any],
+    replay_section: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not runtime_section or not replay_section:
+        return {
+            "status": "pass",
+            "readiness_status": "NOT_EVALUATED",
+            "fail_reasons": [],
+            "warn_reasons": [],
+            "live_trend_symbols": [],
+            "live_trend_candidate_symbols": [],
+            "replay_symbols": [],
+            "uncovered_live_trend_symbols": [],
+            "uncovered_live_trend_candidate_symbols": [],
+        }
+
+    metrics = runtime_section.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+
+    live_trend_symbols = unique_symbols(
+        metrics.get("regime_change_trend_symbols", [])
+    )
+    live_candidate_symbols = unique_symbols(
+        metrics.get("regime_change_trend_candidate_symbols", [])
+    )
+
+    replay_symbols = unique_symbols(replay_section.get("symbols"))
+    replay_symbols.extend(
+        symbol
+        for symbol in unique_symbols(replay_section.get("symbol"))
+        if symbol not in replay_symbols
+    )
+
+    uncovered_trend = [
+        symbol for symbol in live_trend_symbols if symbol not in replay_symbols
+    ]
+    uncovered_candidates = [
+        symbol
+        for symbol in live_candidate_symbols
+        if symbol not in replay_symbols and symbol not in uncovered_trend
+    ]
+
+    warn_reasons: List[str] = []
+    if live_trend_symbols and replay_symbols and uncovered_trend:
+        warn_reasons.append(
+            "replay-validation 目标币对未覆盖 live TREND 符号: "
+            f"replay={','.join(replay_symbols)}, "
+            f"live_trend={','.join(live_trend_symbols)}；"
+            "replay 结果不能代表本轮 live TREND 执行，应切换或扩展 replay 目标"
+        )
+    elif (
+        not live_trend_symbols
+        and live_candidate_symbols
+        and replay_symbols
+        and uncovered_candidates
+    ):
+        warn_reasons.append(
+            "replay-validation 目标币对未覆盖 live TREND_CANDIDATE 符号: "
+            f"replay={','.join(replay_symbols)}, "
+            f"live_trend_candidate={','.join(live_candidate_symbols)}；"
+            "若下一轮仍缺 live TREND，应优先用这些候选币对做 replay 验证"
+        )
+
+    readiness_status = "PASS" if not warn_reasons else "PASS_WITH_ACTIONS"
+    if not replay_symbols or not (live_trend_symbols or live_candidate_symbols):
+        readiness_status = "NOT_EVALUATED"
+
+    return {
+        "status": "pass",
+        "readiness_status": readiness_status,
+        "fail_reasons": [],
+        "warn_reasons": warn_reasons,
+        "target_bucket": replay_section.get("target_bucket"),
+        "live_trend_symbols": live_trend_symbols,
+        "live_trend_candidate_symbols": live_candidate_symbols,
+        "replay_symbols": replay_symbols,
+        "uncovered_live_trend_symbols": uncovered_trend,
+        "uncovered_live_trend_candidate_symbols": uncovered_candidates,
     }
 
 
@@ -656,6 +758,13 @@ def main() -> int:
         else:
             inherit_status = "inherit report equals output path, skip"
 
+    replay_alignment = assess_replay_live_symbol_alignment(
+        sections.get("runtime", {}),
+        sections.get("replay_validation", {}),
+    )
+    if replay_alignment.get("readiness_status") != "NOT_EVALUATED":
+        sections["replay_symbol_alignment"] = replay_alignment
+
     for section_name, section in sections.items():
         if section.get("status") == "fail":
             for item in section.get("fail_reasons", []):
@@ -766,6 +875,19 @@ def main() -> int:
             )
         ).upper()
 
+    replay_symbol_alignment_section = sections.get("replay_symbol_alignment", {})
+    replay_symbol_alignment_status = "NOT_EVALUATED"
+    if (
+        isinstance(replay_symbol_alignment_section, dict)
+        and replay_symbol_alignment_section
+    ):
+        replay_symbol_alignment_status = str(
+            replay_symbol_alignment_section.get(
+                "readiness_status",
+                replay_symbol_alignment_section.get("status", "unknown"),
+            )
+        ).upper()
+
     overall_status = "PASS"
     if fail_reasons:
         overall_status = "FAIL"
@@ -783,6 +905,7 @@ def main() -> int:
         "promotion_readiness_status": promotion_readiness_status,
         "trend_readiness_status": trend_readiness_status,
         "replay_readiness_status": replay_readiness_status,
+        "replay_symbol_alignment_status": replay_symbol_alignment_status,
         "account_outcome": account_outcome,
         "sections": sections,
         "inherit": {
