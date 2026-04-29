@@ -47,6 +47,10 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                     "fill_overfill_drop_count": 1,
                                     "fill_duplicate_drop_count": 2,
                                     "bybit_exec_dedup_drop_count": 3,
+                                    "trend_candidate_probe_signal_count": 5,
+                                    "trend_candidate_probe_skip_count": 7,
+                                    "trend_candidate_probe_skip_trend_ratio_count": 4,
+                                    "trend_candidate_probe_skip_cooldown_count": 2,
                                 },
                             },
                             "replay_validation": {
@@ -115,6 +119,16 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             self.assertEqual(runtime_metrics["fill_overfill_drop_count"], 1)
             self.assertEqual(runtime_metrics["fill_duplicate_drop_count"], 2)
             self.assertEqual(runtime_metrics["bybit_exec_dedup_drop_count"], 3)
+            self.assertEqual(runtime_metrics["trend_candidate_probe_signal_count"], 5)
+            self.assertEqual(runtime_metrics["trend_candidate_probe_skip_count"], 7)
+            self.assertEqual(
+                runtime_metrics["trend_candidate_probe_skip_trend_ratio_count"],
+                4,
+            )
+            self.assertEqual(
+                runtime_metrics["trend_candidate_probe_skip_cooldown_count"],
+                2,
+            )
 
     def test_account_summary_clips_samples_to_summary_window(self):
         with tempfile.TemporaryDirectory() as td:

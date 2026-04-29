@@ -343,6 +343,16 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "entry_regime_adjust_bps_avg": None,
             "entry_volatility_adjust_bps_avg": None,
             "entry_liquidity_adjust_bps_avg": None,
+            "trend_candidate_probe_signal_count": 0,
+            "trend_candidate_probe_enqueued_count": 0,
+            "trend_candidate_probe_fill_count": 0,
+            "trend_candidate_probe_skip_count": 0,
+            "trend_candidate_probe_skip_trend_ratio_count": 0,
+            "trend_candidate_probe_skip_cooldown_count": 0,
+            "trend_candidate_probe_skip_exposure_count": 0,
+            "trend_candidate_probe_skip_pending_orders_count": 0,
+            "trend_candidate_probe_skip_existing_intent_count": 0,
+            "trend_candidate_probe_skip_window_limit_count": 0,
             "reconcile_anomaly_reduce_only_true_count": 0,
             "reconcile_anomaly_reduce_only_true_ratio": None,
             "strategy_mix_runtime_count": 0,
@@ -472,6 +482,39 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     entry_liquidity_adjust_bps_avg = to_float(
         latest_metrics.get("entry_liquidity_adjust_bps_avg")
     )
+    trend_candidate_probe_signal_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_signal_count")) or 0
+    )
+    trend_candidate_probe_enqueued_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_enqueued_count")) or 0
+    )
+    trend_candidate_probe_fill_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_fill_count")) or 0
+    )
+    trend_candidate_probe_skip_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_skip_count")) or 0
+    )
+    trend_candidate_probe_skip_trend_ratio_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_skip_trend_ratio_count")) or 0
+    )
+    trend_candidate_probe_skip_cooldown_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_skip_cooldown_count")) or 0
+    )
+    trend_candidate_probe_skip_exposure_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_skip_exposure_count")) or 0
+    )
+    trend_candidate_probe_skip_pending_orders_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_skip_pending_orders_count"))
+        or 0
+    )
+    trend_candidate_probe_skip_existing_intent_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_skip_existing_intent_count"))
+        or 0
+    )
+    trend_candidate_probe_skip_window_limit_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_skip_window_limit_count"))
+        or 0
+    )
     reconcile_anomaly_reduce_only_true_count = (
         to_int(latest_metrics.get("reconcile_anomaly_reduce_only_true_count")) or 0
     )
@@ -577,6 +620,28 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "entry_regime_adjust_bps_avg": entry_regime_adjust_bps_avg,
         "entry_volatility_adjust_bps_avg": entry_volatility_adjust_bps_avg,
         "entry_liquidity_adjust_bps_avg": entry_liquidity_adjust_bps_avg,
+        "trend_candidate_probe_signal_count": trend_candidate_probe_signal_count,
+        "trend_candidate_probe_enqueued_count": trend_candidate_probe_enqueued_count,
+        "trend_candidate_probe_fill_count": trend_candidate_probe_fill_count,
+        "trend_candidate_probe_skip_count": trend_candidate_probe_skip_count,
+        "trend_candidate_probe_skip_trend_ratio_count": (
+            trend_candidate_probe_skip_trend_ratio_count
+        ),
+        "trend_candidate_probe_skip_cooldown_count": (
+            trend_candidate_probe_skip_cooldown_count
+        ),
+        "trend_candidate_probe_skip_exposure_count": (
+            trend_candidate_probe_skip_exposure_count
+        ),
+        "trend_candidate_probe_skip_pending_orders_count": (
+            trend_candidate_probe_skip_pending_orders_count
+        ),
+        "trend_candidate_probe_skip_existing_intent_count": (
+            trend_candidate_probe_skip_existing_intent_count
+        ),
+        "trend_candidate_probe_skip_window_limit_count": (
+            trend_candidate_probe_skip_window_limit_count
+        ),
         "reconcile_anomaly_reduce_only_true_count": reconcile_anomaly_reduce_only_true_count,
         "reconcile_anomaly_reduce_only_true_ratio": reconcile_anomaly_reduce_only_true_ratio,
         "strategy_mix_runtime_count": strategy_mix_runtime_count,

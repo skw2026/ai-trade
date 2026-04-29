@@ -344,6 +344,7 @@ struct AppConfig {
   double execution_candidate_probe_notional_usd{0.0};
   double execution_candidate_probe_max_edge_gap_bps{0.0};
   int execution_candidate_probe_cooldown_ticks{0};
+  int execution_candidate_probe_max_per_window{0};
 
   std::string exchange{"mock"};
   std::string data_path{"data"};

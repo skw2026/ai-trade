@@ -910,6 +910,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "candidate_probe_max_per_window") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_max_per_window 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_max_per_window = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         key == "quality_guard_enabled") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -4417,6 +4432,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_candidate_probe_cooldown_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "execution.candidate_probe_cooldown_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_candidate_probe_max_per_window < 0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.candidate_probe_max_per_window 不能为负数";
     }
     return false;
   }

@@ -76,6 +76,7 @@ execution:
   candidate_probe_notional_usd: 0.0
   candidate_probe_max_edge_gap_bps: 0.0
   candidate_probe_cooldown_ticks: 0
+  candidate_probe_max_per_window: 0
   quality_guard_enabled: false
   quality_guard_min_fills: 12
   quality_guard_bad_streak_to_trigger: 2

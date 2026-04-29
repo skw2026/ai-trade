@@ -1671,6 +1671,46 @@ def assess(
         "trend_candidate_probe_fill_count": count(
             r"TREND_CANDIDATE_PROBE_FILL:", text
         ),
+        "trend_candidate_probe_skip_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:", text
+        ),
+        "trend_candidate_probe_skip_trade_not_ok_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=TRADE_NOT_OK\b", text
+        ),
+        "trend_candidate_probe_skip_existing_intent_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=EXISTING_INTENT\b", text
+        ),
+        "trend_candidate_probe_skip_pending_orders_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=PENDING_ORDERS\b", text
+        ),
+        "trend_candidate_probe_skip_exposure_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=EXPOSURE\b", text
+        ),
+        "trend_candidate_probe_skip_trend_ratio_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=TREND_RATIO_LOW\b", text
+        ),
+        "trend_candidate_probe_skip_cooldown_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=COOLDOWN\b", text
+        ),
+        "trend_candidate_probe_skip_window_limit_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=WINDOW_LIMIT\b", text
+        ),
+        "trend_candidate_probe_skip_direction_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=DIRECTION_ZERO\b", text
+        ),
+        "trend_candidate_probe_skip_invalid_price_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=INVALID_PRICE\b", text
+        ),
+        "trend_candidate_probe_skip_notional_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=NOTIONAL_ZERO\b", text
+        ),
+        "trend_candidate_probe_skip_budget_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=BUDGET_ZERO\b", text
+        ),
+        "trend_candidate_probe_skip_build_intent_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=BUILD_INTENT_FAILED\b",
+            text,
+        ),
         "trend_candidate_probe_runtime_count": count(
             r"RUNTIME_STATUS:.*funnel_window=\{[^}]*candidate_probe_signals=(?:[1-9][0-9]*)",
             text,
@@ -2543,10 +2583,29 @@ def assess(
                         f"{metrics['trend_threshold_ratio_max']:.4f}"
                     )
                     if metrics["trend_candidate_probe_signal_count"] <= 0:
+                        skip_count = metrics.get("trend_candidate_probe_skip_count", 0)
+                        skip_detail = ""
+                        if skip_count:
+                            skip_detail = (
+                                ", skip_count="
+                                f"{skip_count}, ratio_low="
+                                f"{metrics.get('trend_candidate_probe_skip_trend_ratio_count', 0)}, "
+                                "cooldown="
+                                f"{metrics.get('trend_candidate_probe_skip_cooldown_count', 0)}, "
+                                "exposure="
+                                f"{metrics.get('trend_candidate_probe_skip_exposure_count', 0)}, "
+                                "pending_orders="
+                                f"{metrics.get('trend_candidate_probe_skip_pending_orders_count', 0)}, "
+                                "existing_intent="
+                                f"{metrics.get('trend_candidate_probe_skip_existing_intent_count', 0)}, "
+                                "window_limit="
+                                f"{metrics.get('trend_candidate_probe_skip_window_limit_count', 0)}"
+                            )
                         warn_reasons.append(
                             "TREND_CANDIDATE 未产生探针信号：建议检查 "
                             "execution.candidate_probe_* 配置、候选强度阈值、"
                             "空仓/在途订单约束与 Universe 活跃池"
+                            f"{skip_detail}"
                         )
                     elif metrics["trend_candidate_probe_enqueued_count"] <= 0:
                         warn_reasons.append(

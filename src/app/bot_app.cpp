@@ -1221,43 +1221,96 @@ bool BotApplication::TryApplyTrendCandidateProbe(
   if (decision == nullptr || !config_.execution_candidate_probe_enabled) {
     return false;
   }
-  if (!trade_ok || decision->intent.has_value() || decision->regime.warmup ||
-      !decision->regime.trend_candidate || has_pending_symbol_net_orders) {
+  if (!decision->regime.trend_candidate) {
     return false;
+  }
+
+  const auto skip_probe = [&](const std::string& reason,
+                              std::uint64_t* counter,
+                              const std::string& extra = "") {
+    if (counter != nullptr) {
+      ++(*counter);
+    }
+    LogInfo("TREND_CANDIDATE_PROBE_SKIPPED: symbol=" + event.symbol +
+            ", reason=" + reason +
+            ", trend_threshold_ratio=" +
+            std::to_string(decision->regime.trend_threshold_ratio) +
+            ", current_notional_usd=" +
+            std::to_string(effective_symbol_notional_usd) +
+            ", market_tick=" + std::to_string(market_tick_count_) + extra);
+    return false;
+  };
+
+  if (!trade_ok) {
+    return skip_probe("TRADE_NOT_OK",
+                      &funnel_window_.candidate_probe_skipped_trade_not_ok);
+  }
+  if (decision->intent.has_value()) {
+    return skip_probe("EXISTING_INTENT",
+                      &funnel_window_.candidate_probe_skipped_existing_intent);
+  }
+  if (decision->regime.warmup) {
+    return false;
+  }
+  if (has_pending_symbol_net_orders) {
+    return skip_probe("PENDING_ORDERS",
+                      &funnel_window_.candidate_probe_skipped_pending_orders);
   }
   if (HasExposure(effective_symbol_notional_usd) ||
       HasExposure(decision->base_signal.suggested_notional_usd) ||
       HasExposure(decision->base_signal.trend_notional_usd) ||
       HasExposure(decision->base_signal.defensive_notional_usd) ||
       HasExposure(decision->risk_adjusted.adjusted_notional_usd)) {
-    return false;
+    return skip_probe("EXPOSURE",
+                      &funnel_window_.candidate_probe_skipped_exposure);
   }
   if (decision->regime.trend_threshold_ratio + 1e-9 <
       config_.execution_candidate_probe_min_trend_ratio) {
-    return false;
+    return skip_probe(
+        "TREND_RATIO_LOW",
+        &funnel_window_.candidate_probe_skipped_trend_ratio,
+        ", min_trend_ratio=" +
+            std::to_string(config_.execution_candidate_probe_min_trend_ratio));
+  }
+
+  const int max_per_window =
+      std::max(0, config_.execution_candidate_probe_max_per_window);
+  if (max_per_window > 0 &&
+      funnel_window_.candidate_probe_signals >=
+          static_cast<std::uint64_t>(max_per_window)) {
+    return skip_probe("WINDOW_LIMIT",
+                      &funnel_window_.candidate_probe_skipped_window_limit,
+                      ", max_per_window=" + std::to_string(max_per_window));
   }
 
   const auto cooldown_it =
       candidate_probe_cooldown_until_tick_by_symbol_.find(event.symbol);
   if (cooldown_it != candidate_probe_cooldown_until_tick_by_symbol_.end()) {
     if (market_tick_count_ < cooldown_it->second) {
-      return false;
+      return skip_probe(
+          "COOLDOWN",
+          &funnel_window_.candidate_probe_skipped_cooldown,
+          ", cooldown_remaining_ticks=" +
+              std::to_string(cooldown_it->second - market_tick_count_));
     }
     candidate_probe_cooldown_until_tick_by_symbol_.erase(cooldown_it);
   }
 
   const int direction = TrendCandidateProbeDirection(decision->regime);
   if (direction == 0) {
-    return false;
+    return skip_probe("DIRECTION_ZERO",
+                      &funnel_window_.candidate_probe_skipped_direction);
   }
   const double price = event.price > 0.0 ? event.price : event.mark_price;
   if (!std::isfinite(price) || price <= 0.0) {
-    return false;
+    return skip_probe("INVALID_PRICE",
+                      &funnel_window_.candidate_probe_skipped_invalid_price);
   }
   const double configured_notional =
       std::max(0.0, config_.execution_candidate_probe_notional_usd);
   if (configured_notional <= kNotionalEpsilon) {
-    return false;
+    return skip_probe("NOTIONAL_ZERO",
+                      &funnel_window_.candidate_probe_skipped_notional);
   }
 
   const double settled_gross_notional = system_.account().gross_notional_usd();
@@ -1276,7 +1329,9 @@ bool BotApplication::TryApplyTrendCandidateProbe(
                 std::max(0.0, config_.execution_max_order_notional),
                 symbol_budget});
   if (capped_notional <= kNotionalEpsilon) {
-    return false;
+    return skip_probe("BUDGET_ZERO",
+                      &funnel_window_.candidate_probe_skipped_budget,
+                      ", symbol_budget=" + std::to_string(symbol_budget));
   }
 
   Signal probe_signal;
@@ -1311,7 +1366,8 @@ bool BotApplication::TryApplyTrendCandidateProbe(
                              price);
   if (!decision->intent.has_value() || !IsOpeningIntent(*decision->intent)) {
     decision->intent.reset();
-    return false;
+    return skip_probe("BUILD_INTENT_FAILED",
+                      &funnel_window_.candidate_probe_skipped_build_intent);
   }
 
   candidate_probe_intent_ids_.insert(decision->intent->client_order_id);
@@ -1611,6 +1667,30 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->candidate_probe_filtered_fee += delta.candidate_probe_filtered_fee;
   total->candidate_probe_enqueued += delta.candidate_probe_enqueued;
   total->candidate_probe_fills += delta.candidate_probe_fills;
+  total->candidate_probe_skipped_trade_not_ok +=
+      delta.candidate_probe_skipped_trade_not_ok;
+  total->candidate_probe_skipped_existing_intent +=
+      delta.candidate_probe_skipped_existing_intent;
+  total->candidate_probe_skipped_pending_orders +=
+      delta.candidate_probe_skipped_pending_orders;
+  total->candidate_probe_skipped_exposure +=
+      delta.candidate_probe_skipped_exposure;
+  total->candidate_probe_skipped_trend_ratio +=
+      delta.candidate_probe_skipped_trend_ratio;
+  total->candidate_probe_skipped_cooldown +=
+      delta.candidate_probe_skipped_cooldown;
+  total->candidate_probe_skipped_window_limit +=
+      delta.candidate_probe_skipped_window_limit;
+  total->candidate_probe_skipped_direction +=
+      delta.candidate_probe_skipped_direction;
+  total->candidate_probe_skipped_invalid_price +=
+      delta.candidate_probe_skipped_invalid_price;
+  total->candidate_probe_skipped_notional +=
+      delta.candidate_probe_skipped_notional;
+  total->candidate_probe_skipped_budget +=
+      delta.candidate_probe_skipped_budget;
+  total->candidate_probe_skipped_build_intent +=
+      delta.candidate_probe_skipped_build_intent;
   total->async_submit_ok += delta.async_submit_ok;
   total->async_submit_failed += delta.async_submit_failed;
   total->fills_applied += delta.fills_applied;
@@ -4050,6 +4130,30 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.candidate_probe_enqueued) +
           ", candidate_probe_fills=" +
           std::to_string(funnel_window.candidate_probe_fills) +
+          ", candidate_probe_skipped_trade_not_ok=" +
+          std::to_string(funnel_window.candidate_probe_skipped_trade_not_ok) +
+          ", candidate_probe_skipped_existing_intent=" +
+          std::to_string(funnel_window.candidate_probe_skipped_existing_intent) +
+          ", candidate_probe_skipped_pending_orders=" +
+          std::to_string(funnel_window.candidate_probe_skipped_pending_orders) +
+          ", candidate_probe_skipped_exposure=" +
+          std::to_string(funnel_window.candidate_probe_skipped_exposure) +
+          ", candidate_probe_skipped_trend_ratio=" +
+          std::to_string(funnel_window.candidate_probe_skipped_trend_ratio) +
+          ", candidate_probe_skipped_cooldown=" +
+          std::to_string(funnel_window.candidate_probe_skipped_cooldown) +
+          ", candidate_probe_skipped_window_limit=" +
+          std::to_string(funnel_window.candidate_probe_skipped_window_limit) +
+          ", candidate_probe_skipped_direction=" +
+          std::to_string(funnel_window.candidate_probe_skipped_direction) +
+          ", candidate_probe_skipped_invalid_price=" +
+          std::to_string(funnel_window.candidate_probe_skipped_invalid_price) +
+          ", candidate_probe_skipped_notional=" +
+          std::to_string(funnel_window.candidate_probe_skipped_notional) +
+          ", candidate_probe_skipped_budget=" +
+          std::to_string(funnel_window.candidate_probe_skipped_budget) +
+          ", candidate_probe_skipped_build_intent=" +
+          std::to_string(funnel_window.candidate_probe_skipped_build_intent) +
           ", candidate_probe_notional_abs_usd=" +
           std::to_string(funnel_window.candidate_probe_notional_abs_usd_sum) +
           ", async_ok=" + std::to_string(funnel_window.async_submit_ok) +

@@ -251,6 +251,18 @@ class BotApplication {
     std::uint64_t candidate_probe_filtered_fee{0};
     std::uint64_t candidate_probe_enqueued{0};
     std::uint64_t candidate_probe_fills{0};
+    std::uint64_t candidate_probe_skipped_trade_not_ok{0};
+    std::uint64_t candidate_probe_skipped_existing_intent{0};
+    std::uint64_t candidate_probe_skipped_pending_orders{0};
+    std::uint64_t candidate_probe_skipped_exposure{0};
+    std::uint64_t candidate_probe_skipped_trend_ratio{0};
+    std::uint64_t candidate_probe_skipped_cooldown{0};
+    std::uint64_t candidate_probe_skipped_window_limit{0};
+    std::uint64_t candidate_probe_skipped_direction{0};
+    std::uint64_t candidate_probe_skipped_invalid_price{0};
+    std::uint64_t candidate_probe_skipped_notional{0};
+    std::uint64_t candidate_probe_skipped_budget{0};
+    std::uint64_t candidate_probe_skipped_build_intent{0};
     std::uint64_t async_submit_ok{0};
     std::uint64_t async_submit_failed{0};
     std::uint64_t fills_applied{0};
