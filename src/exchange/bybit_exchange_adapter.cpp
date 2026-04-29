@@ -1973,10 +1973,15 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   const bool allow_maker =
       intent.liquidity_preference != LiquidityPreference::kTaker;
   const bool maker_entry_order =
+      intent.purpose == OrderPurpose::kEntry && allow_maker;
+  const bool maker_reduce_order =
+      intent.purpose == OrderPurpose::kReduce &&
+      intent.liquidity_preference == LiquidityPreference::kMaker;
+  const bool maker_passive_order =
       !conditional_protection_order && allow_maker &&
-      options_.maker_entry_enabled && !intent.reduce_only &&
-      intent.purpose == OrderPurpose::kEntry;
-  if (maker_entry_order) {
+      options_.maker_entry_enabled &&
+      (maker_entry_order || maker_reduce_order);
+  if (maker_passive_order) {
     double reference_price = intent.price;
     if (reference_price <= 0.0) {
       const auto it = last_price_by_symbol_.find(normalized_symbol);
@@ -2074,7 +2079,7 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
         (error.find("post-only") != std::string::npos) ||
         (error.find("post_only") != std::string::npos) ||
         (error.find("would be filled immediately") != std::string::npos);
-    if (options_.maker_fallback_to_market && maker_entry_order &&
+    if (options_.maker_fallback_to_market && maker_passive_order &&
         order_type == "Limit" && options_.maker_post_only && post_only_rejected) {
       std::string fallback_response;
       std::string fallback_error;

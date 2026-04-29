@@ -343,6 +343,18 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "entry_regime_adjust_bps_avg": None,
             "entry_volatility_adjust_bps_avg": None,
             "entry_liquidity_adjust_bps_avg": None,
+            "execution_attribution_probe_maker_fill_count": 0,
+            "execution_attribution_probe_taker_fill_count": 0,
+            "execution_attribution_probe_unknown_liquidity_fill_count": 0,
+            "execution_attribution_main_maker_fill_count": 0,
+            "execution_attribution_main_taker_fill_count": 0,
+            "execution_attribution_main_unknown_liquidity_fill_count": 0,
+            "execution_attribution_probe_maker_fee_usd": None,
+            "execution_attribution_probe_taker_fee_usd": None,
+            "execution_attribution_probe_unknown_liquidity_fee_usd": None,
+            "execution_attribution_main_maker_fee_usd": None,
+            "execution_attribution_main_taker_fee_usd": None,
+            "execution_attribution_main_unknown_liquidity_fee_usd": None,
             "trend_candidate_probe_signal_count": 0,
             "trend_candidate_probe_enqueued_count": 0,
             "trend_candidate_probe_fill_count": 0,
@@ -482,6 +494,52 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     entry_liquidity_adjust_bps_avg = to_float(
         latest_metrics.get("entry_liquidity_adjust_bps_avg")
     )
+    execution_attribution_probe_maker_fill_count = (
+        to_int(latest_metrics.get("execution_attribution_probe_maker_fill_count")) or 0
+    )
+    execution_attribution_probe_taker_fill_count = (
+        to_int(latest_metrics.get("execution_attribution_probe_taker_fill_count")) or 0
+    )
+    execution_attribution_probe_unknown_liquidity_fill_count = (
+        to_int(
+            latest_metrics.get(
+                "execution_attribution_probe_unknown_liquidity_fill_count"
+            )
+        )
+        or 0
+    )
+    execution_attribution_main_maker_fill_count = (
+        to_int(latest_metrics.get("execution_attribution_main_maker_fill_count")) or 0
+    )
+    execution_attribution_main_taker_fill_count = (
+        to_int(latest_metrics.get("execution_attribution_main_taker_fill_count")) or 0
+    )
+    execution_attribution_main_unknown_liquidity_fill_count = (
+        to_int(
+            latest_metrics.get(
+                "execution_attribution_main_unknown_liquidity_fill_count"
+            )
+        )
+        or 0
+    )
+    execution_attribution_probe_maker_fee_usd = to_float(
+        latest_metrics.get("execution_attribution_probe_maker_fee_usd")
+    )
+    execution_attribution_probe_taker_fee_usd = to_float(
+        latest_metrics.get("execution_attribution_probe_taker_fee_usd")
+    )
+    execution_attribution_probe_unknown_liquidity_fee_usd = to_float(
+        latest_metrics.get("execution_attribution_probe_unknown_liquidity_fee_usd")
+    )
+    execution_attribution_main_maker_fee_usd = to_float(
+        latest_metrics.get("execution_attribution_main_maker_fee_usd")
+    )
+    execution_attribution_main_taker_fee_usd = to_float(
+        latest_metrics.get("execution_attribution_main_taker_fee_usd")
+    )
+    execution_attribution_main_unknown_liquidity_fee_usd = to_float(
+        latest_metrics.get("execution_attribution_main_unknown_liquidity_fee_usd")
+    )
     trend_candidate_probe_signal_count = (
         to_int(latest_metrics.get("trend_candidate_probe_signal_count")) or 0
     )
@@ -620,6 +678,18 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "entry_regime_adjust_bps_avg": entry_regime_adjust_bps_avg,
         "entry_volatility_adjust_bps_avg": entry_volatility_adjust_bps_avg,
         "entry_liquidity_adjust_bps_avg": entry_liquidity_adjust_bps_avg,
+        "execution_attribution_probe_maker_fill_count": execution_attribution_probe_maker_fill_count,
+        "execution_attribution_probe_taker_fill_count": execution_attribution_probe_taker_fill_count,
+        "execution_attribution_probe_unknown_liquidity_fill_count": execution_attribution_probe_unknown_liquidity_fill_count,
+        "execution_attribution_main_maker_fill_count": execution_attribution_main_maker_fill_count,
+        "execution_attribution_main_taker_fill_count": execution_attribution_main_taker_fill_count,
+        "execution_attribution_main_unknown_liquidity_fill_count": execution_attribution_main_unknown_liquidity_fill_count,
+        "execution_attribution_probe_maker_fee_usd": execution_attribution_probe_maker_fee_usd,
+        "execution_attribution_probe_taker_fee_usd": execution_attribution_probe_taker_fee_usd,
+        "execution_attribution_probe_unknown_liquidity_fee_usd": execution_attribution_probe_unknown_liquidity_fee_usd,
+        "execution_attribution_main_maker_fee_usd": execution_attribution_main_maker_fee_usd,
+        "execution_attribution_main_taker_fee_usd": execution_attribution_main_taker_fee_usd,
+        "execution_attribution_main_unknown_liquidity_fee_usd": execution_attribution_main_unknown_liquidity_fee_usd,
         "trend_candidate_probe_signal_count": trend_candidate_probe_signal_count,
         "trend_candidate_probe_enqueued_count": trend_candidate_probe_enqueued_count,
         "trend_candidate_probe_fill_count": trend_candidate_probe_fill_count,

@@ -603,8 +603,9 @@ int main() {
     }
     if (!intent->reduce_only ||
         intent->purpose != ai_trade::OrderPurpose::kReduce ||
+        intent->liquidity_preference != ai_trade::LiquidityPreference::kTaker ||
         intent->client_order_id.empty()) {
-      std::cerr << "预期订单包含 reduce_only/purpose/client_order_id\n";
+      std::cerr << "预期 forced reduce-only 订单包含 taker reduce 语义\n";
       return 1;
     }
   }
@@ -628,9 +629,10 @@ int main() {
     }
     if (!flat_intent->reduce_only ||
         flat_intent->purpose != ai_trade::OrderPurpose::kReduce ||
+        flat_intent->liquidity_preference != ai_trade::LiquidityPreference::kMaker ||
         flat_intent->direction != 1 ||
         ai_trade::ShouldFilterInactiveSymbolIntent(*flat_intent)) {
-      std::cerr << "policy-flat 残余仓位平仓意图应为 reduce-only 且不被 inactive 过滤\n";
+      std::cerr << "policy-flat 残余仓位平仓意图应为 maker reduce-only 且不被 inactive 过滤\n";
       return 1;
     }
   }
@@ -654,9 +656,10 @@ int main() {
     }
     if (!reverse_intent->reduce_only ||
         reverse_intent->purpose != ai_trade::OrderPurpose::kReduce ||
+        reverse_intent->liquidity_preference != ai_trade::LiquidityPreference::kMaker ||
         reverse_intent->direction != 1 ||
         !NearlyEqual(reverse_intent->qty, 4.0)) {
-      std::cerr << "反向切仓第一步语义不符合预期\n";
+      std::cerr << "反向切仓第一步应为 maker-first 平旧仓\n";
       return 1;
     }
 
@@ -696,10 +699,10 @@ int main() {
     }
     if (flip_intent->reduce_only ||
         flip_intent->purpose != ai_trade::OrderPurpose::kEntry ||
-        flip_intent->liquidity_preference != ai_trade::LiquidityPreference::kTaker ||
+        flip_intent->liquidity_preference != ai_trade::LiquidityPreference::kMaker ||
         flip_intent->direction != 1 ||
         !NearlyEqual(flip_intent->qty, 5.0)) {
-      std::cerr << "direct_flip 反手意图语义不符合预期\n";
+      std::cerr << "direct_flip 反手意图应为 maker-first entry\n";
       return 1;
     }
   }
@@ -6947,7 +6950,7 @@ int main() {
         "/v5/market/instruments-info",
         ai_trade::BybitHttpResponse{
             .status_code = 200,
-            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","lotSizeFilter":{"minOrderQty":"0.001","maxMktOrderQty":"100","qtyStep":"0.001","minNotionalValue":"5"}}]}})",
+            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","lotSizeFilter":{"minOrderQty":"0.001","maxMktOrderQty":"100","qtyStep":"0.001","minNotionalValue":"5"},"priceFilter":{"tickSize":"0.1"}}]}})",
             .error = "",
         });
     transport->AddRoute(
@@ -6963,6 +6966,10 @@ int main() {
     options.mode = "paper";
     options.testnet = true;
     options.symbols = {"BTCUSDT"};
+    options.maker_entry_enabled = true;
+    options.maker_fallback_to_market = false;
+    options.maker_price_offset_bps = 1.0;
+    options.maker_post_only = true;
     options.public_ws_enabled = false;
     options.private_ws_enabled = false;
     options.http_transport_factory = [transport]() {
@@ -6987,6 +6994,29 @@ int main() {
     }
     if (transport->last_body().find("\"qty\":\"0.123\"") == std::string::npos) {
       std::cerr << "Bybit 数量量化结果不符合预期，body=" << transport->last_body() << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent reduce_maker_intent;
+    reduce_maker_intent.client_order_id = "reduce-maker-1";
+    reduce_maker_intent.symbol = "BTCUSDT";
+    reduce_maker_intent.direction = -1;
+    reduce_maker_intent.qty = 0.1;
+    reduce_maker_intent.price = 100.0;
+    reduce_maker_intent.reduce_only = true;
+    reduce_maker_intent.purpose = ai_trade::OrderPurpose::kReduce;
+    reduce_maker_intent.liquidity_preference =
+        ai_trade::LiquidityPreference::kMaker;
+    if (!adapter.SubmitOrder(reduce_maker_intent)) {
+      std::cerr << "Bybit maker reduce-only 平仓单应提交成功\n";
+      return 1;
+    }
+    const std::string& reduce_body = transport->last_body();
+    if (reduce_body.find("\"orderType\":\"Limit\"") == std::string::npos ||
+        reduce_body.find("\"timeInForce\":\"PostOnly\"") == std::string::npos ||
+        reduce_body.find("\"reduceOnly\":true") == std::string::npos) {
+      std::cerr << "Bybit maker reduce-only 应使用 PostOnly Limit，body="
+                << reduce_body << "\n";
       return 1;
     }
 

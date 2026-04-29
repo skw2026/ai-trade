@@ -140,7 +140,8 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
   const bool flatten_to_zero =
       !target.reduce_only && std::fabs(effective_target) < kEpsilon &&
       std::fabs(current_notional_usd) >= kEpsilon;
-  const bool risk_converging_only = target.reduce_only || flatten_to_zero;
+  const bool forced_reduce_only = target.reduce_only;
+  const bool risk_converging_only = forced_reduce_only || flatten_to_zero;
   // ReduceOnly/归零收敛语义：只能向 0 方向减仓，禁止加仓和反手开仓。
   if (risk_converging_only) {
     if (std::fabs(current_notional_usd) < kEpsilon) {
@@ -184,8 +185,8 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
       flip_intent.symbol = target.symbol;
       flip_intent.reduce_only = false;
       flip_intent.purpose = OrderPurpose::kEntry;
-      // 反手窗口优先成交，避免先平后开导致的延迟累积。
-      flip_intent.liquidity_preference = LiquidityPreference::kTaker;
+      // direct flip 属于策略性切仓，不是风控强制减仓；默认仍走 maker-first。
+      flip_intent.liquidity_preference = LiquidityPreference::kMaker;
       flip_intent.direction = (total_delta > 0.0) ? 1 : -1;
       const double flip_notional =
           std::min(std::fabs(total_delta), config_.max_order_notional_usd);
@@ -203,7 +204,9 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
     close_intent.symbol = target.symbol;
     close_intent.reduce_only = true;
     close_intent.purpose = OrderPurpose::kReduce;
-    close_intent.liquidity_preference = LiquidityPreference::kTaker;
+    // 反手第一步是策略性平旧仓，优先 maker；风控 forced reduce-only
+    // 会走上方 risk_converging_only 分支并保留 taker。
+    close_intent.liquidity_preference = LiquidityPreference::kMaker;
     close_intent.direction = (current_notional_usd > 0.0) ? -1 : 1;
     close_intent.qty = close_notional / price;
     close_intent.price = price;
@@ -220,8 +223,8 @@ std::optional<OrderIntent> ExecutionEngine::BuildIntent(
   intent.reduce_only = risk_converging_only;
   intent.purpose = risk_converging_only ? OrderPurpose::kReduce : OrderPurpose::kEntry;
   intent.liquidity_preference =
-      risk_converging_only ? LiquidityPreference::kTaker
-                           : LiquidityPreference::kMaker;
+      forced_reduce_only ? LiquidityPreference::kTaker
+                         : LiquidityPreference::kMaker;
   intent.direction = (total_delta > 0.0) ? 1 : -1;
   const double order_notional =
       std::min(std::fabs(total_delta), config_.max_order_notional_usd);

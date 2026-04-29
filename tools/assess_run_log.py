@@ -386,6 +386,13 @@ def bump_counter(counter: Dict[str, int], key: Optional[str], amount: int = 1) -
     counter[normalized] = int(counter.get(normalized, 0)) + int(amount)
 
 
+def bump_float(counter: Dict[str, float], key: Optional[str], amount: float) -> None:
+    normalized = str(key or "UNKNOWN").strip().upper()
+    if not normalized:
+        normalized = "UNKNOWN"
+    counter[normalized] = rounded(float(counter.get(normalized, 0.0)) + float(amount))
+
+
 def rounded(value: float) -> float:
     return round(float(value), 8)
 
@@ -397,6 +404,8 @@ def new_fill_bucket() -> Dict[str, object]:
         "notional_abs_usd": 0.0,
         "by_symbol": {},
         "by_liquidity": {},
+        "fee_by_liquidity": {},
+        "notional_abs_by_liquidity": {},
     }
 
 
@@ -414,10 +423,16 @@ def record_fill(
     )
     by_symbol = bucket.setdefault("by_symbol", {})
     by_liquidity = bucket.setdefault("by_liquidity", {})
+    fee_by_liquidity = bucket.setdefault("fee_by_liquidity", {})
+    notional_by_liquidity = bucket.setdefault("notional_abs_by_liquidity", {})
     if isinstance(by_symbol, dict):
         bump_counter(by_symbol, symbol)
     if isinstance(by_liquidity, dict):
         bump_counter(by_liquidity, liquidity)
+    if isinstance(fee_by_liquidity, dict):
+        bump_float(fee_by_liquidity, liquidity, abs(fee_usd))
+    if isinstance(notional_by_liquidity, dict):
+        bump_float(notional_by_liquidity, liquidity, abs(notional_abs_usd))
 
 
 def extract_execution_attribution(text: str) -> Dict[str, object]:
@@ -1958,6 +1973,18 @@ def assess(
             probe_fills = {}
         if not isinstance(main_fills, dict):
             main_fills = {}
+        probe_by_liquidity = probe_fills.get("by_liquidity", {})
+        main_by_liquidity = main_fills.get("by_liquidity", {})
+        probe_fee_by_liquidity = probe_fills.get("fee_by_liquidity", {})
+        main_fee_by_liquidity = main_fills.get("fee_by_liquidity", {})
+        if not isinstance(probe_by_liquidity, dict):
+            probe_by_liquidity = {}
+        if not isinstance(main_by_liquidity, dict):
+            main_by_liquidity = {}
+        if not isinstance(probe_fee_by_liquidity, dict):
+            probe_fee_by_liquidity = {}
+        if not isinstance(main_fee_by_liquidity, dict):
+            main_fee_by_liquidity = {}
         metrics.update(
             {
                 "execution_attribution_submit_count": int(
@@ -1981,6 +2008,24 @@ def assess(
                 "execution_attribution_unknown_liquidity_fill_count": int(
                     attribution_fills.get("unknown_liquidity_count", 0)
                 ),
+                "execution_attribution_probe_maker_fill_count": int(
+                    probe_by_liquidity.get("MAKER", 0)
+                ),
+                "execution_attribution_probe_taker_fill_count": int(
+                    probe_by_liquidity.get("TAKER", 0)
+                ),
+                "execution_attribution_probe_unknown_liquidity_fill_count": int(
+                    probe_by_liquidity.get("UNKNOWN", 0)
+                ),
+                "execution_attribution_main_maker_fill_count": int(
+                    main_by_liquidity.get("MAKER", 0)
+                ),
+                "execution_attribution_main_taker_fill_count": int(
+                    main_by_liquidity.get("TAKER", 0)
+                ),
+                "execution_attribution_main_unknown_liquidity_fill_count": int(
+                    main_by_liquidity.get("UNKNOWN", 0)
+                ),
                 "execution_attribution_fee_usd": float(
                     attribution_fills.get("fee_usd", 0.0)
                 ),
@@ -1989,6 +2034,24 @@ def assess(
                 ),
                 "execution_attribution_main_fee_usd": float(
                     main_fills.get("fee_usd", 0.0)
+                ),
+                "execution_attribution_probe_maker_fee_usd": float(
+                    probe_fee_by_liquidity.get("MAKER", 0.0)
+                ),
+                "execution_attribution_probe_taker_fee_usd": float(
+                    probe_fee_by_liquidity.get("TAKER", 0.0)
+                ),
+                "execution_attribution_probe_unknown_liquidity_fee_usd": float(
+                    probe_fee_by_liquidity.get("UNKNOWN", 0.0)
+                ),
+                "execution_attribution_main_maker_fee_usd": float(
+                    main_fee_by_liquidity.get("MAKER", 0.0)
+                ),
+                "execution_attribution_main_taker_fee_usd": float(
+                    main_fee_by_liquidity.get("TAKER", 0.0)
+                ),
+                "execution_attribution_main_unknown_liquidity_fee_usd": float(
+                    main_fee_by_liquidity.get("UNKNOWN", 0.0)
                 ),
                 "execution_attribution_runtime_fill_window_count": int(
                     attribution_runtime_windows.get("count", 0)

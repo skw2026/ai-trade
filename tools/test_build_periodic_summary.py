@@ -51,6 +51,12 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                     "trend_candidate_probe_skip_count": 7,
                                     "trend_candidate_probe_skip_trend_ratio_count": 4,
                                     "trend_candidate_probe_skip_cooldown_count": 2,
+                                    "execution_attribution_probe_maker_fill_count": 3,
+                                    "execution_attribution_probe_taker_fill_count": 0,
+                                    "execution_attribution_main_maker_fill_count": 5,
+                                    "execution_attribution_main_taker_fill_count": 1,
+                                    "execution_attribution_probe_maker_fee_usd": 0.06,
+                                    "execution_attribution_main_taker_fee_usd": 0.15,
                                 },
                             },
                             "replay_validation": {
@@ -128,6 +134,24 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             self.assertEqual(
                 runtime_metrics["trend_candidate_probe_skip_cooldown_count"],
                 2,
+            )
+            self.assertEqual(
+                runtime_metrics["execution_attribution_probe_maker_fill_count"], 3
+            )
+            self.assertEqual(
+                runtime_metrics["execution_attribution_probe_taker_fill_count"], 0
+            )
+            self.assertEqual(
+                runtime_metrics["execution_attribution_main_maker_fill_count"], 5
+            )
+            self.assertEqual(
+                runtime_metrics["execution_attribution_main_taker_fill_count"], 1
+            )
+            self.assertAlmostEqual(
+                runtime_metrics["execution_attribution_probe_maker_fee_usd"], 0.06
+            )
+            self.assertAlmostEqual(
+                runtime_metrics["execution_attribution_main_taker_fee_usd"], 0.15
             )
 
     def test_account_summary_clips_samples_to_summary_window(self):

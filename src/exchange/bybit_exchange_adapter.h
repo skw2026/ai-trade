@@ -56,7 +56,7 @@ struct BybitAdapterOptions {
   // 启动时预热 execution 游标，避免把历史成交误当作新成交推进本地状态。
   bool execution_skip_history_on_start{true};
   int execution_poll_limit{50};  ///< `/v5/execution/list` 轮询 limit。
-  bool maker_entry_enabled{false};  ///< 开仓优先用 maker limit，减少 taker 成本。
+  bool maker_entry_enabled{false};  ///< 显式 maker 的 Entry/Reduce 优先用被动限价。
   bool maker_fallback_to_market{
       true};  ///< maker PostOnly 被拒时是否自动回退一次市价单。
   double maker_price_offset_bps{1.0};  ///< maker 限价相对参考价偏移（bps）。

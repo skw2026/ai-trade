@@ -587,13 +587,29 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["execution_attribution_main_fill_count"], 1)
         self.assertEqual(metrics["execution_attribution_maker_fill_count"], 1)
         self.assertEqual(metrics["execution_attribution_taker_fill_count"], 1)
+        self.assertEqual(metrics["execution_attribution_probe_maker_fill_count"], 1)
+        self.assertEqual(metrics["execution_attribution_probe_taker_fill_count"], 0)
+        self.assertEqual(metrics["execution_attribution_main_maker_fill_count"], 0)
+        self.assertEqual(metrics["execution_attribution_main_taker_fill_count"], 1)
         self.assertAlmostEqual(metrics["execution_attribution_fee_usd"], 0.075)
+        self.assertAlmostEqual(
+            metrics["execution_attribution_probe_maker_fee_usd"], 0.02
+        )
+        self.assertAlmostEqual(
+            metrics["execution_attribution_main_taker_fee_usd"], 0.055
+        )
         self.assertEqual(attribution["submit"]["by_purpose"]["0"], 1)
         self.assertEqual(attribution["submit"]["by_purpose"]["3"], 1)
         self.assertEqual(attribution["fills"]["by_liquidity"]["MAKER"], 1)
         self.assertEqual(attribution["fills"]["by_liquidity"]["TAKER"], 1)
         self.assertAlmostEqual(attribution["fills"]["probe"]["fee_usd"], 0.02)
         self.assertAlmostEqual(attribution["fills"]["main"]["fee_usd"], 0.055)
+        self.assertAlmostEqual(
+            attribution["fills"]["probe"]["fee_by_liquidity"]["MAKER"], 0.02
+        )
+        self.assertAlmostEqual(
+            attribution["fills"]["main"]["fee_by_liquidity"]["TAKER"], 0.055
+        )
 
     def test_transient_trend_regime_change_is_reported_separately(self):
         text = (
