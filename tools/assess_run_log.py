@@ -215,13 +215,16 @@ RUNTIME_REGIME_CURRENT_RE = re.compile(
 )
 RUNTIME_REGIME_CURRENT_DIAGNOSTICS_RE = re.compile(
     r"RUNTIME_STATUS:.*?regime_current=\{[^}]*?"
+    r"(?:warmup=(?P<warmup>true|false)[^}]*?)?"
     r"trend_threshold_ratio=(?P<trend_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
-    r"volatility_threshold_ratio=(?P<volatility_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
+    r"(?:volatility_threshold_ratio=(?P<volatility_threshold_ratio>[0-9]+(?:\.[0-9]+)?), )?"
     r"trend_candidate=(?P<trend_candidate>true|false)"
+    r"(?:, warmup_trend_candidate=(?P<warmup_trend_candidate>true|false))?"
 )
 RUNTIME_REGIME_WINDOW_CANDIDATE_RE = re.compile(
     r"RUNTIME_STATUS:.*?regime_window=\{[^}]*?"
     r"trend_candidate_ticks=(?P<trend_candidate_ticks>[0-9]+)"
+    r"(?:, warmup_trend_candidate_ticks=(?P<warmup_trend_candidate_ticks>[0-9]+))?"
 )
 REGIME_CHANGE_RE = re.compile(
     r"REGIME_CHANGE: symbol=(?P<symbol>[^,]+), "
@@ -233,9 +236,11 @@ REGIME_CHANGE_RE = re.compile(
     r"volatility=(?P<volatility>-?[0-9]+(?:\.[0-9]+)?)"
     r"(?:, trend_threshold_ratio=(?P<trend_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
     r"volatility_threshold_ratio=(?P<volatility_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
-    r"trend_candidate=(?P<trend_candidate>true|false))?"
+    r"trend_candidate=(?P<trend_candidate>true|false)"
+    r"(?:, warmup_trend_candidate=(?P<warmup_trend_candidate>true|false))?)?"
 )
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+TREND_CANDIDATE_MIN_THRESHOLD_RATIO = 0.60
 
 
 def parse_bool_arg(raw: str) -> bool:
@@ -935,25 +940,42 @@ def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
     trend_threshold_ratios: list[float] = []
     volatility_threshold_ratios: list[float] = []
     current_candidate_count = 0
+    current_warmup_candidate_count = 0
     window_candidate_count = 0
+    window_warmup_candidate_count = 0
 
     for match in RUNTIME_REGIME_CURRENT_DIAGNOSTICS_RE.finditer(text):
         try:
-            trend_threshold_ratios.append(
-                float(match.group("trend_threshold_ratio"))
-            )
-            volatility_threshold_ratios.append(
-                float(match.group("volatility_threshold_ratio"))
-            )
+            trend_ratio = float(match.group("trend_threshold_ratio"))
+            trend_threshold_ratios.append(trend_ratio)
+            if match.group("volatility_threshold_ratio") is not None:
+                volatility_threshold_ratios.append(
+                    float(match.group("volatility_threshold_ratio"))
+                )
         except ValueError:
             continue
         if str(match.group("trend_candidate")).lower() == "true":
             current_candidate_count += 1
+        warmup_candidate = (
+            str(match.group("warmup_trend_candidate") or "").lower() == "true"
+        )
+        if not warmup_candidate:
+            warmup_candidate = (
+                str(match.group("warmup") or "").lower() == "true"
+                and trend_ratio >= TREND_CANDIDATE_MIN_THRESHOLD_RATIO
+            )
+        if warmup_candidate:
+            current_warmup_candidate_count += 1
 
     for match in RUNTIME_REGIME_WINDOW_CANDIDATE_RE.finditer(text):
         try:
             if int(match.group("trend_candidate_ticks")) > 0:
                 window_candidate_count += 1
+            if (
+                match.group("warmup_trend_candidate_ticks") is not None
+                and int(match.group("warmup_trend_candidate_ticks")) > 0
+            ):
+                window_warmup_candidate_count += 1
         except ValueError:
             continue
 
@@ -961,7 +983,9 @@ def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
         return {
             "runtime_count": 0,
             "current_candidate_count": 0,
+            "current_warmup_candidate_count": 0,
             "window_candidate_count": window_candidate_count,
+            "window_warmup_candidate_count": window_warmup_candidate_count,
             "trend_threshold_ratio_avg": 0.0,
             "trend_threshold_ratio_max": 0.0,
             "volatility_threshold_ratio_avg": 0.0,
@@ -971,13 +995,20 @@ def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
     return {
         "runtime_count": len(trend_threshold_ratios),
         "current_candidate_count": current_candidate_count,
+        "current_warmup_candidate_count": current_warmup_candidate_count,
         "window_candidate_count": window_candidate_count,
+        "window_warmup_candidate_count": window_warmup_candidate_count,
         "trend_threshold_ratio_avg": sum(trend_threshold_ratios)
         / len(trend_threshold_ratios),
         "trend_threshold_ratio_max": max(trend_threshold_ratios),
-        "volatility_threshold_ratio_avg": sum(volatility_threshold_ratios)
-        / len(volatility_threshold_ratios),
-        "volatility_threshold_ratio_max": max(volatility_threshold_ratios),
+        "volatility_threshold_ratio_avg": (
+            sum(volatility_threshold_ratios) / len(volatility_threshold_ratios)
+            if volatility_threshold_ratios
+            else 0.0
+        ),
+        "volatility_threshold_ratio_max": max(volatility_threshold_ratios)
+        if volatility_threshold_ratios
+        else 0.0,
     }
 
 
@@ -986,15 +1017,21 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
     abs_instant_return_values: list[float] = []
     volatility_values: list[float] = []
     trend_threshold_ratios: list[float] = []
+    warmup_trend_threshold_ratios: list[float] = []
+    nonwarmup_trend_threshold_ratios: list[float] = []
     volatility_threshold_ratios: list[float] = []
     bucket_counts = {"TREND": 0, "RANGE": 0, "EXTREME": 0}
     trend_symbols: set[str] = set()
     trend_candidate_count = 0
     trend_candidate_symbols: set[str] = set()
+    warmup_trend_candidate_count = 0
+    warmup_trend_candidate_symbols: set[str] = set()
 
     for match in REGIME_CHANGE_RE.finditer(text):
         bucket = str(match.group("bucket") or "").upper()
         symbol = str(match.group("symbol") or "")
+        is_warmup = str(match.group("warmup") or "").lower() == "true"
+        trend_ratio: float | None = None
         if bucket in bucket_counts:
             bucket_counts[bucket] += 1
         if bucket == "TREND":
@@ -1004,9 +1041,12 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
             abs_trend_strength_values.append(abs(float(match.group("trend_strength"))))
             volatility_values.append(float(match.group("volatility")))
             if match.group("trend_threshold_ratio") is not None:
-                trend_threshold_ratios.append(
-                    float(match.group("trend_threshold_ratio"))
-                )
+                trend_ratio = float(match.group("trend_threshold_ratio"))
+                trend_threshold_ratios.append(trend_ratio)
+                if is_warmup:
+                    warmup_trend_threshold_ratios.append(trend_ratio)
+                else:
+                    nonwarmup_trend_threshold_ratios.append(trend_ratio)
             if match.group("volatility_threshold_ratio") is not None:
                 volatility_threshold_ratios.append(
                     float(match.group("volatility_threshold_ratio"))
@@ -1017,6 +1057,19 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
             trend_candidate_count += 1
             if symbol:
                 trend_candidate_symbols.add(symbol)
+        explicit_warmup_candidate = (
+            str(match.group("warmup_trend_candidate") or "").lower() == "true"
+        )
+        inferred_warmup_candidate = (
+            is_warmup
+            and bucket == "RANGE"
+            and trend_ratio is not None
+            and trend_ratio >= TREND_CANDIDATE_MIN_THRESHOLD_RATIO
+        )
+        if explicit_warmup_candidate or inferred_warmup_candidate:
+            warmup_trend_candidate_count += 1
+            if symbol:
+                warmup_trend_candidate_symbols.add(symbol)
 
     runtime_count = len(abs_trend_strength_values)
     if runtime_count <= 0:
@@ -1042,10 +1095,15 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
             "trend_candidate_count": 0,
             "trend_candidate_symbol_count": 0,
             "trend_candidate_symbols": [],
+            "warmup_trend_candidate_count": 0,
+            "warmup_trend_candidate_symbol_count": 0,
+            "warmup_trend_candidate_symbols": [],
             "trend_threshold_ratio_p50": 0.0,
             "trend_threshold_ratio_p95": 0.0,
             "trend_threshold_ratio_p99": 0.0,
             "trend_threshold_ratio_max": 0.0,
+            "warmup_trend_threshold_ratio_max": 0.0,
+            "nonwarmup_trend_threshold_ratio_max": 0.0,
             "volatility_threshold_ratio_p50": 0.0,
             "volatility_threshold_ratio_p95": 0.0,
             "volatility_threshold_ratio_p99": 0.0,
@@ -1074,11 +1132,22 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
         "trend_candidate_count": trend_candidate_count,
         "trend_candidate_symbol_count": len(trend_candidate_symbols),
         "trend_candidate_symbols": sorted(x for x in trend_candidate_symbols if x),
+        "warmup_trend_candidate_count": warmup_trend_candidate_count,
+        "warmup_trend_candidate_symbol_count": len(warmup_trend_candidate_symbols),
+        "warmup_trend_candidate_symbols": sorted(
+            x for x in warmup_trend_candidate_symbols if x
+        ),
         "trend_threshold_ratio_p50": percentile(trend_threshold_ratios, 0.50),
         "trend_threshold_ratio_p95": percentile(trend_threshold_ratios, 0.95),
         "trend_threshold_ratio_p99": percentile(trend_threshold_ratios, 0.99),
         "trend_threshold_ratio_max": max(trend_threshold_ratios)
         if trend_threshold_ratios
+        else 0.0,
+        "warmup_trend_threshold_ratio_max": max(warmup_trend_threshold_ratios)
+        if warmup_trend_threshold_ratios
+        else 0.0,
+        "nonwarmup_trend_threshold_ratio_max": max(nonwarmup_trend_threshold_ratios)
+        if nonwarmup_trend_threshold_ratios
         else 0.0,
         "volatility_threshold_ratio_p50": percentile(
             volatility_threshold_ratios, 0.50
@@ -1893,6 +1962,15 @@ def assess(
         "regime_change_trend_candidate_symbols": regime_change[
             "trend_candidate_symbols"
         ],
+        "regime_change_warmup_trend_candidate_count": int(
+            regime_change["warmup_trend_candidate_count"]
+        ),
+        "regime_change_warmup_trend_candidate_symbol_count": int(
+            regime_change["warmup_trend_candidate_symbol_count"]
+        ),
+        "regime_change_warmup_trend_candidate_symbols": regime_change[
+            "warmup_trend_candidate_symbols"
+        ],
         "trend_strength_abs_p50": regime_change["trend_strength_abs_p50"],
         "trend_strength_abs_p95": regime_change["trend_strength_abs_p95"],
         "trend_strength_abs_p99": regime_change["trend_strength_abs_p99"],
@@ -1901,6 +1979,12 @@ def assess(
         "trend_threshold_ratio_p95": regime_change["trend_threshold_ratio_p95"],
         "trend_threshold_ratio_p99": regime_change["trend_threshold_ratio_p99"],
         "trend_threshold_ratio_max": regime_change["trend_threshold_ratio_max"],
+        "warmup_trend_threshold_ratio_max": regime_change[
+            "warmup_trend_threshold_ratio_max"
+        ],
+        "nonwarmup_trend_threshold_ratio_max": regime_change[
+            "nonwarmup_trend_threshold_ratio_max"
+        ],
         "instant_return_abs_p50": regime_change["instant_return_abs_p50"],
         "instant_return_abs_p95": regime_change["instant_return_abs_p95"],
         "instant_return_abs_p99": regime_change["instant_return_abs_p99"],
@@ -1944,8 +2028,14 @@ def assess(
         "regime_trend_candidate_runtime_count": int(
             regime_runtime_diagnostics["window_candidate_count"]
         ),
+        "regime_warmup_trend_candidate_runtime_count": int(
+            regime_runtime_diagnostics["window_warmup_candidate_count"]
+        ),
         "regime_current_trend_candidate_count": int(
             regime_runtime_diagnostics["current_candidate_count"]
+        ),
+        "regime_current_warmup_trend_candidate_count": int(
+            regime_runtime_diagnostics["current_warmup_candidate_count"]
         ),
         "regime_current_trend_threshold_ratio_avg": regime_runtime_diagnostics[
             "trend_threshold_ratio_avg"
@@ -2688,6 +2778,24 @@ def assess(
                             "probe_enqueued_count="
                             f"{metrics['trend_candidate_probe_enqueued_count']}"
                         )
+                elif (
+                    metrics["regime_warmup_trend_candidate_runtime_count"] > 0
+                    or metrics["regime_change_warmup_trend_candidate_count"] > 0
+                ):
+                    warn_reasons.append(
+                        "当前窗口仅在 warmup 阶段出现趋势候选，未转为可交易 TREND_CANDIDATE："
+                        "建议延长 trend reserve 驻留、复核 warmup_ticks/Universe 轮换周期, "
+                        "warmup_candidate_windows="
+                        f"{metrics['regime_warmup_trend_candidate_runtime_count']}, "
+                        "warmup_candidate_events="
+                        f"{metrics['regime_change_warmup_trend_candidate_count']}, "
+                        "symbols="
+                        f"{','.join(metrics['regime_change_warmup_trend_candidate_symbols'])}, "
+                        "warmup_ratio_max="
+                        f"{metrics['warmup_trend_threshold_ratio_max']:.4f}, "
+                        "nonwarmup_ratio_max="
+                        f"{metrics['nonwarmup_trend_threshold_ratio_max']:.4f}"
+                    )
                 else:
                     warn_reasons.append(
                         "当前窗口未出现 TREND 样本：runtime 通过仅代表保护逻辑通过，"

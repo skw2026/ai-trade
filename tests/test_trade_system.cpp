@@ -3343,6 +3343,7 @@ int main() {
         << "  min_active_symbols: 1\n"
         << "  trend_reserve_enabled: true\n"
         << "  trend_reserve_slots: 1\n"
+        << "  trend_reserve_min_residency_refreshes: 4\n"
         << "  reset_stats_on_refresh: true\n"
         << "  fallback_symbols: [\"ETHUSDT\"]\n"
         << "  candidate_symbols: [\"ETHUSDT\", \"BTCUSDT\"]\n"
@@ -3663,6 +3664,7 @@ int main() {
         config.universe.min_active_symbols != 1 ||
         config.universe.trend_reserve_enabled != true ||
         config.universe.trend_reserve_slots != 1 ||
+        config.universe.trend_reserve_min_residency_refreshes != 4 ||
         config.universe.reset_stats_on_refresh != true ||
         config.universe.fallback_symbols.size() != 1 ||
         config.universe.fallback_symbols[0] != "ETHUSDT" ||
@@ -4171,6 +4173,32 @@ int main() {
     }
     if (error.find("trend_reserve_slots") == std::string::npos) {
       std::cerr << "非法 Universe 趋势保留槽错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_universe_trend_reserve_residency.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  primary_symbol: \"BTCUSDT\"\n"
+        << "universe:\n"
+        << "  trend_reserve_min_residency_refreshes: -1\n"
+        << "  fallback_symbols: [\"BTCUSDT\"]\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 Universe 趋势保留驻留配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("trend_reserve_min_residency_refreshes") ==
+        std::string::npos) {
+      std::cerr << "非法 Universe 趋势保留驻留错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);
@@ -5976,6 +6004,69 @@ int main() {
   {
     ai_trade::UniverseConfig config;
     config.enabled = true;
+    config.update_interval_ticks = 14;
+    config.max_active_symbols = 2;
+    config.min_active_symbols = 1;
+    config.min_turnover_usd = 1000.0;
+    config.trend_reserve_enabled = true;
+    config.trend_reserve_slots = 1;
+    config.trend_reserve_min_residency_refreshes = 2;
+    config.reset_stats_on_refresh = true;
+    config.fallback_symbols = {"BTCUSDT"};
+    config.candidate_symbols = {"CHOPUSDT", "TRENDUSDT", "QUIETUSDT", "NEWUSDT"};
+
+    ai_trade::UniverseSelector selector(config, "BTCUSDT");
+    std::optional<ai_trade::UniverseUpdate> update;
+    const auto push = [&selector, &update](std::int64_t ts,
+                                           const std::string& symbol,
+                                           double price) {
+      update = selector.OnMarket(
+          ai_trade::MarketEvent{ts, symbol, price, price, 20.0});
+    };
+
+    push(1, "TRENDUSDT", 100.0);
+    push(2, "QUIETUSDT", 100.0);
+    push(3, "CHOPUSDT", 100.0);
+    push(4, "CHOPUSDT", 102.0);
+    push(5, "CHOPUSDT", 100.0);
+    push(6, "CHOPUSDT", 102.0);
+    push(7, "CHOPUSDT", 100.0);
+    push(8, "CHOPUSDT", 102.0);
+    push(9, "CHOPUSDT", 100.0);
+    push(10, "CHOPUSDT", 102.0);
+    push(11, "CHOPUSDT", 100.0);
+    push(12, "TRENDUSDT", 101.0);
+    push(13, "TRENDUSDT", 102.0);
+    push(14, "QUIETUSDT", 100.01);
+
+    if (!update.has_value() || !selector.IsActive("TRENDUSDT")) {
+      std::cerr << "Universe 趋势保留驻留首轮应选入趋势币对\n";
+      return 1;
+    }
+
+    for (int i = 0; i < 14; ++i) {
+      push(15 + i, "NEWUSDT", 100.0 + static_cast<double>(i) * 2.0);
+    }
+    if (!update.has_value()) {
+      std::cerr << "Universe 趋势保留驻留第二轮应刷新\n";
+      return 1;
+    }
+    if (!selector.IsActive("TRENDUSDT")) {
+      std::cerr << "Universe 趋势保留驻留应避免趋势币对被立即轮换\n";
+      return 1;
+    }
+    if (std::find(update->sticky_trend_reserve_symbols.begin(),
+                  update->sticky_trend_reserve_symbols.end(),
+                  "TRENDUSDT") ==
+        update->sticky_trend_reserve_symbols.end()) {
+      std::cerr << "Universe 应上报 sticky trend reserve 币对\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::UniverseConfig config;
+    config.enabled = true;
     config.update_interval_ticks = 2;
     config.max_active_symbols = 1;
     config.min_active_symbols = 1;
@@ -7761,6 +7852,33 @@ int main() {
         !candidate.trend_candidate ||
         !NearlyEqual(candidate.trend_threshold_ratio, 0.6)) {
       std::cerr << "Regime TREND_CANDIDATE 诊断不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::RegimeConfig config;
+    config.enabled = true;
+    config.warmup_ticks = 3;
+    config.ewma_alpha = 1.0;
+    config.trend_threshold = 0.001;
+    config.extreme_threshold = 0.010;
+    config.volatility_threshold = 0.050;
+
+    ai_trade::RegimeEngine engine(config);
+    ai_trade::MarketEvent event;
+    event.symbol = "BTCUSDT";
+    event.price = 100.0;
+    (void)engine.OnMarket(event);
+
+    event.price = 100.06;
+    const auto warmup_candidate = engine.OnMarket(event);
+    if (!warmup_candidate.warmup ||
+        warmup_candidate.bucket != ai_trade::RegimeBucket::kRange ||
+        warmup_candidate.trend_candidate ||
+        !warmup_candidate.warmup_trend_candidate ||
+        !NearlyEqual(warmup_candidate.trend_threshold_ratio, 0.6)) {
+      std::cerr << "Regime warmup TREND_CANDIDATE 诊断不符合预期\n";
       return 1;
     }
   }

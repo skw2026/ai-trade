@@ -165,9 +165,11 @@ RegimeState RegimeEngine::ProcessSample(SymbolState& symbol_state,
 
   state.regime = regime;
   state.bucket = ToBucket(regime);
-  state.trend_candidate =
-      !state.warmup && state.bucket == RegimeBucket::kRange &&
+  const bool trend_candidate_like =
+      state.bucket == RegimeBucket::kRange &&
       state.trend_threshold_ratio >= kTrendCandidateMinThresholdRatio;
+  state.trend_candidate = !state.warmup && trend_candidate_like;
+  state.warmup_trend_candidate = state.warmup && trend_candidate_like;
   symbol_state.last_emitted_state = state;
   symbol_state.has_last_emitted_state = true;
   return state;

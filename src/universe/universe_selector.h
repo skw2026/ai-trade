@@ -21,6 +21,7 @@ struct UniverseUpdate {
   std::string reason_code;  ///< 降级原因码（若有）。
   std::vector<std::string> active_symbols;  ///< 本轮生效 active universe。
   std::vector<SymbolScore> symbol_scores;  ///< 候选集评分明细。
+  std::vector<std::string> sticky_trend_reserve_symbols;  ///< 最小驻留保留的趋势探索币对。
 };
 
 /**
@@ -69,6 +70,8 @@ class UniverseSelector {
   std::unordered_set<std::string> seen_symbols_;  ///< 已观测到的 symbol 集合。
   std::vector<std::string> active_symbols_;  ///< 当前活跃币对列表（有序）。
   std::unordered_set<std::string> active_symbol_set_;  ///< 当前活跃币对集合（快速查找）。
+  std::unordered_map<std::string, int>
+      trend_reserve_residency_remaining_;  ///< trend reserve 最小驻留剩余刷新次数。
   bool allowed_symbol_filter_enabled_{false};  ///< 是否启用交易规则白名单过滤。
   std::unordered_set<std::string> allowed_symbol_set_;  ///< 交易规则过滤后的允许集合。
 };

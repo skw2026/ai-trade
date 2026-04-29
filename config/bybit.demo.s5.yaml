@@ -250,6 +250,7 @@ universe:
   min_active_symbols: 1
   trend_reserve_enabled: true
   trend_reserve_slots: 1
+  trend_reserve_min_residency_refreshes: 12
   reset_stats_on_refresh: true
   fallback_symbols: ["BTCUSDT", "ETHUSDT"]
   # 保守扩展候选池，先提高 live TREND 样本命中概率，不直接增加同时激活标的数量。

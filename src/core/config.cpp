@@ -2071,6 +2071,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "universe" &&
+        key == "trend_reserve_min_residency_refreshes") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "universe.trend_reserve_min_residency_refreshes 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.universe.trend_reserve_min_residency_refreshes = parsed;
+      continue;
+    }
+
+    if (current_section == "universe" &&
         key == "reset_stats_on_refresh") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -3957,6 +3972,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.universe.trend_reserve_slots > config.universe.max_active_symbols) {
     if (out_error != nullptr) {
       *out_error = "universe.trend_reserve_slots 不能大于 max_active_symbols";
+    }
+    return false;
+  }
+  if (config.universe.trend_reserve_min_residency_refreshes < 0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "universe.trend_reserve_min_residency_refreshes 不能为负数";
     }
     return false;
   }

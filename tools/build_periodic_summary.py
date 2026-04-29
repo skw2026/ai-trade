@@ -365,6 +365,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "trend_candidate_probe_skip_pending_orders_count": 0,
             "trend_candidate_probe_skip_existing_intent_count": 0,
             "trend_candidate_probe_skip_window_limit_count": 0,
+            "regime_change_warmup_trend_candidate_count": 0,
+            "regime_change_warmup_trend_candidate_symbols": [],
+            "regime_warmup_trend_candidate_runtime_count": 0,
+            "regime_current_warmup_trend_candidate_count": 0,
             "reconcile_anomaly_reduce_only_true_count": 0,
             "reconcile_anomaly_reduce_only_true_ratio": None,
             "strategy_mix_runtime_count": 0,
@@ -573,6 +577,23 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         to_int(latest_metrics.get("trend_candidate_probe_skip_window_limit_count"))
         or 0
     )
+    regime_change_warmup_trend_candidate_count = (
+        to_int(latest_metrics.get("regime_change_warmup_trend_candidate_count"))
+        or 0
+    )
+    regime_change_warmup_trend_candidate_symbols = latest_metrics.get(
+        "regime_change_warmup_trend_candidate_symbols"
+    )
+    if not isinstance(regime_change_warmup_trend_candidate_symbols, list):
+        regime_change_warmup_trend_candidate_symbols = []
+    regime_warmup_trend_candidate_runtime_count = (
+        to_int(latest_metrics.get("regime_warmup_trend_candidate_runtime_count"))
+        or 0
+    )
+    regime_current_warmup_trend_candidate_count = (
+        to_int(latest_metrics.get("regime_current_warmup_trend_candidate_count"))
+        or 0
+    )
     reconcile_anomaly_reduce_only_true_count = (
         to_int(latest_metrics.get("reconcile_anomaly_reduce_only_true_count")) or 0
     )
@@ -711,6 +732,18 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         ),
         "trend_candidate_probe_skip_window_limit_count": (
             trend_candidate_probe_skip_window_limit_count
+        ),
+        "regime_change_warmup_trend_candidate_count": (
+            regime_change_warmup_trend_candidate_count
+        ),
+        "regime_change_warmup_trend_candidate_symbols": (
+            regime_change_warmup_trend_candidate_symbols
+        ),
+        "regime_warmup_trend_candidate_runtime_count": (
+            regime_warmup_trend_candidate_runtime_count
+        ),
+        "regime_current_warmup_trend_candidate_count": (
+            regime_current_warmup_trend_candidate_count
         ),
         "reconcile_anomaly_reduce_only_true_count": reconcile_anomaly_reduce_only_true_count,
         "reconcile_anomaly_reduce_only_true_ratio": reconcile_anomaly_reduce_only_true_ratio,

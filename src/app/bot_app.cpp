@@ -1703,6 +1703,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->regime_extreme_ticks += delta.regime_extreme_ticks;
   total->regime_warmup_ticks += delta.regime_warmup_ticks;
   total->regime_trend_candidate_ticks += delta.regime_trend_candidate_ticks;
+  total->regime_warmup_trend_candidate_ticks +=
+      delta.regime_warmup_trend_candidate_ticks;
   total->integrator_scored += delta.integrator_scored;
   total->integrator_pred_up += delta.integrator_pred_up;
   total->integrator_pred_down += delta.integrator_pred_down;
@@ -2094,6 +2096,10 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     if (!update->reason_code.empty()) {
       message += ", reason=" + update->reason_code;
     }
+    if (!update->sticky_trend_reserve_symbols.empty()) {
+      message += ", sticky_trend_reserve=[" +
+                 FormatSymbolList(update->sticky_trend_reserve_symbols) + "]";
+    }
     message += ", top_scores=[" + FormatSymbolScores(update->symbol_scores, 5) + "]";
     LogInfo(message);
   }
@@ -2182,6 +2188,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   if (decision.regime.trend_candidate) {
     ++funnel_window_.regime_trend_candidate_ticks;
   }
+  if (decision.regime.warmup_trend_candidate) {
+    ++funnel_window_.regime_warmup_trend_candidate_ticks;
+  }
   switch (decision.regime.bucket) {
     case RegimeBucket::kTrend:
       ++funnel_window_.regime_trend_ticks;
@@ -2198,7 +2207,10 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
       last_regime_state_.symbol != decision.regime.symbol ||
       last_regime_state_.regime != decision.regime.regime ||
       last_regime_state_.bucket != decision.regime.bucket ||
-      last_regime_state_.warmup != decision.regime.warmup;
+      last_regime_state_.warmup != decision.regime.warmup ||
+      last_regime_state_.trend_candidate != decision.regime.trend_candidate ||
+      last_regime_state_.warmup_trend_candidate !=
+          decision.regime.warmup_trend_candidate;
   if (regime_changed) {
     LogInfo("REGIME_CHANGE: symbol=" + decision.regime.symbol +
             ", regime=" + std::string(ToString(decision.regime.regime)) +
@@ -2219,7 +2231,10 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             ", volatility_threshold_ratio=" +
             std::to_string(decision.regime.volatility_threshold_ratio) +
             ", trend_candidate=" +
-            std::string(decision.regime.trend_candidate ? "true" : "false"));
+            std::string(decision.regime.trend_candidate ? "true" : "false") +
+            ", warmup_trend_candidate=" +
+            std::string(decision.regime.warmup_trend_candidate ? "true"
+                                                               : "false"));
   }
   last_regime_state_ = decision.regime;
   has_last_regime_state_ = true;
@@ -4206,7 +4221,10 @@ void BotApplication::LogStatus() {
           ", warmup_ticks=" +
           std::to_string(funnel_window.regime_warmup_ticks) +
           ", trend_candidate_ticks=" +
-          std::to_string(funnel_window.regime_trend_candidate_ticks) + "}" +
+          std::to_string(funnel_window.regime_trend_candidate_ticks) +
+          ", warmup_trend_candidate_ticks=" +
+          std::to_string(funnel_window.regime_warmup_trend_candidate_ticks) +
+          "}" +
           ", regime_current={symbol=" +
           std::string(has_last_regime_state_ ? last_regime_state_.symbol : "n/a") +
           ", regime=" +
@@ -4239,6 +4257,11 @@ void BotApplication::LogStatus() {
           ", trend_candidate=" +
           std::string(has_last_regime_state_ &&
                               last_regime_state_.trend_candidate
+                          ? "true"
+                          : "false") +
+          ", warmup_trend_candidate=" +
+          std::string(has_last_regime_state_ &&
+                              last_regime_state_.warmup_trend_candidate
                           ? "true"
                           : "false") +
           "}" +

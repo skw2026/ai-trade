@@ -275,6 +275,7 @@ class BotApplication {
     std::uint64_t regime_extreme_ticks{0};
     std::uint64_t regime_warmup_ticks{0};
     std::uint64_t regime_trend_candidate_ticks{0};
+    std::uint64_t regime_warmup_trend_candidate_ticks{0};
     std::uint64_t integrator_scored{0};
     std::uint64_t integrator_pred_up{0};
     std::uint64_t integrator_pred_down{0};

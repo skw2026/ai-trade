@@ -93,6 +93,7 @@ struct UniverseConfig {
   double min_turnover_usd{0.0};
   bool trend_reserve_enabled{false};
   int trend_reserve_slots{0};
+  int trend_reserve_min_residency_refreshes{0};
   bool reset_stats_on_refresh{false};
   std::vector<std::string> fallback_symbols{"BTCUSDT"};
   std::vector<std::string> candidate_symbols{"BTCUSDT", "ETHUSDT", "SOLUSDT"};

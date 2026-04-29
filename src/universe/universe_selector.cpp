@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 #include <utility>
 
 namespace ai_trade {
@@ -145,6 +146,13 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
 
   std::vector<std::string> selected;
   selected.reserve(static_cast<std::size_t>(config_.max_active_symbols));
+  std::vector<std::string> reserve_selected_symbols;
+  std::vector<std::string> sticky_trend_reserve_symbols;
+  std::unordered_set<std::string> candidate_score_symbols;
+  candidate_score_symbols.reserve(candidate_scores.size());
+  for (const auto& candidate : candidate_scores) {
+    candidate_score_symbols.insert(candidate.symbol);
+  }
   const int reserve_slots =
       (config_.trend_reserve_enabled ? config_.trend_reserve_slots : 0);
   const int core_slots = std::max(0, config_.max_active_symbols - reserve_slots);
@@ -158,6 +166,40 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
 
   if (reserve_slots > 0 &&
       static_cast<int>(selected.size()) < config_.max_active_symbols) {
+    std::vector<std::pair<std::string, int>> sticky_candidates;
+    if (config_.trend_reserve_min_residency_refreshes > 0) {
+      for (const auto& [symbol, remaining] :
+           trend_reserve_residency_remaining_) {
+        if (remaining <= 0 || !IsAllowed(symbol) ||
+            candidate_score_symbols.count(symbol) == 0U) {
+          continue;
+        }
+        if (std::find(selected.begin(), selected.end(), symbol) !=
+            selected.end()) {
+          continue;
+        }
+        sticky_candidates.emplace_back(symbol, remaining);
+      }
+      std::sort(sticky_candidates.begin(),
+                sticky_candidates.end(),
+                [](const auto& lhs, const auto& rhs) {
+                  if (lhs.second != rhs.second) {
+                    return lhs.second > rhs.second;
+                  }
+                  return lhs.first < rhs.first;
+                });
+    }
+    for (const auto& [symbol, remaining] : sticky_candidates) {
+      (void)remaining;
+      if (static_cast<int>(selected.size()) >= config_.max_active_symbols ||
+          static_cast<int>(reserve_selected_symbols.size()) >= reserve_slots) {
+        break;
+      }
+      selected.push_back(symbol);
+      reserve_selected_symbols.push_back(symbol);
+      sticky_trend_reserve_symbols.push_back(symbol);
+    }
+
     std::vector<CandidateScore> trend_candidates = candidate_scores;
     std::sort(trend_candidates.begin(), trend_candidates.end(),
               [](const CandidateScore& lhs, const CandidateScore& rhs) {
@@ -173,11 +215,15 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
       if (static_cast<int>(selected.size()) >= config_.max_active_symbols) {
         break;
       }
+      if (static_cast<int>(reserve_selected_symbols.size()) >= reserve_slots) {
+        break;
+      }
       if (std::find(selected.begin(), selected.end(), candidate.symbol) !=
           selected.end()) {
         continue;
       }
       selected.push_back(candidate.symbol);
+      reserve_selected_symbols.push_back(candidate.symbol);
     }
   }
 
@@ -226,6 +272,34 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
   active_symbols_ = std::move(selected);
   RebuildActiveSet();
 
+  std::unordered_map<std::string, int> next_residency;
+  if (reserve_slots > 0 &&
+      config_.trend_reserve_min_residency_refreshes > 0 && !degraded) {
+    for (const auto& symbol : sticky_trend_reserve_symbols) {
+      const auto it = trend_reserve_residency_remaining_.find(symbol);
+      const int remaining =
+          (it == trend_reserve_residency_remaining_.end())
+              ? 0
+              : std::max(0, it->second - 1);
+      if (remaining > 0) {
+        next_residency[symbol] = remaining;
+      }
+    }
+    for (const auto& symbol : reserve_selected_symbols) {
+      if (std::find(sticky_trend_reserve_symbols.begin(),
+                    sticky_trend_reserve_symbols.end(),
+                    symbol) != sticky_trend_reserve_symbols.end()) {
+        continue;
+      }
+      if (active_symbol_set_.count(symbol) == 0U) {
+        continue;
+      }
+      next_residency[symbol] =
+          config_.trend_reserve_min_residency_refreshes;
+    }
+  }
+  trend_reserve_residency_remaining_ = std::move(next_residency);
+
   std::vector<SymbolScore> scores;
   scores.reserve(candidate_scores.size());
   for (const auto& candidate : candidate_scores) {
@@ -241,6 +315,8 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
   update.reason_code = reason_code;
   update.active_symbols = active_symbols_;
   update.symbol_scores = std::move(scores);
+  update.sticky_trend_reserve_symbols =
+      std::move(sticky_trend_reserve_symbols);
   return update;
 }
 

@@ -539,6 +539,24 @@ class AssessRunLogTest(unittest.TestCase):
             metrics["regime_current_trend_threshold_ratio_max"], 0.7, places=6
         )
 
+    def test_warmup_trend_candidate_context_is_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] REGIME_CHANGE: symbol=SOLUSDT, regime=RANGE, bucket=RANGE, warmup=true, decision_interval_ms=5000, aggregated_events=5, instant_return=0.000500, trend_strength=0.000700, volatility=0.000200, trend_threshold_ratio=0.700000, volatility_threshold_ratio=0.080000, trend_candidate=false, warmup_trend_candidate=true\n"
+            "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, trade_ok=true, trading_halted=false, account={equity=100000.000000, drawdown_pct=0.000000, notional=0.000000, realized_pnl=0.000000, fees=0.000000, realized_net=0.000000}, regime_window={trend_ticks=0, range_ticks=4, extreme_ticks=0, warmup_ticks=4, trend_candidate_ticks=0, warmup_trend_candidate_ticks=4}, regime_current={symbol=SOLUSDT, regime=RANGE, bucket=RANGE, warmup=true, decision_interval_ms=5000, aggregated_events=5, trend_threshold_ratio=0.700000, volatility_threshold_ratio=0.080000, trend_candidate=false, warmup_trend_candidate=true}\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(report["market_context_status"], "RANGE_ONLY")
+        self.assertEqual(metrics["regime_change_warmup_trend_candidate_count"], 1)
+        self.assertEqual(
+            metrics["regime_change_warmup_trend_candidate_symbols"], ["SOLUSDT"]
+        )
+        self.assertEqual(metrics["regime_warmup_trend_candidate_runtime_count"], 1)
+        self.assertEqual(metrics["regime_current_warmup_trend_candidate_count"], 1)
+        self.assertAlmostEqual(
+            metrics["warmup_trend_threshold_ratio_max"], 0.7, places=6
+        )
+
     def test_trend_candidate_probe_metrics_are_reported(self):
         text = (
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=BTCUSDT, client_order_id=BTCUSDT-1, direction=1, notional_usd=120.0, trend_threshold_ratio=0.91\n"

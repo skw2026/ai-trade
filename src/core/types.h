@@ -73,6 +73,7 @@ struct RegimeState {
   std::int64_t decision_interval_ms{0};
   int aggregated_event_count{0};
   bool trend_candidate{false};
+  bool warmup_trend_candidate{false};
   bool warmup{true};
 };
 
