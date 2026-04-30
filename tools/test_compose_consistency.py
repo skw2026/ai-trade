@@ -158,6 +158,10 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
+            "CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}",
+            scheduler,
+        )
+        self.assertIn(
             "CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: ${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}",
             scheduler,
         )
@@ -227,6 +231,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_BARS", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_ENABLED", script)
+        self.assertIn("CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL", script)

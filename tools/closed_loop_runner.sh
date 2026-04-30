@@ -112,6 +112,7 @@ TREND_VALIDATION_MIN_SHARPE="${CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE:-0.0}"
 TREND_VALIDATION_MIN_BARS="${CLOSED_LOOP_TREND_VALIDATION_MIN_BARS:-1000}"
 TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
+ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}"
 REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
@@ -256,7 +257,9 @@ Env toggles:
   CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE=<float>        trend-validation TREND 桶 Sharpe 下限 (default: 0.0)
   CLOSED_LOOP_TREND_VALIDATION_MIN_BARS=<int>            trend-validation TREND 桶 bars 门槛 (default: 1000)
   CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES=<int>          trend-validation TREND 桶交易次数门槛 (default: 1)
-  CLOSED_LOOP_REPLAY_VALIDATION_ENABLED=true|false       是否在 data/train/full 中运行 replay-validation (default: true)
+  CLOSED_LOOP_REPLAY_VALIDATION_ENABLED=true|false       是否运行 replay-validation (default: true)
+  CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION=true|false
+                                                       assess 动作是否刷新 replay-validation (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.yaml)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
@@ -1053,6 +1056,47 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
   fi
 }
 
+ensure_replay_validation_source_feature_store() {
+  if [[ -f "${FEATURE_STORE_PATH}" ]]; then
+    echo "[INFO] replay validation source feature store ready: ${FEATURE_STORE_PATH}"
+    return 0
+  fi
+  if ! is_true "${REPLAY_VALIDATION_ENABLED}"; then
+    return 0
+  fi
+  if ! is_true "${REPLAY_VALIDATION_REAL_MARKET_FEATURES}"; then
+    echo "[INFO] replay validation source feature build skipped (real-market features disabled)"
+    return 0
+  fi
+
+  local source_symbol="${REPLAY_VALIDATION_SOURCE_SYMBOL:-${SYMBOL}}"
+  local source_dir="${REPLAY_VALIDATION_FEATURE_DIR}/${source_symbol}/source"
+  local ohlcv_path="${source_dir}/ohlcv_5m.csv"
+  local backtest_path="${source_dir}/walkforward_report.json"
+  mkdir -p "${source_dir}" "$(dirname "${FEATURE_STORE_PATH}")"
+
+  echo "[INFO] replay validation build source feature store: symbol=${source_symbol}"
+  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_data_pipeline.py \
+    --config "${DATA_CONFIG_PATH}" \
+    --symbol "${source_symbol}" \
+    --run-dir "${source_dir}" \
+    --ohlcv-out "${ohlcv_path}" \
+    --feature-out "${FEATURE_STORE_PATH}" \
+    --backtest-report "${backtest_path}" \
+    --skip-walkforward; then
+    if [[ -f "${FEATURE_STORE_PATH}" ]]; then
+      echo "[INFO] replay validation source feature store built: ${FEATURE_STORE_PATH}"
+      return 0
+    fi
+    echo "[WARN] replay validation source feature store missing after build: ${FEATURE_STORE_PATH}"
+    return 0
+  fi
+
+  echo "[WARN] replay validation source feature build failed: symbol=${source_symbol}"
+  return 0
+}
+
 write_replay_validation_skip_report() {
   mkdir -p "${REPLAY_VALIDATION_DIR}"
   cat > "${REPLAY_VALIDATION_REPORT_PATH}" <<EOF
@@ -1166,6 +1210,10 @@ run_replay_validation() {
     echo "[INFO] replay validation skipped (disabled)"
     REPLAY_VALIDATION_LAST_STATUS="disabled"
     return 0
+  fi
+
+  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
+    ensure_replay_validation_source_feature_store
   fi
 
   if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
@@ -1500,6 +1548,9 @@ run_main() {
       restart_if_activated
       ;;
     assess)
+      if is_true "${ASSESS_REFRESH_REPLAY_VALIDATION}"; then
+        run_replay_validation
+      fi
       verify_s5_learning_switches
       run_assess
       verify_s5_learning_activity

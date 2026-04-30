@@ -67,19 +67,21 @@ jobs:
           CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && '' || inputs.replay_symbols }}
           CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && '' || inputs.replay_source_symbol }}
           CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: ${{ github.event_name == 'schedule' && '' || 'true' }}
+          CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL,CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES
+          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL,CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES,CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION
           script: |
             set -euo pipefail
             cd /opt/ai-trade
             WORKFLOW_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
             WORKFLOW_REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
             WORKFLOW_REPLAY_VALIDATION_REAL_MARKET_FEATURES="${CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES:-}"
+            WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-}"
             set -a && source .env.runtime && set +a
             if [[ -n "${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}" ]]; then
               export CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS="${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}"
@@ -89,6 +91,9 @@ jobs:
             fi
             if [[ -n "${WORKFLOW_REPLAY_VALIDATION_REAL_MARKET_FEATURES}" ]]; then
               export CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES="${WORKFLOW_REPLAY_VALIDATION_REAL_MARKET_FEATURES}"
+            fi
+            if [[ -n "${WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION}" ]]; then
+              export CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION="${WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION}"
             fi
             chmod +x tools/closed_loop_runner.sh
             tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
