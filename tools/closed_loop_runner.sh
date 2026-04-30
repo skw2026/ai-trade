@@ -672,6 +672,141 @@ atomic_write_text_file() {
   mv -f "${tmp}" "${dest}"
 }
 
+append_replay_validation_feature_build_record() {
+  local symbol="$1"
+  local status="$2"
+  local feature_path="$3"
+  local symbol_dir="$4"
+  local note="${5:-}"
+  mkdir -p "${REPLAY_VALIDATION_DIR}"
+  python3 - "${REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH}" \
+    "${symbol}" "${status}" "${feature_path}" "${symbol_dir}" "${note}" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+symbol, status, feature_path, symbol_dir, note = sys.argv[2:7]
+base = pathlib.Path(symbol_dir) if symbol_dir else None
+
+def child(name: str) -> str:
+    return str(base / name) if base else ""
+
+record = {
+    "symbol": symbol,
+    "status": status,
+    "feature_csv": feature_path,
+    "note": note,
+    "data_pipeline_report": child("data_pipeline_report.json"),
+    "archive_report": child("archive_report.json"),
+    "incremental_report": child("incremental_report.json"),
+    "gap_fill_report": child("gap_fill_report.json"),
+    "feature_store_report": child("feature_store_report.json"),
+}
+path.parent.mkdir(parents=True, exist_ok=True)
+with path.open("a", encoding="utf-8") as fh:
+    fh.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+PY
+}
+
+write_replay_validation_feature_build_report() {
+  mkdir -p "${REPLAY_VALIDATION_DIR}"
+  python3 - "${REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH}" \
+    "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}" \
+    "${REPLAY_VALIDATION_SYMBOLS_JSON}" \
+    "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}" \
+    "${REPLAY_VALIDATION_REAL_MARKET_FEATURES}" \
+    "${REPLAY_VALIDATION_FEATURE_DAYS}" \
+    "${REPLAY_VALIDATION_SOURCE_SYMBOL}" <<'PY'
+import json
+import pathlib
+import sys
+
+records_path = pathlib.Path(sys.argv[1])
+report_path = pathlib.Path(sys.argv[2])
+try:
+    symbols = json.loads(sys.argv[3] or "[]")
+except Exception:
+    symbols = []
+feature_map_raw = sys.argv[4]
+real_market_features = sys.argv[5]
+feature_days = sys.argv[6]
+source_symbol = sys.argv[7]
+
+feature_csv_by_symbol = {}
+for part in feature_map_raw.split(","):
+    if not part or "=" not in part:
+        continue
+    symbol, path = part.split("=", 1)
+    symbol = symbol.strip().upper()
+    if symbol:
+        feature_csv_by_symbol[symbol] = path
+
+records = []
+if records_path.is_file():
+    for line in records_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except Exception as exc:
+            records.append({"symbol": "", "status": "malformed", "note": str(exc)})
+
+record_by_symbol = {
+    str(item.get("symbol", "")).upper(): item
+    for item in records
+    if str(item.get("symbol", "")).strip()
+}
+missing_symbols = [
+    symbol for symbol in symbols
+    if str(symbol).upper() not in feature_csv_by_symbol
+]
+failed_symbols = [
+    str(item.get("symbol", "")).upper()
+    for item in records
+    if str(item.get("status", "")).lower() in {"failed", "missing", "malformed"}
+]
+payload = {
+    "enabled": str(real_market_features).lower() in {"1", "true", "yes", "on"},
+    "source_symbol": source_symbol,
+    "feature_days": feature_days,
+    "symbols": symbols,
+    "feature_csv_by_symbol": feature_csv_by_symbol,
+    "records": records,
+    "record_by_symbol": record_by_symbol,
+    "built_count": sum(1 for item in records if item.get("status") == "built"),
+    "reused_count": sum(1 for item in records if item.get("status") == "reused"),
+    "failed_symbols": failed_symbols,
+    "missing_symbols": missing_symbols,
+}
+report_path.parent.mkdir(parents=True, exist_ok=True)
+report_path.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
+attach_replay_validation_feature_build_report() {
+  if [[ ! -f "${REPLAY_VALIDATION_REPORT_PATH}" || ! -f "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}" ]]; then
+    return 0
+  fi
+  python3 - "${REPLAY_VALIDATION_REPORT_PATH}" "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}" <<'PY'
+import json
+import pathlib
+import sys
+
+report_path = pathlib.Path(sys.argv[1])
+feature_build_path = pathlib.Path(sys.argv[2])
+payload = json.loads(report_path.read_text(encoding="utf-8"))
+payload["feature_build"] = json.loads(feature_build_path.read_text(encoding="utf-8"))
+report_path.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
 RUN_DIR="${OUTPUT_ROOT}/${RUN_ID}"
 mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
 
@@ -682,6 +817,8 @@ FEATURE_STORE_PATH="${RUN_DIR}/feature_store_5m.csv"
 REPLAY_VALIDATION_DIR="${RUN_DIR}/replay_validation"
 REPLAY_VALIDATION_FEATURE_DIR="${REPLAY_VALIDATION_DIR}/features"
 REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report.json"
+REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH="${REPLAY_VALIDATION_DIR}/feature_build_records.jsonl"
+REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_build_report.json"
 REPLAY_VALIDATION_LAST_STATUS="not_run"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
 BASELINE_REPORT_PATH="${RUN_DIR}/baseline_report.json"
@@ -987,8 +1124,11 @@ run_data_pipeline() {
 
 build_replay_validation_feature_map() {
   REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
+  mkdir -p "${REPLAY_VALIDATION_DIR}"
+  : > "${REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH}"
   if ! is_true "${REPLAY_VALIDATION_REAL_MARKET_FEATURES}"; then
     echo "[INFO] replay validation real-market feature build skipped (disabled)"
+    write_replay_validation_feature_build_report
     return 0
   fi
 
@@ -1004,6 +1144,7 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
   )"
   if [[ -z "${symbol_lines}" ]]; then
     echo "[INFO] replay validation real-market feature build skipped (no symbols)"
+    write_replay_validation_feature_build_report
     return 0
   fi
 
@@ -1024,6 +1165,8 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
     if [[ "${symbol}" == "${REPLAY_VALIDATION_SOURCE_SYMBOL}" && -f "${FEATURE_STORE_PATH}" ]]; then
       mapping_parts+=("${symbol}=${FEATURE_STORE_PATH}")
       echo "[INFO] replay validation reuse source feature store: symbol=${symbol} feature=${FEATURE_STORE_PATH}"
+      append_replay_validation_feature_build_record \
+        "${symbol}" "reused" "${FEATURE_STORE_PATH}" "${symbol_dir}" "source_feature_store"
       continue
     fi
 
@@ -1040,11 +1183,17 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
       --skip-walkforward; then
       if [[ -f "${feature_path}" ]]; then
         mapping_parts+=("${symbol}=${feature_path}")
+        append_replay_validation_feature_build_record \
+          "${symbol}" "built" "${feature_path}" "${symbol_dir}" ""
       else
         echo "[WARN] replay validation feature store missing after build: symbol=${symbol} path=${feature_path}"
+        append_replay_validation_feature_build_record \
+          "${symbol}" "missing" "${feature_path}" "${symbol_dir}" "feature_store_missing_after_build"
       fi
     else
       echo "[WARN] replay validation feature build failed: symbol=${symbol}"
+      append_replay_validation_feature_build_record \
+        "${symbol}" "failed" "${feature_path}" "${symbol_dir}" "data_pipeline_command_failed"
     fi
   done <<< "${symbol_lines}"
 
@@ -1057,6 +1206,7 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
   else
     echo "[WARN] replay validation feature map empty; fallback to source feature store"
   fi
+  write_replay_validation_feature_build_report
 }
 
 ensure_replay_validation_source_feature_store() {
@@ -1261,6 +1411,7 @@ run_replay_validation() {
     REPLAY_ARGS+=(--refresh_corpus_manifest)
   fi
   if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${REPLAY_ARGS[@]}"; then
+    attach_replay_validation_feature_build_report
     REPLAY_VALIDATION_LAST_STATUS="pass"
     echo "[INFO] replay validation done"
     return 0
@@ -1268,6 +1419,7 @@ run_replay_validation() {
 
   echo "[WARN] replay validation failed"
   write_replay_validation_fail_report
+  attach_replay_validation_feature_build_report
   REPLAY_VALIDATION_LAST_STATUS="fail"
   return 0
 }
@@ -1483,6 +1635,7 @@ build_summary() {
   "runtime_log_filter_meta": "${ASSESS_LOG_FILTER_META_PATH}",
   "runtime_assess_report": "${ASSESS_JSON_PATH}",
   "replay_validation_report": "${REPLAY_VALIDATION_REPORT_PATH}",
+  "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }

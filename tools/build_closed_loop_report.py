@@ -374,6 +374,9 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     selection = payload.get("selection", {})
     if not isinstance(selection, dict):
         selection = {}
+    feature_build = payload.get("feature_build", {})
+    if not isinstance(feature_build, dict):
+        feature_build = {}
 
     status_raw = str(aggregate_validation.get("status", "")).lower()
     if status_raw == "pass_with_actions":
@@ -395,6 +398,26 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
             warn_reasons.append(extra)
     if status_raw not in {"pass", "pass_with_actions", "fail"}:
         fail_reasons.append("replay-validation 缺少 aggregate_validation.status")
+    failed_feature_symbols = [
+        str(item)
+        for item in feature_build.get("failed_symbols", [])
+        if str(item).strip()
+    ]
+    missing_feature_symbols = [
+        str(item)
+        for item in feature_build.get("missing_symbols", [])
+        if str(item).strip()
+    ]
+    if failed_feature_symbols:
+        warn_reasons.append(
+            "replay real-market feature 构建失败: symbols="
+            + ",".join(sorted(set(failed_feature_symbols)))
+        )
+    if missing_feature_symbols:
+        warn_reasons.append(
+            "replay real-market feature 缺失，已回退 source feature: symbols="
+            + ",".join(sorted(set(missing_feature_symbols)))
+        )
 
     return {
         "status": status,
@@ -407,6 +430,7 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "source_symbol_matches_target": payload.get("source_symbol_matches_target"),
         "real_market_replay": payload.get("real_market_replay"),
         "per_symbol_source": payload.get("per_symbol_source", {}),
+        "feature_build": feature_build,
         "feature_csv_by_symbol": payload.get("feature_csv_by_symbol", {}),
         "symbol": payload.get("symbol"),
         "symbols": payload.get("symbols", []),
