@@ -74,6 +74,8 @@ class RunDataPipelineTest(unittest.TestCase):
                     str(run_dir),
                     "--symbol",
                     "SOLUSDT",
+                    "--archive-days",
+                    "30",
                     "--skip-walkforward",
                     "--dry-run",
                 ]
@@ -89,6 +91,10 @@ class RunDataPipelineTest(unittest.TestCase):
             self.assertEqual(report["symbol"], "SOLUSDT")
             self.assertTrue(report["skip_walkforward"])
             self.assertEqual(len(report["steps"]), 5)
+            archive_step = next(item for item in report["steps"] if item["name"] == "archive_download")
+            archive_cmd = archive_step["command"]
+            self.assertIn("--days", archive_cmd)
+            self.assertEqual(archive_cmd[archive_cmd.index("--days") + 1], "30")
             planned_count = sum(1 for item in report["steps"] if item["status"] == "planned")
             skipped_count = sum(1 for item in report["steps"] if item["status"] == "skipped")
             self.assertEqual(planned_count, 4)

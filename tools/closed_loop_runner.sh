@@ -118,6 +118,7 @@ REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
 REPLAY_VALIDATION_REAL_MARKET_FEATURES="${CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES:-true}"
+REPLAY_VALIDATION_FEATURE_DAYS="${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-120}"
 REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-trend}"
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
@@ -266,6 +267,7 @@ Env toggles:
   CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol>   feature store 源行情币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES=true|false
                                                          是否为 replay symbols 生成各自 feature store (default: true)
+  CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS=<int>       replay 专用逐币对 feature 下载天数 (default: 120)
   CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET=<bucket>   replay-validation 目标桶 (default: trend)
   CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS=<int>       replay-validation 最大片段数 (default: 16)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS=<int>   replay-validation 单片段最小 bars (default: 40)
@@ -1034,6 +1036,7 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
       --ohlcv-out "${ohlcv_path}" \
       --feature-out "${feature_path}" \
       --backtest-report "${backtest_path}" \
+      --archive-days "${REPLAY_VALIDATION_FEATURE_DAYS}" \
       --skip-walkforward; then
       if [[ -f "${feature_path}" ]]; then
         mapping_parts+=("${symbol}=${feature_path}")
@@ -1084,6 +1087,7 @@ ensure_replay_validation_source_feature_store() {
     --ohlcv-out "${ohlcv_path}" \
     --feature-out "${FEATURE_STORE_PATH}" \
     --backtest-report "${backtest_path}" \
+    --archive-days "${REPLAY_VALIDATION_FEATURE_DAYS}" \
     --skip-walkforward; then
     if [[ -f "${FEATURE_STORE_PATH}" ]]; then
       echo "[INFO] replay validation source feature store built: ${FEATURE_STORE_PATH}"

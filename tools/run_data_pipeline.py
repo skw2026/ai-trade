@@ -168,6 +168,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backtest-report", default="")
     parser.add_argument("--symbol", default="", help="override common.symbol")
     parser.add_argument(
+        "--archive-days",
+        type=int,
+        default=0,
+        help="override archive.days; 0 keeps config value",
+    )
+    parser.add_argument(
+        "--archive-start-date",
+        default="",
+        help="override archive.start_date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--archive-end-date",
+        default="",
+        help="override archive.end_date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
         "--skip-walkforward",
         action="store_true",
         help="build data/feature outputs without running walk-forward",
@@ -207,6 +223,11 @@ def main() -> int:
     steps: List[StepResult] = []
 
     archive_enabled = as_bool(deep_get(config, ["archive", "enabled"], True), True)
+    archive_days = (
+        max(1, int(args.archive_days))
+        if int(args.archive_days or 0) > 0
+        else as_int(deep_get(config, ["archive", "days"], 365), 365)
+    )
     archive_cmd = [
         py,
         "tools/fetch_binance_archive.py",
@@ -217,7 +238,7 @@ def main() -> int:
         "--market",
         str(deep_get(config, ["archive", "market"], "futures_um")),
         "--days",
-        str(as_int(deep_get(config, ["archive", "days"], 365), 365)),
+        str(archive_days),
         "--base-url",
         str(deep_get(config, ["archive", "base_url"], "https://data.binance.vision")),
         "--output",
@@ -225,8 +246,8 @@ def main() -> int:
         "--report",
         str(run_dir / "archive_report.json"),
     ]
-    start_date = deep_get(config, ["archive", "start_date"], "")
-    end_date = deep_get(config, ["archive", "end_date"], "")
+    start_date = args.archive_start_date or deep_get(config, ["archive", "start_date"], "")
+    end_date = args.archive_end_date or deep_get(config, ["archive", "end_date"], "")
     if isinstance(start_date, str) and start_date.strip():
         archive_cmd += ["--start-date", start_date.strip()]
     if isinstance(end_date, str) and end_date.strip():
