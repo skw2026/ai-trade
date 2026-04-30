@@ -178,7 +178,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
-            "CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-120}",
+            "CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-0}",
             scheduler,
         )
         self.assertIn(
@@ -241,6 +241,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS", script)
+        self.assertIn("replay validation corpus refresh enabled for bounded feature window", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS", script)

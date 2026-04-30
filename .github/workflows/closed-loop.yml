@@ -37,6 +37,11 @@ on:
         required: false
         default: "BTCUSDT"
         type: string
+      replay_feature_days:
+        description: "replay-validation 逐币对 feature 历史天数；0 表示沿用 data_pipeline 配置"
+        required: false
+        default: "0"
+        type: string
   schedule:
     - cron: "15 */6 * * *" # 每6小时一次
 
@@ -68,7 +73,7 @@ jobs:
           CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && '' || inputs.replay_source_symbol }}
           CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: ${{ github.event_name == 'schedule' && '' || 'true' }}
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
-          CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ github.event_name == 'schedule' && '' || '120' }}
+          CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ github.event_name == 'schedule' && '' || inputs.replay_feature_days }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}

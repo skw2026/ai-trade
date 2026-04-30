@@ -118,7 +118,7 @@ REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
 REPLAY_VALIDATION_REAL_MARKET_FEATURES="${CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES:-true}"
-REPLAY_VALIDATION_FEATURE_DAYS="${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-120}"
+REPLAY_VALIDATION_FEATURE_DAYS="${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-0}"
 REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-trend}"
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
@@ -267,7 +267,7 @@ Env toggles:
   CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol>   feature store 源行情币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES=true|false
                                                          是否为 replay symbols 生成各自 feature store (default: true)
-  CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS=<int>       replay 专用逐币对 feature 下载天数 (default: 120)
+  CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS=<int>       replay 专用逐币对 feature 下载天数；0=沿用 data 配置 (default: 0)
   CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET=<bucket>   replay-validation 目标桶 (default: trend)
   CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS=<int>       replay-validation 最大片段数 (default: 16)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS=<int>   replay-validation 单片段最小 bars (default: 40)
@@ -1252,7 +1252,12 @@ run_replay_validation() {
     --min_mean_realized_net_per_fill "${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL}"
     --warn_mean_filtered_cost_ratio "${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}"
   )
-  if is_true "${REPLAY_VALIDATION_REFRESH_CORPUS}"; then
+  local replay_refresh_corpus="${REPLAY_VALIDATION_REFRESH_CORPUS}"
+  if ! is_true "${replay_refresh_corpus}" && [[ "${REPLAY_VALIDATION_FEATURE_DAYS}" =~ ^[1-9][0-9]*$ ]]; then
+    replay_refresh_corpus="true"
+    echo "[INFO] replay validation corpus refresh enabled for bounded feature window: days=${REPLAY_VALIDATION_FEATURE_DAYS}"
+  fi
+  if is_true "${replay_refresh_corpus}"; then
     REPLAY_ARGS+=(--refresh_corpus_manifest)
   fi
   if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${REPLAY_ARGS[@]}"; then
