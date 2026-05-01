@@ -243,6 +243,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS", script)
         self.assertIn("replay validation corpus refresh enabled for bounded feature window", script)
         self.assertIn("feature_build_report.json", script)
+        self.assertIn("--skip-walkforward </dev/null", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS", script)

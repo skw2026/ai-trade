@@ -1180,7 +1180,7 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
       --feature-out "${feature_path}" \
       --backtest-report "${backtest_path}" \
       --archive-days "${REPLAY_VALIDATION_FEATURE_DAYS}" \
-      --skip-walkforward; then
+      --skip-walkforward </dev/null; then
       if [[ -f "${feature_path}" ]]; then
         mapping_parts+=("${symbol}=${feature_path}")
         append_replay_validation_feature_build_record \
@@ -1238,7 +1238,7 @@ ensure_replay_validation_source_feature_store() {
     --feature-out "${FEATURE_STORE_PATH}" \
     --backtest-report "${backtest_path}" \
     --archive-days "${REPLAY_VALIDATION_FEATURE_DAYS}" \
-    --skip-walkforward; then
+    --skip-walkforward </dev/null; then
     if [[ -f "${FEATURE_STORE_PATH}" ]]; then
       echo "[INFO] replay validation source feature store built: ${FEATURE_STORE_PATH}"
       return 0
