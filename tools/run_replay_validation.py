@@ -531,6 +531,8 @@ def select_replay_segments(
         "corpus_loaded": False,
         "corpus_written": False,
         "corpus_refreshed": False,
+        "corpus_auto_refreshed": False,
+        "corpus_refresh_reasons": [],
         "corpus_resolved_segment_count": 0,
         "dynamic_appended_segment_count": 0,
     }
@@ -544,6 +546,26 @@ def select_replay_segments(
                 target_bucket=target_bucket,
                 base_interval_ms=base_interval_ms,
             )
+            selection["corpus_loaded"] = True
+            selection["corpus_refresh_reasons"] = list(corpus_warnings)
+            selection["corpus_resolved_segment_count"] = len(resolved_segments)
+            if corpus_warnings and eligible:
+                selected = eligible[: max(1, max_segments)]
+                write_corpus_manifest(
+                    corpus_manifest,
+                    feature_csv=feature_csv,
+                    target_bucket=target_bucket,
+                    base_interval_ms=base_interval_ms,
+                    thresholds=thresholds,
+                    max_segments=max_segments,
+                    min_segment_bars=min_segment_bars,
+                    selected_segments=selected,
+                )
+                selection["selection_mode"] = "dynamic_top_n_auto_refresh"
+                selection["corpus_written"] = True
+                selection["corpus_refreshed"] = True
+                selection["corpus_auto_refreshed"] = True
+                return selected, eligible, selection, warnings
             warnings.extend(corpus_warnings)
             if resolved_segments:
                 selected = list(resolved_segments[: max(1, max_segments)])
@@ -568,8 +590,6 @@ def select_replay_segments(
                         selection["selection_mode"] = "corpus_manifest"
                 else:
                     selection["selection_mode"] = "corpus_manifest"
-                selection["corpus_loaded"] = True
-                selection["corpus_resolved_segment_count"] = len(resolved_segments)
                 return (
                     selected,
                     eligible,

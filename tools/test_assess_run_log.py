@@ -610,6 +610,16 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["execution_attribution_main_maker_fill_count"], 0)
         self.assertEqual(metrics["execution_attribution_main_taker_fill_count"], 1)
         self.assertAlmostEqual(metrics["execution_attribution_fee_usd"], 0.075)
+        self.assertEqual(metrics["execution_attribution_symbol_count"], 1)
+        self.assertEqual(metrics["execution_attribution_worst_symbol"], "BTCUSDT")
+        self.assertAlmostEqual(
+            metrics["execution_attribution_worst_symbol_realized_net_usd"],
+            -0.065,
+        )
+        self.assertAlmostEqual(
+            metrics["execution_attribution_worst_symbol_realized_net_per_fill"],
+            -0.0325,
+        )
         self.assertAlmostEqual(
             metrics["execution_attribution_probe_maker_fee_usd"], 0.02
         )
@@ -628,6 +638,14 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(
             attribution["fills"]["main"]["fee_by_liquidity"]["TAKER"], 0.055
         )
+        quality = attribution["fills"]["quality_by_symbol"]["BTCUSDT"]
+        self.assertEqual(quality["fills"], 2)
+        self.assertEqual(quality["maker_fills"], 1)
+        self.assertEqual(quality["taker_fills"], 1)
+        self.assertAlmostEqual(quality["realized_pnl_usd"], 0.01)
+        self.assertAlmostEqual(quality["fee_usd"], 0.075)
+        self.assertAlmostEqual(quality["realized_net_usd"], -0.065)
+        self.assertAlmostEqual(quality["realized_net_per_fill"], -0.0325)
 
     def test_transient_trend_regime_change_is_reported_separately(self):
         text = (

@@ -440,9 +440,129 @@ def record_fill(
         bump_float(notional_by_liquidity, liquidity, abs(notional_abs_usd))
 
 
+def normalize_counter_key(key: Optional[str]) -> str:
+    normalized = str(key or "UNKNOWN").strip().upper()
+    return normalized or "UNKNOWN"
+
+
+def extract_fill_direction(line: str) -> int:
+    raw_direction = extract_float_log_field(line, "direction")
+    if raw_direction is not None:
+        if raw_direction > 0:
+            return 1
+        if raw_direction < 0:
+            return -1
+    side = str(extract_log_field(line, "side") or "").strip().lower()
+    if side == "buy":
+        return 1
+    if side == "sell":
+        return -1
+    return 0
+
+
+def record_symbol_fill_quality(
+    quality_by_symbol: Dict[str, object],
+    position_state: Dict[str, Dict[str, float]],
+    *,
+    symbol: Optional[str],
+    direction: int,
+    qty: float,
+    price: float,
+    fee_usd: float,
+    notional_abs_usd: float,
+    liquidity: Optional[str],
+) -> None:
+    normalized_symbol = normalize_counter_key(symbol)
+    bucket = quality_by_symbol.setdefault(
+        normalized_symbol,
+        {
+            "fills": 0,
+            "fee_usd": 0.0,
+            "notional_abs_usd": 0.0,
+            "realized_pnl_usd": 0.0,
+            "realized_net_usd": 0.0,
+            "realized_net_per_fill": 0.0,
+            "maker_fills": 0,
+            "taker_fills": 0,
+            "unknown_liquidity_fills": 0,
+        },
+    )
+    if not isinstance(bucket, dict):
+        return
+
+    abs_fee = abs(float(fee_usd))
+    bucket["fills"] = int(bucket.get("fills", 0)) + 1
+    bucket["fee_usd"] = rounded(float(bucket.get("fee_usd", 0.0)) + abs_fee)
+    bucket["notional_abs_usd"] = rounded(
+        float(bucket.get("notional_abs_usd", 0.0)) + abs(float(notional_abs_usd))
+    )
+    liquidity_normalized = normalize_counter_key(liquidity)
+    if liquidity_normalized == "MAKER":
+        bucket["maker_fills"] = int(bucket.get("maker_fills", 0)) + 1
+    elif liquidity_normalized == "TAKER":
+        bucket["taker_fills"] = int(bucket.get("taker_fills", 0)) + 1
+    else:
+        bucket["unknown_liquidity_fills"] = int(
+            bucket.get("unknown_liquidity_fills", 0)
+        ) + 1
+
+    realized_pnl = 0.0
+    if direction != 0 and qty > 0.0 and price > 0.0:
+        state = position_state.setdefault(
+            normalized_symbol,
+            {
+                "position": 0.0,
+                "avg_price": 0.0,
+            },
+        )
+        position = float(state.get("position", 0.0))
+        avg_price = float(state.get("avg_price", 0.0))
+        signed_qty = float(direction) * float(qty)
+        if abs(position) < 1e-12 or position * signed_qty > 0.0:
+            new_position = position + signed_qty
+            if abs(new_position) > 1e-12:
+                avg_price = (
+                    abs(position) * avg_price + abs(signed_qty) * price
+                ) / abs(new_position)
+            else:
+                avg_price = 0.0
+            position = new_position
+        else:
+            close_qty = min(abs(position), abs(signed_qty))
+            if position > 0.0:
+                realized_pnl += (price - avg_price) * close_qty
+            else:
+                realized_pnl += (avg_price - price) * close_qty
+            new_position = position + signed_qty
+            if abs(new_position) < 1e-12:
+                position = 0.0
+                avg_price = 0.0
+            elif position * new_position > 0.0:
+                position = new_position
+            else:
+                position = new_position
+                avg_price = price
+        state["position"] = position
+        state["avg_price"] = avg_price
+
+    bucket["realized_pnl_usd"] = rounded(
+        float(bucket.get("realized_pnl_usd", 0.0)) + realized_pnl
+    )
+    bucket["realized_net_usd"] = rounded(
+        float(bucket.get("realized_pnl_usd", 0.0)) - float(bucket.get("fee_usd", 0.0))
+    )
+    fills = int(bucket.get("fills", 0))
+    bucket["realized_net_per_fill"] = (
+        rounded(float(bucket.get("realized_net_usd", 0.0)) / fills)
+        if fills > 0
+        else 0.0
+    )
+
+
 def extract_execution_attribution(text: str) -> Dict[str, object]:
     probe_client_order_ids: set[str] = set()
     probe_fill_ids: set[str] = set()
+    position_state: Dict[str, Dict[str, float]] = {}
 
     for line in text.splitlines():
         if (
@@ -475,6 +595,7 @@ def extract_execution_attribution(text: str) -> Dict[str, object]:
             "unknown_liquidity_count": 0,
             "by_symbol": {},
             "by_liquidity": {},
+            "quality_by_symbol": {},
             "probe": new_fill_bucket(),
             "main": new_fill_bucket(),
         },
@@ -535,11 +656,11 @@ def extract_execution_attribution(text: str) -> Dict[str, object]:
             fill_id = extract_log_field(line, "fill_id")
             client_order_id = extract_log_field(line, "client_order_id")
             fee_usd = extract_float_log_field(line, "fee") or 0.0
+            qty = extract_float_log_field(line, "qty") or 0.0
+            price = extract_float_log_field(line, "price") or 0.0
             notional_abs_usd = extract_float_log_field(line, "notional_abs_usd")
             if notional_abs_usd is None:
-                qty = extract_float_log_field(line, "qty")
-                price = extract_float_log_field(line, "price")
-                if qty is not None and price is not None:
+                if qty > 0.0 and price > 0.0:
                     notional_abs_usd = abs(qty * price)
                 else:
                     notional_abs_usd = 0.0
@@ -575,6 +696,19 @@ def extract_execution_attribution(text: str) -> Dict[str, object]:
             bucket = fills.get(bucket_name)
             if isinstance(bucket, dict):
                 record_fill(bucket, symbol, liquidity, fee_usd, notional_abs_usd)
+            quality_by_symbol = fills.get("quality_by_symbol")
+            if isinstance(quality_by_symbol, dict):
+                record_symbol_fill_quality(
+                    quality_by_symbol,
+                    position_state,
+                    symbol=symbol,
+                    direction=extract_fill_direction(line),
+                    qty=qty,
+                    price=price,
+                    fee_usd=fee_usd,
+                    notional_abs_usd=notional_abs_usd,
+                    liquidity=liquidity,
+                )
 
         if "RUNTIME_STATUS:" in line:
             window_fills = int(extract_float_log_field(line, "fills") or 0)
@@ -2075,6 +2209,35 @@ def assess(
             probe_fee_by_liquidity = {}
         if not isinstance(main_fee_by_liquidity, dict):
             main_fee_by_liquidity = {}
+        quality_by_symbol = attribution_fills.get("quality_by_symbol", {})
+        if not isinstance(quality_by_symbol, dict):
+            quality_by_symbol = {}
+        worst_symbol = ""
+        worst_symbol_net = 0.0
+        worst_symbol_net_per_fill = 0.0
+        best_symbol = ""
+        best_symbol_net = 0.0
+        best_symbol_net_per_fill = 0.0
+        if quality_by_symbol:
+            ranked_symbols = sorted(
+                (
+                    (
+                        symbol,
+                        float(payload.get("realized_net_usd", 0.0)),
+                        float(payload.get("realized_net_per_fill", 0.0)),
+                    )
+                    for symbol, payload in quality_by_symbol.items()
+                    if isinstance(payload, dict)
+                ),
+                key=lambda item: item[1],
+            )
+            if ranked_symbols:
+                worst_symbol, worst_symbol_net, worst_symbol_net_per_fill = (
+                    ranked_symbols[0]
+                )
+                best_symbol, best_symbol_net, best_symbol_net_per_fill = (
+                    ranked_symbols[-1]
+                )
         metrics.update(
             {
                 "execution_attribution_submit_count": int(
@@ -2154,6 +2317,21 @@ def assess(
                 ),
                 "execution_attribution_runtime_fee_delta_usd": float(
                     attribution_runtime_windows.get("fee_delta_usd", 0.0)
+                ),
+                "execution_attribution_symbol_count": int(len(quality_by_symbol)),
+                "execution_attribution_worst_symbol": worst_symbol,
+                "execution_attribution_worst_symbol_realized_net_usd": float(
+                    worst_symbol_net
+                ),
+                "execution_attribution_worst_symbol_realized_net_per_fill": float(
+                    worst_symbol_net_per_fill
+                ),
+                "execution_attribution_best_symbol": best_symbol,
+                "execution_attribution_best_symbol_realized_net_usd": float(
+                    best_symbol_net
+                ),
+                "execution_attribution_best_symbol_realized_net_per_fill": float(
+                    best_symbol_net_per_fill
                 ),
             }
         )
@@ -2967,6 +3145,7 @@ def print_report(report: Dict[str, object]) -> None:
             print(f"  - fill_notional_abs_usd: {fills.get('notional_abs_usd')}")
             print(f"  - fill_by_symbol: {fills.get('by_symbol')}")
             print(f"  - fill_by_liquidity: {fills.get('by_liquidity')}")
+            print(f"  - quality_by_symbol: {fills.get('quality_by_symbol')}")
             print(f"  - probe: {fills.get('probe')}")
             print(f"  - main: {fills.get('main')}")
         if isinstance(runtime_fill_windows, dict):
