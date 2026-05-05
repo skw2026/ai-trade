@@ -15,6 +15,7 @@ RUNNER_SCRIPT = ROOT / "tools" / "closed_loop_runner.sh"
 WATCHDOG_SCRIPT = ROOT / "ops" / "watchdog.py"
 RECYCLE_SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
 DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
+CLOSED_LOOP_WORKFLOW = ROOT / ".github" / "workflows" / "closed-loop.yml"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -250,6 +251,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS", script)
         self.assertIn("--corpus_manifest", script)
+
         self.assertIn("--refresh_corpus_manifest", script)
         self.assertIn("--symbols", script)
         self.assertIn("--source_symbol", script)
@@ -287,6 +289,13 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--validation_fraction", script)
         self.assertIn("--min_validation_samples", script)
         self.assertIn("--early_stopping_rounds", script)
+
+    def test_closed_loop_workflow_default_replay_symbols_cover_live_trend_set(self):
+        workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'default: "BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT"',
+            workflow,
+        )
 
     def test_web_service_paths_are_consistent(self):
         dev_web = self.dev_services["ai-trade-web"]

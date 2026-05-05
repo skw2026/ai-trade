@@ -30,7 +30,7 @@ on:
       replay_symbols:
         description: "replay-validation 目标币对，逗号分隔；留空则使用 ECS .env.runtime"
         required: false
-        default: "SOLUSDT,XRPUSDT,BNBUSDT"
+        default: "BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT"
         type: string
       replay_source_symbol:
         description: "replay-validation feature store 源币对；留空则使用 ECS .env.runtime"

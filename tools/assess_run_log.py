@@ -2808,7 +2808,11 @@ def assess(
         if metrics["reconcile_anomaly_reduce_only_true_count"] > 0:
             warn_reasons.append(
                 "对账异常保护触发 reduce-only，建议核查回报链路与对账口径: "
-                f"reduce_only_true_count={metrics['reconcile_anomaly_reduce_only_true_count']}"
+                f"reduce_only_true_count={metrics['reconcile_anomaly_reduce_only_true_count']}, "
+                f"mismatch_count={metrics['reconcile_mismatch_count']}, "
+                f"autoresync_count={metrics['reconcile_autoresync_count']}, "
+                f"deferred_count={metrics['reconcile_deferred_count']}, "
+                f"streak_max={metrics['reconcile_anomaly_streak_max']}"
             )
         if (
             metrics["concentration_runtime_count"] > 0

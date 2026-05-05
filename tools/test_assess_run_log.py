@@ -936,6 +936,12 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["fill_account_already_reflected_count"], 1)
         self.assertEqual(metrics["fill_applied_account_already_reflected_count"], 1)
         self.assertEqual(metrics["fill_cancelled_order_applied_count"], 1)
+        warnings = "\n".join(report["warn_reasons"])
+        self.assertIn("reduce_only_true_count=1", warnings)
+        self.assertIn("mismatch_count=0", warnings)
+        self.assertIn("autoresync_count=0", warnings)
+        self.assertIn("deferred_count=0", warnings)
+        self.assertIn("streak_max=2", warnings)
 
     def test_assess_warn_on_low_explicit_liquidity_ratio(self):
         runtime = self._runtime_line(
