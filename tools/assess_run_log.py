@@ -192,6 +192,8 @@ RUNTIME_EXECUTION_QUALITY_GUARD_RE = re.compile(
     r"min_realized_net_per_fill_usd=(?P<min_realized_net_per_fill_usd>-?[0-9]+(?:\.[0-9]+)?), "
     r"max_fee_bps_per_fill=(?P<max_fee_bps_per_fill>-?[0-9]+(?:\.[0-9]+)?), "
     r"applied_penalty_bps=(?P<applied_penalty_bps>-?[0-9]+(?:\.[0-9]+)?)"
+    r"(?:, symbol_active_count=(?P<symbol_active_count>-?[0-9]+), "
+    r"symbol_state_count=(?P<symbol_state_count>-?[0-9]+))?"
 )
 RUNTIME_ENTRY_EDGE_ADJUST_RE = re.compile(
     r"RUNTIME_STATUS:.*?funnel_window=\{[^}]*?"
@@ -1451,6 +1453,8 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
     bad_streaks: list[int] = []
     good_streaks: list[int] = []
     no_fill_windows: list[int] = []
+    symbol_active_counts: list[int] = []
+    symbol_state_counts: list[int] = []
 
     for m in RUNTIME_EXECUTION_QUALITY_GUARD_RE.finditer(text):
         active_flags.append(1.0 if m.group("active") == "true" else 0.0)
@@ -1460,6 +1464,10 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
             bad_streaks.append(int(m.group("bad_streak")))
             good_streaks.append(int(m.group("good_streak")))
             no_fill_windows.append(int(m.group("no_fill_windows")))
+            if m.group("symbol_active_count") is not None:
+                symbol_active_counts.append(int(m.group("symbol_active_count")))
+            if m.group("symbol_state_count") is not None:
+                symbol_state_counts.append(int(m.group("symbol_state_count")))
         except ValueError:
             continue
 
@@ -1474,6 +1482,8 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
             "bad_streak_max": 0.0,
             "good_streak_max": 0.0,
             "no_fill_windows_max": 0.0,
+            "symbol_active_count_max": 0.0,
+            "symbol_state_count_max": 0.0,
         }
 
     return {
@@ -1485,6 +1495,12 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
         "bad_streak_max": float(max(bad_streaks) if bad_streaks else 0),
         "good_streak_max": float(max(good_streaks) if good_streaks else 0),
         "no_fill_windows_max": float(max(no_fill_windows) if no_fill_windows else 0),
+        "symbol_active_count_max": float(
+            max(symbol_active_counts) if symbol_active_counts else 0
+        ),
+        "symbol_state_count_max": float(
+            max(symbol_state_counts) if symbol_state_counts else 0
+        ),
     }
 
 
@@ -2068,6 +2084,12 @@ def assess(
         "execution_quality_guard_no_fill_windows_max": int(
             execution_quality_guard["no_fill_windows_max"]
         ),
+        "execution_quality_guard_symbol_active_count_max": int(
+            execution_quality_guard["symbol_active_count_max"]
+        ),
+        "execution_quality_guard_symbol_state_count_max": int(
+            execution_quality_guard["symbol_state_count_max"]
+        ),
         "entry_edge_adjust_runtime_count": int(entry_edge_adjust["runtime_count"]),
         "entry_regime_adjust_bps_avg": entry_edge_adjust["regime_adjust_bps_avg"],
         "entry_volatility_adjust_bps_avg": entry_edge_adjust[
@@ -2144,6 +2166,12 @@ def assess(
         ),
         "execution_quality_guard_exit_count": count(
             r"EXECUTION_QUALITY_GUARD_EXIT", text
+        ),
+        "execution_symbol_quality_guard_enter_count": count(
+            r"EXECUTION_SYMBOL_QUALITY_GUARD_ENTER", text
+        ),
+        "execution_symbol_quality_guard_exit_count": count(
+            r"EXECUTION_SYMBOL_QUALITY_GUARD_EXIT", text
         ),
         "reconcile_runtime_count": int(reconcile_runtime["runtime_count"]),
         "reconcile_anomaly_streak_nonzero_count": int(

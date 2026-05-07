@@ -143,6 +143,15 @@ class BotApplication {
                                      double window_realized_net_per_fill_usd,
                                      double window_fee_delta_usd,
                                      double window_notional_abs_usd);
+  /// Symbol 级执行质量守卫：避免单个低质量币对被全局平均值掩盖。
+  void EvaluateSymbolExecutionQualityGuard(const std::string& symbol,
+                                           std::uint64_t window_fills,
+                                           double window_realized_net_sum_usd,
+                                           double window_fee_delta_usd,
+                                           double window_notional_abs_usd);
+  bool IsSymbolExecutionQualityGuardActive(const std::string& symbol) const;
+  double SymbolExecutionQualityPenaltyBps(const std::string& symbol) const;
+  int ActiveSymbolExecutionQualityGuardCount() const;
   /// 对账异常保护：连续异常触发 reduce-only / halt，自恢复窗口退出。
   void UpdateReconcileAnomalyProtection(bool anomaly_detected,
                                         const std::string& reason_code);
@@ -231,6 +240,13 @@ class BotApplication {
 
   /// 订单漏斗统计（用于运行态可观测闭环）。
   struct DecisionFunnelStats {
+    struct EntryFillQualityBySymbol {
+      std::uint64_t fills{0};
+      double realized_net_sum_usd{0.0};
+      double fee_usd_sum{0.0};
+      double notional_abs_usd_sum{0.0};
+    };
+
     std::uint64_t raw_signals{0};
     std::uint64_t risk_adjusted_signals{0};
     std::uint64_t intents_generated{0};
@@ -328,6 +344,8 @@ class BotApplication {
     double entry_fills_taker_fee_usd_sum{0.0};
     double entry_fills_maker_notional_abs_usd_sum{0.0};
     double entry_fills_taker_notional_abs_usd_sum{0.0};
+    std::unordered_map<std::string, EntryFillQualityBySymbol>
+        entry_fill_quality_by_symbol;
   };
 
   static void AccumulateStats(DecisionFunnelStats* total,
@@ -451,6 +469,19 @@ class BotApplication {
       0.0};  ///< 累积 fee_usd，用于稳定计算费率。
   double execution_quality_pending_notional_abs_usd_sum_{
       0.0};  ///< 累积成交名义值，用于稳定计算费率。
+  struct ExecutionQualityGuardState {
+    int bad_streak{0};
+    int good_streak{0};
+    int no_fill_windows{0};
+    bool guard_active{false};
+    double required_edge_penalty_bps{0.0};
+    std::uint64_t pending_fills{0};
+    double pending_realized_net_sum_usd{0.0};
+    double pending_fee_usd_sum{0.0};
+    double pending_notional_abs_usd_sum{0.0};
+  };
+  std::unordered_map<std::string, ExecutionQualityGuardState>
+      execution_quality_by_symbol_;
   int reconcile_anomaly_streak_{0};  ///< 连续对账异常窗口计数。
   int reconcile_healthy_streak_{0};  ///< 对账连续健康窗口计数。
   int reconcile_tick_{0};          ///< 对账定时器计数

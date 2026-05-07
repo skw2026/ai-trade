@@ -858,7 +858,10 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
         std::min(required_edge_bps, config_.execution_required_edge_cap_bps);
   }
   double adaptive_relax_bps = 0.0;
-  const bool quality_guard_active = execution_quality_guard_active_;
+  const bool symbol_quality_guard_active =
+      IsSymbolExecutionQualityGuardActive(decision.intent->symbol);
+  const bool quality_guard_active =
+      execution_quality_guard_active_ || symbol_quality_guard_active;
   if (config_.execution_adaptive_fee_gate_enabled &&
       static_cast<int>(entry_gate_observed_samples_) >=
           config_.execution_adaptive_fee_gate_min_samples) {
@@ -1019,7 +1022,8 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
     }
   }
   const double quality_guard_penalty_bps =
-      std::max(0.0, execution_quality_required_edge_penalty_bps_);
+      std::max(0.0, execution_quality_required_edge_penalty_bps_) +
+      SymbolExecutionQualityPenaltyBps(decision.intent->symbol);
   const double quality_guard_floor_bps =
       quality_guard_active
           ? std::max(0.0, config_.execution_quality_guard_required_edge_floor_bps)
@@ -1424,6 +1428,7 @@ void BotApplication::EvaluateExecutionQualityGuard(
     execution_quality_pending_realized_net_sum_usd_ = 0.0;
     execution_quality_pending_fee_usd_sum_ = 0.0;
     execution_quality_pending_notional_abs_usd_sum_ = 0.0;
+    execution_quality_by_symbol_.clear();
     return;
   }
 
@@ -1579,6 +1584,207 @@ void BotApplication::EvaluateExecutionQualityGuard(
     execution_quality_no_fill_windows_ = 0;
     LogInfo("EXECUTION_QUALITY_GUARD_EXIT: release_streak=" +
             std::to_string(release_streak) +
+            ", eval_fills=" + std::to_string(static_cast<int>(eval_fills)) +
+            ", eval_realized_net_per_fill_usd=" +
+            std::to_string(eval_realized_net_per_fill_usd) +
+            ", eval_fee_bps_per_fill=" + std::to_string(eval_fee_bps_per_fill) +
+            ", eval_notional_abs_usd=" + std::to_string(eval_notional_abs_usd) +
+            ", eval_fee_bps_has_sample=" +
+            std::string(eval_has_fee_bps_sample ? "true" : "false") +
+            ", eval_net_quality_has_sample=" +
+            std::string(eval_has_net_quality_sample ? "true" : "false"));
+  }
+}
+
+bool BotApplication::IsSymbolExecutionQualityGuardActive(
+    const std::string& symbol) const {
+  const auto it = execution_quality_by_symbol_.find(symbol);
+  return it != execution_quality_by_symbol_.end() && it->second.guard_active;
+}
+
+double BotApplication::SymbolExecutionQualityPenaltyBps(
+    const std::string& symbol) const {
+  const auto it = execution_quality_by_symbol_.find(symbol);
+  if (it == execution_quality_by_symbol_.end() || !it->second.guard_active) {
+    return 0.0;
+  }
+  return std::max(0.0, it->second.required_edge_penalty_bps);
+}
+
+int BotApplication::ActiveSymbolExecutionQualityGuardCount() const {
+  int active_count = 0;
+  for (const auto& [symbol, state] : execution_quality_by_symbol_) {
+    (void)symbol;
+    if (state.guard_active) {
+      ++active_count;
+    }
+  }
+  return active_count;
+}
+
+void BotApplication::EvaluateSymbolExecutionQualityGuard(
+    const std::string& symbol,
+    std::uint64_t window_fills,
+    double window_realized_net_sum_usd,
+    double window_fee_delta_usd,
+    double window_notional_abs_usd) {
+  if (symbol.empty()) {
+    return;
+  }
+  if (!config_.execution_quality_guard_enabled) {
+    execution_quality_by_symbol_.clear();
+    return;
+  }
+
+  constexpr double kMinNotionalForFeeBpsUsd = 1000.0;
+  const double min_notional_for_net_quality_usd =
+      std::max(kMinNotionalForFeeBpsUsd,
+               std::max(0.0, config_.strategy_signal_notional_usd) * 3.0);
+  const double window_realized_net_per_fill_usd =
+      window_fills > 0
+          ? window_realized_net_sum_usd / static_cast<double>(window_fills)
+          : 0.0;
+  const double window_fee_bps =
+      window_notional_abs_usd > 1e-9
+          ? window_fee_delta_usd / window_notional_abs_usd * 10000.0
+          : 0.0;
+  const bool window_has_fee_bps_sample =
+      window_notional_abs_usd >= kMinNotionalForFeeBpsUsd;
+  const bool window_has_net_quality_sample =
+      window_notional_abs_usd >= min_notional_for_net_quality_usd;
+
+  auto& state = execution_quality_by_symbol_[symbol];
+  if (window_fills > 0) {
+    state.no_fill_windows = 0;
+    state.pending_fills += window_fills;
+    state.pending_realized_net_sum_usd += window_realized_net_sum_usd;
+    state.pending_fee_usd_sum += window_fee_delta_usd;
+    state.pending_notional_abs_usd_sum += window_notional_abs_usd;
+  }
+
+  const std::uint64_t min_fills = static_cast<std::uint64_t>(std::max(
+      0, config_.execution_quality_guard_min_fills));
+  const bool severe_bad_window =
+      window_fills > 0 &&
+      ((window_has_net_quality_sample &&
+        window_realized_net_per_fill_usd <
+            config_.execution_quality_guard_min_realized_net_per_fill_usd * 2.0) ||
+       (window_has_fee_bps_sample &&
+        window_fee_bps >
+            std::max(0.0, config_.execution_quality_guard_max_fee_bps_per_fill) *
+                1.5));
+
+  if (state.guard_active && window_fills == 0 && state.pending_fills < min_fills) {
+    ++state.no_fill_windows;
+    const double trigger_ratio =
+        std::clamp(config_.execution_adaptive_fee_gate_trigger_ratio, 0.0, 1.0);
+    if (entry_gate_observed_filtered_ratio_ >= trigger_ratio) {
+      ++state.good_streak;
+    } else {
+      state.good_streak = 0;
+    }
+    const int base_release_streak =
+        std::max(1, config_.execution_quality_guard_good_streak_to_release);
+    const int stale_release_streak = base_release_streak * 12;
+    if (state.good_streak >= stale_release_streak ||
+        state.no_fill_windows >= stale_release_streak) {
+      const int stale_no_fill_windows = state.no_fill_windows;
+      const auto stale_pending_fills = state.pending_fills;
+      const double stale_filtered_ratio = entry_gate_observed_filtered_ratio_;
+      state = ExecutionQualityGuardState{};
+      LogInfo("EXECUTION_SYMBOL_QUALITY_GUARD_EXIT_STALE: symbol=" + symbol +
+              ", release_streak=" + std::to_string(stale_release_streak) +
+              ", no_fill_windows=" +
+              std::to_string(stale_no_fill_windows) +
+              ", pending_fills=" + std::to_string(stale_pending_fills) +
+              ", observed_filtered_ratio=" +
+              std::to_string(stale_filtered_ratio) +
+              ", trigger_ratio=" + std::to_string(trigger_ratio));
+    }
+    return;
+  }
+  if (window_fills == 0) {
+    state.no_fill_windows = 0;
+  }
+  if (state.pending_fills == 0) {
+    return;
+  }
+  if (!severe_bad_window && state.pending_fills < min_fills) {
+    return;
+  }
+
+  const double eval_fills = static_cast<double>(state.pending_fills);
+  const double eval_realized_net_per_fill_usd =
+      eval_fills > 0.0 ? state.pending_realized_net_sum_usd / eval_fills : 0.0;
+  const bool eval_has_fee_bps_sample =
+      state.pending_notional_abs_usd_sum >= kMinNotionalForFeeBpsUsd;
+  const bool eval_has_net_quality_sample =
+      state.pending_notional_abs_usd_sum >= min_notional_for_net_quality_usd;
+  const double eval_fee_bps_per_fill =
+      state.pending_notional_abs_usd_sum > 1e-9
+          ? state.pending_fee_usd_sum / state.pending_notional_abs_usd_sum *
+                10000.0
+          : 0.0;
+  const double eval_notional_abs_usd = state.pending_notional_abs_usd_sum;
+  state.pending_fills = 0;
+  state.pending_realized_net_sum_usd = 0.0;
+  state.pending_fee_usd_sum = 0.0;
+  state.pending_notional_abs_usd_sum = 0.0;
+
+  const bool bad_quality =
+      (eval_has_net_quality_sample &&
+       eval_realized_net_per_fill_usd <
+           config_.execution_quality_guard_min_realized_net_per_fill_usd) ||
+      (eval_has_fee_bps_sample &&
+       eval_fee_bps_per_fill > config_.execution_quality_guard_max_fee_bps_per_fill);
+  if (bad_quality) {
+    state.no_fill_windows = 0;
+    ++state.bad_streak;
+    state.good_streak = 0;
+    const int trigger_streak =
+        std::max(0, config_.execution_quality_guard_bad_streak_to_trigger);
+    if (!state.guard_active &&
+        (trigger_streak == 0 || state.bad_streak >= trigger_streak)) {
+      state.guard_active = true;
+      state.required_edge_penalty_bps = std::max(
+          0.0, config_.execution_quality_guard_required_edge_penalty_bps);
+      LogInfo("EXECUTION_SYMBOL_QUALITY_GUARD_ENTER: symbol=" + symbol +
+              ", bad_streak=" + std::to_string(state.bad_streak) +
+              ", eval_fills=" + std::to_string(static_cast<int>(eval_fills)) +
+              ", eval_realized_net_per_fill_usd=" +
+              std::to_string(eval_realized_net_per_fill_usd) +
+              ", eval_fee_bps_per_fill=" + std::to_string(eval_fee_bps_per_fill) +
+              ", eval_notional_abs_usd=" + std::to_string(eval_notional_abs_usd) +
+              ", eval_fee_bps_has_sample=" +
+              std::string(eval_has_fee_bps_sample ? "true" : "false") +
+              ", eval_net_quality_has_sample=" +
+              std::string(eval_has_net_quality_sample ? "true" : "false") +
+              ", min_realized_net_per_fill_usd=" +
+              std::to_string(
+                  config_.execution_quality_guard_min_realized_net_per_fill_usd) +
+              ", max_fee_bps_per_fill=" +
+              std::to_string(config_.execution_quality_guard_max_fee_bps_per_fill) +
+              ", applied_penalty_bps=" +
+              std::to_string(state.required_edge_penalty_bps));
+    }
+    return;
+  }
+
+  state.bad_streak = 0;
+  if (!state.guard_active) {
+    state.good_streak = 0;
+    state.no_fill_windows = 0;
+    state.required_edge_penalty_bps = 0.0;
+    return;
+  }
+  ++state.good_streak;
+  state.no_fill_windows = 0;
+  const int release_streak =
+      std::max(0, config_.execution_quality_guard_good_streak_to_release);
+  if (release_streak == 0 || state.good_streak >= release_streak) {
+    state = ExecutionQualityGuardState{};
+    LogInfo("EXECUTION_SYMBOL_QUALITY_GUARD_EXIT: symbol=" + symbol +
+            ", release_streak=" + std::to_string(release_streak) +
             ", eval_fills=" + std::to_string(static_cast<int>(eval_fills)) +
             ", eval_realized_net_per_fill_usd=" +
             std::to_string(eval_realized_net_per_fill_usd) +
@@ -2812,6 +3018,12 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
     if (entry_fill) {
       ++funnel_window_.entry_fills_applied;
       funnel_window_.entry_fills_notional_abs_usd_sum += fill_notional_abs_usd;
+      auto& symbol_quality =
+          funnel_window_.entry_fill_quality_by_symbol[fill.symbol];
+      ++symbol_quality.fills;
+      symbol_quality.fee_usd_sum += fill.fee;
+      symbol_quality.realized_net_sum_usd -= fill.fee;
+      symbol_quality.notional_abs_usd_sum += fill_notional_abs_usd;
       if (explicit_liquidity) {
         ++funnel_window_.entry_fills_explicit_liquidity_count;
       } else if (fallback_by_fee) {
@@ -4084,6 +4296,25 @@ void BotApplication::LogStatus() {
                                 window_realized_net_per_entry_fill_usd,
                                 window_entry_fee_delta_usd,
                                 funnel_window.entry_fills_notional_abs_usd_sum);
+  std::unordered_set<std::string> symbol_quality_evaluated;
+  for (const auto& [symbol, quality] : funnel_window.entry_fill_quality_by_symbol) {
+    symbol_quality_evaluated.insert(symbol);
+    EvaluateSymbolExecutionQualityGuard(symbol,
+                                        quality.fills,
+                                        quality.realized_net_sum_usd,
+                                        quality.fee_usd_sum,
+                                        quality.notional_abs_usd_sum);
+  }
+  std::vector<std::string> stale_symbol_quality_guards;
+  stale_symbol_quality_guards.reserve(execution_quality_by_symbol_.size());
+  for (const auto& [symbol, state] : execution_quality_by_symbol_) {
+    if (state.guard_active && symbol_quality_evaluated.count(symbol) == 0) {
+      stale_symbol_quality_guards.push_back(symbol);
+    }
+  }
+  for (const auto& symbol : stale_symbol_quality_guards) {
+    EvaluateSymbolExecutionQualityGuard(symbol, 0, 0.0, 0.0, 0.0);
+  }
 
   LogInfo("RUNTIME_STATUS: ticks=" + std::to_string(market_tick_count_) +
           ", trade_ok=" + std::string(trade_ok ? "true" : "false") +
@@ -4374,6 +4605,8 @@ void BotApplication::LogStatus() {
           std::to_string(config_.execution_entry_gate_near_miss_maker_max_gap_bps) +
           ", quality_guard_penalty_bps=" +
           std::to_string(execution_quality_required_edge_penalty_bps_) +
+          ", symbol_quality_guard_active_count=" +
+          std::to_string(ActiveSymbolExecutionQualityGuardCount()) +
           ", quality_guard_floor_bps=" +
           std::to_string(config_.execution_quality_guard_required_edge_floor_bps) +
           ", concentration_top1_share_threshold=" +
@@ -4458,7 +4691,11 @@ void BotApplication::LogStatus() {
           ", max_fee_bps_per_fill=" +
           std::to_string(config_.execution_quality_guard_max_fee_bps_per_fill) +
           ", applied_penalty_bps=" +
-          std::to_string(execution_quality_required_edge_penalty_bps_) + "}" +
+          std::to_string(execution_quality_required_edge_penalty_bps_) +
+          ", symbol_active_count=" +
+          std::to_string(ActiveSymbolExecutionQualityGuardCount()) +
+          ", symbol_state_count=" +
+          std::to_string(execution_quality_by_symbol_.size()) + "}" +
           ", reconcile_runtime={anomaly_streak=" +
           std::to_string(reconcile_anomaly_streak_) +
           ", healthy_streak=" + std::to_string(reconcile_healthy_streak_) +

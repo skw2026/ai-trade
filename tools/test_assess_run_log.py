@@ -74,6 +74,8 @@ class AssessRunLogTest(unittest.TestCase):
         execution_quality_guard_active: bool = False,
         execution_quality_guard_penalty_bps: float = 0.0,
         execution_quality_guard_no_fill_windows: int = 0,
+        execution_quality_guard_symbol_active_count: int = 0,
+        execution_quality_guard_symbol_state_count: int = 0,
         reconcile_anomaly_streak: int = 0,
         reconcile_anomaly_reduce_only: bool = False,
         regime_bucket: str = "RANGE",
@@ -159,7 +161,9 @@ class AssessRunLogTest(unittest.TestCase):
             f"no_fill_windows={execution_quality_guard_no_fill_windows}, "
             "min_fills=12, trigger_streak=2, release_streak=2, "
             "min_realized_net_per_fill_usd=-0.005, max_fee_bps_per_fill=8.0, "
-            f"applied_penalty_bps={execution_quality_guard_penalty_bps}}}, "
+            f"applied_penalty_bps={execution_quality_guard_penalty_bps}, "
+            f"symbol_active_count={execution_quality_guard_symbol_active_count}, "
+            f"symbol_state_count={execution_quality_guard_symbol_state_count}}}, "
             "reconcile_runtime={anomaly_streak="
             f"{reconcile_anomaly_streak}, healthy_streak=0, "
             f"anomaly_reduce_only={reconcile_anomaly_reduce_only_text}, "
@@ -918,6 +922,8 @@ class AssessRunLogTest(unittest.TestCase):
                 execution_quality_guard_active=True,
                 execution_quality_guard_penalty_bps=1.5,
                 execution_quality_guard_no_fill_windows=4,
+                execution_quality_guard_symbol_active_count=1,
+                execution_quality_guard_symbol_state_count=2,
                 reconcile_anomaly_streak=2,
                 reconcile_anomaly_reduce_only=True,
             )
@@ -932,6 +938,8 @@ class AssessRunLogTest(unittest.TestCase):
         )
         text = (
             "2026-02-14 15:00:00 [INFO] EXECUTION_QUALITY_GUARD_ENTER: bad_streak=2\n"
+            "2026-02-14 15:00:01 [INFO] EXECUTION_SYMBOL_QUALITY_GUARD_ENTER: symbol=BNBUSDT, bad_streak=2\n"
+            "2026-02-14 15:00:02 [INFO] EXECUTION_SYMBOL_QUALITY_GUARD_EXIT: symbol=BNBUSDT, release_streak=2\n"
             "2026-02-14 15:00:20 [INFO] OMS_RECONCILE_ANOMALY_STREAK: streak=2\n"
             "2026-02-14 15:00:21 [INFO] FILL_ACCOUNT_ALREADY_REFLECTED: fill_id=f1\n"
             "2026-02-14 15:00:22 [INFO] FILL_APPLIED: fill_id=f1, "
@@ -943,6 +951,10 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["execution_quality_guard_runtime_count"], 2)
         self.assertEqual(metrics["execution_quality_guard_active_count"], 1)
         self.assertEqual(metrics["execution_quality_guard_enter_count"], 1)
+        self.assertEqual(metrics["execution_symbol_quality_guard_enter_count"], 1)
+        self.assertEqual(metrics["execution_symbol_quality_guard_exit_count"], 1)
+        self.assertEqual(metrics["execution_quality_guard_symbol_active_count_max"], 1)
+        self.assertEqual(metrics["execution_quality_guard_symbol_state_count_max"], 2)
         self.assertEqual(metrics["execution_quality_guard_no_fill_windows_max"], 4)
         self.assertAlmostEqual(
             metrics["execution_quality_guard_penalty_bps_avg"], 0.75, places=6
