@@ -1664,10 +1664,10 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
     return;
   }
 
-  constexpr double kMinNotionalForFeeBpsUsd = 1000.0;
+  constexpr double kMinNotionalForFeeBpsUsd = 100.0;
   const double min_notional_for_net_quality_usd =
       std::max(kMinNotionalForFeeBpsUsd,
-               std::max(0.0, config_.strategy_signal_notional_usd) * 3.0);
+               std::max(0.0, config_.strategy_signal_notional_usd) * 0.5);
   const double window_realized_net_per_fill_usd =
       window_fills > 0
           ? window_realized_net_sum_usd / static_cast<double>(window_fills)
@@ -1690,8 +1690,11 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
     state.pending_notional_abs_usd_sum += window_notional_abs_usd;
   }
 
-  const std::uint64_t min_fills = static_cast<std::uint64_t>(std::max(
-      0, config_.execution_quality_guard_min_fills));
+  const std::uint64_t configured_min_fills =
+      static_cast<std::uint64_t>(
+          std::max(0, config_.execution_quality_guard_min_fills));
+  const std::uint64_t min_fills =
+      configured_min_fills == 0 ? 0 : std::min<std::uint64_t>(configured_min_fills, 6);
   const bool severe_bad_window =
       window_fills > 0 &&
       ((window_has_net_quality_sample &&
@@ -1769,8 +1772,14 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
     state.no_fill_windows = 0;
     ++state.bad_streak;
     state.good_streak = 0;
-    const int trigger_streak =
+    const int configured_trigger_streak =
         std::max(0, config_.execution_quality_guard_bad_streak_to_trigger);
+    const int trigger_streak =
+        severe_bad_window
+            ? 1
+            : (configured_trigger_streak == 0
+                   ? 0
+                   : std::min(configured_trigger_streak, 2));
     if (!state.guard_active &&
         (trigger_streak == 0 || state.bad_streak >= trigger_streak)) {
       state.guard_active = true;
