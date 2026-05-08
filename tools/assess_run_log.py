@@ -2174,6 +2174,9 @@ def assess(
         "execution_symbol_quality_guard_enter_count": count(
             r"EXECUTION_SYMBOL_QUALITY_GUARD_ENTER", text
         ),
+        "execution_symbol_quality_guard_reinforce_count": count(
+            r"EXECUTION_SYMBOL_QUALITY_GUARD_REINFORCE", text
+        ),
         "execution_symbol_quality_guard_exit_count": count(
             r"EXECUTION_SYMBOL_QUALITY_GUARD_EXIT", text
         ),
@@ -2834,6 +2837,17 @@ def assess(
                 "执行质量守卫触发，入场门槛已抬升，建议复核手续费与执行路径: "
                 f"active_count={metrics['execution_quality_guard_active_count']}, "
                 f"penalty_bps_avg={metrics['execution_quality_guard_penalty_bps_avg']:.4f}"
+            )
+        if (
+            metrics["execution_symbol_quality_guard_enter_count"] > 0
+            or metrics["execution_symbol_quality_guard_reinforce_count"] > 0
+            or metrics["execution_quality_guard_symbol_active_count_max"] > 0
+        ):
+            warn_reasons.append(
+                "symbol 级执行质量守卫触发，低质量币对已进入单币冷却/惩罚: "
+                f"enter={metrics['execution_symbol_quality_guard_enter_count']}, "
+                f"reinforce={metrics['execution_symbol_quality_guard_reinforce_count']}, "
+                f"symbol_active_max={metrics['execution_quality_guard_symbol_active_count_max']}"
             )
         if (
             s5_protection_enabled

@@ -475,6 +475,8 @@ class BotApplication {
     int bad_streak{0};
     int good_streak{0};
     int no_fill_windows{0};
+    int trigger_count{0};
+    int cooldown_until_tick{-1000000};
     bool guard_active{false};
     double required_edge_penalty_bps{0.0};
     std::uint64_t pending_fills{0};

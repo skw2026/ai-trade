@@ -942,6 +942,7 @@ class AssessRunLogTest(unittest.TestCase):
         text = (
             "2026-02-14 15:00:00 [INFO] EXECUTION_QUALITY_GUARD_ENTER: bad_streak=2\n"
             "2026-02-14 15:00:01 [INFO] EXECUTION_SYMBOL_QUALITY_GUARD_ENTER: symbol=BNBUSDT, bad_streak=2\n"
+            "2026-02-14 15:00:01 [INFO] EXECUTION_SYMBOL_QUALITY_GUARD_REINFORCE: symbol=BNBUSDT, bad_streak=3\n"
             "2026-02-14 15:00:02 [INFO] EXECUTION_SYMBOL_QUALITY_GUARD_EXIT: symbol=BNBUSDT, release_streak=2\n"
             "2026-02-14 15:00:20 [INFO] OMS_RECONCILE_ANOMALY_STREAK: streak=2\n"
             "2026-02-14 15:00:21 [INFO] FILL_ACCOUNT_ALREADY_REFLECTED: fill_id=f1\n"
@@ -955,6 +956,7 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["execution_quality_guard_active_count"], 1)
         self.assertEqual(metrics["execution_quality_guard_enter_count"], 1)
         self.assertEqual(metrics["execution_symbol_quality_guard_enter_count"], 1)
+        self.assertEqual(metrics["execution_symbol_quality_guard_reinforce_count"], 1)
         self.assertEqual(metrics["execution_symbol_quality_guard_exit_count"], 1)
         self.assertEqual(metrics["execution_quality_guard_symbol_active_count_max"], 1)
         self.assertEqual(metrics["execution_quality_guard_symbol_state_count_max"], 2)

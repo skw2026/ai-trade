@@ -1627,23 +1627,30 @@ void BotApplication::EvaluateExecutionQualityGuard(
 bool BotApplication::IsSymbolExecutionQualityGuardActive(
     const std::string& symbol) const {
   const auto it = execution_quality_by_symbol_.find(symbol);
-  return it != execution_quality_by_symbol_.end() && it->second.guard_active;
+  if (it == execution_quality_by_symbol_.end()) {
+    return false;
+  }
+  return it->second.guard_active ||
+         it->second.cooldown_until_tick >= market_tick_count_;
 }
 
 double BotApplication::SymbolExecutionQualityPenaltyBps(
     const std::string& symbol) const {
   const auto it = execution_quality_by_symbol_.find(symbol);
-  if (it == execution_quality_by_symbol_.end() || !it->second.guard_active) {
+  if (it == execution_quality_by_symbol_.end() ||
+      !IsSymbolExecutionQualityGuardActive(symbol)) {
     return 0.0;
   }
-  return std::max(0.0, it->second.required_edge_penalty_bps);
+  return std::max(
+      std::max(0.0, config_.execution_quality_guard_required_edge_penalty_bps),
+      it->second.required_edge_penalty_bps);
 }
 
 int BotApplication::ActiveSymbolExecutionQualityGuardCount() const {
   int active_count = 0;
   for (const auto& [symbol, state] : execution_quality_by_symbol_) {
     (void)symbol;
-    if (state.guard_active) {
+    if (state.guard_active || state.cooldown_until_tick >= market_tick_count_) {
       ++active_count;
     }
   }
@@ -1695,6 +1702,12 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
           std::max(0, config_.execution_quality_guard_min_fills));
   const std::uint64_t min_fills =
       configured_min_fills == 0 ? 0 : std::min<std::uint64_t>(configured_min_fills, 6);
+  const int configured_cooldown_ticks =
+      std::max(0, config_.execution_candidate_probe_cooldown_ticks);
+  const int release_window_ticks =
+      std::max(1, config_.execution_quality_guard_good_streak_to_release) * 120;
+  const int guard_cooldown_ticks =
+      std::max(120, std::max(configured_cooldown_ticks, release_window_ticks));
   const bool severe_bad_window =
       window_fills > 0 &&
       ((window_has_net_quality_sample &&
@@ -1722,7 +1735,16 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
       const int stale_no_fill_windows = state.no_fill_windows;
       const auto stale_pending_fills = state.pending_fills;
       const double stale_filtered_ratio = entry_gate_observed_filtered_ratio_;
-      state = ExecutionQualityGuardState{};
+      state.guard_active = false;
+      state.bad_streak = 0;
+      state.good_streak = 0;
+      state.no_fill_windows = 0;
+      state.pending_fills = 0;
+      state.pending_realized_net_sum_usd = 0.0;
+      state.pending_fee_usd_sum = 0.0;
+      state.pending_notional_abs_usd_sum = 0.0;
+      state.cooldown_until_tick = std::max(
+          state.cooldown_until_tick, market_tick_count_ + guard_cooldown_ticks);
       LogInfo("EXECUTION_SYMBOL_QUALITY_GUARD_EXIT_STALE: symbol=" + symbol +
               ", release_streak=" + std::to_string(stale_release_streak) +
               ", no_fill_windows=" +
@@ -1730,7 +1752,12 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
               ", pending_fills=" + std::to_string(stale_pending_fills) +
               ", observed_filtered_ratio=" +
               std::to_string(stale_filtered_ratio) +
-              ", trigger_ratio=" + std::to_string(trigger_ratio));
+              ", trigger_ratio=" + std::to_string(trigger_ratio) +
+              ", cooldown_until_tick=" +
+              std::to_string(state.cooldown_until_tick) +
+              ", cooldown_remaining_ticks=" +
+              std::to_string(std::max(0, state.cooldown_until_tick -
+                                             market_tick_count_)));
     }
     return;
   }
@@ -1780,13 +1807,24 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
             : (configured_trigger_streak == 0
                    ? 0
                    : std::min(configured_trigger_streak, 2));
-    if (!state.guard_active &&
-        (trigger_streak == 0 || state.bad_streak >= trigger_streak)) {
+    const bool should_enter =
+        !state.guard_active &&
+        (trigger_streak == 0 || state.bad_streak >= trigger_streak);
+    if (should_enter || state.guard_active) {
+      ++state.trigger_count;
       state.guard_active = true;
-      state.required_edge_penalty_bps = std::max(
-          0.0, config_.execution_quality_guard_required_edge_penalty_bps);
-      LogInfo("EXECUTION_SYMBOL_QUALITY_GUARD_ENTER: symbol=" + symbol +
+      const double penalty_multiplier =
+          static_cast<double>(std::clamp(state.trigger_count, 1, 3));
+      state.required_edge_penalty_bps =
+          std::max(0.0, config_.execution_quality_guard_required_edge_penalty_bps) *
+          penalty_multiplier;
+      state.cooldown_until_tick = std::max(
+          state.cooldown_until_tick, market_tick_count_ + guard_cooldown_ticks);
+      LogInfo(std::string(should_enter ? "EXECUTION_SYMBOL_QUALITY_GUARD_ENTER"
+                                       : "EXECUTION_SYMBOL_QUALITY_GUARD_REINFORCE") +
+              ": symbol=" + symbol +
               ", bad_streak=" + std::to_string(state.bad_streak) +
+              ", trigger_count=" + std::to_string(state.trigger_count) +
               ", eval_fills=" + std::to_string(static_cast<int>(eval_fills)) +
               ", eval_realized_net_per_fill_usd=" +
               std::to_string(eval_realized_net_per_fill_usd) +
@@ -1802,7 +1840,12 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
               ", max_fee_bps_per_fill=" +
               std::to_string(config_.execution_quality_guard_max_fee_bps_per_fill) +
               ", applied_penalty_bps=" +
-              std::to_string(state.required_edge_penalty_bps));
+              std::to_string(state.required_edge_penalty_bps) +
+              ", cooldown_until_tick=" +
+              std::to_string(state.cooldown_until_tick) +
+              ", cooldown_remaining_ticks=" +
+              std::to_string(std::max(0, state.cooldown_until_tick -
+                                             market_tick_count_)));
     }
     return;
   }
@@ -1812,6 +1855,9 @@ void BotApplication::EvaluateSymbolExecutionQualityGuard(
     state.good_streak = 0;
     state.no_fill_windows = 0;
     state.required_edge_penalty_bps = 0.0;
+    if (state.cooldown_until_tick < market_tick_count_) {
+      state.trigger_count = 0;
+    }
     return;
   }
   ++state.good_streak;
