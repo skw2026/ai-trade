@@ -346,6 +346,8 @@ class BotApplication {
     double entry_fills_taker_notional_abs_usd_sum{0.0};
     std::unordered_map<std::string, EntryFillQualityBySymbol>
         entry_fill_quality_by_symbol;
+    std::unordered_map<std::string, EntryFillQualityBySymbol>
+        symbol_fill_quality_by_symbol;
   };
 
   static void AccumulateStats(DecisionFunnelStats* total,

@@ -1899,6 +1899,10 @@ def assess(
             r"TREND_CANDIDATE_PROBE_FILTERED_FEE:",
             text,
         ),
+        "trend_candidate_probe_quality_guard_blocked_count": count(
+            r"TREND_CANDIDATE_PROBE_FILTERED_FEE:.*quality_guard_override_blocked=true",
+            text,
+        ),
         "trend_candidate_probe_enqueued_count": count(
             r"TREND_CANDIDATE_PROBE_ENQUEUED:", text
         ),

@@ -209,6 +209,27 @@ double FillOverrunToleranceQty(const OrderRecord& record) {
   return std::max(kFillOverrunToleranceMinQty, std::fabs(record.intent.qty) * 1e-6);
 }
 
+double EstimateFillRealizedPnlUsd(double position_qty_before,
+                                  double avg_entry_price_before,
+                                  const FillEvent& fill) {
+  if (!std::isfinite(position_qty_before) ||
+      !std::isfinite(avg_entry_price_before) ||
+      !std::isfinite(fill.price) || !std::isfinite(fill.qty) ||
+      fill.price <= kNotionalEpsilon || fill.qty <= kNotionalEpsilon) {
+    return 0.0;
+  }
+  const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
+  if (std::fabs(position_qty_before) <= kNotionalEpsilon ||
+      std::fabs(signed_qty) <= kNotionalEpsilon ||
+      SignOf(position_qty_before) == SignOf(signed_qty)) {
+    return 0.0;
+  }
+  const double close_qty = std::min(std::fabs(position_qty_before),
+                                    std::fabs(signed_qty));
+  return close_qty * (fill.price - avg_entry_price_before) *
+         SignOf(position_qty_before);
+}
+
 bool AccountAlreadyReflectsFill(const FillEvent& fill,
                                 double local_qty_before,
                                 double oms_net_qty_before) {
@@ -1406,10 +1427,11 @@ void BotApplication::EvaluateExecutionQualityGuard(
     double window_realized_net_per_fill_usd,
     double window_fee_delta_usd,
     double window_notional_abs_usd) {
-  constexpr double kMinNotionalForFeeBpsUsd = 1000.0;
+  // Symbol 级 guard 需要比全局 guard 更快响应小额 probe/往返磨损。
+  constexpr double kMinNotionalForFeeBpsUsd = 100.0;
   const double min_notional_for_net_quality_usd =
       std::max(kMinNotionalForFeeBpsUsd,
-               std::max(0.0, config_.strategy_signal_notional_usd) * 3.0);
+               std::max(0.0, config_.strategy_signal_notional_usd) * 0.5);
   const double window_fee_bps =
       window_notional_abs_usd > 1e-9
           ? window_fee_delta_usd / window_notional_abs_usd * 10000.0
@@ -1537,8 +1559,14 @@ void BotApplication::EvaluateExecutionQualityGuard(
     execution_quality_no_fill_windows_ = 0;
     ++execution_quality_bad_streak_;
     execution_quality_good_streak_ = 0;
-    const int trigger_streak =
+    const int configured_trigger_streak =
         std::max(0, config_.execution_quality_guard_bad_streak_to_trigger);
+    const int trigger_streak =
+        severe_bad_window
+            ? 1
+            : (configured_trigger_streak == 0
+                   ? 0
+                   : std::min(configured_trigger_streak, 2));
     if (!execution_quality_guard_active_ &&
         (trigger_streak == 0 || execution_quality_bad_streak_ >= trigger_streak)) {
       execution_quality_guard_active_ = true;
@@ -2614,7 +2642,11 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     if (filtered && candidate_probe_intent) {
       const double max_edge_gap_bps =
           std::max(0.0, config_.execution_candidate_probe_max_edge_gap_bps);
-      if (entry_edge_gap_bps <= max_edge_gap_bps + 1e-9) {
+      const bool quality_guard_override_blocked =
+          quality_guard_penalty_bps > 1e-9 ||
+          IsSymbolExecutionQualityGuardActive(decision.intent->symbol);
+      if (!quality_guard_override_blocked &&
+          entry_edge_gap_bps <= max_edge_gap_bps + 1e-9) {
         filtered = false;
         near_miss_allowed = true;
         candidate_probe_fee_override = true;
@@ -2634,7 +2666,11 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
                 ", required_edge_bps=" + std::to_string(required_edge_bps) +
                 ", edge_gap_bps=" + std::to_string(entry_edge_gap_bps) +
-                ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps));
+                ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps) +
+                ", quality_guard_override_blocked=" +
+                std::string(quality_guard_override_blocked ? "true" : "false") +
+                ", quality_guard_penalty_bps=" +
+                std::to_string(quality_guard_penalty_bps));
       }
     }
     UpdateEntryGateObservedRatio(filtered, near_miss, near_miss_allowed);
@@ -2894,6 +2930,8 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
 
   const OrderRecord* fill_order_record_before = oms_.Find(fill.client_order_id);
   const double local_qty_before = system_.account().position_qty(fill.symbol);
+  const double avg_entry_price_before =
+      system_.account().avg_entry_price(fill.symbol);
   const double oms_net_qty_before = oms_.net_filled_qty(fill.symbol);
   const double order_filled_qty_before =
       fill_order_record_before != nullptr ? fill_order_record_before->filled_qty
@@ -2984,6 +3022,18 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
         fill_order_record != nullptr &&
         fill_order_record->intent.purpose == OrderPurpose::kEntry &&
         !fill_order_record->intent.reduce_only;
+    const bool symbol_quality_fill =
+        fill_order_record != nullptr &&
+        (fill_order_record->intent.purpose == OrderPurpose::kEntry ||
+         fill_order_record->intent.purpose == OrderPurpose::kReduce ||
+         fill_order_record->intent.purpose == OrderPurpose::kTp ||
+         fill_order_record->intent.purpose == OrderPurpose::kSl);
+    const double realized_pnl_usd =
+        account_already_reflects_fill
+            ? 0.0
+            : EstimateFillRealizedPnlUsd(local_qty_before,
+                                         avg_entry_price_before,
+                                         fill);
     constexpr double kFeeSignEpsilon = 1e-12;
     const bool explicit_liquidity =
         fill.liquidity == FillLiquidity::kMaker ||
@@ -3014,6 +3064,14 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
       funnel_window_.fills_taker_notional_abs_usd_sum += fill_notional_abs_usd;
     } else {
       ++funnel_window_.fills_unknown_liquidity_count;
+    }
+    if (symbol_quality_fill) {
+      auto& symbol_quality =
+          funnel_window_.symbol_fill_quality_by_symbol[fill.symbol];
+      ++symbol_quality.fills;
+      symbol_quality.fee_usd_sum += fill.fee;
+      symbol_quality.realized_net_sum_usd += realized_pnl_usd - fill.fee;
+      symbol_quality.notional_abs_usd_sum += fill_notional_abs_usd;
     }
     if (entry_fill) {
       ++funnel_window_.entry_fills_applied;
@@ -4297,7 +4355,7 @@ void BotApplication::LogStatus() {
                                 window_entry_fee_delta_usd,
                                 funnel_window.entry_fills_notional_abs_usd_sum);
   std::unordered_set<std::string> symbol_quality_evaluated;
-  for (const auto& [symbol, quality] : funnel_window.entry_fill_quality_by_symbol) {
+  for (const auto& [symbol, quality] : funnel_window.symbol_fill_quality_by_symbol) {
     symbol_quality_evaluated.insert(symbol);
     EvaluateSymbolExecutionQualityGuard(symbol,
                                         quality.fills,
