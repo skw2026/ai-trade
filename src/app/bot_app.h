@@ -146,6 +146,7 @@ class BotApplication {
   /// Symbol 级执行质量守卫：避免单个低质量币对被全局平均值掩盖。
   void EvaluateSymbolExecutionQualityGuard(const std::string& symbol,
                                            std::uint64_t window_fills,
+                                           std::uint64_t window_net_quality_fills,
                                            double window_realized_net_sum_usd,
                                            double window_fee_delta_usd,
                                            double window_notional_abs_usd);
@@ -242,6 +243,7 @@ class BotApplication {
   struct DecisionFunnelStats {
     struct EntryFillQualityBySymbol {
       std::uint64_t fills{0};
+      std::uint64_t net_quality_fills{0};
       double realized_net_sum_usd{0.0};
       double fee_usd_sum{0.0};
       double notional_abs_usd_sum{0.0};
@@ -480,6 +482,7 @@ class BotApplication {
     bool guard_active{false};
     double required_edge_penalty_bps{0.0};
     std::uint64_t pending_fills{0};
+    std::uint64_t pending_net_quality_fills{0};
     double pending_realized_net_sum_usd{0.0};
     double pending_fee_usd_sum{0.0};
     double pending_notional_abs_usd_sum{0.0};
