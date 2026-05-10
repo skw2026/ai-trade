@@ -435,7 +435,7 @@ class BotApplication {
   bool reconcile_forced_reduce_only_{
       false};  ///< 对账异常连续触发的只减仓保护（可在健康窗口自动恢复）。
   bool reconcile_halted_{
-      false};  ///< 对账确认失败触发的停机开关（权威兜底，不自动恢复）。
+      false};  ///< 对账确认失败触发的停机开关；空仓健康窗口可自动恢复。
   bool gate_halted_{false};  ///< Gate 运行时动作触发的停机开关（可自动恢复）。
   bool trading_halted_{false};  ///< 聚合停机状态（reconcile_halted_ || gate_halted_）。
 

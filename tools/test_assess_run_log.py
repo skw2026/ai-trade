@@ -194,6 +194,19 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(series["avg_abs_defensive_notional"], 160.0)
         self.assertGreater(series["avg_defensive_share"], 0.0)
 
+    def test_gate_reduce_only_metric_scoped_to_gate_runtime(self):
+        text = self._runtime_line(
+            20,
+            0.0,
+            reduce_only=False,
+            reconcile_anomaly_streak=6,
+            reconcile_anomaly_reduce_only=True,
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["gate_reduce_only_true_count"], 0)
+        self.assertEqual(metrics["reconcile_anomaly_reduce_only_true_count"], 1)
+
     def test_extract_strategy_mix_series_ignore_zero_samples(self):
         text = (
             "2026-02-14 15:02:18 [INFO] RUNTIME_STATUS: ticks=180, trade_ok=true, "

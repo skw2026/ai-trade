@@ -1933,12 +1933,24 @@ void BotApplication::UpdateReconcileAnomalyProtection(bool anomaly_detected,
   reconcile_anomaly_streak_ = 0;
   ++reconcile_healthy_streak_;
   const int resume_threshold = std::max(0, config_.reconcile.anomaly_resume_streak);
-  if (reconcile_forced_reduce_only_ && resume_threshold > 0 &&
-      reconcile_healthy_streak_ >= resume_threshold) {
+  if (resume_threshold <= 0 || reconcile_healthy_streak_ < resume_threshold) {
+    return;
+  }
+
+  if (reconcile_forced_reduce_only_) {
     reconcile_forced_reduce_only_ = false;
     RefreshReduceOnlyMode();
     LogInfo("OMS_RECONCILE_ANOMALY_PROTECTION_EXIT: healthy_streak=" +
             std::to_string(reconcile_healthy_streak_));
+  }
+  if (reconcile_halted_) {
+    reconcile_halted_ = false;
+    RefreshTradingHaltState();
+    LogInfo("OMS_RECONCILE_ANOMALY_HALT_EXIT: healthy_streak=" +
+            std::to_string(reconcile_healthy_streak_) +
+            ", reason=" + reason_code +
+            ", trading_halted=" +
+            std::string(trading_halted_ ? "true" : "false"));
   }
 }
 
@@ -3702,9 +3714,19 @@ void BotApplication::CheckPendingRequiredSlTimeouts() {
  */
 void BotApplication::RunReconcile() {
   if (!config_.reconcile.enabled || config_.reconcile.interval_ticks <= 0) return;
-  if (reconcile_halted_) return;
   if (++reconcile_tick_ % config_.reconcile.interval_ticks != 0) return;
   PruneRecentFillObservations(market_tick_count_);
+
+  const bool flat_and_idle =
+      !HasExposure(system_.account().current_notional_usd()) &&
+      pending_net_order_enqueued_ms_.empty();
+  if (reconcile_halted_ && !flat_and_idle) {
+    LogInfo("OMS_RECONCILE_HALTED_WAITING: flat_idle=false, local_notional=" +
+            std::to_string(system_.account().current_notional_usd()) +
+            ", pending_net_orders=" +
+            std::to_string(pending_net_order_enqueued_ms_.size()));
+    return;
+  }
 
   // 净仓位变更订单仍在途时，远端与本地可能天然存在短时偏差。
   // 但若订单长期未收敛（例如 reduce-only 部分成交尾量未终态），需要主动收敛以解除永久阻塞。
@@ -3779,6 +3801,11 @@ void BotApplication::RunReconcile() {
   // live/paper 模式下，远端快照不可用时跳过本轮对账，避免回退到弱口径导致误熔断。
   if (!remote_notional.has_value() && config_.mode != "replay") {
     reconcile_streak_ = 0;
+    if (flat_and_idle) {
+      LogInfo("OMS_RECONCILE_DEGRADED_FLAT_IDLE: 远端快照不可用，本地空仓且无净仓位在途订单，累计健康恢复窗口");
+      UpdateReconcileAnomalyProtection(false, "RECONCILE_DEGRADED_FLAT_IDLE");
+      return;
+    }
     LogInfo("OMS_RECONCILE_DEGRADED: 远端快照不可用，跳过本轮对账");
     UpdateReconcileAnomalyProtection(true, "RECONCILE_DEGRADED");
     return;
@@ -4836,7 +4863,9 @@ void BotApplication::LogStatus() {
           ", anomaly_halt_threshold=" +
           std::to_string(config_.reconcile.anomaly_halt_streak) +
           ", anomaly_resume_threshold=" +
-          std::to_string(config_.reconcile.anomaly_resume_streak) + "}" +
+          std::to_string(config_.reconcile.anomaly_resume_streak) +
+          ", anomaly_halted=" +
+          std::string(reconcile_halted_ ? "true" : "false") + "}" +
           ", evolution={enabled=" +
           std::string(evolution_enabled ? "true" : "false") +
           ", objective={alpha_pnl=" +

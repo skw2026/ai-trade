@@ -1779,8 +1779,12 @@ def assess(
         "critical_count": count(r"\bCRITICAL\b", text),
         "trading_halted_event_count": count(r"\bTRADING_HALTED\b", text),
         "trading_halted_true_count": count(r"RUNTIME_STATUS:.*trading_halted=true", text),
-        "gate_reduce_only_true_count": count(r"RUNTIME_STATUS:.*gate_runtime=.*reduce_only=true", text),
-        "gate_halted_true_count": count(r"RUNTIME_STATUS:.*gate_runtime=.*gate_halted=true", text),
+        "gate_reduce_only_true_count": count(
+            r"RUNTIME_STATUS:.*gate_runtime=\{[^}]*reduce_only=true", text
+        ),
+        "gate_halted_true_count": count(
+            r"RUNTIME_STATUS:.*gate_runtime=\{[^}]*gate_halted=true", text
+        ),
         "ws_unhealthy_count": count(
             r"RUNTIME_STATUS:.*(?:public_ws_healthy=false|private_ws_healthy=false)", text
         ),
@@ -1800,6 +1804,9 @@ def assess(
         "reconcile_mismatch_count": count(r"OMS_RECONCILE_MISMATCH", text),
         "reconcile_autoresync_count": count(r"OMS_RECONCILE_AUTORESYNC", text),
         "reconcile_deferred_count": count(r"OMS_RECONCILE_DEFERRED", text),
+        "reconcile_degraded_flat_idle_count": count(
+            r"OMS_RECONCILE_DEGRADED_FLAT_IDLE", text
+        ),
         "reconcile_anomaly_event_count": count(r"OMS_RECONCILE_ANOMALY_STREAK", text),
         "reconcile_anomaly_protection_enter_count": count(
             r"OMS_RECONCILE_ANOMALY_PROTECTION_ENTER", text
@@ -1809,6 +1816,12 @@ def assess(
         ),
         "reconcile_anomaly_halt_enter_count": count(
             r"OMS_RECONCILE_ANOMALY_HALT_ENTER", text
+        ),
+        "reconcile_anomaly_halt_exit_count": count(
+            r"OMS_RECONCILE_ANOMALY_HALT_EXIT", text
+        ),
+        "reconcile_anomaly_halted_true_count": count(
+            r"RUNTIME_STATUS:.*reconcile_runtime=\{[^}]*anomaly_halted=true", text
         ),
         "fill_overfill_drop_count": count(r"FILL_OVERFILL_DROP", text),
         "fill_duplicate_drop_count": count(r"FILL_DUPLICATE_DROP", text),
