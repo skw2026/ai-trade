@@ -135,6 +135,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn("train|assess|full|data", scheduler)
+        self.assertIn("python3", scheduler)
         self.assertIn("AI_TRADE_ENV_FILE: ${AI_TRADE_ENV_FILE:-.env.runtime}", scheduler)
         self.assertIn(
             "DATA_PIPELINE_CONFIG: ${DATA_PIPELINE_CONFIG:-config/data_pipeline.yaml}",
@@ -357,6 +358,16 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn('if [[ "${verdict}" != "PASS" ]]; then', script)
         self.assertIn('if [[ "${verdict}" == "FAIL" ]]; then', script)
+
+    def test_deploy_runs_startup_preflight_before_service_stop(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"', script)
+        self.assertIn('run_startup_preflight()', script)
+        self.assertIn('--check-startup', script)
+        self.assertLess(
+            script.index('if ! run_startup_preflight; then'),
+            script.index('stopping deferred services before gate'),
+        )
 
     def test_optional_compose_config_validation(self):
         docker_bin = shutil.which("docker")

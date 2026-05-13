@@ -2127,6 +2127,18 @@ int BotApplication::Run() {
   return 0;
 }
 
+int BotApplication::CheckStartup() {
+  LogInfo("STARTUP_CHECK_START: boot_id=" + boot_id_ + ", startup_utc=" +
+          startup_utc_ + ", primary_symbol=" + config_.primary_symbol);
+  if (!Initialize()) {
+    LogError("STARTUP_CHECK_FAILED");
+    return 1;
+  }
+  Shutdown();
+  LogInfo("STARTUP_CHECK_PASSED");
+  return 0;
+}
+
 /**
  * @brief 系统初始化
  *

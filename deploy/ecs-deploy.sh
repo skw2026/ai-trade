@@ -31,6 +31,7 @@ CLOSED_LOOP_MIN_RUNTIME_STATUS="${CLOSED_LOOP_MIN_RUNTIME_STATUS:-}"
 CLOSED_LOOP_OUTPUT_ROOT="${CLOSED_LOOP_OUTPUT_ROOT:-./data/reports/closed_loop}"
 CLOSED_LOOP_STRICT_PASS="${CLOSED_LOOP_STRICT_PASS:-true}"
 GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-watchdog scheduler}"
+DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
@@ -106,6 +107,25 @@ extract_json_string_field() {
   grep -m1 -oE "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" "${file}" \
     | sed -E 's/.*"([^"]+)".*/\1/' \
     || true
+}
+
+read_env_value() {
+  local key="$1"
+  local default_value="${2:-}"
+  local raw=""
+  if [[ -f "${ENV_FILE}" ]]; then
+    raw="$(grep -E "^${key}=" "${ENV_FILE}" | tail -n1 | sed -E "s#^${key}=##" || true)"
+  fi
+  raw="${raw%$'\r'}"
+  raw="${raw%\"}"
+  raw="${raw#\"}"
+  raw="${raw%\'}"
+  raw="${raw#\'}"
+  if [[ -n "${raw}" ]]; then
+    printf '%s' "${raw}"
+  else
+    printf '%s' "${default_value}"
+  fi
 }
 
 wait_for_services_ready() {
@@ -276,6 +296,37 @@ run_closed_loop_gate() {
   return 0
 }
 
+run_startup_preflight() {
+  if ! is_true "${DEPLOY_STARTUP_PREFLIGHT}"; then
+    echo "[deploy] startup preflight skipped (DEPLOY_STARTUP_PREFLIGHT=${DEPLOY_STARTUP_PREFLIGHT})"
+    return 0
+  fi
+  if ! array_contains "ai-trade" "${initial_deploy_services[@]}"; then
+    echo "[deploy] startup preflight skipped (ai-trade not in initial services)"
+    return 0
+  fi
+
+  local runtime_config
+  local runtime_exchange
+  local preflight_status=0
+  runtime_config="$(read_env_value "AI_TRADE_CONFIG_PATH" "config/bybit.demo.s5.yaml")"
+  runtime_exchange="$(read_env_value "AI_TRADE_EXCHANGE" "bybit")"
+
+  echo "[deploy] startup preflight start: image=${AI_TRADE_IMAGE}, config=${runtime_config}, exchange=${runtime_exchange}"
+  "${compose_cmd[@]}" pull ai-trade
+  "${compose_cmd[@]}" run --rm --no-deps ai-trade \
+    --config="${runtime_config}" \
+    --exchange="${runtime_exchange}" \
+    --check-startup || preflight_status=$?
+  if (( preflight_status != 0 )); then
+    echo "[deploy] startup preflight failed: status=${preflight_status}"
+    echo "[deploy] target image was not promoted; check runtime credentials/config before retry"
+    return "${preflight_status}"
+  fi
+  echo "[deploy] startup preflight passed"
+  return 0
+}
+
 if [[ -n "${GHCR_USER:-}" && -n "${GHCR_TOKEN:-}" ]]; then
   echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
 fi
@@ -367,6 +418,13 @@ else
   upsert_env "AI_TRADE_ENV_FILE" "$(basename "${ENV_FILE}")"
 fi
 compose_cmd=(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}")
+
+if ! run_startup_preflight; then
+  if [[ -n "${previous_image}" ]]; then
+    upsert_env "AI_TRADE_IMAGE" "${previous_image}"
+  fi
+  exit 1
+fi
 
 if is_true "${CLOSED_LOOP_ENFORCE}" && (( ${#deferred_deploy_services[@]} > 0 )); then
   echo "[deploy] stopping deferred services before gate: ${deferred_deploy_services[*]}"

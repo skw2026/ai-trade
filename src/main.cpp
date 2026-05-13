@@ -34,6 +34,7 @@ struct RuntimeOptions {
   std::optional<int> miner_generations;
   std::optional<int> miner_population;
   std::optional<int> miner_elite;
+  bool check_startup{false};
 };
 
 bool ParseNonNegativeInt(const std::string& raw, int* out_value) {
@@ -106,6 +107,7 @@ void ParseOptionalIntArg(const std::string& raw_value,
  * - `--status_log_interval_ticks=...` / `--status_log_interval_ticks ...`
  * - `--remote_risk_refresh_interval_ticks=...` / `--remote_risk_refresh_interval_ticks ...`
  * - `--run_forever`
+ * - `--check_startup` / `--check-startup`
  * - `--run_miner --miner_csv=... [--miner_output=...] [--miner_top_k=...]`
  *               [--miner_generations=...] [--miner_population=...]
  *               [--miner_elite=...]
@@ -217,6 +219,10 @@ RuntimeOptions ParseOptions(int argc, char** argv) {
     }
     if (arg == "--run_forever" || arg == "--run-forever") {
       options.run_forever = true;
+      continue;
+    }
+    if (arg == "--check_startup" || arg == "--check-startup") {
+      options.check_startup = true;
       continue;
     }
     if (arg == "--run_miner" || arg == "--run-miner") {
@@ -440,5 +446,8 @@ int main(int argc, char** argv) {
       FormatSymbolList(config.universe.candidate_symbols) + "]}");
 
   ai_trade::BotApplication app(config);
+  if (options.check_startup) {
+    return app.CheckStartup();
+  }
   return app.Run();
 }

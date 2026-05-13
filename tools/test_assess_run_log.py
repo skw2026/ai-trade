@@ -972,7 +972,9 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["execution_symbol_quality_guard_reinforce_count"], 1)
         self.assertEqual(metrics["execution_symbol_quality_guard_exit_count"], 1)
         self.assertEqual(metrics["execution_quality_guard_symbol_active_count_max"], 1)
+        self.assertEqual(metrics["execution_quality_guard_symbol_active_count_latest"], 0)
         self.assertEqual(metrics["execution_quality_guard_symbol_state_count_max"], 2)
+        self.assertEqual(metrics["execution_quality_guard_symbol_state_count_latest"], 0)
         self.assertEqual(metrics["execution_quality_guard_no_fill_windows_max"], 4)
         self.assertAlmostEqual(
             metrics["execution_quality_guard_penalty_bps_avg"], 0.75, places=6
@@ -990,6 +992,39 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertIn("autoresync_count=0", warnings)
         self.assertIn("deferred_count=0", warnings)
         self.assertIn("streak_max=2", warnings)
+
+    def test_transient_symbol_quality_guard_exit_does_not_warn(self):
+        runtime = (
+            self._runtime_line(
+                20,
+                0.0,
+                execution_quality_guard_symbol_active_count=1,
+                execution_quality_guard_symbol_state_count=1,
+            )
+            + self._runtime_line(
+                40,
+                0.0,
+                execution_quality_guard_symbol_active_count=0,
+                execution_quality_guard_symbol_state_count=0,
+            )
+        )
+        text = (
+            "2026-02-14 15:00:01 [INFO] EXECUTION_SYMBOL_QUALITY_GUARD_ENTER: symbol=BNBUSDT, bad_streak=2\n"
+            "2026-02-14 15:00:02 [INFO] EXECUTION_SYMBOL_QUALITY_GUARD_EXIT: symbol=BNBUSDT, release_streak=2\n"
+            + runtime
+        )
+
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=2)
+        metrics = report["metrics"]
+
+        self.assertEqual(metrics["execution_symbol_quality_guard_enter_count"], 1)
+        self.assertEqual(metrics["execution_symbol_quality_guard_exit_count"], 1)
+        self.assertEqual(metrics["execution_symbol_quality_guard_reinforce_count"], 0)
+        self.assertEqual(metrics["execution_quality_guard_symbol_active_count_max"], 1)
+        self.assertEqual(metrics["execution_quality_guard_symbol_active_count_latest"], 0)
+        self.assertFalse(
+            any("symbol 级执行质量守卫触发" in x for x in report["warn_reasons"])
+        )
 
     def test_assess_warn_on_low_explicit_liquidity_ratio(self):
         runtime = self._runtime_line(

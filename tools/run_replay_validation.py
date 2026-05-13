@@ -728,6 +728,20 @@ def aggregate_run_summaries(
         for summary in summaries
         if isinstance(summary.get("realized_net_per_fill"), (int, float))
     ]
+    zero_realized_net_with_fills_runs = sum(
+        1
+        for summary in summaries
+        if int(summary.get("funnel_fills_runtime_count") or 0) > 0
+        and isinstance(summary.get("realized_net_per_fill"), (int, float))
+        and abs(float(summary["realized_net_per_fill"])) <= 1e-12
+    )
+    nonzero_realized_net_with_fills_runs = sum(
+        1
+        for summary in summaries
+        if int(summary.get("funnel_fills_runtime_count") or 0) > 0
+        and isinstance(summary.get("realized_net_per_fill"), (int, float))
+        and abs(float(summary["realized_net_per_fill"])) > 1e-12
+    )
     filtered_cost_values = [
         float(summary["filtered_cost_ratio_avg"])
         for summary in summaries
@@ -745,6 +759,8 @@ def aggregate_run_summaries(
         "total_fills": total_fills,
         "mean_realized_net_per_fill": finite_mean(realized_net_values),
         "median_realized_net_per_fill": finite_median(realized_net_values),
+        "zero_realized_net_with_fills_runs": zero_realized_net_with_fills_runs,
+        "nonzero_realized_net_with_fills_runs": nonzero_realized_net_with_fills_runs,
         "mean_filtered_cost_ratio_avg": finite_mean(filtered_cost_values),
         "max_filtered_cost_ratio_avg": max(filtered_cost_values) if filtered_cost_values else None,
     }
@@ -784,6 +800,20 @@ def aggregate_run_summaries(
             )
     else:
         warn_reasons.append("无有效 realized_net_per_fill 样本，需结合 per-segment 结果复核")
+    if total_fills > 0 and zero_realized_net_with_fills_runs > 0:
+        if nonzero_realized_net_with_fills_runs <= 0:
+            warn_reasons.append(
+                "replay 已有成交但 realized_net_per_fill 全为 0，"
+                "当前只能证明执行/保护链路可触发，尚不能证明扣费后经济性；"
+                "建议接入手续费/滑点/平仓净值口径"
+            )
+        elif zero_realized_net_with_fills_runs > nonzero_realized_net_with_fills_runs:
+            warn_reasons.append(
+                "replay 多数成交片段 realized_net_per_fill 为 0，"
+                "建议复核手续费/滑点/平仓净值口径: "
+                f"zero_runs={zero_realized_net_with_fills_runs}, "
+                f"nonzero_runs={nonzero_realized_net_with_fills_runs}"
+            )
 
     mean_filtered_cost_ratio = aggregate_summary.get("mean_filtered_cost_ratio_avg")
     if isinstance(mean_filtered_cost_ratio, (int, float)) and (

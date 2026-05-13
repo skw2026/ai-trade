@@ -49,6 +49,14 @@ class BotApplication {
    */
   int Run();
 
+  /**
+   * @brief 仅执行启动初始化检查，不进入主循环。
+   *
+   * 用于部署前验证目标镜像、配置和交易所密钥是否可用。
+   * @return int 退出码 (0 表示启动检查通过, 非 0 表示失败)
+   */
+  int CheckStartup();
+
  private:
   // --- 初始化阶段 ---
 

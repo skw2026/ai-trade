@@ -1483,7 +1483,9 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
             "good_streak_max": 0.0,
             "no_fill_windows_max": 0.0,
             "symbol_active_count_max": 0.0,
+            "symbol_active_count_latest": 0.0,
             "symbol_state_count_max": 0.0,
+            "symbol_state_count_latest": 0.0,
         }
 
     return {
@@ -1498,8 +1500,14 @@ def extract_execution_quality_guard_series(text: str) -> Dict[str, float]:
         "symbol_active_count_max": float(
             max(symbol_active_counts) if symbol_active_counts else 0
         ),
+        "symbol_active_count_latest": float(
+            symbol_active_counts[-1] if symbol_active_counts else 0
+        ),
         "symbol_state_count_max": float(
             max(symbol_state_counts) if symbol_state_counts else 0
+        ),
+        "symbol_state_count_latest": float(
+            symbol_state_counts[-1] if symbol_state_counts else 0
         ),
     }
 
@@ -2104,8 +2112,14 @@ def assess(
         "execution_quality_guard_symbol_active_count_max": int(
             execution_quality_guard["symbol_active_count_max"]
         ),
+        "execution_quality_guard_symbol_active_count_latest": int(
+            execution_quality_guard["symbol_active_count_latest"]
+        ),
         "execution_quality_guard_symbol_state_count_max": int(
             execution_quality_guard["symbol_state_count_max"]
+        ),
+        "execution_quality_guard_symbol_state_count_latest": int(
+            execution_quality_guard["symbol_state_count_latest"]
         ),
         "entry_edge_adjust_runtime_count": int(entry_edge_adjust["runtime_count"]),
         "entry_regime_adjust_bps_avg": entry_edge_adjust["regime_adjust_bps_avg"],
@@ -2851,15 +2865,24 @@ def assess(
                 f"active_count={metrics['execution_quality_guard_active_count']}, "
                 f"penalty_bps_avg={metrics['execution_quality_guard_penalty_bps_avg']:.4f}"
             )
-        if (
-            metrics["execution_symbol_quality_guard_enter_count"] > 0
-            or metrics["execution_symbol_quality_guard_reinforce_count"] > 0
-            or metrics["execution_quality_guard_symbol_active_count_max"] > 0
-        ):
+        symbol_guard_event_unrecovered = (
+            metrics["execution_symbol_quality_guard_enter_count"]
+            > metrics["execution_symbol_quality_guard_exit_count"]
+        )
+        symbol_guard_still_active = (
+            metrics["execution_quality_guard_symbol_active_count_latest"] > 0
+            or symbol_guard_event_unrecovered
+        )
+        symbol_guard_reinforced = (
+            metrics["execution_symbol_quality_guard_reinforce_count"] > 0
+        )
+        if symbol_guard_reinforced or symbol_guard_still_active:
             warn_reasons.append(
                 "symbol 级执行质量守卫触发，低质量币对已进入单币冷却/惩罚: "
                 f"enter={metrics['execution_symbol_quality_guard_enter_count']}, "
                 f"reinforce={metrics['execution_symbol_quality_guard_reinforce_count']}, "
+                f"exit={metrics['execution_symbol_quality_guard_exit_count']}, "
+                f"symbol_active_latest={metrics['execution_quality_guard_symbol_active_count_latest']}, "
                 f"symbol_active_max={metrics['execution_quality_guard_symbol_active_count_max']}"
             )
         if (

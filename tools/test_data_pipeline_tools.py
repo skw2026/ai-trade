@@ -358,6 +358,8 @@ class ReplayValidationToolsTest(unittest.TestCase):
         self.assertEqual(summary["execution_pass_runs"], 2)
         self.assertEqual(summary["total_fills"], 5)
         self.assertAlmostEqual(summary["mean_realized_net_per_fill"], -0.001)
+        self.assertEqual(summary["zero_realized_net_with_fills_runs"], 1)
+        self.assertEqual(summary["nonzero_realized_net_with_fills_runs"], 1)
         self.assertEqual(validation["status"], "pass_with_actions")
         self.assertEqual(validation["coverage_strength_status"], "MINIMUM_ONLY")
         self.assertFalse(validation["recommended_coverage_targets_met"])
@@ -366,6 +368,42 @@ class ReplayValidationToolsTest(unittest.TestCase):
         )
         self.assertTrue(
             any("仅达到最小门槛" in reason for reason in validation["warn_reasons"])
+        )
+
+    def test_aggregate_run_summaries_warns_when_replay_net_is_all_zero(self):
+        runs = []
+        for _ in range(4):
+            runs.append(
+                {
+                    "assess_summary": {
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "market_context_status": "TREND_PRESENT",
+                        "execution_activity_count": 4,
+                        "funnel_fills_runtime_count": 2,
+                        "regime_trend_runtime_count": 4,
+                        "realized_net_per_fill": 0.0,
+                        "filtered_cost_ratio_avg": 0.20,
+                    }
+                }
+            )
+
+        summary, validation = REPLAY.aggregate_run_summaries(
+            runs,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=3,
+            min_mean_realized_net_per_fill=-0.005,
+            warn_mean_filtered_cost_ratio=0.80,
+        )
+
+        self.assertEqual(summary["zero_realized_net_with_fills_runs"], 4)
+        self.assertEqual(summary["nonzero_realized_net_with_fills_runs"], 0)
+        self.assertEqual(validation["status"], "pass_with_actions")
+        self.assertTrue(
+            any("realized_net_per_fill 全为 0" in reason for reason in validation["warn_reasons"])
         )
 
     def test_aggregate_run_summaries_fails_when_execution_is_too_weak(self):
