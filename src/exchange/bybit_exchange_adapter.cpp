@@ -30,6 +30,50 @@ bool IsReplayMode(const BybitAdapterOptions& options) {
   return options.mode == "replay";
 }
 
+bool ReplayEffectiveMaker(const BybitAdapterOptions& options,
+                          const OrderIntent& intent) {
+  if (intent.purpose == OrderPurpose::kTp ||
+      intent.purpose == OrderPurpose::kSl ||
+      intent.liquidity_preference == LiquidityPreference::kTaker) {
+    return false;
+  }
+  const bool maker_entry_order = intent.purpose == OrderPurpose::kEntry;
+  const bool maker_reduce_order =
+      intent.purpose == OrderPurpose::kReduce &&
+      intent.liquidity_preference == LiquidityPreference::kMaker;
+  return options.maker_entry_enabled && (maker_entry_order || maker_reduce_order);
+}
+
+FillLiquidity ReplayFillLiquidity(const BybitAdapterOptions& options,
+                                  const OrderIntent& intent) {
+  return ReplayEffectiveMaker(options, intent) ? FillLiquidity::kMaker
+                                               : FillLiquidity::kTaker;
+}
+
+double ReplayFeeBpsForIntent(const BybitAdapterOptions& options,
+                             const OrderIntent& intent) {
+  if (intent.purpose == OrderPurpose::kEntry) {
+    return std::max(0.0, options.replay_entry_fee_bps);
+  }
+  return std::max(0.0, options.replay_exit_fee_bps);
+}
+
+double ApplyReplaySlippage(const BybitAdapterOptions& options,
+                           const OrderIntent& intent,
+                           double price) {
+  if (price <= 0.0 ||
+      ReplayFillLiquidity(options, intent) != FillLiquidity::kTaker) {
+    return price;
+  }
+  const double slippage_bps = std::max(0.0, options.replay_expected_slippage_bps);
+  if (slippage_bps <= 0.0) {
+    return price;
+  }
+  const double side = intent.direction > 0 ? 1.0 : -1.0;
+  const double adjusted = price * (1.0 + side * slippage_bps / 10000.0);
+  return adjusted > 0.0 ? adjusted : price;
+}
+
 std::string ReadEnvOrEmpty(const char* key) {
   if (key == nullptr) {
     return {};
@@ -1844,31 +1888,31 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
     if (fill_price <= 0.0) {
       return false;
     }
+    fill_price = ApplyReplaySlippage(options_, intent, fill_price);
+    const double fee_bps = ReplayFeeBpsForIntent(options_, intent);
+    const FillLiquidity liquidity = ReplayFillLiquidity(options_, intent);
+    auto make_fill = [&](double qty) {
+      FillEvent fill;
+      fill.fill_id =
+          intent.client_order_id + "-fill-" + std::to_string(fill_seq_++);
+      fill.client_order_id = intent.client_order_id;
+      fill.symbol = intent.symbol;
+      fill.direction = intent.direction;
+      fill.qty = qty;
+      fill.price = fill_price;
+      fill.fee = std::fabs(qty * fill_price) * fee_bps / 10000.0;
+      fill.liquidity = liquidity;
+      return fill;
+    };
 
     // 回放模式模拟部分成交：拆分为两笔 FillEvent。
     const double first_qty = intent.qty * 0.6;
     const double second_qty = intent.qty - first_qty;
 
-    FillEvent first;
-    first.fill_id =
-        intent.client_order_id + "-fill-" + std::to_string(fill_seq_++);
-    first.client_order_id = intent.client_order_id;
-    first.symbol = intent.symbol;
-    first.direction = intent.direction;
-    first.qty = first_qty;
-    first.price = fill_price;
-    pending_fills_.push_back(first);
+    pending_fills_.push_back(make_fill(first_qty));
 
     if (second_qty > 1e-9) {
-      FillEvent second;
-      second.fill_id =
-          intent.client_order_id + "-fill-" + std::to_string(fill_seq_++);
-      second.client_order_id = intent.client_order_id;
-      second.symbol = intent.symbol;
-      second.direction = intent.direction;
-      second.qty = second_qty;
-      second.price = fill_price;
-      pending_fills_.push_back(second);
+      pending_fills_.push_back(make_fill(second_qty));
     }
     return true;
   }

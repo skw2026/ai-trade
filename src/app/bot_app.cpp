@@ -628,6 +628,9 @@ std::unique_ptr<ExchangeAdapter> CreateAdapter(const AppConfig& config) {
     options.replay_interval_column = config.bybit.replay_interval_column;
     options.replay_funding_rate_column = config.bybit.replay_funding_rate_column;
     options.replay_default_interval_ms = config.bybit.replay_default_interval_ms;
+    options.replay_entry_fee_bps = config.execution_entry_fee_bps;
+    options.replay_exit_fee_bps = config.execution_exit_fee_bps;
+    options.replay_expected_slippage_bps = config.execution_expected_slippage_bps;
     options.symbols = collect_symbols();
     options.remote_account_mode = config.bybit.expected_account_mode;
     options.remote_margin_mode = config.bybit.expected_margin_mode;

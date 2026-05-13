@@ -7191,6 +7191,8 @@ int main() {
     options.allow_no_auth_in_replay = true;
     options.symbols = {"BTCUSDT", "ETHUSDT"};
     options.replay_prices = {100.0, 101.0, 102.0, 103.0};
+    options.replay_entry_fee_bps = 10.0;
+    options.replay_expected_slippage_bps = 5.0;
     options.remote_account_mode = ai_trade::AccountMode::kUnified;
     options.remote_margin_mode = ai_trade::MarginMode::kPortfolio;
     options.remote_position_mode = ai_trade::PositionMode::kHedge;
@@ -7217,17 +7219,31 @@ int main() {
     intent.direction = 1;
     intent.qty = 2.0;
     intent.price = e1.price;
+    // maker_entry_enabled=false 时 live 会实际走 Market/Taker，replay 需同口径计费。
+    intent.liquidity_preference = ai_trade::LiquidityPreference::kMaker;
     if (!adapter.SubmitOrder(intent)) {
       std::cerr << "bybit 回放下单失败\n";
       return 1;
     }
     ai_trade::FillEvent fill;
     int fill_count = 0;
+    double replay_fee = 0.0;
     while (adapter.PollFill(&fill)) {
       ++fill_count;
+      replay_fee += fill.fee;
+      if (fill.liquidity != ai_trade::FillLiquidity::kTaker ||
+          !NearlyEqual(fill.price, 100.05, 1e-9)) {
+        std::cerr << "bybit 回放成交应带 taker 滑点和流动性标记\n";
+        return 1;
+      }
     }
     if (fill_count < 1) {
       std::cerr << "bybit 回放预期至少一笔成交\n";
+      return 1;
+    }
+    if (!NearlyEqual(replay_fee, 0.2001, 1e-9)) {
+      std::cerr << "bybit 回放成交手续费不符合预期，实际 " << replay_fee
+                << "\n";
       return 1;
     }
     double remote_notional = 0.0;

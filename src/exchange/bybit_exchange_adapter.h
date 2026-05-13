@@ -73,6 +73,9 @@ struct BybitAdapterOptions {
       "funding_rate_per_interval"};  ///< replay CSV 资金费列名（可缺省）。
   int replay_default_interval_ms{
       5000};  ///< replay CSV 缺失 interval 时的默认 bar 间隔。
+  double replay_entry_fee_bps{0.0};  ///< replay Entry 成交手续费估计（bps）。
+  double replay_exit_fee_bps{0.0};  ///< replay Reduce/TP/SL 成交手续费估计（bps）。
+  double replay_expected_slippage_bps{0.0};  ///< replay taker 成交单侧滑点估计（bps）。
   AccountMode remote_account_mode{AccountMode::kUnified};  ///< 期望远端账户模式。
   MarginMode remote_margin_mode{MarginMode::kIsolated};  ///< 期望远端保证金模式。
   PositionMode remote_position_mode{PositionMode::kOneWay};  ///< 期望远端持仓模式。
