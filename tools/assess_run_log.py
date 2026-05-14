@@ -1924,6 +1924,13 @@ def assess(
             r"TREND_CANDIDATE_PROBE_FILTERED_FEE:.*quality_guard_override_blocked=true",
             text,
         ),
+        "trend_candidate_probe_quality_guard_memory_skip_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=QUALITY_GUARD_MEMORY",
+            text,
+        ),
+        "trend_candidate_probe_downweight_count": count(
+            r"TREND_CANDIDATE_PROBE_DOWNWEIGHT:", text
+        ),
         "trend_candidate_probe_enqueued_count": count(
             r"TREND_CANDIDATE_PROBE_ENQUEUED:", text
         ),
@@ -1975,6 +1982,10 @@ def assess(
             text,
         ),
         "entry_gate_enabled_count": count(r"RUNTIME_STATUS:.*entry_gate=\{enabled=true", text),
+        "order_throttled_symbol_quality_min_hold_count": count(
+            r"ORDER_THROTTLED:.*symbol_quality_min_hold_remaining_ticks",
+            text,
+        ),
         "funnel_enqueued_runtime_count": count(
             r"RUNTIME_STATUS:.*funnel_window=\{[^}]*enqueued=(?:[1-9][0-9]*)",
             text,
@@ -2206,6 +2217,9 @@ def assess(
         ),
         "execution_symbol_quality_guard_exit_count": count(
             r"EXECUTION_SYMBOL_QUALITY_GUARD_EXIT", text
+        ),
+        "execution_symbol_quality_memory_decay_count": count(
+            r"EXECUTION_SYMBOL_QUALITY_MEMORY_DECAY", text
         ),
         "reconcile_runtime_count": int(reconcile_runtime["runtime_count"]),
         "reconcile_anomaly_streak_nonzero_count": int(

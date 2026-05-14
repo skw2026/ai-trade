@@ -159,6 +159,14 @@ class BotApplication {
                                            double window_fee_delta_usd,
                                            double window_notional_abs_usd);
   bool IsSymbolExecutionQualityGuardActive(const std::string& symbol) const;
+  bool HasSymbolExecutionQualityMemory(const std::string& symbol) const;
+  int SymbolExecutionQualityMemoryTriggerCount(const std::string& symbol) const;
+  int SymbolExecutionQualityMemoryCooldownTicks(int trigger_count) const;
+  int SymbolExecutionQualityActiveRemainingTicks(const std::string& symbol) const;
+  double SymbolExecutionQualityProbeNotionalScale(const std::string& symbol) const;
+  int SymbolExecutionQualityMinHoldRemainingTicks(const std::string& symbol) const;
+  bool ShouldThrottleSymbolQualityMinHold(const MarketDecision& decision,
+                                          int* out_remaining_ticks) const;
   double SymbolExecutionQualityPenaltyBps(const std::string& symbol) const;
   int ActiveSymbolExecutionQualityGuardCount() const;
   /// 对账异常保护：连续异常触发 reduce-only / halt，自恢复窗口退出。
@@ -487,6 +495,8 @@ class BotApplication {
     int no_fill_windows{0};
     int trigger_count{0};
     int cooldown_until_tick{-1000000};
+    int memory_until_tick{-1000000};
+    int last_maker_entry_tick{-1000000};
     bool guard_active{false};
     double required_edge_penalty_bps{0.0};
     std::uint64_t pending_fills{0};

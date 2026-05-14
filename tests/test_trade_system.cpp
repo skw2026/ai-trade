@@ -1997,6 +1997,89 @@ int main() {
   }
 
   {
+    ai_trade::AppConfig config;
+    config.strategy_signal_notional_usd = 100.0;
+    config.strategy_min_hold_ticks = 18;
+    config.execution_candidate_probe_cooldown_ticks = 600;
+    config.execution_quality_guard_enabled = true;
+    config.execution_quality_guard_min_fills = 2;
+    config.execution_quality_guard_bad_streak_to_trigger = 1;
+    config.execution_quality_guard_good_streak_to_release = 1;
+    config.execution_quality_guard_min_realized_net_per_fill_usd = -0.01;
+    config.execution_quality_guard_max_fee_bps_per_fill = 20.0;
+    config.execution_quality_guard_required_edge_penalty_bps = 1.0;
+    ai_trade::BotApplication app(config);
+    app.market_tick_count_ = 100;
+
+    app.EvaluateSymbolExecutionQualityGuard(
+        "BNBUSDT", 2, 2, -0.10, 0.0, 100.0);
+    app.EvaluateSymbolExecutionQualityGuard(
+        "BNBUSDT", 2, 2, -0.10, 0.0, 100.0);
+    if (!app.IsSymbolExecutionQualityGuardActive("BNBUSDT") ||
+        app.SymbolExecutionQualityMemoryTriggerCount("BNBUSDT") != 2) {
+      std::cerr << "symbol 质量守卫应记录连续低质量触发\n";
+      return 1;
+    }
+
+    app.EvaluateSymbolExecutionQualityGuard(
+        "BNBUSDT", 2, 2, 0.20, 0.0, 100.0);
+    if (!app.IsSymbolExecutionQualityGuardActive("BNBUSDT") ||
+        !app.HasSymbolExecutionQualityMemory("BNBUSDT") ||
+        app.SymbolExecutionQualityMemoryTriggerCount("BNBUSDT") != 1 ||
+        app.SymbolExecutionQualityPenaltyBps("BNBUSDT") <= 0.0) {
+      std::cerr << "symbol 质量守卫退出后应保留衰减记忆与惩罚\n";
+      return 1;
+    }
+
+    app.market_tick_count_ =
+        app.execution_quality_by_symbol_["BNBUSDT"].memory_until_tick + 1;
+    if (app.IsSymbolExecutionQualityGuardActive("BNBUSDT") ||
+        !app.HasSymbolExecutionQualityMemory("BNBUSDT") ||
+        !(app.SymbolExecutionQualityProbeNotionalScale("BNBUSDT") < 1.0)) {
+      std::cerr << "symbol 质量记忆过期后应停止硬冷却但保留探针降权\n";
+      return 1;
+    }
+
+    app.execution_quality_by_symbol_["BNBUSDT"].last_maker_entry_tick =
+        app.market_tick_count_;
+    ai_trade::MarketDecision reduce_decision;
+    reduce_decision.risk_adjusted.symbol = "BNBUSDT";
+    reduce_decision.risk_adjusted.adjusted_notional_usd = 0.0;
+    reduce_decision.risk_adjusted.reduce_only = false;
+    ai_trade::OrderIntent reduce_intent;
+    reduce_intent.client_order_id = "quality-min-hold-reduce";
+    reduce_intent.symbol = "BNBUSDT";
+    reduce_intent.purpose = ai_trade::OrderPurpose::kReduce;
+    reduce_intent.reduce_only = true;
+    reduce_intent.direction = -1;
+    reduce_intent.qty = 0.1;
+    reduce_intent.price = 600.0;
+    reduce_decision.intent = reduce_intent;
+    int remaining_ticks = 0;
+    if (!app.ShouldThrottleSymbolQualityMinHold(reduce_decision,
+                                                &remaining_ticks) ||
+        remaining_ticks <= 0) {
+      std::cerr << "低质量 symbol 的 maker entry 后应短暂阻止策略反手/减仓抖动\n";
+      return 1;
+    }
+    reduce_decision.risk_adjusted.reduce_only = true;
+    if (app.ShouldThrottleSymbolQualityMinHold(reduce_decision,
+                                               &remaining_ticks)) {
+      std::cerr << "风控 reduce_only 不能被 symbol 最小持仓保护拦截\n";
+      return 1;
+    }
+
+    app.EvaluateSymbolExecutionQualityGuard(
+        "BNBUSDT", 2, 2, 0.20, 0.0, 100.0);
+    if (app.HasSymbolExecutionQualityMemory("BNBUSDT") ||
+        app.SymbolExecutionQualityMemoryTriggerCount("BNBUSDT") != 0 ||
+        app.SymbolExecutionQualityProbeNotionalScale("BNBUSDT") != 1.0) {
+      std::cerr << "低质量软记忆应能被后续正质量样本衰减清零\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：正收益窗口应提高 trend 权重（受 max_weight_step 约束）。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
