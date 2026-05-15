@@ -840,8 +840,27 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(
                 alignment["uncovered_live_trend_symbols"], ["BNBUSDT", "SOLUSDT"]
             )
+            self.assertEqual(
+                alignment["recommended_replay_symbols"],
+                ["BTCUSDT", "BNBUSDT", "SOLUSDT", "ETHUSDT", "XRPUSDT"],
+            )
+            self.assertEqual(
+                alignment["recommended_replay_symbols_csv"],
+                "BTCUSDT,BNBUSDT,SOLUSDT,ETHUSDT,XRPUSDT",
+            )
+            self.assertEqual(
+                alignment["missing_recommended_replay_symbols"],
+                ["BNBUSDT", "SOLUSDT", "ETHUSDT", "XRPUSDT"],
+            )
             self.assertTrue(
                 any("未覆盖 live TREND 符号" in item for item in payload["warn_reasons"])
+            )
+            self.assertTrue(
+                any(
+                    "recommended_replay_symbols=BTCUSDT,BNBUSDT,SOLUSDT,ETHUSDT,XRPUSDT"
+                    in item
+                    for item in payload["warn_reasons"]
+                )
             )
 
     def test_replay_live_symbol_alignment_passes_when_replay_covers_live_trend(self):
@@ -913,6 +932,8 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(payload["replay_symbol_alignment_status"], "PASS")
             alignment = payload["sections"]["replay_symbol_alignment"]
             self.assertEqual(alignment["uncovered_live_trend_symbols"], [])
+            self.assertEqual(alignment["recommended_replay_symbols"], ["SOLUSDT"])
+            self.assertEqual(alignment["missing_recommended_replay_symbols"], [])
             self.assertEqual(payload["warn_reasons"], [])
 
     def test_replay_validation_fail_blocks_overall_status(self):

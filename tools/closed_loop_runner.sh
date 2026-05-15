@@ -114,6 +114,7 @@ TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
 ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}"
 REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}"
+DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
@@ -262,6 +263,8 @@ Env toggles:
   CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION=true|false
                                                        assess 动作是否刷新 replay-validation (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.yaml)
+  CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS=<csv>    replay-validation 空目标时的默认多币对
+                                                       (default: BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
   CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol>   feature store 源行情币对 (default: --symbol)
@@ -460,8 +463,15 @@ if [[ -z "${REPLAY_VALIDATION_SOURCE_SYMBOL}" ]]; then
   REPLAY_VALIDATION_SOURCE_SYMBOL="${SYMBOL}"
 fi
 if [[ -z "${REPLAY_VALIDATION_SYMBOLS}" ]]; then
-  REPLAY_VALIDATION_SYMBOLS="${REPLAY_VALIDATION_SYMBOL}"
+  REPLAY_VALIDATION_SYMBOLS="${REPLAY_VALIDATION_SYMBOL},${DEFAULT_REPLAY_VALIDATION_SYMBOLS}"
 fi
+REPLAY_VALIDATION_SYMBOLS="$(python3 -c 'import sys
+seen = []
+for item in sys.argv[1].replace(";", ",").split(","):
+    symbol = item.strip().upper()
+    if symbol and symbol not in seen:
+        seen.append(symbol)
+print(",".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}")"
 REPLAY_VALIDATION_SYMBOLS_JSON="$(python3 -c 'import json,sys; print(json.dumps([x.strip().upper() for x in sys.argv[1].replace(";", ",").split(",") if x.strip()]))' "${REPLAY_VALIDATION_SYMBOLS}")"
 if [[ -z "${REPLAY_VALIDATION_CORPUS_PATH}" ]]; then
   REPLAY_VALIDATION_CORPUS_PATH="data/research/replay_validation_${REPLAY_VALIDATION_TARGET_BUCKET}_corpus.json"
@@ -471,6 +481,8 @@ if [[ "${NEED_HELP}" == "true" ]]; then
   usage
   exit 0
 fi
+
+echo "[INFO] replay validation symbols=${REPLAY_VALIDATION_SYMBOLS} source_symbol=${REPLAY_VALIDATION_SOURCE_SYMBOL}"
 
 if [[ -n "${CLOSED_LOOP_RUNTIME_CONFIG_PATH:-}" ]]; then
   RUNTIME_CONFIG_PATH="${CLOSED_LOOP_RUNTIME_CONFIG_PATH}"

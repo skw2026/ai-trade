@@ -69,9 +69,9 @@ jobs:
           CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
           CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && '' || inputs.replay_symbols }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && '' || inputs.replay_source_symbol }}
-          CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: ${{ github.event_name == 'schedule' && '' || 'true' }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'BTCUSDT' || inputs.replay_source_symbol }}
+          CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: "true"
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
           CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ github.event_name == 'schedule' && '' || inputs.replay_feature_days }}
         with:

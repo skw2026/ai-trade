@@ -239,6 +239,11 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_ENABLED", script)
         self.assertIn("CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS", script)
+        self.assertIn(
+            "BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT",
+            script,
+        )
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES", script)
@@ -295,6 +300,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
             'default: "BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT"',
+            workflow,
+        )
+        self.assertIn(
+            "github.event_name == 'schedule' && 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT'",
             workflow,
         )
 

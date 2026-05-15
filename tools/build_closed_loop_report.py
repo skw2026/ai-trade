@@ -502,6 +502,14 @@ def assess_replay_live_symbol_alignment(
         for symbol in live_candidate_symbols
         if symbol not in replay_symbols and symbol not in uncovered_trend
     ]
+    recommended_symbols: List[str] = []
+    for symbol in replay_symbols + live_trend_symbols + live_candidate_symbols:
+        if symbol and symbol not in recommended_symbols:
+            recommended_symbols.append(symbol)
+    missing_recommended_symbols = [
+        symbol for symbol in recommended_symbols if symbol not in replay_symbols
+    ]
+    recommended_symbols_csv = ",".join(recommended_symbols)
 
     warn_reasons: List[str] = []
     if live_trend_symbols and replay_symbols and uncovered_trend:
@@ -510,6 +518,11 @@ def assess_replay_live_symbol_alignment(
             f"replay={','.join(replay_symbols)}, "
             f"live_trend={','.join(live_trend_symbols)}；"
             "replay 结果不能代表本轮 live TREND 执行，应切换或扩展 replay 目标"
+            + (
+                f": recommended_replay_symbols={recommended_symbols_csv}"
+                if recommended_symbols_csv
+                else ""
+            )
         )
     elif (
         not live_trend_symbols
@@ -522,6 +535,11 @@ def assess_replay_live_symbol_alignment(
             f"replay={','.join(replay_symbols)}, "
             f"live_trend_candidate={','.join(live_candidate_symbols)}；"
             "若下一轮仍缺 live TREND，应优先用这些候选币对做 replay 验证"
+            + (
+                f": recommended_replay_symbols={recommended_symbols_csv}"
+                if recommended_symbols_csv
+                else ""
+            )
         )
 
     readiness_status = "PASS" if not warn_reasons else "PASS_WITH_ACTIONS"
@@ -537,6 +555,9 @@ def assess_replay_live_symbol_alignment(
         "live_trend_symbols": live_trend_symbols,
         "live_trend_candidate_symbols": live_candidate_symbols,
         "replay_symbols": replay_symbols,
+        "recommended_replay_symbols": recommended_symbols,
+        "recommended_replay_symbols_csv": recommended_symbols_csv,
+        "missing_recommended_replay_symbols": missing_recommended_symbols,
         "uncovered_live_trend_symbols": uncovered_trend,
         "uncovered_live_trend_candidate_symbols": uncovered_candidates,
     }
