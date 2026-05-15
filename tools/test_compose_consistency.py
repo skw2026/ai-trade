@@ -306,6 +306,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             "github.event_name == 'schedule' && 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT'",
             workflow,
         )
+        self.assertIn("timeout-minutes: 120", workflow)
+        self.assertIn("command_timeout: 90m", workflow)
 
     def test_web_service_paths_are_consistent(self):
         dev_web = self.dev_services["ai-trade-web"]

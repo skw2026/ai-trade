@@ -55,6 +55,7 @@ concurrency:
 jobs:
   run-closed-loop:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - name: Check deploy secrets
         run: |
@@ -80,6 +81,7 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          command_timeout: 90m
           envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL,CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES,CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION,CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS
           script: |
             set -euo pipefail
