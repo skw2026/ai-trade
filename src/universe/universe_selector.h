@@ -39,6 +39,8 @@ class UniverseSelector {
   UniverseSelector(UniverseConfig config, std::string primary_symbol);
 
   std::optional<UniverseUpdate> OnMarket(const MarketEvent& event);
+  bool RecordWarmupTrendCandidate(const std::string& symbol,
+                                  double trend_threshold_ratio);
   void SetAllowedSymbols(const std::vector<std::string>& symbols);
   bool IsActive(const std::string& symbol) const;
   const std::vector<std::string>& active_symbols() const { return active_symbols_; }

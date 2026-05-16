@@ -2086,6 +2086,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "universe" &&
+        key == "warmup_trend_reserve_min_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "universe.warmup_trend_reserve_min_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.universe.warmup_trend_reserve_min_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "universe" &&
         key == "reset_stats_on_refresh") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -3979,6 +3994,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "universe.trend_reserve_min_residency_refreshes 不能为负数";
+    }
+    return false;
+  }
+  if (!std::isfinite(config.universe.warmup_trend_reserve_min_ratio) ||
+      config.universe.warmup_trend_reserve_min_ratio < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "universe.warmup_trend_reserve_min_ratio 不能为负数";
     }
     return false;
   }

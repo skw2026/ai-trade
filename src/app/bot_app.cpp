@@ -2709,6 +2709,19 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
   if (decision.regime.warmup_trend_candidate) {
     ++funnel_window_.regime_warmup_trend_candidate_ticks;
+    if (universe_selector_.RecordWarmupTrendCandidate(
+            decision.regime.symbol,
+            decision.regime.trend_threshold_ratio)) {
+      LogInfo("UNIVERSE_WARMUP_TREND_RESERVE_PIN: symbol=" +
+              decision.regime.symbol +
+              ", trend_threshold_ratio=" +
+              std::to_string(decision.regime.trend_threshold_ratio) +
+              ", min_ratio=" +
+              std::to_string(config_.universe.warmup_trend_reserve_min_ratio) +
+              ", residency_refreshes=" +
+              std::to_string(
+                  config_.universe.trend_reserve_min_residency_refreshes));
+    }
   }
   switch (decision.regime.bucket) {
     case RegimeBucket::kTrend:

@@ -360,6 +360,37 @@ class AssessRunLogTest(unittest.TestCase):
             report["metrics"]["self_evolution_runtime_enabled_total_count"], 1
         )
 
+    def test_s5_warns_when_assess_window_is_fresh_boot(self):
+        runtime_line = self._runtime_line(
+            20,
+            0.0,
+            funnel_enqueued=0,
+            funnel_fills=0,
+            strategy_mix_samples=0,
+            strategy_mix_policy_flat_samples=12,
+            strategy_mix_latest_trend=0.0,
+            strategy_mix_latest_defensive=0.0,
+            strategy_mix_latest_blended=0.0,
+            strategy_mix_avg_abs_trend=0.0,
+            strategy_mix_avg_abs_defensive=0.0,
+            strategy_mix_avg_abs_blended=0.0,
+        )
+        runtime_line = runtime_line[:-1] + (
+            ", evolution={enabled=true, active_bucket=RANGE, active_trend_weight=0.5, "
+            "active_defensive_weight=0.5, next_eval_tick=600, cooldown=false, "
+            "cooldown_remaining_ticks=0}\n"
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] PROCESS_START: "
+            "boot_id=boot-test, startup_utc=2026-02-14T15:00:00Z, "
+            "primary_symbol=BTCUSDT\n"
+            + runtime_line
+            + "2026-02-14 15:00:20 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=12, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertEqual(report["metrics"]["runtime_boot_age_seconds"], 20.0)
+        self.assertIn("运行进程启动时间过短", "\n".join(report["warn_reasons"]))
+
     def test_s5_policy_flat_window_without_evolution_evidence_still_fails(self):
         text = (
             self._runtime_line(

@@ -122,6 +122,7 @@ DEFAULT_S5_PROTECTION_ENABLED = False
 DEFAULT_S5_PROFIT_PROTECTION_ENABLED = False
 DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT = 0
 DEFAULT_S5_MIN_TREND_RUNTIME_WINDOWS = 60
+DEFAULT_S5_MIN_EFFECTIVE_RUNTIME_AGE_SECONDS = 3600
 
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -242,6 +243,12 @@ REGIME_CHANGE_RE = re.compile(
     r"(?:, warmup_trend_candidate=(?P<warmup_trend_candidate>true|false))?)?"
 )
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+PROCESS_START_RE = re.compile(
+    r"PROCESS_START:.*?startup_utc=(?P<startup>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"
+)
+RUNTIME_STATUS_TS_RE = re.compile(
+    r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?RUNTIME_STATUS:"
+)
 TREND_CANDIDATE_MIN_THRESHOLD_RATIO = 0.60
 
 
@@ -775,6 +782,62 @@ def filter_log_since(text: str, cutoff_ts: dt.datetime) -> str:
     if not lines_out:
         return ""
     return "\n".join(lines_out) + "\n"
+
+
+def _parse_utc_timestamp(value: str) -> Optional[dt.datetime]:
+    try:
+        return dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return None
+
+
+def extract_runtime_timing(text: str) -> Dict[str, object]:
+    runtime_timestamps: list[dt.datetime] = []
+    for match in RUNTIME_STATUS_TS_RE.finditer(text):
+        try:
+            runtime_timestamps.append(
+                dt.datetime.strptime(match.group("ts"), "%Y-%m-%d %H:%M:%S")
+            )
+        except ValueError:
+            continue
+
+    process_start_times: list[dt.datetime] = []
+    for match in PROCESS_START_RE.finditer(text):
+        parsed = _parse_utc_timestamp(match.group("startup"))
+        if parsed is not None:
+            process_start_times.append(parsed)
+
+    first_runtime = min(runtime_timestamps) if runtime_timestamps else None
+    last_runtime = max(runtime_timestamps) if runtime_timestamps else None
+    process_start = max(process_start_times) if process_start_times else None
+    runtime_window_seconds: Optional[float] = None
+    runtime_boot_age_seconds: Optional[float] = None
+    if first_runtime is not None and last_runtime is not None:
+        runtime_window_seconds = max(0.0, (last_runtime - first_runtime).total_seconds())
+    if process_start is not None and last_runtime is not None:
+        runtime_boot_age_seconds = max(
+            0.0, (last_runtime - process_start).total_seconds()
+        )
+
+    return {
+        "process_start_utc": (
+            process_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if process_start is not None
+            else None
+        ),
+        "runtime_first_status_utc": (
+            first_runtime.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if first_runtime is not None
+            else None
+        ),
+        "runtime_last_status_utc": (
+            last_runtime.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if last_runtime is not None
+            else None
+        ),
+        "runtime_window_seconds": runtime_window_seconds,
+        "runtime_boot_age_seconds": runtime_boot_age_seconds,
+    }
 
 
 def extract_runtime_account_series(text: str) -> Dict[str, object]:
@@ -2261,6 +2324,7 @@ def assess(
         ],
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
+    metrics.update(extract_runtime_timing(text))
     attribution_fills = execution_attribution.get("fills", {})
     attribution_submit = execution_attribution.get("submit", {})
     attribution_runtime_windows = execution_attribution.get("runtime_fill_windows", {})
@@ -2806,6 +2870,18 @@ def assess(
 
     # 软告警：DEPLOY 仅保留硬失败项，避免上线门禁被策略类黄灯误阻断。
     if stage.name != "DEPLOY":
+        runtime_boot_age_seconds = metrics.get("runtime_boot_age_seconds")
+        if (
+            stage.name == "S5"
+            and isinstance(runtime_boot_age_seconds, (int, float))
+            and runtime_boot_age_seconds < DEFAULT_S5_MIN_EFFECTIVE_RUNTIME_AGE_SECONDS
+        ):
+            warn_reasons.append(
+                "运行进程启动时间过短，当前窗口不能代表 12/24h live 验证："
+                f"boot_age_seconds={runtime_boot_age_seconds:.0f}, "
+                f"min_effective_seconds={DEFAULT_S5_MIN_EFFECTIVE_RUNTIME_AGE_SECONDS}, "
+                "请确认 assess 未紧跟 deploy/restart 执行"
+            )
         if (
             metrics["reconcile_mismatch_count"] > 0
             and metrics["reconcile_autoresync_count"] <= 0

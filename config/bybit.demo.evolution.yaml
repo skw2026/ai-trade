@@ -251,6 +251,7 @@ universe:
   trend_reserve_enabled: true
   trend_reserve_slots: 1
   trend_reserve_min_residency_refreshes: 12
+  warmup_trend_reserve_min_ratio: 0.60
   reset_stats_on_refresh: true
   fallback_symbols: ["BTCUSDT", "ETHUSDT"]
   candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]

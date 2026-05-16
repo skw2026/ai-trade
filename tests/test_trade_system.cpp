@@ -3427,6 +3427,7 @@ int main() {
         << "  trend_reserve_enabled: true\n"
         << "  trend_reserve_slots: 1\n"
         << "  trend_reserve_min_residency_refreshes: 4\n"
+        << "  warmup_trend_reserve_min_ratio: 0.72\n"
         << "  reset_stats_on_refresh: true\n"
         << "  fallback_symbols: [\"ETHUSDT\"]\n"
         << "  candidate_symbols: [\"ETHUSDT\", \"BTCUSDT\"]\n"
@@ -3748,6 +3749,7 @@ int main() {
         config.universe.trend_reserve_enabled != true ||
         config.universe.trend_reserve_slots != 1 ||
         config.universe.trend_reserve_min_residency_refreshes != 4 ||
+        !NearlyEqual(config.universe.warmup_trend_reserve_min_ratio, 0.72) ||
         config.universe.reset_stats_on_refresh != true ||
         config.universe.fallback_symbols.size() != 1 ||
         config.universe.fallback_symbols[0] != "ETHUSDT" ||
@@ -6143,6 +6145,62 @@ int main() {
                   "TRENDUSDT") ==
         update->sticky_trend_reserve_symbols.end()) {
       std::cerr << "Universe 应上报 sticky trend reserve 币对\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::UniverseConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 3;
+    config.max_active_symbols = 2;
+    config.min_active_symbols = 1;
+    config.min_turnover_usd = 1000.0;
+    config.trend_reserve_enabled = true;
+    config.trend_reserve_slots = 1;
+    config.trend_reserve_min_residency_refreshes = 2;
+    config.warmup_trend_reserve_min_ratio = 0.6;
+    config.reset_stats_on_refresh = true;
+    config.fallback_symbols = {"BTCUSDT"};
+    config.candidate_symbols = {"COREUSDT", "WARMUSDT", "NEWUSDT"};
+
+    ai_trade::UniverseSelector selector(config, "BTCUSDT");
+    std::optional<ai_trade::UniverseUpdate> update;
+    const auto push = [&selector, &update](std::int64_t ts,
+                                           const std::string& symbol,
+                                           double price) {
+      update = selector.OnMarket(
+          ai_trade::MarketEvent{ts, symbol, price, price, 20.0});
+    };
+
+    push(1, "COREUSDT", 100.0);
+    push(2, "WARMUSDT", 100.0);
+    if (!selector.RecordWarmupTrendCandidate("WARMUSDT", 0.8)) {
+      std::cerr << "Universe warmup 趋势候选应进入趋势保留驻留队列\n";
+      return 1;
+    }
+    push(3, "NEWUSDT", 100.0);
+    if (!update.has_value() || !selector.IsActive("WARMUSDT")) {
+      std::cerr << "Universe warmup 趋势候选应在下一轮刷新中保留\n";
+      return 1;
+    }
+    if (std::find(update->sticky_trend_reserve_symbols.begin(),
+                  update->sticky_trend_reserve_symbols.end(),
+                  "WARMUSDT") ==
+        update->sticky_trend_reserve_symbols.end()) {
+      std::cerr << "Universe warmup 趋势候选应上报 sticky reserve\n";
+      return 1;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+      push(4 + i, "NEWUSDT", 102.0 + static_cast<double>(i) * 3.0);
+    }
+    if (!update.has_value() || !selector.IsActive("WARMUSDT")) {
+      std::cerr << "Universe warmup 趋势候选驻留应跨刷新周期生效\n";
+      return 1;
+    }
+    if (selector.RecordWarmupTrendCandidate("NEWUSDT", 0.5)) {
+      std::cerr << "低于 warmup 趋势保留门槛时不应 pin Universe\n";
       return 1;
     }
   }

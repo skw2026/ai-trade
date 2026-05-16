@@ -73,6 +73,27 @@ std::optional<UniverseUpdate> UniverseSelector::OnMarket(const MarketEvent& even
   return Refresh();
 }
 
+bool UniverseSelector::RecordWarmupTrendCandidate(
+    const std::string& symbol,
+    double trend_threshold_ratio) {
+  if (!config_.enabled || !config_.trend_reserve_enabled ||
+      config_.trend_reserve_slots <= 0 ||
+      config_.trend_reserve_min_residency_refreshes <= 0 ||
+      symbol.empty() || !IsAllowed(symbol) ||
+      !std::isfinite(trend_threshold_ratio) ||
+      trend_threshold_ratio < config_.warmup_trend_reserve_min_ratio) {
+    return false;
+  }
+  const int desired_residency =
+      std::max(1, config_.trend_reserve_min_residency_refreshes);
+  auto& remaining = trend_reserve_residency_remaining_[symbol];
+  if (remaining >= desired_residency) {
+    return false;
+  }
+  remaining = desired_residency;
+  return true;
+}
+
 void UniverseSelector::SetAllowedSymbols(const std::vector<std::string>& symbols) {
   allowed_symbol_set_.clear();
   const std::vector<std::string> unique = UniqueSymbols(symbols);
@@ -275,6 +296,16 @@ std::optional<UniverseUpdate> UniverseSelector::Refresh() {
   std::unordered_map<std::string, int> next_residency;
   if (reserve_slots > 0 &&
       config_.trend_reserve_min_residency_refreshes > 0 && !degraded) {
+    for (const auto& [symbol, remaining] : trend_reserve_residency_remaining_) {
+      if (remaining <= 0 || active_symbol_set_.count(symbol) == 0U ||
+          !IsAllowed(symbol) || candidate_score_symbols.count(symbol) == 0U) {
+        continue;
+      }
+      const int next_remaining = std::max(0, remaining - 1);
+      if (next_remaining > 0) {
+        next_residency[symbol] = next_remaining;
+      }
+    }
     for (const auto& symbol : sticky_trend_reserve_symbols) {
       const auto it = trend_reserve_residency_remaining_.find(symbol);
       const int remaining =

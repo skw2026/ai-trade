@@ -211,5 +211,6 @@ universe:
   update_interval_ticks: 10
   max_active_symbols: 3
   min_active_symbols: 1
+  warmup_trend_reserve_min_ratio: 0.60
   fallback_symbols: ["BTCUSDT", "ETHUSDT"]
   candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
