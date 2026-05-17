@@ -164,6 +164,8 @@ class BotApplication {
   int SymbolExecutionQualityMemoryCooldownTicks(int trigger_count) const;
   int SymbolExecutionQualityActiveRemainingTicks(const std::string& symbol) const;
   double SymbolExecutionQualityProbeNotionalScale(const std::string& symbol) const;
+  bool ShouldThrottleSymbolQualityQuarantine(const MarketDecision& decision,
+                                             int* out_remaining_ticks) const;
   int SymbolExecutionQualityMinHoldRemainingTicks(const std::string& symbol) const;
   bool ShouldThrottleSymbolQualityMinHold(const MarketDecision& decision,
                                           int* out_remaining_ticks) const;
@@ -276,6 +278,7 @@ class BotApplication {
     std::uint64_t rebalance_gap_samples{0};
     std::uint64_t rebalance_converged_within_min_notional{0};
     std::uint64_t intents_throttled_cost_cooldown{0};
+    std::uint64_t intents_throttled_symbol_quality_quarantine{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
     std::uint64_t candidate_probe_signals{0};

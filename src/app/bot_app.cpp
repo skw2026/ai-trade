@@ -1724,6 +1724,29 @@ double BotApplication::SymbolExecutionQualityProbeNotionalScale(
   return std::clamp(1.0 / (1.0 + 0.5 * penalty_steps), 0.33, 1.0);
 }
 
+bool BotApplication::ShouldThrottleSymbolQualityQuarantine(
+    const MarketDecision& decision,
+    int* out_remaining_ticks) const {
+  if (out_remaining_ticks != nullptr) {
+    *out_remaining_ticks = 0;
+  }
+  if (!decision.intent.has_value() || !IsOpeningIntent(*decision.intent)) {
+    return false;
+  }
+  if (IsTrendCandidateProbeIntent(decision.intent->client_order_id)) {
+    return false;
+  }
+  const std::string& symbol = decision.intent->symbol;
+  if (!HasSymbolExecutionQualityMemory(symbol)) {
+    return false;
+  }
+  const int remaining_ticks = SymbolExecutionQualityActiveRemainingTicks(symbol);
+  if (out_remaining_ticks != nullptr) {
+    *out_remaining_ticks = remaining_ticks;
+  }
+  return true;
+}
+
 int BotApplication::SymbolExecutionQualityMinHoldRemainingTicks(
     const std::string& symbol) const {
   const auto it = execution_quality_by_symbol_.find(symbol);
@@ -2164,6 +2187,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.rebalance_converged_within_min_notional;
   total->intents_throttled_cost_cooldown +=
       delta.intents_throttled_cost_cooldown;
+  total->intents_throttled_symbol_quality_quarantine +=
+      delta.intents_throttled_symbol_quality_quarantine;
   total->intents_throttled += delta.intents_throttled;
   total->intents_enqueued += delta.intents_enqueued;
   total->candidate_probe_signals += delta.candidate_probe_signals;
@@ -2862,6 +2887,24 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
       ShouldFilterInactiveSymbolIntent(*decision.intent)) {
     ++funnel_window_.intents_filtered_inactive_symbol;
     decision.intent.reset();
+  }
+
+  if (decision.intent.has_value() && IsOpeningIntent(*decision.intent)) {
+    int symbol_quality_remaining_ticks = 0;
+    if (ShouldThrottleSymbolQualityQuarantine(
+            decision, &symbol_quality_remaining_ticks)) {
+      ++funnel_window_.intents_throttled;
+      ++funnel_window_.intents_throttled_symbol_quality_quarantine;
+      LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", reason=symbol_quality_quarantine_remaining_ticks=" +
+              std::to_string(symbol_quality_remaining_ticks) +
+              ", quality_guard_trigger_count=" +
+              std::to_string(SymbolExecutionQualityMemoryTriggerCount(
+                  decision.intent->symbol)) +
+              ", allow_recovery_probe=true");
+      decision.intent.reset();
+    }
   }
 
   // 交易所规则前置保护：避免 qty=0/min_qty/min_notional 拒单循环。
@@ -4748,6 +4791,9 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.rebalance_converged_within_min_notional) +
           ", intents_throttled_cost_cooldown=" +
           std::to_string(funnel_window.intents_throttled_cost_cooldown) +
+          ", intents_throttled_symbol_quality_quarantine=" +
+          std::to_string(
+              funnel_window.intents_throttled_symbol_quality_quarantine) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
           ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
           ", candidate_probe_signals=" +

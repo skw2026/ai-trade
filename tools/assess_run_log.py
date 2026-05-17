@@ -123,6 +123,7 @@ DEFAULT_S5_PROFIT_PROTECTION_ENABLED = False
 DEFAULT_S5_MAX_PROTECTIVE_ORDER_MISSING_COUNT = 0
 DEFAULT_S5_MIN_TREND_RUNTIME_WINDOWS = 60
 DEFAULT_S5_MIN_EFFECTIVE_RUNTIME_AGE_SECONDS = 3600
+MIN_S5_EXECUTION_NEGATIVE_SYMBOL_FILL_COUNT_WARN = 10
 
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
@@ -245,6 +246,10 @@ REGIME_CHANGE_RE = re.compile(
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 PROCESS_START_RE = re.compile(
     r"PROCESS_START:.*?startup_utc=(?P<startup>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"
+)
+RUNTIME_STATUS_BOOT_START_RE = re.compile(
+    r"RUNTIME_STATUS:.*?boot=\{[^}]*?"
+    r"startup_utc=(?P<startup>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"
 )
 RUNTIME_STATUS_TS_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?RUNTIME_STATUS:"
@@ -803,6 +808,10 @@ def extract_runtime_timing(text: str) -> Dict[str, object]:
 
     process_start_times: list[dt.datetime] = []
     for match in PROCESS_START_RE.finditer(text):
+        parsed = _parse_utc_timestamp(match.group("startup"))
+        if parsed is not None:
+            process_start_times.append(parsed)
+    for match in RUNTIME_STATUS_BOOT_START_RE.finditer(text):
         parsed = _parse_utc_timestamp(match.group("startup"))
         if parsed is not None:
             process_start_times.append(parsed)
@@ -2049,6 +2058,10 @@ def assess(
             r"ORDER_THROTTLED:.*symbol_quality_min_hold_remaining_ticks",
             text,
         ),
+        "order_throttled_symbol_quality_quarantine_count": count(
+            r"ORDER_THROTTLED:.*symbol_quality_quarantine_remaining_ticks",
+            text,
+        ),
         "funnel_enqueued_runtime_count": count(
             r"RUNTIME_STATUS:.*funnel_window=\{[^}]*enqueued=(?:[1-9][0-9]*)",
             text,
@@ -2358,6 +2371,8 @@ def assess(
         best_symbol = ""
         best_symbol_net = 0.0
         best_symbol_net_per_fill = 0.0
+        negative_symbol_count = 0
+        positive_symbol_count = 0
         if quality_by_symbol:
             ranked_symbols = sorted(
                 (
@@ -2369,7 +2384,7 @@ def assess(
                     for symbol, payload in quality_by_symbol.items()
                     if isinstance(payload, dict)
                 ),
-                key=lambda item: item[1],
+                key=lambda item: (item[2], item[1]),
             )
             if ranked_symbols:
                 worst_symbol, worst_symbol_net, worst_symbol_net_per_fill = (
@@ -2377,6 +2392,12 @@ def assess(
                 )
                 best_symbol, best_symbol_net, best_symbol_net_per_fill = (
                     ranked_symbols[-1]
+                )
+                negative_symbol_count = sum(
+                    1 for _, _, net_per_fill in ranked_symbols if net_per_fill < 0.0
+                )
+                positive_symbol_count = sum(
+                    1 for _, _, net_per_fill in ranked_symbols if net_per_fill > 0.0
                 )
         metrics.update(
             {
@@ -2459,6 +2480,12 @@ def assess(
                     attribution_runtime_windows.get("fee_delta_usd", 0.0)
                 ),
                 "execution_attribution_symbol_count": int(len(quality_by_symbol)),
+                "execution_attribution_negative_symbol_count": int(
+                    negative_symbol_count
+                ),
+                "execution_attribution_positive_symbol_count": int(
+                    positive_symbol_count
+                ),
                 "execution_attribution_worst_symbol": worst_symbol,
                 "execution_attribution_worst_symbol_realized_net_usd": float(
                     worst_symbol_net
@@ -2974,6 +3001,27 @@ def assess(
                 f"exit={metrics['execution_symbol_quality_guard_exit_count']}, "
                 f"symbol_active_latest={metrics['execution_quality_guard_symbol_active_count_latest']}, "
                 f"symbol_active_max={metrics['execution_quality_guard_symbol_active_count_max']}"
+            )
+        if (
+            stage.name == "S5"
+            and has_execution_activity
+            and metrics["execution_attribution_fill_count"]
+            >= MIN_S5_EXECUTION_NEGATIVE_SYMBOL_FILL_COUNT_WARN
+            and metrics["execution_attribution_symbol_count"] > 0
+            and metrics["execution_attribution_negative_symbol_count"]
+            == metrics["execution_attribution_symbol_count"]
+        ):
+            warn_reasons.append(
+                "成交已活跃但所有成交币对按 realized_net_per_fill 统计均为负，"
+                "当前瓶颈已从采样转为执行净质量/费用控制: "
+                f"symbols={metrics['execution_attribution_symbol_count']}, "
+                f"fills={metrics['execution_attribution_fill_count']}, "
+                f"best_symbol={metrics['execution_attribution_best_symbol']}, "
+                "best_net_per_fill="
+                f"{metrics['execution_attribution_best_symbol_realized_net_per_fill']:.6f}, "
+                f"worst_symbol={metrics['execution_attribution_worst_symbol']}, "
+                "worst_net_per_fill="
+                f"{metrics['execution_attribution_worst_symbol_realized_net_per_fill']:.6f}"
             )
         if (
             s5_protection_enabled

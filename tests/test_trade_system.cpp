@@ -2040,6 +2040,30 @@ int main() {
       return 1;
     }
 
+    ai_trade::MarketDecision entry_decision;
+    ai_trade::OrderIntent entry_intent;
+    entry_intent.client_order_id = "quality-main-entry";
+    entry_intent.symbol = "BNBUSDT";
+    entry_intent.purpose = ai_trade::OrderPurpose::kEntry;
+    entry_intent.reduce_only = false;
+    entry_intent.direction = 1;
+    entry_intent.qty = 0.1;
+    entry_intent.price = 600.0;
+    entry_decision.intent = entry_intent;
+    int quarantine_remaining_ticks = 0;
+    if (!app.ShouldThrottleSymbolQualityQuarantine(
+            entry_decision, &quarantine_remaining_ticks)) {
+      std::cerr << "低质量 symbol 软记忆未清零前应隔离主链开仓\n";
+      return 1;
+    }
+    entry_decision.intent->client_order_id = "quality-recovery-probe";
+    app.candidate_probe_intent_ids_.insert("quality-recovery-probe");
+    if (app.ShouldThrottleSymbolQualityQuarantine(entry_decision,
+                                                  &quarantine_remaining_ticks)) {
+      std::cerr << "低质量 symbol 恢复期应允许小额探针验证\n";
+      return 1;
+    }
+
     app.execution_quality_by_symbol_["BNBUSDT"].last_maker_entry_tick =
         app.market_tick_count_;
     ai_trade::MarketDecision reduce_decision;
@@ -2075,6 +2099,13 @@ int main() {
         app.SymbolExecutionQualityMemoryTriggerCount("BNBUSDT") != 0 ||
         app.SymbolExecutionQualityProbeNotionalScale("BNBUSDT") != 1.0) {
       std::cerr << "低质量软记忆应能被后续正质量样本衰减清零\n";
+      return 1;
+    }
+    entry_decision.intent->client_order_id = "quality-main-entry-restored";
+    app.candidate_probe_intent_ids_.erase("quality-recovery-probe");
+    if (app.ShouldThrottleSymbolQualityQuarantine(entry_decision,
+                                                  &quarantine_remaining_ticks)) {
+      std::cerr << "低质量软记忆清零后应恢复主链开仓\n";
       return 1;
     }
   }

@@ -391,6 +391,42 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["metrics"]["runtime_boot_age_seconds"], 20.0)
         self.assertIn("运行进程启动时间过短", "\n".join(report["warn_reasons"]))
 
+    def test_s5_runtime_boot_startup_fallback_when_process_start_filtered(self):
+        runtime_line = self._runtime_line(
+            20,
+            0.0,
+            funnel_enqueued=0,
+            funnel_fills=0,
+            strategy_mix_samples=0,
+            strategy_mix_policy_flat_samples=12,
+            strategy_mix_latest_trend=0.0,
+            strategy_mix_latest_defensive=0.0,
+            strategy_mix_latest_blended=0.0,
+            strategy_mix_avg_abs_trend=0.0,
+            strategy_mix_avg_abs_defensive=0.0,
+            strategy_mix_avg_abs_blended=0.0,
+        )
+        runtime_line = runtime_line.replace(
+            "RUNTIME_STATUS: ticks=20, ",
+            "RUNTIME_STATUS: ticks=20, "
+            "boot={startup_utc=2026-02-14T15:00:00Z}, ",
+        )
+        runtime_line = runtime_line[:-1] + (
+            ", evolution={enabled=true, active_bucket=RANGE, active_trend_weight=0.5, "
+            "active_defensive_weight=0.5, next_eval_tick=600, cooldown=false, "
+            "cooldown_remaining_ticks=0}\n"
+        )
+        text = (
+            runtime_line
+            + "2026-02-14 15:00:20 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=12, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertEqual(
+            report["metrics"]["process_start_utc"], "2026-02-14T15:00:00Z"
+        )
+        self.assertEqual(report["metrics"]["runtime_boot_age_seconds"], 20.0)
+        self.assertIn("运行进程启动时间过短", "\n".join(report["warn_reasons"]))
+
     def test_s5_policy_flat_window_without_evolution_evidence_still_fails(self):
         text = (
             self._runtime_line(
@@ -697,6 +733,83 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(quality["fee_usd"], 0.075)
         self.assertAlmostEqual(quality["realized_net_usd"], -0.065)
         self.assertAlmostEqual(quality["realized_net_per_fill"], -0.0325)
+
+    def test_execution_attribution_ranks_symbols_by_net_per_fill(self):
+        lines = [
+            "2026-02-14 15:00:01 [INFO] FILL_APPLIED: fill_id=btc-open, client_order_id=btc-open, symbol=BTCUSDT, side=Buy, qty=1.0, price=100.0, fee=0.000000, liquidity=maker",
+            "2026-02-14 15:00:02 [INFO] FILL_APPLIED: fill_id=btc-close, client_order_id=btc-close, symbol=BTCUSDT, side=Sell, qty=1.0, price=100.0, fee=-0.100000, liquidity=taker",
+        ]
+        for idx in range(5):
+            lines.extend(
+                [
+                    f"2026-02-14 15:01:{idx * 2:02d} [INFO] FILL_APPLIED: fill_id=sol-open-{idx}, client_order_id=sol-open-{idx}, symbol=SOLUSDT, side=Buy, qty=1.0, price=20.0, fee=0.000000, liquidity=maker",
+                    f"2026-02-14 15:01:{idx * 2 + 1:02d} [INFO] FILL_APPLIED: fill_id=sol-close-{idx}, client_order_id=sol-close-{idx}, symbol=SOLUSDT, side=Sell, qty=1.0, price=20.0, fee=-0.040000, liquidity=maker",
+                ]
+            )
+        text = "\n".join(lines) + "\n" + self._runtime_line(20, 0.0, funnel_fills=12)
+
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+
+        self.assertEqual(metrics["execution_attribution_symbol_count"], 2)
+        self.assertEqual(metrics["execution_attribution_negative_symbol_count"], 2)
+        self.assertEqual(metrics["execution_attribution_positive_symbol_count"], 0)
+        self.assertEqual(metrics["execution_attribution_worst_symbol"], "BTCUSDT")
+        self.assertAlmostEqual(
+            metrics["execution_attribution_worst_symbol_realized_net_per_fill"],
+            -0.05,
+        )
+        self.assertEqual(metrics["execution_attribution_best_symbol"], "SOLUSDT")
+        self.assertAlmostEqual(
+            metrics["execution_attribution_best_symbol_realized_net_per_fill"],
+            -0.02,
+        )
+
+    def test_s5_warns_when_all_active_symbols_have_negative_net_quality(self):
+        lines = [
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600",
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=12",
+            "2026-02-14 15:00:01 [INFO] FILL_APPLIED: fill_id=btc-open, client_order_id=btc-open, symbol=BTCUSDT, side=Buy, qty=1.0, price=100.0, fee=0.000000, liquidity=maker",
+            "2026-02-14 15:00:02 [INFO] FILL_APPLIED: fill_id=btc-close, client_order_id=btc-close, symbol=BTCUSDT, side=Sell, qty=1.0, price=100.0, fee=-0.100000, liquidity=taker",
+        ]
+        for idx in range(5):
+            lines.extend(
+                [
+                    f"2026-02-14 15:01:{idx * 2:02d} [INFO] FILL_APPLIED: fill_id=sol-open-{idx}, client_order_id=sol-open-{idx}, symbol=SOLUSDT, side=Buy, qty=1.0, price=20.0, fee=0.000000, liquidity=maker",
+                    f"2026-02-14 15:01:{idx * 2 + 1:02d} [INFO] FILL_APPLIED: fill_id=sol-close-{idx}, client_order_id=sol-close-{idx}, symbol=SOLUSDT, side=Sell, qty=1.0, price=20.0, fee=-0.040000, liquidity=maker",
+                ]
+            )
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.01,
+                fee_bps_per_fill=1.0,
+                maker_fills=1,
+                explicit_liquidity_fills=1,
+                explicit_liquidity_fill_ratio=1.0,
+                maker_fill_ratio=1.0,
+                regime_bucket="TREND",
+            )
+            for i in range(50)
+        )
+        text = "\n".join(lines) + "\n" + runtime
+
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
+        self.assertTrue(
+            any(
+                "所有成交币对按 realized_net_per_fill 统计均为负"
+                in item
+                for item in report["warn_reasons"]
+            )
+        )
 
     def test_transient_trend_regime_change_is_reported_separately(self):
         text = (
@@ -1055,6 +1168,19 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["execution_quality_guard_symbol_active_count_latest"], 0)
         self.assertFalse(
             any("symbol 级执行质量守卫触发" in x for x in report["warn_reasons"])
+        )
+
+    def test_assess_counts_symbol_quality_quarantine_throttle(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] ORDER_THROTTLED: symbol=BTCUSDT, "
+            "client_order_id=main-entry-1, "
+            "reason=symbol_quality_quarantine_remaining_ticks=120, "
+            "quality_guard_trigger_count=2, allow_recovery_probe=true\n"
+            + self._runtime_line(20, 0.0)
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        self.assertEqual(
+            report["metrics"]["order_throttled_symbol_quality_quarantine_count"], 1
         )
 
     def test_assess_warn_on_low_explicit_liquidity_ratio(self):
