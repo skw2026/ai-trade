@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import argparse
+import json
 import pathlib
 import sys
+import tempfile
 import unittest
 
 
@@ -75,6 +78,111 @@ class ModelRegistryTest(unittest.TestCase):
         self.assertEqual(summary["random_label_auc_mean"], 0.57)
         self.assertEqual(summary["random_label_auc_stdev"], 0.03)
         self.assertEqual(summary["random_label_auc_max"], 0.61)
+
+    def test_replay_fail_prevents_activation_even_when_integrator_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            model_file = root / "integrator_latest.cbm"
+            integrator_report = root / "integrator_report.json"
+            walkforward_report = root / "walkforward_report.json"
+            replay_report = root / "replay_validation_report.json"
+            registration_out = root / "registry_out.json"
+
+            model_file.write_bytes(b"fake model")
+            integrator_report.write_text(
+                json.dumps(
+                    {
+                        "model_version": "integrator_cb_v1",
+                        "feature_schema_version": "feature_schema_v1",
+                        "factor_set_version": "factor_set_v1",
+                        "metrics_oos": {
+                            "auc_mean": 0.56,
+                            "delta_auc_vs_baseline": 0.02,
+                            "split_trained_count": 5,
+                            "split_count": 5,
+                            "split_trained_ratio": 1.0,
+                        },
+                        "governance": {"pass": True, "fail_reasons": [], "warn_reasons": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "avg_split_return": 0.001,
+                            "enabled_avg_split_return": 0.001,
+                            "traded_avg_split_return": 0.001,
+                            "traded_split_count": 4,
+                            "total_trades": 20,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "fail",
+                        "fail_reasons": ["ROBUST filled replay segments are all net-negative"],
+                        "warn_reasons": [],
+                        "aggregate_validation": {
+                            "execution_active_runs": 10,
+                            "execution_pass_runs": 10,
+                            "total_fills": 10,
+                            "negative_realized_net_with_fills_runs": 10,
+                            "mean_realized_net_per_fill": -0.001,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            code = REGISTRY.run_register(
+                argparse.Namespace(
+                    model_file=str(model_file),
+                    integrator_report=str(integrator_report),
+                    miner_report="",
+                    walkforward_report=str(walkforward_report),
+                    replay_validation_report=str(replay_report),
+                    registry_dir=str(root / "registry"),
+                    max_versions=20,
+                    active_model_path=str(root / "active" / "integrator_latest.cbm"),
+                    active_report_path=str(root / "active" / "integrator_report.json"),
+                    active_miner_report_path=str(root / "active" / "miner_report.json"),
+                    active_meta_path=str(root / "active" / "integrator_active.json"),
+                    min_auc_mean=0.50,
+                    min_delta_auc_vs_baseline=0.0,
+                    min_split_trained_count=1,
+                    min_split_trained_ratio=0.5,
+                    activate_on_pass=True,
+                    require_walkforward_positive=True,
+                    min_walkforward_avg_split_return=0.0,
+                    min_walkforward_enabled_avg_split_return=0.0,
+                    min_walkforward_traded_avg_split_return=0.0,
+                    require_replay_validation_pass=True,
+                    registration_out=str(registration_out),
+                )
+            )
+
+            self.assertEqual(code, 0)
+            payload = json.loads(registration_out.read_text(encoding="utf-8"))
+            self.assertFalse(payload["activated"])
+            self.assertFalse(payload["gate"]["pass"])
+            self.assertFalse((root / "active" / "integrator_latest.cbm").exists())
+            self.assertTrue(
+                any(
+                    "replay_validation: replay_validation status=fail != pass" in reason
+                    for reason in payload["gate"]["fail_reasons"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    "ROBUST filled replay segments are all net-negative" in reason
+                    for reason in payload["gate"]["fail_reasons"]
+                )
+            )
 
 
 if __name__ == "__main__":

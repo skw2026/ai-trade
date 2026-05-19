@@ -144,11 +144,23 @@ def assess_registry(path: Path) -> Dict[str, Any]:
         "gate_fail_reasons": gate.get("fail_reasons", []),
         "gate_warn_reasons": gate.get("warn_reasons", []),
         "gate_metric_summary": gate.get("metric_summary", {}),
+        "gate_external": gate.get("external", {}),
         "gate_thresholds": {
             "min_auc_mean": gate.get("min_auc_mean"),
             "min_delta_auc_vs_baseline": gate.get("min_delta_auc_vs_baseline"),
             "min_split_trained_count": gate.get("min_split_trained_count"),
             "min_split_trained_ratio": gate.get("min_split_trained_ratio"),
+            "require_walkforward_positive": gate.get("require_walkforward_positive"),
+            "min_walkforward_avg_split_return": gate.get(
+                "min_walkforward_avg_split_return"
+            ),
+            "min_walkforward_enabled_avg_split_return": gate.get(
+                "min_walkforward_enabled_avg_split_return"
+            ),
+            "min_walkforward_traded_avg_split_return": gate.get(
+                "min_walkforward_traded_avg_split_return"
+            ),
+            "require_replay_validation_pass": gate.get("require_replay_validation_pass"),
         },
     }
 
@@ -232,6 +244,9 @@ def assess_data_pipeline(path: Path) -> Dict[str, Any]:
 def assess_walkforward(
     path: Path,
     min_avg_split_sharpe: float = 0.0,
+    min_avg_split_return: float = 0.0,
+    min_enabled_avg_split_return: float = 0.0,
+    min_traded_avg_split_return: float = 0.0,
     min_traded_split_count: int = 0,
     min_total_trades: int = 0,
     min_trend_bucket_bars: int = 0,
@@ -246,6 +261,9 @@ def assess_walkforward(
     total_trades = summary.get("total_trades", 0)
     total_bars = summary.get("total_bars", 0)
     avg_split_sharpe = summary.get("avg_split_sharpe")
+    avg_split_return = summary.get("avg_split_return")
+    enabled_avg_split_return = summary.get("enabled_avg_split_return")
+    traded_avg_split_return = summary.get("traded_avg_split_return")
     regime_bucket_summary = summary.get("regime_bucket_summary", {})
     trend_bucket = regime_bucket_summary.get("trend", {}) if isinstance(regime_bucket_summary, dict) else {}
     fails: List[str] = []
@@ -283,6 +301,30 @@ def assess_walkforward(
             )
     else:
         warns.append("walk-forward 缺少 avg_split_sharpe，无法评估收益质量")
+    return_checks = [
+        ("avg_split_return", "平均 split 收益", avg_split_return, min_avg_split_return),
+        (
+            "enabled_avg_split_return",
+            "启用 split 平均收益",
+            enabled_avg_split_return,
+            min_enabled_avg_split_return,
+        ),
+        (
+            "traded_avg_split_return",
+            "交易 split 平均收益",
+            traded_avg_split_return,
+            min_traded_avg_split_return,
+        ),
+    ]
+    for metric_name, label, metric_value, threshold in return_checks:
+        if isinstance(metric_value, (int, float)):
+            if float(metric_value) < float(threshold):
+                fails.append(
+                    f"walk-forward {label}未达门槛: "
+                    f"{float(metric_value):.6f} < {float(threshold):.6f}"
+                )
+        elif float(threshold) != 0.0:
+            warns.append(f"walk-forward 缺少 {metric_name}，无法评估净收益质量")
     status = "pass" if not fails else "fail"
     return {
         "status": status,
@@ -628,6 +670,24 @@ def parse_args() -> argparse.Namespace:
         help="walk-forward 平均 Sharpe 最低门槛（默认 0.0，低于即 FAIL）",
     )
     parser.add_argument(
+        "--walkforward_min_avg_split_return",
+        type=float,
+        default=0.0,
+        help="walk-forward 平均 split 收益最低门槛（默认 0.0，低于即 FAIL）",
+    )
+    parser.add_argument(
+        "--walkforward_min_enabled_avg_split_return",
+        type=float,
+        default=0.0,
+        help="walk-forward 启用 split 平均收益最低门槛（默认 0.0，低于即 FAIL）",
+    )
+    parser.add_argument(
+        "--walkforward_min_traded_avg_split_return",
+        type=float,
+        default=0.0,
+        help="walk-forward 交易 split 平均收益最低门槛（默认 0.0，低于即 FAIL）",
+    )
+    parser.add_argument(
         "--walkforward_min_traded_split_count",
         type=int,
         default=0,
@@ -764,6 +824,13 @@ def main() -> int:
             sections["walkforward"] = assess_walkforward(
                 walkforward_path,
                 min_avg_split_sharpe=float(args.walkforward_min_avg_sharpe),
+                min_avg_split_return=float(args.walkforward_min_avg_split_return),
+                min_enabled_avg_split_return=float(
+                    args.walkforward_min_enabled_avg_split_return
+                ),
+                min_traded_avg_split_return=float(
+                    args.walkforward_min_traded_avg_split_return
+                ),
                 min_traded_split_count=int(args.walkforward_min_traded_split_count),
                 min_total_trades=int(args.walkforward_min_total_trades),
                 min_trend_bucket_bars=int(args.walkforward_min_trend_bucket_bars),

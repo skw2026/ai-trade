@@ -156,6 +156,18 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
+            "CLOSED_LOOP_WALKFORWARD_MIN_AVG_SPLIT_RETURN: ${CLOSED_LOOP_WALKFORWARD_MIN_AVG_SPLIT_RETURN:-0.0}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN: ${CLOSED_LOOP_WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN:-0.0}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN: ${CLOSED_LOOP_WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN:-0.0}",
+            scheduler,
+        )
+        self.assertIn(
             "CLOSED_LOOP_REPLAY_VALIDATION_ENABLED: ${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}",
             scheduler,
         )
@@ -233,9 +245,17 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--trend_validation_min_sharpe", script)
         self.assertIn("--trend_validation_min_bars", script)
         self.assertIn("--trend_validation_min_trades", script)
+        self.assertIn("--walkforward_min_avg_split_return", script)
+        self.assertIn("--walkforward_min_enabled_avg_split_return", script)
+        self.assertIn("--walkforward_min_traded_avg_split_return", script)
+        self.assertIn("--require_walkforward_positive", script)
+        self.assertIn("--require_replay_validation_pass", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_BARS", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES", script)
+        self.assertIn("CLOSED_LOOP_WALKFORWARD_MIN_AVG_SPLIT_RETURN", script)
+        self.assertIn("CLOSED_LOOP_WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN", script)
+        self.assertIn("CLOSED_LOOP_WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_ENABLED", script)
         self.assertIn("CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
@@ -295,6 +315,9 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--validation_fraction", script)
         self.assertIn("--min_validation_samples", script)
         self.assertIn("--early_stopping_rounds", script)
+
+        full_case = script[script.index("    full)") : script.index("      ;;", script.index("    full)"))]
+        self.assertLess(full_case.index("run_replay_validation"), full_case.index("run_registry"))
 
     def test_closed_loop_workflow_default_replay_symbols_cover_live_trend_set(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")

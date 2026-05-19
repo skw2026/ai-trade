@@ -104,6 +104,9 @@ S5_MIN_REALIZED_NET_PER_FILL_WINDOWS="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL
 S5_MIN_FILL_WINDOWS="${CLOSED_LOOP_S5_MIN_FILL_WINDOWS:-10}"
 S5_MIN_TREND_RUNTIME_WINDOWS="${CLOSED_LOOP_S5_MIN_TREND_RUNTIME_WINDOWS:-60}"
 WALKFORWARD_MIN_AVG_SHARPE="${CLOSED_LOOP_WALKFORWARD_MIN_AVG_SHARPE:-0.0}"
+WALKFORWARD_MIN_AVG_SPLIT_RETURN="${CLOSED_LOOP_WALKFORWARD_MIN_AVG_SPLIT_RETURN:-0.0}"
+WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN="${CLOSED_LOOP_WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN:-0.0}"
+WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN="${CLOSED_LOOP_WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN:-0.0}"
 WALKFORWARD_MIN_TRADED_SPLIT_COUNT="${CLOSED_LOOP_WALKFORWARD_MIN_TRADED_SPLIT_COUNT:-1}"
 WALKFORWARD_MIN_TOTAL_TRADES="${CLOSED_LOOP_WALKFORWARD_MIN_TOTAL_TRADES:-1}"
 WALKFORWARD_MIN_TREND_BUCKET_BARS="${CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_BARS:-1000}"
@@ -252,6 +255,9 @@ Env toggles:
   CLOSED_LOOP_S5_MIN_FILL_WINDOWS=<int>                 S5 强门禁：fills>0窗口最小数量 (default: 10)
   CLOSED_LOOP_S5_MIN_TREND_RUNTIME_WINDOWS=<int>        S5 反退化门禁：TREND 桶最小 runtime 窗口数 (default: 60)
   CLOSED_LOOP_WALKFORWARD_MIN_AVG_SHARPE=<float>         walk-forward 平均 Sharpe 下限 (default: 0.0)
+  CLOSED_LOOP_WALKFORWARD_MIN_AVG_SPLIT_RETURN=<float>  walk-forward 平均 split 收益下限 (default: 0.0)
+  CLOSED_LOOP_WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN=<float> walk-forward 启用 split 平均收益下限 (default: 0.0)
+  CLOSED_LOOP_WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN=<float>  walk-forward 交易 split 平均收益下限 (default: 0.0)
   CLOSED_LOOP_WALKFORWARD_MIN_TRADED_SPLIT_COUNT=<int>   walk-forward 最小交易活跃 split 数 (default: 1)
   CLOSED_LOOP_WALKFORWARD_MIN_TOTAL_TRADES=<int>         walk-forward 最小总交易次数 (default: 1)
   CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_BARS=<int>    walk-forward TREND 桶最小 bars 门槛 (default: 1000)
@@ -1107,8 +1113,19 @@ run_registry() {
     --min_delta_auc_vs_baseline="${MIN_DELTA_AUC_VS_BASELINE}"
     --min_split_trained_count="${MIN_SPLIT_TRAINED_COUNT}"
     --min_split_trained_ratio="${MIN_SPLIT_TRAINED_RATIO}"
+    --walkforward_report="${WALKFORWARD_REPORT_PATH}"
+    --require_walkforward_positive
+    --min_walkforward_avg_split_return="${WALKFORWARD_MIN_AVG_SPLIT_RETURN}"
+    --min_walkforward_enabled_avg_split_return="${WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN}"
+    --min_walkforward_traded_avg_split_return="${WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN}"
     --registration_out="${REGISTRY_RESULT_PATH}"
   )
+  if is_true "${REPLAY_VALIDATION_ENABLED}"; then
+    REG_ARGS+=(
+      --replay_validation_report="${REPLAY_VALIDATION_REPORT_PATH}"
+      --require_replay_validation_pass
+    )
+  fi
   if [[ "${ACTIVATE_ON_PASS}" == "true" ]]; then
     REG_ARGS+=(--activate_on_pass)
   fi
@@ -1571,6 +1588,9 @@ build_summary() {
     --output="${FINAL_REPORT_PATH}"
     --run_id="${RUN_ID}"
     --walkforward_min_avg_sharpe="${WALKFORWARD_MIN_AVG_SHARPE}"
+    --walkforward_min_avg_split_return="${WALKFORWARD_MIN_AVG_SPLIT_RETURN}"
+    --walkforward_min_enabled_avg_split_return="${WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN}"
+    --walkforward_min_traded_avg_split_return="${WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN}"
     --walkforward_min_traded_split_count="${WALKFORWARD_MIN_TRADED_SPLIT_COUNT}"
     --walkforward_min_total_trades="${WALKFORWARD_MIN_TOTAL_TRADES}"
     --walkforward_min_trend_bucket_bars="${WALKFORWARD_MIN_TREND_BUCKET_BARS}"
@@ -1716,8 +1736,8 @@ run_main() {
       run_data_quality
       run_miner
       run_integrator
-      run_registry
       run_replay_validation
+      run_registry
       build_summary
       restart_if_activated
       ;;
@@ -1736,8 +1756,8 @@ run_main() {
       run_data_quality
       run_miner
       run_integrator
-      run_registry
       run_replay_validation
+      run_registry
       verify_s5_learning_switches
       run_assess
       verify_s5_learning_activity

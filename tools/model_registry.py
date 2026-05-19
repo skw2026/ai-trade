@@ -128,6 +128,12 @@ def parse_args() -> argparse.Namespace:
     register.add_argument("--model_file", required=True, help="训练产物模型文件（.cbm）")
     register.add_argument("--integrator_report", required=True, help="integrator_report.json 路径")
     register.add_argument("--miner_report", default="", help="可选：miner_report.json 路径")
+    register.add_argument("--walkforward_report", default="", help="可选：walkforward_report.json 路径")
+    register.add_argument(
+        "--replay_validation_report",
+        default="",
+        help="可选：replay_validation_report.json 路径",
+    )
     register.add_argument("--registry_dir", default="./data/models/registry", help="模型注册目录")
     register.add_argument("--max_versions", type=int, default=20, help="历史版本最大保留数")
     register.add_argument(
@@ -173,6 +179,34 @@ def parse_args() -> argparse.Namespace:
         "--activate_on_pass",
         action="store_true",
         help="门槛通过后自动激活为当前版本",
+    )
+    register.add_argument(
+        "--require_walkforward_positive",
+        action="store_true",
+        help="要求 walk-forward 满足净收益门槛后才允许激活",
+    )
+    register.add_argument(
+        "--min_walkforward_avg_split_return",
+        type=float,
+        default=0.0,
+        help="walk-forward 平均 split 收益最低门槛",
+    )
+    register.add_argument(
+        "--min_walkforward_enabled_avg_split_return",
+        type=float,
+        default=0.0,
+        help="walk-forward 启用 split 平均收益最低门槛",
+    )
+    register.add_argument(
+        "--min_walkforward_traded_avg_split_return",
+        type=float,
+        default=0.0,
+        help="walk-forward 交易 split 平均收益最低门槛",
+    )
+    register.add_argument(
+        "--require_replay_validation_pass",
+        action="store_true",
+        help="要求 replay validation 状态为 pass 后才允许激活",
     )
     register.add_argument(
         "--registration_out",
@@ -274,6 +308,132 @@ def gate_integrator_report(
     return gate_pass, fail_reasons, warn_reasons, summary
 
 
+def coerce_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def gate_walkforward_report(
+    report_path: Path | None,
+    require_report: bool,
+    min_avg_split_return: float,
+    min_enabled_avg_split_return: float,
+    min_traded_avg_split_return: float,
+) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    summary: Dict[str, Any] = {}
+
+    if report_path is None:
+        if require_report:
+            fail_reasons.append("walkforward_report 缺失")
+        return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
+    if not report_path.is_file():
+        fail_reasons.append(f"walkforward_report 不存在: {report_path}")
+        return False, fail_reasons, warn_reasons, summary
+
+    payload = read_json(report_path)
+    raw_summary = payload.get("summary", {})
+    if not isinstance(raw_summary, dict):
+        fail_reasons.append("walkforward_report.summary 缺失或格式错误")
+        return False, fail_reasons, warn_reasons, summary
+    summary = raw_summary
+
+    return_checks = [
+        ("avg_split_return", min_avg_split_return),
+        ("enabled_avg_split_return", min_enabled_avg_split_return),
+        ("traded_avg_split_return", min_traded_avg_split_return),
+    ]
+    for metric_name, threshold in return_checks:
+        metric_value = coerce_float(summary.get(metric_name))
+        if metric_value is None:
+            fail_reasons.append(f"walkforward_report.summary.{metric_name} 缺失")
+            continue
+        if metric_value < float(threshold):
+            fail_reasons.append(
+                f"walkforward {metric_name}={metric_value:.6f} < {float(threshold):.6f}"
+            )
+
+    total_trades = summary.get("total_trades")
+    traded_split_count = summary.get("traded_split_count")
+    if isinstance(total_trades, int) and total_trades <= 0:
+        fail_reasons.append(f"walkforward total_trades={total_trades} <= 0")
+    if isinstance(traded_split_count, int) and traded_split_count <= 0:
+        fail_reasons.append(f"walkforward traded_split_count={traded_split_count} <= 0")
+
+    return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
+
+
+def gate_replay_validation_report(
+    report_path: Path | None,
+    require_report: bool,
+) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    summary: Dict[str, Any] = {}
+
+    if report_path is None:
+        if require_report:
+            fail_reasons.append("replay_validation_report 缺失")
+        return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
+    if not report_path.is_file():
+        fail_reasons.append(f"replay_validation_report 不存在: {report_path}")
+        return False, fail_reasons, warn_reasons, summary
+
+    payload = read_json(report_path)
+    aggregate = payload.get("aggregate_validation", {})
+    aggregate_status = ""
+    if isinstance(aggregate, dict):
+        aggregate_status = str(aggregate.get("status", "")).strip().lower()
+    status = str(payload.get("status", aggregate_status)).strip().lower()
+    if status != "pass":
+        fail_reasons.append(f"replay_validation status={status or 'UNKNOWN'} != pass")
+
+    fail_items = payload.get("fail_reasons", [])
+    if not fail_items and isinstance(aggregate, dict):
+        fail_items = aggregate.get("fail_reasons", [])
+    if isinstance(fail_items, list):
+        for item in fail_items:
+            item_text = str(item).strip()
+            if item_text:
+                fail_reasons.append(item_text)
+
+    warn_items = payload.get("warn_reasons", [])
+    if not warn_items and isinstance(aggregate, dict):
+        warn_items = aggregate.get("warn_reasons", [])
+    if isinstance(warn_items, list):
+        for item in warn_items:
+            item_text = str(item).strip()
+            if item_text:
+                warn_reasons.append(item_text)
+
+    coverage_strength_status = payload.get("coverage_strength_status")
+    if coverage_strength_status is None and isinstance(aggregate, dict):
+        coverage_strength_status = aggregate.get("coverage_strength_status")
+    summary = {
+        "status": payload.get("status", aggregate_status),
+        "coverage_strength_status": coverage_strength_status,
+        "aggregate_validation": aggregate if isinstance(aggregate, dict) else {},
+    }
+    if isinstance(aggregate, dict):
+        for key in (
+            "execution_active_runs",
+            "execution_pass_runs",
+            "total_fills",
+            "positive_realized_net_with_fills_runs",
+            "negative_realized_net_with_fills_runs",
+            "mean_realized_net_per_fill",
+            "mean_realized_net_per_fill_with_fills",
+        ):
+            if key in aggregate:
+                summary[key] = aggregate.get(key)
+
+    return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
+
+
 def prune_old_versions(
     index_entries: List[Dict[str, Any]], registry_dir: Path, max_versions: int
 ) -> List[Dict[str, Any]]:
@@ -305,6 +465,10 @@ def run_register(args: argparse.Namespace) -> int:
     model_file = Path(args.model_file)
     integrator_report_path = Path(args.integrator_report)
     miner_report_path = Path(args.miner_report) if args.miner_report else None
+    walkforward_report_path = Path(args.walkforward_report) if args.walkforward_report else None
+    replay_validation_report_path = (
+        Path(args.replay_validation_report) if args.replay_validation_report else None
+    )
 
     if not model_file.is_file():
         print(f"[ERROR] model_file 不存在: {model_file}", file=sys.stderr)
@@ -328,6 +492,53 @@ def run_register(args: argparse.Namespace) -> int:
         args.min_split_trained_count,
         args.min_split_trained_ratio,
     )
+    external_gate_summary: Dict[str, Any] = {}
+
+    if args.require_walkforward_positive or walkforward_report_path is not None:
+        (
+            walkforward_pass,
+            walkforward_fail_reasons,
+            walkforward_warn_reasons,
+            walkforward_summary,
+        ) = gate_walkforward_report(
+            walkforward_report_path,
+            bool(args.require_walkforward_positive),
+            float(args.min_walkforward_avg_split_return),
+            float(args.min_walkforward_enabled_avg_split_return),
+            float(args.min_walkforward_traded_avg_split_return),
+        )
+        external_gate_summary["walkforward"] = {
+            "pass": walkforward_pass,
+            "min_avg_split_return": args.min_walkforward_avg_split_return,
+            "min_enabled_avg_split_return": args.min_walkforward_enabled_avg_split_return,
+            "min_traded_avg_split_return": args.min_walkforward_traded_avg_split_return,
+            "summary": walkforward_summary,
+        }
+        for item in walkforward_fail_reasons:
+            gate_fail_reasons.append(f"walkforward: {item}")
+        for item in walkforward_warn_reasons:
+            gate_warn_reasons.append(f"walkforward: {item}")
+
+    if args.require_replay_validation_pass or replay_validation_report_path is not None:
+        (
+            replay_pass,
+            replay_fail_reasons,
+            replay_warn_reasons,
+            replay_summary,
+        ) = gate_replay_validation_report(
+            replay_validation_report_path,
+            bool(args.require_replay_validation_pass),
+        )
+        external_gate_summary["replay_validation"] = {
+            "pass": replay_pass,
+            "summary": replay_summary,
+        }
+        for item in replay_fail_reasons:
+            gate_fail_reasons.append(f"replay_validation: {item}")
+        for item in replay_warn_reasons:
+            gate_warn_reasons.append(f"replay_validation: {item}")
+
+    gate_pass = len(gate_fail_reasons) == 0
 
     created_at = now_utc_iso()
     created_tag = now_utc_compact()
@@ -351,6 +562,27 @@ def run_register(args: argparse.Namespace) -> int:
     if miner_report_path is not None:
         shutil.copy2(miner_report_path, miner_dst)
         miner_sha = sha256_file(miner_report_path)
+
+    gate_payload = {
+        "pass": gate_pass,
+        "min_auc_mean": args.min_auc_mean,
+        "min_delta_auc_vs_baseline": args.min_delta_auc_vs_baseline,
+        "min_split_trained_count": args.min_split_trained_count,
+        "min_split_trained_ratio": args.min_split_trained_ratio,
+        "require_walkforward_positive": bool(args.require_walkforward_positive),
+        "min_walkforward_avg_split_return": args.min_walkforward_avg_split_return,
+        "min_walkforward_enabled_avg_split_return": (
+            args.min_walkforward_enabled_avg_split_return
+        ),
+        "min_walkforward_traded_avg_split_return": (
+            args.min_walkforward_traded_avg_split_return
+        ),
+        "require_replay_validation_pass": bool(args.require_replay_validation_pass),
+        "fail_reasons": gate_fail_reasons,
+        "warn_reasons": gate_warn_reasons,
+        "metric_summary": metric_summary,
+        "external": external_gate_summary,
+    }
 
     activated = bool(args.activate_on_pass and gate_pass)
     active_model_path = Path(args.active_model_path)
@@ -379,15 +611,7 @@ def run_register(args: argparse.Namespace) -> int:
             "activated_at_utc": created_at,
             "model_sha256": model_sha,
             "report_sha256": report_sha,
-            "gate": {
-                "pass": gate_pass,
-                "min_auc_mean": args.min_auc_mean,
-                "min_delta_auc_vs_baseline": args.min_delta_auc_vs_baseline,
-                "min_split_trained_count": args.min_split_trained_count,
-                "min_split_trained_ratio": args.min_split_trained_ratio,
-                "fail_reasons": gate_fail_reasons,
-                "warn_reasons": gate_warn_reasons,
-            },
+            "gate": gate_payload,
         }
         write_json(active_meta_path, active_payload)
 
@@ -413,16 +637,7 @@ def run_register(args: argparse.Namespace) -> int:
             "integrator_report_bytes": integrator_report_path.stat().st_size,
             "miner_report_bytes": miner_report_path.stat().st_size if miner_report_path else 0,
         },
-        "gate": {
-            "pass": gate_pass,
-            "min_auc_mean": args.min_auc_mean,
-            "min_delta_auc_vs_baseline": args.min_delta_auc_vs_baseline,
-            "min_split_trained_count": args.min_split_trained_count,
-            "min_split_trained_ratio": args.min_split_trained_ratio,
-            "fail_reasons": gate_fail_reasons,
-            "warn_reasons": gate_warn_reasons,
-            "metric_summary": metric_summary,
-        },
+        "gate": gate_payload,
         "activated": activated,
     }
     write_json(meta_dst, entry_payload)
