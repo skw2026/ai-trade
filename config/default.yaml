@@ -81,7 +81,7 @@ execution:
   quality_guard_min_fills: 12
   quality_guard_bad_streak_to_trigger: 2
   quality_guard_good_streak_to_release: 2
-  quality_guard_min_realized_net_per_fill_usd: -0.005
+  quality_guard_min_realized_net_per_fill_usd: 0.0
   quality_guard_max_fee_bps_per_fill: 8.0
   quality_guard_required_edge_penalty_bps: 1.5
   quality_guard_required_edge_floor_bps: 0.0

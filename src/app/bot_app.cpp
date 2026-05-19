@@ -886,11 +886,8 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   const double round_trip_cost_bps = RoundTripCostBps();
   const double base_required_edge_bps =
       round_trip_cost_bps + std::max(0.0, config_.execution_min_expected_edge_bps);
+  const double cost_floor_required_edge_bps = base_required_edge_bps;
   double required_edge_bps = base_required_edge_bps;
-  if (config_.execution_required_edge_cap_bps > 0.0) {
-    required_edge_bps =
-        std::min(required_edge_bps, config_.execution_required_edge_cap_bps);
-  }
   double adaptive_relax_bps = 0.0;
   const bool symbol_quality_guard_active =
       IsSymbolExecutionQualityGuardActive(decision.intent->symbol);
@@ -1070,7 +1067,13 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
           regime_adjust_bps + volatility_adjust_bps + liquidity_adjust_bps +
           concentration_adjust_bps +
           quality_guard_penalty_bps);
-  required_edge_bps = std::max(required_edge_bps, quality_guard_floor_bps);
+  const double effective_required_edge_floor_bps =
+      std::max(cost_floor_required_edge_bps, quality_guard_floor_bps);
+  required_edge_bps = std::max(required_edge_bps, effective_required_edge_floor_bps);
+  if (config_.execution_required_edge_cap_bps > effective_required_edge_floor_bps) {
+    required_edge_bps =
+        std::min(required_edge_bps, config_.execution_required_edge_cap_bps);
+  }
   if (out_expected_edge_bps != nullptr) {
     *out_expected_edge_bps = expected_edge_bps;
   }

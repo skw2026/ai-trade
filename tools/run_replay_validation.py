@@ -728,6 +728,12 @@ def aggregate_run_summaries(
         for summary in summaries
         if isinstance(summary.get("realized_net_per_fill"), (int, float))
     ]
+    realized_net_values_with_fills = [
+        float(summary["realized_net_per_fill"])
+        for summary in summaries
+        if int(summary.get("funnel_fills_runtime_count") or 0) > 0
+        and isinstance(summary.get("realized_net_per_fill"), (int, float))
+    ]
     zero_realized_net_with_fills_runs = sum(
         1
         for summary in summaries
@@ -741,6 +747,12 @@ def aggregate_run_summaries(
         if int(summary.get("funnel_fills_runtime_count") or 0) > 0
         and isinstance(summary.get("realized_net_per_fill"), (int, float))
         and abs(float(summary["realized_net_per_fill"])) > 1e-12
+    )
+    positive_realized_net_with_fills_runs = sum(
+        1 for value in realized_net_values_with_fills if value > 1e-12
+    )
+    negative_realized_net_with_fills_runs = sum(
+        1 for value in realized_net_values_with_fills if value < -1e-12
     )
     filtered_cost_values = [
         float(summary["filtered_cost_ratio_avg"])
@@ -759,14 +771,24 @@ def aggregate_run_summaries(
         "total_fills": total_fills,
         "mean_realized_net_per_fill": finite_mean(realized_net_values),
         "median_realized_net_per_fill": finite_median(realized_net_values),
+        "mean_realized_net_per_fill_with_fills": finite_mean(
+            realized_net_values_with_fills
+        ),
+        "median_realized_net_per_fill_with_fills": finite_median(
+            realized_net_values_with_fills
+        ),
         "zero_realized_net_with_fills_runs": zero_realized_net_with_fills_runs,
         "nonzero_realized_net_with_fills_runs": nonzero_realized_net_with_fills_runs,
+        "positive_realized_net_with_fills_runs": positive_realized_net_with_fills_runs,
+        "negative_realized_net_with_fills_runs": negative_realized_net_with_fills_runs,
         "mean_filtered_cost_ratio_avg": finite_mean(filtered_cost_values),
         "max_filtered_cost_ratio_avg": max(filtered_cost_values) if filtered_cost_values else None,
     }
 
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
+    coverage_fail_reasons: list[str] = []
+    quality_fail_reasons: list[str] = []
 
     minimum_thresholds = {
         "min_execution_active_runs": max(1, min_execution_active_runs),
@@ -775,28 +797,39 @@ def aggregate_run_summaries(
         "min_mean_realized_net_per_fill": float(min_mean_realized_net_per_fill),
         "warn_mean_filtered_cost_ratio": float(warn_mean_filtered_cost_ratio),
     }
+    recommended_coverage_targets_met = has_met_replay_coverage_targets(
+        aggregate_summary,
+        min_execution_active_runs=recommended_thresholds["min_execution_active_runs"],
+        min_execution_pass_runs=recommended_thresholds["min_execution_pass_runs"],
+        min_total_fills=recommended_thresholds["min_total_fills"],
+    )
 
     if execution_active_runs < minimum_thresholds["min_execution_active_runs"]:
-        fail_reasons.append(
+        coverage_fail_reasons.append(
             "execution_active_runs="
             f"{execution_active_runs} < {minimum_thresholds['min_execution_active_runs']}"
         )
     if execution_pass_runs < max(1, min_execution_pass_runs):
-        fail_reasons.append(
+        coverage_fail_reasons.append(
             "execution_pass_runs="
             f"{execution_pass_runs} < {minimum_thresholds['min_execution_pass_runs']}"
         )
     if total_fills < minimum_thresholds["min_total_fills"]:
-        fail_reasons.append(
+        coverage_fail_reasons.append(
             f"total_fills={total_fills} < {minimum_thresholds['min_total_fills']}"
         )
 
     mean_realized_net_per_fill = aggregate_summary.get("mean_realized_net_per_fill")
     if isinstance(mean_realized_net_per_fill, (int, float)):
         if mean_realized_net_per_fill < min_mean_realized_net_per_fill:
-            fail_reasons.append(
+            quality_fail_reasons.append(
                 "mean_realized_net_per_fill="
                 f"{mean_realized_net_per_fill:.6f} < {min_mean_realized_net_per_fill:.6f}"
+            )
+        elif mean_realized_net_per_fill < 0.0:
+            warn_reasons.append(
+                "replay 聚合 realized_net_per_fill 仍为负，覆盖通过但执行经济性未转正: "
+                f"mean_realized_net_per_fill={mean_realized_net_per_fill:.6f}"
             )
     else:
         warn_reasons.append("无有效 realized_net_per_fill 样本，需结合 per-segment 结果复核")
@@ -814,6 +847,20 @@ def aggregate_run_summaries(
                 f"zero_runs={zero_realized_net_with_fills_runs}, "
                 f"nonzero_runs={nonzero_realized_net_with_fills_runs}"
             )
+    if (
+        recommended_coverage_targets_met
+        and total_fills >= recommended_thresholds["min_total_fills"]
+    ):
+        if (
+            negative_realized_net_with_fills_runs > 0
+            and positive_realized_net_with_fills_runs <= 0
+        ):
+            quality_fail_reasons.append(
+                "replay ROBUST 覆盖下所有有成交片段 realized_net_per_fill 均未转正: "
+                f"negative_runs={negative_realized_net_with_fills_runs}, "
+                f"zero_runs={zero_realized_net_with_fills_runs}, "
+                f"positive_runs={positive_realized_net_with_fills_runs}"
+            )
 
     mean_filtered_cost_ratio = aggregate_summary.get("mean_filtered_cost_ratio_avg")
     if isinstance(mean_filtered_cost_ratio, (int, float)) and (
@@ -830,17 +877,10 @@ def aggregate_run_summaries(
     if failed_runs > 0:
         warn_reasons.append(f"存在 {failed_runs} 个 FAIL 片段，需检查单段日志与 assess 口径")
 
-    minimum_coverage_targets_met = not (
-        execution_active_runs < minimum_thresholds["min_execution_active_runs"]
-        or execution_pass_runs < minimum_thresholds["min_execution_pass_runs"]
-        or total_fills < minimum_thresholds["min_total_fills"]
-    )
-    recommended_coverage_targets_met = has_met_replay_coverage_targets(
-        aggregate_summary,
-        min_execution_active_runs=recommended_thresholds["min_execution_active_runs"],
-        min_execution_pass_runs=recommended_thresholds["min_execution_pass_runs"],
-        min_total_fills=recommended_thresholds["min_total_fills"],
-    )
+    fail_reasons.extend(coverage_fail_reasons)
+    fail_reasons.extend(quality_fail_reasons)
+
+    minimum_coverage_targets_met = not coverage_fail_reasons
     if minimum_coverage_targets_met and not recommended_coverage_targets_met:
         warn_reasons.append(
             "replay 覆盖仅达到最小门槛，建议继续补足更稳健的 execution 样本: "
@@ -861,13 +901,15 @@ def aggregate_run_summaries(
         "status": status,
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
+        "coverage_fail_reasons": coverage_fail_reasons,
+        "quality_fail_reasons": quality_fail_reasons,
         "thresholds": minimum_thresholds,
         "recommended_thresholds": recommended_thresholds,
         "minimum_coverage_targets_met": minimum_coverage_targets_met,
         "recommended_coverage_targets_met": recommended_coverage_targets_met,
         "coverage_strength_status": (
             "INSUFFICIENT"
-            if fail_reasons
+            if not minimum_coverage_targets_met
             else "ROBUST"
             if recommended_coverage_targets_met
             else "MINIMUM_ONLY"
@@ -983,11 +1025,19 @@ def merge_symbol_validations(
 
     if fail_reasons:
         merged["status"] = "fail"
-        merged["coverage_strength_status"] = "INSUFFICIENT"
+        if any(
+            str(
+                symbol_report.get("aggregate_validation", {}).get(
+                    "coverage_strength_status", ""
+                )
+            )
+            == "INSUFFICIENT"
+            for symbol_report in symbol_reports.values()
+            if isinstance(symbol_report.get("aggregate_validation", {}), dict)
+        ):
+            merged["coverage_strength_status"] = "INSUFFICIENT"
     elif warn_reasons and str(merged.get("status", "")).lower() == "pass":
         merged["status"] = "pass_with_actions"
-        if merged.get("coverage_strength_status") == "ROBUST":
-            merged["coverage_strength_status"] = "MINIMUM_ONLY"
     merged["fail_reasons"] = fail_reasons
     merged["warn_reasons"] = warn_reasons
     return merged
@@ -1241,7 +1291,7 @@ def main() -> int:
     parser.add_argument(
         "--min_mean_realized_net_per_fill",
         type=float,
-        default=-0.005,
+        default=0.0,
         help="replay 聚合判定的 realized_net_per_fill 均值下限",
     )
     parser.add_argument(

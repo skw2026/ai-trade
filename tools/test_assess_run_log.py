@@ -868,7 +868,7 @@ class AssessRunLogTest(unittest.TestCase):
                 funnel_fills=1,
                 strategy_mix_samples=10,
                 strategy_mix_policy_flat_samples=0,
-                realized_net_per_fill=-0.001,
+                realized_net_per_fill=0.001,
                 fee_bps_per_fill=0.1,
                 maker_fills=1,
                 regime_bucket="TREND",

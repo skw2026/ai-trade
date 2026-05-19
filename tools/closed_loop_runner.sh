@@ -99,7 +99,7 @@ VERIFY_S5_EVOLUTION_SWITCHES="${CLOSED_LOOP_VERIFY_S5_EVOLUTION_SWITCHES:-true}"
 REQUIRE_S5_FACTOR_IC_ACTION="${CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION:-false}"
 REQUIRE_S5_LEARNABILITY_ACTIVITY="${CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY:-false}"
 S5_MIN_EFFECTIVE_UPDATES="${CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES:-1}"
-S5_MIN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD:--0.005}"
+S5_MIN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD:-0.0}"
 S5_MIN_REALIZED_NET_PER_FILL_WINDOWS="${CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS:-10}"
 S5_MIN_FILL_WINDOWS="${CLOSED_LOOP_S5_MIN_FILL_WINDOWS:-10}"
 S5_MIN_TREND_RUNTIME_WINDOWS="${CLOSED_LOOP_S5_MIN_TREND_RUNTIME_WINDOWS:-60}"
@@ -129,7 +129,7 @@ REPLAY_VALIDATION_MIN_RUNTIME_STATUS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_RUNTIM
 REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}"
 REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
 REPLAY_VALIDATION_MIN_TOTAL_FILLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-3}"
-REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:--0.005}"
+REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:-0.0}"
 REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO="${CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO:-0.80}"
 S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
@@ -227,7 +227,7 @@ Options:
   --replay-validation-min-total-fills <int>
                                       replay-validation 聚合 fills 下限 (default: 3)
   --replay-validation-min-mean-realized-net-per-fill <float>
-                                      replay-validation realized_net_per_fill 均值下限 (default: -0.005)
+                                      replay-validation realized_net_per_fill 均值下限 (default: 0.0)
   --replay-validation-warn-mean-filtered-cost-ratio <float>
                                       replay-validation filtered_cost_ratio_avg 均值告警线 (default: 0.80)
 
@@ -247,7 +247,7 @@ Env toggles:
   CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY=true|false
                                                        S5 要求 learnability 有 pass/skip 活动 (default: false)
   CLOSED_LOOP_S5_MIN_EFFECTIVE_UPDATES=<int>            S5 强门禁：有效学习更新最小次数 (default: 1)
-  CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD=<float>  S5 强门禁：单位成交净收益下限 (default: -0.005)
+  CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_USD=<float>  S5 强门禁：单位成交净收益下限 (default: 0.0)
   CLOSED_LOOP_S5_MIN_REALIZED_NET_PER_FILL_WINDOWS=<int> S5 生效条件：fills>0窗口最小数量 (default: 10)
   CLOSED_LOOP_S5_MIN_FILL_WINDOWS=<int>                 S5 强门禁：fills>0窗口最小数量 (default: 10)
   CLOSED_LOOP_S5_MIN_TREND_RUNTIME_WINDOWS=<int>        S5 反退化门禁：TREND 桶最小 runtime 窗口数 (default: 60)
@@ -284,7 +284,7 @@ Env toggles:
                                                        replay-validation 至少多少片段 execution_status=PASS (default: 3)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS=<int>    replay-validation 聚合 fills 下限 (default: 3)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL=<float>
-                                                       replay-validation realized_net_per_fill 均值下限 (default: -0.005)
+                                                       replay-validation realized_net_per_fill 均值下限 (default: 0.0)
   CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO=<float>
                                                        replay-validation filtered_cost_ratio_avg 均值告警线 (default: 0.80)
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）

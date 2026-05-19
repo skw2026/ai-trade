@@ -1981,15 +1981,17 @@ int main() {
         &range_near_miss,
         &range_near_miss_allowed);
 
-    if (trend_filtered || !range_filtered || range_near_miss_allowed ||
+    if (!trend_filtered || !range_filtered || range_near_miss_allowed ||
         expected_edge_bps <= 2.0 ||
+        required_edge_bps + 1e-9 < base_required_edge_bps ||
         adaptive_relax_bps <= 0.0 || regime_adjust_bps >= 0.0) {
-      std::cerr << "TREND fee-aware gate 优化不符合预期: trend_filtered="
+      std::cerr << "TREND fee-aware gate 成本底线不符合预期: trend_filtered="
                 << trend_filtered << ", range_filtered=" << range_filtered
                 << ", range_near_miss=" << range_near_miss
                 << ", range_near_miss_allowed=" << range_near_miss_allowed
                 << ", expected=" << expected_edge_bps
                 << ", required=" << required_edge_bps
+                << ", base_required=" << base_required_edge_bps
                 << ", adaptive_relax=" << adaptive_relax_bps
                 << ", regime_adjust=" << regime_adjust_bps << "\n";
       return 1;

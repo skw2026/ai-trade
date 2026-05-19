@@ -406,6 +406,46 @@ class ReplayValidationToolsTest(unittest.TestCase):
             any("realized_net_per_fill 全为 0" in reason for reason in validation["warn_reasons"])
         )
 
+    def test_aggregate_run_summaries_fails_when_robust_filled_runs_are_all_negative(self):
+        runs = []
+        for _ in range(4):
+            runs.append(
+                {
+                    "assess_summary": {
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "market_context_status": "TREND_PRESENT",
+                        "execution_activity_count": 4,
+                        "funnel_fills_runtime_count": 2,
+                        "regime_trend_runtime_count": 4,
+                        "realized_net_per_fill": -0.001,
+                        "filtered_cost_ratio_avg": 0.20,
+                    }
+                }
+            )
+
+        summary, validation = REPLAY.aggregate_run_summaries(
+            runs,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=3,
+            min_mean_realized_net_per_fill=-0.005,
+            warn_mean_filtered_cost_ratio=0.80,
+        )
+
+        self.assertEqual(summary["negative_realized_net_with_fills_runs"], 4)
+        self.assertEqual(summary["positive_realized_net_with_fills_runs"], 0)
+        self.assertAlmostEqual(summary["mean_realized_net_per_fill_with_fills"], -0.001)
+        self.assertEqual(validation["status"], "fail")
+        self.assertEqual(validation["coverage_strength_status"], "ROBUST")
+        self.assertTrue(
+            any("ROBUST 覆盖下所有有成交片段" in reason for reason in validation["fail_reasons"])
+        )
+        self.assertTrue(validation["quality_fail_reasons"])
+        self.assertFalse(validation["coverage_fail_reasons"])
+
     def test_aggregate_run_summaries_fails_when_execution_is_too_weak(self):
         runs = [
             {
@@ -481,6 +521,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
                         "status": "fail",
                         "fail_reasons": ["total_fills=0 < 3"],
                         "warn_reasons": [],
+                        "coverage_strength_status": "INSUFFICIENT",
                     }
                 }
             },
@@ -488,6 +529,34 @@ class ReplayValidationToolsTest(unittest.TestCase):
         self.assertEqual(merged["status"], "fail")
         self.assertEqual(merged["coverage_strength_status"], "INSUFFICIENT")
         self.assertIn("SOLUSDT: total_fills=0 < 3", merged["fail_reasons"])
+
+    def test_merge_symbol_validations_preserves_robust_coverage_on_quality_failure(self):
+        merged = REPLAY.merge_symbol_validations(
+            {
+                "status": "pass",
+                "fail_reasons": [],
+                "warn_reasons": [],
+                "coverage_strength_status": "ROBUST",
+            },
+            {
+                "SOLUSDT": {
+                    "aggregate_validation": {
+                        "status": "fail",
+                        "fail_reasons": [
+                            "mean_realized_net_per_fill=-0.001000 < 0.000000"
+                        ],
+                        "warn_reasons": [],
+                        "coverage_strength_status": "ROBUST",
+                    }
+                }
+            },
+        )
+        self.assertEqual(merged["status"], "fail")
+        self.assertEqual(merged["coverage_strength_status"], "ROBUST")
+        self.assertIn(
+            "SOLUSDT: mean_realized_net_per_fill=-0.001000 < 0.000000",
+            merged["fail_reasons"],
+        )
 
     def test_derive_recommended_coverage_thresholds_never_below_baseline(self):
         recommended = REPLAY.derive_recommended_coverage_thresholds(

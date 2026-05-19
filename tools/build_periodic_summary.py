@@ -791,6 +791,9 @@ def compute_replay_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "execution_pass_runs": 0,
             "total_fills": 0,
             "mean_realized_net_per_fill": None,
+            "mean_realized_net_per_fill_with_fills": None,
+            "positive_realized_net_with_fills_runs": 0,
+            "negative_realized_net_with_fills_runs": 0,
             "mean_filtered_cost_ratio_avg": None,
         }
 
@@ -833,6 +836,17 @@ def compute_replay_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "mean_realized_net_per_fill": to_float(
             aggregate_summary.get("mean_realized_net_per_fill")
         ),
+        "mean_realized_net_per_fill_with_fills": to_float(
+            aggregate_summary.get("mean_realized_net_per_fill_with_fills")
+        ),
+        "positive_realized_net_with_fills_runs": to_int(
+            aggregate_summary.get("positive_realized_net_with_fills_runs")
+        )
+        or 0,
+        "negative_realized_net_with_fills_runs": to_int(
+            aggregate_summary.get("negative_realized_net_with_fills_runs")
+        )
+        or 0,
         "mean_filtered_cost_ratio_avg": to_float(
             aggregate_summary.get("mean_filtered_cost_ratio_avg")
         ),

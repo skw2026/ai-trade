@@ -324,7 +324,7 @@ struct AppConfig {
   int execution_quality_guard_min_fills{12};
   int execution_quality_guard_bad_streak_to_trigger{2};
   int execution_quality_guard_good_streak_to_release{2};
-  double execution_quality_guard_min_realized_net_per_fill_usd{-0.005};
+  double execution_quality_guard_min_realized_net_per_fill_usd{0.0};
   double execution_quality_guard_max_fee_bps_per_fill{8.0};
   double execution_quality_guard_required_edge_penalty_bps{1.5};
   double execution_quality_guard_required_edge_floor_bps{0.0};
