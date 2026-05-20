@@ -119,7 +119,7 @@ TREND_VALIDATION_MIN_BARS="${CLOSED_LOOP_TREND_VALIDATION_MIN_BARS:-1000}"
 TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
 ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}"
-REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}"
+REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.maker_first.yaml}"
 DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
@@ -225,7 +225,7 @@ Options:
                                       数据加速成功后是否跳过 R0 fetch (default: true)
   --replay-validation-enabled <true|false>
                                       是否运行 replay-validation (default: true)
-  --replay-validation-config <path>   replay-validation 配置模板 (default: config/bybit.replay.assess.yaml)
+  --replay-validation-config <path>   replay-validation 配置模板 (default: config/bybit.replay.assess.maker_first.yaml)
   --replay-validation-target-bucket <bucket>
                                       replay-validation 目标 bucket (default: trend)
   --replay-validation-max-segments <int>
@@ -281,7 +281,7 @@ Env toggles:
   CLOSED_LOOP_REPLAY_VALIDATION_ENABLED=true|false       是否运行 replay-validation (default: true)
   CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION=true|false
                                                        assess 动作是否刷新 replay-validation (default: false)
-  CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.yaml)
+  CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.maker_first.yaml)
   CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS=<csv>    replay-validation 空目标时的默认多币对
                                                        (default: BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)

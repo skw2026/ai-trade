@@ -3936,6 +3936,7 @@ int main() {
              "bybit.paper.yaml",
              "bybit.replay.yaml",
              "bybit.replay.assess.yaml",
+             "bybit.replay.assess.maker_first.yaml",
          }) {
       ai_trade::AppConfig config;
       std::string error;
@@ -7440,6 +7441,87 @@ int main() {
         snapshot.margin_mode != ai_trade::MarginMode::kPortfolio ||
         snapshot.position_mode != ai_trade::PositionMode::kHedge) {
       std::cerr << "bybit 账户快照字段不符合预期\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::BybitAdapterOptions options;
+    options.mode = "replay";
+    options.allow_no_auth_in_replay = true;
+    options.symbols = {"BTCUSDT"};
+    options.replay_prices = {100.0, 98.0};
+    options.replay_exit_fee_bps = 10.0;
+    ai_trade::BybitExchangeAdapter adapter(options);
+    if (!adapter.Connect()) {
+      std::cerr << "bybit 回放保护单连接失败\n";
+      return 1;
+    }
+
+    ai_trade::MarketEvent first;
+    if (!adapter.PollMarket(&first)) {
+      std::cerr << "bybit 回放保护单首条行情失败\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent entry;
+    entry.client_order_id = "bybit-replay-protection-entry";
+    entry.symbol = "BTCUSDT";
+    entry.purpose = ai_trade::OrderPurpose::kEntry;
+    entry.direction = 1;
+    entry.qty = 1.0;
+    entry.price = first.price;
+    if (!adapter.SubmitOrder(entry)) {
+      std::cerr << "bybit 回放保护单入场失败\n";
+      return 1;
+    }
+    ai_trade::FillEvent fill;
+    while (adapter.PollFill(&fill)) {
+    }
+
+    ai_trade::OrderIntent stop_loss;
+    stop_loss.client_order_id = "bybit-replay-protection-sl";
+    stop_loss.parent_order_id = entry.client_order_id;
+    stop_loss.symbol = "BTCUSDT";
+    stop_loss.purpose = ai_trade::OrderPurpose::kSl;
+    stop_loss.reduce_only = true;
+    stop_loss.direction = -1;
+    stop_loss.qty = 1.0;
+    stop_loss.price = 99.0;
+    if (!adapter.SubmitOrder(stop_loss)) {
+      std::cerr << "bybit 回放保护单提交失败\n";
+      return 1;
+    }
+    if (adapter.PollFill(&fill)) {
+      std::cerr << "bybit 回放保护单不应提交即成交\n";
+      return 1;
+    }
+
+    ai_trade::MarketEvent second;
+    if (!adapter.PollMarket(&second)) {
+      std::cerr << "bybit 回放保护单触发行情失败\n";
+      return 1;
+    }
+    int protection_fills = 0;
+    double protection_fee = 0.0;
+    while (adapter.PollFill(&fill)) {
+      ++protection_fills;
+      protection_fee += fill.fee;
+      if (fill.client_order_id != stop_loss.client_order_id ||
+          fill.direction != -1 ||
+          !NearlyEqual(fill.price, 99.0, 1e-9)) {
+        std::cerr << "bybit 回放保护单触发成交字段不符合预期\n";
+        return 1;
+      }
+    }
+    if (protection_fills != 2 || !NearlyEqual(protection_fee, 0.099, 1e-9)) {
+      std::cerr << "bybit 回放保护单触发成交数量或手续费不符合预期\n";
+      return 1;
+    }
+    double remote_notional = 0.0;
+    if (!adapter.GetRemoteNotionalUsd(&remote_notional) ||
+        !NearlyEqual(remote_notional, 0.0, 1e-9)) {
+      std::cerr << "bybit 回放保护单触发后仓位应归零\n";
       return 1;
     }
   }

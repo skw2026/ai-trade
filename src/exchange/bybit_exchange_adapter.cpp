@@ -74,6 +74,22 @@ double ApplyReplaySlippage(const BybitAdapterOptions& options,
   return adjusted > 0.0 ? adjusted : price;
 }
 
+bool IsConditionalProtectionOrder(const OrderIntent& intent) {
+  return intent.purpose == OrderPurpose::kSl ||
+         intent.purpose == OrderPurpose::kTp;
+}
+
+bool ReplayConditionalTriggered(const OrderIntent& intent, double price) {
+  if (!IsConditionalProtectionOrder(intent) || price <= 0.0 ||
+      intent.price <= 0.0 || intent.direction == 0) {
+    return false;
+  }
+  if (intent.purpose == OrderPurpose::kSl) {
+    return intent.direction < 0 ? price <= intent.price : price >= intent.price;
+  }
+  return intent.direction < 0 ? price >= intent.price : price <= intent.price;
+}
+
 std::string ReadEnvOrEmpty(const char* key) {
   if (key == nullptr) {
     return {};
@@ -1560,6 +1576,7 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
       last_price_by_symbol_[out_event->symbol] = out_event->price;
       last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
       ++replay_seq_;
+      TriggerReplayConditionalOrders(*out_event);
       return true;
     }
 
@@ -1592,6 +1609,7 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
         interval_ms,
         std::numeric_limits<double>::quiet_NaN(),
     };
+    TriggerReplayConditionalOrders(*out_event);
     return true;
   }
 
@@ -1705,6 +1723,80 @@ bool BybitExchangeAdapter::PrimeExecutionCursor() {
   LogInfo("BYBIT_EXEC_CURSOR_PRIMED: seeded_exec_ids=" + std::to_string(seeded) +
           ", watermark_ms=" + std::to_string(execution_watermark_ms_));
   return true;
+}
+
+bool BybitExchangeAdapter::EnqueueReplayFill(const OrderIntent& intent,
+                                             double fill_price) {
+  if (fill_price <= 0.0 || intent.qty <= 0.0 || intent.direction == 0) {
+    return false;
+  }
+  fill_price = ApplyReplaySlippage(options_, intent, fill_price);
+  const double fee_bps = ReplayFeeBpsForIntent(options_, intent);
+  const FillLiquidity liquidity = ReplayFillLiquidity(options_, intent);
+  auto make_fill = [&](double qty) {
+    FillEvent fill;
+    fill.fill_id =
+        intent.client_order_id + "-fill-" + std::to_string(fill_seq_++);
+    fill.client_order_id = intent.client_order_id;
+    fill.symbol = intent.symbol;
+    fill.direction = intent.direction;
+    fill.qty = qty;
+    fill.price = fill_price;
+    fill.fee = std::fabs(qty * fill_price) * fee_bps / 10000.0;
+    fill.liquidity = liquidity;
+    return fill;
+  };
+
+  // 回放模式模拟部分成交：拆分为两笔 FillEvent。
+  const double first_qty = intent.qty * 0.6;
+  const double second_qty = intent.qty - first_qty;
+  pending_fills_.push_back(make_fill(first_qty));
+  if (second_qty > 1e-9) {
+    pending_fills_.push_back(make_fill(second_qty));
+  }
+  return true;
+}
+
+void BybitExchangeAdapter::TriggerReplayConditionalOrders(
+    const MarketEvent& event) {
+  const double trigger_price =
+      event.mark_price > 0.0 ? event.mark_price : event.price;
+  if (event.symbol.empty() || trigger_price <= 0.0 ||
+      replay_conditional_orders_.empty()) {
+    return;
+  }
+
+  std::unordered_set<std::string> triggered_symbols;
+  std::deque<ReplayConditionalOrder> kept;
+  for (const auto& order : replay_conditional_orders_) {
+    const OrderIntent& intent = order.intent;
+    if (intent.symbol != event.symbol ||
+        !ReplayConditionalTriggered(intent, trigger_price)) {
+      kept.push_back(order);
+      continue;
+    }
+    if (EnqueueReplayFill(intent, intent.price)) {
+      triggered_symbols.insert(intent.symbol);
+      order_symbol_by_client_id_.erase(intent.client_order_id);
+    } else {
+      kept.push_back(order);
+    }
+  }
+
+  if (!triggered_symbols.empty()) {
+    std::deque<ReplayConditionalOrder> oco_kept;
+    for (const auto& order : kept) {
+      if (triggered_symbols.find(order.intent.symbol) ==
+          triggered_symbols.end()) {
+        oco_kept.push_back(order);
+      } else {
+        order_symbol_by_client_id_.erase(order.intent.client_order_id);
+      }
+    }
+    replay_conditional_orders_.swap(oco_kept);
+    return;
+  }
+  replay_conditional_orders_.swap(kept);
 }
 
 bool BybitExchangeAdapter::PollFillFromReplay(FillEvent* out_fill) {
@@ -1878,9 +1970,21 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   }
 
   if (IsReplayMode(options_)) {
-    double fill_price = intent.price;
+    OrderIntent replay_intent = intent;
+    replay_intent.symbol = ToUpperCopy(intent.symbol);
+    order_symbol_by_client_id_[replay_intent.client_order_id] =
+        replay_intent.symbol;
+    if (IsConditionalProtectionOrder(replay_intent)) {
+      if (replay_intent.price <= 0.0) {
+        return false;
+      }
+      replay_conditional_orders_.push_back(
+          ReplayConditionalOrder{replay_intent});
+      return true;
+    }
+    double fill_price = replay_intent.price;
     if (fill_price <= 0.0) {
-      const auto it = last_price_by_symbol_.find(intent.symbol);
+      const auto it = last_price_by_symbol_.find(replay_intent.symbol);
       if (it != last_price_by_symbol_.end() && it->second > 0.0) {
         fill_price = it->second;
       }
@@ -1888,33 +1992,7 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
     if (fill_price <= 0.0) {
       return false;
     }
-    fill_price = ApplyReplaySlippage(options_, intent, fill_price);
-    const double fee_bps = ReplayFeeBpsForIntent(options_, intent);
-    const FillLiquidity liquidity = ReplayFillLiquidity(options_, intent);
-    auto make_fill = [&](double qty) {
-      FillEvent fill;
-      fill.fill_id =
-          intent.client_order_id + "-fill-" + std::to_string(fill_seq_++);
-      fill.client_order_id = intent.client_order_id;
-      fill.symbol = intent.symbol;
-      fill.direction = intent.direction;
-      fill.qty = qty;
-      fill.price = fill_price;
-      fill.fee = std::fabs(qty * fill_price) * fee_bps / 10000.0;
-      fill.liquidity = liquidity;
-      return fill;
-    };
-
-    // 回放模式模拟部分成交：拆分为两笔 FillEvent。
-    const double first_qty = intent.qty * 0.6;
-    const double second_qty = intent.qty - first_qty;
-
-    pending_fills_.push_back(make_fill(first_qty));
-
-    if (second_qty > 1e-9) {
-      pending_fills_.push_back(make_fill(second_qty));
-    }
-    return true;
+    return EnqueueReplayFill(replay_intent, fill_price);
   }
 
   if (rest_client_ == nullptr) {
@@ -2187,6 +2265,14 @@ bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
       }
     }
     pending_fills_.swap(kept);
+    std::deque<ReplayConditionalOrder> conditional_kept;
+    for (const auto& order : replay_conditional_orders_) {
+      if (order.intent.client_order_id != client_order_id) {
+        conditional_kept.push_back(order);
+      }
+    }
+    replay_conditional_orders_.swap(conditional_kept);
+    order_symbol_by_client_id_.erase(client_order_id);
     return true;
   }
 

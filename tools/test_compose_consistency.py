@@ -176,7 +176,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
-            "CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: ${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.yaml}",
+            "CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: ${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.maker_first.yaml}",
             scheduler,
         )
         self.assertIn(
@@ -217,6 +217,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-3}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:-0.0}",
             scheduler,
         )
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
@@ -327,6 +331,14 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             "github.event_name == 'schedule' && 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT'",
+            workflow,
+        )
+        self.assertIn(
+            'CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"',
+            workflow,
+        )
+        self.assertIn(
+            "WORKFLOW_REPLAY_VALIDATION_CONFIG",
             workflow,
         )
         self.assertIn("replay_optimization_report.json", workflow)

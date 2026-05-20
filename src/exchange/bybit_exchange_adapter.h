@@ -143,9 +143,16 @@ class BybitExchangeAdapter : public ExchangeAdapter {
     kPublicWs,    ///< 公共 WS 行情通道。
     kRestPolling, ///< REST market/tickers 轮询通道。
   };
+  struct ReplayConditionalOrder {
+    OrderIntent intent;
+  };
 
   /// 回放模式成交读取。
   bool PollFillFromReplay(FillEvent* out_fill);
+  /// 回放模式保护单触发检测。
+  void TriggerReplayConditionalOrders(const MarketEvent& event);
+  /// 回放模式生成虚拟成交。
+  bool EnqueueReplayFill(const OrderIntent& intent, double fill_price);
   /// REST 模式成交读取（execution/list）。
   bool PollFillFromRest(FillEvent* out_fill);
   /// REST 模式行情读取（market/tickers）。
@@ -194,6 +201,7 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   std::vector<MarketEvent> replay_market_events_;  ///< 来自 CSV 的 replay 行情。
   std::unordered_map<std::string, double> remote_position_qty_by_symbol_;  ///< 远端仓位数量（signed）。
   std::unordered_map<std::string, BybitSymbolTradeRule> symbol_trade_rules_;  ///< symbol 交易规则缓存。
+  std::deque<ReplayConditionalOrder> replay_conditional_orders_;  ///< replay 条件保护单。
   std::deque<FillEvent> pending_fills_;  ///< 待消费成交队列。
   std::int64_t execution_watermark_ms_{0};  ///< execution 时间水位（去历史用）。
   bool execution_cursor_primed_{false};  ///< execution 游标是否已完成预热。

@@ -1,0 +1,167 @@
+system:
+  id: "bot-bybit-replay-assess-maker-first"
+  mode: "replay"
+  primary_symbol: "BTCUSDT"
+  data_path: "./data"
+  max_ticks: 0
+  status_log_interval_ticks: 1
+  remote_risk_refresh_interval_ticks: 0
+  reconcile:
+    enabled: false
+    interval_ticks: 10
+    tolerance_notional_usd: 5.0
+    mismatch_confirmations: 3
+    pending_order_stale_ms: 30000
+
+exchange:
+  platform: "bybit"
+  bybit:
+    testnet: true
+    demo_trading: false
+    category: "linear"
+    account_type: "UNIFIED"
+    expected_account_mode: "UNIFIED"
+    expected_margin_mode: "ISOLATED"
+    expected_position_mode: "ONE_WAY"
+    public_ws_enabled: true
+    public_ws_rest_fallback: true
+    private_ws_enabled: true
+    private_ws_rest_fallback: true
+    ws_reconnect_interval_ms: 15000
+    execution_poll_limit: 50
+    replay_timestamp_column: "timestamp"
+    replay_symbol_column: "symbol"
+    replay_price_column: "price"
+    replay_volume_column: "volume"
+    replay_interval_column: "interval_ms"
+    replay_funding_rate_column: "funding_rate_per_interval"
+    replay_default_interval_ms: 300000
+
+risk:
+  max_abs_notional_usd: 3000
+  max_drawdown:
+    degraded_threshold: 0.08
+    cooldown_threshold: 0.12
+    fuse_threshold: 0.20
+
+execution:
+  max_order_notional: 380
+  min_rebalance_notional_usd: 80
+  same_side_rebalance_multiplier: 2.0
+  include_inflight_notional_in_position: true
+  max_inflight_orders_per_symbol_direction: 2
+  min_order_interval_ms: 7000
+  reverse_signal_cooldown_ticks: 22
+  enable_fee_aware_entry_gate: true
+  # Maker-first replay profile:
+  # 最近 robust replay 显示 path MFE 覆盖成本，但 current taker-like 费用只差约 1.05%
+  # fee reduction 即可转正。这里保守只把入场按半 maker/半 taker 估算，出场仍按 taker。
+  entry_fee_bps: 2.75
+  exit_fee_bps: 5.5
+  expected_slippage_bps: 1.0
+  min_expected_edge_bps: 1.3
+  # replay assess 与 S5 一致：不允许 cap/relax 下穿成本底线。
+  required_edge_cap_bps: 0.0
+  entry_gate_near_miss_tolerance_bps: 0.30
+  entry_gate_near_miss_maker_allow: true
+  entry_gate_near_miss_maker_max_gap_bps: 0.40
+  adaptive_fee_gate_enabled: true
+  adaptive_fee_gate_min_samples: 20
+  adaptive_fee_gate_trigger_ratio: 0.62
+  adaptive_fee_gate_max_relax_bps: 1.2
+  maker_entry_enabled: true
+  maker_fallback_to_market: false
+  maker_price_offset_bps: 0.3
+  maker_post_only: true
+  maker_edge_relax_bps: 0.35
+  cost_filter_cooldown_trigger_count: 8
+  cost_filter_cooldown_ticks: 12
+  protection:
+    enabled: true
+    require_sl: true
+    enable_tp: true
+    attach_timeout_ms: 1500
+    stop_loss_ratio: 0.01
+    take_profit_ratio: 0.012
+    dynamic_distance_enabled: true
+    dynamic_distance_volatility_multiplier: 72.0
+    dynamic_stop_loss_min_ratio: 0.008
+    dynamic_stop_loss_max_ratio: 0.025
+    dynamic_take_profit_min_ratio: 0.010
+    dynamic_take_profit_max_ratio: 0.030
+    dynamic_take_profit_rr_multiplier: 1.35
+    break_even_enabled: true
+    break_even_trigger_ratio: 0.0065
+    break_even_offset_ratio: 0.0025
+    trailing_enabled: true
+    trailing_trigger_ratio: 0.010
+    trailing_distance_ratio: 0.0045
+    profit_protection_min_update_ratio: 0.0008
+
+strategy:
+  signal_notional_usd: 380
+  signal_deadband_abs: 0.0
+  signal_deadband_bps: 3.0
+  signal_valid_for_ms: 15000
+  default_tick_interval_ms: 5000
+  min_hold_ticks: 18
+  range_min_confidence: 0.10
+  extreme_block_signals: true
+  trend_breakout_lookback_ticks: 24
+  trend_breakout_rank_threshold: 0.95
+  trend_slope_lookback_ticks: 6
+  trend_slope_min_abs: 0.00002
+  trend_vol_cap_annual: 1.20
+  trend_strength_scale: 1.5
+  trend_trend_scale: 1.0
+  trend_range_scale: 0.25
+  trend_extreme_scale: 0.0
+  vol_target_pct: 0.35
+  vol_target_max_leverage: 2.2
+  vol_target_low_vol_leverage_cap_enabled: true
+  vol_target_low_vol_annual_threshold: 0.12
+  vol_target_low_vol_max_leverage: 1.1
+  defensive_notional_ratio: 0.30
+  defensive_entry_score: 1.40
+  defensive_rank_lookback_ticks: 72
+  defensive_trend_scale: 0.25
+  defensive_range_scale: 0.40
+  defensive_extreme_scale: 0.00
+  eth_range_defensive_scale_multiplier: 0.10
+
+regime:
+  enabled: true
+  warmup_ticks: 30
+  ewma_alpha: 0.05
+  bar_interval_ms: 5000
+  switch_confirm_ticks: 5
+  extreme_requires_both: true
+  trend_threshold: 0.0003
+  extreme_threshold: 0.0080
+  volatility_threshold: 0.0025
+
+self_evolution:
+  enabled: false
+  update_interval_ticks: 60
+  min_update_interval_ticks: 60
+  max_single_strategy_weight: 0.60
+  max_weight_step: 0.05
+  rollback_degrade_windows: 2
+  rollback_degrade_threshold_score: 0.0
+  rollback_cooldown_ticks: 240
+  initial_trend_weight: 0.50
+  initial_defensive_weight: 0.50
+
+gate:
+  min_effective_signals_per_day: 1
+  min_fills_per_day: 0
+  heartbeat_empty_signal_ticks: 2
+  window_ticks: 2
+
+universe:
+  enabled: true
+  update_interval_ticks: 1
+  max_active_symbols: 3
+  min_active_symbols: 1
+  fallback_symbols: ["BTCUSDT", "ETHUSDT"]
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]

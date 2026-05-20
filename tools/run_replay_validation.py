@@ -2334,7 +2334,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--base_config",
-        default="config/bybit.replay.assess.yaml",
+        default="config/bybit.replay.assess.maker_first.yaml",
         help="replay 运行配置模板",
     )
     parser.add_argument(
