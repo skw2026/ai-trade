@@ -168,6 +168,14 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
+            "CLOSED_LOOP_WALKFORWARD_FOCUS_BUCKET: ${CLOSED_LOOP_WALKFORWARD_FOCUS_BUCKET:-trend}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_MAX_AUC_STDEV: ${CLOSED_LOOP_MAX_AUC_STDEV:-0.09}",
+            scheduler,
+        )
+        self.assertIn(
             "CLOSED_LOOP_REPLAY_VALIDATION_ENABLED: ${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}",
             scheduler,
         )
@@ -223,6 +231,10 @@ class ComposeConsistencyTest(unittest.TestCase):
             "CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:-0.0}",
             scheduler,
         )
+        self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-3}",
+            scheduler,
+        )
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
         self.assertIn("CLOSED_LOOP_GC_ENABLED: ${CLOSED_LOOP_GC_ENABLED:-true}", scheduler)
         self.assertIn("CLOSED_LOOP_GC_KEEP_RUN_DIRS: ${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}", scheduler)
@@ -257,6 +269,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_BARS", script)
         self.assertIn("CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES", script)
+        self.assertIn("CLOSED_LOOP_WALKFORWARD_FOCUS_BUCKET", script)
+        self.assertIn("--walkforward_focus_bucket", script)
         self.assertIn("CLOSED_LOOP_WALKFORWARD_MIN_AVG_SPLIT_RETURN", script)
         self.assertIn("CLOSED_LOOP_WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN", script)
         self.assertIn("CLOSED_LOOP_WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN", script)
@@ -280,6 +294,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS", script)
         self.assertIn("--corpus_manifest", script)
 
         self.assertIn("--refresh_corpus_manifest", script)

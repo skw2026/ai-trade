@@ -256,5 +256,5 @@ universe:
   warmup_trend_reserve_min_ratio: 0.60
   reset_stats_on_refresh: true
   fallback_symbols: ["BTCUSDT", "ETHUSDT"]
-  # 保守扩展候选池，先提高 live TREND 样本命中概率，不直接增加同时激活标的数量。
-  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT"]
+  # replay 分币种经济性通过的主链白名单；XRP/BNB 暂留 replay 观察，不进入 S5 实盘候选池。
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]

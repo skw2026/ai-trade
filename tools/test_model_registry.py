@@ -271,6 +271,53 @@ class ModelRegistryTest(unittest.TestCase):
                 )
             )
 
+    def test_walkforward_focus_bucket_converts_global_negative_returns_to_warnings(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            walkforward_report = root / "walkforward_report.json"
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "avg_split_return": -0.001,
+                            "enabled_avg_split_return": -0.001,
+                            "traded_avg_split_return": -0.001,
+                            "traded_split_count": 5,
+                            "total_trades": 10,
+                            "regime_bucket_summary": {
+                                "trend": {
+                                    "bars": 1500,
+                                    "trades": 4,
+                                    "sharpe": 2.0,
+                                },
+                                "range": {"bars": 2000, "trades": 6, "sharpe": -2.0},
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = REGISTRY.gate_walkforward_report(
+                walkforward_report,
+                True,
+                0.0,
+                0.0,
+                0.0,
+                focus_bucket="trend",
+                min_focus_bucket_bars=1000,
+                min_focus_bucket_trades=1,
+                min_focus_bucket_sharpe=0.0,
+            )
+
+            self.assertTrue(passed)
+            self.assertEqual(fail_reasons, [])
+            self.assertTrue(warn_reasons)
+            self.assertEqual(
+                summary["focus_bucket_validation"]["status"],
+                "pass",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2111,25 +2111,188 @@ def thresholds_to_payload(thresholds: RegimeThresholds) -> dict[str, float]:
     }
 
 
+def build_symbol_tradeability(
+    symbol_reports: dict[str, dict[str, Any]],
+    *,
+    min_mean_realized_net_per_fill: float,
+    min_tradable_symbols: int,
+) -> dict[str, Any]:
+    decisions: dict[str, dict[str, Any]] = {}
+    tradable_symbols: list[str] = []
+    quarantined_symbols: list[str] = []
+    insufficient_symbols: list[str] = []
+
+    for symbol, symbol_report in symbol_reports.items():
+        summary = symbol_report.get("aggregate_summary", {})
+        if not isinstance(summary, dict):
+            summary = {}
+        validation = symbol_report.get("aggregate_validation", {})
+        if not isinstance(validation, dict):
+            validation = {}
+        thresholds = validation.get("thresholds", {})
+        if not isinstance(thresholds, dict):
+            thresholds = {}
+        min_total_fills = int_or_zero(thresholds.get("min_total_fills")) or 1
+        coverage_fail_reasons = [
+            str(item)
+            for item in validation.get("coverage_fail_reasons", [])
+            if str(item).strip()
+        ]
+        quality_fail_reasons = [
+            str(item)
+            for item in validation.get("quality_fail_reasons", [])
+            if str(item).strip()
+        ]
+        fail_reasons = [
+            str(item)
+            for item in validation.get("fail_reasons", [])
+            if str(item).strip()
+        ]
+        coverage_strength = str(
+            validation.get("coverage_strength_status", "")
+        ).upper()
+        total_fills = int_or_zero(summary.get("total_fills"))
+        positive_runs = int_or_zero(
+            summary.get("positive_realized_net_with_fills_runs")
+        )
+        negative_runs = int_or_zero(
+            summary.get("negative_realized_net_with_fills_runs")
+        )
+        mean_net = number_or_none(summary.get("mean_realized_net_per_fill"))
+        mean_net_with_fills = number_or_none(
+            summary.get("mean_realized_net_per_fill_with_fills")
+        )
+        economic_value = mean_net if mean_net is not None else mean_net_with_fills
+        coverage_ok = (
+            bool(validation.get("minimum_coverage_targets_met"))
+            and coverage_strength != "INSUFFICIENT"
+            and not coverage_fail_reasons
+            and total_fills >= min_total_fills
+        )
+        economic_ok = (
+            economic_value is not None
+            and economic_value >= float(min_mean_realized_net_per_fill)
+            and not quality_fail_reasons
+        )
+        all_filled_runs_negative = positive_runs <= 0 and negative_runs > 0
+        reasons: list[str] = []
+        if not coverage_ok:
+            reasons.extend(coverage_fail_reasons or fail_reasons)
+            if not reasons:
+                reasons.append("symbol_replay_coverage_insufficient")
+            decision_status = "insufficient"
+            insufficient_symbols.append(symbol)
+        elif not economic_ok or all_filled_runs_negative:
+            reasons.extend(quality_fail_reasons or fail_reasons)
+            if all_filled_runs_negative and not any(
+                "均未转正" in reason or "all" in reason.lower()
+                for reason in reasons
+            ):
+                reasons.append(
+                    "symbol_replay_all_filled_segments_net_negative: "
+                    f"positive_runs={positive_runs}, negative_runs={negative_runs}"
+                )
+            if not reasons:
+                reasons.append(
+                    "symbol_replay_mean_realized_net_per_fill_below_threshold"
+                )
+            decision_status = "quarantined"
+            quarantined_symbols.append(symbol)
+        else:
+            decision_status = "tradable"
+            tradable_symbols.append(symbol)
+
+        decisions[symbol] = {
+            "status": decision_status,
+            "coverage_ok": coverage_ok,
+            "economic_ok": economic_ok,
+            "coverage_strength_status": coverage_strength,
+            "total_fills": total_fills,
+            "positive_realized_net_with_fills_runs": positive_runs,
+            "negative_realized_net_with_fills_runs": negative_runs,
+            "mean_realized_net_per_fill": mean_net,
+            "mean_realized_net_per_fill_with_fills": mean_net_with_fills,
+            "thresholds": {
+                "min_total_fills": min_total_fills,
+                "min_mean_realized_net_per_fill": float(
+                    min_mean_realized_net_per_fill
+                ),
+            },
+            "reasons": reasons,
+        }
+
+    min_tradable = max(1, int(min_tradable_symbols))
+    fail_reasons: list[str] = []
+    if len(tradable_symbols) < min_tradable:
+        fail_reasons.append(
+            "tradable_symbol_count="
+            f"{len(tradable_symbols)} < min_tradable_symbols={min_tradable}"
+        )
+    if insufficient_symbols:
+        fail_reasons.append(
+            "symbol_replay_coverage_insufficient="
+            + ",".join(insufficient_symbols)
+        )
+
+    return {
+        "status": "pass" if not fail_reasons else "fail",
+        "fail_reasons": fail_reasons,
+        "tradable_symbols": tradable_symbols,
+        "quarantined_symbols": quarantined_symbols,
+        "insufficient_symbols": insufficient_symbols,
+        "tradable_symbol_count": len(tradable_symbols),
+        "quarantined_symbol_count": len(quarantined_symbols),
+        "insufficient_symbol_count": len(insufficient_symbols),
+        "min_tradable_symbols": min_tradable,
+        "decisions": decisions,
+    }
+
+
 def merge_symbol_validations(
     aggregate_validation: dict[str, Any],
     symbol_reports: dict[str, dict[str, Any]],
+    *,
+    min_mean_realized_net_per_fill: float = 0.0,
+    min_tradable_symbols: int = 1,
 ) -> dict[str, Any]:
     merged = dict(aggregate_validation)
     fail_reasons = list(merged.get("fail_reasons", []))
     warn_reasons = list(merged.get("warn_reasons", []))
+    symbol_quarantine_reasons: list[str] = []
+    tradeability = build_symbol_tradeability(
+        symbol_reports,
+        min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        min_tradable_symbols=min_tradable_symbols,
+    )
+    decisions = tradeability.get("decisions", {})
+    if not isinstance(decisions, dict):
+        decisions = {}
 
     for symbol, symbol_report in symbol_reports.items():
         validation = symbol_report.get("aggregate_validation", {})
         if not isinstance(validation, dict):
             continue
+        decision = decisions.get(symbol, {})
+        if not isinstance(decision, dict):
+            decision = {}
         status = str(validation.get("status", "")).lower()
         if status == "fail":
             for reason in validation.get("fail_reasons", []):
-                fail_reasons.append(f"{symbol}: {reason}")
+                item = f"{symbol}: {reason}"
+                if decision.get("status") == "quarantined":
+                    symbol_quarantine_reasons.append(item)
+                else:
+                    fail_reasons.append(item)
         elif status == "pass_with_actions":
             for reason in validation.get("warn_reasons", []):
                 warn_reasons.append(f"{symbol}: {reason}")
+
+    for reason in tradeability.get("fail_reasons", []):
+        reason_text = str(reason).strip()
+        if reason_text:
+            fail_reasons.append(reason_text)
+    if str(tradeability.get("status", "")).lower() == "fail":
+        fail_reasons.extend(symbol_quarantine_reasons)
 
     if fail_reasons:
         merged["status"] = "fail"
@@ -2146,8 +2309,15 @@ def merge_symbol_validations(
             merged["coverage_strength_status"] = "INSUFFICIENT"
     elif warn_reasons and str(merged.get("status", "")).lower() == "pass":
         merged["status"] = "pass_with_actions"
+    elif str(merged.get("status", "")).lower() == "pass_with_actions" and not warn_reasons:
+        merged["status"] = "pass"
     merged["fail_reasons"] = fail_reasons
     merged["warn_reasons"] = warn_reasons
+    merged["symbol_tradeability"] = tradeability
+    merged["tradable_symbols"] = tradeability.get("tradable_symbols", [])
+    merged["quarantined_symbols"] = tradeability.get("quarantined_symbols", [])
+    merged["insufficient_symbols"] = tradeability.get("insufficient_symbols", [])
+    merged["symbol_quarantine_reasons"] = symbol_quarantine_reasons
     return merged
 
 
@@ -2428,6 +2598,12 @@ def main() -> int:
         default=0.80,
         help="replay 聚合 warning 的 filtered_cost_ratio_avg 均值阈值",
     )
+    parser.add_argument(
+        "--min_tradable_symbols",
+        type=int,
+        default=1,
+        help="多币对 replay 至少需要多少个币对满足覆盖与净收益条件；失败但覆盖充分的币对会进入隔离名单",
+    )
     args = parser.parse_args()
 
     root = pathlib.Path(__file__).resolve().parent.parent
@@ -2622,6 +2798,8 @@ def main() -> int:
     aggregate_validation = merge_symbol_validations(
         aggregate_validation,
         symbol_reports,
+        min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
+        min_tradable_symbols=args.min_tradable_symbols,
     )
     economics_report = build_replay_economics_report(
         run_summaries,
@@ -2707,6 +2885,7 @@ def main() -> int:
             ),
         },
         "warnings": warnings,
+        "status": aggregate_validation.get("status"),
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
         "execution_economics": economics_report["attribution_summary"],

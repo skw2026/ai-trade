@@ -265,6 +265,10 @@ def assess_walkforward(
     min_total_trades: int = 0,
     min_trend_bucket_bars: int = 0,
     min_trend_bucket_trades: int = 0,
+    focus_bucket: str = "",
+    min_focus_bucket_bars: int = 0,
+    min_focus_bucket_trades: int = 0,
+    min_focus_bucket_sharpe: float = 0.0,
 ) -> Dict[str, Any]:
     payload = read_json(path)
     summary = payload.get("summary", {})
@@ -301,6 +305,51 @@ def assess_walkforward(
         )
     trend_bars = int(trend_bucket.get("bars", 0)) if isinstance(trend_bucket, dict) else 0
     trend_trades = int(trend_bucket.get("trades", 0)) if isinstance(trend_bucket, dict) else 0
+    focus_bucket_name = str(focus_bucket or "").strip().lower()
+    focus_bucket_pass = False
+    focus_validation: Dict[str, Any] = {}
+    if focus_bucket_name:
+        focus_payload = (
+            regime_bucket_summary.get(focus_bucket_name, {})
+            if isinstance(regime_bucket_summary, dict)
+            else {}
+        )
+        if not isinstance(focus_payload, dict):
+            focus_payload = {}
+        focus_bars = int(focus_payload.get("bars", 0) or 0)
+        focus_trades = int(focus_payload.get("trades", 0) or 0)
+        focus_sharpe = focus_payload.get("sharpe")
+        focus_fail_reasons: List[str] = []
+        if focus_bars < int(min_focus_bucket_bars):
+            focus_fail_reasons.append(
+                f"{focus_bucket_name} bucket bars={focus_bars} < {int(min_focus_bucket_bars)}"
+            )
+        if focus_trades < int(min_focus_bucket_trades):
+            focus_fail_reasons.append(
+                f"{focus_bucket_name} bucket trades={focus_trades} < {int(min_focus_bucket_trades)}"
+            )
+        if not isinstance(focus_sharpe, (int, float)):
+            focus_fail_reasons.append(f"{focus_bucket_name} bucket sharpe missing")
+        elif float(focus_sharpe) < float(min_focus_bucket_sharpe):
+            focus_fail_reasons.append(
+                f"{focus_bucket_name} bucket sharpe={float(focus_sharpe):.6f} < {float(min_focus_bucket_sharpe):.6f}"
+            )
+        focus_bucket_pass = not focus_fail_reasons
+        focus_validation = {
+            "bucket": focus_bucket_name,
+            "status": "pass" if focus_bucket_pass else "fail",
+            "fail_reasons": focus_fail_reasons,
+            "bars": focus_bars,
+            "trades": focus_trades,
+            "sharpe": focus_sharpe,
+            "thresholds": {
+                "min_bars": int(min_focus_bucket_bars),
+                "min_trades": int(min_focus_bucket_trades),
+                "min_sharpe": float(min_focus_bucket_sharpe),
+            },
+        }
+        if not focus_bucket_pass:
+            fails.extend(focus_fail_reasons)
     if trend_bars >= int(min_trend_bucket_bars) and trend_trades < int(min_trend_bucket_trades):
         fails.append(
             "walk-forward TREND 桶交易次数未达门槛: "
@@ -309,10 +358,17 @@ def assess_walkforward(
         )
     if isinstance(avg_split_sharpe, (int, float)):
         if avg_split_sharpe < min_avg_split_sharpe:
-            fails.append(
+            reason = (
                 "walk-forward 平均 Sharpe 未达门槛: "
                 f"{float(avg_split_sharpe):.6f} < {float(min_avg_split_sharpe):.6f}"
             )
+            if focus_bucket_pass:
+                warns.append(
+                    reason
+                    + f"；已由 {focus_bucket_name} 桶主链口径通过，降级为告警"
+                )
+            else:
+                fails.append(reason)
     else:
         warns.append("walk-forward 缺少 avg_split_sharpe，无法评估收益质量")
     return_checks = [
@@ -333,10 +389,17 @@ def assess_walkforward(
     for metric_name, label, metric_value, threshold in return_checks:
         if isinstance(metric_value, (int, float)):
             if float(metric_value) < float(threshold):
-                fails.append(
+                reason = (
                     f"walk-forward {label}未达门槛: "
                     f"{float(metric_value):.6f} < {float(threshold):.6f}"
                 )
+                if focus_bucket_pass:
+                    warns.append(
+                        reason
+                        + f"；已由 {focus_bucket_name} 桶主链口径通过，降级为告警"
+                    )
+                else:
+                    fails.append(reason)
         elif float(threshold) != 0.0:
             warns.append(f"walk-forward 缺少 {metric_name}，无法评估净收益质量")
     status = "pass" if not fails else "fail"
@@ -346,6 +409,7 @@ def assess_walkforward(
         "warn_reasons": warns,
         "rows": payload.get("rows"),
         "summary": summary,
+        "focus_bucket_validation": focus_validation,
     }
 
 
@@ -518,6 +582,7 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "summary": aggregate_summary,
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
+        "symbol_tradeability": aggregate_validation.get("symbol_tradeability", {}),
         "execution_economics": payload.get("execution_economics", {}),
         "cost_sensitivity": cost_sensitivity,
         "exit_capture": exit_capture,
@@ -878,6 +943,16 @@ def main() -> int:
                 min_total_trades=int(args.walkforward_min_total_trades),
                 min_trend_bucket_bars=int(args.walkforward_min_trend_bucket_bars),
                 min_trend_bucket_trades=int(args.walkforward_min_trend_bucket_trades),
+                focus_bucket="trend"
+                if (
+                    int(args.trend_validation_min_bars) > 0
+                    or int(args.trend_validation_min_trades) > 0
+                    or float(args.trend_validation_min_sharpe) != 0.0
+                )
+                else "",
+                min_focus_bucket_bars=int(args.trend_validation_min_bars),
+                min_focus_bucket_trades=int(args.trend_validation_min_trades),
+                min_focus_bucket_sharpe=float(args.trend_validation_min_sharpe),
             )
             sections["trend_validation"] = assess_trend_validation(
                 walkforward_path,

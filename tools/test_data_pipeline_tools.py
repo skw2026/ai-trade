@@ -558,6 +558,106 @@ class ReplayValidationToolsTest(unittest.TestCase):
             merged["fail_reasons"],
         )
 
+    def test_merge_symbol_validations_quarantines_failed_symbols_when_allowlist_passes(self):
+        merged = REPLAY.merge_symbol_validations(
+            {
+                "status": "pass",
+                "fail_reasons": [],
+                "warn_reasons": [],
+                "coverage_strength_status": "ROBUST",
+            },
+            {
+                "BTCUSDT": {
+                    "aggregate_summary": {
+                        "total_fills": 6,
+                        "positive_realized_net_with_fills_runs": 1,
+                        "negative_realized_net_with_fills_runs": 4,
+                        "mean_realized_net_per_fill": 0.0001,
+                    },
+                    "aggregate_validation": {
+                        "status": "pass",
+                        "fail_reasons": [],
+                        "warn_reasons": [],
+                        "coverage_fail_reasons": [],
+                        "quality_fail_reasons": [],
+                        "minimum_coverage_targets_met": True,
+                        "coverage_strength_status": "ROBUST",
+                        "thresholds": {"min_total_fills": 3},
+                    },
+                },
+                "ETHUSDT": {
+                    "aggregate_summary": {
+                        "total_fills": 6,
+                        "positive_realized_net_with_fills_runs": 1,
+                        "negative_realized_net_with_fills_runs": 4,
+                        "mean_realized_net_per_fill": 0.0002,
+                    },
+                    "aggregate_validation": {
+                        "status": "pass",
+                        "fail_reasons": [],
+                        "warn_reasons": [],
+                        "coverage_fail_reasons": [],
+                        "quality_fail_reasons": [],
+                        "minimum_coverage_targets_met": True,
+                        "coverage_strength_status": "ROBUST",
+                        "thresholds": {"min_total_fills": 3},
+                    },
+                },
+                "SOLUSDT": {
+                    "aggregate_summary": {
+                        "total_fills": 6,
+                        "positive_realized_net_with_fills_runs": 1,
+                        "negative_realized_net_with_fills_runs": 4,
+                        "mean_realized_net_per_fill": 0.006,
+                    },
+                    "aggregate_validation": {
+                        "status": "pass",
+                        "fail_reasons": [],
+                        "warn_reasons": [],
+                        "coverage_fail_reasons": [],
+                        "quality_fail_reasons": [],
+                        "minimum_coverage_targets_met": True,
+                        "coverage_strength_status": "ROBUST",
+                        "thresholds": {"min_total_fills": 3},
+                    },
+                },
+                "XRPUSDT": {
+                    "aggregate_summary": {
+                        "total_fills": 6,
+                        "positive_realized_net_with_fills_runs": 0,
+                        "negative_realized_net_with_fills_runs": 6,
+                        "mean_realized_net_per_fill": -0.0004,
+                    },
+                    "aggregate_validation": {
+                        "status": "fail",
+                        "fail_reasons": [
+                            "mean_realized_net_per_fill=-0.000400 < 0.000000"
+                        ],
+                        "warn_reasons": [],
+                        "coverage_fail_reasons": [],
+                        "quality_fail_reasons": [
+                            "mean_realized_net_per_fill=-0.000400 < 0.000000"
+                        ],
+                        "minimum_coverage_targets_met": True,
+                        "coverage_strength_status": "ROBUST",
+                        "thresholds": {"min_total_fills": 3},
+                    },
+                },
+            },
+            min_mean_realized_net_per_fill=0.0,
+            min_tradable_symbols=3,
+        )
+        self.assertEqual(merged["status"], "pass")
+        self.assertEqual(
+            merged["tradable_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+        )
+        self.assertEqual(merged["quarantined_symbols"], ["XRPUSDT"])
+        self.assertEqual(merged["fail_reasons"], [])
+        self.assertIn(
+            "XRPUSDT: mean_realized_net_per_fill=-0.000400 < 0.000000",
+            merged["symbol_quarantine_reasons"],
+        )
+
     def test_derive_recommended_coverage_thresholds_never_below_baseline(self):
         recommended = REPLAY.derive_recommended_coverage_thresholds(
             min_execution_active_runs=1,

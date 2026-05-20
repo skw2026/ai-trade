@@ -204,6 +204,29 @@ def parse_args() -> argparse.Namespace:
         help="walk-forward 交易 split 平均收益最低门槛",
     )
     register.add_argument(
+        "--walkforward_focus_bucket",
+        default="",
+        help="可选：以指定 regime bucket 作为主链 walk-forward 通过口径（例如 S5 使用 trend）",
+    )
+    register.add_argument(
+        "--walkforward_min_focus_bucket_bars",
+        type=int,
+        default=0,
+        help="focus bucket 生效所需最小 bars",
+    )
+    register.add_argument(
+        "--walkforward_min_focus_bucket_trades",
+        type=int,
+        default=0,
+        help="focus bucket 最小交易次数",
+    )
+    register.add_argument(
+        "--walkforward_min_focus_bucket_sharpe",
+        type=float,
+        default=0.0,
+        help="focus bucket 最小 Sharpe",
+    )
+    register.add_argument(
         "--require_replay_validation_pass",
         action="store_true",
         help="要求 replay validation 状态为 pass 后才允许激活",
@@ -336,6 +359,10 @@ def gate_walkforward_report(
     min_avg_split_return: float,
     min_enabled_avg_split_return: float,
     min_traded_avg_split_return: float,
+    focus_bucket: str = "",
+    min_focus_bucket_bars: int = 0,
+    min_focus_bucket_trades: int = 0,
+    min_focus_bucket_sharpe: float = 0.0,
 ) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
@@ -355,6 +382,52 @@ def gate_walkforward_report(
         fail_reasons.append("walkforward_report.summary 缺失或格式错误")
         return False, fail_reasons, warn_reasons, summary
     summary = raw_summary
+    focus_validation: Dict[str, Any] = {}
+    focus_bucket_name = str(focus_bucket or "").strip().lower()
+    focus_bucket_pass = False
+    if focus_bucket_name:
+        regime_bucket_summary = summary.get("regime_bucket_summary", {})
+        bucket_payload = (
+            regime_bucket_summary.get(focus_bucket_name, {})
+            if isinstance(regime_bucket_summary, dict)
+            else {}
+        )
+        if not isinstance(bucket_payload, dict):
+            bucket_payload = {}
+        focus_bars = int(bucket_payload.get("bars", 0) or 0)
+        focus_trades = int(bucket_payload.get("trades", 0) or 0)
+        focus_sharpe = coerce_float(bucket_payload.get("sharpe"))
+        focus_fail_reasons: List[str] = []
+        if focus_bars < int(min_focus_bucket_bars):
+            focus_fail_reasons.append(
+                f"{focus_bucket_name} bucket bars={focus_bars} < {int(min_focus_bucket_bars)}"
+            )
+        if focus_trades < int(min_focus_bucket_trades):
+            focus_fail_reasons.append(
+                f"{focus_bucket_name} bucket trades={focus_trades} < {int(min_focus_bucket_trades)}"
+            )
+        if focus_sharpe is None:
+            focus_fail_reasons.append(f"{focus_bucket_name} bucket sharpe missing")
+        elif focus_sharpe < float(min_focus_bucket_sharpe):
+            focus_fail_reasons.append(
+                f"{focus_bucket_name} bucket sharpe={focus_sharpe:.6f} < {float(min_focus_bucket_sharpe):.6f}"
+            )
+        focus_bucket_pass = not focus_fail_reasons
+        focus_validation = {
+            "bucket": focus_bucket_name,
+            "status": "pass" if focus_bucket_pass else "fail",
+            "fail_reasons": focus_fail_reasons,
+            "bars": focus_bars,
+            "trades": focus_trades,
+            "sharpe": focus_sharpe,
+            "thresholds": {
+                "min_bars": int(min_focus_bucket_bars),
+                "min_trades": int(min_focus_bucket_trades),
+                "min_sharpe": float(min_focus_bucket_sharpe),
+            },
+        }
+        if not focus_bucket_pass:
+            fail_reasons.extend(focus_fail_reasons)
 
     return_checks = [
         ("avg_split_return", min_avg_split_return),
@@ -367,9 +440,16 @@ def gate_walkforward_report(
             fail_reasons.append(f"walkforward_report.summary.{metric_name} 缺失")
             continue
         if metric_value < float(threshold):
-            fail_reasons.append(
+            reason = (
                 f"walkforward {metric_name}={metric_value:.6f} < {float(threshold):.6f}"
             )
+            if focus_bucket_pass:
+                warn_reasons.append(
+                    reason
+                    + f"; ignored because {focus_bucket_name} bucket focus gate passed"
+                )
+            else:
+                fail_reasons.append(reason)
 
     total_trades = summary.get("total_trades")
     traded_split_count = summary.get("traded_split_count")
@@ -378,6 +458,9 @@ def gate_walkforward_report(
     if isinstance(traded_split_count, int) and traded_split_count <= 0:
         fail_reasons.append(f"walkforward traded_split_count={traded_split_count} <= 0")
 
+    if focus_validation:
+        summary = dict(summary)
+        summary["focus_bucket_validation"] = focus_validation
     return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
 
 
@@ -541,12 +624,26 @@ def run_register(args: argparse.Namespace) -> int:
             float(args.min_walkforward_avg_split_return),
             float(args.min_walkforward_enabled_avg_split_return),
             float(args.min_walkforward_traded_avg_split_return),
+            focus_bucket=str(getattr(args, "walkforward_focus_bucket", "")),
+            min_focus_bucket_bars=int(
+                getattr(args, "walkforward_min_focus_bucket_bars", 0)
+            ),
+            min_focus_bucket_trades=int(
+                getattr(args, "walkforward_min_focus_bucket_trades", 0)
+            ),
+            min_focus_bucket_sharpe=float(
+                getattr(args, "walkforward_min_focus_bucket_sharpe", 0.0)
+            ),
         )
         external_gate_summary["walkforward"] = {
             "pass": walkforward_pass,
             "min_avg_split_return": args.min_walkforward_avg_split_return,
             "min_enabled_avg_split_return": args.min_walkforward_enabled_avg_split_return,
             "min_traded_avg_split_return": args.min_walkforward_traded_avg_split_return,
+            "focus_bucket": getattr(args, "walkforward_focus_bucket", ""),
+            "min_focus_bucket_bars": getattr(args, "walkforward_min_focus_bucket_bars", 0),
+            "min_focus_bucket_trades": getattr(args, "walkforward_min_focus_bucket_trades", 0),
+            "min_focus_bucket_sharpe": getattr(args, "walkforward_min_focus_bucket_sharpe", 0.0),
             "summary": walkforward_summary,
         }
         for item in walkforward_fail_reasons:
