@@ -433,12 +433,24 @@ def gate_replay_validation_report(
     optimizer_status = str(execution_optimizer.get("status", "")).strip().lower()
     if status == "pass" and optimizer_status == "fail":
         fail_reasons.append("replay execution_optimizer status=fail")
+    execution_cost_plan = payload.get("execution_cost_plan", {})
+    if not isinstance(execution_cost_plan, dict):
+        execution_cost_plan = {}
+    cost_plan_status = str(execution_cost_plan.get("status", "")).strip().lower()
+    if status == "pass" and cost_plan_status == "fail":
+        fail_reasons.append("replay execution_cost_plan status=fail")
+    elif cost_plan_status == "candidate_requires_rerun":
+        warn_reasons.append(
+            "replay execution_cost_plan found lower-cost candidate requiring rerun"
+        )
     summary = {
         "status": payload.get("status", aggregate_status),
         "coverage_strength_status": coverage_strength_status,
         "aggregate_validation": aggregate if isinstance(aggregate, dict) else {},
         "execution_economics": payload.get("execution_economics", {}),
         "cost_sensitivity": payload.get("cost_sensitivity", {}),
+        "exit_capture": payload.get("exit_capture", {}),
+        "execution_cost_plan": execution_cost_plan,
         "execution_optimizer": execution_optimizer,
     }
     if isinstance(aggregate, dict):

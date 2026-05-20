@@ -248,6 +248,79 @@ class RunReplayValidationTest(unittest.TestCase):
         self.assertIn("fee_x0.5", pass_names)
         self.assertNotIn("fee_x1", pass_names)
 
+    def test_exit_capture_flags_low_capture_when_path_mfe_covers_fee(self):
+        economics_rows = [
+            {
+                "symbol": "BTCUSDT",
+                "segment_index": 1,
+                "fill_count": 1,
+                "realized_net_per_fill": -0.8,
+                "fee_usd": 1.0,
+                "fee_per_fill_usd": 1.0,
+                "fee_bps_per_fill": 10.0,
+                "estimated_gross_pnl_usd": 0.2,
+                "estimated_gross_per_fill_usd": 0.2,
+                "segment_close_path_mfe": 0.005,
+                "segment_close_path_efficiency": 0.6,
+            },
+            {
+                "symbol": "ETHUSDT",
+                "segment_index": 2,
+                "fill_count": 1,
+                "realized_net_per_fill": -0.7,
+                "fee_usd": 1.0,
+                "fee_per_fill_usd": 1.0,
+                "fee_bps_per_fill": 10.0,
+                "estimated_gross_pnl_usd": 0.3,
+                "estimated_gross_per_fill_usd": 0.3,
+                "segment_close_path_mfe": 0.006,
+                "segment_close_path_efficiency": 0.5,
+            },
+        ]
+
+        report = REPLAY.build_exit_capture_report(economics_rows)
+
+        self.assertEqual(report["primary_diagnosis"], "exit_capture_low")
+        self.assertIn(
+            "path_mfe_covers_cost_but_gross_capture_low",
+            report["diagnostics"],
+        )
+        self.assertEqual(report["low_capture_segment_count"], 2)
+        self.assertGreater(report["mean_path_fee_coverage_ratio"], 2.0)
+
+    def test_execution_cost_plan_marks_lower_cost_candidate_requires_rerun(self):
+        economics_rows = [
+            {
+                "fill_count": 1,
+                "realized_net_per_fill": -0.01,
+                "fee_usd": 1.0,
+                "fee_per_fill_usd": 1.0,
+                "fee_bps_per_fill": 10.0,
+                "estimated_gross_pnl_usd": 0.99,
+                "estimated_gross_per_fill_usd": 0.99,
+                "segment_close_path_mfe": 0.003,
+            }
+        ]
+        exit_capture = REPLAY.build_exit_capture_report(economics_rows)
+
+        plan = REPLAY.build_execution_cost_plan(
+            economics_rows,
+            min_total_fills=1,
+            min_mean_realized_net_per_fill=0.0,
+            exit_capture=exit_capture,
+        )
+
+        self.assertEqual(plan["status"], "candidate_requires_rerun")
+        self.assertEqual(
+            plan["primary_action"], "rerun_replay_with_lower_cost_execution"
+        )
+        self.assertIn("current_cost_not_deployable", plan["diagnostics"])
+        self.assertIn(
+            "lower_cost_execution_candidate_requires_rerun",
+            plan["diagnostics"],
+        )
+        self.assertAlmostEqual(plan["break_even_fee_multiplier"], 0.99)
+
     def test_segment_market_attribution_reports_close_path_mfe_mae(self):
         rows = [
             REPLAY.FeatureRow(

@@ -439,6 +439,12 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     cost_sensitivity = payload.get("cost_sensitivity", {})
     if not isinstance(cost_sensitivity, dict):
         cost_sensitivity = {}
+    exit_capture = payload.get("exit_capture", {})
+    if not isinstance(exit_capture, dict):
+        exit_capture = {}
+    execution_cost_plan = payload.get("execution_cost_plan", {})
+    if not isinstance(execution_cost_plan, dict):
+        execution_cost_plan = {}
 
     status_raw = str(aggregate_validation.get("status", "")).lower()
     if status_raw == "pass_with_actions":
@@ -464,6 +470,14 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     if optimizer_status == "fail" and status != "fail":
         status = "fail"
         fail_reasons.append("replay execution_optimizer status=fail")
+    cost_plan_status = str(execution_cost_plan.get("status", "")).lower()
+    if cost_plan_status == "fail" and status != "fail":
+        status = "fail"
+        fail_reasons.append("replay execution_cost_plan status=fail")
+    elif cost_plan_status == "candidate_requires_rerun":
+        warn_reasons.append(
+            "replay execution_cost_plan 仅找到需重跑验证的低成本执行候选，不能直接上线"
+        )
     failed_feature_symbols = [
         str(item)
         for item in feature_build.get("failed_symbols", [])
@@ -506,6 +520,8 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "aggregate_validation": aggregate_validation,
         "execution_economics": payload.get("execution_economics", {}),
         "cost_sensitivity": cost_sensitivity,
+        "exit_capture": exit_capture,
+        "execution_cost_plan": execution_cost_plan,
         "execution_optimizer": execution_optimizer,
     }
 

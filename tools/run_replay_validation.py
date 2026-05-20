@@ -810,6 +810,16 @@ def int_or_zero(value: Any) -> int:
     return 0
 
 
+def safe_ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None:
+        return None
+    if not math.isfinite(float(numerator)) or not math.isfinite(float(denominator)):
+        return None
+    if abs(float(denominator)) <= 1e-12:
+        return None
+    return float(numerator) / float(denominator)
+
+
 def quantile_from_runs(
     run_summaries: list[dict[str, Any]],
     field_path: tuple[str, ...],
@@ -856,7 +866,30 @@ def build_run_economics_attribution(run: dict[str, Any]) -> dict[str, Any]:
             summary.get("execution_attribution_runtime_fee_delta_usd")
         )
     fee_usd = float(fee_usd or 0.0)
+    fee_per_fill_usd = fee_usd / fill_count if fill_count > 0 else 0.0
     estimated_gross_pnl_usd = realized_net_usd + fee_usd
+    fills_attribution = summary.get("fills_attribution", {})
+    if not isinstance(fills_attribution, dict):
+        fills_attribution = {}
+    notional_abs_usd = number_or_none(fills_attribution.get("notional_abs_usd"))
+    notional_abs_per_fill_usd = (
+        float(notional_abs_usd) / fill_count
+        if notional_abs_usd is not None and fill_count > 0
+        else None
+    )
+    reported_fee_bps_per_fill = number_or_none(summary.get("fee_bps_per_fill"))
+    derived_fee_bps_per_fill = (
+        fee_per_fill_usd / notional_abs_per_fill_usd * 10_000.0
+        if notional_abs_per_fill_usd is not None
+        and notional_abs_per_fill_usd > 1e-12
+        and fee_per_fill_usd > 0.0
+        else None
+    )
+    fee_bps_per_fill = (
+        derived_fee_bps_per_fill
+        if derived_fee_bps_per_fill is not None
+        else reported_fee_bps_per_fill
+    )
 
     return {
         "symbol": run.get("symbol"),
@@ -869,7 +902,11 @@ def build_run_economics_attribution(run: dict[str, Any]) -> dict[str, Any]:
         "realized_net_per_fill": realized_net_per_fill,
         "realized_net_usd_est": realized_net_usd,
         "fee_usd": fee_usd,
-        "fee_per_fill_usd": fee_usd / fill_count if fill_count > 0 else 0.0,
+        "fee_per_fill_usd": fee_per_fill_usd,
+        "notional_abs_usd": notional_abs_usd,
+        "notional_abs_per_fill_usd": notional_abs_per_fill_usd,
+        "reported_fee_bps_per_fill": reported_fee_bps_per_fill,
+        "derived_fee_bps_per_fill": derived_fee_bps_per_fill,
         "estimated_gross_pnl_usd": estimated_gross_pnl_usd,
         "estimated_gross_per_fill_usd": (
             estimated_gross_pnl_usd / fill_count if fill_count > 0 else 0.0
@@ -877,7 +914,7 @@ def build_run_economics_attribution(run: dict[str, Any]) -> dict[str, Any]:
         "filtered_cost_ratio_avg": number_or_none(
             summary.get("filtered_cost_ratio_avg")
         ),
-        "fee_bps_per_fill": number_or_none(summary.get("fee_bps_per_fill")),
+        "fee_bps_per_fill": fee_bps_per_fill,
         "entry_edge_gap_avg_bps": number_or_none(
             summary.get("entry_edge_gap_avg_bps")
         ),
@@ -982,6 +1019,128 @@ def summarize_economics_attribution(
     }
 
 
+def build_exit_capture_report(
+    economics_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    rows_with_fills = [
+        row for row in economics_rows if int_or_zero(row.get("fill_count")) > 0
+    ]
+    samples: list[dict[str, Any]] = []
+    for row in rows_with_fills:
+        fill_count = max(1, int_or_zero(row.get("fill_count")))
+        fee_per_fill = float(row.get("fee_per_fill_usd") or 0.0)
+        fee_bps = number_or_none(row.get("fee_bps_per_fill"))
+        gross_per_fill = float(row.get("estimated_gross_per_fill_usd") or 0.0)
+        net_per_fill = number_or_none(row.get("realized_net_per_fill"))
+        path_mfe = number_or_none(row.get("segment_close_path_mfe"))
+        path_efficiency = number_or_none(row.get("segment_close_path_efficiency"))
+        if (
+            fee_per_fill <= 0.0
+            or fee_bps is None
+            or fee_bps <= 0.0
+            or path_mfe is None
+            or path_mfe <= 0.0
+        ):
+            continue
+        notional_per_fill = fee_per_fill / (fee_bps / 10_000.0)
+        path_mfe_bps = path_mfe * 10_000.0
+        path_mfe_potential_per_fill = path_mfe * notional_per_fill
+        path_fee_coverage = safe_ratio(path_mfe_bps, fee_bps)
+        gross_capture_ratio = safe_ratio(gross_per_fill, path_mfe_potential_per_fill)
+        gross_fee_coverage = safe_ratio(gross_per_fill, fee_per_fill)
+        if (
+            path_fee_coverage is None
+            or gross_capture_ratio is None
+            or gross_fee_coverage is None
+        ):
+            continue
+        samples.append(
+            {
+                "symbol": row.get("symbol"),
+                "segment_index": row.get("segment_index"),
+                "fill_count": fill_count,
+                "net_per_fill_usd": net_per_fill,
+                "gross_per_fill_usd": gross_per_fill,
+                "fee_per_fill_usd": fee_per_fill,
+                "fee_bps_per_fill": fee_bps,
+                "segment_close_path_mfe": path_mfe,
+                "segment_close_path_mfe_bps": path_mfe_bps,
+                "segment_close_path_efficiency": path_efficiency,
+                "estimated_notional_per_fill_usd": notional_per_fill,
+                "path_mfe_potential_per_fill_usd": path_mfe_potential_per_fill,
+                "path_fee_coverage_ratio": path_fee_coverage,
+                "gross_capture_of_path_mfe": gross_capture_ratio,
+                "gross_fee_coverage_ratio": gross_fee_coverage,
+            }
+        )
+
+    path_fee_coverages = [
+        float(item["path_fee_coverage_ratio"]) for item in samples
+    ]
+    gross_capture_ratios = [
+        float(item["gross_capture_of_path_mfe"]) for item in samples
+    ]
+    gross_fee_coverages = [
+        float(item["gross_fee_coverage_ratio"]) for item in samples
+    ]
+    fee_bps_values = [float(item["fee_bps_per_fill"]) for item in samples]
+    path_mfe_bps_values = [
+        float(item["segment_close_path_mfe_bps"]) for item in samples
+    ]
+    low_capture_count = sum(
+        1
+        for item in samples
+        if float(item["path_fee_coverage_ratio"]) >= 2.0
+        and float(item["gross_capture_of_path_mfe"]) < 0.35
+    )
+    fee_bound_count = sum(
+        1 for item in samples if float(item["path_fee_coverage_ratio"]) < 1.25
+    )
+    gross_cost_bound_count = sum(
+        1 for item in samples if float(item["gross_fee_coverage_ratio"]) < 1.0
+    )
+
+    diagnostics: list[str] = []
+    if rows_with_fills and not samples:
+        diagnostics.append("insufficient_exit_capture_samples")
+    if samples and fee_bound_count >= max(1, math.ceil(len(samples) * 0.5)):
+        diagnostics.append("path_mfe_does_not_cover_fee_buffer")
+    if samples and low_capture_count >= max(1, math.ceil(len(samples) * 0.5)):
+        diagnostics.append("path_mfe_covers_cost_but_gross_capture_low")
+    if samples and gross_cost_bound_count >= max(1, math.ceil(len(samples) * 0.5)):
+        diagnostics.append("gross_edge_does_not_cover_current_fee")
+
+    if "path_mfe_covers_cost_but_gross_capture_low" in diagnostics:
+        primary_diagnosis = "exit_capture_low"
+    elif "path_mfe_does_not_cover_fee_buffer" in diagnostics:
+        primary_diagnosis = "fee_bound_or_low_path"
+    elif "gross_edge_does_not_cover_current_fee" in diagnostics:
+        primary_diagnosis = "execution_cost_bound"
+    elif not samples:
+        primary_diagnosis = "insufficient_samples"
+    else:
+        primary_diagnosis = "no_obvious_exit_capture_issue"
+
+    return {
+        "status": "action_required" if diagnostics else "pass",
+        "primary_diagnosis": primary_diagnosis,
+        "diagnostics": diagnostics,
+        "filled_segment_count": len(rows_with_fills),
+        "sample_count": len(samples),
+        "low_capture_segment_count": low_capture_count,
+        "fee_bound_segment_count": fee_bound_count,
+        "gross_cost_bound_segment_count": gross_cost_bound_count,
+        "mean_path_fee_coverage_ratio": finite_mean(path_fee_coverages),
+        "median_path_fee_coverage_ratio": finite_median(path_fee_coverages),
+        "mean_gross_capture_of_path_mfe": finite_mean(gross_capture_ratios),
+        "median_gross_capture_of_path_mfe": finite_median(gross_capture_ratios),
+        "mean_gross_fee_coverage_ratio": finite_mean(gross_fee_coverages),
+        "mean_fee_bps_per_fill": finite_mean(fee_bps_values),
+        "mean_path_mfe_bps": finite_mean(path_mfe_bps_values),
+        "samples": samples,
+    }
+
+
 def summarize_cost_adjusted_rows(
     economics_rows: list[dict[str, Any]],
     *,
@@ -1036,6 +1195,135 @@ def summarize_cost_adjusted_rows(
         "positive_segments": positive_rows,
         "negative_segments": negative_rows,
         "zero_segments": zero_rows,
+    }
+
+
+def build_execution_cost_plan(
+    economics_rows: list[dict[str, Any]],
+    *,
+    min_total_fills: int,
+    min_mean_realized_net_per_fill: float,
+    exit_capture: dict[str, Any],
+) -> dict[str, Any]:
+    filled_rows = [
+        row for row in economics_rows if int_or_zero(row.get("fill_count")) > 0
+    ]
+    if not filled_rows:
+        return {
+            "status": "fail",
+            "activation_recommendation": "block",
+            "primary_action": "collect_execution_fills",
+            "diagnostics": ["no_filled_segments"],
+            "filled_segment_count": 0,
+            "total_fills": 0,
+            "candidate_plans": [],
+        }
+
+    total_fills = sum(int_or_zero(row.get("fill_count")) for row in filled_rows)
+    total_gross = sum(float(row.get("estimated_gross_pnl_usd") or 0.0) for row in filled_rows)
+    total_fee = sum(float(row.get("fee_usd") or 0.0) for row in filled_rows)
+    current_net_per_fill = safe_ratio(total_gross - total_fee, float(total_fills))
+    break_even_fee_multiplier = safe_ratio(total_gross, total_fee)
+    fee_reduction_required_pct = None
+    if break_even_fee_multiplier is not None and break_even_fee_multiplier < 1.0:
+        fee_reduction_required_pct = (1.0 - break_even_fee_multiplier) * 100.0
+
+    candidate_specs = [
+        (
+            "current_cost",
+            1.0,
+            False,
+            "当前 replay 成本口径",
+        ),
+        (
+            "maker_first_fee_x0.75",
+            0.75,
+            True,
+            "候选：优先 maker / 降低 taker 暴露后按 75% 当前费用复算",
+        ),
+        (
+            "maker_first_fee_x0.5",
+            0.50,
+            True,
+            "候选：激进 maker-only / 更低交易成本假设，需重跑验证",
+        ),
+    ]
+    candidate_plans: list[dict[str, Any]] = []
+    for name, fee_multiplier, requires_rerun, description in candidate_specs:
+        scenario = summarize_cost_adjusted_rows(
+            filled_rows,
+            fee_multiplier=fee_multiplier,
+        )
+        mean_net = scenario.get("mean_adjusted_realized_net_per_fill")
+        scenario_status = (
+            "pass"
+            if int(scenario["total_fills"]) >= max(1, min_total_fills)
+            and isinstance(mean_net, (int, float))
+            and float(mean_net) >= float(min_mean_realized_net_per_fill)
+            and int(scenario["positive_segments"]) > 0
+            else "fail"
+        )
+        candidate_plans.append(
+            {
+                **scenario,
+                "name": name,
+                "description": description,
+                "requires_rerun": bool(requires_rerun),
+                "status": scenario_status,
+            }
+        )
+
+    current_plan = candidate_plans[0]
+    deployable_candidates = [
+        item for item in candidate_plans[1:] if item.get("status") == "pass"
+    ]
+    diagnostics: list[str] = []
+    if current_plan.get("status") != "pass":
+        diagnostics.append("current_cost_not_deployable")
+    if fee_reduction_required_pct is not None:
+        diagnostics.append("fee_reduction_required")
+    if deployable_candidates:
+        diagnostics.append("lower_cost_execution_candidate_requires_rerun")
+    else:
+        diagnostics.append("no_lower_cost_execution_candidate_positive")
+
+    exit_primary = str(exit_capture.get("primary_diagnosis") or "")
+    if exit_primary and exit_primary not in {"no_obvious_exit_capture_issue", "insufficient_samples"}:
+        diagnostics.append(f"exit_capture:{exit_primary}")
+
+    if current_plan.get("status") == "pass":
+        status = "pass"
+        primary_action = "allow_current_cost_after_registry_gate"
+        activation_recommendation = "allow"
+    elif deployable_candidates:
+        status = "candidate_requires_rerun"
+        primary_action = "rerun_replay_with_lower_cost_execution"
+        activation_recommendation = "block_until_rerun_passes"
+    elif exit_primary == "exit_capture_low":
+        status = "fail"
+        primary_action = "improve_exit_capture_before_more_fee_tuning"
+        activation_recommendation = "block"
+    else:
+        status = "fail"
+        primary_action = "raise_edge_or_reduce_turnover_before_activation"
+        activation_recommendation = "block"
+
+    return {
+        "status": status,
+        "activation_recommendation": activation_recommendation,
+        "primary_action": primary_action,
+        "diagnostics": diagnostics,
+        "filled_segment_count": len(filled_rows),
+        "total_fills": total_fills,
+        "total_estimated_gross_pnl_usd": total_gross,
+        "total_fee_usd": total_fee,
+        "current_net_per_fill_usd": current_net_per_fill,
+        "break_even_fee_multiplier": break_even_fee_multiplier,
+        "fee_reduction_required_pct": fee_reduction_required_pct,
+        "candidate_plan_count": len(candidate_plans),
+        "deployable_candidate_requires_rerun_count": len(deployable_candidates),
+        "best_candidate": deployable_candidates[0] if deployable_candidates else current_plan,
+        "candidate_plans": candidate_plans,
     }
 
 
@@ -1455,12 +1743,20 @@ def build_replay_economics_report(
         run.get("economics_attribution") or build_run_economics_attribution(run)
         for run in run_summaries
     ]
+    exit_capture = build_exit_capture_report(economics_rows)
     return {
         "attribution_summary": summarize_economics_attribution(economics_rows),
         "cost_sensitivity": build_cost_sensitivity_report(
             economics_rows,
             min_total_fills=min_total_fills,
             min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        ),
+        "exit_capture": exit_capture,
+        "execution_cost_plan": build_execution_cost_plan(
+            economics_rows,
+            min_total_fills=min_total_fills,
+            min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+            exit_capture=exit_capture,
         ),
         "runs": economics_rows,
         "optimizer": build_replay_execution_optimizer(
@@ -2309,6 +2605,8 @@ def main() -> int:
             "aggregate_validation": symbol_aggregate_validation,
             "execution_economics": symbol_economics_report["attribution_summary"],
             "cost_sensitivity": symbol_economics_report["cost_sensitivity"],
+            "exit_capture": symbol_economics_report["exit_capture"],
+            "execution_cost_plan": symbol_economics_report["execution_cost_plan"],
             "execution_optimizer": symbol_economics_report["optimizer"],
             "runs": symbol_runs,
         }
@@ -2413,6 +2711,8 @@ def main() -> int:
         "aggregate_validation": aggregate_validation,
         "execution_economics": economics_report["attribution_summary"],
         "cost_sensitivity": economics_report["cost_sensitivity"],
+        "exit_capture": economics_report["exit_capture"],
+        "execution_cost_plan": economics_report["execution_cost_plan"],
         "execution_optimizer": economics_report["optimizer"],
         "symbol_reports": symbol_reports,
         "runs": run_summaries,
@@ -2426,11 +2726,15 @@ def main() -> int:
         "real_market_replay": real_market_replay,
         "execution_economics": economics_report["attribution_summary"],
         "cost_sensitivity": economics_report["cost_sensitivity"],
+        "exit_capture": economics_report["exit_capture"],
+        "execution_cost_plan": economics_report["execution_cost_plan"],
         "execution_optimizer": economics_report["optimizer"],
         "per_symbol": {
             symbol: {
                 "execution_economics": symbol_report.get("execution_economics", {}),
                 "cost_sensitivity": symbol_report.get("cost_sensitivity", {}),
+                "exit_capture": symbol_report.get("exit_capture", {}),
+                "execution_cost_plan": symbol_report.get("execution_cost_plan", {}),
                 "execution_optimizer": symbol_report.get("execution_optimizer", {}),
             }
             for symbol, symbol_report in symbol_reports.items()
