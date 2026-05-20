@@ -184,6 +184,93 @@ class ModelRegistryTest(unittest.TestCase):
                 )
             )
 
+    def test_replay_optimizer_fail_prevents_activation_even_when_replay_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            model_file = root / "integrator_latest.cbm"
+            integrator_report = root / "integrator_report.json"
+            replay_report = root / "replay_validation_report.json"
+            registration_out = root / "registry_out.json"
+
+            model_file.write_bytes(b"fake model")
+            integrator_report.write_text(
+                json.dumps(
+                    {
+                        "model_version": "integrator_cb_v1",
+                        "feature_schema_version": "feature_schema_v1",
+                        "factor_set_version": "factor_set_v1",
+                        "metrics_oos": {
+                            "auc_mean": 0.56,
+                            "delta_auc_vs_baseline": 0.02,
+                            "split_trained_count": 5,
+                            "split_count": 5,
+                            "split_trained_ratio": 1.0,
+                        },
+                        "governance": {
+                            "pass": True,
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                        "execution_optimizer": {
+                            "status": "fail",
+                            "fail_reasons": [
+                                "no_deployable_prefilter_candidate_positive_after_costs"
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            code = REGISTRY.run_register(
+                argparse.Namespace(
+                    model_file=str(model_file),
+                    integrator_report=str(integrator_report),
+                    miner_report="",
+                    walkforward_report="",
+                    replay_validation_report=str(replay_report),
+                    registry_dir=str(root / "registry"),
+                    max_versions=20,
+                    active_model_path=str(root / "active" / "integrator_latest.cbm"),
+                    active_report_path=str(root / "active" / "integrator_report.json"),
+                    active_miner_report_path=str(root / "active" / "miner_report.json"),
+                    active_meta_path=str(root / "active" / "integrator_active.json"),
+                    min_auc_mean=0.50,
+                    min_delta_auc_vs_baseline=0.0,
+                    min_split_trained_count=1,
+                    min_split_trained_ratio=0.5,
+                    activate_on_pass=True,
+                    require_walkforward_positive=False,
+                    min_walkforward_avg_split_return=0.0,
+                    min_walkforward_enabled_avg_split_return=0.0,
+                    min_walkforward_traded_avg_split_return=0.0,
+                    require_replay_validation_pass=True,
+                    registration_out=str(registration_out),
+                )
+            )
+
+            self.assertEqual(code, 0)
+            payload = json.loads(registration_out.read_text(encoding="utf-8"))
+            self.assertFalse(payload["activated"])
+            self.assertTrue(
+                any(
+                    "replay_validation: replay execution_optimizer status=fail" in reason
+                    for reason in payload["gate"]["fail_reasons"]
+                )
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

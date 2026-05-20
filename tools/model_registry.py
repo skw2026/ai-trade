@@ -413,10 +413,18 @@ def gate_replay_validation_report(
     coverage_strength_status = payload.get("coverage_strength_status")
     if coverage_strength_status is None and isinstance(aggregate, dict):
         coverage_strength_status = aggregate.get("coverage_strength_status")
+    execution_optimizer = payload.get("execution_optimizer", {})
+    if not isinstance(execution_optimizer, dict):
+        execution_optimizer = {}
+    optimizer_status = str(execution_optimizer.get("status", "")).strip().lower()
+    if status == "pass" and optimizer_status == "fail":
+        fail_reasons.append("replay execution_optimizer status=fail")
     summary = {
         "status": payload.get("status", aggregate_status),
         "coverage_strength_status": coverage_strength_status,
         "aggregate_validation": aggregate if isinstance(aggregate, dict) else {},
+        "execution_economics": payload.get("execution_economics", {}),
+        "execution_optimizer": execution_optimizer,
     }
     if isinstance(aggregate, dict):
         for key in (

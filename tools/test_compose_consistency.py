@@ -329,6 +329,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "github.event_name == 'schedule' && 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT'",
             workflow,
         )
+        self.assertIn("replay_optimization_report.json", workflow)
         self.assertIn("timeout-minutes: 120", workflow)
         self.assertIn("command_timeout: 90m", workflow)
 

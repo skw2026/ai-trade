@@ -828,6 +828,79 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(replay_section["summary"]["total_fills"], 3)
             self.assertEqual(replay_section["aggregate_summary"]["total_fills"], 3)
 
+    def test_replay_optimizer_failure_blocks_replay_section(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "target_bucket": "trend",
+                        "symbol": "BTCUSDT",
+                        "symbols": ["BTCUSDT"],
+                        "aggregate_summary": {
+                            "execution_active_runs": 4,
+                            "execution_pass_runs": 4,
+                            "total_fills": 6,
+                            "mean_realized_net_per_fill": 0.001,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                        "execution_optimizer": {
+                            "status": "fail",
+                            "fail_reasons": [
+                                "no_deployable_prefilter_candidate_positive_after_costs"
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            replay_section = payload["sections"]["replay_validation"]
+            self.assertEqual(replay_section["status"], "fail")
+            self.assertIn(
+                "replay_validation: replay execution_optimizer status=fail",
+                payload["fail_reasons"],
+            )
+
     def test_replay_live_symbol_alignment_warns_on_uncovered_live_trend(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

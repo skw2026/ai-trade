@@ -419,6 +419,9 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     feature_build = payload.get("feature_build", {})
     if not isinstance(feature_build, dict):
         feature_build = {}
+    execution_optimizer = payload.get("execution_optimizer", {})
+    if not isinstance(execution_optimizer, dict):
+        execution_optimizer = {}
 
     status_raw = str(aggregate_validation.get("status", "")).lower()
     if status_raw == "pass_with_actions":
@@ -440,6 +443,10 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
             warn_reasons.append(extra)
     if status_raw not in {"pass", "pass_with_actions", "fail"}:
         fail_reasons.append("replay-validation 缺少 aggregate_validation.status")
+    optimizer_status = str(execution_optimizer.get("status", "")).lower()
+    if optimizer_status == "fail" and status != "fail":
+        status = "fail"
+        fail_reasons.append("replay execution_optimizer status=fail")
     failed_feature_symbols = [
         str(item)
         for item in feature_build.get("failed_symbols", [])
@@ -480,6 +487,8 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "summary": aggregate_summary,
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
+        "execution_economics": payload.get("execution_economics", {}),
+        "execution_optimizer": execution_optimizer,
     }
 
 

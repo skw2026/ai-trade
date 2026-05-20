@@ -247,6 +247,7 @@ jobs:
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime_assess.json" ".artifacts/runtime_assess.json" "runtime_assess" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/replay_validation/replay_validation_report.json" ".artifacts/replay_validation_report.json" "replay_validation_report" "json"
+          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/replay_validation/replay_optimization_report.json" ".artifacts/replay_optimization_report.json" "replay_optimization_report" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/replay_validation/feature_build_report.json" ".artifacts/replay_feature_build_report.json" "replay_feature_build_report" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" ".artifacts/daily_summary.json" "daily_summary" "json"

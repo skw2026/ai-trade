@@ -95,6 +95,127 @@ class RunReplayValidationTest(unittest.TestCase):
                 rows[0].timestamp,
             )
 
+    def test_execution_optimizer_fails_when_all_filled_segments_are_net_negative(self):
+        run_summaries = [
+            {
+                "symbol": "BTCUSDT",
+                "segment_index": 1,
+                "segment": {
+                    "bars": 40,
+                    "strength_score": 3.0,
+                    "liquidity_score": 1.5,
+                    "avg_range_pct": 0.001,
+                    "avg_vol_12": 0.001,
+                },
+                "assess_summary": {
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "execution_status": "PASS",
+                    "funnel_fills_runtime_count": 2,
+                    "execution_activity_count": 2,
+                    "realized_net_per_fill": -0.02,
+                    "filtered_cost_ratio_avg": 0.2,
+                    "execution_attribution_fee_usd": 0.01,
+                },
+            },
+            {
+                "symbol": "ETHUSDT",
+                "segment_index": 2,
+                "segment": {
+                    "bars": 40,
+                    "strength_score": 2.0,
+                    "liquidity_score": 1.0,
+                    "avg_range_pct": 0.002,
+                    "avg_vol_12": 0.0015,
+                },
+                "assess_summary": {
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "execution_status": "PASS",
+                    "funnel_fills_runtime_count": 1,
+                    "execution_activity_count": 1,
+                    "realized_net_per_fill": -0.01,
+                    "filtered_cost_ratio_avg": 0.3,
+                    "execution_attribution_fee_usd": 0.005,
+                },
+            },
+        ]
+        for run in run_summaries:
+            run["economics_attribution"] = REPLAY.build_run_economics_attribution(run)
+
+        report = REPLAY.build_replay_economics_report(
+            run_summaries,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=1,
+            min_mean_realized_net_per_fill=0.0,
+        )
+
+        self.assertEqual(report["optimizer"]["status"], "fail")
+        self.assertIn(
+            "no_deployable_prefilter_candidate_positive_after_costs",
+            report["optimizer"]["fail_reasons"],
+        )
+        self.assertIn(
+            "all_filled_segments_net_negative",
+            report["attribution_summary"]["diagnostics"],
+        )
+
+    def test_execution_optimizer_passes_when_prefilter_candidate_is_positive(self):
+        run_summaries = [
+            {
+                "symbol": "BTCUSDT",
+                "segment_index": 1,
+                "segment": {
+                    "bars": 40,
+                    "strength_score": 4.0,
+                    "liquidity_score": 2.0,
+                    "avg_range_pct": 0.001,
+                    "avg_vol_12": 0.001,
+                },
+                "assess_summary": {
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "execution_status": "PASS",
+                    "funnel_fills_runtime_count": 2,
+                    "execution_activity_count": 2,
+                    "realized_net_per_fill": 0.03,
+                    "filtered_cost_ratio_avg": 0.1,
+                    "execution_attribution_fee_usd": 0.01,
+                },
+            },
+            {
+                "symbol": "ETHUSDT",
+                "segment_index": 2,
+                "segment": {
+                    "bars": 40,
+                    "strength_score": 1.0,
+                    "liquidity_score": 1.0,
+                    "avg_range_pct": 0.002,
+                    "avg_vol_12": 0.002,
+                },
+                "assess_summary": {
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "execution_status": "PASS",
+                    "funnel_fills_runtime_count": 1,
+                    "execution_activity_count": 1,
+                    "realized_net_per_fill": -0.01,
+                    "filtered_cost_ratio_avg": 0.3,
+                    "execution_attribution_fee_usd": 0.005,
+                },
+            },
+        ]
+        for run in run_summaries:
+            run["economics_attribution"] = REPLAY.build_run_economics_attribution(run)
+
+        report = REPLAY.build_replay_economics_report(
+            run_summaries,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=1,
+            min_mean_realized_net_per_fill=0.0,
+        )
+
+        self.assertEqual(report["optimizer"]["status"], "pass")
+        self.assertGreaterEqual(report["optimizer"]["pass_candidate_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

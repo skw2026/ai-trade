@@ -645,6 +645,23 @@ def run_command(command: list[str], output_path: pathlib.Path) -> int:
 
 def summarize_assess(assess_payload: dict[str, Any]) -> dict[str, Any]:
     metrics = assess_payload.get("metrics", {})
+    execution_attribution = assess_payload.get("execution_attribution", {})
+    fills_attribution: dict[str, Any] = {}
+    if isinstance(execution_attribution, dict):
+        fills = execution_attribution.get("fills", {})
+        if isinstance(fills, dict):
+            quality_by_symbol = fills.get("quality_by_symbol", {})
+            fills_attribution = {
+                "total": fills.get("total"),
+                "fee_usd": fills.get("fee_usd"),
+                "notional_abs_usd": fills.get("notional_abs_usd"),
+                "maker_count": fills.get("maker_count"),
+                "taker_count": fills.get("taker_count"),
+                "unknown_liquidity_count": fills.get("unknown_liquidity_count"),
+                "quality_by_symbol": quality_by_symbol
+                if isinstance(quality_by_symbol, dict)
+                else {},
+            }
     return {
         "verdict": assess_payload.get("verdict"),
         "runtime_validation_mode": assess_payload.get("runtime_validation_mode"),
@@ -656,8 +673,555 @@ def summarize_assess(assess_payload: dict[str, Any]) -> dict[str, Any]:
         "regime_trend_runtime_count": metrics.get("regime_trend_runtime_count"),
         "realized_net_per_fill": metrics.get("realized_net_per_fill"),
         "filtered_cost_ratio_avg": metrics.get("filtered_cost_ratio_avg"),
+        "fee_bps_per_fill": metrics.get("fee_bps_per_fill"),
+        "entry_edge_gap_avg_bps": metrics.get("entry_edge_gap_avg_bps"),
+        "entry_gate_observed_filtered_ratio_avg": metrics.get(
+            "entry_gate_observed_filtered_ratio_avg"
+        ),
+        "execution_attribution_fill_count": metrics.get(
+            "execution_attribution_fill_count"
+        ),
+        "execution_attribution_main_fill_count": metrics.get(
+            "execution_attribution_main_fill_count"
+        ),
+        "execution_attribution_probe_fill_count": metrics.get(
+            "execution_attribution_probe_fill_count"
+        ),
+        "execution_attribution_maker_fill_count": metrics.get(
+            "execution_attribution_maker_fill_count"
+        ),
+        "execution_attribution_taker_fill_count": metrics.get(
+            "execution_attribution_taker_fill_count"
+        ),
+        "execution_attribution_fee_usd": metrics.get("execution_attribution_fee_usd"),
+        "execution_attribution_main_fee_usd": metrics.get(
+            "execution_attribution_main_fee_usd"
+        ),
+        "execution_attribution_probe_fee_usd": metrics.get(
+            "execution_attribution_probe_fee_usd"
+        ),
+        "execution_attribution_runtime_fill_window_count": metrics.get(
+            "execution_attribution_runtime_fill_window_count"
+        ),
+        "execution_attribution_runtime_realized_net_delta_usd": metrics.get(
+            "execution_attribution_runtime_realized_net_delta_usd"
+        ),
+        "execution_attribution_runtime_fee_delta_usd": metrics.get(
+            "execution_attribution_runtime_fee_delta_usd"
+        ),
+        "execution_attribution_worst_symbol": metrics.get(
+            "execution_attribution_worst_symbol"
+        ),
+        "execution_attribution_worst_symbol_realized_net_per_fill": metrics.get(
+            "execution_attribution_worst_symbol_realized_net_per_fill"
+        ),
+        "execution_attribution_best_symbol": metrics.get(
+            "execution_attribution_best_symbol"
+        ),
+        "execution_attribution_best_symbol_realized_net_per_fill": metrics.get(
+            "execution_attribution_best_symbol_realized_net_per_fill"
+        ),
+        "fills_attribution": fills_attribution,
         "warn_reasons": assess_payload.get("warn_reasons", []),
         "fail_reasons": assess_payload.get("fail_reasons", []),
+    }
+
+
+def number_or_none(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        return float(value)
+    return None
+
+
+def int_or_zero(value: Any) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float) and math.isfinite(value):
+        return int(value)
+    return 0
+
+
+def quantile_from_runs(
+    run_summaries: list[dict[str, Any]],
+    field_path: tuple[str, ...],
+    q: float,
+) -> float | None:
+    values: list[float] = []
+    for run in run_summaries:
+        current: Any = run
+        for part in field_path:
+            if not isinstance(current, dict):
+                current = None
+                break
+            current = current.get(part)
+        value = number_or_none(current)
+        if value is not None:
+            values.append(value)
+    if not values:
+        return None
+    return quantile(values, q, values[0])
+
+
+def build_run_economics_attribution(run: dict[str, Any]) -> dict[str, Any]:
+    summary = run.get("assess_summary", {})
+    if not isinstance(summary, dict):
+        summary = {}
+    segment = run.get("segment", {})
+    if not isinstance(segment, dict):
+        segment = {}
+
+    fill_count = int_or_zero(summary.get("funnel_fills_runtime_count"))
+    attribution_fill_count = int_or_zero(summary.get("execution_attribution_fill_count"))
+    if fill_count <= 0 and attribution_fill_count > 0:
+        fill_count = attribution_fill_count
+
+    realized_net_per_fill = number_or_none(summary.get("realized_net_per_fill"))
+    realized_net_usd = (
+        float(realized_net_per_fill) * float(fill_count)
+        if realized_net_per_fill is not None and fill_count > 0
+        else 0.0
+    )
+    fee_usd = number_or_none(summary.get("execution_attribution_fee_usd"))
+    if fee_usd is None:
+        fee_usd = number_or_none(
+            summary.get("execution_attribution_runtime_fee_delta_usd")
+        )
+    fee_usd = float(fee_usd or 0.0)
+    estimated_gross_pnl_usd = realized_net_usd + fee_usd
+
+    return {
+        "symbol": run.get("symbol"),
+        "segment_index": run.get("segment_index"),
+        "runtime_validation_mode": summary.get("runtime_validation_mode"),
+        "execution_status": summary.get("execution_status"),
+        "market_context_status": summary.get("market_context_status"),
+        "fill_count": fill_count,
+        "execution_activity_count": int_or_zero(summary.get("execution_activity_count")),
+        "realized_net_per_fill": realized_net_per_fill,
+        "realized_net_usd_est": realized_net_usd,
+        "fee_usd": fee_usd,
+        "fee_per_fill_usd": fee_usd / fill_count if fill_count > 0 else 0.0,
+        "estimated_gross_pnl_usd": estimated_gross_pnl_usd,
+        "estimated_gross_per_fill_usd": (
+            estimated_gross_pnl_usd / fill_count if fill_count > 0 else 0.0
+        ),
+        "filtered_cost_ratio_avg": number_or_none(
+            summary.get("filtered_cost_ratio_avg")
+        ),
+        "fee_bps_per_fill": number_or_none(summary.get("fee_bps_per_fill")),
+        "entry_edge_gap_avg_bps": number_or_none(
+            summary.get("entry_edge_gap_avg_bps")
+        ),
+        "entry_gate_observed_filtered_ratio_avg": number_or_none(
+            summary.get("entry_gate_observed_filtered_ratio_avg")
+        ),
+        "main_fill_count": int_or_zero(
+            summary.get("execution_attribution_main_fill_count")
+        ),
+        "probe_fill_count": int_or_zero(
+            summary.get("execution_attribution_probe_fill_count")
+        ),
+        "maker_fill_count": int_or_zero(
+            summary.get("execution_attribution_maker_fill_count")
+        ),
+        "taker_fill_count": int_or_zero(
+            summary.get("execution_attribution_taker_fill_count")
+        ),
+        "worst_symbol": summary.get("execution_attribution_worst_symbol"),
+        "worst_symbol_realized_net_per_fill": number_or_none(
+            summary.get("execution_attribution_worst_symbol_realized_net_per_fill")
+        ),
+        "best_symbol": summary.get("execution_attribution_best_symbol"),
+        "best_symbol_realized_net_per_fill": number_or_none(
+            summary.get("execution_attribution_best_symbol_realized_net_per_fill")
+        ),
+        "segment_bars": segment.get("bars"),
+        "segment_strength_score": number_or_none(segment.get("strength_score")),
+        "segment_path_score": number_or_none(segment.get("path_score")),
+        "segment_liquidity_score": number_or_none(segment.get("liquidity_score")),
+        "segment_price_return_abs": number_or_none(segment.get("price_return_abs")),
+        "segment_avg_abs_ema_diff": number_or_none(segment.get("avg_abs_ema_diff")),
+        "segment_avg_abs_mom_48": number_or_none(segment.get("avg_abs_mom_48")),
+        "segment_avg_vol_12": number_or_none(segment.get("avg_vol_12")),
+        "segment_avg_range_pct": number_or_none(segment.get("avg_range_pct")),
+    }
+
+
+def summarize_economics_attribution(
+    economics_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    rows_with_fills = [
+        row for row in economics_rows if int_or_zero(row.get("fill_count")) > 0
+    ]
+    net_values = [
+        float(row["realized_net_per_fill"])
+        for row in rows_with_fills
+        if isinstance(row.get("realized_net_per_fill"), (int, float))
+    ]
+    fee_values = [
+        float(row["fee_per_fill_usd"])
+        for row in rows_with_fills
+        if isinstance(row.get("fee_per_fill_usd"), (int, float))
+    ]
+    total_fills = sum(int_or_zero(row.get("fill_count")) for row in economics_rows)
+    total_realized_net = sum(
+        float(row.get("realized_net_usd_est") or 0.0) for row in economics_rows
+    )
+    total_fee = sum(float(row.get("fee_usd") or 0.0) for row in economics_rows)
+    total_gross = sum(
+        float(row.get("estimated_gross_pnl_usd") or 0.0)
+        for row in economics_rows
+    )
+    positive_rows = sum(1 for value in net_values if value > 1e-12)
+    negative_rows = sum(1 for value in net_values if value < -1e-12)
+    zero_rows = sum(1 for value in net_values if abs(value) <= 1e-12)
+    diagnostics: list[str] = []
+    if rows_with_fills and positive_rows <= 0 and negative_rows > 0:
+        diagnostics.append("all_filled_segments_net_negative")
+    if total_fills > 0 and total_fee > abs(total_gross):
+        diagnostics.append("fees_exceed_abs_estimated_gross_pnl")
+    if rows_with_fills and finite_mean(fee_values) and (finite_mean(fee_values) or 0.0) > abs(
+        finite_mean(net_values) or 0.0
+    ):
+        diagnostics.append("fee_per_fill_exceeds_abs_mean_net_per_fill")
+    return {
+        "segment_count": len(economics_rows),
+        "filled_segment_count": len(rows_with_fills),
+        "total_fills": total_fills,
+        "positive_filled_segments": positive_rows,
+        "negative_filled_segments": negative_rows,
+        "zero_filled_segments": zero_rows,
+        "total_realized_net_usd_est": total_realized_net,
+        "total_fee_usd": total_fee,
+        "total_estimated_gross_pnl_usd": total_gross,
+        "mean_realized_net_per_fill_with_fills": finite_mean(net_values),
+        "median_realized_net_per_fill_with_fills": finite_median(net_values),
+        "mean_fee_per_fill_usd": finite_mean(fee_values),
+        "diagnostics": diagnostics,
+    }
+
+
+def evaluate_replay_policy(
+    name: str,
+    description: str,
+    run_summaries: list[dict[str, Any]],
+    filters: dict[str, Any],
+    *,
+    diagnostic_only: bool,
+    min_execution_active_runs: int,
+    min_execution_pass_runs: int,
+    min_total_fills: int,
+    min_mean_realized_net_per_fill: float,
+) -> dict[str, Any]:
+    selected: list[dict[str, Any]] = []
+    for run in run_summaries:
+        summary = run.get("assess_summary", {})
+        segment = run.get("segment", {})
+        if not isinstance(summary, dict):
+            summary = {}
+        if not isinstance(segment, dict):
+            segment = {}
+        keep = True
+        for key, threshold in filters.items():
+            if key == "min_strength_score":
+                keep = keep and (
+                    (number_or_none(segment.get("strength_score")) or float("-inf"))
+                    >= float(threshold)
+                )
+            elif key == "min_liquidity_score":
+                keep = keep and (
+                    (number_or_none(segment.get("liquidity_score")) or float("-inf"))
+                    >= float(threshold)
+                )
+            elif key == "max_avg_range_pct":
+                keep = keep and (
+                    (number_or_none(segment.get("avg_range_pct")) or float("inf"))
+                    <= float(threshold)
+                )
+            elif key == "max_avg_vol_12":
+                keep = keep and (
+                    (number_or_none(segment.get("avg_vol_12")) or float("inf"))
+                    <= float(threshold)
+                )
+            elif key == "max_filtered_cost_ratio_avg":
+                keep = keep and (
+                    (
+                        number_or_none(summary.get("filtered_cost_ratio_avg"))
+                        or float("inf")
+                    )
+                    <= float(threshold)
+                )
+            elif key == "execution_active_only":
+                keep = keep and summary.get("runtime_validation_mode") == "EXECUTION_ACTIVE"
+        if keep:
+            selected.append(run)
+
+    aggregate_summary, aggregate_validation = aggregate_run_summaries(
+        selected,
+        min_execution_active_runs=min_execution_active_runs,
+        min_execution_pass_runs=min_execution_pass_runs,
+        min_total_fills=min_total_fills,
+        min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        warn_mean_filtered_cost_ratio=1.0,
+    )
+    economics = [
+        run.get("economics_attribution") or build_run_economics_attribution(run)
+        for run in selected
+    ]
+    economics_summary = summarize_economics_attribution(economics)
+    validation_status = str(aggregate_validation.get("status", "")).lower()
+    pass_status = (
+        validation_status in {"pass", "pass_with_actions"}
+        and not aggregate_validation.get("quality_fail_reasons")
+        and bool(aggregate_validation.get("minimum_coverage_targets_met"))
+        and int(aggregate_summary.get("total_fills") or 0) >= max(1, min_total_fills)
+        and (
+            aggregate_summary.get("mean_realized_net_per_fill_with_fills")
+            is not None
+        )
+        and float(aggregate_summary["mean_realized_net_per_fill_with_fills"])
+        >= float(min_mean_realized_net_per_fill)
+        and int(aggregate_summary.get("positive_realized_net_with_fills_runs") or 0)
+        > 0
+    )
+    return {
+        "name": name,
+        "description": description,
+        "diagnostic_only": bool(diagnostic_only),
+        "filters": filters,
+        "status": "pass" if pass_status else "fail",
+        "selected_segments": len(selected),
+        "aggregate_summary": aggregate_summary,
+        "aggregate_validation": aggregate_validation,
+        "economics_summary": economics_summary,
+    }
+
+
+def build_replay_execution_optimizer(
+    run_summaries: list[dict[str, Any]],
+    *,
+    min_execution_active_runs: int,
+    min_execution_pass_runs: int,
+    min_total_fills: int,
+    min_mean_realized_net_per_fill: float,
+) -> dict[str, Any]:
+    if not run_summaries:
+        return {
+            "status": "fail",
+            "fail_reasons": ["no_replay_runs"],
+            "warn_reasons": [],
+            "candidate_count": 0,
+            "pass_candidate_count": 0,
+            "diagnostic_pass_candidate_count": 0,
+            "best_candidate": None,
+            "candidates": [],
+        }
+
+    strength_q50 = quantile_from_runs(run_summaries, ("segment", "strength_score"), 0.50)
+    strength_q75 = quantile_from_runs(run_summaries, ("segment", "strength_score"), 0.75)
+    liquidity_q50 = quantile_from_runs(run_summaries, ("segment", "liquidity_score"), 0.50)
+    range_q50 = quantile_from_runs(run_summaries, ("segment", "avg_range_pct"), 0.50)
+    vol_q50 = quantile_from_runs(run_summaries, ("segment", "avg_vol_12"), 0.50)
+    filtered_cost_q50 = quantile_from_runs(
+        run_summaries, ("assess_summary", "filtered_cost_ratio_avg"), 0.50
+    )
+
+    policy_specs: list[tuple[str, str, dict[str, Any], bool]] = [
+        (
+            "baseline_all",
+            "当前 replay 配置，不过滤任何片段",
+            {},
+            False,
+        ),
+    ]
+    if strength_q50 is not None:
+        policy_specs.append(
+            (
+                "trend_strength_q50",
+                "仅保留趋势强度不低于本轮中位数的片段",
+                {"min_strength_score": strength_q50},
+                False,
+            )
+        )
+    if strength_q75 is not None:
+        policy_specs.append(
+            (
+                "trend_strength_q75",
+                "仅保留趋势强度不低于本轮 75 分位的片段",
+                {"min_strength_score": strength_q75},
+                False,
+            )
+        )
+    if liquidity_q50 is not None:
+        policy_specs.append(
+            (
+                "liquidity_q50",
+                "仅保留流动性不低于本轮中位数的片段",
+                {"min_liquidity_score": liquidity_q50},
+                False,
+            )
+        )
+    if range_q50 is not None:
+        policy_specs.append(
+            (
+                "quiet_range_q50",
+                "仅保留平均区间波动不高于本轮中位数的片段",
+                {"max_avg_range_pct": range_q50},
+                False,
+            )
+        )
+    if vol_q50 is not None:
+        policy_specs.append(
+            (
+                "low_vol_q50",
+                "仅保留短期波动不高于本轮中位数的片段",
+                {"max_avg_vol_12": vol_q50},
+                False,
+            )
+        )
+    if strength_q50 is not None and liquidity_q50 is not None:
+        policy_specs.append(
+            (
+                "strong_liquid_q50",
+                "趋势强度和流动性同时不低于中位数",
+                {
+                    "min_strength_score": strength_q50,
+                    "min_liquidity_score": liquidity_q50,
+                },
+                False,
+            )
+        )
+    if strength_q50 is not None and range_q50 is not None:
+        policy_specs.append(
+            (
+                "strong_quiet_q50",
+                "趋势强度不低于中位数，同时区间波动不高于中位数",
+                {
+                    "min_strength_score": strength_q50,
+                    "max_avg_range_pct": range_q50,
+                },
+                False,
+            )
+        )
+    if filtered_cost_q50 is not None:
+        policy_specs.append(
+            (
+                "diagnostic_low_cost_q50",
+                "诊断项：仅保留事后 filtered_cost_ratio 不高于中位数的片段",
+                {"max_filtered_cost_ratio_avg": filtered_cost_q50},
+                True,
+            )
+        )
+        policy_specs.append(
+            (
+                "diagnostic_execution_active_low_cost_q50",
+                "诊断项：仅保留已经进入 EXECUTION_ACTIVE 且 filtered_cost_ratio 较低的片段",
+                {
+                    "execution_active_only": True,
+                    "max_filtered_cost_ratio_avg": filtered_cost_q50,
+                },
+                True,
+            )
+        )
+
+    candidates = [
+        evaluate_replay_policy(
+            name,
+            description,
+            run_summaries,
+            filters,
+            diagnostic_only=diagnostic_only,
+            min_execution_active_runs=min_execution_active_runs,
+            min_execution_pass_runs=min_execution_pass_runs,
+            min_total_fills=min_total_fills,
+            min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        )
+        for name, description, filters, diagnostic_only in policy_specs
+    ]
+    deployable_candidates = [
+        candidate for candidate in candidates if not candidate["diagnostic_only"]
+    ]
+    pass_candidates = [
+        candidate
+        for candidate in deployable_candidates
+        if candidate.get("status") == "pass"
+    ]
+    diagnostic_pass_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate.get("diagnostic_only") and candidate.get("status") == "pass"
+    ]
+
+    def candidate_rank(candidate: dict[str, Any]) -> tuple[float, int, int]:
+        summary = candidate.get("aggregate_summary", {})
+        mean_net = summary.get("mean_realized_net_per_fill_with_fills")
+        if not isinstance(mean_net, (int, float)):
+            mean_net = float("-inf")
+        return (
+            float(mean_net),
+            int(summary.get("total_fills") or 0),
+            int(candidate.get("selected_segments") or 0),
+        )
+
+    ranked_candidates = sorted(
+        candidates,
+        key=candidate_rank,
+        reverse=True,
+    )
+    fail_reasons: list[str] = []
+    warn_reasons: list[str] = []
+    if not pass_candidates:
+        fail_reasons.append(
+            "no_deployable_prefilter_candidate_positive_after_costs"
+        )
+    if diagnostic_pass_candidates and not pass_candidates:
+        warn_reasons.append(
+            "only_diagnostic_post_run_filters_found_positive; do not promote without rerun"
+        )
+    return {
+        "status": "pass" if pass_candidates else "fail",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "candidate_count": len(candidates),
+        "deployable_candidate_count": len(deployable_candidates),
+        "pass_candidate_count": len(pass_candidates),
+        "diagnostic_pass_candidate_count": len(diagnostic_pass_candidates),
+        "best_candidate": ranked_candidates[0] if ranked_candidates else None,
+        "best_deployable_candidate": sorted(
+            deployable_candidates,
+            key=candidate_rank,
+            reverse=True,
+        )[0]
+        if deployable_candidates
+        else None,
+        "candidates": candidates,
+    }
+
+
+def build_replay_economics_report(
+    run_summaries: list[dict[str, Any]],
+    *,
+    min_execution_active_runs: int,
+    min_execution_pass_runs: int,
+    min_total_fills: int,
+    min_mean_realized_net_per_fill: float,
+) -> dict[str, Any]:
+    economics_rows = [
+        run.get("economics_attribution") or build_run_economics_attribution(run)
+        for run in run_summaries
+    ]
+    return {
+        "attribution_summary": summarize_economics_attribution(economics_rows),
+        "runs": economics_rows,
+        "optimizer": build_replay_execution_optimizer(
+            run_summaries,
+            min_execution_active_runs=min_execution_active_runs,
+            min_execution_pass_runs=min_execution_pass_runs,
+            min_total_fills=min_total_fills,
+            min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        ),
     }
 
 
@@ -1062,7 +1626,13 @@ def run_replay_for_symbol(
     min_total_fills: int,
     min_mean_realized_net_per_fill: float,
     warn_mean_filtered_cost_ratio: float,
-) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any], dict[str, Any]]:
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+]:
     run_summaries: list[dict[str, Any]] = []
     stopped_early = False
     stop_reason = ""
@@ -1111,27 +1681,28 @@ def run_replay_for_symbol(
         assess_payload: dict[str, Any] = {}
         if runtime_assess.is_file():
             assess_payload = json.loads(runtime_assess.read_text(encoding="utf-8"))
-
-        run_summaries.append(
-            {
-                "symbol": symbol,
-                "segment_index": idx,
-                "segment": segment_to_payload(
-                    segment,
-                    rows=rows,
-                    thresholds=thresholds,
-                    target_bucket=target_bucket,
-                ),
-                "replay_csv": str(replay_csv),
-                "runtime_log": str(runtime_log),
-                "runtime_assess": str(runtime_assess),
-                "trade_bot_exit_code": trade_exit,
-                "assess_exit_code": int(assess_exit),
-                "assess_summary": summarize_assess(assess_payload)
-                if assess_payload
-                else {},
-            }
+        assess_summary = summarize_assess(assess_payload) if assess_payload else {}
+        run_payload = {
+            "symbol": symbol,
+            "segment_index": idx,
+            "segment": segment_to_payload(
+                segment,
+                rows=rows,
+                thresholds=thresholds,
+                target_bucket=target_bucket,
+            ),
+            "replay_csv": str(replay_csv),
+            "runtime_log": str(runtime_log),
+            "runtime_assess": str(runtime_assess),
+            "trade_bot_exit_code": trade_exit,
+            "assess_exit_code": int(assess_exit),
+            "assess_summary": assess_summary,
+        }
+        run_payload["economics_attribution"] = build_run_economics_attribution(
+            run_payload
         )
+
+        run_summaries.append(run_payload)
         aggregate_summary, _ = aggregate_run_summaries(
             run_summaries,
             min_execution_active_runs=min_execution_active_runs,
@@ -1162,6 +1733,13 @@ def run_replay_for_symbol(
         min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
         warn_mean_filtered_cost_ratio=warn_mean_filtered_cost_ratio,
     )
+    economics_report = build_replay_economics_report(
+        run_summaries,
+        min_execution_active_runs=min_execution_active_runs,
+        min_execution_pass_runs=min_execution_pass_runs,
+        min_total_fills=min_total_fills,
+        min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+    )
     symbol_selection = {
         "segments_ran": len(run_summaries),
         "stopped_early": stopped_early,
@@ -1189,7 +1767,13 @@ def run_replay_for_symbol(
             min_total_fills=recommended_thresholds["min_total_fills"],
         ),
     }
-    return run_summaries, symbol_selection, aggregate_summary, aggregate_validation
+    return (
+        run_summaries,
+        symbol_selection,
+        aggregate_summary,
+        aggregate_validation,
+        economics_report,
+    )
 
 
 def main() -> int:
@@ -1432,6 +2016,7 @@ def main() -> int:
             symbol_selection,
             symbol_aggregate_summary,
             symbol_aggregate_validation,
+            symbol_economics_report,
         ) = run_replay_for_symbol(
             symbol=symbol,
             output_dir=symbol_output_dir,
@@ -1474,6 +2059,8 @@ def main() -> int:
             "selection": symbol_selection,
             "aggregate_summary": symbol_aggregate_summary,
             "aggregate_validation": symbol_aggregate_validation,
+            "execution_economics": symbol_economics_report["attribution_summary"],
+            "execution_optimizer": symbol_economics_report["optimizer"],
             "runs": symbol_runs,
         }
 
@@ -1488,6 +2075,13 @@ def main() -> int:
     aggregate_validation = merge_symbol_validations(
         aggregate_validation,
         symbol_reports,
+    )
+    economics_report = build_replay_economics_report(
+        run_summaries,
+        min_execution_active_runs=args.min_execution_active_runs,
+        min_execution_pass_runs=args.min_execution_pass_runs,
+        min_total_fills=args.min_total_fills,
+        min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
     )
     recommended_thresholds = derive_recommended_coverage_thresholds(
         min_execution_active_runs=args.min_execution_active_runs,
@@ -1568,11 +2162,32 @@ def main() -> int:
         "warnings": warnings,
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
+        "execution_economics": economics_report["attribution_summary"],
+        "execution_optimizer": economics_report["optimizer"],
         "symbol_reports": symbol_reports,
         "runs": run_summaries,
     }
     report_path = output_dir / "replay_validation_report.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    optimization_report_path = output_dir / "replay_optimization_report.json"
+    optimization_report = {
+        "target_bucket": args.target_bucket,
+        "symbols": symbols,
+        "real_market_replay": real_market_replay,
+        "execution_economics": economics_report["attribution_summary"],
+        "execution_optimizer": economics_report["optimizer"],
+        "per_symbol": {
+            symbol: {
+                "execution_economics": symbol_report.get("execution_economics", {}),
+                "execution_optimizer": symbol_report.get("execution_optimizer", {}),
+            }
+            for symbol, symbol_report in symbol_reports.items()
+        },
+    }
+    optimization_report_path.write_text(
+        json.dumps(optimization_report, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     print(str(report_path))
     return 0
 
