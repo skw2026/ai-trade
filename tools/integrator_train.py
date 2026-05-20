@@ -10,7 +10,8 @@ Integrator 离线训练工具（Stage R2）。
 
 注意：
 - 该脚本是离线研究工具，不会直接驱动线上下单；
-- 标签对齐口径固定：t 时刻特征，预测 t+1...t+h 的收益方向。
+- 标签对齐口径固定：t 时刻特征，预测 t+1...t+h 的收益方向；
+- 可选成本带标签会丢弃净收益不足的中性样本，避免训练目标偏离执行经济性。
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 try:
     import numpy as np
@@ -54,6 +55,75 @@ def sanitize_array(values: np.ndarray) -> np.ndarray:
     out = values.astype(np.float64, copy=True)
     out[~np.isfinite(out)] = np.nan
     return out
+
+
+def finite_json_number(value: float) -> float | None:
+    return float(value) if math.isfinite(float(value)) else None
+
+
+def build_feature_transform(
+    features: np.ndarray,
+    feature_names: Sequence[str],
+    feature_clip_quantile: float,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    clipped = sanitize_array(features)
+    q = max(0.0, min(0.49, float(feature_clip_quantile)))
+    clip_bounds: List[Dict[str, Any]] = []
+    if q <= 0.0:
+        return clipped, {
+            "feature_clip_requested": False,
+            "feature_clipping_enabled": False,
+            "clip_quantile": 0.0,
+            "enabled_clip_bound_count": 0,
+            "clip_bounds": [],
+        }
+
+    for index, name in enumerate(feature_names):
+        column = clipped[:, index]
+        finite = np.isfinite(column)
+        finite_values = column[finite]
+        raw_min = float(np.min(finite_values)) if finite_values.size > 0 else float("nan")
+        raw_max = float(np.max(finite_values)) if finite_values.size > 0 else float("nan")
+        enabled = False
+        lower = float("nan")
+        upper = float("nan")
+        clipped_low = 0
+        clipped_high = 0
+        if finite_values.size >= 20:
+            lower = float(np.nanquantile(finite_values, q))
+            upper = float(np.nanquantile(finite_values, 1.0 - q))
+            enabled = (
+                math.isfinite(lower)
+                and math.isfinite(upper)
+                and lower <= upper
+                and (lower > raw_min or upper < raw_max)
+            )
+        if enabled:
+            clipped_low = int(np.sum(finite & (column < lower)))
+            clipped_high = int(np.sum(finite & (column > upper)))
+            column[finite] = np.clip(column[finite], lower, upper)
+            clipped[:, index] = column
+        clip_bounds.append(
+            {
+                "feature": name,
+                "enabled": bool(enabled),
+                "lower": finite_json_number(lower),
+                "upper": finite_json_number(upper),
+                "finite_count": int(finite_values.size),
+                "raw_min": finite_json_number(raw_min),
+                "raw_max": finite_json_number(raw_max),
+                "clipped_low_count": clipped_low,
+                "clipped_high_count": clipped_high,
+            }
+        )
+    enabled_bound_count = sum(1 for item in clip_bounds if bool(item.get("enabled")))
+    return clipped, {
+        "feature_clip_requested": True,
+        "feature_clipping_enabled": enabled_bound_count > 0,
+        "clip_quantile": q,
+        "enabled_clip_bound_count": enabled_bound_count,
+        "clip_bounds": clip_bounds,
+    }
 
 
 def ts_delay(x: np.ndarray, window: int) -> np.ndarray:
@@ -372,7 +442,12 @@ def build_feature_matrix(
     return matrix, feature_names, ret_1
 
 
-def build_label(close: np.ndarray, horizon: int) -> Tuple[np.ndarray, np.ndarray]:
+def build_label(
+    close: np.ndarray,
+    horizon: int,
+    label_round_trip_cost_bps: float = 0.0,
+    label_min_net_edge_bps: float = 0.0,
+) -> Tuple[np.ndarray, np.ndarray]:
     n = len(close)
     forward_return = np.full(n, np.nan, dtype=np.float64)
     if horizon <= 0:
@@ -384,8 +459,47 @@ def build_label(close: np.ndarray, horizon: int) -> Tuple[np.ndarray, np.ndarray
         if not math.isfinite(float(base)) or abs(base) < 1e-12 or not math.isfinite(float(future)):
             continue
         forward_return[i] = future / base - 1.0
-    label = np.where(np.isfinite(forward_return), (forward_return > 0.0).astype(np.float64), np.nan)
+    threshold = (
+        max(0.0, float(label_round_trip_cost_bps))
+        + max(0.0, float(label_min_net_edge_bps))
+    ) / 10000.0
+    if threshold <= 0.0:
+        label = np.where(np.isfinite(forward_return), (forward_return > 0.0).astype(np.float64), np.nan)
+        return label, forward_return
+
+    label = np.full(n, np.nan, dtype=np.float64)
+    finite = np.isfinite(forward_return)
+    label[finite & (forward_return > threshold)] = 1.0
+    label[finite & (forward_return < -threshold)] = 0.0
     return label, forward_return
+
+
+def build_label_policy_summary(
+    label: np.ndarray,
+    forward_return: np.ndarray,
+    label_round_trip_cost_bps: float,
+    label_min_net_edge_bps: float,
+    valid_mask: np.ndarray,
+) -> Dict[str, Any]:
+    finite_forward = np.isfinite(forward_return)
+    finite_label = np.isfinite(label)
+    neutral_mask = finite_forward & ~finite_label
+    valid_label = finite_label & valid_mask
+    threshold_bps = max(0.0, float(label_round_trip_cost_bps)) + max(
+        0.0, float(label_min_net_edge_bps)
+    )
+    return {
+        "round_trip_cost_bps": float(label_round_trip_cost_bps),
+        "min_net_edge_bps": float(label_min_net_edge_bps),
+        "threshold_bps": threshold_bps,
+        "finite_forward_return_count": int(np.sum(finite_forward)),
+        "neutral_dropped_count": int(np.sum(neutral_mask)),
+        "raw_positive_label_count": int(np.sum(finite_label & (label == 1.0))),
+        "raw_negative_label_count": int(np.sum(finite_label & (label == 0.0))),
+        "valid_positive_label_count": int(np.sum(valid_label & (label == 1.0))),
+        "valid_negative_label_count": int(np.sum(valid_label & (label == 0.0))),
+        "sample_count_after_filter": int(np.sum(valid_label)),
+    }
 
 
 def auc_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
@@ -822,6 +936,24 @@ def main() -> int:
         help="随机标签对照重复次数（统计均值/波动，降低单次噪声）",
     )
     parser.add_argument(
+        "--label_round_trip_cost_bps",
+        type=float,
+        default=0.0,
+        help="训练标签成本带：round-trip 成本估计 bps；>0 时成本带内样本丢弃",
+    )
+    parser.add_argument(
+        "--label_min_net_edge_bps",
+        type=float,
+        default=0.0,
+        help="训练标签额外净边际 bps；与 round-trip cost 叠加为标签阈值",
+    )
+    parser.add_argument(
+        "--feature_clip_quantile",
+        type=float,
+        default=0.0,
+        help="特征稳健裁剪分位数；0 表示关闭，0.001 表示按 0.1%/99.9% 裁剪",
+    )
+    parser.add_argument(
         "--fail_on_governance",
         action="store_true",
         help="治理门槛不通过时返回非零退出码",
@@ -870,6 +1002,12 @@ def main() -> int:
         raise ValueError("--random_label_iterations 必须大于 0")
     if int(args.random_label_trials) <= 0:
         raise ValueError("--random_label_trials 必须大于 0")
+    if float(args.label_round_trip_cost_bps) < 0.0:
+        raise ValueError("--label_round_trip_cost_bps 不能为负数")
+    if float(args.label_min_net_edge_bps) < 0.0:
+        raise ValueError("--label_min_net_edge_bps 不能为负数")
+    if not (0.0 <= float(args.feature_clip_quantile) < 0.5):
+        raise ValueError("--feature_clip_quantile 必须在 [0,0.5) 范围")
     if float(args.l2_leaf_reg) < 0.0:
         raise ValueError("--l2_leaf_reg 不能为负数")
     if float(args.random_strength) < 0.0:
@@ -889,9 +1027,45 @@ def main() -> int:
     factor_set_version, factor_specs = load_factor_specs(miner_report_path, max(1, args.top_k))
     log_info(f"INTEGRATOR_START: bars={len(series['close'])}, factors={len(factor_specs)}")
 
-    features, feature_names, ret_1 = build_feature_matrix(series, factor_specs)
-    label, _ = build_label(series["close"], args.predict_horizon_bars)
+    raw_features, feature_names, ret_1 = build_feature_matrix(series, factor_specs)
+    features, feature_transform = build_feature_transform(
+        raw_features,
+        feature_names,
+        feature_clip_quantile=float(args.feature_clip_quantile),
+    )
+    if feature_transform.get("feature_clipping_enabled"):
+        clipped_feature_count = sum(
+            1
+            for item in feature_transform.get("clip_bounds", [])
+            if isinstance(item, dict) and bool(item.get("enabled"))
+        )
+        log_info(
+            "INTEGRATOR_FEATURE_TRANSFORM: "
+            f"clip_quantile={float(args.feature_clip_quantile):.6f}, "
+            f"clipped_features={clipped_feature_count}/{len(feature_names)}"
+        )
+    label, forward_return = build_label(
+        series["close"],
+        args.predict_horizon_bars,
+        label_round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+        label_min_net_edge_bps=float(args.label_min_net_edge_bps),
+    )
     valid_mask = np.isfinite(label) & np.all(np.isfinite(features), axis=1)
+    label_policy = build_label_policy_summary(
+        label=label,
+        forward_return=forward_return,
+        label_round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+        label_min_net_edge_bps=float(args.label_min_net_edge_bps),
+        valid_mask=valid_mask,
+    )
+    log_info(
+        "INTEGRATOR_LABEL_POLICY: "
+        f"horizon_bars={int(args.predict_horizon_bars)}, "
+        f"threshold_bps={label_policy['threshold_bps']:.6f}, "
+        f"neutral_dropped={label_policy['neutral_dropped_count']}, "
+        f"valid_pos={label_policy['valid_positive_label_count']}, "
+        f"valid_neg={label_policy['valid_negative_label_count']}"
+    )
 
     X = features[valid_mask]
     y = label[valid_mask]
@@ -1190,7 +1364,11 @@ def main() -> int:
 
     schema_hash = hashlib.sha256("|".join(feature_names).encode("utf-8")).hexdigest()[:16]
     model_hash_seed = (
-        f"{schema_hash}|{args.split_method}|{args.predict_horizon_bars}|{args.random_seed}|{int(time.time() * 1000)}"
+        f"{schema_hash}|{args.split_method}|{args.predict_horizon_bars}|"
+        f"{float(args.label_round_trip_cost_bps):.6f}|"
+        f"{float(args.label_min_net_edge_bps):.6f}|"
+        f"{float(args.feature_clip_quantile):.6f}|"
+        f"{args.random_seed}|{int(time.time() * 1000)}"
     )
     model_hash = hashlib.sha256(model_hash_seed.encode("utf-8")).hexdigest()[:16]
     model_version = f"integrator_cb_v1_{model_hash}"
@@ -1262,7 +1440,9 @@ def main() -> int:
             "miner_report_path": str(miner_report_path),
             "sample_count_after_filter": int(len(X)),
             "predict_horizon_bars": int(args.predict_horizon_bars),
+            "label_policy": label_policy,
         },
+        "feature_transform": feature_transform,
         "anti_leakage": {
             "feature_time": "t",
             "label_time": f"t+1..t+{args.predict_horizon_bars + 1}",
@@ -1289,6 +1469,9 @@ def main() -> int:
             "early_stopping_rounds": int(args.early_stopping_rounds),
             "final_model_iterations": int(final_iterations),
             "random_seed": int(args.random_seed),
+            "label_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
+            "label_min_net_edge_bps": float(args.label_min_net_edge_bps),
+            "feature_clip_quantile": float(args.feature_clip_quantile),
         },
         "metrics_oos": metrics_oos,
         "governance": governance,

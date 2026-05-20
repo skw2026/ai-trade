@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass
@@ -254,7 +255,14 @@ RUNTIME_STATUS_BOOT_START_RE = re.compile(
 RUNTIME_STATUS_TS_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?RUNTIME_STATUS:"
 )
+FEATURES_RE = re.compile(r"FEATURES:\s*(?P<body>.*)")
+FEATURE_VALUE_RE = re.compile(
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)="
+    r"(?P<value>-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|nan|inf|-inf)"
+)
 TREND_CANDIDATE_MIN_THRESHOLD_RATIO = 0.60
+FEATURE_LARGE_ABS_WARN_THRESHOLD = 1000.0
+FEATURE_LARGE_ABS_RATIO_WARN_THRESHOLD = 0.10
 
 
 def parse_bool_arg(raw: str) -> bool:
@@ -1744,6 +1752,69 @@ def extract_reconcile_runtime_series(text: str) -> Dict[str, float]:
     }
 
 
+def extract_feature_scale_diagnostics(text: str) -> Dict[str, object]:
+    feature_line_count = 0
+    feature_value_count = 0
+    nonfinite_count = 0
+    large_abs_value_count = 0
+    large_abs_line_count = 0
+    max_abs_value = 0.0
+    max_abs_feature = ""
+    large_abs_by_feature: Dict[str, int] = {}
+    max_abs_by_feature: Dict[str, float] = {}
+
+    for line in text.splitlines():
+        match = FEATURES_RE.search(line)
+        if not match:
+            continue
+        feature_line_count += 1
+        line_has_large = False
+        for item in FEATURE_VALUE_RE.finditer(match.group("body")):
+            name = item.group("name")
+            raw_value = item.group("value")
+            feature_value_count += 1
+            try:
+                value = float(raw_value)
+            except ValueError:
+                nonfinite_count += 1
+                continue
+            if not math.isfinite(value):
+                nonfinite_count += 1
+                continue
+            abs_value = abs(value)
+            current_max = float(max_abs_by_feature.get(name, 0.0))
+            if abs_value > current_max:
+                max_abs_by_feature[name] = rounded(abs_value)
+            if abs_value > max_abs_value:
+                max_abs_value = abs_value
+                max_abs_feature = name
+            if abs_value >= FEATURE_LARGE_ABS_WARN_THRESHOLD:
+                large_abs_value_count += 1
+                line_has_large = True
+                large_abs_by_feature[name] = int(large_abs_by_feature.get(name, 0)) + 1
+        if line_has_large:
+            large_abs_line_count += 1
+
+    large_abs_ratio = (
+        large_abs_line_count / feature_line_count if feature_line_count > 0 else 0.0
+    )
+    return {
+        "feature_line_count": feature_line_count,
+        "feature_value_count": feature_value_count,
+        "feature_nonfinite_count": nonfinite_count,
+        "feature_large_abs_value_count": large_abs_value_count,
+        "feature_large_abs_line_count": large_abs_line_count,
+        "feature_large_abs_line_ratio": rounded(large_abs_ratio),
+        "feature_max_abs_value": rounded(max_abs_value),
+        "feature_max_abs_feature": max_abs_feature,
+        "feature_large_abs_by_feature": large_abs_by_feature,
+        "feature_max_abs_by_feature": max_abs_by_feature,
+        "integrator_nan_feature_skip_count": count(
+            r"INTEGRATOR_SKIP: NaN feature detected", text
+        ),
+    }
+
+
 def assess(
     text: str,
     stage: StageRule,
@@ -1847,6 +1918,7 @@ def assess(
     regime_current_counts = extract_regime_current_counts(text)
     regime_runtime_diagnostics = extract_regime_runtime_diagnostics(text)
     execution_attribution = extract_execution_attribution(text)
+    feature_scale = extract_feature_scale_diagnostics(text)
 
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
@@ -2338,6 +2410,7 @@ def assess(
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
     metrics.update(extract_runtime_timing(text))
+    metrics.update(feature_scale)
     attribution_fills = execution_attribution.get("fills", {})
     attribution_submit = execution_attribution.get("submit", {})
     attribution_runtime_windows = execution_attribution.get("runtime_fill_windows", {})
@@ -3237,6 +3310,24 @@ def assess(
             and metrics["integrator_shadow_scored_runtime_count"] <= 0
         ):
             warn_reasons.append("Integrator 处于 canary/active 但未观测到 shadow scored>0")
+        if int(metrics.get("integrator_nan_feature_skip_count", 0)) > 0:
+            warn_reasons.append(
+                "Integrator 观测到 NaN feature skip，建议复核 miner/live 特征对齐: "
+                f"count={metrics['integrator_nan_feature_skip_count']}"
+            )
+        if (
+            int(metrics.get("feature_large_abs_line_count", 0)) > 0
+            and float(metrics.get("feature_large_abs_line_ratio", 0.0))
+            >= FEATURE_LARGE_ABS_RATIO_WARN_THRESHOLD
+        ):
+            warn_reasons.append(
+                "Integrator FEATURES 出现大尺度特征，可能存在 live/replay 特征分布不一致或未归一化 raw price 泄漏: "
+                f"large_lines={metrics['feature_large_abs_line_count']}, "
+                f"feature_lines={metrics['feature_line_count']}, "
+                f"ratio={metrics['feature_large_abs_line_ratio']:.4f}, "
+                f"max_abs={metrics['feature_max_abs_value']:.4f}, "
+                f"max_feature={metrics['feature_max_abs_feature']}"
+            )
 
         if execution_activity_count <= 0:
             gap_usd = metrics.get("equity_vs_realized_net_gap_usd")

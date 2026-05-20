@@ -225,6 +225,8 @@ def gate_integrator_report(
 ) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
     metrics = report.get("metrics_oos", {})
     governance = report.get("governance", {})
+    data = report.get("data", {})
+    feature_transform = report.get("feature_transform", {})
     auc_mean = metrics.get("auc_mean")
     delta_auc = metrics.get("delta_auc_vs_baseline")
     trained_count = metrics.get("split_trained_count")
@@ -304,6 +306,18 @@ def gate_integrator_report(
         "random_label_auc_mean": metrics.get("random_label_auc_mean"),
         "random_label_auc_stdev": metrics.get("random_label_auc_stdev"),
         "random_label_auc_max": metrics.get("random_label_auc_max"),
+        "predict_horizon_bars": data.get("predict_horizon_bars") if isinstance(data, dict) else None,
+        "label_policy": data.get("label_policy") if isinstance(data, dict) else None,
+        "feature_transform": {
+            "feature_clipping_enabled": feature_transform.get("feature_clipping_enabled"),
+            "clip_quantile": feature_transform.get("clip_quantile"),
+            "enabled_clip_bound_count": feature_transform.get("enabled_clip_bound_count"),
+            "clip_bound_count": len(feature_transform.get("clip_bounds", []))
+            if isinstance(feature_transform.get("clip_bounds"), list)
+            else 0,
+        }
+        if isinstance(feature_transform, dict)
+        else None,
     }
     return gate_pass, fail_reasons, warn_reasons, summary
 
@@ -424,6 +438,7 @@ def gate_replay_validation_report(
         "coverage_strength_status": coverage_strength_status,
         "aggregate_validation": aggregate if isinstance(aggregate, dict) else {},
         "execution_economics": payload.get("execution_economics", {}),
+        "cost_sensitivity": payload.get("cost_sensitivity", {}),
         "execution_optimizer": execution_optimizer,
     }
     if isinstance(aggregate, dict):

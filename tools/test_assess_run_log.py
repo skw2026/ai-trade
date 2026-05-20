@@ -244,6 +244,29 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(series["nonzero_window_count"], 0.0)
         self.assertEqual(series["policy_flat_window_count"], 1.0)
 
+    def test_feature_scale_diagnostics_warn_on_large_miner_features(self):
+        text = (
+            "2026-02-14 15:02:18 [INFO] FEATURES: "
+            "miner_00=-0.1, miner_01=75230.7, miner_02=-2046.1\n"
+            + self._runtime_line(
+                20,
+                0.0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=12,
+            )
+            + "2026-02-14 15:00:20 [INFO] SELF_EVOLUTION_INIT: enabled=true\n"
+            + "2026-02-14 15:00:21 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=12, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["feature_line_count"], 1)
+        self.assertEqual(metrics["feature_large_abs_line_count"], 1)
+        self.assertEqual(metrics["feature_large_abs_by_feature"]["miner_01"], 1)
+        self.assertIn(
+            "Integrator FEATURES 出现大尺度特征",
+            "\n".join(report["warn_reasons"]),
+        )
+
     def test_assess_contains_strategy_mix_metrics(self):
         text = (
             "2026-02-14 15:02:18 [INFO] RUNTIME_STATUS: ticks=200, trade_ok=true, "

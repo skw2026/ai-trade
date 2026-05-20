@@ -46,6 +46,52 @@ class IntegratorTrainTest(unittest.TestCase):
         self.assertEqual(int(label[0]), 1)
         self.assertEqual(int(label[1]), 1)
 
+    def test_build_label_drops_cost_band_neutral_samples(self):
+        close = TRAIN.np.asarray(
+            [100.0, 100.0, 100.03, 100.20, 99.80, 99.50],
+            dtype=TRAIN.np.float64,
+        )
+        label, forward = TRAIN.build_label(
+            close,
+            horizon=1,
+            label_round_trip_cost_bps=10.0,
+            label_min_net_edge_bps=2.0,
+        )
+        self.assertAlmostEqual(float(forward[0]), 100.03 / 100.0 - 1.0, places=12)
+        self.assertTrue(math.isnan(float(label[0])))
+        self.assertEqual(int(label[1]), 1)
+        self.assertEqual(int(label[2]), 0)
+
+        valid_mask = TRAIN.np.isfinite(label)
+        summary = TRAIN.build_label_policy_summary(
+            label=label,
+            forward_return=forward,
+            label_round_trip_cost_bps=10.0,
+            label_min_net_edge_bps=2.0,
+            valid_mask=valid_mask,
+        )
+        self.assertEqual(summary["threshold_bps"], 12.0)
+        self.assertEqual(summary["neutral_dropped_count"], 1)
+        self.assertEqual(summary["valid_positive_label_count"], 1)
+        self.assertEqual(summary["valid_negative_label_count"], 2)
+
+    def test_feature_transform_clips_extreme_values_and_reports_bounds(self):
+        feature = TRAIN.np.asarray([[float(i)] for i in range(100)], dtype=TRAIN.np.float64)
+        feature[0, 0] = -1000.0
+        feature[-1, 0] = 1000.0
+        clipped, report = TRAIN.build_feature_transform(
+            feature,
+            ["miner_00"],
+            feature_clip_quantile=0.05,
+        )
+        self.assertTrue(report["feature_clipping_enabled"])
+        bound = report["clip_bounds"][0]
+        self.assertTrue(bound["enabled"])
+        self.assertGreater(clipped[0, 0], -1000.0)
+        self.assertLess(clipped[-1, 0], 1000.0)
+        self.assertGreater(bound["clipped_low_count"], 0)
+        self.assertGreater(bound["clipped_high_count"], 0)
+
     def test_split_temporal_train_validation_uses_tail_and_preserves_classes(self):
         x = TRAIN.np.arange(20, dtype=TRAIN.np.float64).reshape(-1, 1)
         y = TRAIN.np.asarray([0, 1] * 10, dtype=TRAIN.np.float64)

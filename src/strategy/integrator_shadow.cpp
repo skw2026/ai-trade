@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <unordered_map>
@@ -358,6 +359,9 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
   model_version_ = "n/a";
   feature_names_.clear();
   feature_expressions_.clear();
+  feature_clipping_enabled_ = false;
+  feature_clip_lower_.clear();
+  feature_clip_upper_.clear();
   model_runtime_ready_ = false;
 
   if (!config_.enabled) {
@@ -403,6 +407,47 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
       if (auto name = JsonAsString(&item); name.has_value()) {
         feature_names_.push_back(*name);
       }
+    }
+  }
+
+  feature_clip_lower_.assign(feature_names_.size(),
+                             -std::numeric_limits<double>::infinity());
+  feature_clip_upper_.assign(feature_names_.size(),
+                             std::numeric_limits<double>::infinity());
+  const JsonValue* feature_transform = JsonObjectField(&root, "feature_transform");
+  const auto transform_enabled =
+      JsonAsBool(JsonObjectField(feature_transform, "feature_clipping_enabled"));
+  const JsonValue* clip_bounds = JsonObjectField(feature_transform, "clip_bounds");
+  if (transform_enabled.value_or(false) && clip_bounds != nullptr &&
+      clip_bounds->type == JsonType::kArray && !feature_names_.empty()) {
+    std::unordered_map<std::string, size_t> feature_index;
+    for (size_t i = 0; i < feature_names_.size(); ++i) {
+      feature_index[feature_names_[i]] = i;
+    }
+    int loaded_clip_bounds = 0;
+    for (const auto& item : clip_bounds->array_value) {
+      const auto name = JsonAsString(JsonObjectField(&item, "feature"));
+      const auto enabled = JsonAsBool(JsonObjectField(&item, "enabled"));
+      const auto lower = JsonAsNumber(JsonObjectField(&item, "lower"));
+      const auto upper = JsonAsNumber(JsonObjectField(&item, "upper"));
+      if (!name.has_value() || !enabled.value_or(false) ||
+          !lower.has_value() || !upper.has_value() ||
+          !std::isfinite(*lower) || !std::isfinite(*upper) || *lower > *upper) {
+        continue;
+      }
+      const auto it = feature_index.find(*name);
+      if (it == feature_index.end()) {
+        continue;
+      }
+      feature_clip_lower_[it->second] = *lower;
+      feature_clip_upper_[it->second] = *upper;
+      ++loaded_clip_bounds;
+    }
+    feature_clipping_enabled_ = loaded_clip_bounds > 0;
+    if (feature_clipping_enabled_) {
+      LogInfo("INTEGRATOR_FEATURE_TRANSFORM_LOADED: clip_bounds=" +
+              std::to_string(loaded_clip_bounds) + "/" +
+              std::to_string(feature_names_.size()));
     }
   }
 
@@ -755,6 +800,29 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
       }
       out.enabled = false;
       return out;
+    }
+  }
+  if (feature_clipping_enabled_ && feature_clip_lower_.size() == features.size() &&
+      feature_clip_upper_.size() == features.size()) {
+    int clipped_count = 0;
+    for (size_t i = 0; i < features.size(); ++i) {
+      const double lower = feature_clip_lower_[i];
+      const double upper = feature_clip_upper_[i];
+      if (!std::isfinite(lower) || !std::isfinite(upper) || lower > upper) {
+        continue;
+      }
+      const double before = features[i];
+      features[i] = std::clamp(features[i], lower, upper);
+      if (features[i] != before) {
+        ++clipped_count;
+      }
+    }
+    if (config_.log_model_score && clipped_count > 0) {
+      static int clip_warn_counter = 0;
+      if (clip_warn_counter++ % 100 == 0) {
+        LogInfo("INTEGRATOR_FEATURE_CLIP: clipped=" + std::to_string(clipped_count) +
+                "/" + std::to_string(features.size()));
+      }
     }
   }
 

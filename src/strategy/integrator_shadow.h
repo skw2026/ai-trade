@@ -35,6 +35,9 @@ class IntegratorShadow {
   research::OnlineFeatureEngine feature_engine_;
   std::vector<std::string> feature_names_;
   std::vector<std::string> feature_expressions_;
+  bool feature_clipping_enabled_{false};
+  std::vector<double> feature_clip_lower_;
+  std::vector<double> feature_clip_upper_;
   void* model_handle_{nullptr}; // CatBoost ModelCalcerHandle (void* to avoid header dependency)
   bool model_runtime_ready_{false};
 };

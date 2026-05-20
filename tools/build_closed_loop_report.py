@@ -64,6 +64,8 @@ def assess_miner(path: Path) -> Dict[str, Any]:
 def assess_integrator(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     metrics = payload.get("metrics_oos", {})
+    data = payload.get("data", {})
+    feature_transform = payload.get("feature_transform", {})
     auc_mean = metrics.get("auc_mean")
     split_trained = metrics.get("split_trained_count")
     split_count = metrics.get("split_count")
@@ -88,6 +90,18 @@ def assess_integrator(path: Path) -> Dict[str, Any]:
         "delta_auc_vs_baseline": delta_auc,
         "split_trained_count": split_trained,
         "split_count": split_count,
+        "predict_horizon_bars": data.get("predict_horizon_bars") if isinstance(data, dict) else None,
+        "label_policy": data.get("label_policy") if isinstance(data, dict) else None,
+        "feature_transform": {
+            "feature_clipping_enabled": feature_transform.get("feature_clipping_enabled"),
+            "clip_quantile": feature_transform.get("clip_quantile"),
+            "enabled_clip_bound_count": feature_transform.get("enabled_clip_bound_count"),
+            "clip_bound_count": len(feature_transform.get("clip_bounds", []))
+            if isinstance(feature_transform.get("clip_bounds"), list)
+            else 0,
+        }
+        if isinstance(feature_transform, dict)
+        else None,
     }
 
 
@@ -422,6 +436,9 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     execution_optimizer = payload.get("execution_optimizer", {})
     if not isinstance(execution_optimizer, dict):
         execution_optimizer = {}
+    cost_sensitivity = payload.get("cost_sensitivity", {})
+    if not isinstance(cost_sensitivity, dict):
+        cost_sensitivity = {}
 
     status_raw = str(aggregate_validation.get("status", "")).lower()
     if status_raw == "pass_with_actions":
@@ -488,6 +505,7 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
         "execution_economics": payload.get("execution_economics", {}),
+        "cost_sensitivity": cost_sensitivity,
         "execution_optimizer": execution_optimizer,
     }
 

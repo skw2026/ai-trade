@@ -56,7 +56,7 @@ DQ_MIN_ROWS="2000"
 DQ_MAX_NAN_RATIO="0.0"
 DQ_MAX_DUPLICATE_TS_RATIO="0.0"
 DQ_MAX_ZERO_VOLUME_RATIO="1.0"
-PREDICT_HORIZON_BARS="1"
+PREDICT_HORIZON_BARS="${CLOSED_LOOP_PREDICT_HORIZON_BARS:-12}"
 N_SPLITS="5"
 TRAIN_WINDOW_BARS="2400"
 TEST_WINDOW_BARS="240"
@@ -85,6 +85,9 @@ INTEGRATOR_RSM="${CLOSED_LOOP_INTEGRATOR_RSM:-0.70}"
 INTEGRATOR_VALIDATION_FRACTION="${CLOSED_LOOP_INTEGRATOR_VALIDATION_FRACTION:-0.15}"
 INTEGRATOR_MIN_VALIDATION_SAMPLES="${CLOSED_LOOP_INTEGRATOR_MIN_VALIDATION_SAMPLES:-60}"
 INTEGRATOR_EARLY_STOPPING_ROUNDS="${CLOSED_LOOP_INTEGRATOR_EARLY_STOPPING_ROUNDS:-30}"
+INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS:-13.0}"
+INTEGRATOR_LABEL_MIN_NET_EDGE_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_MIN_NET_EDGE_BPS:-1.3}"
+INTEGRATOR_FEATURE_CLIP_QUANTILE="${CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE:-0.001}"
 
 GC_ENABLED="${CLOSED_LOOP_GC_ENABLED:-true}"
 GC_KEEP_RUN_DIRS="${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}"
@@ -175,7 +178,7 @@ Options:
   --dq-max-duplicate-ts-ratio <f>    DQ 最大重复时间戳比例 (default: 0.0)
   --dq-max-zero-volume-ratio <f>     DQ 最大零成交量比例 (default: 1.0)
 
-  --predict-horizon-bars <int>       R2 预测 horizon (default: 1)
+  --predict-horizon-bars <int>       R2 预测 horizon (default: 12; 可用 CLOSED_LOOP_PREDICT_HORIZON_BARS 覆盖)
   --n-splits <int>                   R2 split 数量 (default: 5)
   --train-window-bars <int>          R2 train 窗口 (default: 2400)
   --test-window-bars <int>           R2 test 窗口 (default: 240)
@@ -206,6 +209,12 @@ Options:
                                       R2 训练窗口内最小验证样本数 (default: 60)
   --integrator-early-stopping-rounds <int>
                                       R2 训练窗口内早停轮数 (default: 30)
+  --integrator-label-round-trip-cost-bps <float>
+                                      R2 标签成本带 round-trip bps (default: 13.0)
+  --integrator-label-min-net-edge-bps <float>
+                                      R2 标签额外净边际 bps (default: 1.3)
+  --integrator-feature-clip-quantile <float>
+                                      R2 特征稳健裁剪分位数 (default: 0.001)
   --max-model-versions <int>         模型历史保留数 (default: 20)
   --activate-on-pass <true|false>    门槛通过后是否激活 (default: true)
 
@@ -245,6 +254,10 @@ Options:
   --gc-dry-run                       回收仅演练，不删除
 
 Env toggles:
+  CLOSED_LOOP_PREDICT_HORIZON_BARS=<int>                R2 训练预测 horizon (default: 12)
+  CLOSED_LOOP_INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS=<f>  R2 标签成本带 round-trip bps (default: 13.0)
+  CLOSED_LOOP_INTEGRATOR_LABEL_MIN_NET_EDGE_BPS=<f>     R2 标签额外净边际 bps (default: 1.3)
+  CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE=<f>      R2 特征裁剪分位数 (default: 0.001)
   CLOSED_LOOP_VERIFY_S5_EVOLUTION_SWITCHES=true|false   S5 校验 3+6 开关是否显式启用 (default: true)
   CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION=true|false    S5 要求 factor-IC 更新动作 >0 (default: false)
   CLOSED_LOOP_REQUIRE_S5_LEARNABILITY_ACTIVITY=true|false
@@ -399,6 +412,12 @@ while [[ $# -gt 0 ]]; do
       INTEGRATOR_MIN_VALIDATION_SAMPLES="$2"; shift 2;;
     --integrator-early-stopping-rounds)
       INTEGRATOR_EARLY_STOPPING_ROUNDS="$2"; shift 2;;
+    --integrator-label-round-trip-cost-bps)
+      INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS="$2"; shift 2;;
+    --integrator-label-min-net-edge-bps)
+      INTEGRATOR_LABEL_MIN_NET_EDGE_BPS="$2"; shift 2;;
+    --integrator-feature-clip-quantile)
+      INTEGRATOR_FEATURE_CLIP_QUANTILE="$2"; shift 2;;
     --max-model-versions)
       MAX_MODEL_VERSIONS="$2"; shift 2;;
     --activate-on-pass)
@@ -1090,6 +1109,9 @@ run_integrator() {
     --validation_fraction="${INTEGRATOR_VALIDATION_FRACTION}"
     --min_validation_samples="${INTEGRATOR_MIN_VALIDATION_SAMPLES}"
     --early_stopping_rounds="${INTEGRATOR_EARLY_STOPPING_ROUNDS}"
+    --label_round_trip_cost_bps="${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
+    --label_min_net_edge_bps="${INTEGRATOR_LABEL_MIN_NET_EDGE_BPS}"
+    --feature_clip_quantile="${INTEGRATOR_FEATURE_CLIP_QUANTILE}"
   )
   if [[ "${DISABLE_RANDOM_LABEL_CONTROL}" == "true" ]]; then
     INTEGRATOR_ARGS+=(--disable_random_label_control)

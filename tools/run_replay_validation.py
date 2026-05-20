@@ -388,7 +388,74 @@ def segment_to_payload(
                 volume_baseline=volume_baseline,
             )
         )
+        payload.update(build_segment_market_attribution(segment, rows))
     return payload
+
+
+def build_segment_market_attribution(
+    segment: ReplaySegment,
+    rows: list[FeatureRow],
+) -> dict[str, Any]:
+    segment_rows = rows[segment.start_index : segment.end_index + 1]
+    closes = [row.close for row in segment_rows if math.isfinite(row.close) and row.close > 0.0]
+    if len(closes) < 2:
+        return {
+            "start_close": None,
+            "end_close": None,
+            "close_return": None,
+            "dominant_direction": 0,
+            "dominant_direction_label": "flat",
+            "close_path_mfe": None,
+            "close_path_mae": None,
+            "close_path_efficiency": None,
+            "long_close_mfe": None,
+            "long_close_mae": None,
+            "short_close_mfe": None,
+            "short_close_mae": None,
+        }
+
+    start_close = closes[0]
+    end_close = closes[-1]
+    close_return = end_close / start_close - 1.0
+    dominant_direction = 1 if close_return > 0.0 else -1 if close_return < 0.0 else 0
+    long_returns = [close / start_close - 1.0 for close in closes]
+    short_returns = [start_close / close - 1.0 for close in closes]
+    long_mfe = max(long_returns)
+    long_mae = min(long_returns)
+    short_mfe = max(short_returns)
+    short_mae = min(short_returns)
+    if dominant_direction > 0:
+        close_path_mfe = long_mfe
+        close_path_mae = long_mae
+    elif dominant_direction < 0:
+        close_path_mfe = short_mfe
+        close_path_mae = short_mae
+    else:
+        close_path_mfe = 0.0
+        close_path_mae = 0.0
+    close_path_efficiency = (
+        abs(close_return) / close_path_mfe
+        if close_path_mfe and close_path_mfe > 1e-12
+        else None
+    )
+    return {
+        "start_close": float(start_close),
+        "end_close": float(end_close),
+        "close_return": float(close_return),
+        "dominant_direction": dominant_direction,
+        "dominant_direction_label": (
+            "long" if dominant_direction > 0 else "short" if dominant_direction < 0 else "flat"
+        ),
+        "close_path_mfe": float(close_path_mfe),
+        "close_path_mae": float(close_path_mae),
+        "close_path_efficiency": float(close_path_efficiency)
+        if close_path_efficiency is not None
+        else None,
+        "long_close_mfe": float(long_mfe),
+        "long_close_mae": float(long_mae),
+        "short_close_mfe": float(short_mfe),
+        "short_close_mae": float(short_mae),
+    }
 
 
 def load_corpus_manifest(path: pathlib.Path) -> dict[str, Any]:
@@ -846,6 +913,18 @@ def build_run_economics_attribution(run: dict[str, Any]) -> dict[str, Any]:
         "segment_avg_abs_mom_48": number_or_none(segment.get("avg_abs_mom_48")),
         "segment_avg_vol_12": number_or_none(segment.get("avg_vol_12")),
         "segment_avg_range_pct": number_or_none(segment.get("avg_range_pct")),
+        "segment_close_return": number_or_none(segment.get("close_return")),
+        "segment_dominant_direction": int_or_zero(segment.get("dominant_direction")),
+        "segment_dominant_direction_label": segment.get("dominant_direction_label"),
+        "segment_close_path_mfe": number_or_none(segment.get("close_path_mfe")),
+        "segment_close_path_mae": number_or_none(segment.get("close_path_mae")),
+        "segment_close_path_efficiency": number_or_none(
+            segment.get("close_path_efficiency")
+        ),
+        "segment_long_close_mfe": number_or_none(segment.get("long_close_mfe")),
+        "segment_long_close_mae": number_or_none(segment.get("long_close_mae")),
+        "segment_short_close_mfe": number_or_none(segment.get("short_close_mfe")),
+        "segment_short_close_mae": number_or_none(segment.get("short_close_mae")),
     }
 
 
@@ -900,6 +979,170 @@ def summarize_economics_attribution(
         "median_realized_net_per_fill_with_fills": finite_median(net_values),
         "mean_fee_per_fill_usd": finite_mean(fee_values),
         "diagnostics": diagnostics,
+    }
+
+
+def summarize_cost_adjusted_rows(
+    economics_rows: list[dict[str, Any]],
+    *,
+    fee_multiplier: float,
+    min_gross_over_adjusted_fee_per_fill_usd: float = float("-inf"),
+) -> dict[str, Any]:
+    selected_rows: list[dict[str, Any]] = []
+    for row in economics_rows:
+        fill_count = int_or_zero(row.get("fill_count"))
+        if fill_count <= 0:
+            continue
+        gross = float(row.get("estimated_gross_pnl_usd") or 0.0)
+        fee = float(row.get("fee_usd") or 0.0)
+        gross_per_fill = gross / fill_count
+        adjusted_fee_per_fill = fee * fee_multiplier / fill_count
+        edge_after_adjusted_fee = gross_per_fill - adjusted_fee_per_fill
+        if edge_after_adjusted_fee >= min_gross_over_adjusted_fee_per_fill_usd:
+            selected_rows.append(row)
+
+    net_values: list[float] = []
+    total_fills = 0
+    total_gross = 0.0
+    total_adjusted_fee = 0.0
+    for row in selected_rows:
+        fill_count = int_or_zero(row.get("fill_count"))
+        gross = float(row.get("estimated_gross_pnl_usd") or 0.0)
+        adjusted_fee = float(row.get("fee_usd") or 0.0) * fee_multiplier
+        adjusted_net = gross - adjusted_fee
+        total_fills += fill_count
+        total_gross += gross
+        total_adjusted_fee += adjusted_fee
+        if fill_count > 0:
+            net_values.append(adjusted_net / fill_count)
+
+    positive_rows = sum(1 for value in net_values if value > 1e-12)
+    negative_rows = sum(1 for value in net_values if value < -1e-12)
+    zero_rows = sum(1 for value in net_values if abs(value) <= 1e-12)
+    return {
+        "selected_segment_count": len(selected_rows),
+        "total_fills": total_fills,
+        "fee_multiplier": float(fee_multiplier),
+        "min_gross_over_adjusted_fee_per_fill_usd": (
+            None
+            if not math.isfinite(min_gross_over_adjusted_fee_per_fill_usd)
+            else float(min_gross_over_adjusted_fee_per_fill_usd)
+        ),
+        "total_estimated_gross_pnl_usd": total_gross,
+        "total_adjusted_fee_usd": total_adjusted_fee,
+        "total_adjusted_realized_net_usd_est": total_gross - total_adjusted_fee,
+        "mean_adjusted_realized_net_per_fill": finite_mean(net_values),
+        "median_adjusted_realized_net_per_fill": finite_median(net_values),
+        "positive_segments": positive_rows,
+        "negative_segments": negative_rows,
+        "zero_segments": zero_rows,
+    }
+
+
+def build_cost_sensitivity_report(
+    economics_rows: list[dict[str, Any]],
+    *,
+    min_total_fills: int,
+    min_mean_realized_net_per_fill: float,
+) -> dict[str, Any]:
+    filled_rows = [
+        row for row in economics_rows if int_or_zero(row.get("fill_count")) > 0
+    ]
+    total_fee = sum(float(row.get("fee_usd") or 0.0) for row in filled_rows)
+    total_gross = sum(
+        float(row.get("estimated_gross_pnl_usd") or 0.0) for row in filled_rows
+    )
+    break_even_fee_multiplier = (
+        total_gross / total_fee if total_fee > 1e-12 else None
+    )
+
+    scenarios: list[dict[str, Any]] = []
+    for fee_multiplier in (0.0, 0.25, 0.50, 0.75, 1.0, 1.25):
+        scenario = summarize_cost_adjusted_rows(
+            filled_rows,
+            fee_multiplier=fee_multiplier,
+        )
+        mean_net = scenario.get("mean_adjusted_realized_net_per_fill")
+        scenario["name"] = f"fee_x{fee_multiplier:g}"
+        scenario["description"] = "仅调整费用倍率，不过滤片段"
+        scenario["diagnostic_only"] = True
+        scenario["status"] = (
+            "pass"
+            if int(scenario["total_fills"]) >= max(1, min_total_fills)
+            and isinstance(mean_net, (int, float))
+            and float(mean_net) >= float(min_mean_realized_net_per_fill)
+            and int(scenario["positive_segments"]) > 0
+            else "fail"
+        )
+        scenarios.append(scenario)
+
+    for margin_name, margin in (
+        ("gross_gt_adjusted_fee", 0.0),
+        ("gross_gt_adjusted_fee_plus_25pct_fee", 0.25),
+        ("gross_gt_adjusted_fee_plus_50pct_fee", 0.50),
+    ):
+        for fee_multiplier in (1.0, 0.5):
+            selected_rows = []
+            for row in filled_rows:
+                fill_count = int_or_zero(row.get("fill_count"))
+                if fill_count <= 0:
+                    continue
+                adjusted_fee_per_fill = (
+                    float(row.get("fee_usd") or 0.0) * fee_multiplier / fill_count
+                )
+                min_edge = adjusted_fee_per_fill * margin
+                gross_per_fill = (
+                    float(row.get("estimated_gross_pnl_usd") or 0.0) / fill_count
+                )
+                if gross_per_fill - adjusted_fee_per_fill >= min_edge:
+                    selected_rows.append(row)
+            scenario = summarize_cost_adjusted_rows(
+                selected_rows,
+                fee_multiplier=fee_multiplier,
+            )
+            mean_net = scenario.get("mean_adjusted_realized_net_per_fill")
+            scenario["name"] = f"{margin_name}_fee_x{fee_multiplier:g}"
+            scenario["description"] = (
+                "按估算 gross edge 覆盖调整后费用的幅度过滤片段"
+            )
+            scenario["diagnostic_only"] = True
+            scenario["status"] = (
+                "pass"
+                if int(scenario["total_fills"]) >= max(1, min_total_fills)
+                and isinstance(mean_net, (int, float))
+                and float(mean_net) >= float(min_mean_realized_net_per_fill)
+                and int(scenario["positive_segments"]) > 0
+                else "fail"
+            )
+            scenarios.append(scenario)
+
+    pass_scenarios = [item for item in scenarios if item.get("status") == "pass"]
+    diagnostics: list[str] = []
+    if filled_rows and break_even_fee_multiplier is not None:
+        if break_even_fee_multiplier < 1.0:
+            diagnostics.append("current_cost_above_break_even")
+        if break_even_fee_multiplier < 0.5:
+            diagnostics.append("requires_large_fee_reduction")
+    if not pass_scenarios:
+        diagnostics.append("no_cost_sensitivity_scenario_positive")
+    current_cost_scenario = next(
+        (item for item in scenarios if item.get("name") == "fee_x1"),
+        None,
+    )
+    return {
+        "status": "diagnostic_pass" if pass_scenarios else "fail",
+        "current_cost_status": (
+            current_cost_scenario.get("status")
+            if isinstance(current_cost_scenario, dict)
+            else "unknown"
+        ),
+        "diagnostics": diagnostics,
+        "filled_segment_count": len(filled_rows),
+        "total_estimated_gross_pnl_usd": total_gross,
+        "total_fee_usd": total_fee,
+        "break_even_fee_multiplier": break_even_fee_multiplier,
+        "pass_scenario_count": len(pass_scenarios),
+        "scenarios": scenarios,
     }
 
 
@@ -1214,6 +1457,11 @@ def build_replay_economics_report(
     ]
     return {
         "attribution_summary": summarize_economics_attribution(economics_rows),
+        "cost_sensitivity": build_cost_sensitivity_report(
+            economics_rows,
+            min_total_fills=min_total_fills,
+            min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        ),
         "runs": economics_rows,
         "optimizer": build_replay_execution_optimizer(
             run_summaries,
@@ -2060,6 +2308,7 @@ def main() -> int:
             "aggregate_summary": symbol_aggregate_summary,
             "aggregate_validation": symbol_aggregate_validation,
             "execution_economics": symbol_economics_report["attribution_summary"],
+            "cost_sensitivity": symbol_economics_report["cost_sensitivity"],
             "execution_optimizer": symbol_economics_report["optimizer"],
             "runs": symbol_runs,
         }
@@ -2163,6 +2412,7 @@ def main() -> int:
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
         "execution_economics": economics_report["attribution_summary"],
+        "cost_sensitivity": economics_report["cost_sensitivity"],
         "execution_optimizer": economics_report["optimizer"],
         "symbol_reports": symbol_reports,
         "runs": run_summaries,
@@ -2175,10 +2425,12 @@ def main() -> int:
         "symbols": symbols,
         "real_market_replay": real_market_replay,
         "execution_economics": economics_report["attribution_summary"],
+        "cost_sensitivity": economics_report["cost_sensitivity"],
         "execution_optimizer": economics_report["optimizer"],
         "per_symbol": {
             symbol: {
                 "execution_economics": symbol_report.get("execution_economics", {}),
+                "cost_sensitivity": symbol_report.get("cost_sensitivity", {}),
                 "execution_optimizer": symbol_report.get("execution_optimizer", {}),
             }
             for symbol, symbol_report in symbol_reports.items()
