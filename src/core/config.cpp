@@ -865,6 +865,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "candidate_probe_strong_min_trend_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_strong_min_trend_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_strong_min_trend_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         key == "candidate_probe_notional_usd") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -4458,6 +4473,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_candidate_probe_min_trend_ratio < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.candidate_probe_min_trend_ratio 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_candidate_probe_strong_min_trend_ratio < 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "execution.candidate_probe_strong_min_trend_ratio 不能为负数";
     }
     return false;
   }

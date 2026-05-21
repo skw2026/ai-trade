@@ -356,10 +356,12 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "execution_attribution_main_taker_fee_usd": None,
             "execution_attribution_main_unknown_liquidity_fee_usd": None,
             "trend_candidate_probe_signal_count": 0,
+            "trend_candidate_probe_strong_signal_count": 0,
             "trend_candidate_probe_enqueued_count": 0,
             "trend_candidate_probe_fill_count": 0,
             "trend_candidate_probe_skip_count": 0,
             "trend_candidate_probe_skip_trend_ratio_count": 0,
+            "trend_candidate_probe_skip_strong_trend_ratio_count": 0,
             "trend_candidate_probe_skip_cooldown_count": 0,
             "trend_candidate_probe_skip_exposure_count": 0,
             "trend_candidate_probe_skip_pending_orders_count": 0,
@@ -367,8 +369,13 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "trend_candidate_probe_skip_window_limit_count": 0,
             "regime_change_warmup_trend_candidate_count": 0,
             "regime_change_warmup_trend_candidate_symbols": [],
+            "regime_change_pending_trend_confirmation_count": 0,
+            "regime_change_pending_trend_confirmation_symbols": [],
+            "regime_change_pending_trend_confirmation_ticks_max": 0,
+            "regime_change_confirm_ticks_required_max": 0,
             "regime_warmup_trend_candidate_runtime_count": 0,
             "regime_current_warmup_trend_candidate_count": 0,
+            "regime_current_pending_trend_confirmation_count": 0,
             "reconcile_anomaly_reduce_only_true_count": 0,
             "reconcile_anomaly_reduce_only_true_ratio": None,
             "strategy_mix_runtime_count": 0,
@@ -547,6 +554,9 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     trend_candidate_probe_signal_count = (
         to_int(latest_metrics.get("trend_candidate_probe_signal_count")) or 0
     )
+    trend_candidate_probe_strong_signal_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_strong_signal_count")) or 0
+    )
     trend_candidate_probe_enqueued_count = (
         to_int(latest_metrics.get("trend_candidate_probe_enqueued_count")) or 0
     )
@@ -558,6 +568,12 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     )
     trend_candidate_probe_skip_trend_ratio_count = (
         to_int(latest_metrics.get("trend_candidate_probe_skip_trend_ratio_count")) or 0
+    )
+    trend_candidate_probe_skip_strong_trend_ratio_count = (
+        to_int(
+            latest_metrics.get("trend_candidate_probe_skip_strong_trend_ratio_count")
+        )
+        or 0
     )
     trend_candidate_probe_skip_cooldown_count = (
         to_int(latest_metrics.get("trend_candidate_probe_skip_cooldown_count")) or 0
@@ -584,14 +600,38 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     regime_change_warmup_trend_candidate_symbols = latest_metrics.get(
         "regime_change_warmup_trend_candidate_symbols"
     )
+    regime_change_pending_trend_confirmation_count = (
+        to_int(latest_metrics.get("regime_change_pending_trend_confirmation_count"))
+        or 0
+    )
+    regime_change_pending_trend_confirmation_symbols = latest_metrics.get(
+        "regime_change_pending_trend_confirmation_symbols"
+    )
+    regime_change_pending_trend_confirmation_ticks_max = (
+        to_int(
+            latest_metrics.get(
+                "regime_change_pending_trend_confirmation_ticks_max"
+            )
+        )
+        or 0
+    )
+    regime_change_confirm_ticks_required_max = (
+        to_int(latest_metrics.get("regime_change_confirm_ticks_required_max")) or 0
+    )
     if not isinstance(regime_change_warmup_trend_candidate_symbols, list):
         regime_change_warmup_trend_candidate_symbols = []
+    if not isinstance(regime_change_pending_trend_confirmation_symbols, list):
+        regime_change_pending_trend_confirmation_symbols = []
     regime_warmup_trend_candidate_runtime_count = (
         to_int(latest_metrics.get("regime_warmup_trend_candidate_runtime_count"))
         or 0
     )
     regime_current_warmup_trend_candidate_count = (
         to_int(latest_metrics.get("regime_current_warmup_trend_candidate_count"))
+        or 0
+    )
+    regime_current_pending_trend_confirmation_count = (
+        to_int(latest_metrics.get("regime_current_pending_trend_confirmation_count"))
         or 0
     )
     reconcile_anomaly_reduce_only_true_count = (
@@ -712,11 +752,17 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "execution_attribution_main_taker_fee_usd": execution_attribution_main_taker_fee_usd,
         "execution_attribution_main_unknown_liquidity_fee_usd": execution_attribution_main_unknown_liquidity_fee_usd,
         "trend_candidate_probe_signal_count": trend_candidate_probe_signal_count,
+        "trend_candidate_probe_strong_signal_count": (
+            trend_candidate_probe_strong_signal_count
+        ),
         "trend_candidate_probe_enqueued_count": trend_candidate_probe_enqueued_count,
         "trend_candidate_probe_fill_count": trend_candidate_probe_fill_count,
         "trend_candidate_probe_skip_count": trend_candidate_probe_skip_count,
         "trend_candidate_probe_skip_trend_ratio_count": (
             trend_candidate_probe_skip_trend_ratio_count
+        ),
+        "trend_candidate_probe_skip_strong_trend_ratio_count": (
+            trend_candidate_probe_skip_strong_trend_ratio_count
         ),
         "trend_candidate_probe_skip_cooldown_count": (
             trend_candidate_probe_skip_cooldown_count
@@ -739,11 +785,26 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "regime_change_warmup_trend_candidate_symbols": (
             regime_change_warmup_trend_candidate_symbols
         ),
+        "regime_change_pending_trend_confirmation_count": (
+            regime_change_pending_trend_confirmation_count
+        ),
+        "regime_change_pending_trend_confirmation_symbols": (
+            regime_change_pending_trend_confirmation_symbols
+        ),
+        "regime_change_pending_trend_confirmation_ticks_max": (
+            regime_change_pending_trend_confirmation_ticks_max
+        ),
+        "regime_change_confirm_ticks_required_max": (
+            regime_change_confirm_ticks_required_max
+        ),
         "regime_warmup_trend_candidate_runtime_count": (
             regime_warmup_trend_candidate_runtime_count
         ),
         "regime_current_warmup_trend_candidate_count": (
             regime_current_warmup_trend_candidate_count
+        ),
+        "regime_current_pending_trend_confirmation_count": (
+            regime_current_pending_trend_confirmation_count
         ),
         "reconcile_anomaly_reduce_only_true_count": reconcile_anomaly_reduce_only_true_count,
         "reconcile_anomaly_reduce_only_true_ratio": reconcile_anomaly_reduce_only_true_ratio,

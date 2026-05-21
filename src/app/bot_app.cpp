@@ -1315,6 +1315,16 @@ bool BotApplication::TryApplyTrendCandidateProbe(
         ", min_trend_ratio=" +
             std::to_string(config_.execution_candidate_probe_min_trend_ratio));
   }
+  const double strong_min_trend_ratio =
+      std::max(0.0, config_.execution_candidate_probe_strong_min_trend_ratio);
+  if (strong_min_trend_ratio > 0.0 &&
+      decision->regime.trend_threshold_ratio + 1e-9 <
+          strong_min_trend_ratio) {
+    return skip_probe(
+        "STRONG_TREND_RATIO_LOW",
+        &funnel_window_.candidate_probe_skipped_strong_trend_ratio,
+        ", strong_min_trend_ratio=" + std::to_string(strong_min_trend_ratio));
+  }
 
   const int quality_guard_remaining_ticks =
       SymbolExecutionQualityActiveRemainingTicks(event.symbol);
@@ -1417,6 +1427,9 @@ bool BotApplication::TryApplyTrendCandidateProbe(
       "REG_TREND_CANDIDATE",
       "EXEC_MAKER_PROBE",
   };
+  if (strong_min_trend_ratio > 0.0) {
+    probe_signal.reason_codes.push_back("EXEC_STRONG_TREND_PROBE");
+  }
 
   decision->base_signal = probe_signal;
   decision->signal = probe_signal;
@@ -1443,6 +1456,9 @@ bool BotApplication::TryApplyTrendCandidateProbe(
         market_tick_count_ + config_.execution_candidate_probe_cooldown_ticks;
   }
   ++funnel_window_.candidate_probe_signals;
+  if (strong_min_trend_ratio > 0.0) {
+    ++funnel_window_.candidate_probe_strong_signals;
+  }
   ++funnel_window_.candidate_probe_intents;
   funnel_window_.candidate_probe_notional_abs_usd_sum += capped_notional;
   LogInfo("TREND_CANDIDATE_PROBE_SIGNAL: symbol=" + event.symbol +
@@ -1452,6 +1468,9 @@ bool BotApplication::TryApplyTrendCandidateProbe(
           ", quality_probe_scale=" + std::to_string(quality_probe_scale) +
           ", quality_guard_trigger_count=" +
           std::to_string(SymbolExecutionQualityMemoryTriggerCount(event.symbol)) +
+          ", strong_filter=" +
+          std::string(strong_min_trend_ratio > 0.0 ? "true" : "false") +
+          ", strong_min_trend_ratio=" + std::to_string(strong_min_trend_ratio) +
           ", trend_threshold_ratio=" +
           std::to_string(decision->regime.trend_threshold_ratio) +
           ", instant_return=" + std::to_string(decision->regime.instant_return) +
@@ -2195,6 +2214,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->intents_throttled += delta.intents_throttled;
   total->intents_enqueued += delta.intents_enqueued;
   total->candidate_probe_signals += delta.candidate_probe_signals;
+  total->candidate_probe_strong_signals +=
+      delta.candidate_probe_strong_signals;
   total->candidate_probe_intents += delta.candidate_probe_intents;
   total->candidate_probe_cost_cooldown_bypass +=
       delta.candidate_probe_cost_cooldown_bypass;
@@ -2212,6 +2233,8 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.candidate_probe_skipped_exposure;
   total->candidate_probe_skipped_trend_ratio +=
       delta.candidate_probe_skipped_trend_ratio;
+  total->candidate_probe_skipped_strong_trend_ratio +=
+      delta.candidate_probe_skipped_strong_trend_ratio;
   total->candidate_probe_skipped_cooldown +=
       delta.candidate_probe_skipped_cooldown;
   total->candidate_probe_skipped_window_limit +=
@@ -2767,6 +2790,12 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
       last_regime_state_.symbol != decision.regime.symbol ||
       last_regime_state_.regime != decision.regime.regime ||
       last_regime_state_.bucket != decision.regime.bucket ||
+      last_regime_state_.raw_regime != decision.regime.raw_regime ||
+      last_regime_state_.pending_regime != decision.regime.pending_regime ||
+      last_regime_state_.pending_regime_ticks !=
+          decision.regime.pending_regime_ticks ||
+      last_regime_state_.pending_trend_confirmation !=
+          decision.regime.pending_trend_confirmation ||
       last_regime_state_.warmup != decision.regime.warmup ||
       last_regime_state_.trend_candidate != decision.regime.trend_candidate ||
       last_regime_state_.warmup_trend_candidate !=
@@ -2794,7 +2823,26 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             std::string(decision.regime.trend_candidate ? "true" : "false") +
             ", warmup_trend_candidate=" +
             std::string(decision.regime.warmup_trend_candidate ? "true"
-                                                               : "false"));
+                                                               : "false") +
+            ", raw_regime=" +
+            std::string(ToString(decision.regime.raw_regime)) +
+            ", raw_bucket=" +
+            std::string(ToString(decision.regime.raw_bucket)) +
+            ", pending_regime=" +
+            std::string(ToString(decision.regime.pending_regime)) +
+            ", pending_bucket=" +
+            std::string(ToString(decision.regime.pending_bucket)) +
+            ", pending_regime_ticks=" +
+            std::to_string(decision.regime.pending_regime_ticks) +
+            ", confirm_ticks_required=" +
+            std::to_string(decision.regime.confirm_ticks_required) +
+            ", pending_regime_elapsed_ms=" +
+            std::to_string(decision.regime.pending_regime_elapsed_ms) +
+            ", confirm_elapsed_ms_required=" +
+            std::to_string(decision.regime.confirm_elapsed_ms_required) +
+            ", pending_trend_confirmation=" +
+            std::string(decision.regime.pending_trend_confirmation ? "true"
+                                                                   : "false"));
   }
   last_regime_state_ = decision.regime;
   has_last_regime_state_ = true;
@@ -4801,6 +4849,8 @@ void BotApplication::LogStatus() {
           ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
           ", candidate_probe_signals=" +
           std::to_string(funnel_window.candidate_probe_signals) +
+          ", candidate_probe_strong_signals=" +
+          std::to_string(funnel_window.candidate_probe_strong_signals) +
           ", candidate_probe_intents=" +
           std::to_string(funnel_window.candidate_probe_intents) +
           ", candidate_probe_cost_cooldown_bypass=" +
@@ -4823,6 +4873,9 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.candidate_probe_skipped_exposure) +
           ", candidate_probe_skipped_trend_ratio=" +
           std::to_string(funnel_window.candidate_probe_skipped_trend_ratio) +
+          ", candidate_probe_skipped_strong_trend_ratio=" +
+          std::to_string(
+              funnel_window.candidate_probe_skipped_strong_trend_ratio) +
           ", candidate_probe_skipped_cooldown=" +
           std::to_string(funnel_window.candidate_probe_skipped_cooldown) +
           ", candidate_probe_skipped_window_limit=" +
@@ -4930,6 +4983,43 @@ void BotApplication::LogStatus() {
           ", warmup_trend_candidate=" +
           std::string(has_last_regime_state_ &&
                               last_regime_state_.warmup_trend_candidate
+                          ? "true"
+                          : "false") +
+          ", raw_regime=" +
+          std::string(has_last_regime_state_
+                          ? ToString(last_regime_state_.raw_regime)
+                          : "n/a") +
+          ", raw_bucket=" +
+          std::string(has_last_regime_state_
+                          ? ToString(last_regime_state_.raw_bucket)
+                          : "n/a") +
+          ", pending_regime=" +
+          std::string(has_last_regime_state_
+                          ? ToString(last_regime_state_.pending_regime)
+                          : "n/a") +
+          ", pending_bucket=" +
+          std::string(has_last_regime_state_
+                          ? ToString(last_regime_state_.pending_bucket)
+                          : "n/a") +
+          ", pending_regime_ticks=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.pending_regime_ticks
+                             : 0) +
+          ", confirm_ticks_required=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.confirm_ticks_required
+                             : 0) +
+          ", pending_regime_elapsed_ms=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.pending_regime_elapsed_ms
+                             : 0) +
+          ", confirm_elapsed_ms_required=" +
+          std::to_string(has_last_regime_state_
+                             ? last_regime_state_.confirm_elapsed_ms_required
+                             : 0) +
+          ", pending_trend_confirmation=" +
+          std::string(has_last_regime_state_ &&
+                              last_regime_state_.pending_trend_confirmation
                           ? "true"
                           : "false") +
           "}" +

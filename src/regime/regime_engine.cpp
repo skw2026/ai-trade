@@ -120,17 +120,21 @@ RegimeState RegimeEngine::ProcessSample(SymbolState& symbol_state,
       raw_regime = Regime::kDowntrend;
     }
   }
+  state.raw_regime = raw_regime;
+  state.raw_bucket = ToBucket(raw_regime);
+  const int confirm_ticks = std::max(1, config_.switch_confirm_ticks);
+  const std::int64_t confirm_elapsed_ms =
+      (config_.bar_interval_ms > 0 && confirm_ticks > 1)
+          ? static_cast<std::int64_t>(confirm_ticks) *
+                static_cast<std::int64_t>(config_.bar_interval_ms)
+          : 0;
+  state.confirm_ticks_required = state.warmup ? 0 : confirm_ticks;
+  state.confirm_elapsed_ms_required = state.warmup ? 0 : confirm_elapsed_ms;
 
   Regime regime = Regime::kRange;
   if (state.warmup) {
     regime = Regime::kRange;
   } else {
-    const int confirm_ticks = std::max(1, config_.switch_confirm_ticks);
-    const std::int64_t confirm_elapsed_ms =
-        (config_.bar_interval_ms > 0 && confirm_ticks > 1)
-            ? static_cast<std::int64_t>(confirm_ticks) *
-                  static_cast<std::int64_t>(config_.bar_interval_ms)
-            : 0;
     if (!symbol_state.has_confirmed_regime || confirm_ticks <= 1) {
       symbol_state.has_confirmed_regime = true;
       symbol_state.confirmed_regime = raw_regime;
@@ -165,6 +169,13 @@ RegimeState RegimeEngine::ProcessSample(SymbolState& symbol_state,
 
   state.regime = regime;
   state.bucket = ToBucket(regime);
+  state.pending_regime = symbol_state.pending_regime;
+  state.pending_bucket = ToBucket(symbol_state.pending_regime);
+  state.pending_regime_ticks = symbol_state.pending_regime_ticks;
+  state.pending_regime_elapsed_ms = symbol_state.pending_regime_elapsed_ms;
+  state.pending_trend_confirmation =
+      !state.warmup && state.raw_bucket == RegimeBucket::kTrend &&
+      state.bucket != RegimeBucket::kTrend;
   const bool trend_candidate_like =
       state.bucket == RegimeBucket::kRange &&
       state.trend_threshold_ratio >= kTrendCandidateMinThresholdRatio;

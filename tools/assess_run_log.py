@@ -225,6 +225,15 @@ RUNTIME_REGIME_CURRENT_DIAGNOSTICS_RE = re.compile(
     r"(?:volatility_threshold_ratio=(?P<volatility_threshold_ratio>[0-9]+(?:\.[0-9]+)?), )?"
     r"trend_candidate=(?P<trend_candidate>true|false)"
     r"(?:, warmup_trend_candidate=(?P<warmup_trend_candidate>true|false))?"
+    r"(?:, raw_regime=(?P<raw_regime>[A-Z_]+), "
+    r"raw_bucket=(?P<raw_bucket>[A-Z_]+), "
+    r"pending_regime=(?P<pending_regime>[A-Z_]+), "
+    r"pending_bucket=(?P<pending_bucket>[A-Z_]+), "
+    r"pending_regime_ticks=(?P<pending_regime_ticks>-?\d+), "
+    r"confirm_ticks_required=(?P<confirm_ticks_required>-?\d+), "
+    r"pending_regime_elapsed_ms=(?P<pending_regime_elapsed_ms>-?\d+), "
+    r"confirm_elapsed_ms_required=(?P<confirm_elapsed_ms_required>-?\d+), "
+    r"pending_trend_confirmation=(?P<pending_trend_confirmation>true|false))?"
 )
 RUNTIME_REGIME_WINDOW_CANDIDATE_RE = re.compile(
     r"RUNTIME_STATUS:.*?regime_window=\{[^}]*?"
@@ -242,7 +251,16 @@ REGIME_CHANGE_RE = re.compile(
     r"(?:, trend_threshold_ratio=(?P<trend_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
     r"volatility_threshold_ratio=(?P<volatility_threshold_ratio>[0-9]+(?:\.[0-9]+)?), "
     r"trend_candidate=(?P<trend_candidate>true|false)"
-    r"(?:, warmup_trend_candidate=(?P<warmup_trend_candidate>true|false))?)?"
+    r"(?:, warmup_trend_candidate=(?P<warmup_trend_candidate>true|false))?"
+    r"(?:, raw_regime=(?P<raw_regime>[A-Z_]+), "
+    r"raw_bucket=(?P<raw_bucket>[A-Z_]+), "
+    r"pending_regime=(?P<pending_regime>[A-Z_]+), "
+    r"pending_bucket=(?P<pending_bucket>[A-Z_]+), "
+    r"pending_regime_ticks=(?P<pending_regime_ticks>-?\d+), "
+    r"confirm_ticks_required=(?P<confirm_ticks_required>-?\d+), "
+    r"pending_regime_elapsed_ms=(?P<pending_regime_elapsed_ms>-?\d+), "
+    r"confirm_elapsed_ms_required=(?P<confirm_elapsed_ms_required>-?\d+), "
+    r"pending_trend_confirmation=(?P<pending_trend_confirmation>true|false))?)?"
 )
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 PROCESS_START_RE = re.compile(
@@ -1157,6 +1175,11 @@ def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
     volatility_threshold_ratios: list[float] = []
     current_candidate_count = 0
     current_warmup_candidate_count = 0
+    current_pending_trend_confirmation_count = 0
+    pending_trend_ticks: list[int] = []
+    confirm_ticks_required_values: list[int] = []
+    pending_trend_elapsed_ms: list[int] = []
+    confirm_elapsed_required_values: list[int] = []
     window_candidate_count = 0
     window_warmup_candidate_count = 0
 
@@ -1182,6 +1205,24 @@ def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
             )
         if warmup_candidate:
             current_warmup_candidate_count += 1
+        if (
+            str(match.group("pending_trend_confirmation") or "").lower()
+            == "true"
+        ):
+            current_pending_trend_confirmation_count += 1
+            try:
+                pending_trend_ticks.append(int(match.group("pending_regime_ticks")))
+                confirm_ticks_required_values.append(
+                    int(match.group("confirm_ticks_required"))
+                )
+                pending_trend_elapsed_ms.append(
+                    int(match.group("pending_regime_elapsed_ms"))
+                )
+                confirm_elapsed_required_values.append(
+                    int(match.group("confirm_elapsed_ms_required"))
+                )
+            except (TypeError, ValueError):
+                pass
 
     for match in RUNTIME_REGIME_WINDOW_CANDIDATE_RE.finditer(text):
         try:
@@ -1200,18 +1241,26 @@ def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
             "runtime_count": 0,
             "current_candidate_count": 0,
             "current_warmup_candidate_count": 0,
+            "current_pending_trend_confirmation_count": 0,
             "window_candidate_count": window_candidate_count,
             "window_warmup_candidate_count": window_warmup_candidate_count,
             "trend_threshold_ratio_avg": 0.0,
             "trend_threshold_ratio_max": 0.0,
             "volatility_threshold_ratio_avg": 0.0,
             "volatility_threshold_ratio_max": 0.0,
+            "pending_trend_confirmation_ticks_max": 0,
+            "confirm_ticks_required_max": 0,
+            "pending_trend_confirmation_elapsed_ms_max": 0,
+            "confirm_elapsed_ms_required_max": 0,
         }
 
     return {
         "runtime_count": len(trend_threshold_ratios),
         "current_candidate_count": current_candidate_count,
         "current_warmup_candidate_count": current_warmup_candidate_count,
+        "current_pending_trend_confirmation_count": (
+            current_pending_trend_confirmation_count
+        ),
         "window_candidate_count": window_candidate_count,
         "window_warmup_candidate_count": window_warmup_candidate_count,
         "trend_threshold_ratio_avg": sum(trend_threshold_ratios)
@@ -1225,6 +1274,18 @@ def extract_regime_runtime_diagnostics(text: str) -> Dict[str, Any]:
         "volatility_threshold_ratio_max": max(volatility_threshold_ratios)
         if volatility_threshold_ratios
         else 0.0,
+        "pending_trend_confirmation_ticks_max": max(pending_trend_ticks)
+        if pending_trend_ticks
+        else 0,
+        "confirm_ticks_required_max": max(confirm_ticks_required_values)
+        if confirm_ticks_required_values
+        else 0,
+        "pending_trend_confirmation_elapsed_ms_max": max(pending_trend_elapsed_ms)
+        if pending_trend_elapsed_ms
+        else 0,
+        "confirm_elapsed_ms_required_max": max(confirm_elapsed_required_values)
+        if confirm_elapsed_required_values
+        else 0,
     }
 
 
@@ -1242,6 +1303,12 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
     trend_candidate_symbols: set[str] = set()
     warmup_trend_candidate_count = 0
     warmup_trend_candidate_symbols: set[str] = set()
+    pending_trend_confirmation_count = 0
+    pending_trend_confirmation_symbols: set[str] = set()
+    pending_trend_confirmation_ticks: list[int] = []
+    pending_trend_confirmation_elapsed_ms: list[int] = []
+    confirm_ticks_required_values: list[int] = []
+    confirm_elapsed_ms_required_values: list[int] = []
 
     for match in REGIME_CHANGE_RE.finditer(text):
         bucket = str(match.group("bucket") or "").upper()
@@ -1286,6 +1353,28 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
             warmup_trend_candidate_count += 1
             if symbol:
                 warmup_trend_candidate_symbols.add(symbol)
+        if (
+            str(match.group("pending_trend_confirmation") or "").lower()
+            == "true"
+        ):
+            pending_trend_confirmation_count += 1
+            if symbol:
+                pending_trend_confirmation_symbols.add(symbol)
+            try:
+                pending_trend_confirmation_ticks.append(
+                    int(match.group("pending_regime_ticks"))
+                )
+                pending_trend_confirmation_elapsed_ms.append(
+                    int(match.group("pending_regime_elapsed_ms"))
+                )
+                confirm_ticks_required_values.append(
+                    int(match.group("confirm_ticks_required"))
+                )
+                confirm_elapsed_ms_required_values.append(
+                    int(match.group("confirm_elapsed_ms_required"))
+                )
+            except (TypeError, ValueError):
+                pass
 
     runtime_count = len(abs_trend_strength_values)
     if runtime_count <= 0:
@@ -1314,6 +1403,13 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
             "warmup_trend_candidate_count": 0,
             "warmup_trend_candidate_symbol_count": 0,
             "warmup_trend_candidate_symbols": [],
+            "pending_trend_confirmation_count": 0,
+            "pending_trend_confirmation_symbol_count": 0,
+            "pending_trend_confirmation_symbols": [],
+            "pending_trend_confirmation_ticks_max": 0,
+            "pending_trend_confirmation_elapsed_ms_max": 0,
+            "confirm_ticks_required_max": 0,
+            "confirm_elapsed_ms_required_max": 0,
             "trend_threshold_ratio_p50": 0.0,
             "trend_threshold_ratio_p95": 0.0,
             "trend_threshold_ratio_p99": 0.0,
@@ -1353,6 +1449,29 @@ def extract_regime_change_series(text: str) -> Dict[str, Any]:
         "warmup_trend_candidate_symbols": sorted(
             x for x in warmup_trend_candidate_symbols if x
         ),
+        "pending_trend_confirmation_count": pending_trend_confirmation_count,
+        "pending_trend_confirmation_symbol_count": len(
+            pending_trend_confirmation_symbols
+        ),
+        "pending_trend_confirmation_symbols": sorted(
+            x for x in pending_trend_confirmation_symbols if x
+        ),
+        "pending_trend_confirmation_ticks_max": max(
+            pending_trend_confirmation_ticks
+        )
+        if pending_trend_confirmation_ticks
+        else 0,
+        "pending_trend_confirmation_elapsed_ms_max": max(
+            pending_trend_confirmation_elapsed_ms
+        )
+        if pending_trend_confirmation_elapsed_ms
+        else 0,
+        "confirm_ticks_required_max": max(confirm_ticks_required_values)
+        if confirm_ticks_required_values
+        else 0,
+        "confirm_elapsed_ms_required_max": max(confirm_elapsed_ms_required_values)
+        if confirm_elapsed_ms_required_values
+        else 0,
         "trend_threshold_ratio_p50": percentile(trend_threshold_ratios, 0.50),
         "trend_threshold_ratio_p95": percentile(trend_threshold_ratios, 0.95),
         "trend_threshold_ratio_p99": percentile(trend_threshold_ratios, 0.99),
@@ -2054,6 +2173,9 @@ def assess(
         "trend_candidate_probe_signal_count": count(
             r"TREND_CANDIDATE_PROBE_SIGNAL:", text
         ),
+        "trend_candidate_probe_strong_signal_count": count(
+            r"TREND_CANDIDATE_PROBE_SIGNAL:.*strong_filter=true", text
+        ),
         "trend_candidate_probe_cost_cooldown_bypass_count": count(
             r"TREND_CANDIDATE_PROBE_COST_COOLDOWN_BYPASS:", text
         ),
@@ -2098,6 +2220,10 @@ def assess(
         ),
         "trend_candidate_probe_skip_trend_ratio_count": count(
             r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=TREND_RATIO_LOW\b", text
+        ),
+        "trend_candidate_probe_skip_strong_trend_ratio_count": count(
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=STRONG_TREND_RATIO_LOW\b",
+            text,
         ),
         "trend_candidate_probe_skip_cooldown_count": count(
             r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=COOLDOWN\b", text
@@ -2317,6 +2443,27 @@ def assess(
         "regime_change_warmup_trend_candidate_symbols": regime_change[
             "warmup_trend_candidate_symbols"
         ],
+        "regime_change_pending_trend_confirmation_count": int(
+            regime_change["pending_trend_confirmation_count"]
+        ),
+        "regime_change_pending_trend_confirmation_symbol_count": int(
+            regime_change["pending_trend_confirmation_symbol_count"]
+        ),
+        "regime_change_pending_trend_confirmation_symbols": regime_change[
+            "pending_trend_confirmation_symbols"
+        ],
+        "regime_change_pending_trend_confirmation_ticks_max": int(
+            regime_change["pending_trend_confirmation_ticks_max"]
+        ),
+        "regime_change_pending_trend_confirmation_elapsed_ms_max": int(
+            regime_change["pending_trend_confirmation_elapsed_ms_max"]
+        ),
+        "regime_change_confirm_ticks_required_max": int(
+            regime_change["confirm_ticks_required_max"]
+        ),
+        "regime_change_confirm_elapsed_ms_required_max": int(
+            regime_change["confirm_elapsed_ms_required_max"]
+        ),
         "trend_strength_abs_p50": regime_change["trend_strength_abs_p50"],
         "trend_strength_abs_p95": regime_change["trend_strength_abs_p95"],
         "trend_strength_abs_p99": regime_change["trend_strength_abs_p99"],
@@ -2395,6 +2542,11 @@ def assess(
         "regime_current_warmup_trend_candidate_count": int(
             regime_runtime_diagnostics["current_warmup_candidate_count"]
         ),
+        "regime_current_pending_trend_confirmation_count": int(
+            regime_runtime_diagnostics[
+                "current_pending_trend_confirmation_count"
+            ]
+        ),
         "regime_current_trend_threshold_ratio_avg": regime_runtime_diagnostics[
             "trend_threshold_ratio_avg"
         ],
@@ -2407,6 +2559,22 @@ def assess(
         "regime_current_volatility_threshold_ratio_max": regime_runtime_diagnostics[
             "volatility_threshold_ratio_max"
         ],
+        "regime_current_pending_trend_confirmation_ticks_max": int(
+            regime_runtime_diagnostics[
+                "pending_trend_confirmation_ticks_max"
+            ]
+        ),
+        "regime_current_confirm_ticks_required_max": int(
+            regime_runtime_diagnostics["confirm_ticks_required_max"]
+        ),
+        "regime_current_pending_trend_confirmation_elapsed_ms_max": int(
+            regime_runtime_diagnostics[
+                "pending_trend_confirmation_elapsed_ms_max"
+            ]
+        ),
+        "regime_current_confirm_elapsed_ms_required_max": int(
+            regime_runtime_diagnostics["confirm_elapsed_ms_required_max"]
+        ),
         "flat_start_rebase_applied_count": 1 if flat_start_rebased else 0,
     }
     metrics.update(extract_runtime_timing(text))
@@ -3204,7 +3372,13 @@ def assess(
                         "candidate_events="
                         f"{metrics['regime_change_trend_candidate_count']}, "
                         "trend_ratio_max="
-                        f"{metrics['trend_threshold_ratio_max']:.4f}"
+                        f"{metrics['trend_threshold_ratio_max']:.4f}, "
+                        "pending_trend_confirm_events="
+                        f"{metrics.get('regime_change_pending_trend_confirmation_count', 0)}, "
+                        "pending_ticks_max="
+                        f"{metrics.get('regime_change_pending_trend_confirmation_ticks_max', 0)}, "
+                        "confirm_ticks_required="
+                        f"{metrics.get('regime_change_confirm_ticks_required_max', 0)}"
                     )
                     if metrics["trend_candidate_probe_signal_count"] <= 0:
                         skip_count = metrics.get("trend_candidate_probe_skip_count", 0)
@@ -3214,6 +3388,8 @@ def assess(
                                 ", skip_count="
                                 f"{skip_count}, ratio_low="
                                 f"{metrics.get('trend_candidate_probe_skip_trend_ratio_count', 0)}, "
+                                "strong_ratio_low="
+                                f"{metrics.get('trend_candidate_probe_skip_strong_trend_ratio_count', 0)}, "
                                 "cooldown="
                                 f"{metrics.get('trend_candidate_probe_skip_cooldown_count', 0)}, "
                                 "exposure="

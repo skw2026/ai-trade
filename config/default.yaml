@@ -73,6 +73,7 @@ execution:
   cost_filter_cooldown_ticks: 0
   candidate_probe_enabled: false
   candidate_probe_min_trend_ratio: 0.0
+  candidate_probe_strong_min_trend_ratio: 0.0
   candidate_probe_notional_usd: 0.0
   candidate_probe_max_edge_gap_bps: 0.0
   candidate_probe_cooldown_ticks: 0

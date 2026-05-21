@@ -3531,6 +3531,7 @@ int main() {
         << "  cost_filter_cooldown_ticks: 120\n"
         << "  candidate_probe_enabled: true\n"
         << "  candidate_probe_min_trend_ratio: 0.82\n"
+        << "  candidate_probe_strong_min_trend_ratio: 1.05\n"
         << "  candidate_probe_notional_usd: 120.0\n"
         << "  candidate_probe_max_edge_gap_bps: 4.5\n"
         << "  candidate_probe_cooldown_ticks: 1800\n"
@@ -3689,6 +3690,8 @@ int main() {
         config.execution_cost_filter_cooldown_ticks != 120 ||
         config.execution_candidate_probe_enabled != true ||
         !NearlyEqual(config.execution_candidate_probe_min_trend_ratio, 0.82) ||
+        !NearlyEqual(config.execution_candidate_probe_strong_min_trend_ratio,
+                     1.05) ||
         !NearlyEqual(config.execution_candidate_probe_notional_usd, 120.0) ||
         !NearlyEqual(config.execution_candidate_probe_max_edge_gap_bps, 4.5) ||
         config.execution_candidate_probe_cooldown_ticks != 1800 ||

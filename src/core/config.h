@@ -343,6 +343,7 @@ struct AppConfig {
   double execution_dynamic_edge_liquidity_penalty_bps{0.0};
   bool execution_candidate_probe_enabled{false};
   double execution_candidate_probe_min_trend_ratio{0.0};
+  double execution_candidate_probe_strong_min_trend_ratio{0.0};
   double execution_candidate_probe_notional_usd{0.0};
   double execution_candidate_probe_max_edge_gap_bps{0.0};
   int execution_candidate_probe_cooldown_ticks{0};

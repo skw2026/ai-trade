@@ -282,6 +282,7 @@ class BotApplication {
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
     std::uint64_t candidate_probe_signals{0};
+    std::uint64_t candidate_probe_strong_signals{0};
     std::uint64_t candidate_probe_intents{0};
     std::uint64_t candidate_probe_cost_cooldown_bypass{0};
     std::uint64_t candidate_probe_fee_overrides{0};
@@ -293,6 +294,7 @@ class BotApplication {
     std::uint64_t candidate_probe_skipped_pending_orders{0};
     std::uint64_t candidate_probe_skipped_exposure{0};
     std::uint64_t candidate_probe_skipped_trend_ratio{0};
+    std::uint64_t candidate_probe_skipped_strong_trend_ratio{0};
     std::uint64_t candidate_probe_skipped_cooldown{0};
     std::uint64_t candidate_probe_skipped_window_limit{0};
     std::uint64_t candidate_probe_skipped_direction{0};
