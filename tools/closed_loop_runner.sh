@@ -75,16 +75,16 @@ DISABLE_RANDOM_LABEL_CONTROL="false"
 FAIL_ON_GOVERNANCE="false"
 MAX_MODEL_VERSIONS="20"
 ACTIVATE_ON_PASS="true"
-INTEGRATOR_ITERATIONS="${CLOSED_LOOP_INTEGRATOR_ITERATIONS:-120}"
-INTEGRATOR_DEPTH="${CLOSED_LOOP_INTEGRATOR_DEPTH:-3}"
-INTEGRATOR_LEARNING_RATE="${CLOSED_LOOP_INTEGRATOR_LEARNING_RATE:-0.025}"
-INTEGRATOR_L2_LEAF_REG="${CLOSED_LOOP_INTEGRATOR_L2_LEAF_REG:-45.0}"
-INTEGRATOR_RANDOM_STRENGTH="${CLOSED_LOOP_INTEGRATOR_RANDOM_STRENGTH:-3.0}"
-INTEGRATOR_SUBSAMPLE="${CLOSED_LOOP_INTEGRATOR_SUBSAMPLE:-0.70}"
-INTEGRATOR_RSM="${CLOSED_LOOP_INTEGRATOR_RSM:-0.70}"
-INTEGRATOR_VALIDATION_FRACTION="${CLOSED_LOOP_INTEGRATOR_VALIDATION_FRACTION:-0.15}"
+INTEGRATOR_ITERATIONS="${CLOSED_LOOP_INTEGRATOR_ITERATIONS:-90}"
+INTEGRATOR_DEPTH="${CLOSED_LOOP_INTEGRATOR_DEPTH:-2}"
+INTEGRATOR_LEARNING_RATE="${CLOSED_LOOP_INTEGRATOR_LEARNING_RATE:-0.022}"
+INTEGRATOR_L2_LEAF_REG="${CLOSED_LOOP_INTEGRATOR_L2_LEAF_REG:-80.0}"
+INTEGRATOR_RANDOM_STRENGTH="${CLOSED_LOOP_INTEGRATOR_RANDOM_STRENGTH:-5.0}"
+INTEGRATOR_SUBSAMPLE="${CLOSED_LOOP_INTEGRATOR_SUBSAMPLE:-0.65}"
+INTEGRATOR_RSM="${CLOSED_LOOP_INTEGRATOR_RSM:-0.60}"
+INTEGRATOR_VALIDATION_FRACTION="${CLOSED_LOOP_INTEGRATOR_VALIDATION_FRACTION:-0.20}"
 INTEGRATOR_MIN_VALIDATION_SAMPLES="${CLOSED_LOOP_INTEGRATOR_MIN_VALIDATION_SAMPLES:-60}"
-INTEGRATOR_EARLY_STOPPING_ROUNDS="${CLOSED_LOOP_INTEGRATOR_EARLY_STOPPING_ROUNDS:-30}"
+INTEGRATOR_EARLY_STOPPING_ROUNDS="${CLOSED_LOOP_INTEGRATOR_EARLY_STOPPING_ROUNDS:-20}"
 INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS:-13.0}"
 INTEGRATOR_LABEL_MIN_NET_EDGE_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_MIN_NET_EDGE_BPS:-1.3}"
 INTEGRATOR_FEATURE_CLIP_QUANTILE="${CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE:-0.001}"
@@ -198,19 +198,19 @@ Options:
   --disable-random-label-control <true|false>
                                       是否关闭随机标签对照门禁 (default: false)
   --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
-  --integrator-iterations <int>      R2 CatBoost 迭代数 (default: 120)
-  --integrator-depth <int>           R2 CatBoost 树深 (default: 3)
-  --integrator-learning-rate <f>     R2 CatBoost 学习率 (default: 0.025)
-  --integrator-l2-leaf-reg <float>   R2 CatBoost L2 正则 (default: 45.0)
-  --integrator-random-strength <f>   R2 CatBoost 随机强度 (default: 3.0)
-  --integrator-subsample <float>     R2 CatBoost 行采样比例 (default: 0.70)
-  --integrator-rsm <float>           R2 CatBoost 列采样比例 (default: 0.70)
+  --integrator-iterations <int>      R2 CatBoost 迭代数 (default: 90)
+  --integrator-depth <int>           R2 CatBoost 树深 (default: 2)
+  --integrator-learning-rate <f>     R2 CatBoost 学习率 (default: 0.022)
+  --integrator-l2-leaf-reg <float>   R2 CatBoost L2 正则 (default: 80.0)
+  --integrator-random-strength <f>   R2 CatBoost 随机强度 (default: 5.0)
+  --integrator-subsample <float>     R2 CatBoost 行采样比例 (default: 0.65)
+  --integrator-rsm <float>           R2 CatBoost 列采样比例 (default: 0.60)
   --integrator-validation-fraction <float>
-                                      R2 训练窗口内验证集比例 (default: 0.15)
+                                      R2 训练窗口内验证集比例 (default: 0.20)
   --integrator-min-validation-samples <int>
                                       R2 训练窗口内最小验证样本数 (default: 60)
   --integrator-early-stopping-rounds <int>
-                                      R2 训练窗口内早停轮数 (default: 30)
+                                      R2 训练窗口内早停轮数 (default: 20)
   --integrator-label-round-trip-cost-bps <float>
                                       R2 标签成本带 round-trip bps (default: 13.0)
   --integrator-label-min-net-edge-bps <float>
