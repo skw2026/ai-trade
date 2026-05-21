@@ -94,8 +94,16 @@ def assess_integrator(path: Path) -> Dict[str, Any]:
         "label_policy": data.get("label_policy") if isinstance(data, dict) else None,
         "feature_transform": {
             "feature_clipping_enabled": feature_transform.get("feature_clipping_enabled"),
+            "feature_normalization_enabled": feature_transform.get(
+                "feature_normalization_enabled"
+            ),
             "clip_quantile": feature_transform.get("clip_quantile"),
+            "normalization_method": feature_transform.get("normalization_method"),
+            "normalization_max_abs": feature_transform.get("normalization_max_abs"),
             "enabled_clip_bound_count": feature_transform.get("enabled_clip_bound_count"),
+            "enabled_normalization_count": feature_transform.get(
+                "enabled_normalization_count"
+            ),
             "clip_bound_count": len(feature_transform.get("clip_bounds", []))
             if isinstance(feature_transform.get("clip_bounds"), list)
             else 0,

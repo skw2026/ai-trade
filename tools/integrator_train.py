@@ -66,20 +66,25 @@ def build_feature_transform(
     feature_names: Sequence[str],
     feature_clip_quantile: float,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
-    clipped = sanitize_array(features)
+    transformed = sanitize_array(features)
     q = max(0.0, min(0.49, float(feature_clip_quantile)))
     clip_bounds: List[Dict[str, Any]] = []
     if q <= 0.0:
-        return clipped, {
+        return transformed, {
             "feature_clip_requested": False,
             "feature_clipping_enabled": False,
+            "feature_normalization_enabled": False,
+            "normalization_method": "none",
             "clip_quantile": 0.0,
             "enabled_clip_bound_count": 0,
+            "enabled_normalization_count": 0,
+            "normalization_max_abs": None,
             "clip_bounds": [],
         }
 
+    normalization_max_abs = 8.0
     for index, name in enumerate(feature_names):
-        column = clipped[:, index]
+        column = transformed[:, index]
         finite = np.isfinite(column)
         finite_values = column[finite]
         raw_min = float(np.min(finite_values)) if finite_values.size > 0 else float("nan")
@@ -102,7 +107,40 @@ def build_feature_transform(
             clipped_low = int(np.sum(finite & (column < lower)))
             clipped_high = int(np.sum(finite & (column > upper)))
             column[finite] = np.clip(column[finite], lower, upper)
-            clipped[:, index] = column
+            transformed[:, index] = column
+        clipped_finite_values = column[finite]
+        center = float("nan")
+        scale = float("nan")
+        normalization_enabled = False
+        normalized_low = 0
+        normalized_high = 0
+        if clipped_finite_values.size >= 20:
+            center = float(np.nanmedian(clipped_finite_values))
+            q25 = float(np.nanquantile(clipped_finite_values, 0.25))
+            q75 = float(np.nanquantile(clipped_finite_values, 0.75))
+            robust_scale = (q75 - q25) / 1.349 if math.isfinite(q75 - q25) else float("nan")
+            std_scale = float(np.nanstd(clipped_finite_values))
+            if math.isfinite(robust_scale) and robust_scale > 1e-12:
+                scale = robust_scale
+            elif math.isfinite(std_scale) and std_scale > 1e-12:
+                scale = std_scale
+            elif math.isfinite(center):
+                scale = max(abs(center), 1.0)
+            normalization_enabled = (
+                math.isfinite(center)
+                and math.isfinite(scale)
+                and scale > 1e-12
+            )
+        if normalization_enabled:
+            normalized = (column[finite] - center) / scale
+            normalized_low = int(np.sum(normalized < -normalization_max_abs))
+            normalized_high = int(np.sum(normalized > normalization_max_abs))
+            column[finite] = np.clip(
+                normalized,
+                -normalization_max_abs,
+                normalization_max_abs,
+            )
+            transformed[:, index] = column
         clip_bounds.append(
             {
                 "feature": name,
@@ -114,14 +152,28 @@ def build_feature_transform(
                 "raw_max": finite_json_number(raw_max),
                 "clipped_low_count": clipped_low,
                 "clipped_high_count": clipped_high,
+                "normalization_enabled": bool(normalization_enabled),
+                "normalization_method": "median_iqr" if normalization_enabled else "none",
+                "center": finite_json_number(center),
+                "scale": finite_json_number(scale),
+                "normalized_max_abs": normalization_max_abs if normalization_enabled else None,
+                "normalized_clipped_low_count": normalized_low,
+                "normalized_clipped_high_count": normalized_high,
             }
         )
     enabled_bound_count = sum(1 for item in clip_bounds if bool(item.get("enabled")))
-    return clipped, {
+    enabled_normalization_count = sum(
+        1 for item in clip_bounds if bool(item.get("normalization_enabled"))
+    )
+    return transformed, {
         "feature_clip_requested": True,
         "feature_clipping_enabled": enabled_bound_count > 0,
+        "feature_normalization_enabled": enabled_normalization_count > 0,
+        "normalization_method": "median_iqr",
         "clip_quantile": q,
         "enabled_clip_bound_count": enabled_bound_count,
+        "enabled_normalization_count": enabled_normalization_count,
+        "normalization_max_abs": normalization_max_abs,
         "clip_bounds": clip_bounds,
     }
 
@@ -1044,6 +1096,14 @@ def main() -> int:
             f"clip_quantile={float(args.feature_clip_quantile):.6f}, "
             f"clipped_features={clipped_feature_count}/{len(feature_names)}"
         )
+    if feature_transform.get("feature_normalization_enabled"):
+        normalized_feature_count = int(feature_transform.get("enabled_normalization_count") or 0)
+        log_info(
+            "INTEGRATOR_FEATURE_NORMALIZATION: "
+            f"method={feature_transform.get('normalization_method')}, "
+            f"normalized_features={normalized_feature_count}/{len(feature_names)}, "
+            f"max_abs={feature_transform.get('normalization_max_abs')}"
+        )
     label, forward_return = build_label(
         series["close"],
         args.predict_horizon_bars,
@@ -1362,7 +1422,8 @@ def main() -> int:
         reverse=True,
     )
 
-    schema_hash = hashlib.sha256("|".join(feature_names).encode("utf-8")).hexdigest()[:16]
+    schema_seed = "feature_transform=clip_plus_robust_norm_v2|" + "|".join(feature_names)
+    schema_hash = hashlib.sha256(schema_seed.encode("utf-8")).hexdigest()[:16]
     model_hash_seed = (
         f"{schema_hash}|{args.split_method}|{args.predict_horizon_bars}|"
         f"{float(args.label_round_trip_cost_bps):.6f}|"

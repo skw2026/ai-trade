@@ -362,6 +362,10 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
   feature_clipping_enabled_ = false;
   feature_clip_lower_.clear();
   feature_clip_upper_.clear();
+  feature_normalization_enabled_ = false;
+  feature_norm_center_.clear();
+  feature_norm_scale_.clear();
+  feature_norm_max_abs_.clear();
   model_runtime_ready_ = false;
 
   if (!config_.enabled) {
@@ -414,39 +418,76 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
                              -std::numeric_limits<double>::infinity());
   feature_clip_upper_.assign(feature_names_.size(),
                              std::numeric_limits<double>::infinity());
+  feature_norm_center_.assign(feature_names_.size(), 0.0);
+  feature_norm_scale_.assign(feature_names_.size(), 1.0);
+  feature_norm_max_abs_.assign(feature_names_.size(),
+                               std::numeric_limits<double>::infinity());
   const JsonValue* feature_transform = JsonObjectField(&root, "feature_transform");
   const auto transform_enabled =
       JsonAsBool(JsonObjectField(feature_transform, "feature_clipping_enabled"));
+  const auto normalization_enabled =
+      JsonAsBool(JsonObjectField(feature_transform, "feature_normalization_enabled"));
+  const auto normalization_max_abs =
+      JsonAsNumber(JsonObjectField(feature_transform, "normalization_max_abs"));
   const JsonValue* clip_bounds = JsonObjectField(feature_transform, "clip_bounds");
-  if (transform_enabled.value_or(false) && clip_bounds != nullptr &&
+  if ((transform_enabled.value_or(false) || normalization_enabled.value_or(false)) &&
+      clip_bounds != nullptr &&
       clip_bounds->type == JsonType::kArray && !feature_names_.empty()) {
     std::unordered_map<std::string, size_t> feature_index;
     for (size_t i = 0; i < feature_names_.size(); ++i) {
       feature_index[feature_names_[i]] = i;
     }
     int loaded_clip_bounds = 0;
+    int loaded_normalization_bounds = 0;
     for (const auto& item : clip_bounds->array_value) {
       const auto name = JsonAsString(JsonObjectField(&item, "feature"));
-      const auto enabled = JsonAsBool(JsonObjectField(&item, "enabled"));
-      const auto lower = JsonAsNumber(JsonObjectField(&item, "lower"));
-      const auto upper = JsonAsNumber(JsonObjectField(&item, "upper"));
-      if (!name.has_value() || !enabled.value_or(false) ||
-          !lower.has_value() || !upper.has_value() ||
-          !std::isfinite(*lower) || !std::isfinite(*upper) || *lower > *upper) {
+      if (!name.has_value()) {
         continue;
       }
       const auto it = feature_index.find(*name);
       if (it == feature_index.end()) {
         continue;
       }
-      feature_clip_lower_[it->second] = *lower;
-      feature_clip_upper_[it->second] = *upper;
-      ++loaded_clip_bounds;
+      const size_t index = it->second;
+      const auto enabled = JsonAsBool(JsonObjectField(&item, "enabled"));
+      const auto lower = JsonAsNumber(JsonObjectField(&item, "lower"));
+      const auto upper = JsonAsNumber(JsonObjectField(&item, "upper"));
+      if (enabled.value_or(false) && lower.has_value() && upper.has_value() &&
+          std::isfinite(*lower) && std::isfinite(*upper) && *lower <= *upper) {
+        feature_clip_lower_[index] = *lower;
+        feature_clip_upper_[index] = *upper;
+        ++loaded_clip_bounds;
+      }
+      const auto norm_enabled =
+          JsonAsBool(JsonObjectField(&item, "normalization_enabled"));
+      const auto center = JsonAsNumber(JsonObjectField(&item, "center"));
+      const auto scale = JsonAsNumber(JsonObjectField(&item, "scale"));
+      const auto item_max_abs = JsonAsNumber(JsonObjectField(&item, "normalized_max_abs"));
+      const double max_abs =
+          (item_max_abs.has_value() && std::isfinite(*item_max_abs) && *item_max_abs > 0.0)
+              ? *item_max_abs
+              : (normalization_max_abs.has_value() && std::isfinite(*normalization_max_abs) &&
+                         *normalization_max_abs > 0.0
+                     ? *normalization_max_abs
+                     : std::numeric_limits<double>::infinity());
+      if (norm_enabled.value_or(false) && center.has_value() && scale.has_value() &&
+          std::isfinite(*center) && std::isfinite(*scale) && *scale > 1e-12) {
+        feature_norm_center_[index] = *center;
+        feature_norm_scale_[index] = *scale;
+        feature_norm_max_abs_[index] = max_abs;
+        ++loaded_normalization_bounds;
+      }
     }
     feature_clipping_enabled_ = loaded_clip_bounds > 0;
+    feature_normalization_enabled_ = loaded_normalization_bounds > 0;
     if (feature_clipping_enabled_) {
       LogInfo("INTEGRATOR_FEATURE_TRANSFORM_LOADED: clip_bounds=" +
               std::to_string(loaded_clip_bounds) + "/" +
+              std::to_string(feature_names_.size()));
+    }
+    if (feature_normalization_enabled_) {
+      LogInfo("INTEGRATOR_FEATURE_NORMALIZATION_LOADED: normalization_bounds=" +
+              std::to_string(loaded_normalization_bounds) + "/" +
               std::to_string(feature_names_.size()));
     }
   }
@@ -822,6 +863,34 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
       if (clip_warn_counter++ % 100 == 0) {
         LogInfo("INTEGRATOR_FEATURE_CLIP: clipped=" + std::to_string(clipped_count) +
                 "/" + std::to_string(features.size()));
+      }
+    }
+  }
+  if (feature_normalization_enabled_ &&
+      feature_norm_center_.size() == features.size() &&
+      feature_norm_scale_.size() == features.size() &&
+      feature_norm_max_abs_.size() == features.size()) {
+    int normalized_count = 0;
+    for (size_t i = 0; i < features.size(); ++i) {
+      const double center = feature_norm_center_[i];
+      const double scale = feature_norm_scale_[i];
+      if (!std::isfinite(center) || !std::isfinite(scale) || scale <= 1e-12) {
+        continue;
+      }
+      double normalized = (features[i] - center) / scale;
+      const double max_abs = feature_norm_max_abs_[i];
+      if (std::isfinite(max_abs) && max_abs > 0.0) {
+        normalized = std::clamp(normalized, -max_abs, max_abs);
+      }
+      features[i] = normalized;
+      ++normalized_count;
+    }
+    if (config_.log_model_score && normalized_count > 0) {
+      static int normalize_warn_counter = 0;
+      if (normalize_warn_counter++ % 100 == 0) {
+        LogInfo("INTEGRATOR_FEATURE_NORMALIZE: normalized=" +
+                std::to_string(normalized_count) + "/" +
+                std::to_string(features.size()));
       }
     }
   }

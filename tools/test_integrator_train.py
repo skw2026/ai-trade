@@ -79,18 +79,39 @@ class IntegratorTrainTest(unittest.TestCase):
         feature = TRAIN.np.asarray([[float(i)] for i in range(100)], dtype=TRAIN.np.float64)
         feature[0, 0] = -1000.0
         feature[-1, 0] = 1000.0
-        clipped, report = TRAIN.build_feature_transform(
+        transformed, report = TRAIN.build_feature_transform(
             feature,
             ["miner_00"],
             feature_clip_quantile=0.05,
         )
         self.assertTrue(report["feature_clipping_enabled"])
+        self.assertTrue(report["feature_normalization_enabled"])
         bound = report["clip_bounds"][0]
         self.assertTrue(bound["enabled"])
-        self.assertGreater(clipped[0, 0], -1000.0)
-        self.assertLess(clipped[-1, 0], 1000.0)
+        self.assertTrue(bound["normalization_enabled"])
+        self.assertGreater(transformed[0, 0], -8.0)
+        self.assertLess(transformed[-1, 0], 8.0)
         self.assertGreater(bound["clipped_low_count"], 0)
         self.assertGreater(bound["clipped_high_count"], 0)
+        self.assertIsNotNone(bound["center"])
+        self.assertIsNotNone(bound["scale"])
+        self.assertGreater(bound["scale"], 0.0)
+
+    def test_feature_transform_normalizes_raw_price_scale_features(self):
+        price_scale = TRAIN.np.asarray(
+            [[70000.0 + float(i)] for i in range(100)],
+            dtype=TRAIN.np.float64,
+        )
+        transformed, report = TRAIN.build_feature_transform(
+            price_scale,
+            ["miner_02"],
+            feature_clip_quantile=0.01,
+        )
+        self.assertTrue(report["feature_normalization_enabled"])
+        bound = report["clip_bounds"][0]
+        self.assertTrue(bound["normalization_enabled"])
+        self.assertGreater(bound["raw_max"], 70000.0)
+        self.assertLessEqual(float(TRAIN.np.nanmax(TRAIN.np.abs(transformed))), 8.0)
 
     def test_split_temporal_train_validation_uses_tail_and_preserves_classes(self):
         x = TRAIN.np.arange(20, dtype=TRAIN.np.float64).reshape(-1, 1)

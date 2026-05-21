@@ -38,6 +38,10 @@ class IntegratorShadow {
   bool feature_clipping_enabled_{false};
   std::vector<double> feature_clip_lower_;
   std::vector<double> feature_clip_upper_;
+  bool feature_normalization_enabled_{false};
+  std::vector<double> feature_norm_center_;
+  std::vector<double> feature_norm_scale_;
+  std::vector<double> feature_norm_max_abs_;
   void* model_handle_{nullptr}; // CatBoost ModelCalcerHandle (void* to avoid header dependency)
   bool model_runtime_ready_{false};
 };
