@@ -57,6 +57,20 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                     "execution_attribution_main_taker_fill_count": 1,
                                     "execution_attribution_probe_maker_fee_usd": 0.06,
                                     "execution_attribution_main_taker_fee_usd": 0.15,
+                                    "integrator_nan_feature_skip_count": 2,
+                                    "integrator_nan_feature_skip_by_feature": {
+                                        "miner_03": 2
+                                    },
+                                    "integrator_nan_feature_skip_by_symbol": {
+                                        "BTCUSDT": 2
+                                    },
+                                    "integrator_nan_feature_skip_examples": [
+                                        {
+                                            "feature_name": "miner_03",
+                                            "symbol": "BTCUSDT",
+                                            "raw_value": "nan",
+                                        }
+                                    ],
                                 },
                             },
                             "replay_validation": {
@@ -152,6 +166,21 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             )
             self.assertAlmostEqual(
                 runtime_metrics["execution_attribution_main_taker_fee_usd"], 0.15
+            )
+            self.assertEqual(runtime_metrics["integrator_nan_feature_skip_count"], 2)
+            self.assertEqual(
+                runtime_metrics["integrator_nan_feature_skip_by_feature"]["miner_03"],
+                2,
+            )
+            self.assertEqual(
+                runtime_metrics["integrator_nan_feature_skip_by_symbol"]["BTCUSDT"],
+                2,
+            )
+            self.assertEqual(
+                runtime_metrics["integrator_nan_feature_skip_examples"][0][
+                    "raw_value"
+                ],
+                "nan",
             )
 
     def test_account_summary_clips_samples_to_summary_window(self):

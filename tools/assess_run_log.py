@@ -18,7 +18,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass(frozen=True)
@@ -277,6 +277,13 @@ FEATURES_RE = re.compile(r"FEATURES:\s*(?P<body>.*)")
 FEATURE_VALUE_RE = re.compile(
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)="
     r"(?P<value>-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|nan|inf|-inf)"
+)
+INTEGRATOR_NAN_SKIP_FIELD_RE = re.compile(
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>[^,\s]+)"
+)
+INTEGRATOR_NAN_SKIP_LEGACY_RE = re.compile(
+    r"INTEGRATOR_SKIP: NaN feature detected at index "
+    r"(?P<feature_index>\d+) \((?P<feature_name>[^)]+)\)"
 )
 TREND_CANDIDATE_MIN_THRESHOLD_RATIO = 0.60
 FEATURE_LARGE_ABS_WARN_THRESHOLD = 1000.0
@@ -1881,8 +1888,46 @@ def extract_feature_scale_diagnostics(text: str) -> Dict[str, object]:
     max_abs_feature = ""
     large_abs_by_feature: Dict[str, int] = {}
     max_abs_by_feature: Dict[str, float] = {}
+    nan_skip_count = 0
+    nan_skip_by_feature: Dict[str, int] = {}
+    nan_skip_by_symbol: Dict[str, int] = {}
+    nan_skip_examples: List[Dict[str, object]] = []
 
     for line in text.splitlines():
+        if "INTEGRATOR_SKIP: NaN feature detected" in line:
+            nan_skip_count += 1
+            fields = {
+                item.group("name"): item.group("value")
+                for item in INTEGRATOR_NAN_SKIP_FIELD_RE.finditer(line)
+            }
+            if "feature_name" not in fields or "feature_index" not in fields:
+                legacy = INTEGRATOR_NAN_SKIP_LEGACY_RE.search(line)
+                if legacy:
+                    fields.setdefault("feature_index", legacy.group("feature_index"))
+                    fields.setdefault("feature_name", legacy.group("feature_name"))
+            feature_name = fields.get("feature_name", "unknown")
+            symbol = fields.get("symbol", "unknown")
+            nan_skip_by_feature[feature_name] = int(nan_skip_by_feature.get(feature_name, 0)) + 1
+            nan_skip_by_symbol[symbol] = int(nan_skip_by_symbol.get(symbol, 0)) + 1
+            if len(nan_skip_examples) < 5:
+                example: Dict[str, object] = {
+                    "feature_name": feature_name,
+                    "symbol": symbol,
+                }
+                for key in (
+                    "feature_index",
+                    "raw_value",
+                    "regime",
+                    "bucket",
+                    "raw_regime",
+                    "raw_bucket",
+                    "model_version",
+                    "skip_count",
+                ):
+                    if key in fields:
+                        example[key] = fields[key]
+                nan_skip_examples.append(example)
+
         match = FEATURES_RE.search(line)
         if not match:
             continue
@@ -1928,9 +1973,10 @@ def extract_feature_scale_diagnostics(text: str) -> Dict[str, object]:
         "feature_max_abs_feature": max_abs_feature,
         "feature_large_abs_by_feature": large_abs_by_feature,
         "feature_max_abs_by_feature": max_abs_by_feature,
-        "integrator_nan_feature_skip_count": count(
-            r"INTEGRATOR_SKIP: NaN feature detected", text
-        ),
+        "integrator_nan_feature_skip_count": nan_skip_count,
+        "integrator_nan_feature_skip_by_feature": nan_skip_by_feature,
+        "integrator_nan_feature_skip_by_symbol": nan_skip_by_symbol,
+        "integrator_nan_feature_skip_examples": nan_skip_examples,
     }
 
 
@@ -3487,9 +3533,20 @@ def assess(
         ):
             warn_reasons.append("Integrator 处于 canary/active 但未观测到 shadow scored>0")
         if int(metrics.get("integrator_nan_feature_skip_count", 0)) > 0:
+            nan_skip_features = metrics.get("integrator_nan_feature_skip_by_feature", {})
+            feature_detail = ""
+            if isinstance(nan_skip_features, dict) and nan_skip_features:
+                feature_items = sorted(
+                    nan_skip_features.items(),
+                    key=lambda item: (-int(item[1]), str(item[0])),
+                )
+                feature_detail = ", features=" + ",".join(
+                    f"{name}:{count}" for name, count in feature_items[:5]
+                )
             warn_reasons.append(
                 "Integrator 观测到 NaN feature skip，建议复核 miner/live 特征对齐: "
                 f"count={metrics['integrator_nan_feature_skip_count']}"
+                f"{feature_detail}"
             )
         if (
             int(metrics.get("feature_large_abs_line_count", 0)) > 0

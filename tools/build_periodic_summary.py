@@ -323,6 +323,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "integrator_mode_shadow_count": 0,
             "integrator_mode_canary_count": 0,
             "integrator_mode_active_count": 0,
+            "integrator_nan_feature_skip_count": 0,
+            "integrator_nan_feature_skip_by_feature": {},
+            "integrator_nan_feature_skip_by_symbol": {},
+            "integrator_nan_feature_skip_examples": [],
             "filtered_cost_ratio": None,
             "filtered_cost_ratio_avg": None,
             "realized_net_per_fill": None,
@@ -452,6 +456,24 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     integrator_mode_shadow = to_int(latest_metrics.get("integrator_mode_shadow_count")) or 0
     integrator_mode_canary = to_int(latest_metrics.get("integrator_mode_canary_count")) or 0
     integrator_mode_active = to_int(latest_metrics.get("integrator_mode_active_count")) or 0
+    integrator_nan_feature_skip_count = (
+        to_int(latest_metrics.get("integrator_nan_feature_skip_count")) or 0
+    )
+    integrator_nan_feature_skip_by_feature = latest_metrics.get(
+        "integrator_nan_feature_skip_by_feature"
+    )
+    integrator_nan_feature_skip_by_symbol = latest_metrics.get(
+        "integrator_nan_feature_skip_by_symbol"
+    )
+    integrator_nan_feature_skip_examples = latest_metrics.get(
+        "integrator_nan_feature_skip_examples"
+    )
+    if not isinstance(integrator_nan_feature_skip_by_feature, dict):
+        integrator_nan_feature_skip_by_feature = {}
+    if not isinstance(integrator_nan_feature_skip_by_symbol, dict):
+        integrator_nan_feature_skip_by_symbol = {}
+    if not isinstance(integrator_nan_feature_skip_examples, list):
+        integrator_nan_feature_skip_examples = []
     filtered_cost_ratio = to_float(latest_metrics.get("filtered_cost_ratio"))
     filtered_cost_ratio_avg = to_float(latest_metrics.get("filtered_cost_ratio_avg"))
     realized_net_per_fill = to_float(latest_metrics.get("realized_net_per_fill"))
@@ -719,6 +741,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "integrator_mode_shadow_count": integrator_mode_shadow,
         "integrator_mode_canary_count": integrator_mode_canary,
         "integrator_mode_active_count": integrator_mode_active,
+        "integrator_nan_feature_skip_count": integrator_nan_feature_skip_count,
+        "integrator_nan_feature_skip_by_feature": integrator_nan_feature_skip_by_feature,
+        "integrator_nan_feature_skip_by_symbol": integrator_nan_feature_skip_by_symbol,
+        "integrator_nan_feature_skip_examples": integrator_nan_feature_skip_examples[:5],
         "filtered_cost_ratio": filtered_cost_ratio,
         "filtered_cost_ratio_avg": filtered_cost_ratio_avg,
         "realized_net_per_fill": realized_net_per_fill,

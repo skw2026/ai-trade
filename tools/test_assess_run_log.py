@@ -267,6 +267,31 @@ class AssessRunLogTest(unittest.TestCase):
             "\n".join(report["warn_reasons"]),
         )
 
+    def test_integrator_nan_skip_diagnostics_include_feature_details(self):
+        text = (
+            "2026-02-14 15:02:18 [INFO] INTEGRATOR_SKIP: NaN feature detected, "
+            "skip_count=1, symbol=BTCUSDT, regime=RANGE, bucket=RANGE, "
+            "raw_regime=RANGE, raw_bucket=RANGE, feature_index=3, "
+            "feature_name=miner_03, raw_value=nan, model_version=integrator_v1\n"
+            + self._runtime_line(
+                20,
+                0.0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=12,
+            )
+            + "2026-02-14 15:00:20 [INFO] SELF_EVOLUTION_INIT: enabled=true\n"
+            + "2026-02-14 15:00:21 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=12, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["integrator_nan_feature_skip_count"], 1)
+        self.assertEqual(metrics["integrator_nan_feature_skip_by_feature"]["miner_03"], 1)
+        self.assertEqual(metrics["integrator_nan_feature_skip_by_symbol"]["BTCUSDT"], 1)
+        self.assertEqual(
+            metrics["integrator_nan_feature_skip_examples"][0]["raw_value"], "nan"
+        )
+        self.assertIn("features=miner_03:1", "\n".join(report["warn_reasons"]))
+
     def test_assess_contains_strategy_mix_metrics(self):
         text = (
             "2026-02-14 15:02:18 [INFO] RUNTIME_STATUS: ticks=200, trade_ok=true, "

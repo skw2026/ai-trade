@@ -834,10 +834,25 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   for (size_t i = 0; i < features.size(); ++i) {
     if (!std::isfinite(features[i])) {
       static int nan_warn_counter = 0;
-      // 限频日志：避免因数据预热期的连续 NaN 刷屏
-      if (config_.log_model_score && nan_warn_counter++ % 100 == 0) {
-        LogInfo("INTEGRATOR_SKIP: NaN feature detected at index " + std::to_string(i) +
-                " (" + (i < feature_names_.size() ? feature_names_[i] : "unknown") + ")");
+      const int skip_count = ++nan_warn_counter;
+      // 限频日志：预热期可能连续 NaN，但前几个样本必须完整暴露定位信息。
+      if (config_.log_model_score &&
+          (skip_count <= 10 || skip_count % 100 == 0)) {
+        const std::string feature_name =
+            i < feature_names_.size() ? feature_names_[i] : "unknown";
+        std::ostringstream oss;
+        oss << "INTEGRATOR_SKIP: NaN feature detected"
+            << ", skip_count=" << skip_count
+            << ", symbol=" << signal.symbol
+            << ", regime=" << ToString(regime.regime)
+            << ", bucket=" << ToString(regime.bucket)
+            << ", raw_regime=" << ToString(regime.raw_regime)
+            << ", raw_bucket=" << ToString(regime.raw_bucket)
+            << ", feature_index=" << i
+            << ", feature_name=" << feature_name
+            << ", raw_value=" << features[i]
+            << ", model_version=" << model_version_;
+        LogInfo(oss.str());
       }
       out.enabled = false;
       return out;
