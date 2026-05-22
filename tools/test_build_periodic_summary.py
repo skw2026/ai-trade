@@ -57,6 +57,11 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                     "execution_attribution_main_taker_fill_count": 1,
                                     "execution_attribution_probe_maker_fee_usd": 0.06,
                                     "execution_attribution_main_taker_fee_usd": 0.15,
+                                    "execution_attribution_quality_fill_count": 8,
+                                    "execution_attribution_realized_pnl_usd": 0.4,
+                                    "execution_attribution_realized_net_usd": 0.19,
+                                    "execution_attribution_realized_net_per_fill": 0.02375,
+                                    "execution_attribution_quality_fee_usd": 0.21,
                                     "integrator_nan_feature_skip_count": 2,
                                     "integrator_nan_feature_skip_by_feature": {
                                         "miner_03": 2
@@ -166,6 +171,22 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             )
             self.assertAlmostEqual(
                 runtime_metrics["execution_attribution_main_taker_fee_usd"], 0.15
+            )
+            self.assertEqual(
+                runtime_metrics["execution_attribution_quality_fill_count"], 8
+            )
+            self.assertAlmostEqual(
+                runtime_metrics["execution_attribution_realized_pnl_usd"], 0.4
+            )
+            self.assertAlmostEqual(
+                runtime_metrics["execution_attribution_realized_net_usd"], 0.19
+            )
+            self.assertAlmostEqual(
+                runtime_metrics["execution_attribution_realized_net_per_fill"],
+                0.02375,
+            )
+            self.assertAlmostEqual(
+                runtime_metrics["execution_attribution_quality_fee_usd"], 0.21
             )
             self.assertEqual(runtime_metrics["integrator_nan_feature_skip_count"], 2)
             self.assertEqual(

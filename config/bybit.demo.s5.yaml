@@ -91,8 +91,8 @@ execution:
   candidate_probe_cooldown_ticks: 600
   candidate_probe_max_per_window: 2
   quality_guard_enabled: true
-  quality_guard_min_fills: 8
-  quality_guard_bad_streak_to_trigger: 3
+  quality_guard_min_fills: 4
+  quality_guard_bad_streak_to_trigger: 1
   quality_guard_good_streak_to_release: 3
   quality_guard_min_realized_net_per_fill_usd: 0.0
   quality_guard_max_fee_bps_per_fill: 6.0

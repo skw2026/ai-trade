@@ -776,6 +776,15 @@ class AssessRunLogTest(unittest.TestCase):
             metrics["execution_attribution_worst_symbol_realized_net_per_fill"],
             -0.0325,
         )
+        self.assertEqual(metrics["execution_attribution_quality_fill_count"], 2)
+        self.assertAlmostEqual(
+            metrics["execution_attribution_realized_pnl_usd"], 0.01
+        )
+        self.assertAlmostEqual(metrics["execution_attribution_quality_fee_usd"], 0.075)
+        self.assertAlmostEqual(metrics["execution_attribution_realized_net_usd"], -0.065)
+        self.assertAlmostEqual(
+            metrics["execution_attribution_realized_net_per_fill"], -0.0325
+        )
         self.assertAlmostEqual(
             metrics["execution_attribution_probe_maker_fee_usd"], 0.02
         )
@@ -1468,6 +1477,60 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(
             any("执行净收益质量未达标" in x for x in report["fail_reasons"])
+        )
+
+    def test_s5_prefers_attribution_net_quality_over_runtime_window_average(self):
+        fill_lines = []
+        for idx in range(5):
+            fill_lines.extend(
+                [
+                    f"2026-02-14 15:00:{idx * 2:02d} [INFO] FILL_APPLIED: fill_id=open-{idx}, client_order_id=open-{idx}, symbol=SOLUSDT, side=Buy, qty=1.0, price=100.0, fee=0.000000, liquidity=maker",
+                    f"2026-02-14 15:00:{idx * 2 + 1:02d} [INFO] FILL_APPLIED: fill_id=close-{idx}, client_order_id=close-{idx}, symbol=SOLUSDT, side=Sell, qty=1.0, price=100.0, fee=-0.040000, liquidity=maker",
+                ]
+            )
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1,
+                funnel_fills=1,
+                realized_net_per_fill=0.01,
+                fee_bps_per_fill=1.0,
+                maker_fills=1,
+                explicit_liquidity_fills=1,
+                explicit_liquidity_fill_ratio=1.0,
+                maker_fill_ratio=1.0,
+            )
+            for i in range(60)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:30:00 [INFO] GATE_CHECK_PASSED: raw_signals=10, order_intents=10, effective_signals=10, fills=10\n"
+            + "\n".join(fill_lines)
+            + "\n"
+            + runtime
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["S5"],
+            min_runtime_status=50,
+            s5_min_fill_windows=0,
+        )
+
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertAlmostEqual(report["metrics"]["realized_net_per_fill"], 0.01)
+        self.assertEqual(
+            report["metrics"]["execution_attribution_quality_fill_count"], 10
+        )
+        self.assertAlmostEqual(
+            report["metrics"]["execution_attribution_realized_net_per_fill"],
+            -0.02,
+        )
+        self.assertTrue(
+            any(
+                "execution_attribution" in item
+                for item in report["fail_reasons"]
+            )
         )
 
     def test_s5_fail_when_protection_missing_event_observed(self):

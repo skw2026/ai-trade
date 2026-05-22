@@ -359,6 +359,11 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "execution_attribution_main_maker_fee_usd": None,
             "execution_attribution_main_taker_fee_usd": None,
             "execution_attribution_main_unknown_liquidity_fee_usd": None,
+            "execution_attribution_quality_fill_count": 0,
+            "execution_attribution_realized_pnl_usd": None,
+            "execution_attribution_realized_net_usd": None,
+            "execution_attribution_realized_net_per_fill": None,
+            "execution_attribution_quality_fee_usd": None,
             "trend_candidate_probe_signal_count": 0,
             "trend_candidate_probe_strong_signal_count": 0,
             "trend_candidate_probe_enqueued_count": 0,
@@ -573,6 +578,21 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     execution_attribution_main_unknown_liquidity_fee_usd = to_float(
         latest_metrics.get("execution_attribution_main_unknown_liquidity_fee_usd")
     )
+    execution_attribution_quality_fill_count = (
+        to_int(latest_metrics.get("execution_attribution_quality_fill_count")) or 0
+    )
+    execution_attribution_realized_pnl_usd = to_float(
+        latest_metrics.get("execution_attribution_realized_pnl_usd")
+    )
+    execution_attribution_realized_net_usd = to_float(
+        latest_metrics.get("execution_attribution_realized_net_usd")
+    )
+    execution_attribution_realized_net_per_fill = to_float(
+        latest_metrics.get("execution_attribution_realized_net_per_fill")
+    )
+    execution_attribution_quality_fee_usd = to_float(
+        latest_metrics.get("execution_attribution_quality_fee_usd")
+    )
     trend_candidate_probe_signal_count = (
         to_int(latest_metrics.get("trend_candidate_probe_signal_count")) or 0
     )
@@ -777,6 +797,11 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "execution_attribution_main_maker_fee_usd": execution_attribution_main_maker_fee_usd,
         "execution_attribution_main_taker_fee_usd": execution_attribution_main_taker_fee_usd,
         "execution_attribution_main_unknown_liquidity_fee_usd": execution_attribution_main_unknown_liquidity_fee_usd,
+        "execution_attribution_quality_fill_count": execution_attribution_quality_fill_count,
+        "execution_attribution_realized_pnl_usd": execution_attribution_realized_pnl_usd,
+        "execution_attribution_realized_net_usd": execution_attribution_realized_net_usd,
+        "execution_attribution_realized_net_per_fill": execution_attribution_realized_net_per_fill,
+        "execution_attribution_quality_fee_usd": execution_attribution_quality_fee_usd,
         "trend_candidate_probe_signal_count": trend_candidate_probe_signal_count,
         "trend_candidate_probe_strong_signal_count": (
             trend_candidate_probe_strong_signal_count

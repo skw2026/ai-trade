@@ -2660,7 +2660,22 @@ def assess(
         best_symbol_net_per_fill = 0.0
         negative_symbol_count = 0
         positive_symbol_count = 0
+        quality_fill_count = 0
+        quality_realized_pnl_usd = 0.0
+        quality_fee_usd = 0.0
+        quality_realized_net_usd = 0.0
         if quality_by_symbol:
+            for payload in quality_by_symbol.values():
+                if not isinstance(payload, dict):
+                    continue
+                quality_fill_count += int(payload.get("fills", 0) or 0)
+                quality_realized_pnl_usd += float(
+                    payload.get("realized_pnl_usd", 0.0) or 0.0
+                )
+                quality_fee_usd += float(payload.get("fee_usd", 0.0) or 0.0)
+                quality_realized_net_usd += float(
+                    payload.get("realized_net_usd", 0.0) or 0.0
+                )
             ranked_symbols = sorted(
                 (
                     (
@@ -2686,6 +2701,11 @@ def assess(
                 positive_symbol_count = sum(
                     1 for _, _, net_per_fill in ranked_symbols if net_per_fill > 0.0
                 )
+        quality_realized_net_per_fill = (
+            quality_realized_net_usd / quality_fill_count
+            if quality_fill_count > 0
+            else 0.0
+        )
         metrics.update(
             {
                 "execution_attribution_submit_count": int(
@@ -2754,6 +2774,17 @@ def assess(
                 "execution_attribution_main_unknown_liquidity_fee_usd": float(
                     main_fee_by_liquidity.get("UNKNOWN", 0.0)
                 ),
+                "execution_attribution_quality_fill_count": int(quality_fill_count),
+                "execution_attribution_realized_pnl_usd": float(
+                    quality_realized_pnl_usd
+                ),
+                "execution_attribution_realized_net_usd": float(
+                    quality_realized_net_usd
+                ),
+                "execution_attribution_realized_net_per_fill": float(
+                    quality_realized_net_per_fill
+                ),
+                "execution_attribution_quality_fee_usd": float(quality_fee_usd),
                 "execution_attribution_runtime_fill_window_count": int(
                     attribution_runtime_windows.get("count", 0)
                 ),
@@ -3078,10 +3109,25 @@ def assess(
                 f"trend_runtime_windows={metrics['regime_trend_runtime_count']}, "
                 f"required>={max(0, s5_min_trend_runtime_windows)}"
             )
+        s5_net_quality_required_fills = max(0, s5_min_realized_net_per_fill_windows)
+        s5_attribution_quality_required_fills = max(
+            1, s5_net_quality_required_fills
+        )
+        attribution_quality_fill_count = int(
+            metrics.get("execution_attribution_quality_fill_count", 0) or 0
+        )
+        attribution_realized_net_per_fill = metrics.get(
+            "execution_attribution_realized_net_per_fill"
+        )
+        attribution_quality_ready = (
+            attribution_quality_fill_count >= s5_attribution_quality_required_fills
+            and isinstance(attribution_realized_net_per_fill, (int, float))
+        )
         if (
             stage.name == "S5"
             and metrics["funnel_fills_runtime_count"]
-            >= max(0, s5_min_realized_net_per_fill_windows)
+            >= s5_net_quality_required_fills
+            and not attribution_quality_ready
             and metrics["execution_window_runtime_count"] <= 0
         ):
             execution_fail_reasons.append(
@@ -3091,8 +3137,20 @@ def assess(
             )
         elif (
             stage.name == "S5"
+            and attribution_quality_ready
+            and attribution_realized_net_per_fill < s5_min_realized_net_per_fill_usd
+        ):
+            execution_fail_reasons.append(
+                "执行净收益质量未达标（S5 强门禁，execution_attribution）: "
+                f"realized_net_per_fill={attribution_realized_net_per_fill:.6f}, "
+                f"threshold={s5_min_realized_net_per_fill_usd:.6f}, "
+                f"attribution_fills={attribution_quality_fill_count}, "
+                f"required_fills>={s5_attribution_quality_required_fills}"
+            )
+        elif (
+            stage.name == "S5"
             and metrics["funnel_fills_runtime_count"]
-            >= max(0, s5_min_realized_net_per_fill_windows)
+            >= s5_net_quality_required_fills
             and isinstance(metrics["realized_net_per_fill"], (int, float))
             and metrics["realized_net_per_fill"] < s5_min_realized_net_per_fill_usd
         ):
@@ -3101,7 +3159,7 @@ def assess(
                 f"realized_net_per_fill={metrics['realized_net_per_fill']:.6f}, "
                 f"threshold={s5_min_realized_net_per_fill_usd:.6f}, "
                 f"fill_windows={metrics['funnel_fills_runtime_count']}, "
-                f"required_windows>={max(0, s5_min_realized_net_per_fill_windows)}"
+                f"required_windows>={s5_net_quality_required_fills}"
             )
         if (
             stage.name == "S5"
@@ -3288,6 +3346,24 @@ def assess(
                 f"exit={metrics['execution_symbol_quality_guard_exit_count']}, "
                 f"symbol_active_latest={metrics['execution_quality_guard_symbol_active_count_latest']}, "
                 f"symbol_active_max={metrics['execution_quality_guard_symbol_active_count_max']}"
+            )
+        if (
+            stage.name == "S5"
+            and has_execution_activity
+            and 0
+            < attribution_quality_fill_count
+            < s5_attribution_quality_required_fills
+            and isinstance(attribution_realized_net_per_fill, (int, float))
+            and attribution_realized_net_per_fill < s5_min_realized_net_per_fill_usd
+        ):
+            warn_reasons.append(
+                "执行归因净收益已为负但样本尚未达到 S5 强门槛，"
+                "建议继续观察或触发单币质量冷却: "
+                f"execution_attribution_realized_net_per_fill="
+                f"{attribution_realized_net_per_fill:.6f}, "
+                f"threshold={s5_min_realized_net_per_fill_usd:.6f}, "
+                f"attribution_fills={attribution_quality_fill_count}, "
+                f"required_fills>={s5_attribution_quality_required_fills}"
             )
         if (
             stage.name == "S5"
