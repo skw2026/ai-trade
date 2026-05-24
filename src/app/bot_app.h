@@ -200,6 +200,12 @@ class BotApplication {
                                         const std::string& reason);
   /// 基于最新行情推进盈利保护（break-even / trailing）。
   void UpdateProfitProtection(const MarketEvent& event);
+  /// 在减仓/保护单成交时输出退出捕获样本，连接 live 与 replay 的 exit_capture 口径。
+  void LogExitCaptureSample(const FillEvent& fill,
+                            const OrderRecord& record,
+                            double position_qty_before,
+                            double avg_entry_price_before,
+                            double realized_pnl_usd);
   /// 检查“required SL 挂单确认”是否超时，超时则触发强制只减仓并审计。
   void CheckPendingRequiredSlTimeouts();
   /// 注册 required SL 的确认等待项（key=SL client_order_id）。
@@ -427,6 +433,7 @@ class BotApplication {
     double active_tp_price{0.0};
     std::string active_sl_client_order_id;
     std::string active_tp_client_order_id;
+    int entry_tick{0};
   };
   std::unordered_map<std::string, ManagedProtectionState>
       managed_protection_by_symbol_;

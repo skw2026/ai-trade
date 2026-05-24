@@ -169,6 +169,58 @@ bool IsNetPositionOrderPurpose(OrderPurpose purpose) {
   return purpose == OrderPurpose::kEntry || purpose == OrderPurpose::kReduce;
 }
 
+const char* OrderPurposeToString(OrderPurpose purpose) {
+  switch (purpose) {
+    case OrderPurpose::kEntry:
+      return "entry";
+    case OrderPurpose::kTp:
+      return "take_profit";
+    case OrderPurpose::kSl:
+      return "stop_loss";
+    case OrderPurpose::kReduce:
+      return "strategy_reduce";
+  }
+  return "unknown";
+}
+
+double FavorableReturn(int direction, double entry_price, double price) {
+  if (direction == 0 || entry_price <= 0.0 || price <= 0.0 ||
+      !std::isfinite(entry_price) || !std::isfinite(price)) {
+    return 0.0;
+  }
+  if (direction > 0) {
+    return price / entry_price - 1.0;
+  }
+  return entry_price / price - 1.0;
+}
+
+bool IsTighterStopPrice(int direction,
+                        double candidate_stop,
+                        double active_stop,
+                        double min_update_abs) {
+  if (direction == 0 || candidate_stop <= 0.0 || !std::isfinite(candidate_stop)) {
+    return false;
+  }
+  if (active_stop <= 0.0 || !std::isfinite(active_stop)) {
+    return true;
+  }
+  if (direction > 0) {
+    return candidate_stop > active_stop + std::max(0.0, min_update_abs);
+  }
+  return candidate_stop < active_stop - std::max(0.0, min_update_abs);
+}
+
+bool StopWouldTriggerNow(int entry_direction,
+                         double stop_price,
+                         double current_price) {
+  if (entry_direction == 0 || stop_price <= 0.0 || current_price <= 0.0 ||
+      !std::isfinite(stop_price) || !std::isfinite(current_price)) {
+    return false;
+  }
+  return entry_direction > 0 ? current_price <= stop_price
+                             : current_price >= stop_price;
+}
+
 const char* RiskModeToString(RiskMode mode) {
   switch (mode) {
     case RiskMode::kNormal:
@@ -3482,6 +3534,13 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
       symbol_quality.realized_net_sum_usd += realized_pnl_usd - fill.fee;
       symbol_quality.notional_abs_usd_sum += fill_notional_abs_usd;
     }
+    if (!account_already_reflects_fill && fill_order_record != nullptr) {
+      LogExitCaptureSample(fill,
+                           *fill_order_record,
+                           local_qty_before,
+                           avg_entry_price_before,
+                           realized_pnl_usd);
+    }
     if (entry_fill) {
       if (maker_fill && config_.execution_quality_guard_enabled) {
         execution_quality_by_symbol_[fill.symbol].last_maker_entry_tick =
@@ -3614,6 +3673,91 @@ bool BotApplication::RecentFillsExplainReconcileMismatch(
   return true;
 }
 
+void BotApplication::LogExitCaptureSample(const FillEvent& fill,
+                                          const OrderRecord& record,
+                                          double position_qty_before,
+                                          double avg_entry_price_before,
+                                          double realized_pnl_usd) {
+  if (fill.symbol.empty() || fill.direction == 0 || fill.qty <= 0.0 ||
+      fill.price <= 0.0 || avg_entry_price_before <= 0.0 ||
+      !std::isfinite(position_qty_before) ||
+      !std::isfinite(avg_entry_price_before) ||
+      !std::isfinite(realized_pnl_usd)) {
+    return;
+  }
+
+  const int entry_direction = SignOf(position_qty_before);
+  if (entry_direction == 0 || entry_direction == fill.direction) {
+    return;
+  }
+
+  const double close_qty =
+      std::min(std::fabs(position_qty_before), std::fabs(fill.qty));
+  if (close_qty <= kNotionalEpsilon) {
+    return;
+  }
+  const double close_qty_ratio =
+      std::clamp(close_qty / std::max(fill.qty, kNotionalEpsilon), 0.0, 1.0);
+  const double fee_for_closed_qty = fill.fee * close_qty_ratio;
+  const double entry_notional_abs_usd = close_qty * avg_entry_price_before;
+  if (entry_notional_abs_usd <= kNotionalEpsilon) {
+    return;
+  }
+
+  const auto state_it = managed_protection_by_symbol_.find(fill.symbol);
+  const bool has_protection_state =
+      state_it != managed_protection_by_symbol_.end() &&
+      state_it->second.avg_entry_price > 0.0;
+  const double best_price =
+      has_protection_state && state_it->second.best_price > 0.0
+          ? state_it->second.best_price
+          : avg_entry_price_before;
+  const double path_mfe_bps =
+      std::max(0.0, FavorableReturn(entry_direction,
+                                    avg_entry_price_before,
+                                    best_price)) *
+      10000.0;
+  const double captured_gross_bps =
+      FavorableReturn(entry_direction, avg_entry_price_before, fill.price) *
+      10000.0;
+  const double realized_net_usd = realized_pnl_usd - fee_for_closed_qty;
+  const double captured_net_bps =
+      realized_net_usd / entry_notional_abs_usd * 10000.0;
+  const double fee_bps =
+      std::fabs(fee_for_closed_qty) / entry_notional_abs_usd * 10000.0;
+  const double capture_ratio =
+      path_mfe_bps > 1e-9 ? captured_gross_bps / path_mfe_bps : 0.0;
+  const double round_trip_cost_bps = RoundTripCostBps();
+  const bool low_capture =
+      path_mfe_bps > std::max(round_trip_cost_bps, 1.0) &&
+      (capture_ratio < 0.20 || captured_net_bps < 0.0);
+  const int holding_ticks =
+      has_protection_state
+          ? std::max(0, market_tick_count_ - state_it->second.entry_tick)
+          : 0;
+
+  LogInfo("EXIT_CAPTURE_SAMPLE: symbol=" + fill.symbol +
+          ", client_order_id=" + fill.client_order_id +
+          ", purpose=" + std::string(OrderPurposeToString(record.intent.purpose)) +
+          ", entry_direction=" + std::to_string(entry_direction) +
+          ", close_qty=" + std::to_string(close_qty) +
+          ", avg_entry_price=" + std::to_string(avg_entry_price_before) +
+          ", exit_price=" + std::to_string(fill.price) +
+          ", best_price=" + std::to_string(best_price) +
+          ", path_mfe_bps=" + std::to_string(path_mfe_bps) +
+          ", captured_gross_bps=" + std::to_string(captured_gross_bps) +
+          ", captured_net_bps=" + std::to_string(captured_net_bps) +
+          ", fee_bps=" + std::to_string(fee_bps) +
+          ", capture_ratio=" + std::to_string(capture_ratio) +
+          ", low_capture=" + std::string(low_capture ? "true" : "false") +
+          ", realized_pnl_usd=" + std::to_string(realized_pnl_usd) +
+          ", realized_net_usd=" + std::to_string(realized_net_usd) +
+          ", round_trip_cost_bps=" + std::to_string(round_trip_cost_bps) +
+          ", holding_ticks=" + std::to_string(holding_ticks) +
+          ", protection_state=" +
+          std::string(has_protection_state ? "true" : "false"));
+}
+
 /**
  * @brief 保护单编排（symbol 级持仓 -> 动态 SL/TP -> 盈利保护）
  */
@@ -3694,6 +3838,7 @@ void BotApplication::RefreshManagedProtectionForSymbol(
     state.protection_group_id = BuildProtectionGroupId(symbol);
     state.direction = direction;
     state.best_price = market_price > 0.0 ? market_price : avg_entry_price;
+    state.entry_tick = market_tick_count_;
   }
 
   if (market_price > 0.0) {
@@ -3769,8 +3914,48 @@ void BotApplication::RefreshManagedProtectionForSymbol(
   synthetic_entry_fill.qty = std::fabs(position_qty);
   synthetic_entry_fill.price = avg_entry_price;
 
-  auto sl = execution_.BuildProtectionIntent(
-      synthetic_entry_fill, OrderPurpose::kSl, stop_loss_ratio);
+  double initial_sl_price = ComputeProtectionPrice(direction,
+                                                   avg_entry_price,
+                                                   OrderPurpose::kSl,
+                                                   stop_loss_ratio);
+  double trailing_distance_ratio = config_.protection.trailing_distance_ratio;
+  if (trailing_distance_ratio <= 0.0) {
+    trailing_distance_ratio = stop_loss_ratio;
+  }
+  const auto initial_profit_stop = ComputeProfitProtectionStopPrice(
+      direction,
+      avg_entry_price,
+      state.best_price,
+      config_.protection.break_even_enabled,
+      config_.protection.break_even_trigger_ratio,
+      config_.protection.break_even_offset_ratio,
+      config_.protection.trailing_enabled,
+      config_.protection.trailing_trigger_ratio,
+      trailing_distance_ratio);
+  const double initial_reference_price =
+      market_price > 0.0 ? market_price : state.best_price;
+  const bool initial_profit_crossed =
+      initial_profit_stop.has_value() &&
+      StopWouldTriggerNow(direction, *initial_profit_stop, initial_reference_price);
+  const bool initial_profit_armed =
+      initial_profit_stop.has_value() &&
+      !initial_profit_crossed &&
+      IsTighterStopPrice(direction, *initial_profit_stop, initial_sl_price, 0.0);
+  if (initial_profit_armed) {
+    initial_sl_price = *initial_profit_stop;
+  }
+  if (initial_profit_crossed) {
+    LogInfo("PROFIT_PROTECTION_CROSSED: symbol=" + symbol +
+            ", protection_group_id=" + state.protection_group_id +
+            ", reason=initial_refresh" +
+            ", best_price=" + std::to_string(state.best_price) +
+            ", current_price=" + std::to_string(initial_reference_price) +
+            ", candidate_sl_price=" + std::to_string(*initial_profit_stop) +
+            ", action=keep_initial_sl");
+  }
+
+  auto sl = execution_.BuildProtectionIntentAtPrice(
+      synthetic_entry_fill, OrderPurpose::kSl, initial_sl_price);
   bool sl_ok = false;
   if (sl) {
     sl_ok = EnqueueIntent(*sl);
@@ -3779,6 +3964,24 @@ void BotApplication::RefreshManagedProtectionForSymbol(
       state.active_sl_client_order_id = sl->client_order_id;
       state.active_sl_price = sl->price;
     }
+  }
+  if (initial_profit_armed && sl_ok) {
+    LogInfo("PROFIT_PROTECTION_ARMED: symbol=" + symbol +
+            ", protection_group_id=" + state.protection_group_id +
+            ", reason=initial_refresh" +
+            ", best_price=" + std::to_string(state.best_price) +
+            ", avg_entry_price=" + std::to_string(avg_entry_price) +
+            ", armed_sl_price=" + std::to_string(initial_sl_price) +
+            ", path_mfe_bps=" +
+            std::to_string(std::max(0.0,
+                                    FavorableReturn(direction,
+                                                    avg_entry_price,
+                                                    state.best_price)) *
+                           10000.0) +
+            ", break_even_trigger_ratio=" +
+            std::to_string(config_.protection.break_even_trigger_ratio) +
+            ", trailing_trigger_ratio=" +
+            std::to_string(config_.protection.trailing_trigger_ratio));
   }
   if (!sl_ok && config_.protection.require_sl) {
     protection_forced_reduce_only_ = true;
@@ -3825,7 +4028,9 @@ void BotApplication::RefreshManagedProtectionForSymbol(
           ", stop_loss_ratio=" + std::to_string(state.stop_loss_ratio) +
           ", take_profit_ratio=" + std::to_string(state.take_profit_ratio) +
           ", sl_price=" + std::to_string(state.active_sl_price) +
-          ", tp_price=" + std::to_string(state.active_tp_price));
+          ", tp_price=" + std::to_string(state.active_tp_price) +
+          ", profit_protection_initial_armed=" +
+          std::string(initial_profit_armed ? "true" : "false"));
 }
 
 void BotApplication::CancelManagedProtectionForSymbol(
@@ -3877,20 +4082,14 @@ void BotApplication::UpdateProfitProtection(const MarketEvent& event) {
     return;
   }
 
-  bool best_improved = false;
   if (state.direction > 0) {
     if (current_price > state.best_price + 1e-9) {
       state.best_price = current_price;
-      best_improved = true;
     }
   } else if (state.direction < 0) {
     if (state.best_price <= 0.0 || current_price < state.best_price - 1e-9) {
       state.best_price = current_price;
-      best_improved = true;
     }
-  }
-  if (!best_improved) {
-    return;
   }
 
   double trailing_distance_ratio = config_.protection.trailing_distance_ratio;
@@ -3915,14 +4114,24 @@ void BotApplication::UpdateProfitProtection(const MarketEvent& event) {
       std::max(state.avg_entry_price *
                    config_.protection.profit_protection_min_update_ratio,
                1e-6);
-  const bool tighter_stop =
-      state.direction > 0
-          ? (*candidate_stop > state.active_sl_price + min_update_abs)
-          : (*candidate_stop < state.active_sl_price - min_update_abs);
+  const bool tighter_stop = IsTighterStopPrice(
+      state.direction, *candidate_stop, state.active_sl_price, min_update_abs);
   if (!tighter_stop) {
     return;
   }
+  if (StopWouldTriggerNow(state.direction, *candidate_stop, current_price)) {
+    LogInfo("PROFIT_PROTECTION_CROSSED: symbol=" + state.symbol +
+            ", protection_group_id=" + state.protection_group_id +
+            ", reason=update" +
+            ", best_price=" + std::to_string(state.best_price) +
+            ", current_price=" + std::to_string(current_price) +
+            ", candidate_sl_price=" + std::to_string(*candidate_stop) +
+            ", active_sl_price=" + std::to_string(state.active_sl_price) +
+            ", action=skip_sl_update");
+    return;
+  }
 
+  const double previous_sl_price = state.active_sl_price;
   if (const auto* sl_record = oms_.Find(state.active_sl_client_order_id);
       sl_record != nullptr && !OrderManager::IsTerminalState(sl_record->state)) {
     executor_->Cancel(state.active_sl_client_order_id);
@@ -3955,6 +4164,20 @@ void BotApplication::UpdateProfitProtection(const MarketEvent& event) {
   LogInfo("PROFIT_PROTECTION_UPDATE: symbol=" + state.symbol +
           ", protection_group_id=" + state.protection_group_id +
           ", best_price=" + std::to_string(state.best_price) +
+          ", avg_entry_price=" + std::to_string(state.avg_entry_price) +
+          ", current_price=" + std::to_string(current_price) +
+          ", path_mfe_bps=" +
+          std::to_string(std::max(0.0,
+                                  FavorableReturn(state.direction,
+                                                  state.avg_entry_price,
+                                                  state.best_price)) *
+                         10000.0) +
+          ", current_favorable_bps=" +
+          std::to_string(FavorableReturn(state.direction,
+                                         state.avg_entry_price,
+                                         current_price) *
+                         10000.0) +
+          ", previous_sl_price=" + std::to_string(previous_sl_price) +
           ", new_sl_price=" + std::to_string(state.active_sl_price) +
           ", break_even_enabled=" +
           std::string(config_.protection.break_even_enabled ? "true" : "false") +

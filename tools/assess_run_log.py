@@ -779,6 +779,133 @@ def extract_execution_attribution(text: str) -> Dict[str, object]:
     return attribution
 
 
+def _new_exit_capture_symbol_bucket() -> Dict[str, object]:
+    return {
+        "samples": 0,
+        "low_capture_count": 0,
+        "path_mfe_bps_sum": 0.0,
+        "captured_gross_bps_sum": 0.0,
+        "captured_net_bps_sum": 0.0,
+        "fee_bps_sum": 0.0,
+        "capture_ratio_sum": 0.0,
+        "path_mfe_bps_avg": 0.0,
+        "captured_gross_bps_avg": 0.0,
+        "captured_net_bps_avg": 0.0,
+        "fee_bps_avg": 0.0,
+        "capture_ratio_avg": 0.0,
+        "low_capture_ratio": 0.0,
+    }
+
+
+def extract_exit_capture_samples(text: str) -> Dict[str, object]:
+    path_mfe_values: list[float] = []
+    captured_gross_values: list[float] = []
+    captured_net_values: list[float] = []
+    fee_values: list[float] = []
+    capture_ratio_values: list[float] = []
+    by_symbol: Dict[str, object] = {}
+    by_purpose: Dict[str, int] = {}
+    low_by_symbol: Dict[str, int] = {}
+    low_capture_count = 0
+
+    for line in text.splitlines():
+        if "EXIT_CAPTURE_SAMPLE:" not in line:
+            continue
+        symbol = normalize_counter_key(extract_log_field(line, "symbol"))
+        purpose = normalize_counter_key(extract_log_field(line, "purpose"))
+        path_mfe_bps = float(extract_float_log_field(line, "path_mfe_bps") or 0.0)
+        captured_gross_bps = float(
+            extract_float_log_field(line, "captured_gross_bps") or 0.0
+        )
+        captured_net_bps = float(
+            extract_float_log_field(line, "captured_net_bps") or 0.0
+        )
+        fee_bps = float(extract_float_log_field(line, "fee_bps") or 0.0)
+        capture_ratio = float(extract_float_log_field(line, "capture_ratio") or 0.0)
+        low_capture = (
+            str(extract_log_field(line, "low_capture") or "").strip().lower()
+            == "true"
+        )
+
+        path_mfe_values.append(path_mfe_bps)
+        captured_gross_values.append(captured_gross_bps)
+        captured_net_values.append(captured_net_bps)
+        fee_values.append(fee_bps)
+        capture_ratio_values.append(capture_ratio)
+        bump_counter(by_purpose, purpose)
+        bucket = by_symbol.setdefault(symbol, _new_exit_capture_symbol_bucket())
+        if isinstance(bucket, dict):
+            bucket["samples"] = int(bucket.get("samples", 0)) + 1
+            bucket["path_mfe_bps_sum"] = rounded(
+                float(bucket.get("path_mfe_bps_sum", 0.0)) + path_mfe_bps
+            )
+            bucket["captured_gross_bps_sum"] = rounded(
+                float(bucket.get("captured_gross_bps_sum", 0.0)) + captured_gross_bps
+            )
+            bucket["captured_net_bps_sum"] = rounded(
+                float(bucket.get("captured_net_bps_sum", 0.0)) + captured_net_bps
+            )
+            bucket["fee_bps_sum"] = rounded(
+                float(bucket.get("fee_bps_sum", 0.0)) + fee_bps
+            )
+            bucket["capture_ratio_sum"] = rounded(
+                float(bucket.get("capture_ratio_sum", 0.0)) + capture_ratio
+            )
+            if low_capture:
+                bucket["low_capture_count"] = int(
+                    bucket.get("low_capture_count", 0)
+                ) + 1
+        if low_capture:
+            low_capture_count += 1
+            bump_counter(low_by_symbol, symbol)
+
+    sample_count = len(path_mfe_values)
+    for payload in by_symbol.values():
+        if not isinstance(payload, dict):
+            continue
+        samples = int(payload.get("samples", 0))
+        if samples <= 0:
+            continue
+        payload["path_mfe_bps_avg"] = rounded(
+            float(payload.get("path_mfe_bps_sum", 0.0)) / samples
+        )
+        payload["captured_gross_bps_avg"] = rounded(
+            float(payload.get("captured_gross_bps_sum", 0.0)) / samples
+        )
+        payload["captured_net_bps_avg"] = rounded(
+            float(payload.get("captured_net_bps_sum", 0.0)) / samples
+        )
+        payload["fee_bps_avg"] = rounded(float(payload.get("fee_bps_sum", 0.0)) / samples)
+        payload["capture_ratio_avg"] = rounded(
+            float(payload.get("capture_ratio_sum", 0.0)) / samples
+        )
+        payload["low_capture_ratio"] = rounded(
+            int(payload.get("low_capture_count", 0)) / samples
+        )
+
+    def avg(values: list[float]) -> float:
+        return rounded(sum(values) / len(values)) if values else 0.0
+
+    return {
+        "sample_count": sample_count,
+        "low_capture_count": low_capture_count,
+        "low_capture_ratio": rounded(low_capture_count / sample_count)
+        if sample_count > 0
+        else 0.0,
+        "mean_path_mfe_bps": avg(path_mfe_values),
+        "mean_captured_gross_bps": avg(captured_gross_values),
+        "mean_captured_net_bps": avg(captured_net_values),
+        "mean_fee_bps": avg(fee_values),
+        "mean_capture_ratio": avg(capture_ratio_values),
+        "p25_capture_ratio": rounded(percentile(capture_ratio_values, 0.25)),
+        "p50_capture_ratio": rounded(percentile(capture_ratio_values, 0.50)),
+        "p75_capture_ratio": rounded(percentile(capture_ratio_values, 0.75)),
+        "by_symbol": by_symbol,
+        "low_by_symbol": low_by_symbol,
+        "by_purpose": by_purpose,
+    }
+
+
 def percentile(values: list[float], q: float) -> float:
     if not values:
         return 0.0
@@ -2083,6 +2210,7 @@ def assess(
     regime_current_counts = extract_regime_current_counts(text)
     regime_runtime_diagnostics = extract_regime_runtime_diagnostics(text)
     execution_attribution = extract_execution_attribution(text)
+    exit_capture_live = extract_exit_capture_samples(text)
     feature_scale = extract_feature_scale_diagnostics(text)
 
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
@@ -2325,6 +2453,40 @@ def assess(
         "profit_protection_update_count": count(
             r"PROFIT_PROTECTION_UPDATE", text
         ),
+        "profit_protection_armed_count": count(
+            r"PROFIT_PROTECTION_ARMED", text
+        ),
+        "profit_protection_crossed_count": count(
+            r"PROFIT_PROTECTION_CROSSED", text
+        ),
+        "exit_capture_sample_count": int(exit_capture_live["sample_count"]),
+        "exit_capture_low_count": int(exit_capture_live["low_capture_count"]),
+        "exit_capture_low_ratio": float(exit_capture_live["low_capture_ratio"]),
+        "exit_capture_mean_path_mfe_bps": float(
+            exit_capture_live["mean_path_mfe_bps"]
+        ),
+        "exit_capture_mean_captured_gross_bps": float(
+            exit_capture_live["mean_captured_gross_bps"]
+        ),
+        "exit_capture_mean_captured_net_bps": float(
+            exit_capture_live["mean_captured_net_bps"]
+        ),
+        "exit_capture_mean_fee_bps": float(exit_capture_live["mean_fee_bps"]),
+        "exit_capture_mean_capture_ratio": float(
+            exit_capture_live["mean_capture_ratio"]
+        ),
+        "exit_capture_p25_capture_ratio": float(
+            exit_capture_live["p25_capture_ratio"]
+        ),
+        "exit_capture_p50_capture_ratio": float(
+            exit_capture_live["p50_capture_ratio"]
+        ),
+        "exit_capture_p75_capture_ratio": float(
+            exit_capture_live["p75_capture_ratio"]
+        ),
+        "exit_capture_by_symbol": exit_capture_live["by_symbol"],
+        "exit_capture_low_by_symbol": exit_capture_live["low_by_symbol"],
+        "exit_capture_by_purpose": exit_capture_live["by_purpose"],
         "s5_protection_enabled": 1 if s5_protection_enabled else 0,
         "s5_profit_protection_enabled": 1
         if s5_profit_protection_enabled
@@ -3401,6 +3563,36 @@ def assess(
                 "TP 挂单失败事件已观测到（S5 观测项）: "
                 f"tp_attach_failed_count={metrics['tp_attach_failed_count']}"
             )
+        if stage.name == "S5" and metrics["profit_protection_crossed_count"] > 0:
+            warn_reasons.append(
+                "盈利保护候选 SL 已被当前价格穿越，系统已跳过提交以避免无效/即时触发条件单: "
+                f"profit_protection_crossed_count={metrics['profit_protection_crossed_count']}"
+            )
+        if (
+            stage.name == "S5"
+            and metrics["exit_capture_sample_count"] >= 3
+            and metrics["exit_capture_mean_path_mfe_bps"]
+            > max(float(metrics.get("fee_bps_per_fill", 0.0) or 0.0), 1.0)
+            and metrics["exit_capture_mean_capture_ratio"] < 0.20
+        ):
+            warn_reasons.append(
+                "live 退出捕获偏低，行情给过盈利空间但保护/退出未充分锁定: "
+                f"samples={metrics['exit_capture_sample_count']}, "
+                f"mean_path_mfe_bps={metrics['exit_capture_mean_path_mfe_bps']:.4f}, "
+                "mean_captured_net_bps="
+                f"{metrics['exit_capture_mean_captured_net_bps']:.4f}, "
+                f"mean_capture_ratio={metrics['exit_capture_mean_capture_ratio']:.4f}"
+            )
+        if (
+            stage.name == "S5"
+            and metrics["exit_capture_sample_count"] >= 5
+            and metrics["exit_capture_low_ratio"] >= 0.50
+        ):
+            warn_reasons.append(
+                "live low_capture 样本占比偏高，下一轮应优先调退出而不是继续加交易频率: "
+                f"low_capture_ratio={metrics['exit_capture_low_ratio']:.4f}, "
+                f"low_by_symbol={metrics['exit_capture_low_by_symbol']}"
+            )
         if (
             metrics["execution_window_runtime_count"] > 0
             and metrics["execution_window_maker_fill_ratio_avg"] < 0.20
@@ -3669,6 +3861,7 @@ def assess(
         "metrics": metrics,
         "account_pnl": account_pnl,
         "execution_attribution": execution_attribution,
+        "exit_capture_live": exit_capture_live,
         "fail_reasons": fail_reasons,
         "protection_fail_reasons": protection_fail_reasons,
         "execution_fail_reasons": execution_fail_reasons,
@@ -3770,6 +3963,25 @@ def print_report(report: Dict[str, object]) -> None:
             print(f"  - main: {fills.get('main')}")
         if isinstance(runtime_fill_windows, dict):
             print(f"  - runtime_fill_windows: {runtime_fill_windows}")
+
+    exit_capture_live = report.get("exit_capture_live", {})
+    if isinstance(exit_capture_live, dict) and exit_capture_live.get("sample_count", 0):
+        print("EXIT_CAPTURE_LIVE:")
+        for key in (
+            "sample_count",
+            "low_capture_count",
+            "low_capture_ratio",
+            "mean_path_mfe_bps",
+            "mean_captured_gross_bps",
+            "mean_captured_net_bps",
+            "mean_fee_bps",
+            "mean_capture_ratio",
+            "p50_capture_ratio",
+            "by_symbol",
+            "low_by_symbol",
+            "by_purpose",
+        ):
+            print(f"  - {key}: {exit_capture_live.get(key)}")
 
     fail_reasons = report["fail_reasons"]
     warn_reasons = report["warn_reasons"]

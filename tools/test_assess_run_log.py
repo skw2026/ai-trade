@@ -812,6 +812,29 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(quality["realized_net_usd"], -0.065)
         self.assertAlmostEqual(quality["realized_net_per_fill"], -0.0325)
 
+    def test_exit_capture_live_samples_are_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] EXIT_CAPTURE_SAMPLE: symbol=SOLUSDT, client_order_id=sol-tp-1, purpose=take_profit, entry_direction=1, close_qty=1.0, avg_entry_price=100.0, exit_price=100.3, best_price=101.2, path_mfe_bps=120.0, captured_gross_bps=30.0, captured_net_bps=20.0, fee_bps=5.0, capture_ratio=0.25, low_capture=false, realized_pnl_usd=0.30, realized_net_usd=0.20, round_trip_cost_bps=13.0, holding_ticks=12, protection_state=true\n"
+            "2026-02-14 15:00:02 [INFO] EXIT_CAPTURE_SAMPLE: symbol=ETHUSDT, client_order_id=eth-sl-1, purpose=stop_loss, entry_direction=1, close_qty=1.0, avg_entry_price=100.0, exit_price=99.95, best_price=101.0, path_mfe_bps=100.0, captured_gross_bps=-5.0, captured_net_bps=-12.0, fee_bps=7.0, capture_ratio=-0.05, low_capture=true, realized_pnl_usd=-0.05, realized_net_usd=-0.12, round_trip_cost_bps=13.0, holding_ticks=8, protection_state=true\n"
+            + self._runtime_line(20, 0.0, funnel_fills=2)
+        )
+
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        exit_capture_live = report["exit_capture_live"]
+
+        self.assertEqual(metrics["exit_capture_sample_count"], 2)
+        self.assertEqual(metrics["exit_capture_low_count"], 1)
+        self.assertAlmostEqual(metrics["exit_capture_low_ratio"], 0.5)
+        self.assertAlmostEqual(metrics["exit_capture_mean_path_mfe_bps"], 110.0)
+        self.assertAlmostEqual(metrics["exit_capture_mean_captured_gross_bps"], 12.5)
+        self.assertAlmostEqual(metrics["exit_capture_mean_captured_net_bps"], 4.0)
+        self.assertAlmostEqual(metrics["exit_capture_mean_capture_ratio"], 0.1)
+        self.assertEqual(metrics["exit_capture_low_by_symbol"]["ETHUSDT"], 1)
+        self.assertEqual(metrics["exit_capture_by_purpose"]["TAKE_PROFIT"], 1)
+        self.assertEqual(exit_capture_live["by_symbol"]["SOLUSDT"]["samples"], 1)
+        self.assertEqual(exit_capture_live["by_symbol"]["ETHUSDT"]["low_capture_count"], 1)
+
     def test_execution_attribution_ranks_symbols_by_net_per_fill(self):
         lines = [
             "2026-02-14 15:00:01 [INFO] FILL_APPLIED: fill_id=btc-open, client_order_id=btc-open, symbol=BTCUSDT, side=Buy, qty=1.0, price=100.0, fee=0.000000, liquidity=maker",
@@ -1625,6 +1648,7 @@ class AssessRunLogTest(unittest.TestCase):
             "2026-02-14 15:30:01 [INFO] PROTECTION_REFRESH: symbol=BTCUSDT, qty=0.01, direction=1\n"
             "2026-02-14 15:30:02 [ERROR] EXEC_TP_ATTACH_FAILED: reason=managed_tp_enqueue_failed, symbol=BTCUSDT\n"
             "2026-02-14 15:30:03 [INFO] PROFIT_PROTECTION_UPDATE: symbol=BTCUSDT, stop_price=101.0\n"
+            "2026-02-14 15:30:04 [INFO] PROFIT_PROTECTION_CROSSED: symbol=BTCUSDT, candidate_sl_price=101.0, action=skip_sl_update\n"
             + runtime
         )
         report = ASSESS.assess(
@@ -1639,8 +1663,12 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["metrics"]["tp_attach_failed_count"], 1)
         self.assertEqual(report["metrics"]["protection_refresh_count"], 1)
         self.assertEqual(report["metrics"]["profit_protection_update_count"], 1)
+        self.assertEqual(report["metrics"]["profit_protection_crossed_count"], 1)
         self.assertTrue(
             any("TP 挂单失败事件已观测到" in x for x in report["warn_reasons"])
+        )
+        self.assertTrue(
+            any("盈利保护候选 SL 已被当前价格穿越" in x for x in report["warn_reasons"])
         )
 
     def test_s5_fail_when_fill_windows_below_minimum(self):
