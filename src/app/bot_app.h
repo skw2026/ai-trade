@@ -169,6 +169,15 @@ class BotApplication {
   int SymbolExecutionQualityMinHoldRemainingTicks(const std::string& symbol) const;
   bool ShouldThrottleSymbolQualityMinHold(const MarketDecision& decision,
                                           int* out_remaining_ticks) const;
+  bool ShouldThrottleStrategyReduceCostGuard(
+      const MarketDecision& decision,
+      const MarketEvent& event,
+      double* out_estimated_gross_bps,
+      double* out_estimated_net_bps,
+      double* out_required_net_bps,
+      double* out_expected_exit_cost_bps,
+      int* out_holding_ticks,
+      std::string* out_bypass_reason) const;
   double SymbolExecutionQualityPenaltyBps(const std::string& symbol) const;
   int ActiveSymbolExecutionQualityGuardCount() const;
   /// 对账异常保护：连续异常触发 reduce-only / halt，自恢复窗口退出。
@@ -285,6 +294,8 @@ class BotApplication {
     std::uint64_t rebalance_converged_within_min_notional{0};
     std::uint64_t intents_throttled_cost_cooldown{0};
     std::uint64_t intents_throttled_symbol_quality_quarantine{0};
+    std::uint64_t strategy_reduce_cost_guard_blocked{0};
+    std::uint64_t strategy_reduce_cost_guard_bypassed{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
     std::uint64_t candidate_probe_signals{0};

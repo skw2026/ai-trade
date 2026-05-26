@@ -71,6 +71,10 @@ execution:
   maker_edge_relax_bps: 0.0
   cost_filter_cooldown_trigger_count: 0
   cost_filter_cooldown_ticks: 0
+  strategy_reduce_cost_guard_enabled: false
+  strategy_reduce_min_net_bps: 0.0
+  strategy_reduce_max_adverse_bps: 0.0
+  strategy_reduce_guard_max_hold_ticks: 0
   candidate_probe_enabled: false
   candidate_probe_min_trend_ratio: 0.0
   candidate_probe_strong_min_trend_ratio: 0.0

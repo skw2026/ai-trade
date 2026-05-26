@@ -83,6 +83,11 @@ execution:
   maker_edge_relax_bps: 0.35
   cost_filter_cooldown_trigger_count: 24
   cost_filter_cooldown_ticks: 40
+  # 普通策略 reduce 必须先覆盖预计出场成本；SL/TP/风控 reduce-only 不受此保护影响。
+  strategy_reduce_cost_guard_enabled: true
+  strategy_reduce_min_net_bps: 0.5
+  strategy_reduce_max_adverse_bps: 18.0
+  strategy_reduce_guard_max_hold_ticks: 720
   candidate_probe_enabled: true
   candidate_probe_min_trend_ratio: 0.60
   candidate_probe_strong_min_trend_ratio: 1.00

@@ -1860,6 +1860,136 @@ bool BotApplication::ShouldThrottleSymbolQualityMinHold(
   return remaining_ticks > 0;
 }
 
+bool BotApplication::ShouldThrottleStrategyReduceCostGuard(
+    const MarketDecision& decision,
+    const MarketEvent& event,
+    double* out_estimated_gross_bps,
+    double* out_estimated_net_bps,
+    double* out_required_net_bps,
+    double* out_expected_exit_cost_bps,
+    int* out_holding_ticks,
+    std::string* out_bypass_reason) const {
+  if (out_estimated_gross_bps != nullptr) {
+    *out_estimated_gross_bps = 0.0;
+  }
+  if (out_estimated_net_bps != nullptr) {
+    *out_estimated_net_bps = 0.0;
+  }
+  if (out_required_net_bps != nullptr) {
+    *out_required_net_bps = 0.0;
+  }
+  if (out_expected_exit_cost_bps != nullptr) {
+    *out_expected_exit_cost_bps = 0.0;
+  }
+  if (out_holding_ticks != nullptr) {
+    *out_holding_ticks = 0;
+  }
+  if (out_bypass_reason != nullptr) {
+    out_bypass_reason->clear();
+  }
+
+  if (!config_.execution_strategy_reduce_cost_guard_enabled ||
+      !decision.intent.has_value() ||
+      decision.intent->purpose != OrderPurpose::kReduce ||
+      !decision.intent->reduce_only) {
+    return false;
+  }
+  if (decision.risk_adjusted.reduce_only || IsForceReduceOnlyActive()) {
+    if (out_bypass_reason != nullptr) {
+      *out_bypass_reason = "forced_reduce_only";
+    }
+    return false;
+  }
+  if (decision.risk_adjusted.risk_mode != RiskMode::kNormal) {
+    if (out_bypass_reason != nullptr) {
+      *out_bypass_reason = std::string("risk_mode_") +
+                           RiskModeToString(decision.risk_adjusted.risk_mode);
+    }
+    return false;
+  }
+  if (decision.regime.bucket == RegimeBucket::kExtreme) {
+    if (out_bypass_reason != nullptr) {
+      *out_bypass_reason = "extreme_regime";
+    }
+    return false;
+  }
+
+  const OrderIntent& intent = *decision.intent;
+  const double position_qty = system_.account().position_qty(intent.symbol);
+  const int entry_direction = SignOf(position_qty);
+  if (entry_direction == 0 || entry_direction == intent.direction) {
+    return false;
+  }
+  const double avg_entry_price = system_.account().avg_entry_price(intent.symbol);
+  double exit_price = intent.price;
+  if (!std::isfinite(exit_price) || exit_price <= kNotionalEpsilon) {
+    exit_price = event.mark_price > kNotionalEpsilon ? event.mark_price
+                                                     : event.price;
+  }
+  if (!std::isfinite(avg_entry_price) || avg_entry_price <= kNotionalEpsilon ||
+      !std::isfinite(exit_price) || exit_price <= kNotionalEpsilon ||
+      !std::isfinite(intent.qty) || intent.qty <= kNotionalEpsilon) {
+    return false;
+  }
+
+  const double estimated_gross_bps =
+      FavorableReturn(entry_direction, avg_entry_price, exit_price) * 10000.0;
+  const bool maker_reduce =
+      intent.liquidity_preference == LiquidityPreference::kMaker;
+  const double expected_exit_cost_bps =
+      std::max(0.0, config_.execution_exit_fee_bps) +
+      (maker_reduce ? 0.0 : std::max(0.0, config_.execution_expected_slippage_bps));
+  const double estimated_net_bps = estimated_gross_bps - expected_exit_cost_bps;
+  const double required_net_bps =
+      std::max(0.0, config_.execution_strategy_reduce_min_net_bps);
+
+  int holding_ticks = 0;
+  if (const auto state_it = managed_protection_by_symbol_.find(intent.symbol);
+      state_it != managed_protection_by_symbol_.end()) {
+    holding_ticks = std::max(0, market_tick_count_ - state_it->second.entry_tick);
+  }
+
+  if (out_estimated_gross_bps != nullptr) {
+    *out_estimated_gross_bps = estimated_gross_bps;
+  }
+  if (out_estimated_net_bps != nullptr) {
+    *out_estimated_net_bps = estimated_net_bps;
+  }
+  if (out_required_net_bps != nullptr) {
+    *out_required_net_bps = required_net_bps;
+  }
+  if (out_expected_exit_cost_bps != nullptr) {
+    *out_expected_exit_cost_bps = expected_exit_cost_bps;
+  }
+  if (out_holding_ticks != nullptr) {
+    *out_holding_ticks = holding_ticks;
+  }
+
+  if (estimated_net_bps >= required_net_bps) {
+    return false;
+  }
+
+  const double max_adverse_bps =
+      std::max(0.0, config_.execution_strategy_reduce_max_adverse_bps);
+  if (max_adverse_bps > 0.0 && estimated_net_bps <= -max_adverse_bps) {
+    if (out_bypass_reason != nullptr) {
+      *out_bypass_reason = "adverse_cut";
+    }
+    return false;
+  }
+
+  const int max_hold_ticks =
+      std::max(0, config_.execution_strategy_reduce_guard_max_hold_ticks);
+  if (max_hold_ticks > 0 && holding_ticks >= max_hold_ticks) {
+    if (out_bypass_reason != nullptr) {
+      *out_bypass_reason = "max_hold";
+    }
+    return false;
+  }
+
+  return true;
+}
+
 double BotApplication::SymbolExecutionQualityPenaltyBps(
     const std::string& symbol) const {
   const auto it = execution_quality_by_symbol_.find(symbol);
@@ -2263,6 +2393,10 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.intents_throttled_cost_cooldown;
   total->intents_throttled_symbol_quality_quarantine +=
       delta.intents_throttled_symbol_quality_quarantine;
+  total->strategy_reduce_cost_guard_blocked +=
+      delta.strategy_reduce_cost_guard_blocked;
+  total->strategy_reduce_cost_guard_bypassed +=
+      delta.strategy_reduce_cost_guard_bypassed;
   total->intents_throttled += delta.intents_throttled;
   total->intents_enqueued += delta.intents_enqueued;
   total->candidate_probe_signals += delta.candidate_probe_signals;
@@ -3215,6 +3349,59 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             ", client_order_id=" + decision.intent->client_order_id +
             ", reason=gate_halted");
     decision.intent.reset();
+  }
+
+  if (decision.intent.has_value()) {
+    double estimated_gross_bps = 0.0;
+    double estimated_net_bps = 0.0;
+    double required_net_bps = 0.0;
+    double expected_exit_cost_bps = 0.0;
+    int holding_ticks = 0;
+    std::string bypass_reason;
+    if (ShouldThrottleStrategyReduceCostGuard(decision,
+                                              event,
+                                              &estimated_gross_bps,
+                                              &estimated_net_bps,
+                                              &required_net_bps,
+                                              &expected_exit_cost_bps,
+                                              &holding_ticks,
+                                              &bypass_reason)) {
+      ++funnel_window_.intents_throttled;
+      ++funnel_window_.strategy_reduce_cost_guard_blocked;
+      LogInfo("STRATEGY_REDUCE_COST_GUARD_BLOCKED: symbol=" +
+              decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", estimated_gross_bps=" +
+              std::to_string(estimated_gross_bps) +
+              ", estimated_net_bps=" + std::to_string(estimated_net_bps) +
+              ", required_net_bps=" + std::to_string(required_net_bps) +
+              ", expected_exit_cost_bps=" +
+              std::to_string(expected_exit_cost_bps) +
+              ", holding_ticks=" + std::to_string(holding_ticks) +
+              ", max_hold_ticks=" +
+              std::to_string(
+                  std::max(0, config_.execution_strategy_reduce_guard_max_hold_ticks)) +
+              ", max_adverse_bps=" +
+              std::to_string(
+                  std::max(0.0, config_.execution_strategy_reduce_max_adverse_bps)));
+      LogInfo("ORDER_THROTTLED: symbol=" + decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", reason=strategy_reduce_cost_guard");
+      decision.intent.reset();
+    } else if (!bypass_reason.empty()) {
+      ++funnel_window_.strategy_reduce_cost_guard_bypassed;
+      LogInfo("STRATEGY_REDUCE_COST_GUARD_BYPASS: symbol=" +
+              decision.intent->symbol +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", reason=" + bypass_reason +
+              ", estimated_gross_bps=" +
+              std::to_string(estimated_gross_bps) +
+              ", estimated_net_bps=" + std::to_string(estimated_net_bps) +
+              ", required_net_bps=" + std::to_string(required_net_bps) +
+              ", expected_exit_cost_bps=" +
+              std::to_string(expected_exit_cost_bps) +
+              ", holding_ticks=" + std::to_string(holding_ticks));
+    }
   }
 
   if (decision.intent.has_value()) {
@@ -5068,6 +5255,10 @@ void BotApplication::LogStatus() {
           ", intents_throttled_symbol_quality_quarantine=" +
           std::to_string(
               funnel_window.intents_throttled_symbol_quality_quarantine) +
+          ", strategy_reduce_cost_guard_blocked=" +
+          std::to_string(funnel_window.strategy_reduce_cost_guard_blocked) +
+          ", strategy_reduce_cost_guard_bypassed=" +
+          std::to_string(funnel_window.strategy_reduce_cost_guard_bypassed) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
           ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
           ", candidate_probe_signals=" +

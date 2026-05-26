@@ -835,6 +835,66 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "strategy_reduce_cost_guard_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.strategy_reduce_cost_guard_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_strategy_reduce_cost_guard_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "strategy_reduce_min_net_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.strategy_reduce_min_net_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_strategy_reduce_min_net_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "strategy_reduce_max_adverse_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.strategy_reduce_max_adverse_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_strategy_reduce_max_adverse_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "strategy_reduce_guard_max_hold_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.strategy_reduce_guard_max_hold_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_strategy_reduce_guard_max_hold_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         key == "candidate_probe_enabled") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -4467,6 +4527,14 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "execution.cost_filter_cooldown_trigger_count 与 execution.cost_filter_cooldown_ticks 需同时>0或同时为0";
+    }
+    return false;
+  }
+  if (config.execution_strategy_reduce_min_net_bps < 0.0 ||
+      config.execution_strategy_reduce_max_adverse_bps < 0.0 ||
+      config.execution_strategy_reduce_guard_max_hold_ticks < 0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.strategy_reduce_cost_guard_* 参数不能为负数";
     }
     return false;
   }

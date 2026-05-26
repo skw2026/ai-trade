@@ -2003,6 +2003,10 @@ int main() {
     config.strategy_signal_notional_usd = 100.0;
     config.strategy_min_hold_ticks = 18;
     config.execution_candidate_probe_cooldown_ticks = 600;
+    config.execution_strategy_reduce_cost_guard_enabled = true;
+    config.execution_strategy_reduce_min_net_bps = 0.5;
+    config.execution_strategy_reduce_max_adverse_bps = 18.0;
+    config.execution_strategy_reduce_guard_max_hold_ticks = 120;
     config.execution_quality_guard_enabled = true;
     config.execution_quality_guard_min_fills = 2;
     config.execution_quality_guard_bad_streak_to_trigger = 1;
@@ -2094,6 +2098,84 @@ int main() {
       std::cerr << "风控 reduce_only 不能被 symbol 最小持仓保护拦截\n";
       return 1;
     }
+
+    ai_trade::FillEvent held_entry;
+    held_entry.fill_id = "strategy-reduce-guard-entry";
+    held_entry.client_order_id = "strategy-reduce-guard-entry";
+    held_entry.symbol = "BNBUSDT";
+    held_entry.direction = 1;
+    held_entry.qty = 0.1;
+    held_entry.price = 600.0;
+    app.system_.OnFill(held_entry);
+    app.managed_protection_by_symbol_["BNBUSDT"].symbol = "BNBUSDT";
+    app.managed_protection_by_symbol_["BNBUSDT"].direction = 1;
+    app.managed_protection_by_symbol_["BNBUSDT"].qty = 0.1;
+    app.managed_protection_by_symbol_["BNBUSDT"].avg_entry_price = 600.0;
+    app.managed_protection_by_symbol_["BNBUSDT"].entry_tick =
+        app.market_tick_count_;
+
+    reduce_decision.risk_adjusted.reduce_only = false;
+    reduce_decision.risk_adjusted.risk_mode = ai_trade::RiskMode::kNormal;
+    reduce_decision.regime.bucket = ai_trade::RegimeBucket::kTrend;
+    reduce_decision.intent = reduce_intent;
+    reduce_decision.intent->price = 600.05;
+    const ai_trade::MarketEvent reduce_event{
+        100, "BNBUSDT", 600.05, 600.05, 0.0, 5000};
+    double estimated_gross_bps = 0.0;
+    double estimated_net_bps = 0.0;
+    double required_net_bps = 0.0;
+    double expected_exit_cost_bps = 0.0;
+    int guard_holding_ticks = 0;
+    std::string bypass_reason;
+    if (!app.ShouldThrottleStrategyReduceCostGuard(reduce_decision,
+                                                   reduce_event,
+                                                   &estimated_gross_bps,
+                                                   &estimated_net_bps,
+                                                   &required_net_bps,
+                                                   &expected_exit_cost_bps,
+                                                   &guard_holding_ticks,
+                                                   &bypass_reason) ||
+        estimated_net_bps >= required_net_bps ||
+        !bypass_reason.empty()) {
+      std::cerr << "普通策略 reduce 未覆盖退出成本时应被成本守门拦截: net="
+                << estimated_net_bps << ", required=" << required_net_bps
+                << ", bypass=" << bypass_reason << "\n";
+      return 1;
+    }
+
+    reduce_decision.risk_adjusted.reduce_only = true;
+    if (app.ShouldThrottleStrategyReduceCostGuard(reduce_decision,
+                                                  reduce_event,
+                                                  nullptr,
+                                                  nullptr,
+                                                  nullptr,
+                                                  nullptr,
+                                                  nullptr,
+                                                  &bypass_reason) ||
+        bypass_reason != "forced_reduce_only") {
+      std::cerr << "风控 reduce_only 不能被普通策略 reduce 成本守门拦截\n";
+      return 1;
+    }
+    reduce_decision.risk_adjusted.reduce_only = false;
+
+    app.market_tick_count_ =
+        app.managed_protection_by_symbol_["BNBUSDT"].entry_tick +
+        config.execution_strategy_reduce_guard_max_hold_ticks;
+    if (app.ShouldThrottleStrategyReduceCostGuard(reduce_decision,
+                                                  reduce_event,
+                                                  nullptr,
+                                                  nullptr,
+                                                  nullptr,
+                                                  nullptr,
+                                                  &guard_holding_ticks,
+                                                  &bypass_reason) ||
+        bypass_reason != "max_hold" ||
+        guard_holding_ticks < config.execution_strategy_reduce_guard_max_hold_ticks) {
+      std::cerr << "超过最大持仓 tick 后应允许普通策略 reduce 收敛\n";
+      return 1;
+    }
+    app.market_tick_count_ =
+        app.managed_protection_by_symbol_["BNBUSDT"].entry_tick;
 
     app.EvaluateSymbolExecutionQualityGuard(
         "BNBUSDT", 2, 2, 0.20, 0.0, 100.0);
@@ -3529,6 +3611,10 @@ int main() {
         << "  maker_edge_relax_bps: 0.9\n"
         << "  cost_filter_cooldown_trigger_count: 6\n"
         << "  cost_filter_cooldown_ticks: 120\n"
+        << "  strategy_reduce_cost_guard_enabled: true\n"
+        << "  strategy_reduce_min_net_bps: 0.7\n"
+        << "  strategy_reduce_max_adverse_bps: 19.0\n"
+        << "  strategy_reduce_guard_max_hold_ticks: 240\n"
         << "  candidate_probe_enabled: true\n"
         << "  candidate_probe_min_trend_ratio: 0.82\n"
         << "  candidate_probe_strong_min_trend_ratio: 1.05\n"
@@ -3688,6 +3774,10 @@ int main() {
         !NearlyEqual(config.execution_maker_edge_relax_bps, 0.9) ||
         config.execution_cost_filter_cooldown_trigger_count != 6 ||
         config.execution_cost_filter_cooldown_ticks != 120 ||
+        config.execution_strategy_reduce_cost_guard_enabled != true ||
+        !NearlyEqual(config.execution_strategy_reduce_min_net_bps, 0.7) ||
+        !NearlyEqual(config.execution_strategy_reduce_max_adverse_bps, 19.0) ||
+        config.execution_strategy_reduce_guard_max_hold_ticks != 240 ||
         config.execution_candidate_probe_enabled != true ||
         !NearlyEqual(config.execution_candidate_probe_min_trend_ratio, 0.82) ||
         !NearlyEqual(config.execution_candidate_probe_strong_min_trend_ratio,
@@ -4563,6 +4653,29 @@ int main() {
     if (error.find("cost_filter_cooldown") == std::string::npos) {
       std::cerr
           << "非法 execution.cost_filter_cooldown_* 错误信息不符合预期\n";
+      return 1;
+    }
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_invalid_strategy_reduce_cost_guard.yaml";
+    std::ofstream out(temp_path);
+    out << "execution:\n"
+        << "  strategy_reduce_min_net_bps: -0.1\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "非法 execution.strategy_reduce_cost_guard_* 配置应加载失败\n";
+      return 1;
+    }
+    if (error.find("strategy_reduce_cost_guard") == std::string::npos) {
+      std::cerr
+          << "非法 execution.strategy_reduce_cost_guard_* 错误信息不符合预期\n";
       return 1;
     }
     std::filesystem::remove(temp_path);

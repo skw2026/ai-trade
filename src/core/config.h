@@ -320,6 +320,10 @@ struct AppConfig {
   double execution_maker_edge_relax_bps{0.0};
   int execution_cost_filter_cooldown_trigger_count{0};
   int execution_cost_filter_cooldown_ticks{0};
+  bool execution_strategy_reduce_cost_guard_enabled{false};
+  double execution_strategy_reduce_min_net_bps{0.0};
+  double execution_strategy_reduce_max_adverse_bps{0.0};
+  int execution_strategy_reduce_guard_max_hold_ticks{0};
   bool execution_quality_guard_enabled{false};
   int execution_quality_guard_min_fills{12};
   int execution_quality_guard_bad_streak_to_trigger{2};

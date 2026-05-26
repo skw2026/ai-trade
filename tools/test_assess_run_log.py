@@ -835,6 +835,23 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(exit_capture_live["by_symbol"]["SOLUSDT"]["samples"], 1)
         self.assertEqual(exit_capture_live["by_symbol"]["ETHUSDT"]["low_capture_count"], 1)
 
+    def test_strategy_reduce_cost_guard_metrics_are_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] STRATEGY_REDUCE_COST_GUARD_BLOCKED: symbol=SOLUSDT, client_order_id=sol-reduce-1, estimated_gross_bps=1.0, estimated_net_bps=-4.5, required_net_bps=0.5, expected_exit_cost_bps=5.5, holding_ticks=20\n"
+            "2026-02-14 15:00:01 [INFO] ORDER_THROTTLED: symbol=SOLUSDT, client_order_id=sol-reduce-1, reason=strategy_reduce_cost_guard\n"
+            "2026-02-14 15:00:02 [INFO] STRATEGY_REDUCE_COST_GUARD_BYPASS: symbol=ETHUSDT, client_order_id=eth-reduce-1, reason=max_hold, estimated_gross_bps=0.0, estimated_net_bps=-5.5, required_net_bps=0.5, expected_exit_cost_bps=5.5, holding_ticks=720\n"
+            + self._runtime_line(20, 0.0)
+        )
+
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+
+        self.assertEqual(metrics["strategy_reduce_cost_guard_blocked_count"], 1)
+        self.assertEqual(metrics["strategy_reduce_cost_guard_bypass_count"], 1)
+        self.assertEqual(
+            metrics["order_throttled_strategy_reduce_cost_guard_count"], 1
+        )
+
     def test_execution_attribution_ranks_symbols_by_net_per_fill(self):
         lines = [
             "2026-02-14 15:00:01 [INFO] FILL_APPLIED: fill_id=btc-open, client_order_id=btc-open, symbol=BTCUSDT, side=Buy, qty=1.0, price=100.0, fee=0.000000, liquidity=maker",

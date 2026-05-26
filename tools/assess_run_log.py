@@ -2434,6 +2434,15 @@ def assess(
             r"ORDER_THROTTLED:.*symbol_quality_quarantine_remaining_ticks",
             text,
         ),
+        "strategy_reduce_cost_guard_blocked_count": count(
+            r"STRATEGY_REDUCE_COST_GUARD_BLOCKED:", text
+        ),
+        "strategy_reduce_cost_guard_bypass_count": count(
+            r"STRATEGY_REDUCE_COST_GUARD_BYPASS:", text
+        ),
+        "order_throttled_strategy_reduce_cost_guard_count": count(
+            r"ORDER_THROTTLED:.*reason=strategy_reduce_cost_guard\b", text
+        ),
         "funnel_enqueued_runtime_count": count(
             r"RUNTIME_STATUS:.*funnel_window=\{[^}]*enqueued=(?:[1-9][0-9]*)",
             text,
