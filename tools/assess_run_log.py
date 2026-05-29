@@ -2019,8 +2019,44 @@ def extract_feature_scale_diagnostics(text: str) -> Dict[str, object]:
     nan_skip_by_feature: Dict[str, int] = {}
     nan_skip_by_symbol: Dict[str, int] = {}
     nan_skip_examples: List[Dict[str, object]] = []
+    sanitized_count = 0
+    sanitized_by_feature: Dict[str, int] = {}
+    sanitized_by_symbol: Dict[str, int] = {}
+    sanitized_examples: List[Dict[str, object]] = []
 
     for line in text.splitlines():
+        if "INTEGRATOR_FEATURE_SANITIZED:" in line:
+            sanitized_count += 1
+            fields = {
+                item.group("name"): item.group("value")
+                for item in INTEGRATOR_NAN_SKIP_FIELD_RE.finditer(line)
+            }
+            feature_name = fields.get("feature_name", "unknown")
+            symbol = fields.get("symbol", "unknown")
+            sanitized_by_feature[feature_name] = (
+                int(sanitized_by_feature.get(feature_name, 0)) + 1
+            )
+            sanitized_by_symbol[symbol] = int(sanitized_by_symbol.get(symbol, 0)) + 1
+            if len(sanitized_examples) < 5:
+                example: Dict[str, object] = {
+                    "feature_name": feature_name,
+                    "symbol": symbol,
+                }
+                for key in (
+                    "feature_index",
+                    "raw_value",
+                    "sanitized_value",
+                    "regime",
+                    "bucket",
+                    "raw_regime",
+                    "raw_bucket",
+                    "model_version",
+                    "sanitize_count",
+                ):
+                    if key in fields:
+                        example[key] = fields[key]
+                sanitized_examples.append(example)
+
         if "INTEGRATOR_SKIP: NaN feature detected" in line:
             nan_skip_count += 1
             fields = {
@@ -2104,6 +2140,10 @@ def extract_feature_scale_diagnostics(text: str) -> Dict[str, object]:
         "integrator_nan_feature_skip_by_feature": nan_skip_by_feature,
         "integrator_nan_feature_skip_by_symbol": nan_skip_by_symbol,
         "integrator_nan_feature_skip_examples": nan_skip_examples,
+        "integrator_feature_sanitized_count": sanitized_count,
+        "integrator_feature_sanitized_by_feature": sanitized_by_feature,
+        "integrator_feature_sanitized_by_symbol": sanitized_by_symbol,
+        "integrator_feature_sanitized_examples": sanitized_examples,
     }
 
 
@@ -2377,6 +2417,24 @@ def assess(
         "trend_candidate_probe_fill_count": count(
             r"TREND_CANDIDATE_PROBE_FILL:", text
         ),
+        "trend_candidate_probe_pending_timeout_count": count(
+            r"TREND_CANDIDATE_PROBE_PENDING_TIMEOUT:", text
+        ),
+        "trend_candidate_probe_cancel_ok_count": count(
+            r"TREND_CANDIDATE_PROBE_CANCEL_OK:", text
+        ),
+        "trend_candidate_probe_cancel_failed_count": count(
+            r"TREND_CANDIDATE_PROBE_CANCEL_FAILED:", text
+        ),
+        "trend_candidate_probe_reprice_count": count(
+            r"TREND_CANDIDATE_PROBE_REPRICE:", text
+        ),
+        "trend_candidate_probe_taker_fallback_count": count(
+            r"TREND_CANDIDATE_PROBE_TAKER_FALLBACK:", text
+        ),
+        "trend_candidate_probe_expired_without_fill_count": count(
+            r"TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL:", text
+        ),
         "trend_candidate_probe_skip_count": count(
             r"TREND_CANDIDATE_PROBE_SKIPPED:", text
         ),
@@ -2387,7 +2445,8 @@ def assess(
             r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=EXISTING_INTENT\b", text
         ),
         "trend_candidate_probe_skip_pending_orders_count": count(
-            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=PENDING_ORDERS\b", text
+            r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=(?:PENDING_ORDERS|ACTIVE_PROBE)\b",
+            text,
         ),
         "trend_candidate_probe_skip_exposure_count": count(
             r"TREND_CANDIDATE_PROBE_SKIPPED:.*reason=EXPOSURE\b", text
@@ -2442,6 +2501,12 @@ def assess(
         ),
         "order_throttled_strategy_reduce_cost_guard_count": count(
             r"ORDER_THROTTLED:.*reason=strategy_reduce_cost_guard\b", text
+        ),
+        "order_throttled_reduce_without_actual_position_count": count(
+            r"ORDER_THROTTLED:.*reason=reduce_without_actual_position\b", text
+        ),
+        "reduce_qty_capped_to_position_count": count(
+            r"REDUCE_QTY_CAPPED_TO_POSITION:", text
         ),
         "funnel_enqueued_runtime_count": count(
             r"RUNTIME_STATUS:.*funnel_window=\{[^}]*enqueued=(?:[1-9][0-9]*)",
@@ -3823,6 +3888,22 @@ def assess(
             warn_reasons.append(
                 "Integrator 观测到 NaN feature skip，建议复核 miner/live 特征对齐: "
                 f"count={metrics['integrator_nan_feature_skip_count']}"
+                f"{feature_detail}"
+            )
+        if int(metrics.get("integrator_feature_sanitized_count", 0)) > 0:
+            sanitized_features = metrics.get("integrator_feature_sanitized_by_feature", {})
+            feature_detail = ""
+            if isinstance(sanitized_features, dict) and sanitized_features:
+                feature_items = sorted(
+                    sanitized_features.items(),
+                    key=lambda item: (-int(item[1]), str(item[0])),
+                )
+                feature_detail = ", features=" + ",".join(
+                    f"{name}:{count}" for name, count in feature_items[:5]
+                )
+            warn_reasons.append(
+                "Integrator 已对非有限 live feature 做兜底归零，需继续复核 miner/live 特征对齐: "
+                f"count={metrics['integrator_feature_sanitized_count']}"
                 f"{feature_detail}"
             )
         if (

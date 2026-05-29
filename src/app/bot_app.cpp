@@ -1347,6 +1347,11 @@ bool BotApplication::TryApplyTrendCandidateProbe(
   if (decision->regime.warmup) {
     return false;
   }
+  if (active_candidate_probe_by_symbol_.find(event.symbol) !=
+      active_candidate_probe_by_symbol_.end()) {
+    return skip_probe("ACTIVE_PROBE",
+                      &funnel_window_.candidate_probe_skipped_pending_orders);
+  }
   if (has_pending_symbol_net_orders) {
     return skip_probe("PENDING_ORDERS",
                       &funnel_window_.candidate_probe_skipped_pending_orders);
@@ -1536,6 +1541,275 @@ bool BotApplication::IsTrendCandidateProbeIntent(
     const std::string& client_order_id) const {
   return !client_order_id.empty() &&
          candidate_probe_intent_ids_.count(client_order_id) > 0;
+}
+
+bool BotApplication::NormalizeReduceIntentToActualPosition(
+    MarketDecision* decision,
+    const MarketEvent& event) {
+  (void)event;
+  if (decision == nullptr || !decision->intent.has_value()) {
+    return true;
+  }
+  OrderIntent& intent = *decision->intent;
+  if (intent.purpose != OrderPurpose::kReduce || !intent.reduce_only) {
+    return true;
+  }
+
+  const double actual_position_qty = system_.account().position_qty(intent.symbol);
+  const int actual_position_direction = SignOf(actual_position_qty);
+  if (actual_position_direction == 0 ||
+      actual_position_direction == intent.direction) {
+    ++funnel_window_.intents_throttled;
+    ++funnel_window_.reduce_without_position_blocked;
+    LogInfo("ORDER_THROTTLED: symbol=" + intent.symbol +
+            ", client_order_id=" + intent.client_order_id +
+            ", reason=reduce_without_actual_position" +
+            ", actual_position_qty=" + std::to_string(actual_position_qty) +
+            ", intent_direction=" + std::to_string(intent.direction) +
+            ", adjusted_notional_usd=" +
+            std::to_string(decision->risk_adjusted.adjusted_notional_usd));
+    decision->intent.reset();
+    return false;
+  }
+
+  const double max_reduce_qty = std::fabs(actual_position_qty);
+  if (intent.qty > max_reduce_qty + kNotionalEpsilon) {
+    ++funnel_window_.reduce_qty_capped_to_position;
+    LogInfo("REDUCE_QTY_CAPPED_TO_POSITION: symbol=" + intent.symbol +
+            ", client_order_id=" + intent.client_order_id +
+            ", old_qty=" + std::to_string(intent.qty) +
+            ", capped_qty=" + std::to_string(max_reduce_qty) +
+            ", actual_position_qty=" + std::to_string(actual_position_qty));
+    intent.qty = max_reduce_qty;
+  }
+  if (intent.qty <= kNotionalEpsilon) {
+    ++funnel_window_.intents_throttled;
+    ++funnel_window_.reduce_without_position_blocked;
+    LogInfo("ORDER_THROTTLED: symbol=" + intent.symbol +
+            ", client_order_id=" + intent.client_order_id +
+            ", reason=reduce_qty_zero_after_actual_position_cap");
+    decision->intent.reset();
+    return false;
+  }
+  return true;
+}
+
+void BotApplication::OnCandidateProbeCancelResult(
+    const std::string& client_order_id,
+    bool success) {
+  if (client_order_id.empty()) {
+    return;
+  }
+  for (auto& [symbol, state] : active_candidate_probe_by_symbol_) {
+    if (state.client_order_id != client_order_id) {
+      continue;
+    }
+    if (success) {
+      ++funnel_window_.candidate_probe_cancel_ok;
+      state.cancel_requested = false;
+      state.cancel_confirmed = true;
+      LogInfo("TREND_CANDIDATE_PROBE_CANCEL_OK: symbol=" + symbol +
+              ", client_order_id=" + client_order_id +
+              ", replacement_pending=" +
+              std::string(state.replacement_pending ? "true" : "false") +
+              ", replacement_taker=" +
+              std::string(state.replacement_taker ? "true" : "false"));
+    } else {
+      ++funnel_window_.candidate_probe_cancel_failed;
+      state.cancel_requested = false;
+      state.cancel_confirmed = false;
+      state.replacement_pending = false;
+      state.created_tick = market_tick_count_;
+      LogInfo("TREND_CANDIDATE_PROBE_CANCEL_FAILED: symbol=" + symbol +
+              ", client_order_id=" + client_order_id +
+              ", retry_after_tick=" + std::to_string(state.created_tick));
+    }
+    return;
+  }
+}
+
+void BotApplication::ManageCandidateProbeLifecycle(const MarketEvent& event) {
+  if (!config_.execution_candidate_probe_enabled || event.symbol.empty() ||
+      executor_ == nullptr) {
+    return;
+  }
+  auto it = active_candidate_probe_by_symbol_.find(event.symbol);
+  if (it == active_candidate_probe_by_symbol_.end()) {
+    return;
+  }
+
+  auto& state = it->second;
+  const OrderRecord* record = oms_.Find(state.client_order_id);
+  const bool waiting_cancel_ack =
+      state.cancel_requested && !state.cancel_confirmed;
+  const bool terminal =
+      record == nullptr || OrderManager::IsTerminalState(record->state);
+  const double actual_notional =
+      system_.account().current_notional_usd(event.symbol);
+  if ((record != nullptr && record->filled_qty > kNotionalEpsilon) ||
+      HasExposure(actual_notional)) {
+    active_candidate_probe_by_symbol_.erase(it);
+    return;
+  }
+  if (!state.cancel_confirmed && !waiting_cancel_ack && terminal) {
+    active_candidate_probe_by_symbol_.erase(it);
+    return;
+  }
+
+  if (state.cancel_confirmed) {
+    if (!state.replacement_pending) {
+      active_candidate_probe_by_symbol_.erase(it);
+      return;
+    }
+    if (trading_halted_ || IsForceReduceOnlyActive() ||
+        adapter_ == nullptr || !adapter_->TradeOk()) {
+      ++funnel_window_.candidate_probe_expired_without_fill;
+      LogInfo("TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL: symbol=" +
+              event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", reason=replacement_trade_not_ok");
+      active_candidate_probe_by_symbol_.erase(it);
+      return;
+    }
+
+    double reference_price = event.price > 0.0 ? event.price : event.mark_price;
+    if (!std::isfinite(reference_price) || reference_price <= 0.0) {
+      reference_price = state.reference_price;
+    }
+    if (!std::isfinite(reference_price) || reference_price <= 0.0) {
+      ++funnel_window_.candidate_probe_expired_without_fill;
+      LogInfo("TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL: symbol=" +
+              event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", reason=replacement_invalid_price");
+      active_candidate_probe_by_symbol_.erase(it);
+      return;
+    }
+
+    const double reprice_ratio =
+        std::max(0.0, config_.execution_candidate_probe_reprice_bps) / 10000.0;
+    if (!state.replacement_taker && reprice_ratio > 0.0 &&
+        state.next_attempts > 0) {
+      const double aggressiveness =
+          reprice_ratio * static_cast<double>(state.next_attempts);
+      reference_price *= state.direction > 0 ? (1.0 + aggressiveness)
+                                             : (1.0 - aggressiveness);
+    }
+    RiskAdjustedPosition target{
+        .symbol = event.symbol,
+        .adjusted_notional_usd =
+            static_cast<double>(state.direction) * state.notional_usd,
+        .reduce_only = false,
+        .risk_mode = system_.risk_mode(),
+    };
+    auto replacement = execution_.BuildIntent(target, 0.0, reference_price);
+    if (!replacement.has_value() || !IsOpeningIntent(*replacement)) {
+      ++funnel_window_.candidate_probe_expired_without_fill;
+      LogInfo("TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL: symbol=" +
+              event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", reason=replacement_build_failed");
+      active_candidate_probe_by_symbol_.erase(it);
+      return;
+    }
+    replacement->liquidity_preference =
+        state.replacement_taker ? LiquidityPreference::kTaker
+                                : LiquidityPreference::kMaker;
+    std::string guard_reason;
+    if (ViolatesExchangePretradeGuard(adapter_.get(), &*replacement, event,
+                                      &guard_reason)) {
+      ++funnel_window_.candidate_probe_expired_without_fill;
+      LogInfo("TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL: symbol=" +
+              event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", replacement_client_order_id=" +
+              replacement->client_order_id +
+              ", reason=" + guard_reason);
+      active_candidate_probe_by_symbol_.erase(it);
+      return;
+    }
+
+    const std::string replacement_id = replacement->client_order_id;
+    candidate_probe_intent_ids_.insert(replacement_id);
+    candidate_probe_attempt_by_intent_id_[replacement_id] = state.next_attempts;
+    candidate_probe_taker_fallback_by_intent_id_[replacement_id] =
+        state.replacement_taker;
+    const bool replacement_taker = state.replacement_taker;
+    const int replacement_attempts = state.next_attempts;
+    if (!EnqueueIntent(*replacement)) {
+      candidate_probe_attempt_by_intent_id_.erase(replacement_id);
+      candidate_probe_taker_fallback_by_intent_id_.erase(replacement_id);
+      ++funnel_window_.candidate_probe_expired_without_fill;
+      LogInfo("TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL: symbol=" +
+              event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", replacement_client_order_id=" + replacement_id +
+              ", reason=replacement_enqueue_failed");
+      active_candidate_probe_by_symbol_.erase(event.symbol);
+      return;
+    }
+    if (replacement_taker) {
+      ++funnel_window_.candidate_probe_taker_fallbacks;
+      LogInfo("TREND_CANDIDATE_PROBE_TAKER_FALLBACK: symbol=" + event.symbol +
+              ", client_order_id=" + replacement_id +
+              ", attempts=" + std::to_string(replacement_attempts) +
+              ", trend_threshold_ratio=" +
+              std::to_string(state.trend_threshold_ratio));
+    } else {
+      ++funnel_window_.candidate_probe_reprices;
+      LogInfo("TREND_CANDIDATE_PROBE_REPRICE: symbol=" + event.symbol +
+              ", client_order_id=" + replacement_id +
+              ", attempts=" + std::to_string(replacement_attempts) +
+              ", reprice_bps=" +
+              std::to_string(config_.execution_candidate_probe_reprice_bps));
+    }
+    return;
+  }
+
+  if (state.cancel_requested) {
+    return;
+  }
+
+  const int timeout_ticks =
+      std::max(0, config_.execution_candidate_probe_post_only_timeout_ticks);
+  if (timeout_ticks <= 0 ||
+      market_tick_count_ - state.created_tick < timeout_ticks) {
+    return;
+  }
+
+  const int max_reprice_attempts =
+      std::max(0, config_.execution_candidate_probe_reprice_max_attempts);
+  const bool can_reprice = state.attempts < max_reprice_attempts;
+  const double fallback_min_ratio = std::max(
+      0.0, config_.execution_candidate_probe_taker_fallback_min_trend_ratio);
+  const bool can_taker_fallback =
+      config_.execution_candidate_probe_taker_fallback_enabled &&
+      !state.taker_fallback_used &&
+      state.trend_threshold_ratio + 1e-9 >= fallback_min_ratio;
+
+  ++funnel_window_.candidate_probe_pending_timeouts;
+  state.cancel_requested = true;
+  state.cancel_confirmed = false;
+  state.replacement_pending = can_reprice || can_taker_fallback;
+  state.replacement_taker = !can_reprice && can_taker_fallback;
+  state.next_attempts = can_reprice ? state.attempts + 1 : state.attempts;
+  executor_->Cancel(state.client_order_id);
+  ++funnel_window_.candidate_probe_cancel_submitted;
+  if (!state.replacement_pending) {
+    ++funnel_window_.candidate_probe_expired_without_fill;
+  }
+  LogInfo("TREND_CANDIDATE_PROBE_PENDING_TIMEOUT: symbol=" + event.symbol +
+          ", client_order_id=" + state.client_order_id +
+          ", age_ticks=" +
+          std::to_string(market_tick_count_ - state.created_tick) +
+          ", timeout_ticks=" + std::to_string(timeout_ticks) +
+          ", attempts=" + std::to_string(state.attempts) +
+          ", replacement_pending=" +
+          std::string(state.replacement_pending ? "true" : "false") +
+          ", replacement_taker=" +
+          std::string(state.replacement_taker ? "true" : "false") +
+          ", trend_threshold_ratio=" +
+          std::to_string(state.trend_threshold_ratio));
 }
 
 void BotApplication::EvaluateExecutionQualityGuard(
@@ -2397,6 +2671,10 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.strategy_reduce_cost_guard_blocked;
   total->strategy_reduce_cost_guard_bypassed +=
       delta.strategy_reduce_cost_guard_bypassed;
+  total->reduce_without_position_blocked +=
+      delta.reduce_without_position_blocked;
+  total->reduce_qty_capped_to_position +=
+      delta.reduce_qty_capped_to_position;
   total->intents_throttled += delta.intents_throttled;
   total->intents_enqueued += delta.intents_enqueued;
   total->candidate_probe_signals += delta.candidate_probe_signals;
@@ -2409,6 +2687,17 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->candidate_probe_filtered_fee += delta.candidate_probe_filtered_fee;
   total->candidate_probe_enqueued += delta.candidate_probe_enqueued;
   total->candidate_probe_fills += delta.candidate_probe_fills;
+  total->candidate_probe_pending_timeouts +=
+      delta.candidate_probe_pending_timeouts;
+  total->candidate_probe_cancel_submitted +=
+      delta.candidate_probe_cancel_submitted;
+  total->candidate_probe_cancel_ok += delta.candidate_probe_cancel_ok;
+  total->candidate_probe_cancel_failed += delta.candidate_probe_cancel_failed;
+  total->candidate_probe_reprices += delta.candidate_probe_reprices;
+  total->candidate_probe_taker_fallbacks +=
+      delta.candidate_probe_taker_fallbacks;
+  total->candidate_probe_expired_without_fill +=
+      delta.candidate_probe_expired_without_fill;
   total->candidate_probe_skipped_trade_not_ok +=
       delta.candidate_probe_skipped_trade_not_ok;
   total->candidate_probe_skipped_existing_intent +=
@@ -2880,6 +3169,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
 
   UpdateProfitProtection(event);
+  ManageCandidateProbeLifecycle(event);
 
   // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
   if (reconcile_halted_) {
@@ -3125,6 +3415,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     ++funnel_window_.intents_filtered_inactive_symbol;
     decision.intent.reset();
   }
+
+  NormalizeReduceIntentToActualPosition(&decision, event);
 
   if (decision.intent.has_value() && IsOpeningIntent(*decision.intent)) {
     int symbol_quality_remaining_ticks = 0;
@@ -3486,12 +3778,51 @@ bool BotApplication::EnqueueIntent(const OrderIntent& intent) {
   executor_->Submit(intent);
   ++funnel_window_.intents_enqueued;
   if (IsTrendCandidateProbeIntent(intent.client_order_id)) {
+    const auto attempt_it =
+        candidate_probe_attempt_by_intent_id_.find(intent.client_order_id);
+    const int attempts =
+        attempt_it != candidate_probe_attempt_by_intent_id_.end()
+            ? std::max(0, attempt_it->second)
+            : 0;
+    const auto fallback_it =
+        candidate_probe_taker_fallback_by_intent_id_.find(intent.client_order_id);
+    const bool taker_fallback =
+        fallback_it != candidate_probe_taker_fallback_by_intent_id_.end() &&
+        fallback_it->second;
+    const double reference_price =
+        intent.price > 0.0 ? intent.price
+                           : latest_mark_price_by_symbol_[intent.symbol];
+    const double notional_usd =
+        std::fabs(intent.qty) *
+        (reference_price > 0.0 ? reference_price : 0.0);
+    double trend_threshold_ratio = 0.0;
+    if (const auto regime_it = regime_state_by_symbol_.find(intent.symbol);
+        regime_it != regime_state_by_symbol_.end()) {
+      trend_threshold_ratio = regime_it->second.trend_threshold_ratio;
+    }
+    active_candidate_probe_by_symbol_[intent.symbol] = CandidateProbeOrderState{
+        .symbol = intent.symbol,
+        .client_order_id = intent.client_order_id,
+        .direction = intent.direction,
+        .qty = intent.qty,
+        .notional_usd = notional_usd,
+        .reference_price = reference_price,
+        .trend_threshold_ratio = trend_threshold_ratio,
+        .created_tick = market_tick_count_,
+        .attempts = attempts,
+        .taker_fallback_used = taker_fallback,
+    };
+    candidate_probe_attempt_by_intent_id_.erase(intent.client_order_id);
+    candidate_probe_taker_fallback_by_intent_id_.erase(intent.client_order_id);
     ++funnel_window_.candidate_probe_enqueued;
     LogInfo("TREND_CANDIDATE_PROBE_ENQUEUED: symbol=" + intent.symbol +
             ", client_order_id=" + intent.client_order_id +
             ", direction=" + std::to_string(intent.direction) +
             ", qty=" + std::to_string(intent.qty) +
-            ", price=" + std::to_string(intent.price));
+            ", price=" + std::to_string(intent.price) +
+            ", attempts=" + std::to_string(attempts) +
+            ", taker_fallback=" +
+            std::string(taker_fallback ? "true" : "false"));
   }
   return true;
 }
@@ -3506,7 +3837,17 @@ void BotApplication::ProcessAsyncResults() {
   std::vector<AsyncResult> results;
   executor_->PollResults(&results);
   for (const auto& res : results) {
-    if (res.is_cancel) continue;
+    if (res.is_cancel) {
+      if (res.success) {
+        oms_.MarkCancelled(res.client_order_id);
+        pending_net_order_enqueued_ms_.erase(res.client_order_id);
+      } else {
+        LogError("Async Cancel Failed: " + res.error +
+                 ", client_order_id=" + res.client_order_id);
+      }
+      OnCandidateProbeCancelResult(res.client_order_id, res.success);
+      continue;
+    }
 
     if (res.success) {
       oms_.MarkSent(res.client_order_id);
@@ -3518,6 +3859,15 @@ void BotApplication::ProcessAsyncResults() {
     } else {
       oms_.MarkRejected(res.client_order_id);
       pending_net_order_enqueued_ms_.erase(res.client_order_id);
+      if (IsTrendCandidateProbeIntent(res.client_order_id)) {
+        for (auto it = active_candidate_probe_by_symbol_.begin();
+             it != active_candidate_probe_by_symbol_.end(); ++it) {
+          if (it->second.client_order_id == res.client_order_id) {
+            active_candidate_probe_by_symbol_.erase(it);
+            break;
+          }
+        }
+      }
       ++funnel_window_.async_submit_failed;
       LogError("Async Submit Failed: " + res.error);
 
@@ -3644,6 +3994,14 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   if (fill_order_record != nullptr &&
       fill_order_record->intent.purpose == OrderPurpose::kSl) {
     ClearPendingRequiredSl(fill.client_order_id);
+  }
+  if (candidate_probe_fill) {
+    if (const auto active_it =
+            active_candidate_probe_by_symbol_.find(fill.symbol);
+        active_it != active_candidate_probe_by_symbol_.end() &&
+        active_it->second.client_order_id == fill.client_order_id) {
+      active_candidate_probe_by_symbol_.erase(active_it);
+    }
   }
   if (const auto* record = oms_.Find(fill.client_order_id);
       record != nullptr && OrderManager::IsTerminalState(record->state)) {
@@ -5259,6 +5617,10 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.strategy_reduce_cost_guard_blocked) +
           ", strategy_reduce_cost_guard_bypassed=" +
           std::to_string(funnel_window.strategy_reduce_cost_guard_bypassed) +
+          ", reduce_without_position_blocked=" +
+          std::to_string(funnel_window.reduce_without_position_blocked) +
+          ", reduce_qty_capped_to_position=" +
+          std::to_string(funnel_window.reduce_qty_capped_to_position) +
           ", throttled=" + std::to_string(funnel_window.intents_throttled) +
           ", enqueued=" + std::to_string(funnel_window.intents_enqueued) +
           ", candidate_probe_signals=" +
@@ -5277,6 +5639,20 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.candidate_probe_enqueued) +
           ", candidate_probe_fills=" +
           std::to_string(funnel_window.candidate_probe_fills) +
+          ", candidate_probe_pending_timeouts=" +
+          std::to_string(funnel_window.candidate_probe_pending_timeouts) +
+          ", candidate_probe_cancel_submitted=" +
+          std::to_string(funnel_window.candidate_probe_cancel_submitted) +
+          ", candidate_probe_cancel_ok=" +
+          std::to_string(funnel_window.candidate_probe_cancel_ok) +
+          ", candidate_probe_cancel_failed=" +
+          std::to_string(funnel_window.candidate_probe_cancel_failed) +
+          ", candidate_probe_reprices=" +
+          std::to_string(funnel_window.candidate_probe_reprices) +
+          ", candidate_probe_taker_fallbacks=" +
+          std::to_string(funnel_window.candidate_probe_taker_fallbacks) +
+          ", candidate_probe_expired_without_fill=" +
+          std::to_string(funnel_window.candidate_probe_expired_without_fill) +
           ", candidate_probe_skipped_trade_not_ok=" +
           std::to_string(funnel_window.candidate_probe_skipped_trade_not_ok) +
           ", candidate_probe_skipped_existing_intent=" +

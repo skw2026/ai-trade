@@ -48,9 +48,16 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                     "fill_duplicate_drop_count": 2,
                                     "bybit_exec_dedup_drop_count": 3,
                                     "trend_candidate_probe_signal_count": 5,
+                                    "trend_candidate_probe_pending_timeout_count": 2,
+                                    "trend_candidate_probe_cancel_ok_count": 2,
+                                    "trend_candidate_probe_reprice_count": 1,
+                                    "trend_candidate_probe_taker_fallback_count": 1,
+                                    "trend_candidate_probe_expired_without_fill_count": 0,
                                     "trend_candidate_probe_skip_count": 7,
                                     "trend_candidate_probe_skip_trend_ratio_count": 4,
                                     "trend_candidate_probe_skip_cooldown_count": 2,
+                                    "order_throttled_reduce_without_actual_position_count": 1,
+                                    "reduce_qty_capped_to_position_count": 1,
                                     "execution_attribution_probe_maker_fill_count": 3,
                                     "execution_attribution_probe_taker_fill_count": 0,
                                     "execution_attribution_main_maker_fill_count": 5,
@@ -74,6 +81,21 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                                             "feature_name": "miner_03",
                                             "symbol": "BTCUSDT",
                                             "raw_value": "nan",
+                                        }
+                                    ],
+                                    "integrator_feature_sanitized_count": 3,
+                                    "integrator_feature_sanitized_by_feature": {
+                                        "miner_00": 1,
+                                        "miner_03": 2,
+                                    },
+                                    "integrator_feature_sanitized_by_symbol": {
+                                        "ETHUSDT": 3
+                                    },
+                                    "integrator_feature_sanitized_examples": [
+                                        {
+                                            "feature_name": "miner_00",
+                                            "symbol": "ETHUSDT",
+                                            "sanitized_value": 0.0,
                                         }
                                     ],
                                 },
@@ -145,6 +167,22 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
             self.assertEqual(runtime_metrics["fill_duplicate_drop_count"], 2)
             self.assertEqual(runtime_metrics["bybit_exec_dedup_drop_count"], 3)
             self.assertEqual(runtime_metrics["trend_candidate_probe_signal_count"], 5)
+            self.assertEqual(
+                runtime_metrics["trend_candidate_probe_pending_timeout_count"],
+                2,
+            )
+            self.assertEqual(runtime_metrics["trend_candidate_probe_cancel_ok_count"], 2)
+            self.assertEqual(runtime_metrics["trend_candidate_probe_reprice_count"], 1)
+            self.assertEqual(
+                runtime_metrics["trend_candidate_probe_taker_fallback_count"],
+                1,
+            )
+            self.assertEqual(
+                runtime_metrics[
+                    "trend_candidate_probe_expired_without_fill_count"
+                ],
+                0,
+            )
             self.assertEqual(runtime_metrics["trend_candidate_probe_skip_count"], 7)
             self.assertEqual(
                 runtime_metrics["trend_candidate_probe_skip_trend_ratio_count"],
@@ -154,6 +192,13 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                 runtime_metrics["trend_candidate_probe_skip_cooldown_count"],
                 2,
             )
+            self.assertEqual(
+                runtime_metrics[
+                    "order_throttled_reduce_without_actual_position_count"
+                ],
+                1,
+            )
+            self.assertEqual(runtime_metrics["reduce_qty_capped_to_position_count"], 1)
             self.assertEqual(
                 runtime_metrics["execution_attribution_probe_maker_fill_count"], 3
             )
@@ -202,6 +247,25 @@ class BuildPeriodicSummaryTest(unittest.TestCase):
                     "raw_value"
                 ],
                 "nan",
+            )
+            self.assertEqual(runtime_metrics["integrator_feature_sanitized_count"], 3)
+            self.assertEqual(
+                runtime_metrics["integrator_feature_sanitized_by_feature"][
+                    "miner_03"
+                ],
+                2,
+            )
+            self.assertEqual(
+                runtime_metrics["integrator_feature_sanitized_by_symbol"][
+                    "ETHUSDT"
+                ],
+                3,
+            )
+            self.assertEqual(
+                runtime_metrics["integrator_feature_sanitized_examples"][0][
+                    "sanitized_value"
+                ],
+                0.0,
             )
 
     def test_account_summary_clips_samples_to_summary_window(self):

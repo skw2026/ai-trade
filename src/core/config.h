@@ -352,6 +352,11 @@ struct AppConfig {
   double execution_candidate_probe_max_edge_gap_bps{0.0};
   int execution_candidate_probe_cooldown_ticks{0};
   int execution_candidate_probe_max_per_window{0};
+  int execution_candidate_probe_post_only_timeout_ticks{0};
+  int execution_candidate_probe_reprice_max_attempts{0};
+  double execution_candidate_probe_reprice_bps{0.0};
+  bool execution_candidate_probe_taker_fallback_enabled{false};
+  double execution_candidate_probe_taker_fallback_min_trend_ratio{0.0};
 
   std::string exchange{"mock"};
   std::string data_path{"data"};

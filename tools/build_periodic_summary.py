@@ -327,6 +327,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "integrator_nan_feature_skip_by_feature": {},
             "integrator_nan_feature_skip_by_symbol": {},
             "integrator_nan_feature_skip_examples": [],
+            "integrator_feature_sanitized_count": 0,
+            "integrator_feature_sanitized_by_feature": {},
+            "integrator_feature_sanitized_by_symbol": {},
+            "integrator_feature_sanitized_examples": [],
             "filtered_cost_ratio": None,
             "filtered_cost_ratio_avg": None,
             "realized_net_per_fill": None,
@@ -368,6 +372,12 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "trend_candidate_probe_strong_signal_count": 0,
             "trend_candidate_probe_enqueued_count": 0,
             "trend_candidate_probe_fill_count": 0,
+            "trend_candidate_probe_pending_timeout_count": 0,
+            "trend_candidate_probe_cancel_ok_count": 0,
+            "trend_candidate_probe_cancel_failed_count": 0,
+            "trend_candidate_probe_reprice_count": 0,
+            "trend_candidate_probe_taker_fallback_count": 0,
+            "trend_candidate_probe_expired_without_fill_count": 0,
             "trend_candidate_probe_skip_count": 0,
             "trend_candidate_probe_skip_trend_ratio_count": 0,
             "trend_candidate_probe_skip_strong_trend_ratio_count": 0,
@@ -376,6 +386,8 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "trend_candidate_probe_skip_pending_orders_count": 0,
             "trend_candidate_probe_skip_existing_intent_count": 0,
             "trend_candidate_probe_skip_window_limit_count": 0,
+            "order_throttled_reduce_without_actual_position_count": 0,
+            "reduce_qty_capped_to_position_count": 0,
             "regime_change_warmup_trend_candidate_count": 0,
             "regime_change_warmup_trend_candidate_symbols": [],
             "regime_change_pending_trend_confirmation_count": 0,
@@ -479,6 +491,24 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         integrator_nan_feature_skip_by_symbol = {}
     if not isinstance(integrator_nan_feature_skip_examples, list):
         integrator_nan_feature_skip_examples = []
+    integrator_feature_sanitized_count = (
+        to_int(latest_metrics.get("integrator_feature_sanitized_count")) or 0
+    )
+    integrator_feature_sanitized_by_feature = latest_metrics.get(
+        "integrator_feature_sanitized_by_feature"
+    )
+    integrator_feature_sanitized_by_symbol = latest_metrics.get(
+        "integrator_feature_sanitized_by_symbol"
+    )
+    integrator_feature_sanitized_examples = latest_metrics.get(
+        "integrator_feature_sanitized_examples"
+    )
+    if not isinstance(integrator_feature_sanitized_by_feature, dict):
+        integrator_feature_sanitized_by_feature = {}
+    if not isinstance(integrator_feature_sanitized_by_symbol, dict):
+        integrator_feature_sanitized_by_symbol = {}
+    if not isinstance(integrator_feature_sanitized_examples, list):
+        integrator_feature_sanitized_examples = []
     filtered_cost_ratio = to_float(latest_metrics.get("filtered_cost_ratio"))
     filtered_cost_ratio_avg = to_float(latest_metrics.get("filtered_cost_ratio_avg"))
     realized_net_per_fill = to_float(latest_metrics.get("realized_net_per_fill"))
@@ -605,6 +635,27 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     trend_candidate_probe_fill_count = (
         to_int(latest_metrics.get("trend_candidate_probe_fill_count")) or 0
     )
+    trend_candidate_probe_pending_timeout_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_pending_timeout_count")) or 0
+    )
+    trend_candidate_probe_cancel_ok_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_cancel_ok_count")) or 0
+    )
+    trend_candidate_probe_cancel_failed_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_cancel_failed_count")) or 0
+    )
+    trend_candidate_probe_reprice_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_reprice_count")) or 0
+    )
+    trend_candidate_probe_taker_fallback_count = (
+        to_int(latest_metrics.get("trend_candidate_probe_taker_fallback_count")) or 0
+    )
+    trend_candidate_probe_expired_without_fill_count = (
+        to_int(
+            latest_metrics.get("trend_candidate_probe_expired_without_fill_count")
+        )
+        or 0
+    )
     trend_candidate_probe_skip_count = (
         to_int(latest_metrics.get("trend_candidate_probe_skip_count")) or 0
     )
@@ -634,6 +685,17 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     trend_candidate_probe_skip_window_limit_count = (
         to_int(latest_metrics.get("trend_candidate_probe_skip_window_limit_count"))
         or 0
+    )
+    order_throttled_reduce_without_actual_position_count = (
+        to_int(
+            latest_metrics.get(
+                "order_throttled_reduce_without_actual_position_count"
+            )
+        )
+        or 0
+    )
+    reduce_qty_capped_to_position_count = (
+        to_int(latest_metrics.get("reduce_qty_capped_to_position_count")) or 0
     )
     regime_change_warmup_trend_candidate_count = (
         to_int(latest_metrics.get("regime_change_warmup_trend_candidate_count"))
@@ -765,6 +827,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "integrator_nan_feature_skip_by_feature": integrator_nan_feature_skip_by_feature,
         "integrator_nan_feature_skip_by_symbol": integrator_nan_feature_skip_by_symbol,
         "integrator_nan_feature_skip_examples": integrator_nan_feature_skip_examples[:5],
+        "integrator_feature_sanitized_count": integrator_feature_sanitized_count,
+        "integrator_feature_sanitized_by_feature": integrator_feature_sanitized_by_feature,
+        "integrator_feature_sanitized_by_symbol": integrator_feature_sanitized_by_symbol,
+        "integrator_feature_sanitized_examples": integrator_feature_sanitized_examples[:5],
         "filtered_cost_ratio": filtered_cost_ratio,
         "filtered_cost_ratio_avg": filtered_cost_ratio_avg,
         "realized_net_per_fill": realized_net_per_fill,
@@ -808,6 +874,22 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         ),
         "trend_candidate_probe_enqueued_count": trend_candidate_probe_enqueued_count,
         "trend_candidate_probe_fill_count": trend_candidate_probe_fill_count,
+        "trend_candidate_probe_pending_timeout_count": (
+            trend_candidate_probe_pending_timeout_count
+        ),
+        "trend_candidate_probe_cancel_ok_count": (
+            trend_candidate_probe_cancel_ok_count
+        ),
+        "trend_candidate_probe_cancel_failed_count": (
+            trend_candidate_probe_cancel_failed_count
+        ),
+        "trend_candidate_probe_reprice_count": trend_candidate_probe_reprice_count,
+        "trend_candidate_probe_taker_fallback_count": (
+            trend_candidate_probe_taker_fallback_count
+        ),
+        "trend_candidate_probe_expired_without_fill_count": (
+            trend_candidate_probe_expired_without_fill_count
+        ),
         "trend_candidate_probe_skip_count": trend_candidate_probe_skip_count,
         "trend_candidate_probe_skip_trend_ratio_count": (
             trend_candidate_probe_skip_trend_ratio_count
@@ -830,6 +912,10 @@ def compute_runtime_summary(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         "trend_candidate_probe_skip_window_limit_count": (
             trend_candidate_probe_skip_window_limit_count
         ),
+        "order_throttled_reduce_without_actual_position_count": (
+            order_throttled_reduce_without_actual_position_count
+        ),
+        "reduce_qty_capped_to_position_count": reduce_qty_capped_to_position_count,
         "regime_change_warmup_trend_candidate_count": (
             regime_change_warmup_trend_candidate_count
         ),

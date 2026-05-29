@@ -1000,6 +1000,81 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "candidate_probe_post_only_timeout_ticks") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_post_only_timeout_ticks 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_post_only_timeout_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_reprice_max_attempts") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_reprice_max_attempts 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_reprice_max_attempts = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_reprice_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_reprice_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_reprice_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_taker_fallback_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_taker_fallback_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_taker_fallback_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_taker_fallback_min_trend_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_taker_fallback_min_trend_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_taker_fallback_min_trend_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         key == "quality_guard_enabled") {
       bool parsed = false;
       if (!ParseBool(value, &parsed)) {
@@ -4572,6 +4647,15 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_candidate_probe_max_per_window < 0) {
     if (out_error != nullptr) {
       *out_error = "execution.candidate_probe_max_per_window 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_candidate_probe_post_only_timeout_ticks < 0 ||
+      config.execution_candidate_probe_reprice_max_attempts < 0 ||
+      config.execution_candidate_probe_reprice_bps < 0.0 ||
+      config.execution_candidate_probe_taker_fallback_min_trend_ratio < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.candidate_probe lifecycle 参数不能为负数";
     }
     return false;
   }

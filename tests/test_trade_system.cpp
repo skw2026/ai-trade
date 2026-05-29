@@ -2195,6 +2195,67 @@ int main() {
   }
 
   {
+    ai_trade::BotApplication app(ai_trade::AppConfig{});
+    const ai_trade::MarketEvent event{
+        1, "SOLUSDT", 100.0, 100.0, 0.0, 5000};
+
+    ai_trade::MarketDecision flat_reduce;
+    flat_reduce.risk_adjusted.symbol = "SOLUSDT";
+    flat_reduce.risk_adjusted.adjusted_notional_usd = 0.0;
+    ai_trade::OrderIntent flat_reduce_intent;
+    flat_reduce_intent.client_order_id = "flat-reduce";
+    flat_reduce_intent.symbol = "SOLUSDT";
+    flat_reduce_intent.purpose = ai_trade::OrderPurpose::kReduce;
+    flat_reduce_intent.reduce_only = true;
+    flat_reduce_intent.direction = -1;
+    flat_reduce_intent.qty = 1.0;
+    flat_reduce_intent.price = 100.0;
+    flat_reduce.intent = flat_reduce_intent;
+    if (app.NormalizeReduceIntentToActualPosition(&flat_reduce, event) ||
+        flat_reduce.intent.has_value() ||
+        app.funnel_window_.reduce_without_position_blocked != 1) {
+      std::cerr << "reduce-only 必须基于真实持仓，空仓不能因在途意图触发减仓\n";
+      return 1;
+    }
+
+    ai_trade::FillEvent entry_fill;
+    entry_fill.fill_id = "actual-long-fill";
+    entry_fill.client_order_id = "actual-long-entry";
+    entry_fill.symbol = "SOLUSDT";
+    entry_fill.direction = 1;
+    entry_fill.qty = 1.0;
+    entry_fill.price = 100.0;
+    app.system_.OnFill(entry_fill);
+
+    ai_trade::MarketDecision oversized_reduce;
+    oversized_reduce.risk_adjusted.symbol = "SOLUSDT";
+    oversized_reduce.risk_adjusted.adjusted_notional_usd = 0.0;
+    ai_trade::OrderIntent oversized_intent = flat_reduce_intent;
+    oversized_intent.client_order_id = "oversized-reduce";
+    oversized_intent.qty = 2.0;
+    oversized_reduce.intent = oversized_intent;
+    if (!app.NormalizeReduceIntentToActualPosition(&oversized_reduce, event) ||
+        !oversized_reduce.intent.has_value() ||
+        !NearlyEqual(oversized_reduce.intent->qty, 1.0) ||
+        app.funnel_window_.reduce_qty_capped_to_position != 1) {
+      std::cerr << "reduce-only 数量必须被真实持仓上限裁剪\n";
+      return 1;
+    }
+
+    ai_trade::MarketDecision wrong_direction_reduce;
+    ai_trade::OrderIntent wrong_direction_intent = flat_reduce_intent;
+    wrong_direction_intent.client_order_id = "wrong-direction-reduce";
+    wrong_direction_intent.direction = 1;
+    wrong_direction_reduce.intent = wrong_direction_intent;
+    if (app.NormalizeReduceIntentToActualPosition(&wrong_direction_reduce, event) ||
+        wrong_direction_reduce.intent.has_value() ||
+        app.funnel_window_.reduce_without_position_blocked != 2) {
+      std::cerr << "reduce-only 方向不能与真实持仓同向\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：正收益窗口应提高 trend 权重（受 max_weight_step 约束）。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
@@ -3621,6 +3682,12 @@ int main() {
         << "  candidate_probe_notional_usd: 120.0\n"
         << "  candidate_probe_max_edge_gap_bps: 4.5\n"
         << "  candidate_probe_cooldown_ticks: 1800\n"
+        << "  candidate_probe_max_per_window: 3\n"
+        << "  candidate_probe_post_only_timeout_ticks: 45\n"
+        << "  candidate_probe_reprice_max_attempts: 2\n"
+        << "  candidate_probe_reprice_bps: 0.25\n"
+        << "  candidate_probe_taker_fallback_enabled: true\n"
+        << "  candidate_probe_taker_fallback_min_trend_ratio: 1.35\n"
         << "  quality_guard_enabled: true\n"
         << "  quality_guard_min_fills: 10\n"
         << "  quality_guard_bad_streak_to_trigger: 2\n"
@@ -3785,6 +3852,14 @@ int main() {
         !NearlyEqual(config.execution_candidate_probe_notional_usd, 120.0) ||
         !NearlyEqual(config.execution_candidate_probe_max_edge_gap_bps, 4.5) ||
         config.execution_candidate_probe_cooldown_ticks != 1800 ||
+        config.execution_candidate_probe_max_per_window != 3 ||
+        config.execution_candidate_probe_post_only_timeout_ticks != 45 ||
+        config.execution_candidate_probe_reprice_max_attempts != 2 ||
+        !NearlyEqual(config.execution_candidate_probe_reprice_bps, 0.25) ||
+        config.execution_candidate_probe_taker_fallback_enabled != true ||
+        !NearlyEqual(
+            config.execution_candidate_probe_taker_fallback_min_trend_ratio,
+            1.35) ||
         config.execution_quality_guard_enabled != true ||
         config.execution_quality_guard_min_fills != 10 ||
         config.execution_quality_guard_bad_streak_to_trigger != 2 ||

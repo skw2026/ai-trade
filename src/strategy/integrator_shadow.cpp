@@ -830,19 +830,24 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   }
 
   // 关键防御：检查特征向量是否存在 NaN/Inf。
-  // 任何脏数据都可能导致模型输出不可预测的极端值，必须在此熔断。
+  // live 特征偶发非有限值时不再整次跳过推理；先归零并打审计日志，
+  // 避免少量 miner/live 特征错位把 Integrator 长期锁死为 unavailable。
+  int sanitized_count = 0;
   for (size_t i = 0; i < features.size(); ++i) {
     if (!std::isfinite(features[i])) {
-      static int nan_warn_counter = 0;
-      const int skip_count = ++nan_warn_counter;
+      static int sanitize_warn_counter = 0;
+      const int sanitize_count = ++sanitize_warn_counter;
+      const double raw_value = features[i];
+      features[i] = 0.0;
+      ++sanitized_count;
       // 限频日志：预热期可能连续 NaN，但前几个样本必须完整暴露定位信息。
       if (config_.log_model_score &&
-          (skip_count <= 10 || skip_count % 100 == 0)) {
+          (sanitize_count <= 10 || sanitize_count % 100 == 0)) {
         const std::string feature_name =
             i < feature_names_.size() ? feature_names_[i] : "unknown";
         std::ostringstream oss;
-        oss << "INTEGRATOR_SKIP: NaN feature detected"
-            << ", skip_count=" << skip_count
+        oss << "INTEGRATOR_FEATURE_SANITIZED: nonfinite feature"
+            << ", sanitize_count=" << sanitize_count
             << ", symbol=" << signal.symbol
             << ", regime=" << ToString(regime.regime)
             << ", bucket=" << ToString(regime.bucket)
@@ -850,12 +855,19 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
             << ", raw_bucket=" << ToString(regime.raw_bucket)
             << ", feature_index=" << i
             << ", feature_name=" << feature_name
-            << ", raw_value=" << features[i]
+            << ", raw_value=" << raw_value
+            << ", sanitized_value=0"
             << ", model_version=" << model_version_;
         LogInfo(oss.str());
       }
-      out.enabled = false;
-      return out;
+    }
+  }
+  if (config_.log_model_score && sanitized_count > 0) {
+    static int sanitized_summary_counter = 0;
+    if (sanitized_summary_counter++ % 100 == 0) {
+      LogInfo("INTEGRATOR_FEATURE_SANITIZE_SUMMARY: sanitized=" +
+              std::to_string(sanitized_count) + "/" +
+              std::to_string(features.size()));
     }
   }
   if (feature_clipping_enabled_ && feature_clip_lower_.size() == features.size() &&

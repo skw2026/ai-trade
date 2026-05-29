@@ -292,6 +292,36 @@ class AssessRunLogTest(unittest.TestCase):
         )
         self.assertIn("features=miner_03:1", "\n".join(report["warn_reasons"]))
 
+    def test_integrator_feature_sanitized_diagnostics_include_feature_details(self):
+        text = (
+            "2026-02-14 15:02:18 [INFO] INTEGRATOR_FEATURE_SANITIZED: nonfinite feature, "
+            "sanitize_count=1, symbol=ETHUSDT, regime=RANGE, bucket=RANGE, "
+            "raw_regime=RANGE, raw_bucket=RANGE, feature_index=0, "
+            "feature_name=miner_00, raw_value=inf, sanitized_value=0, "
+            "model_version=integrator_v1\n"
+            + self._runtime_line(
+                20,
+                0.0,
+                strategy_mix_samples=0,
+                strategy_mix_policy_flat_samples=12,
+            )
+            + "2026-02-14 15:00:20 [INFO] SELF_EVOLUTION_INIT: enabled=true\n"
+            + "2026-02-14 15:00:21 [INFO] GATE_CHECK_PASSED: raw_signals=0, order_intents=0, effective_signals=0, fills=0, policy_flat_signals=12, policy_flat=true\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["integrator_feature_sanitized_count"], 1)
+        self.assertEqual(
+            metrics["integrator_feature_sanitized_by_feature"]["miner_00"], 1
+        )
+        self.assertEqual(
+            metrics["integrator_feature_sanitized_by_symbol"]["ETHUSDT"], 1
+        )
+        self.assertEqual(
+            metrics["integrator_feature_sanitized_examples"][0]["raw_value"], "inf"
+        )
+        self.assertIn("features=miner_00:1", "\n".join(report["warn_reasons"]))
+
     def test_assess_contains_strategy_mix_metrics(self):
         text = (
             "2026-02-14 15:02:18 [INFO] RUNTIME_STATUS: ticks=200, trade_ok=true, "
@@ -711,10 +741,18 @@ class AssessRunLogTest(unittest.TestCase):
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_FEE_OVERRIDE: symbol=BTCUSDT, client_order_id=BTCUSDT-1, expected_edge_bps=1.2, required_edge_bps=5.2, edge_gap_bps=4.0, max_edge_gap_bps=4.5\n"
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=BNBUSDT, client_order_id=BNBUSDT-1, expected_edge_bps=1.0, required_edge_bps=6.6, edge_gap_bps=5.6, max_edge_gap_bps=5.5, quality_guard_override_blocked=true, quality_guard_penalty_bps=0.8\n"
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_ENQUEUED: symbol=BTCUSDT, client_order_id=BTCUSDT-1, direction=1, qty=0.001, price=100000.0\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_PENDING_TIMEOUT: symbol=BTCUSDT, client_order_id=BTCUSDT-1, age_ticks=30, timeout_ticks=30, attempts=0, replacement_pending=true, replacement_taker=false, trend_threshold_ratio=1.11\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_CANCEL_OK: symbol=BTCUSDT, client_order_id=BTCUSDT-1, replacement_pending=true, replacement_taker=false\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_REPRICE: symbol=BTCUSDT, client_order_id=BTCUSDT-2, attempts=1, reprice_bps=0.15\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_TAKER_FALLBACK: symbol=BTCUSDT, client_order_id=BTCUSDT-3, attempts=2, trend_threshold_ratio=1.35\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL: symbol=BTCUSDT, client_order_id=BTCUSDT-3, reason=replacement_enqueue_failed\n"
+            "2026-02-14 15:00:01 [INFO] ORDER_THROTTLED: symbol=BTCUSDT, client_order_id=bad-reduce, reason=reduce_without_actual_position, actual_position_qty=0.000000, intent_direction=-1, adjusted_notional_usd=0.000000\n"
+            "2026-02-14 15:00:01 [INFO] REDUCE_QTY_CAPPED_TO_POSITION: symbol=BTCUSDT, client_order_id=cap-reduce, old_qty=2.000000, capped_qty=1.000000, actual_position_qty=1.000000\n"
             "2026-02-14 15:00:02 [INFO] TREND_CANDIDATE_PROBE_FILL: fill_id=f1, client_order_id=BTCUSDT-1, symbol=BTCUSDT, direction=1, qty=0.001, price=100000.0, fee=-0.01, liquidity=maker, notional_abs_usd=100.0\n"
             "2026-02-14 15:00:03 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=BTCUSDT, reason=TREND_RATIO_LOW, trend_threshold_ratio=0.65, current_notional_usd=0.0, market_tick=22, min_trend_ratio=0.70\n"
             "2026-02-14 15:00:03 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=BTCUSDT, reason=STRONG_TREND_RATIO_LOW, trend_threshold_ratio=0.91, current_notional_usd=0.0, market_tick=22, strong_min_trend_ratio=1.00\n"
             "2026-02-14 15:00:04 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=BTCUSDT, reason=COOLDOWN, trend_threshold_ratio=0.75, current_notional_usd=0.0, market_tick=23, cooldown_remaining_ticks=100\n"
+            "2026-02-14 15:00:05 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=BTCUSDT, reason=ACTIVE_PROBE, trend_threshold_ratio=0.85, current_notional_usd=0.0, market_tick=24\n"
             "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, trade_ok=true, trading_halted=false, account={equity=100000.000000, drawdown_pct=0.000000, notional=0.000000, realized_pnl=0.000000, fees=0.000000, realized_net=0.000000}, funnel_window={raw=1, risk_adjusted=1, intents_generated=1, candidate_probe_signals=1, candidate_probe_strong_signals=1, candidate_probe_intents=1, candidate_probe_fee_overrides=1, candidate_probe_enqueued=1, candidate_probe_fills=1, candidate_probe_skipped_trend_ratio=1, candidate_probe_skipped_strong_trend_ratio=1, candidate_probe_skipped_cooldown=1, fills=1}, regime_window={trend_ticks=0, range_ticks=4, extreme_ticks=0, warmup_ticks=0, trend_candidate_ticks=4}, regime_current={symbol=BTCUSDT, regime=RANGE, bucket=RANGE, warmup=false, trend_threshold_ratio=0.910000, trend_candidate=true}\n"
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
@@ -726,12 +764,20 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["trend_candidate_probe_quality_guard_blocked_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_enqueued_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_fill_count"], 1)
-        self.assertEqual(metrics["trend_candidate_probe_skip_count"], 3)
+        self.assertEqual(metrics["trend_candidate_probe_pending_timeout_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_cancel_ok_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_reprice_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_taker_fallback_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_expired_without_fill_count"], 1)
+        self.assertEqual(metrics["order_throttled_reduce_without_actual_position_count"], 1)
+        self.assertEqual(metrics["reduce_qty_capped_to_position_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_skip_count"], 4)
         self.assertEqual(metrics["trend_candidate_probe_skip_trend_ratio_count"], 1)
         self.assertEqual(
             metrics["trend_candidate_probe_skip_strong_trend_ratio_count"], 1
         )
         self.assertEqual(metrics["trend_candidate_probe_skip_cooldown_count"], 1)
+        self.assertEqual(metrics["trend_candidate_probe_skip_pending_orders_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_runtime_count"], 1)
 
     def test_execution_attribution_is_reported(self):

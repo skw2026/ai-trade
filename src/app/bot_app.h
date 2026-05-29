@@ -144,6 +144,14 @@ class BotApplication {
                                    bool trade_ok,
                                    double effective_symbol_notional_usd,
                                    bool has_pending_symbol_net_orders);
+  /// 维护 TREND_CANDIDATE maker 探针挂单：超时撤单、确认后重挂/小额 taker fallback。
+  void ManageCandidateProbeLifecycle(const MarketEvent& event);
+  /// 撤单 ACK 后推进探针状态机。
+  void OnCandidateProbeCancelResult(const std::string& client_order_id,
+                                    bool success);
+  /// 主链 reduce-only 只能针对真实持仓，不能针对未成交的在途开仓。
+  bool NormalizeReduceIntentToActualPosition(MarketDecision* decision,
+                                             const MarketEvent& event);
   /// 当前订单是否来源于 TREND_CANDIDATE 探针。
   bool IsTrendCandidateProbeIntent(const std::string& client_order_id) const;
   /// 执行质量守卫：根据窗口成交质量动态启停开仓惩罚。
@@ -296,6 +304,8 @@ class BotApplication {
     std::uint64_t intents_throttled_symbol_quality_quarantine{0};
     std::uint64_t strategy_reduce_cost_guard_blocked{0};
     std::uint64_t strategy_reduce_cost_guard_bypassed{0};
+    std::uint64_t reduce_without_position_blocked{0};
+    std::uint64_t reduce_qty_capped_to_position{0};
     std::uint64_t intents_throttled{0};
     std::uint64_t intents_enqueued{0};
     std::uint64_t candidate_probe_signals{0};
@@ -306,6 +316,13 @@ class BotApplication {
     std::uint64_t candidate_probe_filtered_fee{0};
     std::uint64_t candidate_probe_enqueued{0};
     std::uint64_t candidate_probe_fills{0};
+    std::uint64_t candidate_probe_pending_timeouts{0};
+    std::uint64_t candidate_probe_cancel_submitted{0};
+    std::uint64_t candidate_probe_cancel_ok{0};
+    std::uint64_t candidate_probe_cancel_failed{0};
+    std::uint64_t candidate_probe_reprices{0};
+    std::uint64_t candidate_probe_taker_fallbacks{0};
+    std::uint64_t candidate_probe_expired_without_fill{0};
     std::uint64_t candidate_probe_skipped_trade_not_ok{0};
     std::uint64_t candidate_probe_skipped_existing_intent{0};
     std::uint64_t candidate_probe_skipped_pending_orders{0};
@@ -453,6 +470,27 @@ class BotApplication {
   std::unordered_map<std::string, int> cost_filter_reject_streak_by_symbol_;
   std::unordered_map<std::string, int> cost_filter_cooldown_until_tick_by_symbol_;
   std::unordered_set<std::string> candidate_probe_intent_ids_;
+  std::unordered_map<std::string, int> candidate_probe_attempt_by_intent_id_;
+  std::unordered_map<std::string, bool> candidate_probe_taker_fallback_by_intent_id_;
+  struct CandidateProbeOrderState {
+    std::string symbol;
+    std::string client_order_id;
+    int direction{0};
+    double qty{0.0};
+    double notional_usd{0.0};
+    double reference_price{0.0};
+    double trend_threshold_ratio{0.0};
+    int created_tick{0};
+    int attempts{0};
+    bool taker_fallback_used{false};
+    bool cancel_requested{false};
+    bool cancel_confirmed{false};
+    bool replacement_pending{false};
+    bool replacement_taker{false};
+    int next_attempts{0};
+  };
+  std::unordered_map<std::string, CandidateProbeOrderState>
+      active_candidate_probe_by_symbol_;
   std::unordered_map<std::string, int>
       candidate_probe_cooldown_until_tick_by_symbol_;
   std::uint64_t entry_gate_observed_samples_{0};

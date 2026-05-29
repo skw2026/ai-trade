@@ -95,6 +95,13 @@ execution:
   candidate_probe_max_edge_gap_bps: 5.5
   candidate_probe_cooldown_ticks: 600
   candidate_probe_max_per_window: 2
+  # maker probe 必须有生命周期：超时先撤单，撤单确认后最多重挂两次；
+  # 只有极强候选趋势才允许小额 taker fallback，避免长期“挂单无成交=无样本”。
+  candidate_probe_post_only_timeout_ticks: 30
+  candidate_probe_reprice_max_attempts: 2
+  candidate_probe_reprice_bps: 0.15
+  candidate_probe_taker_fallback_enabled: true
+  candidate_probe_taker_fallback_min_trend_ratio: 1.25
   quality_guard_enabled: true
   quality_guard_min_fills: 4
   quality_guard_bad_streak_to_trigger: 1
