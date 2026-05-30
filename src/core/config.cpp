@@ -970,6 +970,51 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "candidate_probe_memory_max_edge_gap_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_memory_max_edge_gap_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_memory_max_edge_gap_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_memory_min_trend_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_memory_min_trend_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_memory_min_trend_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_reduce_max_adverse_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_reduce_max_adverse_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_reduce_max_adverse_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         key == "candidate_probe_cooldown_ticks") {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {

@@ -310,9 +310,9 @@ class ModelRegistryTest(unittest.TestCase):
                 min_focus_bucket_sharpe=0.0,
             )
 
-            self.assertTrue(passed)
-            self.assertEqual(fail_reasons, [])
-            self.assertTrue(warn_reasons)
+            self.assertFalse(passed)
+            self.assertTrue(fail_reasons)
+            self.assertEqual(warn_reasons, [])
             self.assertEqual(
                 summary["focus_bucket_validation"]["status"],
                 "pass",

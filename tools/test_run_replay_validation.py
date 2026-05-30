@@ -221,6 +221,47 @@ class RunReplayValidationTest(unittest.TestCase):
         self.assertEqual(report["optimizer"]["status"], "pass")
         self.assertGreaterEqual(report["optimizer"]["pass_candidate_count"], 1)
 
+    def test_aggregate_run_summaries_fails_when_mean_masks_negative_median(self):
+        runs = []
+        for realized_net in (-0.002, -0.001, -0.001, 0.020):
+            runs.append(
+                {
+                    "assess_summary": {
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "market_context_status": "TREND_PRESENT",
+                        "execution_activity_count": 4,
+                        "funnel_fills_runtime_count": 2,
+                        "regime_trend_runtime_count": 4,
+                        "realized_net_per_fill": realized_net,
+                        "filtered_cost_ratio_avg": 0.20,
+                    }
+                }
+            )
+
+        summary, validation = REPLAY.aggregate_run_summaries(
+            runs,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=3,
+            min_mean_realized_net_per_fill=0.0,
+            warn_mean_filtered_cost_ratio=0.80,
+        )
+
+        self.assertGreater(summary["mean_realized_net_per_fill"], 0.0)
+        self.assertLess(summary["median_realized_net_per_fill_with_fills"], 0.0)
+        self.assertLess(summary["positive_filled_segment_ratio"], 0.45)
+        self.assertEqual(validation["coverage_strength_status"], "ROBUST")
+        self.assertEqual(validation["status"], "fail")
+        self.assertTrue(
+            any(
+                "median_realized_net_per_fill_with_fills" in reason
+                for reason in validation["fail_reasons"]
+            )
+        )
+
     def test_cost_sensitivity_finds_fee_reduction_break_even(self):
         economics_rows = [
             {

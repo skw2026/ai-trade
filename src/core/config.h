@@ -350,6 +350,9 @@ struct AppConfig {
   double execution_candidate_probe_strong_min_trend_ratio{0.0};
   double execution_candidate_probe_notional_usd{0.0};
   double execution_candidate_probe_max_edge_gap_bps{0.0};
+  double execution_candidate_probe_memory_max_edge_gap_bps{0.0};
+  double execution_candidate_probe_memory_min_trend_ratio{0.0};
+  double execution_candidate_probe_reduce_max_adverse_bps{0.0};
   int execution_candidate_probe_cooldown_ticks{0};
   int execution_candidate_probe_max_per_window{0};
   int execution_candidate_probe_post_only_timeout_ticks{0};

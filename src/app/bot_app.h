@@ -493,6 +493,8 @@ class BotApplication {
       active_candidate_probe_by_symbol_;
   std::unordered_map<std::string, int>
       candidate_probe_cooldown_until_tick_by_symbol_;
+  std::unordered_map<std::string, int>
+      candidate_probe_position_entry_tick_by_symbol_;
   std::uint64_t entry_gate_observed_samples_{0};
   std::uint64_t entry_gate_observed_filtered_{0};
   std::uint64_t entry_gate_observed_near_miss_{0};

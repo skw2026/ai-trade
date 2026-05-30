@@ -90,9 +90,14 @@ execution:
   strategy_reduce_guard_max_hold_ticks: 720
   candidate_probe_enabled: true
   candidate_probe_min_trend_ratio: 0.60
-  candidate_probe_strong_min_trend_ratio: 1.00
+  candidate_probe_strong_min_trend_ratio: 0.75
   candidate_probe_notional_usd: 80.0
   candidate_probe_max_edge_gap_bps: 5.5
+  # 质量记忆期只允许强趋势小额 recovery probe，避免一亏损就永久隔离该币对。
+  candidate_probe_memory_max_edge_gap_bps: 4.0
+  candidate_probe_memory_min_trend_ratio: 0.85
+  # probe 仓位是取样仓，不用等普通 reduce 的 18bps adverse cut 才承认失败。
+  candidate_probe_reduce_max_adverse_bps: 12.0
   candidate_probe_cooldown_ticks: 600
   candidate_probe_max_per_window: 2
   # maker probe 必须有生命周期：超时先撤单，撤单确认后最多重挂两次；

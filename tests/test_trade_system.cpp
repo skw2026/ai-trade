@@ -2006,6 +2006,7 @@ int main() {
     config.execution_strategy_reduce_cost_guard_enabled = true;
     config.execution_strategy_reduce_min_net_bps = 0.5;
     config.execution_strategy_reduce_max_adverse_bps = 18.0;
+    config.execution_candidate_probe_reduce_max_adverse_bps = 11.0;
     config.execution_strategy_reduce_guard_max_hold_ticks = 120;
     config.execution_quality_guard_enabled = true;
     config.execution_quality_guard_min_fills = 2;
@@ -2141,10 +2142,29 @@ int main() {
                 << estimated_net_bps << ", required=" << required_net_bps
                 << ", bypass=" << bypass_reason << "\n";
       return 1;
-    }
+	    }
 
-    reduce_decision.risk_adjusted.reduce_only = true;
-    if (app.ShouldThrottleStrategyReduceCostGuard(reduce_decision,
+	    app.candidate_probe_position_entry_tick_by_symbol_["BNBUSDT"] =
+	        app.managed_protection_by_symbol_["BNBUSDT"].entry_tick;
+	    reduce_decision.intent->price = 599.0;
+	    if (app.ShouldThrottleStrategyReduceCostGuard(reduce_decision,
+	                                                  reduce_event,
+	                                                  nullptr,
+	                                                  nullptr,
+	                                                  nullptr,
+	                                                  nullptr,
+	                                                  nullptr,
+	                                                  &bypass_reason) ||
+	        bypass_reason != "candidate_probe_adverse_cut") {
+	      std::cerr << "probe 取样仓达到专用 adverse cut 后应优先退出: bypass="
+	                << bypass_reason << "\n";
+	      return 1;
+	    }
+	    app.candidate_probe_position_entry_tick_by_symbol_.erase("BNBUSDT");
+	    reduce_decision.intent->price = 600.05;
+
+	    reduce_decision.risk_adjusted.reduce_only = true;
+	    if (app.ShouldThrottleStrategyReduceCostGuard(reduce_decision,
                                                   reduce_event,
                                                   nullptr,
                                                   nullptr,
@@ -3681,6 +3701,9 @@ int main() {
         << "  candidate_probe_strong_min_trend_ratio: 1.05\n"
         << "  candidate_probe_notional_usd: 120.0\n"
         << "  candidate_probe_max_edge_gap_bps: 4.5\n"
+        << "  candidate_probe_memory_max_edge_gap_bps: 3.5\n"
+        << "  candidate_probe_memory_min_trend_ratio: 0.92\n"
+        << "  candidate_probe_reduce_max_adverse_bps: 11.0\n"
         << "  candidate_probe_cooldown_ticks: 1800\n"
         << "  candidate_probe_max_per_window: 3\n"
         << "  candidate_probe_post_only_timeout_ticks: 45\n"
@@ -3851,6 +3874,12 @@ int main() {
                      1.05) ||
         !NearlyEqual(config.execution_candidate_probe_notional_usd, 120.0) ||
         !NearlyEqual(config.execution_candidate_probe_max_edge_gap_bps, 4.5) ||
+        !NearlyEqual(config.execution_candidate_probe_memory_max_edge_gap_bps,
+                     3.5) ||
+        !NearlyEqual(config.execution_candidate_probe_memory_min_trend_ratio,
+                     0.92) ||
+        !NearlyEqual(config.execution_candidate_probe_reduce_max_adverse_bps,
+                     11.0) ||
         config.execution_candidate_probe_cooldown_ticks != 1800 ||
         config.execution_candidate_probe_max_per_window != 3 ||
         config.execution_candidate_probe_post_only_timeout_ticks != 45 ||

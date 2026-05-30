@@ -451,13 +451,7 @@ def gate_walkforward_report(
             reason = (
                 f"walkforward {metric_name}={metric_value:.6f} < {float(threshold):.6f}"
             )
-            if focus_bucket_pass:
-                warn_reasons.append(
-                    reason
-                    + f"; ignored because {focus_bucket_name} bucket focus gate passed"
-                )
-            else:
-                fail_reasons.append(reason)
+            fail_reasons.append(reason)
 
     total_trades = summary.get("total_trades")
     traded_split_count = summary.get("traded_split_count")
@@ -545,6 +539,22 @@ def gate_replay_validation_report(
         "execution_optimizer": execution_optimizer,
     }
     if isinstance(aggregate, dict):
+        median_net_with_fills = aggregate.get(
+            "median_realized_net_per_fill_with_fills"
+        )
+        if isinstance(median_net_with_fills, (int, float)) and (
+            float(median_net_with_fills) < 0.0
+        ):
+            fail_reasons.append(
+                "replay median_realized_net_per_fill_with_fills="
+                f"{float(median_net_with_fills):.6f} < 0.000000"
+            )
+        positive_ratio = aggregate.get("positive_filled_segment_ratio")
+        if isinstance(positive_ratio, (int, float)) and float(positive_ratio) < 0.45:
+            fail_reasons.append(
+                "replay positive_filled_segment_ratio="
+                f"{float(positive_ratio):.6f} < 0.450000"
+            )
         for key in (
             "execution_active_runs",
             "execution_pass_runs",
@@ -553,6 +563,8 @@ def gate_replay_validation_report(
             "negative_realized_net_with_fills_runs",
             "mean_realized_net_per_fill",
             "mean_realized_net_per_fill_with_fills",
+            "median_realized_net_per_fill_with_fills",
+            "positive_filled_segment_ratio",
         ):
             if key in aggregate:
                 summary[key] = aggregate.get(key)

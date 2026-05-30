@@ -1385,7 +1385,14 @@ bool BotApplication::TryApplyTrendCandidateProbe(
 
   const int quality_guard_remaining_ticks =
       SymbolExecutionQualityActiveRemainingTicks(event.symbol);
-  if (IsSymbolExecutionQualityGuardActive(event.symbol)) {
+  const bool quality_memory_active =
+      IsSymbolExecutionQualityGuardActive(event.symbol);
+  const double recovery_min_trend_ratio = std::max(
+      0.0, config_.execution_candidate_probe_memory_min_trend_ratio);
+  const bool recovery_probe_allowed =
+      quality_memory_active && recovery_min_trend_ratio > 0.0 &&
+      decision->regime.trend_threshold_ratio + 1e-9 >= recovery_min_trend_ratio;
+  if (quality_memory_active && !recovery_probe_allowed) {
     return skip_probe(
         "QUALITY_GUARD_MEMORY",
         &funnel_window_.candidate_probe_skipped_cooldown,
@@ -1508,10 +1515,6 @@ bool BotApplication::TryApplyTrendCandidateProbe(
   }
 
   candidate_probe_intent_ids_.insert(decision->intent->client_order_id);
-  if (config_.execution_candidate_probe_cooldown_ticks > 0) {
-    candidate_probe_cooldown_until_tick_by_symbol_[event.symbol] =
-        market_tick_count_ + config_.execution_candidate_probe_cooldown_ticks;
-  }
   ++funnel_window_.candidate_probe_signals;
   if (strong_min_trend_ratio > 0.0) {
     ++funnel_window_.candidate_probe_strong_signals;
@@ -2222,6 +2225,13 @@ bool BotApplication::ShouldThrottleStrategyReduceCostGuard(
       state_it != managed_protection_by_symbol_.end()) {
     holding_ticks = std::max(0, market_tick_count_ - state_it->second.entry_tick);
   }
+  const auto probe_position_it =
+      candidate_probe_position_entry_tick_by_symbol_.find(intent.symbol);
+  const bool candidate_probe_position =
+      probe_position_it != candidate_probe_position_entry_tick_by_symbol_.end();
+  if (candidate_probe_position && holding_ticks == 0) {
+    holding_ticks = std::max(0, market_tick_count_ - probe_position_it->second);
+  }
 
   if (out_estimated_gross_bps != nullptr) {
     *out_estimated_gross_bps = estimated_gross_bps;
@@ -2240,6 +2250,16 @@ bool BotApplication::ShouldThrottleStrategyReduceCostGuard(
   }
 
   if (estimated_net_bps >= required_net_bps) {
+    return false;
+  }
+
+  const double probe_max_adverse_bps =
+      std::max(0.0, config_.execution_candidate_probe_reduce_max_adverse_bps);
+  if (candidate_probe_position && probe_max_adverse_bps > 0.0 &&
+      estimated_net_bps <= -probe_max_adverse_bps) {
+    if (out_bypass_reason != nullptr) {
+      *out_bypass_reason = "candidate_probe_adverse_cut";
+    }
     return false;
   }
 
@@ -3512,22 +3532,43 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     if (filtered && candidate_probe_intent) {
       const double max_edge_gap_bps =
           std::max(0.0, config_.execution_candidate_probe_max_edge_gap_bps);
+      const bool has_quality_memory =
+          HasSymbolExecutionQualityMemory(decision.intent->symbol);
       const bool quality_guard_override_blocked =
           quality_guard_penalty_bps > 1e-9 ||
-          HasSymbolExecutionQualityMemory(decision.intent->symbol);
-      if (!quality_guard_override_blocked &&
-          entry_edge_gap_bps <= max_edge_gap_bps + 1e-9) {
+          has_quality_memory;
+      const double memory_max_edge_gap_bps = std::max(
+          0.0, config_.execution_candidate_probe_memory_max_edge_gap_bps);
+      const double memory_min_trend_ratio = std::max(
+          0.0, config_.execution_candidate_probe_memory_min_trend_ratio);
+      const bool memory_recovery_allowed =
+          has_quality_memory && memory_max_edge_gap_bps > 0.0 &&
+          memory_min_trend_ratio > 0.0 &&
+          decision.regime.trend_threshold_ratio + 1e-9 >=
+              memory_min_trend_ratio &&
+          entry_edge_gap_bps <= memory_max_edge_gap_bps + 1e-9;
+      if ((!quality_guard_override_blocked &&
+           entry_edge_gap_bps <= max_edge_gap_bps + 1e-9) ||
+          memory_recovery_allowed) {
         filtered = false;
         near_miss_allowed = true;
         candidate_probe_fee_override = true;
         ++funnel_window_.candidate_probe_fee_overrides;
-        LogInfo("TREND_CANDIDATE_PROBE_FEE_OVERRIDE: symbol=" +
+        LogInfo(std::string(memory_recovery_allowed
+                            ? "TREND_CANDIDATE_PROBE_RECOVERY_FEE_OVERRIDE: symbol="
+                            : "TREND_CANDIDATE_PROBE_FEE_OVERRIDE: symbol=") +
                 decision.intent->symbol +
                 ", client_order_id=" + decision.intent->client_order_id +
                 ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
                 ", required_edge_bps=" + std::to_string(required_edge_bps) +
                 ", edge_gap_bps=" + std::to_string(entry_edge_gap_bps) +
-                ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps));
+                ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps) +
+                ", memory_max_edge_gap_bps=" +
+                std::to_string(memory_max_edge_gap_bps) +
+                ", memory_min_trend_ratio=" +
+                std::to_string(memory_min_trend_ratio) +
+                ", trend_threshold_ratio=" +
+                std::to_string(decision.regime.trend_threshold_ratio));
       } else {
         ++funnel_window_.candidate_probe_filtered_fee;
         LogInfo("TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=" +
@@ -3540,7 +3581,13 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 ", quality_guard_override_blocked=" +
                 std::string(quality_guard_override_blocked ? "true" : "false") +
                 ", quality_guard_penalty_bps=" +
-                std::to_string(quality_guard_penalty_bps));
+                std::to_string(quality_guard_penalty_bps) +
+                ", memory_max_edge_gap_bps=" +
+                std::to_string(memory_max_edge_gap_bps) +
+                ", memory_min_trend_ratio=" +
+                std::to_string(memory_min_trend_ratio) +
+                ", trend_threshold_ratio=" +
+                std::to_string(decision.regime.trend_threshold_ratio));
       }
     }
     UpdateEntryGateObservedRatio(filtered, near_miss, near_miss_allowed);
@@ -3592,6 +3639,12 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
               std::to_string(config_.execution_required_edge_cap_bps) +
               ", observed_filtered_ratio=" +
               std::to_string(observed_filtered_ratio));
+      if (candidate_probe_intent) {
+        candidate_probe_intent_ids_.erase(decision.intent->client_order_id);
+        candidate_probe_attempt_by_intent_id_.erase(decision.intent->client_order_id);
+        candidate_probe_taker_fallback_by_intent_id_.erase(
+            decision.intent->client_order_id);
+      }
       decision.intent.reset();
     } else {
       if (near_miss_allowed && !candidate_probe_fee_override) {
@@ -3814,6 +3867,10 @@ bool BotApplication::EnqueueIntent(const OrderIntent& intent) {
     };
     candidate_probe_attempt_by_intent_id_.erase(intent.client_order_id);
     candidate_probe_taker_fallback_by_intent_id_.erase(intent.client_order_id);
+    if (config_.execution_candidate_probe_cooldown_ticks > 0) {
+      candidate_probe_cooldown_until_tick_by_symbol_[intent.symbol] =
+          market_tick_count_ + config_.execution_candidate_probe_cooldown_ticks;
+    }
     ++funnel_window_.candidate_probe_enqueued;
     LogInfo("TREND_CANDIDATE_PROBE_ENQUEUED: symbol=" + intent.symbol +
             ", client_order_id=" + intent.client_order_id +
@@ -4002,6 +4059,13 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
         active_it->second.client_order_id == fill.client_order_id) {
       active_candidate_probe_by_symbol_.erase(active_it);
     }
+    if (std::fabs(local_qty_after) > kNotionalEpsilon) {
+      candidate_probe_position_entry_tick_by_symbol_[fill.symbol] =
+          market_tick_count_;
+    }
+  }
+  if (std::fabs(local_qty_after) <= kNotionalEpsilon) {
+    candidate_probe_position_entry_tick_by_symbol_.erase(fill.symbol);
   }
   if (const auto* record = oms_.Find(fill.client_order_id);
       record != nullptr && OrderManager::IsTerminalState(record->state)) {

@@ -1862,6 +1862,15 @@ def aggregate_run_summaries(
     negative_realized_net_with_fills_runs = sum(
         1 for value in realized_net_values_with_fills if value < -1e-12
     )
+    filled_realized_net_runs = (
+        positive_realized_net_with_fills_runs
+        + negative_realized_net_with_fills_runs
+        + zero_realized_net_with_fills_runs
+    )
+    positive_filled_segment_ratio = safe_ratio(
+        positive_realized_net_with_fills_runs,
+        filled_realized_net_runs,
+    )
     filtered_cost_values = [
         float(summary["filtered_cost_ratio_avg"])
         for summary in summaries
@@ -1889,6 +1898,8 @@ def aggregate_run_summaries(
         "nonzero_realized_net_with_fills_runs": nonzero_realized_net_with_fills_runs,
         "positive_realized_net_with_fills_runs": positive_realized_net_with_fills_runs,
         "negative_realized_net_with_fills_runs": negative_realized_net_with_fills_runs,
+        "filled_realized_net_runs": filled_realized_net_runs,
+        "positive_filled_segment_ratio": positive_filled_segment_ratio,
         "mean_filtered_cost_ratio_avg": finite_mean(filtered_cost_values),
         "max_filtered_cost_ratio_avg": max(filtered_cost_values) if filtered_cost_values else None,
     }
@@ -1903,6 +1914,7 @@ def aggregate_run_summaries(
         "min_execution_pass_runs": max(1, min_execution_pass_runs),
         "min_total_fills": max(1, min_total_fills),
         "min_mean_realized_net_per_fill": float(min_mean_realized_net_per_fill),
+        "min_positive_filled_segment_ratio": 0.45,
         "warn_mean_filtered_cost_ratio": float(warn_mean_filtered_cost_ratio),
     }
     recommended_coverage_targets_met = has_met_replay_coverage_targets(
@@ -1959,6 +1971,33 @@ def aggregate_run_summaries(
         recommended_coverage_targets_met
         and total_fills >= recommended_thresholds["min_total_fills"]
     ):
+        median_net_with_fills = aggregate_summary.get(
+            "median_realized_net_per_fill_with_fills"
+        )
+        if isinstance(median_net_with_fills, (int, float)):
+            if median_net_with_fills < min_mean_realized_net_per_fill:
+                quality_fail_reasons.append(
+                    "median_realized_net_per_fill_with_fills="
+                    f"{median_net_with_fills:.6f} < {min_mean_realized_net_per_fill:.6f}"
+                )
+        else:
+            quality_fail_reasons.append(
+                "median_realized_net_per_fill_with_fills 缺失，ROBUST 覆盖下无法证明净收益稳定性"
+            )
+        if (
+            nonzero_realized_net_with_fills_runs > 0
+            and isinstance(positive_filled_segment_ratio, (int, float))
+            and positive_filled_segment_ratio
+            < minimum_thresholds["min_positive_filled_segment_ratio"]
+        ):
+            quality_fail_reasons.append(
+                "positive_filled_segment_ratio="
+                f"{positive_filled_segment_ratio:.6f} < "
+                f"{minimum_thresholds['min_positive_filled_segment_ratio']:.6f}; "
+                f"positive_runs={positive_realized_net_with_fills_runs}, "
+                f"negative_runs={negative_realized_net_with_fills_runs}, "
+                f"zero_runs={zero_realized_net_with_fills_runs}"
+            )
         if (
             negative_realized_net_with_fills_runs > 0
             and positive_realized_net_with_fills_runs <= 0
@@ -2158,10 +2197,20 @@ def build_symbol_tradeability(
         negative_runs = int_or_zero(
             summary.get("negative_realized_net_with_fills_runs")
         )
+        zero_runs = int_or_zero(summary.get("zero_realized_net_with_fills_runs"))
         mean_net = number_or_none(summary.get("mean_realized_net_per_fill"))
         mean_net_with_fills = number_or_none(
             summary.get("mean_realized_net_per_fill_with_fills")
         )
+        median_net_with_fills = number_or_none(
+            summary.get("median_realized_net_per_fill_with_fills")
+        )
+        positive_ratio = number_or_none(summary.get("positive_filled_segment_ratio"))
+        if positive_ratio is None and zero_runs > 0:
+            positive_ratio = safe_ratio(
+                positive_runs,
+                positive_runs + negative_runs + zero_runs,
+            )
         economic_value = mean_net if mean_net is not None else mean_net_with_fills
         coverage_ok = (
             bool(validation.get("minimum_coverage_targets_met"))
@@ -2169,9 +2218,16 @@ def build_symbol_tradeability(
             and not coverage_fail_reasons
             and total_fills >= min_total_fills
         )
+        median_ok = (
+            median_net_with_fills is None
+            or median_net_with_fills >= float(min_mean_realized_net_per_fill)
+        )
+        positive_ratio_ok = positive_ratio is None or positive_ratio >= 0.45
         economic_ok = (
             economic_value is not None
             and economic_value >= float(min_mean_realized_net_per_fill)
+            and median_ok
+            and positive_ratio_ok
             and not quality_fail_reasons
         )
         all_filled_runs_negative = positive_runs <= 0 and negative_runs > 0
@@ -2193,9 +2249,18 @@ def build_symbol_tradeability(
                     f"positive_runs={positive_runs}, negative_runs={negative_runs}"
                 )
             if not reasons:
-                reasons.append(
-                    "symbol_replay_mean_realized_net_per_fill_below_threshold"
-                )
+                if not median_ok:
+                    reasons.append(
+                        "symbol_replay_median_realized_net_per_fill_with_fills_below_threshold"
+                    )
+                elif not positive_ratio_ok:
+                    reasons.append(
+                        "symbol_replay_positive_filled_segment_ratio_below_threshold"
+                    )
+                else:
+                    reasons.append(
+                        "symbol_replay_mean_realized_net_per_fill_below_threshold"
+                    )
             decision_status = "quarantined"
             quarantined_symbols.append(symbol)
         else:
@@ -2212,11 +2277,14 @@ def build_symbol_tradeability(
             "negative_realized_net_with_fills_runs": negative_runs,
             "mean_realized_net_per_fill": mean_net,
             "mean_realized_net_per_fill_with_fills": mean_net_with_fills,
+            "median_realized_net_per_fill_with_fills": median_net_with_fills,
+            "positive_filled_segment_ratio": positive_ratio,
             "thresholds": {
                 "min_total_fills": min_total_fills,
                 "min_mean_realized_net_per_fill": float(
                     min_mean_realized_net_per_fill
                 ),
+                "min_positive_filled_segment_ratio": 0.45,
             },
             "reasons": reasons,
         }
