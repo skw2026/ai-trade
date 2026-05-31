@@ -232,7 +232,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
-            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-3}",
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-2}",
             scheduler,
         )
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
@@ -279,7 +279,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS", script)
         self.assertIn(
-            "BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT",
+            "ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT",
             script,
         )
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
@@ -341,13 +341,15 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_closed_loop_workflow_default_replay_symbols_cover_live_trend_set(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            'default: "BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT"',
+            'default: "ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT"',
             workflow,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,BNBUSDT'",
+            "github.event_name == 'schedule' && 'ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT'",
             workflow,
         )
+        self.assertIn('default: "ETHUSDT"', workflow)
+        self.assertIn("--symbol \"${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-ETHUSDT}\"", workflow)
         self.assertIn(
             'CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"',
             workflow,

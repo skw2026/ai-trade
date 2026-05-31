@@ -370,13 +370,7 @@ def assess_walkforward(
                 "walk-forward 平均 Sharpe 未达门槛: "
                 f"{float(avg_split_sharpe):.6f} < {float(min_avg_split_sharpe):.6f}"
             )
-            if focus_bucket_pass:
-                warns.append(
-                    reason
-                    + f"；已由 {focus_bucket_name} 桶主链口径通过，降级为告警"
-                )
-            else:
-                fails.append(reason)
+            fails.append(reason)
     else:
         warns.append("walk-forward 缺少 avg_split_sharpe，无法评估收益质量")
     return_checks = [
@@ -401,13 +395,7 @@ def assess_walkforward(
                     f"walk-forward {label}未达门槛: "
                     f"{float(metric_value):.6f} < {float(threshold):.6f}"
                 )
-                if focus_bucket_pass:
-                    warns.append(
-                        reason
-                        + f"；已由 {focus_bucket_name} 桶主链口径通过，降级为告警"
-                    )
-                else:
-                    fails.append(reason)
+                fails.append(reason)
         elif float(threshold) != 0.0:
             warns.append(f"walk-forward 缺少 {metric_name}，无法评估净收益质量")
     status = "pass" if not fails else "fail"

@@ -405,6 +405,51 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 any("walk-forward 交易 split 平均收益未达门槛" in x for x in payload["fail_reasons"])
             )
 
+    def test_walkforward_focus_bucket_does_not_downgrade_negative_returns(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            walkforward_report = root / "walkforward_report.json"
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "rows": 5000,
+                        "summary": {
+                            "valid_split_count": 12,
+                            "traded_split_count": 5,
+                            "total_trades": 25,
+                            "total_bars": 4800,
+                            "avg_split_sharpe": 0.30,
+                            "avg_split_return": -0.0002,
+                            "enabled_avg_split_return": -0.0004,
+                            "traded_avg_split_return": -0.0006,
+                            "regime_bucket_summary": {
+                                "trend": {
+                                    "bars": 1500,
+                                    "trades": 4,
+                                    "sharpe": 2.0,
+                                }
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_walkforward(
+                walkforward_report,
+                focus_bucket="trend",
+                min_focus_bucket_bars=1000,
+                min_focus_bucket_trades=1,
+                min_focus_bucket_sharpe=0.0,
+            )
+
+            self.assertEqual(section["focus_bucket_validation"]["status"], "pass")
+            self.assertEqual(section["status"], "fail")
+            self.assertEqual(section["warn_reasons"], [])
+            self.assertTrue(
+                any("walk-forward 平均 split 收益未达门槛" in x for x in section["fail_reasons"])
+            )
+
     def test_runtime_not_evaluated_execution_is_exposed_and_warned(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

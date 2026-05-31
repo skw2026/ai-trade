@@ -1,7 +1,7 @@
 system:
   id: "bot-bybit-demo-s5"
   mode: "paper"
-  primary_symbol: "BTCUSDT"
+  primary_symbol: "ETHUSDT"
   data_path: "./data/demo_s5"
   max_ticks: 0
   status_log_interval_ticks: 20
@@ -273,6 +273,6 @@ universe:
   trend_reserve_min_residency_refreshes: 12
   warmup_trend_reserve_min_ratio: 0.60
   reset_stats_on_refresh: true
-  fallback_symbols: ["BTCUSDT", "ETHUSDT"]
-  # replay 分币种经济性通过的主链白名单；XRP/BNB 暂留 replay 观察，不进入 S5 实盘候选池。
-  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  fallback_symbols: ["ETHUSDT", "SOLUSDT"]
+  # replay 分币种经济性通过的 S5 canary 白名单；BTC/XRP/BNB 暂留 replay 观察，不进入实盘候选池。
+  candidate_symbols: ["ETHUSDT", "SOLUSDT"]

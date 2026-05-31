@@ -271,7 +271,51 @@ class ModelRegistryTest(unittest.TestCase):
                 )
             )
 
-    def test_walkforward_focus_bucket_converts_global_negative_returns_to_warnings(self):
+    def test_replay_source_symbol_quarantine_prevents_activation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "source_symbol": "BTCUSDT",
+                        "source_symbols": {
+                            "BTCUSDT": "BTCUSDT",
+                            "ETHUSDT": "ETHUSDT",
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "tradable_symbols": ["ETHUSDT", "SOLUSDT"],
+                                "quarantined_symbols": ["BTCUSDT"],
+                                "decisions": {
+                                    "BTCUSDT": {"status": "quarantined"},
+                                    "ETHUSDT": {"status": "tradable"},
+                                    "SOLUSDT": {"status": "tradable"},
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_replay_validation_report(replay_report, True)
+            )
+
+            self.assertFalse(passed)
+            self.assertEqual(warn_reasons, [])
+            self.assertIn(
+                "replay source_symbol=BTCUSDT is quarantined by symbol_tradeability",
+                fail_reasons,
+            )
+            self.assertEqual(summary["source_symbol"], "BTCUSDT")
+
+    def test_walkforward_focus_bucket_does_not_waive_global_negative_returns(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             walkforward_report = root / "walkforward_report.json"

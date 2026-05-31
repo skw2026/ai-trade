@@ -530,6 +530,8 @@ def gate_replay_validation_report(
         )
     summary = {
         "status": payload.get("status", aggregate_status),
+        "source_symbol": payload.get("source_symbol"),
+        "source_symbols": payload.get("source_symbols", {}),
         "coverage_strength_status": coverage_strength_status,
         "aggregate_validation": aggregate if isinstance(aggregate, dict) else {},
         "execution_economics": payload.get("execution_economics", {}),
@@ -568,6 +570,29 @@ def gate_replay_validation_report(
         ):
             if key in aggregate:
                 summary[key] = aggregate.get(key)
+        tradeability = aggregate.get("symbol_tradeability", {})
+        if not isinstance(tradeability, dict):
+            tradeability = {}
+        summary["symbol_tradeability"] = tradeability
+        quarantined_symbols = {
+            str(item).strip().upper()
+            for item in tradeability.get("quarantined_symbols", [])
+            if str(item).strip()
+        }
+        decisions = tradeability.get("decisions", {})
+        if isinstance(decisions, dict):
+            for symbol, decision in decisions.items():
+                if not isinstance(decision, dict):
+                    continue
+                if str(decision.get("status", "")).strip().lower() == "quarantined":
+                    symbol_text = str(symbol).strip().upper()
+                    if symbol_text:
+                        quarantined_symbols.add(symbol_text)
+        source_symbol = str(payload.get("source_symbol", "")).strip().upper()
+        if source_symbol and source_symbol in quarantined_symbols:
+            fail_reasons.append(
+                f"replay source_symbol={source_symbol} is quarantined by symbol_tradeability"
+            )
 
     return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
 
