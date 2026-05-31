@@ -418,7 +418,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
                         "execution_status": "PASS",
                         "market_context_status": "TREND_PRESENT",
                         "execution_activity_count": 4,
-                        "funnel_fills_runtime_count": 2,
+                        "funnel_fills_runtime_count": 5,
                         "regime_trend_runtime_count": 4,
                         "realized_net_per_fill": -0.001,
                         "filtered_cost_ratio_avg": 0.20,
@@ -437,6 +437,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
 
         self.assertEqual(summary["negative_realized_net_with_fills_runs"], 4)
         self.assertEqual(summary["positive_realized_net_with_fills_runs"], 0)
+        self.assertEqual(summary["total_fills"], 20)
         self.assertAlmostEqual(summary["mean_realized_net_per_fill_with_fills"], -0.001)
         self.assertEqual(validation["status"], "fail")
         self.assertEqual(validation["coverage_strength_status"], "ROBUST")
@@ -570,9 +571,12 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 "BTCUSDT": {
                     "aggregate_summary": {
                         "total_fills": 6,
-                        "positive_realized_net_with_fills_runs": 1,
+                        "positive_realized_net_with_fills_runs": 6,
                         "negative_realized_net_with_fills_runs": 4,
                         "mean_realized_net_per_fill": 0.0001,
+                        "mean_realized_net_per_fill_with_fills": 0.0001,
+                        "median_realized_net_per_fill_with_fills": 0.0001,
+                        "positive_filled_segment_ratio": 0.60,
                     },
                     "aggregate_validation": {
                         "status": "pass",
@@ -588,9 +592,12 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 "ETHUSDT": {
                     "aggregate_summary": {
                         "total_fills": 6,
-                        "positive_realized_net_with_fills_runs": 1,
+                        "positive_realized_net_with_fills_runs": 6,
                         "negative_realized_net_with_fills_runs": 4,
                         "mean_realized_net_per_fill": 0.0002,
+                        "mean_realized_net_per_fill_with_fills": 0.0002,
+                        "median_realized_net_per_fill_with_fills": 0.0002,
+                        "positive_filled_segment_ratio": 0.60,
                     },
                     "aggregate_validation": {
                         "status": "pass",
@@ -606,9 +613,12 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 "SOLUSDT": {
                     "aggregate_summary": {
                         "total_fills": 6,
-                        "positive_realized_net_with_fills_runs": 1,
+                        "positive_realized_net_with_fills_runs": 6,
                         "negative_realized_net_with_fills_runs": 4,
                         "mean_realized_net_per_fill": 0.006,
+                        "mean_realized_net_per_fill_with_fills": 0.006,
+                        "median_realized_net_per_fill_with_fills": 0.006,
+                        "positive_filled_segment_ratio": 0.60,
                     },
                     "aggregate_validation": {
                         "status": "pass",
@@ -647,12 +657,13 @@ class ReplayValidationToolsTest(unittest.TestCase):
             min_mean_realized_net_per_fill=0.0,
             min_tradable_symbols=3,
         )
-        self.assertEqual(merged["status"], "pass")
+        self.assertEqual(merged["status"], "pass_with_actions")
         self.assertEqual(
             merged["tradable_symbols"], ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
         )
         self.assertEqual(merged["quarantined_symbols"], ["XRPUSDT"])
         self.assertEqual(merged["fail_reasons"], [])
+        self.assertIn("symbol_replay_quarantined=XRPUSDT", merged["warn_reasons"])
         self.assertIn(
             "XRPUSDT: mean_realized_net_per_fill=-0.000400 < 0.000000",
             merged["symbol_quarantine_reasons"],
@@ -666,7 +677,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
         )
         self.assertEqual(recommended["min_execution_active_runs"], 4)
         self.assertEqual(recommended["min_execution_pass_runs"], 4)
-        self.assertEqual(recommended["min_total_fills"], 6)
+        self.assertEqual(recommended["min_total_fills"], 20)
         self.assertFalse(
             REPLAY.has_met_replay_coverage_targets(
                 {

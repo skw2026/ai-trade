@@ -79,7 +79,11 @@ class BuildClosedLoopReportTest(unittest.TestCase):
 
             self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(payload["overall_status"], "PASS")
+            self.assertEqual(payload["overall_status"], "PASS_WITH_ACTIONS")
+            self.assertEqual(
+                payload["trading_convergence_status"],
+                "NOT_CONVERGED_REPLAY_SAMPLE_INSUFFICIENT",
+            )
             self.assertIn("runtime", payload["sections"])
             self.assertIn("miner", payload["sections"])
             self.assertIn("integrator", payload["sections"])
@@ -873,6 +877,111 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(replay_section["summary"]["total_fills"], 3)
             self.assertEqual(replay_section["aggregate_summary"]["total_fills"], 3)
 
+    def test_canary_validation_uses_tradable_symbol_metrics_not_quarantined_aggregate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "metrics": {
+                            "runtime_status_count": 80,
+                            "funnel_fills_runtime_count": 4,
+                            "realized_net_per_fill": 0.01,
+                            "regime_change_trend_symbols": ["SOLUSDT"],
+                            "regime_change_trend_candidate_symbols": ["SOLUSDT"],
+                        },
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "target_bucket": "trend",
+                        "source_symbol": "SOLUSDT",
+                        "symbols": ["SOLUSDT", "ETHUSDT"],
+                        "symbol": "SOLUSDT",
+                        "selection": {"segments_ran": 8, "coverage_targets_met": True},
+                        "aggregate_summary": {
+                            "execution_active_runs": 8,
+                            "execution_pass_runs": 6,
+                            "total_fills": 12,
+                            "mean_realized_net_per_fill": -0.01,
+                            "median_realized_net_per_fill_with_fills": -0.02,
+                            "positive_filled_segment_ratio": 0.25,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": ["ETHUSDT"],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.008,
+                                        "positive_filled_segment_ratio": 0.75,
+                                        "total_fills": 8,
+                                    },
+                                    "ETHUSDT": {
+                                        "status": "quarantined",
+                                        "median_realized_net_per_fill_with_fills": -0.05,
+                                        "positive_filled_segment_ratio": 0.0,
+                                        "total_fills": 4,
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["overall_status"], "PASS_WITH_ACTIONS")
+            canary = payload["sections"]["canary_validation"]
+            self.assertEqual(canary["readiness_status"], "PASS")
+            self.assertEqual(
+                payload["trading_convergence_status"],
+                "NOT_CONVERGED_REPLAY_SAMPLE_INSUFFICIENT",
+            )
+            self.assertEqual(canary["recommended_live_symbols"], ["SOLUSDT"])
+            self.assertEqual(
+                canary["replay_metrics"]["basis"],
+                "symbol_tradeability.tradable_symbols_min",
+            )
+            self.assertEqual(
+                canary["replay_metrics"]["median_realized_net_per_fill_with_fills"],
+                0.008,
+            )
+
     def test_replay_optimizer_failure_blocks_replay_section(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -1112,13 +1221,18 @@ class BuildClosedLoopReportTest(unittest.TestCase):
 
             self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(payload["overall_status"], "PASS")
+            self.assertEqual(payload["overall_status"], "PASS_WITH_ACTIONS")
             self.assertEqual(payload["replay_symbol_alignment_status"], "PASS")
             alignment = payload["sections"]["replay_symbol_alignment"]
             self.assertEqual(alignment["uncovered_live_trend_symbols"], [])
             self.assertEqual(alignment["recommended_replay_symbols"], ["SOLUSDT"])
             self.assertEqual(alignment["missing_recommended_replay_symbols"], [])
-            self.assertEqual(payload["warn_reasons"], [])
+            self.assertFalse(
+                any(
+                    item.startswith("replay_symbol_alignment:")
+                    for item in payload["warn_reasons"]
+                )
+            )
 
     def test_replay_validation_fail_blocks_overall_status(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1276,6 +1390,250 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(
                 registry["gate_metric_summary"]["auc_mean"],
                 0.513,
+            )
+
+    def test_feature_parity_missing_metrics_is_not_evaluated(self):
+        section = REPORT.assess_feature_parity(
+            {"metrics": {"runtime_status_count": 10}}
+        )
+
+        self.assertEqual(section["status"], "pass")
+        self.assertEqual(section["readiness_status"], "NOT_EVALUATED")
+
+    def test_canary_tradeability_requires_symbol_decision_metrics(self):
+        section = REPORT.assess_canary_validation(
+            {
+                "source_symbol": "SOLUSDT",
+                "aggregate_summary": {
+                    "median_realized_net_per_fill_with_fills": 0.02,
+                    "positive_filled_segment_ratio": 0.80,
+                    "total_fills": 10,
+                },
+                "symbol_tradeability": {
+                    "status": "pass",
+                    "tradable_symbols": ["SOLUSDT"],
+                    "quarantined_symbols": [],
+                    "decisions": {},
+                },
+            },
+            {},
+        )
+
+        self.assertEqual(section["status"], "fail")
+        self.assertIn(
+            "canary symbol_tradeability decision missing for SOLUSDT",
+            section["fail_reasons"],
+        )
+        self.assertEqual(
+            section["replay_metrics"]["basis"],
+            "symbol_tradeability.tradable_symbols_min",
+        )
+
+    def test_exit_capture_low_mean_fails_without_low_segment_counter(self):
+        section = REPORT.assess_exit_capture(
+            {
+                "exit_capture": {
+                    "sample_count": 3,
+                    "mean_gross_capture_of_path_mfe": 0.05,
+                }
+            },
+            {},
+        )
+
+        self.assertEqual(section["status"], "fail")
+        self.assertIn(
+            "replay mean_gross_capture_of_path_mfe=0.050000 < 0.100000",
+            section["fail_reasons"],
+        )
+
+    def test_exit_capture_uses_source_symbol_when_aggregate_is_contaminated(self):
+        section = REPORT.assess_exit_capture(
+            {
+                "source_symbol": "SOLUSDT",
+                "symbol_tradeability": {
+                    "tradable_symbols": ["SOLUSDT"],
+                    "quarantined_symbols": ["ETHUSDT"],
+                },
+                "exit_capture": {
+                    "sample_count": 20,
+                    "primary_diagnosis": "exit_capture_low",
+                    "mean_gross_capture_of_path_mfe": 0.03,
+                },
+                "exit_capture_by_symbol": {
+                    "SOLUSDT": {
+                        "sample_count": 8,
+                        "primary_diagnosis": "ok",
+                        "mean_gross_capture_of_path_mfe": 0.22,
+                    },
+                    "ETHUSDT": {
+                        "sample_count": 12,
+                        "primary_diagnosis": "exit_capture_low",
+                        "mean_gross_capture_of_path_mfe": 0.02,
+                    },
+                },
+            },
+            {},
+        )
+
+        self.assertEqual(section["status"], "pass")
+        self.assertEqual(section["fail_reasons"], [])
+        self.assertEqual(section["replay"]["sample_count"], 8)
+        self.assertEqual(
+            section["replay"]["selected_by_symbol"]["SOLUSDT"]["sample_count"],
+            8,
+        )
+
+    def test_replay_validation_suppresses_aggregate_fail_when_tradeable_canary_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass_with_actions",
+                        "source_symbol": "SOLUSDT",
+                        "aggregate_validation": {
+                            "status": "fail",
+                            "fail_reasons": ["aggregate net negative"],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "status": "pass",
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": ["ETHUSDT"],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.02,
+                                        "positive_filled_segment_ratio": 0.80,
+                                        "total_fills": 20,
+                                    },
+                                    "ETHUSDT": {"status": "quarantined"},
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_replay_validation(replay_report)
+
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["fail_reasons"], [])
+            self.assertIn(
+                "aggregate net negative",
+                "; ".join(section["suppressed_aggregate_fail_reasons"]),
+            )
+
+    def test_replay_validation_skip_report_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass_with_actions",
+                        "validation_skipped": True,
+                        "skip_reason": "feature_store_missing",
+                        "selection": {
+                            "selection_mode": "not_run",
+                            "stop_reason": "feature_store_missing",
+                        },
+                        "aggregate_validation": {
+                            "status": "pass_with_actions",
+                            "fail_reasons": [],
+                            "warn_reasons": ["skipped"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_replay_validation(replay_report)
+
+            self.assertEqual(section["status"], "fail")
+            self.assertIn(
+                "replay-validation skipped/not_run: reason=feature_store_missing",
+                section["fail_reasons"],
+            )
+
+    def test_trading_convergence_requires_live_fills(self):
+        section = REPORT.assess_trading_convergence(
+            {
+                "verdict": "PASS",
+                "execution_status": "NOT_EVALUATED",
+                "runtime_validation_mode": "POLICY_FLAT_PROTECTION",
+                "market_context_status": "RANGE_ONLY",
+                "metrics": {"funnel_fills_runtime_count": 0},
+            },
+            {"aggregate_summary": {"total_fills": 20}},
+            {"readiness_status": "PASS"},
+            {
+                "readiness_status": "PASS",
+                "replay": {
+                    "sample_count": 10,
+                    "mean_gross_capture_of_path_mfe": 0.20,
+                },
+            },
+            {
+                "readiness_status": "PASS",
+                "replay_metrics": {
+                    "total_fills": 20,
+                    "median_realized_net_per_fill_with_fills": 0.01,
+                    "positive_filled_segment_ratio": 0.60,
+                },
+            },
+        )
+
+        self.assertEqual(section["readiness_status"], "NOT_CONVERGED_NO_LIVE_FILLS")
+
+    def test_trading_convergence_passes_with_replay_exit_parity_and_live_fills(self):
+        section = REPORT.assess_trading_convergence(
+            {
+                "verdict": "PASS",
+                "execution_status": "PASS",
+                "runtime_validation_mode": "EXECUTION_ACTIVE",
+                "metrics": {
+                    "funnel_fills_runtime_count": 4,
+                    "realized_net_per_fill": 0.01,
+                },
+            },
+            {"aggregate_summary": {"total_fills": 20}},
+            {"readiness_status": "PASS"},
+            {
+                "readiness_status": "PASS",
+                "replay": {
+                    "sample_count": 10,
+                    "mean_gross_capture_of_path_mfe": 0.20,
+                },
+            },
+            {
+                "readiness_status": "PASS",
+                "replay_metrics": {
+                    "total_fills": 20,
+                    "median_realized_net_per_fill_with_fills": 0.01,
+                    "positive_filled_segment_ratio": 0.60,
+                },
+            },
+        )
+
+        self.assertEqual(
+            section["readiness_status"],
+            "CONVERGED_CANARY_VALIDATED_WITH_LIVE_FILLS",
+        )
+        self.assertEqual(section["blockers"], [])
+
+    def test_run_manifest_expected_run_id_missing_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = pathlib.Path(td) / "run_manifest.json"
+            manifest.write_text(json.dumps({"git": {}}), encoding="utf-8")
+
+            section = REPORT.assess_run_manifest(manifest, "gha-1-1")
+
+            self.assertEqual(section["status"], "fail")
+            self.assertIn(
+                "run manifest run_id missing; expected=gha-1-1",
+                section["fail_reasons"],
             )
 
 

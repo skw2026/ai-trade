@@ -35,7 +35,8 @@ COMPOSE_FILE="docker-compose.yml"
 ENV_FILE=".env"
 ENV_FILE_EXPLICIT="false"
 OUTPUT_ROOT="./data/reports/closed_loop"
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_ID="${CLOSED_LOOP_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+RUN_ID="${RUN_ID//[^A-Za-z0-9T_.-]/_}"
 STAGE="S5"
 LOG_SINCE="4h"
 MIN_RUNTIME_STATUS=""
@@ -43,7 +44,7 @@ ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS="${CLOSED_LOOP_ASSESS_WAIT_FOR_MIN_RUNTIME_ST
 ASSESS_WAIT_TIMEOUT_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS:-900}"
 ASSESS_WAIT_POLL_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS:-15}"
 
-SYMBOL="ETHUSDT"
+SYMBOL="SOLUSDT"
 INTERVAL="5"
 CATEGORY="linear"
 BARS="5000"
@@ -121,7 +122,7 @@ TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
 ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}"
 REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.maker_first.yaml}"
-DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT}"
+DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
@@ -135,10 +136,10 @@ REPLAY_VALIDATION_REFRESH_CORPUS="${CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS
 REPLAY_VALIDATION_MIN_RUNTIME_STATUS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_RUNTIME_STATUS:-10}"
 REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}"
 REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
-REPLAY_VALIDATION_MIN_TOTAL_FILLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-3}"
+REPLAY_VALIDATION_MIN_TOTAL_FILLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-20}"
 REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:-0.0}"
 REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO="${CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO:-0.80}"
-REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-2}"
+REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-1}"
 S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
@@ -166,7 +167,7 @@ Options:
   --since <duration>                 导出日志窗口 (default: 4h)
   --min-runtime-status <int>         覆盖日志验收最小 RUNTIME_STATUS 条数
 
-  --symbol <symbol>                  R0 拉数 symbol (default: ETHUSDT)
+  --symbol <symbol>                  R0 拉数 symbol (default: SOLUSDT)
   --interval <minutes>               R0 拉数周期分钟 (default: 5)
   --category <category>              R0 category (default: linear)
   --bars <int>                       R0 拉数 bars (default: 5000)
@@ -239,7 +240,7 @@ Options:
   --replay-validation-min-execution-pass-runs <int>
                                       replay-validation 至少多少片段 execution_status=PASS (default: 3)
   --replay-validation-min-total-fills <int>
-                                      replay-validation 聚合 fills 下限 (default: 3)
+                                      replay-validation 聚合 fills 下限 (default: 20)
   --replay-validation-min-mean-realized-net-per-fill <float>
                                       replay-validation realized_net_per_fill 均值下限 (default: 0.0)
   --replay-validation-warn-mean-filtered-cost-ratio <float>
@@ -286,7 +287,7 @@ Env toggles:
                                                        assess 动作是否刷新 replay-validation (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.maker_first.yaml)
   CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS=<csv>    replay-validation 空目标时的默认多币对
-                                                       (default: ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT)
+                                                       (default: SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
   CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol>   feature store 源行情币对 (default: --symbol)
@@ -304,13 +305,14 @@ Env toggles:
                                                        replay-validation 至少多少片段进入 EXECUTION_ACTIVE (default: 3)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS=<int>
                                                        replay-validation 至少多少片段 execution_status=PASS (default: 3)
-  CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS=<int>    replay-validation 聚合 fills 下限 (default: 3)
+  CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS=<int>    replay-validation 聚合 fills 下限 (default: 20)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL=<float>
                                                        replay-validation realized_net_per_fill 均值下限 (default: 0.0)
   CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO=<float>
                                                        replay-validation filtered_cost_ratio_avg 均值告警线 (default: 0.80)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS=<int>
-                                                       多币对 replay 至少多少币对可进入主链 (default: 3)
+                                                       多币对 replay 至少多少币对可进入主链 (default: 1)
+  CLOSED_LOOP_RUN_ID=<id>                              可选：外部 workflow 指定本轮 run_id，避免 artifact 读取 latest 漂移
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
   CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
@@ -875,6 +877,7 @@ ASSESS_LOG_FILTER_META_PATH="${RUN_DIR}/runtime_log_filter.json"
 ASSESS_JSON_PATH="${RUN_DIR}/runtime_assess.json"
 FINAL_REPORT_PATH="${RUN_DIR}/closed_loop_report.json"
 RUN_META_PATH="${RUN_DIR}/run_meta.json"
+RUN_MANIFEST_PATH="${RUN_DIR}/run_manifest.json"
 LATEST_REPORT_PATH="${OUTPUT_ROOT}/latest_closed_loop_report.json"
 LATEST_RUNTIME_ASSESS_PATH="${OUTPUT_ROOT}/latest_runtime_assess.json"
 LATEST_META_PATH="${OUTPUT_ROOT}/latest_run_meta.json"
@@ -1319,6 +1322,10 @@ write_replay_validation_skip_report() {
   "source_symbol": "${REPLAY_VALIDATION_SOURCE_SYMBOL}",
   "symbol": "${REPLAY_VALIDATION_SYMBOL}",
   "symbols": ${REPLAY_VALIDATION_SYMBOLS_JSON},
+  "status": "fail",
+  "validation_skipped": true,
+  "skip_reason": "feature_store_missing",
+  "fail_reasons": ["replay validation skipped: feature_store_missing"],
   "warnings": ["replay validation skipped: feature store not available for current run"],
   "selection": {
     "selection_mode": "not_run",
@@ -1350,8 +1357,8 @@ write_replay_validation_skip_report() {
     "max_filtered_cost_ratio_avg": null
   },
   "aggregate_validation": {
-    "status": "pass_with_actions",
-    "fail_reasons": [],
+    "status": "fail",
+    "fail_reasons": ["replay validation skipped: feature_store_missing"],
     "warn_reasons": ["replay validation skipped: feature store not available for current run"],
     "thresholds": {
       "min_execution_active_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS},
@@ -1373,6 +1380,10 @@ write_replay_validation_fail_report() {
   "source_symbol": "${REPLAY_VALIDATION_SOURCE_SYMBOL}",
   "symbol": "${REPLAY_VALIDATION_SYMBOL}",
   "symbols": ${REPLAY_VALIDATION_SYMBOLS_JSON},
+  "status": "fail",
+  "validation_skipped": true,
+  "skip_reason": "command_failed",
+  "fail_reasons": ["replay validation command failed"],
   "warnings": [],
   "selection": {
     "selection_mode": "not_run",
@@ -1613,12 +1624,131 @@ restart_if_activated() {
   fi
 }
 
+write_run_manifest() {
+  mkdir -p "${RUN_DIR}"
+  local git_commit=""
+  local git_branch=""
+  local git_dirty="unknown"
+  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_commit="$(git rev-parse HEAD 2>/dev/null || true)"
+    git_branch="$(git branch --show-current 2>/dev/null || true)"
+    if [[ -n "$(git status --short 2>/dev/null || true)" ]]; then
+      git_dirty="true"
+    else
+      git_dirty="false"
+    fi
+  fi
+
+  RUN_MANIFEST_JSON_OUT="${RUN_MANIFEST_PATH}" \
+  RUN_ID_VALUE="${RUN_ID}" \
+  ACTION_VALUE="${ACTION}" \
+  STAGE_VALUE="${STAGE}" \
+  SYMBOL_VALUE="${SYMBOL}" \
+  COMPOSE_FILE_VALUE="${COMPOSE_FILE}" \
+  ENV_FILE_VALUE="${ENV_FILE}" \
+  RUNTIME_CONFIG_PATH_VALUE="${RUNTIME_CONFIG_PATH}" \
+  RUNTIME_CONFIG_SOURCE_VALUE="${RUNTIME_CONFIG_SOURCE}" \
+  DATA_CONFIG_PATH_VALUE="${DATA_CONFIG_PATH}" \
+  REPLAY_CONFIG_PATH_VALUE="${REPLAY_VALIDATION_CONFIG_PATH}" \
+  REPLAY_SOURCE_SYMBOL_VALUE="${REPLAY_VALIDATION_SOURCE_SYMBOL}" \
+  REPLAY_SYMBOL_VALUE="${REPLAY_VALIDATION_SYMBOL}" \
+  REPLAY_SYMBOLS_VALUE="${REPLAY_VALIDATION_SYMBOLS}" \
+  REPLAY_MIN_TRADABLE_SYMBOLS_VALUE="${REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS}" \
+  REPLAY_REAL_MARKET_FEATURES_VALUE="${REPLAY_VALIDATION_REAL_MARKET_FEATURES}" \
+  REPLAY_FEATURE_DAYS_VALUE="${REPLAY_VALIDATION_FEATURE_DAYS}" \
+  WALKFORWARD_MIN_AVG_SPLIT_RETURN_VALUE="${WALKFORWARD_MIN_AVG_SPLIT_RETURN}" \
+  WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN_VALUE="${WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN}" \
+  WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN_VALUE="${WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN}" \
+  GIT_COMMIT_VALUE="${git_commit}" \
+  GIT_BRANCH_VALUE="${git_branch}" \
+  GIT_DIRTY_VALUE="${git_dirty}" \
+  python3 - <<'PY'
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+
+
+def file_hash(path_text: str) -> str:
+    if not path_text:
+        return ""
+    path = Path(path_text)
+    if not path.is_file():
+        return ""
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def csv_symbols(value: str) -> list[str]:
+    seen = []
+    for item in value.replace(";", ",").split(","):
+        symbol = item.strip().upper()
+        if symbol and symbol not in seen:
+            seen.append(symbol)
+    return seen
+
+
+out = Path(os.environ["RUN_MANIFEST_JSON_OUT"])
+payload = {
+    "run_id": os.environ.get("RUN_ID_VALUE", ""),
+    "action": os.environ.get("ACTION_VALUE", ""),
+    "stage": os.environ.get("STAGE_VALUE", ""),
+    "generated_at_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "git": {
+        "commit": os.environ.get("GIT_COMMIT_VALUE", ""),
+        "branch": os.environ.get("GIT_BRANCH_VALUE", ""),
+        "dirty": os.environ.get("GIT_DIRTY_VALUE", "unknown"),
+    },
+    "runtime": {
+        "symbol": os.environ.get("SYMBOL_VALUE", ""),
+        "config_path": os.environ.get("RUNTIME_CONFIG_PATH_VALUE", ""),
+        "config_source": os.environ.get("RUNTIME_CONFIG_SOURCE_VALUE", ""),
+    },
+    "replay_validation": {
+        "source_symbol": os.environ.get("REPLAY_SOURCE_SYMBOL_VALUE", ""),
+        "symbol": os.environ.get("REPLAY_SYMBOL_VALUE", ""),
+        "symbols": csv_symbols(os.environ.get("REPLAY_SYMBOLS_VALUE", "")),
+        "min_tradable_symbols": os.environ.get("REPLAY_MIN_TRADABLE_SYMBOLS_VALUE", ""),
+        "real_market_features": os.environ.get("REPLAY_REAL_MARKET_FEATURES_VALUE", ""),
+        "feature_days": os.environ.get("REPLAY_FEATURE_DAYS_VALUE", ""),
+    },
+    "walkforward_thresholds": {
+        "min_avg_split_return": os.environ.get("WALKFORWARD_MIN_AVG_SPLIT_RETURN_VALUE", ""),
+        "min_enabled_avg_split_return": os.environ.get("WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN_VALUE", ""),
+        "min_traded_avg_split_return": os.environ.get("WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN_VALUE", ""),
+    },
+    "config_paths": {
+        "compose_file": os.environ.get("COMPOSE_FILE_VALUE", ""),
+        "env_file": os.environ.get("ENV_FILE_VALUE", ""),
+        "runtime_config": os.environ.get("RUNTIME_CONFIG_PATH_VALUE", ""),
+        "data_config": os.environ.get("DATA_CONFIG_PATH_VALUE", ""),
+        "replay_config": os.environ.get("REPLAY_CONFIG_PATH_VALUE", ""),
+    },
+    "config_hashes": {},
+    "artifact_contract": {
+        "run_specific_dir": str(out.parent),
+        "latest_pointer_must_match_run_id": True,
+        "workflow_success_is_not_strategy_success": True,
+    },
+}
+for name, path_text in payload["config_paths"].items():
+    payload["config_hashes"][name] = file_hash(path_text)
+out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
 build_summary() {
   echo "[INFO] summary report start"
+  write_run_manifest
   SUMMARY_ARGS=(
     tools/build_closed_loop_report.py
     --output="${FINAL_REPORT_PATH}"
     --run_id="${RUN_ID}"
+    --run_manifest="${RUN_MANIFEST_PATH}"
     --walkforward_min_avg_sharpe="${WALKFORWARD_MIN_AVG_SHARPE}"
     --walkforward_min_avg_split_return="${WALKFORWARD_MIN_AVG_SPLIT_RETURN}"
     --walkforward_min_enabled_avg_split_return="${WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN}"
@@ -1694,6 +1824,7 @@ build_summary() {
   "runtime_verdict": "${RUNTIME_VERDICT}",
   "run_dir": "${RUN_DIR}",
   "final_report": "${FINAL_REPORT_PATH}",
+  "run_manifest": "${RUN_MANIFEST_PATH}",
   "runtime_log": "${ASSESS_LOG_PATH}",
   "runtime_raw_log": "${ASSESS_RAW_LOG_PATH}",
   "runtime_log_filter_meta": "${ASSESS_LOG_FILTER_META_PATH}",
@@ -1756,6 +1887,7 @@ run_gc() {
 }
 
 run_main() {
+  write_run_manifest
   case "${ACTION}" in
     data)
       run_data_pipeline

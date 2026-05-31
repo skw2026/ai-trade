@@ -26,6 +26,20 @@ try:
 except ImportError:  # pragma: no cover - 非 POSIX 环境兜底
     fcntl = None
 
+MIN_POSITIVE_FILLED_SEGMENT_RATIO = 0.55
+EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE = 0.10
+
+
+def is_allowed_activation_gate_warning(reason: str) -> bool:
+    text = str(reason or "").strip()
+    return text.startswith(
+        (
+            "symbol_replay_coverage_insufficient=",
+            "symbol_replay_quarantined=",
+            "aggregate_validation_failed_but_symbol_tradeability_passed:",
+        )
+    )
+
 
 def now_utc_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -488,8 +502,62 @@ def gate_replay_validation_report(
     if isinstance(aggregate, dict):
         aggregate_status = str(aggregate.get("status", "")).strip().lower()
     status = str(payload.get("status", aggregate_status)).strip().lower()
-    if status != "pass":
-        fail_reasons.append(f"replay_validation status={status or 'UNKNOWN'} != pass")
+    activation_gate = payload.get("activation_gate", {})
+    if not isinstance(activation_gate, dict):
+        activation_gate = {}
+    activation_gate_status = str(activation_gate.get("status", "")).strip().lower()
+    activation_gate_blocking_warnings: List[str] = []
+    if not activation_gate:
+        fail_reasons.append("replay activation_gate missing")
+    elif activation_gate_status == "fail":
+        gate_fail_items = activation_gate.get("fail_reasons", [])
+        if isinstance(gate_fail_items, list):
+            for item in gate_fail_items:
+                item_text = str(item).strip()
+                if item_text:
+                    fail_reasons.append(f"replay activation_gate: {item_text}")
+        if not gate_fail_items:
+            fail_reasons.append("replay activation_gate status=fail")
+    elif activation_gate_status == "pass_with_actions":
+        gate_warn_items = activation_gate.get("warn_reasons", [])
+        if isinstance(gate_warn_items, list):
+            for item in gate_warn_items:
+                item_text = str(item).strip()
+                if not item_text:
+                    continue
+                warn_reasons.append(f"replay activation_gate: {item_text}")
+                if not is_allowed_activation_gate_warning(item_text):
+                    activation_gate_blocking_warnings.append(item_text)
+        else:
+            activation_gate_blocking_warnings.append(
+                "activation_gate.pass_with_actions without warn_reasons"
+            )
+    elif activation_gate_status != "pass":
+        fail_reasons.append(
+            "replay activation_gate status="
+            f"{activation_gate_status or 'UNKNOWN'} != pass"
+        )
+    raw_replay_fail_reasons: List[str] = []
+    selection = payload.get("selection", {})
+    if not isinstance(selection, dict):
+        selection = {}
+    skip_reason = str(
+        payload.get("skip_reason") or selection.get("stop_reason") or ""
+    ).strip()
+    selection_mode = str(selection.get("selection_mode", "")).strip()
+    validation_skipped = bool(payload.get("validation_skipped")) or (
+        selection_mode == "not_run"
+        and skip_reason in {"feature_store_missing", "command_failed", "not_run"}
+    )
+    if validation_skipped:
+        raw_replay_fail_reasons.append(
+            "replay_validation skipped/not_run: "
+            f"reason={skip_reason or 'unknown'}"
+        )
+    if status not in {"pass", "pass_with_actions"}:
+        raw_replay_fail_reasons.append(
+            f"replay_validation status={status or 'UNKNOWN'} != pass"
+        )
 
     fail_items = payload.get("fail_reasons", [])
     if not fail_items and isinstance(aggregate, dict):
@@ -498,7 +566,7 @@ def gate_replay_validation_report(
         for item in fail_items:
             item_text = str(item).strip()
             if item_text:
-                fail_reasons.append(item_text)
+                raw_replay_fail_reasons.append(item_text)
 
     warn_items = payload.get("warn_reasons", [])
     if not warn_items and isinstance(aggregate, dict):
@@ -516,18 +584,48 @@ def gate_replay_validation_report(
     if not isinstance(execution_optimizer, dict):
         execution_optimizer = {}
     optimizer_status = str(execution_optimizer.get("status", "")).strip().lower()
-    if status == "pass" and optimizer_status == "fail":
+    if optimizer_status == "fail":
         fail_reasons.append("replay execution_optimizer status=fail")
     execution_cost_plan = payload.get("execution_cost_plan", {})
     if not isinstance(execution_cost_plan, dict):
         execution_cost_plan = {}
+    feature_build = payload.get("feature_build", {})
+    if not isinstance(feature_build, dict):
+        feature_build = {}
+    exit_capture = payload.get("exit_capture", {})
+    if not isinstance(exit_capture, dict):
+        exit_capture = {}
+    exit_capture_by_symbol = payload.get("exit_capture_by_symbol", {})
+    if not isinstance(exit_capture_by_symbol, dict):
+        exit_capture_by_symbol = {}
     cost_plan_status = str(execution_cost_plan.get("status", "")).strip().lower()
-    if status == "pass" and cost_plan_status == "fail":
+    if cost_plan_status == "fail":
         fail_reasons.append("replay execution_cost_plan status=fail")
     elif cost_plan_status == "candidate_requires_rerun":
         warn_reasons.append(
             "replay execution_cost_plan found lower-cost candidate requiring rerun"
         )
+    exit_sample_count = exit_capture.get("sample_count")
+    exit_primary_diagnosis = str(exit_capture.get("primary_diagnosis", "")).strip()
+    exit_mean_capture = exit_capture.get("mean_gross_capture_of_path_mfe")
+    if (
+        not exit_capture_by_symbol
+        and isinstance(exit_sample_count, (int, float))
+        and float(exit_sample_count) > 0
+    ):
+        if exit_primary_diagnosis == "exit_capture_low":
+            fail_reasons.append(
+                "replay exit_capture_low: path MFE covers cost but gross capture is too low"
+            )
+        if (
+            isinstance(exit_mean_capture, (int, float))
+            and float(exit_mean_capture) < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
+        ):
+            fail_reasons.append(
+                "replay mean_gross_capture_of_path_mfe="
+                f"{float(exit_mean_capture):.6f} < "
+                f"{EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
+            )
     summary = {
         "status": payload.get("status", aggregate_status),
         "source_symbol": payload.get("source_symbol"),
@@ -536,27 +634,14 @@ def gate_replay_validation_report(
         "aggregate_validation": aggregate if isinstance(aggregate, dict) else {},
         "execution_economics": payload.get("execution_economics", {}),
         "cost_sensitivity": payload.get("cost_sensitivity", {}),
-        "exit_capture": payload.get("exit_capture", {}),
+        "exit_capture": exit_capture,
+        "exit_capture_by_symbol": exit_capture_by_symbol,
         "execution_cost_plan": execution_cost_plan,
         "execution_optimizer": execution_optimizer,
+        "feature_build": feature_build,
+        "activation_gate": activation_gate,
     }
     if isinstance(aggregate, dict):
-        median_net_with_fills = aggregate.get(
-            "median_realized_net_per_fill_with_fills"
-        )
-        if isinstance(median_net_with_fills, (int, float)) and (
-            float(median_net_with_fills) < 0.0
-        ):
-            fail_reasons.append(
-                "replay median_realized_net_per_fill_with_fills="
-                f"{float(median_net_with_fills):.6f} < 0.000000"
-            )
-        positive_ratio = aggregate.get("positive_filled_segment_ratio")
-        if isinstance(positive_ratio, (int, float)) and float(positive_ratio) < 0.45:
-            fail_reasons.append(
-                "replay positive_filled_segment_ratio="
-                f"{float(positive_ratio):.6f} < 0.450000"
-            )
         for key in (
             "execution_active_runs",
             "execution_pass_runs",
@@ -574,6 +659,19 @@ def gate_replay_validation_report(
         if not isinstance(tradeability, dict):
             tradeability = {}
         summary["symbol_tradeability"] = tradeability
+        tradeability_status = str(tradeability.get("status", "")).strip().lower()
+        if tradeability and tradeability_status == "fail":
+            for reason in tradeability.get("fail_reasons", []):
+                reason_text = str(reason).strip()
+                if reason_text:
+                    fail_reasons.append(f"replay symbol_tradeability: {reason_text}")
+        tradable_symbols = {
+            str(item).strip().upper()
+            for item in tradeability.get("tradable_symbols", [])
+            if str(item).strip()
+        }
+        if tradeability and not tradable_symbols:
+            fail_reasons.append("replay symbol_tradeability has no tradable_symbols")
         quarantined_symbols = {
             str(item).strip().upper()
             for item in tradeability.get("quarantined_symbols", [])
@@ -593,6 +691,156 @@ def gate_replay_validation_report(
             fail_reasons.append(
                 f"replay source_symbol={source_symbol} is quarantined by symbol_tradeability"
             )
+        if tradeability and source_symbol and source_symbol not in tradable_symbols:
+            fail_reasons.append(
+                f"replay source_symbol={source_symbol} is not tradable by symbol_tradeability"
+            )
+        critical_symbols = set(tradable_symbols)
+        if source_symbol:
+            critical_symbols.add(source_symbol)
+        failed_feature_symbols = {
+            str(item).strip().upper()
+            for item in feature_build.get("failed_symbols", [])
+            if str(item).strip()
+        }
+        missing_feature_symbols = {
+            str(item).strip().upper()
+            for item in feature_build.get("missing_symbols", [])
+            if str(item).strip()
+        }
+        critical_failed_features = sorted(critical_symbols & failed_feature_symbols)
+        critical_missing_features = sorted(critical_symbols & missing_feature_symbols)
+        if critical_failed_features:
+            fail_reasons.append(
+                "replay real-market feature build failed for source/tradable symbols="
+                + ",".join(critical_failed_features)
+            )
+        if critical_missing_features:
+            fail_reasons.append(
+                "replay real-market feature missing for source/tradable symbols="
+                + ",".join(critical_missing_features)
+            )
+        for symbol in sorted(critical_symbols):
+            symbol_exit = exit_capture_by_symbol.get(symbol)
+            if not isinstance(symbol_exit, dict):
+                continue
+            symbol_samples = symbol_exit.get("sample_count")
+            if not isinstance(symbol_samples, (int, float)) or float(symbol_samples) <= 0:
+                continue
+            symbol_primary = str(symbol_exit.get("primary_diagnosis", "")).strip()
+            symbol_mean_capture = symbol_exit.get("mean_gross_capture_of_path_mfe")
+            if symbol_primary == "exit_capture_low":
+                fail_reasons.append(
+                    f"replay {symbol} exit_capture_low: path MFE covers cost but gross capture is too low"
+                )
+            if (
+                isinstance(symbol_mean_capture, (int, float))
+                and float(symbol_mean_capture)
+                < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
+            ):
+                fail_reasons.append(
+                    f"replay {symbol} mean_gross_capture_of_path_mfe="
+                    f"{float(symbol_mean_capture):.6f} < "
+                    f"{EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
+                )
+        economic_gate_basis = "aggregate_validation"
+        median_net_with_fills = aggregate.get(
+            "median_realized_net_per_fill_with_fills"
+        )
+        positive_ratio = aggregate.get("positive_filled_segment_ratio")
+        decision_schema_complete = True
+        if tradeability and tradable_symbols:
+            economic_gate_basis = "symbol_tradeability.tradable_symbols_min"
+            median_net_with_fills = None
+            positive_ratio = None
+            tradable_medians = []
+            tradable_positive_ratios = []
+            if not isinstance(decisions, dict):
+                decisions = {}
+                decision_schema_complete = False
+                fail_reasons.append("replay symbol_tradeability.decisions missing")
+            for symbol in sorted(tradable_symbols):
+                decision = decisions.get(symbol, {})
+                if not isinstance(decision, dict) or not decision:
+                    decision_schema_complete = False
+                    fail_reasons.append(
+                        f"replay symbol_tradeability decision missing for {symbol}"
+                    )
+                    continue
+                item_median = decision.get("median_realized_net_per_fill_with_fills")
+                item_positive_ratio = decision.get("positive_filled_segment_ratio")
+                item_total_fills = decision.get("total_fills")
+                if isinstance(item_median, (int, float)):
+                    tradable_medians.append(float(item_median))
+                else:
+                    decision_schema_complete = False
+                    fail_reasons.append(
+                        "replay symbol_tradeability "
+                        f"median_realized_net_per_fill_with_fills missing for {symbol}"
+                    )
+                if isinstance(item_positive_ratio, (int, float)):
+                    tradable_positive_ratios.append(float(item_positive_ratio))
+                else:
+                    decision_schema_complete = False
+                    fail_reasons.append(
+                        "replay symbol_tradeability "
+                        f"positive_filled_segment_ratio missing for {symbol}"
+                    )
+                if not isinstance(item_total_fills, (int, float)) or float(item_total_fills) <= 0:
+                    decision_schema_complete = False
+                    fail_reasons.append(
+                        "replay symbol_tradeability "
+                        f"total_fills missing for {symbol}"
+                    )
+            if tradable_medians:
+                median_net_with_fills = min(tradable_medians)
+            if tradable_positive_ratios:
+                positive_ratio = min(tradable_positive_ratios)
+        suppressed_aggregate_fail_reasons: List[str] = []
+        source_quarantined = bool(source_symbol and source_symbol in quarantined_symbols)
+        if (
+            raw_replay_fail_reasons
+            and tradeability_status == "pass"
+            and tradable_symbols
+            and decision_schema_complete
+            and not source_quarantined
+        ):
+            suppressed_aggregate_fail_reasons = list(raw_replay_fail_reasons)
+            warn_reasons.append(
+                "replay aggregate fail reasons suppressed because symbol_tradeability passed: "
+                + "; ".join(suppressed_aggregate_fail_reasons)
+            )
+        else:
+            fail_reasons.extend(raw_replay_fail_reasons)
+        summary["suppressed_aggregate_fail_reasons"] = suppressed_aggregate_fail_reasons
+        summary["economic_gate_basis"] = economic_gate_basis
+        if isinstance(median_net_with_fills, (int, float)) and (
+            float(median_net_with_fills) < 0.0
+        ):
+            fail_reasons.append(
+                f"replay {economic_gate_basis} median_realized_net_per_fill_with_fills="
+                f"{float(median_net_with_fills):.6f} < 0.000000"
+            )
+        if (
+            isinstance(positive_ratio, (int, float))
+            and float(positive_ratio) < MIN_POSITIVE_FILLED_SEGMENT_RATIO
+        ):
+            fail_reasons.append(
+                f"replay {economic_gate_basis} positive_filled_segment_ratio="
+                f"{float(positive_ratio):.6f} < {MIN_POSITIVE_FILLED_SEGMENT_RATIO:.6f}"
+            )
+        if activation_gate_blocking_warnings:
+            fail_reasons.append(
+                "replay activation_gate pass_with_actions has blocking warnings: "
+                + "; ".join(activation_gate_blocking_warnings)
+            )
+    elif raw_replay_fail_reasons:
+        fail_reasons.extend(raw_replay_fail_reasons)
+    if activation_gate_blocking_warnings and not isinstance(aggregate, dict):
+        fail_reasons.append(
+            "replay activation_gate pass_with_actions has blocking warnings: "
+            + "; ".join(activation_gate_blocking_warnings)
+        )
 
     return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
 

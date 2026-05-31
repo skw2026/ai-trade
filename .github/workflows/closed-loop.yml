@@ -30,12 +30,12 @@ on:
       replay_symbols:
         description: "replay-validation 目标币对，逗号分隔；留空则使用 ECS .env.runtime"
         required: false
-        default: "ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT"
+        default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"
         type: string
       replay_source_symbol:
         description: "replay-validation feature store 源币对；留空则使用 ECS .env.runtime"
         required: false
-        default: "ETHUSDT"
+        default: "SOLUSDT"
         type: string
       replay_feature_days:
         description: "replay-validation 逐币对 feature 历史天数；0 表示沿用 data_pipeline 配置"
@@ -70,12 +70,13 @@ jobs:
           CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
           CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'ETHUSDT' || inputs.replay_source_symbol }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'SOLUSDT' || inputs.replay_source_symbol }}
           CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"
           CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: "true"
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
           CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ github.event_name == 'schedule' && '' || inputs.replay_feature_days }}
+          CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
@@ -83,7 +84,7 @@ jobs:
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
           command_timeout: 90m
-          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL,CLOSED_LOOP_REPLAY_VALIDATION_CONFIG,CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES,CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION,CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS
+          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL,CLOSED_LOOP_REPLAY_VALIDATION_CONFIG,CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES,CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION,CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS,CLOSED_LOOP_RUN_ID
           script: |
             set -euo pipefail
             cd /opt/ai-trade
@@ -93,7 +94,11 @@ jobs:
             WORKFLOW_REPLAY_VALIDATION_REAL_MARKET_FEATURES="${CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES:-}"
             WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-}"
             WORKFLOW_REPLAY_VALIDATION_FEATURE_DAYS="${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-}"
+            WORKFLOW_CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"
             set -a && source .env.runtime && set +a
+            if [[ -n "${WORKFLOW_CLOSED_LOOP_RUN_ID}" ]]; then
+              export CLOSED_LOOP_RUN_ID="${WORKFLOW_CLOSED_LOOP_RUN_ID}"
+            fi
             if [[ -n "${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}" ]]; then
               export CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS="${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}"
             fi
@@ -119,13 +124,13 @@ jobs:
               --output-root ./data/reports/closed_loop \
               --stage "${CLOSED_LOOP_STAGE}" \
               --since "${CLOSED_LOOP_SINCE}" \
-              --symbol "${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-ETHUSDT}"
-            LATEST="./data/reports/closed_loop/latest/closed_loop_report.json"
-            if [[ -f "${LATEST}" ]]; then
+              --symbol "${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"
+            REPORT="./data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_report.json"
+            if [[ -f "${REPORT}" ]]; then
               echo "=== closed_loop_report ==="
-              cat "${LATEST}"
+              cat "${REPORT}"
             else
-              echo "missing report: ${LATEST}"
+              echo "missing report: ${REPORT}"
               exit 1
             fi
 
@@ -249,19 +254,68 @@ jobs:
             fi
           }
 
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/closed_loop_report.json" ".artifacts/closed_loop_report.json" "closed_loop_report" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime_assess.json" ".artifacts/runtime_assess.json" "runtime_assess" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/replay_validation/replay_validation_report.json" ".artifacts/replay_validation_report.json" "replay_validation_report" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/replay_validation/replay_optimization_report.json" ".artifacts/replay_optimization_report.json" "replay_optimization_report" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/replay_validation/feature_build_report.json" ".artifacts/replay_feature_build_report.json" "replay_feature_build_report" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta" "json"
+          EXPECTED_RUN_ID="gha-${{ github.run_id }}-${{ github.run_attempt }}"
+          REMOTE_BASE="/opt/ai-trade/data/reports/closed_loop/${EXPECTED_RUN_ID}"
+          echo "[closed-loop] expected run-specific artifact path: run_id=${EXPECTED_RUN_ID}"
+
+          fetch_report "${REMOTE_BASE}/closed_loop_report.json" ".artifacts/closed_loop_report.json" "closed_loop_report" "json"
+          fetch_report "${REMOTE_BASE}/runtime_assess.json" ".artifacts/runtime_assess.json" "runtime_assess" "json"
+          fetch_report "${REMOTE_BASE}/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"
+          fetch_report "${REMOTE_BASE}/run_manifest.json" ".artifacts/run_manifest.json" "run_manifest" "json"
+          fetch_report "${REMOTE_BASE}/run_meta.json" ".artifacts/latest_run_meta.json" "run_meta" "json"
+          fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_report.json" ".artifacts/replay_validation_report.json" "replay_validation_report" "json"
+          fetch_report "${REMOTE_BASE}/replay_validation/replay_optimization_report.json" ".artifacts/replay_optimization_report.json" "replay_optimization_report" "json"
+          fetch_report "${REMOTE_BASE}/replay_validation/feature_build_report.json" ".artifacts/replay_feature_build_report.json" "replay_feature_build_report" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" ".artifacts/daily_summary.json" "daily_summary" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_weekly_summary.json" ".artifacts/weekly_summary.json" "weekly_summary" "json"
+
+          if [[ -f ".artifacts/closed_loop_report.json" || -f ".artifacts/latest_run_meta.json" || -f ".artifacts/run_manifest.json" ]]; then
+            if ! python3 - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          expected = "gha-${{ github.run_id }}-${{ github.run_attempt }}"
+          checks = []
+          for label, path in (
+              ("closed_loop_report", Path(".artifacts/closed_loop_report.json")),
+              ("run_meta", Path(".artifacts/latest_run_meta.json")),
+              ("run_manifest", Path(".artifacts/run_manifest.json")),
+          ):
+              if path.is_file():
+                  payload = json.loads(path.read_text())
+                  checks.append((label, str(payload.get("run_id", "")).strip()))
+          bad = [(label, run_id) for label, run_id in checks if run_id != expected]
+          if bad:
+              print(
+                  "[closed-loop] run_id mismatch: expected="
+                  + expected
+                  + " actual="
+                  + ",".join(f"{label}:{run_id}" for label, run_id in bad),
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+            then
+              invalid+=("run_id_consistency")
+            fi
+          fi
+
+          for essential in closed_loop_report latest_run_meta run_manifest; do
+            case "${essential}" in
+              closed_loop_report) essential_path=".artifacts/closed_loop_report.json" ;;
+              latest_run_meta) essential_path=".artifacts/latest_run_meta.json" ;;
+              run_manifest) essential_path=".artifacts/run_manifest.json" ;;
+            esac
+            if [[ ! -f "${essential_path}" ]]; then
+              invalid+=("missing_essential_${essential}")
+            fi
+          done
 
           {
             echo "{"
             echo "  \"status\": \"DONE\","
+            echo "  \"expected_run_id\": \"${EXPECTED_RUN_ID}\","
+            echo "  \"remote_base\": \"${REMOTE_BASE}\","
             echo "  \"downloaded_count\": ${downloaded},"
             echo "  \"invalid_count\": ${#invalid[@]},"
             echo "  \"missing\": ["
@@ -287,6 +341,9 @@ jobs:
 
           echo "[closed-loop] downloaded_count=${downloaded} missing_count=${#missing[@]} invalid_count=${#invalid[@]}"
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+          if [[ "${#invalid[@]}" -gt 0 ]]; then
+            exit 1
+          fi
 
       - name: Upload Closed Loop Artifacts
         if: always()

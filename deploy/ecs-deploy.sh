@@ -30,6 +30,7 @@ CLOSED_LOOP_SINCE="${CLOSED_LOOP_SINCE:-30m}"
 CLOSED_LOOP_MIN_RUNTIME_STATUS="${CLOSED_LOOP_MIN_RUNTIME_STATUS:-}"
 CLOSED_LOOP_OUTPUT_ROOT="${CLOSED_LOOP_OUTPUT_ROOT:-./data/reports/closed_loop}"
 CLOSED_LOOP_STRICT_PASS="${CLOSED_LOOP_STRICT_PASS:-true}"
+CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"
 GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-watchdog scheduler}"
 DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"
 
@@ -225,12 +226,23 @@ run_closed_loop_gate() {
   local stage_name="${CLOSED_LOOP_STAGE^^}"
   local assess_json="${output_root}/latest_runtime_assess.json"
   local report_json="${output_root}/latest_closed_loop_report.json"
+  local manifest_json=""
+  if [[ -n "${CLOSED_LOOP_RUN_ID}" ]]; then
+    local run_dir="${output_root%/}/${CLOSED_LOOP_RUN_ID}"
+    assess_json="${run_dir}/runtime_assess.json"
+    report_json="${run_dir}/closed_loop_report.json"
+    manifest_json="${run_dir}/run_manifest.json"
+  fi
   local verdict=""
   local overall_status=""
   local gate_status=0
 
   if [[ ! -f "${runner}" ]]; then
     echo "[deploy] closed-loop gate failed: runner not found: ${runner}"
+    return 1
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[deploy] closed-loop gate failed: python3 not found on host"
     return 1
   fi
   chmod +x "${runner}"
@@ -247,10 +259,21 @@ run_closed_loop_gate() {
     gate_cmd+=(--min-runtime-status "${CLOSED_LOOP_MIN_RUNTIME_STATUS}")
   fi
 
-  echo "[deploy] closed-loop gate start: action=${CLOSED_LOOP_ACTION}, stage=${CLOSED_LOOP_STAGE}, since=${CLOSED_LOOP_SINCE}, output_root=${output_root}"
+  echo "[deploy] closed-loop gate start: action=${CLOSED_LOOP_ACTION}, stage=${CLOSED_LOOP_STAGE}, since=${CLOSED_LOOP_SINCE}, output_root=${output_root}, run_id=${CLOSED_LOOP_RUN_ID:-<latest>}"
   "${gate_cmd[@]}" || gate_status=$?
   if (( gate_status != 0 )); then
     echo "[deploy] closed-loop gate command exited non-zero: status=${gate_status}"
+  fi
+  if [[ -n "${manifest_json}" ]]; then
+    local actual_run_id=""
+    actual_run_id="$(extract_json_string_field "run_id" "${manifest_json}")"
+    if [[ "${actual_run_id}" != "${CLOSED_LOOP_RUN_ID}" ]]; then
+      echo "[deploy] closed-loop gate failed: run_manifest run_id mismatch expected=${CLOSED_LOOP_RUN_ID} actual=${actual_run_id:-<empty>}"
+      return 1
+    fi
+  fi
+  if (( gate_status != 0 )); then
+    return 1
   fi
 
   verdict="$(extract_json_string_field "verdict" "${assess_json}")"
@@ -275,10 +298,6 @@ run_closed_loop_gate() {
       return 1
     fi
     return 0
-  fi
-
-  if (( gate_status != 0 )); then
-    return 1
   fi
 
   if is_true "${CLOSED_LOOP_STRICT_PASS}"; then

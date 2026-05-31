@@ -16,6 +16,7 @@ WATCHDOG_SCRIPT = ROOT / "ops" / "watchdog.py"
 RECYCLE_SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
 DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
 CLOSED_LOOP_WORKFLOW = ROOT / ".github" / "workflows" / "closed-loop.yml"
+CD_WORKFLOW = ROOT / ".github" / "workflows" / "cd.yml"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -224,7 +225,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
-            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-3}",
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-20}",
             scheduler,
         )
         self.assertIn(
@@ -232,7 +233,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
-            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-2}",
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-1}",
             scheduler,
         )
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
@@ -279,7 +280,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS", script)
         self.assertIn(
-            "ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT",
+            "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT",
             script,
         )
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
@@ -341,15 +342,15 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_closed_loop_workflow_default_replay_symbols_cover_live_trend_set(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            'default: "ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT"',
+            'default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"',
             workflow,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'ETHUSDT,SOLUSDT,BTCUSDT,XRPUSDT,BNBUSDT'",
+            "github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT'",
             workflow,
         )
-        self.assertIn('default: "ETHUSDT"', workflow)
-        self.assertIn("--symbol \"${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-ETHUSDT}\"", workflow)
+        self.assertIn('default: "SOLUSDT"', workflow)
+        self.assertIn("--symbol \"${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}\"", workflow)
         self.assertIn(
             'CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"',
             workflow,
@@ -359,8 +360,24 @@ class ComposeConsistencyTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("replay_optimization_report.json", workflow)
+        self.assertIn("CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
+        self.assertIn('REMOTE_BASE="/opt/ai-trade/data/reports/closed_loop/${EXPECTED_RUN_ID}"', workflow)
+        self.assertIn("run_id mismatch: expected=", workflow)
         self.assertIn("timeout-minutes: 120", workflow)
         self.assertIn("command_timeout: 90m", workflow)
+
+    def test_cd_deploy_gate_uses_run_specific_artifacts(self):
+        workflow = CD_WORKFLOW.read_text(encoding="utf-8")
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("CLOSED_LOOP_RUN_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
+        self.assertIn("CLOSED_LOOP_RUN_ID", workflow)
+        self.assertIn('EXPECTED_RUN_ID="deploy-${{ github.run_id }}-${{ github.run_attempt }}"', workflow)
+        self.assertIn('REMOTE_BASE="${REMOTE_OUTPUT_ROOT%/}/${EXPECTED_RUN_ID}"', workflow)
+        self.assertIn("run_id mismatch: expected=", workflow)
+        self.assertIn('CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"', script)
+        self.assertIn('run_dir="${output_root%/}/${CLOSED_LOOP_RUN_ID}"', script)
+        self.assertIn('run_manifest run_id mismatch', script)
 
     def test_web_service_paths_are_consistent(self):
         dev_web = self.dev_services["ai-trade-web"]

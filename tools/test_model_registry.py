@@ -293,8 +293,18 @@ class ModelRegistryTest(unittest.TestCase):
                                 "quarantined_symbols": ["BTCUSDT"],
                                 "decisions": {
                                     "BTCUSDT": {"status": "quarantined"},
-                                    "ETHUSDT": {"status": "tradable"},
-                                    "SOLUSDT": {"status": "tradable"},
+                                    "ETHUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.01,
+                                        "positive_filled_segment_ratio": 0.80,
+                                        "total_fills": 20,
+                                    },
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.01,
+                                        "positive_filled_segment_ratio": 0.80,
+                                        "total_fills": 20,
+                                    },
                                 },
                             },
                         },
@@ -314,6 +324,337 @@ class ModelRegistryTest(unittest.TestCase):
                 fail_reasons,
             )
             self.assertEqual(summary["source_symbol"], "BTCUSDT")
+
+    def test_replay_economic_gate_uses_tradable_symbol_metrics_before_aggregate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "source_symbol": "SOLUSDT",
+                        "activation_gate": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                            "median_realized_net_per_fill_with_fills": -0.02,
+                            "positive_filled_segment_ratio": 0.25,
+                            "symbol_tradeability": {
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": ["ETHUSDT"],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.008,
+                                        "positive_filled_segment_ratio": 0.75,
+                                        "total_fills": 20,
+                                    },
+                                    "ETHUSDT": {
+                                        "status": "quarantined",
+                                        "median_realized_net_per_fill_with_fills": -0.05,
+                                        "positive_filled_segment_ratio": 0.0,
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_replay_validation_report(replay_report, True)
+            )
+
+            self.assertTrue(passed)
+            self.assertEqual(fail_reasons, [])
+            self.assertEqual(warn_reasons, [])
+            self.assertEqual(
+                summary["economic_gate_basis"],
+                "symbol_tradeability.tradable_symbols_min",
+            )
+
+    def test_replay_tradeability_pass_suppresses_aggregate_failures(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "fail",
+                        "source_symbol": "SOLUSDT",
+                        "activation_gate": {
+                            "status": "pass_with_actions",
+                            "fail_reasons": [],
+                            "warn_reasons": [
+                                "aggregate_validation_failed_but_symbol_tradeability_passed: aggregate median net negative"
+                            ],
+                        },
+                        "aggregate_validation": {
+                            "status": "fail",
+                            "fail_reasons": ["aggregate median net negative"],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "status": "pass",
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": ["ETHUSDT"],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.01,
+                                        "positive_filled_segment_ratio": 0.75,
+                                        "total_fills": 20,
+                                    },
+                                    "ETHUSDT": {
+                                        "status": "quarantined",
+                                        "median_realized_net_per_fill_with_fills": -0.05,
+                                        "positive_filled_segment_ratio": 0.0,
+                                    },
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_replay_validation_report(replay_report, True)
+            )
+
+            self.assertTrue(passed)
+            self.assertEqual(fail_reasons, [])
+            self.assertTrue(warn_reasons)
+            self.assertIn(
+                "aggregate median net negative",
+                "; ".join(summary["suppressed_aggregate_fail_reasons"]),
+            )
+
+    def test_replay_activation_gate_blocking_warning_prevents_activation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass_with_actions",
+                        "source_symbol": "SOLUSDT",
+                        "activation_gate": {
+                            "status": "pass_with_actions",
+                            "fail_reasons": [],
+                            "warn_reasons": [
+                                "execution_cost_plan.candidate_requires_rerun: lower-cost candidate needs replay rerun"
+                            ],
+                        },
+                        "aggregate_validation": {
+                            "status": "pass_with_actions",
+                            "fail_reasons": [],
+                            "warn_reasons": [
+                                "execution_cost_plan.candidate_requires_rerun"
+                            ],
+                            "symbol_tradeability": {
+                                "status": "pass",
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": [],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.01,
+                                        "positive_filled_segment_ratio": 0.80,
+                                        "total_fills": 20,
+                                    }
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_replay_validation_report(replay_report, True)
+            )
+
+            self.assertFalse(passed)
+            self.assertTrue(warn_reasons)
+            self.assertIn(
+                "replay activation_gate pass_with_actions has blocking warnings",
+                "; ".join(fail_reasons),
+            )
+            self.assertEqual(summary["activation_gate"]["status"], "pass_with_actions")
+
+    def test_replay_tradeability_requires_symbol_decision_metrics(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "source_symbol": "SOLUSDT",
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "status": "pass",
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": [],
+                                "decisions": {},
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_replay_validation_report(replay_report, True)
+            )
+
+            self.assertFalse(passed)
+            self.assertEqual(warn_reasons, [])
+            self.assertIn(
+                "replay symbol_tradeability decision missing for SOLUSDT",
+                fail_reasons,
+            )
+            self.assertEqual(
+                summary["economic_gate_basis"],
+                "symbol_tradeability.tradable_symbols_min",
+            )
+
+    def test_replay_exit_capture_low_prevents_activation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "source_symbol": "SOLUSDT",
+                        "exit_capture": {
+                            "sample_count": 5,
+                            "primary_diagnosis": "exit_capture_low",
+                            "mean_gross_capture_of_path_mfe": 0.05,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": [],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.01,
+                                        "positive_filled_segment_ratio": 0.80,
+                                        "total_fills": 20,
+                                    }
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_replay_validation_report(replay_report, True)
+            )
+
+            self.assertFalse(passed)
+            self.assertEqual(warn_reasons, [])
+            self.assertIn(
+                "replay exit_capture_low: path MFE covers cost but gross capture is too low",
+                fail_reasons,
+            )
+            self.assertEqual(summary["exit_capture"]["sample_count"], 5)
+
+    def test_replay_skip_report_prevents_activation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass_with_actions",
+                        "validation_skipped": True,
+                        "skip_reason": "feature_store_missing",
+                        "selection": {
+                            "selection_mode": "not_run",
+                            "stop_reason": "feature_store_missing",
+                        },
+                        "aggregate_validation": {
+                            "status": "pass_with_actions",
+                            "fail_reasons": [],
+                            "warn_reasons": ["skipped"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, _, _ = REGISTRY.gate_replay_validation_report(
+                replay_report,
+                True,
+            )
+
+            self.assertFalse(passed)
+            self.assertIn(
+                "replay_validation skipped/not_run: reason=feature_store_missing",
+                fail_reasons,
+            )
+
+    def test_replay_feature_build_failure_on_tradable_symbol_prevents_activation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "source_symbol": "SOLUSDT",
+                        "feature_build": {"failed_symbols": ["SOLUSDT"]},
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "status": "pass",
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": [],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "median_realized_net_per_fill_with_fills": 0.01,
+                                        "positive_filled_segment_ratio": 0.80,
+                                        "total_fills": 20,
+                                    }
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, _, _ = REGISTRY.gate_replay_validation_report(
+                replay_report,
+                True,
+            )
+
+            self.assertFalse(passed)
+            self.assertIn(
+                "replay real-market feature build failed for source/tradable symbols=SOLUSDT",
+                fail_reasons,
+            )
 
     def test_walkforward_focus_bucket_does_not_waive_global_negative_returns(self):
         with tempfile.TemporaryDirectory() as td:

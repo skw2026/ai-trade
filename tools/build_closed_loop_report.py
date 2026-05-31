@@ -26,6 +26,11 @@ INHERITABLE_SECTION_NAMES = [
     "replay_validation",
 ]
 
+CANARY_MIN_REPLAY_TOTAL_FILLS = 20
+CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO = 0.55
+EXIT_CAPTURE_MIN_SAMPLES = 10
+EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE = 0.10
+
 
 def now_utc_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -33,6 +38,30 @@ def now_utc_iso() -> str:
 
 def read_json(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def as_float(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def as_int(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return 0
+    return 0
 
 
 def status_tuple(ok: bool, reason: str = "") -> Tuple[str, List[str]]:
@@ -155,6 +184,11 @@ def assess_registry(path: Path) -> Dict[str, Any]:
     warnings: List[str] = [str(item) for item in gate.get("warn_reasons", []) if str(item)]
     if gate_pass and not activated:
         warnings.append("注册门槛通过但未激活（可能是未开启 activate_on_pass）")
+    gate_fail_reasons = [str(item) for item in gate.get("fail_reasons", []) if str(item)]
+    if not gate_pass:
+        for item in gate_fail_reasons:
+            if item not in fails:
+                fails.append(item)
     return {
         "status": status,
         "fail_reasons": fails,
@@ -163,7 +197,7 @@ def assess_registry(path: Path) -> Dict[str, Any]:
         "model_version": payload.get("model_version"),
         "gate_pass": gate_pass,
         "activated": activated,
-        "gate_fail_reasons": gate.get("fail_reasons", []),
+        "gate_fail_reasons": gate_fail_reasons,
         "gate_warn_reasons": gate.get("warn_reasons", []),
         "gate_metric_summary": gate.get("metric_summary", {}),
         "gate_external": gate.get("external", {}),
@@ -505,8 +539,12 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     execution_cost_plan = payload.get("execution_cost_plan", {})
     if not isinstance(execution_cost_plan, dict):
         execution_cost_plan = {}
+    activation_gate = payload.get("activation_gate", {})
+    if not isinstance(activation_gate, dict):
+        activation_gate = {}
 
     status_raw = str(aggregate_validation.get("status", "")).lower()
+    top_status_raw = str(payload.get("status", "")).strip().lower()
     if status_raw == "pass_with_actions":
         status = "pass"
     elif status_raw in {"pass", "fail"}:
@@ -514,7 +552,31 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     else:
         status = "fail"
 
-    fail_reasons = [str(item) for item in aggregate_validation.get("fail_reasons", [])]
+    raw_aggregate_fail_reasons = [
+        str(item)
+        for item in aggregate_validation.get("fail_reasons", [])
+        if str(item).strip()
+    ]
+    skip_reason = str(
+        payload.get("skip_reason") or selection.get("stop_reason") or ""
+    ).strip()
+    selection_mode = str(selection.get("selection_mode", "")).strip()
+    validation_skipped = bool(payload.get("validation_skipped")) or (
+        selection_mode == "not_run"
+        and skip_reason in {"feature_store_missing", "command_failed", "not_run"}
+    )
+    if validation_skipped:
+        raw_aggregate_fail_reasons.append(
+            "replay-validation skipped/not_run: "
+            f"reason={skip_reason or 'unknown'}"
+        )
+    if status_raw == "fail" and not raw_aggregate_fail_reasons:
+        raw_aggregate_fail_reasons.append("replay-validation aggregate_validation.status=fail")
+    if top_status_raw and top_status_raw not in {"pass", "pass_with_actions"}:
+        raw_aggregate_fail_reasons.append(
+            f"replay-validation status={top_status_raw} != pass"
+        )
+    fail_reasons: List[str] = []
     warn_reasons = [str(item) for item in aggregate_validation.get("warn_reasons", [])]
     for item in payload.get("warnings", []):
         item_text = str(item)
@@ -525,19 +587,32 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         if extra not in warn_reasons:
             warn_reasons.append(extra)
     if status_raw not in {"pass", "pass_with_actions", "fail"}:
-        fail_reasons.append("replay-validation 缺少 aggregate_validation.status")
+        raw_aggregate_fail_reasons.append(
+            "replay-validation 缺少 aggregate_validation.status"
+        )
     optimizer_status = str(execution_optimizer.get("status", "")).lower()
-    if optimizer_status == "fail" and status != "fail":
+    if optimizer_status == "fail":
         status = "fail"
         fail_reasons.append("replay execution_optimizer status=fail")
     cost_plan_status = str(execution_cost_plan.get("status", "")).lower()
-    if cost_plan_status == "fail" and status != "fail":
+    if cost_plan_status == "fail":
         status = "fail"
         fail_reasons.append("replay execution_cost_plan status=fail")
     elif cost_plan_status == "candidate_requires_rerun":
         warn_reasons.append(
             "replay execution_cost_plan 仅找到需重跑验证的低成本执行候选，不能直接上线"
         )
+    activation_gate_status = str(activation_gate.get("status", "")).lower()
+    if activation_gate_status == "fail":
+        for reason in activation_gate.get("fail_reasons", []):
+            reason_text = str(reason).strip()
+            if reason_text:
+                fail_reasons.append(f"replay activation_gate: {reason_text}")
+    elif activation_gate_status == "pass_with_actions":
+        for reason in activation_gate.get("warn_reasons", []):
+            reason_text = str(reason).strip()
+            if reason_text:
+                warn_reasons.append(f"replay activation_gate: {reason_text}")
     failed_feature_symbols = [
         str(item)
         for item in feature_build.get("failed_symbols", [])
@@ -548,22 +623,121 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         for item in feature_build.get("missing_symbols", [])
         if str(item).strip()
     ]
-    if failed_feature_symbols:
+    tradeability = aggregate_validation.get("symbol_tradeability", {})
+    if not isinstance(tradeability, dict):
+        tradeability = {}
+    tradeability_status = str(tradeability.get("status", "")).strip().lower()
+    tradable_symbols = {
+        str(item).strip().upper()
+        for item in tradeability.get("tradable_symbols", [])
+        if str(item).strip()
+    }
+    quarantined_symbols = {
+        str(item).strip().upper()
+        for item in tradeability.get("quarantined_symbols", [])
+        if str(item).strip()
+    }
+    decisions = tradeability.get("decisions", {})
+    if isinstance(decisions, dict):
+        for symbol, decision in decisions.items():
+            if not isinstance(decision, dict):
+                continue
+            if str(decision.get("status", "")).strip().lower() == "quarantined":
+                symbol_text = str(symbol).strip().upper()
+                if symbol_text:
+                    quarantined_symbols.add(symbol_text)
+    source_symbol = str(payload.get("source_symbol", "")).strip().upper()
+    source_quarantined = bool(source_symbol and source_symbol in quarantined_symbols)
+    critical_feature_symbols = set(tradable_symbols)
+    if source_symbol:
+        critical_feature_symbols.add(source_symbol)
+    failed_feature_set = {item.strip().upper() for item in failed_feature_symbols}
+    missing_feature_set = {item.strip().upper() for item in missing_feature_symbols}
+    critical_failed_features = sorted(critical_feature_symbols & failed_feature_set)
+    critical_missing_features = sorted(critical_feature_symbols & missing_feature_set)
+    if critical_failed_features:
+        fail_reasons.append(
+            "replay real-market feature 构建失败且命中 source/tradable symbols="
+            + ",".join(critical_failed_features)
+        )
+    elif failed_feature_symbols:
         warn_reasons.append(
             "replay real-market feature 构建失败: symbols="
             + ",".join(sorted(set(failed_feature_symbols)))
         )
-    if missing_feature_symbols:
+    if critical_missing_features:
+        fail_reasons.append(
+            "replay real-market feature 缺失且命中 source/tradable symbols="
+            + ",".join(critical_missing_features)
+        )
+    elif missing_feature_symbols:
         warn_reasons.append(
             "replay real-market feature 缺失，已回退 source feature: symbols="
             + ",".join(sorted(set(missing_feature_symbols)))
         )
+    if source_symbol and source_symbol in quarantined_symbols:
+        fail_reasons.append(
+            f"replay source_symbol={source_symbol} is quarantined by symbol_tradeability"
+        )
+    decision_schema_complete = True
+    if tradeability and tradable_symbols:
+        if not isinstance(decisions, dict):
+            decisions = {}
+            decision_schema_complete = False
+            fail_reasons.append("replay symbol_tradeability.decisions missing")
+        for symbol in sorted(tradable_symbols):
+            decision = decisions.get(symbol, {})
+            if not isinstance(decision, dict) or not decision:
+                decision_schema_complete = False
+                fail_reasons.append(
+                    f"replay symbol_tradeability decision missing for {symbol}"
+                )
+                continue
+            if as_float(decision.get("median_realized_net_per_fill_with_fills")) is None:
+                decision_schema_complete = False
+                fail_reasons.append(
+                    "replay symbol_tradeability "
+                    f"median_realized_net_per_fill_with_fills missing for {symbol}"
+                )
+            if as_float(decision.get("positive_filled_segment_ratio")) is None:
+                decision_schema_complete = False
+                fail_reasons.append(
+                    "replay symbol_tradeability "
+                    f"positive_filled_segment_ratio missing for {symbol}"
+                )
+            if as_int(decision.get("total_fills")) <= 0:
+                decision_schema_complete = False
+                fail_reasons.append(
+                    f"replay symbol_tradeability total_fills missing for {symbol}"
+                )
+    suppressed_aggregate_fail_reasons: List[str] = []
+    if (
+        raw_aggregate_fail_reasons
+        and tradeability_status == "pass"
+        and not source_quarantined
+        and tradable_symbols
+        and decision_schema_complete
+    ):
+        suppressed_aggregate_fail_reasons = list(raw_aggregate_fail_reasons)
+        warn_reasons.append(
+            "replay aggregate fail reasons suppressed because symbol_tradeability passed: "
+            + "; ".join(suppressed_aggregate_fail_reasons)
+        )
+    else:
+        fail_reasons.extend(raw_aggregate_fail_reasons)
+    if fail_reasons:
+        status = "fail"
+    else:
+        status = "pass"
+    readiness_status = "FAIL" if status == "fail" else (
+        "PASS_WITH_ACTIONS" if warn_reasons else "PASS"
+    )
 
     return {
         "status": status,
         "fail_reasons": fail_reasons if status == "fail" else [],
         "warn_reasons": warn_reasons,
-        "readiness_status": str(status_raw or "unknown").upper(),
+        "readiness_status": readiness_status,
         "target_bucket": payload.get("target_bucket"),
         "source_symbol": payload.get("source_symbol"),
         "source_symbols": payload.get("source_symbols", {}),
@@ -578,10 +752,13 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "summary": aggregate_summary,
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
-        "symbol_tradeability": aggregate_validation.get("symbol_tradeability", {}),
+        "symbol_tradeability": tradeability,
+        "suppressed_aggregate_fail_reasons": suppressed_aggregate_fail_reasons,
+        "activation_gate": activation_gate,
         "execution_economics": payload.get("execution_economics", {}),
         "cost_sensitivity": cost_sensitivity,
         "exit_capture": exit_capture,
+        "exit_capture_by_symbol": payload.get("exit_capture_by_symbol", {}),
         "execution_cost_plan": execution_cost_plan,
         "execution_optimizer": execution_optimizer,
     }
@@ -749,11 +926,611 @@ def inherit_sections(
     return inherited, ""
 
 
+def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    run_id = str(payload.get("run_id", "")).strip()
+    if expected_run_id:
+        if not run_id:
+            fail_reasons.append(
+                f"run manifest run_id missing; expected={expected_run_id}"
+            )
+        elif run_id != expected_run_id:
+            fail_reasons.append(
+                f"run manifest run_id mismatch: manifest={run_id}, report={expected_run_id}"
+            )
+    elif not run_id:
+        warn_reasons.append("run manifest missing run_id")
+    for key in ("git", "config_hashes", "replay_validation"):
+        if key not in payload:
+            warn_reasons.append(f"run manifest missing {key}")
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "manifest": payload,
+    }
+
+
+def classify_runtime_validation(runtime_section: Dict[str, Any]) -> str:
+    if not isinstance(runtime_section, dict) or not runtime_section:
+        return "NOT_EVALUATED"
+    verdict = str(runtime_section.get("verdict", "")).upper()
+    execution_status = str(runtime_section.get("execution_status", "")).upper()
+    mode = str(runtime_section.get("runtime_validation_mode", "")).upper()
+    market_context = str(runtime_section.get("market_context_status", "")).upper()
+    metrics = runtime_section.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    fills = max(
+        as_int(metrics.get("funnel_fills_runtime_count")),
+        as_int(metrics.get("trend_candidate_probe_fill_count")),
+    )
+    if verdict == "FAIL":
+        return "RUNTIME_FAIL"
+    if execution_status == "PASS" and fills > 0:
+        return "EXECUTION_VALIDATED_WITH_FILLS"
+    if execution_status == "NOT_EVALUATED" and (
+        mode == "POLICY_FLAT_PROTECTION" or market_context in {"RANGE_ONLY", "EXTREME_ONLY", "RANGE_EXTREME_ONLY"}
+    ):
+        return "PROTECTION_PASS_NO_TRADE_VALIDATION"
+    if verdict == "PASS_WITH_ACTIONS":
+        return "RUNTIME_PASS_WITH_ACTIONS_NOT_TRADING_PROOF"
+    if verdict == "PASS":
+        return "RUNTIME_HEALTH_PASS"
+    return "UNKNOWN"
+
+
+def assess_feature_parity(runtime_section: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(runtime_section, dict) or not runtime_section:
+        return {
+            "status": "pass",
+            "readiness_status": "NOT_EVALUATED",
+            "fail_reasons": [],
+            "warn_reasons": [],
+        }
+    metrics = runtime_section.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    feature_metric_keys = (
+        "integrator_feature_sanitized_count",
+        "integrator_feature_sanitized_by_feature",
+        "integrator_feature_sanitized_by_symbol",
+        "feature_nonfinite_count",
+        "feature_large_abs_line_ratio",
+        "feature_max_abs_by_feature",
+    )
+    if not any(key in metrics for key in feature_metric_keys):
+        return {
+            "status": "pass",
+            "readiness_status": "NOT_EVALUATED",
+            "fail_reasons": [],
+            "warn_reasons": [],
+        }
+    sanitized_count = as_int(metrics.get("integrator_feature_sanitized_count"))
+    nonfinite_count = as_int(metrics.get("feature_nonfinite_count"))
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    if sanitized_count > 0:
+        fail_reasons.append(
+            "live/replay feature parity failed: "
+            f"integrator_feature_sanitized_count={sanitized_count} > 0"
+        )
+    if nonfinite_count > 0:
+        fail_reasons.append(
+            f"live feature stream has non-finite values: feature_nonfinite_count={nonfinite_count} > 0"
+        )
+    large_line_ratio = as_float(metrics.get("feature_large_abs_line_ratio"))
+    if large_line_ratio is not None and large_line_ratio > 0.0:
+        warn_reasons.append(
+            f"live feature large-abs line ratio={large_line_ratio:.6f}; check miner/live normalization"
+        )
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "integrator_feature_sanitized_count": sanitized_count,
+        "integrator_feature_sanitized_by_feature": metrics.get(
+            "integrator_feature_sanitized_by_feature", {}
+        ),
+        "integrator_feature_sanitized_by_symbol": metrics.get(
+            "integrator_feature_sanitized_by_symbol", {}
+        ),
+        "feature_nonfinite_count": nonfinite_count,
+        "feature_large_abs_line_ratio": large_line_ratio,
+        "feature_max_abs_by_feature": metrics.get("feature_max_abs_by_feature", {}),
+    }
+
+
+def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[str, Any]) -> Dict[str, Any]:
+    replay_exit = replay_section.get("exit_capture", {}) if isinstance(replay_section, dict) else {}
+    if not isinstance(replay_exit, dict):
+        replay_exit = {}
+    replay_exit_by_symbol = (
+        replay_section.get("exit_capture_by_symbol", {})
+        if isinstance(replay_section, dict)
+        else {}
+    )
+    if not isinstance(replay_exit_by_symbol, dict):
+        replay_exit_by_symbol = {}
+    tradeability = (
+        replay_section.get("symbol_tradeability", {})
+        if isinstance(replay_section, dict)
+        else {}
+    )
+    if not isinstance(tradeability, dict):
+        tradeability = {}
+    critical_symbols = set(unique_symbols(tradeability.get("tradable_symbols", [])))
+    source_symbol = (
+        str(replay_section.get("source_symbol", "")).strip().upper()
+        if isinstance(replay_section, dict)
+        else ""
+    )
+    if source_symbol:
+        critical_symbols.add(source_symbol)
+    selected_symbol_exit: Dict[str, Dict[str, Any]] = {}
+    for symbol in sorted(critical_symbols):
+        item = replay_exit_by_symbol.get(symbol)
+        if isinstance(item, dict):
+            selected_symbol_exit[symbol] = item
+    runtime_metrics = runtime_section.get("metrics", {}) if isinstance(runtime_section, dict) else {}
+    if not isinstance(runtime_metrics, dict):
+        runtime_metrics = {}
+    live_exit_keys = (
+        "exit_capture_sample_count",
+        "exit_capture_low_ratio",
+        "exit_capture_mean_captured_net_bps",
+        "exit_capture_mean_capture_ratio",
+    )
+    has_exit_capture_data = bool(replay_exit) or any(key in runtime_metrics for key in live_exit_keys)
+
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    replay_sample_count = as_int(replay_exit.get("sample_count"))
+    primary_diagnosis = str(replay_exit.get("primary_diagnosis", "")).strip()
+    low_capture_segments = as_int(replay_exit.get("low_capture_segment_count"))
+    mean_capture = as_float(replay_exit.get("mean_gross_capture_of_path_mfe"))
+    if selected_symbol_exit:
+        replay_sample_count = sum(
+            as_int(item.get("sample_count")) for item in selected_symbol_exit.values()
+        )
+        symbol_mean_captures = [
+            as_float(item.get("mean_gross_capture_of_path_mfe"))
+            for item in selected_symbol_exit.values()
+        ]
+        symbol_mean_captures = [
+            item for item in symbol_mean_captures if item is not None
+        ]
+        if symbol_mean_captures:
+            mean_capture = min(symbol_mean_captures)
+        low_capture_segments = sum(
+            as_int(item.get("low_capture_segment_count"))
+            for item in selected_symbol_exit.values()
+        )
+        for symbol, item in selected_symbol_exit.items():
+            symbol_samples = as_int(item.get("sample_count"))
+            symbol_diagnosis = str(item.get("primary_diagnosis", "")).strip()
+            symbol_mean_capture = as_float(
+                item.get("mean_gross_capture_of_path_mfe")
+            )
+            if symbol_samples > 0 and symbol_diagnosis == "exit_capture_low":
+                fail_reasons.append(
+                    f"replay {symbol} exit_capture_low: path MFE covers cost but gross capture is too low"
+                )
+            if (
+                symbol_samples > 0
+                and symbol_mean_capture is not None
+                and symbol_mean_capture < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
+            ):
+                fail_reasons.append(
+                    f"replay {symbol} mean_gross_capture_of_path_mfe="
+                    f"{symbol_mean_capture:.6f} < "
+                    f"{EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
+                )
+    if (
+        not selected_symbol_exit
+        and replay_sample_count > 0
+        and primary_diagnosis == "exit_capture_low"
+    ):
+        fail_reasons.append(
+            "replay exit_capture_low: path MFE covers cost but gross capture is too low"
+        )
+    if (
+        not selected_symbol_exit
+        and replay_sample_count > 0
+        and mean_capture is not None
+        and mean_capture < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
+    ):
+        fail_reasons.append(
+            "replay mean_gross_capture_of_path_mfe="
+            f"{mean_capture:.6f} < {EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
+        )
+
+    runtime_exit_samples = as_int(runtime_metrics.get("exit_capture_sample_count"))
+    runtime_low_ratio = as_float(runtime_metrics.get("exit_capture_low_ratio"))
+    runtime_mean_net_bps = as_float(runtime_metrics.get("exit_capture_mean_captured_net_bps"))
+    if runtime_exit_samples > 0:
+        if runtime_low_ratio is not None and runtime_low_ratio > 0.50:
+            fail_reasons.append(
+                f"live exit_capture_low_ratio={runtime_low_ratio:.6f} > 0.500000"
+            )
+        if runtime_mean_net_bps is not None and runtime_mean_net_bps <= 0.0:
+            fail_reasons.append(
+                f"live exit_capture_mean_captured_net_bps={runtime_mean_net_bps:.6f} <= 0"
+            )
+    elif replay_sample_count == 0 and has_exit_capture_data:
+        warn_reasons.append("exit_capture not evaluated: no replay/live filled samples")
+
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL"
+        if fail_reasons
+        else (
+            "NOT_EVALUATED"
+            if not has_exit_capture_data or (replay_sample_count == 0 and runtime_exit_samples == 0)
+            else "PASS"
+        ),
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "replay": {
+            "sample_count": replay_sample_count,
+            "primary_diagnosis": primary_diagnosis,
+            "low_capture_segment_count": low_capture_segments,
+            "mean_gross_capture_of_path_mfe": mean_capture,
+            "mean_path_fee_coverage_ratio": replay_exit.get("mean_path_fee_coverage_ratio"),
+            "median_path_fee_coverage_ratio": replay_exit.get("median_path_fee_coverage_ratio"),
+            "selected_by_symbol": selected_symbol_exit,
+        },
+        "live": {
+            "sample_count": runtime_exit_samples,
+            "low_ratio": runtime_low_ratio,
+            "mean_captured_net_bps": runtime_mean_net_bps,
+            "mean_capture_ratio": runtime_metrics.get("exit_capture_mean_capture_ratio"),
+        },
+    }
+
+
+def assess_canary_validation(
+    replay_section: Dict[str, Any],
+    runtime_section: Dict[str, Any],
+) -> Dict[str, Any]:
+    aggregate = replay_section.get("aggregate_summary", {}) if isinstance(replay_section, dict) else {}
+    if not isinstance(aggregate, dict):
+        aggregate = {}
+    tradeability = replay_section.get("symbol_tradeability", {}) if isinstance(replay_section, dict) else {}
+    if not isinstance(tradeability, dict):
+        tradeability = {}
+    has_tradeability = bool(tradeability)
+    tradable_symbols = unique_symbols(tradeability.get("tradable_symbols", []))
+    quarantined_symbols = unique_symbols(tradeability.get("quarantined_symbols", []))
+    source_symbol = str(replay_section.get("source_symbol", "")).strip().upper() if isinstance(replay_section, dict) else ""
+
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    if not replay_section:
+        return {
+            "status": "pass",
+            "readiness_status": "NOT_EVALUATED",
+            "validation_mode": "NOT_EVALUATED",
+            "fail_reasons": [],
+            "warn_reasons": [],
+            "recommended_live_symbols": [],
+            "quarantined_symbols": [],
+            "source_symbol": source_symbol,
+            "replay_thresholds": {
+                "min_median_realized_net_per_fill_with_fills": 0.0,
+                "min_positive_filled_segment_ratio": CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO,
+            },
+            "replay_metrics": {},
+            "live_thresholds": {
+                "min_round_trips_before_promotion": 30,
+                "fee_stress_multiplier_required": 1.25,
+                "max_single_trade_profit_share": 0.30,
+            },
+            "live_metrics": {},
+        }
+    if not has_tradeability:
+        return {
+            "status": "pass",
+            "readiness_status": "NOT_EVALUATED",
+            "validation_mode": "NOT_EVALUATED",
+            "fail_reasons": [],
+            "warn_reasons": [],
+            "recommended_live_symbols": [],
+            "quarantined_symbols": quarantined_symbols,
+            "source_symbol": source_symbol,
+            "replay_thresholds": {
+                "min_median_realized_net_per_fill_with_fills": 0.0,
+                "min_positive_filled_segment_ratio": CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO,
+            },
+            "replay_metrics": {
+                "basis": "not_evaluated_missing_symbol_tradeability",
+                "median_realized_net_per_fill_with_fills": as_float(
+                    aggregate.get("median_realized_net_per_fill_with_fills")
+                ),
+                "positive_filled_segment_ratio": as_float(
+                    aggregate.get("positive_filled_segment_ratio")
+                ),
+                "total_fills": aggregate.get("total_fills"),
+            },
+            "live_thresholds": {
+                "min_round_trips_before_promotion": 30,
+                "fee_stress_multiplier_required": 1.25,
+                "max_single_trade_profit_share": 0.30,
+            },
+            "live_metrics": {},
+        }
+    if has_tradeability and not tradable_symbols:
+        fail_reasons.append("canary has no replay tradable_symbols")
+    if source_symbol and source_symbol in quarantined_symbols:
+        fail_reasons.append(
+            f"canary source_symbol={source_symbol} is quarantined; do not use it as live/source"
+        )
+
+    replay_metric_basis = "aggregate_summary"
+    median_net = as_float(aggregate.get("median_realized_net_per_fill_with_fills"))
+    positive_ratio = as_float(aggregate.get("positive_filled_segment_ratio"))
+    total_fills: Any = aggregate.get("total_fills")
+    decisions = tradeability.get("decisions", {}) if has_tradeability else {}
+    if tradable_symbols:
+        replay_metric_basis = "symbol_tradeability.tradable_symbols_min"
+        median_net = None
+        positive_ratio = None
+        total_fills = 0
+        tradable_medians: List[float] = []
+        tradable_positive_ratios: List[float] = []
+        tradable_total_fills = 0
+        if not isinstance(decisions, dict):
+            decisions = {}
+            fail_reasons.append("canary symbol_tradeability.decisions missing")
+        for symbol in tradable_symbols:
+            decision = decisions.get(symbol, {})
+            if not isinstance(decision, dict) or not decision:
+                fail_reasons.append(
+                    f"canary symbol_tradeability decision missing for {symbol}"
+                )
+                continue
+            item_median = as_float(decision.get("median_realized_net_per_fill_with_fills"))
+            item_positive_ratio = as_float(decision.get("positive_filled_segment_ratio"))
+            if item_median is not None:
+                tradable_medians.append(item_median)
+            else:
+                fail_reasons.append(
+                    f"canary symbol_tradeability median_realized_net_per_fill_with_fills missing for {symbol}"
+                )
+            if item_positive_ratio is not None:
+                tradable_positive_ratios.append(item_positive_ratio)
+            else:
+                fail_reasons.append(
+                    f"canary symbol_tradeability positive_filled_segment_ratio missing for {symbol}"
+                )
+            tradable_total_fills += as_int(decision.get("total_fills"))
+        if tradable_medians:
+            median_net = min(tradable_medians)
+        if tradable_positive_ratios:
+            positive_ratio = min(tradable_positive_ratios)
+        if tradable_total_fills > 0:
+            total_fills = tradable_total_fills
+    if median_net is not None and median_net <= 0.0:
+        fail_reasons.append(
+            f"canary replay {replay_metric_basis} median net per fill={median_net:.6f} <= 0"
+        )
+    if positive_ratio is not None and positive_ratio < CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO:
+        fail_reasons.append(
+            f"canary replay {replay_metric_basis} positive filled segment ratio={positive_ratio:.6f} < {CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO:.6f}"
+        )
+
+    runtime_metrics = runtime_section.get("metrics", {}) if isinstance(runtime_section, dict) else {}
+    if not isinstance(runtime_metrics, dict):
+        runtime_metrics = {}
+    live_fills = max(
+        as_int(runtime_metrics.get("funnel_fills_runtime_count")),
+        as_int(runtime_metrics.get("trend_candidate_probe_fill_count")),
+    )
+    live_net = as_float(runtime_metrics.get("realized_net_per_fill"))
+    if live_fills <= 0:
+        warn_reasons.append(
+            "canary live execution not evaluated: no live fills; do not treat policy-flat as trading success"
+        )
+    elif live_net is not None and live_net <= 0.0:
+        fail_reasons.append(f"canary live realized_net_per_fill={live_net:.6f} <= 0")
+
+    validation_mode = "NOT_EVALUATED"
+    if len(tradable_symbols) == 1:
+        validation_mode = "SINGLE_SYMBOL_CANARY"
+    elif len(tradable_symbols) > 1:
+        validation_mode = "MULTI_SYMBOL_CANARY"
+
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else ("PASS_WITH_ACTIONS" if warn_reasons else "PASS"),
+        "validation_mode": validation_mode,
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "recommended_live_symbols": tradable_symbols,
+        "quarantined_symbols": quarantined_symbols,
+        "source_symbol": source_symbol,
+        "replay_thresholds": {
+            "min_median_realized_net_per_fill_with_fills": 0.0,
+            "min_positive_filled_segment_ratio": CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO,
+        },
+        "replay_metrics": {
+            "basis": replay_metric_basis,
+            "median_realized_net_per_fill_with_fills": median_net,
+            "positive_filled_segment_ratio": positive_ratio,
+            "total_fills": total_fills,
+        },
+        "live_thresholds": {
+            "min_round_trips_before_promotion": 30,
+            "fee_stress_multiplier_required": 1.25,
+            "max_single_trade_profit_share": 0.30,
+        },
+        "live_metrics": {
+            "fills": live_fills,
+            "realized_net_per_fill": live_net,
+        },
+    }
+
+
+def section_readiness(section: Dict[str, Any]) -> str:
+    if not isinstance(section, dict) or not section:
+        return "NOT_EVALUATED"
+    return str(section.get("readiness_status", section.get("status", "unknown"))).upper()
+
+
+def assess_trading_convergence(
+    runtime_section: Dict[str, Any],
+    replay_section: Dict[str, Any],
+    feature_parity_section: Dict[str, Any],
+    exit_capture_section: Dict[str, Any],
+    canary_validation_section: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not runtime_section and not replay_section:
+        return {
+            "status": "pass",
+            "readiness_status": "NOT_EVALUATED",
+            "fail_reasons": [],
+            "warn_reasons": [],
+            "blockers": [],
+            "thresholds": {},
+            "metrics": {},
+        }
+
+    runtime_metrics = runtime_section.get("metrics", {}) if isinstance(runtime_section, dict) else {}
+    if not isinstance(runtime_metrics, dict):
+        runtime_metrics = {}
+    live_fills = max(
+        as_int(runtime_metrics.get("funnel_fills_runtime_count")),
+        as_int(runtime_metrics.get("trend_candidate_probe_fill_count")),
+    )
+    live_net = as_float(runtime_metrics.get("realized_net_per_fill"))
+    runtime_class = classify_runtime_validation(runtime_section)
+
+    canary_metrics = (
+        canary_validation_section.get("replay_metrics", {})
+        if isinstance(canary_validation_section, dict)
+        else {}
+    )
+    if not isinstance(canary_metrics, dict):
+        canary_metrics = {}
+    replay_summary = (
+        replay_section.get("aggregate_summary", {})
+        if isinstance(replay_section, dict)
+        else {}
+    )
+    if not isinstance(replay_summary, dict):
+        replay_summary = {}
+    replay_total_fills = as_int(
+        canary_metrics.get("total_fills", replay_summary.get("total_fills"))
+    )
+    replay_positive_ratio = as_float(
+        canary_metrics.get(
+            "positive_filled_segment_ratio",
+            replay_summary.get("positive_filled_segment_ratio"),
+        )
+    )
+    replay_median_net = as_float(
+        canary_metrics.get(
+            "median_realized_net_per_fill_with_fills",
+            replay_summary.get("median_realized_net_per_fill_with_fills"),
+        )
+    )
+
+    exit_replay = (
+        exit_capture_section.get("replay", {})
+        if isinstance(exit_capture_section, dict)
+        else {}
+    )
+    if not isinstance(exit_replay, dict):
+        exit_replay = {}
+    exit_sample_count = as_int(exit_replay.get("sample_count"))
+    exit_mean_capture = as_float(exit_replay.get("mean_gross_capture_of_path_mfe"))
+
+    blocker_statuses: List[str] = []
+    replay_status = section_readiness(replay_section)
+    canary_status = section_readiness(canary_validation_section)
+    feature_parity_status = section_readiness(feature_parity_section)
+    exit_capture_status = section_readiness(exit_capture_section)
+
+    if replay_status == "FAIL" or canary_status == "FAIL":
+        blocker_statuses.append("NOT_CONVERGED_REPLAY_CANARY_FAIL")
+    if replay_total_fills < CANARY_MIN_REPLAY_TOTAL_FILLS:
+        blocker_statuses.append("NOT_CONVERGED_REPLAY_SAMPLE_INSUFFICIENT")
+    if replay_median_net is not None and replay_median_net <= 0.0:
+        blocker_statuses.append("NOT_CONVERGED_REPLAY_MEDIAN_NET_NOT_POSITIVE")
+    if (
+        replay_positive_ratio is None
+        or replay_positive_ratio < CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO
+    ):
+        blocker_statuses.append("NOT_CONVERGED_REPLAY_POSITIVE_RATIO_LOW")
+    if feature_parity_status != "PASS":
+        blocker_statuses.append("NOT_CONVERGED_FEATURE_PARITY_NOT_VERIFIED")
+    if exit_capture_status == "FAIL":
+        blocker_statuses.append("NOT_CONVERGED_EXIT_CAPTURE_FAIL")
+    elif exit_capture_status != "PASS":
+        blocker_statuses.append("NOT_CONVERGED_EXIT_CAPTURE_NOT_VERIFIED")
+    if exit_sample_count < EXIT_CAPTURE_MIN_SAMPLES:
+        blocker_statuses.append("NOT_CONVERGED_EXIT_CAPTURE_SAMPLE_INSUFFICIENT")
+    if (
+        live_fills <= 0
+        or runtime_class == "PROTECTION_PASS_NO_TRADE_VALIDATION"
+    ):
+        blocker_statuses.append("NOT_CONVERGED_NO_LIVE_FILLS")
+    elif live_net is not None and live_net <= 0.0:
+        blocker_statuses.append("NOT_CONVERGED_LIVE_NET_NOT_POSITIVE")
+
+    blockers = list(dict.fromkeys(blocker_statuses))
+    readiness_status = (
+        "CONVERGED_CANARY_VALIDATED_WITH_LIVE_FILLS"
+        if not blockers
+        else blockers[0]
+    )
+    warn_reasons: List[str] = []
+    if blockers:
+        warn_reasons.append(
+            "trading convergence not reached: " + ",".join(blockers)
+        )
+    return {
+        "status": "pass",
+        "readiness_status": readiness_status,
+        "fail_reasons": [],
+        "warn_reasons": warn_reasons,
+        "blockers": blockers,
+        "thresholds": {
+            "min_replay_total_fills": CANARY_MIN_REPLAY_TOTAL_FILLS,
+            "min_replay_positive_filled_segment_ratio": (
+                CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO
+            ),
+            "min_exit_capture_samples": EXIT_CAPTURE_MIN_SAMPLES,
+            "min_exit_capture_mean_gross_capture_of_path_mfe": (
+                EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
+            ),
+        },
+        "metrics": {
+            "runtime_validation_class": runtime_class,
+            "live_fills": live_fills,
+            "live_realized_net_per_fill": live_net,
+            "replay_total_fills": replay_total_fills,
+            "replay_median_realized_net_per_fill_with_fills": replay_median_net,
+            "replay_positive_filled_segment_ratio": replay_positive_ratio,
+            "feature_parity_status": feature_parity_status,
+            "exit_capture_status": exit_capture_status,
+            "exit_capture_sample_count": exit_sample_count,
+            "exit_capture_mean_gross_capture_of_path_mfe": exit_mean_capture,
+            "replay_readiness_status": replay_status,
+            "canary_validation_status": canary_status,
+        },
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成闭环汇总报告")
     parser.add_argument("--output", required=True, help="输出 JSON 路径")
     parser.add_argument("--pipeline_name", default="ai-trade-closed-loop", help="流水线名称")
     parser.add_argument("--run_id", default="", help="可选：闭环运行 ID")
+    parser.add_argument("--run_manifest", default="", help="run_manifest.json 路径")
     parser.add_argument("--miner_report", default="", help="miner_report.json 路径")
     parser.add_argument("--baseline_report", default="", help="baseline_report.json 路径")
     parser.add_argument("--data_quality_report", default="", help="data_quality_report.json 路径")
@@ -854,6 +1631,20 @@ def main() -> int:
     sections: Dict[str, Dict[str, Any]] = {}
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
+    run_manifest_payload: Dict[str, Any] = {}
+
+    if args.run_manifest:
+        manifest_path = Path(args.run_manifest)
+        if manifest_path.is_file():
+            sections["run_manifest"] = assess_run_manifest(manifest_path, args.run_id)
+            manifest = sections["run_manifest"].get("manifest", {})
+            if isinstance(manifest, dict):
+                run_manifest_payload = manifest
+        else:
+            sections["run_manifest"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {manifest_path}"],
+            }
 
     if args.miner_report:
         miner_path = Path(args.miner_report)
@@ -998,6 +1789,35 @@ def main() -> int:
     if replay_alignment.get("readiness_status") != "NOT_EVALUATED":
         sections["replay_symbol_alignment"] = replay_alignment
 
+    runtime_section_for_derived = sections.get("runtime", {})
+    replay_section_for_derived = sections.get("replay_validation", {})
+    feature_parity_for_derived: Dict[str, Any] = {}
+    if runtime_section_for_derived:
+        feature_parity_for_derived = assess_feature_parity(runtime_section_for_derived)
+        sections["feature_parity"] = feature_parity_for_derived
+    if replay_section_for_derived:
+        runtime_for_derived = (
+            runtime_section_for_derived
+            if isinstance(runtime_section_for_derived, dict)
+            else {}
+        )
+        sections["exit_capture"] = assess_exit_capture(
+            replay_section_for_derived,
+            runtime_for_derived,
+        )
+        sections["canary_validation"] = assess_canary_validation(
+            replay_section_for_derived,
+            runtime_for_derived,
+        )
+    if runtime_section_for_derived or replay_section_for_derived:
+        sections["trading_convergence"] = assess_trading_convergence(
+            runtime_section_for_derived,
+            replay_section_for_derived,
+            feature_parity_for_derived or sections.get("feature_parity", {}),
+            sections.get("exit_capture", {}),
+            sections.get("canary_validation", {}),
+        )
+
     for section_name, section in sections.items():
         if section.get("status") == "fail":
             for item in section.get("fail_reasons", []):
@@ -1076,6 +1896,8 @@ def main() -> int:
                 ),
             }
 
+    runtime_validation_class = classify_runtime_validation(runtime_section)
+
     registry_section = sections.get("registry", {})
     promotion_readiness_status = "NOT_EVALUATED"
     if isinstance(registry_section, dict) and registry_section:
@@ -1121,6 +1943,43 @@ def main() -> int:
             )
         ).upper()
 
+    feature_parity_section = sections.get("feature_parity", {})
+    feature_parity_status = "NOT_EVALUATED"
+    if isinstance(feature_parity_section, dict) and feature_parity_section:
+        feature_parity_status = str(
+            feature_parity_section.get(
+                "readiness_status", feature_parity_section.get("status", "unknown")
+            )
+        ).upper()
+
+    exit_capture_section = sections.get("exit_capture", {})
+    exit_capture_status = "NOT_EVALUATED"
+    if isinstance(exit_capture_section, dict) and exit_capture_section:
+        exit_capture_status = str(
+            exit_capture_section.get(
+                "readiness_status", exit_capture_section.get("status", "unknown")
+            )
+        ).upper()
+
+    canary_validation_section = sections.get("canary_validation", {})
+    canary_validation_status = "NOT_EVALUATED"
+    if isinstance(canary_validation_section, dict) and canary_validation_section:
+        canary_validation_status = str(
+            canary_validation_section.get(
+                "readiness_status", canary_validation_section.get("status", "unknown")
+            )
+        ).upper()
+
+    trading_convergence_section = sections.get("trading_convergence", {})
+    trading_convergence_status = "NOT_EVALUATED"
+    if isinstance(trading_convergence_section, dict) and trading_convergence_section:
+        trading_convergence_status = str(
+            trading_convergence_section.get(
+                "readiness_status",
+                trading_convergence_section.get("status", "unknown"),
+            )
+        ).upper()
+
     overall_status = "PASS"
     if fail_reasons:
         overall_status = "FAIL"
@@ -1132,13 +1991,37 @@ def main() -> int:
         "pipeline_name": args.pipeline_name,
         "generated_at_utc": now_utc_iso(),
         "overall_status": overall_status,
+        "strategy_success_status": overall_status,
         "runtime_verdict": runtime_verdict,
         "runtime_validation_mode": runtime_validation_mode,
+        "runtime_validation_class": runtime_validation_class,
         "runtime_health_status": runtime_health_status,
         "promotion_readiness_status": promotion_readiness_status,
         "trend_readiness_status": trend_readiness_status,
         "replay_readiness_status": replay_readiness_status,
         "replay_symbol_alignment_status": replay_symbol_alignment_status,
+        "feature_parity_status": feature_parity_status,
+        "exit_capture_status": exit_capture_status,
+        "canary_validation_status": canary_validation_status,
+        "trading_convergence_status": trading_convergence_status,
+        "trading_convergence_readiness_status": trading_convergence_status,
+        "status_semantics": {
+            "workflow_success_meaning": (
+                "GitHub workflow success only means the job completed and artifacts "
+                "were uploaded; use overall_status for strategy success."
+            ),
+            "strategy_success_field": "overall_status",
+            "runtime_health_field": "runtime_health_status",
+            "runtime_validation_class": runtime_validation_class,
+            "promotion_field": "promotion_readiness_status",
+            "replay_field": "replay_readiness_status",
+            "policy_flat_warning": (
+                "PROTECTION_PASS_NO_TRADE_VALIDATION only proves safe flat behavior; "
+                "it is not evidence of trading convergence."
+            ),
+            "trading_convergence_field": "trading_convergence_status",
+        },
+        "run_manifest": run_manifest_payload,
         "account_outcome": account_outcome,
         "sections": sections,
         "inherit": {

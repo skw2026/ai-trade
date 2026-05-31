@@ -233,7 +233,7 @@ class RunReplayValidationTest(unittest.TestCase):
                         "execution_status": "PASS",
                         "market_context_status": "TREND_PRESENT",
                         "execution_activity_count": 4,
-                        "funnel_fills_runtime_count": 2,
+                        "funnel_fills_runtime_count": 5,
                         "regime_trend_runtime_count": 4,
                         "realized_net_per_fill": realized_net,
                         "filtered_cost_ratio_avg": 0.20,
@@ -252,7 +252,7 @@ class RunReplayValidationTest(unittest.TestCase):
 
         self.assertGreater(summary["mean_realized_net_per_fill"], 0.0)
         self.assertLess(summary["median_realized_net_per_fill_with_fills"], 0.0)
-        self.assertLess(summary["positive_filled_segment_ratio"], 0.45)
+        self.assertLess(summary["positive_filled_segment_ratio"], 0.55)
         self.assertEqual(validation["coverage_strength_status"], "ROBUST")
         self.assertEqual(validation["status"], "fail")
         self.assertTrue(
@@ -392,6 +392,174 @@ class RunReplayValidationTest(unittest.TestCase):
         self.assertAlmostEqual(attribution["close_return"], 0.05)
         self.assertAlmostEqual(attribution["close_path_mfe"], 0.05)
         self.assertAlmostEqual(attribution["close_path_mae"], 0.0)
+
+    def test_symbol_tradeability_pass_suppresses_negative_aggregate_fail(self):
+        aggregate_validation = {
+            "status": "fail",
+            "fail_reasons": ["aggregate median net is negative"],
+            "warn_reasons": [],
+        }
+        symbol_reports = {
+            "SOLUSDT": {
+                "aggregate_summary": {
+                    "total_fills": 8,
+                    "positive_realized_net_with_fills_runs": 5,
+                    "negative_realized_net_with_fills_runs": 2,
+                    "mean_realized_net_per_fill": 0.03,
+                    "mean_realized_net_per_fill_with_fills": 0.03,
+                    "median_realized_net_per_fill_with_fills": 0.02,
+                    "positive_filled_segment_ratio": 0.70,
+                },
+                "aggregate_validation": {
+                    "status": "pass",
+                    "minimum_coverage_targets_met": True,
+                    "coverage_strength_status": "PASS",
+                    "fail_reasons": [],
+                    "coverage_fail_reasons": [],
+                    "quality_fail_reasons": [],
+                    "thresholds": {"min_total_fills": 3},
+                },
+            },
+            "ETHUSDT": {
+                "aggregate_summary": {
+                    "total_fills": 5,
+                    "positive_realized_net_with_fills_runs": 0,
+                    "negative_realized_net_with_fills_runs": 5,
+                    "mean_realized_net_per_fill": -0.02,
+                    "mean_realized_net_per_fill_with_fills": -0.02,
+                    "median_realized_net_per_fill_with_fills": -0.02,
+                    "positive_filled_segment_ratio": 0.0,
+                },
+                "aggregate_validation": {
+                    "status": "fail",
+                    "minimum_coverage_targets_met": True,
+                    "coverage_strength_status": "PASS",
+                    "fail_reasons": ["all filled segments net negative"],
+                    "coverage_fail_reasons": [],
+                    "quality_fail_reasons": ["all filled segments net negative"],
+                    "thresholds": {"min_total_fills": 3},
+                },
+            },
+        }
+
+        merged = REPLAY.merge_symbol_validations(
+            aggregate_validation,
+            symbol_reports,
+            min_mean_realized_net_per_fill=0.0,
+            min_tradable_symbols=1,
+        )
+
+        self.assertEqual(merged["status"], "pass_with_actions")
+        self.assertEqual(merged["fail_reasons"], [])
+        self.assertEqual(merged["tradable_symbols"], ["SOLUSDT"])
+        self.assertIn("ETHUSDT", merged["quarantined_symbols"])
+        self.assertTrue(merged["suppressed_aggregate_fail_reasons"])
+        self.assertTrue(
+            any(
+                "aggregate_validation_failed_but_symbol_tradeability_passed" in reason
+                for reason in merged["warn_reasons"]
+            )
+        )
+
+    def test_symbol_tradeability_does_not_fail_on_non_source_insufficient_symbol(self):
+        aggregate_validation = {
+            "status": "fail",
+            "fail_reasons": ["aggregate coverage insufficient"],
+            "warn_reasons": [],
+        }
+        symbol_reports = {
+            "SOLUSDT": {
+                "aggregate_summary": {
+                    "total_fills": 20,
+                    "positive_realized_net_with_fills_runs": 12,
+                    "negative_realized_net_with_fills_runs": 8,
+                    "median_realized_net_per_fill_with_fills": 0.01,
+                    "positive_filled_segment_ratio": 0.60,
+                },
+                "aggregate_validation": {
+                    "status": "pass",
+                    "minimum_coverage_targets_met": True,
+                    "coverage_strength_status": "ROBUST",
+                    "fail_reasons": [],
+                    "coverage_fail_reasons": [],
+                    "quality_fail_reasons": [],
+                    "thresholds": {"min_total_fills": 20},
+                },
+            },
+            "ETHUSDT": {
+                "aggregate_summary": {"total_fills": 0},
+                "aggregate_validation": {
+                    "status": "fail",
+                    "minimum_coverage_targets_met": False,
+                    "coverage_strength_status": "INSUFFICIENT",
+                    "fail_reasons": ["total_fills=0 < 20"],
+                    "coverage_fail_reasons": ["total_fills=0 < 20"],
+                    "quality_fail_reasons": [],
+                    "thresholds": {"min_total_fills": 20},
+                },
+            },
+        }
+
+        merged = REPLAY.merge_symbol_validations(
+            aggregate_validation,
+            symbol_reports,
+            min_mean_realized_net_per_fill=0.0,
+            min_tradable_symbols=1,
+            source_symbol="SOLUSDT",
+        )
+
+        self.assertEqual(merged["status"], "pass_with_actions")
+        self.assertEqual(merged["fail_reasons"], [])
+        self.assertEqual(merged["tradable_symbols"], ["SOLUSDT"])
+        self.assertIn("ETHUSDT", merged["insufficient_symbols"])
+        self.assertTrue(
+            any("symbol_replay_coverage_insufficient=ETHUSDT" in reason for reason in merged["warn_reasons"])
+        )
+
+    def test_symbol_tradeability_fails_when_source_symbol_is_not_tradable(self):
+        symbol_reports = {
+            "SOLUSDT": {
+                "aggregate_summary": {"total_fills": 0},
+                "aggregate_validation": {
+                    "status": "fail",
+                    "minimum_coverage_targets_met": False,
+                    "coverage_strength_status": "INSUFFICIENT",
+                    "fail_reasons": ["total_fills=0 < 20"],
+                    "coverage_fail_reasons": ["total_fills=0 < 20"],
+                    "quality_fail_reasons": [],
+                    "thresholds": {"min_total_fills": 20},
+                },
+            },
+            "ETHUSDT": {
+                "aggregate_summary": {
+                    "total_fills": 20,
+                    "positive_realized_net_with_fills_runs": 12,
+                    "negative_realized_net_with_fills_runs": 8,
+                    "median_realized_net_per_fill_with_fills": 0.01,
+                    "positive_filled_segment_ratio": 0.60,
+                },
+                "aggregate_validation": {
+                    "status": "pass",
+                    "minimum_coverage_targets_met": True,
+                    "coverage_strength_status": "ROBUST",
+                    "fail_reasons": [],
+                    "coverage_fail_reasons": [],
+                    "quality_fail_reasons": [],
+                    "thresholds": {"min_total_fills": 20},
+                },
+            },
+        }
+
+        merged = REPLAY.merge_symbol_validations(
+            {"status": "pass", "fail_reasons": [], "warn_reasons": []},
+            symbol_reports,
+            min_mean_realized_net_per_fill=0.0,
+            min_tradable_symbols=1,
+            source_symbol="SOLUSDT",
+        )
+
+        self.assertEqual(merged["status"], "fail")
+        self.assertIn("source_symbol_not_tradable=SOLUSDT", merged["fail_reasons"])
 
 
 if __name__ == "__main__":

@@ -223,6 +223,7 @@ jobs:
           CLOSED_LOOP_MIN_RUNTIME_STATUS: ${{ vars.CLOSED_LOOP_MIN_RUNTIME_STATUS || '' }}
           CLOSED_LOOP_OUTPUT_ROOT: ${{ vars.CLOSED_LOOP_OUTPUT_ROOT || '/opt/ai-trade/data/reports/closed_loop' }}
           CLOSED_LOOP_STRICT_PASS: ${{ vars.CLOSED_LOOP_STRICT_PASS || 'true' }}
+          CLOSED_LOOP_RUN_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}
           DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'ai-trade watchdog scheduler' }}
           GATE_DEFER_SERVICES: ${{ vars.GATE_DEFER_SERVICES || 'watchdog scheduler' }}
         with:
@@ -231,7 +232,7 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,AI_TRADE_WEB_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,DEPLOY_SERVICES,GATE_DEFER_SERVICES
+          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,AI_TRADE_WEB_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,CLOSED_LOOP_RUN_ID,DEPLOY_SERVICES,GATE_DEFER_SERVICES
           script: |
             set -euo pipefail
             DEPLOY_ROOT="/opt/ai-trade"
@@ -309,7 +310,7 @@ jobs:
             chmod +x "${DEPLOY_ROOT}/tools/recycle_artifacts.sh"
             chmod +x "${DEPLOY_ROOT}/tools/docker_gc.sh"
             chmod +x "${DEPLOY_ROOT}/ops/cron/install_closed_loop_cron.sh"
-            echo "[deploy] closed-loop gate config: enforce=${CLOSED_LOOP_ENFORCE} action=${CLOSED_LOOP_ACTION} stage=${CLOSED_LOOP_STAGE} since=${CLOSED_LOOP_SINCE} strict=${CLOSED_LOOP_STRICT_PASS} min_runtime_status=${CLOSED_LOOP_MIN_RUNTIME_STATUS}"
+            echo "[deploy] closed-loop gate config: enforce=${CLOSED_LOOP_ENFORCE} action=${CLOSED_LOOP_ACTION} stage=${CLOSED_LOOP_STAGE} since=${CLOSED_LOOP_SINCE} strict=${CLOSED_LOOP_STRICT_PASS} min_runtime_status=${CLOSED_LOOP_MIN_RUNTIME_STATUS} run_id=${CLOSED_LOOP_RUN_ID}"
             echo "[deploy] deploy services: ${DEPLOY_SERVICES}, gate defer services: ${GATE_DEFER_SERVICES}"
             "${DEPLOY_ROOT}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/docker-compose.prod.yml" "${DEPLOY_ENV_FILE}"
 
@@ -433,14 +434,67 @@ jobs:
             fi
           }
 
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_closed_loop_report.json" ".artifacts/latest_closed_loop_report.json" "latest_closed_loop_report" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_runtime_assess.json" ".artifacts/latest_runtime_assess.json" "latest_runtime_assess" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_run_meta.json" ".artifacts/latest_run_meta.json" "latest_run_meta" "json"
-          fetch_report "/opt/ai-trade/data/reports/closed_loop/latest/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"
+          EXPECTED_RUN_ID="deploy-${{ github.run_id }}-${{ github.run_attempt }}"
+          REMOTE_OUTPUT_ROOT="${{ vars.CLOSED_LOOP_OUTPUT_ROOT || '/opt/ai-trade/data/reports/closed_loop' }}"
+          if [[ "${REMOTE_OUTPUT_ROOT}" != /* ]]; then
+            REMOTE_OUTPUT_ROOT="/opt/ai-trade/${REMOTE_OUTPUT_ROOT#./}"
+          fi
+          REMOTE_BASE="${REMOTE_OUTPUT_ROOT%/}/${EXPECTED_RUN_ID}"
+          echo "[deploy] expected deploy gate artifact path: run_id=${EXPECTED_RUN_ID} remote_base=${REMOTE_BASE}"
+
+          fetch_report "${REMOTE_BASE}/closed_loop_report.json" ".artifacts/latest_closed_loop_report.json" "closed_loop_report" "json"
+          fetch_report "${REMOTE_BASE}/runtime_assess.json" ".artifacts/latest_runtime_assess.json" "runtime_assess" "json"
+          fetch_report "${REMOTE_BASE}/run_meta.json" ".artifacts/latest_run_meta.json" "run_meta" "json"
+          fetch_report "${REMOTE_BASE}/run_manifest.json" ".artifacts/run_manifest.json" "run_manifest" "json"
+          fetch_report "${REMOTE_BASE}/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"
+
+          if [[ -f ".artifacts/latest_closed_loop_report.json" || -f ".artifacts/latest_run_meta.json" || -f ".artifacts/run_manifest.json" ]]; then
+            if ! python3 - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          expected = "deploy-${{ github.run_id }}-${{ github.run_attempt }}"
+          checks = []
+          for label, path in (
+              ("closed_loop_report", Path(".artifacts/latest_closed_loop_report.json")),
+              ("run_meta", Path(".artifacts/latest_run_meta.json")),
+              ("run_manifest", Path(".artifacts/run_manifest.json")),
+          ):
+              if path.is_file():
+                  payload = json.loads(path.read_text())
+                  checks.append((label, str(payload.get("run_id", "")).strip()))
+          bad = [(label, run_id) for label, run_id in checks if run_id != expected]
+          if bad:
+              print(
+                  "[deploy] run_id mismatch: expected="
+                  + expected
+                  + " actual="
+                  + ",".join(f"{label}:{run_id}" for label, run_id in bad),
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+            then
+              invalid+=("run_id_consistency")
+            fi
+          fi
+
+          for essential in latest_closed_loop_report latest_run_meta run_manifest; do
+            case "${essential}" in
+              latest_closed_loop_report) essential_path=".artifacts/latest_closed_loop_report.json" ;;
+              latest_run_meta) essential_path=".artifacts/latest_run_meta.json" ;;
+              run_manifest) essential_path=".artifacts/run_manifest.json" ;;
+            esac
+            if [[ ! -f "${essential_path}" ]]; then
+              invalid+=("missing_essential_${essential}")
+            fi
+          done
 
           {
             echo "{"
             echo "  \"status\": \"DONE\","
+            echo "  \"expected_run_id\": \"${EXPECTED_RUN_ID}\","
+            echo "  \"remote_base\": \"${REMOTE_BASE}\","
             echo "  \"downloaded_count\": ${downloaded},"
             echo "  \"invalid_count\": ${#invalid[@]},"
             echo "  \"missing\": ["
@@ -466,6 +520,9 @@ jobs:
 
           echo "[deploy] downloaded_count=${downloaded} missing_count=${#missing[@]} invalid_count=${#invalid[@]}"
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+          if [[ "${#invalid[@]}" -gt 0 ]]; then
+            exit 1
+          fi
 
       - name: Upload Deploy Gate Artifacts
         if: always()
