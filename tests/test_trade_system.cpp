@@ -2276,6 +2276,70 @@ int main() {
   }
 
   {
+    ai_trade::AppConfig config;
+    const auto temp_dir = std::filesystem::temp_directory_path() /
+                          "ai_trade_test_profit_protection_immediate";
+    std::filesystem::create_directories(temp_dir);
+    config.data_path = temp_dir.string();
+    config.exchange = "mock";
+    config.mode = "paper";
+    config.primary_symbol = "SOLUSDT";
+    config.execution_max_order_notional = 500.0;
+    config.execution_entry_fee_bps = 5.5;
+    config.execution_exit_fee_bps = 5.5;
+    config.execution_expected_slippage_bps = 1.0;
+    config.protection.enabled = true;
+    config.protection.require_sl = true;
+    config.protection.profit_protection_immediate_reduce_enabled = true;
+    config.protection.profit_protection_immediate_min_net_bps = 0.3;
+
+    ai_trade::BotApplication app(config);
+    if (!app.Initialize()) {
+      std::cerr << "即时盈利保护测试初始化失败\n";
+      return 1;
+    }
+
+    ai_trade::FillEvent entry_fill;
+    entry_fill.fill_id = "profit-immediate-entry-fill";
+    entry_fill.client_order_id = "profit-immediate-entry";
+    entry_fill.symbol = "SOLUSDT";
+    entry_fill.direction = 1;
+    entry_fill.qty = 1.0;
+    entry_fill.price = 100.0;
+    app.system_.OnFill(entry_fill);
+
+    const ai_trade::MarketEvent event{
+        2, "SOLUSDT", 100.20, 100.20, 0.0, 5000};
+    app.system_.OnMarketSnapshot(event);
+    auto& state = app.managed_protection_by_symbol_["SOLUSDT"];
+    state.symbol = "SOLUSDT";
+    state.protection_group_id = "profit-immediate-group";
+    state.direction = 1;
+    state.qty = 1.0;
+    state.avg_entry_price = 100.0;
+    state.best_price = 100.35;
+    state.active_sl_price = 99.0;
+
+    if (!app.TryEnqueueProfitProtectionImmediateReduce(
+            state, event, 100.20, 100.14, "unit_test")) {
+      std::cerr << "当前净收益覆盖成本时应允许即时盈利保护 reduce\n";
+      return 1;
+    }
+    if (!app.oms_.HasPendingNetPositionOrderForSymbol("SOLUSDT") ||
+        app.funnel_window_.intents_enqueued != 1) {
+      std::cerr << "即时盈利保护 reduce 应进入 OMS/WAL/执行队列\n";
+      return 1;
+    }
+    if (!NearlyEqual(app.system_.account().current_notional_usd("SOLUSDT"),
+                     100.20)) {
+      std::cerr << "即时盈利保护应基于当前 tick mark 计算减仓名义值\n";
+      return 1;
+    }
+    app.Shutdown();
+    std::filesystem::remove_all(temp_dir);
+  }
+
+  {
     // 自进化控制器：正收益窗口应提高 trend 权重（受 max_weight_step 约束）。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
@@ -4246,7 +4310,9 @@ int main() {
         << "    trailing_enabled: true\n"
         << "    trailing_trigger_ratio: 0.02\n"
         << "    trailing_distance_ratio: 0.006\n"
-        << "    profit_protection_min_update_ratio: 0.0008\n";
+        << "    profit_protection_min_update_ratio: 0.0008\n"
+        << "    profit_protection_immediate_reduce_enabled: true\n"
+        << "    profit_protection_immediate_min_net_bps: 0.4\n";
     out.close();
 
     ai_trade::AppConfig config;
@@ -4268,7 +4334,10 @@ int main() {
         !config.protection.trailing_enabled ||
         !NearlyEqual(config.protection.trailing_trigger_ratio, 0.02) ||
         !NearlyEqual(config.protection.trailing_distance_ratio, 0.006) ||
-        !NearlyEqual(config.protection.profit_protection_min_update_ratio, 0.0008)) {
+        !NearlyEqual(config.protection.profit_protection_min_update_ratio, 0.0008) ||
+        !config.protection.profit_protection_immediate_reduce_enabled ||
+        !NearlyEqual(config.protection.profit_protection_immediate_min_net_bps,
+                     0.4)) {
       std::cerr << "动态保护配置字段解析结果不符合预期\n";
       return 1;
     }
@@ -8846,6 +8915,10 @@ int main() {
       std::cerr << "OnlineFeatureEngine 预热后应就绪\n";
       return 1;
     }
+    if (engine.SampleCount() != 20U) {
+      std::cerr << "OnlineFeatureEngine SampleCount 不符合预期\n";
+      return 1;
+    }
 
     // 2. 验证算子计算
     // ts_delay(close, 1) -> 118.0 (current is 119.0)
@@ -8895,6 +8968,17 @@ int main() {
     double macd = engine.Evaluate("ema(close,12)-ema(close,26)");
     if (!std::isfinite(macd)) {
       std::cerr << "OnlineFeatureEngine macd 组合计算异常\n";
+      return 1;
+    }
+
+    // Integrator/Miner 表达式会使用 1e-9 这类科学计数法常量；
+    // 线上解析器必须与 Python 训练语义一致，不能把 `1e-9` 误拆成变量 e。
+    double normalized_delta =
+        engine.Evaluate("ts_delta(close,1)/(abs(ts_delay(close,1))+1e-9)");
+    if (!std::isfinite(normalized_delta) ||
+        !NearlyEqual(normalized_delta, 1.0 / 118.0, 1e-8)) {
+      std::cerr << "OnlineFeatureEngine 科学计数法表达式计算错误: "
+                << normalized_delta << "\n";
       return 1;
     }
 

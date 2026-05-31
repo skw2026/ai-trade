@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stack>
 #include <stdexcept>
@@ -114,6 +115,26 @@ class ExpressionParser {
             has_dot = true;
           }
           ++i;
+        }
+        if (i < expression_.length() &&
+            (expression_[i] == 'e' || expression_[i] == 'E')) {
+          const size_t exponent_start = i;
+          size_t exponent_cursor = i + 1;
+          if (exponent_cursor < expression_.length() &&
+              (expression_[exponent_cursor] == '+' ||
+               expression_[exponent_cursor] == '-')) {
+            ++exponent_cursor;
+          }
+          const size_t digit_start = exponent_cursor;
+          while (exponent_cursor < expression_.length() &&
+                 IsDigit(expression_[exponent_cursor])) {
+            ++exponent_cursor;
+          }
+          if (exponent_cursor > digit_start) {
+            i = exponent_cursor;
+          } else {
+            i = exponent_start;
+          }
         }
         std::string num_str = expression_.substr(start, i - start);
         tokens_.push_back({TokenType::kNumber, num_str, std::stod(num_str)});
@@ -354,11 +375,19 @@ OnlineFeatureEngine::OnlineFeatureEngine(size_t window_size)
 void OnlineFeatureEngine::OnMarket(const MarketEvent& event) {
   // MarketEvent 是逐 tick 事件，当前将 price 映射到 OHLC。
   // volume 约定为“事件间隔内增量成交量”，由上游适配器统一转换。
-  series_.at("open").Add(event.price);
-  series_.at("high").Add(event.price);
-  series_.at("low").Add(event.price);
-  series_.at("close").Add(event.price);
-  series_.at("volume").Add(event.volume);
+  const double price =
+      (std::isfinite(event.price) && event.price > 0.0)
+          ? event.price
+          : ((std::isfinite(event.mark_price) && event.mark_price > 0.0)
+                 ? event.mark_price
+                 : std::numeric_limits<double>::quiet_NaN());
+  const double volume =
+      std::isfinite(event.volume) ? std::max(0.0, event.volume) : 0.0;
+  series_.at("open").Add(price);
+  series_.at("high").Add(price);
+  series_.at("low").Add(price);
+  series_.at("close").Add(price);
+  series_.at("volume").Add(volume);
 }
 
 double OnlineFeatureEngine::Evaluate(const std::string& expression) const {
@@ -380,6 +409,14 @@ bool OnlineFeatureEngine::IsReady() const {
   // 放宽限制：只要有数据即可尝试计算。
   // 具体算子（如 ts_rank）会在数据不足时返回 NaN，由上层处理。
   return !series_.at("close").empty();
+}
+
+size_t OnlineFeatureEngine::SampleCount() const {
+  const auto it = series_.find("close");
+  if (it == series_.end()) {
+    return 0;
+  }
+  return it->second.size();
 }
 
 double OnlineFeatureEngine::EvaluateRecursive(const std::string& expr) const {

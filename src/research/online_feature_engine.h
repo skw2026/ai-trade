@@ -50,6 +50,10 @@ class OnlineFeatureEngine {
   // 检查缓冲区是否已满足最小计算长度
   bool IsReady() const;
 
+  // 当前在线窗口已累计的 close 样本数。Integrator 用它做独立预热，
+  // 避免 ts_rank/ts_corr 等 miner 表达式在窗口未满时产生 NaN 并被归零。
+  size_t SampleCount() const;
+
  private:
   size_t window_size_;
   std::unordered_map<std::string, RollingBuffer> series_;

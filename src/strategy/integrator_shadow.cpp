@@ -821,6 +821,21 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
 
   // 1. 计算特征向量
   std::vector<double> features;
+  const std::size_t warmup_ticks =
+      static_cast<std::size_t>(std::max(1, config_.feature_window_ticks));
+  if (feature_engine_.SampleCount() < warmup_ticks) {
+    if (config_.log_model_score) {
+      static int warmup_log_counter = 0;
+      if (warmup_log_counter++ % 100 == 0) {
+        LogInfo("INTEGRATOR_WARMUP: samples=" +
+                std::to_string(feature_engine_.SampleCount()) +
+                ", required=" + std::to_string(warmup_ticks) +
+                ", model_version=" + model_version_);
+      }
+    }
+    out.enabled = false;
+    return out;
+  }
   if (feature_engine_.IsReady()) {
     features = feature_engine_.EvaluateBatch(feature_expressions_);
   }

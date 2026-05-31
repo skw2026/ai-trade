@@ -49,8 +49,8 @@ execution:
   same_side_rebalance_multiplier: 2.0
   include_inflight_notional_in_position: true
   max_inflight_orders_per_symbol_direction: 2
-  min_order_interval_ms: 10000
-  reverse_signal_cooldown_ticks: 22
+  min_order_interval_ms: 8000
+  reverse_signal_cooldown_ticks: 16
   enable_fee_aware_entry_gate: true
   entry_fee_bps: 5.5
   exit_fee_bps: 5.5
@@ -90,7 +90,7 @@ execution:
   strategy_reduce_guard_max_hold_ticks: 720
   candidate_probe_enabled: true
   candidate_probe_min_trend_ratio: 0.60
-  candidate_probe_strong_min_trend_ratio: 0.75
+  candidate_probe_strong_min_trend_ratio: 0.68
   candidate_probe_notional_usd: 80.0
   candidate_probe_max_edge_gap_bps: 5.5
   # 质量记忆期只允许强趋势小额 recovery probe，避免一亏损就永久隔离该币对。
@@ -98,15 +98,15 @@ execution:
   candidate_probe_memory_min_trend_ratio: 0.85
   # probe 仓位是取样仓，不用等普通 reduce 的 18bps adverse cut 才承认失败。
   candidate_probe_reduce_max_adverse_bps: 12.0
-  candidate_probe_cooldown_ticks: 600
-  candidate_probe_max_per_window: 2
-  # maker probe 必须有生命周期：超时先撤单，撤单确认后最多重挂两次；
+  candidate_probe_cooldown_ticks: 240
+  candidate_probe_max_per_window: 3
+  # maker probe 必须有生命周期：超时先撤单，撤单确认后最多重挂一次；
   # 只有极强候选趋势才允许小额 taker fallback，避免长期“挂单无成交=无样本”。
-  candidate_probe_post_only_timeout_ticks: 30
-  candidate_probe_reprice_max_attempts: 2
+  candidate_probe_post_only_timeout_ticks: 6
+  candidate_probe_reprice_max_attempts: 1
   candidate_probe_reprice_bps: 0.15
   candidate_probe_taker_fallback_enabled: true
-  candidate_probe_taker_fallback_min_trend_ratio: 1.25
+  candidate_probe_taker_fallback_min_trend_ratio: 1.05
   quality_guard_enabled: true
   quality_guard_min_fills: 4
   quality_guard_bad_streak_to_trigger: 1
@@ -126,21 +126,23 @@ execution:
     stop_loss_ratio: 0.01
     # 最近 live/replay 都显示 path MFE 给过空间但 exit capture 偏低。
     # 提前保本/trailing，并允许新保护单初挂时直接 armed，优先把浮盈锁成净收益样本。
-    take_profit_ratio: 0.012
+    take_profit_ratio: 0.0065
     dynamic_distance_enabled: true
     dynamic_distance_volatility_multiplier: 72.0
     dynamic_stop_loss_min_ratio: 0.008
     dynamic_stop_loss_max_ratio: 0.025
-    dynamic_take_profit_min_ratio: 0.010
-    dynamic_take_profit_max_ratio: 0.030
-    dynamic_take_profit_rr_multiplier: 1.35
+    dynamic_take_profit_min_ratio: 0.0055
+    dynamic_take_profit_max_ratio: 0.016
+    dynamic_take_profit_rr_multiplier: 0.90
     break_even_enabled: true
-    break_even_trigger_ratio: 0.0045
-    break_even_offset_ratio: 0.0025
+    break_even_trigger_ratio: 0.0028
+    break_even_offset_ratio: 0.0014
     trailing_enabled: true
-    trailing_trigger_ratio: 0.0075
-    trailing_distance_ratio: 0.0038
-    profit_protection_min_update_ratio: 0.0006
+    trailing_trigger_ratio: 0.0045
+    trailing_distance_ratio: 0.0022
+    profit_protection_min_update_ratio: 0.00025
+    profit_protection_immediate_reduce_enabled: true
+    profit_protection_immediate_min_net_bps: 0.3
 
 strategy:
   signal_notional_usd: 380
@@ -188,6 +190,7 @@ integrator:
     log_model_score: true
     model_report_path: "./data/research/integrator_report.json"
     score_gain: 1.0
+    feature_window_ticks: 300
 
 self_evolution:
   enabled: true
@@ -241,7 +244,7 @@ regime:
   warmup_ticks: 30
   ewma_alpha: 0.05
   bar_interval_ms: 5000
-  switch_confirm_ticks: 5
+  switch_confirm_ticks: 3
   extreme_requires_both: true
   # 5s 聚合下 live 的 trend_strength 峰值长期落在 0.0002~0.00037 区间；
   # 先小幅下调阈值，恢复 TREND 样本而不过早放松 fee gate。

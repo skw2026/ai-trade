@@ -32,6 +32,8 @@ struct ProtectionConfig {
   double trailing_trigger_ratio{0.0};
   double trailing_distance_ratio{0.0};
   double profit_protection_min_update_ratio{0.001};
+  bool profit_protection_immediate_reduce_enabled{false};
+  double profit_protection_immediate_min_net_bps{0.0};
 };
 
 struct ReconcileConfig {

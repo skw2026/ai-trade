@@ -194,6 +194,8 @@ class BotApplication {
 
   // --- 辅助逻辑 ---
 
+  struct ManagedProtectionState;
+
   /**
    * @brief 将订单意图加入执行队列
    * 包含：WAL 持久化、OMS 注册、推送到异步执行器。
@@ -217,6 +219,14 @@ class BotApplication {
                                         const std::string& reason);
   /// 基于最新行情推进盈利保护（break-even / trailing）。
   void UpdateProfitProtection(const MarketEvent& event);
+  /// 当盈利保护候选 stop 已被当前价穿越且仍有净收益空间时，直接 reduce
+  /// 锁定样本，避免继续等待旧 SL 把 MFE 还给市场。
+  bool TryEnqueueProfitProtectionImmediateReduce(
+      ManagedProtectionState& state,
+      const MarketEvent& event,
+      double current_price,
+      double candidate_stop,
+      const std::string& reason);
   /// 在减仓/保护单成交时输出退出捕获样本，连接 live 与 replay 的 exit_capture 口径。
   void LogExitCaptureSample(const FillEvent& fill,
                             const OrderRecord& record,

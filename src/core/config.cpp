@@ -4118,6 +4118,38 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "profit_protection_immediate_reduce_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.profit_protection_immediate_reduce_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.profit_protection_immediate_reduce_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        current_subsection == "protection" &&
+        key == "profit_protection_immediate_min_net_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.protection.profit_protection_immediate_min_net_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.protection.profit_protection_immediate_min_net_bps = parsed;
+      continue;
+    }
+
     std::string full_key = current_section;
     if (!current_subsection.empty()) {
       if (!full_key.empty()) {
@@ -4471,7 +4503,8 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.protection.break_even_offset_ratio < 0.0 ||
       config.protection.trailing_trigger_ratio < 0.0 ||
       config.protection.trailing_distance_ratio < 0.0 ||
-      config.protection.profit_protection_min_update_ratio < 0.0) {
+      config.protection.profit_protection_min_update_ratio < 0.0 ||
+      config.protection.profit_protection_immediate_min_net_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.protection 动态保护/盈利保护参数不能为负数，且 dynamic_take_profit_rr_multiplier 必须大于 0";
     }

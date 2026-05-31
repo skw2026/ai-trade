@@ -732,7 +732,7 @@ BotApplication::BotApplication(const AppConfig& config)
       startup_utc_(CurrentUtcIsoTimestamp()),
       boot_id_(BuildBootId()),
       system_(config),
-      execution_(config.execution_max_order_notional),
+      execution_(config.GetExecutionEngineConfig()),
       order_throttle_({
           .min_order_interval_ms = config.execution_min_order_interval_ms,
           .reverse_signal_cooldown_ticks =
@@ -3188,12 +3188,14 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     has_latest_funding_rate_per_tick_ = false;
   }
 
+  // 保护单和即时 reduce 需要用当前 tick 的账户名义值计算减仓数量；
+  // Evaluate() 内部也会刷新一次 mark，重复刷新是幂等的，但这里必须先于保护逻辑。
+  system_.OnMarketSnapshot(event);
   UpdateProfitProtection(event);
   ManageCandidateProbeLifecycle(event);
 
   // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
   if (reconcile_halted_) {
-    system_.OnMarketSnapshot(event);
     return;
   }
 
@@ -4671,6 +4673,111 @@ void BotApplication::CancelManagedProtectionForSymbol(
   managed_protection_by_symbol_.erase(it);
 }
 
+bool BotApplication::TryEnqueueProfitProtectionImmediateReduce(
+    ManagedProtectionState& state,
+    const MarketEvent& event,
+    double current_price,
+    double candidate_stop,
+    const std::string& reason) {
+  if (!config_.protection.profit_protection_immediate_reduce_enabled ||
+      state.symbol.empty() || state.direction == 0 || state.avg_entry_price <= 0.0 ||
+      !std::isfinite(current_price) || current_price <= 0.0) {
+    return false;
+  }
+  if (oms_.HasPendingNetPositionOrderForSymbol(state.symbol)) {
+    LogInfo("PROFIT_PROTECTION_IMMEDIATE_REDUCE_SKIPPED: symbol=" +
+            state.symbol +
+            ", reason=pending_net_order" +
+            ", protection_group_id=" + state.protection_group_id);
+    return false;
+  }
+
+  const double current_notional =
+      system_.account().current_notional_usd(state.symbol);
+  if (!HasExposure(current_notional)) {
+    return false;
+  }
+  const double current_favorable_bps =
+      FavorableReturn(state.direction, state.avg_entry_price, current_price) *
+      10000.0;
+  const double required_gross_bps =
+      std::max(0.0,
+               config_.execution_entry_fee_bps + config_.execution_exit_fee_bps +
+                   config_.execution_expected_slippage_bps +
+                   config_.protection.profit_protection_immediate_min_net_bps);
+  if (current_favorable_bps + 1e-9 < required_gross_bps) {
+    LogInfo("PROFIT_PROTECTION_IMMEDIATE_REDUCE_SKIPPED: symbol=" +
+            state.symbol +
+            ", reason=insufficient_current_net_edge" +
+            ", protection_group_id=" + state.protection_group_id +
+            ", current_favorable_bps=" +
+            std::to_string(current_favorable_bps) +
+            ", required_gross_bps=" + std::to_string(required_gross_bps) +
+            ", candidate_sl_price=" + std::to_string(candidate_stop) +
+            ", current_price=" + std::to_string(current_price));
+    return false;
+  }
+
+  RiskAdjustedPosition flat_target{
+      .symbol = state.symbol,
+      .adjusted_notional_usd = 0.0,
+      .reduce_only = true,
+      .risk_mode = system_.risk_mode(),
+  };
+  auto reduce = execution_.BuildIntent(flat_target, current_notional, current_price);
+  if (!reduce.has_value() || reduce->purpose != OrderPurpose::kReduce ||
+      !reduce->reduce_only) {
+    LogInfo("PROFIT_PROTECTION_IMMEDIATE_REDUCE_SKIPPED: symbol=" +
+            state.symbol +
+            ", reason=build_reduce_failed" +
+            ", protection_group_id=" + state.protection_group_id);
+    return false;
+  }
+  reduce->liquidity_preference = LiquidityPreference::kTaker;
+  reduce->price = current_price;
+  std::string guard_reason;
+  if (ViolatesExchangePretradeGuard(adapter_.get(), &*reduce, event,
+                                    &guard_reason)) {
+    LogInfo("PROFIT_PROTECTION_IMMEDIATE_REDUCE_SKIPPED: symbol=" +
+            state.symbol +
+            ", reason=" + guard_reason +
+            ", protection_group_id=" + state.protection_group_id);
+    return false;
+  }
+  if (!EnqueueIntent(*reduce)) {
+    LogInfo("PROFIT_PROTECTION_IMMEDIATE_REDUCE_SKIPPED: symbol=" +
+            state.symbol +
+            ", reason=enqueue_failed" +
+            ", protection_group_id=" + state.protection_group_id);
+    return false;
+  }
+
+  if (!state.active_tp_client_order_id.empty()) {
+    if (const auto* tp_record = oms_.Find(state.active_tp_client_order_id);
+        tp_record != nullptr && !OrderManager::IsTerminalState(tp_record->state)) {
+      executor_->Cancel(state.active_tp_client_order_id);
+      oms_.MarkCancelled(state.active_tp_client_order_id);
+    }
+    state.active_tp_client_order_id.clear();
+    state.active_tp_price = 0.0;
+  }
+
+  LogInfo("PROFIT_PROTECTION_IMMEDIATE_REDUCE: symbol=" + state.symbol +
+          ", client_order_id=" + reduce->client_order_id +
+          ", protection_group_id=" + state.protection_group_id +
+          ", reason=" + reason +
+          ", direction=" + std::to_string(state.direction) +
+          ", current_notional_usd=" + std::to_string(current_notional) +
+          ", qty=" + std::to_string(reduce->qty) +
+          ", current_price=" + std::to_string(current_price) +
+          ", candidate_sl_price=" + std::to_string(candidate_stop) +
+          ", active_sl_price=" + std::to_string(state.active_sl_price) +
+          ", current_favorable_bps=" +
+          std::to_string(current_favorable_bps) +
+          ", required_gross_bps=" + std::to_string(required_gross_bps));
+  return true;
+}
+
 void BotApplication::UpdateProfitProtection(const MarketEvent& event) {
   if (!config_.protection.enabled || event.symbol.empty()) {
     return;
@@ -4729,6 +4836,10 @@ void BotApplication::UpdateProfitProtection(const MarketEvent& event) {
     return;
   }
   if (StopWouldTriggerNow(state.direction, *candidate_stop, current_price)) {
+    if (TryEnqueueProfitProtectionImmediateReduce(
+            state, event, current_price, *candidate_stop, "candidate_stop_crossed")) {
+      return;
+    }
     LogInfo("PROFIT_PROTECTION_CROSSED: symbol=" + state.symbol +
             ", protection_group_id=" + state.protection_group_id +
             ", reason=update" +
