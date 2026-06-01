@@ -11,7 +11,7 @@ on:
       min_runtime_status:
         description: "最小 RUNTIME_STATUS 条数"
         required: true
-        default: "30"
+        default: "12"
         type: string
   workflow_run:
     workflows:
@@ -30,9 +30,10 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    timeout-minutes: 30
     env:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
-      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '30' }}
+      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '12' }}
       SMOKE_OUTPUT_ROOT: ./data/reports/closed_loop_smoke
       SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS: "5400"
     steps:
@@ -57,6 +58,7 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          command_timeout: 20m
           envs: SMOKE_SINCE,SMOKE_MIN_RUNTIME_STATUS,SMOKE_OUTPUT_ROOT,CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS,CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS
           script: |
             set -euo pipefail

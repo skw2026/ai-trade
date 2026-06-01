@@ -17,6 +17,7 @@ RECYCLE_SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
 DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
 CLOSED_LOOP_WORKFLOW = ROOT / ".github" / "workflows" / "closed-loop.yml"
 CD_WORKFLOW = ROOT / ".github" / "workflows" / "cd.yml"
+SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -365,6 +366,25 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("run_id mismatch: expected=", workflow)
         self.assertIn("timeout-minutes: 120", workflow)
         self.assertIn("command_timeout: 90m", workflow)
+
+    def test_smoke_workflow_is_short_health_gate_not_long_s5_gate(self):
+        workflow = SMOKE_WORKFLOW.read_text(encoding="utf-8")
+        runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        assess = (ROOT / "tools" / "assess_run_log.py").read_text(encoding="utf-8")
+
+        self.assertIn('default: "12"', workflow)
+        self.assertIn("inputs.min_runtime_status || '12'", workflow)
+        self.assertIn("timeout-minutes: 30", workflow)
+        self.assertIn("command_timeout: 20m", workflow)
+        self.assertIn("CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS: \"900\"", workflow)
+        self.assertRegex(
+            runner,
+            r"SMOKE\)\n\s+echo 12\n\s+;;",
+        )
+        self.assertRegex(
+            assess,
+            r'"SMOKE": StageRule\(\s*name="SMOKE",\s*min_runtime_status=12,',
+        )
 
     def test_cd_deploy_gate_uses_run_specific_artifacts(self):
         workflow = CD_WORKFLOW.read_text(encoding="utf-8")
