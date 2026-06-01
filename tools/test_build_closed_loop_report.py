@@ -93,6 +93,138 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 ["miner", "integrator", "data_pipeline"],
             )
 
+    def test_assess_inherited_registry_is_context_not_current_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+            inherit_report = root / "previous_closed_loop_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "protection_status": "PASS",
+                        "execution_status": "PASS",
+                        "metrics": {
+                            "runtime_status_count": 80,
+                            "funnel_fills_runtime_count": 2,
+                            "realized_net_per_fill": 0.01,
+                            "integrator_feature_sanitized_count": 0,
+                            "feature_nonfinite_count": 0,
+                        },
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass_with_actions",
+                        "target_bucket": "trend",
+                        "source_symbol": "SOLUSDT",
+                        "symbol": "SOLUSDT",
+                        "symbols": ["SOLUSDT"],
+                        "selection": {"segments_ran": 8, "coverage_targets_met": True},
+                        "aggregate_summary": {
+                            "execution_active_runs": 8,
+                            "execution_pass_runs": 8,
+                            "total_fills": 24,
+                            "median_realized_net_per_fill_with_fills": 0.01,
+                            "positive_filled_segment_ratio": 0.75,
+                            "mean_realized_net_per_fill": 0.01,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                            "symbol_tradeability": {
+                                "status": "pass",
+                                "tradable_symbols": ["SOLUSDT"],
+                                "quarantined_symbols": [],
+                                "decisions": {
+                                    "SOLUSDT": {
+                                        "status": "tradable",
+                                        "total_fills": 24,
+                                        "median_realized_net_per_fill_with_fills": 0.01,
+                                        "positive_filled_segment_ratio": 0.75,
+                                    }
+                                },
+                            },
+                        },
+                        "exit_capture": {
+                            "status": "pass",
+                            "sample_count": 12,
+                            "mean_gross_capture_of_path_mfe": 0.15,
+                            "low_capture_segment_count": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            inherit_report.write_text(
+                json.dumps(
+                    {
+                        "overall_status": "FAIL",
+                        "sections": {
+                            "registry": {
+                                "status": "fail",
+                                "fail_reasons": [
+                                    "replay_validation: source_symbol_not_tradable=SOLUSDT",
+                                    "replay_validation: tradable_symbol_count=0 < min_tradable_symbols=1",
+                                ],
+                                "gate_pass": False,
+                                "activated": False,
+                            },
+                            "replay_validation": {
+                                "status": "fail",
+                                "fail_reasons": ["old replay should not override current replay"],
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                    "--inherit_report",
+                    str(inherit_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["overall_status"], "PASS")
+            self.assertEqual(payload["promotion_readiness_status"], "NOT_EVALUATED")
+            self.assertEqual(payload["sections"]["replay_validation"]["status"], "pass")
+            self.assertEqual(payload["sections"]["registry"]["status"], "fail")
+            self.assertFalse(payload["sections"]["registry"]["_current_run_gate"])
+            self.assertIn("registry", payload["inherit"]["inherited_sections"])
+            self.assertEqual(
+                payload["inherit"]["current_gate_excluded_sections"], ["registry"]
+            )
+            self.assertFalse(
+                any(reason.startswith("registry:") for reason in payload["fail_reasons"])
+            )
+            self.assertFalse(
+                any("old replay should not override" in reason for reason in payload["fail_reasons"])
+            )
+
     def test_explicit_section_not_overridden_by_inherit(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

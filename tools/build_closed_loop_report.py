@@ -26,6 +26,12 @@ INHERITABLE_SECTION_NAMES = [
     "replay_validation",
 ]
 
+# A section inherited from the previous report is useful context, but some
+# sections are stale gates rather than current-run evidence. In assess runs the
+# registry is not re-run; carrying its old fail reasons into the new top-level
+# status makes fresh replay/runtime evidence look like it failed for old data.
+INHERITED_SECTIONS_EXCLUDED_FROM_CURRENT_GATE = {"registry"}
+
 CANARY_MIN_REPLAY_TOTAL_FILLS = 20
 CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO = 0.55
 EXIT_CAPTURE_MIN_SAMPLES = 10
@@ -921,7 +927,12 @@ def inherit_sections(
         candidate = report_sections.get(name)
         if not isinstance(candidate, dict):
             continue
-        sections[name] = candidate
+        inherited_candidate = dict(candidate)
+        inherited_candidate["_inherited_from_report"] = str(inherit_report_path)
+        inherited_candidate["_current_run_gate"] = (
+            name not in INHERITED_SECTIONS_EXCLUDED_FROM_CURRENT_GATE
+        )
+        sections[name] = inherited_candidate
         inherited.append(name)
     return inherited, ""
 
@@ -1781,6 +1792,11 @@ def main() -> int:
             )
         else:
             inherit_status = "inherit report equals output path, skip"
+    inherited_sections_excluded_from_gate = [
+        name
+        for name in inherited_sections
+        if name in INHERITED_SECTIONS_EXCLUDED_FROM_CURRENT_GATE
+    ]
 
     replay_alignment = assess_replay_live_symbol_alignment(
         sections.get("runtime", {}),
@@ -1819,6 +1835,8 @@ def main() -> int:
         )
 
     for section_name, section in sections.items():
+        if section_name in inherited_sections_excluded_from_gate:
+            continue
         if section.get("status") == "fail":
             for item in section.get("fail_reasons", []):
                 fail_reasons.append(f"{section_name}: {item}")
@@ -1900,7 +1918,9 @@ def main() -> int:
 
     registry_section = sections.get("registry", {})
     promotion_readiness_status = "NOT_EVALUATED"
-    if isinstance(registry_section, dict) and registry_section:
+    if "registry" in inherited_sections_excluded_from_gate:
+        promotion_readiness_status = "NOT_EVALUATED"
+    elif isinstance(registry_section, dict) and registry_section:
         if registry_section.get("status") == "fail":
             promotion_readiness_status = "FAIL"
         elif bool(registry_section.get("gate_pass")) and bool(
@@ -2028,6 +2048,7 @@ def main() -> int:
             "source_report": inherit_source_report,
             "status": inherit_status or "ok",
             "inherited_sections": inherited_sections,
+            "current_gate_excluded_sections": inherited_sections_excluded_from_gate,
         },
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
