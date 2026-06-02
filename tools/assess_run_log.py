@@ -3083,6 +3083,14 @@ def assess(
         + metrics["funnel_fills_runtime_count"]
     )
     metrics["execution_activity_count"] = execution_activity_count
+    metrics["trend_candidate_probe_filtered_fee_window_pressure_count"] = max(
+        0,
+        min(
+            metrics["trend_candidate_probe_skip_window_limit_count"],
+            metrics["trend_candidate_probe_filtered_fee_count"]
+            - metrics["trend_candidate_probe_enqueued_count"],
+        ),
+    )
 
     gate_window_count = metrics["gate_check_passed_count"] + metrics["gate_check_failed_count"]
     if gate_window_count > 0:
@@ -3177,6 +3185,23 @@ def assess(
     execution_fail_reasons: list[str] = []
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
+    filtered_window_pressure = metrics.get(
+        "trend_candidate_probe_filtered_fee_window_pressure_count",
+        0,
+    )
+    if filtered_window_pressure > 0:
+        warn_reasons.append(
+            "TREND_CANDIDATE 探针窗口存在 fee-filtered 配额压力："
+            "成本过滤样本可能挤占真实下单窗口, "
+            "filtered_fee_window_pressure="
+            f"{filtered_window_pressure}, "
+            "filtered_fee_count="
+            f"{metrics['trend_candidate_probe_filtered_fee_count']}, "
+            "window_limit_count="
+            f"{metrics['trend_candidate_probe_skip_window_limit_count']}, "
+            "probe_enqueued_count="
+            f"{metrics['trend_candidate_probe_enqueued_count']}"
+        )
     if flat_start_rebase_fallback:
         warn_reasons.append(
             "FLAT_START_REBASE 已回退原始窗口：rebase 后 strategy_mix 非零窗口被清零，"
@@ -3808,7 +3833,25 @@ def assess(
                             "fee_override_count="
                             f"{metrics['trend_candidate_probe_fee_override_count']}, "
                             "filtered_fee_count="
-                            f"{metrics['trend_candidate_probe_filtered_fee_count']}"
+                            f"{metrics['trend_candidate_probe_filtered_fee_count']}, "
+                            "filtered_fee_window_pressure="
+                            f"{filtered_window_pressure}"
+                        )
+                    elif filtered_window_pressure > 0 and not any(
+                        "filtered_fee_window_pressure" in item
+                        for item in warn_reasons
+                    ):
+                        warn_reasons.append(
+                            "TREND_CANDIDATE 探针窗口存在 fee-filtered 配额压力："
+                            "旧版/异常限流可能让成本过滤样本挤占真实下单窗口, "
+                            "filtered_fee_window_pressure="
+                            f"{filtered_window_pressure}, "
+                            "filtered_fee_count="
+                            f"{metrics['trend_candidate_probe_filtered_fee_count']}, "
+                            "window_limit_count="
+                            f"{metrics['trend_candidate_probe_skip_window_limit_count']}, "
+                            "probe_enqueued_count="
+                            f"{metrics['trend_candidate_probe_enqueued_count']}"
                         )
                     elif metrics["trend_candidate_probe_fill_count"] <= 0:
                         warn_reasons.append(

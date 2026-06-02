@@ -782,6 +782,33 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["trend_candidate_probe_skip_cooldown_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_skip_pending_orders_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_runtime_count"], 1)
+        self.assertEqual(
+            metrics["trend_candidate_probe_filtered_fee_window_pressure_count"], 0
+        )
+
+    def test_trend_candidate_probe_filtered_fee_window_pressure_is_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=SOLUSDT, client_order_id=SOLUSDT-1, direction=-1, notional_usd=80.0, strong_filter=true, trend_threshold_ratio=0.74\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=SOLUSDT, client_order_id=SOLUSDT-1, expected_edge_bps=4.3, required_edge_bps=14.9, edge_gap_bps=10.6, max_edge_gap_bps=5.5, quality_guard_override_blocked=false\n"
+            "2026-02-14 15:00:02 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=SOLUSDT, client_order_id=SOLUSDT-2, direction=-1, notional_usd=80.0, strong_filter=true, trend_threshold_ratio=0.74\n"
+            "2026-02-14 15:00:02 [INFO] TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=SOLUSDT, client_order_id=SOLUSDT-2, expected_edge_bps=4.3, required_edge_bps=14.9, edge_gap_bps=10.6, max_edge_gap_bps=5.5, quality_guard_override_blocked=false\n"
+            "2026-02-14 15:00:03 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=SOLUSDT, client_order_id=SOLUSDT-3, direction=-1, notional_usd=80.0, strong_filter=true, trend_threshold_ratio=0.74\n"
+            "2026-02-14 15:00:03 [INFO] TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=SOLUSDT, client_order_id=SOLUSDT-3, expected_edge_bps=4.3, required_edge_bps=14.9, edge_gap_bps=10.6, max_edge_gap_bps=5.5, quality_guard_override_blocked=false\n"
+            "2026-02-14 15:00:04 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=SOLUSDT, reason=WINDOW_LIMIT, trend_threshold_ratio=0.74, current_notional_usd=0.0, market_tick=24, max_per_window=3\n"
+            "2026-02-14 15:00:05 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=SOLUSDT, reason=WINDOW_LIMIT, trend_threshold_ratio=0.74, current_notional_usd=0.0, market_tick=25, max_per_window=3\n"
+            "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, trade_ok=true, trading_halted=false, account={equity=100000.000000, drawdown_pct=0.000000, notional=0.000000, realized_pnl=0.000000, fees=0.000000, realized_net=0.000000}, funnel_window={raw=0, risk_adjusted=0, intents_generated=3, candidate_probe_signals=3, candidate_probe_filtered_fee=3, candidate_probe_enqueued=0, candidate_probe_skipped_window_limit=2, fills=0}, regime_window={trend_ticks=0, range_ticks=20, extreme_ticks=0, warmup_ticks=0, trend_candidate_ticks=6}, regime_current={symbol=SOLUSDT, regime=RANGE, bucket=RANGE, warmup=false, trend_threshold_ratio=0.740000, trend_candidate=true}\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["trend_candidate_probe_filtered_fee_count"], 3)
+        self.assertEqual(metrics["trend_candidate_probe_skip_window_limit_count"], 2)
+        self.assertEqual(metrics["trend_candidate_probe_enqueued_count"], 0)
+        self.assertEqual(
+            metrics["trend_candidate_probe_filtered_fee_window_pressure_count"], 2
+        )
+        self.assertTrue(
+            any("filtered_fee_window_pressure=2" in item for item in report["warn_reasons"])
+        )
 
     def test_execution_attribution_is_reported(self):
         text = (

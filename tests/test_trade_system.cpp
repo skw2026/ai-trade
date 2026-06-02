@@ -2431,6 +2431,64 @@ int main() {
   }
 
   {
+    ai_trade::AppConfig config;
+    config.exchange = "mock";
+    config.primary_symbol = "SOLUSDT";
+    config.execution_candidate_probe_enabled = true;
+    config.execution_candidate_probe_min_trend_ratio = 0.70;
+    config.execution_candidate_probe_notional_usd = 80.0;
+    config.execution_candidate_probe_max_per_window = 3;
+    config.execution_max_order_notional = 500.0;
+    config.risk_max_abs_notional_usd = 1000.0;
+
+    const auto make_probe_decision = [] {
+      ai_trade::MarketDecision decision;
+      decision.regime.trend_candidate = true;
+      decision.regime.warmup = false;
+      decision.regime.trend_threshold_ratio = 0.74;
+      decision.regime.trend_strength = -0.00024;
+      decision.regime.instant_return = -0.0030;
+      decision.regime.decision_interval_ms = 5000;
+      return decision;
+    };
+
+    ai_trade::BotApplication app(config);
+    app.funnel_window_.candidate_probe_signals = 3;
+    app.funnel_window_.candidate_probe_filtered_fee = 3;
+    app.funnel_window_.candidate_probe_enqueued = 0;
+
+    const ai_trade::MarketEvent event{
+        1, "SOLUSDT", 80.0, 80.0, 0.0, 5000};
+    auto decision = make_probe_decision();
+    if (!app.TryApplyTrendCandidateProbe(
+            &decision,
+            event,
+            /*trade_ok=*/true,
+            /*effective_symbol_notional_usd=*/0.0,
+            /*has_pending_symbol_net_orders=*/false) ||
+        !decision.intent.has_value() ||
+        app.funnel_window_.candidate_probe_skipped_window_limit != 0) {
+      std::cerr << "fee-filtered TREND_CANDIDATE probe 不应消耗窗口入队配额\n";
+      return 1;
+    }
+
+    ai_trade::BotApplication capped_app(config);
+    capped_app.funnel_window_.candidate_probe_enqueued = 3;
+    auto capped_decision = make_probe_decision();
+    if (capped_app.TryApplyTrendCandidateProbe(
+            &capped_decision,
+            event,
+            /*trade_ok=*/true,
+            /*effective_symbol_notional_usd=*/0.0,
+            /*has_pending_symbol_net_orders=*/false) ||
+        capped_decision.intent.has_value() ||
+        capped_app.funnel_window_.candidate_probe_skipped_window_limit != 1) {
+      std::cerr << "已入队 probe 达到窗口上限时应继续限流\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：正收益窗口应提高 trend 权重（受 max_weight_step 约束）。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;

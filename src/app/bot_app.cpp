@@ -1466,11 +1466,17 @@ bool BotApplication::TryApplyTrendCandidateProbe(
   const int max_per_window =
       std::max(0, config_.execution_candidate_probe_max_per_window);
   if (max_per_window > 0 &&
-      funnel_window_.candidate_probe_signals >=
+      funnel_window_.candidate_probe_enqueued >=
           static_cast<std::uint64_t>(max_per_window)) {
     return skip_probe("WINDOW_LIMIT",
                       &funnel_window_.candidate_probe_skipped_window_limit,
-                      ", max_per_window=" + std::to_string(max_per_window));
+                      ", max_per_window=" + std::to_string(max_per_window) +
+                          ", quota_basis=enqueued" +
+                          ", window_used=" +
+                          std::to_string(funnel_window_.candidate_probe_enqueued) +
+                          ", filtered_fee=" +
+                          std::to_string(
+                              funnel_window_.candidate_probe_filtered_fee));
   }
 
   const auto cooldown_it =
