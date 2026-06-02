@@ -970,6 +970,66 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "candidate_probe_diagnostic_canary_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_diagnostic_canary_enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_diagnostic_canary_enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_diagnostic_min_trend_ratio") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_diagnostic_min_trend_ratio 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_diagnostic_min_trend_ratio = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_diagnostic_max_edge_gap_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_diagnostic_max_edge_gap_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_diagnostic_max_edge_gap_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
+        key == "candidate_probe_diagnostic_min_expected_edge_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_diagnostic_min_expected_edge_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_diagnostic_min_expected_edge_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         key == "candidate_probe_memory_max_edge_gap_bps") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -4713,6 +4773,16 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.execution_candidate_probe_max_edge_gap_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.candidate_probe_max_edge_gap_bps 不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_candidate_probe_memory_max_edge_gap_bps < 0.0 ||
+      config.execution_candidate_probe_memory_min_trend_ratio < 0.0 ||
+      config.execution_candidate_probe_diagnostic_min_trend_ratio < 0.0 ||
+      config.execution_candidate_probe_diagnostic_max_edge_gap_bps < 0.0 ||
+      config.execution_candidate_probe_diagnostic_min_expected_edge_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.candidate_probe diagnostic/memory 参数不能为负数";
     }
     return false;
   }

@@ -2000,6 +2000,97 @@ int main() {
 
   {
     ai_trade::AppConfig config;
+    config.execution_candidate_probe_max_edge_gap_bps = 5.5;
+    config.execution_candidate_probe_diagnostic_canary_enabled = true;
+    config.execution_candidate_probe_diagnostic_min_trend_ratio = 0.70;
+    config.execution_candidate_probe_diagnostic_max_edge_gap_bps = 9.0;
+    config.execution_candidate_probe_diagnostic_min_expected_edge_bps = 0.5;
+    ai_trade::BotApplication app(config);
+    ai_trade::MarketDecision decision;
+    decision.regime.trend_threshold_ratio = 0.740672;
+
+    bool memory_recovery_allowed = true;
+    bool diagnostic_canary_allowed = false;
+    if (!app.ShouldAllowCandidateProbeFeeOverride(
+            decision,
+            /*expected_edge_bps=*/6.518317,
+            /*entry_edge_gap_bps=*/8.424183,
+            /*quality_guard_penalty_bps=*/0.0,
+            /*has_quality_memory=*/false,
+            &memory_recovery_allowed,
+            &diagnostic_canary_allowed) ||
+        memory_recovery_allowed || !diagnostic_canary_allowed) {
+      std::cerr << "TREND_CANDIDATE 诊断 canary 应放行强候选正 edge 取样\n";
+      return 1;
+    }
+
+    if (app.ShouldAllowCandidateProbeFeeOverride(
+            decision,
+            /*expected_edge_bps=*/0.4,
+            /*entry_edge_gap_bps=*/8.4,
+            /*quality_guard_penalty_bps=*/0.0,
+            /*has_quality_memory=*/false,
+            nullptr,
+            nullptr)) {
+      std::cerr << "诊断 canary 不能放行非正/过弱 edge 样本\n";
+      return 1;
+    }
+
+    decision.regime.trend_threshold_ratio = 0.69;
+    if (app.ShouldAllowCandidateProbeFeeOverride(
+            decision,
+            /*expected_edge_bps=*/6.5,
+            /*entry_edge_gap_bps=*/8.4,
+            /*quality_guard_penalty_bps=*/0.0,
+            /*has_quality_memory=*/false,
+            nullptr,
+            nullptr)) {
+      std::cerr << "诊断 canary 不能放行低于趋势比阈值的样本\n";
+      return 1;
+    }
+
+    decision.regime.trend_threshold_ratio = 0.740672;
+    if (app.ShouldAllowCandidateProbeFeeOverride(
+            decision,
+            /*expected_edge_bps=*/6.5,
+            /*entry_edge_gap_bps=*/9.1,
+            /*quality_guard_penalty_bps=*/0.0,
+            /*has_quality_memory=*/false,
+            nullptr,
+            nullptr)) {
+      std::cerr << "诊断 canary 不能放行超过诊断 gap 上限的样本\n";
+      return 1;
+    }
+
+    if (app.ShouldAllowCandidateProbeFeeOverride(
+            decision,
+            /*expected_edge_bps=*/6.5,
+            /*entry_edge_gap_bps=*/8.4,
+            /*quality_guard_penalty_bps=*/0.1,
+            /*has_quality_memory=*/false,
+            nullptr,
+            nullptr)) {
+      std::cerr << "诊断 canary 不能绕过执行质量惩罚\n";
+      return 1;
+    }
+
+    diagnostic_canary_allowed = true;
+    if (!app.ShouldAllowCandidateProbeFeeOverride(
+            decision,
+            /*expected_edge_bps=*/6.5,
+            /*entry_edge_gap_bps=*/5.4,
+            /*quality_guard_penalty_bps=*/0.0,
+            /*has_quality_memory=*/false,
+            nullptr,
+            &diagnostic_canary_allowed) ||
+        diagnostic_canary_allowed) {
+      std::cerr << "主 probe gap 范围内应走普通放行而非诊断 canary 标记\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::AppConfig config;
     config.strategy_signal_notional_usd = 100.0;
     config.strategy_min_hold_ticks = 18;
     config.execution_candidate_probe_cooldown_ticks = 600;
@@ -3765,6 +3856,10 @@ int main() {
         << "  candidate_probe_strong_min_trend_ratio: 1.05\n"
         << "  candidate_probe_notional_usd: 120.0\n"
         << "  candidate_probe_max_edge_gap_bps: 4.5\n"
+        << "  candidate_probe_diagnostic_canary_enabled: true\n"
+        << "  candidate_probe_diagnostic_min_trend_ratio: 0.74\n"
+        << "  candidate_probe_diagnostic_max_edge_gap_bps: 8.8\n"
+        << "  candidate_probe_diagnostic_min_expected_edge_bps: 0.6\n"
         << "  candidate_probe_memory_max_edge_gap_bps: 3.5\n"
         << "  candidate_probe_memory_min_trend_ratio: 0.92\n"
         << "  candidate_probe_reduce_max_adverse_bps: 11.0\n"
@@ -3938,6 +4033,14 @@ int main() {
                      1.05) ||
         !NearlyEqual(config.execution_candidate_probe_notional_usd, 120.0) ||
         !NearlyEqual(config.execution_candidate_probe_max_edge_gap_bps, 4.5) ||
+        config.execution_candidate_probe_diagnostic_canary_enabled != true ||
+        !NearlyEqual(
+            config.execution_candidate_probe_diagnostic_min_trend_ratio, 0.74) ||
+        !NearlyEqual(
+            config.execution_candidate_probe_diagnostic_max_edge_gap_bps, 8.8) ||
+        !NearlyEqual(
+            config.execution_candidate_probe_diagnostic_min_expected_edge_bps,
+            0.6) ||
         !NearlyEqual(config.execution_candidate_probe_memory_max_edge_gap_bps,
                      3.5) ||
         !NearlyEqual(config.execution_candidate_probe_memory_min_trend_ratio,

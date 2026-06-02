@@ -2396,6 +2396,10 @@ def assess(
         "trend_candidate_probe_fee_override_count": count(
             r"TREND_CANDIDATE_PROBE_FEE_OVERRIDE:", text
         ),
+        "trend_candidate_probe_diagnostic_canary_override_count": count(
+            r"TREND_CANDIDATE_PROBE_FEE_OVERRIDE:.*diagnostic_canary=true",
+            text,
+        ),
         "trend_candidate_probe_filtered_fee_count": count(
             r"TREND_CANDIDATE_PROBE_FILTERED_FEE:",
             text,

@@ -127,6 +127,14 @@ class BotApplication {
                                   double* out_edge_gap_bps,
                                   bool* out_near_miss,
                                   bool* out_near_miss_allowed) const;
+  bool ShouldAllowCandidateProbeFeeOverride(
+      const MarketDecision& decision,
+      double expected_edge_bps,
+      double entry_edge_gap_bps,
+      double quality_guard_penalty_bps,
+      bool has_quality_memory,
+      bool* out_memory_recovery_allowed,
+      bool* out_diagnostic_canary_allowed) const;
   /// 开仓成本门冷却是否生效（用于避免连续重复无效入场）。
   bool IsCostFilterCooldownActive(const std::string& symbol,
                                   int* out_remaining_ticks);

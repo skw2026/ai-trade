@@ -738,7 +738,7 @@ class AssessRunLogTest(unittest.TestCase):
     def test_trend_candidate_probe_metrics_are_reported(self):
         text = (
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=BTCUSDT, client_order_id=BTCUSDT-1, direction=1, notional_usd=120.0, strong_filter=true, strong_min_trend_ratio=1.0, trend_threshold_ratio=1.11\n"
-            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_FEE_OVERRIDE: symbol=BTCUSDT, client_order_id=BTCUSDT-1, expected_edge_bps=1.2, required_edge_bps=5.2, edge_gap_bps=4.0, max_edge_gap_bps=4.5\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_FEE_OVERRIDE: symbol=BTCUSDT, client_order_id=BTCUSDT-1, expected_edge_bps=1.2, required_edge_bps=5.2, edge_gap_bps=4.0, max_edge_gap_bps=4.5, diagnostic_canary=true\n"
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=BNBUSDT, client_order_id=BNBUSDT-1, expected_edge_bps=1.0, required_edge_bps=6.6, edge_gap_bps=5.6, max_edge_gap_bps=5.5, quality_guard_override_blocked=true, quality_guard_penalty_bps=0.8\n"
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_ENQUEUED: symbol=BTCUSDT, client_order_id=BTCUSDT-1, direction=1, qty=0.001, price=100000.0\n"
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_PENDING_TIMEOUT: symbol=BTCUSDT, client_order_id=BTCUSDT-1, age_ticks=30, timeout_ticks=30, attempts=0, replacement_pending=true, replacement_taker=false, trend_threshold_ratio=1.11\n"
@@ -760,6 +760,9 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["trend_candidate_probe_signal_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_strong_signal_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_fee_override_count"], 1)
+        self.assertEqual(
+            metrics["trend_candidate_probe_diagnostic_canary_override_count"], 1
+        )
         self.assertEqual(metrics["trend_candidate_probe_filtered_fee_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_quality_guard_blocked_count"], 1)
         self.assertEqual(metrics["trend_candidate_probe_enqueued_count"], 1)

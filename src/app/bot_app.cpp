@@ -1225,6 +1225,67 @@ bool BotApplication::ShouldFilterByFeeAwareGate(
   return filtered;
 }
 
+bool BotApplication::ShouldAllowCandidateProbeFeeOverride(
+    const MarketDecision& decision,
+    double expected_edge_bps,
+    double entry_edge_gap_bps,
+    double quality_guard_penalty_bps,
+    bool has_quality_memory,
+    bool* out_memory_recovery_allowed,
+    bool* out_diagnostic_canary_allowed) const {
+  if (out_memory_recovery_allowed != nullptr) {
+    *out_memory_recovery_allowed = false;
+  }
+  if (out_diagnostic_canary_allowed != nullptr) {
+    *out_diagnostic_canary_allowed = false;
+  }
+
+  const double max_edge_gap_bps =
+      std::max(0.0, config_.execution_candidate_probe_max_edge_gap_bps);
+  const bool quality_guard_override_blocked =
+      quality_guard_penalty_bps > 1e-9 || has_quality_memory;
+  const bool normal_probe_allowed =
+      !quality_guard_override_blocked &&
+      entry_edge_gap_bps <= max_edge_gap_bps + 1e-9;
+
+  const double memory_max_edge_gap_bps = std::max(
+      0.0, config_.execution_candidate_probe_memory_max_edge_gap_bps);
+  const double memory_min_trend_ratio = std::max(
+      0.0, config_.execution_candidate_probe_memory_min_trend_ratio);
+  const bool memory_recovery_allowed =
+      has_quality_memory && memory_max_edge_gap_bps > 0.0 &&
+      memory_min_trend_ratio > 0.0 &&
+      decision.regime.trend_threshold_ratio + 1e-9 >=
+          memory_min_trend_ratio &&
+      entry_edge_gap_bps <= memory_max_edge_gap_bps + 1e-9;
+  if (out_memory_recovery_allowed != nullptr) {
+    *out_memory_recovery_allowed = memory_recovery_allowed;
+  }
+
+  const double diagnostic_min_trend_ratio = std::max(
+      0.0, config_.execution_candidate_probe_diagnostic_min_trend_ratio);
+  const double diagnostic_max_edge_gap_bps = std::max(
+      0.0, config_.execution_candidate_probe_diagnostic_max_edge_gap_bps);
+  const double diagnostic_min_expected_edge_bps = std::max(
+      0.0, config_.execution_candidate_probe_diagnostic_min_expected_edge_bps);
+  const bool diagnostic_canary_allowed =
+      config_.execution_candidate_probe_diagnostic_canary_enabled &&
+      !normal_probe_allowed &&
+      !memory_recovery_allowed &&
+      !quality_guard_override_blocked &&
+      diagnostic_max_edge_gap_bps > 0.0 &&
+      expected_edge_bps + 1e-9 >= diagnostic_min_expected_edge_bps &&
+      decision.regime.trend_threshold_ratio + 1e-9 >=
+          diagnostic_min_trend_ratio &&
+      entry_edge_gap_bps <= diagnostic_max_edge_gap_bps + 1e-9;
+  if (out_diagnostic_canary_allowed != nullptr) {
+    *out_diagnostic_canary_allowed = diagnostic_canary_allowed;
+  }
+
+  return normal_probe_allowed || memory_recovery_allowed ||
+         diagnostic_canary_allowed;
+}
+
 bool BotApplication::IsCostFilterCooldownActive(const std::string& symbol,
                                                 int* out_remaining_ticks) {
   if (out_remaining_ticks != nullptr) {
@@ -3543,15 +3604,22 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
           0.0, config_.execution_candidate_probe_memory_max_edge_gap_bps);
       const double memory_min_trend_ratio = std::max(
           0.0, config_.execution_candidate_probe_memory_min_trend_ratio);
-      const bool memory_recovery_allowed =
-          has_quality_memory && memory_max_edge_gap_bps > 0.0 &&
-          memory_min_trend_ratio > 0.0 &&
-          decision.regime.trend_threshold_ratio + 1e-9 >=
-              memory_min_trend_ratio &&
-          entry_edge_gap_bps <= memory_max_edge_gap_bps + 1e-9;
-      if ((!quality_guard_override_blocked &&
-           entry_edge_gap_bps <= max_edge_gap_bps + 1e-9) ||
-          memory_recovery_allowed) {
+      const double diagnostic_min_trend_ratio = std::max(
+          0.0, config_.execution_candidate_probe_diagnostic_min_trend_ratio);
+      const double diagnostic_max_edge_gap_bps = std::max(
+          0.0, config_.execution_candidate_probe_diagnostic_max_edge_gap_bps);
+      const double diagnostic_min_expected_edge_bps = std::max(
+          0.0, config_.execution_candidate_probe_diagnostic_min_expected_edge_bps);
+      bool memory_recovery_allowed = false;
+      bool diagnostic_canary_allowed = false;
+      if (ShouldAllowCandidateProbeFeeOverride(
+              decision,
+              expected_edge_bps,
+              entry_edge_gap_bps,
+              quality_guard_penalty_bps,
+              has_quality_memory,
+              &memory_recovery_allowed,
+              &diagnostic_canary_allowed)) {
         filtered = false;
         near_miss_allowed = true;
         candidate_probe_fee_override = true;
@@ -3565,6 +3633,14 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 ", required_edge_bps=" + std::to_string(required_edge_bps) +
                 ", edge_gap_bps=" + std::to_string(entry_edge_gap_bps) +
                 ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps) +
+                ", diagnostic_canary=" +
+                std::string(diagnostic_canary_allowed ? "true" : "false") +
+                ", diagnostic_min_trend_ratio=" +
+                std::to_string(diagnostic_min_trend_ratio) +
+                ", diagnostic_max_edge_gap_bps=" +
+                std::to_string(diagnostic_max_edge_gap_bps) +
+                ", diagnostic_min_expected_edge_bps=" +
+                std::to_string(diagnostic_min_expected_edge_bps) +
                 ", memory_max_edge_gap_bps=" +
                 std::to_string(memory_max_edge_gap_bps) +
                 ", memory_min_trend_ratio=" +
@@ -3584,6 +3660,16 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 std::string(quality_guard_override_blocked ? "true" : "false") +
                 ", quality_guard_penalty_bps=" +
                 std::to_string(quality_guard_penalty_bps) +
+                ", diagnostic_canary_enabled=" +
+                std::string(config_.execution_candidate_probe_diagnostic_canary_enabled
+                                ? "true"
+                                : "false") +
+                ", diagnostic_min_trend_ratio=" +
+                std::to_string(diagnostic_min_trend_ratio) +
+                ", diagnostic_max_edge_gap_bps=" +
+                std::to_string(diagnostic_max_edge_gap_bps) +
+                ", diagnostic_min_expected_edge_bps=" +
+                std::to_string(diagnostic_min_expected_edge_bps) +
                 ", memory_max_edge_gap_bps=" +
                 std::to_string(memory_max_edge_gap_bps) +
                 ", memory_min_trend_ratio=" +
