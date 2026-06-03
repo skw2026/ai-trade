@@ -1506,8 +1506,21 @@ bool BotApplication::TryApplyTrendCandidateProbe(
       SymbolExecutionQualityProbeNotionalScale(event.symbol);
   const double base_configured_notional =
       std::max(0.0, config_.execution_candidate_probe_notional_usd);
-  const double configured_notional =
+  const double scaled_configured_notional =
       base_configured_notional * quality_probe_scale;
+  const double min_executable_notional =
+      std::max(0.0, config_.execution_min_rebalance_notional_usd);
+  double configured_notional = scaled_configured_notional;
+  const bool probe_base_can_meet_execution_floor =
+      base_configured_notional + kNotionalEpsilon >= min_executable_notional;
+  const bool probe_notional_floor_applied =
+      min_executable_notional > kNotionalEpsilon &&
+      probe_base_can_meet_execution_floor &&
+      configured_notional > kNotionalEpsilon &&
+      configured_notional + kNotionalEpsilon < min_executable_notional;
+  if (probe_notional_floor_applied) {
+    configured_notional = min_executable_notional;
+  }
   if (configured_notional <= kNotionalEpsilon) {
     return skip_probe("NOTIONAL_ZERO",
                       &funnel_window_.candidate_probe_skipped_notional);
@@ -1517,7 +1530,14 @@ bool BotApplication::TryApplyTrendCandidateProbe(
             ", trigger_count=" +
             std::to_string(SymbolExecutionQualityMemoryTriggerCount(event.symbol)) +
             ", base_notional_usd=" + std::to_string(base_configured_notional) +
-            ", scaled_notional_usd=" + std::to_string(configured_notional) +
+            ", scaled_notional_usd=" +
+            std::to_string(scaled_configured_notional) +
+            ", executable_notional_usd=" +
+            std::to_string(configured_notional) +
+            ", execution_min_rebalance_notional_usd=" +
+            std::to_string(min_executable_notional) +
+            ", floor_applied=" +
+            std::string(probe_notional_floor_applied ? "true" : "false") +
             ", scale=" + std::to_string(quality_probe_scale));
   }
 
@@ -1540,6 +1560,16 @@ bool BotApplication::TryApplyTrendCandidateProbe(
     return skip_probe("BUDGET_ZERO",
                       &funnel_window_.candidate_probe_skipped_budget,
                       ", symbol_budget=" + std::to_string(symbol_budget));
+  }
+  if (probe_base_can_meet_execution_floor &&
+      capped_notional + kNotionalEpsilon < min_executable_notional) {
+    return skip_probe(
+        "MIN_REBALANCE_NOTIONAL",
+        &funnel_window_.candidate_probe_skipped_notional,
+        ", capped_notional_usd=" + std::to_string(capped_notional) +
+            ", execution_min_rebalance_notional_usd=" +
+            std::to_string(min_executable_notional) +
+            ", symbol_budget=" + std::to_string(symbol_budget));
   }
 
   Signal probe_signal;

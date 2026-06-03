@@ -2489,6 +2489,47 @@ int main() {
   }
 
   {
+    ai_trade::AppConfig config;
+    config.exchange = "mock";
+    config.primary_symbol = "SOLUSDT";
+    config.execution_candidate_probe_enabled = true;
+    config.execution_candidate_probe_min_trend_ratio = 0.60;
+    config.execution_candidate_probe_strong_min_trend_ratio = 0.68;
+    config.execution_candidate_probe_notional_usd = 80.0;
+    config.execution_min_rebalance_notional_usd = 80.0;
+    config.execution_max_order_notional = 380.0;
+    config.risk_max_abs_notional_usd = 1000.0;
+
+    ai_trade::BotApplication app(config);
+    app.execution_quality_by_symbol_["SOLUSDT"].trigger_count = 1;
+
+    ai_trade::MarketDecision decision;
+    decision.regime.trend_candidate = true;
+    decision.regime.warmup = false;
+    decision.regime.trend_threshold_ratio = 0.82;
+    decision.regime.trend_strength = -0.00024;
+    decision.regime.instant_return = -0.0030;
+    decision.regime.decision_interval_ms = 5000;
+
+    const ai_trade::MarketEvent event{
+        1, "SOLUSDT", 80.0, 80.0, 0.0, 5000};
+    if (!app.TryApplyTrendCandidateProbe(
+            &decision,
+            event,
+            /*trade_ok=*/true,
+            /*effective_symbol_notional_usd=*/0.0,
+            /*has_pending_symbol_net_orders=*/false) ||
+        !decision.intent.has_value() ||
+        !NearlyEqual(decision.intent->qty, 1.0) ||
+        !NearlyEqual(app.funnel_window_.candidate_probe_notional_abs_usd_sum,
+                     80.0) ||
+        app.funnel_window_.candidate_probe_skipped_build_intent != 0) {
+      std::cerr << "质量降权后的 TREND_CANDIDATE probe 应夹到可执行最小调仓金额\n";
+      return 1;
+    }
+  }
+
+  {
     // 自进化控制器：正收益窗口应提高 trend 权重（受 max_weight_step 约束）。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
