@@ -116,6 +116,32 @@ double SafeRatio(double numerator, double denominator) {
   return numerator / denominator;
 }
 
+double StepAwareExecutableNotionalFloor(const ExchangeAdapter* adapter,
+                                        const std::string& symbol,
+                                        double price,
+                                        double min_notional_usd) {
+  const double base_floor = std::max(0.0, min_notional_usd);
+  if (base_floor <= kNotionalEpsilon || adapter == nullptr || symbol.empty() ||
+      !std::isfinite(price) || price <= kNotionalEpsilon) {
+    return base_floor;
+  }
+
+  SymbolInfo info;
+  if (!adapter->GetSymbolInfo(symbol, &info) || !info.tradable ||
+      info.qty_step <= kNotionalEpsilon) {
+    return base_floor;
+  }
+
+  const double min_qty =
+      std::max(base_floor / price, std::max(0.0, info.min_order_qty));
+  const double steps =
+      std::ceil(std::max(0.0, min_qty - 1e-12) / info.qty_step);
+  if (!std::isfinite(steps) || steps <= 0.0) {
+    return base_floor;
+  }
+  return std::max(base_floor, steps * info.qty_step * price);
+}
+
 bool HasReasonCode(const Signal& signal, const char* code) {
   if (code == nullptr || *code == '\0') {
     return false;
@@ -1508,11 +1534,17 @@ bool BotApplication::TryApplyTrendCandidateProbe(
       std::max(0.0, config_.execution_candidate_probe_notional_usd);
   const double scaled_configured_notional =
       base_configured_notional * quality_probe_scale;
-  const double min_executable_notional =
+  const double configured_min_executable_notional =
       std::max(0.0, config_.execution_min_rebalance_notional_usd);
+  const double min_executable_notional =
+      StepAwareExecutableNotionalFloor(adapter_.get(),
+                                       event.symbol,
+                                       price,
+                                       configured_min_executable_notional);
   double configured_notional = scaled_configured_notional;
   const bool probe_base_can_meet_execution_floor =
-      base_configured_notional + kNotionalEpsilon >= min_executable_notional;
+      base_configured_notional + kNotionalEpsilon >=
+      configured_min_executable_notional;
   const bool probe_notional_floor_applied =
       min_executable_notional > kNotionalEpsilon &&
       probe_base_can_meet_execution_floor &&
@@ -1535,6 +1567,8 @@ bool BotApplication::TryApplyTrendCandidateProbe(
             ", executable_notional_usd=" +
             std::to_string(configured_notional) +
             ", execution_min_rebalance_notional_usd=" +
+            std::to_string(configured_min_executable_notional) +
+            ", step_aware_min_executable_notional_usd=" +
             std::to_string(min_executable_notional) +
             ", floor_applied=" +
             std::string(probe_notional_floor_applied ? "true" : "false") +
@@ -1568,6 +1602,8 @@ bool BotApplication::TryApplyTrendCandidateProbe(
         &funnel_window_.candidate_probe_skipped_notional,
         ", capped_notional_usd=" + std::to_string(capped_notional) +
             ", execution_min_rebalance_notional_usd=" +
+            std::to_string(configured_min_executable_notional) +
+            ", step_aware_min_executable_notional_usd=" +
             std::to_string(min_executable_notional) +
             ", symbol_budget=" + std::to_string(symbol_budget));
   }
@@ -1622,6 +1658,14 @@ bool BotApplication::TryApplyTrendCandidateProbe(
           ", client_order_id=" + decision->intent->client_order_id +
           ", direction=" + std::to_string(direction) +
           ", notional_usd=" + std::to_string(capped_notional) +
+          ", configured_notional_usd=" +
+          std::to_string(base_configured_notional) +
+          ", execution_min_rebalance_notional_usd=" +
+          std::to_string(configured_min_executable_notional) +
+          ", step_aware_min_executable_notional_usd=" +
+          std::to_string(min_executable_notional) +
+          ", notional_floor_applied=" +
+          std::string(probe_notional_floor_applied ? "true" : "false") +
           ", quality_probe_scale=" + std::to_string(quality_probe_scale) +
           ", quality_guard_trigger_count=" +
           std::to_string(SymbolExecutionQualityMemoryTriggerCount(event.symbol)) +
@@ -1795,10 +1839,26 @@ void BotApplication::ManageCandidateProbeLifecycle(const MarketEvent& event) {
       reference_price *= state.direction > 0 ? (1.0 + aggressiveness)
                                              : (1.0 - aggressiveness);
     }
+    const double configured_min_executable_notional =
+        std::max(0.0, config_.execution_min_rebalance_notional_usd);
+    const double replacement_min_executable_notional =
+        StepAwareExecutableNotionalFloor(adapter_.get(),
+                                         event.symbol,
+                                         reference_price,
+                                         configured_min_executable_notional);
+    double replacement_notional_usd = std::max(0.0, state.notional_usd);
+    const bool replacement_floor_applied =
+        configured_min_executable_notional > kNotionalEpsilon &&
+        replacement_notional_usd > kNotionalEpsilon &&
+        replacement_notional_usd + kNotionalEpsilon <
+            replacement_min_executable_notional;
+    if (replacement_floor_applied) {
+      replacement_notional_usd = replacement_min_executable_notional;
+    }
     RiskAdjustedPosition target{
         .symbol = event.symbol,
         .adjusted_notional_usd =
-            static_cast<double>(state.direction) * state.notional_usd,
+            static_cast<double>(state.direction) * replacement_notional_usd,
         .reduce_only = false,
         .risk_mode = system_.risk_mode(),
     };
@@ -1808,7 +1868,17 @@ void BotApplication::ManageCandidateProbeLifecycle(const MarketEvent& event) {
       LogInfo("TREND_CANDIDATE_PROBE_EXPIRED_WITHOUT_FILL: symbol=" +
               event.symbol +
               ", client_order_id=" + state.client_order_id +
-              ", reason=replacement_build_failed");
+              ", reason=replacement_build_failed" +
+              ", state_notional_usd=" + std::to_string(state.notional_usd) +
+              ", replacement_notional_usd=" +
+              std::to_string(replacement_notional_usd) +
+              ", reference_price=" + std::to_string(reference_price) +
+              ", execution_min_rebalance_notional_usd=" +
+              std::to_string(configured_min_executable_notional) +
+              ", step_aware_min_executable_notional_usd=" +
+              std::to_string(replacement_min_executable_notional) +
+              ", replacement_floor_applied=" +
+              std::string(replacement_floor_applied ? "true" : "false"));
       active_candidate_probe_by_symbol_.erase(it);
       return;
     }
@@ -1853,6 +1923,13 @@ void BotApplication::ManageCandidateProbeLifecycle(const MarketEvent& event) {
       LogInfo("TREND_CANDIDATE_PROBE_TAKER_FALLBACK: symbol=" + event.symbol +
               ", client_order_id=" + replacement_id +
               ", attempts=" + std::to_string(replacement_attempts) +
+              ", state_notional_usd=" + std::to_string(state.notional_usd) +
+              ", replacement_notional_usd=" +
+              std::to_string(replacement_notional_usd) +
+              ", step_aware_min_executable_notional_usd=" +
+              std::to_string(replacement_min_executable_notional) +
+              ", replacement_floor_applied=" +
+              std::string(replacement_floor_applied ? "true" : "false") +
               ", trend_threshold_ratio=" +
               std::to_string(state.trend_threshold_ratio));
     } else {
@@ -1860,6 +1937,13 @@ void BotApplication::ManageCandidateProbeLifecycle(const MarketEvent& event) {
       LogInfo("TREND_CANDIDATE_PROBE_REPRICE: symbol=" + event.symbol +
               ", client_order_id=" + replacement_id +
               ", attempts=" + std::to_string(replacement_attempts) +
+              ", state_notional_usd=" + std::to_string(state.notional_usd) +
+              ", replacement_notional_usd=" +
+              std::to_string(replacement_notional_usd) +
+              ", step_aware_min_executable_notional_usd=" +
+              std::to_string(replacement_min_executable_notional) +
+              ", replacement_floor_applied=" +
+              std::string(replacement_floor_applied ? "true" : "false") +
               ", reprice_bps=" +
               std::to_string(config_.execution_candidate_probe_reprice_bps));
     }

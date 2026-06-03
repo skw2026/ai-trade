@@ -67,6 +67,32 @@ ai_trade::FillEvent ToFill(const ai_trade::OrderIntent& intent,
   return fill;
 }
 
+class CoarseStepMockAdapter final : public ai_trade::MockExchangeAdapter {
+ public:
+  CoarseStepMockAdapter(std::string symbol, double price)
+      : MockExchangeAdapter(std::vector<double>{price}, symbol),
+        symbol_(std::move(symbol)) {}
+
+  bool GetSymbolInfo(const std::string& symbol,
+                     ai_trade::SymbolInfo* out_info) const override {
+    if (out_info == nullptr) {
+      return false;
+    }
+    out_info->symbol = symbol;
+    out_info->tradable = true;
+    out_info->qty_step = 0.1;
+    out_info->min_order_qty = 0.1;
+    out_info->min_notional_usd = 5.0;
+    out_info->price_tick = 0.01;
+    out_info->qty_precision = 1;
+    out_info->price_precision = 2;
+    return symbol == symbol_;
+  }
+
+ private:
+  std::string symbol_;
+};
+
 bool WriteIntegratorReportFile(const std::filesystem::path& path,
                                double auc_mean,
                                double delta_auc,
@@ -2525,6 +2551,50 @@ int main() {
                      80.0) ||
         app.funnel_window_.candidate_probe_skipped_build_intent != 0) {
       std::cerr << "质量降权后的 TREND_CANDIDATE probe 应夹到可执行最小调仓金额\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::AppConfig config;
+    config.exchange = "mock";
+    config.primary_symbol = "SOLUSDT";
+    config.execution_candidate_probe_enabled = true;
+    config.execution_candidate_probe_min_trend_ratio = 0.60;
+    config.execution_candidate_probe_strong_min_trend_ratio = 0.68;
+    config.execution_candidate_probe_notional_usd = 80.0;
+    config.execution_min_rebalance_notional_usd = 80.0;
+    config.execution_max_order_notional = 380.0;
+    config.risk_max_abs_notional_usd = 1000.0;
+
+    constexpr double kPrice = 74.39;
+    ai_trade::BotApplication app(config);
+    app.adapter_ =
+        std::make_unique<CoarseStepMockAdapter>("SOLUSDT", kPrice);
+
+    ai_trade::MarketDecision decision;
+    decision.regime.trend_candidate = true;
+    decision.regime.warmup = false;
+    decision.regime.trend_threshold_ratio = 0.82;
+    decision.regime.trend_strength = -0.00024;
+    decision.regime.instant_return = -0.0030;
+    decision.regime.decision_interval_ms = 5000;
+
+    const ai_trade::MarketEvent event{
+        1, "SOLUSDT", kPrice, kPrice, 0.0, 5000};
+    if (!app.TryApplyTrendCandidateProbe(
+            &decision,
+            event,
+            /*trade_ok=*/true,
+            /*effective_symbol_notional_usd=*/0.0,
+            /*has_pending_symbol_net_orders=*/false) ||
+        !decision.intent.has_value() ||
+        !NearlyEqual(decision.intent->qty, 1.1) ||
+        decision.intent->qty * kPrice + 1e-9 < 80.0 ||
+        !NearlyEqual(app.funnel_window_.candidate_probe_notional_abs_usd_sum,
+                     1.1 * kPrice) ||
+        app.funnel_window_.candidate_probe_skipped_build_intent != 0) {
+      std::cerr << "TREND_CANDIDATE probe 应按交易所 qty_step 抬高到可执行最小名义金额\n";
       return 1;
     }
   }
