@@ -103,6 +103,8 @@ execution:
   candidate_probe_memory_max_edge_gap_bps: 4.0
   candidate_probe_memory_min_trend_ratio: 0.85
   # probe 仓位是取样仓，不用等普通 reduce 的 18bps adverse cut 才承认失败。
+  # 同时要求策略 reduce 至少有更厚净收益空间，避免 flat 残仓在噪声微利区过早收掉 probe。
+  candidate_probe_reduce_min_net_bps: 4.0
   candidate_probe_reduce_max_adverse_bps: 12.0
   candidate_probe_cooldown_ticks: 240
   candidate_probe_max_per_window: 3

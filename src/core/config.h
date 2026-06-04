@@ -358,6 +358,7 @@ struct AppConfig {
   double execution_candidate_probe_diagnostic_min_trend_ratio{0.0};
   double execution_candidate_probe_diagnostic_max_edge_gap_bps{0.0};
   double execution_candidate_probe_diagnostic_min_expected_edge_bps{0.0};
+  double execution_candidate_probe_reduce_min_net_bps{0.0};
   double execution_candidate_probe_reduce_max_adverse_bps{0.0};
   int execution_candidate_probe_cooldown_ticks{0};
   int execution_candidate_probe_max_per_window{0};

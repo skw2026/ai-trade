@@ -1075,6 +1075,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "execution" &&
+        key == "candidate_probe_reduce_min_net_bps") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "execution.candidate_probe_reduce_min_net_bps 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_candidate_probe_reduce_min_net_bps = parsed;
+      continue;
+    }
+
+    if (current_section == "execution" &&
         key == "candidate_probe_cooldown_ticks") {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {
@@ -4783,6 +4798,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.execution_candidate_probe_diagnostic_min_expected_edge_bps < 0.0) {
     if (out_error != nullptr) {
       *out_error = "execution.candidate_probe diagnostic/memory 参数不能为负数";
+    }
+    return false;
+  }
+  if (config.execution_candidate_probe_reduce_min_net_bps < 0.0 ||
+      config.execution_candidate_probe_reduce_max_adverse_bps < 0.0) {
+    if (out_error != nullptr) {
+      *out_error = "execution.candidate_probe_reduce_* 参数不能为负数";
     }
     return false;
   }

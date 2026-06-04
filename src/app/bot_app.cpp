@@ -2398,8 +2398,6 @@ bool BotApplication::ShouldThrottleStrategyReduceCostGuard(
       std::max(0.0, config_.execution_exit_fee_bps) +
       (maker_reduce ? 0.0 : std::max(0.0, config_.execution_expected_slippage_bps));
   const double estimated_net_bps = estimated_gross_bps - expected_exit_cost_bps;
-  const double required_net_bps =
-      std::max(0.0, config_.execution_strategy_reduce_min_net_bps);
 
   int holding_ticks = 0;
   if (const auto state_it = managed_protection_by_symbol_.find(intent.symbol);
@@ -2412,6 +2410,13 @@ bool BotApplication::ShouldThrottleStrategyReduceCostGuard(
       probe_position_it != candidate_probe_position_entry_tick_by_symbol_.end();
   if (candidate_probe_position && holding_ticks == 0) {
     holding_ticks = std::max(0, market_tick_count_ - probe_position_it->second);
+  }
+  double required_net_bps =
+      std::max(0.0, config_.execution_strategy_reduce_min_net_bps);
+  if (candidate_probe_position &&
+      config_.execution_candidate_probe_reduce_min_net_bps > 0.0) {
+    required_net_bps =
+        std::max(0.0, config_.execution_candidate_probe_reduce_min_net_bps);
   }
 
   if (out_estimated_gross_bps != nullptr) {
