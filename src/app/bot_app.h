@@ -432,6 +432,8 @@ class BotApplication {
   bool IsForceReduceOnlyActive() const;
   /// 将强制只减仓合并态同步到风控引擎。
   void RefreshReduceOnlyMode();
+  /// 保护单失败只减仓在账户重新回到空仓且无在途保护/净仓位订单后可安全释放。
+  void RefreshProtectionReduceOnlyRelease(const std::string& reason);
   /// 将多个停机来源（Reconcile/Gate）合并为统一交易停机开关。
   void RefreshTradingHaltState();
   /// 每个行情 tick 驱动 Gate 运行时动作冷却计时。
@@ -526,7 +528,7 @@ class BotApplication {
       0};  ///< 最近一个状态窗口内开仓侧已分类成交样本数（maker+taker+unknown）。
 
   bool protection_forced_reduce_only_{
-      false};  ///< 保护单关键路径触发的只减仓开关（高优先级，需人工介入恢复）。
+      false};  ///< 保护单关键路径触发的只减仓开关；空仓且无保护/在途订单后自动释放。
   bool gate_forced_reduce_only_{
       false};  ///< Gate 运行时动作触发的只减仓开关（可自动恢复）。
   bool reconcile_forced_reduce_only_{

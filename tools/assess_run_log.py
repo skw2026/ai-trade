@@ -2263,6 +2263,11 @@ def assess(
         "max_runtime_tick": max_tick(text),
         "critical_count": count(r"\bCRITICAL\b", text),
         "trading_halted_event_count": count(r"\bTRADING_HALTED\b", text),
+        "trade_ok_false_count": count(r"RUNTIME_STATUS:.*trade_ok=false", text),
+        "risk_mode_reduce_only_count": count(
+            r"RUNTIME_STATUS:.*(?:risk=\{[^}]*mode=reduce_only|risk_mode=reduce_only)",
+            text,
+        ),
         "trading_halted_true_count": count(r"RUNTIME_STATUS:.*trading_halted=true", text),
         "gate_reduce_only_true_count": count(
             r"RUNTIME_STATUS:.*gate_runtime=\{[^}]*reduce_only=true", text
@@ -3298,7 +3303,17 @@ def assess(
             and execution_activity_count <= 0
             and not policy_flat_dominant
         ):
-            execution_fail_reasons.append("未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）")
+            detail = ""
+            if metrics["trend_candidate_probe_skip_trade_not_ok_count"] > 0:
+                detail = (
+                    "；TREND_CANDIDATE 探针被 TRADE_NOT_OK 阻断: "
+                    f"skip_trade_not_ok={metrics['trend_candidate_probe_skip_trade_not_ok_count']}, "
+                    f"trade_ok_false_windows={metrics['trade_ok_false_count']}, "
+                    f"risk_mode_reduce_only_windows={metrics['risk_mode_reduce_only_count']}"
+                )
+            execution_fail_reasons.append(
+                "未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）" + detail
+            )
         if stage.name == "S5" and policy_flat_open_position:
             execution_fail_reasons.append(
                 "policy-flat 窗口结束仍有残余仓位（S5 强门禁）: "
@@ -3816,7 +3831,9 @@ def assess(
                                 "existing_intent="
                                 f"{metrics.get('trend_candidate_probe_skip_existing_intent_count', 0)}, "
                                 "window_limit="
-                                f"{metrics.get('trend_candidate_probe_skip_window_limit_count', 0)}"
+                                f"{metrics.get('trend_candidate_probe_skip_window_limit_count', 0)}, "
+                                "trade_not_ok="
+                                f"{metrics.get('trend_candidate_probe_skip_trade_not_ok_count', 0)}"
                             )
                         warn_reasons.append(
                             "TREND_CANDIDATE 未产生探针信号：建议检查 "

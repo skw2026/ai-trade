@@ -810,6 +810,27 @@ class AssessRunLogTest(unittest.TestCase):
             any("filtered_fee_window_pressure=2" in item for item in report["warn_reasons"])
         )
 
+    def test_no_execution_reports_trade_not_ok_probe_blocker(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=SOLUSDT, reason=TRADE_NOT_OK, trend_threshold_ratio=0.74, current_notional_usd=0.0, market_tick=24\n"
+            "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, trade_ok=false, trading_halted=false, "
+            "account={equity=100000.000000, drawdown_pct=0.000000, notional=0.000000, realized_pnl=0.000000, fees=0.000000, realized_net=0.000000}, "
+            "risk={mode=reduce_only}, "
+            "regime_window={trend_ticks=0, range_ticks=20, extreme_ticks=0, warmup_ticks=0, trend_candidate_ticks=6}, "
+            "regime_current={symbol=SOLUSDT, regime=RANGE, bucket=RANGE, warmup=false, trend_threshold_ratio=0.740000, trend_candidate=true}\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["trend_candidate_probe_skip_trade_not_ok_count"], 1)
+        self.assertEqual(metrics["trade_ok_false_count"], 1)
+        self.assertEqual(metrics["risk_mode_reduce_only_count"], 1)
+        self.assertTrue(
+            any(
+                "TREND_CANDIDATE 探针被 TRADE_NOT_OK 阻断" in item
+                for item in report["execution_fail_reasons"]
+            )
+        )
+
     def test_execution_attribution_is_reported(self):
         text = (
             "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=BTCUSDT, client_order_id=BTCUSDT-probe-1, direction=1, notional_usd=120.0, trend_threshold_ratio=0.91\n"

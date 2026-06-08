@@ -3019,6 +3019,31 @@ void BotApplication::RefreshReduceOnlyMode() {
   system_.ForceReduceOnly(IsForceReduceOnlyActive());
 }
 
+void BotApplication::RefreshProtectionReduceOnlyRelease(
+    const std::string& reason) {
+  if (!protection_forced_reduce_only_) {
+    return;
+  }
+
+  const double gross_notional = system_.account().gross_notional_usd();
+  const auto pending_net_order_ids = oms_.PendingNetPositionOrderIds();
+  if (HasExposure(gross_notional) || !managed_protection_by_symbol_.empty() ||
+      !pending_required_sl_attach_.empty() ||
+      !pending_net_order_enqueued_ms_.empty() ||
+      !pending_net_order_ids.empty()) {
+    return;
+  }
+
+  protection_forced_reduce_only_ = false;
+  RefreshReduceOnlyMode();
+  LogInfo("PROTECTION_FORCE_REDUCE_ONLY_RELEASED: reason=" + reason +
+          ", account_flat=true" +
+          ", gross_notional_usd=" + std::to_string(gross_notional) +
+          ", managed_protections=0" +
+          ", pending_required_sl=0" +
+          ", pending_net_orders=0");
+}
+
 void BotApplication::RefreshTradingHaltState() {
   trading_halted_ = reconcile_halted_ || gate_halted_;
 }
@@ -3379,6 +3404,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   system_.OnMarketSnapshot(event);
   UpdateProfitProtection(event);
   ManageCandidateProbeLifecycle(event);
+  RefreshProtectionReduceOnlyRelease("market_tick_flat_idle");
 
   // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
   if (reconcile_halted_) {
@@ -4882,6 +4908,7 @@ void BotApplication::CancelManagedProtectionForSymbol(
           ", reason=" + reason +
           ", protection_group_id=" + state.protection_group_id);
   managed_protection_by_symbol_.erase(it);
+  RefreshProtectionReduceOnlyRelease(reason + "_protection_cancelled");
 }
 
 bool BotApplication::TryEnqueueProfitProtectionImmediateReduce(
@@ -5136,6 +5163,7 @@ void BotApplication::ClearPendingRequiredSl(
     return;
   }
   pending_required_sl_attach_.erase(sl_client_order_id);
+  RefreshProtectionReduceOnlyRelease("required_sl_cleared");
 }
 
 void BotApplication::CheckPendingRequiredSlTimeouts() {

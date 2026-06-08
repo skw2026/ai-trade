@@ -2428,6 +2428,73 @@ int main() {
   }
 
   {
+    ai_trade::BotApplication app(ai_trade::AppConfig{});
+    app.protection_forced_reduce_only_ = true;
+    app.RefreshReduceOnlyMode();
+    if (!app.IsForceReduceOnlyActive()) {
+      std::cerr << "保护单强制 reduce-only 预期应生效\n";
+      return 1;
+    }
+    app.RefreshProtectionReduceOnlyRelease("unit_test_flat_idle");
+    if (app.IsForceReduceOnlyActive()) {
+      std::cerr << "空仓且无保护/在途订单时应自动释放保护单 reduce-only\n";
+      return 1;
+    }
+
+    app.protection_forced_reduce_only_ = true;
+    app.RefreshReduceOnlyMode();
+    ai_trade::FillEvent entry_fill;
+    entry_fill.fill_id = "protection-release-entry";
+    entry_fill.client_order_id = "protection-release-entry";
+    entry_fill.symbol = "SOLUSDT";
+    entry_fill.direction = 1;
+    entry_fill.qty = 1.0;
+    entry_fill.price = 100.0;
+    app.system_.OnFill(entry_fill);
+    app.RefreshProtectionReduceOnlyRelease("unit_test_still_has_position");
+    if (!app.IsForceReduceOnlyActive()) {
+      std::cerr << "仍有敞口时不能释放保护单 reduce-only\n";
+      return 1;
+    }
+
+    ai_trade::FillEvent exit_fill = entry_fill;
+    exit_fill.fill_id = "protection-release-exit";
+    exit_fill.client_order_id = "protection-release-exit";
+    exit_fill.direction = -1;
+    app.system_.OnFill(exit_fill);
+    app.RefreshProtectionReduceOnlyRelease("unit_test_flat_after_exit");
+    if (app.IsForceReduceOnlyActive()) {
+      std::cerr << "敞口归零后应释放保护单 reduce-only\n";
+      return 1;
+    }
+
+    app.protection_forced_reduce_only_ = true;
+    app.RefreshReduceOnlyMode();
+    ai_trade::BotApplication::PendingRequiredSlAttach pending_sl;
+    pending_sl.parent_order_id = "pending-parent";
+    pending_sl.deadline_ms = 1;
+    app.pending_required_sl_attach_["pending-sl"] = pending_sl;
+    app.RefreshProtectionReduceOnlyRelease("unit_test_pending_sl");
+    if (!app.IsForceReduceOnlyActive()) {
+      std::cerr << "仍有待确认 SL 时不能释放保护单 reduce-only\n";
+      return 1;
+    }
+    app.pending_required_sl_attach_.clear();
+    app.pending_net_order_enqueued_ms_["pending-entry"] = 1;
+    app.RefreshProtectionReduceOnlyRelease("unit_test_pending_net_order");
+    if (!app.IsForceReduceOnlyActive()) {
+      std::cerr << "仍有在途净仓位订单时不能释放保护单 reduce-only\n";
+      return 1;
+    }
+    app.pending_net_order_enqueued_ms_.clear();
+    app.RefreshProtectionReduceOnlyRelease("unit_test_idle_after_pending");
+    if (app.IsForceReduceOnlyActive()) {
+      std::cerr << "待确认 SL 与在途净仓位订单清空后应释放保护单 reduce-only\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::AppConfig config;
     const auto temp_dir = std::filesystem::temp_directory_path() /
                           "ai_trade_test_profit_protection_immediate";
