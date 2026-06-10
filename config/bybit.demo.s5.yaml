@@ -97,7 +97,7 @@ execution:
   # 穿过主成本门，解决“有候选趋势但永远无成交样本”的闭环盲区。
   candidate_probe_diagnostic_canary_enabled: true
   candidate_probe_diagnostic_min_trend_ratio: 0.70
-  candidate_probe_diagnostic_max_edge_gap_bps: 9.0
+  candidate_probe_diagnostic_max_edge_gap_bps: 10.0
   candidate_probe_diagnostic_min_expected_edge_bps: 0.5
   # 质量记忆期只允许强趋势小额 recovery probe，避免一亏损就永久隔离该币对。
   candidate_probe_memory_max_edge_gap_bps: 5.0
