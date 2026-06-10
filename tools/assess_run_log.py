@@ -126,6 +126,78 @@ DEFAULT_S5_MIN_TREND_RUNTIME_WINDOWS = 60
 DEFAULT_S5_MIN_EFFECTIVE_RUNTIME_AGE_SECONDS = 3600
 MIN_S5_EXECUTION_NEGATIVE_SYMBOL_FILL_COUNT_WARN = 10
 
+
+def _metric_int(metrics: Dict[str, Any], key: str) -> int:
+    value = metrics.get(key, 0)
+    return int(value) if isinstance(value, (int, float)) else 0
+
+
+def _format_s5_sample_starvation_detail(metrics: Dict[str, Any]) -> str:
+    probe_signal_count = _metric_int(metrics, "trend_candidate_probe_signal_count")
+    probe_enqueued_count = _metric_int(metrics, "trend_candidate_probe_enqueued_count")
+    probe_fill_count = _metric_int(metrics, "trend_candidate_probe_fill_count")
+    skip_count = _metric_int(metrics, "trend_candidate_probe_skip_count")
+    throttle_count = _metric_int(metrics, "order_throttled_count")
+
+    parts: List[str] = []
+    if probe_signal_count > 0 or probe_enqueued_count > 0 or probe_fill_count > 0:
+        parts.append(
+            "probe="
+            f"signals:{probe_signal_count},"
+            f"enqueued:{probe_enqueued_count},"
+            f"fills:{probe_fill_count},"
+            f"skips:{skip_count}"
+        )
+
+    skip_keys = [
+        ("strong_ratio", "trend_candidate_probe_skip_strong_trend_ratio_count"),
+        ("quality_memory", "trend_candidate_probe_quality_guard_memory_skip_count"),
+        ("existing_intent", "trend_candidate_probe_skip_existing_intent_count"),
+        ("cooldown", "trend_candidate_probe_skip_cooldown_count"),
+        ("pending_orders", "trend_candidate_probe_skip_pending_orders_count"),
+        ("trend_ratio", "trend_candidate_probe_skip_trend_ratio_count"),
+        ("trade_not_ok", "trend_candidate_probe_skip_trade_not_ok_count"),
+        ("window_limit", "trend_candidate_probe_skip_window_limit_count"),
+    ]
+    skip_items = sorted(
+        [
+            (count, f"{label}:{count}")
+            for label, key in skip_keys
+            if (count := _metric_int(metrics, key)) > 0
+        ],
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    if skip_items:
+        parts.append("skip_top=" + ",".join(item for _, item in skip_items[:5]))
+
+    throttle_keys = [
+        ("quality_quarantine", "order_throttled_symbol_quality_quarantine_count"),
+        ("strategy_reduce_guard", "order_throttled_strategy_reduce_cost_guard_count"),
+        ("quality_min_hold", "order_throttled_symbol_quality_min_hold_count"),
+        ("reduce_without_position", "order_throttled_reduce_without_actual_position_count"),
+    ]
+    throttle_items = sorted(
+        [
+            (count, f"{label}:{count}")
+            for label, key in throttle_keys
+            if (count := _metric_int(metrics, key)) > 0
+        ],
+        key=lambda item: item[0],
+        reverse=True,
+    )
+    if throttle_count > 0 or throttle_items:
+        prefix = f"total:{throttle_count}" if throttle_count > 0 else ""
+        detail_items = [prefix] if prefix else []
+        detail_items.extend(item for _, item in throttle_items[:4])
+        details = ",".join(detail_items)
+        parts.append("throttle_top=" + details)
+
+    if not parts:
+        return ""
+    return "；sample_starvation: " + "; ".join(parts)
+
+
 RUNTIME_ACCOUNT_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?"
     r"RUNTIME_STATUS:.*?equity=(?P<equity>-?[0-9]+(?:\.[0-9]+)?), "
@@ -2494,6 +2566,7 @@ def assess(
             text,
         ),
         "entry_gate_enabled_count": count(r"RUNTIME_STATUS:.*entry_gate=\{enabled=true", text),
+        "order_throttled_count": count(r"ORDER_THROTTLED:", text),
         "order_throttled_symbol_quality_min_hold_count": count(
             r"ORDER_THROTTLED:.*symbol_quality_min_hold_remaining_ticks",
             text,
@@ -3373,10 +3446,12 @@ def assess(
             and metrics["funnel_fills_runtime_count"] < max(0, s5_min_fill_windows)
             and not policy_flat_dominant
         ):
+            starvation_detail = _format_s5_sample_starvation_detail(metrics)
             execution_fail_reasons.append(
                 "执行样本不足（S5 强门禁）: "
                 f"fill_windows={metrics['funnel_fills_runtime_count']}, "
                 f"required>={max(0, s5_min_fill_windows)}"
+                f"{starvation_detail}"
             )
         if (
             stage.name == "S5"

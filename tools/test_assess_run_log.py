@@ -1817,6 +1817,38 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(report["verdict"], "FAIL")
         self.assertTrue(any("执行样本不足" in x for x in report["fail_reasons"]))
 
+    def test_s5_sample_starvation_failure_reports_probe_and_throttle_causes(self):
+        runtime = "".join(
+            self._runtime_line(
+                20 + i * 20,
+                0.0,
+                funnel_enqueued=1 if i == 0 else 0,
+                funnel_fills=1 if i == 0 else 0,
+                realized_net_per_fill=0.02,
+                fee_bps_per_fill=1.5,
+            )
+            for i in range(5)
+        )
+        text = (
+            "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: trend_weight=0.5, defensive_weight=0.5, update_interval_ticks=600\n"
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SIGNAL: symbol=SOLUSDT, client_order_id=probe-1, direction=1, notional_usd=80.0, strong_filter=true, trend_threshold_ratio=0.66\n"
+            "2026-02-14 15:00:02 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=SOLUSDT, reason=STRONG_TREND_RATIO_LOW, trend_threshold_ratio=0.66, current_notional_usd=0.0, market_tick=21, strong_min_trend_ratio=0.68\n"
+            "2026-02-14 15:00:03 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=SOLUSDT, reason=QUALITY_GUARD_MEMORY, trend_threshold_ratio=0.72, current_notional_usd=0.0, market_tick=22, quality_guard_remaining_ticks=120\n"
+            "2026-02-14 15:00:04 [INFO] ORDER_THROTTLED: symbol=SOLUSDT, client_order_id=main-1, reason=symbol_quality_quarantine_remaining_ticks=120\n"
+            "2026-02-14 15:00:05 [INFO] ORDER_THROTTLED: symbol=SOLUSDT, client_order_id=reduce-1, reason=strategy_reduce_cost_guard\n"
+            + runtime
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=5)
+        self.assertEqual(report["verdict"], "FAIL")
+        failure_text = "\n".join(report["fail_reasons"])
+        self.assertIn("sample_starvation", failure_text)
+        self.assertIn("probe=signals:1,enqueued:0,fills:0,skips:2", failure_text)
+        self.assertIn("skip_top=strong_ratio:1,quality_memory:1", failure_text)
+        self.assertIn(
+            "throttle_top=total:2,quality_quarantine:1,strategy_reduce_guard:1",
+            failure_text,
+        )
+
     def test_s5_fail_when_fill_windows_exist_but_execution_window_missing(self):
         runtime = "".join(
             re.sub(
