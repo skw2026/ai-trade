@@ -272,16 +272,15 @@ run_closed_loop_gate() {
       return 1
     fi
   fi
-  if (( gate_status != 0 )); then
-    return 1
-  fi
-
   verdict="$(extract_json_string_field "verdict" "${assess_json}")"
   overall_status="$(extract_json_string_field "overall_status" "${report_json}")"
   echo "[deploy] closed-loop gate result: verdict=${verdict:-<empty>}, overall_status=${overall_status:-<empty>}"
 
   if [[ "${stage_name}" == "DEPLOY" ]]; then
     echo "[deploy] DEPLOY stage gate uses runtime verdict only; overall_status is audit-only"
+    if (( gate_status != 0 )); then
+      echo "[deploy] DEPLOY gate command was non-zero; evaluating runtime verdict because audit sections are not deploy blockers"
+    fi
     if [[ -z "${verdict}" ]]; then
       echo "[deploy] DEPLOY gate failed: runtime verdict missing"
       return 1
@@ -298,6 +297,10 @@ run_closed_loop_gate() {
       return 1
     fi
     return 0
+  fi
+
+  if (( gate_status != 0 )); then
+    return 1
   fi
 
   if is_true "${CLOSED_LOOP_STRICT_PASS}"; then

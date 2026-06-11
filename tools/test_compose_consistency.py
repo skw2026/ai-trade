@@ -457,8 +457,32 @@ class ComposeConsistencyTest(unittest.TestCase):
             'DEPLOY stage gate uses runtime verdict only; overall_status is audit-only',
             script,
         )
+        self.assertIn(
+            'DEPLOY gate command was non-zero; evaluating runtime verdict because audit sections are not deploy blockers',
+            script,
+        )
         self.assertIn('if [[ "${verdict}" != "PASS" ]]; then', script)
         self.assertIn('if [[ "${verdict}" == "FAIL" ]]; then', script)
+        deploy_block_index = script.index('if [[ "${stage_name}" == "DEPLOY" ]]; then')
+        non_deploy_gate_failure_index = script.index(
+            "if (( gate_status != 0 )); then\n    return 1\n  fi",
+            deploy_block_index,
+        )
+        self.assertGreater(non_deploy_gate_failure_index, deploy_block_index)
+
+    def test_closed_loop_assess_summary_failure_is_audit_only(self):
+        runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("build_summary_for_assess()", runner)
+        self.assertIn(
+            "assess summary returned non-zero; runtime verdict remains the assess gate",
+            runner,
+        )
+        assess_start = runner.index("    assess)")
+        assess_end = runner.index("      ;;", assess_start)
+        assess_block = runner[assess_start:assess_end]
+        self.assertIn("run_assess", assess_block)
+        self.assertIn("build_summary_for_assess", assess_block)
+        self.assertNotIn("      build_summary\n", assess_block)
 
     def test_deploy_runs_startup_preflight_before_service_stop(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

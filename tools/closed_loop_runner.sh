@@ -1936,6 +1936,15 @@ EOF
   return "${summary_status}"
 }
 
+build_summary_for_assess() {
+  local summary_status=0
+  build_summary || summary_status=$?
+  if (( summary_status != 0 )); then
+    echo "[WARN] assess summary returned non-zero; runtime verdict remains the assess gate: status=${summary_status}"
+  fi
+  return 0
+}
+
 run_gc() {
   if ! is_true "${GC_ENABLED}"; then
     echo "[INFO] recycle skipped (GC disabled)"
@@ -1998,7 +2007,7 @@ run_main() {
       verify_s5_learning_switches
       run_assess
       verify_s5_learning_activity
-      build_summary
+      build_summary_for_assess
       ;;
     full)
       run_freeze_baseline
