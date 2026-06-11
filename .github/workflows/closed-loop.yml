@@ -30,12 +30,12 @@ on:
       replay_symbols:
         description: "replay-validation 目标币对，逗号分隔；留空则使用 ECS .env.runtime"
         required: false
-        default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"
+        default: "ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT"
         type: string
       replay_source_symbol:
-        description: "replay-validation feature store 源币对；留空则使用 ECS .env.runtime"
+        description: "replay-validation feature store 源币对；auto 则从上一份 symbol_tradeability 选择"
         required: false
-        default: "SOLUSDT"
+        default: "auto"
         type: string
       replay_feature_days:
         description: "replay-validation 逐币对 feature 历史天数；0 表示沿用 data_pipeline 配置"
@@ -70,8 +70,8 @@ jobs:
           CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
           CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'SOLUSDT' || inputs.replay_source_symbol }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'auto' || inputs.replay_source_symbol }}
           CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"
           CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: "true"
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
@@ -124,7 +124,7 @@ jobs:
               --output-root ./data/reports/closed_loop \
               --stage "${CLOSED_LOOP_STAGE}" \
               --since "${CLOSED_LOOP_SINCE}" \
-              --symbol "${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"
+              --symbol "${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-ETHUSDT}"
             REPORT="./data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_report.json"
             if [[ -f "${REPORT}" ]]; then
               echo "=== closed_loop_report ==="

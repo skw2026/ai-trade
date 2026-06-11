@@ -284,6 +284,7 @@ universe:
   trend_reserve_min_residency_refreshes: 12
   warmup_trend_reserve_min_ratio: 0.60
   reset_stats_on_refresh: true
-  fallback_symbols: ["SOLUSDT"]
-  # replay 分币种经济性通过的 S5 单币 canary 白名单；其他币对暂留 replay/probe 观察，不进入实盘候选池。
-  candidate_symbols: ["SOLUSDT"]
+  fallback_symbols: ["ETHUSDT"]
+  # S5 live 只允许 replay symbol_tradeability 证明可交易的 canary 符号进入候选池。
+  # 2026-06-11 full 报告中 ETHUSDT 为唯一 ROBUST/tradable，SOLUSDT 已被 source_symbol_not_tradable 阻断。
+  candidate_symbols: ["ETHUSDT"]

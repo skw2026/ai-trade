@@ -18,6 +18,7 @@ DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
 CLOSED_LOOP_WORKFLOW = ROOT / ".github" / "workflows" / "closed-loop.yml"
 CD_WORKFLOW = ROOT / ".github" / "workflows" / "cd.yml"
 SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
+S5_CONFIG = ROOT / "config" / "bybit.demo.s5.yaml"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -111,6 +112,12 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("closed-loop runtime config resolved", script)
         self.assertIn('export AI_TRADE_CONFIG_PATH="${RUNTIME_CONFIG_PATH}"', script)
+
+    def test_s5_live_canary_uses_replay_tradable_symbol(self):
+        config = S5_CONFIG.read_text(encoding="utf-8")
+        self.assertIn('fallback_symbols: ["ETHUSDT"]', config)
+        self.assertIn('candidate_symbols: ["ETHUSDT"]', config)
+        self.assertIn("source_symbol_not_tradable", config)
 
     def test_dev_does_not_include_scheduler_and_watchdog(self):
         self.assertNotIn("watchdog", self.dev_services)
@@ -281,7 +288,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS", script)
         self.assertIn(
-            "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT",
+            "ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT",
             script,
         )
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
@@ -304,6 +311,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--source_symbol", script)
         self.assertIn("--feature_csv_by_symbol", script)
         self.assertIn("--replay_validation_report", script)
+        self.assertIn("resolve_replay_validation_source_symbol()", script)
+        self.assertIn("replay validation source auto-selected", script)
         self.assertIn("tools/run_replay_validation.py", script)
         self.assertIn("--max-auc-stdev", script)
         self.assertIn("--max-train-test-auc-gap", script)
@@ -343,15 +352,16 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_closed_loop_workflow_default_replay_symbols_cover_live_trend_set(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            'default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"',
+            'default: "ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT"',
             workflow,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT'",
+            "github.event_name == 'schedule' && 'ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT'",
             workflow,
         )
-        self.assertIn('default: "SOLUSDT"', workflow)
-        self.assertIn("--symbol \"${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}\"", workflow)
+        self.assertIn('default: "auto"', workflow)
+        self.assertIn("github.event_name == 'schedule' && 'auto'", workflow)
+        self.assertIn("--symbol \"${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-ETHUSDT}\"", workflow)
         self.assertIn(
             'CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"',
             workflow,

@@ -44,7 +44,7 @@ ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS="${CLOSED_LOOP_ASSESS_WAIT_FOR_MIN_RUNTIME_ST
 ASSESS_WAIT_TIMEOUT_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS:-900}"
 ASSESS_WAIT_POLL_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS:-15}"
 
-SYMBOL="SOLUSDT"
+SYMBOL="ETHUSDT"
 INTERVAL="5"
 CATEGORY="linear"
 BARS="5000"
@@ -122,7 +122,7 @@ TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
 ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}"
 REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.maker_first.yaml}"
-DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT}"
+DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
@@ -172,7 +172,7 @@ Options:
   --since <duration>                 导出日志窗口 (default: 4h)
   --min-runtime-status <int>         覆盖日志验收最小 RUNTIME_STATUS 条数
 
-  --symbol <symbol>                  R0 拉数 symbol (default: SOLUSDT)
+  --symbol <symbol>                  R0 拉数 symbol (default: ETHUSDT)
   --interval <minutes>               R0 拉数周期分钟 (default: 5)
   --category <category>              R0 category (default: linear)
   --bars <int>                       R0 拉数 bars (default: 5000)
@@ -292,10 +292,11 @@ Env toggles:
                                                        assess 动作是否刷新 replay-validation (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.maker_first.yaml)
   CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS=<csv>    replay-validation 空目标时的默认多币对
-                                                       (default: SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT)
+                                                       (default: ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
-  CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol>   feature store 源行情币对 (default: --symbol)
+  CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol|auto>
+                                      feature store 源行情币对；auto 从上一份 symbol_tradeability 选择 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES=true|false
                                                          是否为 replay symbols 生成各自 feature store (default: true)
   CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS=<int>       replay 专用逐币对 feature 下载天数；0=沿用 data 配置 (default: 0)
@@ -493,8 +494,130 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+resolve_replay_validation_source_symbol() {
+  local requested="$1"
+  local symbols_csv="$2"
+  local fallback_symbol="$3"
+  local latest_report_path="${OUTPUT_ROOT%/}/latest_closed_loop_report.json"
+
+  python3 - "${latest_report_path}" "${symbols_csv}" "${fallback_symbol}" "${requested}" <<'PY'
+import json
+import math
+import pathlib
+import sys
+
+latest_path = pathlib.Path(sys.argv[1])
+symbols = []
+for item in sys.argv[2].replace(";", ",").split(","):
+    symbol = item.strip().upper()
+    if symbol and symbol not in symbols:
+        symbols.append(symbol)
+fallback = sys.argv[3].strip().upper()
+requested = sys.argv[4].strip().upper()
+
+if requested and requested != "AUTO":
+    print(requested)
+    raise SystemExit(0)
+
+if fallback == "AUTO":
+    fallback = ""
+
+
+def as_float(value, default=-math.inf):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def coverage_score(value):
+    text = str(value or "").strip().upper()
+    if text == "ROBUST":
+        return 3
+    if text == "PASS":
+        return 2
+    if text and text != "INSUFFICIENT":
+        return 1
+    return 0
+
+
+tradeability = {}
+if latest_path.is_file():
+    try:
+        payload = json.loads(latest_path.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    replay = payload.get("sections", {}).get("replay_validation", {})
+    if isinstance(replay, dict):
+        tradeability = replay.get("symbol_tradeability", {})
+        if not isinstance(tradeability, dict):
+            aggregate = replay.get("aggregate_validation", {})
+            tradeability = (
+                aggregate.get("symbol_tradeability", {})
+                if isinstance(aggregate, dict)
+                else {}
+            )
+
+decisions = tradeability.get("decisions", {}) if isinstance(tradeability, dict) else {}
+tradable_symbols = {
+    str(item).strip().upper()
+    for item in (tradeability.get("tradable_symbols", []) if isinstance(tradeability, dict) else [])
+    if str(item).strip()
+}
+ordered_symbols = symbols or ([fallback] if fallback else [])
+candidate_symbols = [symbol for symbol in ordered_symbols if symbol in tradable_symbols]
+
+if candidate_symbols:
+    order = {symbol: idx for idx, symbol in enumerate(ordered_symbols)}
+
+    def score(symbol):
+        decision = decisions.get(symbol, {}) if isinstance(decisions, dict) else {}
+        if not isinstance(decision, dict):
+            decision = {}
+        return (
+            coverage_score(decision.get("coverage_strength_status")),
+            as_float(decision.get("positive_filled_segment_ratio")),
+            as_float(decision.get("median_realized_net_per_fill_with_fills")),
+            as_float(decision.get("mean_realized_net_per_fill_with_fills")),
+            as_float(decision.get("total_fills"), 0.0),
+            -order.get(symbol, 9999),
+        )
+
+    print(max(candidate_symbols, key=score))
+    raise SystemExit(0)
+
+if fallback and fallback in ordered_symbols:
+    print(fallback)
+elif ordered_symbols:
+    print(ordered_symbols[0])
+elif fallback:
+    print(fallback)
+else:
+    print("ETHUSDT")
+PY
+}
+
+REPLAY_VALIDATION_SOURCE_SYMBOL_REQUESTED="${REPLAY_VALIDATION_SOURCE_SYMBOL}"
 if [[ -z "${REPLAY_VALIDATION_SOURCE_SYMBOL}" ]]; then
   REPLAY_VALIDATION_SOURCE_SYMBOL="${SYMBOL}"
+fi
+REPLAY_VALIDATION_SOURCE_SYMBOL="$(
+  resolve_replay_validation_source_symbol \
+    "${REPLAY_VALIDATION_SOURCE_SYMBOL}" \
+    "${REPLAY_VALIDATION_SYMBOLS:-${DEFAULT_REPLAY_VALIDATION_SYMBOLS}}" \
+    "${SYMBOL}"
+)"
+REPLAY_VALIDATION_SOURCE_SYMBOL_REQUESTED_UPPER="$(
+  printf '%s' "${REPLAY_VALIDATION_SOURCE_SYMBOL_REQUESTED}" | tr '[:lower:]' '[:upper:]'
+)"
+SYMBOL_UPPER="$(
+  printf '%s' "${SYMBOL}" | tr '[:lower:]' '[:upper:]'
+)"
+if [[ "${REPLAY_VALIDATION_SOURCE_SYMBOL_REQUESTED_UPPER}" == "AUTO" || "${SYMBOL_UPPER}" == "AUTO" ]]; then
+  echo "[INFO] replay validation source auto-selected: source_symbol=${REPLAY_VALIDATION_SOURCE_SYMBOL}"
+  SYMBOL="${REPLAY_VALIDATION_SOURCE_SYMBOL}"
 fi
 if [[ -z "${REPLAY_VALIDATION_SYMBOL}" ]]; then
   REPLAY_VALIDATION_SYMBOL="${REPLAY_VALIDATION_SOURCE_SYMBOL}"
@@ -697,7 +820,7 @@ to_int() {
 }
 
 is_true() {
-  case "${1,,}" in
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on)
       return 0
       ;;
