@@ -2276,7 +2276,10 @@ bool BotApplication::ShouldThrottleSymbolQualityQuarantine(
   if (out_remaining_ticks != nullptr) {
     *out_remaining_ticks = remaining_ticks;
   }
-  return true;
+  // trigger_count soft memory still downweights recovery probes and blocks some
+  // relaxed fee paths, but it should not hard-quarantine new entry samples once
+  // the active cooldown/memory window has fully expired.
+  return remaining_ticks > 0;
 }
 
 int BotApplication::SymbolExecutionQualityMinHoldRemainingTicks(

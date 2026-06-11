@@ -2156,15 +2156,6 @@ int main() {
       return 1;
     }
 
-    app.market_tick_count_ =
-        app.execution_quality_by_symbol_["BNBUSDT"].memory_until_tick + 1;
-    if (app.IsSymbolExecutionQualityGuardActive("BNBUSDT") ||
-        !app.HasSymbolExecutionQualityMemory("BNBUSDT") ||
-        !(app.SymbolExecutionQualityProbeNotionalScale("BNBUSDT") < 1.0)) {
-      std::cerr << "symbol 质量记忆过期后应停止硬冷却但保留探针降权\n";
-      return 1;
-    }
-
     ai_trade::MarketDecision entry_decision;
     ai_trade::OrderIntent entry_intent;
     entry_intent.client_order_id = "quality-main-entry";
@@ -2177,8 +2168,24 @@ int main() {
     entry_decision.intent = entry_intent;
     int quarantine_remaining_ticks = 0;
     if (!app.ShouldThrottleSymbolQualityQuarantine(
-            entry_decision, &quarantine_remaining_ticks)) {
-      std::cerr << "低质量 symbol 软记忆未清零前应隔离主链开仓\n";
+            entry_decision, &quarantine_remaining_ticks) ||
+        quarantine_remaining_ticks <= 0) {
+      std::cerr << "低质量 symbol 硬冷却未过期前应隔离主链开仓\n";
+      return 1;
+    }
+
+    app.market_tick_count_ =
+        app.execution_quality_by_symbol_["BNBUSDT"].memory_until_tick + 1;
+    if (app.IsSymbolExecutionQualityGuardActive("BNBUSDT") ||
+        !app.HasSymbolExecutionQualityMemory("BNBUSDT") ||
+        !(app.SymbolExecutionQualityProbeNotionalScale("BNBUSDT") < 1.0)) {
+      std::cerr << "symbol 质量记忆过期后应停止硬冷却但保留探针降权\n";
+      return 1;
+    }
+    if (app.ShouldThrottleSymbolQualityQuarantine(
+            entry_decision, &quarantine_remaining_ticks) ||
+        quarantine_remaining_ticks != 0) {
+      std::cerr << "低质量 symbol 软记忆过期后不应继续硬隔离主链开仓\n";
       return 1;
     }
     entry_decision.intent->client_order_id = "quality-recovery-probe";

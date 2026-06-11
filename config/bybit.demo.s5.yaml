@@ -106,7 +106,7 @@ execution:
   # 同时要求策略 reduce 至少有更厚净收益空间，避免 flat 残仓在噪声微利区过早收掉 probe。
   candidate_probe_reduce_min_net_bps: 4.0
   candidate_probe_reduce_max_adverse_bps: 8.0
-  candidate_probe_cooldown_ticks: 240
+  candidate_probe_cooldown_ticks: 120
   candidate_probe_max_per_window: 3
   # maker probe 必须有生命周期：超时先撤单，撤单确认后最多重挂一次；
   # 只有极强候选趋势才允许小额 taker fallback，避免长期“挂单无成交=无样本”。
