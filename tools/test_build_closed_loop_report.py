@@ -411,6 +411,101 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 any("walk-forward 平均 Sharpe 未达门槛" in x for x in payload["fail_reasons"])
             )
 
+    def test_strategy_diagnose_action_required_blocks_convergence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+            strategy_report = root / "strategy_diagnose_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "execution_status": "PASS",
+                        "metrics": {
+                            "runtime_status_count": 80,
+                            "funnel_fills_runtime_count": 2,
+                            "realized_net_per_fill": 0.01,
+                        },
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "symbol": "SOLUSDT",
+                        "symbols": ["SOLUSDT"],
+                        "aggregate_summary": {
+                            "total_fills": 24,
+                            "median_realized_net_per_fill_with_fills": 0.01,
+                            "positive_filled_segment_ratio": 0.75,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            strategy_report.write_text(
+                json.dumps(
+                    {
+                        "status": "action_required",
+                        "readiness_status": "ACTION_REQUIRED",
+                        "fail_reasons": [
+                            "confirmed_trend path MFE covers cost but capture is low"
+                        ],
+                        "aggregate": {
+                            "confirmed_trend": {
+                                "sample_count": 48,
+                                "mean_net_forward_bps": 7.0,
+                                "positive_net_ratio": 1.0,
+                                "mean_gross_capture_of_path_mfe": 0.04,
+                            }
+                        },
+                        "diagnostics": [
+                            {"code": "path_mfe_available_but_capture_low"}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                    "--strategy_diagnose_report",
+                    str(strategy_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["strategy_diagnose_status"], "ACTION_REQUIRED")
+            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertIn(
+                "NOT_CONVERGED_STRATEGY_RAW_EDGE_ACTION_REQUIRED",
+                payload["sections"]["trading_convergence"]["blockers"],
+            )
+
     def test_walkforward_low_activity_is_fail(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -1699,6 +1794,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 "metrics": {"funnel_fills_runtime_count": 0},
             },
             {"aggregate_summary": {"total_fills": 20}},
+            {},
             {"readiness_status": "PASS"},
             {
                 "readiness_status": "PASS",
@@ -1731,6 +1827,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 },
             },
             {"aggregate_summary": {"total_fills": 20}},
+            {},
             {"readiness_status": "PASS"},
             {
                 "readiness_status": "PASS",

@@ -24,6 +24,7 @@ INHERITABLE_SECTION_NAMES = [
     "walkforward",
     "trend_validation",
     "replay_validation",
+    "strategy_diagnose",
 ]
 
 # A section inherited from the previous report is useful context, but some
@@ -770,6 +771,47 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_strategy_diagnose(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    status_raw = str(payload.get("status", "")).strip().lower()
+    readiness_status = str(
+        payload.get("readiness_status", status_raw.upper() if status_raw else "UNKNOWN")
+    ).upper()
+    fail_reasons = [
+        str(item) for item in payload.get("fail_reasons", []) if str(item).strip()
+    ]
+    warn_reasons = [
+        str(item) for item in payload.get("warn_reasons", []) if str(item).strip()
+    ]
+
+    if status_raw == "pass":
+        status = "pass"
+    elif status_raw in {"skipped", "insufficient_samples"}:
+        status = "pass"
+        if not warn_reasons:
+            warn_reasons.append(f"strategy_diagnose status={status_raw}")
+    elif status_raw in {"fail", "action_required"}:
+        status = "fail"
+        if not fail_reasons:
+            fail_reasons.append(f"strategy_diagnose status={status_raw}")
+    else:
+        status = "fail"
+        fail_reasons.append("strategy_diagnose missing/unknown status")
+
+    return {
+        "status": status,
+        "readiness_status": readiness_status,
+        "fail_reasons": fail_reasons if status == "fail" else [],
+        "warn_reasons": warn_reasons,
+        "diagnose_status": status_raw or "unknown",
+        "target": payload.get("target", {}),
+        "aggregate": payload.get("aggregate", {}),
+        "by_symbol": payload.get("by_symbol", {}),
+        "diagnostics": payload.get("diagnostics", []),
+        "recommendations": payload.get("recommendations", []),
+    }
+
+
 def unique_symbols(raw_value: Any) -> List[str]:
     if raw_value is None:
         return []
@@ -1394,6 +1436,7 @@ def section_readiness(section: Dict[str, Any]) -> str:
 def assess_trading_convergence(
     runtime_section: Dict[str, Any],
     replay_section: Dict[str, Any],
+    strategy_diagnose_section: Dict[str, Any],
     feature_parity_section: Dict[str, Any],
     exit_capture_section: Dict[str, Any],
     canary_validation_section: Dict[str, Any],
@@ -1461,10 +1504,18 @@ def assess_trading_convergence(
 
     blocker_statuses: List[str] = []
     replay_status = section_readiness(replay_section)
+    strategy_diagnose_status = section_readiness(strategy_diagnose_section)
     canary_status = section_readiness(canary_validation_section)
     feature_parity_status = section_readiness(feature_parity_section)
     exit_capture_status = section_readiness(exit_capture_section)
 
+    if strategy_diagnose_section:
+        if strategy_diagnose_status == "FAIL":
+            blocker_statuses.append("NOT_CONVERGED_STRATEGY_RAW_EDGE_FAIL")
+        elif strategy_diagnose_status == "ACTION_REQUIRED":
+            blocker_statuses.append("NOT_CONVERGED_STRATEGY_RAW_EDGE_ACTION_REQUIRED")
+        elif strategy_diagnose_status != "PASS":
+            blocker_statuses.append("NOT_CONVERGED_STRATEGY_RAW_EDGE_NOT_VERIFIED")
     if replay_status == "FAIL" or canary_status == "FAIL":
         blocker_statuses.append("NOT_CONVERGED_REPLAY_CANARY_FAIL")
     if replay_total_fills < CANARY_MIN_REPLAY_TOTAL_FILLS:
@@ -1521,6 +1572,7 @@ def assess_trading_convergence(
         },
         "metrics": {
             "runtime_validation_class": runtime_class,
+            "strategy_diagnose_status": strategy_diagnose_status,
             "live_fills": live_fills,
             "live_realized_net_per_fill": live_net,
             "replay_total_fills": replay_total_fills,
@@ -1554,6 +1606,11 @@ def parse_args() -> argparse.Namespace:
         "--replay_validation_report",
         default="",
         help="replay_validation_report.json 路径",
+    )
+    parser.add_argument(
+        "--strategy_diagnose_report",
+        default="",
+        help="strategy_diagnose_report.json 路径",
     )
     parser.add_argument(
         "--walkforward_min_avg_sharpe",
@@ -1778,6 +1835,16 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {replay_path}"],
             }
 
+    if args.strategy_diagnose_report:
+        strategy_diagnose_path = Path(args.strategy_diagnose_report)
+        if strategy_diagnose_path.is_file():
+            sections["strategy_diagnose"] = assess_strategy_diagnose(strategy_diagnose_path)
+        else:
+            sections["strategy_diagnose"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {strategy_diagnose_path}"],
+            }
+
     inherited_sections: List[str] = []
     inherit_status = ""
     inherit_source_report = ""
@@ -1829,6 +1896,7 @@ def main() -> int:
         sections["trading_convergence"] = assess_trading_convergence(
             runtime_section_for_derived,
             replay_section_for_derived,
+            sections.get("strategy_diagnose", {}),
             feature_parity_for_derived or sections.get("feature_parity", {}),
             sections.get("exit_capture", {}),
             sections.get("canary_validation", {}),
@@ -1963,6 +2031,16 @@ def main() -> int:
             )
         ).upper()
 
+    strategy_diagnose_section = sections.get("strategy_diagnose", {})
+    strategy_diagnose_status = "NOT_EVALUATED"
+    if isinstance(strategy_diagnose_section, dict) and strategy_diagnose_section:
+        strategy_diagnose_status = str(
+            strategy_diagnose_section.get(
+                "readiness_status",
+                strategy_diagnose_section.get("status", "unknown"),
+            )
+        ).upper()
+
     feature_parity_section = sections.get("feature_parity", {})
     feature_parity_status = "NOT_EVALUATED"
     if isinstance(feature_parity_section, dict) and feature_parity_section:
@@ -2020,6 +2098,7 @@ def main() -> int:
         "trend_readiness_status": trend_readiness_status,
         "replay_readiness_status": replay_readiness_status,
         "replay_symbol_alignment_status": replay_symbol_alignment_status,
+        "strategy_diagnose_status": strategy_diagnose_status,
         "feature_parity_status": feature_parity_status,
         "exit_capture_status": exit_capture_status,
         "canary_validation_status": canary_validation_status,
@@ -2035,6 +2114,7 @@ def main() -> int:
             "runtime_validation_class": runtime_validation_class,
             "promotion_field": "promotion_readiness_status",
             "replay_field": "replay_readiness_status",
+            "strategy_diagnose_field": "strategy_diagnose_status",
             "policy_flat_warning": (
                 "PROTECTION_PASS_NO_TRADE_VALIDATION only proves safe flat behavior; "
                 "it is not evidence of trading convergence."

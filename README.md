@@ -417,6 +417,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.runtime up -d schedule
 - 每次运行：`data/reports/closed_loop/<UTC_RUN_ID>/`
 - 最新软链接：`data/reports/closed_loop/latest`
 - 总结报告：`data/reports/closed_loop/latest/closed_loop_report.json`
+- 策略原始边际诊断：`data/reports/closed_loop/latest/strategy_diagnose_report.json`
 - 固定入口（无需解析软链接）：
   - `data/reports/closed_loop/latest_closed_loop_report.json`
   - `data/reports/closed_loop/latest_runtime_assess.json`

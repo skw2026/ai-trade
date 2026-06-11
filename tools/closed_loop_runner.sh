@@ -140,6 +140,11 @@ REPLAY_VALIDATION_MIN_TOTAL_FILLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FIL
 REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:-0.0}"
 REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO="${CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO:-0.80}"
 REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-1}"
+STRATEGY_DIAGNOSE_ENABLED="${CLOSED_LOOP_STRATEGY_DIAGNOSE_ENABLED:-true}"
+STRATEGY_DIAGNOSE_MIN_SAMPLES="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_SAMPLES:-30}"
+STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS:-0.0}"
+STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO:-0.50}"
+STRATEGY_DIAGNOSE_MIN_MFE_COST_COVERAGE="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_MFE_COST_COVERAGE:-1.20}"
 S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
@@ -864,6 +869,7 @@ REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report
 REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH="${REPLAY_VALIDATION_DIR}/feature_build_records.jsonl"
 REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_build_report.json"
 REPLAY_VALIDATION_LAST_STATUS="not_run"
+STRATEGY_DIAGNOSE_REPORT_PATH="${RUN_DIR}/strategy_diagnose_report.json"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
 BASELINE_REPORT_PATH="${RUN_DIR}/baseline_report.json"
 BASELINE_SNAPSHOT_DIR="${RUN_DIR}/baseline_snapshot"
@@ -1496,6 +1502,68 @@ run_replay_validation() {
   return 0
 }
 
+write_strategy_diagnose_report() {
+  local status="$1"
+  local reason="$2"
+  mkdir -p "$(dirname "${STRATEGY_DIAGNOSE_REPORT_PATH}")"
+  cat > "${STRATEGY_DIAGNOSE_REPORT_PATH}" <<EOF
+{
+  "schema_version": "strategy_diagnose_v1",
+  "generated_at_utc": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "status": "${status}",
+  "readiness_status": "$(printf '%s' "${status}" | tr '[:lower:]' '[:upper:]')",
+  "fail_reasons": [],
+  "warn_reasons": ["${reason}"],
+  "aggregate": {},
+  "by_symbol": {},
+  "diagnostics": [],
+  "recommendations": ["strategy_diagnose not evaluated: ${reason}"]
+}
+EOF
+}
+
+run_strategy_diagnose() {
+  if ! is_true "${STRATEGY_DIAGNOSE_ENABLED}"; then
+    echo "[INFO] strategy diagnose skipped (disabled)"
+    write_strategy_diagnose_report "skipped" "disabled"
+    return 0
+  fi
+
+  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
+    echo "[WARN] strategy diagnose skipped: feature store missing (${FEATURE_STORE_PATH})"
+    write_strategy_diagnose_report "skipped" "feature_store_missing"
+    return 0
+  fi
+
+  echo "[INFO] strategy diagnose start"
+  STRATEGY_DIAGNOSE_ARGS=(
+    tools/strategy_diagnose.py
+    --output "${STRATEGY_DIAGNOSE_REPORT_PATH}"
+    --symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL:-${SYMBOL}}"
+    --feature_csv "${FEATURE_STORE_PATH}"
+    --ohlcv_csv "${CSV_PATH}"
+    --forward-bars "${PREDICT_HORIZON_BARS}"
+    --round-trip-cost-bps "${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
+    --min-samples "${STRATEGY_DIAGNOSE_MIN_SAMPLES}"
+    --min-mean-net-edge-bps "${STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS}"
+    --min-positive-net-ratio "${STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO}"
+    --min-mfe-cost-coverage "${STRATEGY_DIAGNOSE_MIN_MFE_COST_COVERAGE}"
+  )
+  if [[ -n "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}" ]]; then
+    STRATEGY_DIAGNOSE_ARGS+=(
+      --feature_csv_by_symbol "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+    )
+  fi
+  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${STRATEGY_DIAGNOSE_ARGS[@]}"; then
+    echo "[INFO] strategy diagnose done"
+    return 0
+  fi
+
+  echo "[WARN] strategy diagnose failed"
+  write_strategy_diagnose_report "fail" "strategy_diagnose_command_failed"
+  return 0
+}
+
 prepare_training_data() {
   if ! is_true "${DATA_PIPELINE_BEFORE_TRAIN}"; then
     echo "[INFO] data pipeline pre-train disabled, fallback to R0 fetch"
@@ -1788,14 +1856,27 @@ build_summary() {
   if [[ -f "${REPLAY_VALIDATION_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--replay_validation_report "${REPLAY_VALIDATION_REPORT_PATH}")
   fi
+  if [[ -f "${STRATEGY_DIAGNOSE_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--strategy_diagnose_report "${STRATEGY_DIAGNOSE_REPORT_PATH}")
+  fi
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
     SUMMARY_ARGS+=(--runtime_assess_report "${ASSESS_JSON_PATH}")
   fi
-  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${SUMMARY_ARGS[@]}"
+  local summary_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${SUMMARY_ARGS[@]}" \
+    || summary_status=$?
+  local periodic_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/build_periodic_summary.py \
     --reports-root "${OUTPUT_ROOT}" \
-    --out-dir "${SUMMARY_OUTPUT_DIR}"
+    --out-dir "${SUMMARY_OUTPUT_DIR}" \
+    || periodic_status=$?
+  if (( periodic_status != 0 )); then
+    echo "[WARN] periodic summary failed: status=${periodic_status}"
+    if (( summary_status == 0 )); then
+      summary_status="${periodic_status}"
+    fi
+  fi
   local refresh_latest="false"
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
     refresh_latest="true"
@@ -1831,11 +1912,12 @@ build_summary() {
   "runtime_assess_report": "${ASSESS_JSON_PATH}",
   "replay_validation_report": "${REPLAY_VALIDATION_REPORT_PATH}",
   "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
+  "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }
 EOF
-  if [[ "${refresh_latest}" == "true" ]]; then
+  if [[ "${refresh_latest}" == "true" && -f "${FINAL_REPORT_PATH}" ]]; then
     ln -sfn "${RUN_ID}" "${OUTPUT_ROOT}/latest"
     atomic_copy_file "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
     atomic_copy_file "${ASSESS_JSON_PATH}" "${LATEST_RUNTIME_ASSESS_PATH}"
@@ -1848,9 +1930,10 @@ EOF
     atomic_write_text_file "${LATEST_RUN_ID_PATH}" "${RUN_ID}"
     atomic_copy_file "${RUN_META_PATH}" "${LATEST_META_PATH}"
   else
-    echo "[INFO] skip latest pointer refresh: runtime assess missing (action=${ACTION})"
+    echo "[INFO] skip latest pointer refresh: runtime assess/report missing (action=${ACTION})"
   fi
   echo "[INFO] summary report done: ${FINAL_REPORT_PATH}"
+  return "${summary_status}"
 }
 
 run_gc() {
@@ -1892,6 +1975,7 @@ run_main() {
     data)
       run_data_pipeline
       run_replay_validation
+      run_strategy_diagnose
       build_summary
       ;;
     train)
@@ -1901,6 +1985,7 @@ run_main() {
       run_miner
       run_integrator
       run_replay_validation
+      run_strategy_diagnose
       run_registry
       build_summary
       restart_if_activated
@@ -1908,6 +1993,7 @@ run_main() {
     assess)
       if is_true "${ASSESS_REFRESH_REPLAY_VALIDATION}"; then
         run_replay_validation
+        run_strategy_diagnose
       fi
       verify_s5_learning_switches
       run_assess
@@ -1921,6 +2007,7 @@ run_main() {
       run_miner
       run_integrator
       run_replay_validation
+      run_strategy_diagnose
       run_registry
       verify_s5_learning_switches
       run_assess
