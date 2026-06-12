@@ -390,6 +390,14 @@ class BotApplication {
     double entry_concentration_adjust_bps_sum{0.0};
     double entry_quality_guard_penalty_bps_sum{0.0};
     double entry_edge_gap_bps_sum{0.0};
+    std::uint64_t candidate_probe_cost_gate_samples{0};
+    std::uint64_t candidate_probe_cost_gate_long_count{0};
+    std::uint64_t candidate_probe_cost_gate_short_count{0};
+    double candidate_probe_cost_gate_expected_edge_bps_sum{0.0};
+    double candidate_probe_cost_gate_required_edge_bps_sum{0.0};
+    double candidate_probe_cost_gate_edge_gap_bps_sum{0.0};
+    double candidate_probe_cost_gate_edge_gap_bps_max{0.0};
+    double candidate_probe_cost_gate_trend_ratio_sum{0.0};
     double rebalance_gap_abs_usd_sum{0.0};
     double rebalance_gap_abs_usd_max{0.0};
     double rebalance_gap_within_min_notional_abs_usd_sum{0.0};

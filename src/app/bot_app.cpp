@@ -2975,6 +2975,23 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->entry_quality_guard_penalty_bps_sum +=
       delta.entry_quality_guard_penalty_bps_sum;
   total->entry_edge_gap_bps_sum += delta.entry_edge_gap_bps_sum;
+  total->candidate_probe_cost_gate_samples +=
+      delta.candidate_probe_cost_gate_samples;
+  total->candidate_probe_cost_gate_long_count +=
+      delta.candidate_probe_cost_gate_long_count;
+  total->candidate_probe_cost_gate_short_count +=
+      delta.candidate_probe_cost_gate_short_count;
+  total->candidate_probe_cost_gate_expected_edge_bps_sum +=
+      delta.candidate_probe_cost_gate_expected_edge_bps_sum;
+  total->candidate_probe_cost_gate_required_edge_bps_sum +=
+      delta.candidate_probe_cost_gate_required_edge_bps_sum;
+  total->candidate_probe_cost_gate_edge_gap_bps_sum +=
+      delta.candidate_probe_cost_gate_edge_gap_bps_sum;
+  total->candidate_probe_cost_gate_edge_gap_bps_max =
+      std::max(total->candidate_probe_cost_gate_edge_gap_bps_max,
+               delta.candidate_probe_cost_gate_edge_gap_bps_max);
+  total->candidate_probe_cost_gate_trend_ratio_sum +=
+      delta.candidate_probe_cost_gate_trend_ratio_sum;
   total->rebalance_gap_abs_usd_sum += delta.rebalance_gap_abs_usd_sum;
   total->rebalance_gap_abs_usd_max =
       std::max(total->rebalance_gap_abs_usd_max, delta.rebalance_gap_abs_usd_max);
@@ -3764,6 +3781,40 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
           0.0, config_.execution_candidate_probe_diagnostic_max_edge_gap_bps);
       const double diagnostic_min_expected_edge_bps = std::max(
           0.0, config_.execution_candidate_probe_diagnostic_min_expected_edge_bps);
+      ++funnel_window_.candidate_probe_cost_gate_samples;
+      if (decision.intent->direction > 0) {
+        ++funnel_window_.candidate_probe_cost_gate_long_count;
+      } else if (decision.intent->direction < 0) {
+        ++funnel_window_.candidate_probe_cost_gate_short_count;
+      }
+      funnel_window_.candidate_probe_cost_gate_expected_edge_bps_sum +=
+          expected_edge_bps;
+      funnel_window_.candidate_probe_cost_gate_required_edge_bps_sum +=
+          required_edge_bps;
+      funnel_window_.candidate_probe_cost_gate_edge_gap_bps_sum +=
+          entry_edge_gap_bps;
+      funnel_window_.candidate_probe_cost_gate_edge_gap_bps_max =
+          std::max(funnel_window_.candidate_probe_cost_gate_edge_gap_bps_max,
+                   entry_edge_gap_bps);
+      funnel_window_.candidate_probe_cost_gate_trend_ratio_sum +=
+          decision.regime.trend_threshold_ratio;
+      const bool diagnostic_enabled =
+          config_.execution_candidate_probe_diagnostic_canary_enabled;
+      const std::string diagnostic_block_reason =
+          !diagnostic_enabled
+              ? "disabled"
+              : (quality_guard_override_blocked
+                     ? "quality_guard"
+                     : (expected_edge_bps + 1e-9 <
+                                diagnostic_min_expected_edge_bps
+                            ? "expected_edge_low"
+                            : (decision.regime.trend_threshold_ratio + 1e-9 <
+                                       diagnostic_min_trend_ratio
+                                   ? "trend_ratio_low"
+                                   : (entry_edge_gap_bps >
+                                              diagnostic_max_edge_gap_bps + 1e-9
+                                          ? "edge_gap_high"
+                                          : "unknown"))));
       bool memory_recovery_allowed = false;
       bool diagnostic_canary_allowed = false;
       if (ShouldAllowCandidateProbeFeeOverride(
@@ -3789,6 +3840,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 ", max_edge_gap_bps=" + std::to_string(max_edge_gap_bps) +
                 ", diagnostic_canary=" +
                 std::string(diagnostic_canary_allowed ? "true" : "false") +
+                ", direction=" + std::to_string(decision.intent->direction) +
                 ", diagnostic_min_trend_ratio=" +
                 std::to_string(diagnostic_min_trend_ratio) +
                 ", diagnostic_max_edge_gap_bps=" +
@@ -3799,6 +3851,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 std::to_string(memory_max_edge_gap_bps) +
                 ", memory_min_trend_ratio=" +
                 std::to_string(memory_min_trend_ratio) +
+                ", trend_strength=" +
+                std::to_string(decision.regime.trend_strength) +
                 ", trend_threshold_ratio=" +
                 std::to_string(decision.regime.trend_threshold_ratio));
       } else {
@@ -3806,6 +3860,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
         LogInfo("TREND_CANDIDATE_PROBE_FILTERED_FEE: symbol=" +
                 decision.intent->symbol +
                 ", client_order_id=" + decision.intent->client_order_id +
+                ", direction=" + std::to_string(decision.intent->direction) +
                 ", expected_edge_bps=" + std::to_string(expected_edge_bps) +
                 ", required_edge_bps=" + std::to_string(required_edge_bps) +
                 ", edge_gap_bps=" + std::to_string(entry_edge_gap_bps) +
@@ -3824,10 +3879,13 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
                 std::to_string(diagnostic_max_edge_gap_bps) +
                 ", diagnostic_min_expected_edge_bps=" +
                 std::to_string(diagnostic_min_expected_edge_bps) +
+                ", diagnostic_block_reason=" + diagnostic_block_reason +
                 ", memory_max_edge_gap_bps=" +
                 std::to_string(memory_max_edge_gap_bps) +
                 ", memory_min_trend_ratio=" +
                 std::to_string(memory_min_trend_ratio) +
+                ", trend_strength=" +
+                std::to_string(decision.regime.trend_strength) +
                 ", trend_threshold_ratio=" +
                 std::to_string(decision.regime.trend_threshold_ratio));
       }
@@ -5820,6 +5878,26 @@ void BotApplication::LogStatus() {
           ? funnel_window.entry_edge_gap_bps_sum /
                 static_cast<double>(funnel_window.entry_edge_samples)
           : 0.0;
+  const double candidate_probe_cost_gate_expected_edge_avg_bps =
+      funnel_window.candidate_probe_cost_gate_samples > 0
+          ? funnel_window.candidate_probe_cost_gate_expected_edge_bps_sum /
+                static_cast<double>(funnel_window.candidate_probe_cost_gate_samples)
+          : 0.0;
+  const double candidate_probe_cost_gate_required_edge_avg_bps =
+      funnel_window.candidate_probe_cost_gate_samples > 0
+          ? funnel_window.candidate_probe_cost_gate_required_edge_bps_sum /
+                static_cast<double>(funnel_window.candidate_probe_cost_gate_samples)
+          : 0.0;
+  const double candidate_probe_cost_gate_edge_gap_avg_bps =
+      funnel_window.candidate_probe_cost_gate_samples > 0
+          ? funnel_window.candidate_probe_cost_gate_edge_gap_bps_sum /
+                static_cast<double>(funnel_window.candidate_probe_cost_gate_samples)
+          : 0.0;
+  const double candidate_probe_cost_gate_trend_ratio_avg =
+      funnel_window.candidate_probe_cost_gate_samples > 0
+          ? funnel_window.candidate_probe_cost_gate_trend_ratio_sum /
+                static_cast<double>(funnel_window.candidate_probe_cost_gate_samples)
+          : 0.0;
   const double filtered_cost_ratio =
       funnel_window.entry_edge_samples > 0
           ? static_cast<double>(funnel_window.intents_filtered_fee_aware) /
@@ -6380,6 +6458,22 @@ void BotApplication::LogStatus() {
           ", same_side_rebalance_multiplier=" +
           std::to_string(config_.execution_same_side_rebalance_multiplier) +
           ", entry_edge_gap_avg_bps=" + std::to_string(entry_edge_gap_avg_bps) +
+          ", candidate_probe_cost_gate_samples=" +
+          std::to_string(funnel_window.candidate_probe_cost_gate_samples) +
+          ", candidate_probe_cost_gate_long_count=" +
+          std::to_string(funnel_window.candidate_probe_cost_gate_long_count) +
+          ", candidate_probe_cost_gate_short_count=" +
+          std::to_string(funnel_window.candidate_probe_cost_gate_short_count) +
+          ", candidate_probe_cost_gate_expected_edge_avg_bps=" +
+          std::to_string(candidate_probe_cost_gate_expected_edge_avg_bps) +
+          ", candidate_probe_cost_gate_required_edge_avg_bps=" +
+          std::to_string(candidate_probe_cost_gate_required_edge_avg_bps) +
+          ", candidate_probe_cost_gate_edge_gap_avg_bps=" +
+          std::to_string(candidate_probe_cost_gate_edge_gap_avg_bps) +
+          ", candidate_probe_cost_gate_edge_gap_max_bps=" +
+          std::to_string(funnel_window.candidate_probe_cost_gate_edge_gap_bps_max) +
+          ", candidate_probe_cost_gate_trend_ratio_avg=" +
+          std::to_string(candidate_probe_cost_gate_trend_ratio_avg) +
           ", realized_net_delta_usd=" +
           std::to_string(window_realized_net_delta_usd) +
           ", realized_net_per_fill=" +

@@ -19,6 +19,7 @@ CLOSED_LOOP_WORKFLOW = ROOT / ".github" / "workflows" / "closed-loop.yml"
 CD_WORKFLOW = ROOT / ".github" / "workflows" / "cd.yml"
 SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
 S5_CONFIG = ROOT / "config" / "bybit.demo.s5.yaml"
+REPLAY_MAKER_FIRST_CONFIG = ROOT / "config" / "bybit.replay.assess.maker_first.yaml"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -118,6 +119,21 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('fallback_symbols: ["ETHUSDT"]', config)
         self.assertIn('candidate_symbols: ["ETHUSDT"]', config)
         self.assertIn("source_symbol_not_tradable", config)
+
+    def test_s5_and_replay_diagnostic_canary_thresholds_stay_aligned(self):
+        s5 = S5_CONFIG.read_text(encoding="utf-8")
+        replay = REPLAY_MAKER_FIRST_CONFIG.read_text(encoding="utf-8")
+        for key, value in (
+            ("candidate_probe_diagnostic_min_trend_ratio", "0.64"),
+            ("candidate_probe_diagnostic_max_edge_gap_bps", "10.0"),
+            ("candidate_probe_diagnostic_min_expected_edge_bps", "0.5"),
+            ("trailing_trigger_ratio", "0.0024"),
+            ("trailing_distance_ratio", "0.0011"),
+            ("profit_protection_immediate_min_net_bps", "0.5"),
+        ):
+            needle = f"{key}: {value}"
+            self.assertIn(needle, s5)
+            self.assertIn(needle, replay)
 
     def test_dev_does_not_include_scheduler_and_watchdog(self):
         self.assertNotIn("watchdog", self.dev_services)
@@ -399,6 +415,7 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_cd_deploy_gate_uses_run_specific_artifacts(self):
         workflow = CD_WORKFLOW.read_text(encoding="utf-8")
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("CLOSED_LOOP_RUN_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
         self.assertIn("CLOSED_LOOP_RUN_ID", workflow)
@@ -408,6 +425,11 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"', script)
         self.assertIn('run_dir="${output_root%/}/${CLOSED_LOOP_RUN_ID}"', script)
         self.assertIn('run_manifest run_id mismatch', script)
+        self.assertIn("REPLAY_REPORT_PATH_VALUE", runner)
+        self.assertIn("RUNTIME_LOG_PATH_VALUE", runner)
+        self.assertIn("requested_symbol", runner)
+        self.assertIn("observed_symbol", runner)
+        self.assertIn("manifest_consistency", runner)
 
     def test_web_service_paths_are_consistent(self):
         dev_web = self.dev_services["ai-trade-web"]

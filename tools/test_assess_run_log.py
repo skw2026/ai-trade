@@ -50,6 +50,14 @@ class AssessRunLogTest(unittest.TestCase):
         rebalance_within_min_notional_ratio: float = 0.0,
         min_rebalance_notional_usd: float = 25.0,
         entry_edge_gap_avg_bps: float = 0.0,
+        candidate_probe_cost_gate_samples: int = 0,
+        candidate_probe_cost_gate_long_count: int = 0,
+        candidate_probe_cost_gate_short_count: int = 0,
+        candidate_probe_cost_gate_expected_edge_avg_bps: float = 0.0,
+        candidate_probe_cost_gate_required_edge_avg_bps: float = 0.0,
+        candidate_probe_cost_gate_edge_gap_avg_bps: float = 0.0,
+        candidate_probe_cost_gate_edge_gap_max_bps: float = 0.0,
+        candidate_probe_cost_gate_trend_ratio_avg: float = 0.0,
         realized_net_per_fill: float = 0.0,
         fee_bps_per_fill: float = 0.0,
         maker_fills: int = 0,
@@ -146,6 +154,19 @@ class AssessRunLogTest(unittest.TestCase):
             f"rebalance_within_min_notional_ratio={rebalance_within_min_notional_ratio}, "
             f"min_rebalance_notional_usd={min_rebalance_notional_usd}, "
             f"entry_edge_gap_avg_bps={entry_edge_gap_avg_bps}, realized_net_delta_usd=0.0, "
+            f"candidate_probe_cost_gate_samples={candidate_probe_cost_gate_samples}, "
+            f"candidate_probe_cost_gate_long_count={candidate_probe_cost_gate_long_count}, "
+            f"candidate_probe_cost_gate_short_count={candidate_probe_cost_gate_short_count}, "
+            "candidate_probe_cost_gate_expected_edge_avg_bps="
+            f"{candidate_probe_cost_gate_expected_edge_avg_bps}, "
+            "candidate_probe_cost_gate_required_edge_avg_bps="
+            f"{candidate_probe_cost_gate_required_edge_avg_bps}, "
+            "candidate_probe_cost_gate_edge_gap_avg_bps="
+            f"{candidate_probe_cost_gate_edge_gap_avg_bps}, "
+            "candidate_probe_cost_gate_edge_gap_max_bps="
+            f"{candidate_probe_cost_gate_edge_gap_max_bps}, "
+            "candidate_probe_cost_gate_trend_ratio_avg="
+            f"{candidate_probe_cost_gate_trend_ratio_avg}, "
             f"realized_net_per_fill={realized_net_per_fill}, fee_delta_usd=0.0, "
             f"fee_bps_per_fill={fee_bps_per_fill}, maker_fills={maker_fills}, "
             f"taker_fills={taker_fills}, unknown_fills={unknown_fills}, "
@@ -1156,6 +1177,14 @@ class AssessRunLogTest(unittest.TestCase):
                 maker_fee_bps=-0.5,
                 taker_fee_bps=9.5,
                 maker_fill_ratio=0.333333,
+                candidate_probe_cost_gate_samples=2,
+                candidate_probe_cost_gate_long_count=2,
+                candidate_probe_cost_gate_short_count=0,
+                candidate_probe_cost_gate_expected_edge_avg_bps=2.5,
+                candidate_probe_cost_gate_required_edge_avg_bps=12.0,
+                candidate_probe_cost_gate_edge_gap_avg_bps=9.5,
+                candidate_probe_cost_gate_edge_gap_max_bps=10.2,
+                candidate_probe_cost_gate_trend_ratio_avg=0.64,
             )
             + self._runtime_line(
                 40,
@@ -1174,6 +1203,14 @@ class AssessRunLogTest(unittest.TestCase):
                 maker_fee_bps=-0.5,
                 taker_fee_bps=8.8,
                 maker_fill_ratio=0.666667,
+                candidate_probe_cost_gate_samples=1,
+                candidate_probe_cost_gate_long_count=0,
+                candidate_probe_cost_gate_short_count=1,
+                candidate_probe_cost_gate_expected_edge_avg_bps=3.5,
+                candidate_probe_cost_gate_required_edge_avg_bps=11.0,
+                candidate_probe_cost_gate_edge_gap_avg_bps=7.5,
+                candidate_probe_cost_gate_edge_gap_max_bps=8.1,
+                candidate_probe_cost_gate_trend_ratio_avg=0.66,
             )
         )
         report = ASSESS.assess(runtime, ASSESS.STAGE_RULES["S3"], min_runtime_status=2)
@@ -1212,6 +1249,34 @@ class AssessRunLogTest(unittest.TestCase):
             places=6,
         )
         self.assertEqual(metrics["execution_window_liquidity_source_runtime_count"], 2)
+        self.assertEqual(metrics["trend_candidate_probe_cost_gate_sample_sum"], 3)
+        self.assertEqual(metrics["trend_candidate_probe_cost_gate_long_count_sum"], 2)
+        self.assertEqual(metrics["trend_candidate_probe_cost_gate_short_count_sum"], 1)
+        self.assertAlmostEqual(
+            metrics["trend_candidate_probe_cost_gate_expected_edge_avg_bps"],
+            3.0,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            metrics["trend_candidate_probe_cost_gate_required_edge_avg_bps"],
+            11.5,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            metrics["trend_candidate_probe_cost_gate_edge_gap_avg_bps"],
+            8.5,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            metrics["trend_candidate_probe_cost_gate_edge_gap_max_bps"],
+            10.2,
+            places=6,
+        )
+        self.assertAlmostEqual(
+            metrics["trend_candidate_probe_cost_gate_trend_ratio_avg"],
+            0.65,
+            places=6,
+        )
 
     def test_assess_extracts_entry_gate_and_near_miss_metrics(self):
         runtime = (

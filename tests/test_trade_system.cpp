@@ -2028,19 +2028,19 @@ int main() {
     ai_trade::AppConfig config;
     config.execution_candidate_probe_max_edge_gap_bps = 5.5;
     config.execution_candidate_probe_diagnostic_canary_enabled = true;
-    config.execution_candidate_probe_diagnostic_min_trend_ratio = 0.70;
-    config.execution_candidate_probe_diagnostic_max_edge_gap_bps = 9.0;
+    config.execution_candidate_probe_diagnostic_min_trend_ratio = 0.64;
+    config.execution_candidate_probe_diagnostic_max_edge_gap_bps = 10.0;
     config.execution_candidate_probe_diagnostic_min_expected_edge_bps = 0.5;
     ai_trade::BotApplication app(config);
     ai_trade::MarketDecision decision;
-    decision.regime.trend_threshold_ratio = 0.740672;
+    decision.regime.trend_threshold_ratio = 0.640672;
 
     bool memory_recovery_allowed = true;
     bool diagnostic_canary_allowed = false;
     if (!app.ShouldAllowCandidateProbeFeeOverride(
             decision,
             /*expected_edge_bps=*/6.518317,
-            /*entry_edge_gap_bps=*/8.424183,
+            /*entry_edge_gap_bps=*/9.424183,
             /*quality_guard_penalty_bps=*/0.0,
             /*has_quality_memory=*/false,
             &memory_recovery_allowed,
@@ -2062,7 +2062,7 @@ int main() {
       return 1;
     }
 
-    decision.regime.trend_threshold_ratio = 0.69;
+    decision.regime.trend_threshold_ratio = 0.63;
     if (app.ShouldAllowCandidateProbeFeeOverride(
             decision,
             /*expected_edge_bps=*/6.5,
@@ -2075,11 +2075,11 @@ int main() {
       return 1;
     }
 
-    decision.regime.trend_threshold_ratio = 0.740672;
+    decision.regime.trend_threshold_ratio = 0.640672;
     if (app.ShouldAllowCandidateProbeFeeOverride(
             decision,
             /*expected_edge_bps=*/6.5,
-            /*entry_edge_gap_bps=*/9.1,
+            /*entry_edge_gap_bps=*/10.1,
             /*quality_guard_penalty_bps=*/0.0,
             /*has_quality_memory=*/false,
             nullptr,

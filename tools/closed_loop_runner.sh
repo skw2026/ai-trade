@@ -1847,6 +1847,9 @@ write_run_manifest() {
   REPLAY_MIN_TRADABLE_SYMBOLS_VALUE="${REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS}" \
   REPLAY_REAL_MARKET_FEATURES_VALUE="${REPLAY_VALIDATION_REAL_MARKET_FEATURES}" \
   REPLAY_FEATURE_DAYS_VALUE="${REPLAY_VALIDATION_FEATURE_DAYS}" \
+  REPLAY_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  RUNTIME_LOG_PATH_VALUE="${ASSESS_LOG_PATH}" \
+  RUNTIME_RAW_LOG_PATH_VALUE="${ASSESS_RAW_LOG_PATH}" \
   WALKFORWARD_MIN_AVG_SPLIT_RETURN_VALUE="${WALKFORWARD_MIN_AVG_SPLIT_RETURN}" \
   WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN_VALUE="${WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN}" \
   WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN_VALUE="${WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN}" \
@@ -1858,6 +1861,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 
@@ -1883,7 +1887,47 @@ def csv_symbols(value: str) -> list[str]:
     return seen
 
 
+def load_json_file(path_text: str) -> dict:
+    if not path_text:
+        return {}
+    path = Path(path_text)
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def latest_runtime_symbol(*path_values: str) -> str:
+    symbol = ""
+    patterns = (
+        re.compile(r"regime_current=\{[^}]*\bsymbol=([A-Z0-9_:-]+)"),
+        re.compile(r"\bprimary_symbol=([A-Z0-9_:-]+)"),
+    )
+    for path_text in path_values:
+        if not path_text:
+            continue
+        path = Path(path_text)
+        if not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            for pattern in patterns:
+                match = pattern.search(line)
+                if match:
+                    symbol = match.group(1).strip().upper()
+    return symbol
+
+
 out = Path(os.environ["RUN_MANIFEST_JSON_OUT"])
+requested_symbol = os.environ.get("SYMBOL_VALUE", "")
+requested_replay_source_symbol = os.environ.get("REPLAY_SOURCE_SYMBOL_VALUE", "")
+requested_replay_symbol = os.environ.get("REPLAY_SYMBOL_VALUE", "")
 payload = {
     "run_id": os.environ.get("RUN_ID_VALUE", ""),
     "action": os.environ.get("ACTION_VALUE", ""),
@@ -1895,17 +1939,21 @@ payload = {
         "dirty": os.environ.get("GIT_DIRTY_VALUE", "unknown"),
     },
     "runtime": {
-        "symbol": os.environ.get("SYMBOL_VALUE", ""),
+        "symbol": requested_symbol,
+        "requested_symbol": requested_symbol,
         "config_path": os.environ.get("RUNTIME_CONFIG_PATH_VALUE", ""),
         "config_source": os.environ.get("RUNTIME_CONFIG_SOURCE_VALUE", ""),
     },
     "replay_validation": {
-        "source_symbol": os.environ.get("REPLAY_SOURCE_SYMBOL_VALUE", ""),
-        "symbol": os.environ.get("REPLAY_SYMBOL_VALUE", ""),
+        "source_symbol": requested_replay_source_symbol,
+        "symbol": requested_replay_symbol,
+        "requested_source_symbol": requested_replay_source_symbol,
+        "requested_symbol": requested_replay_symbol,
         "symbols": csv_symbols(os.environ.get("REPLAY_SYMBOLS_VALUE", "")),
         "min_tradable_symbols": os.environ.get("REPLAY_MIN_TRADABLE_SYMBOLS_VALUE", ""),
         "real_market_features": os.environ.get("REPLAY_REAL_MARKET_FEATURES_VALUE", ""),
         "feature_days": os.environ.get("REPLAY_FEATURE_DAYS_VALUE", ""),
+        "report_path": os.environ.get("REPLAY_REPORT_PATH_VALUE", ""),
     },
     "walkforward_thresholds": {
         "min_avg_split_return": os.environ.get("WALKFORWARD_MIN_AVG_SPLIT_RETURN_VALUE", ""),
@@ -1925,7 +1973,46 @@ payload = {
         "latest_pointer_must_match_run_id": True,
         "workflow_success_is_not_strategy_success": True,
     },
+    "manifest_consistency": {
+        "reconciled_from_artifacts": False,
+        "warnings": [],
+    },
 }
+
+runtime_symbol = latest_runtime_symbol(
+    os.environ.get("RUNTIME_RAW_LOG_PATH_VALUE", ""),
+    os.environ.get("RUNTIME_LOG_PATH_VALUE", ""),
+)
+if runtime_symbol:
+    payload["runtime"]["observed_symbol"] = runtime_symbol
+    payload["runtime"]["symbol"] = runtime_symbol
+    if requested_symbol and requested_symbol.upper() != runtime_symbol:
+        payload["manifest_consistency"]["warnings"].append(
+            f"runtime requested_symbol={requested_symbol} observed_symbol={runtime_symbol}"
+        )
+
+replay_report = load_json_file(os.environ.get("REPLAY_REPORT_PATH_VALUE", ""))
+if replay_report:
+    payload["manifest_consistency"]["reconciled_from_artifacts"] = True
+    source_symbol = str(replay_report.get("source_symbol") or "").strip().upper()
+    symbol = str(replay_report.get("symbol") or "").strip().upper()
+    symbols = replay_report.get("symbols")
+    if source_symbol:
+        payload["replay_validation"]["source_symbol"] = source_symbol
+        if requested_replay_source_symbol and requested_replay_source_symbol.upper() != source_symbol:
+            payload["manifest_consistency"]["warnings"].append(
+                "replay requested_source_symbol="
+                f"{requested_replay_source_symbol} effective_source_symbol={source_symbol}"
+            )
+    if symbol:
+        payload["replay_validation"]["symbol"] = symbol
+        if requested_replay_symbol and requested_replay_symbol.upper() != symbol:
+            payload["manifest_consistency"]["warnings"].append(
+                f"replay requested_symbol={requested_replay_symbol} effective_symbol={symbol}"
+            )
+    if isinstance(symbols, list):
+        payload["replay_validation"]["symbols"] = csv_symbols(",".join(str(item) for item in symbols))
+
 for name, path_text in payload["config_paths"].items():
     payload["config_hashes"][name] = file_hash(path_text)
 out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

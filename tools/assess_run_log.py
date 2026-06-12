@@ -1729,6 +1729,14 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
     filtered_cost_near_miss_ratios: list[float] = []
     passed_cost_near_miss_ratios: list[float] = []
     entry_edge_gap_avg_bps_values: list[float] = []
+    candidate_probe_cost_gate_samples: list[float] = []
+    candidate_probe_cost_gate_expected_edge_avg_bps: list[float] = []
+    candidate_probe_cost_gate_required_edge_avg_bps: list[float] = []
+    candidate_probe_cost_gate_edge_gap_avg_bps: list[float] = []
+    candidate_probe_cost_gate_edge_gap_max_bps: list[float] = []
+    candidate_probe_cost_gate_trend_ratio_avg: list[float] = []
+    candidate_probe_cost_gate_long_counts: list[float] = []
+    candidate_probe_cost_gate_short_counts: list[float] = []
     realized_net_per_fills: list[float] = []
     fee_bps_per_fills: list[float] = []
     maker_fills: list[float] = []
@@ -1757,6 +1765,30 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
         )
         entry_edge_gap_avg_bps_values.append(
             map_float(values, "entry_edge_gap_avg_bps", 0.0)
+        )
+        candidate_probe_cost_gate_samples.append(
+            map_float(values, "candidate_probe_cost_gate_samples", 0.0)
+        )
+        candidate_probe_cost_gate_expected_edge_avg_bps.append(
+            map_float(values, "candidate_probe_cost_gate_expected_edge_avg_bps", 0.0)
+        )
+        candidate_probe_cost_gate_required_edge_avg_bps.append(
+            map_float(values, "candidate_probe_cost_gate_required_edge_avg_bps", 0.0)
+        )
+        candidate_probe_cost_gate_edge_gap_avg_bps.append(
+            map_float(values, "candidate_probe_cost_gate_edge_gap_avg_bps", 0.0)
+        )
+        candidate_probe_cost_gate_edge_gap_max_bps.append(
+            map_float(values, "candidate_probe_cost_gate_edge_gap_max_bps", 0.0)
+        )
+        candidate_probe_cost_gate_trend_ratio_avg.append(
+            map_float(values, "candidate_probe_cost_gate_trend_ratio_avg", 0.0)
+        )
+        candidate_probe_cost_gate_long_counts.append(
+            map_float(values, "candidate_probe_cost_gate_long_count", 0.0)
+        )
+        candidate_probe_cost_gate_short_counts.append(
+            map_float(values, "candidate_probe_cost_gate_short_count", 0.0)
         )
         realized_net_per_fills.append(map_float(values, "realized_net_per_fill", 0.0))
         fee_bps_per_fills.append(map_float(values, "fee_bps_per_fill", 0.0))
@@ -1806,6 +1838,14 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
             "passed_cost_near_miss_ratio_avg": 0.0,
             "passed_cost_near_miss_ratio_latest": 0.0,
             "entry_edge_gap_avg_bps_avg": 0.0,
+            "candidate_probe_cost_gate_sample_sum": 0.0,
+            "candidate_probe_cost_gate_expected_edge_avg_bps": 0.0,
+            "candidate_probe_cost_gate_required_edge_avg_bps": 0.0,
+            "candidate_probe_cost_gate_edge_gap_avg_bps": 0.0,
+            "candidate_probe_cost_gate_edge_gap_max_bps": 0.0,
+            "candidate_probe_cost_gate_trend_ratio_avg": 0.0,
+            "candidate_probe_cost_gate_long_count_sum": 0.0,
+            "candidate_probe_cost_gate_short_count_sum": 0.0,
             "realized_net_per_fill_avg": 0.0,
             "fee_bps_per_fill_avg": 0.0,
             "maker_fills_avg": 0.0,
@@ -1834,6 +1874,32 @@ def extract_execution_window_series(text: str) -> Dict[str, float]:
         "passed_cost_near_miss_ratio_latest": passed_cost_near_miss_ratios[-1],
         "entry_edge_gap_avg_bps_avg": sum(entry_edge_gap_avg_bps_values)
         / runtime_count,
+        "candidate_probe_cost_gate_sample_sum": sum(candidate_probe_cost_gate_samples),
+        "candidate_probe_cost_gate_expected_edge_avg_bps": sum(
+            candidate_probe_cost_gate_expected_edge_avg_bps
+        )
+        / runtime_count,
+        "candidate_probe_cost_gate_required_edge_avg_bps": sum(
+            candidate_probe_cost_gate_required_edge_avg_bps
+        )
+        / runtime_count,
+        "candidate_probe_cost_gate_edge_gap_avg_bps": sum(
+            candidate_probe_cost_gate_edge_gap_avg_bps
+        )
+        / runtime_count,
+        "candidate_probe_cost_gate_edge_gap_max_bps": max(
+            candidate_probe_cost_gate_edge_gap_max_bps
+        ),
+        "candidate_probe_cost_gate_trend_ratio_avg": sum(
+            candidate_probe_cost_gate_trend_ratio_avg
+        )
+        / runtime_count,
+        "candidate_probe_cost_gate_long_count_sum": sum(
+            candidate_probe_cost_gate_long_counts
+        ),
+        "candidate_probe_cost_gate_short_count_sum": sum(
+            candidate_probe_cost_gate_short_counts
+        ),
         "realized_net_per_fill_avg": sum(realized_net_per_fills) / runtime_count,
         "fee_bps_per_fill_avg": sum(fee_bps_per_fills) / runtime_count,
         "maker_fills_avg": sum(maker_fills) / runtime_count,
@@ -2682,6 +2748,30 @@ def assess(
             "passed_cost_near_miss_ratio_avg"
         ],
         "entry_edge_gap_avg_bps": execution_window["entry_edge_gap_avg_bps_avg"],
+        "trend_candidate_probe_cost_gate_sample_sum": int(
+            execution_window["candidate_probe_cost_gate_sample_sum"]
+        ),
+        "trend_candidate_probe_cost_gate_expected_edge_avg_bps": execution_window[
+            "candidate_probe_cost_gate_expected_edge_avg_bps"
+        ],
+        "trend_candidate_probe_cost_gate_required_edge_avg_bps": execution_window[
+            "candidate_probe_cost_gate_required_edge_avg_bps"
+        ],
+        "trend_candidate_probe_cost_gate_edge_gap_avg_bps": execution_window[
+            "candidate_probe_cost_gate_edge_gap_avg_bps"
+        ],
+        "trend_candidate_probe_cost_gate_edge_gap_max_bps": execution_window[
+            "candidate_probe_cost_gate_edge_gap_max_bps"
+        ],
+        "trend_candidate_probe_cost_gate_trend_ratio_avg": execution_window[
+            "candidate_probe_cost_gate_trend_ratio_avg"
+        ],
+        "trend_candidate_probe_cost_gate_long_count_sum": int(
+            execution_window["candidate_probe_cost_gate_long_count_sum"]
+        ),
+        "trend_candidate_probe_cost_gate_short_count_sum": int(
+            execution_window["candidate_probe_cost_gate_short_count_sum"]
+        ),
         "realized_net_per_fill": execution_window["realized_net_per_fill_avg"],
         "fee_bps_per_fill": execution_window["fee_bps_per_fill_avg"],
         "execution_window_maker_fills_avg": execution_window["maker_fills_avg"],
@@ -3278,7 +3368,13 @@ def assess(
             "window_limit_count="
             f"{metrics['trend_candidate_probe_skip_window_limit_count']}, "
             "probe_enqueued_count="
-            f"{metrics['trend_candidate_probe_enqueued_count']}"
+            f"{metrics['trend_candidate_probe_enqueued_count']}, "
+            "cost_gate_edge_gap_avg_bps="
+            f"{metrics['trend_candidate_probe_cost_gate_edge_gap_avg_bps']:.4f}, "
+            "cost_gate_edge_gap_max_bps="
+            f"{metrics['trend_candidate_probe_cost_gate_edge_gap_max_bps']:.4f}, "
+            "cost_gate_trend_ratio_avg="
+            f"{metrics['trend_candidate_probe_cost_gate_trend_ratio_avg']:.4f}"
         )
     if flat_start_rebase_fallback:
         warn_reasons.append(
@@ -3927,7 +4023,13 @@ def assess(
                             "filtered_fee_count="
                             f"{metrics['trend_candidate_probe_filtered_fee_count']}, "
                             "filtered_fee_window_pressure="
-                            f"{filtered_window_pressure}"
+                            f"{filtered_window_pressure}, "
+                            "cost_gate_edge_gap_avg_bps="
+                            f"{metrics['trend_candidate_probe_cost_gate_edge_gap_avg_bps']:.4f}, "
+                            "cost_gate_edge_gap_max_bps="
+                            f"{metrics['trend_candidate_probe_cost_gate_edge_gap_max_bps']:.4f}, "
+                            "cost_gate_trend_ratio_avg="
+                            f"{metrics['trend_candidate_probe_cost_gate_trend_ratio_avg']:.4f}"
                         )
                     elif filtered_window_pressure > 0 and not any(
                         "filtered_fee_window_pressure" in item
@@ -3943,7 +4045,13 @@ def assess(
                             "window_limit_count="
                             f"{metrics['trend_candidate_probe_skip_window_limit_count']}, "
                             "probe_enqueued_count="
-                            f"{metrics['trend_candidate_probe_enqueued_count']}"
+                            f"{metrics['trend_candidate_probe_enqueued_count']}, "
+                            "cost_gate_edge_gap_avg_bps="
+                            f"{metrics['trend_candidate_probe_cost_gate_edge_gap_avg_bps']:.4f}, "
+                            "cost_gate_edge_gap_max_bps="
+                            f"{metrics['trend_candidate_probe_cost_gate_edge_gap_max_bps']:.4f}, "
+                            "cost_gate_trend_ratio_avg="
+                            f"{metrics['trend_candidate_probe_cost_gate_trend_ratio_avg']:.4f}"
                         )
                     elif metrics["trend_candidate_probe_fill_count"] <= 0:
                         warn_reasons.append(
