@@ -833,6 +833,73 @@ def assess_strategy_diagnose(path: Path) -> Dict[str, Any]:
     }
 
 
+def replay_activation_uses_deployable_optimizer_candidate(
+    replay_section: Dict[str, Any],
+) -> bool:
+    if not isinstance(replay_section, dict):
+        return False
+    activation_gate = replay_section.get("activation_gate", {})
+    if not isinstance(activation_gate, dict):
+        return False
+    selected_candidate = activation_gate.get("selected_candidate")
+    if not isinstance(selected_candidate, dict):
+        return False
+    return (
+        str(activation_gate.get("basis", "")).strip()
+        == "execution_optimizer.best_deployable_candidate"
+        and str(selected_candidate.get("status", "")).strip().lower() == "pass"
+        and not bool(selected_candidate.get("diagnostic_only"))
+    )
+
+
+def downgrade_strategy_raw_edge_if_optimizer_candidate_passed(
+    strategy_section: Dict[str, Any],
+    replay_section: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(strategy_section, dict) or not strategy_section:
+        return strategy_section
+    if strategy_section.get("status") != "fail":
+        return strategy_section
+    if not replay_activation_uses_deployable_optimizer_candidate(replay_section):
+        return strategy_section
+
+    diagnostics = strategy_section.get("diagnostics", [])
+    codes = {
+        str(item.get("code", "")).strip()
+        for item in diagnostics
+        if isinstance(item, dict)
+    }
+    suppressible_codes = {
+        "confirmed_trend_raw_edge_non_positive",
+        "confirmed_trend_positive_ratio_low",
+    }
+    if not codes or not codes.issubset(suppressible_codes):
+        return strategy_section
+
+    fail_reasons = [
+        str(item)
+        for item in strategy_section.get("fail_reasons", [])
+        if str(item).strip()
+    ]
+    downgraded = dict(strategy_section)
+    existing_warnings = [
+        str(item)
+        for item in downgraded.get("warn_reasons", [])
+        if str(item).strip()
+    ]
+    warning = (
+        "strategy_raw_edge_suppressed_by_optimizer_candidate: "
+        + "; ".join(fail_reasons or sorted(codes))
+    )
+    downgraded["status"] = "pass"
+    downgraded["readiness_status"] = "PASS_WITH_ACTIONS"
+    downgraded["fail_reasons"] = []
+    downgraded["warn_reasons"] = list(dict.fromkeys(existing_warnings + [warning]))
+    downgraded["suppressed_fail_reasons"] = fail_reasons
+    downgraded["suppression_basis"] = "execution_optimizer.best_deployable_candidate"
+    return downgraded
+
+
 def unique_symbols(raw_value: Any) -> List[str]:
     if raw_value is None:
         return []
@@ -1564,7 +1631,7 @@ def assess_trading_convergence(
             blocker_statuses.append("NOT_CONVERGED_STRATEGY_RAW_EDGE_FAIL")
         elif strategy_diagnose_status == "ACTION_REQUIRED":
             blocker_statuses.append("NOT_CONVERGED_STRATEGY_RAW_EDGE_ACTION_REQUIRED")
-        elif strategy_diagnose_status != "PASS":
+        elif strategy_diagnose_status not in {"PASS", "PASS_WITH_ACTIONS"}:
             blocker_statuses.append("NOT_CONVERGED_STRATEGY_RAW_EDGE_NOT_VERIFIED")
     if replay_status == "FAIL" or canary_status == "FAIL":
         blocker_statuses.append("NOT_CONVERGED_REPLAY_CANARY_FAIL")
@@ -2147,6 +2214,13 @@ def main() -> int:
         sections["canary_validation"] = assess_canary_validation(
             replay_section_for_derived,
             runtime_for_derived,
+        )
+    if sections.get("strategy_diagnose") and replay_section_for_derived:
+        sections["strategy_diagnose"] = (
+            downgrade_strategy_raw_edge_if_optimizer_candidate_passed(
+                sections.get("strategy_diagnose", {}),
+                replay_section_for_derived,
+            )
         )
     if runtime_section_for_derived or replay_section_for_derived:
         sections["trading_convergence"] = assess_trading_convergence(

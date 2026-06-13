@@ -506,6 +506,130 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 payload["sections"]["trading_convergence"]["blockers"],
             )
 
+    def test_strategy_raw_edge_can_be_suppressed_by_deployable_optimizer_candidate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+            strategy_report = root / "strategy_diagnose_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "runtime_validation_mode": "EXECUTION_ACTIVE",
+                        "execution_status": "PASS",
+                        "metrics": {
+                            "runtime_status_count": 80,
+                            "funnel_fills_runtime_count": 2,
+                            "realized_net_per_fill": 0.01,
+                        },
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "symbol": "SOLUSDT",
+                        "symbols": ["SOLUSDT"],
+                        "activation_gate": {
+                            "basis": "execution_optimizer.best_deployable_candidate",
+                            "status": "pass_with_actions",
+                            "fail_reasons": [],
+                            "selected_candidate": {
+                                "name": "strong_liquid_q50",
+                                "status": "pass",
+                                "diagnostic_only": False,
+                                "aggregate_summary": {
+                                    "total_fills": 34,
+                                    "median_realized_net_per_fill_with_fills": 0.003,
+                                    "positive_filled_segment_ratio": 0.61,
+                                },
+                            },
+                        },
+                        "aggregate_summary": {
+                            "total_fills": 24,
+                            "median_realized_net_per_fill_with_fills": 0.01,
+                            "positive_filled_segment_ratio": 0.75,
+                        },
+                        "aggregate_validation": {
+                            "status": "pass",
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            strategy_report.write_text(
+                json.dumps(
+                    {
+                        "status": "fail",
+                        "readiness_status": "FAIL",
+                        "fail_reasons": [
+                            "confirmed_trend mean_net_forward_bps -12.0 <= min_mean_net_edge_bps=0.0",
+                            "confirmed_trend positive_net_ratio 0.35 < 0.500000",
+                        ],
+                        "aggregate": {
+                            "confirmed_trend": {
+                                "sample_count": 100,
+                                "mean_net_forward_bps": -12.0,
+                                "positive_net_ratio": 0.35,
+                            }
+                        },
+                        "diagnostics": [
+                            {"code": "confirmed_trend_raw_edge_non_positive"},
+                            {"code": "confirmed_trend_positive_ratio_low"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                    "--strategy_diagnose_report",
+                    str(strategy_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            strategy = payload["sections"]["strategy_diagnose"]
+            self.assertEqual(strategy["status"], "pass")
+            self.assertEqual(strategy["readiness_status"], "PASS_WITH_ACTIONS")
+            self.assertEqual(strategy["suppression_basis"], "execution_optimizer.best_deployable_candidate")
+            self.assertEqual(strategy["fail_reasons"], [])
+            self.assertTrue(
+                any(
+                    "strategy_raw_edge_suppressed_by_optimizer_candidate" in item
+                    for item in strategy["warn_reasons"]
+                )
+            )
+            self.assertNotIn(
+                "NOT_CONVERGED_STRATEGY_RAW_EDGE_FAIL",
+                payload["sections"]["trading_convergence"]["blockers"],
+            )
+            self.assertNotIn(
+                "NOT_CONVERGED_STRATEGY_RAW_EDGE_NOT_VERIFIED",
+                payload["sections"]["trading_convergence"]["blockers"],
+            )
+
     def test_walkforward_low_activity_is_fail(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
