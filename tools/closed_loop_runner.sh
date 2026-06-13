@@ -989,6 +989,7 @@ FEATURE_STORE_PATH="${RUN_DIR}/feature_store_5m.csv"
 REPLAY_VALIDATION_DIR="${RUN_DIR}/replay_validation"
 REPLAY_VALIDATION_FEATURE_DIR="${REPLAY_VALIDATION_DIR}/features"
 REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report.json"
+REPLAY_VALIDATION_COMMAND_LOG_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_command.log"
 REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH="${REPLAY_VALIDATION_DIR}/feature_build_records.jsonl"
 REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_build_report.json"
 REPLAY_VALIDATION_LAST_STATUS="not_run"
@@ -1502,61 +1503,138 @@ EOF
 }
 
 write_replay_validation_fail_report() {
+  local exit_code="${1:-1}"
+  local command_log_path="${2:-${REPLAY_VALIDATION_COMMAND_LOG_PATH}}"
+  local replay_command_json="${3:-[]}"
   mkdir -p "${REPLAY_VALIDATION_DIR}"
-  cat > "${REPLAY_VALIDATION_REPORT_PATH}" <<EOF
-{
-  "target_bucket": "${REPLAY_VALIDATION_TARGET_BUCKET}",
-  "source_symbol": "${REPLAY_VALIDATION_SOURCE_SYMBOL}",
-  "symbol": "${REPLAY_VALIDATION_SYMBOL}",
-  "symbols": ${REPLAY_VALIDATION_SYMBOLS_JSON},
-  "status": "fail",
-  "validation_skipped": true,
-  "skip_reason": "command_failed",
-  "fail_reasons": ["replay validation command failed"],
-  "warnings": [],
-  "selection": {
-    "selection_mode": "not_run",
-    "eligible_segment_count": 0,
-    "requested_max_segments": ${REPLAY_VALIDATION_MAX_SEGMENTS},
-    "corpus_manifest": "${REPLAY_VALIDATION_CORPUS_PATH}",
-    "corpus_loaded": false,
-    "corpus_written": false,
-    "corpus_refreshed": false,
-    "corpus_resolved_segment_count": 0,
-    "segments_ran": 0,
-    "stopped_early": false,
-    "stop_reason": "command_failed",
-    "coverage_targets_met": false
-  },
-  "aggregate_summary": {
-    "segment_count": 0,
-    "execution_active_runs": 0,
-    "execution_pass_runs": 0,
-    "protection_pass_runs": 0,
-    "trend_present_runs": 0,
-    "pass_with_actions_runs": 0,
-    "failed_runs": 0,
-    "total_execution_activity_count": 0,
-    "total_fills": 0,
-    "mean_realized_net_per_fill": null,
-    "median_realized_net_per_fill": null,
-    "mean_filtered_cost_ratio_avg": null,
-    "max_filtered_cost_ratio_avg": null
-  },
-  "aggregate_validation": {
+  REPLAY_VALIDATION_REPORT_OUT="${REPLAY_VALIDATION_REPORT_PATH}" \
+  REPLAY_VALIDATION_TARGET_BUCKET_VALUE="${REPLAY_VALIDATION_TARGET_BUCKET}" \
+  REPLAY_VALIDATION_SOURCE_SYMBOL_VALUE="${REPLAY_VALIDATION_SOURCE_SYMBOL}" \
+  REPLAY_VALIDATION_SYMBOL_VALUE="${REPLAY_VALIDATION_SYMBOL}" \
+  REPLAY_VALIDATION_SYMBOLS_JSON_VALUE="${REPLAY_VALIDATION_SYMBOLS_JSON}" \
+  REPLAY_VALIDATION_MAX_SEGMENTS_VALUE="${REPLAY_VALIDATION_MAX_SEGMENTS}" \
+  REPLAY_VALIDATION_CORPUS_PATH_VALUE="${REPLAY_VALIDATION_CORPUS_PATH}" \
+  REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS_VALUE="${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS}" \
+  REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS_VALUE="${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS}" \
+  REPLAY_VALIDATION_MIN_TOTAL_FILLS_VALUE="${REPLAY_VALIDATION_MIN_TOTAL_FILLS}" \
+  REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL_VALUE="${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL}" \
+  REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO_VALUE="${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}" \
+  REPLAY_VALIDATION_COMMAND_EXIT_CODE_VALUE="${exit_code}" \
+  REPLAY_VALIDATION_COMMAND_LOG_PATH_VALUE="${command_log_path}" \
+  REPLAY_VALIDATION_COMMAND_JSON_VALUE="${replay_command_json}" \
+  python3 - <<'PY'
+import datetime as dt
+import json
+import os
+from pathlib import Path
+
+
+def as_int(value: str, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def as_float(value: str, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_json_array(raw: str) -> list:
+    try:
+        value = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return []
+    return value if isinstance(value, list) else []
+
+
+def tail_lines(path_text: str, limit: int = 200) -> list[str]:
+    path = Path(path_text)
+    if not path.is_file():
+        return []
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]
+    except OSError:
+        return []
+
+
+out = Path(os.environ["REPLAY_VALIDATION_REPORT_OUT"])
+command = parse_json_array(os.environ.get("REPLAY_VALIDATION_COMMAND_JSON_VALUE", "[]"))
+command_log_path = os.environ.get("REPLAY_VALIDATION_COMMAND_LOG_PATH_VALUE", "")
+exit_code = as_int(os.environ.get("REPLAY_VALIDATION_COMMAND_EXIT_CODE_VALUE", "1"), 1)
+command_tail = tail_lines(command_log_path)
+failure_reason = f"replay validation command failed: exit_code={exit_code}"
+payload = {
+    "target_bucket": os.environ.get("REPLAY_VALIDATION_TARGET_BUCKET_VALUE", ""),
+    "source_symbol": os.environ.get("REPLAY_VALIDATION_SOURCE_SYMBOL_VALUE", ""),
+    "symbol": os.environ.get("REPLAY_VALIDATION_SYMBOL_VALUE", ""),
+    "symbols": parse_json_array(os.environ.get("REPLAY_VALIDATION_SYMBOLS_JSON_VALUE", "[]")),
     "status": "fail",
-    "fail_reasons": ["replay validation command failed"],
-    "warn_reasons": [],
-    "thresholds": {
-      "min_execution_active_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS},
-      "min_execution_pass_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS},
-      "min_total_fills": ${REPLAY_VALIDATION_MIN_TOTAL_FILLS},
-      "min_mean_realized_net_per_fill": ${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL},
-      "warn_mean_filtered_cost_ratio": ${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}
-    }
-  }
+    "validation_skipped": True,
+    "skip_reason": "command_failed",
+    "fail_reasons": [failure_reason],
+    "warnings": [
+        "replay validation command failed; inspect failure_diagnostics.command_output_tail"
+    ],
+    "failure_diagnostics": {
+        "schema_version": "replay_command_failure_v1",
+        "generated_at_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "failure_stage": "run_replay_validation_command",
+        "exit_code": exit_code,
+        "runner": "compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research",
+        "command": command,
+        "command_text": " ".join(command),
+        "command_log_path": command_log_path,
+        "command_output_tail_line_count": len(command_tail),
+        "command_output_tail": command_tail,
+    },
+    "selection": {
+        "selection_mode": "not_run",
+        "eligible_segment_count": 0,
+        "requested_max_segments": as_int(os.environ.get("REPLAY_VALIDATION_MAX_SEGMENTS_VALUE", "0")),
+        "corpus_manifest": os.environ.get("REPLAY_VALIDATION_CORPUS_PATH_VALUE", ""),
+        "corpus_loaded": False,
+        "corpus_written": False,
+        "corpus_refreshed": False,
+        "corpus_resolved_segment_count": 0,
+        "segments_ran": 0,
+        "stopped_early": False,
+        "stop_reason": "command_failed",
+        "coverage_targets_met": False,
+    },
+    "aggregate_summary": {
+        "segment_count": 0,
+        "execution_active_runs": 0,
+        "execution_pass_runs": 0,
+        "protection_pass_runs": 0,
+        "trend_present_runs": 0,
+        "pass_with_actions_runs": 0,
+        "failed_runs": 0,
+        "total_execution_activity_count": 0,
+        "total_fills": 0,
+        "mean_realized_net_per_fill": None,
+        "median_realized_net_per_fill": None,
+        "mean_filtered_cost_ratio_avg": None,
+        "max_filtered_cost_ratio_avg": None,
+    },
+    "aggregate_validation": {
+        "status": "fail",
+        "fail_reasons": [failure_reason],
+        "warn_reasons": [],
+        "thresholds": {
+            "min_execution_active_runs": as_int(os.environ.get("REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS_VALUE", "0")),
+            "min_execution_pass_runs": as_int(os.environ.get("REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS_VALUE", "0")),
+            "min_total_fills": as_int(os.environ.get("REPLAY_VALIDATION_MIN_TOTAL_FILLS_VALUE", "0")),
+            "min_mean_realized_net_per_fill": as_float(os.environ.get("REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL_VALUE", "0")),
+            "warn_mean_filtered_cost_ratio": as_float(os.environ.get("REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO_VALUE", "0")),
+        },
+    },
 }
-EOF
+out.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
 }
 
 run_replay_validation() {
@@ -1611,15 +1689,30 @@ run_replay_validation() {
   if is_true "${replay_refresh_corpus}"; then
     REPLAY_ARGS+=(--refresh_corpus_manifest)
   fi
-  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${REPLAY_ARGS[@]}"; then
+  local replay_command_json
+  replay_command_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:], ensure_ascii=False))' "${REPLAY_ARGS[@]}")"
+  local replay_exit_code=0
+  rm -f "${REPLAY_VALIDATION_COMMAND_LOG_PATH}"
+  set +e
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    "${REPLAY_ARGS[@]}" >"${REPLAY_VALIDATION_COMMAND_LOG_PATH}" 2>&1
+  replay_exit_code=$?
+  set -e
+  if [[ -f "${REPLAY_VALIDATION_COMMAND_LOG_PATH}" ]]; then
+    cat "${REPLAY_VALIDATION_COMMAND_LOG_PATH}"
+  fi
+  if (( replay_exit_code == 0 )); then
     attach_replay_validation_feature_build_report
     REPLAY_VALIDATION_LAST_STATUS="pass"
     echo "[INFO] replay validation done"
     return 0
   fi
 
-  echo "[WARN] replay validation failed"
-  write_replay_validation_fail_report
+  echo "[WARN] replay validation failed: exit_code=${replay_exit_code}, log=${REPLAY_VALIDATION_COMMAND_LOG_PATH}"
+  write_replay_validation_fail_report \
+    "${replay_exit_code}" \
+    "${REPLAY_VALIDATION_COMMAND_LOG_PATH}" \
+    "${replay_command_json}"
   attach_replay_validation_feature_build_report
   REPLAY_VALIDATION_LAST_STATUS="fail"
   return 0
@@ -2121,6 +2214,7 @@ build_summary() {
   "runtime_log_filter_meta": "${ASSESS_LOG_FILTER_META_PATH}",
   "runtime_assess_report": "${ASSESS_JSON_PATH}",
   "replay_validation_report": "${REPLAY_VALIDATION_REPORT_PATH}",
+  "replay_validation_command_log": "${REPLAY_VALIDATION_COMMAND_LOG_PATH}",
   "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
   "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",

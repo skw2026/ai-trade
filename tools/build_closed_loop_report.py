@@ -768,6 +768,7 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "exit_capture_by_symbol": payload.get("exit_capture_by_symbol", {}),
         "execution_cost_plan": execution_cost_plan,
         "execution_optimizer": execution_optimizer,
+        "failure_diagnostics": payload.get("failure_diagnostics", {}),
     }
 
 
@@ -1588,6 +1589,206 @@ def assess_trading_convergence(
     }
 
 
+def section_status(section: Dict[str, Any]) -> str:
+    if not isinstance(section, dict) or not section:
+        return "NOT_EVALUATED"
+    readiness = section_readiness(section)
+    if readiness in {"FAIL", "ACTION_REQUIRED"}:
+        return readiness
+    return str(section.get("status", readiness or "unknown")).strip().upper()
+
+
+def section_fail_reasons(section: Dict[str, Any]) -> List[str]:
+    if not isinstance(section, dict):
+        return []
+    return [str(item) for item in section.get("fail_reasons", []) if str(item).strip()]
+
+
+def section_warn_reasons(section: Dict[str, Any]) -> List[str]:
+    if not isinstance(section, dict):
+        return []
+    return [str(item) for item in section.get("warn_reasons", []) if str(item).strip()]
+
+
+def layer_from_sections(
+    *,
+    name: str,
+    section_names: List[str],
+    sections: Dict[str, Dict[str, Any]],
+    next_action: str,
+) -> Dict[str, Any]:
+    present = [item for item in section_names if isinstance(sections.get(item), dict) and sections.get(item)]
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    statuses: Dict[str, str] = {}
+    for section_name in section_names:
+        section = sections.get(section_name, {})
+        statuses[section_name] = section_status(section)
+        fail_reasons.extend(
+            f"{section_name}: {item}" for item in section_fail_reasons(section)
+        )
+        warn_reasons.extend(
+            f"{section_name}: {item}" for item in section_warn_reasons(section)
+        )
+    status_fail_reasons = [
+        f"{section_name}: status={status}"
+        for section_name, status in statuses.items()
+        if status in {"FAIL", "ACTION_REQUIRED"}
+    ]
+    for reason in status_fail_reasons:
+        if reason not in fail_reasons:
+            fail_reasons.append(reason)
+    if fail_reasons:
+        status = "FAIL"
+    elif present:
+        status = "PASS_WITH_ACTIONS" if warn_reasons else "PASS"
+    else:
+        status = "NOT_EVALUATED"
+    return {
+        "name": name,
+        "status": status,
+        "section_statuses": statuses,
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "next_action": next_action,
+    }
+
+
+def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    runtime_section = sections.get("runtime", {})
+    replay_section = sections.get("replay_validation", {})
+    strategy_section = sections.get("strategy_diagnose", {})
+    trading_section = sections.get("trading_convergence", {})
+    failure_diagnostics = (
+        replay_section.get("failure_diagnostics", {})
+        if isinstance(replay_section, dict)
+        else {}
+    )
+    if not isinstance(failure_diagnostics, dict):
+        failure_diagnostics = {}
+
+    layers = [
+        layer_from_sections(
+            name="artifact_contract",
+            section_names=["run_manifest"],
+            sections=sections,
+            next_action="fix_run_manifest_or_artifact_contract_before_interpreting_strategy",
+        ),
+        layer_from_sections(
+            name="data_feature_quality",
+            section_names=["data_pipeline", "data_quality", "feature_parity"],
+            sections=sections,
+            next_action="fix_data_pipeline_data_quality_or_live_replay_feature_parity",
+        ),
+        layer_from_sections(
+            name="model_walkforward",
+            section_names=["miner", "integrator", "walkforward", "trend_validation"],
+            sections=sections,
+            next_action="fix_training_or_walkforward_before_live_replay_tuning",
+        ),
+        layer_from_sections(
+            name="strategy_raw_edge",
+            section_names=["strategy_diagnose"],
+            sections=sections,
+            next_action="redesign_alpha_label_or_exit_objective_before_widening_live_gates",
+        ),
+        layer_from_sections(
+            name="replay_execution",
+            section_names=["replay_validation", "canary_validation", "exit_capture"],
+            sections=sections,
+            next_action="fix_replay_validation_or_execution_economics_before_waiting_for_live",
+        ),
+        layer_from_sections(
+            name="live_canary",
+            section_names=["runtime", "trading_convergence"],
+            sections=sections,
+            next_action="run_live_canary_only_after_replay_and_strategy_edge_are_verified",
+        ),
+    ]
+
+    runtime_metrics = runtime_section.get("metrics", {}) if isinstance(runtime_section, dict) else {}
+    if not isinstance(runtime_metrics, dict):
+        runtime_metrics = {}
+    live_fills = max(
+        as_int(runtime_metrics.get("funnel_fills_runtime_count")),
+        as_int(runtime_metrics.get("trend_candidate_probe_fill_count")),
+    )
+    runtime_class = classify_runtime_validation(runtime_section)
+    replay_skip_reason = ""
+    if isinstance(replay_section, dict):
+        selection = replay_section.get("selection", {})
+        if not isinstance(selection, dict):
+            selection = {}
+        replay_skip_reason = str(
+            replay_section.get("skip_reason") or selection.get("stop_reason") or ""
+        ).strip()
+    trading_blockers = (
+        trading_section.get("blockers", [])
+        if isinstance(trading_section, dict)
+        else []
+    )
+    if not isinstance(trading_blockers, list):
+        trading_blockers = []
+
+    first_blocking_layer = ""
+    primary_next_action = "review_closed_loop_report"
+    primary_reason = ""
+    for layer in layers:
+        if layer["status"] == "FAIL":
+            first_blocking_layer = str(layer["name"])
+            primary_next_action = str(layer["next_action"])
+            primary_reason = layer["fail_reasons"][0] if layer["fail_reasons"] else ""
+            break
+
+    if replay_skip_reason == "command_failed":
+        first_blocking_layer = "replay_execution"
+        primary_next_action = "inspect_replay_failure_diagnostics_and_fix_replay_command"
+        primary_reason = "replay_validation command_failed"
+    elif (
+        not first_blocking_layer
+        and strategy_section
+        and section_readiness(strategy_section) in {"FAIL", "ACTION_REQUIRED"}
+    ):
+        first_blocking_layer = "strategy_raw_edge"
+        primary_next_action = "redesign_alpha_label_or_exit_objective_before_widening_live_gates"
+        primary_reason = "strategy_diagnose not pass"
+    elif (
+        not first_blocking_layer
+        and isinstance(trading_blockers, list)
+        and "NOT_CONVERGED_NO_LIVE_FILLS" in trading_blockers
+        and live_fills <= 0
+    ):
+        first_blocking_layer = "live_canary"
+        primary_next_action = (
+            "do_not_wait_blindly; rerun_live_only_after_replay_passes_or_market_context_has_target_samples"
+        )
+        primary_reason = f"runtime_validation_class={runtime_class}, live_fills={live_fills}"
+
+    return {
+        "schema_version": "convergence_layers_v1",
+        "layers": layers,
+        "first_blocking_layer": first_blocking_layer or "none",
+        "primary_next_action": primary_next_action,
+        "primary_reason": primary_reason,
+        "replay_command_failure": {
+            "present": replay_skip_reason == "command_failed",
+            "has_failure_diagnostics": bool(failure_diagnostics),
+            "exit_code": failure_diagnostics.get("exit_code"),
+            "command_log_path": failure_diagnostics.get("command_log_path"),
+            "command_output_tail_line_count": failure_diagnostics.get(
+                "command_output_tail_line_count"
+            ),
+        },
+        "live_sample_context": {
+            "runtime_validation_class": runtime_class,
+            "live_fills": live_fills,
+            "market_context_status": runtime_section.get("market_context_status")
+            if isinstance(runtime_section, dict)
+            else None,
+        },
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成闭环汇总报告")
     parser.add_argument("--output", required=True, help="输出 JSON 路径")
@@ -1901,6 +2102,7 @@ def main() -> int:
             sections.get("exit_capture", {}),
             sections.get("canary_validation", {}),
         )
+    convergence_layers = build_convergence_layers(sections)
 
     for section_name, section in sections.items():
         if section_name in inherited_sections_excluded_from_gate:
@@ -2120,9 +2322,16 @@ def main() -> int:
                 "it is not evidence of trading convergence."
             ),
             "trading_convergence_field": "trading_convergence_status",
+            "convergence_layers_field": "convergence_layers",
         },
         "run_manifest": run_manifest_payload,
         "account_outcome": account_outcome,
+        "convergence_layers": convergence_layers,
+        "next_action_plan": {
+            "first_blocking_layer": convergence_layers.get("first_blocking_layer"),
+            "primary_next_action": convergence_layers.get("primary_next_action"),
+            "primary_reason": convergence_layers.get("primary_reason"),
+        },
         "sections": sections,
         "inherit": {
             "source_report": inherit_source_report,

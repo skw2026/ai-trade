@@ -1865,6 +1865,106 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 section["fail_reasons"],
             )
 
+    def test_replay_command_failure_drives_next_action_plan(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            replay_report = root / "replay_validation_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS_WITH_ACTIONS",
+                        "runtime_validation_mode": "POLICY_FLAT_PROTECTION",
+                        "protection_status": "PASS",
+                        "execution_status": "NOT_EVALUATED",
+                        "market_context_status": "RANGE_ONLY",
+                        "metrics": {"runtime_status_count": 80},
+                        "account_pnl": {"samples": 80},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "fail",
+                        "validation_skipped": True,
+                        "skip_reason": "command_failed",
+                        "target_bucket": "trend",
+                        "source_symbol": "ETHUSDT",
+                        "symbol": "ETHUSDT",
+                        "symbols": ["ETHUSDT", "BTCUSDT"],
+                        "fail_reasons": [
+                            "replay validation command failed: exit_code=2"
+                        ],
+                        "selection": {
+                            "selection_mode": "not_run",
+                            "stop_reason": "command_failed",
+                            "segments_ran": 0,
+                        },
+                        "aggregate_summary": {"total_fills": 0},
+                        "aggregate_validation": {
+                            "status": "fail",
+                            "fail_reasons": [
+                                "replay validation command failed: exit_code=2"
+                            ],
+                            "warn_reasons": [],
+                        },
+                        "failure_diagnostics": {
+                            "schema_version": "replay_command_failure_v1",
+                            "exit_code": 2,
+                            "command_log_path": "data/reports/x/replay_validation/replay_validation_command.log",
+                            "command_output_tail_line_count": 3,
+                            "command_output_tail": ["Traceback", "boom"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--replay_validation_report",
+                    str(replay_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                payload["next_action_plan"]["first_blocking_layer"],
+                "replay_execution",
+            )
+            self.assertEqual(
+                payload["next_action_plan"]["primary_next_action"],
+                "inspect_replay_failure_diagnostics_and_fix_replay_command",
+            )
+            self.assertTrue(
+                payload["convergence_layers"]["replay_command_failure"]["present"]
+            )
+            self.assertTrue(
+                payload["convergence_layers"]["replay_command_failure"][
+                    "has_failure_diagnostics"
+                ]
+            )
+            self.assertEqual(
+                payload["sections"]["replay_validation"]["failure_diagnostics"][
+                    "exit_code"
+                ],
+                2,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

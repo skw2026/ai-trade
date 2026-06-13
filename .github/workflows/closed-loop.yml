@@ -266,6 +266,7 @@ jobs:
           fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_report.json" ".artifacts/replay_validation_report.json" "replay_validation_report" "json"
           fetch_report "${REMOTE_BASE}/replay_validation/replay_optimization_report.json" ".artifacts/replay_optimization_report.json" "replay_optimization_report" "json"
           fetch_report "${REMOTE_BASE}/replay_validation/feature_build_report.json" ".artifacts/replay_feature_build_report.json" "replay_feature_build_report" "json"
+          fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_command.log" ".artifacts/replay_validation_command.log" "replay_validation_command_log" "text"
           fetch_report "${REMOTE_BASE}/strategy_diagnose_report.json" ".artifacts/strategy_diagnose_report.json" "strategy_diagnose_report" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" ".artifacts/daily_summary.json" "daily_summary" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_weekly_summary.json" ".artifacts/weekly_summary.json" "weekly_summary" "json"
@@ -354,5 +355,6 @@ jobs:
           path: |
             .artifacts/*.json
             .artifacts/runtime.log
+            .artifacts/replay_validation_command.log
           include-hidden-files: true
           if-no-files-found: warn
