@@ -116,9 +116,9 @@ class ComposeConsistencyTest(unittest.TestCase):
 
     def test_s5_live_canary_uses_replay_tradable_symbol(self):
         config = S5_CONFIG.read_text(encoding="utf-8")
-        self.assertIn('fallback_symbols: ["ETHUSDT"]', config)
-        self.assertIn('candidate_symbols: ["ETHUSDT"]', config)
-        self.assertIn("source_symbol_not_tradable", config)
+        self.assertIn('fallback_symbols: ["SOLUSDT"]', config)
+        self.assertIn('candidate_symbols: ["SOLUSDT"]', config)
+        self.assertIn("SOLUSDT 是唯一通过 tradeability 的可交易符号", config)
 
     def test_s5_and_replay_diagnostic_canary_thresholds_stay_aligned(self):
         s5 = S5_CONFIG.read_text(encoding="utf-8")
@@ -127,9 +127,9 @@ class ComposeConsistencyTest(unittest.TestCase):
             ("candidate_probe_diagnostic_min_trend_ratio", "0.64"),
             ("candidate_probe_diagnostic_max_edge_gap_bps", "10.0"),
             ("candidate_probe_diagnostic_min_expected_edge_bps", "0.5"),
-            ("trailing_trigger_ratio", "0.0024"),
-            ("trailing_distance_ratio", "0.0011"),
-            ("profit_protection_immediate_min_net_bps", "0.5"),
+            ("trailing_trigger_ratio", "0.0014"),
+            ("trailing_distance_ratio", "0.0006"),
+            ("profit_protection_immediate_min_net_bps", "0.2"),
         ):
             needle = f"{key}: {value}"
             self.assertIn(needle, s5)
@@ -304,7 +304,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS", script)
         self.assertIn(
-            "ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT",
+            "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT",
             script,
         )
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
@@ -368,16 +368,18 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_closed_loop_workflow_default_replay_symbols_cover_live_trend_set(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            'default: "ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT"',
+            'default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"',
             workflow,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT'",
+            "github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT'",
             workflow,
         )
         self.assertIn('default: "auto"', workflow)
         self.assertIn("github.event_name == 'schedule' && 'auto'", workflow)
-        self.assertIn("--symbol \"${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-ETHUSDT}\"", workflow)
+        self.assertIn('RUNNER_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"', workflow)
+        self.assertIn('RUNNER_SYMBOL="${CLOSED_LOOP_SYMBOL:-SOLUSDT}"', workflow)
+        self.assertIn('--symbol "${RUNNER_SYMBOL}"', workflow)
         self.assertIn(
             'CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"',
             workflow,

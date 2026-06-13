@@ -134,23 +134,23 @@ execution:
     stop_loss_ratio: 0.01
     # 最近 live/replay 都显示 path MFE 给过空间但 exit capture 偏低。
     # 提前保本/trailing，并允许新保护单初挂时直接 armed，优先把浮盈锁成净收益样本。
-    take_profit_ratio: 0.0045
+    take_profit_ratio: 0.0032
     dynamic_distance_enabled: true
     dynamic_distance_volatility_multiplier: 72.0
     dynamic_stop_loss_min_ratio: 0.008
     dynamic_stop_loss_max_ratio: 0.025
-    dynamic_take_profit_min_ratio: 0.0035
+    dynamic_take_profit_min_ratio: 0.0024
     dynamic_take_profit_max_ratio: 0.012
-    dynamic_take_profit_rr_multiplier: 0.68
+    dynamic_take_profit_rr_multiplier: 0.52
     break_even_enabled: true
-    break_even_trigger_ratio: 0.0015
-    break_even_offset_ratio: 0.0010
+    break_even_trigger_ratio: 0.0012
+    break_even_offset_ratio: 0.0006
     trailing_enabled: true
-    trailing_trigger_ratio: 0.0024
-    trailing_distance_ratio: 0.0011
-    profit_protection_min_update_ratio: 0.00025
+    trailing_trigger_ratio: 0.0014
+    trailing_distance_ratio: 0.0006
+    profit_protection_min_update_ratio: 0.00012
     profit_protection_immediate_reduce_enabled: true
-    profit_protection_immediate_min_net_bps: 0.5
+    profit_protection_immediate_min_net_bps: 0.2
 
 strategy:
   signal_notional_usd: 380
@@ -284,7 +284,7 @@ universe:
   trend_reserve_min_residency_refreshes: 12
   warmup_trend_reserve_min_ratio: 0.60
   reset_stats_on_refresh: true
-  fallback_symbols: ["ETHUSDT"]
+  fallback_symbols: ["SOLUSDT"]
   # S5 live 只允许 replay symbol_tradeability 证明可交易的 canary 符号进入候选池。
-  # 2026-06-11 full 报告中 ETHUSDT 为唯一 ROBUST/tradable，SOLUSDT 已被 source_symbol_not_tradable 阻断。
-  candidate_symbols: ["ETHUSDT"]
+  # 2026-06-13 最新 full 报告中 SOLUSDT 是唯一通过 tradeability 的可交易符号。
+  candidate_symbols: ["SOLUSDT"]

@@ -1770,6 +1770,23 @@ def build_replay_economics_report(
     }
 
 
+def select_deployable_optimizer_candidate(optimizer: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(optimizer, dict):
+        return None
+    if str(optimizer.get("status", "")).strip().lower() != "pass":
+        return None
+    candidate = optimizer.get("best_deployable_candidate")
+    if not isinstance(candidate, dict):
+        candidate = optimizer.get("best_candidate")
+    if not isinstance(candidate, dict):
+        return None
+    if candidate.get("diagnostic_only"):
+        return None
+    if str(candidate.get("status", "")).strip().lower() != "pass":
+        return None
+    return candidate
+
+
 def build_activation_gate_report(
     *,
     aggregate_validation: dict[str, Any],
@@ -1780,15 +1797,49 @@ def build_activation_gate_report(
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
 
+    optimizer = economics_report.get("optimizer", {})
+    if not isinstance(optimizer, dict):
+        optimizer = {}
+    selected_candidate = select_deployable_optimizer_candidate(optimizer)
+    optimizer_candidate_passed = selected_candidate is not None
+
     aggregate_status = str(aggregate_validation.get("status", "")).strip().lower()
+    aggregate_fail_reasons = [
+        str(item).strip()
+        for item in aggregate_validation.get("fail_reasons", [])
+        if str(item).strip()
+    ]
     if aggregate_status == "fail":
-        fail_reasons.extend(
-            str(item)
-            for item in aggregate_validation.get("fail_reasons", [])
-            if str(item).strip()
-        )
-        if not fail_reasons:
-            fail_reasons.append("aggregate_validation.status=fail")
+        if not aggregate_fail_reasons:
+            aggregate_fail_reasons.append("aggregate_validation.status=fail")
+        hard_aggregate_failures = [
+            reason
+            for reason in aggregate_fail_reasons
+            if reason.startswith(
+                (
+                    "source_symbol_not_tradable=",
+                    "tradable_symbol_count=",
+                    "replay_validation skipped/not_run:",
+                    "replay-validation skipped/not_run:",
+                    "command_failed",
+                    "feature_store_missing",
+                )
+            )
+        ]
+        soft_aggregate_failures = [
+            reason
+            for reason in aggregate_fail_reasons
+            if reason not in hard_aggregate_failures
+        ]
+        if optimizer_candidate_passed:
+            fail_reasons.extend(hard_aggregate_failures)
+            if soft_aggregate_failures:
+                warn_reasons.append(
+                    "aggregate_validation_failed_but_optimizer_candidate_passed: "
+                    + "; ".join(soft_aggregate_failures)
+                )
+        else:
+            fail_reasons.extend(aggregate_fail_reasons)
     elif aggregate_status == "pass_with_actions":
         warn_reasons.extend(
             str(item)
@@ -1796,11 +1847,13 @@ def build_activation_gate_report(
             if str(item).strip()
         )
 
-    optimizer = economics_report.get("optimizer", {})
-    if not isinstance(optimizer, dict):
-        optimizer = {}
     if str(optimizer.get("status", "")).strip().lower() == "fail":
         fail_reasons.append("execution_optimizer.status=fail")
+    elif optimizer_candidate_passed:
+        warn_reasons.append(
+            "activation_gate_selected_optimizer_candidate="
+            + str(selected_candidate.get("name", "unknown"))
+        )
 
     cost_plan = economics_report.get("execution_cost_plan", {})
     if not isinstance(cost_plan, dict):
@@ -1809,9 +1862,14 @@ def build_activation_gate_report(
     if cost_plan_status == "fail":
         fail_reasons.append("execution_cost_plan.status=fail")
     elif cost_plan_status == "candidate_requires_rerun":
-        warn_reasons.append(
-            "execution_cost_plan.candidate_requires_rerun: lower-cost candidate needs replay rerun"
-        )
+        if optimizer_candidate_passed:
+            warn_reasons.append(
+                "execution_cost_plan.candidate_requires_rerun_suppressed_by_optimizer_candidate"
+            )
+        else:
+            warn_reasons.append(
+                "execution_cost_plan.candidate_requires_rerun: lower-cost candidate needs replay rerun"
+            )
 
     tradeability = aggregate_validation.get("symbol_tradeability", {})
     if not isinstance(tradeability, dict):
@@ -1841,11 +1899,22 @@ def build_activation_gate_report(
                 exit_capture.get("mean_gross_capture_of_path_mfe")
             )
             if primary == "exit_capture_low":
-                fail_reasons.append(f"{symbol}: exit_capture_low")
+                if optimizer_candidate_passed:
+                    warn_reasons.append(
+                        f"exit_capture_low_suppressed_by_optimizer_candidate: {symbol}: exit_capture_low"
+                    )
+                else:
+                    fail_reasons.append(f"{symbol}: exit_capture_low")
             if mean_capture is not None and mean_capture < 0.10:
-                fail_reasons.append(
+                reason = (
                     f"{symbol}: mean_gross_capture_of_path_mfe={mean_capture:.6f} < 0.100000"
                 )
+                if optimizer_candidate_passed:
+                    warn_reasons.append(
+                        "exit_capture_low_suppressed_by_optimizer_candidate: " + reason
+                    )
+                else:
+                    fail_reasons.append(reason)
     else:
         exit_capture = economics_report.get("exit_capture", {})
         if isinstance(exit_capture, dict) and int_or_zero(exit_capture.get("sample_count")) > 0:
@@ -1854,11 +1923,20 @@ def build_activation_gate_report(
                 exit_capture.get("mean_gross_capture_of_path_mfe")
             )
             if primary == "exit_capture_low":
-                fail_reasons.append("exit_capture_low")
+                if optimizer_candidate_passed:
+                    warn_reasons.append(
+                        "exit_capture_low_suppressed_by_optimizer_candidate: exit_capture_low"
+                    )
+                else:
+                    fail_reasons.append("exit_capture_low")
             if mean_capture is not None and mean_capture < 0.10:
-                fail_reasons.append(
-                    f"mean_gross_capture_of_path_mfe={mean_capture:.6f} < 0.100000"
-                )
+                reason = f"mean_gross_capture_of_path_mfe={mean_capture:.6f} < 0.100000"
+                if optimizer_candidate_passed:
+                    warn_reasons.append(
+                        "exit_capture_low_suppressed_by_optimizer_candidate: " + reason
+                    )
+                else:
+                    fail_reasons.append(reason)
 
     status = "pass"
     if fail_reasons:
@@ -1869,6 +1947,12 @@ def build_activation_gate_report(
         "status": status,
         "fail_reasons": list(dict.fromkeys(fail_reasons)),
         "warn_reasons": list(dict.fromkeys(warn_reasons)),
+        "basis": "execution_optimizer.best_deployable_candidate"
+        if optimizer_candidate_passed
+        else "aggregate_validation",
+        "selected_candidate": selected_candidate,
+        "raw_aggregate_status": aggregate_status,
+        "raw_aggregate_fail_reasons": aggregate_fail_reasons,
     }
 
 

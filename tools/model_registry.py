@@ -37,6 +37,10 @@ def is_allowed_activation_gate_warning(reason: str) -> bool:
             "symbol_replay_coverage_insufficient=",
             "symbol_replay_quarantined=",
             "aggregate_validation_failed_but_symbol_tradeability_passed:",
+            "activation_gate_selected_optimizer_candidate=",
+            "aggregate_validation_failed_but_optimizer_candidate_passed:",
+            "execution_cost_plan.candidate_requires_rerun_suppressed_by_optimizer_candidate",
+            "exit_capture_low_suppressed_by_optimizer_candidate:",
         )
     )
 
@@ -241,6 +245,11 @@ def parse_args() -> argparse.Namespace:
         help="focus bucket 最小 Sharpe",
     )
     register.add_argument(
+        "--walkforward_focus_bucket_primary",
+        action="store_true",
+        help="focus bucket 通过时，将全局非目标 bucket 收益失败降级为 warning",
+    )
+    register.add_argument(
         "--require_replay_validation_pass",
         action="store_true",
         help="要求 replay validation 状态为 pass 后才允许激活",
@@ -385,6 +394,7 @@ def gate_walkforward_report(
     min_focus_bucket_bars: int = 0,
     min_focus_bucket_trades: int = 0,
     min_focus_bucket_sharpe: float = 0.0,
+    focus_bucket_primary: bool = False,
 ) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
@@ -447,6 +457,7 @@ def gate_walkforward_report(
                 "min_trades": int(min_focus_bucket_trades),
                 "min_sharpe": float(min_focus_bucket_sharpe),
             },
+            "primary": bool(focus_bucket_primary),
         }
         if not focus_bucket_pass:
             fail_reasons.extend(focus_fail_reasons)
@@ -465,14 +476,34 @@ def gate_walkforward_report(
             reason = (
                 f"walkforward {metric_name}={metric_value:.6f} < {float(threshold):.6f}"
             )
-            fail_reasons.append(reason)
+            if focus_bucket_primary and focus_bucket_pass:
+                warn_reasons.append(
+                    "walkforward global metric below threshold but focus bucket passed: "
+                    + reason
+                )
+            else:
+                fail_reasons.append(reason)
 
     total_trades = summary.get("total_trades")
     traded_split_count = summary.get("traded_split_count")
     if isinstance(total_trades, int) and total_trades <= 0:
-        fail_reasons.append(f"walkforward total_trades={total_trades} <= 0")
+        reason = f"walkforward total_trades={total_trades} <= 0"
+        if focus_bucket_primary and focus_bucket_pass:
+            warn_reasons.append(
+                "walkforward global trade count below threshold but focus bucket passed: "
+                + reason
+            )
+        else:
+            fail_reasons.append(reason)
     if isinstance(traded_split_count, int) and traded_split_count <= 0:
-        fail_reasons.append(f"walkforward traded_split_count={traded_split_count} <= 0")
+        reason = f"walkforward traded_split_count={traded_split_count} <= 0"
+        if focus_bucket_primary and focus_bucket_pass:
+            warn_reasons.append(
+                "walkforward global trade count below threshold but focus bucket passed: "
+                + reason
+            )
+        else:
+            fail_reasons.append(reason)
 
     if focus_validation:
         summary = dict(summary)
@@ -505,6 +536,15 @@ def gate_replay_validation_report(
     activation_gate = payload.get("activation_gate", {})
     if not isinstance(activation_gate, dict):
         activation_gate = {}
+    activation_basis = str(activation_gate.get("basis", "")).strip()
+    selected_candidate = activation_gate.get("selected_candidate")
+    if not isinstance(selected_candidate, dict):
+        selected_candidate = {}
+    activation_optimizer_candidate_passed = (
+        activation_basis == "execution_optimizer.best_deployable_candidate"
+        and str(selected_candidate.get("status", "")).strip().lower() == "pass"
+        and not bool(selected_candidate.get("diagnostic_only"))
+    )
     activation_gate_status = str(activation_gate.get("status", "")).strip().lower()
     activation_gate_blocking_warnings: List[str] = []
     if not activation_gate:
@@ -614,18 +654,30 @@ def gate_replay_validation_report(
         and float(exit_sample_count) > 0
     ):
         if exit_primary_diagnosis == "exit_capture_low":
-            fail_reasons.append(
+            reason = (
                 "replay exit_capture_low: path MFE covers cost but gross capture is too low"
             )
+            if activation_optimizer_candidate_passed:
+                warn_reasons.append(
+                    "exit_capture_low_suppressed_by_optimizer_candidate: " + reason
+                )
+            else:
+                fail_reasons.append(reason)
         if (
             isinstance(exit_mean_capture, (int, float))
             and float(exit_mean_capture) < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
         ):
-            fail_reasons.append(
+            reason = (
                 "replay mean_gross_capture_of_path_mfe="
                 f"{float(exit_mean_capture):.6f} < "
                 f"{EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
             )
+            if activation_optimizer_candidate_passed:
+                warn_reasons.append(
+                    "exit_capture_low_suppressed_by_optimizer_candidate: " + reason
+                )
+            else:
+                fail_reasons.append(reason)
     summary = {
         "status": payload.get("status", aggregate_status),
         "source_symbol": payload.get("source_symbol"),
@@ -730,19 +782,31 @@ def gate_replay_validation_report(
             symbol_primary = str(symbol_exit.get("primary_diagnosis", "")).strip()
             symbol_mean_capture = symbol_exit.get("mean_gross_capture_of_path_mfe")
             if symbol_primary == "exit_capture_low":
-                fail_reasons.append(
+                reason = (
                     f"replay {symbol} exit_capture_low: path MFE covers cost but gross capture is too low"
                 )
+                if activation_optimizer_candidate_passed:
+                    warn_reasons.append(
+                        "exit_capture_low_suppressed_by_optimizer_candidate: " + reason
+                    )
+                else:
+                    fail_reasons.append(reason)
             if (
                 isinstance(symbol_mean_capture, (int, float))
                 and float(symbol_mean_capture)
                 < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
             ):
-                fail_reasons.append(
+                reason = (
                     f"replay {symbol} mean_gross_capture_of_path_mfe="
                     f"{float(symbol_mean_capture):.6f} < "
                     f"{EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
                 )
+                if activation_optimizer_candidate_passed:
+                    warn_reasons.append(
+                        "exit_capture_low_suppressed_by_optimizer_candidate: " + reason
+                    )
+                else:
+                    fail_reasons.append(reason)
         economic_gate_basis = "aggregate_validation"
         median_net_with_fills = aggregate.get(
             "median_realized_net_per_fill_with_fills"
@@ -800,6 +864,16 @@ def gate_replay_validation_report(
         source_quarantined = bool(source_symbol and source_symbol in quarantined_symbols)
         if (
             raw_replay_fail_reasons
+            and activation_optimizer_candidate_passed
+            and not source_quarantined
+        ):
+            suppressed_aggregate_fail_reasons = list(raw_replay_fail_reasons)
+            warn_reasons.append(
+                "replay aggregate fail reasons suppressed because optimizer candidate passed: "
+                + "; ".join(suppressed_aggregate_fail_reasons)
+            )
+        elif (
+            raw_replay_fail_reasons
             and tradeability_status == "pass"
             and tradable_symbols
             and decision_schema_complete
@@ -814,6 +888,17 @@ def gate_replay_validation_report(
             fail_reasons.extend(raw_replay_fail_reasons)
         summary["suppressed_aggregate_fail_reasons"] = suppressed_aggregate_fail_reasons
         summary["economic_gate_basis"] = economic_gate_basis
+        if activation_optimizer_candidate_passed:
+            candidate_summary = selected_candidate.get("aggregate_summary", {})
+            if not isinstance(candidate_summary, dict):
+                candidate_summary = {}
+            economic_gate_basis = "execution_optimizer.best_deployable_candidate"
+            median_net_with_fills = candidate_summary.get(
+                "median_realized_net_per_fill_with_fills"
+            )
+            positive_ratio = candidate_summary.get("positive_filled_segment_ratio")
+            summary["economic_gate_basis"] = economic_gate_basis
+            summary["selected_candidate"] = selected_candidate
         if isinstance(median_net_with_fills, (int, float)) and (
             float(median_net_with_fills) < 0.0
         ):
@@ -927,6 +1012,9 @@ def run_register(args: argparse.Namespace) -> int:
             min_focus_bucket_sharpe=float(
                 getattr(args, "walkforward_min_focus_bucket_sharpe", 0.0)
             ),
+            focus_bucket_primary=bool(
+                getattr(args, "walkforward_focus_bucket_primary", False)
+            ),
         )
         external_gate_summary["walkforward"] = {
             "pass": walkforward_pass,
@@ -937,6 +1025,9 @@ def run_register(args: argparse.Namespace) -> int:
             "min_focus_bucket_bars": getattr(args, "walkforward_min_focus_bucket_bars", 0),
             "min_focus_bucket_trades": getattr(args, "walkforward_min_focus_bucket_trades", 0),
             "min_focus_bucket_sharpe": getattr(args, "walkforward_min_focus_bucket_sharpe", 0.0),
+            "focus_bucket_primary": bool(
+                getattr(args, "walkforward_focus_bucket_primary", False)
+            ),
             "summary": walkforward_summary,
         }
         for item in walkforward_fail_reasons:

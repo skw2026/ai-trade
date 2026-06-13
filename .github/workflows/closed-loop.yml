@@ -30,7 +30,7 @@ on:
       replay_symbols:
         description: "replay-validation 目标币对，逗号分隔；留空则使用 ECS .env.runtime"
         required: false
-        default: "ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT"
+        default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"
         type: string
       replay_source_symbol:
         description: "replay-validation feature store 源币对；auto 则从上一份 symbol_tradeability 选择"
@@ -70,7 +70,7 @@ jobs:
           CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
           CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
           CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'auto' || inputs.replay_source_symbol }}
           CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"
           CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: "true"
@@ -117,6 +117,11 @@ jobs:
             if [[ -n "${WORKFLOW_REPLAY_VALIDATION_FEATURE_DAYS}" ]]; then
               export CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS="${WORKFLOW_REPLAY_VALIDATION_FEATURE_DAYS}"
             fi
+            RUNNER_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"
+            RUNNER_SYMBOL_UPPER="$(printf '%s' "${RUNNER_SYMBOL}" | tr '[:lower:]' '[:upper:]')"
+            if [[ -z "${RUNNER_SYMBOL}" || "${RUNNER_SYMBOL_UPPER}" == "AUTO" ]]; then
+              RUNNER_SYMBOL="${CLOSED_LOOP_SYMBOL:-SOLUSDT}"
+            fi
             chmod +x tools/closed_loop_runner.sh
             tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
               --compose-file docker-compose.prod.yml \
@@ -124,7 +129,7 @@ jobs:
               --output-root ./data/reports/closed_loop \
               --stage "${CLOSED_LOOP_STAGE}" \
               --since "${CLOSED_LOOP_SINCE}" \
-              --symbol "${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-ETHUSDT}"
+              --symbol "${RUNNER_SYMBOL}"
             REPORT="./data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_report.json"
             if [[ -f "${REPORT}" ]]; then
               echo "=== closed_loop_report ==="

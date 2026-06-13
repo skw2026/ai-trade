@@ -106,23 +106,23 @@ execution:
     enable_tp: true
     attach_timeout_ms: 1500
     stop_loss_ratio: 0.01
-    take_profit_ratio: 0.0045
+    take_profit_ratio: 0.0032
     dynamic_distance_enabled: true
     dynamic_distance_volatility_multiplier: 72.0
     dynamic_stop_loss_min_ratio: 0.008
     dynamic_stop_loss_max_ratio: 0.025
-    dynamic_take_profit_min_ratio: 0.0035
+    dynamic_take_profit_min_ratio: 0.0024
     dynamic_take_profit_max_ratio: 0.012
-    dynamic_take_profit_rr_multiplier: 0.68
+    dynamic_take_profit_rr_multiplier: 0.52
     break_even_enabled: true
-    break_even_trigger_ratio: 0.0015
-    break_even_offset_ratio: 0.0010
+    break_even_trigger_ratio: 0.0012
+    break_even_offset_ratio: 0.0006
     trailing_enabled: true
-    trailing_trigger_ratio: 0.0024
-    trailing_distance_ratio: 0.0011
-    profit_protection_min_update_ratio: 0.00025
+    trailing_trigger_ratio: 0.0014
+    trailing_distance_ratio: 0.0006
+    profit_protection_min_update_ratio: 0.00012
     profit_protection_immediate_reduce_enabled: true
-    profit_protection_immediate_min_net_bps: 0.5
+    profit_protection_immediate_min_net_bps: 0.2
 
 strategy:
   signal_notional_usd: 380

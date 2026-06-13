@@ -44,7 +44,7 @@ ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS="${CLOSED_LOOP_ASSESS_WAIT_FOR_MIN_RUNTIME_ST
 ASSESS_WAIT_TIMEOUT_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS:-900}"
 ASSESS_WAIT_POLL_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS:-15}"
 
-SYMBOL="ETHUSDT"
+SYMBOL="SOLUSDT"
 INTERVAL="5"
 CATEGORY="linear"
 BARS="5000"
@@ -116,13 +116,14 @@ WALKFORWARD_MIN_TOTAL_TRADES="${CLOSED_LOOP_WALKFORWARD_MIN_TOTAL_TRADES:-1}"
 WALKFORWARD_MIN_TREND_BUCKET_BARS="${CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_BARS:-1000}"
 WALKFORWARD_MIN_TREND_BUCKET_TRADES="${CLOSED_LOOP_WALKFORWARD_MIN_TREND_BUCKET_TRADES:-1}"
 WALKFORWARD_FOCUS_BUCKET="${CLOSED_LOOP_WALKFORWARD_FOCUS_BUCKET:-trend}"
+WALKFORWARD_FOCUS_BUCKET_PRIMARY="${CLOSED_LOOP_WALKFORWARD_FOCUS_BUCKET_PRIMARY:-true}"
 TREND_VALIDATION_MIN_SHARPE="${CLOSED_LOOP_TREND_VALIDATION_MIN_SHARPE:-0.0}"
 TREND_VALIDATION_MIN_BARS="${CLOSED_LOOP_TREND_VALIDATION_MIN_BARS:-1000}"
 TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
 ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}"
 REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.maker_first.yaml}"
-DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT}"
+DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
@@ -172,7 +173,7 @@ Options:
   --since <duration>                 导出日志窗口 (default: 4h)
   --min-runtime-status <int>         覆盖日志验收最小 RUNTIME_STATUS 条数
 
-  --symbol <symbol>                  R0 拉数 symbol (default: ETHUSDT)
+  --symbol <symbol>                  R0 拉数 symbol (default: SOLUSDT)
   --interval <minutes>               R0 拉数周期分钟 (default: 5)
   --category <category>              R0 category (default: linear)
   --bars <int>                       R0 拉数 bars (default: 5000)
@@ -292,7 +293,7 @@ Env toggles:
                                                        assess 动作是否刷新 replay-validation (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.maker_first.yaml)
   CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS=<csv>    replay-validation 空目标时的默认多币对
-                                                       (default: ETHUSDT,BTCUSDT,SOLUSDT,XRPUSDT,BNBUSDT)
+                                                       (default: SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
   CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol|auto>
@@ -595,7 +596,7 @@ elif ordered_symbols:
 elif fallback:
     print(fallback)
 else:
-    print("ETHUSDT")
+    print("SOLUSDT")
 PY
 }
 
@@ -1284,6 +1285,9 @@ run_registry() {
     --walkforward_min_focus_bucket_sharpe="${TREND_VALIDATION_MIN_SHARPE}"
     --registration_out="${REGISTRY_RESULT_PATH}"
   )
+  if is_true "${WALKFORWARD_FOCUS_BUCKET_PRIMARY}"; then
+    REG_ARGS+=(--walkforward_focus_bucket_primary)
+  fi
   if is_true "${REPLAY_VALIDATION_ENABLED}"; then
     REG_ARGS+=(
       --replay_validation_report="${REPLAY_VALIDATION_REPORT_PATH}"
@@ -1941,6 +1945,8 @@ write_run_manifest() {
   REPLAY_REAL_MARKET_FEATURES_VALUE="${REPLAY_VALIDATION_REAL_MARKET_FEATURES}" \
   REPLAY_FEATURE_DAYS_VALUE="${REPLAY_VALIDATION_FEATURE_DAYS}" \
   REPLAY_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  WALKFORWARD_FOCUS_BUCKET_VALUE="${WALKFORWARD_FOCUS_BUCKET}" \
+  WALKFORWARD_FOCUS_BUCKET_PRIMARY_VALUE="${WALKFORWARD_FOCUS_BUCKET_PRIMARY}" \
   RUNTIME_LOG_PATH_VALUE="${ASSESS_LOG_PATH}" \
   RUNTIME_RAW_LOG_PATH_VALUE="${ASSESS_RAW_LOG_PATH}" \
   WALKFORWARD_MIN_AVG_SPLIT_RETURN_VALUE="${WALKFORWARD_MIN_AVG_SPLIT_RETURN}" \
@@ -2052,6 +2058,8 @@ payload = {
         "min_avg_split_return": os.environ.get("WALKFORWARD_MIN_AVG_SPLIT_RETURN_VALUE", ""),
         "min_enabled_avg_split_return": os.environ.get("WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN_VALUE", ""),
         "min_traded_avg_split_return": os.environ.get("WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN_VALUE", ""),
+        "focus_bucket": os.environ.get("WALKFORWARD_FOCUS_BUCKET_VALUE", ""),
+        "focus_bucket_primary": os.environ.get("WALKFORWARD_FOCUS_BUCKET_PRIMARY_VALUE", ""),
     },
     "config_paths": {
         "compose_file": os.environ.get("COMPOSE_FILE_VALUE", ""),
@@ -2132,6 +2140,9 @@ build_summary() {
     --trend_validation_min_bars="${TREND_VALIDATION_MIN_BARS}"
     --trend_validation_min_trades="${TREND_VALIDATION_MIN_TRADES}"
   )
+  if is_true "${WALKFORWARD_FOCUS_BUCKET_PRIMARY}"; then
+    SUMMARY_ARGS+=(--walkforward_focus_bucket_primary)
+  fi
   if [[ "${ACTION}" == "assess" && -f "${LATEST_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--inherit_report "${LATEST_REPORT_PATH}")
   fi

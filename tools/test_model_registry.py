@@ -436,6 +436,69 @@ class ModelRegistryTest(unittest.TestCase):
                 "; ".join(summary["suppressed_aggregate_fail_reasons"]),
             )
 
+    def test_replay_optimizer_candidate_can_suppress_raw_aggregate_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            replay_report = root / "replay_validation_report.json"
+            selected_candidate = {
+                "name": "strong_liquid_q50",
+                "diagnostic_only": False,
+                "status": "pass",
+                "aggregate_summary": {
+                    "median_realized_net_per_fill_with_fills": 0.002,
+                    "positive_filled_segment_ratio": 0.70,
+                    "total_fills": 24,
+                },
+            }
+            replay_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass_with_actions",
+                        "source_symbol": "SOLUSDT",
+                        "activation_gate": {
+                            "status": "pass_with_actions",
+                            "basis": "execution_optimizer.best_deployable_candidate",
+                            "selected_candidate": selected_candidate,
+                            "fail_reasons": [],
+                            "warn_reasons": [
+                                "activation_gate_selected_optimizer_candidate=strong_liquid_q50",
+                                "aggregate_validation_failed_but_optimizer_candidate_passed: aggregate median net negative",
+                            ],
+                        },
+                        "execution_optimizer": {
+                            "status": "pass",
+                            "best_deployable_candidate": selected_candidate,
+                        },
+                        "exit_capture": {
+                            "sample_count": 3,
+                            "primary_diagnosis": "exit_capture_low",
+                            "mean_gross_capture_of_path_mfe": 0.05,
+                        },
+                        "aggregate_validation": {
+                            "status": "fail",
+                            "fail_reasons": ["aggregate median net negative"],
+                            "warn_reasons": [],
+                            "median_realized_net_per_fill_with_fills": -0.02,
+                            "positive_filled_segment_ratio": 0.25,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_replay_validation_report(replay_report, True)
+            )
+
+            self.assertTrue(passed)
+            self.assertEqual(fail_reasons, [])
+            self.assertTrue(warn_reasons)
+            self.assertEqual(
+                summary["economic_gate_basis"],
+                "execution_optimizer.best_deployable_candidate",
+            )
+            self.assertEqual(summary["selected_candidate"]["name"], "strong_liquid_q50")
+
     def test_replay_activation_gate_blocking_warning_prevents_activation(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -702,6 +765,51 @@ class ModelRegistryTest(unittest.TestCase):
                 summary["focus_bucket_validation"]["status"],
                 "pass",
             )
+
+    def test_walkforward_focus_bucket_primary_downgrades_global_negative_returns(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            walkforward_report = root / "walkforward_report.json"
+            walkforward_report.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "avg_split_return": -0.001,
+                            "enabled_avg_split_return": -0.001,
+                            "traded_avg_split_return": -0.001,
+                            "traded_split_count": 5,
+                            "total_trades": 10,
+                            "regime_bucket_summary": {
+                                "trend": {
+                                    "bars": 1500,
+                                    "trades": 4,
+                                    "sharpe": 2.0,
+                                },
+                                "range": {"bars": 2000, "trades": 6, "sharpe": -2.0},
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = REGISTRY.gate_walkforward_report(
+                walkforward_report,
+                True,
+                0.0,
+                0.0,
+                0.0,
+                focus_bucket="trend",
+                min_focus_bucket_bars=1000,
+                min_focus_bucket_trades=1,
+                min_focus_bucket_sharpe=0.0,
+                focus_bucket_primary=True,
+            )
+
+            self.assertTrue(passed)
+            self.assertEqual(fail_reasons, [])
+            self.assertTrue(warn_reasons)
+            self.assertTrue(summary["focus_bucket_validation"]["primary"])
 
 
 if __name__ == "__main__":

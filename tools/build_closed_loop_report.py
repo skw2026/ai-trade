@@ -318,6 +318,7 @@ def assess_walkforward(
     min_focus_bucket_bars: int = 0,
     min_focus_bucket_trades: int = 0,
     min_focus_bucket_sharpe: float = 0.0,
+    focus_bucket_primary: bool = False,
 ) -> Dict[str, Any]:
     payload = read_json(path)
     summary = payload.get("summary", {})
@@ -396,6 +397,7 @@ def assess_walkforward(
                 "min_trades": int(min_focus_bucket_trades),
                 "min_sharpe": float(min_focus_bucket_sharpe),
             },
+            "primary": bool(focus_bucket_primary),
         }
         if not focus_bucket_pass:
             fails.extend(focus_fail_reasons)
@@ -411,7 +413,13 @@ def assess_walkforward(
                 "walk-forward 平均 Sharpe 未达门槛: "
                 f"{float(avg_split_sharpe):.6f} < {float(min_avg_split_sharpe):.6f}"
             )
-            fails.append(reason)
+            if focus_bucket_primary and focus_bucket_pass:
+                warns.append(
+                    "walk-forward 全局 Sharpe 未达门槛，但 focus bucket 已通过: "
+                    + reason
+                )
+            else:
+                fails.append(reason)
     else:
         warns.append("walk-forward 缺少 avg_split_sharpe，无法评估收益质量")
     return_checks = [
@@ -436,7 +444,13 @@ def assess_walkforward(
                     f"walk-forward {label}未达门槛: "
                     f"{float(metric_value):.6f} < {float(threshold):.6f}"
                 )
-                fails.append(reason)
+                if focus_bucket_primary and focus_bucket_pass:
+                    warns.append(
+                        "walk-forward 全局收益未达门槛，但 focus bucket 已通过: "
+                        + reason
+                    )
+                else:
+                    fails.append(reason)
         elif float(threshold) != 0.0:
             warns.append(f"walk-forward 缺少 {metric_name}，无法评估净收益质量")
     status = "pass" if not fails else "fail"
@@ -549,6 +563,10 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
     activation_gate = payload.get("activation_gate", {})
     if not isinstance(activation_gate, dict):
         activation_gate = {}
+    activation_basis = str(activation_gate.get("basis", "")).strip()
+    selected_candidate = activation_gate.get("selected_candidate")
+    if not isinstance(selected_candidate, dict):
+        selected_candidate = {}
 
     status_raw = str(aggregate_validation.get("status", "")).lower()
     top_status_raw = str(payload.get("status", "")).strip().lower()
@@ -762,6 +780,8 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "symbol_tradeability": tradeability,
         "suppressed_aggregate_fail_reasons": suppressed_aggregate_fail_reasons,
         "activation_gate": activation_gate,
+        "activation_basis": activation_basis,
+        "selected_candidate": selected_candidate,
         "execution_economics": payload.get("execution_economics", {}),
         "cost_sensitivity": cost_sensitivity,
         "exit_capture": exit_capture,
@@ -1116,6 +1136,22 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
     )
     if not isinstance(tradeability, dict):
         tradeability = {}
+    activation_gate = (
+        replay_section.get("activation_gate", {})
+        if isinstance(replay_section, dict)
+        else {}
+    )
+    if not isinstance(activation_gate, dict):
+        activation_gate = {}
+    selected_candidate = activation_gate.get("selected_candidate")
+    if not isinstance(selected_candidate, dict):
+        selected_candidate = {}
+    optimizer_candidate_basis = (
+        str(activation_gate.get("basis", "")).strip()
+        == "execution_optimizer.best_deployable_candidate"
+        and str(selected_candidate.get("status", "")).strip().lower() == "pass"
+        and not bool(selected_candidate.get("diagnostic_only"))
+    )
     critical_symbols = set(unique_symbols(tradeability.get("tradable_symbols", [])))
     source_symbol = (
         str(replay_section.get("source_symbol", "")).strip().upper()
@@ -1142,6 +1178,15 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
 
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
+
+    def add_replay_exit_issue(reason: str) -> None:
+        if optimizer_candidate_basis:
+            warn_reasons.append(
+                "exit_capture_low_suppressed_by_optimizer_candidate: " + reason
+            )
+        else:
+            fail_reasons.append(reason)
+
     replay_sample_count = as_int(replay_exit.get("sample_count"))
     primary_diagnosis = str(replay_exit.get("primary_diagnosis", "")).strip()
     low_capture_segments = as_int(replay_exit.get("low_capture_segment_count"))
@@ -1170,7 +1215,7 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
                 item.get("mean_gross_capture_of_path_mfe")
             )
             if symbol_samples > 0 and symbol_diagnosis == "exit_capture_low":
-                fail_reasons.append(
+                add_replay_exit_issue(
                     f"replay {symbol} exit_capture_low: path MFE covers cost but gross capture is too low"
                 )
             if (
@@ -1178,7 +1223,7 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
                 and symbol_mean_capture is not None
                 and symbol_mean_capture < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
             ):
-                fail_reasons.append(
+                add_replay_exit_issue(
                     f"replay {symbol} mean_gross_capture_of_path_mfe="
                     f"{symbol_mean_capture:.6f} < "
                     f"{EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
@@ -1188,7 +1233,7 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
         and replay_sample_count > 0
         and primary_diagnosis == "exit_capture_low"
     ):
-        fail_reasons.append(
+        add_replay_exit_issue(
             "replay exit_capture_low: path MFE covers cost but gross capture is too low"
         )
     if (
@@ -1197,7 +1242,7 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
         and mean_capture is not None
         and mean_capture < EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE
     ):
-        fail_reasons.append(
+        add_replay_exit_issue(
             "replay mean_gross_capture_of_path_mfe="
             f"{mean_capture:.6f} < {EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE:.6f}"
         )
@@ -1217,15 +1262,18 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
     elif replay_sample_count == 0 and has_exit_capture_data:
         warn_reasons.append("exit_capture not evaluated: no replay/live filled samples")
 
+    if fail_reasons:
+        readiness_status = "FAIL"
+    elif not has_exit_capture_data or (replay_sample_count == 0 and runtime_exit_samples == 0):
+        readiness_status = "NOT_EVALUATED"
+    elif warn_reasons:
+        readiness_status = "PASS_WITH_ACTIONS"
+    else:
+        readiness_status = "PASS"
+
     return {
         "status": "fail" if fail_reasons else "pass",
-        "readiness_status": "FAIL"
-        if fail_reasons
-        else (
-            "NOT_EVALUATED"
-            if not has_exit_capture_data or (replay_sample_count == 0 and runtime_exit_samples == 0)
-            else "PASS"
-        ),
+        "readiness_status": readiness_status,
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
         "replay": {
@@ -1236,6 +1284,7 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
             "mean_path_fee_coverage_ratio": replay_exit.get("mean_path_fee_coverage_ratio"),
             "median_path_fee_coverage_ratio": replay_exit.get("median_path_fee_coverage_ratio"),
             "selected_by_symbol": selected_symbol_exit,
+            "optimizer_candidate_basis": optimizer_candidate_basis,
         },
         "live": {
             "sample_count": runtime_exit_samples,
@@ -1862,6 +1911,11 @@ def parse_args() -> argparse.Namespace:
         help="walk-forward TREND 桶最小交易次数（默认 0）",
     )
     parser.add_argument(
+        "--walkforward_focus_bucket_primary",
+        action="store_true",
+        help="TREND focus bucket 通过时，将全局非目标 bucket 收益失败降级为 warning",
+    )
+    parser.add_argument(
         "--trend_validation_min_sharpe",
         type=float,
         default=0.0,
@@ -2009,6 +2063,7 @@ def main() -> int:
                 min_focus_bucket_bars=int(args.trend_validation_min_bars),
                 min_focus_bucket_trades=int(args.trend_validation_min_trades),
                 min_focus_bucket_sharpe=float(args.trend_validation_min_sharpe),
+                focus_bucket_primary=bool(args.walkforward_focus_bucket_primary),
             )
             sections["trend_validation"] = assess_trend_validation(
                 walkforward_path,

@@ -221,6 +221,48 @@ class RunReplayValidationTest(unittest.TestCase):
         self.assertEqual(report["optimizer"]["status"], "pass")
         self.assertGreaterEqual(report["optimizer"]["pass_candidate_count"], 1)
 
+    def test_activation_gate_uses_deployable_optimizer_candidate(self):
+        selected_candidate = {
+            "name": "strong_liquid_q50",
+            "diagnostic_only": False,
+            "status": "pass",
+            "aggregate_summary": {
+                "median_realized_net_per_fill_with_fills": 0.002,
+                "positive_filled_segment_ratio": 0.70,
+                "total_fills": 24,
+            },
+        }
+        activation = REPLAY.build_activation_gate_report(
+            aggregate_validation={
+                "status": "fail",
+                "fail_reasons": [
+                    "median_realized_net_per_fill_with_fills=-0.001 < 0.000"
+                ],
+                "warn_reasons": [],
+            },
+            economics_report={
+                "optimizer": {
+                    "status": "pass",
+                    "best_deployable_candidate": selected_candidate,
+                },
+                "execution_cost_plan": {"status": "pass"},
+            },
+            symbol_reports={},
+            source_symbol="SOLUSDT",
+        )
+
+        self.assertEqual(activation["status"], "pass_with_actions")
+        self.assertEqual(
+            activation["basis"], "execution_optimizer.best_deployable_candidate"
+        )
+        self.assertEqual(activation["selected_candidate"]["name"], "strong_liquid_q50")
+        self.assertTrue(
+            any(
+                "aggregate_validation_failed_but_optimizer_candidate_passed" in reason
+                for reason in activation["warn_reasons"]
+            )
+        )
+
     def test_aggregate_run_summaries_fails_when_mean_masks_negative_median(self):
         runs = []
         for realized_net in (-0.002, -0.001, -0.001, 0.020):
