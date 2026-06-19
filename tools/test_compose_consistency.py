@@ -257,7 +257,19 @@ class ComposeConsistencyTest(unittest.TestCase):
             scheduler,
         )
         self.assertIn(
+            "CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER:-1.25}",
+            scheduler,
+        )
+        self.assertIn(
             "CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS: ${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-1}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS: ${CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS:-6,12,24}",
+            scheduler,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL: ${CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL:-true}",
             scheduler,
         )
         self.assertIn("Sleeping $${SCHEDULER_INTERVAL_VALUE}s", scheduler)
@@ -319,8 +331,14 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS", script)
+        self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS", script)
+        self.assertIn("CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS", script)
+        self.assertIn("CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL", script)
         self.assertIn("--corpus_manifest", script)
+        self.assertIn("--min_break_even_fee_multiplier", script)
+        self.assertIn("--tournament-horizons", script)
+        self.assertIn("maybe_write_registry_alpha_block_report()", script)
 
         self.assertIn("--refresh_corpus_manifest", script)
         self.assertIn("--symbols", script)
@@ -391,9 +409,30 @@ class ComposeConsistencyTest(unittest.TestCase):
             workflow,
         )
         self.assertIn(
+            'CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER: "1.25"',
+            workflow,
+        )
+        self.assertIn(
+            'CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS: "6,12,24"',
+            workflow,
+        )
+        self.assertIn(
+            'CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL: "true"',
+            workflow,
+        )
+        self.assertIn(
             "WORKFLOW_REPLAY_VALIDATION_CONFIG",
             workflow,
         )
+        self.assertIn(
+            "WORKFLOW_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER",
+            workflow,
+        )
+        self.assertIn(
+            "WORKFLOW_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS",
+            workflow,
+        )
+        self.assertIn("WORKFLOW_BLOCK_REGISTRY_ON_ALPHA_FAIL", workflow)
         self.assertIn("replay_optimization_report.json", workflow)
         self.assertIn("closed_loop_mechanism_report.json", workflow)
         self.assertIn("CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}", workflow)

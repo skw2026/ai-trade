@@ -147,6 +147,7 @@ class RunReplayValidationTest(unittest.TestCase):
             min_execution_pass_runs=1,
             min_total_fills=1,
             min_mean_realized_net_per_fill=0.0,
+            min_break_even_fee_multiplier=1.25,
         )
 
         self.assertEqual(report["optimizer"]["status"], "fail")
@@ -216,10 +217,58 @@ class RunReplayValidationTest(unittest.TestCase):
             min_execution_pass_runs=1,
             min_total_fills=1,
             min_mean_realized_net_per_fill=0.0,
+            min_break_even_fee_multiplier=1.25,
         )
 
         self.assertEqual(report["optimizer"]["status"], "pass")
         self.assertGreaterEqual(report["optimizer"]["pass_candidate_count"], 1)
+
+    def test_execution_optimizer_blocks_positive_net_without_fee_safety_margin(self):
+        run_summaries = [
+            {
+                "symbol": "SOLUSDT",
+                "segment_index": 1,
+                "segment": {
+                    "bars": 40,
+                    "strength_score": 4.0,
+                    "liquidity_score": 2.0,
+                    "avg_range_pct": 0.001,
+                    "avg_vol_12": 0.001,
+                },
+                "assess_summary": {
+                    "runtime_validation_mode": "EXECUTION_ACTIVE",
+                    "execution_status": "PASS",
+                    "funnel_fills_runtime_count": 1,
+                    "execution_activity_count": 1,
+                    "realized_net_per_fill": 0.01,
+                    "filtered_cost_ratio_avg": 0.1,
+                    "execution_attribution_fee_usd": 0.10,
+                },
+            },
+        ]
+        for run in run_summaries:
+            run["economics_attribution"] = REPLAY.build_run_economics_attribution(run)
+
+        report = REPLAY.build_replay_economics_report(
+            run_summaries,
+            min_execution_active_runs=1,
+            min_execution_pass_runs=1,
+            min_total_fills=1,
+            min_mean_realized_net_per_fill=0.0,
+            min_break_even_fee_multiplier=1.25,
+        )
+
+        self.assertEqual(report["optimizer"]["status"], "fail")
+        best = report["optimizer"]["best_deployable_candidate"]
+        self.assertIsNotNone(best)
+        self.assertAlmostEqual(best["break_even_fee_multiplier"], 1.1)
+        self.assertTrue(
+            any(
+                "break_even_fee_multiplier" in reason
+                for reason in best["fail_reasons"]
+            )
+        )
+        self.assertEqual(best["cost_stress"]["status"], "fail")
 
     def test_activation_gate_uses_deployable_optimizer_candidate(self):
         selected_candidate = {

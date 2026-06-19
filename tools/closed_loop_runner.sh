@@ -144,9 +144,12 @@ REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN
 REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
 REPLAY_VALIDATION_MIN_TOTAL_FILLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS:-20}"
 REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL:-0.0}"
+REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER:-1.25}"
 REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO="${CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO:-0.80}"
 REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS:-1}"
 STRATEGY_DIAGNOSE_ENABLED="${CLOSED_LOOP_STRATEGY_DIAGNOSE_ENABLED:-true}"
+BLOCK_REGISTRY_ON_ALPHA_FAIL="${CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL:-true}"
+STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS="${CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS:-6,12,24}"
 STRATEGY_DIAGNOSE_MIN_SAMPLES="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_SAMPLES:-30}"
 STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS:-0.0}"
 STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO:-0.50}"
@@ -254,8 +257,14 @@ Options:
                                       replay-validation 聚合 fills 下限 (default: 20)
   --replay-validation-min-mean-realized-net-per-fill <float>
                                       replay-validation realized_net_per_fill 均值下限 (default: 0.0)
+  --replay-validation-min-break-even-fee-multiplier <float>
+                                      replay optimizer 可部署候选毛利/费用安全垫下限 (default: 1.25)
   --replay-validation-warn-mean-filtered-cost-ratio <float>
                                       replay-validation filtered_cost_ratio_avg 均值告警线 (default: 0.80)
+  --strategy-diagnose-tournament-horizons <csv>
+                                      strategy diagnose alpha 候选 horizon 列表 (default: 6,12,24)
+  --block-registry-on-alpha-fail <true|false>
+                                      alpha viability 未证实时跳过模型注册激活 (default: true)
 
   --gc-enabled <true|false>          启用产物回收 (default: true)
   --gc-keep-run-dirs <int>           保留最近 run 目录数 (default: 120)
@@ -321,10 +330,15 @@ Env toggles:
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_TOTAL_FILLS=<int>    replay-validation 聚合 fills 下限 (default: 20)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL=<float>
                                                        replay-validation realized_net_per_fill 均值下限 (default: 0.0)
+  CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER=<float>
+                                                       replay optimizer 可部署候选毛利/费用安全垫下限 (default: 1.25)
   CLOSED_LOOP_REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO=<float>
                                                        replay-validation filtered_cost_ratio_avg 均值告警线 (default: 0.80)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS=<int>
                                                        多币对 replay 至少多少币对可进入主链 (default: 1)
+  CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS=<csv>
+                                                       alpha 候选 horizon 列表 (default: 6,12,24)
+  CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL=true|false   alpha viability 失败时跳过模型注册激活 (default: true)
   CLOSED_LOOP_RUN_ID=<id>                              可选：外部 workflow 指定本轮 run_id，避免 artifact 读取 latest 漂移
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
@@ -476,8 +490,14 @@ while [[ $# -gt 0 ]]; do
       REPLAY_VALIDATION_MIN_TOTAL_FILLS="$2"; shift 2;;
     --replay-validation-min-mean-realized-net-per-fill)
       REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL="$2"; shift 2;;
+    --replay-validation-min-break-even-fee-multiplier)
+      REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER="$2"; shift 2;;
     --replay-validation-warn-mean-filtered-cost-ratio)
       REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO="$2"; shift 2;;
+    --strategy-diagnose-tournament-horizons)
+      STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS="$2"; shift 2;;
+    --block-registry-on-alpha-fail)
+      BLOCK_REGISTRY_ON_ALPHA_FAIL="$2"; shift 2;;
     --gc-enabled)
       GC_ENABLED="$2"; shift 2;;
     --gc-keep-run-dirs)
@@ -1276,8 +1296,112 @@ run_integrator() {
   echo "[INFO] R2 integrator done"
 }
 
+maybe_write_registry_alpha_block_report() {
+  if ! is_true "${BLOCK_REGISTRY_ON_ALPHA_FAIL}"; then
+    return 1
+  fi
+  if [[ ! -f "${STRATEGY_DIAGNOSE_REPORT_PATH}" ]]; then
+    return 1
+  fi
+
+  python3 - \
+    "${STRATEGY_DIAGNOSE_REPORT_PATH}" \
+    "${REGISTRY_RESULT_PATH}" \
+    "${RUN_ID}" <<'PY'
+import datetime as dt
+import json
+import sys
+from pathlib import Path
+
+
+def as_list(value):
+    return value if isinstance(value, list) else []
+
+
+strategy_path = Path(sys.argv[1])
+out_path = Path(sys.argv[2])
+run_id = sys.argv[3]
+try:
+    strategy = json.loads(strategy_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    sys.exit(1)
+
+status = str(strategy.get("status", "")).strip().lower()
+diagnostics = as_list(strategy.get("diagnostics"))
+codes = {
+    str(item.get("code", "")).strip()
+    for item in diagnostics
+    if isinstance(item, dict)
+}
+alpha = strategy.get("alpha_tournament", {})
+if not isinstance(alpha, dict):
+    alpha = {}
+alpha_status = str(alpha.get("status", "")).strip().lower()
+alpha_pass = alpha_status == "pass"
+
+block_reasons = []
+if "confirmed_trend_raw_edge_non_positive" in codes:
+    block_reasons.append("current_strategy_confirmed_trend_raw_edge_non_positive")
+if "confirmed_trend_positive_ratio_low" in codes:
+    block_reasons.append("current_strategy_confirmed_trend_positive_ratio_low")
+if not alpha_pass and status in {"fail", "action_required", "insufficient_samples"}:
+    block_reasons.append("no_alpha_tournament_candidate_positive_after_cost")
+if status == "fail" and alpha_pass and block_reasons:
+    block_reasons.append("viable_alpha_candidate_exists_but_current_strategy_not_aligned")
+
+if not block_reasons:
+    sys.exit(1)
+
+created_at = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+gate_fail_reasons = [f"alpha_viability: {reason}" for reason in dict.fromkeys(block_reasons)]
+payload = {
+    "entry_id": f"{run_id}_alpha_viability_blocked",
+    "created_at_utc": created_at,
+    "model_version": "",
+    "model_file": "",
+    "activated": False,
+    "activation_skipped": True,
+    "skip_reason": "alpha_viability_not_proven",
+    "gate": {
+        "pass": False,
+        "fail_reasons": gate_fail_reasons,
+        "warn_reasons": [],
+        "metric_summary": {
+            "source": "strategy_diagnose",
+            "strategy_status": status,
+            "alpha_tournament_status": alpha_status or "missing",
+            "alpha_pass_candidate_count": alpha.get("pass_candidate_count"),
+            "best_alpha_candidate": alpha.get("best_candidate"),
+        },
+        "external": {
+            "strategy_diagnose": {
+                "path": str(strategy_path),
+                "status": status,
+                "readiness_status": strategy.get("readiness_status"),
+                "fail_reasons": as_list(strategy.get("fail_reasons")),
+                "warn_reasons": as_list(strategy.get("warn_reasons")),
+                "diagnostic_codes": sorted(code for code in codes if code),
+                "alpha_tournament": alpha,
+            }
+        },
+    },
+}
+out_path.parent.mkdir(parents=True, exist_ok=True)
+out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+print(f"REGISTRY_SKIPPED_ALPHA_VIABILITY: {out_path}")
+for reason in gate_fail_reasons:
+    print(f"GATE_FAIL: {reason}")
+sys.exit(0)
+PY
+}
+
 run_registry() {
   echo "[INFO] model registry start"
+  if maybe_write_registry_alpha_block_report; then
+    echo "[INFO] model registry skipped: alpha viability not proven"
+    echo "[INFO] model registry done"
+    return 0
+  fi
   REG_ARGS=(
     tools/model_registry.py register
     --model_file="${MODEL_OUTPUT_PATH}"
@@ -1515,6 +1639,7 @@ write_replay_validation_skip_report() {
       "min_execution_pass_runs": ${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS},
       "min_total_fills": ${REPLAY_VALIDATION_MIN_TOTAL_FILLS},
       "min_mean_realized_net_per_fill": ${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL},
+      "min_break_even_fee_multiplier": ${REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER},
       "warn_mean_filtered_cost_ratio": ${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}
     }
   }
@@ -1538,6 +1663,7 @@ write_replay_validation_fail_report() {
   REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS_VALUE="${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS}" \
   REPLAY_VALIDATION_MIN_TOTAL_FILLS_VALUE="${REPLAY_VALIDATION_MIN_TOTAL_FILLS}" \
   REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL_VALUE="${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL}" \
+  REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER_VALUE="${REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER}" \
   REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO_VALUE="${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}" \
   REPLAY_VALIDATION_COMMAND_EXIT_CODE_VALUE="${exit_code}" \
   REPLAY_VALIDATION_COMMAND_LOG_PATH_VALUE="${command_log_path}" \
@@ -1649,6 +1775,7 @@ payload = {
             "min_execution_pass_runs": as_int(os.environ.get("REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS_VALUE", "0")),
             "min_total_fills": as_int(os.environ.get("REPLAY_VALIDATION_MIN_TOTAL_FILLS_VALUE", "0")),
             "min_mean_realized_net_per_fill": as_float(os.environ.get("REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL_VALUE", "0")),
+            "min_break_even_fee_multiplier": as_float(os.environ.get("REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER_VALUE", "0")),
             "warn_mean_filtered_cost_ratio": as_float(os.environ.get("REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO_VALUE", "0")),
         },
     },
@@ -1698,6 +1825,7 @@ run_replay_validation() {
     --min_execution_pass_runs "${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS}"
     --min_total_fills "${REPLAY_VALIDATION_MIN_TOTAL_FILLS}"
     --min_mean_realized_net_per_fill "${REPLAY_VALIDATION_MIN_MEAN_REALIZED_NET_PER_FILL}"
+    --min_break_even_fee_multiplier "${REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER}"
     --warn_mean_filtered_cost_ratio "${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}"
     --min_tradable_symbols "${REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS}"
   )
@@ -1780,6 +1908,7 @@ run_strategy_diagnose() {
     --ohlcv_csv "${CSV_PATH}"
     --forward-bars "${PREDICT_HORIZON_BARS}"
     --round-trip-cost-bps "${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
+    --tournament-horizons "${STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS}"
     --min-samples "${STRATEGY_DIAGNOSE_MIN_SAMPLES}"
     --min-mean-net-edge-bps "${STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS}"
     --min-positive-net-ratio "${STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO}"

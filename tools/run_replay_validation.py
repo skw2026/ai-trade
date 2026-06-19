@@ -1446,6 +1446,7 @@ def evaluate_replay_policy(
     min_execution_pass_runs: int,
     min_total_fills: int,
     min_mean_realized_net_per_fill: float,
+    min_break_even_fee_multiplier: float,
 ) -> dict[str, Any]:
     selected: list[dict[str, Any]] = []
     for run in run_summaries:
@@ -1503,7 +1504,40 @@ def evaluate_replay_policy(
         for run in selected
     ]
     economics_summary = summarize_economics_attribution(economics)
+    total_gross = float(economics_summary.get("total_estimated_gross_pnl_usd") or 0.0)
+    total_fee = float(economics_summary.get("total_fee_usd") or 0.0)
+    break_even_fee_multiplier = (
+        1_000_000_000.0
+        if abs(total_fee) <= 1e-12 and total_gross > 0.0
+        else safe_ratio(total_gross, total_fee)
+    )
+    fee_stress = summarize_cost_adjusted_rows(
+        economics,
+        fee_multiplier=float(min_break_even_fee_multiplier),
+    )
+    fee_stress_mean_net = fee_stress.get("mean_adjusted_realized_net_per_fill")
+    fee_stress_status = (
+        "pass"
+        if int(fee_stress.get("total_fills") or 0) >= max(1, min_total_fills)
+        and isinstance(fee_stress_mean_net, (int, float))
+        and float(fee_stress_mean_net) >= float(min_mean_realized_net_per_fill)
+        and int(fee_stress.get("positive_segments") or 0) > 0
+        else "fail"
+    )
     validation_status = str(aggregate_validation.get("status", "")).lower()
+    candidate_fail_reasons: list[str] = []
+    if (
+        break_even_fee_multiplier is None
+        or float(break_even_fee_multiplier) < float(min_break_even_fee_multiplier)
+    ):
+        candidate_fail_reasons.append(
+            "break_even_fee_multiplier "
+            f"{break_even_fee_multiplier} < min_break_even_fee_multiplier={float(min_break_even_fee_multiplier)}"
+        )
+    if fee_stress_status != "pass":
+        candidate_fail_reasons.append(
+            f"fee_x{float(min_break_even_fee_multiplier):g}_stress_status={fee_stress_status}"
+        )
     pass_status = (
         validation_status in {"pass", "pass_with_actions"}
         and not aggregate_validation.get("quality_fail_reasons")
@@ -1517,6 +1551,7 @@ def evaluate_replay_policy(
         >= float(min_mean_realized_net_per_fill)
         and int(aggregate_summary.get("positive_realized_net_with_fills_runs") or 0)
         > 0
+        and not candidate_fail_reasons
     )
     return {
         "name": name,
@@ -1524,10 +1559,36 @@ def evaluate_replay_policy(
         "diagnostic_only": bool(diagnostic_only),
         "filters": filters,
         "status": "pass" if pass_status else "fail",
+        "fail_reasons": []
+        if pass_status
+        else list(
+            dict.fromkeys(
+                [
+                    *(
+                        str(item)
+                        for item in aggregate_validation.get("fail_reasons", [])
+                        if str(item).strip()
+                    ),
+                    *candidate_fail_reasons,
+                ]
+            )
+        ),
         "selected_segments": len(selected),
         "aggregate_summary": aggregate_summary,
         "aggregate_validation": aggregate_validation,
         "economics_summary": economics_summary,
+        "cost_stress": {
+            **fee_stress,
+            "name": f"fee_x{float(min_break_even_fee_multiplier):g}",
+            "status": fee_stress_status,
+        },
+        "break_even_fee_multiplier": break_even_fee_multiplier,
+        "deployable_config": {
+            "candidate_name": name,
+            "filters": filters,
+            "requires_rerun": False,
+            "min_break_even_fee_multiplier": float(min_break_even_fee_multiplier),
+        },
     }
 
 
@@ -1538,12 +1599,14 @@ def build_replay_execution_optimizer(
     min_execution_pass_runs: int,
     min_total_fills: int,
     min_mean_realized_net_per_fill: float,
+    min_break_even_fee_multiplier: float,
 ) -> dict[str, Any]:
     if not run_summaries:
         return {
             "status": "fail",
             "fail_reasons": ["no_replay_runs"],
             "warn_reasons": [],
+            "min_break_even_fee_multiplier": float(min_break_even_fee_multiplier),
             "candidate_count": 0,
             "pass_candidate_count": 0,
             "diagnostic_pass_candidate_count": 0,
@@ -1669,6 +1732,7 @@ def build_replay_execution_optimizer(
             min_execution_pass_runs=min_execution_pass_runs,
             min_total_fills=min_total_fills,
             min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+            min_break_even_fee_multiplier=min_break_even_fee_multiplier,
         )
         for name, description, filters, diagnostic_only in policy_specs
     ]
@@ -1712,10 +1776,15 @@ def build_replay_execution_optimizer(
         warn_reasons.append(
             "only_diagnostic_post_run_filters_found_positive; do not promote without rerun"
         )
+    if pass_candidates:
+        warn_reasons.append(
+            f"deployable_candidates_pass_fee_stress_x{float(min_break_even_fee_multiplier):g}"
+        )
     return {
         "status": "pass" if pass_candidates else "fail",
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
+        "min_break_even_fee_multiplier": float(min_break_even_fee_multiplier),
         "candidate_count": len(candidates),
         "deployable_candidate_count": len(deployable_candidates),
         "pass_candidate_count": len(pass_candidates),
@@ -1739,6 +1808,7 @@ def build_replay_economics_report(
     min_execution_pass_runs: int,
     min_total_fills: int,
     min_mean_realized_net_per_fill: float,
+    min_break_even_fee_multiplier: float,
 ) -> dict[str, Any]:
     economics_rows = [
         run.get("economics_attribution") or build_run_economics_attribution(run)
@@ -1766,6 +1836,7 @@ def build_replay_economics_report(
             min_execution_pass_runs=min_execution_pass_runs,
             min_total_fills=min_total_fills,
             min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+            min_break_even_fee_multiplier=min_break_even_fee_multiplier,
         ),
     }
 
@@ -2647,6 +2718,7 @@ def run_replay_for_symbol(
     min_execution_pass_runs: int,
     min_total_fills: int,
     min_mean_realized_net_per_fill: float,
+    min_break_even_fee_multiplier: float,
     warn_mean_filtered_cost_ratio: float,
 ) -> tuple[
     list[dict[str, Any]],
@@ -2761,6 +2833,7 @@ def run_replay_for_symbol(
         min_execution_pass_runs=min_execution_pass_runs,
         min_total_fills=min_total_fills,
         min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
+        min_break_even_fee_multiplier=min_break_even_fee_multiplier,
     )
     symbol_selection = {
         "segments_ran": len(run_summaries),
@@ -2899,6 +2972,12 @@ def main() -> int:
         type=float,
         default=0.0,
         help="replay 聚合判定的 realized_net_per_fill 均值下限",
+    )
+    parser.add_argument(
+        "--min_break_even_fee_multiplier",
+        type=float,
+        default=1.25,
+        help="replay optimizer 可部署候选要求的毛利/费用安全垫下限",
     )
     parser.add_argument(
         "--warn_mean_filtered_cost_ratio",
@@ -3062,6 +3141,7 @@ def main() -> int:
             min_execution_pass_runs=args.min_execution_pass_runs,
             min_total_fills=args.min_total_fills,
             min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
+            min_break_even_fee_multiplier=args.min_break_even_fee_multiplier,
             warn_mean_filtered_cost_ratio=args.warn_mean_filtered_cost_ratio,
         )
         symbol_selection = {
@@ -3116,6 +3196,7 @@ def main() -> int:
         min_execution_pass_runs=args.min_execution_pass_runs,
         min_total_fills=args.min_total_fills,
         min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
+        min_break_even_fee_multiplier=args.min_break_even_fee_multiplier,
     )
     activation_gate = build_activation_gate_report(
         aggregate_validation=aggregate_validation,

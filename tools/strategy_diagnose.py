@@ -50,6 +50,20 @@ def normalize_symbol(value: str, fallback: str = "SOURCE") -> str:
     return symbol or fallback
 
 
+def parse_horizons(raw: str, default_horizon: int) -> List[int]:
+    values: List[int] = []
+    for part in str(raw or "").replace(";", ",").split(","):
+        item = part.strip()
+        if not item:
+            continue
+        horizon = safe_int(item, 0)
+        if horizon > 0 and horizon not in values:
+            values.append(horizon)
+    if not values:
+        values.append(max(1, int(default_horizon)))
+    return values
+
+
 def quantile(values: Iterable[float], q: float, default: float) -> float:
     clean = sorted(float(item) for item in values if math.isfinite(float(item)))
     if not clean:
@@ -224,6 +238,35 @@ def classify_row(row: Dict[str, float], thresholds: Dict[str, float]) -> Tuple[s
     return "range", direction, trend_ratio
 
 
+def raw_trend_direction(row: Dict[str, float]) -> int:
+    ema_diff = row["ema_diff"]
+    mom_48 = row["mom_48"]
+    if ema_diff > 0.0 and mom_48 > 0.0:
+        return 1
+    if ema_diff < 0.0 and mom_48 < 0.0:
+        return -1
+    return 0
+
+
+def close_forward_return(
+    row: Dict[str, float],
+    ohlcv_rows: List[Dict[str, float]],
+    index_by_timestamp: Dict[int, int],
+    horizon_bars: int,
+) -> float | None:
+    idx = index_by_timestamp.get(int(row["timestamp"]))
+    if idx is None:
+        return None
+    end_idx = idx + max(1, int(horizon_bars))
+    if end_idx >= len(ohlcv_rows):
+        return None
+    entry_close = ohlcv_rows[idx]["close"]
+    future_close = ohlcv_rows[end_idx]["close"]
+    if entry_close <= 0.0 or future_close <= 0.0:
+        return None
+    return future_close / entry_close - 1.0
+
+
 def path_metrics(
     row: Dict[str, float],
     direction: int,
@@ -252,6 +295,55 @@ def path_metrics(
         mfe_bps = (entry_close / min_low - 1.0) * 10000.0 if min_low > 0.0 else math.nan
         mae_bps = (entry_close / max_high - 1.0) * 10000.0 if max_high > 0.0 else math.nan
     return {"path_mfe_bps": mfe_bps, "path_mae_bps": mae_bps}
+
+
+def build_directional_record(
+    row: Dict[str, float],
+    *,
+    bucket: str,
+    direction: int,
+    trend_ratio: float,
+    horizon_bars: int,
+    configured_forward_bars: int,
+    round_trip_cost_bps: float,
+    ohlcv_rows: List[Dict[str, float]],
+    index_by_timestamp: Dict[int, int],
+) -> Dict[str, float] | None:
+    if direction == 0:
+        return None
+    forward_return = close_forward_return(
+        row,
+        ohlcv_rows,
+        index_by_timestamp,
+        horizon_bars,
+    )
+    if forward_return is None:
+        if int(horizon_bars) != int(configured_forward_bars):
+            return None
+        forward_return = row["forward_return"]
+    gross_forward_bps = float(direction) * float(forward_return) * 10000.0
+    record = {
+        "timestamp": row["timestamp"],
+        "bucket": bucket,
+        "direction": float(direction),
+        "trend_ratio": trend_ratio,
+        "horizon_bars": float(horizon_bars),
+        "gross_forward_bps": gross_forward_bps,
+        "net_forward_bps": gross_forward_bps - round_trip_cost_bps,
+    }
+    record.update(
+        path_metrics(
+            row,
+            direction,
+            ohlcv_rows,
+            index_by_timestamp,
+            horizon_bars,
+        )
+    )
+    path_mfe = record.get("path_mfe_bps", math.nan)
+    if math.isfinite(path_mfe) and path_mfe > 0.0:
+        record["gross_capture_of_path_mfe"] = max(0.0, gross_forward_bps) / path_mfe
+    return record
 
 
 def summarize_records(records: List[Dict[str, float]], round_trip_cost_bps: float) -> Dict[str, Any]:
@@ -295,6 +387,245 @@ def summarize_records(records: List[Dict[str, float]], round_trip_cost_bps: floa
     }
 
 
+def candidate_status(
+    summary: Dict[str, Any],
+    *,
+    min_samples: int,
+    min_mean_net_edge_bps: float,
+    min_positive_net_ratio: float,
+) -> Tuple[str, List[str]]:
+    fail_reasons: List[str] = []
+    sample_count = int(summary.get("sample_count") or 0)
+    mean_net = summary.get("mean_net_forward_bps")
+    positive_ratio = summary.get("positive_net_ratio")
+    if sample_count < int(min_samples):
+        fail_reasons.append(f"sample_count={sample_count} < min_samples={min_samples}")
+    if not isinstance(mean_net, (int, float)) or float(mean_net) <= float(min_mean_net_edge_bps):
+        fail_reasons.append(
+            "mean_net_forward_bps "
+            f"{mean_net} <= min_mean_net_edge_bps={float(min_mean_net_edge_bps)}"
+        )
+    if not isinstance(positive_ratio, (int, float)) or float(positive_ratio) < float(min_positive_net_ratio):
+        fail_reasons.append(
+            "positive_net_ratio "
+            f"{positive_ratio} < min_positive_net_ratio={float(min_positive_net_ratio)}"
+        )
+    return ("pass" if not fail_reasons else "fail", fail_reasons)
+
+
+def alpha_candidate_rank(candidate: Dict[str, Any]) -> Tuple[int, float, float, int]:
+    summary = candidate.get("summary", {})
+    mean_net = summary.get("mean_net_forward_bps")
+    positive_ratio = summary.get("positive_net_ratio")
+    sample_count = int(summary.get("sample_count") or 0)
+    return (
+        1 if candidate.get("status") == "pass" else 0,
+        float(mean_net) if isinstance(mean_net, (int, float)) else float("-inf"),
+        float(positive_ratio) if isinstance(positive_ratio, (int, float)) else float("-inf"),
+        sample_count,
+    )
+
+
+def build_alpha_tournament(
+    symbol: str,
+    feature_rows: List[Dict[str, float]],
+    thresholds: Dict[str, float],
+    ohlcv_rows: List[Dict[str, float]],
+    index_by_timestamp: Dict[int, int],
+    *,
+    forward_bars: int,
+    tournament_horizons: List[int],
+    round_trip_cost_bps: float,
+    candidate_trend_ratio: float,
+    confirmed_trend_ratio: float,
+    min_samples: int,
+    min_mean_net_edge_bps: float,
+    min_positive_net_ratio: float,
+) -> Dict[str, Any]:
+    specs: List[Dict[str, Any]] = [
+        {
+            "name": "confirmed_trend_follow",
+            "target_bucket": "trend",
+            "direction_mode": "follow",
+            "min_trend_ratio": confirmed_trend_ratio,
+            "description": "当前 confirmed trend 顺势入场",
+        },
+        {
+            "name": "confirmed_trend_inverse",
+            "target_bucket": "trend",
+            "direction_mode": "inverse",
+            "min_trend_ratio": confirmed_trend_ratio,
+            "description": "confirmed trend 反向入场，用于发现反预测",
+        },
+        {
+            "name": "candidate_trend_follow",
+            "target_bucket": "trend_or_candidate",
+            "direction_mode": "follow",
+            "min_trend_ratio": candidate_trend_ratio,
+            "description": "更早的 candidate trend 顺势入场",
+        },
+        {
+            "name": "candidate_trend_inverse",
+            "target_bucket": "trend_or_candidate",
+            "direction_mode": "inverse",
+            "min_trend_ratio": candidate_trend_ratio,
+            "description": "更早的 candidate trend 反向入场",
+        },
+        {
+            "name": "range_weak_trend_follow",
+            "target_bucket": "range",
+            "direction_mode": "follow",
+            "min_trend_ratio": 0.0,
+            "description": "RANGE 内弱趋势顺势",
+        },
+        {
+            "name": "range_weak_trend_reversal",
+            "target_bucket": "range",
+            "direction_mode": "inverse",
+            "min_trend_ratio": 0.0,
+            "description": "RANGE 内弱趋势反转",
+        },
+        {
+            "name": "all_directional_follow",
+            "target_bucket": "all",
+            "direction_mode": "follow",
+            "min_trend_ratio": 0.0,
+            "description": "所有同向信号样本",
+        },
+        {
+            "name": "all_directional_inverse",
+            "target_bucket": "all",
+            "direction_mode": "inverse",
+            "min_trend_ratio": 0.0,
+            "description": "所有同向信号反向样本",
+        },
+    ]
+
+    candidates: List[Dict[str, Any]] = []
+    for horizon in tournament_horizons:
+        for spec in specs:
+            records: List[Dict[str, float]] = []
+            for row in feature_rows:
+                bucket, classified_direction, trend_ratio = classify_row(row, thresholds)
+                raw_direction = raw_trend_direction(row)
+                if raw_direction == 0:
+                    continue
+                target_bucket = str(spec["target_bucket"])
+                min_trend_ratio = float(spec["min_trend_ratio"])
+                if target_bucket == "trend" and bucket != "trend":
+                    continue
+                if target_bucket == "range" and bucket != "range":
+                    continue
+                if target_bucket == "trend_or_candidate" and trend_ratio < min_trend_ratio:
+                    continue
+                if target_bucket in {"trend", "range"} and trend_ratio < min_trend_ratio:
+                    continue
+                base_direction = classified_direction if classified_direction else raw_direction
+                if target_bucket in {"range", "all"}:
+                    base_direction = raw_direction
+                direction = base_direction
+                if str(spec["direction_mode"]) == "inverse":
+                    direction = -direction
+                record = build_directional_record(
+                    row,
+                    bucket=bucket,
+                    direction=direction,
+                    trend_ratio=trend_ratio,
+                    horizon_bars=horizon,
+                    configured_forward_bars=forward_bars,
+                    round_trip_cost_bps=round_trip_cost_bps,
+                    ohlcv_rows=ohlcv_rows,
+                    index_by_timestamp=index_by_timestamp,
+                )
+                if record is not None:
+                    records.append(record)
+            summary = summarize_records(records, round_trip_cost_bps)
+            status, fail_reasons = candidate_status(
+                summary,
+                min_samples=min_samples,
+                min_mean_net_edge_bps=min_mean_net_edge_bps,
+                min_positive_net_ratio=min_positive_net_ratio,
+            )
+            candidate_name = f"{spec['name']}_h{horizon}"
+            candidates.append(
+                {
+                    "name": candidate_name,
+                    "symbol": symbol,
+                    "base_name": spec["name"],
+                    "description": spec["description"],
+                    "horizon_bars": int(horizon),
+                    "target_bucket": spec["target_bucket"],
+                    "direction_mode": spec["direction_mode"],
+                    "min_trend_ratio": min_trend_ratio,
+                    "status": status,
+                    "fail_reasons": fail_reasons,
+                    "summary": summary,
+                    "deployable_config": {
+                        "symbol": symbol,
+                        "signal_variant": spec["name"],
+                        "direction_mode": spec["direction_mode"],
+                        "target_bucket": spec["target_bucket"],
+                        "predict_horizon_bars": int(horizon),
+                        "min_trend_ratio": min_trend_ratio,
+                        "round_trip_cost_bps": float(round_trip_cost_bps),
+                    },
+                }
+            )
+
+    ranked = sorted(candidates, key=alpha_candidate_rank, reverse=True)
+    pass_candidates = [item for item in ranked if item.get("status") == "pass"]
+    return {
+        "schema_version": "alpha_viability_tournament_v1",
+        "status": "pass" if pass_candidates else "fail",
+        "symbol": symbol,
+        "candidate_count": len(candidates),
+        "pass_candidate_count": len(pass_candidates),
+        "horizons": [int(item) for item in tournament_horizons],
+        "thresholds": {
+            "min_samples": int(min_samples),
+            "min_mean_net_edge_bps": float(min_mean_net_edge_bps),
+            "min_positive_net_ratio": float(min_positive_net_ratio),
+        },
+        "best_candidate": ranked[0] if ranked else None,
+        "pass_candidates": pass_candidates[:10],
+        "ranked_candidates": ranked[:20],
+        "fail_reasons": []
+        if pass_candidates
+        else ["no_alpha_candidate_positive_after_cost"],
+    }
+
+
+def combine_alpha_tournaments(symbol_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    candidates: List[Dict[str, Any]] = []
+    horizons: List[int] = []
+    for item in symbol_items:
+        tournament = item.get("alpha_tournament", {})
+        if not isinstance(tournament, dict):
+            continue
+        for horizon in tournament.get("horizons", []):
+            horizon_int = safe_int(horizon, 0)
+            if horizon_int > 0 and horizon_int not in horizons:
+                horizons.append(horizon_int)
+        for candidate in tournament.get("ranked_candidates", []):
+            if isinstance(candidate, dict):
+                candidates.append(candidate)
+    ranked = sorted(candidates, key=alpha_candidate_rank, reverse=True)
+    pass_candidates = [item for item in ranked if item.get("status") == "pass"]
+    return {
+        "schema_version": "alpha_viability_tournament_v1",
+        "status": "pass" if pass_candidates else "fail",
+        "candidate_count": len(candidates),
+        "pass_candidate_count": len(pass_candidates),
+        "horizons": sorted(horizons),
+        "best_candidate": ranked[0] if ranked else None,
+        "pass_candidates": pass_candidates[:10],
+        "ranked_candidates": ranked[:20],
+        "fail_reasons": []
+        if pass_candidates
+        else ["no_alpha_candidate_positive_after_cost"],
+    }
+
+
 def diagnose_symbol(
     symbol: str,
     feature_path: Path,
@@ -304,6 +635,10 @@ def diagnose_symbol(
     round_trip_cost_bps: float,
     candidate_trend_ratio: float,
     confirmed_trend_ratio: float,
+    tournament_horizons: List[int],
+    min_samples: int,
+    min_mean_net_edge_bps: float,
+    min_positive_net_ratio: float,
 ) -> Dict[str, Any]:
     feature_rows = load_feature_rows(feature_path)
     thresholds = derive_thresholds(feature_rows)
@@ -366,6 +701,21 @@ def diagnose_symbol(
         "all": summarize_records(all_records, round_trip_cost_bps),
         "candidate_trend": summarize_records(candidate_records, round_trip_cost_bps),
         "confirmed_trend": summarize_records(confirmed_records, round_trip_cost_bps),
+        "alpha_tournament": build_alpha_tournament(
+            symbol,
+            feature_rows,
+            thresholds,
+            ohlcv_rows,
+            index_by_timestamp,
+            forward_bars=forward_bars,
+            tournament_horizons=tournament_horizons,
+            round_trip_cost_bps=round_trip_cost_bps,
+            candidate_trend_ratio=candidate_trend_ratio,
+            confirmed_trend_ratio=confirmed_trend_ratio,
+            min_samples=min_samples,
+            min_mean_net_edge_bps=min_mean_net_edge_bps,
+            min_positive_net_ratio=min_positive_net_ratio,
+        ),
     }
 
 
@@ -548,6 +898,10 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     feature_paths.update(parse_mapping(args.feature_csv_by_symbol))
     ohlcv_paths = parse_path_entries(args.ohlcv_csv, default_symbol)
     ohlcv_paths.update(parse_mapping(args.ohlcv_csv_by_symbol))
+    tournament_horizons = parse_horizons(
+        args.tournament_horizons,
+        int(args.forward_bars),
+    )
 
     by_symbol: Dict[str, Any] = {}
     fail_reasons: List[str] = []
@@ -570,6 +924,10 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             round_trip_cost_bps=float(args.round_trip_cost_bps),
             candidate_trend_ratio=float(args.candidate_trend_ratio),
             confirmed_trend_ratio=float(args.confirmed_trend_ratio),
+            tournament_horizons=tournament_horizons,
+            min_samples=int(args.min_samples),
+            min_mean_net_edge_bps=float(args.min_mean_net_edge_bps),
+            min_positive_net_ratio=float(args.min_positive_net_ratio),
         )
 
     if not by_symbol:
@@ -591,6 +949,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         "candidate_trend": combine_summaries(symbol_items, "candidate_trend"),
         "confirmed_trend": combine_summaries(symbol_items, "confirmed_trend"),
     }
+    alpha_tournament = combine_alpha_tournaments(symbol_items)
     status, local_fails, local_warns, diagnostics = classify_diagnosis(
         aggregate,
         min_samples=int(args.min_samples),
@@ -600,6 +959,16 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     )
     fail_reasons.extend(local_fails)
     warn_reasons.extend(local_warns)
+    if alpha_tournament.get("status") == "pass" and status in {"fail", "action_required"}:
+        warn_reasons.append(
+            "alpha_tournament_found_viable_candidate_but_current_strategy_not_aligned"
+        )
+    elif alpha_tournament.get("status") == "fail":
+        fail_reasons.extend(
+            str(item)
+            for item in alpha_tournament.get("fail_reasons", [])
+            if str(item).strip() and str(item) not in fail_reasons
+        )
     return {
         "schema_version": "strategy_diagnose_v1",
         "generated_at_utc": now_utc_iso(),
@@ -616,6 +985,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "min_mfe_cost_coverage": float(args.min_mfe_cost_coverage),
         },
         "aggregate": aggregate,
+        "alpha_tournament": alpha_tournament,
         "by_symbol": by_symbol,
         "diagnostics": diagnostics,
         "recommendations": build_recommendations(status, diagnostics),
@@ -651,6 +1021,11 @@ def parse_args() -> argparse.Namespace:
         help="comma-separated SYMBOL=ohlcv.csv mapping",
     )
     parser.add_argument("--forward-bars", type=int, default=12)
+    parser.add_argument(
+        "--tournament-horizons",
+        default="",
+        help="comma-separated horizons for alpha viability tournament; empty uses --forward-bars",
+    )
     parser.add_argument("--round-trip-cost-bps", type=float, default=13.0)
     parser.add_argument("--candidate-trend-ratio", type=float, default=0.60)
     parser.add_argument("--confirmed-trend-ratio", type=float, default=1.00)

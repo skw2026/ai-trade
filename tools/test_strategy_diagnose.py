@@ -47,7 +47,13 @@ FEATURE_FIELDS = [
 OHLCV_FIELDS = ["timestamp", "open", "high", "low", "close", "volume"]
 
 
-def write_fixture(root: pathlib.Path, *, forward_return: float, path_high: float) -> tuple[pathlib.Path, pathlib.Path]:
+def write_fixture(
+    root: pathlib.Path,
+    *,
+    forward_return: float,
+    path_high: float,
+    close_step: float = 0.0,
+) -> tuple[pathlib.Path, pathlib.Path]:
     feature_path = root / "feature_store_5m.csv"
     ohlcv_path = root / "ohlcv_5m.csv"
     start_ts = 1_700_000_000_000
@@ -81,13 +87,14 @@ def write_fixture(root: pathlib.Path, *, forward_return: float, path_high: float
         writer = csv.DictWriter(fp, fieldnames=OHLCV_FIELDS)
         writer.writeheader()
         for index in range(72):
+            close = 100.0 + float(index) * float(close_step)
             writer.writerow(
                 {
                     "timestamp": start_ts + index * step,
-                    "open": 100.0,
-                    "high": path_high,
-                    "low": 99.8,
-                    "close": 100.0,
+                    "open": close,
+                    "high": max(path_high, close),
+                    "low": min(99.8, close),
+                    "close": close,
                     "volume": 10.0,
                 }
             )
@@ -180,6 +187,55 @@ class StrategyDiagnoseTest(unittest.TestCase):
                 any(
                     item["code"] == "confirmed_trend_raw_edge_non_positive"
                     for item in payload["diagnostics"]
+                )
+            )
+
+    def test_alpha_tournament_finds_inverse_candidate_when_follow_is_negative(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            feature_path, ohlcv_path = write_fixture(
+                root, forward_return=-0.002, path_high=100.2, close_step=-0.2
+            )
+            output = root / "strategy_diagnose_report.json"
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "strategy_diagnose.py",
+                    "--output",
+                    str(output),
+                    "--symbol",
+                    "BTCUSDT",
+                    "--feature_csv",
+                    str(feature_path),
+                    "--ohlcv_csv",
+                    str(ohlcv_path),
+                    "--forward-bars",
+                    "12",
+                    "--tournament-horizons",
+                    "12",
+                    "--round-trip-cost-bps",
+                    "13",
+                    "--min-samples",
+                    "30",
+                ]
+                code = STRATEGY_DIAGNOSE.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            tournament = payload["alpha_tournament"]
+            self.assertEqual(tournament["status"], "pass")
+            best = tournament["best_candidate"]
+            self.assertEqual(best["base_name"], "confirmed_trend_inverse")
+            self.assertEqual(best["direction_mode"], "inverse")
+            self.assertGreater(best["summary"]["mean_net_forward_bps"], 0.0)
+            self.assertTrue(
+                any(
+                    reason
+                    == "alpha_tournament_found_viable_candidate_but_current_strategy_not_aligned"
+                    for reason in payload["warn_reasons"]
                 )
             )
 

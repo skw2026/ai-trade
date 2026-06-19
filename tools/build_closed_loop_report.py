@@ -827,6 +827,7 @@ def assess_strategy_diagnose(path: Path) -> Dict[str, Any]:
         "diagnose_status": status_raw or "unknown",
         "target": payload.get("target", {}),
         "aggregate": payload.get("aggregate", {}),
+        "alpha_tournament": payload.get("alpha_tournament", {}),
         "by_symbol": payload.get("by_symbol", {}),
         "diagnostics": payload.get("diagnostics", []),
         "recommendations": payload.get("recommendations", []),
