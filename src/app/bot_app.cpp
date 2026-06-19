@@ -5784,9 +5784,10 @@ void BotApplication::LogStatus() {
   if (config_.system_status_log_interval_ticks <= 0) return;
   if (market_tick_count_ % config_.system_status_log_interval_ticks != 0) return;
 
+  const bool adapter_trade_ok = adapter_ != nullptr && adapter_->TradeOk();
+  const bool force_reduce_only = IsForceReduceOnlyActive();
   const bool trade_ok =
-      adapter_ != nullptr && adapter_->TradeOk() && !trading_halted_ &&
-      !IsForceReduceOnlyActive();
+      adapter_trade_ok && !trading_halted_ && !force_reduce_only;
 
   std::string ws_summary = "n/a";
   if (const auto* bybit =
@@ -6068,6 +6069,18 @@ void BotApplication::LogStatus() {
           ", risk_mode=" + RiskModeToString(system_.risk_mode()) +
           ", boot={id=" + boot_id_ + ", startup_utc=" + startup_utc_ + "}" +
           ", ws={" + ws_summary + "}" +
+          ", trade_health={adapter_trade_ok=" +
+          std::string(adapter_trade_ok ? "true" : "false") +
+          ", force_reduce_only=" +
+          std::string(force_reduce_only ? "true" : "false") +
+          ", protection_reduce_only=" +
+          std::string(protection_forced_reduce_only_ ? "true" : "false") +
+          ", gate_reduce_only=" +
+          std::string(gate_forced_reduce_only_ ? "true" : "false") +
+          ", reconcile_reduce_only=" +
+          std::string(reconcile_forced_reduce_only_ ? "true" : "false") +
+          ", trading_halted=" +
+          std::string(trading_halted_ ? "true" : "false") + "}" +
           ", account={equity=" + std::to_string(system_.account().equity_usd()) +
           ", drawdown_pct=" + std::to_string(system_.account().drawdown_pct()) +
           ", notional=" + std::to_string(system_.account().current_notional_usd()) +

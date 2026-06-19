@@ -1437,7 +1437,9 @@ std::string BybitExchangeAdapter::ChannelHealthSummary() const {
     private_ws_health = bool_to_string(private_stream_->Healthy());
   }
 
-  return "market_channel=" + market_channel_name +
+  return "connected=" + std::string(bool_to_string(connected_)) +
+         ", adapter_trade_ok=" + std::string(bool_to_string(TradeOk())) +
+         ", market_channel=" + market_channel_name +
          ", fill_channel=" + fill_channel_name +
          ", public_ws_healthy=" + public_ws_health +
          ", private_ws_healthy=" + private_ws_health;

@@ -2402,6 +2402,30 @@ def assess(
         "critical_count": count(r"\bCRITICAL\b", text),
         "trading_halted_event_count": count(r"\bTRADING_HALTED\b", text),
         "trade_ok_false_count": count(r"RUNTIME_STATUS:.*trade_ok=false", text),
+        "adapter_trade_not_ok_count": count(
+            r"RUNTIME_STATUS:.*trade_health=\{[^}]*adapter_trade_ok=false",
+            text,
+        ),
+        "force_reduce_only_active_count": count(
+            r"RUNTIME_STATUS:.*trade_health=\{[^}]*force_reduce_only=true",
+            text,
+        ),
+        "protection_reduce_only_active_count": count(
+            r"RUNTIME_STATUS:.*trade_health=\{[^}]*protection_reduce_only=true",
+            text,
+        ),
+        "gate_reduce_only_active_count": count(
+            r"RUNTIME_STATUS:.*trade_health=\{[^}]*gate_reduce_only=true",
+            text,
+        ),
+        "reconcile_reduce_only_active_count": count(
+            r"RUNTIME_STATUS:.*trade_health=\{[^}]*reconcile_reduce_only=true",
+            text,
+        ),
+        "trade_health_halted_count": count(
+            r"RUNTIME_STATUS:.*trade_health=\{[^}]*trading_halted=true",
+            text,
+        ),
         "risk_mode_reduce_only_count": count(
             r"RUNTIME_STATUS:.*(?:risk=\{[^}]*mode=reduce_only|risk_mode=reduce_only)",
             text,
@@ -3474,11 +3498,36 @@ def assess(
         ):
             detail = ""
             if metrics["trend_candidate_probe_skip_trade_not_ok_count"] > 0:
+                blocker_sources = []
+                source_fields = [
+                    ("adapter_trade_ok=false", "adapter_trade_not_ok_count"),
+                    ("force_reduce_only=true", "force_reduce_only_active_count"),
+                    (
+                        "protection_reduce_only=true",
+                        "protection_reduce_only_active_count",
+                    ),
+                    ("gate_reduce_only=true", "gate_reduce_only_active_count"),
+                    (
+                        "reconcile_reduce_only=true",
+                        "reconcile_reduce_only_active_count",
+                    ),
+                    ("trading_halted=true", "trade_health_halted_count"),
+                ]
+                for label, metric_name in source_fields:
+                    value = int(metrics.get(metric_name, 0))
+                    if value > 0:
+                        blocker_sources.append(f"{label}:{value}")
+                if not blocker_sources and metrics["trade_ok_false_count"] > 0:
+                    blocker_sources.append("source=unknown_legacy_runtime_log")
+                source_detail = ""
+                if blocker_sources:
+                    source_detail = ", blocker_sources=" + ",".join(blocker_sources)
                 detail = (
                     "；TREND_CANDIDATE 探针被 TRADE_NOT_OK 阻断: "
                     f"skip_trade_not_ok={metrics['trend_candidate_probe_skip_trade_not_ok_count']}, "
                     f"trade_ok_false_windows={metrics['trade_ok_false_count']}, "
                     f"risk_mode_reduce_only_windows={metrics['risk_mode_reduce_only_count']}"
+                    f"{source_detail}"
                 )
             execution_fail_reasons.append(
                 "未检测到执行活动（BYBIT_SUBMIT/enqueued/fills 全为 0）" + detail

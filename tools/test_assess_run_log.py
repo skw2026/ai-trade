@@ -29,6 +29,11 @@ class AssessRunLogTest(unittest.TestCase):
         notional: float,
         reduce_only: bool = False,
         trading_halted: bool = False,
+        adapter_trade_ok: bool = True,
+        force_reduce_only: bool = False,
+        protection_reduce_only: bool = False,
+        gate_reduce_only: bool = False,
+        reconcile_reduce_only: bool = False,
         public_ws_healthy: bool = True,
         private_ws_healthy: bool = True,
         funnel_enqueued: int = 0,
@@ -95,6 +100,11 @@ class AssessRunLogTest(unittest.TestCase):
     ) -> str:
         reduce_only_text = "true" if reduce_only else "false"
         trading_halted_text = "true" if trading_halted else "false"
+        adapter_trade_ok_text = "true" if adapter_trade_ok else "false"
+        force_reduce_only_text = "true" if force_reduce_only else "false"
+        protection_reduce_only_text = "true" if protection_reduce_only else "false"
+        gate_reduce_only_text = "true" if gate_reduce_only else "false"
+        reconcile_reduce_only_text = "true" if reconcile_reduce_only else "false"
         public_ws_healthy_text = "true" if public_ws_healthy else "false"
         private_ws_healthy_text = "true" if private_ws_healthy else "false"
         execution_quality_guard_active_text = (
@@ -114,6 +124,14 @@ class AssessRunLogTest(unittest.TestCase):
             f"trade_ok=true, trading_halted={trading_halted_text}, "
             "ws={market_channel=public_ws, fill_channel=private_ws, "
             f"public_ws_healthy={public_ws_healthy_text}, private_ws_healthy={private_ws_healthy_text}"
+            "}, "
+            "trade_health={"
+            f"adapter_trade_ok={adapter_trade_ok_text}, "
+            f"force_reduce_only={force_reduce_only_text}, "
+            f"protection_reduce_only={protection_reduce_only_text}, "
+            f"gate_reduce_only={gate_reduce_only_text}, "
+            f"reconcile_reduce_only={reconcile_reduce_only_text}, "
+            f"trading_halted={trading_halted_text}"
             "}, "
             f"account={{equity={equity:.6f}, drawdown_pct=0.000100, "
             f"notional={notional:.6f}, realized_pnl={realized_pnl:.6f}, "
@@ -848,6 +866,28 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertTrue(
             any(
                 "TREND_CANDIDATE 探针被 TRADE_NOT_OK 阻断" in item
+                for item in report["execution_fail_reasons"]
+            )
+        )
+
+    def test_no_execution_reports_trade_not_ok_source_breakdown(self):
+        text = (
+            "2026-02-14 15:00:01 [INFO] TREND_CANDIDATE_PROBE_SKIPPED: symbol=SOLUSDT, reason=TRADE_NOT_OK, trend_threshold_ratio=0.74, current_notional_usd=0.0, market_tick=24\n"
+            "2026-02-14 15:00:20 [INFO] RUNTIME_STATUS: ticks=20, trade_ok=false, trading_halted=false, "
+            "risk_mode=reduce_only, "
+            "ws={connected=true, adapter_trade_ok=false, market_channel=public_ws, fill_channel=private_ws, public_ws_healthy=true, private_ws_healthy=true}, "
+            "trade_health={adapter_trade_ok=false, force_reduce_only=false, protection_reduce_only=false, gate_reduce_only=false, reconcile_reduce_only=false, trading_halted=false}, "
+            "account={equity=100000.000000, drawdown_pct=0.000000, notional=0.000000, realized_pnl=0.000000, fees=0.000000, realized_net=0.000000}, "
+            "regime_window={trend_ticks=0, range_ticks=20, extreme_ticks=0, warmup_ticks=0, trend_candidate_ticks=6}, "
+            "regime_current={symbol=SOLUSDT, regime=RANGE, bucket=RANGE, warmup=false, trend_threshold_ratio=0.740000, trend_candidate=true}\n"
+        )
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        metrics = report["metrics"]
+        self.assertEqual(metrics["adapter_trade_not_ok_count"], 1)
+        self.assertEqual(metrics["force_reduce_only_active_count"], 0)
+        self.assertTrue(
+            any(
+                "blocker_sources=adapter_trade_ok=false:1" in item
                 for item in report["execution_fail_reasons"]
             )
         )
