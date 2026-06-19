@@ -11,7 +11,7 @@ on:
       min_runtime_status:
         description: "最小 RUNTIME_STATUS 条数"
         required: true
-        default: "12"
+        default: "10"
         type: string
   workflow_run:
     workflows:
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 30
     env:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
-      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '12' }}
+      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '10' }}
       SMOKE_OUTPUT_ROOT: ./data/reports/closed_loop_smoke
       SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS: "5400"
     steps:

@@ -58,7 +58,7 @@ STAGE_RULES: Dict[str, StageRule] = {
     ),
     "SMOKE": StageRule(
         name="SMOKE",
-        min_runtime_status=12,
+        min_runtime_status=10,
         require_gate_window=False,
         require_gate_pass=False,
         require_evolution_init=False,

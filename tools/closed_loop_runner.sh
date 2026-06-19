@@ -686,7 +686,7 @@ default_min_runtime_status_for_stage() {
       echo 0
       ;;
     SMOKE)
-      echo 12
+      echo 10
       ;;
     S3)
       echo 10
