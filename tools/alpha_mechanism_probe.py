@@ -23,6 +23,8 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 SCHEMA_VERSION = "alpha_mechanism_probe_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "alpha_candidate_manifest_v1"
+OBJECTIVE_FIXED_FORWARD = "fixed_forward"
+OBJECTIVE_PATH_FIRST_TOUCH = "path_first_touch"
 
 
 def now_utc_iso() -> str:
@@ -126,6 +128,35 @@ def load_feature_rows(symbol: str, path: Path) -> List[Dict[str, float]]:
     return rows
 
 
+def attach_path_metrics(rows: List[Dict[str, Any]], *, horizon_bars: int) -> None:
+    """Attach future close-path metrics used by path-aware alpha objectives."""
+    if int(horizon_bars) <= 0:
+        return
+    by_symbol: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        by_symbol.setdefault(str(row.get("symbol", "SOURCE")), []).append(row)
+
+    for symbol_rows in by_symbol.values():
+        symbol_rows.sort(key=lambda item: float(item.get("timestamp", 0.0)))
+        closes = [safe_float(row.get("close"), math.nan) for row in symbol_rows]
+        for index, row in enumerate(symbol_rows):
+            row["path_ready"] = False
+            row["path_horizon_bars"] = 0
+            row["path_forward_bps_series"] = []
+            entry = closes[index]
+            if not math.isfinite(entry) or entry <= 0.0:
+                continue
+            future = closes[index + 1 : index + 1 + int(horizon_bars)]
+            if len(future) < int(horizon_bars) or any(not math.isfinite(item) for item in future):
+                continue
+            path = [(item / entry - 1.0) * 10000.0 for item in future]
+            row["path_ready"] = True
+            row["path_horizon_bars"] = int(horizon_bars)
+            row["path_forward_bps_series"] = path
+            row["path_long_mfe_bps"] = max(path)
+            row["path_long_mae_bps"] = min(path)
+
+
 def split_rows(
     rows: List[Dict[str, float]],
     *,
@@ -143,27 +174,149 @@ def split_rows(
 
 
 def direction_from_score(score: float, threshold: float) -> int:
-    if not math.isfinite(score) or abs(score) < threshold:
+    if not math.isfinite(score) or abs(score) == 0.0 or abs(score) < threshold:
         return 0
     return 1 if score > 0.0 else -1
 
 
+def path_objective_gross_bps(
+    row: Dict[str, Any],
+    signal: int,
+    *,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
+) -> Tuple[float | None, str | None, float | None, float | None]:
+    if signal == 0:
+        return None, None, None, None
+    path = row.get("path_forward_bps_series")
+    if not isinstance(path, list) or not path:
+        return None, None, None, None
+    directed: List[float] = []
+    for item in path:
+        value = safe_float(item, math.nan)
+        if math.isfinite(value):
+            directed.append(float(signal) * value)
+    if not directed:
+        return None, None, None, None
+    mfe = max(directed)
+    mae = min(directed)
+    for value in directed:
+        if value >= float(path_take_profit_bps):
+            return float(path_take_profit_bps), "take_profit", mfe, mae
+        if value <= -float(path_stop_loss_bps):
+            return -float(path_stop_loss_bps), "stop_loss", mfe, mae
+    return directed[-1], "horizon", mfe, mae
+
+
+def objective_oracle_signal(
+    row: Dict[str, Any],
+    *,
+    objective_mode: str,
+    round_trip_cost_bps: float,
+    min_mean_net_bps: float,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
+) -> int:
+    if objective_mode == OBJECTIVE_PATH_FIRST_TOUCH:
+        long_gross, _, _, _ = path_objective_gross_bps(
+            row,
+            1,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
+        )
+        short_gross, _, _, _ = path_objective_gross_bps(
+            row,
+            -1,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
+        )
+        choices = [
+            (1, long_gross if long_gross is not None else float("-inf")),
+            (-1, short_gross if short_gross is not None else float("-inf")),
+        ]
+        signal, gross = max(choices, key=lambda item: item[1])
+        if not math.isfinite(gross) or gross <= float(round_trip_cost_bps) + float(min_mean_net_bps):
+            return 0
+        return signal
+    return direction_from_score(float(row["forward_return"]), 0.0)
+
+
+def objective_signal_score(
+    row: Dict[str, Any],
+    *,
+    objective_mode: str,
+    round_trip_cost_bps: float,
+    min_mean_net_bps: float,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
+) -> float:
+    if objective_mode == OBJECTIVE_PATH_FIRST_TOUCH:
+        signal = objective_oracle_signal(
+            row,
+            objective_mode=objective_mode,
+            round_trip_cost_bps=round_trip_cost_bps,
+            min_mean_net_bps=min_mean_net_bps,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
+        )
+        if signal == 0:
+            return 0.0
+        gross, _, _, _ = path_objective_gross_bps(
+            row,
+            signal,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
+        )
+        if gross is None:
+            return 0.0
+        return float(signal) * max(0.0, float(gross) - float(round_trip_cost_bps))
+    return float(row["forward_return"]) * 10000.0
+
+
 def summarize_net(
-    rows: List[Dict[str, float]],
+    rows: List[Dict[str, Any]],
     signals: List[int],
     *,
     round_trip_cost_bps: float,
+    objective_mode: str = OBJECTIVE_FIXED_FORWARD,
+    path_take_profit_bps: float = 16.0,
+    path_stop_loss_bps: float = 8.0,
 ) -> Dict[str, Any]:
     gross: List[float] = []
     net: List[float] = []
+    mfe_values: List[float] = []
+    mae_values: List[float] = []
+    coverage_values: List[float] = []
+    capture_values: List[float] = []
+    exit_counts: Dict[str, int] = {}
     for row, signal in zip(rows, signals):
         if signal == 0:
             continue
-        gross_bps = float(signal) * float(row["forward_return"]) * 10000.0
+        if objective_mode == OBJECTIVE_PATH_FIRST_TOUCH:
+            gross_out, exit_reason, mfe, mae = path_objective_gross_bps(
+                row,
+                signal,
+                path_take_profit_bps=path_take_profit_bps,
+                path_stop_loss_bps=path_stop_loss_bps,
+            )
+            if gross_out is None:
+                continue
+            gross_bps = float(gross_out)
+            exit_counts[str(exit_reason or "unknown")] = exit_counts.get(str(exit_reason or "unknown"), 0) + 1
+            if mfe is not None and math.isfinite(float(mfe)):
+                mfe_values.append(float(mfe))
+                if float(round_trip_cost_bps) > 0.0:
+                    coverage_values.append(float(mfe) / float(round_trip_cost_bps))
+                if float(mfe) > 0.0:
+                    capture_values.append(gross_bps / float(mfe))
+            if mae is not None and math.isfinite(float(mae)):
+                mae_values.append(float(mae))
+        else:
+            gross_bps = float(signal) * float(row["forward_return"]) * 10000.0
         gross.append(gross_bps)
         net.append(gross_bps - float(round_trip_cost_bps))
     positives = [item for item in net if item > 0.0]
-    return {
+    summary: Dict[str, Any] = {
         "sample_count": len(net),
         "mean_gross_bps": mean(gross),
         "median_gross_bps": median(gross),
@@ -171,6 +324,27 @@ def summarize_net(
         "median_net_bps": median(net),
         "positive_ratio": (len(positives) / float(len(net))) if net else None,
     }
+    if objective_mode == OBJECTIVE_PATH_FIRST_TOUCH:
+        summary.update(
+            {
+                "objective_mode": OBJECTIVE_PATH_FIRST_TOUCH,
+                "path_take_profit_bps": float(path_take_profit_bps),
+                "path_stop_loss_bps": float(path_stop_loss_bps),
+                "mean_path_mfe_bps": mean(mfe_values),
+                "median_path_mfe_bps": median(mfe_values),
+                "mean_path_mae_bps": mean(mae_values),
+                "median_path_mae_bps": median(mae_values),
+                "mean_mfe_cost_coverage_ratio": mean(coverage_values),
+                "mean_gross_capture_of_path_mfe": mean(capture_values),
+                "exit_reason_counts": exit_counts,
+            }
+        )
+        total = float(len(net)) if net else 0.0
+        if total > 0.0:
+            summary["take_profit_hit_ratio"] = float(exit_counts.get("take_profit", 0)) / total
+            summary["stop_loss_hit_ratio"] = float(exit_counts.get("stop_loss", 0)) / total
+            summary["horizon_exit_ratio"] = float(exit_counts.get("horizon", 0)) / total
+    return summary
 
 
 def objective_status(
@@ -179,6 +353,7 @@ def objective_status(
     min_samples: int,
     min_mean_net_bps: float,
     min_positive_ratio: float,
+    min_mfe_cost_coverage: float = 0.0,
 ) -> Tuple[str, List[str]]:
     fail_reasons: List[str] = []
     sample_count = int(summary.get("sample_count") or 0)
@@ -193,6 +368,16 @@ def objective_status(
     if not isinstance(positive_ratio, (int, float)) or float(positive_ratio) < float(min_positive_ratio):
         fail_reasons.append(
             f"positive_ratio={positive_ratio} < min_positive_ratio={float(min_positive_ratio)}"
+        )
+    coverage = summary.get("mean_mfe_cost_coverage_ratio")
+    if (
+        float(min_mfe_cost_coverage) > 0.0
+        and isinstance(coverage, (int, float))
+        and float(coverage) < float(min_mfe_cost_coverage)
+    ):
+        fail_reasons.append(
+            "mean_mfe_cost_coverage_ratio="
+            f"{coverage} < min_mfe_cost_coverage={float(min_mfe_cost_coverage)}"
         )
     return ("pass" if not fail_reasons else "fail", fail_reasons)
 
@@ -311,17 +496,27 @@ def candidate_specs() -> List[Dict[str, Any]]:
 
 
 def evaluate_candidate(
-    rows: List[Dict[str, float]],
+    rows: List[Dict[str, Any]],
     spec: Dict[str, Any],
     threshold: float,
     *,
     round_trip_cost_bps: float,
+    objective_mode: str = OBJECTIVE_FIXED_FORWARD,
+    path_take_profit_bps: float = 16.0,
+    path_stop_loss_bps: float = 8.0,
 ) -> Dict[str, Any]:
     signals = [
         direction_from_score(score_for_spec(row, spec), float(threshold))
         for row in rows
     ]
-    summary = summarize_net(rows, signals, round_trip_cost_bps=round_trip_cost_bps)
+    summary = summarize_net(
+        rows,
+        signals,
+        round_trip_cost_bps=round_trip_cost_bps,
+        objective_mode=objective_mode,
+        path_take_profit_bps=path_take_profit_bps,
+        path_stop_loss_bps=path_stop_loss_bps,
+    )
     return {
         "spec": spec,
         "threshold": float(threshold),
@@ -361,13 +556,17 @@ def rank_key(candidate: Dict[str, Any]) -> Tuple[int, float, float, int]:
 
 
 def run_candidate_search(
-    train_rows: List[Dict[str, float]],
-    holdout_rows: List[Dict[str, float]],
+    train_rows: List[Dict[str, Any]],
+    holdout_rows: List[Dict[str, Any]],
     *,
     round_trip_cost_bps: float,
     min_samples: int,
     min_mean_net_bps: float,
     min_positive_ratio: float,
+    min_mfe_cost_coverage: float,
+    objective_mode: str,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
 ) -> Dict[str, Any]:
     candidates: List[Dict[str, Any]] = []
     for spec in candidate_specs():
@@ -379,6 +578,9 @@ def run_candidate_search(
                 spec,
                 threshold,
                 round_trip_cost_bps=round_trip_cost_bps,
+                objective_mode=objective_mode,
+                path_take_profit_bps=path_take_profit_bps,
+                path_stop_loss_bps=path_stop_loss_bps,
             )
             summary = train_eval["summary"]
             mean_net = summary.get("mean_net_bps")
@@ -400,12 +602,16 @@ def run_candidate_search(
             spec,
             float(best_train["threshold"]),
             round_trip_cost_bps=round_trip_cost_bps,
+            objective_mode=objective_mode,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
         )
         holdout_status, holdout_fails = objective_status(
             holdout_eval["summary"],
             min_samples=min_samples,
             min_mean_net_bps=min_mean_net_bps,
             min_positive_ratio=min_positive_ratio,
+            min_mfe_cost_coverage=min_mfe_cost_coverage,
         )
         candidates.append(
             {
@@ -439,6 +645,11 @@ def build_candidate_manifest(
     round_trip_cost_bps: float,
     min_mean_net_bps: float,
     min_positive_ratio: float,
+    min_mfe_cost_coverage: float,
+    objective_mode: str,
+    path_horizon_bars: int,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
 ) -> Dict[str, Any]:
     pass_candidates = candidate_search.get("pass_candidates", [])
     if not isinstance(pass_candidates, list):
@@ -480,8 +691,13 @@ def build_candidate_manifest(
         "symbols": symbols,
         "round_trip_cost_bps": float(round_trip_cost_bps),
         "objective": {
+            "mode": objective_mode,
+            "path_horizon_bars": int(path_horizon_bars),
+            "path_take_profit_bps": float(path_take_profit_bps),
+            "path_stop_loss_bps": float(path_stop_loss_bps),
             "min_mean_net_bps": float(min_mean_net_bps),
             "min_positive_ratio": float(min_positive_ratio),
+            "min_mfe_cost_coverage": float(min_mfe_cost_coverage),
         },
         "selected_candidate": None,
         "best_rejected_candidate": best,
@@ -510,6 +726,11 @@ def build_candidate_manifest(
             "direction_mode": spec.get("mode"),
             "score_threshold": selected.get("threshold"),
             "round_trip_cost_bps": float(round_trip_cost_bps),
+            "objective_mode": objective_mode,
+            "path_horizon_bars": int(path_horizon_bars),
+            "path_take_profit_bps": float(path_take_profit_bps),
+            "path_stop_loss_bps": float(path_stop_loss_bps),
+            "min_mfe_cost_coverage": float(min_mfe_cost_coverage),
             "symbols": symbols,
         },
     }
@@ -517,44 +738,87 @@ def build_candidate_manifest(
 
 
 def oracle_control(
-    rows: List[Dict[str, float]],
+    rows: List[Dict[str, Any]],
     *,
     round_trip_cost_bps: float,
     min_samples: int,
     min_mean_net_bps: float,
     min_positive_ratio: float,
+    min_mfe_cost_coverage: float,
+    objective_mode: str,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
 ) -> Dict[str, Any]:
-    signals = [direction_from_score(float(row["forward_return"]), 0.0) for row in rows]
-    summary = summarize_net(rows, signals, round_trip_cost_bps=round_trip_cost_bps)
+    signals = [
+        objective_oracle_signal(
+            row,
+            objective_mode=objective_mode,
+            round_trip_cost_bps=round_trip_cost_bps,
+            min_mean_net_bps=min_mean_net_bps,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
+        )
+        for row in rows
+    ]
+    summary = summarize_net(
+        rows,
+        signals,
+        round_trip_cost_bps=round_trip_cost_bps,
+        objective_mode=objective_mode,
+        path_take_profit_bps=path_take_profit_bps,
+        path_stop_loss_bps=path_stop_loss_bps,
+    )
     status, fails = objective_status(
         summary,
         min_samples=min_samples,
         min_mean_net_bps=min_mean_net_bps,
         min_positive_ratio=min_positive_ratio,
+        min_mfe_cost_coverage=min_mfe_cost_coverage,
     )
     return {
         "status": status,
         "fail_reasons": fails,
         "summary": summary,
-        "control_type": "oracle_forward_return_direction",
+        "control_type": f"oracle_{objective_mode}_direction",
     }
 
 
 def noisy_oracle_control(
-    train_rows: List[Dict[str, float]],
-    holdout_rows: List[Dict[str, float]],
+    train_rows: List[Dict[str, Any]],
+    holdout_rows: List[Dict[str, Any]],
     *,
     round_trip_cost_bps: float,
     min_samples: int,
     min_mean_net_bps: float,
     min_positive_ratio: float,
+    min_mfe_cost_coverage: float,
+    objective_mode: str,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
 ) -> Dict[str, Any]:
-    train_bps = [float(row["forward_return"]) * 10000.0 for row in train_rows]
+    train_bps = [
+        objective_signal_score(
+            row,
+            objective_mode=objective_mode,
+            round_trip_cost_bps=round_trip_cost_bps,
+            min_mean_net_bps=min_mean_net_bps,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
+        )
+        for row in train_rows
+    ]
     scale = max(1.0, abs(quantile(train_bps, 0.75) - quantile(train_bps, 0.25)))
     rng = random.Random(20260619)
 
-    def score(row: Dict[str, float]) -> float:
-        return float(row["forward_return"]) * 10000.0 + rng.gauss(0.0, scale * 0.35)
+    def score(row: Dict[str, Any]) -> float:
+        return objective_signal_score(
+            row,
+            objective_mode=objective_mode,
+            round_trip_cost_bps=round_trip_cost_bps,
+            min_mean_net_bps=min_mean_net_bps,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
+        ) + rng.gauss(0.0, scale * 0.35)
 
     train_scores = [score(row) for row in train_rows]
     holdout_scores = [score(row) for row in holdout_rows]
@@ -566,11 +830,17 @@ def noisy_oracle_control(
             train_rows,
             train_signals,
             round_trip_cost_bps=round_trip_cost_bps,
+            objective_mode=objective_mode,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
         )
         holdout_summary = summarize_net(
             holdout_rows,
             holdout_signals,
             round_trip_cost_bps=round_trip_cost_bps,
+            objective_mode=objective_mode,
+            path_take_profit_bps=path_take_profit_bps,
+            path_stop_loss_bps=path_stop_loss_bps,
         )
         candidates.append(
             {
@@ -597,6 +867,7 @@ def noisy_oracle_control(
         min_samples=min_samples,
         min_mean_net_bps=min_mean_net_bps,
         min_positive_ratio=min_positive_ratio,
+        min_mfe_cost_coverage=min_mfe_cost_coverage,
     )
     best["status"] = status
     best["fail_reasons"] = fails
@@ -605,21 +876,33 @@ def noisy_oracle_control(
 
 
 def random_control(
-    rows: List[Dict[str, float]],
+    rows: List[Dict[str, Any]],
     *,
     round_trip_cost_bps: float,
     min_samples: int,
     min_mean_net_bps: float,
     min_positive_ratio: float,
+    min_mfe_cost_coverage: float,
+    objective_mode: str,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
 ) -> Dict[str, Any]:
     rng = random.Random(42)
     signals = [1 if rng.random() >= 0.5 else -1 for _ in rows]
-    summary = summarize_net(rows, signals, round_trip_cost_bps=round_trip_cost_bps)
+    summary = summarize_net(
+        rows,
+        signals,
+        round_trip_cost_bps=round_trip_cost_bps,
+        objective_mode=objective_mode,
+        path_take_profit_bps=path_take_profit_bps,
+        path_stop_loss_bps=path_stop_loss_bps,
+    )
     objective, objective_fails = objective_status(
         summary,
         min_samples=min_samples,
         min_mean_net_bps=min_mean_net_bps,
         min_positive_ratio=min_positive_ratio,
+        min_mfe_cost_coverage=min_mfe_cost_coverage,
     )
     unexpected = objective == "pass"
     return {
@@ -636,15 +919,18 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     feature_paths = parse_feature_paths(args.feature_csv, normalize_symbol(args.symbol))
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
-    all_rows: List[Dict[str, float]] = []
-    train_rows: List[Dict[str, float]] = []
-    holdout_rows: List[Dict[str, float]] = []
+    objective_mode = str(args.objective_mode)
+    all_rows: List[Dict[str, Any]] = []
+    train_rows: List[Dict[str, Any]] = []
+    holdout_rows: List[Dict[str, Any]] = []
     by_symbol: Dict[str, Any] = {}
     for symbol, path in sorted(feature_paths.items()):
         if not path.is_file():
             fail_reasons.append(f"feature_csv missing: {symbol}={path}")
             continue
         rows = load_feature_rows(symbol, path)
+        if objective_mode == OBJECTIVE_PATH_FIRST_TOUCH:
+            attach_path_metrics(rows, horizon_bars=int(args.path_horizon_bars))
         all_rows.extend(rows)
         symbol_train, symbol_holdout = split_rows(
             rows,
@@ -659,6 +945,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "row_count": len(rows),
             "train_count": len(symbol_train),
             "holdout_count": len(symbol_holdout),
+            "path_ready_count": sum(1 for row in rows if bool(row.get("path_ready"))),
         }
 
     train_rows.sort(key=lambda item: (str(item["symbol"]), float(item["timestamp"])))
@@ -680,6 +967,10 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
                 min_samples=int(args.min_holdout_samples),
                 min_mean_net_bps=float(args.min_mean_net_bps),
                 min_positive_ratio=float(args.min_positive_ratio),
+                min_mfe_cost_coverage=float(args.min_mfe_cost_coverage),
+                objective_mode=objective_mode,
+                path_take_profit_bps=float(args.path_take_profit_bps),
+                path_stop_loss_bps=float(args.path_stop_loss_bps),
             ),
             "positive_noisy_oracle": noisy_oracle_control(
                 train_rows,
@@ -688,6 +979,10 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
                 min_samples=int(args.min_holdout_samples),
                 min_mean_net_bps=float(args.min_mean_net_bps),
                 min_positive_ratio=float(args.min_positive_ratio),
+                min_mfe_cost_coverage=float(args.min_mfe_cost_coverage),
+                objective_mode=objective_mode,
+                path_take_profit_bps=float(args.path_take_profit_bps),
+                path_stop_loss_bps=float(args.path_stop_loss_bps),
             ),
             "negative_random": random_control(
                 holdout_rows,
@@ -695,6 +990,10 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
                 min_samples=int(args.min_holdout_samples),
                 min_mean_net_bps=float(args.min_mean_net_bps),
                 min_positive_ratio=float(args.min_positive_ratio),
+                min_mfe_cost_coverage=float(args.min_mfe_cost_coverage),
+                objective_mode=objective_mode,
+                path_take_profit_bps=float(args.path_take_profit_bps),
+                path_stop_loss_bps=float(args.path_stop_loss_bps),
             ),
         }
         candidate_search = run_candidate_search(
@@ -704,6 +1003,10 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             min_samples=int(args.min_holdout_samples),
             min_mean_net_bps=float(args.min_mean_net_bps),
             min_positive_ratio=float(args.min_positive_ratio),
+            min_mfe_cost_coverage=float(args.min_mfe_cost_coverage),
+            objective_mode=objective_mode,
+            path_take_profit_bps=float(args.path_take_profit_bps),
+            path_stop_loss_bps=float(args.path_stop_loss_bps),
         )
         candidate_manifest = build_candidate_manifest(
             candidate_search,
@@ -711,6 +1014,11 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             round_trip_cost_bps=float(args.round_trip_cost_bps),
             min_mean_net_bps=float(args.min_mean_net_bps),
             min_positive_ratio=float(args.min_positive_ratio),
+            min_mfe_cost_coverage=float(args.min_mfe_cost_coverage),
+            objective_mode=objective_mode,
+            path_horizon_bars=int(args.path_horizon_bars),
+            path_take_profit_bps=float(args.path_take_profit_bps),
+            path_stop_loss_bps=float(args.path_stop_loss_bps),
         )
     else:
         candidate_manifest = {
@@ -757,11 +1065,16 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         "warn_reasons": warn_reasons,
         "target": {
             "round_trip_cost_bps": float(args.round_trip_cost_bps),
+            "objective_mode": objective_mode,
+            "path_horizon_bars": int(args.path_horizon_bars),
+            "path_take_profit_bps": float(args.path_take_profit_bps),
+            "path_stop_loss_bps": float(args.path_stop_loss_bps),
             "holdout_fraction": float(args.holdout_fraction),
             "min_train_samples": int(args.min_train_samples),
             "min_holdout_samples": int(args.min_holdout_samples),
             "min_mean_net_bps": float(args.min_mean_net_bps),
             "min_positive_ratio": float(args.min_positive_ratio),
+            "min_mfe_cost_coverage": float(args.min_mfe_cost_coverage),
         },
         "data": {
             "row_count": len(all_rows),
@@ -791,11 +1104,21 @@ def parse_args() -> argparse.Namespace:
         help="feature_store CSV path or SYMBOL=path; may be repeated",
     )
     parser.add_argument("--round-trip-cost-bps", type=float, default=3.5)
+    parser.add_argument(
+        "--objective-mode",
+        choices=[OBJECTIVE_FIXED_FORWARD, OBJECTIVE_PATH_FIRST_TOUCH],
+        default=OBJECTIVE_FIXED_FORWARD,
+        help="net-edge objective for controls and market candidates",
+    )
+    parser.add_argument("--path-horizon-bars", type=int, default=12)
+    parser.add_argument("--path-take-profit-bps", type=float, default=16.0)
+    parser.add_argument("--path-stop-loss-bps", type=float, default=8.0)
     parser.add_argument("--holdout-fraction", type=float, default=0.30)
     parser.add_argument("--min-train-samples", type=int, default=200)
     parser.add_argument("--min-holdout-samples", type=int, default=100)
     parser.add_argument("--min-mean-net-bps", type=float, default=0.0)
     parser.add_argument("--min-positive-ratio", type=float, default=0.50)
+    parser.add_argument("--min-mfe-cost-coverage", type=float, default=0.0)
     parser.add_argument(
         "--candidate-manifest-output",
         default="",
