@@ -1889,6 +1889,7 @@ def build_activation_gate_report(
             if reason.startswith(
                 (
                     "source_symbol_not_tradable=",
+                    "source_symbol_not_execution_covered=",
                     "tradable_symbol_count=",
                     "replay_validation skipped/not_run:",
                     "replay-validation skipped/not_run:",
@@ -2417,6 +2418,7 @@ def build_symbol_tradeability(
 ) -> dict[str, Any]:
     decisions: dict[str, dict[str, Any]] = {}
     tradable_symbols: list[str] = []
+    execution_covered_symbols: list[str] = []
     quarantined_symbols: list[str] = []
     insufficient_symbols: list[str] = []
 
@@ -2506,7 +2508,10 @@ def build_symbol_tradeability(
                 reasons.append("symbol_replay_coverage_insufficient")
             decision_status = "insufficient"
             insufficient_symbols.append(symbol)
-        elif not economic_ok or all_filled_runs_negative:
+        else:
+            execution_covered_symbols.append(symbol)
+
+        if coverage_ok and (not economic_ok or all_filled_runs_negative):
             reasons.extend(quality_fail_reasons or fail_reasons)
             if all_filled_runs_negative and not any(
                 "均未转正" in reason or "all" in reason.lower()
@@ -2531,7 +2536,7 @@ def build_symbol_tradeability(
                     )
             decision_status = "quarantined"
             quarantined_symbols.append(symbol)
-        else:
+        elif coverage_ok:
             decision_status = "tradable"
             tradable_symbols.append(symbol)
 
@@ -2567,9 +2572,11 @@ def build_symbol_tradeability(
             f"{len(tradable_symbols)} < min_tradable_symbols={min_tradable}"
         )
     if source_symbol_normalized and source_symbol_normalized not in {
-        item.upper() for item in tradable_symbols
+        item.upper() for item in execution_covered_symbols
     }:
-        fail_reasons.append(f"source_symbol_not_tradable={source_symbol_normalized}")
+        fail_reasons.append(
+            f"source_symbol_not_execution_covered={source_symbol_normalized}"
+        )
     if insufficient_symbols:
         warn_reasons.append(
             "symbol_replay_coverage_insufficient="
@@ -2585,9 +2592,11 @@ def build_symbol_tradeability(
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
         "tradable_symbols": tradable_symbols,
+        "execution_covered_symbols": execution_covered_symbols,
         "quarantined_symbols": quarantined_symbols,
         "insufficient_symbols": insufficient_symbols,
         "tradable_symbol_count": len(tradable_symbols),
+        "execution_covered_symbol_count": len(execution_covered_symbols),
         "quarantined_symbol_count": len(quarantined_symbols),
         "insufficient_symbol_count": len(insufficient_symbols),
         "min_tradable_symbols": min_tradable,

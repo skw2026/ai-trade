@@ -108,6 +108,10 @@ class AlphaMechanismProbeTest(unittest.TestCase):
             self.assertEqual(payload["market_alpha_family_status"], "pass")
             self.assertEqual(payload["status"], "pass")
             self.assertEqual(payload["controls"]["negative_random"]["status"], "pass")
+            self.assertEqual(payload["deployable_candidate_manifest"]["status"], "pass")
+            self.assertIsNotNone(
+                payload["deployable_candidate_manifest"]["selected_candidate"]
+            )
 
     def test_controls_pass_but_market_alpha_can_fail(self):
         with tempfile.TemporaryDirectory() as td:
@@ -139,10 +143,51 @@ class AlphaMechanismProbeTest(unittest.TestCase):
             self.assertEqual(payload["mechanism_control_status"], "pass")
             self.assertEqual(payload["market_alpha_family_status"], "fail")
             self.assertEqual(payload["status"], "pass_with_actions")
+            self.assertEqual(payload["deployable_candidate_manifest"]["status"], "fail")
+            self.assertIsNone(
+                payload["deployable_candidate_manifest"]["selected_candidate"]
+            )
             self.assertIn(
                 "no_market_alpha_candidate_passed_holdout_after_cost",
                 payload["warn_reasons"],
             )
+
+    def test_writes_candidate_manifest_output(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            feature_path = write_probe_fixture(root / "features.csv", aligned=True)
+            output = root / "probe.json"
+            manifest = root / "alpha_candidate_manifest.json"
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "alpha_mechanism_probe.py",
+                    "--output",
+                    str(output),
+                    "--candidate-manifest-output",
+                    str(manifest),
+                    "--symbol",
+                    "SOLUSDT",
+                    "--feature_csv",
+                    str(feature_path),
+                    "--round-trip-cost-bps",
+                    "3.5",
+                    "--min-holdout-samples",
+                    "100",
+                ]
+                code = PROBE.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(
+                manifest_payload["schema_version"],
+                "alpha_candidate_manifest_v1",
+            )
+            self.assertEqual(manifest_payload["status"], "pass")
+            self.assertEqual(manifest_payload["symbols"], ["SOLUSDT"])
 
 
 if __name__ == "__main__":

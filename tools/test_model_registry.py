@@ -408,6 +408,41 @@ class ModelRegistryTest(unittest.TestCase):
                 "symbol_tradeability.tradable_symbols_min",
             )
 
+    def test_alpha_mechanism_probe_market_alpha_fail_blocks_registry_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            alpha_report = root / "alpha_mechanism_probe_report.json"
+            alpha_report.write_text(
+                json.dumps(
+                    {
+                        "status": "pass_with_actions",
+                        "mechanism_control_status": "pass",
+                        "market_alpha_family_status": "fail",
+                        "candidate_search": {
+                            "pass_candidate_count": 0,
+                            "best_candidate": {"name": "trend_inverse"},
+                        },
+                        "deployable_candidate_manifest": {
+                            "status": "fail",
+                            "selected_candidate": None,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            passed, fail_reasons, warn_reasons, summary = (
+                REGISTRY.gate_alpha_mechanism_probe_report(alpha_report)
+            )
+
+            self.assertFalse(passed)
+            self.assertEqual(warn_reasons, [])
+            self.assertIn(
+                "alpha mechanism market alpha family failed holdout after cost",
+                fail_reasons,
+            )
+            self.assertEqual(summary["market_alpha_family_status"], "fail")
+
     def test_replay_tradeability_pass_suppresses_aggregate_failures(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

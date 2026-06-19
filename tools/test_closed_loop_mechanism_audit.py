@@ -121,6 +121,7 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
             self.assertEqual(report["conclusion"], "MECHANISM_NOT_PROVEN")
             self.assertEqual(report["checks"]["negative_control"]["status"], "pass")
             self.assertEqual(report["checks"]["positive_control"]["status"], "pass")
+            self.assertEqual(report["checks"]["alpha_mechanism_probe"]["status"], "fail")
             self.assertEqual(report["checks"]["target_consistency"]["status"], "fail")
             self.assertEqual(report["checks"]["model_influence"]["status"], "fail")
             self.assertTrue(

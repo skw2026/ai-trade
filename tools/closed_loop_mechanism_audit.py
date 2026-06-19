@@ -222,7 +222,10 @@ def audit_alpha_mechanism_probe(probe: Dict[str, Any]) -> Dict[str, Any]:
             f"alpha mechanism controls did not pass: mechanism_control_status={mechanism_status or 'missing'}"
         )
     if market_status == "fail":
-        warn_reasons.append("alpha mechanism probe controls pass, but real market alpha family failed holdout")
+        fail_reasons.append(
+            "alpha mechanism real market alpha family failed holdout: "
+            "market_alpha_family_status=fail"
+        )
     elif market_status not in {"pass", "pass_with_actions"}:
         warn_reasons.append(f"alpha mechanism market alpha status={market_status or 'unknown'}")
 

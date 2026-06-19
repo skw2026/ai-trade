@@ -152,6 +152,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="可选：replay_validation_report.json 路径",
     )
+    register.add_argument(
+        "--alpha_mechanism_probe_report",
+        default="",
+        help="可选：alpha_mechanism_probe_report.json 路径；market alpha 族失败时阻断注册",
+    )
     register.add_argument("--registry_dir", default="./data/models/registry", help="模型注册目录")
     register.add_argument("--max_versions", type=int, default=20, help="历史版本最大保留数")
     register.add_argument(
@@ -784,6 +789,11 @@ def gate_replay_validation_report(
             for item in tradeability.get("tradable_symbols", [])
             if str(item).strip()
         }
+        execution_covered_symbols = {
+            str(item).strip().upper()
+            for item in tradeability.get("execution_covered_symbols", [])
+            if str(item).strip()
+        }
         if tradeability and not tradable_symbols:
             fail_reasons.append("replay symbol_tradeability has no tradable_symbols")
         quarantined_symbols = {
@@ -805,9 +815,14 @@ def gate_replay_validation_report(
             fail_reasons.append(
                 f"replay source_symbol={source_symbol} is quarantined by symbol_tradeability"
             )
-        if tradeability and source_symbol and source_symbol not in tradable_symbols:
+        if (
+            tradeability
+            and source_symbol
+            and execution_covered_symbols
+            and source_symbol not in execution_covered_symbols
+        ):
             fail_reasons.append(
-                f"replay source_symbol={source_symbol} is not tradable by symbol_tradeability"
+                f"replay source_symbol={source_symbol} lacks replay execution coverage"
             )
         critical_symbols = set(tradable_symbols)
         if source_symbol:
@@ -992,6 +1007,64 @@ def gate_replay_validation_report(
     return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
 
 
+def gate_alpha_mechanism_probe_report(
+    report_path: Path | None,
+) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    summary: Dict[str, Any] = {}
+    if report_path is None:
+        return True, fail_reasons, warn_reasons, summary
+    if not report_path.is_file():
+        fail_reasons.append(f"alpha_mechanism_probe_report 不存在: {report_path}")
+        return False, fail_reasons, warn_reasons, summary
+
+    payload = read_json(report_path)
+    mechanism_status = str(payload.get("mechanism_control_status", "")).strip().lower()
+    market_status = str(payload.get("market_alpha_family_status", "")).strip().lower()
+    candidate_search = payload.get("candidate_search", {})
+    if not isinstance(candidate_search, dict):
+        candidate_search = {}
+    manifest = payload.get("deployable_candidate_manifest", {})
+    if not isinstance(manifest, dict):
+        manifest = {}
+
+    if mechanism_status != "pass":
+        fail_reasons.append(
+            "alpha mechanism controls did not pass: "
+            f"mechanism_control_status={mechanism_status or 'missing'}"
+        )
+    if market_status == "fail":
+        fail_reasons.append(
+            "alpha mechanism market alpha family failed holdout after cost"
+        )
+    elif market_status not in {"pass", "pass_with_actions"}:
+        fail_reasons.append(
+            f"alpha mechanism market_alpha_family_status={market_status or 'missing'}"
+        )
+
+    manifest_status = str(manifest.get("status", "")).strip().lower()
+    if market_status == "pass" and manifest_status != "pass":
+        fail_reasons.append(
+            "alpha mechanism pass without deployable candidate manifest"
+        )
+    elif market_status != "pass" and manifest_status == "pass":
+        warn_reasons.append(
+            "alpha mechanism manifest has pass candidate while market alpha family did not pass"
+        )
+
+    summary = {
+        "status": payload.get("status"),
+        "mechanism_control_status": payload.get("mechanism_control_status"),
+        "market_alpha_family_status": payload.get("market_alpha_family_status"),
+        "candidate_pass_count": candidate_search.get("pass_candidate_count"),
+        "best_candidate": candidate_search.get("best_candidate"),
+        "deployable_candidate_manifest_status": manifest.get("status"),
+        "selected_candidate": manifest.get("selected_candidate"),
+    }
+    return len(fail_reasons) == 0, fail_reasons, warn_reasons, summary
+
+
 def prune_old_versions(
     index_entries: List[Dict[str, Any]], registry_dir: Path, max_versions: int
 ) -> List[Dict[str, Any]]:
@@ -1032,6 +1105,11 @@ def run_register(args: argparse.Namespace) -> int:
     walkforward_report_path = Path(args.walkforward_report) if args.walkforward_report else None
     replay_validation_report_path = (
         Path(args.replay_validation_report) if args.replay_validation_report else None
+    )
+    alpha_mechanism_probe_report_path = (
+        Path(getattr(args, "alpha_mechanism_probe_report", ""))
+        if getattr(args, "alpha_mechanism_probe_report", "")
+        else None
     )
 
     if not model_file.is_file():
@@ -1123,6 +1201,22 @@ def run_register(args: argparse.Namespace) -> int:
             gate_fail_reasons.append(f"replay_validation: {item}")
         for item in replay_warn_reasons:
             gate_warn_reasons.append(f"replay_validation: {item}")
+
+    if alpha_mechanism_probe_report_path is not None:
+        (
+            alpha_pass,
+            alpha_fail_reasons,
+            alpha_warn_reasons,
+            alpha_summary,
+        ) = gate_alpha_mechanism_probe_report(alpha_mechanism_probe_report_path)
+        external_gate_summary["alpha_mechanism_probe"] = {
+            "pass": alpha_pass,
+            "summary": alpha_summary,
+        }
+        for item in alpha_fail_reasons:
+            gate_fail_reasons.append(f"alpha_mechanism_probe: {item}")
+        for item in alpha_warn_reasons:
+            gate_warn_reasons.append(f"alpha_mechanism_probe: {item}")
 
     gate_pass = len(gate_fail_reasons) == 0
 

@@ -309,6 +309,7 @@ jobs:
           fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_command.log" ".artifacts/replay_validation_command.log" "replay_validation_command_log" "text"
           fetch_report "${REMOTE_BASE}/strategy_diagnose_report.json" ".artifacts/strategy_diagnose_report.json" "strategy_diagnose_report" "json"
           fetch_report "${REMOTE_BASE}/alpha_mechanism_probe_report.json" ".artifacts/alpha_mechanism_probe_report.json" "alpha_mechanism_probe_report" "json"
+          fetch_report "${REMOTE_BASE}/alpha_candidate_manifest.json" ".artifacts/alpha_candidate_manifest.json" "alpha_candidate_manifest" "json"
           fetch_report "${REMOTE_BASE}/closed_loop_mechanism_report.json" ".artifacts/closed_loop_mechanism_report.json" "closed_loop_mechanism_report" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" ".artifacts/daily_summary.json" "daily_summary" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_weekly_summary.json" ".artifacts/weekly_summary.json" "weekly_summary" "json"

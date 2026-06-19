@@ -650,7 +650,57 @@ class RunReplayValidationTest(unittest.TestCase):
         )
 
         self.assertEqual(merged["status"], "fail")
-        self.assertIn("source_symbol_not_tradable=SOLUSDT", merged["fail_reasons"])
+        self.assertIn(
+            "source_symbol_not_execution_covered=SOLUSDT",
+            merged["fail_reasons"],
+        )
+
+    def test_quarantined_source_symbol_keeps_execution_coverage_separate(self):
+        symbol_reports = {
+            "SOLUSDT": {
+                "aggregate_summary": {
+                    "total_fills": 20,
+                    "positive_realized_net_with_fills_runs": 4,
+                    "negative_realized_net_with_fills_runs": 4,
+                    "median_realized_net_per_fill_with_fills": 0.01,
+                    "positive_filled_segment_ratio": 0.50,
+                },
+                "aggregate_validation": {
+                    "status": "fail",
+                    "minimum_coverage_targets_met": True,
+                    "coverage_strength_status": "ROBUST",
+                    "fail_reasons": [
+                        "positive_filled_segment_ratio=0.500000 < 0.550000"
+                    ],
+                    "coverage_fail_reasons": [],
+                    "quality_fail_reasons": [
+                        "positive_filled_segment_ratio=0.500000 < 0.550000"
+                    ],
+                    "thresholds": {"min_total_fills": 20},
+                },
+            }
+        }
+
+        merged = REPLAY.merge_symbol_validations(
+            {"status": "fail", "fail_reasons": [], "warn_reasons": []},
+            symbol_reports,
+            min_mean_realized_net_per_fill=0.0,
+            min_tradable_symbols=1,
+            source_symbol="SOLUSDT",
+        )
+
+        tradeability = merged["symbol_tradeability"]
+        self.assertEqual(tradeability["execution_covered_symbols"], ["SOLUSDT"])
+        self.assertEqual(tradeability["tradable_symbols"], [])
+        self.assertIn("SOLUSDT", tradeability["quarantined_symbols"])
+        self.assertNotIn(
+            "source_symbol_not_execution_covered=SOLUSDT",
+            merged["fail_reasons"],
+        )
+        self.assertIn(
+            "tradable_symbol_count=0 < min_tradable_symbols=1",
+            merged["fail_reasons"],
+        )
 
 
 if __name__ == "__main__":

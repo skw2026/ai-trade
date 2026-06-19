@@ -1034,6 +1034,7 @@ REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_bu
 REPLAY_VALIDATION_LAST_STATUS="not_run"
 STRATEGY_DIAGNOSE_REPORT_PATH="${RUN_DIR}/strategy_diagnose_report.json"
 ALPHA_MECHANISM_PROBE_REPORT_PATH="${RUN_DIR}/alpha_mechanism_probe_report.json"
+ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/alpha_candidate_manifest.json"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
 BASELINE_REPORT_PATH="${RUN_DIR}/baseline_report.json"
 BASELINE_SNAPSHOT_DIR="${RUN_DIR}/baseline_snapshot"
@@ -1314,6 +1315,7 @@ maybe_write_registry_alpha_block_report() {
 
   python3 - \
     "${STRATEGY_DIAGNOSE_REPORT_PATH}" \
+    "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
     "${REGISTRY_RESULT_PATH}" \
     "${RUN_ID}" <<'PY'
 import datetime as dt
@@ -1327,12 +1329,17 @@ def as_list(value):
 
 
 strategy_path = Path(sys.argv[1])
-out_path = Path(sys.argv[2])
-run_id = sys.argv[3]
+alpha_path = Path(sys.argv[2])
+out_path = Path(sys.argv[3])
+run_id = sys.argv[4]
 try:
     strategy = json.loads(strategy_path.read_text(encoding="utf-8"))
 except (OSError, json.JSONDecodeError):
     sys.exit(1)
+try:
+    alpha_probe = json.loads(alpha_path.read_text(encoding="utf-8")) if alpha_path.is_file() else {}
+except (OSError, json.JSONDecodeError):
+    alpha_probe = {}
 
 status = str(strategy.get("status", "")).strip().lower()
 diagnostics = as_list(strategy.get("diagnostics"))
@@ -1357,6 +1364,13 @@ if not alpha_pass and status in {"fail", "action_required", "insufficient_sample
 if status == "fail" and alpha_pass and block_reasons:
     block_reasons.append("viable_alpha_candidate_exists_but_current_strategy_not_aligned")
 
+alpha_market_status = str(alpha_probe.get("market_alpha_family_status", "")).strip().lower()
+alpha_mechanism_status = str(alpha_probe.get("mechanism_control_status", "")).strip().lower()
+if alpha_market_status == "fail":
+    block_reasons.append("alpha_mechanism_probe_market_alpha_family_failed_holdout")
+elif alpha_mechanism_status and alpha_mechanism_status != "pass":
+    block_reasons.append("alpha_mechanism_probe_controls_not_proven")
+
 if not block_reasons:
     sys.exit(1)
 
@@ -1380,6 +1394,14 @@ payload = {
             "alpha_tournament_status": alpha_status or "missing",
             "alpha_pass_candidate_count": alpha.get("pass_candidate_count"),
             "best_alpha_candidate": alpha.get("best_candidate"),
+            "alpha_mechanism_probe_status": alpha_probe.get("status"),
+            "alpha_mechanism_control_status": alpha_probe.get("mechanism_control_status"),
+            "alpha_mechanism_market_alpha_family_status": alpha_probe.get("market_alpha_family_status"),
+            "alpha_mechanism_best_candidate": (
+                alpha_probe.get("candidate_search", {}).get("best_candidate")
+                if isinstance(alpha_probe.get("candidate_search"), dict)
+                else None
+            ),
         },
         "external": {
             "strategy_diagnose": {
@@ -1390,7 +1412,8 @@ payload = {
                 "warn_reasons": as_list(strategy.get("warn_reasons")),
                 "diagnostic_codes": sorted(code for code in codes if code),
                 "alpha_tournament": alpha,
-            }
+            },
+            "alpha_mechanism_probe": alpha_probe,
         },
     },
 }
@@ -1441,6 +1464,9 @@ run_registry() {
       --replay_validation_report="${REPLAY_VALIDATION_REPORT_PATH}"
       --require_replay_validation_pass
     )
+  fi
+  if [[ -f "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" ]]; then
+    REG_ARGS+=(--alpha_mechanism_probe_report="${ALPHA_MECHANISM_PROBE_REPORT_PATH}")
   fi
   if [[ "${ACTIVATE_ON_PASS}" == "true" ]]; then
     REG_ARGS+=(--activate_on_pass)
@@ -1964,8 +1990,22 @@ run_alpha_mechanism_probe() {
   "readiness_status": "SKIPPED",
   "mechanism_control_status": "not_evaluated",
   "market_alpha_family_status": "not_evaluated",
+  "deployable_candidate_manifest": {
+    "schema_version": "alpha_candidate_manifest_v1",
+    "status": "skipped",
+    "fail_reasons": ["feature_store_missing"]
+  },
   "fail_reasons": [],
   "warn_reasons": ["feature_store_missing"]
+}
+EOF
+    cat > "${ALPHA_CANDIDATE_MANIFEST_PATH}" <<EOF
+{
+  "schema_version": "alpha_candidate_manifest_v1",
+  "generated_at_utc": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "status": "skipped",
+  "selected_candidate": null,
+  "fail_reasons": ["feature_store_missing"]
 }
 EOF
     return 0
@@ -1975,6 +2015,7 @@ EOF
   local probe_args=(
     tools/alpha_mechanism_probe.py
     --output "${ALPHA_MECHANISM_PROBE_REPORT_PATH}"
+    --candidate-manifest-output "${ALPHA_CANDIDATE_MANIFEST_PATH}"
     --symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL:-${SYMBOL}}"
     --feature_csv "${FEATURE_STORE_PATH}"
     --round-trip-cost-bps "${ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS}"
@@ -2509,6 +2550,7 @@ build_summary() {
   "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
   "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
   "alpha_mechanism_probe_report": "${ALPHA_MECHANISM_PROBE_REPORT_PATH}",
+  "alpha_candidate_manifest": "${ALPHA_CANDIDATE_MANIFEST_PATH}",
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"

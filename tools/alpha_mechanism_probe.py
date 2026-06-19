@@ -22,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 
 SCHEMA_VERSION = "alpha_mechanism_probe_v1"
+CANDIDATE_MANIFEST_SCHEMA_VERSION = "alpha_candidate_manifest_v1"
 
 
 def now_utc_iso() -> str:
@@ -105,6 +106,8 @@ def load_feature_rows(symbol: str, path: Path) -> List[Dict[str, float]]:
                 {
                     "symbol": symbol,
                     "timestamp": timestamp,
+                    "close": safe_float(raw.get("close"), math.nan),
+                    "volume": safe_float(raw.get("volume"), math.nan),
                     "forward_return": forward_return,
                     "ret_1": safe_float(raw.get("ret_1"), math.nan),
                     "ret_3": safe_float(raw.get("ret_3"), math.nan),
@@ -114,7 +117,9 @@ def load_feature_rows(symbol: str, path: Path) -> List[Dict[str, float]]:
                     "mom_48": safe_float(raw.get("mom_48"), math.nan),
                     "zscore_48": safe_float(raw.get("zscore_48"), math.nan),
                     "vol_12": safe_float(raw.get("vol_12"), math.nan),
+                    "vol_48": safe_float(raw.get("vol_48"), math.nan),
                     "range_pct": safe_float(raw.get("range_pct"), math.nan),
+                    "vol_chg_12": safe_float(raw.get("vol_chg_12"), math.nan),
                 }
             )
     rows.sort(key=lambda item: (str(item["symbol"]), item["timestamp"]))
@@ -202,6 +207,46 @@ def score_for_spec(row: Dict[str, float], spec: Dict[str, Any]) -> float:
             return math.nan
         sign = 1.0 if ema > 0.0 else -1.0
         score = sign * min(abs(ema) / 5e-4, abs(mom) / 2e-3)
+    elif source == "volatility_breakout":
+        ret_3 = safe_float(row.get("ret_3"), math.nan)
+        vol_12 = safe_float(row.get("vol_12"), math.nan)
+        vol_48 = safe_float(row.get("vol_48"), math.nan)
+        if not all(math.isfinite(item) for item in (ret_3, vol_12, vol_48)):
+            return math.nan
+        expansion = max(0.0, vol_12 / max(abs(vol_48), 1e-12) - 1.0)
+        score = ret_3 * (1.0 + expansion)
+    elif source == "volatility_contraction_breakout":
+        ret_3 = safe_float(row.get("ret_3"), math.nan)
+        vol_12 = safe_float(row.get("vol_12"), math.nan)
+        vol_48 = safe_float(row.get("vol_48"), math.nan)
+        if not all(math.isfinite(item) for item in (ret_3, vol_12, vol_48)):
+            return math.nan
+        contraction = max(0.0, vol_48 / max(abs(vol_12), 1e-12) - 1.0)
+        score = ret_3 * (1.0 + contraction)
+    elif source == "range_expansion_follow":
+        ret_1 = safe_float(row.get("ret_1"), math.nan)
+        range_pct = safe_float(row.get("range_pct"), math.nan)
+        vol_12 = safe_float(row.get("vol_12"), math.nan)
+        if not all(math.isfinite(item) for item in (ret_1, range_pct, vol_12)):
+            return math.nan
+        range_pressure = range_pct / max(abs(vol_12), 1e-12)
+        score = ret_1 * range_pressure
+    elif source == "quiet_range_reversion":
+        zscore = safe_float(row.get("zscore_48"), math.nan)
+        vol_12 = safe_float(row.get("vol_12"), math.nan)
+        vol_48 = safe_float(row.get("vol_48"), math.nan)
+        range_pct = safe_float(row.get("range_pct"), math.nan)
+        if not all(math.isfinite(item) for item in (zscore, vol_12, vol_48, range_pct)):
+            return math.nan
+        quietness = max(0.0, vol_48 / max(abs(vol_12), 1e-12) - 1.0)
+        range_penalty = 1.0 / max(1.0, range_pct / max(abs(vol_12), 1e-12))
+        score = -zscore * (1.0 + quietness) * range_penalty
+    elif source == "ret_vol_adjusted":
+        ret_12 = safe_float(row.get("ret_12"), math.nan)
+        vol_12 = safe_float(row.get("vol_12"), math.nan)
+        if not all(math.isfinite(item) for item in (ret_12, vol_12)):
+            return math.nan
+        score = ret_12 / max(abs(vol_12), 1e-12)
     else:
         score = safe_float(row.get(source), math.nan)
     if mode == "inverse":
@@ -211,15 +256,57 @@ def score_for_spec(row: Dict[str, float], spec: Dict[str, Any]) -> float:
 
 def candidate_specs() -> List[Dict[str, Any]]:
     return [
-        {"name": "trend_follow", "source": "trend", "mode": "follow"},
-        {"name": "trend_inverse", "source": "trend", "mode": "inverse"},
-        {"name": "mom12_follow", "source": "mom_12", "mode": "follow"},
-        {"name": "mom12_inverse", "source": "mom_12", "mode": "inverse"},
-        {"name": "ret3_follow", "source": "ret_3", "mode": "follow"},
-        {"name": "ret3_inverse", "source": "ret_3", "mode": "inverse"},
-        {"name": "ret1_inverse", "source": "ret_1", "mode": "inverse"},
-        {"name": "zscore_follow", "source": "zscore_48", "mode": "follow"},
-        {"name": "zscore_inverse", "source": "zscore_48", "mode": "inverse"},
+        {"name": "trend_follow", "family": "legacy_trend", "source": "trend", "mode": "follow"},
+        {"name": "trend_inverse", "family": "legacy_trend", "source": "trend", "mode": "inverse"},
+        {"name": "mom12_follow", "family": "legacy_momentum", "source": "mom_12", "mode": "follow"},
+        {"name": "mom12_inverse", "family": "legacy_momentum", "source": "mom_12", "mode": "inverse"},
+        {"name": "ret3_follow", "family": "legacy_return", "source": "ret_3", "mode": "follow"},
+        {"name": "ret3_inverse", "family": "legacy_return", "source": "ret_3", "mode": "inverse"},
+        {"name": "ret1_inverse", "family": "legacy_return", "source": "ret_1", "mode": "inverse"},
+        {"name": "zscore_follow", "family": "legacy_reversion", "source": "zscore_48", "mode": "follow"},
+        {"name": "zscore_inverse", "family": "legacy_reversion", "source": "zscore_48", "mode": "inverse"},
+        {
+            "name": "vol_breakout_follow",
+            "family": "volatility_breakout",
+            "source": "volatility_breakout",
+            "mode": "follow",
+        },
+        {
+            "name": "vol_breakout_inverse",
+            "family": "volatility_breakout",
+            "source": "volatility_breakout",
+            "mode": "inverse",
+        },
+        {
+            "name": "vol_contraction_breakout_follow",
+            "family": "volatility_contraction_breakout",
+            "source": "volatility_contraction_breakout",
+            "mode": "follow",
+        },
+        {
+            "name": "range_expansion_follow",
+            "family": "range_expansion",
+            "source": "range_expansion_follow",
+            "mode": "follow",
+        },
+        {
+            "name": "quiet_range_reversion",
+            "family": "range_reversion",
+            "source": "quiet_range_reversion",
+            "mode": "follow",
+        },
+        {
+            "name": "ret_vol_adjusted_follow",
+            "family": "risk_adjusted_momentum",
+            "source": "ret_vol_adjusted",
+            "mode": "follow",
+        },
+        {
+            "name": "ret_vol_adjusted_inverse",
+            "family": "risk_adjusted_momentum",
+            "source": "ret_vol_adjusted",
+            "mode": "inverse",
+        },
     ]
 
 
@@ -343,6 +430,90 @@ def run_candidate_search(
         "ranked_candidates": ranked[:20],
         "fail_reasons": [] if pass_candidates else ["no_market_alpha_candidate_passed_holdout_after_cost"],
     }
+
+
+def build_candidate_manifest(
+    candidate_search: Dict[str, Any],
+    *,
+    symbols: List[str],
+    round_trip_cost_bps: float,
+    min_mean_net_bps: float,
+    min_positive_ratio: float,
+) -> Dict[str, Any]:
+    pass_candidates = candidate_search.get("pass_candidates", [])
+    if not isinstance(pass_candidates, list):
+        pass_candidates = []
+    selected = pass_candidates[0] if pass_candidates else None
+    best = candidate_search.get("best_candidate")
+    if not isinstance(best, dict):
+        best = None
+
+    rejected = []
+    ranked = candidate_search.get("ranked_candidates", [])
+    if isinstance(ranked, list):
+        for item in ranked[:20]:
+            if not isinstance(item, dict):
+                continue
+            spec = item.get("spec", {})
+            if not isinstance(spec, dict):
+                spec = {}
+            rejected.append(
+                {
+                    "name": item.get("name"),
+                    "family": spec.get("family"),
+                    "source": spec.get("source"),
+                    "mode": spec.get("mode"),
+                    "holdout_status": item.get("holdout_status"),
+                    "holdout_fail_reasons": item.get("holdout_fail_reasons", []),
+                    "holdout_summary": (
+                        item.get("holdout", {}).get("summary", {})
+                        if isinstance(item.get("holdout"), dict)
+                        else {}
+                    ),
+                }
+            )
+
+    manifest: Dict[str, Any] = {
+        "schema_version": CANDIDATE_MANIFEST_SCHEMA_VERSION,
+        "generated_at_utc": now_utc_iso(),
+        "status": "pass" if isinstance(selected, dict) else "fail",
+        "symbols": symbols,
+        "round_trip_cost_bps": float(round_trip_cost_bps),
+        "objective": {
+            "min_mean_net_bps": float(min_mean_net_bps),
+            "min_positive_ratio": float(min_positive_ratio),
+        },
+        "selected_candidate": None,
+        "best_rejected_candidate": best,
+        "rejected_candidates": rejected,
+        "fail_reasons": [] if isinstance(selected, dict) else list(candidate_search.get("fail_reasons", [])),
+    }
+    if not isinstance(selected, dict):
+        return manifest
+
+    spec = selected.get("spec", {})
+    if not isinstance(spec, dict):
+        spec = {}
+    holdout = selected.get("holdout", {})
+    if not isinstance(holdout, dict):
+        holdout = {}
+    manifest["selected_candidate"] = {
+        "name": selected.get("name"),
+        "family": spec.get("family"),
+        "source": spec.get("source"),
+        "mode": spec.get("mode"),
+        "threshold": selected.get("threshold"),
+        "holdout_summary": holdout.get("summary", {}),
+        "deployable_config": {
+            "signal_family": spec.get("family"),
+            "signal_source": spec.get("source"),
+            "direction_mode": spec.get("mode"),
+            "score_threshold": selected.get("threshold"),
+            "round_trip_cost_bps": float(round_trip_cost_bps),
+            "symbols": symbols,
+        },
+    }
+    return manifest
 
 
 def oracle_control(
@@ -500,6 +671,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
 
     controls: Dict[str, Any] = {}
     candidate_search: Dict[str, Any] = {}
+    candidate_manifest: Dict[str, Any] = {}
     if holdout_rows:
         controls = {
             "positive_oracle": oracle_control(
@@ -533,6 +705,24 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             min_mean_net_bps=float(args.min_mean_net_bps),
             min_positive_ratio=float(args.min_positive_ratio),
         )
+        candidate_manifest = build_candidate_manifest(
+            candidate_search,
+            symbols=sorted(by_symbol.keys()),
+            round_trip_cost_bps=float(args.round_trip_cost_bps),
+            min_mean_net_bps=float(args.min_mean_net_bps),
+            min_positive_ratio=float(args.min_positive_ratio),
+        )
+    else:
+        candidate_manifest = {
+            "schema_version": CANDIDATE_MANIFEST_SCHEMA_VERSION,
+            "generated_at_utc": now_utc_iso(),
+            "status": "fail",
+            "symbols": sorted(by_symbol.keys()),
+            "selected_candidate": None,
+            "best_rejected_candidate": None,
+            "rejected_candidates": [],
+            "fail_reasons": ["insufficient_holdout_samples"],
+        }
 
     control_failures = [
         name
@@ -581,6 +771,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "controls": controls,
         "candidate_search": candidate_search,
+        "deployable_candidate_manifest": candidate_manifest,
         "next_actions": [
             "If mechanism_control_status fails, fix the objective/probe before any strategy tuning.",
             "If mechanism_control_status passes but market_alpha_family_status fails, replace the alpha family instead of tuning execution thresholds.",
@@ -605,6 +796,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-holdout-samples", type=int, default=100)
     parser.add_argument("--min-mean-net-bps", type=float, default=0.0)
     parser.add_argument("--min-positive-ratio", type=float, default=0.50)
+    parser.add_argument(
+        "--candidate-manifest-output",
+        default="",
+        help="optional alpha_candidate_manifest_v1 output path",
+    )
     return parser.parse_args()
 
 
@@ -617,6 +813,14 @@ def main() -> int:
         json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    if args.candidate_manifest_output:
+        manifest = report.get("deployable_candidate_manifest", {})
+        manifest_output = Path(args.candidate_manifest_output)
+        manifest_output.parent.mkdir(parents=True, exist_ok=True)
+        manifest_output.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     print(
         json.dumps(
             {
