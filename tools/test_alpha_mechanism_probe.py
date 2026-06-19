@@ -121,6 +121,52 @@ def write_path_capture_fixture(path: pathlib.Path) -> pathlib.Path:
     return path
 
 
+def write_one_sided_path_label_fixture(path: pathlib.Path) -> pathlib.Path:
+    cycles = 300
+    period = 20
+    row_count = cycles * period + 20
+    closes = [100.0 for _ in range(row_count)]
+    entry_rows = {}
+    for cycle in range(cycles):
+        direction = 1
+        feature_sign = 1 if cycle % 5 in {0, 1} else -1
+        entry = cycle * period + 4
+        entry_rows[entry] = feature_sign
+        closes[entry] = 100.0
+        closes[entry + 1] = 100.12
+        for offset in range(2, 13):
+            closes[entry + offset] = 100.0
+
+    with path.open("w", encoding="utf-8", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=FIELDS)
+        writer.writeheader()
+        for index, close in enumerate(closes):
+            feature_sign = entry_rows.get(index, 0)
+            feature = float(feature_sign) * 0.003 if feature_sign else 0.0
+            writer.writerow(
+                {
+                    "timestamp": 1_700_000_000_000 + index * 300_000,
+                    "close": close,
+                    "volume": 10.0,
+                    "ret_1": feature,
+                    "ret_3": feature,
+                    "ret_12": feature,
+                    "ema_fast": 100.2,
+                    "ema_slow": 100.0,
+                    "ema_diff": feature,
+                    "vol_12": 0.001,
+                    "vol_48": 0.001,
+                    "zscore_48": feature * 1000.0,
+                    "mom_12": feature,
+                    "mom_48": feature,
+                    "range_pct": 0.001,
+                    "vol_chg_12": 0.0,
+                    "forward_return": 0.0,
+                }
+            )
+    return path
+
+
 class AlphaMechanismProbeTest(unittest.TestCase):
     def test_controls_pass_and_real_candidate_can_pass_on_aligned_fixture(self):
         with tempfile.TemporaryDirectory() as td:
@@ -280,6 +326,54 @@ class AlphaMechanismProbeTest(unittest.TestCase):
             self.assertGreater(summary["mean_net_bps"], 0.0)
             self.assertGreaterEqual(summary["mean_mfe_cost_coverage_ratio"], 1.2)
             self.assertGreater(summary["take_profit_hit_ratio"], 0.9)
+
+    def test_path_label_candidate_isolates_one_sided_feature_bin(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            feature_path = write_one_sided_path_label_fixture(root / "path_label_features.csv")
+            output = root / "probe.json"
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "alpha_mechanism_probe.py",
+                    "--output",
+                    str(output),
+                    "--symbol",
+                    "SOLUSDT",
+                    "--feature_csv",
+                    str(feature_path),
+                    "--round-trip-cost-bps",
+                    "3.5",
+                    "--objective-mode",
+                    "path_first_touch",
+                    "--path-horizon-bars",
+                    "12",
+                    "--path-take-profit-bps",
+                    "8.0",
+                    "--path-stop-loss-bps",
+                    "8.0",
+                    "--min-mfe-cost-coverage",
+                    "1.2",
+                    "--min-holdout-samples",
+                    "20",
+                ]
+                code = PROBE.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["market_alpha_family_status"], "pass")
+            self.assertGreater(
+                payload["path_label_analysis"]["generated_candidate_count"],
+                0,
+            )
+            selected = payload["deployable_candidate_manifest"]["selected_candidate"]
+            self.assertIsNotNone(selected)
+            self.assertEqual(selected["generated_by"], "path_label_train_bin")
+            self.assertEqual(selected["signal_direction"], 1)
+            self.assertGreater(selected["holdout_summary"]["mean_net_bps"], 0.0)
 
 
 if __name__ == "__main__":

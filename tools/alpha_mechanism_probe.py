@@ -25,6 +25,26 @@ SCHEMA_VERSION = "alpha_mechanism_probe_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "alpha_candidate_manifest_v1"
 OBJECTIVE_FIXED_FORWARD = "fixed_forward"
 OBJECTIVE_PATH_FIRST_TOUCH = "path_first_touch"
+PATH_LABEL_BASE_SOURCES = [
+    ("ret_1", "path_label_return"),
+    ("ret_3", "path_label_return"),
+    ("ret_12", "path_label_return"),
+    ("ema_diff", "path_label_trend"),
+    ("mom_12", "path_label_momentum"),
+    ("mom_48", "path_label_momentum"),
+    ("zscore_48", "path_label_reversion"),
+    ("volatility_breakout", "path_label_volatility"),
+    ("volatility_contraction_breakout", "path_label_volatility"),
+    ("ret_vol_adjusted", "path_label_risk_adjusted"),
+]
+PATH_LABEL_GATE_QUANTILES = [
+    ("upper_q75", "ge", 0.75),
+    ("upper_q90", "ge", 0.90),
+    ("lower_q25", "le", 0.25),
+    ("lower_q10", "le", 0.10),
+    ("abs_q75", "abs_ge", 0.75),
+    ("abs_q90", "abs_ge", 0.90),
+]
 
 
 def now_utc_iso() -> str:
@@ -385,7 +405,27 @@ def objective_status(
 def score_for_spec(row: Dict[str, float], spec: Dict[str, Any]) -> float:
     source = str(spec.get("source", "")).strip()
     mode = str(spec.get("mode", "follow")).strip()
-    if source == "trend":
+    if source == "path_label_gate":
+        base_source = str(spec.get("base_source", "")).strip()
+        base_score = score_for_spec(row, {"source": base_source, "mode": "follow"})
+        if not math.isfinite(base_score):
+            return math.nan
+        gate = str(spec.get("gate", "")).strip()
+        gate_threshold = safe_float(spec.get("gate_threshold"), math.nan)
+        if not math.isfinite(gate_threshold):
+            return math.nan
+        active = False
+        if gate == "ge":
+            active = base_score >= gate_threshold
+        elif gate == "le":
+            active = base_score <= gate_threshold
+        elif gate == "abs_ge":
+            active = abs(base_score) >= abs(gate_threshold)
+        if not active:
+            return math.nan
+        direction = 1.0 if int(spec.get("signal_direction", 1) or 1) >= 0 else -1.0
+        score = direction * max(abs(base_score), 1.0)
+    elif source == "trend":
         ema = safe_float(row.get("ema_diff"), math.nan)
         mom = safe_float(row.get("mom_48"), math.nan)
         if not math.isfinite(ema) or not math.isfinite(mom) or ema * mom <= 0.0:
@@ -495,6 +535,148 @@ def candidate_specs() -> List[Dict[str, Any]]:
     ]
 
 
+def path_label_spec_name(source: str, gate_name: str, direction: int) -> str:
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in source).strip("_")
+    side = "long" if direction > 0 else "short"
+    return f"path_label_{cleaned}_{gate_name}_{side}"
+
+
+def build_path_label_candidates(
+    train_rows: List[Dict[str, Any]],
+    *,
+    round_trip_cost_bps: float,
+    min_samples: int,
+    min_mean_net_bps: float,
+    min_positive_ratio: float,
+    min_mfe_cost_coverage: float,
+    objective_mode: str,
+    path_take_profit_bps: float,
+    path_stop_loss_bps: float,
+    max_generated_specs: int = 24,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    if objective_mode != OBJECTIVE_PATH_FIRST_TOUCH:
+        return {
+            "status": "skipped",
+            "reason": "objective_mode_not_path_first_touch",
+            "generated_candidate_count": 0,
+            "top_train_bins": [],
+        }, []
+
+    analyses: List[Dict[str, Any]] = []
+    for source, family in PATH_LABEL_BASE_SOURCES:
+        source_scores = [score_for_spec(row, {"source": source, "mode": "follow"}) for row in train_rows]
+        finite_scores = [item for item in source_scores if math.isfinite(item) and abs(item) > 0.0]
+        if len(finite_scores) < int(min_samples):
+            analyses.append(
+                {
+                    "source": source,
+                    "family": family,
+                    "status": "skipped",
+                    "reason": f"finite_score_count={len(finite_scores)} < min_samples={min_samples}",
+                }
+            )
+            continue
+        abs_scores = [abs(item) for item in finite_scores]
+        for gate_name, gate, q in PATH_LABEL_GATE_QUANTILES:
+            threshold_values = abs_scores if gate == "abs_ge" else finite_scores
+            gate_threshold = quantile(threshold_values, q, math.nan)
+            if not math.isfinite(gate_threshold):
+                continue
+            for direction in (1, -1):
+                spec = {
+                    "name": path_label_spec_name(source, gate_name, direction),
+                    "family": family,
+                    "source": "path_label_gate",
+                    "base_source": source,
+                    "gate": gate,
+                    "gate_name": gate_name,
+                    "gate_quantile": float(q),
+                    "gate_threshold": float(gate_threshold),
+                    "signal_direction": int(direction),
+                    "mode": "follow",
+                    "generated_by": "path_label_train_bin",
+                }
+                train_eval = evaluate_candidate(
+                    train_rows,
+                    spec,
+                    0.0,
+                    round_trip_cost_bps=round_trip_cost_bps,
+                    objective_mode=objective_mode,
+                    path_take_profit_bps=path_take_profit_bps,
+                    path_stop_loss_bps=path_stop_loss_bps,
+                )
+                status, fails = objective_status(
+                    train_eval["summary"],
+                    min_samples=min_samples,
+                    min_mean_net_bps=min_mean_net_bps,
+                    min_positive_ratio=min_positive_ratio,
+                    min_mfe_cost_coverage=min_mfe_cost_coverage,
+                )
+                analyses.append(
+                    {
+                        "name": spec["name"],
+                        "family": family,
+                        "source": source,
+                        "gate": gate,
+                        "gate_name": gate_name,
+                        "gate_quantile": float(q),
+                        "gate_threshold": float(gate_threshold),
+                        "signal_direction": int(direction),
+                        "train_status": status,
+                        "train_fail_reasons": fails,
+                        "train_summary": train_eval["summary"],
+                        "candidate_spec": spec,
+                    }
+                )
+
+    def analysis_rank(item: Dict[str, Any]) -> Tuple[int, float, float, int]:
+        summary = item.get("train_summary", {})
+        if not isinstance(summary, dict):
+            summary = {}
+        mean_net = summary.get("mean_net_bps")
+        positive = summary.get("positive_ratio")
+        samples = int(summary.get("sample_count") or 0)
+        return (
+            1 if item.get("train_status") == "pass" else 0,
+            float(mean_net) if isinstance(mean_net, (int, float)) else float("-inf"),
+            float(positive) if isinstance(positive, (int, float)) else float("-inf"),
+            samples,
+        )
+
+    ranked = sorted(analyses, key=analysis_rank, reverse=True)
+    generated_specs: List[Dict[str, Any]] = []
+    seen_names = set()
+    for item in ranked:
+        if item.get("train_status") != "pass":
+            continue
+        spec = item.get("candidate_spec")
+        if not isinstance(spec, dict):
+            continue
+        name = str(spec.get("name"))
+        if name in seen_names:
+            continue
+        generated_specs.append(spec)
+        seen_names.add(name)
+        if len(generated_specs) >= int(max_generated_specs):
+            break
+
+    public_bins: List[Dict[str, Any]] = []
+    for item in ranked[:50]:
+        public = dict(item)
+        public.pop("candidate_spec", None)
+        public_bins.append(public)
+    status = "pass" if generated_specs else "fail"
+    return {
+        "status": status,
+        "generated_candidate_count": len(generated_specs),
+        "evaluated_bin_count": len([item for item in analyses if "train_summary" in item]),
+        "skipped_source_count": len([item for item in analyses if item.get("status") == "skipped"]),
+        "max_generated_specs": int(max_generated_specs),
+        "top_train_bins": public_bins,
+        "fail_reasons": [] if generated_specs else ["no_path_label_train_bin_passed_objective"],
+    }, generated_specs
+
+
 def evaluate_candidate(
     rows: List[Dict[str, Any]],
     spec: Dict[str, Any],
@@ -567,9 +749,12 @@ def run_candidate_search(
     objective_mode: str,
     path_take_profit_bps: float,
     path_stop_loss_bps: float,
+    extra_specs: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     candidates: List[Dict[str, Any]] = []
-    for spec in candidate_specs():
+    base_specs = candidate_specs()
+    generated_specs = list(extra_specs or [])
+    for spec in base_specs + generated_specs:
         scores = [score_for_spec(row, spec) for row in train_rows]
         best_train: Dict[str, Any] | None = None
         for threshold in thresholds_for_scores(scores):
@@ -630,6 +815,8 @@ def run_candidate_search(
     return {
         "status": "pass" if pass_candidates else "fail",
         "candidate_count": len(candidates),
+        "base_candidate_count": len(base_specs),
+        "generated_candidate_count": len(generated_specs),
         "pass_candidate_count": len(pass_candidates),
         "best_candidate": ranked[0] if ranked else None,
         "pass_candidates": pass_candidates[:10],
@@ -673,6 +860,13 @@ def build_candidate_manifest(
                     "name": item.get("name"),
                     "family": spec.get("family"),
                     "source": spec.get("source"),
+                    "base_source": spec.get("base_source"),
+                    "gate": spec.get("gate"),
+                    "gate_name": spec.get("gate_name"),
+                    "gate_quantile": spec.get("gate_quantile"),
+                    "gate_threshold": spec.get("gate_threshold"),
+                    "signal_direction": spec.get("signal_direction"),
+                    "generated_by": spec.get("generated_by"),
                     "mode": spec.get("mode"),
                     "holdout_status": item.get("holdout_status"),
                     "holdout_fail_reasons": item.get("holdout_fail_reasons", []),
@@ -717,12 +911,25 @@ def build_candidate_manifest(
         "name": selected.get("name"),
         "family": spec.get("family"),
         "source": spec.get("source"),
+        "base_source": spec.get("base_source"),
+        "gate": spec.get("gate"),
+        "gate_name": spec.get("gate_name"),
+        "gate_quantile": spec.get("gate_quantile"),
+        "gate_threshold": spec.get("gate_threshold"),
+        "signal_direction": spec.get("signal_direction"),
+        "generated_by": spec.get("generated_by"),
         "mode": spec.get("mode"),
         "threshold": selected.get("threshold"),
         "holdout_summary": holdout.get("summary", {}),
         "deployable_config": {
             "signal_family": spec.get("family"),
             "signal_source": spec.get("source"),
+            "base_source": spec.get("base_source"),
+            "gate": spec.get("gate"),
+            "gate_name": spec.get("gate_name"),
+            "gate_threshold": spec.get("gate_threshold"),
+            "signal_direction": spec.get("signal_direction"),
+            "generated_by": spec.get("generated_by"),
             "direction_mode": spec.get("mode"),
             "score_threshold": selected.get("threshold"),
             "round_trip_cost_bps": float(round_trip_cost_bps),
@@ -959,7 +1166,19 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     controls: Dict[str, Any] = {}
     candidate_search: Dict[str, Any] = {}
     candidate_manifest: Dict[str, Any] = {}
+    path_label_analysis: Dict[str, Any] = {}
     if holdout_rows:
+        path_label_analysis, generated_path_label_specs = build_path_label_candidates(
+            train_rows,
+            round_trip_cost_bps=float(args.round_trip_cost_bps),
+            min_samples=max(int(args.min_holdout_samples), 100),
+            min_mean_net_bps=float(args.min_mean_net_bps),
+            min_positive_ratio=float(args.min_positive_ratio),
+            min_mfe_cost_coverage=float(args.min_mfe_cost_coverage),
+            objective_mode=objective_mode,
+            path_take_profit_bps=float(args.path_take_profit_bps),
+            path_stop_loss_bps=float(args.path_stop_loss_bps),
+        )
         controls = {
             "positive_oracle": oracle_control(
                 holdout_rows,
@@ -1007,6 +1226,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             objective_mode=objective_mode,
             path_take_profit_bps=float(args.path_take_profit_bps),
             path_stop_loss_bps=float(args.path_stop_loss_bps),
+            extra_specs=generated_path_label_specs,
         )
         candidate_manifest = build_candidate_manifest(
             candidate_search,
@@ -1083,6 +1303,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "by_symbol": by_symbol,
         },
         "controls": controls,
+        "path_label_analysis": path_label_analysis,
         "candidate_search": candidate_search,
         "deployable_candidate_manifest": candidate_manifest,
         "next_actions": [
