@@ -587,6 +587,64 @@ def accuracy_score(y_true: np.ndarray, y_score: np.ndarray) -> float:
     return float(np.mean(pred == y))
 
 
+def median_ignore_nan(values: Sequence[float]) -> float:
+    finite = [v for v in values if math.isfinite(v)]
+    return float(statistics.median(finite)) if finite else float("nan")
+
+
+def model_net_objective_samples(
+    score: np.ndarray,
+    forward_return: np.ndarray,
+    round_trip_cost_bps: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    mask = np.isfinite(score) & np.isfinite(forward_return)
+    if np.sum(mask) == 0:
+        empty = np.asarray([], dtype=np.float64)
+        return empty, empty, empty
+    clean_score = score[mask]
+    direction = np.where(clean_score >= 0.5, 1.0, -1.0).astype(np.float64)
+    gross_bps = direction * forward_return[mask] * 10000.0
+    net_bps = gross_bps - max(0.0, float(round_trip_cost_bps))
+    return gross_bps.astype(np.float64), net_bps.astype(np.float64), direction
+
+
+def summarize_model_net_objective(
+    score: np.ndarray,
+    forward_return: np.ndarray,
+    round_trip_cost_bps: float,
+) -> Dict[str, Any]:
+    gross_bps, net_bps, direction = model_net_objective_samples(
+        score=score,
+        forward_return=forward_return,
+        round_trip_cost_bps=round_trip_cost_bps,
+    )
+    if len(net_bps) <= 0:
+        return {
+            "model_net_objective_sample_count": 0,
+            "mean_model_gross_edge_bps": float("nan"),
+            "mean_model_net_edge_bps": float("nan"),
+            "median_model_net_edge_bps": float("nan"),
+            "positive_model_net_edge_ratio": float("nan"),
+            "long_signal_ratio": float("nan"),
+            "short_signal_ratio": float("nan"),
+            "round_trip_cost_bps": float(round_trip_cost_bps),
+        }
+    positive_count = int(np.sum(net_bps > 0.0))
+    long_count = int(np.sum(direction > 0.0))
+    short_count = int(np.sum(direction < 0.0))
+    sample_count = int(len(net_bps))
+    return {
+        "model_net_objective_sample_count": sample_count,
+        "mean_model_gross_edge_bps": float(np.mean(gross_bps)),
+        "mean_model_net_edge_bps": float(np.mean(net_bps)),
+        "median_model_net_edge_bps": float(np.median(net_bps)),
+        "positive_model_net_edge_ratio": float(positive_count) / float(sample_count),
+        "long_signal_ratio": float(long_count) / float(sample_count),
+        "short_signal_ratio": float(short_count) / float(sample_count),
+        "round_trip_cost_bps": float(round_trip_cost_bps),
+    }
+
+
 @dataclass
 class SplitRange:
     train_start: int
@@ -794,9 +852,15 @@ def evaluate_governance(
     max_train_test_auc_gap: float,
     run_random_label_control: bool,
     max_random_label_auc: float,
+    min_mean_model_net_edge_bps: float,
+    min_positive_model_net_edge_ratio: float,
 ) -> Tuple[bool, List[str], List[str]]:
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
+    mean_model_net_edge_bps = metrics_oos.get("mean_model_net_edge_bps", float("nan"))
+    positive_model_net_edge_ratio = metrics_oos.get(
+        "positive_model_net_edge_ratio", float("nan")
+    )
     auc_mean = metrics_oos.get("auc_mean", float("nan"))
     delta_auc = metrics_oos.get("delta_auc_vs_baseline", float("nan"))
     split_trained_count = metrics_oos.get("split_trained_count", float("nan"))
@@ -810,17 +874,35 @@ def evaluate_governance(
     random_label_auc_mean = metrics_oos.get("random_label_auc_mean", random_label_auc)
     random_label_auc_max = metrics_oos.get("random_label_auc_max", random_label_auc)
 
-    if not math.isfinite(auc_mean):
-        fail_reasons.append("缺少或无效 metrics_oos.auc_mean")
-    elif auc_mean < min_auc_mean:
+    if not math.isfinite(mean_model_net_edge_bps):
+        fail_reasons.append("缺少或无效 metrics_oos.mean_model_net_edge_bps")
+    elif mean_model_net_edge_bps < min_mean_model_net_edge_bps:
         fail_reasons.append(
+            "mean_model_net_edge_bps="
+            f"{mean_model_net_edge_bps:.6f} < "
+            f"min_mean_model_net_edge_bps={min_mean_model_net_edge_bps:.6f}"
+        )
+
+    if not math.isfinite(positive_model_net_edge_ratio):
+        fail_reasons.append("缺少或无效 metrics_oos.positive_model_net_edge_ratio")
+    elif positive_model_net_edge_ratio < min_positive_model_net_edge_ratio:
+        fail_reasons.append(
+            "positive_model_net_edge_ratio="
+            f"{positive_model_net_edge_ratio:.6f} < "
+            f"min_positive_model_net_edge_ratio={min_positive_model_net_edge_ratio:.6f}"
+        )
+
+    if not math.isfinite(auc_mean):
+        warn_reasons.append("缺少或无效 metrics_oos.auc_mean")
+    elif auc_mean < min_auc_mean:
+        warn_reasons.append(
             f"auc_mean={auc_mean:.6f} < min_auc_mean={min_auc_mean:.6f}"
         )
 
     if not math.isfinite(delta_auc):
-        fail_reasons.append("缺少或无效 metrics_oos.delta_auc_vs_baseline")
+        warn_reasons.append("缺少或无效 metrics_oos.delta_auc_vs_baseline")
     elif delta_auc < min_delta_auc_vs_baseline:
-        fail_reasons.append(
+        warn_reasons.append(
             "delta_auc_vs_baseline="
             f"{delta_auc:.6f} < min_delta_auc_vs_baseline={min_delta_auc_vs_baseline:.6f}"
         )
@@ -1000,6 +1082,18 @@ def main() -> int:
         help="训练标签额外净边际 bps；与 round-trip cost 叠加为标签阈值",
     )
     parser.add_argument(
+        "--min_mean_model_net_edge_bps",
+        type=float,
+        default=0.0,
+        help="治理主目标：模型方向在 OOS 上扣除 round-trip cost 后的最小平均净 edge bps",
+    )
+    parser.add_argument(
+        "--min_positive_model_net_edge_ratio",
+        type=float,
+        default=0.50,
+        help="治理主目标：模型 OOS 净 edge 为正的最小样本比例",
+    )
+    parser.add_argument(
         "--feature_clip_quantile",
         type=float,
         default=0.0,
@@ -1058,6 +1152,8 @@ def main() -> int:
         raise ValueError("--label_round_trip_cost_bps 不能为负数")
     if float(args.label_min_net_edge_bps) < 0.0:
         raise ValueError("--label_min_net_edge_bps 不能为负数")
+    if not (0.0 <= float(args.min_positive_model_net_edge_ratio) <= 1.0):
+        raise ValueError("--min_positive_model_net_edge_ratio 必须在 [0,1] 范围")
     if not (0.0 <= float(args.feature_clip_quantile) < 0.5):
         raise ValueError("--feature_clip_quantile 必须在 [0,0.5) 范围")
     if float(args.l2_leaf_reg) < 0.0:
@@ -1132,6 +1228,11 @@ def main() -> int:
     ret1_valid = ret_1[valid_mask]
     ts_valid = series["timestamp"][valid_mask]
 
+    economic_valid_mask = np.isfinite(forward_return) & np.all(np.isfinite(features), axis=1)
+    X_economic = features[economic_valid_mask]
+    forward_return_economic = forward_return[economic_valid_mask]
+    ts_economic = series["timestamp"][economic_valid_mask]
+
     if args.split_method == "rolling" and args.train_window_bars > 0:
         required = (
             args.train_window_bars
@@ -1169,6 +1270,10 @@ def main() -> int:
     acc_values: List[float] = []
     baseline_auc_values: List[float] = []
     best_iteration_values: List[float] = []
+    model_gross_edge_values: List[float] = []
+    model_net_edge_values: List[float] = []
+    model_net_edge_split_values: List[float] = []
+    model_positive_net_edge_split_ratios: List[float] = []
     trained_split_count = 0
     first_trained_split: Dict[str, np.ndarray] | None = None
 
@@ -1178,6 +1283,11 @@ def main() -> int:
         X_test = X[split.test_start : split.test_end]
         y_test = y[split.test_start : split.test_end]
         test_ret1 = ret1_valid[split.test_start : split.test_end]
+        test_ts_start = int(ts_valid[split.test_start])
+        test_ts_end = int(ts_valid[split.test_end - 1])
+        economic_test_mask = (ts_economic >= test_ts_start) & (ts_economic <= test_ts_end)
+        X_economic_test = X_economic[economic_test_mask]
+        test_forward_return = forward_return_economic[economic_test_mask]
         train_counts = class_count(y_train)
         test_counts = class_count(y_test)
 
@@ -1246,6 +1356,31 @@ def main() -> int:
             validation_score = model.predict_proba(X_val)[:, 1]
             validation_auc = auc_score(y_val, validation_score)
         baseline_score = np.where(np.isfinite(test_ret1), np.where(test_ret1 > 0.0, 0.9, 0.1), 0.5)
+        economic_score = (
+            model.predict_proba(X_economic_test)[:, 1]
+            if len(X_economic_test) > 0
+            else np.asarray([], dtype=np.float64)
+        )
+        net_objective = summarize_model_net_objective(
+            score=economic_score,
+            forward_return=test_forward_return,
+            round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+        )
+        split_gross_bps, split_net_bps, _ = model_net_objective_samples(
+            score=economic_score,
+            forward_return=test_forward_return,
+            round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+        )
+        model_gross_edge_values.extend(float(v) for v in split_gross_bps)
+        model_net_edge_values.extend(float(v) for v in split_net_bps)
+        split_mean_net = float(net_objective.get("mean_model_net_edge_bps", float("nan")))
+        split_positive_ratio = float(
+            net_objective.get("positive_model_net_edge_ratio", float("nan"))
+        )
+        if math.isfinite(split_mean_net):
+            model_net_edge_split_values.append(split_mean_net)
+        if math.isfinite(split_positive_ratio):
+            model_positive_net_edge_split_ratios.append(split_positive_ratio)
 
         train_auc = auc_score(y_fit, train_score)
         auc = auc_score(y_test, score)
@@ -1299,6 +1434,8 @@ def main() -> int:
                     "accuracy": acc,
                     "baseline_auc": base_auc,
                     "best_iteration": int(best_iteration + 1) if isinstance(best_iteration, int) and best_iteration >= 0 else None,
+                    "net_objective": net_objective,
+                    "net_objective_evaluation_scope": "all_finite_forward_rows_in_test_time_range",
                 },
                 "fit_window": fit_meta,
             }
@@ -1308,7 +1445,8 @@ def main() -> int:
             f"id={split_id}, train=[{split.train_start},{split.train_end}), "
             f"test=[{split.test_start},{split.test_end}), "
             f"train_auc={train_auc:.6f}, validation_auc={validation_auc:.6f}, "
-            f"auc={auc:.6f}, baseline_auc={base_auc:.6f}"
+            f"auc={auc:.6f}, baseline_auc={base_auc:.6f}, "
+            f"mean_net_edge_bps={split_mean_net:.6f}"
         )
 
     if trained_split_count == 0:
@@ -1436,6 +1574,23 @@ def main() -> int:
     feature_schema_version = f"feature_schema_v1_{schema_hash}"
 
     metrics_oos = {
+        "primary_objective": "model_net_edge_bps_after_cost",
+        "mean_model_gross_edge_bps": mean_ignore_nan(model_gross_edge_values),
+        "mean_model_net_edge_bps": mean_ignore_nan(model_net_edge_values),
+        "median_model_net_edge_bps": median_ignore_nan(model_net_edge_values),
+        "positive_model_net_edge_ratio": (
+            float(sum(1 for item in model_net_edge_values if item > 0.0))
+            / float(len(model_net_edge_values))
+            if model_net_edge_values
+            else float("nan")
+        ),
+        "model_net_objective_sample_count": len(model_net_edge_values),
+        "mean_model_net_edge_bps_by_split": mean_ignore_nan(model_net_edge_split_values),
+        "model_net_edge_bps_split_stdev": stdev_ignore_nan(model_net_edge_split_values),
+        "positive_model_net_edge_ratio_by_split": mean_ignore_nan(
+            model_positive_net_edge_split_ratios
+        ),
+        "net_objective_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
         "train_auc_mean": mean_ignore_nan(train_auc_values),
         "train_auc_stdev": stdev_ignore_nan(train_auc_values),
         "auc_mean": mean_ignore_nan(auc_values),
@@ -1472,12 +1627,19 @@ def main() -> int:
         max_train_test_auc_gap=float(args.max_train_test_auc_gap),
         run_random_label_control=run_random_label_control,
         max_random_label_auc=float(args.max_random_label_auc),
+        min_mean_model_net_edge_bps=float(args.min_mean_model_net_edge_bps),
+        min_positive_model_net_edge_ratio=float(args.min_positive_model_net_edge_ratio),
     )
     governance = {
         "pass": governance_pass,
         "fail_reasons": governance_fail_reasons,
         "warn_reasons": governance_warn_reasons,
+        "primary_objective": "model_net_edge_bps_after_cost",
         "thresholds": {
+            "min_mean_model_net_edge_bps": float(args.min_mean_model_net_edge_bps),
+            "min_positive_model_net_edge_ratio": float(
+                args.min_positive_model_net_edge_ratio
+            ),
             "min_auc_mean": float(args.min_auc_mean),
             "min_delta_auc_vs_baseline": float(args.min_delta_auc_vs_baseline),
             "min_split_trained_count": int(args.min_split_trained_count),
@@ -1532,6 +1694,10 @@ def main() -> int:
             "random_seed": int(args.random_seed),
             "label_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
             "label_min_net_edge_bps": float(args.label_min_net_edge_bps),
+            "min_mean_model_net_edge_bps": float(args.min_mean_model_net_edge_bps),
+            "min_positive_model_net_edge_ratio": float(
+                args.min_positive_model_net_edge_ratio
+            ),
             "feature_clip_quantile": float(args.feature_clip_quantile),
         },
         "metrics_oos": metrics_oos,

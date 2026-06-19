@@ -23,6 +23,72 @@ REPORT = load_module()
 
 
 class BuildClosedLoopReportTest(unittest.TestCase):
+    def test_mechanism_report_becomes_first_blocking_layer(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            runtime_assess = root / "runtime_assess.json"
+            mechanism_report = root / "closed_loop_mechanism_report.json"
+
+            runtime_assess.write_text(
+                json.dumps(
+                    {
+                        "stage": "S5",
+                        "verdict": "PASS",
+                        "metrics": {"runtime_status_count": 88},
+                        "account_pnl": {"samples": 88},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            mechanism_report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "closed_loop_mechanism_audit_v1",
+                        "status": "fail",
+                        "readiness_status": "FAIL",
+                        "conclusion": "MECHANISM_NOT_PROVEN",
+                        "fail_reasons": [
+                            "target_consistency: integrator governance still uses AUC"
+                        ],
+                        "warn_reasons": [],
+                        "checks": {
+                            "target_consistency": {
+                                "status": "fail",
+                                "fail_reasons": [
+                                    "integrator governance still uses AUC"
+                                ],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--runtime_assess_report",
+                    str(runtime_assess),
+                    "--closed_loop_mechanism_report",
+                    str(mechanism_report),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 1)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["closed_loop_mechanism_status"], "FAIL")
+            self.assertEqual(
+                payload["next_action_plan"]["first_blocking_layer"],
+                "mechanism_proof",
+            )
+            self.assertIn("closed_loop_mechanism", payload["sections"])
+
     def test_assess_inherit_offline_sections(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

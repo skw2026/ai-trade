@@ -304,7 +304,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_CONFIG", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS", script)
         self.assertIn(
-            "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT",
+            'CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-SOLUSDT',
             script,
         )
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS", script)
@@ -351,6 +351,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--integrator-validation-fraction", script)
         self.assertIn("--integrator-min-validation-samples", script)
         self.assertIn("--integrator-early-stopping-rounds", script)
+        self.assertIn("--integrator-min-mean-model-net-edge-bps", script)
+        self.assertIn("--integrator-min-positive-model-net-edge-ratio", script)
         self.assertIn("--iterations", script)
         self.assertIn("--depth", script)
         self.assertIn("--learning_rate", script)
@@ -361,18 +363,22 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--validation_fraction", script)
         self.assertIn("--min_validation_samples", script)
         self.assertIn("--early_stopping_rounds", script)
+        self.assertIn("--min_mean_model_net_edge_bps", script)
+        self.assertIn("--min_positive_model_net_edge_ratio", script)
+        self.assertIn("CLOSED_LOOP_INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS", script)
+        self.assertIn("CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO", script)
 
         full_case = script[script.index("    full)") : script.index("      ;;", script.index("    full)"))]
         self.assertLess(full_case.index("run_replay_validation"), full_case.index("run_registry"))
 
-    def test_closed_loop_workflow_default_replay_symbols_cover_live_trend_set(self):
+    def test_closed_loop_workflow_default_replay_symbols_focus_mechanism_proof(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(
-            'default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"',
+            'default: "SOLUSDT"',
             workflow,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT'",
+            "github.event_name == 'schedule' && 'SOLUSDT'",
             workflow,
         )
         self.assertIn('default: "auto"', workflow)
@@ -389,6 +395,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("replay_optimization_report.json", workflow)
+        self.assertIn("closed_loop_mechanism_report.json", workflow)
         self.assertIn("CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
         self.assertIn('REMOTE_BASE="/opt/ai-trade/data/reports/closed_loop/${EXPECTED_RUN_ID}"', workflow)
         self.assertIn("run_id mismatch: expected=", workflow)

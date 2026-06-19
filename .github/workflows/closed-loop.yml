@@ -30,7 +30,7 @@ on:
       replay_symbols:
         description: "replay-validation 目标币对，逗号分隔；留空则使用 ECS .env.runtime"
         required: false
-        default: "SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT"
+        default: "SOLUSDT"
         type: string
       replay_source_symbol:
         description: "replay-validation feature store 源币对；auto 则从上一份 symbol_tradeability 选择"
@@ -70,7 +70,7 @@ jobs:
           CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
           CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT' || inputs.replay_symbols }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'SOLUSDT' || inputs.replay_symbols }}
           CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'auto' || inputs.replay_source_symbol }}
           CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"
           CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: "true"
@@ -273,6 +273,7 @@ jobs:
           fetch_report "${REMOTE_BASE}/replay_validation/feature_build_report.json" ".artifacts/replay_feature_build_report.json" "replay_feature_build_report" "json"
           fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_command.log" ".artifacts/replay_validation_command.log" "replay_validation_command_log" "text"
           fetch_report "${REMOTE_BASE}/strategy_diagnose_report.json" ".artifacts/strategy_diagnose_report.json" "strategy_diagnose_report" "json"
+          fetch_report "${REMOTE_BASE}/closed_loop_mechanism_report.json" ".artifacts/closed_loop_mechanism_report.json" "closed_loop_mechanism_report" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" ".artifacts/daily_summary.json" "daily_summary" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_weekly_summary.json" ".artifacts/weekly_summary.json" "weekly_summary" "json"
 

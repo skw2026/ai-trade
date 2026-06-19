@@ -113,7 +113,7 @@ execution:
   candidate_probe_post_only_timeout_ticks: 6
   candidate_probe_reprice_max_attempts: 1
   candidate_probe_reprice_bps: 0.15
-  candidate_probe_taker_fallback_enabled: true
+  candidate_probe_taker_fallback_enabled: false
   candidate_probe_taker_fallback_min_trend_ratio: 1.05
   quality_guard_enabled: true
   quality_guard_min_fills: 4
@@ -189,6 +189,12 @@ strategy:
 integrator:
   enabled: true
   model_type: "catboost"
+  # S5 不再停留在 shadow-only：闭环机制必须证明模型能真实影响小额决策。
+  # 风险由 canary_notional_ratio + maker-only + replay/registry 净经济门禁共同约束。
+  mode: "canary"
+  canary_notional_ratio: 0.30
+  canary_confidence_threshold: 0.50
+  canary_allow_countertrend: false
   active_confidence_threshold: 0.55
   active_partial_notional_ratio: 0.5
   active_full_notional_confidence_threshold: 0.80

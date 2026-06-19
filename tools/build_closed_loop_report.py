@@ -833,6 +833,46 @@ def assess_strategy_diagnose(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    status_raw = str(payload.get("status", "")).strip().lower()
+    readiness_raw = str(payload.get("readiness_status", "")).strip().upper()
+    fail_reasons = [
+        str(item).strip()
+        for item in payload.get("fail_reasons", [])
+        if str(item).strip()
+    ]
+    warn_reasons = [
+        str(item).strip()
+        for item in payload.get("warn_reasons", [])
+        if str(item).strip()
+    ]
+    if status_raw == "pass":
+        status = "pass"
+        readiness_status = readiness_raw or "PASS"
+    elif status_raw in {"pass_with_actions", "warning"}:
+        status = "pass"
+        readiness_status = readiness_raw or "PASS_WITH_ACTIONS"
+        if not warn_reasons:
+            warn_reasons.append(f"closed_loop_mechanism status={status_raw}")
+    else:
+        status = "fail"
+        readiness_status = readiness_raw or "FAIL"
+        if not fail_reasons:
+            fail_reasons.append(
+                f"closed_loop_mechanism status={status_raw or 'unknown'}"
+            )
+    return {
+        "status": status,
+        "readiness_status": readiness_status,
+        "fail_reasons": fail_reasons if status == "fail" else [],
+        "warn_reasons": warn_reasons,
+        "conclusion": payload.get("conclusion"),
+        "control_cost_bps": payload.get("control_cost_bps"),
+        "checks": payload.get("checks", {}),
+    }
+
+
 def replay_activation_uses_deployable_optimizer_candidate(
     replay_section: Dict[str, Any],
 ) -> bool:
@@ -1797,6 +1837,12 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
             next_action="fix_data_pipeline_data_quality_or_live_replay_feature_parity",
         ),
         layer_from_sections(
+            name="mechanism_proof",
+            section_names=["closed_loop_mechanism"],
+            sections=sections,
+            next_action="prove_closed_loop_mechanism_before_more_strategy_tuning",
+        ),
+        layer_from_sections(
             name="model_walkforward",
             section_names=["miner", "integrator", "walkforward", "trend_validation"],
             sections=sections,
@@ -1928,6 +1974,11 @@ def parse_args() -> argparse.Namespace:
         "--strategy_diagnose_report",
         default="",
         help="strategy_diagnose_report.json 路径",
+    )
+    parser.add_argument(
+        "--closed_loop_mechanism_report",
+        default="",
+        help="closed_loop_mechanism_report.json 路径",
     )
     parser.add_argument(
         "--walkforward_min_avg_sharpe",
@@ -2167,6 +2218,17 @@ def main() -> int:
                 "status": "fail",
                 "fail_reasons": [f"文件不存在: {strategy_diagnose_path}"],
             }
+    if args.closed_loop_mechanism_report:
+        mechanism_path = Path(args.closed_loop_mechanism_report)
+        if mechanism_path.is_file():
+            sections["closed_loop_mechanism"] = assess_closed_loop_mechanism(
+                mechanism_path
+            )
+        else:
+            sections["closed_loop_mechanism"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {mechanism_path}"],
+            }
 
     inherited_sections: List[str] = []
     inherit_status = ""
@@ -2399,6 +2461,15 @@ def main() -> int:
             )
         ).upper()
 
+    mechanism_section = sections.get("closed_loop_mechanism", {})
+    mechanism_readiness_status = "NOT_EVALUATED"
+    if isinstance(mechanism_section, dict) and mechanism_section:
+        mechanism_readiness_status = str(
+            mechanism_section.get(
+                "readiness_status", mechanism_section.get("status", "unknown")
+            )
+        ).upper()
+
     trading_convergence_section = sections.get("trading_convergence", {})
     trading_convergence_status = "NOT_EVALUATED"
     if isinstance(trading_convergence_section, dict) and trading_convergence_section:
@@ -2433,6 +2504,7 @@ def main() -> int:
         "feature_parity_status": feature_parity_status,
         "exit_capture_status": exit_capture_status,
         "canary_validation_status": canary_validation_status,
+        "closed_loop_mechanism_status": mechanism_readiness_status,
         "trading_convergence_status": trading_convergence_status,
         "trading_convergence_readiness_status": trading_convergence_status,
         "status_semantics": {
@@ -2451,6 +2523,7 @@ def main() -> int:
                 "it is not evidence of trading convergence."
             ),
             "trading_convergence_field": "trading_convergence_status",
+            "closed_loop_mechanism_field": "closed_loop_mechanism_status",
             "convergence_layers_field": "convergence_layers",
         },
         "run_manifest": run_manifest_payload,

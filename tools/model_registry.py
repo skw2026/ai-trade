@@ -4,7 +4,7 @@
 
 目标：
 1. 将每次训练产物（.cbm + report）注册为可追溯版本；
-2. 基于门槛（AUC / Delta AUC）决定是否激活为当前线上版本；
+2. 基于成本后净经济目标决定是否激活为当前线上版本；
 3. 维护 index 清单与历史版本保留上限。
 """
 
@@ -179,7 +179,19 @@ def parse_args() -> argparse.Namespace:
         "--min_delta_auc_vs_baseline",
         type=float,
         default=0.0,
-        help="最小 Delta AUC（相对 baseline）门槛",
+        help="Delta AUC 诊断阈值（低于该值记录 warning，不再作为主激活门槛）",
+    )
+    register.add_argument(
+        "--min_mean_model_net_edge_bps",
+        type=float,
+        default=0.0,
+        help="主激活门槛：模型 OOS 方向扣除 round-trip cost 后的最小平均净 edge bps",
+    )
+    register.add_argument(
+        "--min_positive_model_net_edge_ratio",
+        type=float,
+        default=0.50,
+        help="主激活门槛：模型 OOS 净 edge 为正的最小样本比例",
     )
     register.add_argument(
         "--min_split_trained_count",
@@ -266,6 +278,8 @@ def gate_integrator_report(
     report: Dict[str, Any],
     min_auc_mean: float,
     min_delta_auc_vs_baseline: float,
+    min_mean_model_net_edge_bps: float,
+    min_positive_model_net_edge_ratio: float,
     min_split_trained_count: int,
     min_split_trained_ratio: float,
 ) -> Tuple[bool, List[str], List[str], Dict[str, Any]]:
@@ -273,6 +287,14 @@ def gate_integrator_report(
     governance = report.get("governance", {})
     data = report.get("data", {})
     feature_transform = report.get("feature_transform", {})
+    primary_objective = metrics.get("primary_objective")
+    governance_primary_objective = (
+        governance.get("primary_objective") if isinstance(governance, dict) else None
+    )
+    mean_model_net_edge_bps = metrics.get("mean_model_net_edge_bps")
+    median_model_net_edge_bps = metrics.get("median_model_net_edge_bps")
+    positive_model_net_edge_ratio = metrics.get("positive_model_net_edge_ratio")
+    model_net_objective_sample_count = metrics.get("model_net_objective_sample_count")
     auc_mean = metrics.get("auc_mean")
     delta_auc = metrics.get("delta_auc_vs_baseline")
     trained_count = metrics.get("split_trained_count")
@@ -282,17 +304,51 @@ def gate_integrator_report(
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
 
-    if not isinstance(auc_mean, (float, int)):
-        fail_reasons.append("缺少 metrics_oos.auc_mean")
-    elif float(auc_mean) < min_auc_mean:
+    if primary_objective != "model_net_edge_bps_after_cost":
         fail_reasons.append(
+            "metrics_oos.primary_objective != model_net_edge_bps_after_cost"
+        )
+    if (
+        governance_primary_objective is not None
+        and governance_primary_objective != "model_net_edge_bps_after_cost"
+    ):
+        fail_reasons.append(
+            "governance.primary_objective != model_net_edge_bps_after_cost"
+        )
+
+    if not isinstance(mean_model_net_edge_bps, (float, int)):
+        fail_reasons.append("缺少 metrics_oos.mean_model_net_edge_bps")
+    elif float(mean_model_net_edge_bps) < float(min_mean_model_net_edge_bps):
+        fail_reasons.append(
+            "mean_model_net_edge_bps="
+            f"{float(mean_model_net_edge_bps):.6f} < "
+            f"min_mean_model_net_edge_bps={float(min_mean_model_net_edge_bps):.6f}"
+        )
+
+    if not isinstance(positive_model_net_edge_ratio, (float, int)):
+        fail_reasons.append("缺少 metrics_oos.positive_model_net_edge_ratio")
+    elif float(positive_model_net_edge_ratio) < float(min_positive_model_net_edge_ratio):
+        fail_reasons.append(
+            "positive_model_net_edge_ratio="
+            f"{float(positive_model_net_edge_ratio):.6f} < "
+            "min_positive_model_net_edge_ratio="
+            f"{float(min_positive_model_net_edge_ratio):.6f}"
+        )
+
+    if not isinstance(model_net_objective_sample_count, int) or model_net_objective_sample_count <= 0:
+        fail_reasons.append("metrics_oos.model_net_objective_sample_count <= 0")
+
+    if not isinstance(auc_mean, (float, int)):
+        warn_reasons.append("缺少 metrics_oos.auc_mean")
+    elif float(auc_mean) < min_auc_mean:
+        warn_reasons.append(
             f"auc_mean={float(auc_mean):.6f} < min_auc_mean={min_auc_mean:.6f}"
         )
 
     if not isinstance(delta_auc, (float, int)):
-        fail_reasons.append("缺少 metrics_oos.delta_auc_vs_baseline")
+        warn_reasons.append("缺少 metrics_oos.delta_auc_vs_baseline")
     elif float(delta_auc) < min_delta_auc_vs_baseline:
-        fail_reasons.append(
+        warn_reasons.append(
             "delta_auc_vs_baseline="
             f"{float(delta_auc):.6f} < min_delta_auc_vs_baseline={min_delta_auc_vs_baseline:.6f}"
         )
@@ -341,6 +397,12 @@ def gate_integrator_report(
 
     gate_pass = len(fail_reasons) == 0
     summary = {
+        "primary_objective": primary_objective,
+        "governance_primary_objective": governance_primary_objective,
+        "mean_model_net_edge_bps": mean_model_net_edge_bps,
+        "median_model_net_edge_bps": median_model_net_edge_bps,
+        "positive_model_net_edge_ratio": positive_model_net_edge_ratio,
+        "model_net_objective_sample_count": model_net_objective_sample_count,
         "auc_mean": auc_mean,
         "delta_auc_vs_baseline": delta_auc,
         "split_trained_count": trained_count,
@@ -954,6 +1016,12 @@ def run_register(args: argparse.Namespace) -> int:
     if not (0.0 <= float(args.min_split_trained_ratio) <= 1.0):
         print("[ERROR] --min_split_trained_ratio 必须在 [0,1] 范围", file=sys.stderr)
         return 2
+    if not (0.0 <= float(args.min_positive_model_net_edge_ratio) <= 1.0):
+        print(
+            "[ERROR] --min_positive_model_net_edge_ratio 必须在 [0,1] 范围",
+            file=sys.stderr,
+        )
+        return 2
     if int(args.min_split_trained_count) <= 0:
         print("[ERROR] --min_split_trained_count 必须大于 0", file=sys.stderr)
         return 2
@@ -985,6 +1053,8 @@ def run_register(args: argparse.Namespace) -> int:
         report,
         args.min_auc_mean,
         args.min_delta_auc_vs_baseline,
+        args.min_mean_model_net_edge_bps,
+        args.min_positive_model_net_edge_ratio,
         args.min_split_trained_count,
         args.min_split_trained_ratio,
     )
@@ -1081,6 +1151,9 @@ def run_register(args: argparse.Namespace) -> int:
 
     gate_payload = {
         "pass": gate_pass,
+        "primary_objective": "model_net_edge_bps_after_cost",
+        "min_mean_model_net_edge_bps": args.min_mean_model_net_edge_bps,
+        "min_positive_model_net_edge_ratio": args.min_positive_model_net_edge_ratio,
         "min_auc_mean": args.min_auc_mean,
         "min_delta_auc_vs_baseline": args.min_delta_auc_vs_baseline,
         "min_split_trained_count": args.min_split_trained_count,

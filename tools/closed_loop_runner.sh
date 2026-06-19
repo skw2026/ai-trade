@@ -43,6 +43,9 @@ MIN_RUNTIME_STATUS=""
 ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS="${CLOSED_LOOP_ASSESS_WAIT_FOR_MIN_RUNTIME_STATUS:-true}"
 ASSESS_WAIT_TIMEOUT_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS:-900}"
 ASSESS_WAIT_POLL_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS:-15}"
+MECHANISM_AUDIT_ENABLED="${CLOSED_LOOP_MECHANISM_AUDIT_ENABLED:-auto}"
+MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED="${CLOSED_LOOP_MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED:-1}"
+MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS="${CLOSED_LOOP_MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS:-20}"
 
 SYMBOL="SOLUSDT"
 INTERVAL="5"
@@ -88,6 +91,8 @@ INTEGRATOR_MIN_VALIDATION_SAMPLES="${CLOSED_LOOP_INTEGRATOR_MIN_VALIDATION_SAMPL
 INTEGRATOR_EARLY_STOPPING_ROUNDS="${CLOSED_LOOP_INTEGRATOR_EARLY_STOPPING_ROUNDS:-20}"
 INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS:-13.0}"
 INTEGRATOR_LABEL_MIN_NET_EDGE_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_MIN_NET_EDGE_BPS:-1.3}"
+INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS="${CLOSED_LOOP_INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS:-0.0}"
+INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO="${CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO:-0.50}"
 INTEGRATOR_FEATURE_CLIP_QUANTILE="${CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE:-0.001}"
 
 GC_ENABLED="${CLOSED_LOOP_GC_ENABLED:-true}"
@@ -123,7 +128,7 @@ TREND_VALIDATION_MIN_TRADES="${CLOSED_LOOP_TREND_VALIDATION_MIN_TRADES:-1}"
 REPLAY_VALIDATION_ENABLED="${CLOSED_LOOP_REPLAY_VALIDATION_ENABLED:-true}"
 ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-false}"
 REPLAY_VALIDATION_CONFIG_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-config/bybit.replay.assess.maker_first.yaml}"
-DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT}"
+DEFAULT_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS:-SOLUSDT}"
 REPLAY_VALIDATION_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL:-}"
 REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
 REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
@@ -266,6 +271,8 @@ Env toggles:
   CLOSED_LOOP_PREDICT_HORIZON_BARS=<int>                R2 训练预测 horizon (default: 12)
   CLOSED_LOOP_INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS=<f>  R2 标签成本带 round-trip bps (default: 13.0)
   CLOSED_LOOP_INTEGRATOR_LABEL_MIN_NET_EDGE_BPS=<f>     R2 标签额外净边际 bps (default: 1.3)
+  CLOSED_LOOP_INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS=<f> R2 主门禁：OOS 平均净 edge bps (default: 0.0)
+  CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO=<f> R2 主门禁：OOS 净 edge 正样本比例 (default: 0.50)
   CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE=<f>      R2 特征裁剪分位数 (default: 0.001)
   CLOSED_LOOP_VERIFY_S5_EVOLUTION_SWITCHES=true|false   S5 校验 3+6 开关是否显式启用 (default: true)
   CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION=true|false    S5 要求 factor-IC 更新动作 >0 (default: false)
@@ -292,8 +299,7 @@ Env toggles:
   CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION=true|false
                                                        assess 动作是否刷新 replay-validation (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_CONFIG=<path>            replay-validation 配置模板 (default: config/bybit.replay.assess.maker_first.yaml)
-  CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS=<csv>    replay-validation 空目标时的默认多币对
-                                                       (default: SOLUSDT,ETHUSDT,BTCUSDT,XRPUSDT,BNBUSDT)
+  CLOSED_LOOP_REPLAY_VALIDATION_DEFAULT_SYMBOLS=<csv>    replay-validation 空目标时的默认币对 (default: SOLUSDT)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOL=<symbol>          replay-validation 单目标币对 (default: --symbol)
   CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS=<csv>            replay-validation 多目标币对，逗号分隔；优先于单目标
   CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL=<symbol|auto>
@@ -430,6 +436,10 @@ while [[ $# -gt 0 ]]; do
       INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS="$2"; shift 2;;
     --integrator-label-min-net-edge-bps)
       INTEGRATOR_LABEL_MIN_NET_EDGE_BPS="$2"; shift 2;;
+    --integrator-min-mean-model-net-edge-bps)
+      INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS="$2"; shift 2;;
+    --integrator-min-positive-model-net-edge-ratio)
+      INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO="$2"; shift 2;;
     --integrator-feature-clip-quantile)
       INTEGRATOR_FEATURE_CLIP_QUANTILE="$2"; shift 2;;
     --max-model-versions)
@@ -990,6 +1000,7 @@ FEATURE_STORE_PATH="${RUN_DIR}/feature_store_5m.csv"
 REPLAY_VALIDATION_DIR="${RUN_DIR}/replay_validation"
 REPLAY_VALIDATION_FEATURE_DIR="${REPLAY_VALIDATION_DIR}/features"
 REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report.json"
+REPLAY_OPTIMIZATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_optimization_report.json"
 REPLAY_VALIDATION_COMMAND_LOG_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_command.log"
 REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH="${REPLAY_VALIDATION_DIR}/feature_build_records.jsonl"
 REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_build_report.json"
@@ -1006,6 +1017,7 @@ ASSESS_LOG_PATH="${RUN_DIR}/runtime.log"
 ASSESS_RAW_LOG_PATH="${RUN_DIR}/runtime.raw.log"
 ASSESS_LOG_FILTER_META_PATH="${RUN_DIR}/runtime_log_filter.json"
 ASSESS_JSON_PATH="${RUN_DIR}/runtime_assess.json"
+MECHANISM_AUDIT_REPORT_PATH="${RUN_DIR}/closed_loop_mechanism_report.json"
 FINAL_REPORT_PATH="${RUN_DIR}/closed_loop_report.json"
 RUN_META_PATH="${RUN_DIR}/run_meta.json"
 RUN_MANIFEST_PATH="${RUN_DIR}/run_manifest.json"
@@ -1250,6 +1262,8 @@ run_integrator() {
     --early_stopping_rounds="${INTEGRATOR_EARLY_STOPPING_ROUNDS}"
     --label_round_trip_cost_bps="${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
     --label_min_net_edge_bps="${INTEGRATOR_LABEL_MIN_NET_EDGE_BPS}"
+    --min_mean_model_net_edge_bps="${INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS}"
+    --min_positive_model_net_edge_ratio="${INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO}"
     --feature_clip_quantile="${INTEGRATOR_FEATURE_CLIP_QUANTILE}"
   )
   if [[ "${DISABLE_RANDOM_LABEL_CONTROL}" == "true" ]]; then
@@ -1272,6 +1286,8 @@ run_registry() {
     --max_versions="${MAX_MODEL_VERSIONS}"
     --min_auc_mean="${MIN_AUC_MEAN}"
     --min_delta_auc_vs_baseline="${MIN_DELTA_AUC_VS_BASELINE}"
+    --min_mean_model_net_edge_bps="${INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS}"
+    --min_positive_model_net_edge_ratio="${INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO}"
     --min_split_trained_count="${MIN_SPLIT_TRAINED_COUNT}"
     --min_split_trained_ratio="${MIN_SPLIT_TRAINED_RATIO}"
     --walkforward_report="${WALKFORWARD_REPORT_PATH}"
@@ -1784,6 +1800,58 @@ run_strategy_diagnose() {
   return 0
 }
 
+should_run_mechanism_audit() {
+  if is_true "${MECHANISM_AUDIT_ENABLED}"; then
+    return 0
+  fi
+  if [[ "${MECHANISM_AUDIT_ENABLED}" == "auto" && "${ACTION}" == "full" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+run_mechanism_audit() {
+  if ! should_run_mechanism_audit; then
+    echo "[INFO] closed-loop mechanism audit skipped (enabled=${MECHANISM_AUDIT_ENABLED}, action=${ACTION})"
+    return 0
+  fi
+  echo "[INFO] closed-loop mechanism audit start"
+  local audit_args=(
+    tools/closed_loop_mechanism_audit.py
+    --output "${MECHANISM_AUDIT_REPORT_PATH}"
+    --run_manifest "${RUN_MANIFEST_PATH}"
+    --min_live_policy_applied "${MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED}"
+    --min_replay_total_fills "${MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS}"
+  )
+  if [[ -f "${INTEGRATOR_REPORT_PATH}" ]]; then
+    audit_args+=(--integrator_report "${INTEGRATOR_REPORT_PATH}")
+  fi
+  if [[ -f "${REGISTRY_RESULT_PATH}" ]]; then
+    audit_args+=(--registry_report "${REGISTRY_RESULT_PATH}")
+  fi
+  if [[ -f "${ASSESS_JSON_PATH}" ]]; then
+    audit_args+=(--runtime_assess_report "${ASSESS_JSON_PATH}")
+  fi
+  if [[ -f "${REPLAY_VALIDATION_REPORT_PATH}" ]]; then
+    audit_args+=(--replay_validation_report "${REPLAY_VALIDATION_REPORT_PATH}")
+  fi
+  if [[ -f "${REPLAY_OPTIMIZATION_REPORT_PATH}" ]]; then
+    audit_args+=(--replay_optimization_report "${REPLAY_OPTIMIZATION_REPORT_PATH}")
+  fi
+  if [[ -f "${STRATEGY_DIAGNOSE_REPORT_PATH}" ]]; then
+    audit_args+=(--strategy_diagnose_report "${STRATEGY_DIAGNOSE_REPORT_PATH}")
+  fi
+
+  local audit_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${audit_args[@]}" \
+    || audit_status=$?
+  if (( audit_status != 0 )); then
+    echo "[WARN] closed-loop mechanism audit reported action required: status=${audit_status}"
+  fi
+  echo "[INFO] closed-loop mechanism audit done"
+  return 0
+}
+
 prepare_training_data() {
   if ! is_true "${DATA_PIPELINE_BEFORE_TRAIN}"; then
     echo "[INFO] data pipeline pre-train disabled, fallback to R0 fetch"
@@ -2173,6 +2241,9 @@ build_summary() {
   if [[ -f "${STRATEGY_DIAGNOSE_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--strategy_diagnose_report "${STRATEGY_DIAGNOSE_REPORT_PATH}")
   fi
+  if [[ -f "${MECHANISM_AUDIT_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--closed_loop_mechanism_report "${MECHANISM_AUDIT_REPORT_PATH}")
+  fi
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
     SUMMARY_ARGS+=(--runtime_assess_report "${ASSESS_JSON_PATH}")
   fi
@@ -2225,9 +2296,11 @@ build_summary() {
   "runtime_log_filter_meta": "${ASSESS_LOG_FILTER_META_PATH}",
   "runtime_assess_report": "${ASSESS_JSON_PATH}",
   "replay_validation_report": "${REPLAY_VALIDATION_REPORT_PATH}",
+  "replay_optimization_report": "${REPLAY_OPTIMIZATION_REPORT_PATH}",
   "replay_validation_command_log": "${REPLAY_VALIDATION_COMMAND_LOG_PATH}",
   "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
   "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
+  "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }
@@ -2336,6 +2409,7 @@ run_main() {
       verify_s5_learning_switches
       run_assess
       verify_s5_learning_activity
+      run_mechanism_audit
       build_summary
       restart_if_activated
       ;;

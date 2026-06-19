@@ -28,6 +28,11 @@ class ModelRegistryTest(unittest.TestCase):
         gate_pass, fail_reasons, warn_reasons, summary = REGISTRY.gate_integrator_report(
             report={
                 "metrics_oos": {
+                    "primary_objective": "model_net_edge_bps_after_cost",
+                    "mean_model_net_edge_bps": 0.20,
+                    "median_model_net_edge_bps": 0.10,
+                    "positive_model_net_edge_ratio": 0.60,
+                    "model_net_objective_sample_count": 100,
                     "auc_mean": 0.51,
                     "delta_auc_vs_baseline": 0.02,
                     "split_trained_count": 5,
@@ -41,6 +46,7 @@ class ModelRegistryTest(unittest.TestCase):
                     "random_label_auc_max": 0.61,
                 },
                 "governance": {
+                    "primary_objective": "model_net_edge_bps_after_cost",
                     "pass": False,
                     "fail_reasons": [
                         "auc_stdev=0.120000 > max_auc_stdev=0.080000",
@@ -53,6 +59,8 @@ class ModelRegistryTest(unittest.TestCase):
             },
             min_auc_mean=0.48,
             min_delta_auc_vs_baseline=0.0,
+            min_mean_model_net_edge_bps=0.0,
+            min_positive_model_net_edge_ratio=0.50,
             min_split_trained_count=1,
             min_split_trained_ratio=0.5,
         )
@@ -96,13 +104,23 @@ class ModelRegistryTest(unittest.TestCase):
                         "feature_schema_version": "feature_schema_v1",
                         "factor_set_version": "factor_set_v1",
                         "metrics_oos": {
+                            "primary_objective": "model_net_edge_bps_after_cost",
+                            "mean_model_net_edge_bps": 0.20,
+                            "median_model_net_edge_bps": 0.10,
+                            "positive_model_net_edge_ratio": 0.60,
+                            "model_net_objective_sample_count": 100,
                             "auc_mean": 0.56,
                             "delta_auc_vs_baseline": 0.02,
                             "split_trained_count": 5,
                             "split_count": 5,
                             "split_trained_ratio": 1.0,
                         },
-                        "governance": {"pass": True, "fail_reasons": [], "warn_reasons": []},
+                        "governance": {
+                            "primary_objective": "model_net_edge_bps_after_cost",
+                            "pass": True,
+                            "fail_reasons": [],
+                            "warn_reasons": [],
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -154,6 +172,8 @@ class ModelRegistryTest(unittest.TestCase):
                     active_meta_path=str(root / "active" / "integrator_active.json"),
                     min_auc_mean=0.50,
                     min_delta_auc_vs_baseline=0.0,
+                    min_mean_model_net_edge_bps=0.0,
+                    min_positive_model_net_edge_ratio=0.50,
                     min_split_trained_count=1,
                     min_split_trained_ratio=0.5,
                     activate_on_pass=True,
@@ -200,6 +220,11 @@ class ModelRegistryTest(unittest.TestCase):
                         "feature_schema_version": "feature_schema_v1",
                         "factor_set_version": "factor_set_v1",
                         "metrics_oos": {
+                            "primary_objective": "model_net_edge_bps_after_cost",
+                            "mean_model_net_edge_bps": 0.20,
+                            "median_model_net_edge_bps": 0.10,
+                            "positive_model_net_edge_ratio": 0.60,
+                            "model_net_objective_sample_count": 100,
                             "auc_mean": 0.56,
                             "delta_auc_vs_baseline": 0.02,
                             "split_trained_count": 5,
@@ -207,6 +232,7 @@ class ModelRegistryTest(unittest.TestCase):
                             "split_trained_ratio": 1.0,
                         },
                         "governance": {
+                            "primary_objective": "model_net_edge_bps_after_cost",
                             "pass": True,
                             "fail_reasons": [],
                             "warn_reasons": [],
@@ -249,6 +275,8 @@ class ModelRegistryTest(unittest.TestCase):
                     active_meta_path=str(root / "active" / "integrator_active.json"),
                     min_auc_mean=0.50,
                     min_delta_auc_vs_baseline=0.0,
+                    min_mean_model_net_edge_bps=0.0,
+                    min_positive_model_net_edge_ratio=0.50,
                     min_split_trained_count=1,
                     min_split_trained_ratio=0.5,
                     activate_on_pass=True,

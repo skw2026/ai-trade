@@ -149,6 +149,8 @@ class IntegratorTrainTest(unittest.TestCase):
 
     def test_evaluate_governance_extended_thresholds(self):
         metrics_ok = {
+            "mean_model_net_edge_bps": 0.25,
+            "positive_model_net_edge_ratio": 0.60,
             "auc_mean": 0.58,
             "delta_auc_vs_baseline": 0.03,
             "split_trained_count": 4,
@@ -169,6 +171,8 @@ class IntegratorTrainTest(unittest.TestCase):
             max_train_test_auc_gap=0.10,
             run_random_label_control=True,
             max_random_label_auc=0.55,
+            min_mean_model_net_edge_bps=0.0,
+            min_positive_model_net_edge_ratio=0.50,
         )
         self.assertTrue(passed)
         self.assertEqual(reasons, [])
@@ -186,6 +190,8 @@ class IntegratorTrainTest(unittest.TestCase):
             max_train_test_auc_gap=0.10,
             run_random_label_control=True,
             max_random_label_auc=0.55,
+            min_mean_model_net_edge_bps=0.0,
+            min_positive_model_net_edge_ratio=0.50,
         )
         self.assertFalse(passed)
         self.assertTrue(any("train_test_auc_gap_mean" in reason for reason in reasons))
@@ -204,6 +210,8 @@ class IntegratorTrainTest(unittest.TestCase):
             max_train_test_auc_gap=0.10,
             run_random_label_control=True,
             max_random_label_auc=0.55,
+            min_mean_model_net_edge_bps=0.0,
+            min_positive_model_net_edge_ratio=0.50,
         )
         self.assertFalse(passed)
         self.assertTrue(any("auc_stdev" in reason for reason in reasons))
@@ -222,6 +230,8 @@ class IntegratorTrainTest(unittest.TestCase):
             max_train_test_auc_gap=0.10,
             run_random_label_control=True,
             max_random_label_auc=0.55,
+            min_mean_model_net_edge_bps=0.0,
+            min_positive_model_net_edge_ratio=0.50,
         )
         self.assertFalse(passed)
         self.assertTrue(any("random_label_auc_mean" in reason for reason in reasons))
@@ -239,10 +249,30 @@ class IntegratorTrainTest(unittest.TestCase):
             max_train_test_auc_gap=0.10,
             run_random_label_control=True,
             max_random_label_auc=0.55,
+            min_mean_model_net_edge_bps=0.0,
+            min_positive_model_net_edge_ratio=0.50,
         )
         self.assertTrue(passed)
         self.assertEqual(reasons, [])
         self.assertTrue(any("random_label_auc_max" in reason for reason in warns))
+
+        metrics_net_bad = dict(metrics_ok)
+        metrics_net_bad["mean_model_net_edge_bps"] = -0.10
+        passed, reasons, warns = TRAIN.evaluate_governance(
+            metrics_oos=metrics_net_bad,
+            min_auc_mean=0.55,
+            min_delta_auc_vs_baseline=0.0,
+            min_split_trained_count=2,
+            min_split_trained_ratio=0.5,
+            max_auc_stdev=0.08,
+            max_train_test_auc_gap=0.10,
+            run_random_label_control=True,
+            max_random_label_auc=0.55,
+            min_mean_model_net_edge_bps=0.0,
+            min_positive_model_net_edge_ratio=0.50,
+        )
+        self.assertFalse(passed)
+        self.assertTrue(any("mean_model_net_edge_bps" in reason for reason in reasons))
 
     def test_run_random_label_control_trials_returns_requested_count(self):
         if TRAIN.CatBoostClassifier is None:
