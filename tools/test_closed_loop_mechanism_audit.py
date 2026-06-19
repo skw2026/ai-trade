@@ -85,6 +85,18 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                 root / "registry.json",
                 {"gate_pass": True, "activation_gate": {"status": "pass"}},
             )
+            alpha_probe = write_json(
+                root / "alpha_mechanism_probe_report.json",
+                {
+                    "status": "pass_with_actions",
+                    "mechanism_control_status": "pass",
+                    "market_alpha_family_status": "fail",
+                    "candidate_search": {
+                        "pass_candidate_count": 0,
+                        "best_candidate": {"name": "trend_follow"},
+                    },
+                },
+            )
 
             args = type(
                 "Args",
@@ -96,6 +108,7 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                     "replay_validation_report": str(replay),
                     "replay_optimization_report": "",
                     "strategy_diagnose_report": "",
+                    "alpha_mechanism_probe_report": str(alpha_probe),
                     "run_manifest": "",
                     "control_cost_bps": None,
                     "min_live_policy_applied": 1,
@@ -179,6 +192,18 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                 root / "registry.json",
                 {"gate_pass": True, "activation_gate": {"status": "pass"}},
             )
+            alpha_probe = write_json(
+                root / "alpha_mechanism_probe_report.json",
+                {
+                    "status": "pass",
+                    "mechanism_control_status": "pass",
+                    "market_alpha_family_status": "pass",
+                    "candidate_search": {
+                        "pass_candidate_count": 1,
+                        "best_candidate": {"name": "mom12_follow"},
+                    },
+                },
+            )
 
             args = type(
                 "Args",
@@ -190,6 +215,7 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                     "replay_validation_report": str(replay),
                     "replay_optimization_report": "",
                     "strategy_diagnose_report": "",
+                    "alpha_mechanism_probe_report": str(alpha_probe),
                     "run_manifest": "",
                     "control_cost_bps": None,
                     "min_live_policy_applied": 1,

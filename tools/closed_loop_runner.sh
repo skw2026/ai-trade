@@ -46,6 +46,11 @@ ASSESS_WAIT_POLL_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS:-15}"
 MECHANISM_AUDIT_ENABLED="${CLOSED_LOOP_MECHANISM_AUDIT_ENABLED:-auto}"
 MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED="${CLOSED_LOOP_MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED:-1}"
 MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS="${CLOSED_LOOP_MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS:-20}"
+ALPHA_MECHANISM_PROBE_ENABLED="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ENABLED:-auto}"
+ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS:-3.5}"
+ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES:-100}"
+ALPHA_MECHANISM_PROBE_MIN_MEAN_NET_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_MEAN_NET_BPS:-0.0}"
+ALPHA_MECHANISM_PROBE_MIN_POSITIVE_RATIO="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_POSITIVE_RATIO:-0.50}"
 
 SYMBOL="SOLUSDT"
 INTERVAL="5"
@@ -154,6 +159,8 @@ STRATEGY_DIAGNOSE_MIN_SAMPLES="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_SAMPLES:-30}"
 STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS:-0.0}"
 STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO:-0.50}"
 STRATEGY_DIAGNOSE_MIN_MFE_COST_COVERAGE="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MIN_MFE_COST_COVERAGE:-1.20}"
+STRATEGY_DIAGNOSE_MAKER_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_STRATEGY_DIAGNOSE_MAKER_ROUND_TRIP_COST_BPS:-3.5}"
+STRATEGY_DIAGNOSE_STRESS_COST_MULTIPLIER="${CLOSED_LOOP_STRATEGY_DIAGNOSE_STRESS_COST_MULTIPLIER:-1.25}"
 S5_MIN_EQUITY_CHANGE_USD="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD:-}"
 S5_MIN_EQUITY_CHANGE_SAMPLES="${CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES:-0}"
 S5_MAX_EQUITY_VS_REALIZED_GAP_USD="${CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD:-}"
@@ -1026,6 +1033,7 @@ REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH="${REPLAY_VALIDATION_DIR}/feature_b
 REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_build_report.json"
 REPLAY_VALIDATION_LAST_STATUS="not_run"
 STRATEGY_DIAGNOSE_REPORT_PATH="${RUN_DIR}/strategy_diagnose_report.json"
+ALPHA_MECHANISM_PROBE_REPORT_PATH="${RUN_DIR}/alpha_mechanism_probe_report.json"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
 BASELINE_REPORT_PATH="${RUN_DIR}/baseline_report.json"
 BASELINE_SNAPSHOT_DIR="${RUN_DIR}/baseline_snapshot"
@@ -1908,6 +1916,8 @@ run_strategy_diagnose() {
     --ohlcv_csv "${CSV_PATH}"
     --forward-bars "${PREDICT_HORIZON_BARS}"
     --round-trip-cost-bps "${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
+    --maker-round-trip-cost-bps "${STRATEGY_DIAGNOSE_MAKER_ROUND_TRIP_COST_BPS}"
+    --stress-cost-multiplier "${STRATEGY_DIAGNOSE_STRESS_COST_MULTIPLIER}"
     --tournament-horizons "${STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS}"
     --min-samples "${STRATEGY_DIAGNOSE_MIN_SAMPLES}"
     --min-mean-net-edge-bps "${STRATEGY_DIAGNOSE_MIN_MEAN_NET_EDGE_BPS}"
@@ -1926,6 +1936,69 @@ run_strategy_diagnose() {
 
   echo "[WARN] strategy diagnose failed"
   write_strategy_diagnose_report "fail" "strategy_diagnose_command_failed"
+  return 0
+}
+
+should_run_alpha_mechanism_probe() {
+  if is_true "${ALPHA_MECHANISM_PROBE_ENABLED}"; then
+    return 0
+  fi
+  if [[ "${ALPHA_MECHANISM_PROBE_ENABLED}" == "auto" && "${ACTION}" =~ ^(data|train|full)$ ]]; then
+    return 0
+  fi
+  return 1
+}
+
+run_alpha_mechanism_probe() {
+  if ! should_run_alpha_mechanism_probe; then
+    echo "[INFO] alpha mechanism probe skipped (enabled=${ALPHA_MECHANISM_PROBE_ENABLED}, action=${ACTION})"
+    return 0
+  fi
+  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
+    echo "[WARN] alpha mechanism probe skipped: feature store missing (${FEATURE_STORE_PATH})"
+    cat > "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" <<EOF
+{
+  "schema_version": "alpha_mechanism_probe_v1",
+  "generated_at_utc": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "status": "skipped",
+  "readiness_status": "SKIPPED",
+  "mechanism_control_status": "not_evaluated",
+  "market_alpha_family_status": "not_evaluated",
+  "fail_reasons": [],
+  "warn_reasons": ["feature_store_missing"]
+}
+EOF
+    return 0
+  fi
+
+  echo "[INFO] alpha mechanism probe start"
+  local probe_args=(
+    tools/alpha_mechanism_probe.py
+    --output "${ALPHA_MECHANISM_PROBE_REPORT_PATH}"
+    --symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL:-${SYMBOL}}"
+    --feature_csv "${FEATURE_STORE_PATH}"
+    --round-trip-cost-bps "${ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS}"
+    --min-holdout-samples "${ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES}"
+    --min-mean-net-bps "${ALPHA_MECHANISM_PROBE_MIN_MEAN_NET_BPS}"
+    --min-positive-ratio "${ALPHA_MECHANISM_PROBE_MIN_POSITIVE_RATIO}"
+  )
+  if [[ -n "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}" ]]; then
+    IFS=',' read -r -a probe_feature_items <<< "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+    local item
+    for item in "${probe_feature_items[@]}"; do
+      if [[ -n "${item}" ]]; then
+        probe_args+=(--feature_csv "${item}")
+      fi
+    done
+  fi
+
+  local probe_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${probe_args[@]}" \
+    || probe_status=$?
+  if (( probe_status != 0 )); then
+    echo "[WARN] alpha mechanism probe reported failure: status=${probe_status}"
+  fi
+  echo "[INFO] alpha mechanism probe done"
   return 0
 }
 
@@ -1969,6 +2042,9 @@ run_mechanism_audit() {
   fi
   if [[ -f "${STRATEGY_DIAGNOSE_REPORT_PATH}" ]]; then
     audit_args+=(--strategy_diagnose_report "${STRATEGY_DIAGNOSE_REPORT_PATH}")
+  fi
+  if [[ -f "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" ]]; then
+    audit_args+=(--alpha_mechanism_probe_report "${ALPHA_MECHANISM_PROBE_REPORT_PATH}")
   fi
 
   local audit_status=0
@@ -2370,6 +2446,9 @@ build_summary() {
   if [[ -f "${STRATEGY_DIAGNOSE_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--strategy_diagnose_report "${STRATEGY_DIAGNOSE_REPORT_PATH}")
   fi
+  if [[ -f "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--alpha_mechanism_probe_report "${ALPHA_MECHANISM_PROBE_REPORT_PATH}")
+  fi
   if [[ -f "${MECHANISM_AUDIT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--closed_loop_mechanism_report "${MECHANISM_AUDIT_REPORT_PATH}")
   fi
@@ -2429,6 +2508,7 @@ build_summary() {
   "replay_validation_command_log": "${REPLAY_VALIDATION_COMMAND_LOG_PATH}",
   "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
   "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
+  "alpha_mechanism_probe_report": "${ALPHA_MECHANISM_PROBE_REPORT_PATH}",
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
@@ -2502,6 +2582,7 @@ run_main() {
       run_data_pipeline
       run_replay_validation
       run_strategy_diagnose
+      run_alpha_mechanism_probe
       build_summary
       ;;
     train)
@@ -2512,6 +2593,7 @@ run_main() {
       run_integrator
       run_replay_validation
       run_strategy_diagnose
+      run_alpha_mechanism_probe
       run_registry
       build_summary
       restart_if_activated
@@ -2534,6 +2616,7 @@ run_main() {
       run_integrator
       run_replay_validation
       run_strategy_diagnose
+      run_alpha_mechanism_probe
       run_registry
       verify_s5_learning_switches
       run_assess

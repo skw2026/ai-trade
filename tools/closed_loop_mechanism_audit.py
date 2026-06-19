@@ -203,6 +203,51 @@ def audit_positive_control(cost_bps: float) -> Dict[str, Any]:
     }
 
 
+def audit_alpha_mechanism_probe(probe: Dict[str, Any]) -> Dict[str, Any]:
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    if not probe:
+        fail_reasons.append("alpha_mechanism_probe_report missing")
+        return {
+            "status": json_status(fail_reasons),
+            "fail_reasons": fail_reasons,
+            "warn_reasons": warn_reasons,
+            "observed": {},
+        }
+
+    mechanism_status = str(probe.get("mechanism_control_status", "")).lower()
+    market_status = str(probe.get("market_alpha_family_status", "")).lower()
+    if mechanism_status != "pass":
+        fail_reasons.append(
+            f"alpha mechanism controls did not pass: mechanism_control_status={mechanism_status or 'missing'}"
+        )
+    if market_status == "fail":
+        warn_reasons.append("alpha mechanism probe controls pass, but real market alpha family failed holdout")
+    elif market_status not in {"pass", "pass_with_actions"}:
+        warn_reasons.append(f"alpha mechanism market alpha status={market_status or 'unknown'}")
+
+    return {
+        "status": json_status(fail_reasons, warn_reasons),
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "observed": {
+            "probe_status": probe.get("status"),
+            "mechanism_control_status": probe.get("mechanism_control_status"),
+            "market_alpha_family_status": probe.get("market_alpha_family_status"),
+            "candidate_pass_count": (
+                probe.get("candidate_search", {}).get("pass_candidate_count")
+                if isinstance(probe.get("candidate_search"), dict)
+                else None
+            ),
+            "best_candidate": (
+                probe.get("candidate_search", {}).get("best_candidate")
+                if isinstance(probe.get("candidate_search"), dict)
+                else None
+            ),
+        },
+    }
+
+
 def audit_target_consistency(
     integrator: Dict[str, Any],
     registry: Dict[str, Any],
@@ -415,6 +460,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     if not replay:
         replay = read_json_optional(args.replay_optimization_report)
     strategy = read_json_optional(args.strategy_diagnose_report)
+    alpha_probe = read_json_optional(args.alpha_mechanism_probe_report)
     run_manifest = read_json_optional(args.run_manifest)
 
     cost_bps = float(args.control_cost_bps) if args.control_cost_bps is not None else infer_cost_bps(replay)
@@ -422,6 +468,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     checks = {
         "negative_control": audit_negative_control(integrator, cost_bps),
         "positive_control": audit_positive_control(cost_bps),
+        "alpha_mechanism_probe": audit_alpha_mechanism_probe(alpha_probe),
         "target_consistency": audit_target_consistency(
             integrator=integrator,
             registry=registry,
@@ -493,6 +540,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--replay_validation_report", default="", help="replay_validation_report.json path")
     parser.add_argument("--replay_optimization_report", default="", help="replay_optimization_report.json path")
     parser.add_argument("--strategy_diagnose_report", default="", help="strategy_diagnose_report.json path")
+    parser.add_argument("--alpha_mechanism_probe_report", default="", help="alpha_mechanism_probe_report.json path")
     parser.add_argument(
         "--control_cost_bps",
         type=float,

@@ -160,10 +160,15 @@ def load_feature_rows(path: Path) -> List[Dict[str, float]]:
                 {
                     "timestamp": float(timestamp),
                     "close": close,
+                    "ret_1": safe_float(raw.get("ret_1"), math.nan),
+                    "ret_3": safe_float(raw.get("ret_3"), math.nan),
+                    "ret_12": safe_float(raw.get("ret_12"), math.nan),
                     "ema_diff": ema_diff,
+                    "mom_12": safe_float(raw.get("mom_12"), math.nan),
                     "mom_48": mom_48,
                     "vol_12": safe_float(raw.get("vol_12"), math.nan),
                     "range_pct": safe_float(raw.get("range_pct"), math.nan),
+                    "zscore_48": safe_float(raw.get("zscore_48"), math.nan),
                     "forward_return": forward_return,
                 }
             )
@@ -245,6 +250,30 @@ def raw_trend_direction(row: Dict[str, float]) -> int:
         return 1
     if ema_diff < 0.0 and mom_48 < 0.0:
         return -1
+    return 0
+
+
+def numeric_direction(value: float, min_abs: float) -> int:
+    if not math.isfinite(value) or abs(value) < float(min_abs):
+        return 0
+    return 1 if value > 0.0 else -1
+
+
+def candidate_base_direction(
+    row: Dict[str, float],
+    *,
+    classified_direction: int,
+    raw_direction: int,
+    spec: Dict[str, Any],
+) -> int:
+    source = str(spec.get("signal_source", "trend")).strip().lower()
+    min_abs = float(spec.get("min_signal_abs", 0.0))
+    if source == "trend":
+        return classified_direction if classified_direction else raw_direction
+    if source == "raw_trend":
+        return raw_direction
+    if source in {"ret_1", "ret_3", "ret_12", "mom_12", "mom_48", "zscore_48"}:
+        return numeric_direction(safe_float(row.get(source), math.nan), min_abs)
     return 0
 
 
@@ -445,6 +474,7 @@ def build_alpha_tournament(
     specs: List[Dict[str, Any]] = [
         {
             "name": "confirmed_trend_follow",
+            "signal_source": "trend",
             "target_bucket": "trend",
             "direction_mode": "follow",
             "min_trend_ratio": confirmed_trend_ratio,
@@ -452,6 +482,7 @@ def build_alpha_tournament(
         },
         {
             "name": "confirmed_trend_inverse",
+            "signal_source": "trend",
             "target_bucket": "trend",
             "direction_mode": "inverse",
             "min_trend_ratio": confirmed_trend_ratio,
@@ -459,6 +490,7 @@ def build_alpha_tournament(
         },
         {
             "name": "candidate_trend_follow",
+            "signal_source": "trend",
             "target_bucket": "trend_or_candidate",
             "direction_mode": "follow",
             "min_trend_ratio": candidate_trend_ratio,
@@ -466,6 +498,7 @@ def build_alpha_tournament(
         },
         {
             "name": "candidate_trend_inverse",
+            "signal_source": "trend",
             "target_bucket": "trend_or_candidate",
             "direction_mode": "inverse",
             "min_trend_ratio": candidate_trend_ratio,
@@ -473,6 +506,7 @@ def build_alpha_tournament(
         },
         {
             "name": "range_weak_trend_follow",
+            "signal_source": "raw_trend",
             "target_bucket": "range",
             "direction_mode": "follow",
             "min_trend_ratio": 0.0,
@@ -480,6 +514,7 @@ def build_alpha_tournament(
         },
         {
             "name": "range_weak_trend_reversal",
+            "signal_source": "raw_trend",
             "target_bucket": "range",
             "direction_mode": "inverse",
             "min_trend_ratio": 0.0,
@@ -487,6 +522,7 @@ def build_alpha_tournament(
         },
         {
             "name": "all_directional_follow",
+            "signal_source": "raw_trend",
             "target_bucket": "all",
             "direction_mode": "follow",
             "min_trend_ratio": 0.0,
@@ -494,10 +530,83 @@ def build_alpha_tournament(
         },
         {
             "name": "all_directional_inverse",
+            "signal_source": "raw_trend",
             "target_bucket": "all",
             "direction_mode": "inverse",
             "min_trend_ratio": 0.0,
             "description": "所有同向信号反向样本",
+        },
+        {
+            "name": "momentum_12_follow",
+            "signal_source": "mom_12",
+            "target_bucket": "all",
+            "direction_mode": "follow",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 5e-4,
+            "description": "12-bar momentum 顺势候选",
+        },
+        {
+            "name": "momentum_12_reversal",
+            "signal_source": "mom_12",
+            "target_bucket": "all",
+            "direction_mode": "inverse",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 5e-4,
+            "description": "12-bar momentum 反转候选",
+        },
+        {
+            "name": "micro_ret3_follow",
+            "signal_source": "ret_3",
+            "target_bucket": "all",
+            "direction_mode": "follow",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 2e-4,
+            "description": "3-bar 短动量顺势候选",
+        },
+        {
+            "name": "micro_ret3_reversal",
+            "signal_source": "ret_3",
+            "target_bucket": "all",
+            "direction_mode": "inverse",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 2e-4,
+            "description": "3-bar 短动量反转候选",
+        },
+        {
+            "name": "range_zscore_follow",
+            "signal_source": "zscore_48",
+            "target_bucket": "range",
+            "direction_mode": "follow",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 0.75,
+            "description": "RANGE 内 zscore 突破延续候选",
+        },
+        {
+            "name": "range_zscore_reversal",
+            "signal_source": "zscore_48",
+            "target_bucket": "range",
+            "direction_mode": "inverse",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 0.75,
+            "description": "RANGE 内 zscore 均值回归候选",
+        },
+        {
+            "name": "breakout_zscore_follow",
+            "signal_source": "zscore_48",
+            "target_bucket": "all",
+            "direction_mode": "follow",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 1.25,
+            "description": "全市场 zscore 突破延续候选",
+        },
+        {
+            "name": "breakout_zscore_reversal",
+            "signal_source": "zscore_48",
+            "target_bucket": "all",
+            "direction_mode": "inverse",
+            "min_trend_ratio": 0.0,
+            "min_signal_abs": 1.25,
+            "description": "全市场 zscore 极值反转候选",
         },
     ]
 
@@ -520,9 +629,14 @@ def build_alpha_tournament(
                     continue
                 if target_bucket in {"trend", "range"} and trend_ratio < min_trend_ratio:
                     continue
-                base_direction = classified_direction if classified_direction else raw_direction
-                if target_bucket in {"range", "all"}:
-                    base_direction = raw_direction
+                base_direction = candidate_base_direction(
+                    row,
+                    classified_direction=classified_direction,
+                    raw_direction=raw_direction,
+                    spec=spec,
+                )
+                if base_direction == 0:
+                    continue
                 direction = base_direction
                 if str(spec["direction_mode"]) == "inverse":
                     direction = -direction
@@ -564,9 +678,11 @@ def build_alpha_tournament(
                         "symbol": symbol,
                         "signal_variant": spec["name"],
                         "direction_mode": spec["direction_mode"],
+                        "signal_source": spec.get("signal_source", "trend"),
                         "target_bucket": spec["target_bucket"],
                         "predict_horizon_bars": int(horizon),
                         "min_trend_ratio": min_trend_ratio,
+                        "min_signal_abs": float(spec.get("min_signal_abs", 0.0)),
                         "round_trip_cost_bps": float(round_trip_cost_bps),
                     },
                 }
@@ -593,6 +709,44 @@ def build_alpha_tournament(
         if pass_candidates
         else ["no_alpha_candidate_positive_after_cost"],
     }
+
+
+def build_cost_views(
+    *,
+    primary_cost_bps: float,
+    maker_cost_bps: float | None,
+    stress_cost_multiplier: float,
+    stress_cost_bps: float | None,
+) -> List[Dict[str, Any]]:
+    views: List[Dict[str, Any]] = []
+
+    def add(name: str, cost: float, description: str) -> None:
+        if not math.isfinite(cost) or cost <= 0.0:
+            return
+        for view in views:
+            if abs(float(view["round_trip_cost_bps"]) - float(cost)) < 1e-9:
+                aliases = view.setdefault("aliases", [])
+                if name not in aliases:
+                    aliases.append(name)
+                return
+        views.append(
+            {
+                "name": name,
+                "round_trip_cost_bps": float(cost),
+                "description": description,
+            }
+        )
+
+    add("primary", primary_cost_bps, "主链标签/安全成本口径")
+    if maker_cost_bps is not None and math.isfinite(maker_cost_bps) and maker_cost_bps > 0.0:
+        add("maker", maker_cost_bps, "maker-first 真实执行成本口径")
+        stress_cost = (
+            float(stress_cost_bps)
+            if stress_cost_bps is not None and math.isfinite(float(stress_cost_bps))
+            else float(maker_cost_bps) * max(1.0, float(stress_cost_multiplier))
+        )
+        add("maker_stress", stress_cost, "maker-first 压力成本口径")
+    return views
 
 
 def combine_alpha_tournaments(symbol_items: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -626,6 +780,36 @@ def combine_alpha_tournaments(symbol_items: List[Dict[str, Any]]) -> Dict[str, A
     }
 
 
+def combine_alpha_tournament_cost_views(
+    symbol_items: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    by_view: Dict[str, List[Dict[str, Any]]] = {}
+    view_meta: Dict[str, Dict[str, Any]] = {}
+    for item in symbol_items:
+        cost_views = item.get("alpha_tournament_by_cost", {})
+        if not isinstance(cost_views, dict):
+            continue
+        for name, tournament in cost_views.items():
+            if not isinstance(tournament, dict):
+                continue
+            by_view.setdefault(str(name), []).append({"alpha_tournament": tournament})
+            view_meta[str(name)] = {
+                "round_trip_cost_bps": tournament.get("round_trip_cost_bps"),
+                "description": tournament.get("cost_description"),
+            }
+
+    combined: Dict[str, Any] = {}
+    for name, items in sorted(by_view.items()):
+        tournament = combine_alpha_tournaments(items)
+        tournament["cost_view"] = name
+        tournament["round_trip_cost_bps"] = view_meta.get(name, {}).get(
+            "round_trip_cost_bps"
+        )
+        tournament["cost_description"] = view_meta.get(name, {}).get("description")
+        combined[name] = tournament
+    return combined
+
+
 def diagnose_symbol(
     symbol: str,
     feature_path: Path,
@@ -639,6 +823,7 @@ def diagnose_symbol(
     min_samples: int,
     min_mean_net_edge_bps: float,
     min_positive_net_ratio: float,
+    cost_views: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     feature_rows = load_feature_rows(feature_path)
     thresholds = derive_thresholds(feature_rows)
@@ -690,6 +875,54 @@ def diagnose_symbol(
         if direction and trend_ratio >= confirmed_trend_ratio and bucket == "trend":
             confirmed_records.append(record)
 
+    primary_tournament = build_alpha_tournament(
+        symbol,
+        feature_rows,
+        thresholds,
+        ohlcv_rows,
+        index_by_timestamp,
+        forward_bars=forward_bars,
+        tournament_horizons=tournament_horizons,
+        round_trip_cost_bps=round_trip_cost_bps,
+        candidate_trend_ratio=candidate_trend_ratio,
+        confirmed_trend_ratio=confirmed_trend_ratio,
+        min_samples=min_samples,
+        min_mean_net_edge_bps=min_mean_net_edge_bps,
+        min_positive_net_ratio=min_positive_net_ratio,
+    )
+    primary_tournament["cost_view"] = "primary"
+    primary_tournament["round_trip_cost_bps"] = float(round_trip_cost_bps)
+    primary_tournament["cost_description"] = "主链标签/安全成本口径"
+
+    tournaments_by_cost: Dict[str, Any] = {}
+    for view in cost_views:
+        name = str(view.get("name", "")).strip() or "cost"
+        cost = safe_float(view.get("round_trip_cost_bps"), math.nan)
+        if not math.isfinite(cost) or cost <= 0.0:
+            continue
+        if name == "primary" and abs(cost - round_trip_cost_bps) < 1e-9:
+            tournament = dict(primary_tournament)
+        else:
+            tournament = build_alpha_tournament(
+                symbol,
+                feature_rows,
+                thresholds,
+                ohlcv_rows,
+                index_by_timestamp,
+                forward_bars=forward_bars,
+                tournament_horizons=tournament_horizons,
+                round_trip_cost_bps=cost,
+                candidate_trend_ratio=candidate_trend_ratio,
+                confirmed_trend_ratio=confirmed_trend_ratio,
+                min_samples=min_samples,
+                min_mean_net_edge_bps=min_mean_net_edge_bps,
+                min_positive_net_ratio=min_positive_net_ratio,
+            )
+        tournament["cost_view"] = name
+        tournament["round_trip_cost_bps"] = cost
+        tournament["cost_description"] = view.get("description")
+        tournaments_by_cost[name] = tournament
+
     return {
         "symbol": symbol,
         "feature_csv": str(feature_path),
@@ -701,21 +934,8 @@ def diagnose_symbol(
         "all": summarize_records(all_records, round_trip_cost_bps),
         "candidate_trend": summarize_records(candidate_records, round_trip_cost_bps),
         "confirmed_trend": summarize_records(confirmed_records, round_trip_cost_bps),
-        "alpha_tournament": build_alpha_tournament(
-            symbol,
-            feature_rows,
-            thresholds,
-            ohlcv_rows,
-            index_by_timestamp,
-            forward_bars=forward_bars,
-            tournament_horizons=tournament_horizons,
-            round_trip_cost_bps=round_trip_cost_bps,
-            candidate_trend_ratio=candidate_trend_ratio,
-            confirmed_trend_ratio=confirmed_trend_ratio,
-            min_samples=min_samples,
-            min_mean_net_edge_bps=min_mean_net_edge_bps,
-            min_positive_net_ratio=min_positive_net_ratio,
-        ),
+        "alpha_tournament": primary_tournament,
+        "alpha_tournament_by_cost": tournaments_by_cost,
     }
 
 
@@ -902,6 +1122,12 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         args.tournament_horizons,
         int(args.forward_bars),
     )
+    cost_views = build_cost_views(
+        primary_cost_bps=float(args.round_trip_cost_bps),
+        maker_cost_bps=args.maker_round_trip_cost_bps,
+        stress_cost_multiplier=float(args.stress_cost_multiplier),
+        stress_cost_bps=args.stress_round_trip_cost_bps,
+    )
 
     by_symbol: Dict[str, Any] = {}
     fail_reasons: List[str] = []
@@ -928,6 +1154,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             min_samples=int(args.min_samples),
             min_mean_net_edge_bps=float(args.min_mean_net_edge_bps),
             min_positive_net_ratio=float(args.min_positive_net_ratio),
+            cost_views=cost_views,
         )
 
     if not by_symbol:
@@ -950,6 +1177,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         "confirmed_trend": combine_summaries(symbol_items, "confirmed_trend"),
     }
     alpha_tournament = combine_alpha_tournaments(symbol_items)
+    alpha_tournament_by_cost = combine_alpha_tournament_cost_views(symbol_items)
     status, local_fails, local_warns, diagnostics = classify_diagnosis(
         aggregate,
         min_samples=int(args.min_samples),
@@ -969,6 +1197,12 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             for item in alpha_tournament.get("fail_reasons", [])
             if str(item).strip() and str(item) not in fail_reasons
         )
+    maker_view = alpha_tournament_by_cost.get("maker")
+    maker_stress_view = alpha_tournament_by_cost.get("maker_stress")
+    if isinstance(maker_view, dict) and maker_view.get("status") == "pass":
+        warn_reasons.append("maker_cost_alpha_candidate_exists; require maker_stress before activation")
+    if isinstance(maker_stress_view, dict) and maker_stress_view.get("status") == "pass":
+        warn_reasons.append("maker_stress_alpha_candidate_exists; inspect deployable_config before strategy switch")
     return {
         "schema_version": "strategy_diagnose_v1",
         "generated_at_utc": now_utc_iso(),
@@ -977,6 +1211,9 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         "target": {
             "forward_bars": int(args.forward_bars),
             "round_trip_cost_bps": float(args.round_trip_cost_bps),
+            "maker_round_trip_cost_bps": args.maker_round_trip_cost_bps,
+            "stress_cost_multiplier": float(args.stress_cost_multiplier),
+            "stress_round_trip_cost_bps": args.stress_round_trip_cost_bps,
             "candidate_trend_ratio": float(args.candidate_trend_ratio),
             "confirmed_trend_ratio": float(args.confirmed_trend_ratio),
             "min_samples": int(args.min_samples),
@@ -984,8 +1221,10 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "min_positive_net_ratio": float(args.min_positive_net_ratio),
             "min_mfe_cost_coverage": float(args.min_mfe_cost_coverage),
         },
+        "cost_views": cost_views,
         "aggregate": aggregate,
         "alpha_tournament": alpha_tournament,
+        "alpha_tournament_by_cost": alpha_tournament_by_cost,
         "by_symbol": by_symbol,
         "diagnostics": diagnostics,
         "recommendations": build_recommendations(status, diagnostics),
@@ -1027,6 +1266,24 @@ def parse_args() -> argparse.Namespace:
         help="comma-separated horizons for alpha viability tournament; empty uses --forward-bars",
     )
     parser.add_argument("--round-trip-cost-bps", type=float, default=13.0)
+    parser.add_argument(
+        "--maker-round-trip-cost-bps",
+        type=float,
+        default=None,
+        help="Optional maker-first cost view for alpha tournament",
+    )
+    parser.add_argument(
+        "--stress-cost-multiplier",
+        type=float,
+        default=1.25,
+        help="Stress multiplier applied to maker cost when stress cost is not explicit",
+    )
+    parser.add_argument(
+        "--stress-round-trip-cost-bps",
+        type=float,
+        default=None,
+        help="Optional explicit stress cost view for alpha tournament",
+    )
     parser.add_argument("--candidate-trend-ratio", type=float, default=0.60)
     parser.add_argument("--confirmed-trend-ratio", type=float, default=1.00)
     parser.add_argument("--min-samples", type=int, default=30)

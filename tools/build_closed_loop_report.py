@@ -25,6 +25,7 @@ INHERITABLE_SECTION_NAMES = [
     "trend_validation",
     "replay_validation",
     "strategy_diagnose",
+    "alpha_mechanism_probe",
 ]
 
 # A section inherited from the previous report is useful context, but some
@@ -831,6 +832,50 @@ def assess_strategy_diagnose(path: Path) -> Dict[str, Any]:
         "by_symbol": payload.get("by_symbol", {}),
         "diagnostics": payload.get("diagnostics", []),
         "recommendations": payload.get("recommendations", []),
+    }
+
+
+def assess_alpha_mechanism_probe(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    status_raw = str(payload.get("status", "")).strip().lower()
+    readiness_status = str(
+        payload.get("readiness_status", status_raw.upper() if status_raw else "UNKNOWN")
+    ).upper()
+    fail_reasons = [
+        str(item).strip()
+        for item in payload.get("fail_reasons", [])
+        if str(item).strip()
+    ]
+    warn_reasons = [
+        str(item).strip()
+        for item in payload.get("warn_reasons", [])
+        if str(item).strip()
+    ]
+
+    if status_raw == "pass":
+        status = "pass"
+    elif status_raw in {"pass_with_actions", "skipped"}:
+        status = "pass"
+        if status_raw == "skipped" and not warn_reasons:
+            warn_reasons.append("alpha_mechanism_probe skipped")
+    else:
+        status = "fail"
+        if not fail_reasons:
+            fail_reasons.append(f"alpha_mechanism_probe status={status_raw or 'unknown'}")
+
+    return {
+        "status": status,
+        "readiness_status": readiness_status,
+        "fail_reasons": fail_reasons if status == "fail" else [],
+        "warn_reasons": warn_reasons,
+        "probe_status": status_raw or "unknown",
+        "mechanism_control_status": payload.get("mechanism_control_status"),
+        "market_alpha_family_status": payload.get("market_alpha_family_status"),
+        "target": payload.get("target", {}),
+        "data": payload.get("data", {}),
+        "controls": payload.get("controls", {}),
+        "candidate_search": payload.get("candidate_search", {}),
+        "next_actions": payload.get("next_actions", []),
     }
 
 
@@ -1839,7 +1884,7 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
         ),
         layer_from_sections(
             name="mechanism_proof",
-            section_names=["closed_loop_mechanism"],
+            section_names=["alpha_mechanism_probe", "closed_loop_mechanism"],
             sections=sections,
             next_action="prove_closed_loop_mechanism_before_more_strategy_tuning",
         ),
@@ -1975,6 +2020,11 @@ def parse_args() -> argparse.Namespace:
         "--strategy_diagnose_report",
         default="",
         help="strategy_diagnose_report.json 路径",
+    )
+    parser.add_argument(
+        "--alpha_mechanism_probe_report",
+        default="",
+        help="alpha_mechanism_probe_report.json 路径",
     )
     parser.add_argument(
         "--closed_loop_mechanism_report",
@@ -2218,6 +2268,15 @@ def main() -> int:
             sections["strategy_diagnose"] = {
                 "status": "fail",
                 "fail_reasons": [f"文件不存在: {strategy_diagnose_path}"],
+            }
+    if args.alpha_mechanism_probe_report:
+        alpha_probe_path = Path(args.alpha_mechanism_probe_report)
+        if alpha_probe_path.is_file():
+            sections["alpha_mechanism_probe"] = assess_alpha_mechanism_probe(alpha_probe_path)
+        else:
+            sections["alpha_mechanism_probe"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {alpha_probe_path}"],
             }
     if args.closed_loop_mechanism_report:
         mechanism_path = Path(args.closed_loop_mechanism_report)
@@ -2471,6 +2530,15 @@ def main() -> int:
             )
         ).upper()
 
+    alpha_probe_section = sections.get("alpha_mechanism_probe", {})
+    alpha_probe_readiness_status = "NOT_EVALUATED"
+    if isinstance(alpha_probe_section, dict) and alpha_probe_section:
+        alpha_probe_readiness_status = str(
+            alpha_probe_section.get(
+                "readiness_status", alpha_probe_section.get("status", "unknown")
+            )
+        ).upper()
+
     trading_convergence_section = sections.get("trading_convergence", {})
     trading_convergence_status = "NOT_EVALUATED"
     if isinstance(trading_convergence_section, dict) and trading_convergence_section:
@@ -2505,6 +2573,7 @@ def main() -> int:
         "feature_parity_status": feature_parity_status,
         "exit_capture_status": exit_capture_status,
         "canary_validation_status": canary_validation_status,
+        "alpha_mechanism_probe_status": alpha_probe_readiness_status,
         "closed_loop_mechanism_status": mechanism_readiness_status,
         "trading_convergence_status": trading_convergence_status,
         "trading_convergence_readiness_status": trading_convergence_status,
@@ -2525,6 +2594,7 @@ def main() -> int:
             ),
             "trading_convergence_field": "trading_convergence_status",
             "closed_loop_mechanism_field": "closed_loop_mechanism_status",
+            "alpha_mechanism_probe_field": "alpha_mechanism_probe_status",
             "convergence_layers_field": "convergence_layers",
         },
         "run_manifest": run_manifest_payload,
