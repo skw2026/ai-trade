@@ -53,11 +53,18 @@ def rolling_std(values: np.ndarray, window: int) -> np.ndarray:
     return out
 
 
+def safe_divide(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
+    out = np.full(numerator.shape, np.nan, dtype=np.float64)
+    valid = np.isfinite(numerator) & np.isfinite(denominator) & (np.abs(denominator) > 1e-12)
+    np.divide(numerator, denominator, out=out, where=valid)
+    return out
+
+
 def shift_return(close: np.ndarray, bars: int) -> np.ndarray:
     out = np.full(close.shape, np.nan, dtype=np.float64)
     if bars <= 0 or close.size <= bars:
         return out
-    out[bars:] = close[bars:] / close[:-bars] - 1.0
+    out[bars:] = safe_divide(close[bars:], close[:-bars]) - 1.0
     return out
 
 
@@ -65,7 +72,7 @@ def forward_return(close: np.ndarray, bars: int) -> np.ndarray:
     out = np.full(close.shape, np.nan, dtype=np.float64)
     if bars <= 0 or close.size <= bars:
         return out
-    out[:-bars] = close[bars:] / close[:-bars] - 1.0
+    out[:-bars] = safe_divide(close[bars:], close[:-bars]) - 1.0
     return out
 
 
@@ -99,6 +106,7 @@ def load_ohlcv(path: pathlib.Path) -> Dict[str, np.ndarray]:
 
 
 def build_features(data: Dict[str, np.ndarray], forward_bars: int) -> Dict[str, np.ndarray]:
+    open_price = data["open"]
     close = data["close"]
     high = data["high"]
     low = data["low"]
@@ -107,18 +115,45 @@ def build_features(data: Dict[str, np.ndarray], forward_bars: int) -> Dict[str, 
     ret_1 = shift_return(close, 1)
     ret_3 = shift_return(close, 3)
     ret_12 = shift_return(close, 12)
+    ret_24 = shift_return(close, 24)
+    ret_36 = shift_return(close, 36)
+    ret_72 = shift_return(close, 72)
     ema_fast = ema(close, 12)
     ema_slow = ema(close, 48)
-    ema_diff = np.where(close != 0.0, (ema_fast - ema_slow) / close, np.nan)
+    ema_slow_96 = ema(close, 96)
+    ema_diff = safe_divide(ema_fast - ema_slow, close)
+    ema_diff_96 = safe_divide(ema_slow - ema_slow_96, close)
     vol_12 = rolling_std(ret_1, 12)
     vol_48 = rolling_std(ret_1, 48)
+    vol_96 = rolling_std(ret_1, 96)
     mean_48 = rolling_mean(close, 48)
     std_48 = rolling_std(close, 48)
-    zscore_48 = np.where(std_48 > 0.0, (close - mean_48) / std_48, np.nan)
+    zscore_48 = safe_divide(close - mean_48, std_48)
+    mean_96 = rolling_mean(close, 96)
+    std_96 = rolling_std(close, 96)
+    zscore_96 = safe_divide(close - mean_96, std_96)
     mom_12 = shift_return(close, 12)
     mom_48 = shift_return(close, 48)
-    range_pct = np.where(close != 0.0, (high - low) / close, np.nan)
-    vol_chg_12 = np.where(volume > 0.0, shift_return(volume, 12), np.nan)
+    mom_96 = shift_return(close, 96)
+    ret_3_minus_ret_12 = ret_3 - ret_12
+    ret_12_minus_ret_48 = ret_12 - mom_48
+    vol_ratio_12_48 = safe_divide(vol_12, vol_48) - 1.0
+    vol_ratio_48_96 = safe_divide(vol_48, vol_96) - 1.0
+    range_raw = high - low
+    range_pct = safe_divide(range_raw, close)
+    body_pct = safe_divide(close - open_price, close)
+    upper_wick = high - np.maximum(open_price, close)
+    lower_wick = np.minimum(open_price, close) - low
+    upper_wick_pct = safe_divide(upper_wick, close)
+    lower_wick_pct = safe_divide(lower_wick, close)
+    close_pos_in_range = safe_divide(close - low, range_raw)
+    vol_chg_12 = shift_return(volume, 12)
+    volume_mean_12 = rolling_mean(volume, 12)
+    volume_mean_48 = rolling_mean(volume, 48)
+    volume_std_48 = rolling_std(volume, 48)
+    volume_zscore_48 = safe_divide(volume - volume_mean_48, volume_std_48)
+    volume_ratio_12_48 = safe_divide(volume_mean_12, volume_mean_48) - 1.0
+    signed_volume_pressure = np.sign(ret_1) * volume_zscore_48
     fwd = forward_return(close, max(1, int(forward_bars)))
 
     return {
@@ -128,16 +163,35 @@ def build_features(data: Dict[str, np.ndarray], forward_bars: int) -> Dict[str, 
         "ret_1": ret_1,
         "ret_3": ret_3,
         "ret_12": ret_12,
+        "ret_24": ret_24,
+        "ret_36": ret_36,
+        "ret_72": ret_72,
         "ema_fast": ema_fast,
         "ema_slow": ema_slow,
+        "ema_slow_96": ema_slow_96,
         "ema_diff": ema_diff,
+        "ema_diff_96": ema_diff_96,
         "vol_12": vol_12,
         "vol_48": vol_48,
+        "vol_96": vol_96,
         "zscore_48": zscore_48,
+        "zscore_96": zscore_96,
         "mom_12": mom_12,
         "mom_48": mom_48,
+        "mom_96": mom_96,
+        "ret_3_minus_ret_12": ret_3_minus_ret_12,
+        "ret_12_minus_ret_48": ret_12_minus_ret_48,
+        "vol_ratio_12_48": vol_ratio_12_48,
+        "vol_ratio_48_96": vol_ratio_48_96,
         "range_pct": range_pct,
+        "body_pct": body_pct,
+        "upper_wick_pct": upper_wick_pct,
+        "lower_wick_pct": lower_wick_pct,
+        "close_pos_in_range": close_pos_in_range,
         "vol_chg_12": vol_chg_12,
+        "volume_zscore_48": volume_zscore_48,
+        "volume_ratio_12_48": volume_ratio_12_48,
+        "signed_volume_pressure": signed_volume_pressure,
         "forward_return": fwd,
     }
 
@@ -154,16 +208,35 @@ def write_feature_csv(
         "ret_1",
         "ret_3",
         "ret_12",
+        "ret_24",
+        "ret_36",
+        "ret_72",
         "ema_fast",
         "ema_slow",
+        "ema_slow_96",
         "ema_diff",
+        "ema_diff_96",
         "vol_12",
         "vol_48",
+        "vol_96",
         "zscore_48",
+        "zscore_96",
         "mom_12",
         "mom_48",
+        "mom_96",
+        "ret_3_minus_ret_12",
+        "ret_12_minus_ret_48",
+        "vol_ratio_12_48",
+        "vol_ratio_48_96",
         "range_pct",
+        "body_pct",
+        "upper_wick_pct",
+        "lower_wick_pct",
+        "close_pos_in_range",
         "vol_chg_12",
+        "volume_zscore_48",
+        "volume_ratio_12_48",
+        "signed_volume_pressure",
         "forward_return",
     ]
     row_count = int(features["timestamp"].size)

@@ -737,6 +737,19 @@ class FeatureAndBacktestTest(unittest.TestCase):
             features = FEATURE.build_features(data, forward_bars=4)
             kept = FEATURE.write_feature_csv(feature_csv, features, drop_na=True)
             self.assertGreater(kept, 100)
+            for column in (
+                "ret_24",
+                "ema_diff_96",
+                "zscore_96",
+                "body_pct",
+                "close_pos_in_range",
+                "volume_zscore_48",
+                "signed_volume_pressure",
+            ):
+                self.assertIn(column, features)
+            header = feature_csv.read_text(encoding="utf-8").splitlines()[0].split(",")
+            self.assertIn("body_pct", header)
+            self.assertIn("signed_volume_pressure", header)
 
             x_train = np.random.RandomState(7).normal(size=(120, len(BACKTEST.FEATURE_COLUMNS)))
             y_train = (0.0015 * x_train[:, 0] - 0.0007 * x_train[:, 1] + 0.0002).astype(

@@ -30,16 +30,35 @@ FIELDS = [
     "ret_1",
     "ret_3",
     "ret_12",
+    "ret_24",
+    "ret_36",
+    "ret_72",
     "ema_fast",
     "ema_slow",
+    "ema_slow_96",
     "ema_diff",
+    "ema_diff_96",
     "vol_12",
     "vol_48",
+    "vol_96",
     "zscore_48",
+    "zscore_96",
     "mom_12",
     "mom_48",
+    "mom_96",
+    "ret_3_minus_ret_12",
+    "ret_12_minus_ret_48",
+    "vol_ratio_12_48",
+    "vol_ratio_48_96",
     "range_pct",
+    "body_pct",
+    "upper_wick_pct",
+    "lower_wick_pct",
+    "close_pos_in_range",
     "vol_chg_12",
+    "volume_zscore_48",
+    "volume_ratio_12_48",
+    "signed_volume_pressure",
     "forward_return",
 ]
 
@@ -161,6 +180,72 @@ def write_one_sided_path_label_fixture(path: pathlib.Path) -> pathlib.Path:
                     "mom_48": feature,
                     "range_pct": 0.001,
                     "vol_chg_12": 0.0,
+                    "forward_return": 0.0,
+                }
+            )
+    return path
+
+
+def write_body_path_label_fixture(path: pathlib.Path) -> pathlib.Path:
+    cycles = 400
+    period = 20
+    row_count = cycles * period + 20
+    closes = [100.0 for _ in range(row_count)]
+    entry_rows = {}
+    for cycle in range(cycles):
+        feature_sign = 1 if cycle % 5 in {0, 1} else -1
+        entry = cycle * period + 4
+        entry_rows[entry] = feature_sign
+        closes[entry] = 100.0
+        # Only the positive body bin has long path edge. Static follow over both
+        # signs should fail, while path-label gating can isolate the positive bin.
+        closes[entry + 1] = 100.12
+        for offset in range(2, 13):
+            closes[entry + offset] = 100.0
+
+    with path.open("w", encoding="utf-8", newline="") as fp:
+        writer = csv.DictWriter(fp, fieldnames=FIELDS)
+        writer.writeheader()
+        for index, close in enumerate(closes):
+            feature_sign = entry_rows.get(index, 0)
+            body = float(feature_sign) * 0.003 if feature_sign else 0.0
+            writer.writerow(
+                {
+                    "timestamp": 1_700_000_000_000 + index * 300_000,
+                    "close": close,
+                    "volume": 10.0,
+                    "ret_1": 0.0,
+                    "ret_3": 0.0,
+                    "ret_12": 0.0,
+                    "ret_24": 0.0,
+                    "ret_36": 0.0,
+                    "ret_72": 0.0,
+                    "ema_fast": 100.0,
+                    "ema_slow": 100.0,
+                    "ema_slow_96": 100.0,
+                    "ema_diff": 0.0,
+                    "ema_diff_96": 0.0,
+                    "vol_12": 0.001,
+                    "vol_48": 0.001,
+                    "vol_96": 0.001,
+                    "zscore_48": 0.0,
+                    "zscore_96": 0.0,
+                    "mom_12": 0.0,
+                    "mom_48": 0.0,
+                    "mom_96": 0.0,
+                    "ret_3_minus_ret_12": 0.0,
+                    "ret_12_minus_ret_48": 0.0,
+                    "vol_ratio_12_48": 0.0,
+                    "vol_ratio_48_96": 0.0,
+                    "range_pct": 0.001,
+                    "body_pct": body,
+                    "upper_wick_pct": 0.0,
+                    "lower_wick_pct": 0.0,
+                    "close_pos_in_range": 0.5,
+                    "vol_chg_12": 0.0,
+                    "volume_zscore_48": 0.0,
+                    "volume_ratio_12_48": 0.0,
+                    "signed_volume_pressure": 0.0,
                     "forward_return": 0.0,
                 }
             )
@@ -373,6 +458,50 @@ class AlphaMechanismProbeTest(unittest.TestCase):
             self.assertIsNotNone(selected)
             self.assertEqual(selected["generated_by"], "path_label_train_bin")
             self.assertEqual(selected["signal_direction"], 1)
+            self.assertGreater(selected["holdout_summary"]["mean_net_bps"], 0.0)
+
+    def test_path_label_candidate_uses_expanded_candle_feature_family(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            feature_path = write_body_path_label_fixture(root / "body_features.csv")
+            output = root / "probe.json"
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "alpha_mechanism_probe.py",
+                    "--output",
+                    str(output),
+                    "--symbol",
+                    "SOLUSDT",
+                    "--feature_csv",
+                    str(feature_path),
+                    "--round-trip-cost-bps",
+                    "3.5",
+                    "--objective-mode",
+                    "path_first_touch",
+                    "--path-horizon-bars",
+                    "12",
+                    "--path-take-profit-bps",
+                    "8.0",
+                    "--path-stop-loss-bps",
+                    "8.0",
+                    "--min-mfe-cost-coverage",
+                    "1.2",
+                    "--min-holdout-samples",
+                    "20",
+                ]
+                code = PROBE.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            selected = payload["deployable_candidate_manifest"]["selected_candidate"]
+            self.assertIsNotNone(selected)
+            self.assertEqual(selected["generated_by"], "path_label_train_bin")
+            self.assertEqual(selected["base_source"], "body_pct")
+            self.assertEqual(selected["family"], "path_label_candle_shape")
             self.assertGreater(selected["holdout_summary"]["mean_net_bps"], 0.0)
 
 
