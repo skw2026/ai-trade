@@ -7823,7 +7823,7 @@ int main() {
         });
     transport.AddRoute(
         "GET",
-        "/v5/order/realtime",
+        "/v5/order/realtime?category=linear&settleCoin=USDT&openOnly=0&limit=50",
         ai_trade::BybitHttpResponse{
             .status_code = 200,
             .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","orderId":"exchange-open-1","orderLinkId":"cid-open-1","orderStatus":"New","side":"Sell","qty":"1","leavesQty":"1","cumExecQty":"0","price":"0","triggerPrice":"98.8","triggerDirection":"2","orderType":"Market","timeInForce":"GTC","reduceOnly":true,"closeOnTrigger":true},{"symbol":"BTCUSDT","orderLinkId":"cid-zero-leaves-1","orderStatus":"New","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"cid-filled-1","orderStatus":"Filled","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"cid-cancelled-1","orderStatus":"Cancelled","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"","orderStatus":"New","leavesQty":"1"}]}})",

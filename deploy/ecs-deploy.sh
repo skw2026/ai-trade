@@ -648,6 +648,18 @@ stop_managed_containers() {
   done
 }
 
+log_managed_container_diagnostics() {
+  local title="$1"
+  local container=""
+  echo "[deploy] ${title} container status snapshot:"
+  docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
+  echo "[deploy] ${title} recent container logs:"
+  for container in "${required_containers[@]}"; do
+    echo "--- ${container} ---"
+    docker logs --tail 120 "${container}" || true
+  done
+}
+
 wait_for_services_ready() {
   local -a containers_to_check=("$@")
   if (( ${#containers_to_check[@]} == 0 )); then
@@ -705,18 +717,18 @@ wait_for_services_ready() {
   done
 }
 
+restore_previous_env_identity() {
+  upsert_env "AI_TRADE_IMAGE" "${previous_runtime_image}" &&
+    upsert_env "AI_TRADE_RESEARCH_IMAGE" "${previous_research_image}" &&
+    upsert_env "AI_TRADE_WEB_IMAGE" "${previous_web_image}" &&
+    upsert_env "AI_TRADE_PROJECT_DIR" "${PREVIOUS_RELEASE_PATH}"
+}
+
 rollback_to_previous() {
   local reason="$1"
   DEPLOY_ROLLBACK_ATTEMPTED="true"
   echo "[deploy] ${reason}"
-  echo "[deploy] container status snapshot:"
-  docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
-  echo "[deploy] recent container logs:"
-  local container=""
-  for container in "${required_containers[@]}"; do
-    echo "--- ${container} ---"
-    docker logs --tail 120 "${container}" || true
-  done
+  log_managed_container_diagnostics "pre-rollback"
 
   if [[ -z "${PREVIOUS_RELEASE_PATH:-}" ||
         ! -f "${PREVIOUS_RELEASE_PATH}/docker-compose.prod.yml" ||
@@ -728,10 +740,7 @@ rollback_to_previous() {
     return 1
   fi
 
-  if ! upsert_env "AI_TRADE_IMAGE" "${previous_runtime_image}" ||
-     ! upsert_env "AI_TRADE_RESEARCH_IMAGE" "${previous_research_image}" ||
-     ! upsert_env "AI_TRADE_WEB_IMAGE" "${previous_web_image}" ||
-     ! upsert_env "AI_TRADE_PROJECT_DIR" "${PREVIOUS_RELEASE_PATH}"; then
+  if ! restore_previous_env_identity; then
     echo "[deploy] rollback env restore failed"
     stop_managed_containers
     return 1
@@ -772,6 +781,7 @@ rollback_to_previous() {
   fi
   if ! wait_for_services_ready "${required_containers[@]}"; then
     echo "[deploy] rollback readiness verification failed"
+    log_managed_container_diagnostics "post-rollback"
     stop_managed_containers
     return 1
   fi
@@ -1144,7 +1154,14 @@ upsert_env "AI_TRADE_ENV_FILE_CONTAINER" "/run/ai-trade/.env.runtime"
 upsert_env "AI_TRADE_ENV_FILE" "/run/ai-trade/.env.runtime"
 
 if ! run_startup_preflight; then
-  rollback_to_previous "startup preflight failed, restore complete previous release" || true
+  echo "[deploy] startup preflight failed before managed service mutation"
+  if ! restore_previous_env_identity; then
+    echo "[deploy] startup preflight env restore failed"
+    stop_managed_containers
+  else
+    echo "[deploy] previous managed services left unchanged"
+  fi
+  DEPLOY_TRANSACTION_GUARD_ACTIVE="false"
   exit 1
 fi
 

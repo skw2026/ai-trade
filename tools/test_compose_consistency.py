@@ -807,6 +807,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("atomic_switch_current_release()", script)
+        self.assertIn("restore_previous_env_identity()", script)
         self.assertIn('upsert_env "AI_TRADE_IMAGE" "${previous_runtime_image}"', script)
         self.assertIn(
             'upsert_env "AI_TRADE_RESEARCH_IMAGE" "${previous_research_image}"',
@@ -835,6 +836,15 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("startup preflight image pull failed", script)
+        self.assertIn(
+            "startup preflight failed before managed service mutation",
+            script,
+        )
+        self.assertIn("previous managed services left unchanged", script)
+        self.assertNotIn(
+            'rollback_to_previous "startup preflight failed',
+            script,
+        )
         self.assertIn("initial service image pull failed", script)
         self.assertIn("initial service deployment failed", script)
         self.assertIn("deferred service image pull failed", script)
@@ -843,6 +853,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('cd "${COMPOSE_DIR}"', script)
         self.assertIn("prepare_runtime_compose()", script)
         self.assertIn("rollback runtime compose preparation failed", script)
+        self.assertIn('log_managed_container_diagnostics "post-rollback"', script)
         self.assertIn(
             '--project-directory "${PREVIOUS_RELEASE_PATH}"',
             script,

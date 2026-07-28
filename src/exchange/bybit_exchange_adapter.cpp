@@ -2983,20 +2983,30 @@ bool BybitExchangeAdapter::GetRemoteOpenOrders(
     return false;
   }
 
-  const std::string query = "category=" + options_.category +
-                            "&openOnly=0&limit=50";
+  std::string query = "category=" + options_.category;
+  if (options_.category == "linear") {
+    // Bybit requires symbol, baseCoin, or settleCoin for linear all-order
+    // queries. Use the account-wide USDT scope so startup recovery also sees
+    // orders from symbols that are no longer in the active universe.
+    query += "&settleCoin=USDT";
+  }
+  query += "&openOnly=0&limit=50";
   std::string body;
   std::string error;
   if (!rest_client_->GetPrivate("/v5/order/realtime", query, &body, &error)) {
+    LogInfo("BYBIT_OPEN_ORDER_QUERY_FAILED: query=" + query +
+            ", detail=" + error);
     return false;
   }
 
   const std::optional<JsonValue> root = ParseJsonBody(body);
   if (!root.has_value()) {
+    LogInfo("BYBIT_OPEN_ORDER_QUERY_FAILED: invalid_json_response");
     return false;
   }
   const JsonValue* list = JsonResultList(&(*root));
   if (list == nullptr || list->type != JsonType::kArray) {
+    LogInfo("BYBIT_OPEN_ORDER_QUERY_FAILED: result_list_missing");
     return false;
   }
 
