@@ -42,7 +42,9 @@ RUN /usr/local/bin/apt-install \
       git \
       libcurl4-openssl-dev \
       libssl-dev \
-      libboost-all-dev
+      libboost-all-dev \
+      python3 \
+      python3-numpy
 
 # [新增] 下载 CatBoost C++ 推理库 (自动适配 amd64/arm64)
 RUN mkdir -p /usr/local/include/model_interface && \
@@ -102,7 +104,8 @@ RUN mkdir -p /app/data
 # 这确保了 ai-trade-research 服务能运行 integrator_train.py
 FROM runtime AS research
 RUN /usr/local/bin/apt-install python3-pip
-RUN pip3 install --no-cache-dir --break-system-packages numpy catboost
+RUN pip3 install --no-cache-dir --break-system-packages \
+      -r /app/tools/requirements-research.txt
 
 # [修改] 默认目标恢复为 runtime，确保主服务轻量
 FROM runtime

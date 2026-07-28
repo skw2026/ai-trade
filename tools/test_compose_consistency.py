@@ -85,6 +85,20 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("target: research", dev_research)
         self.assertNotIn("dockerfile: Dockerfile.research", dev_research)
 
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        build_stage, research_stage = dockerfile.split(
+            "FROM runtime AS research", maxsplit=1
+        )
+        self.assertIn("python3-numpy", build_stage)
+        self.assertIn(
+            "-r /app/tools/requirements-research.txt",
+            research_stage,
+        )
+        self.assertNotIn(
+            "pip3 install --no-cache-dir --break-system-packages numpy catboost",
+            research_stage,
+        )
+
         cd_workflow = (ROOT / ".github" / "workflows" / "cd.yml").read_text(encoding="utf-8")
         self.assertIn("Build and Push Research Image", cd_workflow)
         self.assertIn("file: Dockerfile", cd_workflow)
