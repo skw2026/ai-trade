@@ -3433,6 +3433,7 @@ void BotApplication::InitializeUniverse() {
  */
 bool BotApplication::SyncRemotePositions() {
   startup_remote_positions_.clear();
+  startup_position_lineage_mismatches_.clear();
   if (config_.mode == "replay") return true;
 
   std::vector<RemotePositionSnapshot> remote_positions;
@@ -3456,17 +3457,22 @@ bool BotApplication::SyncRemotePositions() {
         if (std::fabs(delta) <= kNotionalEpsilon) {
           continue;
         }
-        evidence_persistence_failed_ = true;
-        LogError(
-            "CRITICAL: STARTUP_POSITION_LINEAGE_UNCERTAIN: symbol=" + symbol +
+        startup_position_lineage_mismatches_.push_back(
+            StartupPositionLineageMismatch{
+                .symbol = symbol,
+                .remote_qty = remote_qty_by_symbol[symbol],
+                .wal_oms_qty = oms_.net_filled_qty(symbol),
+                .delta_qty = delta,
+            });
+        LogInfo(
+            "STARTUP_POSITION_LINEAGE_REBASE_PENDING: symbol=" + symbol +
             ", remote_qty=" + std::to_string(remote_qty_by_symbol[symbol]) +
             ", wal_oms_qty=" + std::to_string(oms_.net_filled_qty(symbol)) +
-            ", delta_qty=" + std::to_string(delta) +
-            ", action=force_reduce_only");
+            ", delta_qty=" + std::to_string(delta));
       }
     }
-    // 远端持仓是启动时唯一可执行仓位基线。若 WAL 与远端不一致，上面的
-    // fail-closed 标记会阻止新增风险；禁止把未知差额套用到未来任意同向成交。
+    // 远端持仓是启动时唯一可执行仓位基线。WAL 差异需等活动订单也确认后，
+    // 才能判定为空仓检查点或升级为硬失败。
     oms_.SeedNetPositionBaseline(remote_positions);
     RefreshReduceOnlyMode();
     position_sync_ok = true;
@@ -3513,6 +3519,50 @@ bool BotApplication::RecoverStartupOrdersAndProtection() {
     }
     remote_open_order_ids.insert(order.client_order_id);
     remote_open_order_by_id[order.client_order_id] = &order;
+  }
+
+  if (!startup_position_lineage_mismatches_.empty()) {
+    const bool remote_positions_flat =
+        std::none_of(startup_remote_positions_.begin(),
+                     startup_remote_positions_.end(),
+                     [](const RemotePositionSnapshot& position) {
+                       return std::fabs(position.qty) > kNotionalEpsilon;
+                     });
+    if (remote_positions_flat && remote_open_orders.empty()) {
+      std::string wal_error;
+      if (!wal_.AppendFlatPositionRebase(
+              boot_id_, CurrentUtcIsoTimestamp(), &wal_error)) {
+        evidence_persistence_failed_ = true;
+        RefreshReduceOnlyMode();
+        LogError(
+            "CRITICAL: STARTUP_POSITION_REBASE_FAILED: " + wal_error);
+        return false;
+      }
+      const std::size_t mismatch_count =
+          startup_position_lineage_mismatches_.size();
+      integrator_episode_by_symbol_.clear();
+      startup_position_lineage_mismatches_.clear();
+      LogInfo(
+          "STARTUP_POSITION_REBASE_COMMITTED: state=flat, "
+          "remote_open_orders=0, mismatch_symbols=" +
+          std::to_string(mismatch_count) + ", boot_id=" + boot_id_);
+    } else {
+      for (const auto& mismatch : startup_position_lineage_mismatches_) {
+        // 非空仓或仍有活动订单时不能宣告空仓检查点。隔离旧 candidate
+        // episode，并继续走下方的撤单与必需 SL 恢复；保护恢复失败仍会阻断启动。
+        integrator_episode_by_symbol_.erase(mismatch.symbol);
+        LogInfo(
+            "STARTUP_POSITION_LINEAGE_REBASE_DEFERRED: symbol=" +
+            mismatch.symbol +
+            ", remote_qty=" + std::to_string(mismatch.remote_qty) +
+            ", wal_oms_qty=" + std::to_string(mismatch.wal_oms_qty) +
+            ", delta_qty=" + std::to_string(mismatch.delta_qty) +
+            ", remote_open_orders=" +
+            std::to_string(remote_open_orders.size()) +
+            ", action=order_and_protection_recovery");
+      }
+      startup_position_lineage_mismatches_.clear();
+    }
   }
 
   for (const auto& [remote_id, _] : remote_open_order_by_id) {

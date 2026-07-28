@@ -60,6 +60,56 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 ],
             )
 
+    def test_deadline_wrapper_does_not_pollute_child_run_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            timeout_path = fake_bin / "timeout"
+            timeout_path.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/bin/sh
+                    shift 5
+                    export CLOSED_LOOP_RUNNER_DEADLINE_GUARD=true
+                    export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                    exec "$@"
+                    """
+                ),
+                encoding="utf-8",
+            )
+            timeout_path.chmod(0o755)
+            reports = root / "reports"
+            result = subprocess.run(
+                [
+                    "bash",
+                    "tools/closed_loop_runner.sh",
+                    "assess",
+                    "--stage",
+                    "SMOKE",
+                    "--since",
+                    "15m",
+                    "--output-root",
+                    str(reports),
+                ],
+                cwd=ROOT,
+                env={
+                    "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+                    "CLOSED_LOOP_RUN_ID": "deadline-reexec-test",
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn(
+                "refusing to reuse non-empty closed-loop run directory",
+                result.stdout + result.stderr,
+            )
+            self.assertTrue(
+                (reports / "deadline-reexec-test" / "step_status.jsonl").is_file()
+            )
+
     def test_offline_evidence_is_frozen_and_hash_verified_across_assess(self):
         with tempfile.TemporaryDirectory() as td:
             script = textwrap.dedent(

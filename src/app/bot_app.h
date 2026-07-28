@@ -533,6 +533,14 @@ class BotApplication {
   std::unordered_set<std::string> startup_protection_sl_ids_;
   bool startup_protection_recovery_pending_{false};
   std::vector<RemotePositionSnapshot> startup_remote_positions_;
+  struct StartupPositionLineageMismatch {
+    std::string symbol;
+    double remote_qty{0.0};
+    double wal_oms_qty{0.0};
+    double delta_qty{0.0};
+  };
+  std::vector<StartupPositionLineageMismatch>
+      startup_position_lineage_mismatches_;
   struct ManagedProtectionState {
     std::string symbol;
     std::string protection_group_id;

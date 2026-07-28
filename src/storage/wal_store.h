@@ -48,6 +48,10 @@ class WalStore {
   bool AppendIntent(const OrderIntent& intent, std::string* out_error) const;
   /// 追加一条成交记录。
   bool AppendFill(const FillEvent& fill, std::string* out_error) const;
+  /// 在交易所确认空仓且无活动订单后，固化新的空仓恢复基线。
+  bool AppendFlatPositionRebase(const std::string& boot_id,
+                                const std::string& rebased_at_utc,
+                                std::string* out_error) const;
   /// 追加候选交易 episode 闭合确认，防止重启后丢失或重复记账。
   bool AppendCandidateEpisodeClosure(const std::string& position_episode_id,
                                      std::string* out_error) const;

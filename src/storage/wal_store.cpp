@@ -83,6 +83,12 @@ std::string SerializeFillV3(const FillEvent& fill) {
   return oss.str();
 }
 
+std::string SerializeFlatPositionRebase(const std::string& boot_id,
+                                        const std::string& rebased_at_utc) {
+  return "POSITION_REBASE_FLAT\t" + EncodeWalText(boot_id) + "\t" +
+         EncodeWalText(rebased_at_utc);
+}
+
 std::string SerializeCandidateEpisodeClosure(
     const std::string& position_episode_id) {
   return "EPISODE_CLOSED\t" + EncodeWalText(position_episode_id);
@@ -555,6 +561,19 @@ bool WalStore::AppendFill(const FillEvent& fill, std::string* out_error) const {
   return AppendLine(SerializeFillV3(fill), out_error);
 }
 
+bool WalStore::AppendFlatPositionRebase(const std::string& boot_id,
+                                        const std::string& rebased_at_utc,
+                                        std::string* out_error) const {
+  if (boot_id.empty() || rebased_at_utc.empty()) {
+    if (out_error != nullptr) {
+      *out_error = "position rebase boot_id/rebased_at_utc 为空";
+    }
+    return false;
+  }
+  return AppendLine(SerializeFlatPositionRebase(boot_id, rebased_at_utc),
+                    out_error);
+}
+
 bool WalStore::AppendCandidateEpisodeClosure(
     const std::string& position_episode_id,
     std::string* out_error) const {
@@ -693,6 +712,20 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
       if (inserted) {
         out_fills->push_back(fill);
       }
+      continue;
+    }
+    if (type == "POSITION_REBASE_FLAT") {
+      if (fields.size() != 3 || DecodeWalText(fields[1]).empty() ||
+          DecodeWalText(fields[2]).empty()) {
+        if (out_error != nullptr) {
+          *out_error = "WAL 行解析失败（line=" + std::to_string(line_no) +
+                       "）: POSITION_REBASE_FLAT 字段异常";
+        }
+        return false;
+      }
+      // fill_ids 继续保留全历史去重集合；仓位与未闭合 episode 只允许从
+      // 最近一次权威空仓检查点之后的成交重建。
+      out_fills->clear();
       continue;
     }
     if (type == "EPISODE_CLOSED") {

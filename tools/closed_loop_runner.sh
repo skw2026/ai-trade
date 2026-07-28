@@ -1102,6 +1102,20 @@ report_path.write_text(
 PY
 }
 
+if ! is_true "${CLOSED_LOOP_RUNNER_LIBRARY_MODE:-false}" &&
+   ! is_true "${CLOSED_LOOP_RUNNER_DEADLINE_GUARD:-false}"; then
+  if [[ ! "${RUNNER_MAX_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ERROR] invalid CLOSED_LOOP_RUNNER_MAX_SECONDS=${RUNNER_MAX_SECONDS}"
+    exit 2
+  fi
+  if command -v timeout >/dev/null 2>&1; then
+    export CLOSED_LOOP_RUNNER_DEADLINE_GUARD=true
+    exec timeout -s TERM -k 120 "${RUNNER_MAX_SECONDS}" "$0" \
+      "${ORIGINAL_RUNNER_ARGS[@]}"
+  fi
+  echo "[WARN] timeout command unavailable; runner deadline is not enforced"
+fi
+
 RUN_DIR="${OUTPUT_ROOT}/${RUN_ID}"
 if [[ -d "${RUN_DIR}" && -n "$(ls -A "${RUN_DIR}" 2>/dev/null)" ]]; then
   echo "[ERROR] refusing to reuse non-empty closed-loop run directory: ${RUN_DIR}"
@@ -4992,18 +5006,6 @@ if is_true "${CLOSED_LOOP_RUNNER_LIBRARY_MODE:-false}"; then
     return 0
   fi
   exit 0
-fi
-if ! is_true "${CLOSED_LOOP_RUNNER_DEADLINE_GUARD:-false}"; then
-  if [[ ! "${RUNNER_MAX_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "[ERROR] invalid CLOSED_LOOP_RUNNER_MAX_SECONDS=${RUNNER_MAX_SECONDS}"
-    exit 2
-  fi
-  if command -v timeout >/dev/null 2>&1; then
-    export CLOSED_LOOP_RUNNER_DEADLINE_GUARD=true
-    exec timeout -s TERM -k 120 "${RUNNER_MAX_SECONDS}" "$0" \
-      "${ORIGINAL_RUNNER_ARGS[@]}"
-  fi
-  echo "[WARN] timeout command unavailable; runner deadline is not enforced"
 fi
 run_main
 main_status="${RUN_MAIN_STATUS}"

@@ -2611,6 +2611,90 @@ int main() {
 
   {
     const auto temp_dir = std::filesystem::temp_directory_path() /
+                          "ai_trade_startup_flat_position_rebase_test";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+    std::filesystem::create_directories(temp_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = temp_dir.string();
+    config.exchange = "mock";
+    config.mode = "paper";
+    config.primary_symbol = "SOLUSDT";
+    config.protection.enabled = false;
+
+    auto adapter = std::make_unique<ai_trade::MockExchangeAdapter>(
+        std::vector<double>{100.0}, "SOLUSDT");
+    if (!adapter->Connect()) {
+      std::cerr << "空仓重基线测试 mock 连接失败\n";
+      return 1;
+    }
+
+    ai_trade::BotApplication app(config);
+    app.adapter_ = std::move(adapter);
+    std::string wal_error;
+    if (!app.wal_.Initialize(&wal_error)) {
+      std::cerr << "空仓重基线测试 WAL 初始化失败: " << wal_error << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent stale_intent;
+    stale_intent.client_order_id = "stale-position-intent";
+    stale_intent.symbol = "SOLUSDT";
+    stale_intent.purpose = ai_trade::OrderPurpose::kEntry;
+    stale_intent.direction = -1;
+    stale_intent.qty = 4.4;
+    stale_intent.price = 85.0;
+    if (!app.wal_.AppendIntent(stale_intent, &wal_error) ||
+        !app.oms_.RegisterIntent(stale_intent)) {
+      std::cerr << "空仓重基线测试旧 intent 构造失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(stale_intent.client_order_id);
+    ai_trade::FillEvent stale_fill =
+        ToFill(stale_intent, "stale-position-fill");
+    if (!app.wal_.AppendFill(stale_fill, &wal_error)) {
+      std::cerr << "空仓重基线测试旧 fill 写入失败: " << wal_error << "\n";
+      return 1;
+    }
+    app.oms_.OnFill(stale_fill);
+    app.persisted_intent_by_id_[stale_intent.client_order_id] =
+        stale_intent;
+    ai_trade::BotApplication::IntegratorCandidateEpisode stale_episode;
+    stale_episode.lineage.candidate_id = "stale-candidate";
+    stale_episode.lineage.position_episode_id = "stale-episode";
+    app.integrator_episode_by_symbol_["SOLUSDT"] = stale_episode;
+
+    if (!app.SyncRemotePositions() ||
+        app.startup_position_lineage_mismatches_.size() != 1U ||
+        app.evidence_persistence_failed_ ||
+        !app.RecoverStartupOrdersAndProtection() ||
+        !app.startup_position_lineage_mismatches_.empty() ||
+        app.evidence_persistence_failed_ ||
+        app.IsForceReduceOnlyActive() ||
+        !app.integrator_episode_by_symbol_.empty()) {
+      std::cerr << "远端空仓且无活动订单时应提交可审计空仓重基线\n";
+      return 1;
+    }
+
+    std::unordered_set<std::string> recovered_intent_ids;
+    std::unordered_set<std::string> recovered_fill_ids;
+    std::vector<ai_trade::FillEvent> recovered_position_fills;
+    if (!app.wal_.LoadState(&recovered_intent_ids,
+                            &recovered_fill_ids,
+                            &recovered_position_fills,
+                            &wal_error) ||
+        recovered_fill_ids.count(stale_fill.fill_id) != 1U ||
+        !recovered_position_fills.empty()) {
+      std::cerr << "空仓检查点后只能重放检查点之后的仓位成交\n";
+      return 1;
+    }
+    app.Shutdown();
+    std::filesystem::remove_all(temp_dir, ec);
+  }
+
+  {
+    const auto temp_dir = std::filesystem::temp_directory_path() /
                           "ai_trade_test_startup_protection_recovery";
     std::error_code ec;
     std::filesystem::remove_all(temp_dir, ec);
