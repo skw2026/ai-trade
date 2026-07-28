@@ -108,6 +108,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_assess_run_log.py)
     add_test(NAME compose_consistency_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_compose_consistency.py)
+    add_test(NAME materialize_release_compose_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_materialize_release_compose.py)
     add_test(NAME watchdog_utils_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_watchdog.py)
     add_test(NAME recycle_artifacts_test

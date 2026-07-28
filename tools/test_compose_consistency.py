@@ -138,6 +138,11 @@ class ComposeConsistencyTest(unittest.TestCase):
                     "/tmp/ctest-list.txt",
                     workflow,
                 )
+                self.assertIn(
+                    'grep -q "materialize_release_compose_test" '
+                    "/tmp/ctest-list.txt",
+                    workflow,
+                )
 
     def test_prod_ai_trade_mounts_config_and_data(self):
         runtime = self.prod_services["ai-trade"]
@@ -771,9 +776,12 @@ class ComposeConsistencyTest(unittest.TestCase):
             'if [[ "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/${DEPLOY_GIT_SHA}" ]]',
             workflow,
         )
-        self.assertIn("AI_TRADE_DATA_DIR", workflow)
-        self.assertIn("AI_TRADE_ENV_FILE_HOST", workflow)
-        self.assertIn("release compose source contract changed", workflow)
+        self.assertIn("deploy/materialize_release_compose.py", workflow)
+        self.assertNotIn(
+            "release compose source contract changed",
+            workflow,
+        )
+        self.assertIn("grep -q '^\\./data/$'", workflow)
         self.assertIn("cleanup_release_unpack()", workflow)
         self.assertIn("warning: failed to clean incoming release", workflow)
         self.assertIn("immutable release collision", workflow)
@@ -833,6 +841,21 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("deferred service deployment failed", script)
         self.assertIn("target release validation failed", script)
         self.assertIn('cd "${COMPOSE_DIR}"', script)
+        self.assertIn("prepare_runtime_compose()", script)
+        self.assertIn("rollback runtime compose preparation failed", script)
+        self.assertIn(
+            '--project-directory "${PREVIOUS_RELEASE_PATH}"',
+            script,
+        )
+        self.assertIn(
+            '--project-directory "${COMPOSE_DIR}"',
+            script,
+        )
+        self.assertIn(
+            'upsert_env "AI_TRADE_ENV_FILE_CONTAINER" '
+            '"/run/ai-trade/.env.runtime"',
+            script,
+        )
         self.assertIn(
             'CLOSED_LOOP_ACTIVATION_TRANSACTION_ROOT="${DEPLOY_RELEASE_ROOT}/data/models/activation_transactions"',
             script,

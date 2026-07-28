@@ -40,6 +40,8 @@ DEPLOY_CURRENT_LINK="${DEPLOY_CURRENT_LINK:-}"
 DEPLOY_TRANSACTION_GUARD_ACTIVE="false"
 DEPLOY_TRANSACTION_COMMITTED="false"
 DEPLOY_ROLLBACK_ATTEMPTED="false"
+DEPLOY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_MATERIALIZER="${DEPLOY_SCRIPT_DIR}/materialize_release_compose.py"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
@@ -53,6 +55,11 @@ fi
 
 if [[ ! -f "${COMPOSE_FILE}" ]]; then
   echo "[deploy] compose 文件不存在: ${COMPOSE_FILE}"
+  exit 1
+fi
+
+if [[ ! -f "${COMPOSE_MATERIALIZER}" ]]; then
+  echo "[deploy] compose materializer missing: ${COMPOSE_MATERIALIZER}"
   exit 1
 fi
 
@@ -125,7 +132,10 @@ validate_target_release() {
   if grep -Fq '${AI_TRADE_PROJECT_DIR:-.}/data:' \
        "${target_real}/docker-compose.prod.yml" ||
      [[ "$(grep -Fc '${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}' \
-          "${target_real}/docker-compose.prod.yml")" -lt 4 ]]; then
+          "${target_real}/docker-compose.prod.yml")" -lt 4 ]] ||
+     grep -Fq ':/opt/ai-trade/.env.runtime:ro' \
+       "${target_real}/docker-compose.prod.yml" ||
+     [[ ! -d "${target_real}/data" ]]; then
     echo "[deploy] target release persistent data mount contract is invalid"
     return 1
   fi
@@ -450,53 +460,23 @@ PY
 
 materialize_immutable_release_compose() {
   local compose_path="$1"
-  python3 - "${compose_path}" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-content = path.read_text(encoding="utf-8")
-replacements = {
-    "      - ${AI_TRADE_PROJECT_DIR:-.}/data:/app/data":
-        "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
-    "      - ${AI_TRADE_PROJECT_DIR:-.}/data:/opt/ai-trade/data":
-        "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/opt/ai-trade/data",
-    "      - ${AI_TRADE_PROJECT_DIR:-.}/config:/opt/ai-trade/config":
-        "      - ${AI_TRADE_PROJECT_DIR:-.}/config:/opt/ai-trade/config:ro",
+  python3 "${COMPOSE_MATERIALIZER}" \
+    --input "${compose_path}" \
+    --release-dir "$(dirname "${compose_path}")"
 }
-for old, new in replacements.items():
-    if content.count(old) != 1:
-        raise SystemExit(f"legacy compose source contract changed: {old!r}")
-    content = content.replace(old, new)
 
-project_mount = "      - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade"
-if content.count(project_mount) != 2:
-    raise SystemExit("legacy compose project mount contract changed")
-content = content.replace(
-    project_mount,
-    project_mount
-    + ":ro\n"
-    + "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/opt/ai-trade/data\n"
-    + "      - ${AI_TRADE_ENV_FILE_HOST:-/opt/ai-trade/.env.runtime}:"
-    + "/opt/ai-trade/.env.runtime:ro",
-)
-scheduler_image = (
-    "      AI_TRADE_RESEARCH_IMAGE: "
-    "${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}"
-)
-if content.count(scheduler_image) != 1:
-    raise SystemExit("legacy compose scheduler environment contract changed")
-content = content.replace(
-    scheduler_image,
-    scheduler_image
-    + "\n"
-    + "      AI_TRADE_DATA_DIR: "
-    + "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}\n"
-    + "      AI_TRADE_ENV_FILE_HOST: "
-    + "${AI_TRADE_ENV_FILE_HOST:-/opt/ai-trade/.env.runtime}",
-)
-path.write_text(content, encoding="utf-8")
-PY
+prepare_runtime_compose() {
+  local source_compose="$1"
+  local release_dir="$2"
+  local role="$3"
+  local runtime_compose_root="${DEPLOY_RELEASE_ROOT}/data/deploy-runtime-compose"
+  local runtime_compose="${runtime_compose_root}/${role}-$(basename "${release_dir}").yml"
+  mkdir -p "${runtime_compose_root}"
+  python3 "${COMPOSE_MATERIALIZER}" \
+    --input "${source_compose}" \
+    --output "${runtime_compose}" \
+    --release-dir "${release_dir}"
+  printf '%s' "${runtime_compose}"
 }
 
 atomic_switch_current_release() {
@@ -566,8 +546,10 @@ prepare_previous_release() {
     return 1
   fi
   if ! cp -f "${DEPLOY_RELEASE_ROOT}/deploy/ecs-deploy.sh" \
-       "${legacy_tmp}/deploy/ecs-deploy.sh"; then
-    echo "[deploy] failed to copy legacy deploy script"
+       "${legacy_tmp}/deploy/ecs-deploy.sh" ||
+     ! cp -f "${COMPOSE_MATERIALIZER}" \
+       "${legacy_tmp}/deploy/materialize_release_compose.py"; then
+    echo "[deploy] failed to copy legacy deploy tooling"
     rm -rf "${legacy_tmp}" || true
     return 1
   fi
@@ -760,10 +742,22 @@ rollback_to_previous() {
     return 1
   fi
 
+  local rollback_runtime_compose=""
+  if ! rollback_runtime_compose="$(
+    prepare_runtime_compose \
+      "${PREVIOUS_RELEASE_PATH}/docker-compose.prod.yml" \
+      "${PREVIOUS_RELEASE_PATH}" \
+      "rollback"
+  )"; then
+    echo "[deploy] rollback runtime compose preparation failed"
+    stop_managed_containers
+    return 1
+  fi
   local -a rollback_compose_cmd=(
     docker compose
     --project-name "${AI_TRADE_COMPOSE_PROJECT_NAME}"
-    -f "${PREVIOUS_RELEASE_PATH}/docker-compose.prod.yml"
+    --project-directory "${PREVIOUS_RELEASE_PATH}"
+    -f "${rollback_runtime_compose}"
     --env-file "${ENV_FILE}"
   )
   if ! "${rollback_compose_cmd[@]}" pull "${deploy_services[@]}"; then
@@ -1120,10 +1114,14 @@ echo "[deploy] deferred_deploy_services=${deferred_deploy_services[*]}"
 echo "[deploy] required_containers=${required_containers[*]}"
 echo "[deploy] initial_required_containers=${initial_required_containers[*]}"
 
+target_runtime_compose="$(
+  prepare_runtime_compose "${COMPOSE_FILE}" "${COMPOSE_DIR}" "target"
+)"
 compose_cmd=(
   docker compose
   --project-name "${AI_TRADE_COMPOSE_PROJECT_NAME}"
-  -f "${COMPOSE_FILE}"
+  --project-directory "${COMPOSE_DIR}"
+  -f "${target_runtime_compose}"
   --env-file "${ENV_FILE}"
 )
 DEPLOY_TRANSACTION_GUARD_ACTIVE="true"
@@ -1142,11 +1140,8 @@ upsert_env "AI_TRADE_PROJECT_DIR" "${COMPOSE_DIR}"
 upsert_env "AI_TRADE_COMPOSE_PROJECT_NAME" "${AI_TRADE_COMPOSE_PROJECT_NAME}"
 upsert_env "AI_TRADE_DATA_DIR" "${DEPLOY_RELEASE_ROOT}/data"
 upsert_env "AI_TRADE_ENV_FILE_HOST" "${ENV_FILE}"
-if [[ "${ENV_FILE}" == "${COMPOSE_DIR}/"* ]]; then
-  upsert_env "AI_TRADE_ENV_FILE" "${ENV_FILE#${COMPOSE_DIR}/}"
-else
-  upsert_env "AI_TRADE_ENV_FILE" "$(basename "${ENV_FILE}")"
-fi
+upsert_env "AI_TRADE_ENV_FILE_CONTAINER" "/run/ai-trade/.env.runtime"
+upsert_env "AI_TRADE_ENV_FILE" "/run/ai-trade/.env.runtime"
 
 if ! run_startup_preflight; then
   rollback_to_previous "startup preflight failed, restore complete previous release" || true

@@ -93,6 +93,7 @@ jobs:
           grep -q "trade_system_test" /tmp/ctest-list.txt
           grep -q "assess_run_log_test" /tmp/ctest-list.txt
           grep -q "compose_consistency_test" /tmp/ctest-list.txt
+          grep -q "materialize_release_compose_test" /tmp/ctest-list.txt
           grep -q "watchdog_utils_test" /tmp/ctest-list.txt
           grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
           grep -q "docker_gc_test" /tmp/ctest-list.txt
@@ -206,56 +207,12 @@ jobs:
           mkdir -p "${PAYLOAD_DIR}/deploy"
           cp -f docker-compose.prod.yml "${PAYLOAD_DIR}/docker-compose.prod.yml"
           cp -f deploy/ecs-deploy.sh "${PAYLOAD_DIR}/deploy/ecs-deploy.sh"
+          cp -f deploy/materialize_release_compose.py \
+            "${PAYLOAD_DIR}/deploy/materialize_release_compose.py"
           cp -a config observability ops tools "${PAYLOAD_DIR}/"
-          python3 - "${PAYLOAD_DIR}/docker-compose.prod.yml" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          content = path.read_text(encoding="utf-8")
-          replacements = {
-              "      - ${AI_TRADE_PROJECT_DIR:-.}/data:/app/data":
-                  "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
-              "      - ${AI_TRADE_PROJECT_DIR:-.}/data:/opt/ai-trade/data":
-                  "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/opt/ai-trade/data",
-              "      - ${AI_TRADE_PROJECT_DIR:-.}/config:/opt/ai-trade/config":
-                  "      - ${AI_TRADE_PROJECT_DIR:-.}/config:/opt/ai-trade/config:ro",
-          }
-          for old, new in replacements.items():
-              if content.count(old) != 1:
-                  raise SystemExit(
-                      f"release compose source contract changed: {old!r}"
-                  )
-              content = content.replace(old, new)
-
-          project_mount = "      - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade"
-          if content.count(project_mount) != 2:
-              raise SystemExit("release compose project mount contract changed")
-          content = content.replace(
-              project_mount,
-              project_mount
-              + ":ro\n"
-              + "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/opt/ai-trade/data\n"
-              + "      - ${AI_TRADE_ENV_FILE_HOST:-/opt/ai-trade/.env.runtime}:"
-              + "/opt/ai-trade/.env.runtime:ro",
-          )
-          scheduler_image = (
-              "      AI_TRADE_RESEARCH_IMAGE: "
-              "${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}"
-          )
-          if content.count(scheduler_image) != 1:
-              raise SystemExit("release compose scheduler environment contract changed")
-          content = content.replace(
-              scheduler_image,
-              scheduler_image
-              + "\n"
-              + "      AI_TRADE_DATA_DIR: "
-              + "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}\n"
-              + "      AI_TRADE_ENV_FILE_HOST: "
-              + "${AI_TRADE_ENV_FILE_HOST:-/opt/ai-trade/.env.runtime}",
-          )
-          path.write_text(content, encoding="utf-8")
-          PY
+          python3 deploy/materialize_release_compose.py \
+            --input "${PAYLOAD_DIR}/docker-compose.prod.yml" \
+            --release-dir "${PAYLOAD_DIR}"
 
           (
             cd "${PAYLOAD_DIR}"
@@ -319,6 +276,9 @@ jobs:
           grep -q '^\./\.release-content.sha256$' /tmp/deploy_bundle.list
           grep -q '^\./docker-compose.prod.yml$' /tmp/deploy_bundle.list
           grep -q '^\./deploy/ecs-deploy.sh$' /tmp/deploy_bundle.list
+          grep -q '^\./deploy/materialize_release_compose.py$' \
+            /tmp/deploy_bundle.list
+          grep -q '^\./data/$' /tmp/deploy_bundle.list
           grep -q '^\./config/data_pipeline.yaml$' /tmp/deploy_bundle.list
           grep -q '^\./ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
           grep -q '^\./tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
@@ -544,6 +504,7 @@ jobs:
               "${RELEASE_TMP}/.release-content.sha256" \
               "${RELEASE_TMP}/docker-compose.prod.yml" \
               "${RELEASE_TMP}/deploy/ecs-deploy.sh" \
+              "${RELEASE_TMP}/deploy/materialize_release_compose.py" \
               "${RELEASE_TMP}/config/default.yaml" \
               "${RELEASE_TMP}/config/data_pipeline.yaml" \
               "${RELEASE_TMP}/tools/closed_loop_runner.sh" \
