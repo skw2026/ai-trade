@@ -14,6 +14,8 @@ set -euo pipefail
 #   tools/closed_loop_runner.sh full --compose-file docker-compose.prod.yml --env-file /opt/ai-trade/.env.runtime
 #   tools/closed_loop_runner.sh data --data-config config/data_pipeline.yaml
 
+ORIGINAL_RUNNER_ARGS=("$@")
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   ACTION="help"
 else
@@ -46,6 +48,10 @@ ASSESS_WAIT_POLL_SECONDS="${CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS:-15}"
 MECHANISM_AUDIT_ENABLED="${CLOSED_LOOP_MECHANISM_AUDIT_ENABLED:-auto}"
 MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED="${CLOSED_LOOP_MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED:-1}"
 MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS="${CLOSED_LOOP_MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS:-20}"
+ACTIVATION_MIN_CANARY_EPISODES="${CLOSED_LOOP_ACTIVATION_MIN_CANARY_EPISODES:-30}"
+ACTIVATION_MIN_POSITIVE_EPISODE_RATIO="${CLOSED_LOOP_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO:-0.50}"
+ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD:-0.0}"
+ACTIVATION_MAX_PENDING_HOURS="${CLOSED_LOOP_ACTIVATION_MAX_PENDING_HOURS:-72}"
 ALPHA_MECHANISM_PROBE_ENABLED="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ENABLED:-auto}"
 ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS:-3.5}"
 ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES:-100}"
@@ -62,6 +68,14 @@ INTERVAL="5"
 CATEGORY="linear"
 BARS="5000"
 CSV_PATH="./data/research/ohlcv_5m.csv"
+RESEARCH_SELECTION_BARS="${CLOSED_LOOP_RESEARCH_SELECTION_BARS:-8640}"
+RESEARCH_HOLDOUT_BARS="${CLOSED_LOOP_RESEARCH_HOLDOUT_BARS:-8640}"
+RESEARCH_EMBARGO_BARS="${CLOSED_LOOP_RESEARCH_EMBARGO_BARS:-288}"
+RESEARCH_MIN_DEVELOPMENT_BARS="${CLOSED_LOOP_RESEARCH_MIN_DEVELOPMENT_BARS:-20000}"
+RESEARCH_MIN_SELECTION_FEATURE_BARS="${CLOSED_LOOP_RESEARCH_MIN_SELECTION_FEATURE_BARS:-4000}"
+RESEARCH_MIN_HOLDOUT_FEATURE_BARS="${CLOSED_LOOP_RESEARCH_MIN_HOLDOUT_FEATURE_BARS:-4000}"
+HOLDOUT_CONSUMPTION_LEDGER_PATH="${CLOSED_LOOP_HOLDOUT_CONSUMPTION_LEDGER_PATH:-data/models/final_holdout_consumption.jsonl}"
+RUNNER_MAX_SECONDS="${CLOSED_LOOP_RUNNER_MAX_SECONDS:-4800}"
 MINER_TOP_K="10"
 MINER_GENERATIONS="4"
 MINER_POPULATION="32"
@@ -86,7 +100,7 @@ MAX_RANDOM_LABEL_AUC="0.55"
 RANDOM_LABEL_ITERATIONS="80"
 RANDOM_LABEL_TRIALS="${CLOSED_LOOP_RANDOM_LABEL_TRIALS:-5}"
 DISABLE_RANDOM_LABEL_CONTROL="false"
-FAIL_ON_GOVERNANCE="false"
+FAIL_ON_GOVERNANCE="true"
 MAX_MODEL_VERSIONS="20"
 ACTIVATE_ON_PASS="true"
 INTEGRATOR_ITERATIONS="${CLOSED_LOOP_INTEGRATOR_ITERATIONS:-90}"
@@ -103,6 +117,11 @@ INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_ROUND_TRIP_
 INTEGRATOR_LABEL_MIN_NET_EDGE_BPS="${CLOSED_LOOP_INTEGRATOR_LABEL_MIN_NET_EDGE_BPS:-1.3}"
 INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS="${CLOSED_LOOP_INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS:-0.0}"
 INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO="${CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO:-0.50}"
+INTEGRATOR_MIN_MODEL_NET_TOTAL_TRADES="${CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_TOTAL_TRADES:-20}"
+INTEGRATOR_MIN_MODEL_NET_ACTIVE_BARS="${CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_ACTIVE_BARS:-100}"
+INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO="${CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO:-0.50}"
+INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS="${CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS:-0.0}"
+INTEGRATOR_EXECUTION_LATENCY_BARS="${CLOSED_LOOP_INTEGRATOR_EXECUTION_LATENCY_BARS:-1}"
 INTEGRATOR_FEATURE_CLIP_QUANTILE="${CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE:-0.001}"
 
 GC_ENABLED="${CLOSED_LOOP_GC_ENABLED:-true}"
@@ -148,7 +167,6 @@ REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
 REPLAY_VALIDATION_CORPUS_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH:-}"
-REPLAY_VALIDATION_REFRESH_CORPUS="${CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS:-false}"
 REPLAY_VALIDATION_MIN_RUNTIME_STATUS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_RUNTIME_STATUS:-10}"
 REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}"
 REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
@@ -175,7 +193,7 @@ RUNTIME_CONFIG_PATH=""
 RUNTIME_CONFIG_SOURCE=""
 DATA_CONFIG_PATH="${DATA_PIPELINE_CONFIG:-config/data_pipeline.yaml}"
 DATA_PIPELINE_BEFORE_TRAIN="${CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN:-true}"
-DATA_PIPELINE_REQUIRED="${CLOSED_LOOP_DATA_PIPELINE_REQUIRED:-false}"
+DATA_PIPELINE_REQUIRED="${CLOSED_LOOP_DATA_PIPELINE_REQUIRED:-true}"
 DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS="${CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS:-true}"
 DATA_PIPELINE_LAST_STATUS="not_run"
 REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
@@ -224,7 +242,7 @@ Options:
   --random-label-trials <int>        随机标签对照重复次数 (default: 5)
   --disable-random-label-control <true|false>
                                       是否关闭随机标签对照门禁 (default: false)
-  --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: false)
+  --fail-on-governance <true|false>  R2 治理门槛不通过时是否训练阶段直接失败 (default: true)
   --integrator-iterations <int>      R2 CatBoost 迭代数 (default: 90)
   --integrator-depth <int>           R2 CatBoost 树深 (default: 2)
   --integrator-learning-rate <f>     R2 CatBoost 学习率 (default: 0.022)
@@ -242,6 +260,16 @@ Options:
                                       R2 标签成本带 round-trip bps (default: 13.0)
   --integrator-label-min-net-edge-bps <float>
                                       R2 标签额外净边际 bps (default: 1.3)
+  --integrator-min-model-net-total-trades <int>
+                                      R2 非重叠 OOS 换仓事件数下限 (default: 20)
+  --integrator-min-model-net-active-bars <int>
+                                      R2 非重叠 OOS 活跃 bar 下限 (default: 100)
+  --integrator-min-positive-model-net-splits-ratio <float>
+                                      R2 成本后为正 OOS split 比例下限 (default: 0.50)
+  --integrator-min-model-net-edge-lcb-bps <float>
+                                      R2 OOS 净收益 95% LCB 下限 (default: 0.0)
+  --integrator-execution-latency-bars <int>
+                                      R2 feature 到执行延迟 bar (default: 1)
   --integrator-feature-clip-quantile <float>
                                       R2 特征稳健裁剪分位数 (default: 0.001)
   --max-model-versions <int>         模型历史保留数 (default: 20)
@@ -294,6 +322,11 @@ Env toggles:
   CLOSED_LOOP_INTEGRATOR_LABEL_MIN_NET_EDGE_BPS=<f>     R2 标签额外净边际 bps (default: 1.3)
   CLOSED_LOOP_INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS=<f> R2 主门禁：OOS 平均净 edge bps (default: 0.0)
   CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO=<f> R2 主门禁：OOS 净 edge 正样本比例 (default: 0.50)
+  CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_TOTAL_TRADES=<int> R2 主门禁：OOS 换仓事件数 (default: 20)
+  CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_ACTIVE_BARS=<int> R2 主门禁：OOS 活跃 bar (default: 100)
+  CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO=<f> R2 主门禁：正 OOS split 比例 (default: 0.50)
+  CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS=<f> R2 主门禁：OOS 净收益 95% LCB (default: 0.0)
+  CLOSED_LOOP_INTEGRATOR_EXECUTION_LATENCY_BARS=<int>    R2 feature 到执行延迟 bar (default: 1)
   CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE=<f>      R2 特征裁剪分位数 (default: 0.001)
   CLOSED_LOOP_VERIFY_S5_EVOLUTION_SWITCHES=true|false   S5 校验 3+6 开关是否显式启用 (default: true)
   CLOSED_LOOP_REQUIRE_S5_FACTOR_IC_ACTION=true|false    S5 要求 factor-IC 更新动作 >0 (default: false)
@@ -333,7 +366,6 @@ Env toggles:
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS=<int>   replay-validation 单片段最小 bars (default: 40)
   CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH=<path>       replay-validation 固定语料 manifest 路径
                                                        (default: data/research/replay_validation_<bucket>_corpus.json)
-  CLOSED_LOOP_REPLAY_VALIDATION_REFRESH_CORPUS=true|false
                                                        是否强制重建 replay-validation 语料 manifest (default: false)
   CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS=<int>
                                                        replay-validation 至少多少片段进入 EXECUTION_ACTIVE (default: 3)
@@ -360,7 +392,7 @@ Env toggles:
   CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS=<int>        等待最小 runtime 样本数的最长秒数 (default: 900)
   CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS=<int>           等待期间轮询日志的间隔秒数 (default: 15)
   CLOSED_LOOP_DATA_PIPELINE_BEFORE_TRAIN=true|false      train/full 前是否先跑数据加速链路 (default: true)
-  CLOSED_LOOP_DATA_PIPELINE_REQUIRED=true|false          数据加速失败是否直接失败（false=回退R0）(default: false)
+  CLOSED_LOOP_DATA_PIPELINE_REQUIRED=true|false          数据合同失败是否直接失败（default: true）
   CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS=true|false
                                                        数据加速成功后是否跳过 R0 fetch (default: true)
 EOF
@@ -466,6 +498,16 @@ while [[ $# -gt 0 ]]; do
       INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS="$2"; shift 2;;
     --integrator-min-positive-model-net-edge-ratio)
       INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO="$2"; shift 2;;
+    --integrator-min-model-net-total-trades)
+      INTEGRATOR_MIN_MODEL_NET_TOTAL_TRADES="$2"; shift 2;;
+    --integrator-min-model-net-active-bars)
+      INTEGRATOR_MIN_MODEL_NET_ACTIVE_BARS="$2"; shift 2;;
+    --integrator-min-positive-model-net-splits-ratio)
+      INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO="$2"; shift 2;;
+    --integrator-min-model-net-edge-lcb-bps)
+      INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS="$2"; shift 2;;
+    --integrator-execution-latency-bars)
+      INTEGRATOR_EXECUTION_LATENCY_BARS="$2"; shift 2;;
     --integrator-feature-clip-quantile)
       INTEGRATOR_FEATURE_CLIP_QUANTILE="$2"; shift 2;;
     --max-model-versions)
@@ -492,8 +534,6 @@ while [[ $# -gt 0 ]]; do
       REPLAY_VALIDATION_MIN_SEGMENT_BARS="$2"; shift 2;;
     --replay-validation-corpus-path)
       REPLAY_VALIDATION_CORPUS_PATH="$2"; shift 2;;
-    --replay-validation-refresh-corpus)
-      REPLAY_VALIDATION_REFRESH_CORPUS="$2"; shift 2;;
     --replay-validation-min-execution-active-runs)
       REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="$2"; shift 2;;
     --replay-validation-min-execution-pass-runs)
@@ -541,22 +581,17 @@ resolve_replay_validation_source_symbol() {
   local requested="$1"
   local symbols_csv="$2"
   local fallback_symbol="$3"
-  local latest_report_path="${OUTPUT_ROOT%/}/latest_closed_loop_report.json"
 
-  python3 - "${latest_report_path}" "${symbols_csv}" "${fallback_symbol}" "${requested}" <<'PY'
-import json
-import math
-import pathlib
+  python3 - "${symbols_csv}" "${fallback_symbol}" "${requested}" <<'PY'
 import sys
 
-latest_path = pathlib.Path(sys.argv[1])
 symbols = []
-for item in sys.argv[2].replace(";", ",").split(","):
+for item in sys.argv[1].replace(";", ",").split(","):
     symbol = item.strip().upper()
     if symbol and symbol not in symbols:
         symbols.append(symbol)
-fallback = sys.argv[3].strip().upper()
-requested = sys.argv[4].strip().upper()
+fallback = sys.argv[2].strip().upper()
+requested = sys.argv[3].strip().upper()
 
 if requested and requested != "AUTO":
     print(requested)
@@ -565,76 +600,10 @@ if requested and requested != "AUTO":
 if fallback == "AUTO":
     fallback = ""
 
-
-def as_float(value, default=-math.inf):
-    try:
-        if value is None:
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def coverage_score(value):
-    text = str(value or "").strip().upper()
-    if text == "ROBUST":
-        return 3
-    if text == "PASS":
-        return 2
-    if text and text != "INSUFFICIENT":
-        return 1
-    return 0
-
-
-tradeability = {}
-if latest_path.is_file():
-    try:
-        payload = json.loads(latest_path.read_text(encoding="utf-8"))
-    except Exception:
-        payload = {}
-    replay = payload.get("sections", {}).get("replay_validation", {})
-    if isinstance(replay, dict):
-        tradeability = replay.get("symbol_tradeability", {})
-        if not isinstance(tradeability, dict):
-            aggregate = replay.get("aggregate_validation", {})
-            tradeability = (
-                aggregate.get("symbol_tradeability", {})
-                if isinstance(aggregate, dict)
-                else {}
-            )
-
-decisions = tradeability.get("decisions", {}) if isinstance(tradeability, dict) else {}
-tradable_symbols = {
-    str(item).strip().upper()
-    for item in (tradeability.get("tradable_symbols", []) if isinstance(tradeability, dict) else [])
-    if str(item).strip()
-}
-ordered_symbols = symbols or ([fallback] if fallback else [])
-candidate_symbols = [symbol for symbol in ordered_symbols if symbol in tradable_symbols]
-
-if candidate_symbols:
-    order = {symbol: idx for idx, symbol in enumerate(ordered_symbols)}
-
-    def score(symbol):
-        decision = decisions.get(symbol, {}) if isinstance(decisions, dict) else {}
-        if not isinstance(decision, dict):
-            decision = {}
-        return (
-            coverage_score(decision.get("coverage_strength_status")),
-            as_float(decision.get("positive_filled_segment_ratio")),
-            as_float(decision.get("median_realized_net_per_fill_with_fills")),
-            as_float(decision.get("mean_realized_net_per_fill_with_fills")),
-            as_float(decision.get("total_fills"), 0.0),
-            -order.get(symbol, 9999),
-        )
-
-    print(max(candidate_symbols, key=score))
-    raise SystemExit(0)
-
-if fallback and fallback in ordered_symbols:
+if fallback and fallback in symbols:
     print(fallback)
-elif ordered_symbols:
-    print(ordered_symbols[0])
+elif symbols:
+    print(symbols[0])
 elif fallback:
     print(fallback)
 else:
@@ -659,7 +628,7 @@ SYMBOL_UPPER="$(
   printf '%s' "${SYMBOL}" | tr '[:lower:]' '[:upper:]'
 )"
 if [[ "${REPLAY_VALIDATION_SOURCE_SYMBOL_REQUESTED_UPPER}" == "AUTO" || "${SYMBOL_UPPER}" == "AUTO" ]]; then
-  echo "[INFO] replay validation source auto-selected: source_symbol=${REPLAY_VALIDATION_SOURCE_SYMBOL}"
+  echo "[INFO] replay validation source deterministically selected without prior holdout feedback: source_symbol=${REPLAY_VALIDATION_SOURCE_SYMBOL}"
   SYMBOL="${REPLAY_VALIDATION_SOURCE_SYMBOL}"
 fi
 if [[ -z "${REPLAY_VALIDATION_SYMBOL}" ]]; then
@@ -893,15 +862,26 @@ append_replay_validation_feature_build_record() {
   local feature_path="$3"
   local symbol_dir="$4"
   local note="${5:-}"
+  local selection_feature_path="${6:-}"
+  local domain_split_report_path="${7:-}"
   mkdir -p "${REPLAY_VALIDATION_DIR}"
   python3 - "${REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH}" \
-    "${symbol}" "${status}" "${feature_path}" "${symbol_dir}" "${note}" <<'PY'
+    "${symbol}" "${status}" "${feature_path}" "${symbol_dir}" "${note}" \
+    "${selection_feature_path}" "${domain_split_report_path}" <<'PY'
 import json
 import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
-symbol, status, feature_path, symbol_dir, note = sys.argv[2:7]
+(
+    symbol,
+    status,
+    feature_path,
+    symbol_dir,
+    note,
+    selection_feature_path,
+    domain_split_report_path,
+) = sys.argv[2:9]
 base = pathlib.Path(symbol_dir) if symbol_dir else None
 
 def child(name: str) -> str:
@@ -911,6 +891,8 @@ record = {
     "symbol": symbol,
     "status": status,
     "feature_csv": feature_path,
+    "selection_feature_csv": selection_feature_path,
+    "research_domain_split_report": domain_split_report_path,
     "note": note,
     "data_pipeline_report": child("data_pipeline_report.json"),
     "archive_report": child("archive_report.json"),
@@ -930,9 +912,11 @@ write_replay_validation_feature_build_report() {
     "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}" \
     "${REPLAY_VALIDATION_SYMBOLS_JSON}" \
     "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}" \
+    "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}" \
     "${REPLAY_VALIDATION_REAL_MARKET_FEATURES}" \
     "${REPLAY_VALIDATION_FEATURE_DAYS}" \
     "${REPLAY_VALIDATION_SOURCE_SYMBOL}" <<'PY'
+import hashlib
 import json
 import pathlib
 import sys
@@ -944,18 +928,31 @@ try:
 except Exception:
     symbols = []
 feature_map_raw = sys.argv[4]
-real_market_features = sys.argv[5]
-feature_days = sys.argv[6]
-source_symbol = sys.argv[7]
+selection_map_raw = sys.argv[5]
+real_market_features = sys.argv[6]
+feature_days = sys.argv[7]
+source_symbol = sys.argv[8]
 
-feature_csv_by_symbol = {}
-for part in feature_map_raw.split(","):
-    if not part or "=" not in part:
-        continue
-    symbol, path = part.split("=", 1)
-    symbol = symbol.strip().upper()
-    if symbol:
-        feature_csv_by_symbol[symbol] = path
+def parse_feature_map(raw):
+    result = {}
+    for part in raw.split(","):
+        if not part or "=" not in part:
+            continue
+        symbol, path = part.split("=", 1)
+        symbol = symbol.strip().upper()
+        if symbol:
+            result[symbol] = path
+    return result
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+feature_csv_by_symbol = parse_feature_map(feature_map_raw)
+selection_feature_csv_by_symbol = parse_feature_map(selection_map_raw)
 
 records = []
 if records_path.is_file():
@@ -972,6 +969,78 @@ record_by_symbol = {
     for item in records
     if str(item.get("symbol", "")).strip()
 }
+domain_contract_by_symbol = {}
+for symbol, holdout_path_text in feature_csv_by_symbol.items():
+    reasons = []
+    record = record_by_symbol.get(symbol, {})
+    split_path = pathlib.Path(
+        str(record.get("research_domain_split_report") or "")
+    )
+    selection_path_text = selection_feature_csv_by_symbol.get(symbol, "")
+    if str(record.get("selection_feature_csv") or "") != selection_path_text:
+        reasons.append("selection feature path differs from build record")
+    if not split_path.is_file():
+        reasons.append("research domain split report missing")
+        split_payload = {}
+    else:
+        try:
+            split_payload = json.loads(split_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            reasons.append(f"research domain split report invalid: {exc}")
+            split_payload = {}
+    if split_payload.get("schema_version") != "research_domain_split_v2":
+        reasons.append("research domain split schema invalid")
+    if str(split_payload.get("status", "")).upper() != "PASS":
+        reasons.append("research domain split status != PASS")
+    contract = split_payload.get("contract", {})
+    if not isinstance(contract, dict):
+        contract = {}
+    if (
+        contract.get("domains_overlap") is not False
+        or contract.get("candidate_selection_domain")
+        != "selection_validation"
+        or contract.get("economic_validation_domain")
+        != "untouched_final_holdout"
+    ):
+        reasons.append("research domain isolation contract invalid")
+    artifacts = split_payload.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    for label, expected_path_text, artifact_key in (
+        ("selection", selection_path_text, "selection_feature_csv"),
+        ("holdout", holdout_path_text, "holdout_feature_csv"),
+    ):
+        artifact = artifacts.get(artifact_key, {})
+        if not isinstance(artifact, dict):
+            artifact = {}
+        artifact_path_text = str(artifact.get("path") or "")
+        expected_sha256 = str(artifact.get("sha256") or "")
+        actual_path = pathlib.Path(expected_path_text)
+        if artifact_path_text != expected_path_text:
+            reasons.append(f"{label} artifact path mismatch")
+        elif not actual_path.is_file():
+            reasons.append(f"{label} artifact missing")
+        elif len(expected_sha256) != 64:
+            reasons.append(f"{label} artifact sha256 invalid")
+        elif sha256_file(actual_path) != expected_sha256:
+            reasons.append(f"{label} artifact sha256 mismatch")
+    domain_contract_by_symbol[symbol] = {
+        "status": "pass" if not reasons else "fail",
+        "research_domain_split_report": str(split_path),
+        "selection_feature_csv": selection_path_text,
+        "selection_feature_sha256": (
+            sha256_file(pathlib.Path(selection_path_text))
+            if pathlib.Path(selection_path_text).is_file()
+            else ""
+        ),
+        "holdout_feature_csv": holdout_path_text,
+        "holdout_feature_sha256": (
+            sha256_file(pathlib.Path(holdout_path_text))
+            if pathlib.Path(holdout_path_text).is_file()
+            else ""
+        ),
+        "fail_reasons": reasons,
+    }
 missing_symbols = [
     symbol for symbol in symbols
     if str(symbol).upper() not in feature_csv_by_symbol
@@ -987,6 +1056,17 @@ payload = {
     "feature_days": feature_days,
     "symbols": symbols,
     "feature_csv_by_symbol": feature_csv_by_symbol,
+    "selection_feature_csv_by_symbol": selection_feature_csv_by_symbol,
+    "domain_contract_status": (
+        "pass"
+        if domain_contract_by_symbol
+        and all(
+            item.get("status") == "pass"
+            for item in domain_contract_by_symbol.values()
+        )
+        else "fail"
+    ),
+    "domain_contract_by_symbol": domain_contract_by_symbol,
     "records": records,
     "record_by_symbol": record_by_symbol,
     "built_count": sum(1 for item in records if item.get("status") == "built"),
@@ -1023,23 +1103,36 @@ PY
 }
 
 RUN_DIR="${OUTPUT_ROOT}/${RUN_ID}"
+if [[ -d "${RUN_DIR}" && -n "$(ls -A "${RUN_DIR}" 2>/dev/null)" ]]; then
+  echo "[ERROR] refusing to reuse non-empty closed-loop run directory: ${RUN_DIR}"
+  exit 2
+fi
 mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
 
 DATA_PIPELINE_RUN_DIR="${RUN_DIR}/data_pipeline"
 DATA_PIPELINE_REPORT_PATH="${DATA_PIPELINE_RUN_DIR}/data_pipeline_report.json"
 WALKFORWARD_REPORT_PATH="${RUN_DIR}/walkforward_report.json"
 FEATURE_STORE_PATH="${RUN_DIR}/feature_store_5m.csv"
+RESEARCH_DEVELOPMENT_CSV_PATH="${RUN_DIR}/research_development_ohlcv_5m.csv"
+RESEARCH_SELECTION_FEATURE_PATH="${RUN_DIR}/research_selection_feature_5m.csv"
+RESEARCH_HOLDOUT_FEATURE_PATH="${RUN_DIR}/research_holdout_feature_5m.csv"
+RESEARCH_DOMAIN_SPLIT_REPORT_PATH="${RUN_DIR}/research_domain_split_report.json"
+FEATURE_PARITY_REPORT_PATH="${RUN_DIR}/feature_parity_report.json"
 REPLAY_VALIDATION_DIR="${RUN_DIR}/replay_validation"
 REPLAY_VALIDATION_FEATURE_DIR="${REPLAY_VALIDATION_DIR}/features"
 REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report.json"
 REPLAY_OPTIMIZATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_optimization_report.json"
+SELECTION_CANDIDATE_MANIFEST_PATH="${REPLAY_VALIDATION_DIR}/selection_candidate_manifest.json"
 REPLAY_VALIDATION_COMMAND_LOG_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_command.log"
 REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH="${REPLAY_VALIDATION_DIR}/feature_build_records.jsonl"
 REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_build_report.json"
+REPLAY_CANDIDATE_CONFIG_PATH="${RUN_DIR}/replay_candidate_config.yaml"
+REPLAY_EFFECTIVE_CONFIG_PATH="${REPLAY_VALIDATION_CONFIG_PATH}"
 REPLAY_VALIDATION_LAST_STATUS="not_run"
 STRATEGY_DIAGNOSE_REPORT_PATH="${RUN_DIR}/strategy_diagnose_report.json"
 ALPHA_MECHANISM_PROBE_REPORT_PATH="${RUN_DIR}/alpha_mechanism_probe_report.json"
 ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/alpha_candidate_manifest.json"
+STRATEGY_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/strategy_candidate_manifest.json"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
 BASELINE_REPORT_PATH="${RUN_DIR}/baseline_report.json"
 BASELINE_SNAPSHOT_DIR="${RUN_DIR}/baseline_snapshot"
@@ -1051,10 +1144,23 @@ ASSESS_LOG_PATH="${RUN_DIR}/runtime.log"
 ASSESS_RAW_LOG_PATH="${RUN_DIR}/runtime.raw.log"
 ASSESS_LOG_FILTER_META_PATH="${RUN_DIR}/runtime_log_filter.json"
 ASSESS_JSON_PATH="${RUN_DIR}/runtime_assess.json"
+TRADE_LEDGER_REPORT_PATH="${RUN_DIR}/trade_ledger_report.json"
 MECHANISM_AUDIT_REPORT_PATH="${RUN_DIR}/closed_loop_mechanism_report.json"
 FINAL_REPORT_PATH="${RUN_DIR}/closed_loop_report.json"
 RUN_META_PATH="${RUN_DIR}/run_meta.json"
 RUN_MANIFEST_PATH="${RUN_DIR}/run_manifest.json"
+FINAL_ARTIFACT_ATTESTATION_PATH="${RUN_DIR}/artifact_attestation.json"
+STEP_STATUS_PATH="${RUN_DIR}/step_status.jsonl"
+ACTIVE_MODEL_PATH="./data/models/integrator_latest.cbm"
+ACTIVE_REPORT_PATH="./data/research/integrator_report.json"
+ACTIVE_MINER_REPORT_PATH="./data/research/miner_report.json"
+ACTIVE_META_PATH="./data/models/integrator_active.json"
+ACTIVATION_TRANSACTION_ROOT="${CLOSED_LOOP_ACTIVATION_TRANSACTION_ROOT:-./data/models/activation_transactions}"
+ACTIVATION_TRANSACTION_DIR="${ACTIVATION_TRANSACTION_ROOT}/${RUN_ID}"
+ACTIVATION_TRANSACTION_STATE_PATH="${CLOSED_LOOP_ACTIVATION_TRANSACTION_STATE_PATH:-./data/models/activation_transaction.json}"
+ACTIVATION_TRANSACTION_SNAPSHOT_PATH="${RUN_DIR}/activation_transaction.json"
+ACTIVATION_DECISION_PATH="${RUN_DIR}/activation_decision.json"
+CLOSED_LOOP_RUNNER_LOCK_PATH="${CLOSED_LOOP_RUNNER_LOCK_PATH:-./data/models/closed_loop_runner.lock}"
 LATEST_REPORT_PATH="${OUTPUT_ROOT}/latest_closed_loop_report.json"
 LATEST_RUNTIME_ASSESS_PATH="${OUTPUT_ROOT}/latest_runtime_assess.json"
 LATEST_META_PATH="${OUTPUT_ROOT}/latest_run_meta.json"
@@ -1062,6 +1168,7 @@ LATEST_RUN_ID_PATH="${OUTPUT_ROOT}/latest_run_id"
 SUMMARY_OUTPUT_DIR="${OUTPUT_ROOT}/summary"
 LATEST_DAILY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_daily_summary.json"
 LATEST_WEEKLY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_weekly_summary.json"
+: > "${STEP_STATUS_PATH}"
 
 verify_s5_learning_switches() {
   if [[ "${STAGE}" != "S5" ]]; then
@@ -1169,7 +1276,7 @@ verify_s5_learning_activity() {
   fi
   if [[ ! -f "${ASSESS_JSON_PATH}" ]]; then
     echo "[WARN] S5 learning activity verification skipped: missing ${ASSESS_JSON_PATH}"
-    return 0
+    return 1
   fi
 
   local factor_ic_actions
@@ -1253,7 +1360,7 @@ run_miner() {
   echo "[INFO] R1 miner start"
   compose_cmd run --rm ai-trade \
     --run_miner \
-    --miner_csv="${CSV_PATH}" \
+    --miner_csv="${RESEARCH_DEVELOPMENT_CSV_PATH}" \
     --miner_top_k="${MINER_TOP_K}" \
     --miner_generations="${MINER_GENERATIONS}" \
     --miner_population="${MINER_POPULATION}" \
@@ -1265,7 +1372,13 @@ run_miner() {
 run_integrator() {
   echo "[INFO] R2 integrator start"
   INTEGRATOR_ARGS=(
-    --csv="${CSV_PATH}"
+    --csv="${RESEARCH_DEVELOPMENT_CSV_PATH}"
+    --training_symbol="${SYMBOL}"
+    --bar_interval_ms=300000
+    --source_venue=bybit
+    --source_category=linear
+    --price_type=trade_price
+    --volume_unit=base_asset
     --miner_report="${MINER_REPORT_PATH}"
     --output="${INTEGRATOR_REPORT_PATH}"
     --model_out="${MODEL_OUTPUT_PATH}"
@@ -1296,8 +1409,13 @@ run_integrator() {
     --early_stopping_rounds="${INTEGRATOR_EARLY_STOPPING_ROUNDS}"
     --label_round_trip_cost_bps="${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
     --label_min_net_edge_bps="${INTEGRATOR_LABEL_MIN_NET_EDGE_BPS}"
+    --execution_latency_bars="${INTEGRATOR_EXECUTION_LATENCY_BARS}"
     --min_mean_model_net_edge_bps="${INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS}"
     --min_positive_model_net_edge_ratio="${INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO}"
+    --min_model_net_total_trades="${INTEGRATOR_MIN_MODEL_NET_TOTAL_TRADES}"
+    --min_model_net_active_bars="${INTEGRATOR_MIN_MODEL_NET_ACTIVE_BARS}"
+    --min_positive_model_net_splits_ratio="${INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO}"
+    --min_model_net_edge_lcb_bps="${INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS}"
     --feature_clip_quantile="${INTEGRATOR_FEATURE_CLIP_QUANTILE}"
   )
   if [[ "${DISABLE_RANDOM_LABEL_CONTROL}" == "true" ]]; then
@@ -1308,6 +1426,466 @@ run_integrator() {
   fi
   compose_cmd --profile research run --rm ai-trade-research "${INTEGRATOR_ARGS[@]}"
   echo "[INFO] R2 integrator done"
+}
+
+prepare_replay_candidate_config() {
+  REPLAY_EFFECTIVE_CONFIG_PATH="${REPLAY_VALIDATION_CONFIG_PATH}"
+  if [[ ! -f "${MODEL_OUTPUT_PATH}" || ! -f "${INTEGRATOR_REPORT_PATH}" ]]; then
+    echo "[WARN] candidate replay config skipped: model/report missing"
+    return 0
+  fi
+  local replay_policy_sha256=""
+  replay_policy_sha256="$(
+    python3 tools/build_replay_candidate_config.py \
+      --runtime-config "${RUNTIME_CONFIG_PATH}" \
+      --output "${REPLAY_CANDIDATE_CONFIG_PATH}" \
+      --model "${MODEL_OUTPUT_PATH}" \
+      --report "${INTEGRATOR_REPORT_PATH}"
+  )" || return 1
+  REPLAY_EFFECTIVE_CONFIG_PATH="${REPLAY_CANDIDATE_CONFIG_PATH}"
+  echo "[INFO] candidate replay config ready: ${REPLAY_EFFECTIVE_CONFIG_PATH} execution_policy_sha256=${replay_policy_sha256}"
+}
+
+write_strategy_candidate_manifest() {
+  if [[ ! -f "${INTEGRATOR_REPORT_PATH}" || ! -f "${MODEL_OUTPUT_PATH}" ]]; then
+    echo "[INFO] strategy candidate manifest skipped: no candidate generated in this run"
+    return 0
+  fi
+  STRATEGY_CANDIDATE_MANIFEST_OUT="${STRATEGY_CANDIDATE_MANIFEST_PATH}" \
+  RUN_ID_VALUE="${RUN_ID}" \
+  INTEGRATOR_REPORT_PATH_VALUE="${INTEGRATOR_REPORT_PATH}" \
+  MODEL_OUTPUT_PATH_VALUE="${MODEL_OUTPUT_PATH}" \
+  REPLAY_CONFIG_PATH_VALUE="${REPLAY_EFFECTIVE_CONFIG_PATH}" \
+  REPLAY_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" \
+  RUNTIME_ASSESS_PATH_VALUE="${ASSESS_JSON_PATH}" \
+  RUNTIME_CONFIG_PATH_VALUE="${RUNTIME_CONFIG_PATH}" \
+  python3 - <<'PY'
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+from tools.config_policy_contract import policy_sha256
+
+
+def read_json(path_text):
+    path = Path(path_text)
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def sha256(path_text):
+    path = Path(path_text)
+    if not path.is_file():
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+integrator_path = os.environ["INTEGRATOR_REPORT_PATH_VALUE"]
+model_path = os.environ["MODEL_OUTPUT_PATH_VALUE"]
+replay_config_path = os.environ["REPLAY_CONFIG_PATH_VALUE"]
+replay_path = os.environ["REPLAY_REPORT_PATH_VALUE"]
+registry_path = os.environ["REGISTRY_RESULT_PATH_VALUE"]
+runtime_path = os.environ["RUNTIME_ASSESS_PATH_VALUE"]
+integrator = read_json(integrator_path)
+replay = read_json(replay_path)
+registry = read_json(registry_path)
+runtime = read_json(runtime_path)
+model_version = str(integrator.get("model_version") or "")
+integrator_data = integrator.get("data")
+if not isinstance(integrator_data, dict):
+    integrator_data = {}
+training_symbol = str(integrator_data.get("training_symbol") or "").strip().upper()
+bar_interval_ms = safe_int(integrator_data.get("bar_interval_ms"))
+online_bar_source = str(integrator_data.get("online_bar_source") or "").strip()
+source_venue = str(integrator_data.get("source_venue") or "").strip().lower()
+source_category = str(integrator_data.get("source_category") or "").strip().lower()
+price_type = str(integrator_data.get("price_type") or "").strip().lower()
+volume_unit = str(integrator_data.get("volume_unit") or "").strip().lower()
+replay_source_symbol = str(replay.get("source_symbol") or "").strip().upper()
+replay_identity = replay.get("candidate_identity")
+if not isinstance(replay_identity, dict):
+    replay_identity = {}
+feature_contract_match = (
+    bool(training_symbol)
+    and bar_interval_ms > 0
+    and online_bar_source == "closed_ohlcv"
+    and source_venue == "bybit"
+    and source_category == "linear"
+    and price_type == "trade_price"
+    and volume_unit == "base_asset"
+    and bool(replay_source_symbol)
+    and replay_source_symbol == training_symbol
+)
+registry_model_version = str(registry.get("model_version") or "")
+model_sha256 = sha256(model_path)
+integrator_report_sha256 = sha256(integrator_path)
+replay_model_version = str(replay_identity.get("model_version") or "")
+replay_model_sha256 = str(replay_identity.get("model_sha256") or "")
+replay_integrator_report_sha256 = str(
+    replay_identity.get("integrator_report_sha256") or ""
+)
+replay_config_sha256 = str(replay_identity.get("base_config_sha256") or "")
+replay_execution_policy = replay_identity.get("execution_policy")
+if not isinstance(replay_execution_policy, dict):
+    replay_execution_policy = {}
+replay_execution_policy_sha256 = str(
+    replay_execution_policy.get("sha256") or ""
+)
+replay_trade_bot_sha256 = str(
+    replay_identity.get("trade_bot_sha256") or ""
+)
+replay_runtime_config_sha256 = str(
+    replay_identity.get("runtime_config_sha256") or ""
+)
+runtime_config_sha256 = sha256(os.environ["RUNTIME_CONFIG_PATH_VALUE"])
+try:
+    replay_config_execution_policy_sha256 = policy_sha256(
+        Path(replay_config_path)
+    )
+except (OSError, ValueError):
+    replay_config_execution_policy_sha256 = ""
+replay_candidate_identity_match = (
+    replay_model_version == model_version
+    and replay_model_sha256 == model_sha256
+    and replay_integrator_report_sha256 == integrator_report_sha256
+    and replay_config_sha256 == sha256(replay_config_path)
+    and replay_execution_policy_sha256
+        == replay_config_execution_policy_sha256
+    and replay_runtime_config_sha256 == runtime_config_sha256
+    and len(replay_trade_bot_sha256) == 64
+    and replay_identity.get("config_binds_candidate") is True
+)
+registry_checksums = registry.get("checksums")
+if not isinstance(registry_checksums, dict):
+    registry_checksums = {}
+registry_model_sha256 = str(registry_checksums.get("model_sha256") or "")
+registry_report_sha256 = str(
+    registry_checksums.get("integrator_report_sha256") or ""
+)
+registry_active_checksums = registry.get("active_checksums")
+if not isinstance(registry_active_checksums, dict):
+    registry_active_checksums = {}
+registry_active_model_sha256 = str(
+    registry_active_checksums.get("model_sha256") or ""
+)
+registry_active_report_sha256 = str(
+    registry_active_checksums.get("report_sha256") or ""
+)
+registry_active_execution_policy_sha256 = str(
+    registry_active_checksums.get("execution_policy_sha256") or ""
+)
+registry_active_runtime_config_sha256 = str(
+    registry_active_checksums.get("runtime_config_sha256") or ""
+)
+registry_active_trade_bot_sha256 = str(
+    registry_active_checksums.get("trade_bot_sha256") or ""
+)
+identity_match = (
+    registry_model_version == model_version
+    and registry_model_sha256 == model_sha256
+    and registry_report_sha256 == integrator_report_sha256
+)
+config_text = ""
+try:
+    config_text = Path(replay_config_path).read_text(encoding="utf-8")
+except OSError:
+    pass
+config_binds_candidate = (
+    bool(model_version)
+    and bool(model_sha256)
+    and model_path in config_text
+    and integrator_path in config_text
+)
+reported_replay_config = str(replay.get("base_config") or "")
+try:
+    replay_config_identity_match = (
+        bool(reported_replay_config)
+        and Path(reported_replay_config).resolve() == Path(replay_config_path).resolve()
+    )
+except OSError:
+    replay_config_identity_match = False
+governance = integrator.get("governance")
+governance_pass = (
+    bool(governance.get("pass"))
+    if isinstance(governance, dict)
+    else False
+)
+replay_status = str(
+    replay.get("status")
+    or replay.get("readiness_status")
+    or ""
+).strip().lower()
+registry_gate = registry.get("gate")
+registry_gate_pass = (
+    bool(registry_gate.get("pass"))
+    if isinstance(registry_gate, dict)
+    else None
+)
+activated = bool(registry.get("activated"))
+runtime_metrics = runtime.get("metrics")
+if not isinstance(runtime_metrics, dict):
+    runtime_metrics = {}
+runtime_versions = runtime_metrics.get("integrator_model_versions")
+if not isinstance(runtime_versions, list):
+    runtime_versions = []
+runtime_versions = [str(value) for value in runtime_versions if str(value)]
+runtime_model_version = str(
+    runtime_metrics.get("integrator_model_version_latest")
+    or (runtime_versions[-1] if runtime_versions else "")
+)
+runtime_model_sha256 = str(
+    runtime_metrics.get("integrator_model_sha256_latest") or ""
+).strip()
+runtime_report_sha256 = str(
+    runtime_metrics.get("integrator_report_sha256_latest") or ""
+).strip()
+runtime_runtime_config_sha256 = str(
+    runtime_metrics.get("integrator_runtime_config_sha256_latest") or ""
+).strip()
+runtime_trade_bot_sha256 = str(
+    runtime_metrics.get("integrator_trade_bot_sha256_latest") or ""
+).strip()
+runtime_training_symbol = str(
+    runtime_metrics.get("integrator_feature_training_symbol_latest") or ""
+).strip().upper()
+runtime_bar_interval_ms = safe_int(
+    runtime_metrics.get("integrator_feature_bar_interval_ms_latest")
+)
+runtime_feature_contract_match = (
+    runtime_training_symbol == training_symbol
+    and runtime_bar_interval_ms == bar_interval_ms
+    if runtime_training_symbol and runtime_bar_interval_ms > 0
+    else None
+)
+runtime_identity_match = (
+    runtime_model_version == model_version
+    and runtime_model_sha256 == registry_active_model_sha256
+    and runtime_report_sha256 == registry_active_report_sha256
+    and runtime_runtime_config_sha256
+        == registry_active_runtime_config_sha256
+    and runtime_trade_bot_sha256 == registry_active_trade_bot_sha256
+    if (
+        runtime_model_version
+        and model_version
+        and runtime_model_sha256
+        and runtime_report_sha256
+        and runtime_runtime_config_sha256
+        and runtime_trade_bot_sha256
+        and registry_active_model_sha256
+        and registry_active_report_sha256
+        and registry_active_runtime_config_sha256
+        and registry_active_trade_bot_sha256
+    )
+    else None
+)
+runtime_policy_applied = safe_int(runtime_metrics.get("integrator_policy_applied_count"))
+runtime_canary_applied = safe_int(runtime_metrics.get("integrator_policy_canary_count"))
+runtime_filled_candidate_ids = (
+    [
+        str(value)
+        for value in runtime_metrics.get(
+            "integrator_policy_filled_candidate_ids", []
+        )
+        if str(value)
+    ]
+    if isinstance(
+        runtime_metrics.get("integrator_policy_filled_candidate_ids"), list
+    )
+    else []
+)
+runtime_filled_events = (
+    runtime_metrics.get("integrator_policy_filled_events", [])
+    if isinstance(runtime_metrics.get("integrator_policy_filled_events"), list)
+    else []
+)
+runtime_candidate_fill_events = [
+    event
+    for event in runtime_filled_events
+    if isinstance(event, dict)
+    and str(event.get("candidate_id", "")) == model_version
+]
+runtime_candidate_fills = len(runtime_candidate_fill_events)
+runtime_candidate_unique_orders = len(
+    {
+        str(event.get("client_order_id", ""))
+        for event in runtime_candidate_fill_events
+        if str(event.get("client_order_id", ""))
+    }
+)
+runtime_closed_episodes = (
+    runtime_metrics.get("integrator_policy_closed_episode_events", [])
+    if isinstance(
+        runtime_metrics.get("integrator_policy_closed_episode_events"), list
+    )
+    else []
+)
+runtime_candidate_complete_episodes = [
+    event
+    for event in runtime_closed_episodes
+    if isinstance(event, dict)
+    and str(event.get("candidate_id", "")) == model_version
+    and event.get("evidence_complete") is True
+]
+runtime_candidate_complete_episode_count = len(
+    runtime_candidate_complete_episodes
+)
+runtime_fills = max(
+    safe_int(runtime_metrics.get("funnel_fills_runtime_count")),
+    safe_int(runtime_metrics.get("trend_candidate_probe_fill_count")),
+)
+status = "not_generated"
+if model_version and model_sha256:
+    status = "candidate"
+if (
+    status == "candidate"
+    and replay_status in {"pass", "pass_with_actions"}
+    and config_binds_candidate
+    and replay_config_identity_match
+    and replay_candidate_identity_match
+    and feature_contract_match
+):
+    status = "replay_validated"
+if (
+    registry_gate_pass is False
+    or not identity_match
+    or not config_binds_candidate
+    or not replay_config_identity_match
+    or not replay_candidate_identity_match
+    or not feature_contract_match
+    or runtime_feature_contract_match is False
+    or runtime_identity_match is False
+):
+    status = "rejected"
+elif registry_gate_pass is True:
+    status = "registered"
+    if activated:
+        status = "activation_pending_runtime"
+        if runtime_identity_match:
+            status = "canary_loaded"
+            if runtime_policy_applied > 0 or runtime_canary_applied > 0:
+                status = "canary_observing"
+            if runtime_candidate_complete_episode_count > 0:
+                status = "canary_evidence"
+
+payload = {
+    "schema_version": "strategy_candidate_v1",
+    "run_id": os.environ.get("RUN_ID_VALUE", ""),
+    "generated_at_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "candidate_id": model_version,
+    "status": status,
+    "candidate": {
+        "model_version": model_version,
+        "feature_schema_version": integrator.get("feature_schema_version"),
+        "factor_set_version": integrator.get("factor_set_version"),
+        "model_path": model_path,
+        "model_sha256": model_sha256,
+        "integrator_report_path": integrator_path,
+        "integrator_report_sha256": integrator_report_sha256,
+        "governance_pass": governance_pass,
+        "training_symbol": training_symbol,
+        "bar_interval_ms": bar_interval_ms,
+        "online_bar_source": online_bar_source,
+        "source_venue": source_venue,
+        "source_category": source_category,
+        "price_type": price_type,
+        "volume_unit": volume_unit,
+    },
+    "replay_validation": {
+        "config_path": replay_config_path,
+        "config_sha256": sha256(replay_config_path),
+        "report_path": replay_path,
+        "report_sha256": sha256(replay_path),
+        "status": replay_status or "not_run",
+        "candidate_model_version": replay_model_version,
+        "candidate_model_sha256": replay_model_sha256,
+        "candidate_integrator_report_sha256": replay_integrator_report_sha256,
+        "execution_policy_sha256": replay_execution_policy_sha256,
+        "config_execution_policy_sha256": (
+            replay_config_execution_policy_sha256
+        ),
+        "runtime_config_sha256": replay_runtime_config_sha256,
+        "actual_runtime_config_sha256": runtime_config_sha256,
+        "trade_bot_sha256": replay_trade_bot_sha256,
+        "independent_identity_match": replay_candidate_identity_match,
+        "config_binds_candidate": config_binds_candidate,
+        "reported_base_config": reported_replay_config,
+        "report_config_identity_match": replay_config_identity_match,
+        "source_symbol": replay_source_symbol,
+        "feature_contract_match": feature_contract_match,
+        "evaluates_current_candidate": (
+            config_binds_candidate
+            and replay_config_identity_match
+            and replay_candidate_identity_match
+            and feature_contract_match
+        ),
+    },
+    "registry": {
+        "report_path": registry_path,
+        "report_sha256": sha256(registry_path),
+        "model_version": registry_model_version,
+        "model_sha256": registry_model_sha256,
+        "integrator_report_sha256": registry_report_sha256,
+        "active_model_sha256": registry_active_model_sha256,
+        "active_report_sha256": registry_active_report_sha256,
+        "active_execution_policy_sha256": (
+            registry_active_execution_policy_sha256
+        ),
+        "active_runtime_config_sha256": (
+            registry_active_runtime_config_sha256
+        ),
+        "active_trade_bot_sha256": registry_active_trade_bot_sha256,
+        "candidate_identity_match": identity_match,
+        "gate_pass": registry_gate_pass,
+        "activated": activated,
+    },
+    "runtime": {
+        "assess_path": runtime_path,
+        "assess_sha256": sha256(runtime_path),
+        "verdict": runtime.get("verdict"),
+        "model_versions": runtime_versions,
+        "model_version_latest": runtime_model_version,
+        "model_sha256_latest": runtime_model_sha256,
+        "report_sha256_latest": runtime_report_sha256,
+        "runtime_config_sha256_latest": runtime_runtime_config_sha256,
+        "trade_bot_sha256_latest": runtime_trade_bot_sha256,
+        "candidate_identity_match": runtime_identity_match,
+        "training_symbol": runtime_training_symbol,
+        "bar_interval_ms": runtime_bar_interval_ms,
+        "feature_contract_match": runtime_feature_contract_match,
+        "policy_applied_count": runtime_policy_applied,
+        "canary_applied_count": runtime_canary_applied,
+        "candidate_fill_count": runtime_candidate_fills,
+        "candidate_unique_order_count": runtime_candidate_unique_orders,
+        "candidate_filled_ids": runtime_filled_candidate_ids,
+        "candidate_complete_episode_count": (
+            runtime_candidate_complete_episode_count
+        ),
+        "candidate_complete_episodes": runtime_candidate_complete_episodes,
+        "fill_window_count": runtime_fills,
+    },
+}
+out = Path(os.environ["STRATEGY_CANDIDATE_MANIFEST_OUT"])
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
 }
 
 maybe_write_registry_alpha_block_report() {
@@ -1431,27 +2009,844 @@ sys.exit(0)
 PY
 }
 
+activation_transaction_status() {
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    printf 'none\n'
+    return 0
+  fi
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    print("invalid")
+else:
+    print(str(payload.get("status") or "invalid"))
+PY
+}
+
+snapshot_activation_transaction_state() {
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    return 0
+  fi
+  atomic_copy_file \
+    "${ACTIVATION_TRANSACTION_STATE_PATH}" \
+    "${ACTIVATION_TRANSACTION_SNAPSHOT_PATH}"
+}
+
+activation_transaction_owned_by_current_run() {
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    return 1
+  fi
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  RUN_ID_VALUE="${RUN_ID}" \
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(
+    Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"]).read_text(
+        encoding="utf-8"
+    )
+)
+raise SystemExit(
+    0 if str(payload.get("run_id") or "") == os.environ["RUN_ID_VALUE"] else 1
+)
+PY
+}
+
+activation_slot_available() {
+  local status=""
+  status="$(activation_transaction_status)"
+  case "${status}" in
+    none|committed|rolled_back|rolled_back_service_stopped)
+      return 0
+      ;;
+    *)
+      echo "[ERROR] another candidate is still staged: status=${status}, state=${ACTIVATION_TRANSACTION_STATE_PATH}"
+      echo "[ERROR] run assess to commit/rollback it before starting another full"
+      return 1
+      ;;
+  esac
+}
+
+set_activation_transaction_status() {
+  local status="$1"
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    return 0
+  fi
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  ACTIVATION_TRANSACTION_STATUS_VALUE="${status}" \
+  python3 - <<'PY'
+import datetime as dt
+import json
+import os
+import shutil
+from pathlib import Path
+
+path = Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"])
+payload = json.loads(path.read_text(encoding="utf-8"))
+status = os.environ["ACTIVATION_TRANSACTION_STATUS_VALUE"]
+now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+payload["status"] = status
+payload["updated_at_utc"] = now
+history = payload.setdefault("history", [])
+history.append({"status": status, "at_utc": now})
+tmp = path.with_suffix(path.suffix + ".tmp")
+tmp.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+tmp.replace(path)
+tx_dir_text = str(payload.get("transaction_dir") or "")
+if tx_dir_text:
+    tx_dir = Path(tx_dir_text)
+    tx_dir.mkdir(parents=True, exist_ok=True)
+    archive = tx_dir / "state.json"
+    if archive.resolve() != path.resolve():
+        shutil.copy2(path, archive)
+PY
+  snapshot_activation_transaction_state
+}
+
+begin_activation_transaction() {
+  if [[ "${ACTION}" != "full" ]]; then
+    return 0
+  fi
+  activation_slot_available || return 1
+  mkdir -p \
+    "$(dirname "${ACTIVATION_TRANSACTION_STATE_PATH}")" \
+    "${ACTIVATION_TRANSACTION_DIR}/backup"
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  ACTIVATION_TRANSACTION_DIR_VALUE="${ACTIVATION_TRANSACTION_DIR}" \
+  RUN_ID_VALUE="${RUN_ID}" \
+  ACTIVE_MODEL_PATH_VALUE="${ACTIVE_MODEL_PATH}" \
+  ACTIVE_REPORT_PATH_VALUE="${ACTIVE_REPORT_PATH}" \
+  ACTIVE_MINER_REPORT_PATH_VALUE="${ACTIVE_MINER_REPORT_PATH}" \
+  ACTIVE_META_PATH_VALUE="${ACTIVE_META_PATH}" \
+  ACTIVATION_MIN_CANARY_EPISODES_VALUE="${ACTIVATION_MIN_CANARY_EPISODES}" \
+  ACTIVATION_MIN_POSITIVE_EPISODE_RATIO_VALUE="${ACTIVATION_MIN_POSITIVE_EPISODE_RATIO}" \
+  ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD_VALUE="${ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD}" \
+  ACTIVATION_MAX_PENDING_HOURS_VALUE="${ACTIVATION_MAX_PENDING_HOURS}" \
+  python3 - <<'PY'
+import datetime as dt
+import hashlib
+import json
+import os
+import shutil
+from pathlib import Path
+
+state_path = Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"])
+tx_dir = Path(os.environ["ACTIVATION_TRANSACTION_DIR_VALUE"])
+backup_dir = tx_dir / "backup"
+artifacts = {
+    "model": Path(os.environ["ACTIVE_MODEL_PATH_VALUE"]),
+    "report": Path(os.environ["ACTIVE_REPORT_PATH_VALUE"]),
+    "miner_report": Path(os.environ["ACTIVE_MINER_REPORT_PATH_VALUE"]),
+    "active_meta": Path(os.environ["ACTIVE_META_PATH_VALUE"]),
+}
+previous = {}
+for name, source in artifacts.items():
+    exists = source.is_file()
+    item = {"path": str(source), "exists": exists}
+    if exists:
+        backup = backup_dir / source.name
+        shutil.copy2(source, backup)
+        item["backup_path"] = str(backup)
+        item["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+    previous[name] = item
+now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+activation_policy = {
+    "schema_version": "closed_loop_activation_policy_v1",
+    "min_complete_episodes": int(
+        os.environ["ACTIVATION_MIN_CANARY_EPISODES_VALUE"]
+    ),
+    "min_positive_episode_ratio": float(
+        os.environ["ACTIVATION_MIN_POSITIVE_EPISODE_RATIO_VALUE"]
+    ),
+    "min_mean_realized_net_per_fill_usd": float(
+        os.environ["ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD_VALUE"]
+    ),
+    "max_pending_hours": float(
+        os.environ["ACTIVATION_MAX_PENDING_HOURS_VALUE"]
+    ),
+}
+if activation_policy["min_complete_episodes"] <= 0:
+    raise SystemExit("activation min_complete_episodes must be positive")
+if activation_policy["min_complete_episodes"] < 30:
+    raise SystemExit(
+        "new activation transactions require at least 30 complete episodes"
+    )
+if not 0.0 <= activation_policy["min_positive_episode_ratio"] <= 1.0:
+    raise SystemExit("activation positive episode ratio must be in [0,1]")
+if activation_policy["max_pending_hours"] < 0.0:
+    raise SystemExit("activation max pending hours must not be negative")
+activation_policy_sha256 = hashlib.sha256(
+    json.dumps(
+        activation_policy,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+).hexdigest()
+payload = {
+    "schema_version": "closed_loop_activation_transaction_v2",
+    "run_id": os.environ["RUN_ID_VALUE"],
+    "transaction_dir": str(tx_dir),
+    "status": "prepared",
+    "created_at_utc": now,
+    "updated_at_utc": now,
+    "activation_policy": activation_policy,
+    "activation_policy_sha256": activation_policy_sha256,
+    "previous": previous,
+    "history": [{"status": "prepared", "at_utc": now}],
+}
+tmp = state_path.with_suffix(state_path.suffix + ".tmp")
+tmp.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+tmp.replace(state_path)
+PY
+  snapshot_activation_transaction_state
+  echo "[INFO] activation transaction prepared: ${ACTIVATION_TRANSACTION_STATE_PATH}"
+}
+
+mark_activation_applied() {
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    echo "[ERROR] activation transaction state missing"
+    return 1
+  fi
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" \
+  ACTIVE_MODEL_PATH_VALUE="${ACTIVE_MODEL_PATH}" \
+  ACTIVE_REPORT_PATH_VALUE="${ACTIVE_REPORT_PATH}" \
+  ACTIVE_MINER_REPORT_PATH_VALUE="${ACTIVE_MINER_REPORT_PATH}" \
+  ACTIVE_META_PATH_VALUE="${ACTIVE_META_PATH}" \
+  python3 - <<'PY'
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+
+state_path = Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"])
+registry = json.loads(
+    Path(os.environ["REGISTRY_RESULT_PATH_VALUE"]).read_text(encoding="utf-8")
+)
+if registry.get("activated") is not True:
+    raise SystemExit("registry did not activate candidate")
+paths = {
+    "model": Path(os.environ["ACTIVE_MODEL_PATH_VALUE"]),
+    "report": Path(os.environ["ACTIVE_REPORT_PATH_VALUE"]),
+    "miner_report": Path(os.environ["ACTIVE_MINER_REPORT_PATH_VALUE"]),
+    "active_meta": Path(os.environ["ACTIVE_META_PATH_VALUE"]),
+}
+if any(not path.is_file() for path in paths.values()):
+    raise SystemExit("activated artifact set is incomplete")
+payload = json.loads(state_path.read_text(encoding="utf-8"))
+registry_transaction = registry.get("activation_transaction", {})
+if not isinstance(registry_transaction, dict):
+    raise SystemExit("registry activation transaction binding missing")
+if (
+    registry_transaction.get("run_id") != payload.get("run_id")
+    or registry_transaction.get("activation_policy_sha256")
+        != payload.get("activation_policy_sha256")
+    or registry_transaction.get("status") != "prepared"
+):
+    raise SystemExit("registry activation transaction binding mismatch")
+active_checksums = registry.get("active_checksums", {})
+if not isinstance(active_checksums, dict):
+    raise SystemExit("registry active_checksums missing")
+identity = {
+    "model_sha256": str(active_checksums.get("model_sha256") or "").strip(),
+    "report_sha256": str(active_checksums.get("report_sha256") or "").strip(),
+    "runtime_config_sha256": str(
+        active_checksums.get("runtime_config_sha256") or ""
+    ).strip(),
+    "trade_bot_sha256": str(
+        active_checksums.get("trade_bot_sha256") or ""
+    ).strip(),
+}
+if any(len(value) != 64 for value in identity.values()):
+    raise SystemExit("registry active four-part identity is incomplete")
+if (
+    hashlib.sha256(paths["model"].read_bytes()).hexdigest()
+        != identity["model_sha256"]
+    or hashlib.sha256(paths["report"].read_bytes()).hexdigest()
+        != identity["report_sha256"]
+):
+    raise SystemExit("activated files differ from registry active identity")
+active_report = json.loads(paths["report"].read_text(encoding="utf-8"))
+data = active_report.get("data", {})
+if not isinstance(data, dict):
+    data = {}
+training_symbol = str(data.get("training_symbol") or "").strip().upper()
+try:
+    bar_interval_ms = int(data.get("bar_interval_ms") or 0)
+except (TypeError, ValueError):
+    bar_interval_ms = 0
+if not training_symbol or bar_interval_ms <= 0:
+    raise SystemExit("activated report feature contract is incomplete")
+payload["candidate"] = {
+    "model_version": registry.get("model_version"),
+    "training_symbol": training_symbol,
+    "bar_interval_ms": bar_interval_ms,
+    "identity": identity,
+    "artifacts": {
+        name: {
+            "path": str(path),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for name, path in paths.items()
+    },
+}
+now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+payload["status"] = "activated_pending_validation"
+payload["updated_at_utc"] = now
+payload.setdefault("history", []).append(
+    {"status": "activated_pending_validation", "at_utc": now}
+)
+tmp = state_path.with_suffix(state_path.suffix + ".tmp")
+tmp.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+tmp.replace(state_path)
+PY
+  snapshot_activation_transaction_state
+  echo "[INFO] activation transaction candidate applied; validation pending"
+}
+
+freeze_activation_offline_evidence() {
+  if [[ "${ACTION}" != "full" ||
+        ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    return 0
+  fi
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  INTEGRATOR_REPORT_PATH_VALUE="${INTEGRATOR_REPORT_PATH}" \
+  REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" \
+  REPLAY_VALIDATION_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  SELECTION_CANDIDATE_MANIFEST_PATH_VALUE="${SELECTION_CANDIDATE_MANIFEST_PATH}" \
+  REPLAY_OPTIMIZATION_REPORT_PATH_VALUE="${REPLAY_OPTIMIZATION_REPORT_PATH}" \
+  STRATEGY_DIAGNOSE_REPORT_PATH_VALUE="${STRATEGY_DIAGNOSE_REPORT_PATH}" \
+  ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE="${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
+  RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE="${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}" \
+  FEATURE_PARITY_REPORT_PATH_VALUE="${FEATURE_PARITY_REPORT_PATH}" \
+  python3 - <<'PY' || return $?
+import datetime as dt
+import hashlib
+import json
+import os
+import shutil
+from pathlib import Path
+
+state_path = Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"])
+state = json.loads(state_path.read_text(encoding="utf-8"))
+tx_dir = Path(str(state.get("transaction_dir") or ""))
+if not str(tx_dir):
+    raise SystemExit("activation transaction_dir missing")
+evidence_dir = tx_dir / "offline_evidence"
+evidence_dir.mkdir(parents=True, exist_ok=True)
+sources = {
+    "integrator_report": Path(os.environ["INTEGRATOR_REPORT_PATH_VALUE"]),
+    "registry_report": Path(os.environ["REGISTRY_RESULT_PATH_VALUE"]),
+    "replay_validation_report": Path(
+        os.environ["REPLAY_VALIDATION_REPORT_PATH_VALUE"]
+    ),
+    "selection_candidate_manifest": Path(
+        os.environ["SELECTION_CANDIDATE_MANIFEST_PATH_VALUE"]
+    ),
+    "replay_optimization_report": Path(
+        os.environ["REPLAY_OPTIMIZATION_REPORT_PATH_VALUE"]
+    ),
+    "strategy_diagnose_report": Path(
+        os.environ["STRATEGY_DIAGNOSE_REPORT_PATH_VALUE"]
+    ),
+    "alpha_mechanism_probe_report": Path(
+        os.environ["ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE"]
+    ),
+    "research_domain_split_report": Path(
+        os.environ["RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE"]
+    ),
+    "feature_parity_report": Path(
+        os.environ["FEATURE_PARITY_REPORT_PATH_VALUE"]
+    ),
+}
+required = {
+    "integrator_report",
+    "registry_report",
+    "replay_validation_report",
+    "selection_candidate_manifest",
+    "research_domain_split_report",
+    "feature_parity_report",
+}
+missing = sorted(name for name in required if not sources[name].is_file())
+if missing:
+    raise SystemExit(
+        "required activation offline evidence missing: " + ",".join(missing)
+    )
+frozen = {}
+for name, source in sources.items():
+    if not source.is_file():
+        continue
+    target = evidence_dir / f"{name}.json"
+    shutil.copy2(source, target)
+    frozen[name] = {
+        "path": str(target),
+        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        "source_path": str(source),
+    }
+state["frozen_offline_evidence"] = {
+    "schema_version": "activation_offline_evidence_v1",
+    "frozen_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    ),
+    "artifacts": frozen,
+}
+tmp = state_path.with_suffix(state_path.suffix + ".tmp")
+tmp.write_text(
+    json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+tmp.replace(state_path)
+PY
+  snapshot_activation_transaction_state
+  echo "[INFO] activation offline evidence frozen"
+}
+
+hydrate_activation_offline_evidence() {
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    return 0
+  fi
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  INTEGRATOR_REPORT_PATH_VALUE="${INTEGRATOR_REPORT_PATH}" \
+  REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" \
+  REPLAY_VALIDATION_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  REPLAY_OPTIMIZATION_REPORT_PATH_VALUE="${REPLAY_OPTIMIZATION_REPORT_PATH}" \
+  STRATEGY_DIAGNOSE_REPORT_PATH_VALUE="${STRATEGY_DIAGNOSE_REPORT_PATH}" \
+  ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE="${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
+  RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE="${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}" \
+  FEATURE_PARITY_REPORT_PATH_VALUE="${FEATURE_PARITY_REPORT_PATH}" \
+  python3 - <<'PY' || return $?
+import hashlib
+import json
+import os
+import shutil
+from pathlib import Path
+
+state = json.loads(
+    Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"]).read_text(
+        encoding="utf-8"
+    )
+)
+evidence = state.get("frozen_offline_evidence", {})
+if (
+    not isinstance(evidence, dict)
+    or evidence.get("schema_version") != "activation_offline_evidence_v1"
+):
+    raise SystemExit("activation frozen offline evidence contract missing")
+artifacts = evidence.get("artifacts", {})
+if not isinstance(artifacts, dict):
+    raise SystemExit("activation frozen offline evidence artifacts missing")
+targets = {
+    "integrator_report": Path(os.environ["INTEGRATOR_REPORT_PATH_VALUE"]),
+    "registry_report": Path(os.environ["REGISTRY_RESULT_PATH_VALUE"]),
+    "replay_validation_report": Path(
+        os.environ["REPLAY_VALIDATION_REPORT_PATH_VALUE"]
+    ),
+    "replay_optimization_report": Path(
+        os.environ["REPLAY_OPTIMIZATION_REPORT_PATH_VALUE"]
+    ),
+    "strategy_diagnose_report": Path(
+        os.environ["STRATEGY_DIAGNOSE_REPORT_PATH_VALUE"]
+    ),
+    "alpha_mechanism_probe_report": Path(
+        os.environ["ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE"]
+    ),
+    "research_domain_split_report": Path(
+        os.environ["RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE"]
+    ),
+    "feature_parity_report": Path(
+        os.environ["FEATURE_PARITY_REPORT_PATH_VALUE"]
+    ),
+}
+required = {
+    "integrator_report",
+    "registry_report",
+    "replay_validation_report",
+    "research_domain_split_report",
+    "feature_parity_report",
+}
+for name in required:
+    if name not in artifacts:
+        raise SystemExit(f"frozen offline evidence missing required {name}")
+for name, item in artifacts.items():
+    if name not in targets or not isinstance(item, dict):
+        continue
+    source = Path(str(item.get("path") or ""))
+    expected_sha256 = str(item.get("sha256") or "")
+    if not source.is_file():
+        raise SystemExit(f"frozen offline evidence not found: {name}")
+    if hashlib.sha256(source.read_bytes()).hexdigest() != expected_sha256:
+        raise SystemExit(f"frozen offline evidence checksum mismatch: {name}")
+    target = targets[name]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_suffix(target.suffix + ".tmp")
+    shutil.copy2(source, temp)
+    temp.replace(target)
+PY
+  echo "[INFO] activation offline evidence hydrated from transaction"
+}
+
+commit_activation_transaction() {
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    echo "[ERROR] activation transaction state missing at commit"
+    return 1
+  fi
+  set_activation_transaction_status "committed"
+  echo "[INFO] activation transaction committed"
+}
+
+rollback_activation_transaction() {
+  if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
+    return 0
+  fi
+  local current_status=""
+  if ! current_status="$(
+    ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+    python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+print(json.loads(Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"]).read_text(encoding="utf-8")).get("status", ""))
+PY
+  )"; then
+    echo "[ERROR] activation transaction is unreadable; stopping ai-trade"
+    compose_cmd stop ai-trade
+    return 1
+  fi
+  if [[ "${current_status}" == "committed" ||
+        "${current_status}" == "rolled_back" ||
+        "${current_status}" == "rolled_back_service_stopped" ]]; then
+    return 0
+  fi
+  echo "[WARN] activation transaction rollback start: status=${current_status}"
+  local rollback_identity=""
+  rollback_identity="$(
+    ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+    python3 - <<'PY'
+import datetime as dt
+import json
+import os
+import shutil
+from pathlib import Path
+
+state_path = Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"])
+payload = json.loads(state_path.read_text(encoding="utf-8"))
+for item in payload.get("previous", {}).values():
+    target = Path(str(item.get("path") or ""))
+    if item.get("exists") is True:
+        backup = Path(str(item.get("backup_path") or ""))
+        if not backup.is_file():
+            raise SystemExit(f"rollback backup missing: {backup}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".rollback.tmp")
+        shutil.copy2(backup, tmp)
+        tmp.replace(target)
+    elif target:
+        target.unlink(missing_ok=True)
+meta_item = payload.get("previous", {}).get("active_meta", {})
+meta = {}
+if meta_item.get("exists") is True:
+    meta = json.loads(Path(str(meta_item["path"])).read_text(encoding="utf-8"))
+now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+payload["status"] = "restored_pending_runtime_verify"
+payload["updated_at_utc"] = now
+payload.setdefault("history", []).append(
+    {"status": "restored_pending_runtime_verify", "at_utc": now}
+)
+tmp = state_path.with_suffix(state_path.suffix + ".tmp")
+tmp.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+tmp.replace(state_path)
+print(
+    "|".join(
+        [
+            str(meta.get("model_version") or ""),
+            str(meta.get("model_sha256") or ""),
+            str(meta.get("report_sha256") or ""),
+            str(meta.get("runtime_config_sha256") or ""),
+            str(meta.get("trade_bot_sha256") or ""),
+        ]
+    )
+)
+PY
+  )" || {
+    echo "[ERROR] activation rollback restore failed; stopping ai-trade"
+    compose_cmd stop ai-trade || true
+    set_activation_transaction_status "rollback_failed_restore"
+    return 1
+  }
+  local previous_version=""
+  local previous_model_sha256=""
+  local previous_report_sha256=""
+  local previous_runtime_config_sha256=""
+  local previous_trade_bot_sha256=""
+  IFS='|' read -r previous_version previous_model_sha256 previous_report_sha256 previous_runtime_config_sha256 previous_trade_bot_sha256 \
+    <<< "${rollback_identity}"
+  if [[ -z "${previous_version}" ||
+        ${#previous_model_sha256} -ne 64 ||
+        ${#previous_report_sha256} -ne 64 ||
+        ${#previous_runtime_config_sha256} -ne 64 ||
+        ${#previous_trade_bot_sha256} -ne 64 ]]; then
+    echo "[WARN] no complete previous active identity; stopping ai-trade"
+    compose_cmd stop ai-trade
+    set_activation_transaction_status "rolled_back_service_stopped"
+    return 0
+  fi
+
+  local restart_started_utc=""
+  restart_started_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  if ! compose_cmd restart ai-trade; then
+    echo "[ERROR] activation rollback restart failed; stopping ai-trade"
+    compose_cmd stop ai-trade || true
+    set_activation_transaction_status "rollback_failed_runtime_restart"
+    return 1
+  fi
+  local deadline=$(( $(date +%s) + 180 ))
+  while (( $(date +%s) < deadline )); do
+    local container_id=""
+    container_id="$(compose_cmd ps -q ai-trade 2>/dev/null | head -n 1 || true)"
+    local health=""
+    if [[ -n "${container_id}" ]]; then
+      health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_id}" 2>/dev/null || true)"
+    fi
+    local recent_logs=""
+    recent_logs="$(
+      compose_cmd logs --no-color --since "${restart_started_utc}" ai-trade \
+        2>/dev/null || true
+    )"
+    if [[ "${health}" == "healthy" || "${health}" == "running" ]] &&
+       grep -F "INTEGRATOR_INIT:" <<< "${recent_logs}" |
+         grep -F "model_version=${previous_version}," >/dev/null &&
+       grep -F "INTEGRATOR_ARTIFACT_IDENTITY: model_version=${previous_version}, model_sha256=${previous_model_sha256}, report_sha256=${previous_report_sha256}" \
+         <<< "${recent_logs}" >/dev/null &&
+       grep -F "INTEGRATOR_RUNTIME_IDENTITY: runtime_config_sha256=${previous_runtime_config_sha256}, trade_bot_sha256=${previous_trade_bot_sha256}" \
+         <<< "${recent_logs}" >/dev/null; then
+      set_activation_transaction_status "rolled_back"
+      echo "[INFO] activation rollback verified: model_version=${previous_version}"
+      return 0
+    fi
+    sleep 5
+  done
+  echo "[ERROR] activation rollback runtime verification failed: model_version=${previous_version}"
+  compose_cmd stop ai-trade || true
+  set_activation_transaction_status "rollback_failed_runtime_verify"
+  return 1
+}
+
+ACTIVATION_RESOLUTION_DECISION="none"
+write_activation_failure_decision() {
+  local reason="$1"
+  ACTIVATION_TRANSACTION_STATE_PATH_VALUE="${ACTIVATION_TRANSACTION_STATE_PATH}" \
+  ACTIVATION_DECISION_PATH_VALUE="${ACTIVATION_DECISION_PATH}" \
+  ACTIVATION_FAILURE_REASON_VALUE="${reason}" \
+  python3 - <<'PY'
+import datetime as dt
+import json
+import os
+from pathlib import Path
+
+state_path = Path(os.environ["ACTIVATION_TRANSACTION_STATE_PATH_VALUE"])
+output_path = Path(os.environ["ACTIVATION_DECISION_PATH_VALUE"])
+try:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    state = {}
+candidate = state.get("candidate", {})
+if not isinstance(candidate, dict):
+    candidate = {}
+payload = {
+    "schema_version": "closed_loop_activation_decision_v1",
+    "decision": "rollback",
+    "transaction_run_id": state.get("run_id"),
+    "candidate_model_version": candidate.get("model_version"),
+    "candidate_identity": candidate.get("identity"),
+    "activation_policy_sha256": state.get("activation_policy_sha256"),
+    "evaluated_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    ),
+    "runtime_verdict": None,
+    "mechanism_status": None,
+    "identity_complete": False,
+    "identity_match": None,
+    "hard_fail_reasons": [os.environ["ACTIVATION_FAILURE_REASON_VALUE"]],
+    "pending_reasons": [],
+}
+output_path.parent.mkdir(parents=True, exist_ok=True)
+temp = output_path.with_suffix(output_path.suffix + ".tmp")
+temp.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+temp.replace(output_path)
+PY
+}
+
+read_activation_resolution_decision() {
+  if [[ ! -f "${ACTIVATION_DECISION_PATH}" ]]; then
+    printf 'none\n'
+    return 0
+  fi
+  ACTIVATION_DECISION_PATH_VALUE="${ACTIVATION_DECISION_PATH}" \
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(
+    Path(os.environ["ACTIVATION_DECISION_PATH_VALUE"]).read_text(encoding="utf-8")
+)
+print(str(payload.get("decision") or "invalid"))
+PY
+}
+
+resolve_activation_transaction() {
+  ACTIVATION_RESOLUTION_DECISION="none"
+  local status=""
+  status="$(activation_transaction_status)"
+  case "${status}" in
+    none|committed|rolled_back|rolled_back_service_stopped)
+      return 0
+      ;;
+    prepared|restored_pending_runtime_verify|rollback_failed_restore|rollback_failed_runtime_restart|rollback_failed_runtime_verify)
+      echo "[WARN] activation transaction requires rollback recovery: status=${status}"
+      ACTIVATION_RESOLUTION_DECISION="rollback"
+      write_activation_failure_decision \
+        "activation transaction recovered from nonterminal status: ${status}"
+      rollback_activation_transaction
+      return $?
+      ;;
+    activated_pending_validation|canary_pending_evidence)
+      ;;
+    *)
+      echo "[ERROR] invalid activation transaction status=${status}; stopping ai-trade"
+      compose_cmd stop ai-trade || true
+      ACTIVATION_RESOLUTION_DECISION="rollback"
+      write_activation_failure_decision \
+        "invalid activation transaction status: ${status}"
+      return 1
+      ;;
+  esac
+  if [[ ! -f "${ASSESS_JSON_PATH}" ]]; then
+    echo "[ERROR] activation runtime assess artifact missing; rolling back"
+    ACTIVATION_RESOLUTION_DECISION="rollback"
+    write_activation_failure_decision \
+      "activation runtime assess artifact missing"
+    rollback_activation_transaction
+    return $?
+  fi
+
+  local evaluator_status=0
+  python3 tools/evaluate_activation_transaction.py \
+    --state "${ACTIVATION_TRANSACTION_STATE_PATH}" \
+    --runtime-assess "${ASSESS_JSON_PATH}" \
+    --mechanism-audit "${MECHANISM_AUDIT_REPORT_PATH}" \
+    --output "${ACTIVATION_DECISION_PATH}" \
+    --min-complete-episodes "${ACTIVATION_MIN_CANARY_EPISODES}" \
+    --min-positive-episode-ratio "${ACTIVATION_MIN_POSITIVE_EPISODE_RATIO}" \
+    --min-mean-realized-net-per-fill-usd "${ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD}" \
+    --max-pending-hours "${ACTIVATION_MAX_PENDING_HOURS}" \
+    || evaluator_status=$?
+  if (( evaluator_status != 0 )); then
+    ACTIVATION_RESOLUTION_DECISION="rollback"
+    write_activation_failure_decision \
+      "activation evaluator failed: exit_code=${evaluator_status}"
+    rollback_activation_transaction
+    return $?
+  fi
+
+  ACTIVATION_RESOLUTION_DECISION="$(
+    ACTIVATION_DECISION_PATH_VALUE="${ACTIVATION_DECISION_PATH}" \
+    python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(
+    Path(os.environ["ACTIVATION_DECISION_PATH_VALUE"]).read_text(encoding="utf-8")
+)
+print(str(payload.get("decision") or "invalid"))
+PY
+  )"
+  ACTIVATION_DECISION_PATH_VALUE="${ACTIVATION_DECISION_PATH}" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(
+    Path(os.environ["ACTIVATION_DECISION_PATH_VALUE"]).read_text(encoding="utf-8")
+)
+for category in ("hard_fail_reasons", "pending_reasons"):
+    values = payload.get(category, [])
+    if isinstance(values, list):
+        for value in values:
+            print(f"[INFO] activation {category}: {value}")
+PY
+  case "${ACTIVATION_RESOLUTION_DECISION}" in
+    commit)
+      commit_activation_transaction
+      ;;
+    rollback)
+      rollback_activation_transaction
+      ;;
+    pending)
+      snapshot_activation_transaction_state
+      echo "[INFO] activation remains canary_pending_evidence; run assess again when new closed episodes exist"
+      ;;
+    *)
+      echo "[ERROR] invalid activation resolution decision: ${ACTIVATION_RESOLUTION_DECISION}"
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 run_registry() {
   echo "[INFO] model registry start"
   if maybe_write_registry_alpha_block_report; then
     echo "[INFO] model registry skipped: alpha viability not proven"
     echo "[INFO] model registry done"
-    return 0
+    return 3
   fi
   REG_ARGS=(
     tools/model_registry.py register
     --model_file="${MODEL_OUTPUT_PATH}"
     --integrator_report="${INTEGRATOR_REPORT_PATH}"
     --miner_report="${MINER_REPORT_PATH}"
+    --research_domain_split_report="${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}"
+    --feature_parity_report="${FEATURE_PARITY_REPORT_PATH}"
     --max_versions="${MAX_MODEL_VERSIONS}"
     --min_auc_mean="${MIN_AUC_MEAN}"
     --min_delta_auc_vs_baseline="${MIN_DELTA_AUC_VS_BASELINE}"
     --min_mean_model_net_edge_bps="${INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS}"
     --min_positive_model_net_edge_ratio="${INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO}"
+    --min_model_net_total_trades="${INTEGRATOR_MIN_MODEL_NET_TOTAL_TRADES}"
+    --min_model_net_active_bars="${INTEGRATOR_MIN_MODEL_NET_ACTIVE_BARS}"
+    --min_positive_model_net_splits_ratio="${INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO}"
+    --min_model_net_edge_lcb_bps="${INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS}"
     --min_split_trained_count="${MIN_SPLIT_TRAINED_COUNT}"
     --min_split_trained_ratio="${MIN_SPLIT_TRAINED_RATIO}"
     --walkforward_report="${WALKFORWARD_REPORT_PATH}"
-    --require_walkforward_positive
     --min_walkforward_avg_split_return="${WALKFORWARD_MIN_AVG_SPLIT_RETURN}"
     --min_walkforward_enabled_avg_split_return="${WALKFORWARD_MIN_ENABLED_AVG_SPLIT_RETURN}"
     --min_walkforward_traded_avg_split_return="${WALKFORWARD_MIN_TRADED_AVG_SPLIT_RETURN}"
@@ -1473,10 +2868,33 @@ run_registry() {
   if [[ -f "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" ]]; then
     REG_ARGS+=(--alpha_mechanism_probe_report="${ALPHA_MECHANISM_PROBE_REPORT_PATH}")
   fi
-  if [[ "${ACTIVATE_ON_PASS}" == "true" ]]; then
-    REG_ARGS+=(--activate_on_pass)
+  local effective_activate="false"
+  if [[ "${ACTION}" == "full" ]]; then
+    if ! is_true "${ACTIVATE_ON_PASS}"; then
+      echo "[ERROR] full requires transactional activation; --activate-on-pass=false is invalid"
+      return 2
+    fi
+    begin_activation_transaction
+    effective_activate="true"
+  elif is_true "${ACTIVATE_ON_PASS}"; then
+    echo "[INFO] train registers a staged candidate only; production activation is reserved for full"
   fi
-  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${REG_ARGS[@]}"
+  if is_true "${effective_activate}"; then
+    REG_ARGS+=(
+      --activate_on_pass
+      --activation_transaction="${ACTIVATION_TRANSACTION_STATE_PATH}"
+    )
+  fi
+  local registry_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${REG_ARGS[@]}" \
+    || registry_status=$?
+  if (( registry_status != 0 )); then
+    return "${registry_status}"
+  fi
+  if is_true "${effective_activate}"; then
+    mark_activation_applied
+    freeze_activation_offline_evidence
+  fi
   echo "[INFO] model registry done"
 }
 
@@ -1498,8 +2916,102 @@ run_data_pipeline() {
   return 1
 }
 
+run_research_domain_split() {
+  echo "[INFO] research domain split start"
+  python3 tools/split_research_domains.py \
+    --raw-csv "${CSV_PATH}" \
+    --feature-csv "${FEATURE_STORE_PATH}" \
+    --development-csv "${RESEARCH_DEVELOPMENT_CSV_PATH}" \
+    --selection-feature-csv "${RESEARCH_SELECTION_FEATURE_PATH}" \
+    --holdout-feature-csv "${RESEARCH_HOLDOUT_FEATURE_PATH}" \
+    --report "${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}" \
+    --selection-bars "${RESEARCH_SELECTION_BARS}" \
+    --holdout-bars "${RESEARCH_HOLDOUT_BARS}" \
+    --embargo-bars "${RESEARCH_EMBARGO_BARS}" \
+    --min-development-bars "${RESEARCH_MIN_DEVELOPMENT_BARS}" \
+    --min-selection-feature-bars "${RESEARCH_MIN_SELECTION_FEATURE_BARS}" \
+    --min-holdout-feature-bars "${RESEARCH_MIN_HOLDOUT_FEATURE_BARS}" \
+    --symbol "${SYMBOL}" \
+    --holdout-ledger "${HOLDOUT_CONSUMPTION_LEDGER_PATH}"
+  echo "[INFO] research domain split done"
+}
+
+run_feature_parity() {
+  echo "[INFO] Python/C++ feature parity start"
+  local bars_fixture="tools/fixtures/feature_parity_bars_v1.csv"
+  local expected_fixture="tools/fixtures/feature_parity_expected_v1.tsv"
+  compose_cmd --profile research run --rm \
+    --entrypoint /app/trade_bot ai-trade-research \
+    --run_feature_parity \
+    --feature_parity_bars="${bars_fixture}" \
+    --feature_parity_expected="${expected_fixture}" \
+    --feature_parity_output="${FEATURE_PARITY_REPORT_PATH}" </dev/null
+  python3 - "${FEATURE_PARITY_REPORT_PATH}" \
+    "${bars_fixture}" "${expected_fixture}" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import sys
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+report_path = pathlib.Path(sys.argv[1])
+bars_path = pathlib.Path(sys.argv[2])
+expected_path = pathlib.Path(sys.argv[3])
+payload = json.loads(report_path.read_text(encoding="utf-8"))
+payload["fixture_contract"] = {
+    "schema_version": "feature_parity_fixture_contract_v1",
+    "bars_fixture": str(bars_path),
+    "bars_fixture_sha256": sha256_file(bars_path),
+    "expected_fixture": str(expected_path),
+    "expected_fixture_sha256": sha256_file(expected_path),
+}
+temp_path = report_path.with_suffix(report_path.suffix + ".tmp")
+temp_path.write_text(
+    json.dumps(payload, ensure_ascii=True, indent=2) + "\n",
+    encoding="utf-8",
+)
+os.replace(temp_path, report_path)
+PY
+  echo "[INFO] Python/C++ feature parity done"
+}
+
+split_symbol_replay_holdout() {
+  local raw_path="$1"
+  local feature_path="$2"
+  local symbol_dir="$3"
+  local symbol="$4"
+  local selection_path="${symbol_dir}/selection_feature_store_5m.csv"
+  local holdout_path="${symbol_dir}/holdout_feature_store_5m.csv"
+  python3 tools/split_research_domains.py \
+    --raw-csv "${raw_path}" \
+    --feature-csv "${feature_path}" \
+    --development-csv "${symbol_dir}/development_ohlcv_5m.csv" \
+    --selection-feature-csv "${selection_path}" \
+    --holdout-feature-csv "${holdout_path}" \
+    --report "${symbol_dir}/research_domain_split_report.json" \
+    --selection-bars "${RESEARCH_SELECTION_BARS}" \
+    --holdout-bars "${RESEARCH_HOLDOUT_BARS}" \
+    --embargo-bars "${RESEARCH_EMBARGO_BARS}" \
+    --min-development-bars "${RESEARCH_MIN_DEVELOPMENT_BARS}" \
+    --min-selection-feature-bars "${RESEARCH_MIN_SELECTION_FEATURE_BARS}" \
+    --min-holdout-feature-bars "${RESEARCH_MIN_HOLDOUT_FEATURE_BARS}" \
+    --symbol "${symbol}" \
+    --holdout-ledger "${HOLDOUT_CONSUMPTION_LEDGER_PATH}" \
+    >/dev/null
+}
+
 build_replay_validation_feature_map() {
   REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
+  RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL=""
   mkdir -p "${REPLAY_VALIDATION_DIR}"
   : > "${REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH}"
   if ! is_true "${REPLAY_VALIDATION_REAL_MARKET_FEATURES}"; then
@@ -1527,6 +3039,7 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
   echo "[INFO] replay validation per-symbol feature build start"
   mkdir -p "${REPLAY_VALIDATION_FEATURE_DIR}"
   local mapping_parts=()
+  local selection_mapping_parts=()
   local symbol
   while IFS= read -r symbol; do
     if [[ -z "${symbol}" ]]; then
@@ -1538,11 +3051,14 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
     local backtest_path="${symbol_dir}/walkforward_report.json"
     mkdir -p "${symbol_dir}"
 
-    if [[ "${symbol}" == "${REPLAY_VALIDATION_SOURCE_SYMBOL}" && "${REPLAY_VALIDATION_SOURCE_SYMBOL}" == "${SYMBOL}" && -f "${FEATURE_STORE_PATH}" ]]; then
-      mapping_parts+=("${symbol}=${FEATURE_STORE_PATH}")
-      echo "[INFO] replay validation reuse source feature store: symbol=${symbol} feature=${FEATURE_STORE_PATH}"
+    if [[ "${symbol}" == "${REPLAY_VALIDATION_SOURCE_SYMBOL}" && "${REPLAY_VALIDATION_SOURCE_SYMBOL}" == "${SYMBOL}" && -f "${RESEARCH_SELECTION_FEATURE_PATH}" && -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
+      mapping_parts+=("${symbol}=${RESEARCH_HOLDOUT_FEATURE_PATH}")
+      selection_mapping_parts+=("${symbol}=${RESEARCH_SELECTION_FEATURE_PATH}")
+      echo "[INFO] replay validation reuse source holdout: symbol=${symbol} feature=${RESEARCH_HOLDOUT_FEATURE_PATH}"
       append_replay_validation_feature_build_record \
-        "${symbol}" "reused" "${FEATURE_STORE_PATH}" "${symbol_dir}" "source_feature_store"
+        "${symbol}" "reused" "${RESEARCH_HOLDOUT_FEATURE_PATH}" "${symbol_dir}" \
+        "source_untouched_holdout" "${RESEARCH_SELECTION_FEATURE_PATH}" \
+        "${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}"
       continue
     fi
 
@@ -1558,9 +3074,21 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
       --archive-days "${REPLAY_VALIDATION_FEATURE_DAYS}" \
       --skip-walkforward </dev/null; then
       if [[ -f "${feature_path}" ]]; then
-        mapping_parts+=("${symbol}=${feature_path}")
-        append_replay_validation_feature_build_record \
-          "${symbol}" "built" "${feature_path}" "${symbol_dir}" ""
+        if split_symbol_replay_holdout \
+          "${ohlcv_path}" "${feature_path}" "${symbol_dir}" "${symbol}"; then
+          local symbol_selection_path="${symbol_dir}/selection_feature_store_5m.csv"
+          local symbol_holdout_path="${symbol_dir}/holdout_feature_store_5m.csv"
+          mapping_parts+=("${symbol}=${symbol_holdout_path}")
+          selection_mapping_parts+=("${symbol}=${symbol_selection_path}")
+          append_replay_validation_feature_build_record \
+            "${symbol}" "built" "${symbol_holdout_path}" "${symbol_dir}" \
+            "untouched_holdout" "${symbol_selection_path}" \
+            "${symbol_dir}/research_domain_split_report.json"
+        else
+          echo "[WARN] replay validation domain split failed: symbol=${symbol}"
+          append_replay_validation_feature_build_record \
+            "${symbol}" "failed" "${feature_path}" "${symbol_dir}" "research_domain_split_failed"
+        fi
       else
         echo "[WARN] replay validation feature store missing after build: symbol=${symbol} path=${feature_path}"
         append_replay_validation_feature_build_record \
@@ -1582,12 +3110,21 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
   else
     echo "[WARN] replay validation feature map empty; fallback to source feature store"
   fi
+  if (( ${#selection_mapping_parts[@]} > 0 )); then
+    local old_selection_ifs="${IFS}"
+    IFS=","
+    RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL="${selection_mapping_parts[*]}"
+    IFS="${old_selection_ifs}"
+    echo "[INFO] research selection feature map: ${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}"
+  else
+    echo "[WARN] research selection feature map empty"
+  fi
   write_replay_validation_feature_build_report
 }
 
 ensure_replay_validation_source_feature_store() {
-  if [[ -f "${FEATURE_STORE_PATH}" ]]; then
-    echo "[INFO] replay validation source feature store ready: ${FEATURE_STORE_PATH}"
+  if [[ -f "${FEATURE_STORE_PATH}" && -f "${RESEARCH_SELECTION_FEATURE_PATH}" && -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
+    echo "[INFO] replay validation source holdout ready: ${RESEARCH_HOLDOUT_FEATURE_PATH}"
     return 0
   fi
   if ! is_true "${REPLAY_VALIDATION_ENABLED}"; then
@@ -1616,8 +3153,18 @@ ensure_replay_validation_source_feature_store() {
     --archive-days "${REPLAY_VALIDATION_FEATURE_DAYS}" \
     --skip-walkforward </dev/null; then
     if [[ -f "${FEATURE_STORE_PATH}" ]]; then
-      echo "[INFO] replay validation source feature store built: ${FEATURE_STORE_PATH}"
-      return 0
+      if split_symbol_replay_holdout \
+        "${ohlcv_path}" "${FEATURE_STORE_PATH}" "${source_dir}" "${source_symbol}" \
+        >/dev/null; then
+        cp -f "${source_dir}/development_ohlcv_5m.csv" "${RESEARCH_DEVELOPMENT_CSV_PATH}"
+        cp -f "${source_dir}/selection_feature_store_5m.csv" "${RESEARCH_SELECTION_FEATURE_PATH}"
+        cp -f "${source_dir}/holdout_feature_store_5m.csv" "${RESEARCH_HOLDOUT_FEATURE_PATH}"
+        cp -f "${source_dir}/research_domain_split_report.json" "${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}"
+        echo "[INFO] replay validation source holdout built: ${RESEARCH_HOLDOUT_FEATURE_PATH}"
+        return 0
+      fi
+      echo "[WARN] replay validation source domain split failed"
+      return 1
     fi
     echo "[WARN] replay validation source feature store missing after build: ${FEATURE_STORE_PATH}"
     return 0
@@ -1825,20 +3372,25 @@ PY
 
 run_replay_validation() {
   if ! is_true "${REPLAY_VALIDATION_ENABLED}"; then
-    echo "[INFO] replay validation skipped (disabled)"
+    echo "[ERROR] replay validation is required by the closed-loop contract"
     REPLAY_VALIDATION_LAST_STATUS="disabled"
-    return 0
+    return 1
+  fi
+  if ! is_true "${REPLAY_VALIDATION_REAL_MARKET_FEATURES}"; then
+    echo "[ERROR] real-market per-symbol replay features are required by the closed-loop contract"
+    REPLAY_VALIDATION_LAST_STATUS="real_market_features_disabled"
+    return 1
   fi
 
-  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
+  if [[ ! -f "${FEATURE_STORE_PATH}" || ! -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
     ensure_replay_validation_source_feature_store
   fi
 
-  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
-    echo "[WARN] replay validation skipped: feature store missing (${FEATURE_STORE_PATH})"
+  if [[ ! -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
+    echo "[WARN] replay validation skipped: untouched holdout missing (${RESEARCH_HOLDOUT_FEATURE_PATH})"
     write_replay_validation_skip_report
     REPLAY_VALIDATION_LAST_STATUS="skipped"
-    return 0
+    return 1
   fi
 
   build_replay_validation_feature_map
@@ -1847,14 +3399,16 @@ run_replay_validation() {
   mkdir -p "${REPLAY_VALIDATION_DIR}"
   REPLAY_ARGS=(
     tools/run_replay_validation.py
-    --feature_csv "${FEATURE_STORE_PATH}"
-    --base_config "${REPLAY_VALIDATION_CONFIG_PATH}"
+    --feature_csv "${RESEARCH_HOLDOUT_FEATURE_PATH}"
+    --base_config "${REPLAY_EFFECTIVE_CONFIG_PATH}"
     --trade_bot "/app/trade_bot"
     --output_dir "${REPLAY_VALIDATION_DIR}"
     --symbol "${REPLAY_VALIDATION_SYMBOL}"
     --symbols "${REPLAY_VALIDATION_SYMBOLS}"
     --source_symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL}"
     --feature_csv_by_symbol "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+    --selection_feature_csv "${RESEARCH_SELECTION_FEATURE_PATH}"
+    --selection_feature_csv_by_symbol "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}"
     --target_bucket "${REPLAY_VALIDATION_TARGET_BUCKET}"
     --max_segments "${REPLAY_VALIDATION_MAX_SEGMENTS}"
     --min_segment_bars "${REPLAY_VALIDATION_MIN_SEGMENT_BARS}"
@@ -1867,14 +3421,15 @@ run_replay_validation() {
     --min_break_even_fee_multiplier "${REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER}"
     --warn_mean_filtered_cost_ratio "${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}"
     --min_tradable_symbols "${REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS}"
+    --holdout_ledger "${HOLDOUT_CONSUMPTION_LEDGER_PATH}"
+    --experiment_id "${RUN_ID}"
   )
-  local replay_refresh_corpus="${REPLAY_VALIDATION_REFRESH_CORPUS}"
-  if ! is_true "${replay_refresh_corpus}" && [[ "${REPLAY_VALIDATION_FEATURE_DAYS}" =~ ^[1-9][0-9]*$ ]]; then
-    replay_refresh_corpus="true"
-    echo "[INFO] replay validation corpus refresh enabled for bounded feature window: days=${REPLAY_VALIDATION_FEATURE_DAYS}"
-  fi
-  if is_true "${replay_refresh_corpus}"; then
-    REPLAY_ARGS+=(--refresh_corpus_manifest)
+  if [[ -f "${MODEL_OUTPUT_PATH}" && -f "${INTEGRATOR_REPORT_PATH}" ]]; then
+    REPLAY_ARGS+=(
+      --candidate_model "${MODEL_OUTPUT_PATH}"
+      --candidate_report "${INTEGRATOR_REPORT_PATH}"
+      --require_candidate_identity
+    )
   fi
   local replay_command_json
   replay_command_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:], ensure_ascii=False))' "${REPLAY_ARGS[@]}")"
@@ -1896,13 +3451,17 @@ run_replay_validation() {
   fi
 
   echo "[WARN] replay validation failed: exit_code=${replay_exit_code}, log=${REPLAY_VALIDATION_COMMAND_LOG_PATH}"
-  write_replay_validation_fail_report \
-    "${replay_exit_code}" \
-    "${REPLAY_VALIDATION_COMMAND_LOG_PATH}" \
-    "${replay_command_json}"
+  if [[ ! -s "${REPLAY_VALIDATION_REPORT_PATH}" ]]; then
+    write_replay_validation_fail_report \
+      "${replay_exit_code}" \
+      "${REPLAY_VALIDATION_COMMAND_LOG_PATH}" \
+      "${replay_command_json}"
+  else
+    echo "[INFO] preserving structured replay failure report: ${REPLAY_VALIDATION_REPORT_PATH}"
+  fi
   attach_replay_validation_feature_build_report
   REPLAY_VALIDATION_LAST_STATUS="fail"
-  return 0
+  return "${replay_exit_code}"
 }
 
 write_strategy_diagnose_report() {
@@ -1927,15 +3486,15 @@ EOF
 
 run_strategy_diagnose() {
   if ! is_true "${STRATEGY_DIAGNOSE_ENABLED}"; then
-    echo "[INFO] strategy diagnose skipped (disabled)"
+    echo "[ERROR] strategy diagnose is required by the closed-loop contract"
     write_strategy_diagnose_report "skipped" "disabled"
-    return 0
+    return 1
   fi
 
-  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
-    echo "[WARN] strategy diagnose skipped: feature store missing (${FEATURE_STORE_PATH})"
+  if [[ ! -f "${RESEARCH_SELECTION_FEATURE_PATH}" ]]; then
+    echo "[WARN] strategy diagnose skipped: selection feature missing (${RESEARCH_SELECTION_FEATURE_PATH})"
     write_strategy_diagnose_report "skipped" "feature_store_missing"
-    return 0
+    return 1
   fi
 
   echo "[INFO] strategy diagnose start"
@@ -1943,7 +3502,7 @@ run_strategy_diagnose() {
     tools/strategy_diagnose.py
     --output "${STRATEGY_DIAGNOSE_REPORT_PATH}"
     --symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL:-${SYMBOL}}"
-    --feature_csv "${FEATURE_STORE_PATH}"
+    --feature_csv "${RESEARCH_SELECTION_FEATURE_PATH}"
     --ohlcv_csv "${CSV_PATH}"
     --forward-bars "${PREDICT_HORIZON_BARS}"
     --round-trip-cost-bps "${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
@@ -1955,19 +3514,22 @@ run_strategy_diagnose() {
     --min-positive-net-ratio "${STRATEGY_DIAGNOSE_MIN_POSITIVE_NET_RATIO}"
     --min-mfe-cost-coverage "${STRATEGY_DIAGNOSE_MIN_MFE_COST_COVERAGE}"
   )
-  if [[ -n "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}" ]]; then
+  if [[ -n "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}" ]]; then
     STRATEGY_DIAGNOSE_ARGS+=(
-      --feature_csv_by_symbol "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+      --feature_csv_by_symbol "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}"
     )
   fi
-  if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${STRATEGY_DIAGNOSE_ARGS[@]}"; then
+  local diagnose_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    "${STRATEGY_DIAGNOSE_ARGS[@]}" || diagnose_status=$?
+  if (( diagnose_status == 0 )); then
     echo "[INFO] strategy diagnose done"
     return 0
   fi
 
-  echo "[WARN] strategy diagnose failed"
+  echo "[WARN] strategy diagnose failed: status=${diagnose_status}"
   write_strategy_diagnose_report "fail" "strategy_diagnose_command_failed"
-  return 0
+  return "${diagnose_status}"
 }
 
 should_run_alpha_mechanism_probe() {
@@ -1982,11 +3544,11 @@ should_run_alpha_mechanism_probe() {
 
 run_alpha_mechanism_probe() {
   if ! should_run_alpha_mechanism_probe; then
-    echo "[INFO] alpha mechanism probe skipped (enabled=${ALPHA_MECHANISM_PROBE_ENABLED}, action=${ACTION})"
-    return 0
+    echo "[ERROR] alpha mechanism probe is required by the closed-loop contract (enabled=${ALPHA_MECHANISM_PROBE_ENABLED}, action=${ACTION})"
+    return 1
   fi
-  if [[ ! -f "${FEATURE_STORE_PATH}" ]]; then
-    echo "[WARN] alpha mechanism probe skipped: feature store missing (${FEATURE_STORE_PATH})"
+  if [[ ! -f "${RESEARCH_SELECTION_FEATURE_PATH}" ]]; then
+    echo "[WARN] alpha mechanism probe skipped: selection feature missing (${RESEARCH_SELECTION_FEATURE_PATH})"
     cat > "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" <<EOF
 {
   "schema_version": "alpha_mechanism_probe_v1",
@@ -2013,7 +3575,7 @@ EOF
   "fail_reasons": ["feature_store_missing"]
 }
 EOF
-    return 0
+    return 1
   fi
 
   echo "[INFO] alpha mechanism probe start"
@@ -2022,7 +3584,7 @@ EOF
     --output "${ALPHA_MECHANISM_PROBE_REPORT_PATH}"
     --candidate-manifest-output "${ALPHA_CANDIDATE_MANIFEST_PATH}"
     --symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL:-${SYMBOL}}"
-    --feature_csv "${FEATURE_STORE_PATH}"
+    --feature_csv "${RESEARCH_SELECTION_FEATURE_PATH}"
     --round-trip-cost-bps "${ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS}"
     --objective-mode "${ALPHA_MECHANISM_PROBE_OBJECTIVE_MODE}"
     --path-horizon-bars "${ALPHA_MECHANISM_PROBE_PATH_HORIZON_BARS}"
@@ -2033,8 +3595,8 @@ EOF
     --min-positive-ratio "${ALPHA_MECHANISM_PROBE_MIN_POSITIVE_RATIO}"
     --min-mfe-cost-coverage "${ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE}"
   )
-  if [[ -n "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}" ]]; then
-    IFS=',' read -r -a probe_feature_items <<< "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+  if [[ -n "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}" ]]; then
+    IFS=',' read -r -a probe_feature_items <<< "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}"
     local item
     for item in "${probe_feature_items[@]}"; do
       if [[ -n "${item}" ]]; then
@@ -2050,14 +3612,15 @@ EOF
     echo "[WARN] alpha mechanism probe reported failure: status=${probe_status}"
   fi
   echo "[INFO] alpha mechanism probe done"
-  return 0
+  return "${probe_status}"
 }
 
 should_run_mechanism_audit() {
   if is_true "${MECHANISM_AUDIT_ENABLED}"; then
     return 0
   fi
-  if [[ "${MECHANISM_AUDIT_ENABLED}" == "auto" && "${ACTION}" == "full" ]]; then
+  if [[ "${MECHANISM_AUDIT_ENABLED}" == "auto" &&
+        ( "${ACTION}" == "full" || "${ACTION}" == "assess" ) ]]; then
     return 0
   fi
   return 1
@@ -2065,8 +3628,8 @@ should_run_mechanism_audit() {
 
 run_mechanism_audit() {
   if ! should_run_mechanism_audit; then
-    echo "[INFO] closed-loop mechanism audit skipped (enabled=${MECHANISM_AUDIT_ENABLED}, action=${ACTION})"
-    return 0
+    echo "[ERROR] closed-loop mechanism audit is required by the closed-loop contract (enabled=${MECHANISM_AUDIT_ENABLED}, action=${ACTION})"
+    return 1
   fi
   echo "[INFO] closed-loop mechanism audit start"
   local audit_args=(
@@ -2105,14 +3668,13 @@ run_mechanism_audit() {
     echo "[WARN] closed-loop mechanism audit reported action required: status=${audit_status}"
   fi
   echo "[INFO] closed-loop mechanism audit done"
-  return 0
+  return "${audit_status}"
 }
 
 prepare_training_data() {
   if ! is_true "${DATA_PIPELINE_BEFORE_TRAIN}"; then
-    echo "[INFO] data pipeline pre-train disabled, fallback to R0 fetch"
-    run_fetch
-    return 0
+    echo "[ERROR] data pipeline is required by the closed-loop contract; legacy R0 fallback is forbidden"
+    return 1
   fi
 
   if run_data_pipeline; then
@@ -2126,12 +3688,22 @@ prepare_training_data() {
   fi
 
   echo "[WARN] data pipeline failed"
-  if is_true "${DATA_PIPELINE_REQUIRED}"; then
-    echo "[ERROR] data pipeline required=true, abort train/full"
+  echo "[ERROR] data pipeline contract failed; legacy R0 fallback is forbidden"
+  return 1
+}
+
+run_trade_ledger() {
+  if [[ ! -f "${ASSESS_LOG_PATH}" ]]; then
+    echo "[WARN] trade ledger skipped: runtime log missing (${ASSESS_LOG_PATH})"
     return 1
   fi
-  echo "[WARN] fallback to R0 fetch after data pipeline failure"
-  run_fetch
+  echo "[INFO] canonical trade ledger start"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/build_trade_ledger.py \
+    --log "${ASSESS_LOG_PATH}" \
+    --output "${TRADE_LEDGER_REPORT_PATH}" \
+    --run-id "${RUN_ID}"
+  echo "[INFO] canonical trade ledger done"
 }
 
 run_assess() {
@@ -2151,7 +3723,13 @@ run_assess() {
   fi
 
   while true; do
-    compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade > "${ASSESS_RAW_LOG_PATH}" || true
+    local runtime_log_status=0
+    compose_cmd logs --no-color --since "${LOG_SINCE}" ai-trade \
+      > "${ASSESS_RAW_LOG_PATH}" || runtime_log_status=$?
+    if (( runtime_log_status != 0 )); then
+      echo "[ERROR] runtime log collection failed: status=${runtime_log_status}"
+      return "${runtime_log_status}"
+    fi
     filter_runtime_log_to_current_boot "${ASSESS_RAW_LOG_PATH}" \
       "${ASSESS_LOG_PATH}" \
       "${ASSESS_LOG_FILTER_META_PATH}"
@@ -2219,21 +3797,173 @@ run_assess() {
       ASSESS_ARGS+=(--s5-max-equity-vs-realized-gap-usd "${S5_MAX_EQUITY_VS_REALIZED_GAP_USD}")
     fi
   fi
-  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${ASSESS_ARGS[@]}"
+  local assess_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${ASSESS_ARGS[@]}" \
+    || assess_status=$?
+  local ledger_status=0
+  run_trade_ledger || ledger_status=$?
   echo "[INFO] runtime assess done"
+  if (( assess_status == 0 && ledger_status != 0 )); then
+    assess_status="${ledger_status}"
+  fi
+  return "${assess_status}"
 }
 
 restart_if_activated() {
-  if [[ -f "${REGISTRY_RESULT_PATH}" ]]; then
-    # 检查注册结果是否标记为 activated=true (依赖 JSON 格式化，grep 简单有效)
-    if grep -q '"activated": true' "${REGISTRY_RESULT_PATH}"; then
-      echo "[INFO] DEPLOY: 检测到新模型已激活，正在重启 ai-trade 容器..."
-      compose_cmd restart ai-trade
-      echo "[INFO] DEPLOY: 容器重启指令已执行"
-    else
-      echo "[INFO] DEPLOY: 模型未激活，跳过重启"
+  local require_activation="${1:-false}"
+  if [[ ! -f "${REGISTRY_RESULT_PATH}" ]]; then
+    echo "[ERROR] DEPLOY: registry result missing: ${REGISTRY_RESULT_PATH}"
+    if is_true "${require_activation}"; then
+      return 1
     fi
+    return 0
   fi
+  local candidate_identity=""
+  if ! candidate_identity="$(
+    REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(
+    Path(os.environ["REGISTRY_RESULT_PATH_VALUE"]).read_text(encoding="utf-8")
+)
+if payload.get("activated") is not True:
+    raise SystemExit(2)
+version = str(payload.get("model_version") or "").strip()
+checksums = payload.get("active_checksums")
+if not isinstance(checksums, dict):
+    checksums = {}
+model_sha = str(checksums.get("model_sha256") or "").strip()
+report_sha = str(checksums.get("report_sha256") or "").strip()
+policy_sha = str(checksums.get("execution_policy_sha256") or "").strip()
+runtime_config_sha = str(
+    checksums.get("runtime_config_sha256") or ""
+).strip()
+trade_bot_sha = str(checksums.get("trade_bot_sha256") or "").strip()
+if (
+    not version
+    or len(model_sha) != 64
+    or len(report_sha) != 64
+    or len(policy_sha) != 64
+    or len(runtime_config_sha) != 64
+    or len(trade_bot_sha) != 64
+):
+    raise SystemExit(3)
+print(
+    f"{version}|{model_sha}|{report_sha}|{policy_sha}|"
+    f"{runtime_config_sha}|{trade_bot_sha}"
+)
+PY
+  )"; then
+    echo "[ERROR] DEPLOY: registry candidate was not activated"
+    if is_true "${require_activation}"; then
+      return 1
+    fi
+    return 0
+  fi
+  local candidate_version=""
+  local candidate_model_sha256=""
+  local candidate_report_sha256=""
+  local candidate_execution_policy_sha256=""
+  local candidate_runtime_config_sha256=""
+  local candidate_trade_bot_sha256=""
+  IFS='|' read -r candidate_version candidate_model_sha256 candidate_report_sha256 candidate_execution_policy_sha256 candidate_runtime_config_sha256 candidate_trade_bot_sha256 \
+    <<< "${candidate_identity}"
+  local runtime_execution_policy_sha256=""
+  runtime_execution_policy_sha256="$(
+    python3 tools/config_policy_contract.py --config "${RUNTIME_CONFIG_PATH}"
+  )" || {
+    echo "[ERROR] DEPLOY: runtime execution policy identity failed"
+    return 1
+  }
+  if [[ "${runtime_execution_policy_sha256}" != "${candidate_execution_policy_sha256}" ]]; then
+    echo "[ERROR] DEPLOY: runtime execution policy differs from replay candidate: runtime=${runtime_execution_policy_sha256} candidate=${candidate_execution_policy_sha256}"
+    return 1
+  fi
+  local runtime_config_sha256=""
+  runtime_config_sha256="$(
+    RUNTIME_CONFIG_PATH_VALUE="${RUNTIME_CONFIG_PATH}" python3 - <<'PY'
+import hashlib
+import os
+from pathlib import Path
+
+print(
+    hashlib.sha256(
+        Path(os.environ["RUNTIME_CONFIG_PATH_VALUE"]).read_bytes()
+    ).hexdigest()
+)
+PY
+  )" || {
+    echo "[ERROR] DEPLOY: runtime config identity failed"
+    return 1
+  }
+  if [[ "${runtime_config_sha256}" != "${candidate_runtime_config_sha256}" ]]; then
+    echo "[ERROR] DEPLOY: runtime config differs from replay source: runtime=${runtime_config_sha256} candidate=${candidate_runtime_config_sha256}"
+    return 1
+  fi
+  echo "[INFO] DEPLOY: 候选已激活，重启 ai-trade: model_version=${candidate_version}"
+  local previous_boot_id=""
+  previous_boot_id="$(
+    compose_cmd logs --no-color --tail 500 ai-trade 2>/dev/null \
+      | sed -n 's/.*PROCESS_START: boot_id=\([^, ]*\).*/\1/p' \
+      | tail -n 1 \
+      || true
+  )"
+  local restart_started_utc=""
+  restart_started_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  compose_cmd restart ai-trade
+
+  local deadline=$(( $(date +%s) + 180 ))
+  while (( $(date +%s) < deadline )); do
+    local container_id=""
+    container_id="$(compose_cmd ps -q ai-trade 2>/dev/null | head -n 1 || true)"
+    local health=""
+    if [[ -n "${container_id}" ]]; then
+      health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${container_id}" 2>/dev/null || true)"
+    fi
+    local recent_logs=""
+    recent_logs="$(
+      compose_cmd logs --no-color --since "${restart_started_utc}" ai-trade \
+        2>/dev/null || true
+    )"
+    local current_boot_id=""
+    current_boot_id="$(
+      sed -n 's/.*PROCESS_START: boot_id=\([^, ]*\).*/\1/p' \
+        <<< "${recent_logs}" | tail -n 1
+    )"
+    local current_boot_logs=""
+    if [[ -n "${current_boot_id}" &&
+          "${current_boot_id}" != "${previous_boot_id}" ]]; then
+      current_boot_logs="$(
+        awk -v marker="PROCESS_START: boot_id=${current_boot_id}," \
+          'index($0, marker) { emit=1 } emit { print }' \
+          <<< "${recent_logs}"
+      )"
+    fi
+    if [[ "${health}" == "healthy" || "${health}" == "running" ]]; then
+      if [[ -n "${current_boot_logs}" ]] &&
+         grep -F "INTEGRATOR_INIT:" <<< "${current_boot_logs}" |
+          grep -F "model_version=${candidate_version}," >/dev/null &&
+         grep -F "INTEGRATOR_ARTIFACT_IDENTITY: model_version=${candidate_version}, model_sha256=${candidate_model_sha256}, report_sha256=${candidate_report_sha256}" \
+          <<< "${current_boot_logs}" >/dev/null; then
+        local runtime_trade_bot_sha256=""
+        runtime_trade_bot_sha256="$(
+          compose_cmd exec -T ai-trade sha256sum /app/trade_bot 2>/dev/null |
+            awk '{print $1}' | head -n 1
+        )"
+        if [[ "${runtime_trade_bot_sha256}" == "${candidate_trade_bot_sha256}" ]]; then
+          echo "[INFO] DEPLOY: 候选加载确认完成: model_version=${candidate_version}, boot_id=${current_boot_id}, trade_bot_sha256=${runtime_trade_bot_sha256}"
+          return 0
+        fi
+        echo "[ERROR] DEPLOY: runtime trade_bot differs from replay candidate: runtime=${runtime_trade_bot_sha256} candidate=${candidate_trade_bot_sha256}"
+        return 1
+      fi
+    fi
+    sleep 5
+  done
+  echo "[ERROR] DEPLOY: 候选重启后未在 180s 内完成健康及版本确认: ${candidate_version}"
+  return 1
 }
 
 write_run_manifest() {
@@ -2241,14 +3971,42 @@ write_run_manifest() {
   local git_commit=""
   local git_branch=""
   local git_dirty="unknown"
-  if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  local git_source="unknown"
+  local runtime_container_id=""
+  local runtime_image_ref=""
+  local runtime_image_id=""
+  local runtime_image_revision=""
+  if [[ -n "${CLOSED_LOOP_GIT_COMMIT:-}" ]]; then
+    git_commit="${CLOSED_LOOP_GIT_COMMIT}"
+    git_branch="${CLOSED_LOOP_GIT_BRANCH:-}"
+    git_source="workflow_env"
+  elif command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     git_commit="$(git rev-parse HEAD 2>/dev/null || true)"
     git_branch="$(git branch --show-current 2>/dev/null || true)"
+    git_source="git_worktree"
     if [[ -n "$(git status --short 2>/dev/null || true)" ]]; then
       git_dirty="true"
     else
       git_dirty="false"
     fi
+  fi
+  runtime_container_id="$(compose_cmd ps -q ai-trade 2>/dev/null || true)"
+  if [[ -n "${runtime_container_id}" ]]; then
+    runtime_image_ref="$(
+      docker inspect --format '{{.Config.Image}}' "${runtime_container_id}" 2>/dev/null \
+        || true
+    )"
+    runtime_image_id="$(
+      docker inspect --format '{{.Image}}' "${runtime_container_id}" 2>/dev/null \
+        || true
+    )"
+    runtime_image_revision="$(
+      docker inspect \
+        --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+        "${runtime_container_id}" 2>/dev/null \
+        || true
+    )"
+    [[ "${runtime_image_revision}" == "<no value>" ]] && runtime_image_revision=""
   fi
 
   RUN_MANIFEST_JSON_OUT="${RUN_MANIFEST_PATH}" \
@@ -2261,7 +4019,7 @@ write_run_manifest() {
   RUNTIME_CONFIG_PATH_VALUE="${RUNTIME_CONFIG_PATH}" \
   RUNTIME_CONFIG_SOURCE_VALUE="${RUNTIME_CONFIG_SOURCE}" \
   DATA_CONFIG_PATH_VALUE="${DATA_CONFIG_PATH}" \
-  REPLAY_CONFIG_PATH_VALUE="${REPLAY_VALIDATION_CONFIG_PATH}" \
+  REPLAY_CONFIG_PATH_VALUE="${REPLAY_EFFECTIVE_CONFIG_PATH}" \
   REPLAY_SOURCE_SYMBOL_VALUE="${REPLAY_VALIDATION_SOURCE_SYMBOL}" \
   REPLAY_SYMBOL_VALUE="${REPLAY_VALIDATION_SYMBOL}" \
   REPLAY_SYMBOLS_VALUE="${REPLAY_VALIDATION_SYMBOLS}" \
@@ -2269,6 +4027,7 @@ write_run_manifest() {
   REPLAY_REAL_MARKET_FEATURES_VALUE="${REPLAY_VALIDATION_REAL_MARKET_FEATURES}" \
   REPLAY_FEATURE_DAYS_VALUE="${REPLAY_VALIDATION_FEATURE_DAYS}" \
   REPLAY_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  SELECTION_CANDIDATE_MANIFEST_PATH_VALUE="${SELECTION_CANDIDATE_MANIFEST_PATH}" \
   WALKFORWARD_FOCUS_BUCKET_VALUE="${WALKFORWARD_FOCUS_BUCKET}" \
   WALKFORWARD_FOCUS_BUCKET_PRIMARY_VALUE="${WALKFORWARD_FOCUS_BUCKET_PRIMARY}" \
   RUNTIME_LOG_PATH_VALUE="${ASSESS_LOG_PATH}" \
@@ -2279,6 +4038,41 @@ write_run_manifest() {
   GIT_COMMIT_VALUE="${git_commit}" \
   GIT_BRANCH_VALUE="${git_branch}" \
   GIT_DIRTY_VALUE="${git_dirty}" \
+  GIT_SOURCE_VALUE="${git_source}" \
+  EXECUTED_RELEASE_SHA_VALUE="${CLOSED_LOOP_EXECUTED_RELEASE_SHA:-}" \
+  EXECUTED_RELEASE_DIR_VALUE="${CLOSED_LOOP_EXECUTED_RELEASE_DIR:-}" \
+  RUNNER_SHA256_VALUE="${CLOSED_LOOP_RUNNER_SHA256:-}" \
+  RUNTIME_CONTAINER_ID_VALUE="${runtime_container_id}" \
+  RUNTIME_IMAGE_REF_VALUE="${runtime_image_ref}" \
+  RUNTIME_IMAGE_ID_VALUE="${runtime_image_id}" \
+  RUNTIME_IMAGE_REVISION_VALUE="${runtime_image_revision}" \
+  BASELINE_REPORT_PATH_VALUE="${BASELINE_REPORT_PATH}" \
+  DATA_QUALITY_REPORT_PATH_VALUE="${DATA_QUALITY_REPORT_PATH}" \
+  WALKFORWARD_REPORT_PATH_VALUE="${WALKFORWARD_REPORT_PATH}" \
+  FEATURE_STORE_PATH_VALUE="${FEATURE_STORE_PATH}" \
+  RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE="${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}" \
+  FEATURE_PARITY_REPORT_PATH_VALUE="${FEATURE_PARITY_REPORT_PATH}" \
+  RESEARCH_SELECTION_FEATURE_PATH_VALUE="${RESEARCH_SELECTION_FEATURE_PATH}" \
+  RESEARCH_HOLDOUT_FEATURE_PATH_VALUE="${RESEARCH_HOLDOUT_FEATURE_PATH}" \
+  MINER_REPORT_PATH_VALUE="${MINER_REPORT_PATH}" \
+  INTEGRATOR_REPORT_PATH_VALUE="${INTEGRATOR_REPORT_PATH}" \
+  MODEL_OUTPUT_PATH_VALUE="${MODEL_OUTPUT_PATH}" \
+  REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" \
+  REPLAY_OPTIMIZATION_REPORT_PATH_VALUE="${REPLAY_OPTIMIZATION_REPORT_PATH}" \
+  STRATEGY_DIAGNOSE_REPORT_PATH_VALUE="${STRATEGY_DIAGNOSE_REPORT_PATH}" \
+  ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE="${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
+  ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${ALPHA_CANDIDATE_MANIFEST_PATH}" \
+  STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE="${STRATEGY_CANDIDATE_MANIFEST_PATH}" \
+  REPLAY_CANDIDATE_CONFIG_PATH_VALUE="${REPLAY_CANDIDATE_CONFIG_PATH}" \
+  RUNTIME_ASSESS_PATH_VALUE="${ASSESS_JSON_PATH}" \
+  TRADE_LEDGER_REPORT_PATH_VALUE="${TRADE_LEDGER_REPORT_PATH}" \
+  MECHANISM_AUDIT_REPORT_PATH_VALUE="${MECHANISM_AUDIT_REPORT_PATH}" \
+  ACTIVATION_TRANSACTION_SNAPSHOT_PATH_VALUE="${ACTIVATION_TRANSACTION_SNAPSHOT_PATH}" \
+  ACTIVATION_DECISION_PATH_VALUE="${ACTIVATION_DECISION_PATH}" \
+  STEP_STATUS_PATH_VALUE="${STEP_STATUS_PATH}" \
+  REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH_VALUE="${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}" \
+  REPLAY_VALIDATION_COMMAND_LOG_PATH_VALUE="${REPLAY_VALIDATION_COMMAND_LOG_PATH}" \
+  CLOSED_LOOP_CONTRACT_PATH_VALUE="${CLOSED_LOOP_CONTRACT_PATH:-config/closed_loop_contract.json}" \
   python3 - <<'PY'
 import datetime as dt
 import hashlib
@@ -2348,24 +4142,57 @@ def latest_runtime_symbol(*path_values: str) -> str:
 
 
 out = Path(os.environ["RUN_MANIFEST_JSON_OUT"])
+contract_path = Path(os.environ["CLOSED_LOOP_CONTRACT_PATH_VALUE"])
+if not contract_path.is_file():
+    raise SystemExit(f"closed-loop contract missing: {contract_path}")
+contract = load_json_file(str(contract_path))
+contract_schema = str(contract.get("schema_version") or "").strip()
+contract_actions = contract.get("actions")
+if contract_schema != "closed_loop_contract_v1" or not isinstance(contract_actions, dict):
+    raise SystemExit(f"invalid closed-loop contract: {contract_path}")
+action = os.environ.get("ACTION_VALUE", "").strip().lower()
+action_contract = contract_actions.get(action)
+if not isinstance(action_contract, dict):
+    raise SystemExit(f"closed-loop contract missing action={action}")
+required_artifacts = action_contract.get("required_artifacts")
+required_steps = action_contract.get("required_steps")
+if (
+    not isinstance(required_artifacts, list)
+    or not required_artifacts
+    or not all(isinstance(item, str) and item.strip() for item in required_artifacts)
+    or not isinstance(required_steps, list)
+    or not required_steps
+    or not all(isinstance(item, str) and item.strip() for item in required_steps)
+):
+    raise SystemExit(f"invalid closed-loop action contract: action={action}")
 requested_symbol = os.environ.get("SYMBOL_VALUE", "")
 requested_replay_source_symbol = os.environ.get("REPLAY_SOURCE_SYMBOL_VALUE", "")
 requested_replay_symbol = os.environ.get("REPLAY_SYMBOL_VALUE", "")
 payload = {
     "run_id": os.environ.get("RUN_ID_VALUE", ""),
-    "action": os.environ.get("ACTION_VALUE", ""),
+    "action": action,
     "stage": os.environ.get("STAGE_VALUE", ""),
     "generated_at_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "git": {
         "commit": os.environ.get("GIT_COMMIT_VALUE", ""),
         "branch": os.environ.get("GIT_BRANCH_VALUE", ""),
         "dirty": os.environ.get("GIT_DIRTY_VALUE", "unknown"),
+        "source": os.environ.get("GIT_SOURCE_VALUE", "unknown"),
+    },
+    "release": {
+        "git_sha": os.environ.get("EXECUTED_RELEASE_SHA_VALUE", ""),
+        "directory": os.environ.get("EXECUTED_RELEASE_DIR_VALUE", ""),
+        "runner_sha256": os.environ.get("RUNNER_SHA256_VALUE", ""),
     },
     "runtime": {
         "symbol": requested_symbol,
         "requested_symbol": requested_symbol,
         "config_path": os.environ.get("RUNTIME_CONFIG_PATH_VALUE", ""),
         "config_source": os.environ.get("RUNTIME_CONFIG_SOURCE_VALUE", ""),
+        "container_id": os.environ.get("RUNTIME_CONTAINER_ID_VALUE", ""),
+        "image_ref": os.environ.get("RUNTIME_IMAGE_REF_VALUE", ""),
+        "image_id": os.environ.get("RUNTIME_IMAGE_ID_VALUE", ""),
+        "image_revision": os.environ.get("RUNTIME_IMAGE_REVISION_VALUE", ""),
     },
     "replay_validation": {
         "source_symbol": requested_replay_source_symbol,
@@ -2393,7 +4220,14 @@ payload = {
         "replay_config": os.environ.get("REPLAY_CONFIG_PATH_VALUE", ""),
     },
     "config_hashes": {},
+    "artifacts": {},
     "artifact_contract": {
+        "schema_version": contract_schema,
+        "contract_path": str(contract_path),
+        "contract_sha256": file_hash(str(contract_path)),
+        "action": action,
+        "required_artifacts": required_artifacts,
+        "required_steps": required_steps,
         "run_specific_dir": str(out.parent),
         "latest_pointer_must_match_run_id": True,
         "workflow_success_is_not_strategy_success": True,
@@ -2440,12 +4274,105 @@ if replay_report:
 
 for name, path_text in payload["config_paths"].items():
     payload["config_hashes"][name] = file_hash(path_text)
+
+artifact_env_names = {
+    "baseline_report": "BASELINE_REPORT_PATH_VALUE",
+    "data_quality_report": "DATA_QUALITY_REPORT_PATH_VALUE",
+    "walkforward_report": "WALKFORWARD_REPORT_PATH_VALUE",
+    "feature_store": "FEATURE_STORE_PATH_VALUE",
+    "research_domain_split_report": "RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE",
+    "feature_parity_report": "FEATURE_PARITY_REPORT_PATH_VALUE",
+    "research_selection_feature_store": "RESEARCH_SELECTION_FEATURE_PATH_VALUE",
+    "research_holdout_feature_store": "RESEARCH_HOLDOUT_FEATURE_PATH_VALUE",
+    "miner_report": "MINER_REPORT_PATH_VALUE",
+    "integrator_report": "INTEGRATOR_REPORT_PATH_VALUE",
+    "integrator_model": "MODEL_OUTPUT_PATH_VALUE",
+    "model_registry_entry": "REGISTRY_RESULT_PATH_VALUE",
+    "replay_validation_report": "REPLAY_REPORT_PATH_VALUE",
+    "selection_candidate_manifest": "SELECTION_CANDIDATE_MANIFEST_PATH_VALUE",
+    "replay_optimization_report": "REPLAY_OPTIMIZATION_REPORT_PATH_VALUE",
+    "strategy_diagnose_report": "STRATEGY_DIAGNOSE_REPORT_PATH_VALUE",
+    "alpha_mechanism_probe_report": "ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE",
+    "alpha_candidate_manifest": "ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
+    "strategy_candidate_manifest": "STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE",
+    "replay_candidate_config": "REPLAY_CANDIDATE_CONFIG_PATH_VALUE",
+    "runtime_log": "RUNTIME_LOG_PATH_VALUE",
+    "runtime_assess_report": "RUNTIME_ASSESS_PATH_VALUE",
+    "trade_ledger_report": "TRADE_LEDGER_REPORT_PATH_VALUE",
+    "closed_loop_mechanism_report": "MECHANISM_AUDIT_REPORT_PATH_VALUE",
+    "activation_transaction": "ACTIVATION_TRANSACTION_SNAPSHOT_PATH_VALUE",
+    "activation_decision": "ACTIVATION_DECISION_PATH_VALUE",
+    "replay_validation_feature_build_report": "REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH_VALUE",
+    "replay_validation_command_log": "REPLAY_VALIDATION_COMMAND_LOG_PATH_VALUE",
+    "step_status": "STEP_STATUS_PATH_VALUE",
+}
+for name, env_name in artifact_env_names.items():
+    path_text = os.environ.get(env_name, "")
+    digest = file_hash(path_text)
+    if digest:
+        payload["artifacts"][name] = {
+            "path": path_text,
+            "sha256": digest,
+        }
 out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
+write_final_artifact_attestation() {
+  RUN_ID_VALUE="${RUN_ID}" \
+  ACTION_VALUE="${ACTION}" \
+  ATTESTATION_OUTPUT_VALUE="${FINAL_ARTIFACT_ATTESTATION_PATH}" \
+  CONTRACT_PATH_VALUE="${CLOSED_LOOP_CONTRACT_PATH:-config/closed_loop_contract.json}" \
+  RUN_MANIFEST_PATH_VALUE="${RUN_MANIFEST_PATH}" \
+  FINAL_REPORT_PATH_VALUE="${FINAL_REPORT_PATH}" \
+  RUN_META_PATH_VALUE="${RUN_META_PATH}" \
+  python3 - <<'PY'
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+
+
+def attest(path_text: str) -> dict:
+    path = Path(path_text)
+    if not path.is_file():
+        raise SystemExit(f"final artifact missing: {path}")
+    content = path.read_bytes()
+    return {
+        "path": str(path),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size_bytes": len(content),
+    }
+
+
+contract_path = Path(os.environ["CONTRACT_PATH_VALUE"])
+if not contract_path.is_file():
+    raise SystemExit(f"closed-loop contract missing: {contract_path}")
+payload = {
+    "schema_version": "closed_loop_artifact_attestation_v1",
+    "run_id": os.environ["RUN_ID_VALUE"],
+    "action": os.environ["ACTION_VALUE"],
+    "generated_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    ),
+    "contract": attest(str(contract_path)),
+    "artifacts": {
+        "run_manifest": attest(os.environ["RUN_MANIFEST_PATH_VALUE"]),
+        "closed_loop_report": attest(os.environ["FINAL_REPORT_PATH_VALUE"]),
+        "run_meta": attest(os.environ["RUN_META_PATH_VALUE"]),
+    },
+}
+Path(os.environ["ATTESTATION_OUTPUT_VALUE"]).write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
 PY
 }
 
 build_summary() {
   echo "[INFO] summary report start"
+  write_strategy_candidate_manifest
   write_run_manifest
   SUMMARY_ARGS=(
     tools/build_closed_loop_report.py
@@ -2503,8 +4430,20 @@ build_summary() {
   if [[ -f "${MECHANISM_AUDIT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--closed_loop_mechanism_report "${MECHANISM_AUDIT_REPORT_PATH}")
   fi
+  if [[ -f "${ACTIVATION_DECISION_PATH}" ]]; then
+    SUMMARY_ARGS+=(
+      --activation_decision "${ACTIVATION_DECISION_PATH}"
+      --activation_transaction "${ACTIVATION_TRANSACTION_SNAPSHOT_PATH}"
+    )
+  fi
   if [[ -f "${ASSESS_JSON_PATH}" ]]; then
     SUMMARY_ARGS+=(--runtime_assess_report "${ASSESS_JSON_PATH}")
+  fi
+  if [[ -f "${TRADE_LEDGER_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--trade_ledger_report "${TRADE_LEDGER_REPORT_PATH}")
+  fi
+  if [[ -f "${STRATEGY_CANDIDATE_MANIFEST_PATH}" ]]; then
+    SUMMARY_ARGS+=(--strategy_candidate_manifest "${STRATEGY_CANDIDATE_MANIFEST_PATH}")
   fi
   local summary_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${SUMMARY_ARGS[@]}" \
@@ -2550,22 +4489,37 @@ build_summary() {
   "run_dir": "${RUN_DIR}",
   "final_report": "${FINAL_REPORT_PATH}",
   "run_manifest": "${RUN_MANIFEST_PATH}",
+  "artifact_attestation": "${FINAL_ARTIFACT_ATTESTATION_PATH}",
+  "step_status": "${STEP_STATUS_PATH}",
   "runtime_log": "${ASSESS_LOG_PATH}",
   "runtime_raw_log": "${ASSESS_RAW_LOG_PATH}",
   "runtime_log_filter_meta": "${ASSESS_LOG_FILTER_META_PATH}",
   "runtime_assess_report": "${ASSESS_JSON_PATH}",
+  "trade_ledger_report": "${TRADE_LEDGER_REPORT_PATH}",
   "replay_validation_report": "${REPLAY_VALIDATION_REPORT_PATH}",
+  "selection_candidate_manifest": "${SELECTION_CANDIDATE_MANIFEST_PATH}",
   "replay_optimization_report": "${REPLAY_OPTIMIZATION_REPORT_PATH}",
   "replay_validation_command_log": "${REPLAY_VALIDATION_COMMAND_LOG_PATH}",
   "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
   "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
   "alpha_mechanism_probe_report": "${ALPHA_MECHANISM_PROBE_REPORT_PATH}",
   "alpha_candidate_manifest": "${ALPHA_CANDIDATE_MANIFEST_PATH}",
+  "strategy_candidate_manifest": "${STRATEGY_CANDIDATE_MANIFEST_PATH}",
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
+  "activation_transaction": "${ACTIVATION_TRANSACTION_SNAPSHOT_PATH}",
+  "activation_decision": "${ACTIVATION_DECISION_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }
 EOF
+  local attestation_status=0
+  write_final_artifact_attestation || attestation_status=$?
+  if (( attestation_status != 0 )); then
+    echo "[ERROR] final artifact attestation failed: status=${attestation_status}"
+    if (( summary_status == 0 )); then
+      summary_status="${attestation_status}"
+    fi
+  fi
   if [[ "${refresh_latest}" == "true" && -f "${FINAL_REPORT_PATH}" ]]; then
     ln -sfn "${RUN_ID}" "${OUTPUT_ROOT}/latest"
     atomic_copy_file "${FINAL_REPORT_PATH}" "${LATEST_REPORT_PATH}"
@@ -2589,9 +4543,9 @@ build_summary_for_assess() {
   local summary_status=0
   build_summary || summary_status=$?
   if (( summary_status != 0 )); then
-    echo "[WARN] assess summary returned non-zero; runtime verdict remains the assess gate: status=${summary_status}"
+    echo "[ERROR] assess summary returned non-zero: status=${summary_status}"
   fi
-  return 0
+  return "${summary_status}"
 }
 
 run_gc() {
@@ -2627,62 +4581,437 @@ run_gc() {
   echo "[INFO] recycle done"
 }
 
-run_main() {
-  write_run_manifest
-  case "${ACTION}" in
-    data)
-      run_data_pipeline
-      run_replay_validation
-      run_strategy_diagnose
-      run_alpha_mechanism_probe
-      build_summary
-      ;;
-    train)
-      run_freeze_baseline
-      prepare_training_data
-      run_data_quality
-      run_miner
-      run_integrator
-      run_replay_validation
-      run_strategy_diagnose
-      run_alpha_mechanism_probe
-      run_registry
-      build_summary
-      restart_if_activated
-      ;;
-    assess)
-      if is_true "${ASSESS_REFRESH_REPLAY_VALIDATION}"; then
-        run_replay_validation
-        run_strategy_diagnose
-      fi
-      verify_s5_learning_switches
-      run_assess
-      verify_s5_learning_activity
-      build_summary_for_assess
-      ;;
-    full)
-      run_freeze_baseline
-      prepare_training_data
-      run_data_quality
-      run_miner
-      run_integrator
-      run_replay_validation
-      run_strategy_diagnose
-      run_alpha_mechanism_probe
-      run_registry
-      verify_s5_learning_switches
-      run_assess
-      verify_s5_learning_activity
-      run_mechanism_audit
-      build_summary
-      restart_if_activated
-      ;;
-  esac
+RUN_REQUIRED_STEP_STATUS=0
+LAST_CAPTURED_STATUS=0
+
+capture_step_status() {
+  set +e
+  (
+    set -euo pipefail
+    "$@"
+  )
+  LAST_CAPTURED_STATUS=$?
+  set -e
 }
 
-main_status=0
-run_main || main_status=$?
-run_gc || echo "[WARN] recycle failed"
+refresh_step_outputs() {
+  local step_name="$1"
+  if [[ "${step_name}" == "replay_candidate_config" &&
+        -f "${REPLAY_CANDIDATE_CONFIG_PATH}" ]]; then
+    REPLAY_EFFECTIVE_CONFIG_PATH="${REPLAY_CANDIDATE_CONFIG_PATH}"
+  fi
+  if [[ "${step_name}" == "training_data" ]]; then
+    DATA_PIPELINE_LAST_STATUS="fail"
+    if [[ -f "${DATA_PIPELINE_REPORT_PATH}" ]] &&
+        DATA_PIPELINE_REPORT_PATH_VALUE="${DATA_PIPELINE_REPORT_PATH}" \
+        python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+try:
+    payload = json.loads(
+        Path(os.environ["DATA_PIPELINE_REPORT_PATH_VALUE"]).read_text(encoding="utf-8")
+    )
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(0 if str(payload.get("status", "")).strip().upper() == "PASS" else 1)
+PY
+    then
+      DATA_PIPELINE_LAST_STATUS="pass"
+    fi
+  fi
+}
+
+record_step_status() {
+  local step_name="$1"
+  local step_kind="$2"
+  local result="$3"
+  local exit_code="$4"
+  local blocked_by_prior_failure="$5"
+  STEP_STATUS_PATH_VALUE="${STEP_STATUS_PATH}" \
+  RUN_ID_VALUE="${RUN_ID}" \
+  ACTION_VALUE="${ACTION}" \
+  STEP_NAME_VALUE="${step_name}" \
+  STEP_KIND_VALUE="${step_kind}" \
+  STEP_RESULT_VALUE="${result}" \
+  STEP_EXIT_CODE_VALUE="${exit_code}" \
+  STEP_BLOCKED_VALUE="${blocked_by_prior_failure}" \
+  python3 - <<'PY'
+import datetime as dt
+import json
+import os
+from pathlib import Path
+
+exit_code_text = os.environ.get("STEP_EXIT_CODE_VALUE", "").strip()
+entry = {
+    "recorded_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    ),
+    "run_id": os.environ.get("RUN_ID_VALUE", ""),
+    "action": os.environ.get("ACTION_VALUE", ""),
+    "step": os.environ.get("STEP_NAME_VALUE", ""),
+    "kind": os.environ.get("STEP_KIND_VALUE", ""),
+    "result": os.environ.get("STEP_RESULT_VALUE", ""),
+    "exit_code": int(exit_code_text) if exit_code_text else None,
+    "blocked_by_prior_failure": (
+        os.environ.get("STEP_BLOCKED_VALUE", "").strip().lower() == "true"
+    ),
+}
+path = Path(os.environ["STEP_STATUS_PATH_VALUE"])
+with path.open("a", encoding="utf-8") as fh:
+    fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+PY
+}
+
+run_required_step() {
+  local step_name="$1"
+  shift
+  if (( RUN_REQUIRED_STEP_STATUS != 0 )); then
+    echo "[INFO] required step skipped after prior failure: ${step_name}"
+    capture_step_status \
+      record_step_status "${step_name}" "required" "skipped" "" "true"
+    if (( LAST_CAPTURED_STATUS != 0 )); then
+      echo "[ERROR] step status write failed: ${step_name}"
+      RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+    fi
+    return 0
+  fi
+  capture_step_status "$@"
+  local status="${LAST_CAPTURED_STATUS}"
+  if (( status != 0 )); then
+    RUN_REQUIRED_STEP_STATUS="${status}"
+    echo "[ERROR] required step failed: ${step_name}, status=${status}"
+    capture_step_status \
+      record_step_status "${step_name}" "required" "fail" "${status}" "false"
+  else
+    refresh_step_outputs "${step_name}"
+    capture_step_status \
+      record_step_status "${step_name}" "required" "pass" "0" "false"
+  fi
+  if (( LAST_CAPTURED_STATUS != 0 )); then
+    echo "[ERROR] step status write failed: ${step_name}"
+    RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+  fi
+  return 0
+}
+
+run_collecting_step() {
+  local step_name="$1"
+  shift
+  capture_step_status "$@"
+  local status="${LAST_CAPTURED_STATUS}"
+  if (( status != 0 )); then
+    if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
+      RUN_REQUIRED_STEP_STATUS="${status}"
+    fi
+    echo "[ERROR] required diagnostic step failed: ${step_name}, status=${status}"
+    capture_step_status \
+      record_step_status "${step_name}" "diagnostic" "fail" "${status}" "false"
+  else
+    refresh_step_outputs "${step_name}"
+    capture_step_status \
+      record_step_status "${step_name}" "diagnostic" "pass" "0" "false"
+  fi
+  if (( LAST_CAPTURED_STATUS != 0 )); then
+    echo "[ERROR] step status write failed: ${step_name}"
+    RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+  fi
+  return 0
+}
+
+run_training_chain() {
+  RUN_REQUIRED_STEP_STATUS=0
+  run_required_step baseline_freeze run_freeze_baseline
+  run_required_step training_data prepare_training_data
+  run_required_step research_domain_split run_research_domain_split
+  run_required_step feature_parity run_feature_parity
+  run_required_step data_quality run_data_quality
+  run_required_step miner run_miner
+  run_required_step integrator run_integrator
+  run_required_step replay_candidate_config prepare_replay_candidate_config
+  if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
+    run_collecting_step replay_validation run_replay_validation
+    run_collecting_step strategy_diagnose run_strategy_diagnose
+    run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
+  fi
+  run_required_step model_registry run_registry
+  return 0
+}
+
+run_runtime_chain() {
+  RUN_REQUIRED_STEP_STATUS="${1:-0}"
+  run_required_step s5_learning_switches verify_s5_learning_switches
+  run_required_step runtime_assess run_assess
+  run_required_step s5_learning_activity verify_s5_learning_activity
+  run_required_step mechanism_audit run_mechanism_audit
+  return 0
+}
+
+CLOSED_LOOP_LOCK_BACKEND="none"
+RUNNER_EXIT_CLEANUP_ACTIVE="false"
+
+runner_exit_cleanup() {
+  local exit_status=$?
+  trap - EXIT INT TERM
+  if [[ "${RUNNER_EXIT_CLEANUP_ACTIVE}" == "true" &&
+        "${exit_status}" -ne 0 ]] &&
+     activation_transaction_owned_by_current_run; then
+    echo "[WARN] runner exited non-zero with owned activation transaction; rollback start: status=${exit_status}"
+    set +e
+    rollback_activation_transaction
+    local rollback_status=$?
+    set -e
+    if (( rollback_status != 0 )); then
+      echo "[ERROR] interrupted activation rollback failed; stopping ai-trade"
+      compose_cmd stop ai-trade || true
+    fi
+  fi
+  release_closed_loop_lock
+  RUNNER_EXIT_CLEANUP_ACTIVE="false"
+  exit "${exit_status}"
+}
+
+handle_runner_signal() {
+  local signal_name="$1"
+  local exit_status="$2"
+  echo "[ERROR] closed-loop runner interrupted: signal=${signal_name}, run_id=${RUN_ID}"
+  exit "${exit_status}"
+}
+
+install_runner_exit_guards() {
+  RUNNER_EXIT_CLEANUP_ACTIVE="true"
+  trap 'runner_exit_cleanup' EXIT
+  trap 'handle_runner_signal INT 130' INT
+  trap 'handle_runner_signal TERM 143' TERM
+}
+
+acquire_closed_loop_lock() {
+  if is_true "${CLOSED_LOOP_RUNNER_LOCK_HELD:-false}"; then
+    if [[ ! -e "/proc/$$/fd/9" ]]; then
+      echo "[ERROR] inherited closed-loop lock requested without open fd 9"
+      return 1
+    fi
+    CLOSED_LOOP_LOCK_BACKEND="inherited"
+    install_runner_exit_guards
+    echo "[INFO] using inherited closed-loop deployment lock"
+    return 0
+  fi
+  mkdir -p "$(dirname "${CLOSED_LOOP_RUNNER_LOCK_PATH}")"
+  if command -v flock >/dev/null 2>&1; then
+    exec 9> "${CLOSED_LOOP_RUNNER_LOCK_PATH}"
+    if ! flock -n 9; then
+      echo "[ERROR] another closed-loop process holds ${CLOSED_LOOP_RUNNER_LOCK_PATH}"
+      return 1
+    fi
+    CLOSED_LOOP_LOCK_BACKEND="flock"
+    install_runner_exit_guards
+    return 0
+  fi
+
+  local lock_dir="${CLOSED_LOOP_RUNNER_LOCK_PATH}.d"
+  if ! mkdir "${lock_dir}" 2>/dev/null; then
+    echo "[ERROR] another closed-loop process holds ${lock_dir}"
+    return 1
+  fi
+  printf '%s\n' "$$" > "${lock_dir}/pid"
+  CLOSED_LOOP_LOCK_BACKEND="mkdir"
+  install_runner_exit_guards
+  return 0
+}
+
+release_closed_loop_lock() {
+  if [[ "${CLOSED_LOOP_LOCK_BACKEND}" == "flock" ]]; then
+    flock -u 9 || true
+    exec 9>&-
+  elif [[ "${CLOSED_LOOP_LOCK_BACKEND}" == "mkdir" ]]; then
+    rm -f "${CLOSED_LOOP_RUNNER_LOCK_PATH}.d/pid"
+    rmdir "${CLOSED_LOOP_RUNNER_LOCK_PATH}.d" 2>/dev/null || true
+  fi
+  CLOSED_LOOP_LOCK_BACKEND="none"
+}
+
+run_main() {
+  if ! acquire_closed_loop_lock; then
+    RUN_MAIN_STATUS=5
+    return 0
+  fi
+  if [[ "${ACTION}" == "full" && "${STAGE}" != "S5" ]]; then
+    echo "[ERROR] production candidate activation requires action=full, stage=S5"
+    RUN_MAIN_STATUS=6
+    return 0
+  fi
+  write_run_manifest
+  if [[ "${ACTION}" == "full" ]] && ! activation_slot_available; then
+    RUN_MAIN_STATUS=4
+    return 0
+  fi
+  local step_status=0
+  local summary_status=0
+  local runtime_status=0
+  local restart_status=0
+  local activation_resolution_status=0
+  case "${ACTION}" in
+    data)
+      RUN_REQUIRED_STEP_STATUS=0
+      run_required_step data_pipeline run_data_pipeline
+      run_required_step research_domain_split run_research_domain_split
+      run_required_step feature_parity run_feature_parity
+      run_required_step data_quality run_data_quality
+      if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
+        run_collecting_step replay_validation run_replay_validation
+        run_collecting_step strategy_diagnose run_strategy_diagnose
+        run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
+      fi
+      step_status="${RUN_REQUIRED_STEP_STATUS}"
+      capture_step_status build_summary
+      summary_status="${LAST_CAPTURED_STATUS}"
+      ;;
+    train)
+      run_training_chain
+      step_status="${RUN_REQUIRED_STEP_STATUS}"
+      capture_step_status build_summary
+      summary_status="${LAST_CAPTURED_STATUS}"
+      echo "[INFO] train completed without production activation or restart"
+      ;;
+    assess)
+      local assess_activation_status=""
+      assess_activation_status="$(activation_transaction_status)"
+      if is_true "${ASSESS_REFRESH_REPLAY_VALIDATION}"; then
+        case "${assess_activation_status}" in
+          none|committed|rolled_back|rolled_back_service_stopped)
+            RUN_REQUIRED_STEP_STATUS=0
+            run_collecting_step replay_validation run_replay_validation
+            run_collecting_step strategy_diagnose run_strategy_diagnose
+            step_status="${RUN_REQUIRED_STEP_STATUS}"
+            ;;
+          *)
+            echo "[INFO] pending activation uses frozen offline evidence; replay refresh is diagnostic-only and skipped"
+            ;;
+        esac
+      fi
+      case "${assess_activation_status}" in
+        none|committed|rolled_back|rolled_back_service_stopped)
+          ;;
+        *)
+          capture_step_status hydrate_activation_offline_evidence
+          if (( LAST_CAPTURED_STATUS != 0 )); then
+            RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+            step_status="${LAST_CAPTURED_STATUS}"
+          fi
+          ;;
+      esac
+      run_runtime_chain "${step_status}"
+      runtime_status="${RUN_REQUIRED_STEP_STATUS}"
+      case "${assess_activation_status}" in
+        none|committed|rolled_back|rolled_back_service_stopped)
+          ;;
+        *)
+          capture_step_status resolve_activation_transaction
+          activation_resolution_status="${LAST_CAPTURED_STATUS}"
+          ACTIVATION_RESOLUTION_DECISION="$(read_activation_resolution_decision)"
+          ;;
+      esac
+      capture_step_status build_summary_for_assess
+      summary_status="${LAST_CAPTURED_STATUS}"
+      ;;
+    full)
+      run_training_chain
+      step_status="${RUN_REQUIRED_STEP_STATUS}"
+      if (( step_status == 0 )); then
+        RUN_REQUIRED_STEP_STATUS=0
+        run_required_step candidate_restart restart_if_activated true
+        restart_status="${RUN_REQUIRED_STEP_STATUS}"
+      else
+        RUN_REQUIRED_STEP_STATUS="${step_status}"
+        run_required_step candidate_restart restart_if_activated true
+        restart_status="${RUN_REQUIRED_STEP_STATUS}"
+      fi
+      run_runtime_chain "${restart_status}"
+      runtime_status="${RUN_REQUIRED_STEP_STATUS}"
+      if (( step_status != 0 || restart_status != 0 )) ||
+         [[ ! -f "${ASSESS_JSON_PATH}" ]]; then
+        if activation_transaction_owned_by_current_run; then
+          capture_step_status rollback_activation_transaction
+          activation_resolution_status="${LAST_CAPTURED_STATUS}"
+        fi
+      else
+        capture_step_status resolve_activation_transaction
+        activation_resolution_status="${LAST_CAPTURED_STATUS}"
+        ACTIVATION_RESOLUTION_DECISION="$(read_activation_resolution_decision)"
+      fi
+      capture_step_status build_summary
+      summary_status="${LAST_CAPTURED_STATUS}"
+      ;;
+  esac
+  local final_status=0
+  for status in \
+    "${step_status}" \
+    "${runtime_status}" \
+    "${summary_status}" \
+    "${restart_status}" \
+    "${activation_resolution_status}"; do
+    if (( status != 0 )); then
+      final_status="${status}"
+      break
+    fi
+  done
+  if [[ "${ACTION}" == "full" ]]; then
+    if (( step_status == 0 &&
+          runtime_status == 0 &&
+          summary_status == 0 &&
+          restart_status == 0 &&
+          activation_resolution_status == 0 )) &&
+       [[ "${ACTIVATION_RESOLUTION_DECISION}" == "pending" ||
+          "${ACTIVATION_RESOLUTION_DECISION}" == "commit" ]]; then
+      # A staged canary waiting for an event-count gate is a valid full result.
+      final_status=0
+    elif [[ "${ACTIVATION_RESOLUTION_DECISION}" == "rollback" ]]; then
+      final_status=1
+    fi
+  elif [[ "${ACTION}" == "assess" ]]; then
+    if (( step_status == 0 &&
+          runtime_status == 0 &&
+          summary_status == 0 &&
+          activation_resolution_status == 0 )) &&
+       [[ "${ACTIVATION_RESOLUTION_DECISION}" == "pending" ||
+          "${ACTIVATION_RESOLUTION_DECISION}" == "commit" ]]; then
+      # Insufficient episode count is not an operational failure.
+      final_status=0
+    elif [[ "${ACTIVATION_RESOLUTION_DECISION}" == "rollback" ]]; then
+      final_status=1
+    fi
+  fi
+  RUN_MAIN_STATUS="${final_status}"
+  return 0
+}
+
+RUN_MAIN_STATUS=0
+if is_true "${CLOSED_LOOP_RUNNER_LIBRARY_MODE:-false}"; then
+  if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+  fi
+  exit 0
+fi
+if ! is_true "${CLOSED_LOOP_RUNNER_DEADLINE_GUARD:-false}"; then
+  if [[ ! "${RUNNER_MAX_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ERROR] invalid CLOSED_LOOP_RUNNER_MAX_SECONDS=${RUNNER_MAX_SECONDS}"
+    exit 2
+  fi
+  if command -v timeout >/dev/null 2>&1; then
+    export CLOSED_LOOP_RUNNER_DEADLINE_GUARD=true
+    exec timeout -s TERM -k 120 "${RUNNER_MAX_SECONDS}" "$0" \
+      "${ORIGINAL_RUNNER_ARGS[@]}"
+  fi
+  echo "[WARN] timeout command unavailable; runner deadline is not enforced"
+fi
+run_main
+main_status="${RUN_MAIN_STATUS}"
+capture_step_status run_gc
+if (( LAST_CAPTURED_STATUS != 0 )); then
+  echo "[WARN] recycle failed"
+fi
+release_closed_loop_lock
 
 if (( main_status != 0 )); then
   echo "[ERROR] closed loop ${ACTION} failed: run_dir=${RUN_DIR}, status=${main_status}"

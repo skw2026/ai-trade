@@ -43,8 +43,13 @@ double AccountState::cumulative_fee_usd() const {
   return cumulative_fee_usd_;
 }
 
+double AccountState::cumulative_funding_paid_usd() const {
+  return cumulative_funding_paid_usd_;
+}
+
 double AccountState::cumulative_realized_net_pnl_usd() const {
-  return cumulative_realized_pnl_usd_ - cumulative_fee_usd_;
+  return cumulative_realized_pnl_usd_ - cumulative_fee_usd_ -
+         cumulative_funding_paid_usd_;
 }
 
 double AccountState::current_notional_usd() const {
@@ -227,6 +232,28 @@ void AccountState::ApplyFill(const FillEvent& fill) {
   RefreshPeakEquity();
 }
 
+double AccountState::ApplyFunding(const std::string& symbol,
+                                  double funding_rate_per_interval) {
+  if (!std::isfinite(funding_rate_per_interval) ||
+      std::fabs(funding_rate_per_interval) <= kEpsilon) {
+    return 0.0;
+  }
+  const auto it = positions_.find(symbol);
+  if (it == positions_.end() || std::fabs(it->second.qty) <= kEpsilon) {
+    return 0.0;
+  }
+  const double mark = EffectiveMarkPrice(it->second);
+  if (!std::isfinite(mark) || mark <= kEpsilon) {
+    return 0.0;
+  }
+  const double funding_paid =
+      it->second.qty * mark * funding_rate_per_interval;
+  cash_usd_ -= funding_paid;
+  cumulative_funding_paid_usd_ += funding_paid;
+  RefreshPeakEquity();
+  return funding_paid;
+}
+
 void AccountState::SyncFromRemotePositions(
     const std::vector<RemotePositionSnapshot>& positions,
     double baseline_cash_usd) {
@@ -246,6 +273,7 @@ void AccountState::SyncFromRemotePositions(
   peak_equity_usd_ = baseline_cash_usd;
   cumulative_realized_pnl_usd_ = 0.0;
   cumulative_fee_usd_ = 0.0;
+  cumulative_funding_paid_usd_ = 0.0;
   RefreshPeakEquity();
 }
 

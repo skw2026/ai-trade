@@ -43,6 +43,8 @@ class BinanceExchangeAdapter : public ExchangeAdapter {
   /// 占位远端活动订单查询（当前固定失败）。
   bool GetRemoteOpenOrderClientIds(
       std::unordered_set<std::string>* out_client_order_ids) const override;
+  bool GetRemoteOpenOrders(
+      std::vector<RemoteOpenOrderSnapshot>* out_orders) const override;
   /// 占位 symbol 规则查询（当前固定失败）。
   bool GetSymbolInfo(const std::string& symbol,
                      SymbolInfo* out_info) const override;

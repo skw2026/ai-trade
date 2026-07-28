@@ -26,6 +26,9 @@ DEFAULT_COST_BPS = 3.5
 DEFAULT_MIN_SYNTHETIC_NET_BPS = 0.5
 DEFAULT_MIN_LIVE_POLICY_APPLIED = 1
 DEFAULT_MIN_REPLAY_TOTAL_FILLS = 20
+EXPECTED_MODEL_OBJECTIVE = (
+    "aggregate_model_net_bps_per_unit_turnover_after_cost"
+)
 
 
 def now_utc_iso() -> str:
@@ -261,6 +264,7 @@ def audit_target_consistency(
     warn_reasons: List[str] = []
 
     metrics = integrator.get("metrics_oos", {}) if isinstance(integrator, dict) else {}
+    data_contract = integrator.get("data", {}) if isinstance(integrator, dict) else {}
     train_config = integrator.get("train_config", {}) if isinstance(integrator, dict) else {}
     governance = integrator.get("governance", {}) if isinstance(integrator, dict) else {}
     thresholds = governance.get("thresholds", {}) if isinstance(governance, dict) else {}
@@ -280,9 +284,9 @@ def audit_target_consistency(
     if label_min_edge_bps is None or label_min_edge_bps < 0.0:
         fail_reasons.append("integrator label_min_net_edge_bps missing")
 
-    if primary_objective != "model_net_edge_bps_after_cost":
+    if primary_objective != EXPECTED_MODEL_OBJECTIVE:
         fail_reasons.append("integrator metrics primary objective is not net economic edge")
-    if governance_primary_objective != "model_net_edge_bps_after_cost":
+    if governance_primary_objective != EXPECTED_MODEL_OBJECTIVE:
         fail_reasons.append("integrator governance primary objective is not net economic edge")
     if mean_model_net_edge_bps is None:
         fail_reasons.append("integrator mean_model_net_edge_bps missing")
@@ -292,6 +296,47 @@ def audit_target_consistency(
         fail_reasons.append("integrator min_mean_model_net_edge_bps threshold missing")
     if min_positive_model_net_edge_ratio is None:
         fail_reasons.append("integrator min_positive_model_net_edge_ratio threshold missing")
+    if metrics.get("evidence_tier") != "offline_model_economic_prescreen":
+        fail_reasons.append("integrator evidence tier is not offline economic prescreen")
+    if metrics.get("authoritative_promotion_evidence") != "live_candidate_episode_canary":
+        fail_reasons.append(
+            "integrator did not delegate promotion authority to live candidate episodes"
+        )
+    if (
+        metrics.get("required_offline_prescreen")
+        != "independent_cpp_replay_next_bar_ohlc_touch"
+    ):
+        fail_reasons.append("integrator offline replay prescreen contract is missing")
+    if as_int(metrics.get("model_net_total_trades")) <= 0:
+        fail_reasons.append("integrator OOS economic evidence has no trades")
+    if as_int(metrics.get("model_net_active_bar_count")) <= 0:
+        fail_reasons.append("integrator OOS economic evidence has no active bars")
+    if as_float(metrics.get("model_net_edge_lcb_bps")) is None:
+        fail_reasons.append("integrator OOS net edge confidence bound missing")
+    if as_float(metrics.get("oos_duplicate_bar_ratio")) != 0.0:
+        fail_reasons.append("integrator OOS windows contain duplicate bars")
+    time_axis_quality = (
+        data_contract.get("time_axis_quality", {})
+        if isinstance(data_contract, dict)
+        else {}
+    )
+    if (
+        not isinstance(time_axis_quality, dict)
+        or time_axis_quality.get("pass") is not True
+    ):
+        fail_reasons.append("integrator raw time axis quality is not proven")
+
+    anti_leakage = (
+        integrator.get("anti_leakage", {})
+        if isinstance(integrator, dict)
+        else {}
+    )
+    if not isinstance(anti_leakage, dict):
+        anti_leakage = {}
+    if anti_leakage.get("split_axis") != "raw_bar_index_before_label_filter":
+        fail_reasons.append("integrator split axis is not the raw bar index")
+    if anti_leakage.get("oos_windows_non_overlapping") is not True:
+        fail_reasons.append("integrator OOS windows are not proven non-overlapping")
 
     auc_mean = as_float(metrics.get("auc_mean"))
     min_auc_mean = as_float(thresholds.get("min_auc_mean"))
@@ -310,15 +355,60 @@ def audit_target_consistency(
         fail_reasons.append("replay activation_gate missing")
     elif str(activation_gate.get("status", "")).lower() not in {"pass", "pass_with_actions"}:
         fail_reasons.append(f"replay activation_gate status={activation_gate.get('status')}")
+    replay_execution_contract = (
+        replay.get("execution_evidence_contract", {})
+        if isinstance(replay, dict)
+        else {}
+    )
+    if (
+        not isinstance(replay_execution_contract, dict)
+        or replay_execution_contract.get("evidence_role")
+        != "offline_conservative_execution_prescreen"
+        or replay_execution_contract.get("production_promotion_authority") is not False
+        or replay_execution_contract.get("live_candidate_episode_canary_required")
+        is not True
+    ):
+        fail_reasons.append("replay execution evidence role is not a conservative prescreen")
 
+    replay_identity = replay.get("candidate_identity", {}) if isinstance(replay, dict) else {}
+    if not isinstance(replay_identity, dict):
+        replay_identity = {}
+    integrator_model_version = str(integrator.get("model_version", "")).strip()
+    if not integrator_model_version:
+        fail_reasons.append("integrator model version missing")
+    if replay_identity.get("config_binds_candidate") is not True:
+        fail_reasons.append("replay config does not independently bind the candidate")
+    if str(replay_identity.get("model_version", "")).strip() != integrator_model_version:
+        fail_reasons.append("replay candidate model version differs from integrator")
+    replay_model_sha = str(replay_identity.get("model_sha256", "")).strip()
+    replay_report_sha = str(
+        replay_identity.get("integrator_report_sha256", "")
+    ).strip()
+    if not replay_model_sha or not replay_report_sha:
+        fail_reasons.append("replay candidate model/report checksums missing")
+
+    registry_gate_pass = None
     if registry:
         registry_gate = registry.get("gate", {}) if isinstance(registry, dict) else {}
         registry_activation_gate = registry.get("activation_gate", {})
         registry_gate_pass = bool(registry.get("gate_pass", registry_gate.get("pass")))
         if not registry_gate_pass:
             fail_reasons.append("registry gate did not pass")
+        registry_model_version = str(registry.get("model_version", "")).strip()
+        if registry_model_version != integrator_model_version:
+            fail_reasons.append("registry model version differs from replayed candidate")
         if not registry_activation_gate and not activation_gate:
             fail_reasons.append("registry did not record replay activation gate evidence")
+        registry_checksums = registry.get("checksums", {})
+        if not isinstance(registry_checksums, dict):
+            registry_checksums = {}
+        if str(registry_checksums.get("model_sha256", "")).strip() != replay_model_sha:
+            fail_reasons.append("registry model checksum differs from replayed candidate")
+        if (
+            str(registry_checksums.get("integrator_report_sha256", "")).strip()
+            != replay_report_sha
+        ):
+            fail_reasons.append("registry report checksum differs from replayed candidate")
     else:
         warn_reasons.append("registry_report missing; target consistency can only inspect replay/integrator")
 
@@ -345,8 +435,120 @@ def audit_target_consistency(
             "replay_activation_gate_status": activation_gate.get("status")
             if isinstance(activation_gate, dict)
             else None,
-            "registry_gate_pass": bool(registry.get("gate_pass")) if registry else None,
+            "registry_gate_pass": registry_gate_pass,
+            "replay_candidate_model_sha256": replay_model_sha or None,
+            "replay_candidate_report_sha256": replay_report_sha or None,
             "strategy_diagnose_status": strategy_status or None,
+        },
+    }
+
+
+def audit_feature_contract(
+    integrator: Dict[str, Any],
+    runtime: Dict[str, Any],
+    replay: Dict[str, Any],
+) -> Dict[str, Any]:
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    data = integrator.get("data", {}) if isinstance(integrator, dict) else {}
+    metrics = runtime.get("metrics", {}) if isinstance(runtime, dict) else {}
+    if not isinstance(data, dict):
+        data = {}
+    if not isinstance(metrics, dict):
+        metrics = {}
+
+    training_symbol = str(data.get("training_symbol") or "").strip().upper()
+    bar_interval_ms = as_int(data.get("bar_interval_ms"))
+    online_bar_source = str(data.get("online_bar_source") or "").strip()
+    source_venue = str(data.get("source_venue") or "").strip().lower()
+    source_category = str(data.get("source_category") or "").strip().lower()
+    price_type = str(data.get("price_type") or "").strip().lower()
+    volume_unit = str(data.get("volume_unit") or "").strip().lower()
+    replay_source_symbol = (
+        str(replay.get("source_symbol") or "").strip().upper()
+        if isinstance(replay, dict)
+        else ""
+    )
+    runtime_training_symbol = str(
+        metrics.get("integrator_feature_training_symbol_latest") or ""
+    ).strip().upper()
+    runtime_bar_interval_ms = as_int(
+        metrics.get("integrator_feature_bar_interval_ms_latest")
+    )
+    runtime_bootstrap_count = as_int(
+        metrics.get("integrator_history_bootstrap_count")
+    )
+    runtime_stale_count = as_int(metrics.get("integrator_feature_stale_count"))
+    legacy_contract_count = as_int(
+        metrics.get("integrator_legacy_feature_contract_count")
+    )
+
+    if not training_symbol:
+        fail_reasons.append("integrator data.training_symbol missing")
+    if bar_interval_ms <= 0:
+        fail_reasons.append("integrator data.bar_interval_ms missing")
+    if online_bar_source != "closed_ohlcv":
+        fail_reasons.append("integrator online_bar_source is not closed_ohlcv")
+    if source_venue != "bybit":
+        fail_reasons.append("integrator source_venue is not bybit")
+    if source_category != "linear":
+        fail_reasons.append("integrator source_category is not linear")
+    if price_type != "trade_price":
+        fail_reasons.append("integrator price_type is not trade_price")
+    if volume_unit != "base_asset":
+        fail_reasons.append("integrator volume_unit is not base_asset")
+    if replay_source_symbol and training_symbol and replay_source_symbol != training_symbol:
+        fail_reasons.append(
+            f"replay source_symbol={replay_source_symbol} != "
+            f"training_symbol={training_symbol}"
+        )
+    if runtime_training_symbol and runtime_training_symbol != training_symbol:
+        fail_reasons.append(
+            "runtime training symbol differs from integrator report: "
+            f"{runtime_training_symbol} != {training_symbol}"
+        )
+    if runtime_bar_interval_ms > 0 and runtime_bar_interval_ms != bar_interval_ms:
+        fail_reasons.append(
+            "runtime bar interval differs from integrator report: "
+            f"{runtime_bar_interval_ms} != {bar_interval_ms}"
+        )
+
+    runtime_canary_or_active = (
+        as_int(metrics.get("integrator_mode_canary_count")) > 0
+        or as_int(metrics.get("integrator_mode_active_count")) > 0
+    )
+    if runtime_canary_or_active:
+        if not runtime_training_symbol or runtime_bar_interval_ms <= 0:
+            fail_reasons.append("runtime integrator feature contract was not logged")
+        if runtime_bootstrap_count <= 0:
+            fail_reasons.append("runtime integrator history bootstrap was not proven")
+    if runtime_stale_count > 0:
+        warn_reasons.append(
+            f"runtime detected stale integrator features {runtime_stale_count} times"
+        )
+    if legacy_contract_count > 0:
+        warn_reasons.append(
+            "runtime used legacy feature-contract migration; replace active report"
+        )
+
+    return {
+        "status": json_status(fail_reasons, warn_reasons),
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "observed": {
+            "training_symbol": training_symbol or None,
+            "bar_interval_ms": bar_interval_ms,
+            "online_bar_source": online_bar_source or None,
+            "source_venue": source_venue or None,
+            "source_category": source_category or None,
+            "price_type": price_type or None,
+            "volume_unit": volume_unit or None,
+            "replay_source_symbol": replay_source_symbol or None,
+            "runtime_training_symbol": runtime_training_symbol or None,
+            "runtime_bar_interval_ms": runtime_bar_interval_ms,
+            "runtime_bootstrap_count": runtime_bootstrap_count,
+            "runtime_feature_stale_count": runtime_stale_count,
+            "runtime_legacy_contract_count": legacy_contract_count,
         },
     }
 
@@ -360,6 +562,15 @@ def audit_model_influence(runtime: Dict[str, Any], min_live_policy_applied: int)
     canary_count = as_int(metrics.get("integrator_mode_canary_count"))
     active_count = as_int(metrics.get("integrator_mode_active_count"))
     policy_applied = as_int(metrics.get("integrator_policy_applied_count"))
+    policy_proposed = as_int(metrics.get("integrator_policy_proposed_count"))
+    policy_enqueued = as_int(metrics.get("integrator_policy_enqueued_count"))
+    policy_filled = as_int(metrics.get("integrator_policy_filled_count"))
+    unique_filled_orders = as_int(
+        metrics.get("integrator_policy_unique_filled_order_count")
+    )
+    complete_episodes = as_int(
+        metrics.get("integrator_policy_complete_episode_count")
+    )
     canary_applied = as_int(metrics.get("integrator_policy_canary_count"))
     active_applied = as_int(metrics.get("integrator_policy_active_count"))
     scored_count = as_int(metrics.get("integrator_shadow_scored_runtime_count"))
@@ -374,6 +585,11 @@ def audit_model_influence(runtime: Dict[str, Any], min_live_policy_applied: int)
         fail_reasons.append(
             f"integrator policy applied count {policy_applied} < required {min_live_policy_applied}"
         )
+    elif complete_episodes < min_live_policy_applied:
+        fail_reasons.append(
+            "integrator complete candidate episode count "
+            f"{complete_episodes} < required {min_live_policy_applied}"
+        )
 
     return {
         "status": json_status(fail_reasons),
@@ -383,7 +599,12 @@ def audit_model_influence(runtime: Dict[str, Any], min_live_policy_applied: int)
             "integrator_mode_shadow_count": shadow_count,
             "integrator_mode_canary_count": canary_count,
             "integrator_mode_active_count": active_count,
+            "integrator_policy_proposed_count": policy_proposed,
+            "integrator_policy_enqueued_count": policy_enqueued,
             "integrator_policy_applied_count": policy_applied,
+            "integrator_policy_filled_count": policy_filled,
+            "integrator_policy_unique_filled_order_count": unique_filled_orders,
+            "integrator_policy_complete_episode_count": complete_episodes,
             "integrator_policy_canary_count": canary_applied,
             "integrator_policy_active_count": active_applied,
             "integrator_shadow_scored_runtime_count": scored_count,
@@ -405,9 +626,11 @@ def audit_sample_sufficiency(
     if not isinstance(replay_summary, dict):
         replay_summary = {}
 
-    live_fills = max(
-        as_int(runtime_metrics.get("funnel_fills_runtime_count")),
-        as_int(runtime_metrics.get("trend_candidate_probe_fill_count")),
+    live_fills = as_int(
+        runtime_metrics.get("integrator_policy_unique_filled_order_count")
+    )
+    live_episodes = as_int(
+        runtime_metrics.get("integrator_policy_complete_episode_count")
     )
     replay_fills = as_int(replay_summary.get("total_fills"))
     positive_ratio = as_float(replay_summary.get("positive_filled_segment_ratio"))
@@ -425,7 +648,13 @@ def audit_sample_sufficiency(
     if replay_status == "fail":
         warn_reasons.append("replay status=fail; mechanism proof cannot rely on replay economics yet")
     if live_fills <= 0:
-        warn_reasons.append("live fills are zero; live feedback loop is still unproven")
+        warn_reasons.append(
+            "candidate-attributed live fills are zero; live feedback loop is still unproven"
+        )
+    if live_episodes <= 0:
+        warn_reasons.append(
+            "complete candidate episodes are zero; partial fills cannot prove candidate economics"
+        )
 
     return {
         "status": json_status(fail_reasons, warn_reasons),
@@ -433,6 +662,7 @@ def audit_sample_sufficiency(
         "warn_reasons": warn_reasons,
         "observed": {
             "live_fills": live_fills,
+            "live_complete_episodes": live_episodes,
             "replay_total_fills": replay_fills,
             "replay_positive_filled_segment_ratio": positive_ratio,
             "replay_mean_realized_net_per_fill_with_fills": replay_net,
@@ -477,6 +707,11 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             registry=registry,
             replay=replay,
             strategy=strategy,
+        ),
+        "feature_contract": audit_feature_contract(
+            integrator=integrator,
+            runtime=runtime,
+            replay=replay,
         ),
         "model_influence": audit_model_influence(
             runtime=runtime,

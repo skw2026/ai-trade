@@ -34,6 +34,16 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
             integrator = write_json(
                 root / "integrator_report.json",
                 {
+                    "model_version": "candidate-v1",
+                    "data": {
+                        "training_symbol": "SOLUSDT",
+                        "bar_interval_ms": 300000,
+                        "online_bar_source": "closed_ohlcv",
+                        "source_venue": "bybit",
+                        "source_category": "linear",
+                        "price_type": "trade_price",
+                        "volume_unit": "base_asset",
+                    },
                     "metrics_oos": {
                         "auc_mean": 0.56,
                         "random_label_auc_mean": 0.50,
@@ -57,6 +67,12 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                 root / "replay_validation_report.json",
                 {
                     "status": "pass",
+                    "source_symbol": "SOLUSDT",
+                    "execution_evidence_contract": {
+                        "evidence_role": "offline_conservative_execution_prescreen",
+                        "production_promotion_authority": False,
+                        "live_candidate_episode_canary_required": True,
+                    },
                     "activation_gate": {"status": "pass"},
                     "execution_economics": {
                         "mean_realized_net_per_fill_with_fills": 0.004,
@@ -137,16 +153,36 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
             integrator = write_json(
                 root / "integrator_report.json",
                 {
+                    "model_version": "candidate-v1",
+                    "data": {
+                        "training_symbol": "SOLUSDT",
+                        "bar_interval_ms": 300000,
+                        "online_bar_source": "closed_ohlcv",
+                        "source_venue": "bybit",
+                        "source_category": "linear",
+                        "price_type": "trade_price",
+                        "volume_unit": "base_asset",
+                        "time_axis_quality": {"pass": True},
+                    },
                     "metrics_oos": {
-                        "primary_objective": "model_net_edge_bps_after_cost",
+                        "primary_objective": AUDIT.EXPECTED_MODEL_OBJECTIVE,
+                        "evidence_tier": "offline_model_economic_prescreen",
+                        "authoritative_promotion_evidence": "live_candidate_episode_canary",
+                        "required_offline_prescreen": (
+                            "independent_cpp_replay_next_bar_ohlc_touch"
+                        ),
                         "mean_model_net_edge_bps": 0.35,
                         "positive_model_net_edge_ratio": 0.65,
+                        "model_net_total_trades": 40,
+                        "model_net_active_bar_count": 400,
+                        "model_net_edge_lcb_bps": 0.02,
+                        "oos_duplicate_bar_ratio": 0.0,
                         "random_label_auc_mean": 0.50,
                         "random_label_auc_max": 0.53,
                         "random_label_trials": 5,
                     },
                     "governance": {
-                        "primary_objective": "model_net_edge_bps_after_cost",
+                        "primary_objective": AUDIT.EXPECTED_MODEL_OBJECTIVE,
                         "thresholds": {
                             "run_random_label_control": True,
                             "max_random_label_auc": 0.55,
@@ -158,13 +194,31 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                         "label_round_trip_cost_bps": 3.5,
                         "label_min_net_edge_bps": 0.5,
                     },
+                    "anti_leakage": {
+                        "split_axis": "raw_bar_index_before_label_filter",
+                        "oos_windows_non_overlapping": True,
+                    },
                 },
             )
             replay = write_json(
                 root / "replay_validation_report.json",
                 {
                     "status": "pass",
+                    "source_symbol": "SOLUSDT",
+                    "execution_evidence_contract": {
+                        "schema_version": "replay_execution_prescreen_v1",
+                        "evidence_role": "offline_conservative_execution_prescreen",
+                        "fill_model": "next_bar_ohlc_touch_at_limit_no_queue_position",
+                        "production_promotion_authority": False,
+                        "live_candidate_episode_canary_required": True,
+                    },
                     "activation_gate": {"status": "pass"},
+                    "candidate_identity": {
+                        "model_version": "candidate-v1",
+                        "model_sha256": "model-sha",
+                        "integrator_report_sha256": "report-sha",
+                        "config_binds_candidate": True,
+                    },
                     "execution_economics": {
                         "mean_realized_net_per_fill_with_fills": 0.01,
                     },
@@ -185,13 +239,29 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                         "integrator_mode_canary_count": 50,
                         "integrator_mode_active_count": 0,
                         "integrator_policy_applied_count": 3,
+                        "integrator_policy_proposed_count": 4,
+                        "integrator_policy_enqueued_count": 3,
+                        "integrator_policy_filled_count": 2,
+                        "integrator_policy_unique_filled_order_count": 2,
+                        "integrator_policy_complete_episode_count": 2,
                         "integrator_policy_canary_count": 3,
+                        "integrator_feature_training_symbol_latest": "SOLUSDT",
+                        "integrator_feature_bar_interval_ms_latest": 300000,
+                        "integrator_history_bootstrap_count": 1,
                     }
                 },
             )
             registry = write_json(
                 root / "registry.json",
-                {"gate_pass": True, "activation_gate": {"status": "pass"}},
+                {
+                    "gate_pass": True,
+                    "model_version": "candidate-v1",
+                    "activation_gate": {"status": "pass"},
+                    "checksums": {
+                        "model_sha256": "model-sha",
+                        "integrator_report_sha256": "report-sha",
+                    },
+                },
             )
             alpha_probe = write_json(
                 root / "alpha_mechanism_probe_report.json",

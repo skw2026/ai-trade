@@ -336,10 +336,11 @@ REGIME_CHANGE_RE = re.compile(
 )
 LOG_LINE_TS_RE = re.compile(r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 PROCESS_START_RE = re.compile(
-    r"PROCESS_START:.*?startup_utc=(?P<startup>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"
+    r"PROCESS_START:.*?boot_id=(?P<boot_id>[^,\s]+),.*?"
+    r"startup_utc=(?P<startup>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"
 )
 RUNTIME_STATUS_BOOT_START_RE = re.compile(
-    r"RUNTIME_STATUS:.*?boot=\{[^}]*?"
+    r"RUNTIME_STATUS:.*?boot=\{id=(?P<boot_id>[^,\s}]+),[^}]*?"
     r"startup_utc=(?P<startup>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)"
 )
 RUNTIME_STATUS_TS_RE = re.compile(
@@ -483,6 +484,74 @@ def max_tick(text: str) -> int:
     if not matches:
         return 0
     return max(int(x) for x in matches)
+
+
+def extract_integrator_model_version_events(text: str) -> List[str]:
+    versions: List[str] = []
+    for match in re.finditer(
+        r"(?:INTEGRATOR_INIT|INTEGRATOR_POLICY_APPLIED):"
+        r"[^\n]*?\bmodel_version=([^,\s}]+)",
+        text,
+    ):
+        version = match.group(1).strip()
+        if version:
+            versions.append(version)
+    return versions
+
+
+def extract_integrator_model_versions(text: str) -> List[str]:
+    versions: List[str] = []
+    seen = set()
+    for version in extract_integrator_model_version_events(text):
+        if version not in seen:
+            versions.append(version)
+            seen.add(version)
+    return versions
+
+
+def extract_integrator_artifact_identity_events(text: str) -> List[Dict[str, str]]:
+    events: List[Dict[str, str]] = []
+    for match in re.finditer(
+        r"INTEGRATOR_ARTIFACT_IDENTITY:"
+        r"[^\n]*?\bmodel_version=(?P<model_version>[^,\s}]+),"
+        r"\s*model_sha256=(?P<model_sha256>[0-9a-f]{64}),"
+        r"\s*report_sha256=(?P<report_sha256>[0-9a-f]{64})",
+        text,
+    ):
+        events.append(match.groupdict())
+    return events
+
+
+def extract_integrator_runtime_identity_events(text: str) -> List[Dict[str, str]]:
+    events: List[Dict[str, str]] = []
+    for match in re.finditer(
+        r"INTEGRATOR_RUNTIME_IDENTITY:"
+        r"[^\n]*?\bruntime_config_sha256=(?P<runtime_config_sha256>[0-9a-f]{64}),"
+        r"\s*trade_bot_sha256=(?P<trade_bot_sha256>[0-9a-f]{64})",
+        text,
+    ):
+        events.append(match.groupdict())
+    return events
+
+
+def extract_integrator_feature_contract_events(text: str) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    for line in text.splitlines():
+        if "INTEGRATOR_INIT:" not in line:
+            continue
+        training_symbol = extract_log_field(line, "training_symbol")
+        bar_interval = extract_float_log_field(line, "bar_interval_ms")
+        feature_samples = extract_float_log_field(line, "feature_samples")
+        if training_symbol is None and bar_interval is None:
+            continue
+        events.append(
+            {
+                "training_symbol": str(training_symbol or "").strip().upper(),
+                "bar_interval_ms": int(bar_interval or 0),
+                "feature_samples": int(feature_samples or 0),
+            }
+        )
+    return events
 
 
 def extract_log_field(line: str, key: str) -> Optional[str]:
@@ -851,6 +920,42 @@ def extract_execution_attribution(text: str) -> Dict[str, object]:
     return attribution
 
 
+def extract_replay_terminal_settlement(text: str) -> Dict[str, object]:
+    done_events: List[Dict[str, float]] = []
+    failed_reasons: List[str] = []
+    for line in text.splitlines():
+        if "REPLAY_TERMINAL_SETTLEMENT_DONE:" in line:
+            realized_net_usd = extract_float_log_field(line, "realized_net_usd")
+            fees_usd = extract_float_log_field(line, "fees_usd")
+            funding_paid_usd = extract_float_log_field(
+                line, "funding_paid_usd"
+            )
+            if (
+                realized_net_usd is not None
+                and fees_usd is not None
+                and funding_paid_usd is not None
+            ):
+                done_events.append(
+                    {
+                        "realized_net_usd": realized_net_usd,
+                        "fees_usd": fees_usd,
+                        "funding_paid_usd": funding_paid_usd,
+                    }
+                )
+        if "REPLAY_TERMINAL_SETTLEMENT_FAILED:" in line:
+            failed_reasons.append(extract_log_field(line, "reason") or "unknown")
+
+    latest = done_events[-1] if done_events else {}
+    return {
+        "done_count": len(done_events),
+        "failed_count": len(failed_reasons),
+        "failed_reasons": failed_reasons,
+        "realized_net_usd": latest.get("realized_net_usd"),
+        "fees_usd": latest.get("fees_usd"),
+        "funding_paid_usd": latest.get("funding_paid_usd"),
+    }
+
+
 def _new_exit_capture_symbol_bucket() -> Dict[str, object]:
     return {
         "samples": 0,
@@ -1038,19 +1143,24 @@ def extract_runtime_timing(text: str) -> Dict[str, object]:
         except ValueError:
             continue
 
-    process_start_times: list[dt.datetime] = []
+    process_starts: list[tuple[dt.datetime, str]] = []
     for match in PROCESS_START_RE.finditer(text):
         parsed = _parse_utc_timestamp(match.group("startup"))
         if parsed is not None:
-            process_start_times.append(parsed)
+            process_starts.append((parsed, match.group("boot_id")))
     for match in RUNTIME_STATUS_BOOT_START_RE.finditer(text):
         parsed = _parse_utc_timestamp(match.group("startup"))
         if parsed is not None:
-            process_start_times.append(parsed)
+            process_starts.append((parsed, match.group("boot_id")))
 
     first_runtime = min(runtime_timestamps) if runtime_timestamps else None
     last_runtime = max(runtime_timestamps) if runtime_timestamps else None
-    process_start = max(process_start_times) if process_start_times else None
+    latest_process_start = max(process_starts) if process_starts else None
+    process_start = latest_process_start[0] if latest_process_start else None
+    runtime_boot_id_latest = (
+        latest_process_start[1] if latest_process_start else None
+    )
+    runtime_boot_ids = sorted({boot_id for _, boot_id in process_starts})
     runtime_window_seconds: Optional[float] = None
     runtime_boot_age_seconds: Optional[float] = None
     if first_runtime is not None and last_runtime is not None:
@@ -1078,6 +1188,8 @@ def extract_runtime_timing(text: str) -> Dict[str, object]:
         ),
         "runtime_window_seconds": runtime_window_seconds,
         "runtime_boot_age_seconds": runtime_boot_age_seconds,
+        "runtime_boot_id_latest": runtime_boot_id_latest,
+        "runtime_boot_ids": runtime_boot_ids,
     }
 
 
@@ -2388,13 +2500,104 @@ def assess(
     regime_current_counts = extract_regime_current_counts(text)
     regime_runtime_diagnostics = extract_regime_runtime_diagnostics(text)
     execution_attribution = extract_execution_attribution(text)
+    replay_terminal_settlement = extract_replay_terminal_settlement(text)
     exit_capture_live = extract_exit_capture_samples(text)
     feature_scale = extract_feature_scale_diagnostics(text)
+    integrator_model_version_events = extract_integrator_model_version_events(text)
+    integrator_model_versions = list(dict.fromkeys(integrator_model_version_events))
+    integrator_feature_contract_events = extract_integrator_feature_contract_events(text)
+    integrator_feature_contract_latest = (
+        integrator_feature_contract_events[-1]
+        if integrator_feature_contract_events
+        else {}
+    )
 
     global_self_evolution_init_count = count(r"SELF_EVOLUTION_INIT", original_text)
     global_self_evolution_action_count = count(r"SELF_EVOLUTION_ACTION", original_text)
     global_self_evolution_runtime_enabled_count = count(
         r"RUNTIME_STATUS:.*evolution=\{enabled=true", original_text
+    )
+    integrator_artifact_identity_events = (
+        extract_integrator_artifact_identity_events(text)
+    )
+    integrator_artifact_identity_latest = (
+        integrator_artifact_identity_events[-1]
+        if integrator_artifact_identity_events
+        else {}
+    )
+    integrator_runtime_identity_events = (
+        extract_integrator_runtime_identity_events(text)
+    )
+    integrator_runtime_identity_latest = (
+        integrator_runtime_identity_events[-1]
+        if integrator_runtime_identity_events
+        else {}
+    )
+    integrator_filled_lineage_events = [
+        {
+            "candidate_id": match.group(1),
+            "model_version": match.group(2),
+            "position_episode_id": match.group(3),
+            "client_order_id": match.group(4),
+        }
+        for match in re.finditer(
+            r"INTEGRATOR_POLICY_FILLED:[^\n]*candidate_id=([^,\s]+)"
+            r"[^\n]*model_version=([^,\s]+)"
+            r"[^\n]*position_episode_id=([^,\s]+)"
+            r"[^\n]*client_order_id=([^,\s]+)",
+            text,
+        )
+    ]
+    integrator_closed_episode_events_raw = [
+        {
+            "position_episode_id": match.group(1),
+            "candidate_id": match.group(2),
+            "model_version": match.group(3),
+            "mode": match.group(4),
+            "policy_reason": match.group(5),
+            "symbol": match.group(6),
+            "realized_net_usd": float(match.group(7)),
+            "funding_paid_usd": float(match.group(8)),
+            "fill_event_count": int(match.group(9)),
+            "unique_order_count": int(match.group(10)),
+            "evidence_complete": match.group(11) == "true",
+            "activation_transaction_id": match.group(12),
+            "evidence_boot_id": match.group(13),
+            "runtime_config_sha256": match.group(14),
+            "trade_bot_sha256": match.group(15),
+            "closed_at_utc": match.group(16),
+            "recovered_after_restart": match.group(17) == "true",
+        }
+        for match in re.finditer(
+            r"INTEGRATOR_POLICY_EPISODE_CLOSED:[^\n]*position_episode_id=([^,\s]+)"
+            r"[^\n]*candidate_id=([^,\s]+)"
+            r"[^\n]*model_version=([^,\s]+)"
+            r"[^\n]*mode=([^,\s]+)"
+            r"[^\n]*policy_reason=([^,\s]+)"
+            r"[^\n]*symbol=([^,\s]+)"
+            r"[^\n]*realized_net_usd=([-+0-9.eE]+)"
+            r"[^\n]*funding_paid_usd=([-+0-9.eE]+)"
+            r"[^\n]*fill_event_count=(\d+)"
+            r"[^\n]*unique_order_count=(\d+)"
+            r"[^\n]*evidence_complete=(true|false)"
+            r"[^\n]*activation_transaction_id=([^,\s]+)"
+            r"[^\n]*evidence_boot_id=([^,\s]+)"
+            r"[^\n]*runtime_config_sha256=([0-9a-f]{64})"
+            r"[^\n]*trade_bot_sha256=([0-9a-f]{64})"
+            r"[^\n]*closed_at_utc=([^,\s]+)"
+            r"[^\n]*recovered_after_restart=(true|false)",
+            text,
+        )
+    ]
+    integrator_closed_episode_events_by_id = {
+        event["position_episode_id"]: event
+        for event in integrator_closed_episode_events_raw
+    }
+    integrator_closed_episode_events = list(
+        integrator_closed_episode_events_by_id.values()
+    )
+    integrator_closed_episode_raw_count = count(
+        r"INTEGRATOR_POLICY_EPISODE_CLOSED:", text
     )
     metrics = {
         "runtime_status_count": count(r"RUNTIME_STATUS:", text),
@@ -2476,6 +2679,15 @@ def assess(
             r"RUNTIME_STATUS:.*reconcile_runtime=\{[^}]*anomaly_halted=true", text
         ),
         "fill_overfill_drop_count": count(r"FILL_OVERFILL_DROP", text),
+        "fill_unmapped_drop_count": count(r"FILL_UNMAPPED_DROP", text),
+        "integrator_episode_closure_wal_failed_count": count(
+            r"INTEGRATOR_EPISODE_CLOSURE_WAL_FAILED", text
+        ),
+        "integrator_episode_identity_invalid_count": max(
+            0,
+            integrator_closed_episode_raw_count
+            - len(integrator_closed_episode_events_raw),
+        ),
         "fill_duplicate_drop_count": count(r"FILL_DUPLICATE_DROP", text),
         "bybit_exec_dedup_drop_count": count(r"BYBIT_EXEC_DEDUP_DROP", text),
         "fill_account_already_reflected_count": count(
@@ -2530,12 +2742,93 @@ def assess(
             r"SELF_EVOLUTION_ACTION:.*reason=EVOLUTION_DIRECTION_CONSISTENCY_PENDING",
             text,
         ),
+        "integrator_policy_proposed_count": count(
+            r"INTEGRATOR_POLICY_PROPOSED:", text
+        ),
+        "integrator_policy_risk_accepted_count": count(
+            r"INTEGRATOR_POLICY_RISK_ACCEPTED:", text
+        ),
+        "integrator_policy_enqueued_count": count(
+            r"INTEGRATOR_POLICY_ENQUEUED:", text
+        ),
+        "integrator_policy_filled_count": count(
+            r"INTEGRATOR_POLICY_FILLED:", text
+        ),
+        "integrator_policy_filled_events": integrator_filled_lineage_events,
+        "integrator_policy_filled_order_ids": [
+            event["client_order_id"] for event in integrator_filled_lineage_events
+        ],
+        "integrator_policy_unique_filled_order_count": len(
+            {
+                event["client_order_id"]
+                for event in integrator_filled_lineage_events
+            }
+        ),
+        "integrator_policy_filled_candidate_ids": re.findall(
+            r"INTEGRATOR_POLICY_FILLED:[^\n]*candidate_id=([^,\s]+)", text
+        ),
+        "integrator_policy_filled_model_versions": re.findall(
+            r"INTEGRATOR_POLICY_FILLED:[^\n]*model_version=([^,\s]+)", text
+        ),
+        "integrator_policy_closed_episode_events": integrator_closed_episode_events,
+        "integrator_policy_closed_episode_ids": [
+            event["position_episode_id"]
+            for event in integrator_closed_episode_events
+        ],
+        "integrator_policy_complete_episode_count": sum(
+            1
+            for event in integrator_closed_episode_events
+            if event["evidence_complete"]
+        ),
+        "integrator_policy_closed_episode_count": len(
+            integrator_closed_episode_events
+        ),
         "integrator_policy_applied_count": count(r"INTEGRATOR_POLICY_APPLIED:", text),
         "integrator_policy_canary_count": count(
             r"INTEGRATOR_POLICY_APPLIED:.*mode=canary", text
         ),
         "integrator_policy_active_count": count(
             r"INTEGRATOR_POLICY_APPLIED:.*mode=active", text
+        ),
+        "integrator_model_versions": integrator_model_versions,
+        "integrator_model_version_events": integrator_model_version_events,
+        "integrator_model_version_latest": (
+            integrator_model_version_events[-1]
+            if integrator_model_version_events
+            else ""
+        ),
+        "integrator_artifact_identity_events": integrator_artifact_identity_events,
+        "integrator_model_sha256_latest": integrator_artifact_identity_latest.get(
+            "model_sha256", ""
+        ),
+        "integrator_report_sha256_latest": integrator_artifact_identity_latest.get(
+            "report_sha256", ""
+        ),
+        "integrator_runtime_identity_events": integrator_runtime_identity_events,
+        "integrator_runtime_config_sha256_latest": (
+            integrator_runtime_identity_latest.get("runtime_config_sha256", "")
+        ),
+        "integrator_trade_bot_sha256_latest": (
+            integrator_runtime_identity_latest.get("trade_bot_sha256", "")
+        ),
+        "integrator_feature_contract_events": integrator_feature_contract_events,
+        "integrator_feature_training_symbol_latest": (
+            integrator_feature_contract_latest.get("training_symbol", "")
+        ),
+        "integrator_feature_bar_interval_ms_latest": int(
+            integrator_feature_contract_latest.get("bar_interval_ms", 0)
+        ),
+        "integrator_feature_samples_at_init_latest": int(
+            integrator_feature_contract_latest.get("feature_samples", 0)
+        ),
+        "integrator_history_bootstrap_count": count(
+            r"INTEGRATOR_HISTORY_BOOTSTRAP:", text
+        ),
+        "integrator_feature_stale_count": count(
+            r"INTEGRATOR_FEATURE_STALE:", text
+        ),
+        "integrator_legacy_feature_contract_count": count(
+            r"INTEGRATOR_LEGACY_FEATURE_CONTRACT:", text
         ),
         "integrator_mode_off_count": count(r"RUNTIME_STATUS:.*integrator_mode=off", text),
         "integrator_mode_shadow_count": count(
@@ -3057,6 +3350,25 @@ def assess(
     }
     metrics.update(extract_runtime_timing(text))
     metrics.update(feature_scale)
+    metrics.update(
+        {
+            "replay_terminal_settlement_done_count": int(
+                replay_terminal_settlement.get("done_count", 0)
+            ),
+            "replay_terminal_settlement_failed_count": int(
+                replay_terminal_settlement.get("failed_count", 0)
+            ),
+            "replay_terminal_realized_net_usd": replay_terminal_settlement.get(
+                "realized_net_usd"
+            ),
+            "replay_terminal_fee_usd": replay_terminal_settlement.get(
+                "fees_usd"
+            ),
+            "replay_terminal_funding_paid_usd": replay_terminal_settlement.get(
+                "funding_paid_usd"
+            ),
+        }
+    )
     attribution_fills = execution_attribution.get("fills", {})
     attribution_submit = execution_attribution.get("submit", {})
     attribution_runtime_windows = execution_attribution.get("runtime_fill_windows", {})
@@ -4247,6 +4559,7 @@ def assess(
         "metrics": metrics,
         "account_pnl": account_pnl,
         "execution_attribution": execution_attribution,
+        "replay_terminal_settlement": replay_terminal_settlement,
         "exit_capture_live": exit_capture_live,
         "fail_reasons": fail_reasons,
         "protection_fail_reasons": protection_fail_reasons,

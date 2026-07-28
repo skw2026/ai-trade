@@ -33,10 +33,17 @@ class RollingBuffer {
 // 职责：维护 OHLCV 窗口，解析因子表达式，计算当前 Tick 的特征向量
 class OnlineFeatureEngine {
  public:
-  explicit OnlineFeatureEngine(size_t window_size);
+  explicit OnlineFeatureEngine(size_t window_size,
+                               std::int64_t bar_interval_ms = 0);
+  void Reset(std::int64_t bar_interval_ms);
 
   // 接收实时行情更新缓冲区
   void OnMarket(const MarketEvent& event);
+  void AddCompletedBar(double open,
+                       double high,
+                       double low,
+                       double close,
+                       double volume);
 
   // 计算单个表达式的值
   // 支持算子：ts_delay, ts_delta, ts_rank, ts_corr, +, -, *, /
@@ -53,10 +60,18 @@ class OnlineFeatureEngine {
   // 当前在线窗口已累计的 close 样本数。Integrator 用它做独立预热，
   // 避免 ts_rank/ts_corr 等 miner 表达式在窗口未满时产生 NaN 并被归零。
   size_t SampleCount() const;
+  std::int64_t bar_interval_ms() const { return bar_interval_ms_; }
 
  private:
   size_t window_size_;
+  std::int64_t bar_interval_ms_{0};
   std::unordered_map<std::string, RollingBuffer> series_;
+  std::int64_t active_bar_bucket_{-1};
+  double active_open_{std::numeric_limits<double>::quiet_NaN()};
+  double active_high_{std::numeric_limits<double>::quiet_NaN()};
+  double active_low_{std::numeric_limits<double>::quiet_NaN()};
+  double active_close_{std::numeric_limits<double>::quiet_NaN()};
+  double active_volume_{0.0};
   
   // 简单的递归下降解析器或栈式求值器辅助函数
   // 实际实现中可能需要一个轻量级的 ExpressionParser 类

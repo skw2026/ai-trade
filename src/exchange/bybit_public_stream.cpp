@@ -113,12 +113,21 @@ std::vector<std::string> NormalizeSymbols(
   return out;
 }
 
-std::string TopicToSymbol(const std::string& topic) {
+std::string TickerTopicToSymbol(const std::string& topic) {
   static const std::string kPrefix = "tickers.";
   if (topic.rfind(kPrefix, 0) != 0) {
     return std::string();
   }
   return topic.substr(kPrefix.size());
+}
+
+std::string KlineTopicToSymbol(const std::string& topic,
+                               const std::string& interval) {
+  const std::string prefix = "kline." + interval + ".";
+  if (interval.empty() || topic.rfind(prefix, 0) != 0) {
+    return {};
+  }
+  return topic.substr(prefix.size());
 }
 
 }  // namespace
@@ -175,12 +184,16 @@ bool BybitPublicStream::Connect(std::string* out_error) {
 
   std::string args;
   for (std::size_t i = 0; i < options_.symbols.size(); ++i) {
-    if (i > 0U) {
+    if (!args.empty()) {
       args += ",";
     }
     args += "\"tickers." + EscapeJson(options_.symbols[i]) + "\"";
+    if (!options_.feature_bar_interval.empty()) {
+      args += ",\"kline." + EscapeJson(options_.feature_bar_interval) + "." +
+              EscapeJson(options_.symbols[i]) + "\"";
+    }
   }
-  // 单连接可订阅多个 symbol 的 ticker 主题。
+  // 单连接同时订阅交易 ticker 和模型特征所需的完整 K 线。
   const std::string subscribe_payload =
       "{\"op\":\"subscribe\",\"args\":[" + args + "]}";
 
@@ -337,22 +350,75 @@ bool BybitPublicStream::ParseMessage(const std::string& message) {
   if (!topic.has_value()) {
     return false;
   }
-  const std::string topic_symbol = TopicToSymbol(*topic);
-  if (topic_symbol.empty()) {
-    return false;
-  }
+  const std::string ticker_symbol = TickerTopicToSymbol(*topic);
+  const std::string kline_symbol =
+      KlineTopicToSymbol(*topic, options_.feature_bar_interval);
 
   const JsonValue* data = JsonObjectField(&root, "data");
   if (data == nullptr) {
     return false;
   }
 
-  auto append_event = [&](const JsonValue* item) {
+  if (!kline_symbol.empty()) {
+    auto append_kline = [&](const JsonValue* item) {
+      if (item == nullptr || item->type != JsonType::kObject) {
+        return;
+      }
+      const bool confirmed =
+          JsonAsBool(JsonObjectField(item, "confirm")).value_or(false);
+      if (!confirmed) {
+        return;
+      }
+      const double open = JsonNumberField(item, "open").value_or(0.0);
+      const double high = JsonNumberField(item, "high").value_or(0.0);
+      const double low = JsonNumberField(item, "low").value_or(0.0);
+      const double close = JsonNumberField(item, "close").value_or(0.0);
+      const double volume = JsonNumberField(item, "volume").value_or(0.0);
+      if (open <= 0.0 || high <= 0.0 || low <= 0.0 || close <= 0.0) {
+        return;
+      }
+      const std::int64_t start_ms =
+          JsonInt64Field(item, "start").value_or(0);
+      const std::int64_t end_ms =
+          JsonInt64Field(item, "end").value_or(0);
+      if (start_ms <= 0 || end_ms < start_ms) {
+        return;
+      }
+      const std::int64_t interval_ms = end_ms - start_ms + 1;
+      pending_events_.push_back(MarketEvent{
+          start_ms,
+          kline_symbol,
+          close,
+          close,
+          std::max(0.0, volume),
+          interval_ms,
+          std::numeric_limits<double>::quiet_NaN(),
+          open,
+          high,
+          low,
+          true,
+      });
+    };
+    if (data->type == JsonType::kObject) {
+      append_kline(data);
+    } else if (data->type == JsonType::kArray) {
+      for (const auto& item : data->array_value) {
+        append_kline(&item);
+      }
+    }
+    return true;
+  }
+
+  if (ticker_symbol.empty()) {
+    return false;
+  }
+
+  auto append_ticker = [&](const JsonValue* item) {
     if (item == nullptr || item->type != JsonType::kObject) {
       return;
     }
     const std::string symbol =
-        JsonStringField(item, "symbol").value_or(topic_symbol);
+        JsonStringField(item, "symbol").value_or(ticker_symbol);
     const double last_price = JsonNumberField(item, "lastPrice").value_or(0.0);
     if (last_price <= 0.0) {
       return;
@@ -428,12 +494,12 @@ bool BybitPublicStream::ParseMessage(const std::string& message) {
   };
 
   if (data->type == JsonType::kObject) {
-    append_event(data);
+    append_ticker(data);
     return true;
   }
   if (data->type == JsonType::kArray) {
     for (const auto& item : data->array_value) {
-      append_event(&item);
+      append_ticker(&item);
     }
     return true;
   }

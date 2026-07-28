@@ -112,6 +112,10 @@ struct SelfEvolutionConfig {
   bool use_virtual_pnl{false};
   bool use_counterfactual_search{false};
   bool counterfactual_fallback_to_factor_ic{false};
+  bool counterfactual_require_temporal_holdout{false};
+  double counterfactual_train_fraction{0.70};
+  int counterfactual_min_train_samples{10};
+  int counterfactual_min_holdout_samples{10};
   double counterfactual_min_improvement_usd{0.0};
   double counterfactual_min_improvement_ratio_of_equity{0.0};
   double counterfactual_improvement_decay_per_filtered_signal_usd{0.0};
@@ -136,6 +140,7 @@ struct SelfEvolutionConfig {
   double objective_beta_drawdown{1.0};
   double objective_gamma_notional_churn{0.005};
   bool objective_use_sharpe_like{false};
+  double objective_min_risk_scale{1e-5};
   double max_single_strategy_weight{0.60};
   double max_weight_step{0.05};
   int rollback_degrade_windows{2};
@@ -155,12 +160,26 @@ struct IntegratorShadowConfig {
   bool require_model_file{false};
   bool require_active_meta{false};
   bool require_gate_pass{false};
+  // A release may start with an active_meta bound to the previous binary.
+  // When enabled, strict identity/bootstrap failures disable the integrator
+  // instead of preventing the baseline runtime from starting.
+  bool strict_failure_degrade_to_off{false};
+  // 仅允许 closed-loop replay 在注册前验证候选；生产配置不得开启。
+  bool candidate_validation_mode{false};
+  // Candidate replay carries the exact source live config identity into its
+  // report. The live process computes runtime_config_path on every startup.
+  std::string source_runtime_config_sha256;
+  std::string runtime_config_path;
   double min_auc_mean{0.50};
   double min_delta_auc_vs_baseline{0.0};
   int min_split_trained_count{1};
   double min_split_trained_ratio{0.5};
   double score_gain{1.0};
   int feature_window_ticks{300};
+  // 仅用于从旧 active report 平滑迁移；新模型报告必须自带相同契约。
+  bool allow_legacy_feature_contract{false};
+  std::string legacy_training_symbol;
+  int legacy_bar_interval_ms{0};
 };
 
 enum class IntegratorMode { kOff, kShadow, kCanary, kActive };
@@ -183,6 +202,8 @@ struct IntegratorConfig {
   double canary_min_notional_usd{0.0};
   double canary_confidence_threshold{0.60};
   bool canary_allow_countertrend{false};
+  bool canary_allow_independent_signal{false};
+  double canary_independent_notional_usd{0.0};
   double active_confidence_threshold{0.55};
   double active_min_notional_usd{0.0};
   double active_partial_notional_ratio{0.5};
@@ -247,6 +268,7 @@ struct StrategyConfig {
 // ============================================================================
 
 struct AppConfig {
+  std::string source_config_path;
   std::string system_id{"bot-dev"};
   std::string mode{"replay"};
   std::string primary_symbol{"BTCUSDT"};

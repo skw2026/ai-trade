@@ -13,6 +13,8 @@ enum class OrderState {
   kNew,       ///< 已创建，尚未发送。
   kSent,      ///< 已进入执行通道，等待成交/拒绝。
   kPartial,   ///< 部分成交。
+  kCancelPending,   ///< 撤单请求在途，仍阻塞新净仓位订单。
+  kCancelConfirmed, ///< 交易所已受理撤单，等待迟到成交观察窗口结束。
   kFilled,    ///< 全部成交（终态）。
   kRejected,  ///< 被拒绝（终态）。
   kCancelled, ///< 已撤销（终态）。
@@ -46,6 +48,12 @@ class OrderManager {
   void MarkRejected(const std::string& client_order_id);
   /// 状态迁移：非终态 -> Cancelled。
   void MarkCancelled(const std::string& client_order_id);
+  /// 状态迁移：New/Sent/Partial -> CancelPending。
+  void MarkCancelPending(const std::string& client_order_id);
+  /// 状态迁移：CancelPending -> CancelConfirmed。
+  void MarkCancelConfirmed(const std::string& client_order_id);
+  /// 撤单失败后回到 Sent/Partial，保留订单在途语义。
+  void MarkCancelFailed(const std::string& client_order_id);
   /// 消费成交回报，推进订单状态并更新净成交统计。
   void OnFill(const FillEvent& fill);
 
@@ -74,6 +82,11 @@ class OrderManager {
    * @brief 检查父订单是否已关联了保护单
    */
   bool HasOpenProtection(const std::string& parent_order_id) const;
+
+  /// 是否存在任意非终态订单（包括 Entry/Reduce/SL/TP）。
+  bool HasPendingOrders() const;
+  /// 返回全部非终态订单 ID，供 replay 终态结算完整撤单。
+  std::vector<std::string> PendingOrderIds() const;
 
   /**
    * @brief 是否存在“在途净仓位订单”（用于对账门控）

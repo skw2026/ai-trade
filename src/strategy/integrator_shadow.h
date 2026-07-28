@@ -14,6 +14,7 @@ class IntegratorShadow {
   explicit IntegratorShadow(IntegratorShadowConfig config);
 
   bool Initialize(bool strict_takeover, std::string* out_error);
+  bool BootstrapHistory(std::string* out_error);
   
   // 新增：接收行情以更新特征引擎
   void OnMarket(const MarketEvent& event);
@@ -22,6 +23,20 @@ class IntegratorShadow {
 
   bool enabled() const { return config_.enabled && initialized_; }
   std::string model_version() const { return model_version_; }
+  const std::string& activation_transaction_id() const {
+    return activation_transaction_id_;
+  }
+  const std::string& runtime_config_sha256() const {
+    return runtime_config_sha256_;
+  }
+  const std::string& trade_bot_sha256() const {
+    return trade_bot_sha256_;
+  }
+  const std::string& training_symbol() const { return training_symbol_; }
+  std::int64_t feature_bar_interval_ms() const {
+    return feature_bar_interval_ms_;
+  }
+  size_t feature_sample_count() const { return feature_engine_.SampleCount(); }
   ~IntegratorShadow();
 
  private:
@@ -30,6 +45,16 @@ class IntegratorShadow {
   IntegratorShadowConfig config_;
   bool initialized_{false};
   std::string model_version_;
+  std::string activation_transaction_id_;
+  std::string runtime_config_sha256_;
+  std::string trade_bot_sha256_;
+  bool expected_net_edge_available_{false};
+  double expected_net_edge_per_trade_bps_{0.0};
+  std::string training_symbol_;
+  std::string training_csv_path_;
+  std::int64_t feature_bar_interval_ms_{0};
+  std::int64_t last_observed_market_ts_ms_{0};
+  std::int64_t last_completed_bar_ts_ms_{0};
 
   // 在线特征计算引擎
   research::OnlineFeatureEngine feature_engine_;

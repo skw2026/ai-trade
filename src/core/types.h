@@ -58,6 +58,12 @@ struct MarketEvent {
   std::int64_t interval_ms{0};  // 与上一条同 symbol 行情的时间间隔
   // 当前行情间隔对应的资金费率（按 interval 已折算）；缺失时为 NaN。
   double funding_rate_per_interval{std::numeric_limits<double>::quiet_NaN()};
+  // 完整 K 线事件可显式携带 OHLC；ticker 事件保持 NaN，由在线特征引擎聚合。
+  Price open_price{std::numeric_limits<double>::quiet_NaN()};
+  Price high_price{std::numeric_limits<double>::quiet_NaN()};
+  Price low_price{std::numeric_limits<double>::quiet_NaN()};
+  // 模型专用 K 线不应再次驱动账户、策略和执行链。
+  bool feature_only{false};
 };
 
 /// Regime Analysis Snapshot
@@ -105,6 +111,8 @@ struct ShadowInference {
   double model_score{0.0};
   double p_up{0.5};
   double p_down{0.5};
+  bool expected_net_edge_available{false};
+  double expected_net_edge_per_trade_bps{0.0};
 };
 
 /// Risk Engine Input
@@ -125,6 +133,14 @@ struct RiskAdjustedPosition {
 struct OrderIntent {
   std::string client_order_id;
   std::string parent_order_id;
+  // Candidate lineage is persisted with the order so fills and exits remain
+  // attributable after asynchronous execution and process restarts.
+  std::string decision_id;
+  std::string candidate_id;
+  std::string model_version;
+  std::string integrator_mode;
+  std::string position_episode_id;
+  std::string integrator_policy_reason;
   std::string symbol{"BTCUSDT"};
   OrderPurpose purpose{OrderPurpose::kEntry};
   LiquidityPreference liquidity_preference{LiquidityPreference::kAuto};
@@ -160,6 +176,24 @@ struct RemotePositionSnapshot {
   Price avg_entry_price{0.0};
   Price mark_price{0.0};
   Price liquidation_price{0.0};
+};
+
+struct RemoteOpenOrderSnapshot {
+  std::string client_order_id;
+  std::string exchange_order_id;
+  std::string symbol;
+  std::string status;
+  std::string order_type;
+  std::string time_in_force;
+  int direction{0};
+  Quantity original_qty{0.0};
+  Quantity leaves_qty{0.0};
+  Quantity filled_qty{0.0};
+  Price price{0.0};
+  Price trigger_price{0.0};
+  int trigger_direction{0};
+  bool reduce_only{false};
+  bool close_on_trigger{false};
 };
 
 struct RemoteAccountBalanceSnapshot {

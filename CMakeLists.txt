@@ -132,6 +132,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_closed_loop_mechanism_audit.py)
     add_test(NAME integrator_train_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_integrator_train.py)
+    add_test(NAME feature_parity_contract_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_feature_parity_contract.py)
     add_test(NAME check_runtime_health_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_check_runtime_health.py)
     add_test(NAME web_report_store_test

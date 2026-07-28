@@ -24,6 +24,12 @@ from typing import Dict, Tuple
 
 # 配置
 CONTAINER_NAME = "ai-trade"
+SCHEDULER_CONTAINER_NAME = os.getenv(
+    "AI_TRADE_SCHEDULER_CONTAINER_NAME", "ai-trade-scheduler"
+)
+WATCH_SCHEDULER = os.getenv(
+    "AI_TRADE_WATCH_SCHEDULER", "true"
+).strip().lower() in {"1", "true", "yes", "on"}
 # 心跳超时阈值（秒），应大于 system.status_log_interval_ticks * tick_interval
 HEARTBEAT_THRESHOLD_SEC = 120
 WEBHOOK_URL = os.getenv("AI_TRADE_WEBHOOK_URL")
@@ -154,6 +160,27 @@ def check_container() -> tuple[bool, str]:
         return False, str(e)
 
 
+def check_scheduler() -> tuple[bool, str]:
+    """Require the scheduler's persisted job health to be non-failing."""
+    try:
+        status_line, _, body = docker_http_get(
+            f"/containers/{SCHEDULER_CONTAINER_NAME}/json"
+        )
+        if " 200 " not in status_line:
+            return False, "Container not found or API error"
+        info = json.loads(body.decode("utf-8", errors="ignore"))
+        state = info.get("State", {})
+        if not state.get("Running"):
+            return False, f"State: {state.get('Status', 'unknown')}"
+        health = state.get("Health", {})
+        health_status = str(health.get("Status") or "").strip().lower()
+        if health_status in {"healthy", "starting"}:
+            return True, f"Health: {health_status}"
+        return False, f"Health: {health_status or 'missing'}"
+    except Exception as e:
+        return False, str(e)
+
+
 def get_docker_logs(tail: int = 50) -> str:
     """通过 Unix Socket 获取容器标准输出日志"""
     try:
@@ -219,7 +246,14 @@ def main() -> int:
         send_alert(f"Container Status: {msg}")
         return 1
 
-    # 2. 检查日志心跳
+    # 2. scheduler 失败必须进入同一告警链，不能只留在 Docker 状态中。
+    if WATCH_SCHEDULER:
+        scheduler_ok, scheduler_msg = check_scheduler()
+        if not scheduler_ok:
+            send_alert(f"Scheduler Status: {scheduler_msg}")
+            return 1
+
+    # 3. 检查日志心跳
     ok, msg = check_logs()
     if not ok:
         send_alert(f"Log Heartbeat: {msg}")

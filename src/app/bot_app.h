@@ -55,9 +55,11 @@ class BotApplication {
    * 用于部署前验证目标镜像、配置和交易所密钥是否可用。
    * @return int 退出码 (0 表示启动检查通过, 非 0 表示失败)
    */
-  int CheckStartup();
+ int CheckStartup();
 
  private:
+  struct IntegratorCandidateEpisode;
+
   // --- 初始化阶段 ---
 
   /**
@@ -77,7 +79,20 @@ class BotApplication {
    * @brief 启动同步远端账户状态
    * 拉取持仓与资金口径，用于初始化本地 OMS/AccountState。
    */
-  void SyncRemotePositions();
+  bool SyncRemotePositions();
+  /// 重启时以 WAL + 远端活动订单建立确定状态；遗留净仓位订单一律取消，
+  /// 非零持仓必须恢复或重新挂载 SL 后才允许新增风险。
+  bool RecoverStartupOrdersAndProtection();
+  bool RecordCandidateEpisodeClosure(
+      const std::string& symbol,
+      const IntegratorCandidateEpisode& episode,
+      bool recovered_after_restart);
+  bool HasCandidateIsolationForSymbol(
+      const std::string& symbol,
+      const std::string& allowed_episode_id = "") const;
+  void ApplyCandidateEpisodeFill(
+      IntegratorCandidateEpisode* episode,
+      const FillEvent& fill);
 
   // --- 运行阶段 ---
 
@@ -203,12 +218,32 @@ class BotApplication {
   // --- 辅助逻辑 ---
 
   struct ManagedProtectionState;
+  struct IntegratorCandidateLineage {
+    std::string decision_id;
+    std::string candidate_id;
+    std::string model_version;
+    std::string mode;
+    std::string policy_reason;
+    std::string position_episode_id;
+  };
+  struct IntegratorCandidateEpisode {
+    IntegratorCandidateLineage lineage;
+    double signed_open_qty{0.0};
+    double avg_entry_price{0.0};
+    double realized_net_usd{0.0};
+    double funding_paid_usd{0.0};
+    int fill_event_count{0};
+    bool entry_observed_from_flat{false};
+    std::unordered_set<std::string> order_ids;
+  };
 
   /**
    * @brief 将订单意图加入执行队列
    * 包含：WAL 持久化、OMS 注册、推送到异步执行器。
    */
-  bool EnqueueIntent(const OrderIntent& intent);
+  bool EnqueueIntent(
+      const OrderIntent& intent,
+      const IntegratorCandidateLineage* integrator_lineage = nullptr);
 
   /**
    * @brief 处理成交后的保护单逻辑 (止盈/止损)
@@ -291,6 +326,13 @@ class BotApplication {
    * @param has_fill 当前轮是否消费到成交
    */
   bool ShouldExit(bool has_market, bool has_fill);
+  /**
+   * @brief 在 replay 数据耗尽后取消未成交净仓位订单并按末价强制平仓
+   *
+   * 返回 true 表示结算已经完成或失败，主循环可以退出。失败状态由
+   * replay_terminal_settlement_failed_ 暴露给 Run() 的退出码。
+   */
+  bool AdvanceReplayTerminalSettlement();
 
   /**
    * @brief 停机清理
@@ -370,9 +412,12 @@ class BotApplication {
     std::uint64_t integrator_scored{0};
     std::uint64_t integrator_pred_up{0};
     std::uint64_t integrator_pred_down{0};
+    std::uint64_t integrator_policy_proposed{0};
+    std::uint64_t integrator_policy_risk_accepted{0};
     std::uint64_t integrator_policy_applied{0};
     std::uint64_t integrator_policy_canary{0};
     std::uint64_t integrator_policy_active{0};
+    std::uint64_t integrator_policy_filled{0};
     std::uint64_t entry_edge_samples{0};
     std::uint64_t strategy_mix_samples{0};
     std::uint64_t strategy_policy_flat_samples{0};
@@ -467,6 +512,15 @@ class BotApplication {
   // 状态追踪
   std::unordered_set<std::string> intent_ids_; ///< 已处理的订单 ID (去重)
   std::unordered_set<std::string> fill_ids_;   ///< 已处理的成交 ID (去重)
+  // WAL 恢复后的意图快照用于重启后的迟到成交与候选 episode 归因。
+  std::unordered_map<std::string, OrderIntent> persisted_intent_by_id_;
+  std::unordered_map<std::string, IntegratorCandidateLineage>
+      integrator_lineage_by_intent_id_;
+  std::unordered_map<std::string, IntegratorCandidateEpisode>
+      integrator_episode_by_symbol_;
+  std::unordered_set<std::string> persisted_closed_episode_ids_;
+  std::unordered_map<std::string, CandidateEpisodeClosureRecord>
+      persisted_episode_closures_;
   std::vector<std::string> tracked_symbols_;   ///< 当前关注的 Symbol 列表
   // 仅跟踪“净仓位相关订单（Entry/Reduce）”的入队时间，用于超时收敛。
   std::unordered_map<std::string, std::int64_t> pending_net_order_enqueued_ms_;
@@ -476,6 +530,9 @@ class BotApplication {
   };
   std::unordered_map<std::string, PendingRequiredSlAttach>
       pending_required_sl_attach_;
+  std::unordered_set<std::string> startup_protection_sl_ids_;
+  bool startup_protection_recovery_pending_{false};
+  std::vector<RemotePositionSnapshot> startup_remote_positions_;
   struct ManagedProtectionState {
     std::string symbol;
     std::string protection_group_id;
@@ -494,6 +551,11 @@ class BotApplication {
   std::unordered_map<std::string, ManagedProtectionState>
       managed_protection_by_symbol_;
   std::unordered_map<std::string, double> latest_mark_price_by_symbol_;
+  bool replay_terminal_settlement_started_{false};
+  bool replay_terminal_close_submitted_{false};
+  bool replay_terminal_settlement_failed_{false};
+  int replay_terminal_settlement_idle_polls_{0};
+  std::unordered_set<std::string> replay_terminal_close_order_ids_;
   std::unordered_map<std::string, RegimeState> regime_state_by_symbol_;
   std::unordered_map<std::string, int> cost_filter_reject_streak_by_symbol_;
   std::unordered_map<std::string, int> cost_filter_cooldown_until_tick_by_symbol_;
@@ -520,6 +582,8 @@ class BotApplication {
   std::unordered_map<std::string, CandidateProbeOrderState>
       active_candidate_probe_by_symbol_;
   std::unordered_map<std::string, int>
+      candidate_isolation_grace_until_tick_by_symbol_;
+  std::unordered_map<std::string, int>
       candidate_probe_cooldown_until_tick_by_symbol_;
   std::unordered_map<std::string, int>
       candidate_probe_position_entry_tick_by_symbol_;
@@ -537,6 +601,8 @@ class BotApplication {
 
   bool protection_forced_reduce_only_{
       false};  ///< 保护单关键路径触发的只减仓开关；空仓且无保护/在途订单后自动释放。
+  bool evidence_persistence_failed_{
+      false};  ///< 候选 episode 证据落盘失败后，本进程永久只减仓。
   bool gate_forced_reduce_only_{
       false};  ///< Gate 运行时动作触发的只减仓开关（可自动恢复）。
   bool reconcile_forced_reduce_only_{

@@ -62,6 +62,10 @@ class ExchangeAdapter {
   virtual bool GetRemoteOpenOrderClientIds(
       std::unordered_set<std::string>* out_client_order_ids) const = 0;
 
+  /// @brief 获取远端活动订单完整快照，供启动恢复校验保护单语义。
+  virtual bool GetRemoteOpenOrders(
+      std::vector<RemoteOpenOrderSnapshot>* out_orders) const = 0;
+
   /// @brief 获取 symbol 级交易规则与可交易状态（用于筛币与下单前校验）。
   virtual bool GetSymbolInfo(const std::string& symbol,
                              SymbolInfo* out_info) const = 0;

@@ -61,6 +61,11 @@ struct MinerReport {
   std::string factor_set_version;
   int random_seed{42};
   std::string search_space_version{"ts_ops_v1"};
+  std::string selection_policy{
+      "train_ic_only_validation_diagnostic_v1"};
+  std::string optimization_domain{"development_train"};
+  std::string validation_domain{"development_validation_diagnostic_only"};
+  bool validation_feedback_used{false};
   std::vector<RankedFactor> factors;
   std::vector<std::string> candidate_expressions;
   IcSummary random_baseline_oos_abs_ic{};

@@ -13,6 +13,7 @@ Steps:
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime as dt
 import json
 import pathlib
@@ -28,6 +29,7 @@ class StepResult:
     name: str
     enabled: bool
     command: List[str]
+    required: bool = True
     return_code: int | None = None
     status: str = "skipped"
     started_at_utc: str = ""
@@ -159,6 +161,142 @@ def run_command(step: StepResult, dry_run: bool) -> StepResult:
     return step
 
 
+def validate_source_contract(
+    *,
+    run_dir: pathlib.Path,
+    enabled_steps: Dict[str, bool],
+    expected_base_url: str,
+    expected_category: str,
+    expected_symbol: str,
+    expected_interval_minutes: int,
+    final_ohlcv_path: pathlib.Path | None = None,
+) -> List[str]:
+    failures: List[str] = []
+    report_specs = {
+        "archive_download": (
+            run_dir / "archive_report.json",
+            "interval_minutes",
+        ),
+        "incremental_update": (
+            run_dir / "incremental_report.json",
+            "interval",
+        ),
+        "gap_fill": (
+            run_dir / "gap_fill_report.json",
+            "interval_minutes",
+        ),
+    }
+    expected_url = expected_base_url.rstrip("/")
+    verified_reports = 0
+    authoritative_server_times: List[int] = []
+    for step_name, (report_path, interval_key) in report_specs.items():
+        if not enabled_steps.get(step_name, False):
+            continue
+        if not report_path.is_file():
+            failures.append(f"{step_name}: source report missing")
+            continue
+        try:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            failures.append(f"{step_name}: source report unreadable: {exc}")
+            continue
+        if not isinstance(payload, dict):
+            failures.append(f"{step_name}: source report is not an object")
+            continue
+        expected_fields = {
+            "venue": "bybit",
+            "category": expected_category,
+            "symbol": expected_symbol,
+            "base_url": expected_url,
+            "price_type": "trade_price",
+            "volume_unit": "base_asset",
+            "bar_semantics": "closed_ohlcv",
+        }
+        for field, expected in expected_fields.items():
+            actual = str(payload.get(field, "")).strip()
+            if actual != str(expected):
+                failures.append(
+                    f"{step_name}: {field}={actual or '<missing>'} "
+                    f"expected={expected}"
+                )
+        try:
+            actual_interval = int(payload.get(interval_key, 0))
+        except (TypeError, ValueError):
+            actual_interval = 0
+        if actual_interval != expected_interval_minutes:
+            failures.append(
+                f"{step_name}: interval={actual_interval} "
+                f"expected={expected_interval_minutes}"
+            )
+        if step_name in {"archive_download", "incremental_update"}:
+            try:
+                server_time_ms = int(payload.get("server_time_ms", 0))
+            except (TypeError, ValueError):
+                server_time_ms = 0
+            if server_time_ms <= 0:
+                failures.append(
+                    f"{step_name}: authoritative server time is missing"
+                )
+            else:
+                authoritative_server_times.append(server_time_ms)
+        if step_name == "archive_download":
+            try:
+                end_ms_exclusive = int(payload.get("end_ms_exclusive", 0))
+                closed_boundary_ms = int(payload.get("closed_boundary_ms", 0))
+            except (TypeError, ValueError):
+                end_ms_exclusive = 0
+                closed_boundary_ms = 0
+            if (
+                end_ms_exclusive <= 0
+                or closed_boundary_ms <= 0
+                or end_ms_exclusive > closed_boundary_ms
+            ):
+                failures.append(
+                    "archive_download: end boundary is not proven closed"
+                )
+        if step_name == "incremental_update":
+            try:
+                last_timestamp = int(payload.get("last_timestamp_after", 0))
+                server_time_ms = int(payload.get("server_time_ms", 0))
+            except (TypeError, ValueError):
+                last_timestamp = 0
+                server_time_ms = 0
+            if (
+                last_timestamp <= 0
+                or server_time_ms <= 0
+                or last_timestamp + expected_interval_minutes * 60 * 1000
+                > server_time_ms
+            ):
+                failures.append(
+                    "incremental_update: latest bar is not proven closed"
+                )
+        verified_reports += 1
+    if verified_reports == 0:
+        failures.append("no enabled source report was verified")
+    if final_ohlcv_path is not None:
+        latest_timestamp = 0
+        try:
+            with final_ohlcv_path.open("r", encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    latest_timestamp = max(
+                        latest_timestamp,
+                        int(row.get("timestamp", 0)),
+                    )
+        except (OSError, TypeError, ValueError) as exc:
+            failures.append(f"final OHLCV is unreadable: {exc}")
+        if not authoritative_server_times:
+            failures.append(
+                "final OHLCV has no authoritative Bybit server-time proof"
+            )
+        elif (
+            latest_timestamp <= 0
+            or latest_timestamp + expected_interval_minutes * 60 * 1000
+            > max(authoritative_server_times)
+        ):
+            failures.append("final OHLCV latest bar is not proven closed")
+    return failures
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run data acceleration pipeline")
     parser.add_argument("--config", default="config/data_pipeline.yaml")
@@ -223,6 +361,33 @@ def main() -> int:
     steps: List[StepResult] = []
 
     archive_enabled = as_bool(deep_get(config, ["archive", "enabled"], True), True)
+    archive_provider = str(
+        deep_get(config, ["archive", "provider"], "bybit")
+    ).strip().lower()
+    archive_category = str(
+        deep_get(config, ["archive", "category"], category)
+    ).strip()
+    incremental_category = str(
+        deep_get(config, ["incremental", "category"], category)
+    ).strip()
+    gap_fill_category = str(
+        deep_get(config, ["gap_fill", "category"], category)
+    ).strip()
+    if not archive_enabled:
+        raise ValueError(
+            "archive.enabled must be true: training data must be rebuilt from "
+            "the declared venue instead of reusing an unverified CSV"
+        )
+    if archive_provider != "bybit":
+        raise ValueError(
+            f"unsupported archive.provider={archive_provider}; "
+            "single-venue contract requires bybit"
+        )
+    if len({category, archive_category, incremental_category, gap_fill_category}) != 1:
+        raise ValueError(
+            "archive/incremental/gap_fill category mismatch violates "
+            "the single-venue data contract"
+        )
     archive_days = (
         max(1, int(args.archive_days))
         if int(args.archive_days or 0) > 0
@@ -230,17 +395,17 @@ def main() -> int:
     )
     archive_cmd = [
         py,
-        "tools/fetch_binance_archive.py",
+        "tools/fetch_bybit_history.py",
         "--symbol",
         symbol,
         "--interval",
-        str(deep_get(config, ["archive", "interval"], "5m")),
-        "--market",
-        str(deep_get(config, ["archive", "market"], "futures_um")),
+        str(deep_get(config, ["archive", "interval_minutes"], interval_min)),
+        "--category",
+        archive_category,
         "--days",
         str(archive_days),
         "--base-url",
-        str(deep_get(config, ["archive", "base_url"], "https://data.binance.vision")),
+        str(deep_get(config, ["archive", "base_url"], "https://api.bybit.com")),
         "--output",
         str(ohlcv_path),
         "--report",
@@ -267,7 +432,9 @@ def main() -> int:
                 "--interval",
                 str(deep_get(config, ["incremental", "interval_minutes"], interval_min)),
                 "--category",
-                str(deep_get(config, ["incremental", "category"], category)),
+                incremental_category,
+                "--base-url",
+                str(deep_get(config, ["archive", "base_url"], "https://api.bybit.com")),
                 "--bars",
                 str(as_int(deep_get(config, ["incremental", "bars"], 240), 240)),
                 "--iterations",
@@ -295,7 +462,9 @@ def main() -> int:
         "--interval",
         str(deep_get(config, ["gap_fill", "interval_minutes"], interval_min)),
         "--category",
-        str(deep_get(config, ["gap_fill", "category"], category)),
+        gap_fill_category,
+        "--base-url",
+        str(deep_get(config, ["archive", "base_url"], "https://api.bybit.com")),
         "--max-ranges",
         str(as_int(deep_get(config, ["gap_fill", "max_ranges"], 200), 200)),
         "--report",
@@ -330,6 +499,7 @@ def main() -> int:
         StepResult(
             name="walkforward_backtest",
             enabled=walk_enabled,
+            required=False,
             command=[
                 py,
                 "tools/backtest_walkforward.py",
@@ -393,19 +563,119 @@ def main() -> int:
                         0.0,
                     )
                 ),
+                "--label-horizon-bars",
+                str(
+                    as_int(
+                        deep_get(config, ["feature_store", "forward_bars"], 12),
+                        12,
+                    )
+                ),
+                "--embargo-bars",
+                str(
+                    as_int(
+                        deep_get(config, ["walkforward", "embargo_bars"], -1),
+                        -1,
+                    )
+                ),
+                "--min-traded-splits",
+                str(
+                    as_int(
+                        deep_get(config, ["walkforward", "min_traded_splits"], 1),
+                        1,
+                    )
+                ),
+                "--min-total-trades",
+                str(
+                    as_int(
+                        deep_get(config, ["walkforward", "min_total_trades"], 1),
+                        1,
+                    )
+                ),
+                "--min-avg-split-return",
+                str(
+                    as_float(
+                        deep_get(
+                            config,
+                            ["walkforward", "min_avg_split_return"],
+                            0.0,
+                        ),
+                        0.0,
+                    )
+                ),
+                "--min-traded-avg-split-return",
+                str(
+                    as_float(
+                        deep_get(
+                            config,
+                            ["walkforward", "min_traded_avg_split_return"],
+                            0.0,
+                        ),
+                        0.0,
+                    )
+                ),
+                "--max-worst-drawdown",
+                str(
+                    as_float(
+                        deep_get(
+                            config,
+                            ["walkforward", "max_worst_drawdown"],
+                            1.0,
+                        ),
+                        1.0,
+                    )
+                ),
             ],
         )
     )
 
     status = "PASS"
+    diagnostic_status = "PASS"
     for step in steps:
         result = run_command(step, dry_run=bool(args.dry_run))
         if result.status == "fail":
+            if result.required:
+                status = "FAIL"
+                break
+            diagnostic_status = "FAIL"
+
+    source_contract_failures: List[str] = []
+    if not args.dry_run and status == "PASS":
+        source_contract_failures = validate_source_contract(
+            run_dir=run_dir,
+            enabled_steps={item.name: item.enabled for item in steps},
+            expected_base_url=str(
+                deep_get(config, ["archive", "base_url"], "https://api.bybit.com")
+            ),
+            expected_category=category,
+            expected_symbol=symbol,
+            expected_interval_minutes=interval_min,
+            final_ohlcv_path=ohlcv_path,
+        )
+        if source_contract_failures:
             status = "FAIL"
-            break
 
     report = {
         "status": status if not args.dry_run else "PLANNED",
+        "diagnostic_status": (
+            diagnostic_status if not args.dry_run else "PLANNED"
+        ),
+        "contract": {
+            "single_venue_required": True,
+            "single_venue_verified": not source_contract_failures,
+            "fail_reasons": source_contract_failures,
+            "venue": "bybit",
+            "category": category,
+            "price_type": "trade_price",
+            "volume_unit": "base_asset",
+            "bar_semantics": "closed_ohlcv",
+            "archive_rebuild_required": True,
+            "required_outputs": [
+                "ohlcv_csv",
+                "feature_csv",
+            ],
+            "walkforward_role": "research_benchmark_only",
+            "walkforward_authoritative_for_integrator_promotion": False,
+        },
         "config": str(config_path),
         "run_dir": str(run_dir),
         "outputs": {
@@ -419,6 +689,12 @@ def main() -> int:
             {
                 "name": item.name,
                 "enabled": item.enabled,
+                "required": item.required,
+                "evidence_role": (
+                    "pipeline_requirement"
+                    if item.required
+                    else "research_benchmark_only"
+                ),
                 "status": item.status,
                 "command": item.command,
                 "return_code": item.return_code,
@@ -432,7 +708,16 @@ def main() -> int:
     report_path = run_dir / "data_pipeline_report.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[PIPELINE] report: {report_path}")
-    print(json.dumps({"status": report["status"], "run_dir": str(run_dir)}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "status": report["status"],
+                "diagnostic_status": report["diagnostic_status"],
+                "run_dir": str(run_dir),
+            },
+            ensure_ascii=False,
+        )
+    )
     if status == "FAIL":
         return 1
     return 0

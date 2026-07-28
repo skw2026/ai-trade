@@ -362,19 +362,48 @@ std::vector<double> RollingBuffer::GetLast(size_t n) const {
 
 // --- OnlineFeatureEngine 实现 ---
 
-OnlineFeatureEngine::OnlineFeatureEngine(size_t window_size)
+OnlineFeatureEngine::OnlineFeatureEngine(size_t window_size,
+                                         std::int64_t bar_interval_ms)
     : window_size_(window_size) {
+  Reset(bar_interval_ms);
+}
+
+void OnlineFeatureEngine::Reset(std::int64_t bar_interval_ms) {
+  bar_interval_ms_ = std::max<std::int64_t>(0, bar_interval_ms);
+  series_.clear();
   // 预先初始化基础变量的 buffer
-  series_.emplace("open", RollingBuffer(window_size));
-  series_.emplace("high", RollingBuffer(window_size));
-  series_.emplace("low", RollingBuffer(window_size));
-  series_.emplace("close", RollingBuffer(window_size));
-  series_.emplace("volume", RollingBuffer(window_size));
+  series_.emplace("open", RollingBuffer(window_size_));
+  series_.emplace("high", RollingBuffer(window_size_));
+  series_.emplace("low", RollingBuffer(window_size_));
+  series_.emplace("close", RollingBuffer(window_size_));
+  series_.emplace("volume", RollingBuffer(window_size_));
+  active_bar_bucket_ = -1;
+  active_open_ = std::numeric_limits<double>::quiet_NaN();
+  active_high_ = std::numeric_limits<double>::quiet_NaN();
+  active_low_ = std::numeric_limits<double>::quiet_NaN();
+  active_close_ = std::numeric_limits<double>::quiet_NaN();
+  active_volume_ = 0.0;
+}
+
+void OnlineFeatureEngine::AddCompletedBar(double open,
+                                          double high,
+                                          double low,
+                                          double close,
+                                          double volume) {
+  if (!std::isfinite(open) || !std::isfinite(high) ||
+      !std::isfinite(low) || !std::isfinite(close) ||
+      open <= 0.0 || high <= 0.0 || low <= 0.0 || close <= 0.0) {
+    return;
+  }
+  series_.at("open").Add(open);
+  series_.at("high").Add(std::max({open, high, low, close}));
+  series_.at("low").Add(std::min({open, high, low, close}));
+  series_.at("close").Add(close);
+  series_.at("volume").Add(
+      std::isfinite(volume) ? std::max(0.0, volume) : 0.0);
 }
 
 void OnlineFeatureEngine::OnMarket(const MarketEvent& event) {
-  // MarketEvent 是逐 tick 事件，当前将 price 映射到 OHLC。
-  // volume 约定为“事件间隔内增量成交量”，由上游适配器统一转换。
   const double price =
       (std::isfinite(event.price) && event.price > 0.0)
           ? event.price
@@ -383,11 +412,57 @@ void OnlineFeatureEngine::OnMarket(const MarketEvent& event) {
                  : std::numeric_limits<double>::quiet_NaN());
   const double volume =
       std::isfinite(event.volume) ? std::max(0.0, event.volume) : 0.0;
-  series_.at("open").Add(price);
-  series_.at("high").Add(price);
-  series_.at("low").Add(price);
-  series_.at("close").Add(price);
-  series_.at("volume").Add(volume);
+  if (!std::isfinite(price) || price <= 0.0) {
+    return;
+  }
+
+  const bool has_explicit_ohlc =
+      std::isfinite(event.open_price) && event.open_price > 0.0 &&
+      std::isfinite(event.high_price) && event.high_price > 0.0 &&
+      std::isfinite(event.low_price) && event.low_price > 0.0;
+  if (has_explicit_ohlc &&
+      (bar_interval_ms_ <= 0 || event.interval_ms >= bar_interval_ms_)) {
+    AddCompletedBar(event.open_price,
+                    event.high_price,
+                    event.low_price,
+                    price,
+                    volume);
+    return;
+  }
+
+  if (bar_interval_ms_ <= 0 || event.ts_ms <= 0) {
+    AddCompletedBar(price, price, price, price, volume);
+    return;
+  }
+
+  const std::int64_t bucket = event.ts_ms / bar_interval_ms_;
+  if (active_bar_bucket_ < 0) {
+    active_bar_bucket_ = bucket;
+    active_open_ = price;
+    active_high_ = price;
+    active_low_ = price;
+    active_close_ = price;
+    active_volume_ = volume;
+    return;
+  }
+  if (bucket != active_bar_bucket_) {
+    AddCompletedBar(active_open_,
+                    active_high_,
+                    active_low_,
+                    active_close_,
+                    active_volume_);
+    active_bar_bucket_ = bucket;
+    active_open_ = price;
+    active_high_ = price;
+    active_low_ = price;
+    active_close_ = price;
+    active_volume_ = volume;
+    return;
+  }
+  active_high_ = std::max(active_high_, price);
+  active_low_ = std::min(active_low_, price);
+  active_close_ = price;
+  active_volume_ += volume;
 }
 
 double OnlineFeatureEngine::Evaluate(const std::string& expression) const {

@@ -14,7 +14,7 @@ import json
 import pathlib
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -41,6 +41,23 @@ def normalize_interval(raw: str) -> str:
     raise ValueError(f"invalid interval minutes: {raw}")
 
 
+def keep_closed_candles(
+    candles: Sequence[Candle],
+    *,
+    interval_minutes: int,
+    server_time_ms: int,
+) -> Tuple[List[Candle], int]:
+    if interval_minutes <= 0 or server_time_ms <= 0:
+        raise ValueError("closed-candle filter requires positive interval/server time")
+    interval_ms = interval_minutes * 60 * 1000
+    closed = [
+        candle
+        for candle in candles
+        if candle.timestamp_ms + interval_ms <= server_time_ms
+    ]
+    return closed, len(candles) - len(closed)
+
+
 def request_bybit_latest_klines(
     *,
     base_url: str,
@@ -49,7 +66,7 @@ def request_bybit_latest_klines(
     interval: str,
     bars: int,
     timeout_sec: float,
-) -> List[Candle]:
+) -> Tuple[List[Candle], int, int]:
     params = {
         "category": category,
         "symbol": symbol.upper(),
@@ -72,25 +89,36 @@ def request_bybit_latest_klines(
             f"Bybit API error: retCode={payload.get('retCode')}, retMsg={payload.get('retMsg')}"
         )
 
+    try:
+        server_time_ms = int(payload.get("time", 0))
+    except (TypeError, ValueError):
+        server_time_ms = 0
+    if server_time_ms <= 0:
+        raise RuntimeError("Bybit API response missing authoritative server time")
+
     candles: List[Candle] = []
     for row in payload.get("result", {}).get("list", []):
         if not isinstance(row, list) or len(row) < 6:
             continue
         try:
-            candles.append(
-                Candle(
-                    timestamp_ms=int(row[0]),
-                    open=float(row[1]),
-                    high=float(row[2]),
-                    low=float(row[3]),
-                    close=float(row[4]),
-                    volume=float(row[5]),
-                )
+            candle = Candle(
+                timestamp_ms=int(row[0]),
+                open=float(row[1]),
+                high=float(row[2]),
+                low=float(row[3]),
+                close=float(row[4]),
+                volume=float(row[5]),
             )
         except (TypeError, ValueError):
             continue
+        candles.append(candle)
     candles.sort(key=lambda item: item.timestamp_ms)
-    return candles
+    candles, dropped_open_bar_count = keep_closed_candles(
+        candles,
+        interval_minutes=int(interval),
+        server_time_ms=server_time_ms,
+    )
+    return candles, dropped_open_bar_count, server_time_ms
 
 
 def read_csv(path: pathlib.Path) -> Dict[int, Candle]:
@@ -166,11 +194,13 @@ def main() -> int:
     loops = 0
     total_added = 0
     total_seen = len(existing)
+    total_dropped_open_bars = 0
+    latest_server_time_ms = 0
     last_ts_before = max(existing.keys()) if existing else None
 
     while True:
         loops += 1
-        candles = request_bybit_latest_klines(
+        candles, dropped_open_bars, server_time_ms = request_bybit_latest_klines(
             base_url=args.base_url,
             category=args.category,
             symbol=args.symbol,
@@ -178,6 +208,8 @@ def main() -> int:
             bars=max(1, int(args.bars)),
             timeout_sec=float(args.timeout_sec),
         )
+        total_dropped_open_bars += dropped_open_bars
+        latest_server_time_ms = server_time_ms
         added = merge_candles(existing, candles)
         total_added += added
         sorted_candles = sorted(existing.values(), key=lambda item: item.timestamp_ms)
@@ -197,9 +229,17 @@ def main() -> int:
         "symbol": args.symbol.upper(),
         "interval": interval,
         "category": args.category,
+        "provider": "bybit",
+        "venue": "bybit",
+        "base_url": args.base_url.rstrip("/"),
+        "price_type": "trade_price",
+        "volume_unit": "base_asset",
+        "bar_semantics": "closed_ohlcv",
         "loops": loops,
         "rows_total": total_seen,
         "rows_added": total_added,
+        "dropped_open_bar_count": total_dropped_open_bars,
+        "server_time_ms": latest_server_time_ms,
         "last_timestamp_before": last_ts_before,
         "last_timestamp_after": (max(existing.keys()) if existing else None),
         "output": str(output_path),

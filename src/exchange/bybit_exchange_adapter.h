@@ -5,6 +5,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -124,6 +125,8 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   /// 获取远端活动订单 client_order_id 集合（来自 `/v5/order/realtime`）。
   bool GetRemoteOpenOrderClientIds(
       std::unordered_set<std::string>* out_client_order_ids) const override;
+  bool GetRemoteOpenOrders(
+      std::vector<RemoteOpenOrderSnapshot>* out_orders) const override;
   /// 获取 symbol 交易规则（步长/最小量/最小名义等）。
   bool GetSymbolInfo(const std::string& symbol,
                      SymbolInfo* out_info) const override;
@@ -145,19 +148,26 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   };
   struct ReplayConditionalOrder {
     OrderIntent intent;
+    std::int64_t submitted_replay_seq{0};
+  };
+  struct ReplayRestingOrder {
+    OrderIntent intent;
+    std::int64_t submitted_replay_seq{0};
   };
 
   /// 回放模式成交读取。
   bool PollFillFromReplay(FillEvent* out_fill);
   /// 回放模式保护单触发检测。
   void TriggerReplayConditionalOrders(const MarketEvent& event);
-  /// 回放模式生成虚拟成交。
+  /// 回放模式被动限价单按后续 K 线高低价触发。
+  void TriggerReplayRestingOrders(const MarketEvent& event);
+  /// 回放模式生成虚拟成交；调用方必须持有 state_mutex_。
   bool EnqueueReplayFill(const OrderIntent& intent, double fill_price);
   /// REST 模式成交读取（execution/list）。
   bool PollFillFromRest(FillEvent* out_fill);
   /// REST 模式行情读取（market/tickers）。
   bool PollMarketFromRest(MarketEvent* out_event);
-  /// 从 pending 成交队列取出一条成交。
+  /// 从 pending 成交队列取出一条成交；调用方必须持有 state_mutex_。
   bool DrainPendingFill(FillEvent* out_fill);
   /// 启动预热 execution 游标，避免历史成交重放。
   bool PrimeExecutionCursor();
@@ -177,6 +187,9 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   static std::int64_t CurrentTimestampMs();
 
   BybitAdapterOptions options_;  ///< 适配器配置快照。
+  // Submit/Cancel 由异步执行线程调用，PollMarket/PollFill 由主线程调用。
+  // 所有可变适配器状态统一受此锁保护；网络/WS 调用不得持有该锁。
+  mutable std::mutex state_mutex_;
   bool connected_{false};  ///< 建连状态。
   MarketChannel market_channel_{MarketChannel::kReplay};  ///< 当前行情通道。
   FillChannel fill_channel_{FillChannel::kReplay};  ///< 当前成交通道。
@@ -188,7 +201,8 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   std::size_t replay_symbol_cursor_{0};  ///< replay symbol 轮询游标。
   std::int64_t replay_seq_{0};  ///< replay 行情序号计数器。
   std::uint64_t fill_seq_{0};  ///< replay 成交序号计数器。
-  std::unordered_map<std::string, std::string> order_symbol_by_client_id_;  ///< clientId->symbol 映射（撤单用）。
+  mutable std::unordered_map<std::string, std::string>
+      order_symbol_by_client_id_;  ///< clientId->symbol 映射（撤单用）。
   mutable std::unordered_map<std::string, std::string>
       order_id_to_client_id_;  ///< orderId->clientId 映射（回报归一化/对账收敛）。
   std::unordered_set<std::string> observed_exec_ids_;  ///< 已处理 execution id 去重集合。
@@ -202,7 +216,13 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   std::unordered_map<std::string, double> remote_position_qty_by_symbol_;  ///< 远端仓位数量（signed）。
   std::unordered_map<std::string, BybitSymbolTradeRule> symbol_trade_rules_;  ///< symbol 交易规则缓存。
   std::deque<ReplayConditionalOrder> replay_conditional_orders_;  ///< replay 条件保护单。
+  std::deque<ReplayRestingOrder> replay_resting_orders_;  ///< replay 被动限价挂单。
   std::deque<FillEvent> pending_fills_;  ///< 待消费成交队列。
+  // reduce-only 成交排队时先预留可平数量，避免多个订单在 fill 落账前共同超平。
+  std::unordered_map<std::string, double>
+      replay_reduce_reserved_qty_by_symbol_;
+  std::unordered_map<std::string, double>
+      replay_reduce_reserved_qty_by_client_id_;
   std::int64_t execution_watermark_ms_{0};  ///< execution 时间水位（去历史用）。
   bool execution_cursor_primed_{false};  ///< execution 游标是否已完成预热。
   std::int64_t last_public_ws_reconnect_attempt_ms_{

@@ -208,8 +208,10 @@ CandidateEval EvaluateCandidate(const Candidate& candidate,
       candidate.values, future_returns, rolling_window, 0, split_index);
   const IcSummary rolling_oos = ComputeRollingSummaryInRange(
       candidate.values, future_returns, rolling_window, split_index, future_returns.size());
+  // Validation is diagnostic only. Reusing it as the GA fitness function
+  // turns every generation into another validation-set optimization round.
   const double objective =
-      std::fabs(oos_ic.ic) - complexity_penalty * candidate.complexity;
+      std::fabs(train_ic.ic) - complexity_penalty * candidate.complexity;
   return {candidate.expression,
           train_ic.ic,
           oos_ic.ic,
@@ -654,7 +656,7 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
                               eval.ic_oos,
                               eval.complexity,
                               eval.objective,
-                              eval.ic_oos < 0.0,
+                              eval.ic_train < 0.0,
                               "ALL",
                               config.random_seed,
                               "ts_ops_v1",
@@ -677,11 +679,13 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
       report.top_factor_oos_abs_ic >= report.oos_random_baseline_threshold_p90;
 
   std::ostringstream id_seed;
-  id_seed << "seed=" << config.random_seed << "|bars=" << bars.size()
-          << "|top=" << count;
+  id_seed << "seed=" << config.random_seed << "|train_bars=" << split_index
+          << "|top=" << count
+          << "|selection_policy=train_ic_only_validation_diagnostic_v1";
   for (const RankedFactor& factor : report.factors) {
     id_seed << "|" << factor.expression << "|" << std::fixed
-            << std::setprecision(6) << factor.fitness_ic_oos;
+            << std::setprecision(6) << factor.fitness_ic_train << "|"
+            << (factor.invert_signal ? "invert" : "direct");
   }
   const std::uint64_t hash = Fnv1a64(id_seed.str());
   std::ostringstream version;
@@ -847,6 +851,14 @@ bool SaveMinerReport(const MinerReport& report,
   out << "  \"random_seed\": " << report.random_seed << ",\n";
   out << "  \"search_space_version\": \""
       << JsonEscape(report.search_space_version) << "\",\n";
+  out << "  \"selection_policy\": \"" << JsonEscape(report.selection_policy)
+      << "\",\n";
+  out << "  \"optimization_domain\": \""
+      << JsonEscape(report.optimization_domain) << "\",\n";
+  out << "  \"validation_domain\": \""
+      << JsonEscape(report.validation_domain) << "\",\n";
+  out << "  \"validation_feedback_used\": "
+      << (report.validation_feedback_used ? "true" : "false") << ",\n";
   out << "  \"candidate_count\": " << report.candidate_expressions.size() << ",\n";
   out << "  \"generations\": " << report.generations << ",\n";
   out << "  \"population_size\": " << report.population_size << ",\n";

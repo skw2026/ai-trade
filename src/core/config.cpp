@@ -227,6 +227,14 @@ std::string NormalizeExchange(const std::string& exchange_value) {
   return lowered;
 }
 
+bool IsSha256Hex(const std::string& value) {
+  return value.size() == 64 &&
+         std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+           return std::isdigit(ch) != 0 ||
+                  (std::tolower(ch) >= 'a' && std::tolower(ch) <= 'f');
+         });
+}
+
 }  // namespace
 
 bool LoadAppConfigFromYaml(const std::string& file_path,
@@ -2875,6 +2883,36 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "integrator" && current_subsection.empty() &&
+        key == "canary_allow_independent_signal") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.canary_allow_independent_signal 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.canary_allow_independent_signal = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
+        key == "canary_independent_notional_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.canary_independent_notional_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.canary_independent_notional_usd = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection.empty() &&
         key == "active_confidence_threshold") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -3026,6 +3064,42 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
 
     if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "strict_failure_degrade_to_off") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.strict_failure_degrade_to_off 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.strict_failure_degrade_to_off = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "candidate_validation_mode") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.candidate_validation_mode 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.candidate_validation_mode = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "source_runtime_config_sha256") {
+      config.integrator.shadow.source_runtime_config_sha256 = value;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
         key == "min_auc_mean") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -3110,6 +3184,42 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.integrator.shadow.feature_window_ticks = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "allow_legacy_feature_contract") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.allow_legacy_feature_contract 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.allow_legacy_feature_contract = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "legacy_training_symbol") {
+      config.integrator.shadow.legacy_training_symbol = value;
+      continue;
+    }
+
+    if (current_section == "integrator" && current_subsection == "shadow" &&
+        key == "legacy_bar_interval_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.shadow.legacy_bar_interval_ms 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.shadow.legacy_bar_interval_ms = parsed;
       continue;
     }
 
@@ -3244,6 +3354,56 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.self_evolution.counterfactual_fallback_to_factor_ic = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "counterfactual_require_temporal_holdout") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_require_temporal_holdout "
+              "解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_require_temporal_holdout = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "counterfactual_train_fraction") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.counterfactual_train_fraction 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.counterfactual_train_fraction = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        (key == "counterfactual_min_train_samples" ||
+         key == "counterfactual_min_holdout_samples")) {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "self_evolution." + key +
+                       " 解析失败，行号: " + std::to_string(line_no);
+        }
+        return false;
+      }
+      if (key == "counterfactual_min_train_samples") {
+        config.self_evolution.counterfactual_min_train_samples = parsed;
+      } else {
+        config.self_evolution.counterfactual_min_holdout_samples = parsed;
+      }
       continue;
     }
 
@@ -3613,6 +3773,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
         return false;
       }
       config.self_evolution.objective_use_sharpe_like = parsed;
+      continue;
+    }
+
+    if (current_section == "self_evolution" &&
+        key == "objective_min_risk_scale") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "self_evolution.objective_min_risk_scale 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.objective_min_risk_scale = parsed;
       continue;
     }
 
@@ -4445,6 +4620,16 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.integrator.shadow.allow_legacy_feature_contract &&
+      (config.integrator.shadow.legacy_training_symbol.empty() ||
+       config.integrator.shadow.legacy_bar_interval_ms <= 0)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "启用 integrator.shadow.allow_legacy_feature_contract 时必须配置 "
+          "legacy_training_symbol 与 legacy_bar_interval_ms";
+    }
+    return false;
+  }
   if (!config.integrator.enabled) {
     // 兼容旧配置：enabled=false 时强制等价 off。
     config.integrator.mode = IntegratorMode::kOff;
@@ -4459,6 +4644,23 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.integrator.canary_min_notional_usd < 0.0) {
     if (out_error != nullptr) {
       *out_error = "integrator.canary_min_notional_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.integrator.canary_independent_notional_usd < 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.canary_independent_notional_usd 不能为负数";
+    }
+    return false;
+  }
+  if (config.integrator.mode == IntegratorMode::kCanary &&
+      config.integrator.canary_allow_independent_signal &&
+      config.integrator.canary_independent_notional_usd <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.canary_allow_independent_signal=true 时 "
+          "canary_independent_notional_usd 必须大于 0";
     }
     return false;
   }
@@ -4544,6 +4746,22 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       config.integrator.shadow.active_meta_path.empty()) {
     if (out_error != nullptr) {
       *out_error = "integrator.shadow.active_meta_path 不能为空";
+    }
+    return false;
+  }
+  if (config.integrator.shadow.candidate_validation_mode &&
+      (config.mode != "replay" || !config.integrator.enabled ||
+       !config.integrator.shadow.enabled ||
+       config.integrator.mode != IntegratorMode::kCanary ||
+       !config.integrator.shadow.require_model_file ||
+       config.integrator.shadow.require_active_meta ||
+       !IsSha256Hex(
+           config.integrator.shadow.source_runtime_config_sha256))) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.shadow.candidate_validation_mode 仅允许 system.mode=replay 的 canary，"
+          "并要求 require_model_file=true、require_active_meta=false、"
+          "source_runtime_config_sha256=有效 SHA-256";
     }
     return false;
   }
@@ -5146,6 +5364,23 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (config.self_evolution.counterfactual_train_fraction <= 0.0 ||
+      config.self_evolution.counterfactual_train_fraction >= 1.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.counterfactual_train_fraction 必须在 (0,1) 区间";
+    }
+    return false;
+  }
+  if (config.self_evolution.counterfactual_min_train_samples < 1 ||
+      config.self_evolution.counterfactual_min_holdout_samples < 1) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.counterfactual_min_train_samples / "
+          "counterfactual_min_holdout_samples 必须 >= 1";
+    }
+    return false;
+  }
   if (config.self_evolution
           .counterfactual_improvement_decay_per_filtered_signal_usd < 0.0) {
     if (out_error != nullptr) {
@@ -5245,6 +5480,13 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     if (out_error != nullptr) {
       *out_error =
           "self_evolution objective 参数不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.objective_min_risk_scale <= 0.0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "self_evolution.objective_min_risk_scale 必须大于 0";
     }
     return false;
   }
@@ -5377,6 +5619,8 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  config.source_config_path = file_path;
+  config.integrator.shadow.runtime_config_path = file_path;
   *out_config = config;
   return true;
 }

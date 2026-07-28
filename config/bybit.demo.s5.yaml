@@ -195,6 +195,9 @@ integrator:
   canary_notional_ratio: 0.30
   canary_confidence_threshold: 0.50
   canary_allow_countertrend: false
+  # The model can produce evidence even when the heuristic baseline is flat.
+  canary_allow_independent_signal: true
+  canary_independent_notional_usd: 80
   active_confidence_threshold: 0.55
   active_partial_notional_ratio: 0.5
   active_full_notional_confidence_threshold: 0.80
@@ -205,6 +208,13 @@ integrator:
     model_report_path: "./data/research/integrator_report.json"
     score_gain: 1.0
     feature_window_ticks: 300
+    # 新 release 启动时旧 active_meta 会绑定旧二进制；先安全退回 baseline，
+    # full 生成并绑定当前二进制的新候选后才允许重新进入 canary。
+    strict_failure_degrade_to_off: true
+    # 旧模型缺少完整数据来源合同时必须降级为 off，不得进入 canary。
+    allow_legacy_feature_contract: false
+    legacy_training_symbol: ""
+    legacy_bar_interval_ms: 0
 
 self_evolution:
   enabled: true
@@ -218,10 +228,16 @@ self_evolution:
   # 以虚拟PnL学习，避免“零成交=零学习”死锁。
   use_virtual_pnl: true
   use_counterfactual_search: true
-  counterfactual_fallback_to_factor_ic: true
+  # 候选仅用前 70% 时间窗选择，后 30% 独立验收；证据不足不得原位回退。
+  counterfactual_fallback_to_factor_ic: false
+  counterfactual_require_temporal_holdout: true
+  counterfactual_train_fraction: 0.70
+  counterfactual_min_train_samples: 30
+  counterfactual_min_holdout_samples: 15
   counterfactual_min_improvement_usd: 0.08
-  counterfactual_improvement_decay_per_filtered_signal_usd: 0.08
-  counterfactual_min_fill_count_for_update: 1
+  counterfactual_improvement_decay_per_filtered_signal_usd: 0.0
+  # 虚拟反事实路径不依赖 live fill；真实成交只作为独立 canary 验收证据。
+  counterfactual_min_fill_count_for_update: 0
   counterfactual_min_t_stat_samples_for_update: 60
   counterfactual_min_t_stat_abs_for_update: 0.20
   counterfactual_superiority_min_samples_for_update: 80
@@ -244,6 +260,7 @@ self_evolution:
   objective_beta_drawdown: 1.0
   objective_gamma_notional_churn: 0.008
   objective_use_sharpe_like: true
+  objective_min_risk_scale: 0.00001
   max_single_strategy_weight: 0.55
   max_weight_step: 0.01
   rollback_degrade_windows: 3
@@ -273,7 +290,7 @@ gate:
   heartbeat_empty_signal_ticks: 36
   window_ticks: 288
   allow_policy_flat_windows: true
-  enforce_runtime_actions: false
+  enforce_runtime_actions: true
   fail_to_reduce_only_windows: 2
   fail_to_halt_windows: 4
   reduce_only_cooldown_ticks: 120

@@ -70,13 +70,45 @@ void OrderManager::MarkCancelled(const std::string& client_order_id) {
   }
 }
 
+void OrderManager::MarkCancelPending(const std::string& client_order_id) {
+  auto* record = FindMutable(client_order_id);
+  if (record == nullptr || IsTerminalState(record->state)) {
+    return;
+  }
+  if (record->state != OrderState::kCancelConfirmed) {
+    record->state = OrderState::kCancelPending;
+  }
+}
+
+void OrderManager::MarkCancelConfirmed(const std::string& client_order_id) {
+  auto* record = FindMutable(client_order_id);
+  if (record == nullptr || IsTerminalState(record->state)) {
+    return;
+  }
+  if (record->state == OrderState::kCancelPending) {
+    record->state = OrderState::kCancelConfirmed;
+  }
+}
+
+void OrderManager::MarkCancelFailed(const std::string& client_order_id) {
+  auto* record = FindMutable(client_order_id);
+  if (record == nullptr || IsTerminalState(record->state)) {
+    return;
+  }
+  if (record->state == OrderState::kCancelPending ||
+      record->state == OrderState::kCancelConfirmed) {
+    record->state =
+        record->filled_qty > kEpsilon ? OrderState::kPartial : OrderState::kSent;
+  }
+}
+
 /**
  * @brief 消费成交回报并更新订单状态
  *
  * 规则：
  * 1. 先更新净成交统计（对账依赖）；
  * 2. 再更新对应订单填充量与状态；
- * 3. Cancel 与成交回报可能竞态到达，Cancelled 订单仍允许记录 late fill；
+ * 3. Cancel 与成交回报可能竞态到达，撤单在途/确认订单仍允许记录 late fill；
  * 4. Filled/Rejected 终态订单不回滚状态。
  */
 void OrderManager::OnFill(const FillEvent& fill) {
@@ -178,6 +210,26 @@ bool OrderManager::HasOpenProtection(const std::string& parent_order_id) const {
     return true;
   }
   return false;
+}
+
+bool OrderManager::HasPendingOrders() const {
+  for (const auto& [order_id, record] : orders_) {
+    (void)order_id;
+    if (!IsTerminalState(record.state)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<std::string> OrderManager::PendingOrderIds() const {
+  std::vector<std::string> ids;
+  for (const auto& [order_id, record] : orders_) {
+    if (!IsTerminalState(record.state)) {
+      ids.push_back(order_id);
+    }
+  }
+  return ids;
 }
 
 bool OrderManager::HasPendingNetPositionOrders() const {

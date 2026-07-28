@@ -79,15 +79,63 @@ bool IsConditionalProtectionOrder(const OrderIntent& intent) {
          intent.purpose == OrderPurpose::kTp;
 }
 
-bool ReplayConditionalTriggered(const OrderIntent& intent, double price) {
-  if (!IsConditionalProtectionOrder(intent) || price <= 0.0 ||
+bool ReplayConditionalTriggered(const OrderIntent& intent,
+                                const MarketEvent& event) {
+  const double close =
+      event.mark_price > 0.0 ? event.mark_price : event.price;
+  const double high = std::isfinite(event.high_price) && event.high_price > 0.0
+                          ? event.high_price
+                          : close;
+  const double low = std::isfinite(event.low_price) && event.low_price > 0.0
+                         ? event.low_price
+                         : close;
+  if (!IsConditionalProtectionOrder(intent) || close <= 0.0 ||
       intent.price <= 0.0 || intent.direction == 0) {
     return false;
   }
   if (intent.purpose == OrderPurpose::kSl) {
-    return intent.direction < 0 ? price <= intent.price : price >= intent.price;
+    return intent.direction < 0 ? low <= intent.price : high >= intent.price;
   }
-  return intent.direction < 0 ? price >= intent.price : price <= intent.price;
+  return intent.direction < 0 ? high >= intent.price : low <= intent.price;
+}
+
+double ReplayConditionalFillPrice(const OrderIntent& intent,
+                                  const MarketEvent& event) {
+  if (intent.purpose != OrderPurpose::kSl ||
+      !std::isfinite(event.open_price) || event.open_price <= 0.0) {
+    return intent.price;
+  }
+  // Stop-market 跳空时只能按开盘可成交价或更差价格成交。
+  return intent.direction < 0 ? std::min(intent.price, event.open_price)
+                              : std::max(intent.price, event.open_price);
+}
+
+bool ReplayExitIsWorse(const OrderIntent& candidate,
+                       double candidate_price,
+                       const OrderIntent& selected,
+                       double selected_price) {
+  if (candidate.purpose != selected.purpose) {
+    return candidate.purpose == OrderPurpose::kSl;
+  }
+  if (candidate.direction > 0) {
+    return candidate_price > selected_price;
+  }
+  return candidate_price < selected_price;
+}
+
+bool ReplayLimitTouched(const OrderIntent& intent, const MarketEvent& event) {
+  if (intent.price <= 0.0 || intent.direction == 0) {
+    return false;
+  }
+  const double close =
+      event.mark_price > 0.0 ? event.mark_price : event.price;
+  const double high = std::isfinite(event.high_price) && event.high_price > 0.0
+                          ? event.high_price
+                          : close;
+  const double low = std::isfinite(event.low_price) && event.low_price > 0.0
+                         ? event.low_price
+                         : close;
+  return intent.direction > 0 ? low <= intent.price : high >= intent.price;
 }
 
 std::string ReadEnvOrEmpty(const char* key) {
@@ -318,6 +366,17 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
   }
   const auto symbol_idx = LookupHeaderIndex(header_map, options.replay_symbol_column);
   const auto volume_idx = LookupHeaderIndex(header_map, options.replay_volume_column);
+  const auto open_idx = LookupHeaderIndex(header_map, "open");
+  const auto high_idx = LookupHeaderIndex(header_map, "high");
+  const auto low_idx = LookupHeaderIndex(header_map, "low");
+  if (!open_idx.has_value() || !high_idx.has_value() || !low_idx.has_value() ||
+      !volume_idx.has_value()) {
+    if (out_error != nullptr) {
+      *out_error =
+          "replay 行情文件必须包含完整 open/high/low/price/volume 列";
+    }
+    return false;
+  }
   const auto interval_idx =
       LookupHeaderIndex(header_map, options.replay_interval_column);
   const auto funding_idx =
@@ -378,6 +437,40 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
       }
     }
 
+    auto parse_optional_price = [&](const std::optional<std::size_t>& index,
+                                    const char* field_name,
+                                    double* out_value) -> bool {
+      *out_value = price;
+      if (!index.has_value()) return false;
+      const std::string raw = CsvFieldAt(fields, *index);
+      if (raw.empty()) return false;
+      if (!ParseReplayDouble(raw, out_value) || !std::isfinite(*out_value) ||
+          *out_value <= 0.0) {
+        if (out_error != nullptr) {
+          *out_error = std::string("replay ") + field_name +
+                       " 解析失败，行号: " + std::to_string(line_no);
+        }
+        return false;
+      }
+      return true;
+    };
+    double open = price;
+    double high = price;
+    double low = price;
+    if (!parse_optional_price(open_idx, "open", &open) ||
+        !parse_optional_price(high_idx, "high", &high) ||
+        !parse_optional_price(low_idx, "low", &low)) {
+      return false;
+    }
+    if (high < std::max({open, price, low}) ||
+        low > std::min({open, price, high})) {
+      if (out_error != nullptr) {
+        *out_error = "replay OHLC 关系非法，行号: " +
+                     std::to_string(line_no);
+      }
+      return false;
+    }
+
     std::int64_t interval_ms = 0;
     if (interval_idx.has_value()) {
       const std::string raw_interval = CsvFieldAt(fields, *interval_idx);
@@ -422,6 +515,10 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
         volume,
         interval_ms,
         funding_rate_per_interval,
+        open,
+        high,
+        low,
+        false,
     });
   }
 
@@ -1087,6 +1184,8 @@ bool BybitExchangeAdapter::Connect() {
   options_.symbols = NormalizeSymbols(options_.symbols, options_.primary_symbol);
   observed_exec_ids_.clear();
   pending_fills_.clear();
+  replay_reduce_reserved_qty_by_symbol_.clear();
+  replay_reduce_reserved_qty_by_client_id_.clear();
   pending_markets_.clear();
   replay_market_events_.clear();
   last_market_ts_ms_by_symbol_.clear();
@@ -1450,7 +1549,15 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
     return false;
   }
 
-  if (pending_markets_.empty()) {
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!pending_markets_.empty()) {
+      *out_event = pending_markets_.front();
+      pending_markets_.pop_front();
+      return true;
+    }
+  }
+  {
     // 批量拉取 symbol 行情，写入 pending 队列后逐条吐出。
     const std::int64_t batch_ts_ms = CurrentTimestampMs();
     for (const auto& symbol : options_.symbols) {
@@ -1497,6 +1604,7 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
       if (event_ts_ms <= 0) {
         event_ts_ms = batch_ts_ms;
       }
+      std::lock_guard<std::mutex> lock(state_mutex_);
       std::int64_t interval_ms = 0;
       const auto ts_it = last_market_ts_ms_by_symbol_.find(symbol);
       if (ts_it != last_market_ts_ms_by_symbol_.end() &&
@@ -1550,6 +1658,7 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
     }
   }
 
+  std::lock_guard<std::mutex> lock(state_mutex_);
   if (pending_markets_.empty()) {
     return false;
   }
@@ -1565,6 +1674,7 @@ bool BybitExchangeAdapter::PollMarketFromRest(MarketEvent* out_event) {
  * 当 WS 运行时故障且配置允许回退时，自动切换到 REST。
  */
 bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
+  std::unique_lock<std::mutex> state_lock(state_mutex_);
   if (!connected_ || out_event == nullptr) {
     return false;
   }
@@ -1578,6 +1688,7 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
       last_price_by_symbol_[out_event->symbol] = out_event->price;
       last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
       ++replay_seq_;
+      TriggerReplayRestingOrders(*out_event);
       TriggerReplayConditionalOrders(*out_event);
       return true;
     }
@@ -1611,9 +1722,11 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
         interval_ms,
         std::numeric_limits<double>::quiet_NaN(),
     };
+    TriggerReplayRestingOrders(*out_event);
     TriggerReplayConditionalOrders(*out_event);
     return true;
   }
+  state_lock.unlock();
 
   if (market_channel_ == MarketChannel::kPublicWs) {
     if (public_stream_ != nullptr && public_stream_->PollTicker(out_event)) {
@@ -1621,15 +1734,23 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
         out_event->ts_ms = CurrentTimestampMs();
       }
       if (out_event->interval_ms <= 0) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         const auto ts_it = last_market_ts_ms_by_symbol_.find(out_event->symbol);
         if (ts_it != last_market_ts_ms_by_symbol_.end() &&
             out_event->ts_ms > ts_it->second) {
           out_event->interval_ms = out_event->ts_ms - ts_it->second;
         }
+        last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
+        last_price_by_symbol_[out_event->symbol] =
+            out_event->mark_price > 0.0 ? out_event->mark_price
+                                        : out_event->price;
+      } else {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
+        last_price_by_symbol_[out_event->symbol] =
+            out_event->mark_price > 0.0 ? out_event->mark_price
+                                        : out_event->price;
       }
-      last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
-      last_price_by_symbol_[out_event->symbol] =
-          out_event->mark_price > 0.0 ? out_event->mark_price : out_event->price;
       return true;
     }
 
@@ -1655,15 +1776,23 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
         out_event->ts_ms = CurrentTimestampMs();
       }
       if (out_event->interval_ms <= 0) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         const auto ts_it = last_market_ts_ms_by_symbol_.find(out_event->symbol);
         if (ts_it != last_market_ts_ms_by_symbol_.end() &&
             out_event->ts_ms > ts_it->second) {
           out_event->interval_ms = out_event->ts_ms - ts_it->second;
         }
+        last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
+        last_price_by_symbol_[out_event->symbol] =
+            out_event->mark_price > 0.0 ? out_event->mark_price
+                                        : out_event->price;
+      } else {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
+        last_price_by_symbol_[out_event->symbol] =
+            out_event->mark_price > 0.0 ? out_event->mark_price
+                                        : out_event->price;
       }
-      last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
-      last_price_by_symbol_[out_event->symbol] =
-          out_event->mark_price > 0.0 ? out_event->mark_price : out_event->price;
       return true;
     }
   }
@@ -1700,6 +1829,7 @@ bool BybitExchangeAdapter::PrimeExecutionCursor() {
     return false;
   }
 
+  std::lock_guard<std::mutex> lock(state_mutex_);
   std::size_t seeded = 0;
   std::int64_t max_exec_time_ms = execution_watermark_ms_;
   for (const auto& row : list->array_value) {
@@ -1732,6 +1862,24 @@ bool BybitExchangeAdapter::EnqueueReplayFill(const OrderIntent& intent,
   if (fill_price <= 0.0 || intent.qty <= 0.0 || intent.direction == 0) {
     return false;
   }
+  double enqueue_qty = intent.qty;
+  if (intent.reduce_only) {
+    const double position_qty = remote_position_qty_by_symbol_[intent.symbol];
+    if (position_qty * static_cast<double>(intent.direction) >= -1e-9) {
+      return false;
+    }
+    const double reserved_qty =
+        replay_reduce_reserved_qty_by_symbol_[intent.symbol];
+    const double available_qty =
+        std::max(0.0, std::fabs(position_qty) - reserved_qty);
+    enqueue_qty = std::min(enqueue_qty, available_qty);
+    if (enqueue_qty <= 1e-9) {
+      return false;
+    }
+    replay_reduce_reserved_qty_by_symbol_[intent.symbol] += enqueue_qty;
+    replay_reduce_reserved_qty_by_client_id_[intent.client_order_id] +=
+        enqueue_qty;
+  }
   fill_price = ApplyReplaySlippage(options_, intent, fill_price);
   const double fee_bps = ReplayFeeBpsForIntent(options_, intent);
   const FillLiquidity liquidity = ReplayFillLiquidity(options_, intent);
@@ -1750,8 +1898,8 @@ bool BybitExchangeAdapter::EnqueueReplayFill(const OrderIntent& intent,
   };
 
   // 回放模式模拟部分成交：拆分为两笔 FillEvent。
-  const double first_qty = intent.qty * 0.6;
-  const double second_qty = intent.qty - first_qty;
+  const double first_qty = enqueue_qty * 0.6;
+  const double second_qty = enqueue_qty - first_qty;
   pending_fills_.push_back(make_fill(first_qty));
   if (second_qty > 1e-9) {
     pending_fills_.push_back(make_fill(second_qty));
@@ -1761,44 +1909,69 @@ bool BybitExchangeAdapter::EnqueueReplayFill(const OrderIntent& intent,
 
 void BybitExchangeAdapter::TriggerReplayConditionalOrders(
     const MarketEvent& event) {
-  const double trigger_price =
-      event.mark_price > 0.0 ? event.mark_price : event.price;
-  if (event.symbol.empty() || trigger_price <= 0.0 ||
+  if (event.symbol.empty() ||
       replay_conditional_orders_.empty()) {
     return;
   }
 
-  std::unordered_set<std::string> triggered_symbols;
-  std::deque<ReplayConditionalOrder> kept;
+  const ReplayConditionalOrder* selected = nullptr;
+  double selected_fill_price = 0.0;
   for (const auto& order : replay_conditional_orders_) {
     const OrderIntent& intent = order.intent;
     if (intent.symbol != event.symbol ||
-        !ReplayConditionalTriggered(intent, trigger_price)) {
+        replay_seq_ <= order.submitted_replay_seq ||
+        !ReplayConditionalTriggered(intent, event)) {
+      continue;
+    }
+    const double fill_price = ReplayConditionalFillPrice(intent, event);
+    if (selected == nullptr ||
+        ReplayExitIsWorse(intent, fill_price, selected->intent,
+                          selected_fill_price)) {
+      selected = &order;
+      selected_fill_price = fill_price;
+    }
+  }
+  if (selected == nullptr) {
+    return;
+  }
+
+  // 同一 symbol 的保护单是一组 OCO。选择最不利的触发后，排队成交和删除
+  // sibling 在同一 state_mutex_ 临界区完成，不能让另一线程观察到中间状态。
+  (void)EnqueueReplayFill(selected->intent, selected_fill_price);
+  std::deque<ReplayConditionalOrder> kept;
+  for (const auto& order : replay_conditional_orders_) {
+    if (order.intent.symbol != event.symbol) {
+      kept.push_back(order);
+    } else {
+      order_symbol_by_client_id_.erase(order.intent.client_order_id);
+    }
+  }
+  replay_conditional_orders_.swap(kept);
+}
+
+void BybitExchangeAdapter::TriggerReplayRestingOrders(
+    const MarketEvent& event) {
+  if (event.symbol.empty() || replay_resting_orders_.empty()) {
+    return;
+  }
+  std::deque<ReplayRestingOrder> kept;
+  for (const auto& order : replay_resting_orders_) {
+    const OrderIntent& intent = order.intent;
+    if (intent.symbol != event.symbol ||
+        replay_seq_ <= order.submitted_replay_seq ||
+        !ReplayLimitTouched(intent, event)) {
       kept.push_back(order);
       continue;
     }
+    // Limit price is deliberately used instead of the more favorable bar price.
+    // This is a conservative bar-touch pre-screen, not a queue-position simulator.
     if (EnqueueReplayFill(intent, intent.price)) {
-      triggered_symbols.insert(intent.symbol);
       order_symbol_by_client_id_.erase(intent.client_order_id);
     } else {
       kept.push_back(order);
     }
   }
-
-  if (!triggered_symbols.empty()) {
-    std::deque<ReplayConditionalOrder> oco_kept;
-    for (const auto& order : kept) {
-      if (triggered_symbols.find(order.intent.symbol) ==
-          triggered_symbols.end()) {
-        oco_kept.push_back(order);
-      } else {
-        order_symbol_by_client_id_.erase(order.intent.client_order_id);
-      }
-    }
-    replay_conditional_orders_.swap(oco_kept);
-    return;
-  }
-  replay_conditional_orders_.swap(kept);
+  replay_resting_orders_.swap(kept);
 }
 
 bool BybitExchangeAdapter::PollFillFromReplay(FillEvent* out_fill) {
@@ -1815,8 +1988,28 @@ bool BybitExchangeAdapter::DrainPendingFill(FillEvent* out_fill) {
   *out_fill = pending_fills_.front();
   pending_fills_.pop_front();
   CanonicalizeFillClientOrderId(out_fill);
+  if (auto reserved_it = replay_reduce_reserved_qty_by_client_id_.find(
+          out_fill->client_order_id);
+      reserved_it != replay_reduce_reserved_qty_by_client_id_.end()) {
+    const double released_qty = std::min(reserved_it->second, out_fill->qty);
+    reserved_it->second -= released_qty;
+    auto symbol_it =
+        replay_reduce_reserved_qty_by_symbol_.find(out_fill->symbol);
+    if (symbol_it != replay_reduce_reserved_qty_by_symbol_.end()) {
+      symbol_it->second = std::max(0.0, symbol_it->second - released_qty);
+      if (symbol_it->second <= 1e-9) {
+        replay_reduce_reserved_qty_by_symbol_.erase(symbol_it);
+      }
+    }
+    if (reserved_it->second <= 1e-9) {
+      replay_reduce_reserved_qty_by_client_id_.erase(reserved_it);
+    }
+  }
   remote_position_qty_by_symbol_[out_fill->symbol] +=
       static_cast<double>(out_fill->direction) * out_fill->qty;
+  if (std::fabs(remote_position_qty_by_symbol_[out_fill->symbol]) <= 1e-9) {
+    remote_position_qty_by_symbol_[out_fill->symbol] = 0.0;
+  }
   return true;
 }
 
@@ -1867,13 +2060,25 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
   if (rest_client_ == nullptr || out_fill == nullptr) {
     return false;
   }
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!pending_fills_.empty()) {
+      return DrainPendingFill(out_fill);
+    }
+  }
   // 确保游标已预热
-  if (options_.execution_skip_history_on_start && !execution_cursor_primed_) {
+  bool needs_prime = false;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    needs_prime =
+        options_.execution_skip_history_on_start && !execution_cursor_primed_;
+  }
+  if (needs_prime) {
     if (!PrimeExecutionCursor()) {
       return false;
     }
   }
-  if (pending_fills_.empty()) {
+  {
     const std::string query =
         "category=" + options_.category + "&limit=" +
         std::to_string(options_.execution_poll_limit);
@@ -1892,6 +2097,7 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
       return false;
     }
 
+    std::lock_guard<std::mutex> lock(state_mutex_);
     // 轮询批次内做去重 + 水位过滤，最终写入 pending_fills_。
     for (const auto& row : list->array_value) {
       if (row.type != JsonType::kObject) {
@@ -1953,6 +2159,7 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
     }
   }
 
+  std::lock_guard<std::mutex> lock(state_mutex_);
   return DrainPendingFill(out_fill);
 }
 
@@ -1963,6 +2170,7 @@ bool BybitExchangeAdapter::PollFillFromRest(FillEvent* out_fill) {
  * Live/Paper 模式：应用 symbol 规则（步长/最小量/最小名义）后调用 REST 下单。
  */
 bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
+  std::unique_lock<std::mutex> state_lock(state_mutex_);
   if (!connected_) {
     return false;
   }
@@ -1981,7 +2189,15 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
         return false;
       }
       replay_conditional_orders_.push_back(
-          ReplayConditionalOrder{replay_intent});
+          ReplayConditionalOrder{replay_intent, replay_seq_});
+      return true;
+    }
+    if (ReplayEffectiveMaker(options_, replay_intent)) {
+      if (replay_intent.price <= 0.0) {
+        return false;
+      }
+      replay_resting_orders_.push_back(
+          ReplayRestingOrder{replay_intent, replay_seq_});
       return true;
     }
     double fill_price = replay_intent.price;
@@ -2194,6 +2410,8 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
                                       trigger_price,
                                       trigger_direction,
                                       conditional_protection_order);
+  // REST 调用可能阻塞；共享状态锁必须在网络边界前释放。
+  state_lock.unlock();
   std::string response;
   std::string error;
   if (!rest_client_->PostPrivate("/v5/order/create", body, &response, &error)) {
@@ -2221,12 +2439,16 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
           build_order_body("Market", 0.0, "", 0.0, 0, false);
       if (!rest_client_->PostPrivate("/v5/order/create", market_body,
                                      &fallback_response, &fallback_error)) {
+        state_lock.lock();
+        order_symbol_by_client_id_.erase(intent.client_order_id);
         LogInfo("Bybit 下单失败: client_order_id=" + intent.client_order_id +
                 ", error=" + fallback_error);
         return false;
       }
       response = fallback_response;
     } else {
+      state_lock.lock();
+      order_symbol_by_client_id_.erase(intent.client_order_id);
       LogInfo("Bybit 下单失败: client_order_id=" + intent.client_order_id +
               ", error=" + error);
       return false;
@@ -2242,7 +2464,9 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
       const std::string order_link_id =
           JsonStringField(result, "orderLinkId")
               .value_or(intent.client_order_id);
+      state_lock.lock();
       RememberOrderIdMapping(order_id, order_link_id);
+      state_lock.unlock();
     }
   }
   return true;
@@ -2255,6 +2479,7 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
  * Live/Paper 模式：调用 `/v5/order/cancel`。
  */
 bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
+  std::unique_lock<std::mutex> state_lock(state_mutex_);
   if (!connected_) {
     return false;
   }
@@ -2264,7 +2489,29 @@ bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
     for (const auto& fill : pending_fills_) {
       if (fill.client_order_id != client_order_id) {
         kept.push_back(fill);
+      } else if (auto reserved_it =
+                     replay_reduce_reserved_qty_by_client_id_.find(
+                         client_order_id);
+                 reserved_it !=
+                 replay_reduce_reserved_qty_by_client_id_.end()) {
+        const double released_qty = std::min(reserved_it->second, fill.qty);
+        reserved_it->second -= released_qty;
+        auto symbol_it =
+            replay_reduce_reserved_qty_by_symbol_.find(fill.symbol);
+        if (symbol_it != replay_reduce_reserved_qty_by_symbol_.end()) {
+          symbol_it->second =
+              std::max(0.0, symbol_it->second - released_qty);
+          if (symbol_it->second <= 1e-9) {
+            replay_reduce_reserved_qty_by_symbol_.erase(symbol_it);
+          }
+        }
       }
+    }
+    if (const auto reserved_it =
+            replay_reduce_reserved_qty_by_client_id_.find(client_order_id);
+        reserved_it != replay_reduce_reserved_qty_by_client_id_.end() &&
+        reserved_it->second <= 1e-9) {
+      replay_reduce_reserved_qty_by_client_id_.erase(reserved_it);
     }
     pending_fills_.swap(kept);
     std::deque<ReplayConditionalOrder> conditional_kept;
@@ -2274,6 +2521,13 @@ bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
       }
     }
     replay_conditional_orders_.swap(conditional_kept);
+    std::deque<ReplayRestingOrder> resting_kept;
+    for (const auto& order : replay_resting_orders_) {
+      if (order.intent.client_order_id != client_order_id) {
+        resting_kept.push_back(order);
+      }
+    }
+    replay_resting_orders_.swap(resting_kept);
     order_symbol_by_client_id_.erase(client_order_id);
     return true;
   }
@@ -2289,21 +2543,23 @@ bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
       "{\"category\":\"" + EscapeJson(options_.category) +
       "\",\"symbol\":\"" + EscapeJson(symbol) +
       "\",\"orderLinkId\":\"" + EscapeJson(client_order_id) + "\"}";
+  state_lock.unlock();
   std::string response;
   std::string error;
   if (!rest_client_->PostPrivate("/v5/order/cancel", body, &response, &error)) {
-    // Bybit 110001: 订单不存在或已来不及撤销，按幂等成功处理即可。
+    // 110001 同时覆盖“不存在”和“已来不及撤销”，后者可能已经成交。
+    // 在没有终态/成交确认前必须 fail closed，不能释放本地 pending。
     if (error.find("retCode 异常: 110001") != std::string::npos) {
-      LogInfo("Bybit 撤单幂等成功: client_order_id=" + client_order_id +
-              ", detail=" + error);
-      order_symbol_by_client_id_.erase(client_order_id);
-      return true;
+      LogInfo("BYBIT_CANCEL_AMBIGUOUS: client_order_id=" + client_order_id +
+              ", detail=" + error + ", action=keep_pending");
+      return false;
     }
     LogInfo("Bybit 撤单失败: client_order_id=" + client_order_id +
             ", error=" + error);
     return false;
   }
-  order_symbol_by_client_id_.erase(client_order_id);
+  // 撤单 REST 成功仅表示请求已被受理。保留 clientOrderId->symbol 映射，
+  // 供后续远端终态确认、撤单重试和迟到成交归一化使用。
   return true;
 }
 
@@ -2314,15 +2570,18 @@ bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
  * WS 故障时按配置自动降级到 REST。
  */
 bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
+  std::unique_lock<std::mutex> state_lock(state_mutex_);
   if (!connected_ || out_fill == nullptr) {
     return false;
   }
   if (fill_channel_ == FillChannel::kReplay) {
     return PollFillFromReplay(out_fill);
   }
+  state_lock.unlock();
 
   if (fill_channel_ == FillChannel::kPrivateWs) {
     if (private_stream_ != nullptr && private_stream_->PollExecution(out_fill)) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
       CanonicalizeFillClientOrderId(out_fill);
       // Private WS 重连后可能重复推送历史 execution，这里做全局去重保护。
       if (!observed_exec_ids_.insert(out_fill->fill_id).second) {
@@ -2354,6 +2613,7 @@ bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
   }
   if (fill_channel_ == FillChannel::kPrivateWs) {
     if (private_stream_ != nullptr && private_stream_->PollExecution(out_fill)) {
+      std::lock_guard<std::mutex> lock(state_mutex_);
       CanonicalizeFillClientOrderId(out_fill);
       if (!observed_exec_ids_.insert(out_fill->fill_id).second) {
         LogInfo("BYBIT_EXEC_DEDUP_DROP: " +
@@ -2375,7 +2635,6 @@ bool BybitExchangeAdapter::PollFill(FillEvent* out_fill) {
   if (!PollFillFromRest(out_fill)) {
     return false;
   }
-  CanonicalizeFillClientOrderId(out_fill);
   LogInfo("BYBIT_FILL_OBSERVED: " + FormatFillSummary(*out_fill, "rest_polling"));
   return true;
 }
@@ -2387,6 +2646,7 @@ bool BybitExchangeAdapter::GetRemoteNotionalUsd(double* out_notional_usd) const 
   }
 
   if (IsReplayMode(options_)) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     double total_notional = 0.0;
     for (const auto& [symbol, qty] : remote_position_qty_by_symbol_) {
       const auto it = last_price_by_symbol_.find(symbol);
@@ -2438,6 +2698,7 @@ bool BybitExchangeAdapter::GetRemoteNotionalUsd(double* out_notional_usd) const 
 
 bool BybitExchangeAdapter::GetAccountSnapshot(
     ExchangeAccountSnapshot* out_snapshot) const {
+  std::lock_guard<std::mutex> lock(state_mutex_);
   if (!connected_ || out_snapshot == nullptr) {
     return false;
   }
@@ -2453,6 +2714,7 @@ bool BybitExchangeAdapter::GetRemotePositions(
   out_positions->clear();
 
   if (IsReplayMode(options_)) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     for (const auto& [symbol, qty] : remote_position_qty_by_symbol_) {
       if (std::fabs(qty) < 1e-9) {
         continue;
@@ -2662,18 +2924,57 @@ bool BybitExchangeAdapter::GetRemoteAccountBalance(
   return true;
 }
 
-bool BybitExchangeAdapter::GetRemoteOpenOrderClientIds(
-    std::unordered_set<std::string>* out_client_order_ids) const {
-  if (!connected_ || out_client_order_ids == nullptr) {
+bool BybitExchangeAdapter::GetRemoteOpenOrders(
+    std::vector<RemoteOpenOrderSnapshot>* out_orders) const {
+  if (!connected_ || out_orders == nullptr) {
     return false;
   }
-  out_client_order_ids->clear();
+  out_orders->clear();
 
   if (IsReplayMode(options_)) {
-    for (const auto& fill : pending_fills_) {
-      if (!fill.client_order_id.empty()) {
-        out_client_order_ids->insert(fill.client_order_id);
-      }
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    for (const auto& order : replay_resting_orders_) {
+      const OrderIntent& intent = order.intent;
+      out_orders->push_back(RemoteOpenOrderSnapshot{
+          .client_order_id = intent.client_order_id,
+          .exchange_order_id = intent.client_order_id,
+          .symbol = intent.symbol,
+          .status = "New",
+          .order_type = "Limit",
+          .time_in_force = options_.maker_post_only ? "PostOnly" : "GTC",
+          .direction = intent.direction,
+          .original_qty = intent.qty,
+          .leaves_qty = intent.qty,
+          .filled_qty = 0.0,
+          .price = intent.price,
+          .trigger_price = 0.0,
+          .trigger_direction = 0,
+          .reduce_only = intent.reduce_only,
+          .close_on_trigger = false,
+      });
+    }
+    for (const auto& order : replay_conditional_orders_) {
+      const OrderIntent& intent = order.intent;
+      out_orders->push_back(RemoteOpenOrderSnapshot{
+          .client_order_id = intent.client_order_id,
+          .exchange_order_id = intent.client_order_id,
+          .symbol = intent.symbol,
+          .status = "New",
+          .order_type = "Market",
+          .time_in_force = "",
+          .direction = intent.direction,
+          .original_qty = intent.qty,
+          .leaves_qty = intent.qty,
+          .filled_qty = 0.0,
+          .price = 0.0,
+          .trigger_price = intent.price,
+          .trigger_direction =
+              intent.purpose == OrderPurpose::kSl
+                  ? (intent.direction < 0 ? 2 : 1)
+                  : (intent.direction < 0 ? 1 : 2),
+          .reduce_only = intent.reduce_only,
+          .close_on_trigger = true,
+      });
     }
     return true;
   }
@@ -2699,6 +3000,7 @@ bool BybitExchangeAdapter::GetRemoteOpenOrderClientIds(
     return false;
   }
 
+  std::lock_guard<std::mutex> lock(state_mutex_);
   int total_rows = 0;
   int active_rows = 0;
   int skipped_terminal = 0;
@@ -2737,7 +3039,37 @@ bool BybitExchangeAdapter::GetRemoteOpenOrderClientIds(
       ++skipped_missing_client_id;
       continue;
     }
-    out_client_order_ids->insert(client_order_id);
+    const std::string symbol =
+        JsonStringField(&row, "symbol").value_or(std::string());
+    if (!symbol.empty()) {
+      order_symbol_by_client_id_[client_order_id] = ToUpperCopy(symbol);
+    }
+    const std::string side =
+        JsonStringField(&row, "side").value_or(std::string());
+    out_orders->push_back(RemoteOpenOrderSnapshot{
+        .client_order_id = client_order_id,
+        .exchange_order_id = order_id,
+        .symbol = ToUpperCopy(symbol),
+        .status = order_status,
+        .order_type =
+            JsonStringField(&row, "orderType").value_or(std::string()),
+        .time_in_force =
+            JsonStringField(&row, "timeInForce").value_or(std::string()),
+        .direction = side == "Buy" ? 1 : (side == "Sell" ? -1 : 0),
+        .original_qty = JsonNumberField(&row, "qty").value_or(0.0),
+        .leaves_qty = JsonNumberField(&row, "leavesQty").value_or(0.0),
+        .filled_qty = JsonNumberField(&row, "cumExecQty").value_or(0.0),
+        .price = JsonNumberField(&row, "price").value_or(0.0),
+        .trigger_price =
+            JsonNumberField(&row, "triggerPrice").value_or(0.0),
+        .trigger_direction = static_cast<int>(
+            JsonNumberField(&row, "triggerDirection").value_or(0.0)),
+        .reduce_only = JsonAsBool(JsonObjectField(&row, "reduceOnly"))
+                           .value_or(false),
+        .close_on_trigger =
+            JsonAsBool(JsonObjectField(&row, "closeOnTrigger"))
+                .value_or(false),
+    });
     ++active_rows;
   }
 
@@ -2757,9 +3089,28 @@ bool BybitExchangeAdapter::GetRemoteOpenOrderClientIds(
   return true;
 }
 
+bool BybitExchangeAdapter::GetRemoteOpenOrderClientIds(
+    std::unordered_set<std::string>* out_client_order_ids) const {
+  if (out_client_order_ids == nullptr) {
+    return false;
+  }
+  out_client_order_ids->clear();
+  std::vector<RemoteOpenOrderSnapshot> orders;
+  if (!GetRemoteOpenOrders(&orders)) {
+    return false;
+  }
+  for (const auto& order : orders) {
+    if (!order.client_order_id.empty()) {
+      out_client_order_ids->insert(order.client_order_id);
+    }
+  }
+  return true;
+}
+
 // symbol 规则查询：供 Universe 过滤与执行层下单前校验复用。
 bool BybitExchangeAdapter::GetSymbolInfo(const std::string& symbol,
                                          SymbolInfo* out_info) const {
+  std::lock_guard<std::mutex> lock(state_mutex_);
   if (!connected_ || out_info == nullptr || symbol.empty()) {
     return false;
   }

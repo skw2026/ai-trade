@@ -6,6 +6,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 def load_module():
@@ -93,14 +94,19 @@ class RunDataPipelineTest(unittest.TestCase):
             self.assertEqual(len(report["steps"]), 5)
             archive_step = next(item for item in report["steps"] if item["name"] == "archive_download")
             archive_cmd = archive_step["command"]
+            self.assertIn("tools/fetch_bybit_history.py", archive_cmd)
             self.assertIn("--days", archive_cmd)
             self.assertEqual(archive_cmd[archive_cmd.index("--days") + 1], "30")
+            self.assertEqual(report["contract"]["venue"], "bybit")
+            self.assertTrue(report["contract"]["single_venue_verified"])
             planned_count = sum(1 for item in report["steps"] if item["status"] == "planned")
             skipped_count = sum(1 for item in report["steps"] if item["status"] == "skipped")
             self.assertEqual(planned_count, 4)
             self.assertEqual(skipped_count, 1)
             walk_step = next(item for item in report["steps"] if item["name"] == "walkforward_backtest")
             self.assertEqual(walk_step["status"], "skipped")
+            self.assertFalse(walk_step["required"])
+            self.assertEqual(walk_step["evidence_role"], "research_benchmark_only")
             walk_cmd = walk_step["command"]
             self.assertIn("--model", walk_cmd)
             self.assertIn("linear", walk_cmd)
@@ -108,6 +114,177 @@ class RunDataPipelineTest(unittest.TestCase):
             self.assertIn("--catboost-depth", walk_cmd)
             self.assertIn("--catboost-learning-rate", walk_cmd)
             self.assertIn("--random-seed", walk_cmd)
+            gap_step = next(
+                item for item in report["steps"] if item["name"] == "gap_fill"
+            )
+            self.assertIn("--base-url", gap_step["command"])
+
+    def test_source_contract_rejects_mixed_endpoint(self):
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = pathlib.Path(td)
+            common = {
+                "venue": "bybit",
+                "category": "linear",
+                "symbol": "SOLUSDT",
+                "base_url": "https://api.bybit.com",
+                "price_type": "trade_price",
+                "volume_unit": "base_asset",
+                "bar_semantics": "closed_ohlcv",
+            }
+            final_ohlcv = run_dir / "ohlcv.csv"
+            final_ohlcv.write_text(
+                "timestamp,open,high,low,close,volume\n"
+                "1700000000000,1,1,1,1,1\n",
+                encoding="utf-8",
+            )
+            (run_dir / "archive_report.json").write_text(
+                json.dumps(
+                    {
+                        **common,
+                        "interval_minutes": 5,
+                        "server_time_ms": 1_700_000_600_000,
+                        "closed_boundary_ms": 1_700_000_400_000,
+                        "end_ms_exclusive": 1_700_000_400_000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "incremental_report.json").write_text(
+                json.dumps(
+                    {
+                        **common,
+                        "interval": "5",
+                        "last_timestamp_after": 1_700_000_000_000,
+                        "server_time_ms": 1_700_000_300_000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "gap_fill_report.json").write_text(
+                json.dumps(
+                    {
+                        **common,
+                        "base_url": "https://api-testnet.bybit.com",
+                        "interval_minutes": 5,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            failures = PIPELINE.validate_source_contract(
+                run_dir=run_dir,
+                enabled_steps={
+                    "archive_download": True,
+                    "incremental_update": True,
+                    "gap_fill": True,
+                },
+                expected_base_url="https://api.bybit.com",
+                expected_category="linear",
+                expected_symbol="SOLUSDT",
+                expected_interval_minutes=5,
+                final_ohlcv_path=final_ohlcv,
+            )
+            self.assertTrue(any("gap_fill: base_url=" in item for item in failures))
+
+    def test_source_contract_rejects_open_bar_in_final_csv(self):
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = pathlib.Path(td)
+            common = {
+                "venue": "bybit",
+                "category": "linear",
+                "symbol": "SOLUSDT",
+                "base_url": "https://api.bybit.com",
+                "price_type": "trade_price",
+                "volume_unit": "base_asset",
+                "bar_semantics": "closed_ohlcv",
+            }
+            (run_dir / "archive_report.json").write_text(
+                json.dumps(
+                    {
+                        **common,
+                        "interval_minutes": 5,
+                        "server_time_ms": 1_700_000_600_000,
+                        "closed_boundary_ms": 1_700_000_400_000,
+                        "end_ms_exclusive": 1_700_000_400_000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            final_ohlcv = run_dir / "ohlcv.csv"
+            final_ohlcv.write_text(
+                "timestamp,open,high,low,close,volume\n"
+                "1700000500000,1,1,1,1,1\n",
+                encoding="utf-8",
+            )
+            failures = PIPELINE.validate_source_contract(
+                run_dir=run_dir,
+                enabled_steps={"archive_download": True},
+                expected_base_url="https://api.bybit.com",
+                expected_category="linear",
+                expected_symbol="SOLUSDT",
+                expected_interval_minutes=5,
+                final_ohlcv_path=final_ohlcv,
+            )
+            self.assertIn(
+                "final OHLCV latest bar is not proven closed",
+                failures,
+            )
+
+    def test_walkforward_failure_is_diagnostic_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            config = root / "data_pipeline.yaml"
+            run_dir = root / "run"
+            config.write_text(
+                "archive:\n"
+                "  enabled: true\n"
+                "incremental:\n"
+                "  enabled: true\n"
+                "gap_fill:\n"
+                "  enabled: true\n"
+                "feature_store:\n"
+                "  enabled: true\n"
+                "walkforward:\n"
+                "  enabled: true\n",
+                encoding="utf-8",
+            )
+
+            def fake_run(step, dry_run):
+                del dry_run
+                step.status = (
+                    "fail" if step.name == "walkforward_backtest" else "ok"
+                )
+                step.return_code = 3 if step.status == "fail" else 0
+                return step
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "run_data_pipeline.py",
+                    "--config",
+                    str(config),
+                    "--run-dir",
+                    str(run_dir),
+                ]
+                with mock.patch.object(
+                    PIPELINE, "run_command", side_effect=fake_run
+                ), mock.patch.object(
+                    PIPELINE, "validate_source_contract", return_value=[]
+                ):
+                    code = PIPELINE.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            report = json.loads(
+                (run_dir / "data_pipeline_report.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(report["status"], "PASS")
+            self.assertEqual(report["diagnostic_status"], "FAIL")
+            self.assertFalse(
+                report["contract"][
+                    "walkforward_authoritative_for_integrator_promotion"
+                ]
+            )
 
 
 if __name__ == "__main__":

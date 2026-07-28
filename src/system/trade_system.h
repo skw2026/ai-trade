@@ -31,6 +31,21 @@ struct MarketDecision {
   std::optional<OrderIntent> intent;
 };
 
+struct IntegratorPolicyDecision {
+  Signal signal;
+  bool applied{false};
+  double confidence{0.0};
+  std::string reason;
+};
+
+IntegratorPolicyDecision EvaluateIntegratorPolicy(
+    const IntegratorConfig& config,
+    const ShadowInference& shadow,
+    const Signal& base_signal,
+    bool settled_symbol_exposure_present,
+    bool pending_net_position_order_present,
+    bool independent_base_signal_eligible);
+
 /**
  * @brief Trade System (Pipeline Orchestrator)
  *
@@ -52,12 +67,14 @@ class TradeSystem {
   /// Processes a market event and returns the full decision context.
   MarketDecision Evaluate(const MarketEvent& event,
                           bool trade_ok = true,
-                          double symbol_inflight_notional_usd = 0.0);
+                          double symbol_inflight_notional_usd = 0.0,
+                          bool has_pending_symbol_net_orders = false);
 
   /// Simplified entry point returning just the order intent (if any).
   std::optional<OrderIntent> OnMarket(const MarketEvent& event,
                                       bool trade_ok = true,
-                                      double symbol_inflight_notional_usd = 0.0);
+                                      double symbol_inflight_notional_usd = 0.0,
+                                      bool has_pending_symbol_net_orders = false);
 
   /// Helper for local replay/testing: generates event from price and processes it.
   bool OnPrice(double price, bool trade_ok = true);
@@ -66,6 +83,10 @@ class TradeSystem {
 
   void OnFill(const FillEvent& fill);
   void OnMarketSnapshot(const MarketEvent& event);
+  double ApplyFunding(const std::string& symbol,
+                      double funding_rate_per_interval) {
+    return account_.ApplyFunding(symbol, funding_rate_per_interval);
+  }
 
   // --- Remote Synchronization ---
 
@@ -96,8 +117,19 @@ class TradeSystem {
   
   // Integrator Control
   bool InitializeIntegratorShadow(std::string* out_error);
+  bool BootstrapIntegratorHistory(std::string* out_error);
+  void OnIntegratorMarket(const MarketEvent& event);
   IntegratorMode GetIntegratorMode() const { return integrator_config_.mode; }
   void SetIntegratorMode(IntegratorMode mode) { integrator_config_.mode = mode; }
+  const std::string& integrator_training_symbol() const {
+    return integrator_shadow_.training_symbol();
+  }
+  std::int64_t integrator_feature_bar_interval_ms() const {
+    return integrator_shadow_.feature_bar_interval_ms();
+  }
+  size_t integrator_feature_sample_count() const {
+    return integrator_shadow_.feature_sample_count();
+  }
   
   // Risk Control
   void ForceReduceOnly(bool enabled) { risk_.SetForcedReduceOnly(enabled); }
@@ -119,6 +151,15 @@ class TradeSystem {
   std::string integrator_shadow_model_version() const {
     return integrator_shadow_.model_version();
   }
+  const std::string& integrator_activation_transaction_id() const {
+    return integrator_shadow_.activation_transaction_id();
+  }
+  const std::string& integrator_runtime_config_sha256() const {
+    return integrator_shadow_.runtime_config_sha256();
+  }
+  const std::string& integrator_trade_bot_sha256() const {
+    return integrator_shadow_.trade_bot_sha256();
+  }
 
  private:
   // Components
@@ -136,9 +177,6 @@ class TradeSystem {
   bool evolution_enabled_{false};
   std::array<EvolutionWeights, 3> evolution_weights_by_bucket_;
 
-  // Helpers
-  bool ApplyIntegratorPolicy(const ShadowInference& shadow, Signal* inout_signal,
-                             double* out_confidence, std::string* out_reason) const;
 };
 
 }  // namespace ai_trade

@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
+ARG BUILD_REVISION=unknown
+
 FROM ubuntu:24.04 AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -64,6 +66,9 @@ RUN cmake -S . -B build -G Ninja -DAI_TRADE_USE_BEAST_WEBSOCKET=ON -DAI_TRADE_EN
     ctest --test-dir build --output-on-failure
 
 FROM ubuntu:24.04 AS runtime
+
+ARG BUILD_REVISION
+LABEL org.opencontainers.image.revision="${BUILD_REVISION}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 

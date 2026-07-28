@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ INHERITABLE_SECTION_NAMES = [
     "replay_validation",
     "strategy_diagnose",
     "alpha_mechanism_probe",
+    "strategy_candidate",
 ]
 
 # A section inherited from the previous report is useful context, but some
@@ -919,6 +921,126 @@ def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_activation_decision(
+    path: Path, transaction_path: Path | None = None
+) -> Dict[str, Any]:
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    if payload.get("schema_version") != "closed_loop_activation_decision_v1":
+        fail_reasons.append("activation decision schema is not v1")
+    decision = str(payload.get("decision", "")).strip().lower()
+    if decision == "commit":
+        readiness_status = "COMMITTED"
+    elif decision == "pending":
+        readiness_status = "CANARY_PENDING_EVIDENCE"
+        warn_reasons.extend(
+            str(item)
+            for item in payload.get("pending_reasons", [])
+            if str(item)
+        )
+    elif decision == "rollback":
+        readiness_status = "ROLLED_BACK"
+        fail_reasons.extend(
+            str(item)
+            for item in payload.get("hard_fail_reasons", [])
+            if str(item)
+        )
+        if not fail_reasons:
+            fail_reasons.append("activation candidate rolled back")
+    else:
+        readiness_status = "NOT_EVALUATED"
+        fail_reasons.append(
+            f"unknown activation decision: {decision or 'missing'}"
+        )
+    transaction_binding: Dict[str, Any] = {
+        "checked": transaction_path is not None,
+        "match": None,
+    }
+    if transaction_path is not None:
+        transaction = read_json(transaction_path)
+        binding_reasons: List[str] = []
+        if (
+            transaction.get("schema_version")
+            != "closed_loop_activation_transaction_v2"
+        ):
+            binding_reasons.append("activation transaction schema is not v2")
+        candidate = transaction.get("candidate", {})
+        if not isinstance(candidate, dict):
+            candidate = {}
+        if transaction.get("run_id") != payload.get("transaction_run_id"):
+            binding_reasons.append(
+                "activation decision transaction_run_id mismatch"
+            )
+        if candidate.get("model_version") != payload.get(
+            "candidate_model_version"
+        ):
+            binding_reasons.append(
+                "activation decision candidate_model_version mismatch"
+            )
+        if candidate.get("identity") != payload.get("candidate_identity"):
+            binding_reasons.append(
+                "activation decision candidate identity mismatch"
+            )
+        if transaction.get("activation_policy_sha256") != payload.get(
+            "activation_policy_sha256"
+        ):
+            binding_reasons.append(
+                "activation decision frozen policy hash mismatch"
+            )
+        transaction_status = str(transaction.get("status", "")).strip()
+        expected_statuses = {
+            "commit": {"committed"},
+            "pending": {"canary_pending_evidence"},
+            "rollback": {
+                "rolled_back",
+                "rolled_back_service_stopped",
+                "rollback_failed_restore",
+                "rollback_failed_runtime_restart",
+                "rollback_failed_runtime_verify",
+            },
+        }.get(decision, set())
+        if transaction_status not in expected_statuses:
+            binding_reasons.append(
+                "activation decision/status mismatch: "
+                f"decision={decision}, transaction_status={transaction_status}"
+            )
+        latest = transaction.get("latest_evaluation", {})
+        if isinstance(latest, dict) and latest:
+            if latest.get("evaluated_at_utc") != payload.get(
+                "evaluated_at_utc"
+            ):
+                binding_reasons.append(
+                    "activation decision is not transaction latest_evaluation"
+                )
+        transaction_binding = {
+            "checked": True,
+            "match": not binding_reasons,
+            "transaction_status": transaction_status,
+            "transaction_path": str(transaction_path),
+            "fail_reasons": binding_reasons,
+        }
+        fail_reasons.extend(binding_reasons)
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": readiness_status,
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "decision": decision,
+        "candidate_model_version": payload.get("candidate_model_version"),
+        "transaction_run_id": payload.get("transaction_run_id"),
+        "identity_complete": payload.get("identity_complete"),
+        "identity_match": payload.get("identity_match"),
+        "runtime_verdict": payload.get("runtime_verdict"),
+        "mechanism_status": payload.get("mechanism_status"),
+        "thresholds": payload.get("thresholds", {}),
+        "evidence": payload.get("evidence", {}),
+        "activation_policy_sha256": payload.get("activation_policy_sha256"),
+        "candidate_identity": payload.get("candidate_identity"),
+        "transaction_binding": transaction_binding,
+    }
+
+
 def replay_activation_uses_deployable_optimizer_candidate(
     replay_section: Dict[str, Any],
 ) -> bool:
@@ -930,11 +1052,15 @@ def replay_activation_uses_deployable_optimizer_candidate(
     selected_candidate = activation_gate.get("selected_candidate")
     if not isinstance(selected_candidate, dict):
         return False
+    deployable_config = selected_candidate.get("deployable_config", {})
+    if not isinstance(deployable_config, dict):
+        return False
     return (
         str(activation_gate.get("basis", "")).strip()
         == "execution_optimizer.best_deployable_candidate"
         and str(selected_candidate.get("status", "")).strip().lower() == "pass"
         and not bool(selected_candidate.get("diagnostic_only"))
+        and deployable_config.get("requires_rerun") is False
     )
 
 
@@ -1172,12 +1298,571 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
     for key in ("git", "config_hashes", "replay_validation"):
         if key not in payload:
             warn_reasons.append(f"run manifest missing {key}")
+    git = payload.get("git", {})
+    if not isinstance(git, dict) or not str(git.get("commit", "")).strip():
+        fail_reasons.append("run manifest missing git commit provenance")
+    runtime = payload.get("runtime", {})
+    expected_commit = (
+        str(git.get("commit", "")).strip() if isinstance(git, dict) else ""
+    )
+    runtime_revision = (
+        str(runtime.get("image_revision", "")).strip()
+        if isinstance(runtime, dict)
+        else ""
+    )
+    if not isinstance(runtime, dict) or not str(runtime.get("image_id", "")).strip():
+        fail_reasons.append("run manifest missing deployed runtime image identity")
+    if not runtime_revision:
+        fail_reasons.append("run manifest missing deployed runtime image revision")
+    elif expected_commit and runtime_revision != expected_commit:
+        fail_reasons.append(
+            "deployed runtime revision mismatch: "
+            f"image={runtime_revision}, workflow={expected_commit}"
+        )
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, dict):
+        fail_reasons.append("run manifest missing artifact hashes")
+        artifacts = {}
+    action = str(payload.get("action", "")).strip().lower()
+    contract_path = (
+        Path(__file__).resolve().parents[1] / "config" / "closed_loop_contract.json"
+    )
+    contract = read_json(contract_path)
+    contract_actions = contract.get("actions", {})
+    expected_action_contract = (
+        contract_actions.get(action, {}) if isinstance(contract_actions, dict) else {}
+    )
+    expected_required_artifacts = expected_action_contract.get(
+        "required_artifacts", []
+    )
+    expected_required_steps = expected_action_contract.get("required_steps", [])
+    artifact_contract = payload.get("artifact_contract", {})
+    if not isinstance(artifact_contract, dict):
+        fail_reasons.append("run manifest missing artifact contract")
+        artifact_contract = {}
+    expected_contract_hash = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+    if artifact_contract.get("schema_version") != contract.get("schema_version"):
+        fail_reasons.append("run manifest artifact contract schema mismatch")
+    if artifact_contract.get("contract_sha256") != expected_contract_hash:
+        fail_reasons.append("run manifest artifact contract hash mismatch")
+    if artifact_contract.get("action") != action:
+        fail_reasons.append("run manifest artifact contract action mismatch")
+    if artifact_contract.get("required_artifacts") != expected_required_artifacts:
+        fail_reasons.append("run manifest required artifact contract mismatch")
+    if artifact_contract.get("required_steps") != expected_required_steps:
+        fail_reasons.append("run manifest required step contract mismatch")
+    if not expected_required_artifacts or not expected_required_steps:
+        fail_reasons.append(f"closed-loop contract missing action={action}")
+    missing = sorted(set(expected_required_artifacts) - set(artifacts))
+    if missing:
+        fail_reasons.append(
+            f"run manifest missing required {action} artifacts: {','.join(missing)}"
+        )
+    for name, artifact in artifacts.items():
+        if not isinstance(artifact, dict):
+            fail_reasons.append(f"run manifest artifact {name} is not an object")
+            continue
+        artifact_path = Path(str(artifact.get("path", "")))
+        expected_hash = str(artifact.get("sha256", "")).strip()
+        if not artifact_path.is_file():
+            fail_reasons.append(
+                f"run manifest artifact missing on disk: {name}={artifact_path}"
+            )
+            continue
+        actual_hash = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        if not expected_hash or actual_hash != expected_hash:
+            fail_reasons.append(
+                f"run manifest artifact hash mismatch: {name}"
+            )
+    step_artifact = artifacts.get("step_status", {})
+    step_path = (
+        Path(str(step_artifact.get("path", "")))
+        if isinstance(step_artifact, dict)
+        else Path()
+    )
+    if step_path.is_file():
+        step_records: List[Dict[str, Any]] = []
+        seen_steps: set[str] = set()
+        try:
+            lines = step_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            fail_reasons.append(f"step status ledger unreadable: {exc}")
+            lines = []
+        if not lines:
+            fail_reasons.append("step status ledger is empty")
+        for line_number, line in enumerate(lines, start=1):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                fail_reasons.append(
+                    f"step status ledger invalid JSON at line {line_number}"
+                )
+                continue
+            if not isinstance(record, dict):
+                fail_reasons.append(
+                    f"step status ledger line {line_number} is not an object"
+                )
+                continue
+            step = str(record.get("step", "")).strip()
+            result = str(record.get("result", "")).strip().lower()
+            blocked = record.get("blocked_by_prior_failure")
+            exit_code = record.get("exit_code")
+            if not step:
+                fail_reasons.append(
+                    f"step status ledger line {line_number} missing step"
+                )
+                continue
+            if step in seen_steps:
+                fail_reasons.append(f"step status ledger duplicate step: {step}")
+            seen_steps.add(step)
+            if str(record.get("run_id", "")).strip() != run_id:
+                fail_reasons.append(f"step status run_id mismatch: {step}")
+            if str(record.get("action", "")).strip().lower() != action:
+                fail_reasons.append(f"step status action mismatch: {step}")
+            if result not in {"pass", "fail", "skipped"}:
+                fail_reasons.append(f"step status invalid result: {step}={result}")
+            elif result == "pass" and exit_code != 0:
+                fail_reasons.append(f"step status pass has non-zero exit code: {step}")
+            elif result == "fail":
+                if not isinstance(exit_code, int) or exit_code == 0:
+                    fail_reasons.append(
+                        f"step status fail has invalid exit code: {step}"
+                    )
+                fail_reasons.append(f"closed-loop step failed: {step}")
+            elif result == "skipped":
+                if blocked is not True or exit_code is not None:
+                    fail_reasons.append(
+                        f"step status skipped lacks prior-failure contract: {step}"
+                    )
+                fail_reasons.append(f"closed-loop required step skipped: {step}")
+            if result in {"pass", "fail"} and blocked is not False:
+                fail_reasons.append(
+                    f"step status blocked flag invalid for {result}: {step}"
+                )
+            step_records.append(record)
+        missing_steps = [
+            step for step in expected_required_steps if step not in seen_steps
+        ]
+        if missing_steps:
+            fail_reasons.append(
+                "step status ledger missing required steps: "
+                + ",".join(missing_steps)
+            )
+        order = {str(item.get("step", "")): idx for idx, item in enumerate(step_records)}
+        present_required = [
+            step for step in expected_required_steps if step in order
+        ]
+        if present_required != sorted(present_required, key=order.get):
+            fail_reasons.append("step status ledger violates required DAG order")
     return {
         "status": "fail" if fail_reasons else "pass",
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
         "manifest": payload,
     }
+
+
+def assess_trade_ledger(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    if payload.get("schema_version") != "trade_ledger_v1":
+        fail_reasons.append("trade ledger schema_version is not trade_ledger_v1")
+    quality = payload.get("quality", {})
+    if not isinstance(quality, dict):
+        fail_reasons.append("trade ledger quality section missing")
+        quality = {}
+    conflicts = as_int(quality.get("conflicting_duplicate_count"))
+    malformed = as_int(quality.get("malformed_fill_count"))
+    if conflicts > 0:
+        fail_reasons.append(f"trade ledger has {conflicts} conflicting fill_id records")
+    if malformed > 0:
+        fail_reasons.append(f"trade ledger skipped {malformed} malformed fill records")
+    if quality.get("initial_position_state_verifiable") is not True:
+        fail_reasons.append("trade ledger initial position state is not verifiable")
+    reconciliation_mismatches = as_int(
+        quality.get("position_reconciliation_mismatch_count")
+    )
+    if reconciliation_mismatches > 0:
+        fail_reasons.append(
+            "trade ledger position reconciliation mismatches="
+            f"{reconciliation_mismatches}"
+        )
+    summary = payload.get("summary", {})
+    if not isinstance(summary, dict):
+        fail_reasons.append("trade ledger summary section missing")
+        summary = {}
+    accounting_scope = payload.get("accounting_scope", {})
+    if not isinstance(accounting_scope, dict):
+        accounting_scope = {}
+    if accounting_scope.get("complete_net_pnl") is not True:
+        warn_reasons.append(
+            "trade ledger net PnL excludes unavailable funding/arrival-price "
+            "attribution; do not treat it as complete account net PnL"
+        )
+    if accounting_scope.get("realized_trade_net_pnl_verifiable") is not True:
+        warn_reasons.append(
+            "trade ledger realized trade net PnL is not fully verifiable because "
+            "pre-window entry fees are unavailable for inherited positions"
+        )
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "schema_version": payload.get("schema_version"),
+        "dedupe_key": payload.get("dedupe_key"),
+        "quality": quality,
+        "summary": summary,
+        "accounting_scope": accounting_scope,
+        "open_positions": payload.get("open_positions", {}),
+    }
+
+
+def assess_strategy_candidate_manifest(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    if payload.get("schema_version") != "strategy_candidate_v1":
+        fail_reasons.append(
+            "strategy candidate schema_version is not strategy_candidate_v1"
+        )
+    candidate_id = str(payload.get("candidate_id", "")).strip()
+    status = str(payload.get("status", "")).strip().lower()
+    candidate = payload.get("candidate", {})
+    replay = payload.get("replay_validation", {})
+    registry = payload.get("registry", {})
+    runtime = payload.get("runtime", {})
+    if not isinstance(candidate, dict):
+        candidate = {}
+        fail_reasons.append("strategy candidate section missing")
+    if not isinstance(replay, dict):
+        replay = {}
+        fail_reasons.append("strategy candidate replay section missing")
+    if not isinstance(registry, dict):
+        registry = {}
+        fail_reasons.append("strategy candidate registry section missing")
+    if not isinstance(runtime, dict):
+        runtime = {}
+    if status != "not_generated" and not candidate_id:
+        fail_reasons.append("strategy candidate id missing")
+    if candidate_id:
+        if str(candidate.get("model_version", "")).strip() != candidate_id:
+            fail_reasons.append("strategy candidate model version differs from candidate id")
+        if not str(candidate.get("model_sha256", "")).strip():
+            fail_reasons.append("strategy candidate model hash missing")
+        if not str(candidate.get("integrator_report_sha256", "")).strip():
+            fail_reasons.append("strategy candidate integrator report hash missing")
+        training_symbol = str(candidate.get("training_symbol", "")).strip().upper()
+        if not training_symbol:
+            fail_reasons.append("strategy candidate training symbol missing")
+        if as_int(candidate.get("bar_interval_ms")) <= 0:
+            fail_reasons.append("strategy candidate bar interval missing")
+        if str(candidate.get("online_bar_source", "")).strip() != "closed_ohlcv":
+            fail_reasons.append("strategy candidate online bar source is not closed_ohlcv")
+        if str(candidate.get("source_venue", "")).strip().lower() != "bybit":
+            fail_reasons.append("strategy candidate source venue is not bybit")
+        if str(candidate.get("source_category", "")).strip().lower() != "linear":
+            fail_reasons.append("strategy candidate source category is not linear")
+        if str(candidate.get("price_type", "")).strip().lower() != "trade_price":
+            fail_reasons.append("strategy candidate price type is not trade_price")
+        if str(candidate.get("volume_unit", "")).strip().lower() != "base_asset":
+            fail_reasons.append("strategy candidate volume unit is not base_asset")
+    if candidate_id:
+        if str(replay.get("candidate_model_version", "")).strip() != candidate_id:
+            fail_reasons.append("replay candidate model version differs from candidate id")
+        if (
+            str(replay.get("candidate_model_sha256", "")).strip()
+            != str(candidate.get("model_sha256", "")).strip()
+        ):
+            fail_reasons.append("replay candidate model hash differs from candidate")
+        if (
+            str(replay.get("candidate_integrator_report_sha256", "")).strip()
+            != str(candidate.get("integrator_report_sha256", "")).strip()
+        ):
+            fail_reasons.append(
+                "replay candidate integrator report hash differs from candidate"
+            )
+        if replay.get("independent_identity_match") is not True:
+            fail_reasons.append(
+                "replay did not independently authenticate candidate artifacts"
+            )
+        if not bool(replay.get("config_binds_candidate")):
+            fail_reasons.append("replay config does not bind the current candidate artifacts")
+        if not bool(replay.get("report_config_identity_match")):
+            fail_reasons.append("replay report base_config differs from candidate config")
+        if not bool(replay.get("evaluates_current_candidate")):
+            fail_reasons.append("replay did not evaluate the current candidate model")
+        if not bool(replay.get("feature_contract_match")):
+            fail_reasons.append(
+                "replay source symbol/bar contract differs from candidate training contract"
+            )
+    registry_model_version = str(registry.get("model_version", "")).strip()
+    if registry_model_version and registry_model_version != candidate_id:
+        fail_reasons.append("registry model version differs from candidate id")
+    if registry_model_version:
+        if (
+            str(registry.get("model_sha256", "")).strip()
+            != str(candidate.get("model_sha256", "")).strip()
+        ):
+            fail_reasons.append("registry model hash differs from candidate")
+        if (
+            str(registry.get("integrator_report_sha256", "")).strip()
+            != str(candidate.get("integrator_report_sha256", "")).strip()
+        ):
+            fail_reasons.append(
+                "registry integrator report hash differs from candidate"
+            )
+    if not bool(registry.get("candidate_identity_match", True)):
+        fail_reasons.append("registry model version differs from candidate id")
+    if status == "rejected":
+        fail_reasons.append("strategy candidate lifecycle rejected")
+    if status in {
+        "candidate",
+        "replay_validated",
+        "registered",
+        "activation_pending_runtime",
+        "canary_loaded",
+        "canary_observing",
+        "not_generated",
+    }:
+        warn_reasons.append(
+            f"strategy candidate lifecycle incomplete: status={status}"
+        )
+    if status in {"canary_loaded", "canary_observing", "canary_evidence"}:
+        if runtime.get("candidate_identity_match") is not True:
+            fail_reasons.append("runtime model version differs from candidate id")
+        if runtime.get("feature_contract_match") is not True:
+            fail_reasons.append(
+                "runtime feature symbol/bar contract differs from candidate"
+            )
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "candidate_id": candidate_id,
+        "lifecycle_status": status,
+        "candidate": candidate,
+        "replay_validation": replay,
+        "registry": registry,
+        "runtime": runtime,
+    }
+
+
+def refresh_strategy_candidate_runtime(
+    candidate_section: Dict[str, Any],
+    runtime_section: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(candidate_section, dict) or not candidate_section:
+        return candidate_section
+    if not isinstance(runtime_section, dict) or not runtime_section:
+        return candidate_section
+    candidate_id = str(candidate_section.get("candidate_id", "")).strip()
+    candidate = candidate_section.get("candidate", {})
+    if not isinstance(candidate, dict):
+        candidate = {}
+    candidate_model_sha256 = str(candidate.get("model_sha256", "")).strip()
+    candidate_report_sha256 = str(
+        candidate.get("integrator_report_sha256", "")
+    ).strip()
+    candidate_training_symbol = str(
+        candidate.get("training_symbol", "")
+    ).strip().upper()
+    candidate_bar_interval_ms = as_int(candidate.get("bar_interval_ms"))
+    metrics = runtime_section.get("metrics", {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+    versions = metrics.get("integrator_model_versions")
+    if not isinstance(versions, list):
+        versions = []
+    versions = [str(value) for value in versions if str(value)]
+    latest = str(
+        metrics.get("integrator_model_version_latest")
+        or (versions[-1] if versions else "")
+    )
+    runtime_model_sha256 = str(
+        metrics.get("integrator_model_sha256_latest", "")
+    ).strip()
+    runtime_report_sha256 = str(
+        metrics.get("integrator_report_sha256_latest", "")
+    ).strip()
+    runtime_runtime_config_sha256 = str(
+        metrics.get("integrator_runtime_config_sha256_latest", "")
+    ).strip()
+    runtime_trade_bot_sha256 = str(
+        metrics.get("integrator_trade_bot_sha256_latest", "")
+    ).strip()
+    registry_section = candidate_section.get("registry", {})
+    if not isinstance(registry_section, dict):
+        registry_section = {}
+    expected_runtime_config_sha256 = str(
+        registry_section.get("active_runtime_config_sha256", "")
+    ).strip()
+    expected_trade_bot_sha256 = str(
+        registry_section.get("active_trade_bot_sha256", "")
+    ).strip()
+    runtime_training_symbol = str(
+        metrics.get("integrator_feature_training_symbol_latest", "")
+    ).strip().upper()
+    runtime_bar_interval_ms = as_int(
+        metrics.get("integrator_feature_bar_interval_ms_latest")
+    )
+    identity_complete = bool(
+        candidate_id
+        and latest
+        and candidate_model_sha256
+        and runtime_model_sha256
+        and candidate_report_sha256
+        and runtime_report_sha256
+        and runtime_runtime_config_sha256
+        and runtime_trade_bot_sha256
+        and expected_runtime_config_sha256
+        and expected_trade_bot_sha256
+    )
+    identity_match = (
+        latest == candidate_id
+        and runtime_model_sha256 == candidate_model_sha256
+        and runtime_report_sha256 == candidate_report_sha256
+        and runtime_runtime_config_sha256
+            == expected_runtime_config_sha256
+        and runtime_trade_bot_sha256 == expected_trade_bot_sha256
+        if identity_complete
+        else None
+    )
+    feature_contract_complete = bool(
+        candidate_training_symbol
+        and candidate_bar_interval_ms > 0
+        and runtime_training_symbol
+        and runtime_bar_interval_ms > 0
+    )
+    feature_contract_match = (
+        runtime_training_symbol == candidate_training_symbol
+        and runtime_bar_interval_ms == candidate_bar_interval_ms
+        if feature_contract_complete
+        else None
+    )
+    applied = as_int(metrics.get("integrator_policy_applied_count"))
+    canary_applied = as_int(metrics.get("integrator_policy_canary_count"))
+    filled_candidate_ids = metrics.get("integrator_policy_filled_candidate_ids")
+    if not isinstance(filled_candidate_ids, list):
+        filled_candidate_ids = []
+    filled_candidate_ids = [
+        str(value) for value in filled_candidate_ids if str(value)
+    ]
+    filled_events = metrics.get("integrator_policy_filled_events")
+    if not isinstance(filled_events, list):
+        filled_events = []
+    candidate_filled_events = [
+        event
+        for event in filled_events
+        if isinstance(event, dict)
+        and str(event.get("candidate_id", "")) == candidate_id
+        and str(event.get("model_version", "")) == candidate_id
+    ]
+    candidate_fill_count = len(candidate_filled_events)
+    candidate_unique_order_count = len(
+        {
+            str(event.get("client_order_id", ""))
+            for event in candidate_filled_events
+            if str(event.get("client_order_id", ""))
+        }
+    )
+    mismatched_candidate_fill_count = sum(
+        1 for value in filled_candidate_ids if value != candidate_id
+    )
+    closed_episodes = metrics.get("integrator_policy_closed_episode_events")
+    if not isinstance(closed_episodes, list):
+        closed_episodes = []
+    candidate_complete_episodes = [
+        event
+        for event in closed_episodes
+        if isinstance(event, dict)
+        and str(event.get("candidate_id", "")) == candidate_id
+        and str(event.get("model_version", "")) == candidate_id
+        and str(event.get("mode", "")).strip().lower() == "canary"
+        and event.get("evidence_complete") is True
+    ]
+    candidate_complete_episode_count = len(candidate_complete_episodes)
+    fills = max(
+        as_int(metrics.get("funnel_fills_runtime_count")),
+        as_int(metrics.get("trend_candidate_probe_fill_count")),
+    )
+    refreshed = dict(candidate_section)
+    refreshed_runtime = dict(
+        refreshed.get("runtime", {})
+        if isinstance(refreshed.get("runtime"), dict)
+        else {}
+    )
+    refreshed_runtime.update({
+        "verdict": runtime_section.get("verdict"),
+        "model_versions": versions,
+        "model_version_latest": latest,
+        "model_sha256_latest": runtime_model_sha256,
+        "report_sha256_latest": runtime_report_sha256,
+        "runtime_config_sha256_latest": runtime_runtime_config_sha256,
+        "trade_bot_sha256_latest": runtime_trade_bot_sha256,
+        "candidate_identity_match": identity_match,
+        "training_symbol": runtime_training_symbol,
+        "bar_interval_ms": runtime_bar_interval_ms,
+        "feature_contract_match": feature_contract_match,
+        "policy_applied_count": applied,
+        "canary_applied_count": canary_applied,
+        "candidate_fill_count": candidate_fill_count,
+        "candidate_unique_order_count": candidate_unique_order_count,
+        "candidate_filled_ids": filled_candidate_ids,
+        "mismatched_candidate_fill_count": mismatched_candidate_fill_count,
+        "candidate_complete_episode_count": candidate_complete_episode_count,
+        "candidate_complete_episodes": candidate_complete_episodes,
+        "fill_window_count": fills,
+        "evidence_source": "current_runtime_candidate_lineage",
+    })
+    refreshed["runtime"] = refreshed_runtime
+    lifecycle = str(refreshed.get("lifecycle_status", "")).strip().lower()
+    if identity_match is True and feature_contract_match is True:
+        lifecycle = "canary_loaded"
+        if applied > 0 or canary_applied > 0:
+            lifecycle = "canary_observing"
+        if candidate_complete_episode_count > 0:
+            lifecycle = "canary_evidence"
+    elif (
+        identity_match is False or feature_contract_match is False
+    ) and lifecycle != "not_generated":
+        lifecycle = "rejected"
+    elif lifecycle not in {"rejected", "not_generated"}:
+        lifecycle = "activation_pending_runtime"
+    refreshed["lifecycle_status"] = lifecycle
+    fail_reasons = [
+        str(item)
+        for item in refreshed.get("fail_reasons", [])
+        if not str(item).startswith("runtime candidate ")
+    ]
+    if identity_match is False:
+        fail_reasons.append("runtime candidate model/report identity mismatch")
+    if feature_contract_match is False:
+        fail_reasons.append("runtime candidate feature contract mismatch")
+    refreshed["fail_reasons"] = fail_reasons
+    refreshed["status"] = "fail" if fail_reasons else "pass"
+    warnings = [
+        str(item)
+        for item in refreshed.get("warn_reasons", [])
+        if not str(item).startswith("strategy candidate lifecycle incomplete:")
+    ]
+    if lifecycle != "canary_evidence":
+        warnings.append(
+            f"strategy candidate lifecycle incomplete: status={lifecycle}"
+        )
+    refreshed["warn_reasons"] = warnings
+    fail_reasons = [
+        str(item) for item in refreshed.get("fail_reasons", []) if str(item)
+    ]
+    if lifecycle in {"canary_loaded", "canary_observing", "canary_evidence"}:
+        fail_reasons = [
+            item
+            for item in fail_reasons
+            if item != "runtime model version differs from candidate id"
+        ]
+    refreshed["fail_reasons"] = fail_reasons
+    refreshed["status"] = "fail" if fail_reasons else "pass"
+    return refreshed
 
 
 def classify_runtime_validation(runtime_section: Dict[str, Any]) -> str:
@@ -1299,11 +1984,8 @@ def assess_exit_capture(replay_section: Dict[str, Any], runtime_section: Dict[st
     selected_candidate = activation_gate.get("selected_candidate")
     if not isinstance(selected_candidate, dict):
         selected_candidate = {}
-    optimizer_candidate_basis = (
-        str(activation_gate.get("basis", "")).strip()
-        == "execution_optimizer.best_deployable_candidate"
-        and str(selected_candidate.get("status", "")).strip().lower() == "pass"
-        and not bool(selected_candidate.get("diagnostic_only"))
+    optimizer_candidate_basis = replay_activation_uses_deployable_optimizer_candidate(
+        replay_section
     )
     critical_symbols = set(unique_symbols(tradeability.get("tradable_symbols", [])))
     source_symbol = (
@@ -1818,6 +2500,7 @@ def layer_from_sections(
     section_names: List[str],
     sections: Dict[str, Dict[str, Any]],
     next_action: str,
+    blocking: bool = True,
 ) -> Dict[str, Any]:
     present = [item for item in section_names if isinstance(sections.get(item), dict) and sections.get(item)]
     fail_reasons: List[str] = []
@@ -1853,6 +2536,7 @@ def layer_from_sections(
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
         "next_action": next_action,
+        "blocking": blocking,
     }
 
 
@@ -1889,10 +2573,17 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
             next_action="prove_closed_loop_mechanism_before_more_strategy_tuning",
         ),
         layer_from_sections(
-            name="model_walkforward",
-            section_names=["miner", "integrator", "walkforward", "trend_validation"],
+            name="model_candidate",
+            section_names=["miner", "integrator"],
             sections=sections,
-            next_action="fix_training_or_walkforward_before_live_replay_tuning",
+            next_action="fix_candidate_training_before_live_replay_tuning",
+        ),
+        layer_from_sections(
+            name="research_benchmark",
+            section_names=["walkforward", "trend_validation"],
+            sections=sections,
+            next_action="review_independent_research_benchmark_without_blocking_candidate",
+            blocking=False,
         ),
         layer_from_sections(
             name="strategy_raw_edge",
@@ -1942,7 +2633,7 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
     primary_next_action = "review_closed_loop_report"
     primary_reason = ""
     for layer in layers:
-        if layer["status"] == "FAIL":
+        if layer["status"] == "FAIL" and bool(layer.get("blocking", True)):
             first_blocking_layer = str(layer["name"])
             primary_next_action = str(layer["next_action"])
             primary_reason = layer["fail_reasons"][0] if layer["fail_reasons"] else ""
@@ -2009,6 +2700,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--integrator_report", default="", help="integrator_report.json 路径")
     parser.add_argument("--registry_report", default="", help="model_registry 结果 JSON 路径")
     parser.add_argument("--runtime_assess_report", default="", help="assess_run_log 输出 JSON 路径")
+    parser.add_argument(
+        "--trade_ledger_report",
+        default="",
+        help="fill_id 去重后的规范交易账本 JSON 路径",
+    )
+    parser.add_argument(
+        "--strategy_candidate_manifest",
+        default="",
+        help="training/replay/registry/runtime candidate identity contract",
+    )
     parser.add_argument("--data_pipeline_report", default="", help="data_pipeline_report.json 路径")
     parser.add_argument("--walkforward_report", default="", help="walkforward_report.json 路径")
     parser.add_argument(
@@ -2030,6 +2731,16 @@ def parse_args() -> argparse.Namespace:
         "--closed_loop_mechanism_report",
         default="",
         help="closed_loop_mechanism_report.json 路径",
+    )
+    parser.add_argument(
+        "--activation_decision",
+        default="",
+        help="两阶段候选激活裁决 JSON 路径",
+    )
+    parser.add_argument(
+        "--activation_transaction",
+        default="",
+        help="两阶段候选激活持久事务快照 JSON 路径",
     )
     parser.add_argument(
         "--walkforward_min_avg_sharpe",
@@ -2195,6 +2906,28 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {runtime_path}"],
             }
 
+    if args.trade_ledger_report:
+        ledger_path = Path(args.trade_ledger_report)
+        if ledger_path.is_file():
+            sections["trade_ledger"] = assess_trade_ledger(ledger_path)
+        else:
+            sections["trade_ledger"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {ledger_path}"],
+            }
+
+    if args.strategy_candidate_manifest:
+        candidate_path = Path(args.strategy_candidate_manifest)
+        if candidate_path.is_file():
+            sections["strategy_candidate"] = assess_strategy_candidate_manifest(
+                candidate_path
+            )
+        else:
+            sections["strategy_candidate"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {candidate_path}"],
+            }
+
     if args.data_pipeline_report:
         data_pipeline_path = Path(args.data_pipeline_report)
         if data_pipeline_path.is_file():
@@ -2234,12 +2967,22 @@ def main() -> int:
                 min_focus_bucket_sharpe=float(args.trend_validation_min_sharpe),
                 focus_bucket_primary=bool(args.walkforward_focus_bucket_primary),
             )
+            sections["walkforward"][
+                "authoritative_for_integrator_promotion"
+            ] = False
+            sections["walkforward"]["evidence_role"] = "research_benchmark_only"
             sections["trend_validation"] = assess_trend_validation(
                 walkforward_path,
                 min_trend_bucket_sharpe=float(args.trend_validation_min_sharpe),
                 min_trend_bucket_bars=int(args.trend_validation_min_bars),
                 min_trend_bucket_trades=int(args.trend_validation_min_trades),
             )
+            sections["trend_validation"][
+                "authoritative_for_integrator_promotion"
+            ] = False
+            sections["trend_validation"][
+                "evidence_role"
+            ] = "research_benchmark_only"
         else:
             sections["walkforward"] = {
                 "status": "fail",
@@ -2289,6 +3032,38 @@ def main() -> int:
                 "status": "fail",
                 "fail_reasons": [f"文件不存在: {mechanism_path}"],
             }
+    if args.activation_decision:
+        activation_path = Path(args.activation_decision)
+        activation_transaction_path = (
+            Path(args.activation_transaction)
+            if args.activation_transaction
+            else None
+        )
+        if not args.activation_transaction:
+            sections["activation_transaction"] = {
+                "status": "fail",
+                "readiness_status": "NOT_EVALUATED",
+                "fail_reasons": [
+                    "activation decision provided without transaction snapshot"
+                ],
+            }
+        elif not activation_transaction_path.is_file():
+            sections["activation_transaction"] = {
+                "status": "fail",
+                "readiness_status": "NOT_EVALUATED",
+                "fail_reasons": [
+                    f"文件不存在: {activation_transaction_path}"
+                ],
+            }
+        elif activation_path.is_file():
+            sections["activation_transaction"] = assess_activation_decision(
+                activation_path, activation_transaction_path
+            )
+        else:
+            sections["activation_transaction"] = {
+                "status": "fail",
+                "fail_reasons": [f"文件不存在: {activation_path}"],
+            }
 
     inherited_sections: List[str] = []
     inherit_status = ""
@@ -2309,6 +3084,11 @@ def main() -> int:
         for name in inherited_sections
         if name in INHERITED_SECTIONS_EXCLUDED_FROM_CURRENT_GATE
     ]
+    if "strategy_candidate" in sections and "runtime" in sections:
+        sections["strategy_candidate"] = refresh_strategy_candidate_runtime(
+            sections["strategy_candidate"],
+            sections["runtime"],
+        )
 
     replay_alignment = assess_replay_live_symbol_alignment(
         sections.get("runtime", {}),
@@ -2358,9 +3138,17 @@ def main() -> int:
     for section_name, section in sections.items():
         if section_name in inherited_sections_excluded_from_gate:
             continue
+        diagnostic_only = (
+            section.get("authoritative_for_integrator_promotion") is False
+        )
         if section.get("status") == "fail":
             for item in section.get("fail_reasons", []):
-                fail_reasons.append(f"{section_name}: {item}")
+                if diagnostic_only:
+                    warn_reasons.append(
+                        f"{section_name} diagnostic_only: {item}"
+                    )
+                else:
+                    fail_reasons.append(f"{section_name}: {item}")
         for item in section.get("warn_reasons", []):
             warn_reasons.append(f"{section_name}: {item}")
 
@@ -2530,6 +3318,15 @@ def main() -> int:
             )
         ).upper()
 
+    activation_section = sections.get("activation_transaction", {})
+    activation_readiness_status = "NOT_EVALUATED"
+    if isinstance(activation_section, dict) and activation_section:
+        activation_readiness_status = str(
+            activation_section.get(
+                "readiness_status", activation_section.get("status", "unknown")
+            )
+        ).upper()
+
     alpha_probe_section = sections.get("alpha_mechanism_probe", {})
     alpha_probe_readiness_status = "NOT_EVALUATED"
     if isinstance(alpha_probe_section, dict) and alpha_probe_section:
@@ -2575,6 +3372,7 @@ def main() -> int:
         "canary_validation_status": canary_validation_status,
         "alpha_mechanism_probe_status": alpha_probe_readiness_status,
         "closed_loop_mechanism_status": mechanism_readiness_status,
+        "activation_transaction_status": activation_readiness_status,
         "trading_convergence_status": trading_convergence_status,
         "trading_convergence_readiness_status": trading_convergence_status,
         "status_semantics": {

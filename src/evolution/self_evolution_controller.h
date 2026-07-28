@@ -46,6 +46,9 @@ struct SelfEvolutionAction {
   bool counterfactual_superiority_gate_passed{true};
   double counterfactual_superiority_t_stat{0.0};
   int counterfactual_superiority_samples{0};
+  int counterfactual_train_samples{0};
+  int counterfactual_holdout_samples{0};
+  bool counterfactual_temporal_holdout_required{false};
   int window_fill_count{0};
   int window_cost_filtered_signals{0};
   double trend_factor_ic{0.0};

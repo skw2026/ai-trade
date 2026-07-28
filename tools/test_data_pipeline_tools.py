@@ -72,6 +72,25 @@ class FetchArchiveTest(unittest.TestCase):
 
 
 class StreamAndGapToolsTest(unittest.TestCase):
+    def test_open_candle_is_excluded_by_exchange_server_time(self):
+        interval_minutes = 5
+        server_time_ms = 1_700_000_600_000
+        candles = [
+            STREAM.Candle(1_700_000_000_000, 1, 1, 1, 1, 1),
+            STREAM.Candle(1_700_000_300_000, 1, 1, 1, 1, 1),
+            STREAM.Candle(1_700_000_600_000, 1, 1, 1, 1, 1),
+        ]
+        closed, dropped = STREAM.keep_closed_candles(
+            candles,
+            interval_minutes=interval_minutes,
+            server_time_ms=server_time_ms,
+        )
+        self.assertEqual(
+            [item.timestamp_ms for item in closed],
+            [1_700_000_000_000, 1_700_000_300_000],
+        )
+        self.assertEqual(dropped, 1)
+
     def test_merge_and_gap_detection(self):
         existing = {
             1000: STREAM.Candle(1000, 1, 1, 1, 1, 1),
@@ -92,6 +111,26 @@ class StreamAndGapToolsTest(unittest.TestCase):
 
 
 class ReplayValidationToolsTest(unittest.TestCase):
+    @staticmethod
+    def _complete_replay_summaries(runs):
+        for run in runs:
+            summary = run["assess_summary"]
+            fill_count = int(summary.get("funnel_fills_runtime_count") or 0)
+            net_per_fill = float(summary.get("realized_net_per_fill") or 0.0)
+            summary.update(
+                {
+                    "execution_attribution_fill_count": fill_count,
+                    "execution_attribution_quality_fill_count": fill_count,
+                    "replay_terminal_settlement_done_count": 1,
+                    "replay_terminal_settlement_failed_count": 0,
+                    "replay_terminal_realized_net_usd": (
+                        net_per_fill * fill_count
+                    ),
+                    "replay_terminal_fee_usd": 0.0,
+                    "replay_terminal_funding_paid_usd": 0.0,
+                }
+            )
+
     def build_trend_rows(self):
         thresholds = REPLAY.RegimeThresholds(
             trend_abs_ema_diff=0.001,
@@ -288,12 +327,18 @@ class ReplayValidationToolsTest(unittest.TestCase):
             rows = [
                 REPLAY.FeatureRow(
                     timestamp=1000,
+                    open=101.0,
+                    high=102.0,
+                    low=100.5,
                     close=101.5,
                     volume=12.0,
                     features={name: 0.0 for name in REPLAY.FEATURE_COLUMNS},
                 ),
                 REPLAY.FeatureRow(
                     timestamp=4000,
+                    open=101.5,
+                    high=103.0,
+                    low=101.0,
                     close=102.0,
                     volume=9.0,
                     features={name: 0.0 for name in REPLAY.FEATURE_COLUMNS},
@@ -309,10 +354,16 @@ class ReplayValidationToolsTest(unittest.TestCase):
             content = output.read_text(encoding="utf-8").strip().splitlines()
             self.assertEqual(
                 content[0],
-                "timestamp,symbol,price,volume,interval_ms,funding_rate_per_interval",
+                "timestamp,symbol,open,high,low,price,volume,interval_ms,funding_rate_per_interval",
             )
-            self.assertEqual(content[1], "1000,BTCUSDT,101.5000000000,12.0000000000,3000,")
-            self.assertEqual(content[2], "4000,BTCUSDT,102.0000000000,9.0000000000,3000,")
+            self.assertEqual(
+                content[1],
+                "1000,BTCUSDT,101.0000000000,102.0000000000,100.5000000000,101.5000000000,12.0000000000,3000,",
+            )
+            self.assertEqual(
+                content[2],
+                "4000,BTCUSDT,101.5000000000,103.0000000000,101.0000000000,102.0000000000,9.0000000000,3000,",
+            )
 
     def test_aggregate_run_summaries_reports_pass_with_actions(self):
         runs = [
@@ -345,6 +396,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 }
             },
         ]
+        self._complete_replay_summaries(runs)
         summary, validation = REPLAY.aggregate_run_summaries(
             runs,
             min_execution_active_runs=1,
@@ -357,7 +409,8 @@ class ReplayValidationToolsTest(unittest.TestCase):
         self.assertEqual(summary["execution_active_runs"], 2)
         self.assertEqual(summary["execution_pass_runs"], 2)
         self.assertEqual(summary["total_fills"], 5)
-        self.assertAlmostEqual(summary["mean_realized_net_per_fill"], -0.001)
+        self.assertAlmostEqual(summary["mean_realized_net_per_fill"], -0.0012)
+        self.assertEqual(summary["aggregation_weight"], "fill_count")
         self.assertEqual(summary["zero_realized_net_with_fills_runs"], 1)
         self.assertEqual(summary["nonzero_realized_net_with_fills_runs"], 1)
         self.assertEqual(validation["status"], "pass_with_actions")
@@ -390,6 +443,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 }
             )
 
+        self._complete_replay_summaries(runs)
         summary, validation = REPLAY.aggregate_run_summaries(
             runs,
             min_execution_active_runs=1,
@@ -426,6 +480,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 }
             )
 
+        self._complete_replay_summaries(runs)
         summary, validation = REPLAY.aggregate_run_summaries(
             runs,
             min_execution_active_runs=1,
@@ -464,6 +519,7 @@ class ReplayValidationToolsTest(unittest.TestCase):
                 }
             }
         ]
+        self._complete_replay_summaries(runs)
         _, validation = REPLAY.aggregate_run_summaries(
             runs,
             min_execution_active_runs=1,
@@ -715,6 +771,22 @@ class FeatureAndBacktestTest(unittest.TestCase):
         self.assertAlmostEqual(deadband, 0.075)
         self.assertTrue(warnings)
         self.assertIn("rebalance_deadband >= max_leverage", warnings[0])
+
+    def test_next_bar_returns_do_not_reuse_overlapping_forward_label(self):
+        ret_1 = np.asarray([0.0, 0.01, -0.02, 0.03], dtype=np.float64)
+        actual = BACKTEST.build_next_bar_returns(ret_1)
+        np.testing.assert_allclose(actual[:3], [0.01, -0.02, 0.03])
+        self.assertTrue(np.isnan(actual[-1]))
+
+    def test_walkforward_time_axis_requires_exact_closed_bar_interval(self):
+        timestamp = np.asarray([0, 300000, 600000], dtype=np.int64)
+        quality = BACKTEST.validate_time_axis(timestamp, interval_minutes=5)
+        self.assertTrue(quality["pass"])
+        with self.assertRaises(ValueError):
+            BACKTEST.validate_time_axis(
+                np.asarray([0, 300000, 300000, 900000], dtype=np.int64),
+                interval_minutes=5,
+            )
 
     def test_feature_builder_and_backtest_split(self):
         with tempfile.TemporaryDirectory() as td:

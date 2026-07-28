@@ -1,0 +1,151 @@
+{
+  "schema_version": "closed_loop_contract_v1",
+  "trust_anchors": {
+    "feature_parity_fixture": {
+      "schema_version": "feature_parity_fixture_contract_v1",
+      "bars_fixture": "tools/fixtures/feature_parity_bars_v1.csv",
+      "bars_fixture_sha256": "ceb2370a672b1ad2ae500168e2f0404bbb743163323ad4c8717dbfd6dc0207e6",
+      "expected_fixture": "tools/fixtures/feature_parity_expected_v1.tsv",
+      "expected_fixture_sha256": "18349c8a64c9683a912dc316d55e79032f7ede1c3fce9d2f9924ed81d563b817"
+    }
+  },
+  "actions": {
+    "data": {
+      "required_steps": [
+        "data_pipeline",
+        "research_domain_split",
+        "feature_parity",
+        "data_quality",
+        "replay_validation",
+        "strategy_diagnose",
+        "alpha_mechanism_probe"
+      ],
+      "required_artifacts": [
+        "step_status",
+        "data_quality_report",
+        "walkforward_report",
+        "feature_store",
+        "research_domain_split_report",
+        "feature_parity_report",
+        "research_selection_feature_store",
+        "research_holdout_feature_store",
+        "selection_candidate_manifest",
+        "replay_validation_report",
+        "replay_optimization_report",
+        "replay_validation_feature_build_report",
+        "replay_validation_command_log",
+        "strategy_diagnose_report",
+        "alpha_mechanism_probe_report",
+        "alpha_candidate_manifest"
+      ]
+    },
+    "train": {
+      "required_steps": [
+        "baseline_freeze",
+        "training_data",
+        "research_domain_split",
+        "feature_parity",
+        "data_quality",
+        "miner",
+        "integrator",
+        "replay_candidate_config",
+        "replay_validation",
+        "strategy_diagnose",
+        "alpha_mechanism_probe",
+        "model_registry"
+      ],
+      "required_artifacts": [
+        "step_status",
+        "baseline_report",
+        "data_quality_report",
+        "walkforward_report",
+        "feature_store",
+        "research_domain_split_report",
+        "feature_parity_report",
+        "research_selection_feature_store",
+        "research_holdout_feature_store",
+        "miner_report",
+        "integrator_report",
+        "integrator_model",
+        "replay_candidate_config",
+        "selection_candidate_manifest",
+        "replay_validation_report",
+        "replay_optimization_report",
+        "replay_validation_feature_build_report",
+        "replay_validation_command_log",
+        "strategy_diagnose_report",
+        "alpha_mechanism_probe_report",
+        "alpha_candidate_manifest",
+        "model_registry_entry",
+        "strategy_candidate_manifest"
+      ]
+    },
+    "full": {
+      "required_steps": [
+        "baseline_freeze",
+        "training_data",
+        "research_domain_split",
+        "feature_parity",
+        "data_quality",
+        "miner",
+        "integrator",
+        "replay_candidate_config",
+        "replay_validation",
+        "strategy_diagnose",
+        "alpha_mechanism_probe",
+        "model_registry",
+        "candidate_restart",
+        "s5_learning_switches",
+        "runtime_assess",
+        "s5_learning_activity",
+        "mechanism_audit"
+      ],
+      "required_artifacts": [
+        "step_status",
+        "baseline_report",
+        "data_quality_report",
+        "walkforward_report",
+        "feature_store",
+        "research_domain_split_report",
+        "feature_parity_report",
+        "research_selection_feature_store",
+        "research_holdout_feature_store",
+        "miner_report",
+        "integrator_report",
+        "integrator_model",
+        "replay_candidate_config",
+        "selection_candidate_manifest",
+        "replay_validation_report",
+        "replay_optimization_report",
+        "replay_validation_feature_build_report",
+        "replay_validation_command_log",
+        "strategy_diagnose_report",
+        "alpha_mechanism_probe_report",
+        "alpha_candidate_manifest",
+        "model_registry_entry",
+        "strategy_candidate_manifest",
+        "activation_transaction",
+        "activation_decision",
+        "runtime_log",
+        "runtime_assess_report",
+        "trade_ledger_report",
+        "closed_loop_mechanism_report"
+      ]
+    },
+    "assess": {
+      "required_steps": [
+        "s5_learning_switches",
+        "runtime_assess",
+        "s5_learning_activity",
+        "mechanism_audit"
+      ],
+      "required_artifacts": [
+        "step_status",
+        "runtime_log",
+        "runtime_assess_report",
+        "trade_ledger_report",
+        "closed_loop_mechanism_report"
+      ]
+    }
+  }
+}

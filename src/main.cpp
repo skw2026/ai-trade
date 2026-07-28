@@ -1,4 +1,9 @@
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -8,6 +13,7 @@
 #include "core/config.h"
 #include "core/log.h"
 #include "research/miner.h"
+#include "research/online_feature_engine.h"
 
 namespace {
 
@@ -15,6 +21,7 @@ namespace {
 struct RuntimeOptions {
   std::string config_path{"config/default.yaml"};
   std::string exchange_override;
+  std::string data_path_override;
   std::string replay_market_data_path;
   std::string replay_price_column;
   std::string replay_volume_column;
@@ -34,6 +41,13 @@ struct RuntimeOptions {
   std::optional<int> miner_generations;
   std::optional<int> miner_population;
   std::optional<int> miner_elite;
+  bool run_feature_parity{false};
+  std::string feature_parity_bars_path{
+      "tools/fixtures/feature_parity_bars_v1.csv"};
+  std::string feature_parity_expected_path{
+      "tools/fixtures/feature_parity_expected_v1.tsv"};
+  std::string feature_parity_output_path{
+      "./data/reports/feature_parity_report.json"};
   bool check_startup{false};
 };
 
@@ -95,6 +109,7 @@ void ParseOptionalIntArg(const std::string& raw_value,
  * 支持：
  * - `--config=...`
  * - `--exchange=...`
+ * - `--data_path=...`
  * - `--replay_market_data=...`
  * - `--replay_price_column=...`
  * - `--replay_volume_column=...`
@@ -111,6 +126,8 @@ void ParseOptionalIntArg(const std::string& raw_value,
  * - `--run_miner --miner_csv=... [--miner_output=...] [--miner_top_k=...]`
  *               [--miner_generations=...] [--miner_population=...]
  *               [--miner_elite=...]
+ * - `--run_feature_parity --feature_parity_bars=...`
+ *   `--feature_parity_expected=... --feature_parity_output=...`
  */
 RuntimeOptions ParseOptions(int argc, char** argv) {
   RuntimeOptions options;
@@ -122,6 +139,16 @@ RuntimeOptions ParseOptions(int argc, char** argv) {
     }
     if (arg.rfind("--exchange=", 0) == 0) {
       options.exchange_override = arg.substr(std::string("--exchange=").size());
+      continue;
+    }
+    if (arg.rfind("--data_path=", 0) == 0) {
+      options.data_path_override =
+          arg.substr(std::string("--data_path=").size());
+      continue;
+    }
+    if (arg == "--data_path" && i + 1 < argc) {
+      ++i;
+      options.data_path_override = argv[i];
       continue;
     }
     if (arg.rfind("--replay_market_data=", 0) == 0) {
@@ -229,6 +256,25 @@ RuntimeOptions ParseOptions(int argc, char** argv) {
       options.run_miner = true;
       continue;
     }
+    if (arg == "--run_feature_parity" || arg == "--run-feature-parity") {
+      options.run_feature_parity = true;
+      continue;
+    }
+    if (arg.rfind("--feature_parity_bars=", 0) == 0) {
+      options.feature_parity_bars_path =
+          arg.substr(std::string("--feature_parity_bars=").size());
+      continue;
+    }
+    if (arg.rfind("--feature_parity_expected=", 0) == 0) {
+      options.feature_parity_expected_path =
+          arg.substr(std::string("--feature_parity_expected=").size());
+      continue;
+    }
+    if (arg.rfind("--feature_parity_output=", 0) == 0) {
+      options.feature_parity_output_path =
+          arg.substr(std::string("--feature_parity_output=").size());
+      continue;
+    }
     if (arg.rfind("--miner_csv=", 0) == 0) {
       options.miner_csv_path = arg.substr(std::string("--miner_csv=").size());
       continue;
@@ -305,6 +351,9 @@ void ApplyRuntimeOverrides(const RuntimeOptions& options,
   }
   if (!options.exchange_override.empty()) {
     config->exchange = options.exchange_override;
+  }
+  if (!options.data_path_override.empty()) {
+    config->data_path = options.data_path_override;
   }
   if (!options.replay_market_data_path.empty()) {
     config->bybit.replay_market_data_path = options.replay_market_data_path;
@@ -405,6 +454,216 @@ int RunOfflineMiner(const RuntimeOptions& options) {
   return 0;
 }
 
+struct FeatureParityBar {
+  double open{0.0};
+  double high{0.0};
+  double low{0.0};
+  double close{0.0};
+  double volume{0.0};
+};
+
+struct FeatureParityExpectation {
+  std::size_t sample_count{0};
+  std::string feature;
+  std::string expression;
+  double expected{0.0};
+  double tolerance{0.0};
+};
+
+std::vector<std::string> SplitLine(const std::string& line, char delimiter) {
+  std::vector<std::string> fields;
+  std::stringstream stream(line);
+  std::string field;
+  while (std::getline(stream, field, delimiter)) {
+    fields.push_back(field);
+  }
+  return fields;
+}
+
+std::string EscapeJson(const std::string& value) {
+  std::string escaped;
+  escaped.reserve(value.size());
+  for (const char ch : value) {
+    if (ch == '\\' || ch == '"') {
+      escaped.push_back('\\');
+    }
+    escaped.push_back(ch);
+  }
+  return escaped;
+}
+
+bool LoadFeatureParityBars(const std::string& path,
+                           std::vector<FeatureParityBar>* out,
+                           std::string* error) {
+  std::ifstream input(path);
+  if (!input.is_open()) {
+    *error = "cannot open bars fixture: " + path;
+    return false;
+  }
+  std::string line;
+  std::getline(input, line);
+  while (std::getline(input, line)) {
+    const auto fields = SplitLine(line, ',');
+    if (fields.size() != 6U) {
+      *error = "invalid bars fixture row";
+      return false;
+    }
+    try {
+      out->push_back({std::stod(fields[1]),
+                      std::stod(fields[2]),
+                      std::stod(fields[3]),
+                      std::stod(fields[4]),
+                      std::stod(fields[5])});
+    } catch (...) {
+      *error = "invalid numeric value in bars fixture";
+      return false;
+    }
+  }
+  if (out->empty()) {
+    *error = "bars fixture is empty";
+    return false;
+  }
+  return true;
+}
+
+bool LoadFeatureParityExpectations(
+    const std::string& path,
+    std::vector<FeatureParityExpectation>* out,
+    std::string* error) {
+  std::ifstream input(path);
+  if (!input.is_open()) {
+    *error = "cannot open expected fixture: " + path;
+    return false;
+  }
+  std::string line;
+  std::getline(input, line);
+  while (std::getline(input, line)) {
+    const auto fields = SplitLine(line, '\t');
+    if (fields.size() != 5U) {
+      *error = "invalid expected fixture row";
+      return false;
+    }
+    try {
+      out->push_back(
+          {static_cast<std::size_t>(std::stoull(fields[0])),
+           fields[1],
+           fields[2],
+           std::stod(fields[3]),
+           std::stod(fields[4])});
+    } catch (...) {
+      *error = "invalid numeric value in expected fixture";
+      return false;
+    }
+  }
+  if (out->empty()) {
+    *error = "expected fixture is empty";
+    return false;
+  }
+  if (!std::is_sorted(
+          out->begin(), out->end(),
+          [](const auto& lhs, const auto& rhs) {
+            return lhs.sample_count < rhs.sample_count;
+          })) {
+    *error = "expected fixture checkpoints are not sorted";
+    return false;
+  }
+  return true;
+}
+
+int RunFeatureParity(const RuntimeOptions& options) {
+  std::vector<FeatureParityBar> bars;
+  std::vector<FeatureParityExpectation> expectations;
+  std::string load_error;
+  if (!LoadFeatureParityBars(options.feature_parity_bars_path, &bars,
+                             &load_error) ||
+      !LoadFeatureParityExpectations(options.feature_parity_expected_path,
+                                     &expectations, &load_error)) {
+    ai_trade::LogError("FEATURE_PARITY_LOAD_FAILED: " + load_error);
+    return 1;
+  }
+
+  ai_trade::research::OnlineFeatureEngine engine(bars.size());
+  std::vector<std::string> failures;
+  std::size_t passed_count = 0;
+  double max_abs_error = 0.0;
+  std::size_t expectation_index = 0;
+  for (std::size_t bar_index = 0; bar_index < bars.size(); ++bar_index) {
+    const auto& bar = bars[bar_index];
+    engine.AddCompletedBar(
+        bar.open, bar.high, bar.low, bar.close, bar.volume);
+    const std::size_t sample_count = bar_index + 1;
+    while (expectation_index < expectations.size() &&
+           expectations[expectation_index].sample_count == sample_count) {
+      const auto& expectation = expectations[expectation_index];
+      const double actual = engine.Evaluate(expectation.expression);
+      const double error = std::abs(actual - expectation.expected);
+      if (std::isfinite(error)) {
+        max_abs_error = std::max(max_abs_error, error);
+      }
+      if (!std::isfinite(actual) || error > expectation.tolerance) {
+        std::ostringstream reason;
+        reason << sample_count << "/" << expectation.feature
+               << ": actual=" << std::setprecision(17) << actual
+               << ", expected=" << expectation.expected
+               << ", tolerance=" << expectation.tolerance;
+        failures.push_back(reason.str());
+      } else {
+        ++passed_count;
+      }
+      ++expectation_index;
+    }
+  }
+  if (expectation_index != expectations.size()) {
+    failures.push_back("one or more checkpoints exceed bars fixture");
+  }
+
+  const std::filesystem::path output_path(
+      options.feature_parity_output_path);
+  if (!output_path.parent_path().empty()) {
+    std::filesystem::create_directories(output_path.parent_path());
+  }
+  const auto temp_path = output_path.string() + ".tmp";
+  std::ofstream output(temp_path, std::ios::trunc);
+  if (!output.is_open()) {
+    ai_trade::LogError("FEATURE_PARITY_REPORT_WRITE_FAILED: " +
+                       output_path.string());
+    return 1;
+  }
+  output << "{\n"
+         << "  \"schema_version\": \"feature_parity_report_v1\",\n"
+         << "  \"status\": \"" << (failures.empty() ? "PASS" : "FAIL")
+         << "\",\n"
+         << "  \"engine\": \"cpp_online_feature_engine\",\n"
+         << "  \"golden_source\": \"python_integrator_train\",\n"
+         << "  \"bars_fixture\": \""
+         << EscapeJson(options.feature_parity_bars_path) << "\",\n"
+         << "  \"expected_fixture\": \""
+         << EscapeJson(options.feature_parity_expected_path) << "\",\n"
+         << "  \"check_count\": " << expectations.size() << ",\n"
+         << "  \"passed_count\": " << passed_count << ",\n"
+         << "  \"max_abs_error\": " << std::setprecision(17)
+         << max_abs_error << ",\n"
+         << "  \"failures\": [";
+  for (std::size_t index = 0; index < failures.size(); ++index) {
+    if (index > 0) {
+      output << ",";
+    }
+    output << "\n    \"" << EscapeJson(failures[index]) << "\"";
+  }
+  if (!failures.empty()) {
+    output << "\n  ";
+  }
+  output << "]\n}\n";
+  output.close();
+  std::filesystem::rename(temp_path, output_path);
+  ai_trade::LogInfo(
+      "FEATURE_PARITY_DONE: status=" +
+      std::string(failures.empty() ? "PASS" : "FAIL") +
+      ", checks=" + std::to_string(expectations.size()) +
+      ", output=" + output_path.string());
+  return failures.empty() ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -414,6 +673,9 @@ int main(int argc, char** argv) {
   const RuntimeOptions options = ParseOptions(argc, argv);
   if (options.run_miner) {
     return RunOfflineMiner(options);
+  }
+  if (options.run_feature_parity) {
+    return RunFeatureParity(options);
   }
   // 2) 加载 YAML 基础配置。
   ai_trade::AppConfig config;
@@ -427,7 +689,9 @@ int main(int argc, char** argv) {
   ApplyRuntimeOverrides(options, &config);
   ai_trade::LogInfo(
       "CONFIG_LOADED: path=" + options.config_path +
+      ", mode=" + config.mode +
       ", exchange=" + config.exchange +
+      ", data_path=" + config.data_path +
       ", regime={enabled=" + std::string(config.regime.enabled ? "true" : "false") +
       ", warmup_ticks=" + std::to_string(config.regime.warmup_ticks) +
       ", ewma_alpha=" + FormatDouble(config.regime.ewma_alpha) +

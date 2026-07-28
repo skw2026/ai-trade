@@ -219,6 +219,13 @@ def main() -> int:
 
     remaining_missing = detect_missing_timestamps(sorted(candles_by_ts.keys()), interval_ms)
     summary = {
+        "provider": "bybit",
+        "venue": "bybit",
+        "category": args.category,
+        "base_url": args.base_url.rstrip("/"),
+        "price_type": "trade_price",
+        "volume_unit": "base_asset",
+        "bar_semantics": "closed_ohlcv",
         "input": str(input_path),
         "output": str(output_path),
         "symbol": args.symbol.upper(),

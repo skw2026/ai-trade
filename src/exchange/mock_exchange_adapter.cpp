@@ -1,5 +1,6 @@
 #include "exchange/mock_exchange_adapter.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace ai_trade {
@@ -48,6 +49,8 @@ bool MockExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
   if (!connected_) {
     return false;
   }
+  pending_intent_by_client_id_.insert_or_assign(
+      intent.client_order_id, intent);
   // mock 里模拟部分成交：同一 client_order_id 拆成两笔 fill。
   const double first_qty = intent.qty * 0.6;
   const double second_qty = intent.qty - first_qty;
@@ -86,6 +89,7 @@ bool MockExchangeAdapter::CancelOrder(const std::string& client_order_id) {
     }
   }
   pending_fills_.swap(kept);
+  pending_intent_by_client_id_.erase(client_order_id);
   return true;
 }
 
@@ -99,6 +103,15 @@ bool MockExchangeAdapter::PollFill(FillEvent* out_fill) {
   // 成交回放同时推进“交易所视角”的远端仓位，用于对账测试。
   remote_position_qty_by_symbol_[out_fill->symbol] +=
       static_cast<double>(out_fill->direction) * out_fill->qty;
+  const bool has_remaining = std::any_of(
+      pending_fills_.begin(),
+      pending_fills_.end(),
+      [&](const FillEvent& fill) {
+        return fill.client_order_id == out_fill->client_order_id;
+      });
+  if (!has_remaining) {
+    pending_intent_by_client_id_.erase(out_fill->client_order_id);
+  }
   return true;
 }
 
@@ -180,11 +193,61 @@ bool MockExchangeAdapter::GetRemoteOpenOrderClientIds(
     return false;
   }
   out_client_order_ids->clear();
+  std::vector<RemoteOpenOrderSnapshot> orders;
+  if (!GetRemoteOpenOrders(&orders)) {
+    return false;
+  }
+  for (const auto& order : orders) {
+    out_client_order_ids->insert(order.client_order_id);
+  }
+  return true;
+}
+
+bool MockExchangeAdapter::GetRemoteOpenOrders(
+    std::vector<RemoteOpenOrderSnapshot>* out_orders) const {
+  if (!connected_ || out_orders == nullptr) {
+    return false;
+  }
+  out_orders->clear();
+  std::unordered_map<std::string, double> leaves_by_id;
   for (const auto& fill : pending_fills_) {
-    if (fill.client_order_id.empty()) {
+    leaves_by_id[fill.client_order_id] += fill.qty;
+  }
+  for (const auto& [client_order_id, leaves_qty] : leaves_by_id) {
+    const auto intent_it =
+        pending_intent_by_client_id_.find(client_order_id);
+    if (intent_it == pending_intent_by_client_id_.end()) {
       continue;
     }
-    out_client_order_ids->insert(fill.client_order_id);
+    const OrderIntent& intent = intent_it->second;
+    out_orders->push_back(RemoteOpenOrderSnapshot{
+        .client_order_id = client_order_id,
+        .exchange_order_id = client_order_id,
+        .symbol = intent.symbol,
+        .status = "New",
+        .order_type = "Market",
+        .time_in_force = "",
+        .direction = intent.direction,
+        .original_qty = intent.qty,
+        .leaves_qty = leaves_qty,
+        .filled_qty = std::max(0.0, intent.qty - leaves_qty),
+        .price = intent.price,
+        .trigger_price =
+            (intent.purpose == OrderPurpose::kSl ||
+             intent.purpose == OrderPurpose::kTp)
+                ? intent.price
+                : 0.0,
+        .trigger_direction =
+            intent.purpose == OrderPurpose::kSl
+                ? (intent.direction < 0 ? 2 : 1)
+                : (intent.purpose == OrderPurpose::kTp
+                       ? (intent.direction < 0 ? 1 : 2)
+                       : 0),
+        .reduce_only = intent.reduce_only,
+        .close_on_trigger =
+            intent.purpose == OrderPurpose::kSl ||
+            intent.purpose == OrderPurpose::kTp,
+    });
   }
   return true;
 }

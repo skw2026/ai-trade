@@ -113,6 +113,43 @@ def load_feature_rows(path: pathlib.Path) -> Dict[str, np.ndarray]:
     return out
 
 
+def validate_time_axis(
+    timestamp: np.ndarray,
+    interval_minutes: int,
+) -> Dict[str, int | bool]:
+    values = np.asarray(timestamp, dtype=np.int64)
+    if values.size < 2:
+        raise ValueError("feature store 时间轴至少需要 2 条记录")
+    deltas = np.diff(values)
+    expected_delta_ms = max(1, int(interval_minutes)) * 60 * 1000
+    duplicate_count = int(np.sum(deltas == 0))
+    non_monotonic_count = int(np.sum(deltas < 0))
+    interval_mismatch_count = int(np.sum(deltas != expected_delta_ms))
+    if duplicate_count or non_monotonic_count or interval_mismatch_count:
+        raise ValueError(
+            "feature store 时间轴不满足闭合 bar 契约: "
+            f"duplicates={duplicate_count}, non_monotonic={non_monotonic_count}, "
+            f"interval_mismatch={interval_mismatch_count}, "
+            f"expected_delta_ms={expected_delta_ms}"
+        )
+    return {
+        "pass": True,
+        "row_count": int(values.size),
+        "expected_delta_ms": expected_delta_ms,
+        "duplicate_count": duplicate_count,
+        "non_monotonic_count": non_monotonic_count,
+        "interval_mismatch_count": interval_mismatch_count,
+    }
+
+
+def build_next_bar_returns(ret_1: np.ndarray) -> np.ndarray:
+    values = np.asarray(ret_1, dtype=np.float64)
+    result = np.full(values.shape, np.nan, dtype=np.float64)
+    if values.size > 1:
+        result[:-1] = values[1:]
+    return result
+
+
 def fit_linear_ridge(x: np.ndarray, y: np.ndarray, l2: float) -> np.ndarray:
     if x.ndim != 2:
         raise ValueError("x must be 2D")
@@ -340,7 +377,9 @@ def run_split(
     min_hold_bars: int = 0,
     rebalance_deadband: float = 0.0,
     min_calibration_ic: float = 0.0,
+    label_horizon_bars: int = 0,
     regime_thresholds: RegimeThresholds | None = None,
+    execution_return_test: np.ndarray | None = None,
 ) -> SplitResult:
     valid_train = np.all(np.isfinite(x_train), axis=1) & np.isfinite(y_train)
     x_train_v = x_train[valid_train]
@@ -374,12 +413,19 @@ def run_split(
     if regime_thresholds is None:
         regime_thresholds = derive_regime_thresholds(
             {
-                "ema_diff": x_test[:, FEATURE_INDEX["ema_diff"]],
-                "mom_48": x_test[:, FEATURE_INDEX["mom_48"]],
-                "vol_12": x_test[:, FEATURE_INDEX["vol_12"]],
-                "range_pct": x_test[:, FEATURE_INDEX["range_pct"]],
+                "ema_diff": x_train_v[:, FEATURE_INDEX["ema_diff"]],
+                "mom_48": x_train_v[:, FEATURE_INDEX["mom_48"]],
+                "vol_12": x_train_v[:, FEATURE_INDEX["vol_12"]],
+                "range_pct": x_train_v[:, FEATURE_INDEX["range_pct"]],
             }
         )
+    realized_returns = (
+        y_test
+        if execution_return_test is None
+        else np.asarray(execution_return_test, dtype=np.float64)
+    )
+    if realized_returns.shape[0] != x_test.shape[0]:
+        raise ValueError("execution_return_test must align with x_test")
 
     def fit_predict(x_fit: np.ndarray, y_fit: np.ndarray, x_eval: np.ndarray) -> np.ndarray:
         if model == "linear":
@@ -405,9 +451,20 @@ def run_split(
         calib_rows = max(40, int(x_train_v.shape[0] * 0.2))
         min_fit_rows = max(40, x_train_v.shape[1] * 4)
         if x_train_v.shape[0] >= calib_rows + min_fit_rows:
-            fit_end = x_train_v.shape[0] - calib_rows
-            pred_calib = fit_predict(x_train_v[:fit_end], y_train_v[:fit_end], x_train_v[fit_end:])
-            calibration_ic = safe_corr(pred_calib, y_train_v[fit_end:])
+            validation_start = x_train_v.shape[0] - calib_rows
+            fit_end = validation_start - max(0, int(label_horizon_bars))
+            if fit_end < min_fit_rows:
+                fit_end = 0
+            if fit_end > 0:
+                pred_calib = fit_predict(
+                    x_train_v[:fit_end],
+                    y_train_v[:fit_end],
+                    x_train_v[validation_start:],
+                )
+                calibration_ic = safe_corr(
+                    pred_calib,
+                    y_train_v[validation_start:],
+                )
             if not math.isfinite(calibration_ic):
                 calibration_ic = 0.0
             if calibration_ic < min_calibration_ic:
@@ -429,13 +486,15 @@ def run_split(
     bucket_returns: Dict[str, List[float]] = {bucket: [] for bucket in REGIME_BUCKETS}
     bucket_turnovers: Dict[str, List[float]] = {bucket: [] for bucket in REGIME_BUCKETS}
     bucket_trade_flags: Dict[str, List[int]] = {bucket: [] for bucket in REGIME_BUCKETS}
+    last_bucket: str | None = None
 
     for i in range(x_test.shape[0]):
-        r = y_test[i]
+        r = realized_returns[i]
         p = pred[i]
         if not (math.isfinite(float(r)) and math.isfinite(float(p))):
             continue
         bucket = classify_regime_bucket(x_test[i], regime_thresholds)
+        last_bucket = bucket
         if abs(p) < signal_threshold:
             target = 0.0
         else:
@@ -457,7 +516,8 @@ def run_split(
             bars_since_last_trade = 0
         else:
             bars_since_last_trade += 1
-        pnl = position * float(r) - turnover * fees
+        # The decision at bar t owns the next-bar return t->t+1 exactly once.
+        pnl = target * float(r) - turnover * fees
         bar_returns.append(pnl)
         turnovers.append(turnover)
         bucket_returns[bucket].append(pnl)
@@ -490,6 +550,23 @@ def run_split(
                 interval_minutes=max(1, interval_minutes),
             ),
         )
+
+    if abs(position) > 1e-12 and last_bucket is not None:
+        close_turnover = abs(position)
+        close_cost = close_turnover * fees
+        bar_returns[-1] -= close_cost
+        turnovers[-1] += close_turnover
+        bucket_returns[last_bucket][-1] -= close_cost
+        bucket_turnovers[last_bucket][-1] += close_turnover
+        bucket_trade_flags[last_bucket][-1] = 1
+        trades += 1
+        position = 0.0
+
+    equity = 1.0
+    equity_curve = [equity]
+    for pnl in bar_returns:
+        equity *= max(1e-6, 1.0 + pnl)
+        equity_curve.append(equity)
 
     ret_arr = np.asarray(bar_returns, dtype=np.float64)
     mean = float(np.mean(ret_arr))
@@ -540,6 +617,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-hold-bars", type=int, default=3)
     parser.add_argument("--rebalance-deadband", type=float, default=0.10)
     parser.add_argument("--min-calibration-ic", type=float, default=0.0)
+    parser.add_argument(
+        "--label-horizon-bars",
+        type=int,
+        default=12,
+        help="forward_return label horizon; used to purge train/test boundaries",
+    )
+    parser.add_argument(
+        "--embargo-bars",
+        type=int,
+        default=-1,
+        help="train/test embargo; negative uses label-horizon-bars",
+    )
+    parser.add_argument("--min-traded-splits", type=int, default=1)
+    parser.add_argument("--min-total-trades", type=int, default=1)
+    parser.add_argument("--min-avg-split-return", type=float, default=0.0)
+    parser.add_argument("--min-traded-avg-split-return", type=float, default=0.0)
+    parser.add_argument("--max-worst-drawdown", type=float, default=1.0)
     return parser.parse_args()
 
 
@@ -552,13 +646,27 @@ def main() -> int:
     output_path = pathlib.Path(args.output)
     data = load_feature_rows(feature_path)
     n = int(data["timestamp"].size)
-    if n < max(args.train_window + args.test_window, 100):
+    try:
+        time_axis_quality = validate_time_axis(
+            data["timestamp"],
+            int(args.interval_minutes),
+        )
+    except ValueError as exc:
+        print(f"[ERROR] {exc}")
+        return 2
+    purge_bars = max(
+        int(args.label_horizon_bars),
+        int(args.embargo_bars)
+        if int(args.embargo_bars) >= 0
+        else int(args.label_horizon_bars),
+    )
+    if n < max(args.train_window + args.test_window + purge_bars, 100):
         print("[ERROR] not enough rows for walk-forward")
         return 2
 
     x = np.column_stack([data[col] for col in FEATURE_COLUMNS]).astype(np.float64)
     y = data["forward_return"].astype(np.float64)
-    regime_thresholds = derive_regime_thresholds(data)
+    next_bar_return = build_next_bar_returns(data["ret_1"])
 
     split_results: List[SplitResult] = []
     effective_max_leverage, effective_rebalance_deadband, config_warnings = normalize_execution_controls(
@@ -566,13 +674,16 @@ def main() -> int:
         float(args.rebalance_deadband),
     )
     split_index = 0
-    start = int(args.train_window)
+    start = int(args.train_window) + purge_bars
     test_window = max(20, int(args.test_window))
     step = max(10, int(args.step_window))
+    if step < test_window:
+        print("[ERROR] step-window must be >= test-window to avoid overlapping OOS returns")
+        return 2
 
     while start + test_window <= n:
-        train_start = start - int(args.train_window)
-        train_end = start
+        train_end = start - purge_bars
+        train_start = train_end - int(args.train_window)
         test_start = start
         test_end = start + test_window
 
@@ -582,6 +693,7 @@ def main() -> int:
             y_train=y[train_start:train_end],
             x_test=x[test_start:test_end],
             y_test=y[test_start:test_end],
+            execution_return_test=next_bar_return[test_start:test_end],
             train_start=train_start,
             train_end=train_end,
             test_start=test_start,
@@ -600,7 +712,7 @@ def main() -> int:
             min_hold_bars=max(0, int(args.min_hold_bars)),
             rebalance_deadband=effective_rebalance_deadband,
             min_calibration_ic=max(0.0, float(args.min_calibration_ic)),
-            regime_thresholds=regime_thresholds,
+            label_horizon_bars=max(0, int(args.label_horizon_bars)),
         )
         split_results.append(split)
         split_index += 1
@@ -635,9 +747,38 @@ def main() -> int:
             return 0.0
         return float(np.mean(np.asarray([getattr(item, attr) for item in items], dtype=np.float64)))
 
+    traded_avg_return = mean_metric(traded, "total_return")
+    economic_fail_reasons: List[str] = []
+    if traded_split_count < max(0, int(args.min_traded_splits)):
+        economic_fail_reasons.append(
+            f"traded_split_count={traded_split_count} < "
+            f"min_traded_splits={int(args.min_traded_splits)}"
+        )
+    if total_trades < max(0, int(args.min_total_trades)):
+        economic_fail_reasons.append(
+            f"total_trades={total_trades} < min_total_trades={int(args.min_total_trades)}"
+        )
+    if avg_ret < float(args.min_avg_split_return):
+        economic_fail_reasons.append(
+            f"avg_split_return={avg_ret:.8f} < "
+            f"min_avg_split_return={float(args.min_avg_split_return):.8f}"
+        )
+    if traded_avg_return < float(args.min_traded_avg_split_return):
+        economic_fail_reasons.append(
+            f"traded_avg_split_return={traded_avg_return:.8f} < "
+            "min_traded_avg_split_return="
+            f"{float(args.min_traded_avg_split_return):.8f}"
+        )
+    if worst_dd > float(args.max_worst_drawdown):
+        economic_fail_reasons.append(
+            f"worst_split_max_drawdown={worst_dd:.8f} > "
+            f"max_worst_drawdown={float(args.max_worst_drawdown):.8f}"
+        )
+
     report = {
         "features": str(feature_path),
         "rows": n,
+        "time_axis_quality": time_axis_quality,
         "config": {
             "train_window": int(args.train_window),
             "test_window": int(args.test_window),
@@ -658,12 +799,33 @@ def main() -> int:
             "rebalance_deadband": float(args.rebalance_deadband),
             "effective_rebalance_deadband": effective_rebalance_deadband,
             "min_calibration_ic": float(args.min_calibration_ic),
-            "regime_thresholds": {
-                "trend_abs_ema_diff": regime_thresholds.trend_abs_ema_diff,
-                "trend_abs_mom_48": regime_thresholds.trend_abs_mom_48,
-                "extreme_vol_12": regime_thresholds.extreme_vol_12,
-                "extreme_range_pct": regime_thresholds.extreme_range_pct,
-            },
+            "label_horizon_bars": int(args.label_horizon_bars),
+            "embargo_bars": purge_bars,
+            "min_traded_splits": int(args.min_traded_splits),
+            "min_total_trades": int(args.min_total_trades),
+            "min_avg_split_return": float(args.min_avg_split_return),
+            "min_traded_avg_split_return": float(
+                args.min_traded_avg_split_return
+            ),
+            "max_worst_drawdown": float(args.max_worst_drawdown),
+        },
+        "evaluation_contract": {
+            "model_target": "forward_return",
+            "execution_return": "next_bar_return",
+            "execution_return_counted_once": True,
+            "position_timing": "decision_at_t_applied_to_return_t_to_t_plus_1",
+            "purge_bars": purge_bars,
+            "regime_threshold_scope": "split_train_only",
+            "independent_live_model": True,
+            "authoritative_for_integrator_promotion": False,
+            "authority": "research_benchmark_only",
+            "terminal_position_closed_with_cost": True,
+            "oos_test_windows_non_overlapping": True,
+            "calibration_purge_bars": max(0, int(args.label_horizon_bars)),
+        },
+        "economic_gate": {
+            "pass": not economic_fail_reasons,
+            "fail_reasons": economic_fail_reasons,
         },
         "warnings": config_warnings,
         "summary": {
@@ -677,7 +839,7 @@ def main() -> int:
             "avg_split_sharpe": avg_sharpe,
             "enabled_avg_split_return": mean_metric(enabled, "total_return"),
             "enabled_avg_split_sharpe": mean_metric(enabled, "sharpe"),
-            "traded_avg_split_return": mean_metric(traded, "total_return"),
+            "traded_avg_split_return": traded_avg_return,
             "traded_avg_split_sharpe": mean_metric(traded, "sharpe"),
             "avg_calibration_ic": avg_calibration_ic,
             "worst_split_max_drawdown": worst_dd,
@@ -708,6 +870,10 @@ def main() -> int:
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[INFO] walk-forward report: {output_path}")
     print(json.dumps(report["summary"], ensure_ascii=False))
+    if economic_fail_reasons:
+        for reason in economic_fail_reasons:
+            print(f"[ERROR] walk-forward economic gate: {reason}")
+        return 3
     return 0
 
 

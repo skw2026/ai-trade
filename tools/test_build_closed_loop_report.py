@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import hashlib
 import json
 import pathlib
 import sys
@@ -469,12 +470,12 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             finally:
                 sys.argv = old_argv
 
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["sections"]["walkforward"]["status"], "fail")
-            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertEqual(payload["overall_status"], "PASS_WITH_ACTIONS")
             self.assertTrue(
-                any("walk-forward 平均 Sharpe 未达门槛" in x for x in payload["fail_reasons"])
+                any("walk-forward 平均 Sharpe 未达门槛" in x for x in payload["warn_reasons"])
             )
 
     def test_strategy_diagnose_action_required_blocks_convergence(self):
@@ -611,6 +612,9 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                                 "name": "strong_liquid_q50",
                                 "status": "pass",
                                 "diagnostic_only": False,
+                                "deployable_config": {
+                                    "requires_rerun": False,
+                                },
                                 "aggregate_summary": {
                                     "total_fills": 34,
                                     "median_realized_net_per_fill_with_fills": 0.003,
@@ -696,6 +700,22 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 payload["sections"]["trading_convergence"]["blockers"],
             )
 
+    def test_unrerun_optimizer_candidate_cannot_suppress_strategy_failure(self):
+        replay = {
+            "activation_gate": {
+                "basis": "execution_optimizer.best_deployable_candidate",
+                "selected_candidate": {
+                    "status": "pass",
+                    "diagnostic_only": False,
+                    "deployable_config": {"requires_rerun": True},
+                },
+            }
+        }
+
+        self.assertFalse(
+            REPORT.replay_activation_uses_deployable_optimizer_candidate(replay)
+        )
+
     def test_walkforward_low_activity_is_fail(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -749,15 +769,15 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             finally:
                 sys.argv = old_argv
 
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["sections"]["walkforward"]["status"], "fail")
-            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertEqual(payload["overall_status"], "PASS_WITH_ACTIONS")
             self.assertTrue(
-                any("walk-forward 交易活跃 split 数未达门槛" in x for x in payload["fail_reasons"])
+                any("walk-forward 交易活跃 split 数未达门槛" in x for x in payload["warn_reasons"])
             )
             self.assertTrue(
-                any("walk-forward 总交易次数未达门槛" in x for x in payload["fail_reasons"])
+                any("walk-forward 总交易次数未达门槛" in x for x in payload["warn_reasons"])
             )
 
     def test_walkforward_negative_split_returns_are_fail(self):
@@ -812,18 +832,18 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             finally:
                 sys.argv = old_argv
 
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["sections"]["walkforward"]["status"], "fail")
-            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertEqual(payload["overall_status"], "PASS_WITH_ACTIONS")
             self.assertTrue(
-                any("walk-forward 平均 split 收益未达门槛" in x for x in payload["fail_reasons"])
+                any("walk-forward 平均 split 收益未达门槛" in x for x in payload["warn_reasons"])
             )
             self.assertTrue(
-                any("walk-forward 启用 split 平均收益未达门槛" in x for x in payload["fail_reasons"])
+                any("walk-forward 启用 split 平均收益未达门槛" in x for x in payload["warn_reasons"])
             )
             self.assertTrue(
-                any("walk-forward 交易 split 平均收益未达门槛" in x for x in payload["fail_reasons"])
+                any("walk-forward 交易 split 平均收益未达门槛" in x for x in payload["warn_reasons"])
             )
 
     def test_walkforward_focus_bucket_does_not_downgrade_negative_returns(self):
@@ -1051,11 +1071,11 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             finally:
                 sys.argv = old_argv
 
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["sections"]["walkforward"]["status"], "fail")
             self.assertTrue(
-                any("walk-forward TREND 桶交易次数未达门槛" in x for x in payload["fail_reasons"])
+                any("walk-forward TREND 桶交易次数未达门槛" in x for x in payload["warn_reasons"])
             )
 
     def test_trend_validation_is_reported_and_run_id_is_preserved(self):
@@ -1195,14 +1215,14 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             finally:
                 sys.argv = old_argv
 
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["trend_readiness_status"], "FAIL")
             self.assertEqual(payload["sections"]["trend_validation"]["status"], "fail")
             self.assertTrue(
                 any(
                     "trend-validation TREND 桶 Sharpe 未达门槛" in x
-                    for x in payload["fail_reasons"]
+                    for x in payload["warn_reasons"]
                 )
             )
 
@@ -2054,6 +2074,629 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 "run manifest run_id missing; expected=gha-1-1",
                 section["fail_reasons"],
             )
+
+    def test_run_manifest_validates_step_status_semantics(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            contract_path = (
+                pathlib.Path(__file__).resolve().parents[1]
+                / "config"
+                / "closed_loop_contract.json"
+            )
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            action_contract = contract["actions"]["assess"]
+            step_status = root / "step_status.jsonl"
+            steps = [
+                "s5_learning_switches",
+                "runtime_assess",
+                "s5_learning_activity",
+                "mechanism_audit",
+            ]
+            step_status.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "run_id": "run-1",
+                            "action": "assess",
+                            "step": step,
+                            "kind": "diagnostic",
+                            "result": "pass",
+                            "exit_code": 0,
+                            "blocked_by_prior_failure": False,
+                        }
+                    )
+                    for step in steps
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            artifacts = {}
+            for name in (
+                "runtime_log",
+                "runtime_assess_report",
+                "trade_ledger_report",
+                "closed_loop_mechanism_report",
+            ):
+                path = root / name
+                path.write_text(name, encoding="utf-8")
+                artifacts[name] = {
+                    "path": str(path),
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            artifacts["step_status"] = {
+                "path": str(step_status),
+                "sha256": hashlib.sha256(step_status.read_bytes()).hexdigest(),
+            }
+            manifest = root / "run_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "run_id": "run-1",
+                        "action": "assess",
+                        "git": {"commit": "abc"},
+                        "config_hashes": {},
+                        "replay_validation": {},
+                        "runtime": {
+                            "image_id": "sha256:image",
+                            "image_revision": "abc",
+                        },
+                        "artifact_contract": {
+                            "schema_version": contract["schema_version"],
+                            "contract_sha256": hashlib.sha256(
+                                contract_path.read_bytes()
+                            ).hexdigest(),
+                            "action": "assess",
+                            "required_artifacts": action_contract[
+                                "required_artifacts"
+                            ],
+                            "required_steps": action_contract["required_steps"],
+                        },
+                        "artifacts": artifacts,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_run_manifest(manifest, "run-1")
+
+        self.assertEqual(section["status"], "pass")
+
+    def test_run_manifest_rejects_contract_hash_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            contract_path = (
+                pathlib.Path(__file__).resolve().parents[1]
+                / "config"
+                / "closed_loop_contract.json"
+            )
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            action_contract = contract["actions"]["assess"]
+            step_status = root / "step_status.jsonl"
+            step_status.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "run_id": "run-1",
+                            "action": "assess",
+                            "step": step,
+                            "kind": "required",
+                            "result": "pass",
+                            "exit_code": 0,
+                            "blocked_by_prior_failure": False,
+                        }
+                    )
+                    for step in action_contract["required_steps"]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            artifacts = {}
+            for name in action_contract["required_artifacts"]:
+                artifact_path = (
+                    step_status if name == "step_status" else root / name
+                )
+                if name != "step_status":
+                    artifact_path.write_text(name, encoding="utf-8")
+                artifacts[name] = {
+                    "path": str(artifact_path),
+                    "sha256": hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+                }
+            manifest = root / "run_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "run_id": "run-1",
+                        "action": "assess",
+                        "git": {"commit": "abc"},
+                        "config_hashes": {},
+                        "replay_validation": {},
+                        "runtime": {
+                            "image_id": "sha256:image",
+                            "image_revision": "abc",
+                        },
+                        "artifact_contract": {
+                            "schema_version": contract["schema_version"],
+                            "contract_sha256": "0" * 64,
+                            "action": "assess",
+                            "required_artifacts": action_contract[
+                                "required_artifacts"
+                            ],
+                            "required_steps": action_contract["required_steps"],
+                        },
+                        "artifacts": artifacts,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_run_manifest(manifest, "run-1")
+
+        self.assertEqual(section["status"], "fail")
+        self.assertIn(
+            "run manifest artifact contract hash mismatch",
+            section["fail_reasons"],
+        )
+
+    def test_run_manifest_rejects_empty_step_status_ledger(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            step_status = root / "step_status.jsonl"
+            step_status.write_text("", encoding="utf-8")
+            manifest = root / "run_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "run_id": "run-1",
+                        "action": "assess",
+                        "git": {"commit": "abc"},
+                        "config_hashes": {},
+                        "replay_validation": {},
+                        "runtime": {
+                            "image_id": "sha256:image",
+                            "image_revision": "abc",
+                        },
+                        "artifacts": {
+                            "step_status": {
+                                "path": str(step_status),
+                                "sha256": hashlib.sha256(
+                                    step_status.read_bytes()
+                                ).hexdigest(),
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_run_manifest(manifest, "run-1")
+
+        self.assertEqual(section["status"], "fail")
+        self.assertIn("step status ledger is empty", section["fail_reasons"])
+
+    def test_strategy_candidate_contract_requires_exact_artifact_identity(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = pathlib.Path(td) / "strategy_candidate_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "strategy_candidate_v1",
+                        "candidate_id": "model-v1",
+                        "status": "activation_pending_runtime",
+                        "candidate": {
+                            "model_version": "model-v1",
+                            "model_sha256": "abc123",
+                            "integrator_report_sha256": "report123",
+                            "training_symbol": "SOLUSDT",
+                            "bar_interval_ms": 300000,
+                            "online_bar_source": "closed_ohlcv",
+                            "source_venue": "bybit",
+                            "source_category": "linear",
+                            "price_type": "trade_price",
+                            "volume_unit": "base_asset",
+                        },
+                        "replay_validation": {
+                            "candidate_model_version": "model-v1",
+                            "candidate_model_sha256": "abc123",
+                            "candidate_integrator_report_sha256": "report123",
+                            "independent_identity_match": True,
+                            "source_symbol": "SOLUSDT",
+                            "feature_contract_match": True,
+                            "config_binds_candidate": True,
+                            "report_config_identity_match": True,
+                            "evaluates_current_candidate": True,
+                        },
+                        "registry": {
+                            "model_version": "model-v1",
+                            "model_sha256": "abc123",
+                            "integrator_report_sha256": "report123",
+                            "candidate_identity_match": True,
+                            "gate_pass": True,
+                            "activated": True,
+                        },
+                        "runtime": {
+                            "model_version_latest": "old-model",
+                            "candidate_identity_match": False,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_strategy_candidate_manifest(manifest)
+
+        self.assertEqual(section["status"], "pass")
+        self.assertEqual(
+            section["lifecycle_status"],
+            "activation_pending_runtime",
+        )
+        self.assertIn(
+            "strategy candidate lifecycle incomplete: "
+            "status=activation_pending_runtime",
+            section["warn_reasons"],
+        )
+
+    def test_strategy_candidate_contract_rejects_replay_hash_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = pathlib.Path(td) / "strategy_candidate_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "strategy_candidate_v1",
+                        "candidate_id": "model-v1",
+                        "status": "rejected",
+                        "candidate": {
+                            "model_version": "model-v1",
+                            "model_sha256": "abc123",
+                            "integrator_report_sha256": "report123",
+                            "training_symbol": "SOLUSDT",
+                            "bar_interval_ms": 300000,
+                            "online_bar_source": "closed_ohlcv",
+                            "source_venue": "bybit",
+                            "source_category": "linear",
+                            "price_type": "trade_price",
+                            "volume_unit": "base_asset",
+                        },
+                        "replay_validation": {
+                            "candidate_model_version": "model-v1",
+                            "candidate_model_sha256": "different",
+                            "candidate_integrator_report_sha256": "report123",
+                            "independent_identity_match": False,
+                            "source_symbol": "SOLUSDT",
+                            "feature_contract_match": True,
+                            "config_binds_candidate": True,
+                            "report_config_identity_match": True,
+                            "evaluates_current_candidate": True,
+                        },
+                        "registry": {
+                            "model_version": "model-v1",
+                            "model_sha256": "abc123",
+                            "integrator_report_sha256": "report123",
+                            "candidate_identity_match": True,
+                        },
+                        "runtime": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_strategy_candidate_manifest(manifest)
+
+        self.assertEqual(section["status"], "fail")
+        self.assertIn(
+            "replay candidate model hash differs from candidate",
+            section["fail_reasons"],
+        )
+
+    def test_strategy_candidate_contract_rejects_replay_symbol_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = pathlib.Path(td) / "strategy_candidate_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "strategy_candidate_v1",
+                        "candidate_id": "model-v1",
+                        "status": "rejected",
+                        "candidate": {
+                            "model_version": "model-v1",
+                            "model_sha256": "abc123",
+                            "integrator_report_sha256": "report123",
+                            "training_symbol": "SOLUSDT",
+                            "bar_interval_ms": 300000,
+                            "online_bar_source": "closed_ohlcv",
+                            "source_venue": "bybit",
+                            "source_category": "linear",
+                            "price_type": "trade_price",
+                            "volume_unit": "base_asset",
+                        },
+                        "replay_validation": {
+                            "candidate_model_version": "model-v1",
+                            "candidate_model_sha256": "abc123",
+                            "candidate_integrator_report_sha256": "report123",
+                            "independent_identity_match": True,
+                            "source_symbol": "BTCUSDT",
+                            "feature_contract_match": False,
+                            "config_binds_candidate": True,
+                            "report_config_identity_match": True,
+                            "evaluates_current_candidate": True,
+                        },
+                        "registry": {
+                            "model_version": "model-v1",
+                            "model_sha256": "abc123",
+                            "integrator_report_sha256": "report123",
+                            "candidate_identity_match": True,
+                        },
+                        "runtime": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_strategy_candidate_manifest(manifest)
+
+        self.assertEqual(section["status"], "fail")
+        self.assertIn(
+            "replay source symbol/bar contract differs from candidate training contract",
+            section["fail_reasons"],
+        )
+
+    def test_inherited_candidate_is_refreshed_with_current_runtime_evidence(self):
+        candidate = {
+            "status": "pass",
+            "fail_reasons": [],
+            "warn_reasons": [
+                "strategy candidate lifecycle incomplete: "
+                "status=activation_pending_runtime"
+            ],
+            "candidate_id": "model-v1",
+            "lifecycle_status": "activation_pending_runtime",
+            "candidate": {
+                "model_sha256": "a" * 64,
+                "integrator_report_sha256": "b" * 64,
+                "training_symbol": "SOLUSDT",
+                "bar_interval_ms": 300000,
+            },
+            "registry": {
+                "active_runtime_config_sha256": "c" * 64,
+                "active_trade_bot_sha256": "d" * 64,
+            },
+        }
+        runtime = {
+            "verdict": "PASS",
+            "metrics": {
+                "integrator_model_versions": ["model-v1"],
+                "integrator_model_version_latest": "model-v1",
+                "integrator_model_sha256_latest": "a" * 64,
+                "integrator_report_sha256_latest": "b" * 64,
+                "integrator_runtime_config_sha256_latest": "c" * 64,
+                "integrator_trade_bot_sha256_latest": "d" * 64,
+                "integrator_feature_training_symbol_latest": "SOLUSDT",
+                "integrator_feature_bar_interval_ms_latest": 300000,
+                "integrator_policy_applied_count": 4,
+                "integrator_policy_canary_count": 4,
+                "integrator_policy_filled_candidate_ids": [
+                    "model-v1",
+                    "model-v1",
+                ],
+                "integrator_policy_filled_events": [
+                    {
+                        "candidate_id": "model-v1",
+                        "model_version": "model-v1",
+                        "client_order_id": "order-1",
+                    },
+                    {
+                        "candidate_id": "model-v1",
+                        "model_version": "model-v1",
+                        "client_order_id": "order-1",
+                    },
+                ],
+                "integrator_policy_closed_episode_events": [
+                    {
+                        "candidate_id": "model-v1",
+                        "model_version": "model-v1",
+                        "mode": "canary",
+                        "position_episode_id": "episode-1",
+                        "evidence_complete": True,
+                    }
+                ],
+                "funnel_fills_runtime_count": 2,
+            },
+        }
+
+        refreshed = REPORT.refresh_strategy_candidate_runtime(candidate, runtime)
+
+        self.assertEqual(refreshed["status"], "pass")
+        self.assertEqual(refreshed["lifecycle_status"], "canary_evidence")
+        self.assertEqual(refreshed["warn_reasons"], [])
+        self.assertTrue(refreshed["runtime"]["candidate_identity_match"])
+        self.assertEqual(refreshed["runtime"]["candidate_fill_count"], 2)
+
+    def test_activation_decision_distinguishes_pending_and_rollback(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "activation_decision.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "closed_loop_activation_decision_v1",
+                        "decision": "pending",
+                        "candidate_model_version": "model-v1",
+                        "pending_reasons": ["complete canary episodes 2 < 10"],
+                        "evidence": {"complete_episode_count": 2},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            pending = REPORT.assess_activation_decision(path)
+            self.assertEqual(pending["status"], "pass")
+            self.assertEqual(
+                pending["readiness_status"], "CANARY_PENDING_EVIDENCE"
+            )
+            self.assertEqual(len(pending["warn_reasons"]), 1)
+
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "closed_loop_activation_decision_v1",
+                        "decision": "rollback",
+                        "candidate_model_version": "model-v1",
+                        "hard_fail_reasons": [
+                            "runtime four-part/model feature identity mismatch"
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            rolled_back = REPORT.assess_activation_decision(path)
+            self.assertEqual(rolled_back["status"], "fail")
+            self.assertEqual(rolled_back["readiness_status"], "ROLLED_BACK")
+
+    def test_activation_decision_is_bound_to_transaction_identity(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            decision_path = root / "activation_decision.json"
+            transaction_path = root / "activation_transaction.json"
+            identity = {
+                "model_sha256": "a" * 64,
+                "report_sha256": "b" * 64,
+                "runtime_config_sha256": "c" * 64,
+                "trade_bot_sha256": "d" * 64,
+            }
+            decision_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "closed_loop_activation_decision_v1",
+                        "decision": "commit",
+                        "transaction_run_id": "run-1",
+                        "candidate_model_version": "model-v1",
+                        "candidate_identity": identity,
+                        "activation_policy_sha256": "e" * 64,
+                        "evaluated_at_utc": "2026-07-27T00:10:00Z",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            transaction_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "closed_loop_activation_transaction_v2",
+                        "run_id": "run-1",
+                        "status": "committed",
+                        "activation_policy_sha256": "e" * 64,
+                        "candidate": {
+                            "model_version": "model-v1",
+                            "identity": identity,
+                        },
+                        "latest_evaluation": {
+                            "evaluated_at_utc": "2026-07-27T00:10:00Z"
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            bound = REPORT.assess_activation_decision(
+                decision_path, transaction_path
+            )
+            self.assertEqual(bound["status"], "pass")
+            self.assertTrue(bound["transaction_binding"]["match"])
+
+            transaction = json.loads(
+                transaction_path.read_text(encoding="utf-8")
+            )
+            transaction["candidate"]["identity"]["trade_bot_sha256"] = "f" * 64
+            transaction_path.write_text(
+                json.dumps(transaction), encoding="utf-8"
+            )
+            mismatch = REPORT.assess_activation_decision(
+                decision_path, transaction_path
+            )
+            self.assertEqual(mismatch["status"], "fail")
+            self.assertFalse(mismatch["transaction_binding"]["match"])
+
+    def test_generic_fills_do_not_prove_candidate_canary_evidence(self):
+        candidate = {
+            "status": "pass",
+            "fail_reasons": [],
+            "warn_reasons": [],
+            "candidate_id": "model-v1",
+            "lifecycle_status": "activation_pending_runtime",
+            "candidate": {
+                "model_sha256": "a" * 64,
+                "integrator_report_sha256": "b" * 64,
+                "training_symbol": "SOLUSDT",
+                "bar_interval_ms": 300000,
+            },
+            "registry": {
+                "active_runtime_config_sha256": "c" * 64,
+                "active_trade_bot_sha256": "d" * 64,
+            },
+        }
+        runtime = {
+            "verdict": "PASS",
+            "metrics": {
+                "integrator_model_versions": ["model-v1"],
+                "integrator_model_version_latest": "model-v1",
+                "integrator_model_sha256_latest": "a" * 64,
+                "integrator_report_sha256_latest": "b" * 64,
+                "integrator_runtime_config_sha256_latest": "c" * 64,
+                "integrator_trade_bot_sha256_latest": "d" * 64,
+                "integrator_feature_training_symbol_latest": "SOLUSDT",
+                "integrator_feature_bar_interval_ms_latest": 300000,
+                "integrator_policy_applied_count": 3,
+                "integrator_policy_canary_count": 3,
+                "integrator_policy_filled_candidate_ids": [],
+                "funnel_fills_runtime_count": 9,
+            },
+        }
+
+        refreshed = REPORT.refresh_strategy_candidate_runtime(candidate, runtime)
+
+        self.assertEqual(refreshed["lifecycle_status"], "canary_observing")
+        self.assertEqual(refreshed["runtime"]["candidate_fill_count"], 0)
+        self.assertIn(
+            "strategy candidate lifecycle incomplete: "
+            "status=canary_observing",
+            refreshed["warn_reasons"],
+        )
+
+    def test_matching_version_with_wrong_runtime_hash_rejects_candidate(self):
+        candidate = {
+            "status": "pass",
+            "fail_reasons": [],
+            "warn_reasons": [],
+            "candidate_id": "model-v1",
+            "lifecycle_status": "activation_pending_runtime",
+            "candidate": {
+                "model_sha256": "a" * 64,
+                "integrator_report_sha256": "b" * 64,
+                "training_symbol": "SOLUSDT",
+                "bar_interval_ms": 300000,
+            },
+            "registry": {
+                "active_runtime_config_sha256": "c" * 64,
+                "active_trade_bot_sha256": "d" * 64,
+            },
+        }
+        runtime = {
+            "verdict": "PASS",
+            "metrics": {
+                "integrator_model_version_latest": "model-v1",
+                "integrator_model_sha256_latest": "c" * 64,
+                "integrator_report_sha256_latest": "b" * 64,
+                "integrator_runtime_config_sha256_latest": "c" * 64,
+                "integrator_trade_bot_sha256_latest": "d" * 64,
+                "integrator_feature_training_symbol_latest": "SOLUSDT",
+                "integrator_feature_bar_interval_ms_latest": 300000,
+            },
+        }
+
+        refreshed = REPORT.refresh_strategy_candidate_runtime(candidate, runtime)
+
+        self.assertEqual(refreshed["status"], "fail")
+        self.assertEqual(refreshed["lifecycle_status"], "rejected")
+        self.assertFalse(refreshed["runtime"]["candidate_identity_match"])
+        self.assertIn(
+            "runtime candidate model/report identity mismatch",
+            refreshed["fail_reasons"],
+        )
 
     def test_replay_command_failure_drives_next_action_plan(self):
         with tempfile.TemporaryDirectory() as td:

@@ -58,6 +58,8 @@ class MockExchangeAdapter : public ExchangeAdapter {
   /// 返回 mock 远端活动订单ID集合（由 pending fill 队列推导）。
   bool GetRemoteOpenOrderClientIds(
       std::unordered_set<std::string>* out_client_order_ids) const override;
+  bool GetRemoteOpenOrders(
+      std::vector<RemoteOpenOrderSnapshot>* out_orders) const override;
   /// 返回 mock symbol 规则信息。
   bool GetSymbolInfo(const std::string& symbol,
                      SymbolInfo* out_info) const override;
@@ -75,6 +77,7 @@ class MockExchangeAdapter : public ExchangeAdapter {
   std::unordered_map<std::string, std::int64_t> last_market_ts_ms_by_symbol_;
   std::unordered_map<std::string, double> remote_position_qty_by_symbol_;
   std::deque<FillEvent> pending_fills_;
+  std::unordered_map<std::string, OrderIntent> pending_intent_by_client_id_;
 };
 
 }  // namespace ai_trade

@@ -11,8 +11,8 @@ permissions:
   packages: write
 
 concurrency:
-  group: cd-${{ github.ref }}
-  cancel-in-progress: true
+  group: production-ecs-cd
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -27,6 +27,9 @@ jobs:
       research_image_tag: ${{ steps.meta.outputs.research_image_tag }}
       web_image_uri: ${{ steps.meta.outputs.web_image_uri }}
       web_image_tag: ${{ steps.meta.outputs.web_image_tag }}
+      runtime_image_digest: ${{ steps.runtime_image.outputs.digest }}
+      research_image_digest: ${{ steps.research_image.outputs.digest }}
+      web_image_digest: ${{ steps.web_image.outputs.digest }}
       deploy_enabled: ${{ steps.deploy_gate.outputs.enabled }}
     steps:
       - name: Checkout
@@ -113,27 +116,34 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and Push Runtime Image
+        id: runtime_image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: true
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
           tags: |
             ${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}
             ${{ steps.meta.outputs.image_uri }}:latest
 
       - name: Build and Push Research Image
+        id: research_image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           target: research
           push: true
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
           tags: |
             ${{ steps.meta.outputs.research_image_uri }}:${{ steps.meta.outputs.research_image_tag }}
             ${{ steps.meta.outputs.research_image_uri }}:latest
 
       - name: Build and Push Web Image
+        id: web_image
         uses: docker/build-push-action@v6
         with:
           context: ./apps/ai_trade_web/backend
@@ -157,44 +167,159 @@ jobs:
   deploy-ecs:
     needs: build-test-push
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     if: ${{ needs.build-test-push.outputs.deploy_enabled == 'true' }}
+    env:
+      DEPLOY_RELEASE_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+      DEPLOY_GIT_SHA: ${{ github.sha }}
+      RUNTIME_IMAGE_REF: ${{ needs.build-test-push.outputs.image_uri }}@${{ needs.build-test-push.outputs.runtime_image_digest }}
+      RESEARCH_IMAGE_REF: ${{ needs.build-test-push.outputs.research_image_uri }}@${{ needs.build-test-push.outputs.research_image_digest }}
+      WEB_IMAGE_REF: ${{ needs.build-test-push.outputs.web_image_uri }}@${{ needs.build-test-push.outputs.web_image_digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Create Deployment Bundle
+        id: bundle
         run: |
           set -euo pipefail
-          rm -f deploy_bundle.tgz
-          tar -czf deploy_bundle.tgz \
-            docker-compose.prod.yml \
-            deploy/ecs-deploy.sh \
-            config \
-            observability \
-            ops \
-            tools
-          tar -tzf deploy_bundle.tgz > /tmp/deploy_bundle.list
-          grep -q '^docker-compose.prod.yml$' /tmp/deploy_bundle.list
-          grep -q '^deploy/ecs-deploy.sh$' /tmp/deploy_bundle.list
-          grep -q '^config/' /tmp/deploy_bundle.list
-          grep -q '^config/data_pipeline.yaml$' /tmp/deploy_bundle.list
-          grep -q '^observability/' /tmp/deploy_bundle.list
-          grep -q '^ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
-          grep -q '^tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
-          grep -q '^tools/fetch_bybit_kline.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/fetch_binance_archive.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/stream_market_ws.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/gap_fill_klines.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/build_feature_store.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/backtest_walkforward.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/run_data_pipeline.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/integrator_train.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/assess_run_log.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/model_registry.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/build_closed_loop_report.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/build_periodic_summary.py$' /tmp/deploy_bundle.list
-          grep -q '^tools/recycle_artifacts.sh$' /tmp/deploy_bundle.list
-          grep -q '^tools/docker_gc.sh$' /tmp/deploy_bundle.list
+          RELEASE_ARTIFACT_DIR=".release-artifacts/${DEPLOY_RELEASE_ID}"
+          PAYLOAD_DIR="${RELEASE_ARTIFACT_DIR}/payload"
+          BUNDLE_PATH="${RELEASE_ARTIFACT_DIR}/deploy_bundle.tgz"
+          for image_ref in \
+            "${RUNTIME_IMAGE_REF}" \
+            "${RESEARCH_IMAGE_REF}" \
+            "${WEB_IMAGE_REF}"
+          do
+            if [[ ! "${image_ref}" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
+              echo "image is not digest-pinned: ${image_ref}" >&2
+              exit 1
+            fi
+          done
+          rm -rf "${RELEASE_ARTIFACT_DIR}"
+          mkdir -p "${PAYLOAD_DIR}/deploy"
+          cp -f docker-compose.prod.yml "${PAYLOAD_DIR}/docker-compose.prod.yml"
+          cp -f deploy/ecs-deploy.sh "${PAYLOAD_DIR}/deploy/ecs-deploy.sh"
+          cp -a config observability ops tools "${PAYLOAD_DIR}/"
+          python3 - "${PAYLOAD_DIR}/docker-compose.prod.yml" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          content = path.read_text(encoding="utf-8")
+          replacements = {
+              "      - ${AI_TRADE_PROJECT_DIR:-.}/data:/app/data":
+                  "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
+              "      - ${AI_TRADE_PROJECT_DIR:-.}/data:/opt/ai-trade/data":
+                  "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/opt/ai-trade/data",
+              "      - ${AI_TRADE_PROJECT_DIR:-.}/config:/opt/ai-trade/config":
+                  "      - ${AI_TRADE_PROJECT_DIR:-.}/config:/opt/ai-trade/config:ro",
+          }
+          for old, new in replacements.items():
+              if content.count(old) != 1:
+                  raise SystemExit(
+                      f"release compose source contract changed: {old!r}"
+                  )
+              content = content.replace(old, new)
+
+          project_mount = "      - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade"
+          if content.count(project_mount) != 2:
+              raise SystemExit("release compose project mount contract changed")
+          content = content.replace(
+              project_mount,
+              project_mount
+              + ":ro\n"
+              + "      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/opt/ai-trade/data\n"
+              + "      - ${AI_TRADE_ENV_FILE_HOST:-/opt/ai-trade/.env.runtime}:"
+              + "/opt/ai-trade/.env.runtime:ro",
+          )
+          scheduler_image = (
+              "      AI_TRADE_RESEARCH_IMAGE: "
+              "${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}"
+          )
+          if content.count(scheduler_image) != 1:
+              raise SystemExit("release compose scheduler environment contract changed")
+          content = content.replace(
+              scheduler_image,
+              scheduler_image
+              + "\n"
+              + "      AI_TRADE_DATA_DIR: "
+              + "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}\n"
+              + "      AI_TRADE_ENV_FILE_HOST: "
+              + "${AI_TRADE_ENV_FILE_HOST:-/opt/ai-trade/.env.runtime}",
+          )
+          path.write_text(content, encoding="utf-8")
+          PY
+
+          (
+            cd "${PAYLOAD_DIR}"
+            find \
+              docker-compose.prod.yml \
+              deploy \
+              config \
+              observability \
+              ops \
+              tools \
+              -type f -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > .release-content.sha256
+          )
+          CONTENT_MANIFEST_SHA256="$(
+            sha256sum "${PAYLOAD_DIR}/.release-content.sha256" | awk '{print $1}'
+          )"
+          CONTENT_MANIFEST_SHA256="${CONTENT_MANIFEST_SHA256}" \
+          python3 - "${PAYLOAD_DIR}/release_manifest.json" <<'PY'
+          import datetime as dt
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          output = Path(sys.argv[1])
+          payload = {
+              "schema_version": "ai_trade_release_manifest_v1",
+              "release_id": os.environ["DEPLOY_RELEASE_ID"],
+              "git_sha": os.environ["DEPLOY_GIT_SHA"],
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "github_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "created_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
+                  "%Y-%m-%dT%H:%M:%SZ"
+              ),
+              "content_manifest": {
+                  "path": ".release-content.sha256",
+                  "sha256": os.environ["CONTENT_MANIFEST_SHA256"],
+              },
+              "images": {
+                  "runtime": os.environ["RUNTIME_IMAGE_REF"],
+                  "research": os.environ["RESEARCH_IMAGE_REF"],
+                  "web": os.environ["WEB_IMAGE_REF"],
+              },
+          }
+          output.write_text(
+              json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          tar -C "${PAYLOAD_DIR}" -czf "${BUNDLE_PATH}" .
+          BUNDLE_SHA256="$(sha256sum "${BUNDLE_PATH}" | awk '{print $1}')"
+          printf '%s  deploy_bundle.tgz\n' "${BUNDLE_SHA256}" \
+            > "${BUNDLE_PATH}.sha256"
+          echo "bundle_sha256=${BUNDLE_SHA256}" >> "${GITHUB_OUTPUT}"
+          echo "bundle_path=${BUNDLE_PATH}" >> "${GITHUB_OUTPUT}"
+
+          tar -tzf "${BUNDLE_PATH}" > /tmp/deploy_bundle.list
+          grep -q '^\./release_manifest.json$' /tmp/deploy_bundle.list
+          grep -q '^\./\.release-content.sha256$' /tmp/deploy_bundle.list
+          grep -q '^\./docker-compose.prod.yml$' /tmp/deploy_bundle.list
+          grep -q '^\./deploy/ecs-deploy.sh$' /tmp/deploy_bundle.list
+          grep -q '^\./config/data_pipeline.yaml$' /tmp/deploy_bundle.list
+          grep -q '^\./ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
+          grep -q '^\./tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
+          (
+            cd "${PAYLOAD_DIR}"
+            sha256sum -c .release-content.sha256
+          )
 
       - name: Upload Deployment Bundle
         uses: appleboy/scp-action@v0.1.7
@@ -204,15 +329,24 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          source: "deploy_bundle.tgz"
-          target: "/opt/ai-trade"
+          source: ".release-artifacts/${{ env.DEPLOY_RELEASE_ID }}/deploy_bundle.tgz,.release-artifacts/${{ env.DEPLOY_RELEASE_ID }}/deploy_bundle.tgz.sha256"
+          target: "/opt/ai-trade/incoming/${{ env.DEPLOY_RELEASE_ID }}"
+          strip_components: 2
 
       - name: Deploy to ECS
         uses: appleboy/ssh-action@v1.2.0
         env:
-          AI_TRADE_IMAGE: ${{ needs.build-test-push.outputs.image_uri }}:${{ needs.build-test-push.outputs.image_tag }}
-          AI_TRADE_RESEARCH_IMAGE: ${{ needs.build-test-push.outputs.research_image_uri }}:${{ needs.build-test-push.outputs.research_image_tag }}
-          AI_TRADE_WEB_IMAGE: ${{ needs.build-test-push.outputs.web_image_uri }}:${{ needs.build-test-push.outputs.web_image_tag }}
+          AI_TRADE_IMAGE: ${{ env.RUNTIME_IMAGE_REF }}
+          AI_TRADE_RESEARCH_IMAGE: ${{ env.RESEARCH_IMAGE_REF }}
+          AI_TRADE_WEB_IMAGE: ${{ env.WEB_IMAGE_REF }}
+          DEPLOY_RELEASE_ID: ${{ env.DEPLOY_RELEASE_ID }}
+          DEPLOY_GIT_SHA: ${{ env.DEPLOY_GIT_SHA }}
+          DEPLOY_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          DEPLOY_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          DEPLOY_BUNDLE_SHA256: ${{ steps.bundle.outputs.bundle_sha256 }}
+          DEPLOY_RELEASE_ROOT: /opt/ai-trade
+          DEPLOY_TARGET_RELEASE: /opt/ai-trade/releases/${{ env.DEPLOY_GIT_SHA }}
+          DEPLOY_CURRENT_LINK: /opt/ai-trade/current
           GHCR_USER: ${{ secrets.GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           DEPLOY_ENV_FILE: /opt/ai-trade/.env.runtime
@@ -224,36 +358,184 @@ jobs:
           CLOSED_LOOP_OUTPUT_ROOT: ${{ vars.CLOSED_LOOP_OUTPUT_ROOT || '/opt/ai-trade/data/reports/closed_loop' }}
           CLOSED_LOOP_STRICT_PASS: ${{ vars.CLOSED_LOOP_STRICT_PASS || 'true' }}
           CLOSED_LOOP_RUN_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}
-          DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'ai-trade watchdog scheduler' }}
-          GATE_DEFER_SERVICES: ${{ vars.GATE_DEFER_SERVICES || 'watchdog scheduler' }}
+          DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'ai-trade watchdog scheduler ai-trade-web' }}
+          GATE_DEFER_SERVICES: ${{ vars.GATE_DEFER_SERVICES || 'watchdog scheduler ai-trade-web' }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,AI_TRADE_WEB_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,CLOSED_LOOP_RUN_ID,DEPLOY_SERVICES,GATE_DEFER_SERVICES
+          command_timeout: 45m
+          envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,AI_TRADE_WEB_IMAGE,DEPLOY_RELEASE_ID,DEPLOY_GIT_SHA,DEPLOY_WORKFLOW_RUN_ID,DEPLOY_WORKFLOW_RUN_ATTEMPT,DEPLOY_BUNDLE_SHA256,DEPLOY_RELEASE_ROOT,DEPLOY_TARGET_RELEASE,DEPLOY_CURRENT_LINK,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,CLOSED_LOOP_RUN_ID,DEPLOY_SERVICES,GATE_DEFER_SERVICES
           script: |
             set -euo pipefail
-            DEPLOY_ROOT="/opt/ai-trade"
-            RELEASE_TMP="${DEPLOY_ROOT}/.release_unpack"
-            mkdir -p "${DEPLOY_ROOT}/data"
-            rm -rf "${RELEASE_TMP}"
-            mkdir -p "${RELEASE_TMP}"
+            DEPLOY_ROOT="${DEPLOY_RELEASE_ROOT}"
+            INCOMING_DIR="${DEPLOY_ROOT}/incoming/${DEPLOY_RELEASE_ID}"
+            BUNDLE_PATH="${INCOMING_DIR}/deploy_bundle.tgz"
+            BUNDLE_SHA_PATH="${INCOMING_DIR}/deploy_bundle.tgz.sha256"
+            RELEASE_TMP_ROOT="${DEPLOY_ROOT}/.release-unpack"
+            RELEASE_TMP="${RELEASE_TMP_ROOT}/${DEPLOY_RELEASE_ID}"
+            RELEASE_DIR="${DEPLOY_TARGET_RELEASE}"
+            cleanup_release_unpack() {
+              rm -rf "${RELEASE_TMP}" || true
+            }
+            trap cleanup_release_unpack EXIT
+            mkdir -p "${DEPLOY_ROOT}/data/models"
+            if ! command -v flock >/dev/null 2>&1; then
+              echo "[deploy] flock is required for deployment transaction isolation"
+              exit 1
+            fi
+            exec 9> "${DEPLOY_ROOT}/data/models/closed_loop_runner.lock"
+            if ! flock -n 9; then
+              echo "[deploy] deployment blocked: Closed Loop/CD transaction lock is held"
+              exit 1
+            fi
+            export CLOSED_LOOP_RUNNER_LOCK_HELD=true
+            ACTIVATION_STATE="${DEPLOY_ROOT}/data/models/activation_transaction.json"
+            if [[ -f "${ACTIVATION_STATE}" ]]; then
+              python3 - "${ACTIVATION_STATE}" <<'PY'
+            import json
+            import sys
+            from pathlib import Path
 
-            BUNDLE_PATH="$(find "${DEPLOY_ROOT}" -maxdepth 5 -type f -name deploy_bundle.tgz -printf '%T@ %p\n' | sort -nr | head -n1 | awk '{print $2}' || true)"
-            if [[ -z "${BUNDLE_PATH}" ]]; then
-              echo "[deploy] deploy bundle not found under ${DEPLOY_ROOT}"
+            path = Path(sys.argv[1])
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise SystemExit(f"activation transaction unreadable: {exc}")
+            status = str(payload.get("status") or "invalid")
+            if status not in {"committed", "rolled_back", "rolled_back_service_stopped"}:
+                raise SystemExit(
+                    "deployment blocked by nonterminal activation transaction: "
+                    f"status={status}, run_id={payload.get('run_id')}"
+                )
+            PY
+            fi
+
+            if [[ "${DEPLOY_RELEASE_ID}" != "${DEPLOY_WORKFLOW_RUN_ID}-${DEPLOY_WORKFLOW_RUN_ATTEMPT}-${DEPLOY_GIT_SHA}" ]]; then
+              echo "[deploy] release id does not bind workflow identity"
               exit 1
             fi
-            echo "[deploy] bundle=${BUNDLE_PATH}"
-            if [[ ! -s "${BUNDLE_PATH}" ]]; then
-              echo "[deploy] deploy bundle is empty: ${BUNDLE_PATH}"
+            if [[ ! "${DEPLOY_GIT_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "[deploy] invalid git sha: ${DEPLOY_GIT_SHA}"
               exit 1
             fi
-            tar -xzf "${BUNDLE_PATH}" -C "${RELEASE_TMP}"
+            if [[ "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/${DEPLOY_GIT_SHA}" ]]; then
+              echo "[deploy] target release path is not bound to git sha: ${RELEASE_DIR}"
+              exit 1
+            fi
+            for image_ref in \
+              "${AI_TRADE_IMAGE}" \
+              "${AI_TRADE_RESEARCH_IMAGE}" \
+              "${AI_TRADE_WEB_IMAGE}"
+            do
+              if [[ ! "${image_ref}" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
+                echo "[deploy] image is not digest-pinned: ${image_ref}"
+                exit 1
+              fi
+            done
+            if [[ ! -s "${BUNDLE_PATH}" || ! -s "${BUNDLE_SHA_PATH}" ]]; then
+              echo "[deploy] run-specific bundle or checksum missing: ${INCOMING_DIR}"
+              exit 1
+            fi
+            ACTUAL_BUNDLE_SHA256="$(sha256sum "${BUNDLE_PATH}" | awk '{print $1}')"
+            if [[ "${ACTUAL_BUNDLE_SHA256}" != "${DEPLOY_BUNDLE_SHA256}" ]]; then
+              echo "[deploy] uploaded bundle sha mismatch: expected=${DEPLOY_BUNDLE_SHA256} actual=${ACTUAL_BUNDLE_SHA256}"
+              exit 1
+            fi
+            (
+              cd "${INCOMING_DIR}"
+              sha256sum -c deploy_bundle.tgz.sha256
+            )
+
+            rm -rf "${RELEASE_TMP}"
+            mkdir -p "${RELEASE_TMP_ROOT}" "${RELEASE_TMP}"
+            python3 - "${BUNDLE_PATH}" "${RELEASE_TMP}" <<'PY'
+            import pathlib
+            import sys
+            import tarfile
+
+            bundle = pathlib.Path(sys.argv[1])
+            destination = pathlib.Path(sys.argv[2])
+            with tarfile.open(bundle, "r:gz") as archive:
+                for member in archive.getmembers():
+                    path = pathlib.PurePosixPath(member.name)
+                    if path.is_absolute() or ".." in path.parts:
+                        raise SystemExit(f"unsafe bundle path: {member.name}")
+                    if member.issym() or member.islnk():
+                        raise SystemExit(f"bundle links are forbidden: {member.name}")
+                    if not (member.isfile() or member.isdir()):
+                        raise SystemExit(f"unsupported bundle member: {member.name}")
+                archive.extractall(destination)
+            PY
+
+            RELEASE_TMP_VALUE="${RELEASE_TMP}" \
+            EXPECTED_RELEASE_ID="${DEPLOY_RELEASE_ID}" \
+            EXPECTED_GIT_SHA="${DEPLOY_GIT_SHA}" \
+            EXPECTED_RUNTIME_IMAGE="${AI_TRADE_IMAGE}" \
+            EXPECTED_RESEARCH_IMAGE="${AI_TRADE_RESEARCH_IMAGE}" \
+            EXPECTED_WEB_IMAGE="${AI_TRADE_WEB_IMAGE}" \
+            python3 - <<'PY'
+            import hashlib
+            import json
+            import os
+            from pathlib import Path
+
+            root = Path(os.environ["RELEASE_TMP_VALUE"])
+            manifest_path = root / "release_manifest.json"
+            content_path = root / ".release-content.sha256"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            failures = []
+            if manifest.get("schema_version") != "ai_trade_release_manifest_v1":
+                failures.append("schema_version")
+            if manifest.get("release_id") != os.environ["EXPECTED_RELEASE_ID"]:
+                failures.append("release_id")
+            if manifest.get("git_sha") != os.environ["EXPECTED_GIT_SHA"]:
+                failures.append("git_sha")
+            expected_images = {
+                "runtime": os.environ["EXPECTED_RUNTIME_IMAGE"],
+                "research": os.environ["EXPECTED_RESEARCH_IMAGE"],
+                "web": os.environ["EXPECTED_WEB_IMAGE"],
+            }
+            if manifest.get("images") != expected_images:
+                failures.append("images")
+            content_manifest = manifest.get("content_manifest", {})
+            if content_manifest.get("path") != ".release-content.sha256":
+                failures.append("content_manifest.path")
+            actual_content_sha = hashlib.sha256(content_path.read_bytes()).hexdigest()
+            if content_manifest.get("sha256") != actual_content_sha:
+                failures.append("content_manifest.sha256")
+
+            listed = set()
+            for raw in content_path.read_text(encoding="utf-8").splitlines():
+                digest, relative = raw.split(maxsplit=1)
+                relative = relative.lstrip("*").removeprefix("./")
+                if len(digest) != 64 or not relative:
+                    failures.append("content_manifest.entry")
+                    continue
+                listed.add(relative)
+            actual = {
+                path.relative_to(root).as_posix()
+                for path in root.rglob("*")
+                if path.is_file()
+                and path.name not in {"release_manifest.json", ".release-content.sha256"}
+            }
+            if listed != actual:
+                failures.append("content_manifest.file_set")
+            if failures:
+                raise SystemExit(
+                    "release manifest validation failed: " + ",".join(failures)
+                )
+            PY
+            (
+              cd "${RELEASE_TMP}"
+              sha256sum -c .release-content.sha256
+            )
 
             for required_file in \
+              "${RELEASE_TMP}/release_manifest.json" \
+              "${RELEASE_TMP}/.release-content.sha256" \
               "${RELEASE_TMP}/docker-compose.prod.yml" \
               "${RELEASE_TMP}/deploy/ecs-deploy.sh" \
               "${RELEASE_TMP}/config/default.yaml" \
@@ -290,29 +572,49 @@ jobs:
               fi
             done
 
-            cp -f "${RELEASE_TMP}/docker-compose.prod.yml" "${DEPLOY_ROOT}/docker-compose.prod.yml"
-            mkdir -p "${DEPLOY_ROOT}/deploy"
-            cp -f "${RELEASE_TMP}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
-            mkdir -p "${DEPLOY_ROOT}/config"
-            cp -a "${RELEASE_TMP}/config/." "${DEPLOY_ROOT}/config/"
-            rm -rf "${DEPLOY_ROOT}/ops"
-            cp -a "${RELEASE_TMP}/ops" "${DEPLOY_ROOT}/ops"
-            rm -rf "${DEPLOY_ROOT}/tools"
-            cp -a "${RELEASE_TMP}/tools" "${DEPLOY_ROOT}/tools"
-            rm -rf "${DEPLOY_ROOT}/observability"
-            cp -a "${RELEASE_TMP}/observability" "${DEPLOY_ROOT}/observability"
+            chmod +x "${RELEASE_TMP}/deploy/ecs-deploy.sh"
+            chmod +x "${RELEASE_TMP}/tools/closed_loop_runner.sh"
+            chmod +x "${RELEASE_TMP}/tools/recycle_artifacts.sh"
+            chmod +x "${RELEASE_TMP}/tools/docker_gc.sh"
+            chmod +x "${RELEASE_TMP}/ops/cron/install_closed_loop_cron.sh"
 
-            find "${DEPLOY_ROOT}" -maxdepth 5 -type f -name deploy_bundle.tgz -delete || true
-            rm -rf "${RELEASE_TMP}"
+            mkdir -p "${DEPLOY_ROOT}/releases"
+            if [[ -e "${RELEASE_DIR}" ]]; then
+              EXISTING_RELEASE_VALUE="${RELEASE_DIR}" \
+              CANDIDATE_RELEASE_VALUE="${RELEASE_TMP}" \
+              python3 - <<'PY'
+            import json
+            import os
+            from pathlib import Path
 
-            chmod +x "${DEPLOY_ROOT}/deploy/ecs-deploy.sh"
-            chmod +x "${DEPLOY_ROOT}/tools/closed_loop_runner.sh"
-            chmod +x "${DEPLOY_ROOT}/tools/recycle_artifacts.sh"
-            chmod +x "${DEPLOY_ROOT}/tools/docker_gc.sh"
-            chmod +x "${DEPLOY_ROOT}/ops/cron/install_closed_loop_cron.sh"
+            existing = Path(os.environ["EXISTING_RELEASE_VALUE"])
+            candidate = Path(os.environ["CANDIDATE_RELEASE_VALUE"])
+            existing_manifest = json.loads(
+                (existing / "release_manifest.json").read_text(encoding="utf-8")
+            )
+            candidate_manifest = json.loads(
+                (candidate / "release_manifest.json").read_text(encoding="utf-8")
+            )
+            for field in ("schema_version", "git_sha", "images", "content_manifest"):
+                if existing_manifest.get(field) != candidate_manifest.get(field):
+                    raise SystemExit(
+                        f"immutable release collision for {field}: {existing}"
+                    )
+            PY
+              (
+                cd "${RELEASE_DIR}"
+                sha256sum -c .release-content.sha256
+              )
+              rm -rf "${RELEASE_TMP}"
+            else
+              mv "${RELEASE_TMP}" "${RELEASE_DIR}"
+            fi
+
             echo "[deploy] closed-loop gate config: enforce=${CLOSED_LOOP_ENFORCE} action=${CLOSED_LOOP_ACTION} stage=${CLOSED_LOOP_STAGE} since=${CLOSED_LOOP_SINCE} strict=${CLOSED_LOOP_STRICT_PASS} min_runtime_status=${CLOSED_LOOP_MIN_RUNTIME_STATUS} run_id=${CLOSED_LOOP_RUN_ID}"
             echo "[deploy] deploy services: ${DEPLOY_SERVICES}, gate defer services: ${GATE_DEFER_SERVICES}"
-            "${DEPLOY_ROOT}/deploy/ecs-deploy.sh" "${DEPLOY_ROOT}/docker-compose.prod.yml" "${DEPLOY_ENV_FILE}"
+            "${RELEASE_DIR}/deploy/ecs-deploy.sh" "${RELEASE_DIR}/docker-compose.prod.yml" "${DEPLOY_ENV_FILE}"
+            rm -rf "${INCOMING_DIR}" ||
+              echo "[deploy] warning: failed to clean incoming release ${INCOMING_DIR}"
 
       - name: Download Deploy Gate Reports
         if: always()

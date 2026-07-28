@@ -17,6 +17,33 @@ bool HasExposure(double notional_usd) {
   return std::fabs(notional_usd) > kNotionalEpsilon;
 }
 
+bool HasReasonCode(const Signal& signal, const std::string& code) {
+  return std::find(signal.reason_codes.begin(), signal.reason_codes.end(), code) !=
+         signal.reason_codes.end();
+}
+
+bool IsIndependentCanaryBaseEligible(const Signal& signal,
+                                     bool signal_expired) {
+  if (signal_expired || HasExposure(signal.suggested_notional_usd) ||
+      HasExposure(signal.trend_notional_usd) ||
+      HasExposure(signal.defensive_notional_usd) ||
+      !HasReasonCode(signal, "STR_FLAT_SIGNAL")) {
+    return false;
+  }
+  static constexpr std::array<const char*, 7> kSuppressionReasons = {
+      "STR_WARMUP",
+      "STR_FEATURE_NOT_READY",
+      "STR_SIGNAL_EXPIRED",
+      "STR_RANGE_CONFIDENCE_BLOCK",
+      "STR_EXTREME_BLOCK",
+      "STR_BREAKOUT_BLOCK",
+      "STR_VOL_CAP_BLOCK",
+  };
+  return std::none_of(
+      kSuppressionReasons.begin(), kSuppressionReasons.end(),
+      [&signal](const char* code) { return HasReasonCode(signal, code); });
+}
+
 void PushReason(std::vector<std::string>* reasons, const std::string& code) {
   if (reasons == nullptr || code.empty()) {
     return;
@@ -109,13 +136,17 @@ bool TradeSystem::OnPrice(double price, bool trade_ok) {
 std::optional<OrderIntent> TradeSystem::OnMarket(
     const MarketEvent& event,
     bool trade_ok,
-    double symbol_inflight_notional_usd) {
-  return Evaluate(event, trade_ok, symbol_inflight_notional_usd).intent;
+    double symbol_inflight_notional_usd,
+    bool has_pending_symbol_net_orders) {
+  return Evaluate(event, trade_ok, symbol_inflight_notional_usd,
+                  has_pending_symbol_net_orders)
+      .intent;
 }
 
 MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
                                      bool trade_ok,
-                                     double symbol_inflight_notional_usd) {
+                                     double symbol_inflight_notional_usd,
+                                     bool has_pending_symbol_net_orders) {
   MarketDecision decision;
 
   // 1. Update Account Valuation
@@ -129,8 +160,10 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   if (decision.base_signal.symbol.empty()) {
     decision.base_signal.symbol = event.symbol;
   }
-  if (decision.base_signal.valid_until_ms > 0 &&
-      event.ts_ms > decision.base_signal.valid_until_ms) {
+  const bool base_signal_expired =
+      decision.base_signal.valid_until_ms > 0 &&
+      event.ts_ms > decision.base_signal.valid_until_ms;
+  if (base_signal_expired) {
     decision.base_signal.suggested_notional_usd = 0.0;
     decision.base_signal.trend_notional_usd = 0.0;
     decision.base_signal.defensive_notional_usd = 0.0;
@@ -149,15 +182,19 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   }
 
   // 4. Integrator / ML Overlay
-  decision.signal = decision.base_signal;
   integrator_shadow_.OnMarket(event);
   decision.shadow = integrator_shadow_.Infer(decision.base_signal, decision.regime);
-  
-  decision.integrator_policy_applied = ApplyIntegratorPolicy(
-      decision.shadow,
-      &decision.signal,
-      &decision.integrator_confidence,
-      &decision.integrator_policy_reason);
+  const bool settled_symbol_exposure_present =
+      HasExposure(account_.current_notional_usd(event.symbol));
+  const IntegratorPolicyDecision policy = EvaluateIntegratorPolicy(
+      integrator_config_, decision.shadow, decision.base_signal,
+      settled_symbol_exposure_present, has_pending_symbol_net_orders,
+      IsIndependentCanaryBaseEligible(decision.base_signal,
+                                      base_signal_expired));
+  decision.signal = policy.signal;
+  decision.integrator_policy_applied = policy.applied;
+  decision.integrator_confidence = policy.confidence;
+  decision.integrator_policy_reason = policy.reason;
   if (!decision.integrator_policy_reason.empty()) {
     PushReason(&decision.signal.reason_codes,
                "MODEL_" + decision.integrator_policy_reason);
@@ -272,138 +309,167 @@ bool TradeSystem::InitializeIntegratorShadow(std::string* out_error) {
   return integrator_shadow_.Initialize(strict, out_error);
 }
 
-bool TradeSystem::ApplyIntegratorPolicy(const ShadowInference& shadow,
-                                        Signal* inout_signal,
-                                        double* out_confidence,
-                                        std::string* out_reason) const {
-  if (!inout_signal) return false;
+bool TradeSystem::BootstrapIntegratorHistory(std::string* out_error) {
+  return integrator_shadow_.BootstrapHistory(out_error);
+}
 
-  auto set_out = [&](double conf, const std::string& reason) {
-    if (out_confidence) *out_confidence = conf;
-    if (out_reason) *out_reason = reason;
-  };
+void TradeSystem::OnIntegratorMarket(const MarketEvent& event) {
+  integrator_shadow_.OnMarket(event);
+}
 
-  set_out(0.0, "");
-
-  if (integrator_config_.mode == IntegratorMode::kOff) {
-    set_out(0.0, "mode_off");
-    return false;
-  }
-  if (integrator_config_.mode == IntegratorMode::kShadow) {
-    set_out(shadow.p_up - shadow.p_down, "mode_shadow_observe_only");
-    return false;
-  }
-  if (!shadow.enabled) {
-    set_out(0.0, "shadow_unavailable");
-    return false;
-  }
-  if (!HasExposure(inout_signal->suggested_notional_usd)) {
-    set_out(0.0, "flat_base_signal");
-    return false;
-  }
-
+IntegratorPolicyDecision EvaluateIntegratorPolicy(
+    const IntegratorConfig& config,
+    const ShadowInference& shadow,
+    const Signal& base_signal,
+    bool settled_symbol_exposure_present,
+    bool pending_net_position_order_present,
+    bool independent_base_signal_eligible) {
+  IntegratorPolicyDecision result;
+  result.signal = base_signal;
   const double confidence = shadow.p_up - shadow.p_down;
   const double confidence_abs = std::fabs(confidence);
   const int shadow_direction = SignOf(confidence);
-  const int base_direction = SignOf(inout_signal->suggested_notional_usd);
-  const double base_abs_notional = std::fabs(inout_signal->suggested_notional_usd);
-  
-  set_out(confidence, "");
+  const int base_direction = SignOf(base_signal.suggested_notional_usd);
+  const double base_abs_notional = std::fabs(base_signal.suggested_notional_usd);
+  result.confidence = confidence;
 
+  if (config.mode == IntegratorMode::kOff) {
+    result.confidence = 0.0;
+    result.reason = "mode_off";
+    return result;
+  }
+  if (config.mode == IntegratorMode::kShadow) {
+    result.reason = "mode_shadow_observe_only";
+    return result;
+  }
+  if (!shadow.enabled) {
+    result.confidence = 0.0;
+    result.reason = "shadow_unavailable";
+    return result;
+  }
   if (shadow_direction == 0) {
-    set_out(confidence, "neutral_confidence");
-    return false;
+    result.reason = "neutral_confidence";
+    return result;
   }
 
-  // Canary Mode
-  if (integrator_config_.mode == IntegratorMode::kCanary) {
-    if (confidence_abs < integrator_config_.canary_confidence_threshold) {
-      set_out(confidence, "canary_low_confidence");
-      return false;
+  if (config.mode == IntegratorMode::kCanary) {
+    if (confidence_abs < config.canary_confidence_threshold) {
+      result.reason = "canary_low_confidence";
+      return result;
     }
-    if (!integrator_config_.canary_allow_countertrend &&
+    // Canary 是独立实验仓位，禁止缩放、减仓或接管任何既有 baseline 暴露。
+    if (settled_symbol_exposure_present) {
+      result.reason = "canary_account_not_flat";
+      return result;
+    }
+    if (pending_net_position_order_present) {
+      result.reason = "canary_pending_order_present";
+      return result;
+    }
+    if (!HasExposure(base_signal.suggested_notional_usd)) {
+      if (!config.canary_allow_independent_signal) {
+        result.reason = "flat_base_signal";
+        return result;
+      }
+      if (!independent_base_signal_eligible) {
+        result.reason = "canary_base_signal_ineligible";
+        return result;
+      }
+      const double independent_notional =
+          std::max(0.0, config.canary_independent_notional_usd);
+      if (!HasExposure(independent_notional)) {
+        result.reason = "canary_independent_notional_disabled";
+        return result;
+      }
+      result.signal.suggested_notional_usd =
+          static_cast<double>(shadow_direction) * independent_notional;
+      result.signal.direction = shadow_direction;
+      result.signal.confidence = confidence_abs;
+      result.applied = true;
+      result.reason = "canary_independent_signal";
+      return result;
+    }
+    if (!config.canary_allow_countertrend &&
         shadow_direction != base_direction) {
-      set_out(confidence, "canary_countertrend_blocked");
-      return false;
+      result.reason = "canary_countertrend_blocked";
+      return result;
     }
-    
-    const double canary_ratio = std::clamp(integrator_config_.canary_notional_ratio, 0.0, 1.0);
+
+    const double canary_ratio =
+        std::clamp(config.canary_notional_ratio, 0.0, 1.0);
     const double scaled_abs_notional = base_abs_notional * canary_ratio;
     const double canary_min_notional_usd =
-        std::max(0.0, integrator_config_.canary_min_notional_usd);
+        std::max(0.0, config.canary_min_notional_usd);
     if (canary_min_notional_usd > 0.0 &&
         scaled_abs_notional + kNotionalEpsilon < canary_min_notional_usd) {
-      if (!HasExposure(inout_signal->suggested_notional_usd)) {
-        set_out(confidence, "canary_below_min_notional_no_change");
-        return false;
-      }
-      inout_signal->suggested_notional_usd = 0.0;
-      inout_signal->direction = 0;
-      set_out(confidence, "canary_below_min_notional_to_flat");
-      return true;
+      result.signal.suggested_notional_usd = 0.0;
+      result.signal.direction = 0;
+      result.applied = true;
+      result.reason = "canary_below_min_notional_to_flat";
+      return result;
     }
     const double final_notional =
         static_cast<double>(shadow_direction) * scaled_abs_notional;
-    
-    if (!HasExposure(final_notional - inout_signal->suggested_notional_usd)) {
-      set_out(confidence, "canary_no_change");
-      return false;
+
+    if (!HasExposure(final_notional - base_signal.suggested_notional_usd)) {
+      result.reason = "canary_no_change";
+      return result;
     }
-    
-    inout_signal->suggested_notional_usd = final_notional;
-    inout_signal->direction = SignOf(final_notional);
-    set_out(confidence, "canary_applied");
-    return true;
+
+    result.signal.suggested_notional_usd = final_notional;
+    result.signal.direction = SignOf(final_notional);
+    result.applied = true;
+    result.reason = "canary_applied";
+    return result;
   }
 
-  // Active Mode
-  if (confidence_abs < integrator_config_.active_confidence_threshold) {
-    if (!HasExposure(inout_signal->suggested_notional_usd)) {
-      set_out(confidence, "active_low_confidence_no_change");
-      return false;
-    }
-    inout_signal->suggested_notional_usd = 0.0;
-    inout_signal->direction = 0;
-    set_out(confidence, "active_low_confidence_to_flat");
-    return true;
+  if (!HasExposure(base_signal.suggested_notional_usd)) {
+    result.reason = "flat_base_signal";
+    return result;
+  }
+  if (confidence_abs < config.active_confidence_threshold) {
+    result.signal.suggested_notional_usd = 0.0;
+    result.signal.direction = 0;
+    result.applied = true;
+    result.reason = "active_low_confidence_to_flat";
+    return result;
   }
 
   const double active_full_notional_threshold = std::clamp(
-      integrator_config_.active_full_notional_confidence_threshold,
-      integrator_config_.active_confidence_threshold, 1.0);
+      config.active_full_notional_confidence_threshold,
+      config.active_confidence_threshold, 1.0);
   const double active_partial_notional_ratio =
-      std::clamp(integrator_config_.active_partial_notional_ratio, 0.0, 1.0);
+      std::clamp(config.active_partial_notional_ratio, 0.0, 1.0);
   const double notional_scale =
       confidence_abs >= active_full_notional_threshold
           ? 1.0
           : active_partial_notional_ratio;
   const double scaled_abs_notional = base_abs_notional * notional_scale;
   const double active_min_notional_usd =
-      std::max(0.0, integrator_config_.active_min_notional_usd);
+      std::max(0.0, config.active_min_notional_usd);
   if (active_min_notional_usd > 0.0 &&
       scaled_abs_notional + kNotionalEpsilon < active_min_notional_usd) {
-    if (!HasExposure(inout_signal->suggested_notional_usd)) {
-      set_out(confidence, "active_below_min_notional_no_change");
-      return false;
-    }
-    inout_signal->suggested_notional_usd = 0.0;
-    inout_signal->direction = 0;
-    set_out(confidence, "active_below_min_notional_to_flat");
-    return true;
+    result.signal.suggested_notional_usd = 0.0;
+    result.signal.direction = 0;
+    result.applied = true;
+    result.reason = "active_below_min_notional_to_flat";
+    return result;
   }
-  const double final_notional = static_cast<double>(shadow_direction) * scaled_abs_notional;
-  
-  if (!HasExposure(final_notional - inout_signal->suggested_notional_usd)) {
-    set_out(confidence, "active_no_change");
-    return false;
+  const double final_notional =
+      static_cast<double>(shadow_direction) * scaled_abs_notional;
+
+  if (!HasExposure(final_notional - base_signal.suggested_notional_usd)) {
+    result.reason = "active_no_change";
+    return result;
   }
-  
-  inout_signal->suggested_notional_usd = final_notional;
-  inout_signal->direction = SignOf(final_notional);
-  set_out(confidence,
-          notional_scale >= 1.0 - kNotionalEpsilon ? "active_applied_full"
-                                                    : "active_applied_partial");
-  return true;
+
+  result.signal.suggested_notional_usd = final_notional;
+  result.signal.direction = SignOf(final_notional);
+  result.applied = true;
+  result.reason = notional_scale >= 1.0 - kNotionalEpsilon
+                      ? "active_applied_full"
+                      : "active_applied_partial";
+  return result;
 }
 
 }  // namespace ai_trade

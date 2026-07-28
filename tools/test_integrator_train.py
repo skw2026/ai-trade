@@ -113,6 +113,35 @@ class IntegratorTrainTest(unittest.TestCase):
         self.assertGreater(bound["raw_max"], 70000.0)
         self.assertLessEqual(float(TRAIN.np.nanmax(TRAIN.np.abs(transformed))), 8.0)
 
+    def test_feature_transform_applies_train_bounds_to_unseen_tail(self):
+        train = TRAIN.np.asarray(
+            [[float(i)] for i in range(100)],
+            dtype=TRAIN.np.float64,
+        )
+        _, transform = TRAIN.build_feature_transform(
+            train,
+            ["miner_00"],
+            feature_clip_quantile=0.05,
+        )
+        tail = TRAIN.np.asarray([[100000.0]], dtype=TRAIN.np.float64)
+        applied = TRAIN.apply_feature_transform(tail, ["miner_00"], transform)
+        self.assertLessEqual(float(TRAIN.np.abs(applied[0, 0])), 8.0)
+
+    def test_build_splits_purges_label_horizon(self):
+        splits = TRAIN.build_splits(
+            sample_count=1000,
+            method="rolling",
+            n_splits=2,
+            train_window=400,
+            test_window=100,
+            step_window=100,
+            purge_bars=12,
+        )
+        self.assertEqual(len(splits), 2)
+        for split in splits:
+            self.assertEqual(split.test_start - split.train_end, 12)
+            self.assertEqual(split.train_end - split.train_start, 400)
+
     def test_split_temporal_train_validation_uses_tail_and_preserves_classes(self):
         x = TRAIN.np.arange(20, dtype=TRAIN.np.float64).reshape(-1, 1)
         y = TRAIN.np.asarray([0, 1] * 10, dtype=TRAIN.np.float64)
@@ -160,6 +189,10 @@ class IntegratorTrainTest(unittest.TestCase):
             "random_label_auc": 0.50,
             "random_label_auc_mean": 0.50,
             "random_label_auc_max": 0.53,
+            "model_net_total_trades": 40,
+            "model_net_active_bar_count": 400,
+            "positive_model_net_edge_ratio_by_split": 0.75,
+            "model_net_edge_lcb_bps": 0.05,
         }
         passed, reasons, warns = TRAIN.evaluate_governance(
             metrics_oos=metrics_ok,
@@ -273,6 +306,43 @@ class IntegratorTrainTest(unittest.TestCase):
         )
         self.assertFalse(passed)
         self.assertTrue(any("mean_model_net_edge_bps" in reason for reason in reasons))
+
+    def test_execution_returns_honor_latency(self):
+        ret_1 = TRAIN.np.asarray(
+            [TRAIN.np.nan, 0.01, 0.02, 0.03, 0.04],
+            dtype=TRAIN.np.float64,
+        )
+        result = TRAIN.build_execution_bar_returns(
+            ret_1,
+            execution_latency_bars=1,
+        )
+        self.assertAlmostEqual(float(result[0]), 0.02, places=12)
+        self.assertAlmostEqual(float(result[1]), 0.03, places=12)
+        self.assertAlmostEqual(float(result[2]), 0.04, places=12)
+        self.assertTrue(math.isnan(float(result[3])))
+        self.assertTrue(math.isnan(float(result[4])))
+
+    def test_raw_temporal_validation_purges_before_label_filter(self):
+        raw = TRAIN.np.arange(40, dtype=TRAIN.np.float64).reshape(-1, 1)
+        label = TRAIN.np.asarray([0, 1] * 20, dtype=TRAIN.np.float64)
+        label[20:24] = TRAIN.np.nan
+        x_fit, y_fit, x_val, y_val, meta = (
+            TRAIN.split_raw_temporal_train_validation(
+                raw,
+                label,
+                raw_start=0,
+                raw_end=40,
+                validation_fraction=0.25,
+                min_validation_samples=4,
+                purge_bars=3,
+            )
+        )
+        self.assertIsNotNone(x_val)
+        self.assertIsNotNone(y_val)
+        self.assertEqual(meta["validation_start_raw"], 30)
+        self.assertEqual(meta["purge_count_raw"], 3)
+        self.assertLess(float(x_fit[-1, 0]), 27.0)
+        self.assertGreaterEqual(float(x_val[0, 0]), 30.0)
 
     def test_run_random_label_control_trials_returns_requested_count(self):
         if TRAIN.CatBoostClassifier is None:

@@ -33,9 +33,9 @@ on:
         default: "SOLUSDT"
         type: string
       replay_source_symbol:
-        description: "replay-validation feature store 源币对；auto 则从上一份 symbol_tradeability 选择"
+        description: "replay-validation 固定训练/验证源币对；auto 仅按输入列表顺序确定，不读取历史收益"
         required: false
-        default: "auto"
+        default: "SOLUSDT"
         type: string
       replay_feature_days:
         description: "replay-validation 逐币对 feature 历史天数；0 表示沿用 data_pipeline 配置"
@@ -57,6 +57,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
+      - name: Checkout contract source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
       - name: Check deploy secrets
         run: |
           set -euo pipefail
@@ -69,9 +75,9 @@ jobs:
         env:
           CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || inputs.stage }}
-          CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '4h' || inputs.since }}
+          CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '7h' || inputs.since }}
           CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'SOLUSDT' || inputs.replay_symbols }}
-          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'auto' || inputs.replay_source_symbol }}
+          CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'schedule' && 'SOLUSDT' || inputs.replay_source_symbol }}
           CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"
           CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES: "true"
           CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER: "1.25"
@@ -86,9 +92,15 @@ jobs:
           CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS: "8.0"
           CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE: "1.2"
           CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL: "true"
+          CLOSED_LOOP_ACTIVATION_MIN_CANARY_EPISODES: "30"
+          CLOSED_LOOP_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO: "0.50"
+          CLOSED_LOOP_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD: "0.0"
+          CLOSED_LOOP_ACTIVATION_MAX_PENDING_HOURS: "72"
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
           CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ github.event_name == 'schedule' && '' || inputs.replay_feature_days }}
           CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          CLOSED_LOOP_GIT_COMMIT: ${{ github.sha }}
+          CLOSED_LOOP_GIT_BRANCH: ${{ github.ref_name }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
@@ -96,10 +108,13 @@ jobs:
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
           command_timeout: 90m
-          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL,CLOSED_LOOP_REPLAY_VALIDATION_CONFIG,CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES,CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER,CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS,CLOSED_LOOP_STRATEGY_DIAGNOSE_MAKER_ROUND_TRIP_COST_BPS,CLOSED_LOOP_STRATEGY_DIAGNOSE_STRESS_COST_MULTIPLIER,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ENABLED,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_OBJECTIVE_MODE,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_HORIZON_BARS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_TAKE_PROFIT_BPS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE,CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL,CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION,CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS,CLOSED_LOOP_RUN_ID
+          envs: CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS,CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL,CLOSED_LOOP_REPLAY_VALIDATION_CONFIG,CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES,CLOSED_LOOP_REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER,CLOSED_LOOP_STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS,CLOSED_LOOP_STRATEGY_DIAGNOSE_MAKER_ROUND_TRIP_COST_BPS,CLOSED_LOOP_STRATEGY_DIAGNOSE_STRESS_COST_MULTIPLIER,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ENABLED,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_OBJECTIVE_MODE,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_HORIZON_BARS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_TAKE_PROFIT_BPS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS,CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE,CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL,CLOSED_LOOP_ACTIVATION_MIN_CANARY_EPISODES,CLOSED_LOOP_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO,CLOSED_LOOP_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD,CLOSED_LOOP_ACTIVATION_MAX_PENDING_HOURS,CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION,CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS,CLOSED_LOOP_RUN_ID,CLOSED_LOOP_GIT_COMMIT,CLOSED_LOOP_GIT_BRANCH
           script: |
             set -euo pipefail
-            cd /opt/ai-trade
+            DEPLOY_ROOT="/opt/ai-trade"
+            WORKFLOW_CLOSED_LOOP_ACTION="${CLOSED_LOOP_ACTION:-}"
+            WORKFLOW_CLOSED_LOOP_STAGE="${CLOSED_LOOP_STAGE:-}"
+            WORKFLOW_CLOSED_LOOP_SINCE="${CLOSED_LOOP_SINCE:-}"
             WORKFLOW_REPLAY_VALIDATION_SYMBOLS="${CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS:-}"
             WORKFLOW_REPLAY_VALIDATION_SOURCE_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-}"
             WORKFLOW_REPLAY_VALIDATION_CONFIG="${CLOSED_LOOP_REPLAY_VALIDATION_CONFIG:-}"
@@ -116,13 +131,82 @@ jobs:
             WORKFLOW_ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS:-}"
             WORKFLOW_ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE:-}"
             WORKFLOW_BLOCK_REGISTRY_ON_ALPHA_FAIL="${CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL:-}"
+            WORKFLOW_ACTIVATION_MIN_CANARY_EPISODES="${CLOSED_LOOP_ACTIVATION_MIN_CANARY_EPISODES:-}"
+            WORKFLOW_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO="${CLOSED_LOOP_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO:-}"
+            WORKFLOW_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD:-}"
+            WORKFLOW_ACTIVATION_MAX_PENDING_HOURS="${CLOSED_LOOP_ACTIVATION_MAX_PENDING_HOURS:-}"
             WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-}"
             WORKFLOW_REPLAY_VALIDATION_FEATURE_DAYS="${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-}"
             WORKFLOW_CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"
-            set -a && source .env.runtime && set +a
+            WORKFLOW_CLOSED_LOOP_GIT_COMMIT="${CLOSED_LOOP_GIT_COMMIT:-}"
+            WORKFLOW_CLOSED_LOOP_GIT_BRANCH="${CLOSED_LOOP_GIT_BRANCH:-}"
+            RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"
+            if [[ -z "${RELEASE_DIR}" ||
+                  "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/"* ||
+                  ! -f "${RELEASE_DIR}/release_manifest.json" ||
+                  ! -f "${RELEASE_DIR}/.release-content.sha256" ]]; then
+              echo "[closed-loop] invalid immutable current release: ${RELEASE_DIR:-<empty>}"
+              exit 1
+            fi
+            RELEASE_GIT_SHA="$(
+              python3 - "${RELEASE_DIR}/release_manifest.json" <<'PY'
+            import json
+            import sys
+            from pathlib import Path
+
+            manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+            if manifest.get("schema_version") != "ai_trade_release_manifest_v1":
+                raise SystemExit("invalid release manifest schema")
+            print(str(manifest.get("git_sha") or ""))
+            PY
+            )"
+            if [[ -z "${WORKFLOW_CLOSED_LOOP_GIT_COMMIT}" ||
+                  "${RELEASE_GIT_SHA}" != "${WORKFLOW_CLOSED_LOOP_GIT_COMMIT}" ||
+                  "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/${RELEASE_GIT_SHA}" ]]; then
+              echo "[closed-loop] workflow/release identity mismatch: workflow=${WORKFLOW_CLOSED_LOOP_GIT_COMMIT:-<empty>} release=${RELEASE_GIT_SHA:-<empty>} path=${RELEASE_DIR}"
+              exit 1
+            fi
+            (
+              cd "${RELEASE_DIR}"
+              sha256sum -c .release-content.sha256
+            )
+            RUNNER_SHA256="$(
+              sha256sum "${RELEASE_DIR}/tools/closed_loop_runner.sh" |
+                awk '{print $1}'
+            )"
+            RUNTIME_IMAGE_REVISION="$(
+              docker inspect \
+                --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+                ai-trade 2>/dev/null || true
+            )"
+            if [[ "${RUNTIME_IMAGE_REVISION}" == "<no value>" ]]; then
+              RUNTIME_IMAGE_REVISION=""
+            fi
+            if [[ "${RUNTIME_IMAGE_REVISION}" != "${RELEASE_GIT_SHA}" ]]; then
+              echo "[closed-loop] runtime/release identity mismatch: runtime=${RUNTIME_IMAGE_REVISION:-<empty>} release=${RELEASE_GIT_SHA}"
+              exit 1
+            fi
+            set -a && source "${DEPLOY_ROOT}/.env.runtime" && set +a
+            export CLOSED_LOOP_ACTION="${WORKFLOW_CLOSED_LOOP_ACTION}"
+            export CLOSED_LOOP_STAGE="${WORKFLOW_CLOSED_LOOP_STAGE}"
+            export CLOSED_LOOP_SINCE="${WORKFLOW_CLOSED_LOOP_SINCE}"
             if [[ -n "${WORKFLOW_CLOSED_LOOP_RUN_ID}" ]]; then
               export CLOSED_LOOP_RUN_ID="${WORKFLOW_CLOSED_LOOP_RUN_ID}"
             fi
+            export CLOSED_LOOP_GIT_COMMIT="${RELEASE_GIT_SHA}"
+            if [[ -n "${WORKFLOW_CLOSED_LOOP_GIT_BRANCH}" ]]; then
+              export CLOSED_LOOP_GIT_BRANCH="${WORKFLOW_CLOSED_LOOP_GIT_BRANCH}"
+            fi
+            export CLOSED_LOOP_EXECUTED_RELEASE_SHA="${RELEASE_GIT_SHA}"
+            export CLOSED_LOOP_EXECUTED_RELEASE_DIR="${RELEASE_DIR}"
+            export CLOSED_LOOP_RUNNER_SHA256="${RUNNER_SHA256}"
+            export CLOSED_LOOP_RUNNER_LOCK_PATH="${DEPLOY_ROOT}/data/models/closed_loop_runner.lock"
+            export CLOSED_LOOP_ACTIVATION_TRANSACTION_ROOT="${DEPLOY_ROOT}/data/models/activation_transactions"
+            export CLOSED_LOOP_ACTIVATION_TRANSACTION_STATE_PATH="${DEPLOY_ROOT}/data/models/activation_transaction.json"
+            export CLOSED_LOOP_HOLDOUT_CONSUMPTION_LEDGER_PATH="${DEPLOY_ROOT}/data/models/final_holdout_consumption.jsonl"
+            export AI_TRADE_PROJECT_DIR="${RELEASE_DIR}"
+            export AI_TRADE_DATA_DIR="${DEPLOY_ROOT}/data"
+            export AI_TRADE_ENV_FILE_HOST="${DEPLOY_ROOT}/.env.runtime"
             if [[ -n "${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}" ]]; then
               export CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS="${WORKFLOW_REPLAY_VALIDATION_SYMBOLS}"
             fi
@@ -171,6 +255,18 @@ jobs:
             if [[ -n "${WORKFLOW_BLOCK_REGISTRY_ON_ALPHA_FAIL}" ]]; then
               export CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL="${WORKFLOW_BLOCK_REGISTRY_ON_ALPHA_FAIL}"
             fi
+            if [[ -n "${WORKFLOW_ACTIVATION_MIN_CANARY_EPISODES}" ]]; then
+              export CLOSED_LOOP_ACTIVATION_MIN_CANARY_EPISODES="${WORKFLOW_ACTIVATION_MIN_CANARY_EPISODES}"
+            fi
+            if [[ -n "${WORKFLOW_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO}" ]]; then
+              export CLOSED_LOOP_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO="${WORKFLOW_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO}"
+            fi
+            if [[ -n "${WORKFLOW_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD}" ]]; then
+              export CLOSED_LOOP_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD="${WORKFLOW_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD}"
+            fi
+            if [[ -n "${WORKFLOW_ACTIVATION_MAX_PENDING_HOURS}" ]]; then
+              export CLOSED_LOOP_ACTIVATION_MAX_PENDING_HOURS="${WORKFLOW_ACTIVATION_MAX_PENDING_HOURS}"
+            fi
             if [[ -n "${WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION}" ]]; then
               export CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION="${WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION}"
             fi
@@ -182,15 +278,18 @@ jobs:
             if [[ -z "${RUNNER_SYMBOL}" || "${RUNNER_SYMBOL_UPPER}" == "AUTO" ]]; then
               RUNNER_SYMBOL="${CLOSED_LOOP_SYMBOL:-SOLUSDT}"
             fi
-            chmod +x tools/closed_loop_runner.sh
-            tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
-              --compose-file docker-compose.prod.yml \
-              --env-file .env.runtime \
-              --output-root ./data/reports/closed_loop \
-              --stage "${CLOSED_LOOP_STAGE}" \
-              --since "${CLOSED_LOOP_SINCE}" \
-              --symbol "${RUNNER_SYMBOL}"
-            REPORT="./data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_report.json"
+            chmod +x "${RELEASE_DIR}/tools/closed_loop_runner.sh"
+            (
+              cd "${RELEASE_DIR}"
+              tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
+                --compose-file "${RELEASE_DIR}/docker-compose.prod.yml" \
+                --env-file "${DEPLOY_ROOT}/.env.runtime" \
+                --output-root "${DEPLOY_ROOT}/data/reports/closed_loop" \
+                --stage "${CLOSED_LOOP_STAGE}" \
+                --since "${CLOSED_LOOP_SINCE}" \
+                --symbol "${RUNNER_SYMBOL}"
+            )
+            REPORT="${DEPLOY_ROOT}/data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_report.json"
             if [[ -f "${REPORT}" ]]; then
               echo "=== closed_loop_report ==="
               cat "${REPORT}"
@@ -220,7 +319,7 @@ jobs:
             "reason": "invalid_ssh_key_format"
           }
           EOF
-            exit 0
+            exit 1
           fi
           PORT="${{ secrets.ECS_PORT || 22 }}"
           HOST="${{ secrets.ECS_HOST }}"
@@ -237,7 +336,7 @@ jobs:
             "reason": "missing_host_or_user"
           }
           EOF
-            exit 0
+            exit 1
           fi
           KNOWN_HOSTS_FILE=".artifacts/known_hosts"
           if ! ssh-keyscan -p "${PORT}" -t ed25519,ecdsa,rsa "${HOST}" > "${KNOWN_HOSTS_FILE}" 2>/dev/null; then
@@ -249,7 +348,7 @@ jobs:
             "reason": "ssh_keyscan_failed"
           }
           EOF
-            exit 0
+            exit 1
           fi
           if [[ ! -s "${KNOWN_HOSTS_FILE}" ]]; then
             echo "[closed-loop] ssh-keyscan returned empty host keys, skip artifact download"
@@ -260,7 +359,7 @@ jobs:
             "reason": "ssh_keyscan_empty"
           }
           EOF
-            exit 0
+            exit 1
           fi
           if [[ -n "${EXPECTED_FINGERPRINT}" ]]; then
             if ! ssh-keygen -lf "${KNOWN_HOSTS_FILE}" | awk '{print $2}' | grep -Fxq "${EXPECTED_FINGERPRINT}"; then
@@ -272,7 +371,7 @@ jobs:
             "reason": "host_fingerprint_mismatch"
           }
           EOF
-              exit 0
+              exit 1
             fi
           fi
 
@@ -326,16 +425,36 @@ jobs:
           fetch_report "${REMOTE_BASE}/closed_loop_report.json" ".artifacts/closed_loop_report.json" "closed_loop_report" "json"
           fetch_report "${REMOTE_BASE}/runtime_assess.json" ".artifacts/runtime_assess.json" "runtime_assess" "json"
           fetch_report "${REMOTE_BASE}/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"
+          fetch_report "${REMOTE_BASE}/trade_ledger_report.json" ".artifacts/trade_ledger_report.json" "trade_ledger_report" "json"
           fetch_report "${REMOTE_BASE}/run_manifest.json" ".artifacts/run_manifest.json" "run_manifest" "json"
+          fetch_report "${REMOTE_BASE}/artifact_attestation.json" ".artifacts/artifact_attestation.json" "artifact_attestation" "json"
           fetch_report "${REMOTE_BASE}/run_meta.json" ".artifacts/latest_run_meta.json" "run_meta" "json"
+          fetch_report "${REMOTE_BASE}/step_status.jsonl" ".artifacts/step_status.jsonl" "step_status" "text"
+          fetch_report "${REMOTE_BASE}/baseline_report.json" ".artifacts/baseline_report.json" "baseline_report" "json"
+          fetch_report "${REMOTE_BASE}/data_quality_report.json" ".artifacts/data_quality_report.json" "data_quality_report" "json"
+          fetch_report "${REMOTE_BASE}/walkforward_report.json" ".artifacts/walkforward_report.json" "walkforward_report" "json"
+          fetch_report "${REMOTE_BASE}/feature_store_5m.csv" ".artifacts/feature_store_5m.csv" "feature_store" "text"
+          fetch_report "${REMOTE_BASE}/research_domain_split_report.json" ".artifacts/research_domain_split_report.json" "research_domain_split_report" "json"
+          fetch_report "${REMOTE_BASE}/feature_parity_report.json" ".artifacts/feature_parity_report.json" "feature_parity_report" "json"
+          fetch_report "${REMOTE_BASE}/research_selection_feature_5m.csv" ".artifacts/research_selection_feature_5m.csv" "research_selection_feature_store" "text"
+          fetch_report "${REMOTE_BASE}/research_holdout_feature_5m.csv" ".artifacts/research_holdout_feature_5m.csv" "research_holdout_feature_store" "text"
+          fetch_report "${REMOTE_BASE}/miner_report.json" ".artifacts/miner_report.json" "miner_report" "json"
+          fetch_report "${REMOTE_BASE}/integrator_report.json" ".artifacts/integrator_report.json" "integrator_report" "json"
+          fetch_report "${REMOTE_BASE}/integrator_latest.cbm" ".artifacts/integrator_latest.cbm" "integrator_model" "text"
+          fetch_report "${REMOTE_BASE}/model_registry_entry.json" ".artifacts/model_registry_entry.json" "model_registry_entry" "json"
           fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_report.json" ".artifacts/replay_validation_report.json" "replay_validation_report" "json"
+          fetch_report "${REMOTE_BASE}/replay_validation/selection_candidate_manifest.json" ".artifacts/selection_candidate_manifest.json" "selection_candidate_manifest" "json"
           fetch_report "${REMOTE_BASE}/replay_validation/replay_optimization_report.json" ".artifacts/replay_optimization_report.json" "replay_optimization_report" "json"
           fetch_report "${REMOTE_BASE}/replay_validation/feature_build_report.json" ".artifacts/replay_feature_build_report.json" "replay_feature_build_report" "json"
           fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_command.log" ".artifacts/replay_validation_command.log" "replay_validation_command_log" "text"
           fetch_report "${REMOTE_BASE}/strategy_diagnose_report.json" ".artifacts/strategy_diagnose_report.json" "strategy_diagnose_report" "json"
           fetch_report "${REMOTE_BASE}/alpha_mechanism_probe_report.json" ".artifacts/alpha_mechanism_probe_report.json" "alpha_mechanism_probe_report" "json"
           fetch_report "${REMOTE_BASE}/alpha_candidate_manifest.json" ".artifacts/alpha_candidate_manifest.json" "alpha_candidate_manifest" "json"
+          fetch_report "${REMOTE_BASE}/strategy_candidate_manifest.json" ".artifacts/strategy_candidate_manifest.json" "strategy_candidate_manifest" "json"
+          fetch_report "${REMOTE_BASE}/replay_candidate_config.yaml" ".artifacts/replay_candidate_config.yaml" "replay_candidate_config" "text"
           fetch_report "${REMOTE_BASE}/closed_loop_mechanism_report.json" ".artifacts/closed_loop_mechanism_report.json" "closed_loop_mechanism_report" "json"
+          fetch_report "${REMOTE_BASE}/activation_transaction.json" ".artifacts/activation_transaction.json" "activation_transaction" "json"
+          fetch_report "${REMOTE_BASE}/activation_decision.json" ".artifacts/activation_decision.json" "activation_decision" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_daily_summary.json" ".artifacts/daily_summary.json" "daily_summary" "json"
           fetch_report "/opt/ai-trade/data/reports/closed_loop/latest_weekly_summary.json" ".artifacts/weekly_summary.json" "weekly_summary" "json"
 
@@ -343,8 +462,10 @@ jobs:
             if ! python3 - <<'PY'
           import json
           import sys
+          import hashlib
           from pathlib import Path
           expected = "gha-${{ github.run_id }}-${{ github.run_attempt }}"
+          expected_git_sha = "${{ github.sha }}"
           checks = []
           for label, path in (
               ("closed_loop_report", Path(".artifacts/closed_loop_report.json")),
@@ -355,12 +476,35 @@ jobs:
                   payload = json.loads(path.read_text())
                   checks.append((label, str(payload.get("run_id", "")).strip()))
           bad = [(label, run_id) for label, run_id in checks if run_id != expected]
+          manifest_path = Path(".artifacts/run_manifest.json")
+          if manifest_path.is_file():
+              manifest = json.loads(manifest_path.read_text())
+              release = manifest.get("release", {})
+              if manifest.get("git", {}).get("commit") != expected_git_sha:
+                  bad.append(("git.commit", manifest.get("git", {}).get("commit")))
+              if release.get("git_sha") != expected_git_sha:
+                  bad.append(("release.git_sha", release.get("git_sha")))
+              if release.get("directory") != f"/opt/ai-trade/releases/{expected_git_sha}":
+                  bad.append(("release.directory", release.get("directory")))
+              runner_path = Path("tools/closed_loop_runner.sh")
+              runner_sha256 = hashlib.sha256(runner_path.read_bytes()).hexdigest()
+              if release.get("runner_sha256") != runner_sha256:
+                  bad.append(("release.runner_sha256", release.get("runner_sha256")))
+              if manifest.get("runtime", {}).get("image_revision") != expected_git_sha:
+                  bad.append(
+                      (
+                          "runtime.image_revision",
+                          manifest.get("runtime", {}).get("image_revision"),
+                      )
+                  )
           if bad:
               print(
-                  "[closed-loop] run_id mismatch: expected="
+                  "[closed-loop] run/release identity mismatch: expected_run_id="
                   + expected
+                  + " expected_git_sha="
+                  + expected_git_sha
                   + " actual="
-                  + ",".join(f"{label}:{run_id}" for label, run_id in bad),
+                  + ",".join(f"{label}:{value}" for label, value in bad),
                   file=sys.stderr,
               )
               sys.exit(1)
@@ -370,11 +514,163 @@ jobs:
             fi
           fi
 
-          for essential in closed_loop_report latest_run_meta run_manifest; do
+          if [[ -f ".artifacts/artifact_attestation.json" ]]; then
+            if ! python3 - <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          attestation = json.loads(
+              Path(".artifacts/artifact_attestation.json").read_text()
+          )
+          expected_run_id = "gha-${{ github.run_id }}-${{ github.run_attempt }}"
+          local_paths = {
+              "run_manifest": Path(".artifacts/run_manifest.json"),
+              "closed_loop_report": Path(".artifacts/closed_loop_report.json"),
+              "run_meta": Path(".artifacts/latest_run_meta.json"),
+          }
+          failures = []
+          if (
+              attestation.get("schema_version")
+              != "closed_loop_artifact_attestation_v1"
+          ):
+              failures.append("schema")
+          if attestation.get("run_id") != expected_run_id:
+              failures.append("run_id")
+          contract = attestation.get("contract", {})
+          contract_path = Path("config/closed_loop_contract.json")
+          if (
+              not isinstance(contract, dict)
+              or contract.get("sha256")
+              != hashlib.sha256(contract_path.read_bytes()).hexdigest()
+          ):
+              failures.append("contract_sha256")
+          artifacts = attestation.get("artifacts", {})
+          if not isinstance(artifacts, dict):
+              failures.append("artifacts")
+              artifacts = {}
+          for name, path in local_paths.items():
+              item = artifacts.get(name, {})
+              if not path.is_file():
+                  failures.append(f"{name}:missing")
+                  continue
+              if (
+                  not isinstance(item, dict)
+                  or item.get("sha256")
+                  != hashlib.sha256(path.read_bytes()).hexdigest()
+                  or item.get("size_bytes") != path.stat().st_size
+              ):
+                  failures.append(f"{name}:identity")
+          if failures:
+              print(
+                  "[closed-loop] final attestation mismatch: "
+                  + ",".join(failures),
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+            then
+              invalid+=("artifact_attestation")
+            fi
+          fi
+
+          if [[ -f ".artifacts/run_manifest.json" ]]; then
+            if ! python3 - <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          manifest = json.loads(Path(".artifacts/run_manifest.json").read_text())
+          local_paths = {
+              "step_status": Path(".artifacts/step_status.jsonl"),
+              "baseline_report": Path(".artifacts/baseline_report.json"),
+              "data_quality_report": Path(".artifacts/data_quality_report.json"),
+              "walkforward_report": Path(".artifacts/walkforward_report.json"),
+              "feature_store": Path(".artifacts/feature_store_5m.csv"),
+              "research_domain_split_report": Path(".artifacts/research_domain_split_report.json"),
+              "feature_parity_report": Path(".artifacts/feature_parity_report.json"),
+              "research_selection_feature_store": Path(".artifacts/research_selection_feature_5m.csv"),
+              "research_holdout_feature_store": Path(".artifacts/research_holdout_feature_5m.csv"),
+              "miner_report": Path(".artifacts/miner_report.json"),
+              "integrator_report": Path(".artifacts/integrator_report.json"),
+              "integrator_model": Path(".artifacts/integrator_latest.cbm"),
+              "model_registry_entry": Path(".artifacts/model_registry_entry.json"),
+              "replay_validation_report": Path(".artifacts/replay_validation_report.json"),
+              "selection_candidate_manifest": Path(".artifacts/selection_candidate_manifest.json"),
+              "replay_optimization_report": Path(".artifacts/replay_optimization_report.json"),
+              "strategy_diagnose_report": Path(".artifacts/strategy_diagnose_report.json"),
+              "alpha_mechanism_probe_report": Path(".artifacts/alpha_mechanism_probe_report.json"),
+              "alpha_candidate_manifest": Path(".artifacts/alpha_candidate_manifest.json"),
+              "strategy_candidate_manifest": Path(".artifacts/strategy_candidate_manifest.json"),
+              "replay_candidate_config": Path(".artifacts/replay_candidate_config.yaml"),
+              "replay_validation_feature_build_report": Path(".artifacts/replay_feature_build_report.json"),
+              "replay_validation_command_log": Path(".artifacts/replay_validation_command.log"),
+              "runtime_log": Path(".artifacts/runtime.log"),
+              "runtime_assess_report": Path(".artifacts/runtime_assess.json"),
+              "trade_ledger_report": Path(".artifacts/trade_ledger_report.json"),
+              "closed_loop_mechanism_report": Path(".artifacts/closed_loop_mechanism_report.json"),
+              "activation_transaction": Path(".artifacts/activation_transaction.json"),
+              "activation_decision": Path(".artifacts/activation_decision.json"),
+          }
+          failures = []
+          contract_path = Path("config/closed_loop_contract.json")
+          contract = json.loads(contract_path.read_text())
+          contract_hash = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+          action = str(manifest.get("action", "")).strip().lower()
+          expected = contract.get("actions", {}).get(action, {})
+          artifact_contract = manifest.get("artifact_contract", {})
+          required_artifacts = expected.get("required_artifacts", [])
+          required_steps = expected.get("required_steps", [])
+          if not isinstance(artifact_contract, dict):
+              failures.append("artifact_contract:missing")
+              artifact_contract = {}
+          if artifact_contract.get("schema_version") != contract.get("schema_version"):
+              failures.append("artifact_contract:schema")
+          if artifact_contract.get("contract_sha256") != contract_hash:
+              failures.append("artifact_contract:sha256")
+          if artifact_contract.get("action") != action:
+              failures.append("artifact_contract:action")
+          if artifact_contract.get("required_artifacts") != required_artifacts:
+              failures.append("artifact_contract:required_artifacts")
+          if artifact_contract.get("required_steps") != required_steps:
+              failures.append("artifact_contract:required_steps")
+          if not required_artifacts or not required_steps:
+              failures.append(f"artifact_contract:unknown_action:{action}")
+          for name in required_artifacts:
+              if name not in manifest.get("artifacts", {}):
+                  failures.append(f"{name}:required_not_manifested")
+          for name, artifact in manifest.get("artifacts", {}).items():
+              path = local_paths.get(name)
+              if path is None:
+                  failures.append(f"{name}:unknown_manifest_artifact")
+                  continue
+              if not path.is_file():
+                  failures.append(f"{name}:missing")
+                  continue
+              actual = hashlib.sha256(path.read_bytes()).hexdigest()
+              expected = str(artifact.get("sha256", ""))
+              if not expected or actual != expected:
+                  failures.append(f"{name}:sha256")
+          if failures:
+              print(
+                  "[closed-loop] artifact contract mismatch: " + ",".join(failures),
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          PY
+            then
+              invalid+=("artifact_contract")
+            fi
+          fi
+
+          for essential in closed_loop_report latest_run_meta run_manifest artifact_attestation; do
             case "${essential}" in
               closed_loop_report) essential_path=".artifacts/closed_loop_report.json" ;;
               latest_run_meta) essential_path=".artifacts/latest_run_meta.json" ;;
               run_manifest) essential_path=".artifacts/run_manifest.json" ;;
+              artifact_attestation) essential_path=".artifacts/artifact_attestation.json" ;;
             esac
             if [[ ! -f "${essential_path}" ]]; then
               invalid+=("missing_essential_${essential}")
@@ -422,6 +718,10 @@ jobs:
           name: closed-loop-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .artifacts/*.json
+            .artifacts/*.jsonl
+            .artifacts/*.yaml
+            .artifacts/*.cbm
+            .artifacts/*.csv
             .artifacts/runtime.log
             .artifacts/replay_validation_command.log
           include-hidden-files: true

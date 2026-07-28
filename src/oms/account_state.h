@@ -36,6 +36,9 @@ class AccountState {
 
   /// Applies a fill execution to the portfolio.
   void ApplyFill(const FillEvent& fill);
+  /// Applies one interval of funding. Positive means the account paid funding.
+  double ApplyFunding(const std::string& symbol,
+                      double funding_rate_per_interval);
 
   /// Replaces local positions with a remote snapshot (e.g., from REST API).
   void SyncFromRemotePositions(const std::vector<RemotePositionSnapshot>& positions,
@@ -65,6 +68,7 @@ class AccountState {
   double unrealized_pnl_usd() const;
   double cumulative_realized_pnl_usd() const;
   double cumulative_fee_usd() const;
+  double cumulative_funding_paid_usd() const;
   double cumulative_realized_net_pnl_usd() const;
   
   double drawdown_pct() const;
@@ -87,6 +91,7 @@ class AccountState {
   double peak_equity_usd_{10000.0};
   double cumulative_realized_pnl_usd_{0.0};
   double cumulative_fee_usd_{0.0};
+  double cumulative_funding_paid_usd_{0.0};
   
   std::unordered_map<std::string, PositionState> positions_;
 };

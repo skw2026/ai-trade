@@ -383,6 +383,179 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(metrics["filtered_cost_ratio"], 0.0)
         self.assertEqual(report["verdict"], "PASS")
 
+    def test_assess_tracks_integrator_model_identity_in_log_order(self):
+        text = "\n".join(
+            [
+                "2026-07-27 10:00:00 [INFO] INTEGRATOR_INIT: "
+                "mode=canary, model_version=model-v1, training_symbol=SOLUSDT, "
+                "bar_interval_ms=300000, feature_samples=300",
+                "2026-07-27 10:00:00 [INFO] INTEGRATOR_HISTORY_BOOTSTRAP: "
+                "model_version=model-v1, training_symbol=SOLUSDT",
+                "2026-07-27 10:00:00 [INFO] INTEGRATOR_RUNTIME_IDENTITY: "
+                f"runtime_config_sha256={'a' * 64}, "
+                f"trade_bot_sha256={'b' * 64}",
+                "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_APPLIED: "
+                "mode=canary, model_version=model-v1, reason=canary",
+                "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_PROPOSED: "
+                "decision_id=d1, candidate_id=model-v1, mode=canary",
+                "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_RISK_ACCEPTED: "
+                "decision_id=d1, candidate_id=model-v1, mode=canary",
+                "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_ENQUEUED: "
+                "decision_id=d1, candidate_id=model-v1, mode=canary",
+                "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_FILLED: "
+                "decision_id=d1, candidate_id=model-v1, "
+                "model_version=model-v1, mode=canary, "
+                "position_episode_id=episode-1, client_order_id=order-1, "
+                "fill_id=f1",
+                "2026-07-27 10:00:01 [INFO] "
+                "INTEGRATOR_POLICY_EPISODE_CLOSED: "
+                "position_episode_id=episode-1, decision_id=d1, "
+                "candidate_id=model-v1, model_version=model-v1, mode=canary, "
+                "policy_reason=canary_independent_signal, "
+                "symbol=SOLUSDT, realized_net_usd=0.12, funding_paid_usd=0.01, "
+                "fill_event_count=2, "
+                "unique_order_count=1, evidence_complete=true, "
+                "activation_transaction_id=run-1, "
+                "evidence_boot_id=boot-candidate-v1, "
+                f"runtime_config_sha256={'a' * 64}, "
+                f"trade_bot_sha256={'b' * 64}, "
+                "closed_at_utc=2026-07-27T10:00:01Z, "
+                "recovered_after_restart=false",
+                "2026-07-27 10:00:01 [INFO] "
+                "INTEGRATOR_POLICY_EPISODE_RECOVERED_CLOSED: "
+                "position_episode_id=episode-1, decision_id=d1, "
+                "candidate_id=model-v1, model_version=model-v1, mode=canary, "
+                "policy_reason=canary_independent_signal, "
+                "symbol=SOLUSDT, realized_net_usd=0.12, funding_paid_usd=0.01, "
+                "fill_event_count=2, "
+                "unique_order_count=1, evidence_complete=true, "
+                "activation_transaction_id=run-1, "
+                "evidence_boot_id=boot-candidate-v1, "
+                f"runtime_config_sha256={'a' * 64}, "
+                f"trade_bot_sha256={'b' * 64}, "
+                "closed_at_utc=2026-07-27T10:00:01Z, "
+                "recovered_after_restart=true",
+                "2026-07-27 10:00:02 [INFO] INTEGRATOR_INIT: "
+                "mode=canary, model_version=model-v2, training_symbol=SOLUSDT, "
+                "bar_interval_ms=300000, feature_samples=300",
+            ]
+        )
+
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["SMOKE"],
+            min_runtime_status=0,
+        )
+
+        self.assertEqual(
+            report["metrics"]["integrator_model_versions"],
+            ["model-v1", "model-v2"],
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_model_version_latest"],
+            "model-v2",
+        )
+        self.assertEqual(report["metrics"]["integrator_policy_applied_count"], 1)
+        self.assertEqual(report["metrics"]["integrator_policy_proposed_count"], 1)
+        self.assertEqual(
+            report["metrics"]["integrator_policy_risk_accepted_count"], 1
+        )
+        self.assertEqual(report["metrics"]["integrator_policy_enqueued_count"], 1)
+        self.assertEqual(report["metrics"]["integrator_policy_filled_count"], 1)
+        self.assertEqual(
+            report["metrics"]["integrator_policy_unique_filled_order_count"], 1
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_complete_episode_count"], 1
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_closed_episode_events"][0]["mode"],
+            "canary",
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_closed_episode_events"][0][
+                "policy_reason"
+            ],
+            "canary_independent_signal",
+        )
+        self.assertAlmostEqual(
+            report["metrics"]["integrator_policy_closed_episode_events"][0][
+                "funding_paid_usd"
+            ],
+            0.01,
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_closed_episode_events"][0][
+                "symbol"
+            ],
+            "SOLUSDT",
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_closed_episode_events"][0][
+                "fill_event_count"
+            ],
+            2,
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_closed_episode_events"][0][
+                "activation_transaction_id"
+            ],
+            "run-1",
+        )
+        self.assertFalse(
+            report["metrics"]["integrator_policy_closed_episode_events"][0][
+                "recovered_after_restart"
+            ]
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_closed_episode_count"], 1
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_episode_identity_invalid_count"], 0
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_feature_training_symbol_latest"],
+            "SOLUSDT",
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_feature_bar_interval_ms_latest"],
+            300000,
+        )
+        self.assertEqual(report["metrics"]["integrator_history_bootstrap_count"], 1)
+        self.assertEqual(
+            report["metrics"]["integrator_runtime_config_sha256_latest"],
+            "a" * 64,
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_trade_bot_sha256_latest"],
+            "b" * 64,
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_filled_candidate_ids"],
+            ["model-v1"],
+        )
+
+    def test_assess_latest_integrator_model_tracks_rollback_event(self):
+        text = "\n".join(
+            [
+                "INTEGRATOR_INIT: mode=canary, model_version=model-v1",
+                "INTEGRATOR_INIT: mode=canary, model_version=model-v2",
+                "INTEGRATOR_INIT: mode=canary, model_version=model-v1",
+            ]
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["SMOKE"],
+            min_runtime_status=0,
+        )
+        metrics = report["metrics"]
+        self.assertEqual(metrics["integrator_model_versions"], ["model-v1", "model-v2"])
+        self.assertEqual(
+            metrics["integrator_model_version_events"],
+            ["model-v1", "model-v2", "model-v1"],
+        )
+        self.assertEqual(metrics["integrator_model_version_latest"], "model-v1")
+
     def test_s5_policy_flat_window_is_warn_not_fail(self):
         text = (
             "2026-02-14 15:00:00 [INFO] SELF_EVOLUTION_INIT: bucket=RANGE\n"
@@ -506,6 +679,7 @@ class AssessRunLogTest(unittest.TestCase):
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
         self.assertEqual(report["metrics"]["runtime_boot_age_seconds"], 20.0)
+        self.assertEqual(report["metrics"]["runtime_boot_id_latest"], "boot-test")
         self.assertIn("运行进程启动时间过短", "\n".join(report["warn_reasons"]))
 
     def test_s5_runtime_boot_startup_fallback_when_process_start_filtered(self):
@@ -526,7 +700,7 @@ class AssessRunLogTest(unittest.TestCase):
         runtime_line = runtime_line.replace(
             "RUNTIME_STATUS: ticks=20, ",
             "RUNTIME_STATUS: ticks=20, "
-            "boot={startup_utc=2026-02-14T15:00:00Z}, ",
+            "boot={id=boot-fallback, startup_utc=2026-02-14T15:00:00Z}, ",
         )
         runtime_line = runtime_line[:-1] + (
             ", evolution={enabled=true, active_bucket=RANGE, active_trend_weight=0.5, "
@@ -542,6 +716,9 @@ class AssessRunLogTest(unittest.TestCase):
             report["metrics"]["process_start_utc"], "2026-02-14T15:00:00Z"
         )
         self.assertEqual(report["metrics"]["runtime_boot_age_seconds"], 20.0)
+        self.assertEqual(
+            report["metrics"]["runtime_boot_id_latest"], "boot-fallback"
+        )
         self.assertIn("运行进程启动时间过短", "\n".join(report["warn_reasons"]))
 
     def test_s5_policy_flat_window_without_evolution_evidence_still_fails(self):
@@ -909,6 +1086,7 @@ class AssessRunLogTest(unittest.TestCase):
                 explicit_liquidity_fills=2,
                 explicit_liquidity_fill_ratio=1.0,
             )
+            + "2026-02-14 15:00:21 [INFO] REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=0, realized_net_usd=-0.080000, fees_usd=0.075000, funding_paid_usd=0.005000\n"
         )
         report = ASSESS.assess(text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1)
         metrics = report["metrics"]
@@ -943,6 +1121,16 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(
             metrics["execution_attribution_realized_net_per_fill"], -0.0325
         )
+        self.assertEqual(metrics["replay_terminal_settlement_done_count"], 1)
+        self.assertEqual(metrics["replay_terminal_settlement_failed_count"], 0)
+        self.assertAlmostEqual(metrics["replay_terminal_realized_net_usd"], -0.08)
+        self.assertAlmostEqual(metrics["replay_terminal_fee_usd"], 0.075)
+        self.assertAlmostEqual(
+            metrics["replay_terminal_funding_paid_usd"], 0.005
+        )
+        self.assertEqual(
+            report["replay_terminal_settlement"]["done_count"], 1
+        )
         self.assertAlmostEqual(
             metrics["execution_attribution_probe_maker_fee_usd"], 0.02
         )
@@ -969,6 +1157,28 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(quality["fee_usd"], 0.075)
         self.assertAlmostEqual(quality["realized_net_usd"], -0.065)
         self.assertAlmostEqual(quality["realized_net_per_fill"], -0.0325)
+
+    def test_replay_terminal_settlement_failure_is_reported(self):
+        text = (
+            "2026-02-14 15:00:01 [ERROR] "
+            "REPLAY_TERMINAL_SETTLEMENT_FAILED: reason=timeout\n"
+            + self._runtime_line(20, 0.0)
+        )
+
+        report = ASSESS.assess(
+            text, ASSESS.STAGE_RULES["S3"], min_runtime_status=1
+        )
+
+        self.assertEqual(
+            report["metrics"]["replay_terminal_settlement_done_count"], 0
+        )
+        self.assertEqual(
+            report["metrics"]["replay_terminal_settlement_failed_count"], 1
+        )
+        self.assertEqual(
+            report["replay_terminal_settlement"]["failed_reasons"],
+            ["timeout"],
+        )
 
     def test_exit_capture_live_samples_are_reported(self):
         text = (

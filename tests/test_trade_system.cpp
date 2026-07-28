@@ -1,12 +1,16 @@
+#include <atomic>
 #include <cmath>
 #include <cctype>
 #include <cstdint>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -108,12 +112,24 @@ bool WriteIntegratorReportFile(const std::filesystem::path& path,
   }
   out << "{\n"
       << "  \"model_version\": \"integrator_cb_v1_test\",\n"
+      << "  \"data\": {\"csv_path\": \"/tmp/integrator_train.csv\", "
+         "\"training_symbol\": \"BTCUSDT\", \"bar_interval_ms\": 300000, "
+         "\"online_bar_source\": \"closed_ohlcv\", "
+         "\"source_venue\": \"bybit\", \"source_category\": \"linear\", "
+         "\"price_type\": \"trade_price\", \"volume_unit\": \"base_asset\"},\n"
       << "  \"metrics_oos\": {\n"
+      << "    \"primary_objective\": "
+         "\"aggregate_model_net_bps_per_unit_turnover_after_cost\",\n"
+      << "    \"mean_model_net_edge_bps\": 0.25,\n"
+      << "    \"mean_model_net_edge_bps_per_round_trip\": 0.50,\n"
       << "    \"auc_mean\": " << auc_mean << ",\n"
       << "    \"delta_auc_vs_baseline\": " << delta_auc << ",\n"
       << "    \"split_trained_count\": " << split_trained_count << ",\n"
       << "    \"split_count\": " << split_count << "\n"
-      << "  }\n"
+      << "  },\n"
+      << "  \"governance\": {\"pass\": true, "
+         "\"primary_objective\": "
+         "\"aggregate_model_net_bps_per_unit_turnover_after_cost\"}\n"
       << "}\n";
   if (!out.good()) {
     if (out_error != nullptr) {
@@ -603,6 +619,36 @@ int main() {
                                                      active_symbols.end());
     if (active_set.size() != 1 || active_set.count("ETHUSDT") != 1) {
       std::cerr << "活跃 symbol 仅应包含非零仓位 ETHUSDT\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::AccountState account;
+    account.OnMarket(ai_trade::MarketEvent{1, "BTCUSDT", 100.0, 100.0});
+    ai_trade::FillEvent open;
+    open.fill_id = "funding-open";
+    open.client_order_id = "funding-open-order";
+    open.symbol = "BTCUSDT";
+    open.direction = 1;
+    open.qty = 2.0;
+    open.price = 100.0;
+    open.fee = 0.2;
+    account.ApplyFill(open);
+
+    const double paid = account.ApplyFunding("BTCUSDT", 0.001);
+    if (!NearlyEqual(paid, 0.2) ||
+        !NearlyEqual(account.cumulative_funding_paid_usd(), 0.2) ||
+        !NearlyEqual(account.cumulative_realized_net_pnl_usd(), -0.4) ||
+        !NearlyEqual(account.cash_usd(), 9999.6)) {
+      std::cerr << "资金费率未按持仓方向计入账户净收益\n";
+      return 1;
+    }
+    const double received = account.ApplyFunding("BTCUSDT", -0.0005);
+    if (!NearlyEqual(received, -0.1) ||
+        !NearlyEqual(account.cumulative_funding_paid_usd(), 0.1) ||
+        !NearlyEqual(account.cumulative_realized_net_pnl_usd(), -0.3)) {
+      std::cerr << "负资金费率返还未计入账户净收益\n";
       return 1;
     }
   }
@@ -2499,6 +2545,233 @@ int main() {
       std::cerr << "待确认 SL 与在途净仓位订单清空后应释放保护单 reduce-only\n";
       return 1;
     }
+
+    app.evidence_persistence_failed_ = true;
+    app.protection_forced_reduce_only_ = true;
+    app.RefreshProtectionReduceOnlyRelease("unit_test_evidence_failure");
+    if (!app.IsForceReduceOnlyActive() ||
+        app.protection_forced_reduce_only_) {
+      std::cerr << "证据落盘失败必须独立保持只减仓，不能被保护单自动释放清除\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::BotApplication app(ai_trade::AppConfig{});
+    ai_trade::BotApplication::IntegratorCandidateEpisode episode;
+    episode.lineage.candidate_id = "candidate-v1";
+    episode.lineage.model_version = "candidate-v1";
+    episode.lineage.position_episode_id = "episode-isolation-1";
+    app.integrator_episode_by_symbol_["SOLUSDT"] = episode;
+
+    ai_trade::OrderIntent baseline_entry;
+    baseline_entry.client_order_id = "baseline-entry-during-canary";
+    baseline_entry.symbol = "SOLUSDT";
+    baseline_entry.purpose = ai_trade::OrderPurpose::kEntry;
+    baseline_entry.direction = 1;
+    baseline_entry.qty = 1.0;
+    baseline_entry.price = 100.0;
+    if (app.EnqueueIntent(baseline_entry) ||
+        app.oms_.Find(baseline_entry.client_order_id) != nullptr) {
+      std::cerr << "候选 episode 未闭合前不得混入同币种 baseline entry\n";
+      return 1;
+    }
+  }
+
+  {
+    ai_trade::BotApplication app(ai_trade::AppConfig{});
+    ai_trade::OrderIntent candidate_entry;
+    candidate_entry.client_order_id = "pending-candidate-entry";
+    candidate_entry.symbol = "SOLUSDT";
+    candidate_entry.purpose = ai_trade::OrderPurpose::kEntry;
+    candidate_entry.candidate_id = "candidate-v2";
+    candidate_entry.position_episode_id = "episode-reserved-1";
+    if (!app.oms_.RegisterIntent(candidate_entry)) {
+      std::cerr << "candidate reservation OMS 注册失败\n";
+      return 1;
+    }
+    app.integrator_lineage_by_intent_id_[candidate_entry.client_order_id] =
+        ai_trade::BotApplication::IntegratorCandidateLineage{
+            .candidate_id = candidate_entry.candidate_id,
+            .position_episode_id = candidate_entry.position_episode_id,
+        };
+    app.persisted_intent_by_id_[candidate_entry.client_order_id] =
+        candidate_entry;
+
+    ai_trade::OrderIntent baseline_entry;
+    baseline_entry.client_order_id = "baseline-during-candidate-pending";
+    baseline_entry.symbol = "SOLUSDT";
+    baseline_entry.purpose = ai_trade::OrderPurpose::kEntry;
+    if (!app.HasCandidateIsolationForSymbol("SOLUSDT") ||
+        app.EnqueueIntent(baseline_entry)) {
+      std::cerr << "candidate entry 在途但未成交时也必须隔离 baseline\n";
+      return 1;
+    }
+  }
+
+  {
+    const auto temp_dir = std::filesystem::temp_directory_path() /
+                          "ai_trade_test_startup_protection_recovery";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+    std::filesystem::create_directories(temp_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = temp_dir.string();
+    config.exchange = "mock";
+    config.mode = "paper";
+    config.primary_symbol = "SOLUSDT";
+    config.protection.enabled = true;
+    config.protection.require_sl = true;
+    config.protection.enable_tp = false;
+    config.protection.stop_loss_ratio = 0.012;
+    config.protection.take_profit_ratio = 0.018;
+
+    auto adapter = std::make_unique<ai_trade::MockExchangeAdapter>(
+        std::vector<double>{100.0}, "SOLUSDT");
+    if (!adapter->Connect()) {
+      std::cerr << "启动保护恢复测试 mock 连接失败\n";
+      return 1;
+    }
+    ai_trade::MarketEvent market;
+    if (!adapter->PollMarket(&market)) {
+      std::cerr << "启动保护恢复测试行情初始化失败\n";
+      return 1;
+    }
+    ai_trade::OrderIntent remote_entry;
+    remote_entry.client_order_id = "remote-pre-restart-entry";
+    remote_entry.symbol = "SOLUSDT";
+    remote_entry.purpose = ai_trade::OrderPurpose::kEntry;
+    remote_entry.direction = 1;
+    remote_entry.qty = 1.0;
+    remote_entry.price = 100.0;
+    if (!adapter->SubmitOrder(remote_entry)) {
+      std::cerr << "启动保护恢复测试远端建仓失败\n";
+      return 1;
+    }
+    ai_trade::FillEvent remote_fill;
+    while (adapter->PollFill(&remote_fill)) {
+    }
+
+    ai_trade::BotApplication app(config);
+    app.adapter_ = std::move(adapter);
+    std::string wal_error;
+    if (!app.wal_.Initialize(&wal_error)) {
+      std::cerr << "启动保护恢复测试 WAL 初始化失败: " << wal_error << "\n";
+      return 1;
+    }
+    app.executor_ =
+        std::make_unique<ai_trade::AsyncExecutor>(app.adapter_.get());
+    app.executor_->Start();
+    app.InitializeUniverse();
+    if (!app.SyncRemotePositions() ||
+        !app.RecoverStartupOrdersAndProtection()) {
+      std::cerr << "远端已有仓位时应能重新挂载必需 SL\n";
+      return 1;
+    }
+    const auto protection_it =
+        app.managed_protection_by_symbol_.find("SOLUSDT");
+    if (protection_it == app.managed_protection_by_symbol_.end() ||
+        protection_it->second.active_sl_client_order_id.empty() ||
+        !NearlyEqual(protection_it->second.stop_loss_ratio, 0.012) ||
+        !NearlyEqual(protection_it->second.take_profit_ratio, 0.018) ||
+        !app.startup_protection_recovery_pending_ ||
+        !app.IsForceReduceOnlyActive()) {
+      std::cerr << "启动保护恢复确认前必须保留比例并维持 reduce-only\n";
+      return 1;
+    }
+    for (int retry = 0;
+         retry < 100 && app.startup_protection_recovery_pending_;
+         ++retry) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      app.ProcessAsyncResults();
+    }
+    if (app.startup_protection_recovery_pending_ ||
+        app.IsForceReduceOnlyActive()) {
+      std::cerr << "必需 SL 提交确认后应退出启动恢复 reduce-only\n";
+      return 1;
+    }
+    app.Shutdown();
+    std::filesystem::remove_all(temp_dir, ec);
+  }
+
+  {
+    const auto temp_dir = std::filesystem::temp_directory_path() /
+                          "ai_trade_test_startup_protection_snapshot_mismatch";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+    std::filesystem::create_directories(temp_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = temp_dir.string();
+    config.exchange = "mock";
+    config.mode = "paper";
+    config.primary_symbol = "SOLUSDT";
+    config.protection.enabled = true;
+    config.protection.require_sl = true;
+    config.protection.enable_tp = false;
+    config.protection.stop_loss_ratio = 0.012;
+
+    auto adapter = std::make_unique<ai_trade::MockExchangeAdapter>(
+        std::vector<double>{100.0}, "SOLUSDT");
+    if (!adapter->Connect()) {
+      std::cerr << "保护快照不匹配测试 mock 连接失败\n";
+      return 1;
+    }
+    ai_trade::MarketEvent market;
+    adapter->PollMarket(&market);
+    ai_trade::OrderIntent remote_entry;
+    remote_entry.client_order_id = "snapshot-mismatch-entry";
+    remote_entry.symbol = "SOLUSDT";
+    remote_entry.purpose = ai_trade::OrderPurpose::kEntry;
+    remote_entry.direction = 1;
+    remote_entry.qty = 1.0;
+    remote_entry.price = 100.0;
+    adapter->SubmitOrder(remote_entry);
+    ai_trade::FillEvent remote_fill;
+    while (adapter->PollFill(&remote_fill)) {
+    }
+
+    ai_trade::OrderIntent invalid_remote_sl;
+    invalid_remote_sl.client_order_id = "snapshot-mismatch-sl";
+    invalid_remote_sl.symbol = "SOLUSDT";
+    invalid_remote_sl.purpose = ai_trade::OrderPurpose::kSl;
+    invalid_remote_sl.direction = -1;
+    invalid_remote_sl.qty = 1.0;
+    invalid_remote_sl.price = 90.0;
+    invalid_remote_sl.reduce_only = false;
+    if (!adapter->SubmitOrder(invalid_remote_sl)) {
+      std::cerr << "保护快照不匹配测试远端订单创建失败\n";
+      return 1;
+    }
+
+    ai_trade::BotApplication app(config);
+    app.adapter_ = std::move(adapter);
+    ai_trade::OrderIntent expected_sl = invalid_remote_sl;
+    expected_sl.price = 98.8;
+    expected_sl.reduce_only = true;
+    app.persisted_intent_by_id_[expected_sl.client_order_id] = expected_sl;
+    app.oms_.RegisterIntent(expected_sl);
+    app.executor_ =
+        std::make_unique<ai_trade::AsyncExecutor>(app.adapter_.get());
+    app.executor_->Start();
+    app.InitializeUniverse();
+    if (!app.SyncRemotePositions() ||
+        !app.RecoverStartupOrdersAndProtection()) {
+      std::cerr << "保护快照不匹配时应撤旧单并重挂 SL\n";
+      return 1;
+    }
+    std::unordered_set<std::string> remote_open_order_ids;
+    if (!app.adapter_->GetRemoteOpenOrderClientIds(
+            &remote_open_order_ids) ||
+        remote_open_order_ids.count(expected_sl.client_order_id) != 0U ||
+        !app.startup_protection_recovery_pending_ ||
+        !app.IsForceReduceOnlyActive()) {
+      std::cerr << "伪保护单必须被撤销且恢复确认前保持 reduce-only\n";
+      return 1;
+    }
+    app.Shutdown();
+    std::filesystem::remove_all(temp_dir, ec);
   }
 
   {
@@ -3279,6 +3552,7 @@ int main() {
     config.min_abs_window_pnl_usd = 0.5;
     config.use_virtual_pnl = true;
     config.use_counterfactual_search = true;
+    config.counterfactual_require_temporal_holdout = false;
     config.counterfactual_min_improvement_usd = 0.1;
     config.virtual_cost_bps = 0.0;
     config.rollback_degrade_windows = 2;
@@ -3341,6 +3615,73 @@ int main() {
                   << ", current_virtual_pnl=" << action->window_virtual_pnl_usd;
       }
       std::cerr << "\n";
+      return 1;
+    }
+  }
+
+  {
+    // 严格反事实模式必须用时间后段做 holdout，证据不足时不得原位选优。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.update_interval_ticks = 4;
+    config.min_update_interval_ticks = 0;
+    config.max_single_strategy_weight = 0.60;
+    config.max_weight_step = 0.05;
+    config.min_abs_window_pnl_usd = 0.0;
+    config.use_virtual_pnl = true;
+    config.use_counterfactual_search = true;
+    config.counterfactual_fallback_to_factor_ic = true;
+    config.counterfactual_require_temporal_holdout = true;
+    config.counterfactual_train_fraction = 0.50;
+    config.counterfactual_min_train_samples = 2;
+    config.counterfactual_min_holdout_samples = 2;
+    config.enable_factor_ic_adaptive_weights = true;
+    config.virtual_cost_bps = 0.0;
+
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(/*current_tick=*/0,
+                               /*initial_equity_usd=*/10000.0,
+                               {0.50, 0.50},
+                               &error,
+                               /*initial_realized_net_pnl_usd=*/0.0)) {
+      std::cerr << "严格 holdout 自进化控制器初始化失败: " << error << "\n";
+      return 1;
+    }
+    for (std::int64_t tick = 1; tick < 4; ++tick) {
+      if (controller
+              .OnTick(tick,
+                      0.0,
+                      ai_trade::RegimeBucket::kRange,
+                      0.0,
+                      0.0,
+                      1000.0,
+                      -1000.0,
+                      100.0 + static_cast<double>(tick),
+                      "BTCUSDT")
+              .has_value()) {
+        std::cerr << "严格 holdout 测试未到周期前不应返回动作\n";
+        return 1;
+      }
+    }
+    const auto action = controller.OnTick(
+        4,
+        0.0,
+        ai_trade::RegimeBucket::kRange,
+        0.0,
+        0.0,
+        1000.0,
+        -1000.0,
+        104.0,
+        "BTCUSDT");
+    if (!action.has_value() ||
+        action->type != ai_trade::SelfEvolutionActionType::kSkipped ||
+        action->reason_code != "EVOLUTION_COUNTERFACTUAL_HOLDOUT_INSUFFICIENT" ||
+        !action->counterfactual_temporal_holdout_required ||
+        action->counterfactual_train_samples != 1 ||
+        action->counterfactual_holdout_samples != 2 ||
+        action->counterfactual_fallback_to_factor_ic_enabled) {
+      std::cerr << "严格时间 holdout 的证据不足门禁行为不符合预期\n";
       return 1;
     }
   }
@@ -3511,6 +3852,7 @@ int main() {
     config.min_abs_window_pnl_usd = 0.1;
     config.use_virtual_pnl = true;
     config.use_counterfactual_search = true;
+    config.counterfactual_require_temporal_holdout = false;
     config.counterfactual_fallback_to_factor_ic = false;
     config.counterfactual_min_improvement_usd = 1000.0;
     config.enable_factor_ic_adaptive_weights = true;
@@ -3593,6 +3935,7 @@ int main() {
     config.min_abs_window_pnl_usd = 0.1;
     config.use_virtual_pnl = true;
     config.use_counterfactual_search = true;
+    config.counterfactual_require_temporal_holdout = false;
     config.counterfactual_fallback_to_factor_ic = true;
     config.counterfactual_min_improvement_usd = 1000.0;
     config.enable_factor_ic_adaptive_weights = true;
@@ -3662,6 +4005,7 @@ int main() {
     config.min_abs_window_pnl_usd = 0.1;
     config.use_virtual_pnl = true;
     config.use_counterfactual_search = true;
+    config.counterfactual_require_temporal_holdout = false;
     config.counterfactual_fallback_to_factor_ic = true;
     config.counterfactual_min_fill_count_for_update = 5;
     config.enable_factor_ic_adaptive_weights = true;
@@ -3731,6 +4075,7 @@ int main() {
     config.min_abs_window_pnl_usd = 0.0;
     config.use_virtual_pnl = true;
     config.use_counterfactual_search = true;
+    config.counterfactual_require_temporal_holdout = false;
     config.counterfactual_fallback_to_factor_ic = false;
     config.counterfactual_min_improvement_usd = 0.0;
     config.counterfactual_superiority_min_samples_for_update = 2;
@@ -3800,6 +4145,7 @@ int main() {
     config.min_abs_window_pnl_usd = 0.0;
     config.use_virtual_pnl = true;
     config.use_counterfactual_search = true;
+    config.counterfactual_require_temporal_holdout = false;
     config.counterfactual_fallback_to_factor_ic = true;
     config.counterfactual_min_improvement_usd = 0.0;
     config.counterfactual_superiority_min_samples_for_update = 2;
@@ -4206,6 +4552,8 @@ int main() {
         << "  canary_min_notional_usd: 50\n"
         << "  canary_confidence_threshold: 0.62\n"
         << "  canary_allow_countertrend: true\n"
+        << "  canary_allow_independent_signal: true\n"
+        << "  canary_independent_notional_usd: 75\n"
         << "  active_confidence_threshold: 0.57\n"
         << "  active_min_notional_usd: 80\n"
         << "  active_partial_notional_ratio: 0.4\n"
@@ -4219,6 +4567,7 @@ int main() {
         << "    require_model_file: true\n"
         << "    require_active_meta: true\n"
         << "    require_gate_pass: true\n"
+        << "    strict_failure_degrade_to_off: true\n"
         << "    min_auc_mean: 0.53\n"
         << "    min_delta_auc_vs_baseline: 0.02\n"
         << "    min_split_trained_count: 3\n"
@@ -4234,6 +4583,10 @@ int main() {
         << "  use_virtual_pnl: true\n"
         << "  use_counterfactual_search: true\n"
         << "  counterfactual_fallback_to_factor_ic: false\n"
+        << "  counterfactual_require_temporal_holdout: true\n"
+        << "  counterfactual_train_fraction: 0.65\n"
+        << "  counterfactual_min_train_samples: 33\n"
+        << "  counterfactual_min_holdout_samples: 17\n"
         << "  counterfactual_min_improvement_usd: 1.2\n"
         << "  counterfactual_min_improvement_ratio_of_equity: 0.002\n"
         << "  counterfactual_improvement_decay_per_filtered_signal_usd: 0.05\n"
@@ -4257,6 +4610,7 @@ int main() {
         << "  objective_beta_drawdown: 0.7\n"
         << "  objective_gamma_notional_churn: 0.02\n"
         << "  objective_use_sharpe_like: true\n"
+        << "  objective_min_risk_scale: 0.0002\n"
         << "  max_single_strategy_weight: 0.7\n"
         << "  max_weight_step: 0.03\n"
         << "  rollback_degrade_windows: 3\n"
@@ -4454,6 +4808,8 @@ int main() {
         !NearlyEqual(config.integrator.canary_min_notional_usd, 50.0) ||
         !NearlyEqual(config.integrator.canary_confidence_threshold, 0.62) ||
         config.integrator.canary_allow_countertrend != true ||
+        config.integrator.canary_allow_independent_signal != true ||
+        !NearlyEqual(config.integrator.canary_independent_notional_usd, 75.0) ||
         !NearlyEqual(config.integrator.active_confidence_threshold, 0.57) ||
         !NearlyEqual(config.integrator.active_min_notional_usd, 80.0) ||
         !NearlyEqual(config.integrator.active_partial_notional_ratio, 0.4) ||
@@ -4470,6 +4826,7 @@ int main() {
         config.integrator.shadow.require_model_file != true ||
         config.integrator.shadow.require_active_meta != true ||
         config.integrator.shadow.require_gate_pass != true ||
+        config.integrator.shadow.strict_failure_degrade_to_off != true ||
         !NearlyEqual(config.integrator.shadow.min_auc_mean, 0.53) ||
         !NearlyEqual(config.integrator.shadow.min_delta_auc_vs_baseline, 0.02) ||
         config.integrator.shadow.min_split_trained_count != 3 ||
@@ -4484,6 +4841,10 @@ int main() {
         config.self_evolution.use_virtual_pnl != true ||
         config.self_evolution.use_counterfactual_search != true ||
         config.self_evolution.counterfactual_fallback_to_factor_ic != false ||
+        config.self_evolution.counterfactual_require_temporal_holdout != true ||
+        !NearlyEqual(config.self_evolution.counterfactual_train_fraction, 0.65) ||
+        config.self_evolution.counterfactual_min_train_samples != 33 ||
+        config.self_evolution.counterfactual_min_holdout_samples != 17 ||
         !NearlyEqual(config.self_evolution.counterfactual_min_improvement_usd,
                      1.2) ||
         !NearlyEqual(
@@ -4523,6 +4884,7 @@ int main() {
         !NearlyEqual(config.self_evolution.objective_gamma_notional_churn,
                      0.02) ||
         config.self_evolution.objective_use_sharpe_like != true ||
+        !NearlyEqual(config.self_evolution.objective_min_risk_scale, 0.0002) ||
         !NearlyEqual(config.self_evolution.max_single_strategy_weight, 0.7) ||
         !NearlyEqual(config.self_evolution.max_weight_step, 0.03) ||
         config.self_evolution.rollback_degrade_windows != 3 ||
@@ -4596,7 +4958,8 @@ int main() {
 	          (!config.protection.enabled ||
 	           !config.protection.dynamic_distance_enabled ||
 	           !config.protection.break_even_enabled ||
-	           !config.protection.trailing_enabled)) {
+	           !config.protection.trailing_enabled ||
+	           !config.integrator.shadow.strict_failure_degrade_to_off)) {
 	        std::cerr << "S5 主链配置必须启用动态保护与盈利保护: "
 	                  << config_path << "\n";
 	        return 1;
@@ -4837,6 +5200,41 @@ int main() {
     if (error.find("active_full_notional_confidence_threshold") ==
         std::string::npos) {
       std::cerr << "非法 Integrator active 阈值错误信息不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_candidate_validation_outside_replay.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  mode: \"paper\"\n"
+        << "integrator:\n"
+        << "  enabled: true\n"
+        << "  mode: \"canary\"\n"
+        << "  canary_notional_ratio: 0.30\n"
+        << "  shadow:\n"
+        << "    enabled: true\n"
+        << "    model_report_path: \"/tmp/candidate-report.json\"\n"
+        << "    model_path: \"/tmp/candidate-model.cbm\"\n"
+        << "    require_model_file: true\n"
+        << "    require_active_meta: false\n"
+        << "    candidate_validation_mode: true\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "candidate validation 不得在非 replay 模式绕过激活门禁\n";
+      return 1;
+    }
+    if (error.find("system.mode=replay") == std::string::npos) {
+      std::cerr << "candidate validation 模式错误信息不符合预期: "
+                << error << "\n";
       return 1;
     }
 
@@ -6059,6 +6457,12 @@ int main() {
     intent.direction = 1;
     intent.qty = 2.0;
     intent.price = 100.0;
+    intent.decision_id = "decision-1";
+    intent.candidate_id = "candidate-1";
+    intent.model_version = "model-1";
+    intent.integrator_mode = "canary";
+    intent.position_episode_id = "episode-1";
+    intent.integrator_policy_reason = "candidate_test";
 
     if (!wal.AppendIntent(intent, &error)) {
       std::cerr << "WAL 追加 intent 失败: " << error << "\n";
@@ -6066,8 +6470,10 @@ int main() {
     }
     ai_trade::FillEvent fill_1 = ToFill(intent, "fill-1");
     fill_1.qty = 0.8;
+    fill_1.liquidity = ai_trade::FillLiquidity::kMaker;
     ai_trade::FillEvent fill_2 = ToFill(intent, "fill-2");
     fill_2.qty = 1.2;
+    fill_2.liquidity = ai_trade::FillLiquidity::kTaker;
 
     if (!wal.AppendFill(fill_1, &error)) {
       std::cerr << "WAL 追加 fill_1 失败: " << error << "\n";
@@ -6081,17 +6487,100 @@ int main() {
       std::cerr << "WAL 追加重复 fill_1 失败: " << error << "\n";
       return 1;
     }
+    ai_trade::CandidateEpisodeClosureRecord closure;
+    closure.position_episode_id = intent.position_episode_id;
+    closure.decision_id = intent.decision_id;
+    closure.candidate_id = intent.candidate_id;
+    closure.model_version = intent.model_version;
+    closure.mode = intent.integrator_mode;
+    closure.policy_reason = intent.integrator_policy_reason;
+    closure.symbol = intent.symbol;
+    closure.realized_net_usd = 12.5;
+    closure.funding_paid_usd = 0.75;
+    closure.fill_event_count = 2;
+    closure.unique_order_count = 1;
+    closure.evidence_complete = true;
+    closure.activation_transaction_id = "tx-1";
+    closure.boot_id = "boot-1";
+    closure.runtime_config_sha256 = std::string(64, 'a');
+    closure.trade_bot_sha256 = std::string(64, 'b');
+    closure.closed_at_utc = "2026-07-28T00:00:00Z";
+    if (!wal.AppendCandidateEpisodeClosure(closure, &error) ||
+        !wal.AppendCandidateEpisodeClosure(closure, &error)) {
+      std::cerr << "WAL 追加 episode closure 失败: " << error << "\n";
+      return 1;
+    }
 
     std::unordered_set<std::string> intent_ids;
     std::unordered_set<std::string> fill_ids;
+    std::unordered_set<std::string> closed_episode_ids;
+    std::unordered_map<std::string, ai_trade::CandidateEpisodeClosureRecord>
+        episode_closures;
     std::vector<ai_trade::FillEvent> fills;
-    if (!wal.LoadState(&intent_ids, &fill_ids, &fills, &error)) {
+    std::unordered_map<std::string, ai_trade::OrderIntent> intents;
+    if (!wal.LoadState(&intent_ids,
+                       &fill_ids,
+                       &fills,
+                       &error,
+                       &intents,
+                       &closed_episode_ids,
+                       &episode_closures)) {
       std::cerr << "WAL 加载失败: " << error << "\n";
       return 1;
     }
 
     if (intent_ids.size() != 1 || fill_ids.size() != 2 || fills.size() != 2) {
       std::cerr << "WAL 去重或加载计数不符合预期\n";
+      return 1;
+    }
+    if (closed_episode_ids.size() != 1 ||
+        closed_episode_ids.count(intent.position_episode_id) != 1) {
+      std::cerr << "WAL episode closure 去重或恢复不符合预期\n";
+      return 1;
+    }
+    const auto closure_it =
+        episode_closures.find(intent.position_episode_id);
+    if (closure_it == episode_closures.end() ||
+        closure_it->second.decision_id != closure.decision_id ||
+        closure_it->second.candidate_id != closure.candidate_id ||
+        closure_it->second.model_version != closure.model_version ||
+        closure_it->second.mode != closure.mode ||
+        closure_it->second.policy_reason != closure.policy_reason ||
+        closure_it->second.symbol != closure.symbol ||
+        !NearlyEqual(closure_it->second.realized_net_usd,
+                     closure.realized_net_usd) ||
+        !NearlyEqual(closure_it->second.funding_paid_usd,
+                     closure.funding_paid_usd) ||
+        closure_it->second.fill_event_count != closure.fill_event_count ||
+        closure_it->second.unique_order_count != closure.unique_order_count ||
+        !closure_it->second.evidence_complete ||
+        closure_it->second.activation_transaction_id !=
+            closure.activation_transaction_id ||
+        closure_it->second.boot_id != closure.boot_id ||
+        closure_it->second.runtime_config_sha256 !=
+            closure.runtime_config_sha256 ||
+        closure_it->second.trade_bot_sha256 != closure.trade_bot_sha256 ||
+        closure_it->second.closed_at_utc != closure.closed_at_utc) {
+      std::cerr << "WAL episode closure 完整证据恢复不符合预期\n";
+      return 1;
+    }
+    if (fills[0].liquidity != ai_trade::FillLiquidity::kMaker ||
+        fills[1].liquidity != ai_trade::FillLiquidity::kTaker) {
+      std::cerr << "WAL FILL3 未恢复 maker/taker 流动性身份\n";
+      return 1;
+    }
+    const auto recovered_intent_it = intents.find(intent.client_order_id);
+    if (recovered_intent_it == intents.end() ||
+        recovered_intent_it->second.decision_id != intent.decision_id ||
+        recovered_intent_it->second.candidate_id != intent.candidate_id ||
+        recovered_intent_it->second.model_version != intent.model_version ||
+        recovered_intent_it->second.integrator_mode !=
+            intent.integrator_mode ||
+        recovered_intent_it->second.position_episode_id !=
+            intent.position_episode_id ||
+        recovered_intent_it->second.integrator_policy_reason !=
+            intent.integrator_policy_reason) {
+      std::cerr << "WAL 候选 lineage 恢复不符合预期\n";
       return 1;
     }
 
@@ -6425,6 +6914,54 @@ int main() {
   }
 
   {
+    ai_trade::OrderManager oms;
+    ai_trade::OrderIntent intent;
+    intent.client_order_id = "cancel-state-machine";
+    intent.symbol = "BTCUSDT";
+    intent.purpose = ai_trade::OrderPurpose::kEntry;
+    intent.direction = 1;
+    intent.qty = 1.0;
+    intent.price = 100.0;
+    if (!oms.RegisterIntent(intent)) {
+      std::cerr << "撤单状态机 OMS 注册失败\n";
+      return 1;
+    }
+    oms.MarkSent(intent.client_order_id);
+    oms.MarkCancelPending(intent.client_order_id);
+    const auto* pending = oms.Find(intent.client_order_id);
+    if (pending == nullptr ||
+        pending->state != ai_trade::OrderState::kCancelPending ||
+        !oms.HasPendingNetPositionOrderForSymbol(intent.symbol)) {
+      std::cerr << "撤单请求在途时必须继续阻塞净仓位新单\n";
+      return 1;
+    }
+    oms.MarkCancelFailed(intent.client_order_id);
+    const auto* failed = oms.Find(intent.client_order_id);
+    if (failed == nullptr || failed->state != ai_trade::OrderState::kSent ||
+        !oms.HasPendingNetPositionOrderForSymbol(intent.symbol)) {
+      std::cerr << "撤单失败后订单必须恢复为可重试 pending\n";
+      return 1;
+    }
+    oms.MarkCancelPending(intent.client_order_id);
+    oms.MarkCancelConfirmed(intent.client_order_id);
+    const auto* confirmed = oms.Find(intent.client_order_id);
+    if (confirmed == nullptr ||
+        confirmed->state != ai_trade::OrderState::kCancelConfirmed ||
+        !oms.HasPendingNetPositionOrderForSymbol(intent.symbol)) {
+      std::cerr << "撤单确认后的迟到成交观察窗口必须继续阻塞新单\n";
+      return 1;
+    }
+    ai_trade::FillEvent late_fill = ToFill(intent, "cancel-confirmed-late-fill");
+    oms.OnFill(late_fill);
+    const auto* filled = oms.Find(intent.client_order_id);
+    if (filled == nullptr || filled->state != ai_trade::OrderState::kFilled ||
+        !NearlyEqual(filled->filled_qty, intent.qty)) {
+      std::cerr << "撤单确认后的迟到成交必须收敛到 Filled\n";
+      return 1;
+    }
+  }
+
+  {
     const std::filesystem::path data_dir =
         std::filesystem::temp_directory_path() / "ai_trade_fill_guard_test";
     std::error_code ec;
@@ -6587,7 +7124,7 @@ int main() {
   {
     const std::filesystem::path data_dir =
         std::filesystem::temp_directory_path() /
-        "ai_trade_account_reflected_fill_test";
+        "ai_trade_remote_baseline_future_fill_test";
     std::error_code ec;
     std::filesystem::remove_all(data_dir, ec);
 
@@ -6596,53 +7133,231 @@ int main() {
     ai_trade::BotApplication app(config);
     std::string error;
     if (!app.wal_.Initialize(&error)) {
-      std::cerr << "account reflected fill 测试 WAL 初始化失败: " << error << "\n";
+      std::cerr << "远端基线后新成交测试 WAL 初始化失败: " << error << "\n";
       return 1;
     }
 
     ai_trade::OrderIntent intent;
-    intent.client_order_id = "account-reflected-fill";
+    intent.client_order_id = "future-fill-after-remote-baseline";
     intent.symbol = "SOLUSDT";
     intent.direction = -1;
     intent.qty = 4.4;
     intent.price = 85.0;
     intent.purpose = ai_trade::OrderPurpose::kEntry;
     if (!app.oms_.RegisterIntent(intent)) {
-      std::cerr << "account reflected fill 测试 OMS 注册失败\n";
+      std::cerr << "远端基线后新成交测试 OMS 注册失败\n";
       return 1;
     }
     app.oms_.MarkSent(intent.client_order_id);
-    app.oms_.MarkCancelled(intent.client_order_id);
     app.system_.SyncAccountFromRemotePositions(
         {ai_trade::RemotePositionSnapshot{
              .symbol = "SOLUSDT",
              .qty = -4.4,
              .avg_entry_price = 85.0,
              .mark_price = 85.0,
-         }},
+        }},
         10000.0);
+    app.oms_.SeedNetPositionBaseline(
+        {ai_trade::RemotePositionSnapshot{
+            .symbol = "SOLUSDT",
+            .qty = -4.4,
+            .avg_entry_price = 85.0,
+            .mark_price = 85.0,
+        }});
 
-    ai_trade::FillEvent fill = ToFill(intent, "account-reflected-fill-1");
+    ai_trade::FillEvent fill = ToFill(intent, "future-fill-after-baseline-1");
     app.ProcessFillEvent(fill);
     const auto* record = app.oms_.Find(intent.client_order_id);
     if (record == nullptr || record->state != ai_trade::OrderState::kFilled ||
         !NearlyEqual(record->filled_qty, 4.4) ||
-        !NearlyEqual(app.system_.account().position_qty("SOLUSDT"), -4.4) ||
-        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -4.4) ||
+        !NearlyEqual(app.system_.account().position_qty("SOLUSDT"), -8.8) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -8.8) ||
         app.fill_ids_.size() != 1U) {
-      std::cerr << "已由账户同步反映的 late fill 不应再次扩大本地仓位\n";
+      std::cerr << "远端启动基线不得吞掉后续真实成交\n";
       return 1;
     }
 
-    ai_trade::FillEvent duplicate_fill = ToFill(intent, "account-reflected-fill-2");
+    ai_trade::FillEvent duplicate_fill = ToFill(intent, "future-fill-after-baseline-2");
     app.ProcessFillEvent(duplicate_fill);
-    if (!NearlyEqual(app.system_.account().position_qty("SOLUSDT"), -4.4) ||
-        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -4.4) ||
+    if (!NearlyEqual(app.system_.account().position_qty("SOLUSDT"), -8.8) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -8.8) ||
         app.fill_ids_.size() != 1U) {
-      std::cerr << "已补齐订单数量后的 late fill 重复回报应被拦截\n";
+      std::cerr << "订单已满后的额外成交回报应被 overfill 门禁拦截\n";
       return 1;
     }
 
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_multi_future_fill_after_baseline_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "多笔基线后成交 WAL 初始化失败: " << error << "\n";
+      return 1;
+    }
+    for (int index = 1; index <= 2; ++index) {
+      ai_trade::OrderIntent intent;
+      intent.client_order_id = "multi-reflected-" + std::to_string(index);
+      intent.symbol = "SOLUSDT";
+      intent.direction = 1;
+      intent.qty = 1.0;
+      intent.price = 100.0;
+      intent.purpose = ai_trade::OrderPurpose::kEntry;
+      if (!app.oms_.RegisterIntent(intent)) {
+        std::cerr << "多笔基线后成交 OMS 注册失败\n";
+        return 1;
+      }
+      app.oms_.MarkSent(intent.client_order_id);
+      app.persisted_intent_by_id_[intent.client_order_id] = intent;
+    }
+    app.system_.SyncAccountFromRemotePositions(
+        {ai_trade::RemotePositionSnapshot{
+             .symbol = "SOLUSDT",
+             .qty = 2.0,
+             .avg_entry_price = 100.0,
+             .mark_price = 100.0,
+         }},
+      10000.0);
+    app.oms_.SeedNetPositionBaseline(
+        {ai_trade::RemotePositionSnapshot{
+            .symbol = "SOLUSDT",
+            .qty = 2.0,
+            .avg_entry_price = 100.0,
+            .mark_price = 100.0,
+        }});
+    for (int index = 1; index <= 2; ++index) {
+      ai_trade::FillEvent fill;
+      fill.fill_id = "multi-reflected-fill-" + std::to_string(index);
+      fill.client_order_id = "multi-reflected-" + std::to_string(index);
+      fill.symbol = "SOLUSDT";
+      fill.direction = 1;
+      fill.qty = 1.0;
+      fill.price = 100.0;
+      app.ProcessFillEvent(fill);
+    }
+    if (!NearlyEqual(app.system_.account().position_qty("SOLUSDT"), 4.0) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), 4.0)) {
+      std::cerr << "远端基线后的多笔独立真实成交必须全部入账\n";
+      return 1;
+    }
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_candidate_exit_lineage_inheritance_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    config.exchange = "mock";
+    // This unit test exercises lineage accounting without a staged production
+    // activation transaction; replay mode deliberately excludes the live
+    // evidence identity gate.
+    config.mode = "replay";
+    config.primary_symbol = "SOLUSDT";
+    config.protection.enabled = false;
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "candidate exit lineage WAL 初始化失败: " << error << "\n";
+      return 1;
+    }
+    auto adapter = std::make_unique<ai_trade::MockExchangeAdapter>(
+        std::vector<double>{100.0}, "SOLUSDT");
+    if (!adapter->Connect()) {
+      std::cerr << "candidate exit lineage mock 连接失败\n";
+      return 1;
+    }
+    app.adapter_ = std::move(adapter);
+    app.executor_ =
+        std::make_unique<ai_trade::AsyncExecutor>(app.adapter_.get());
+    app.executor_->Start();
+    app.system_.SyncAccountFromRemotePositions(
+        {ai_trade::RemotePositionSnapshot{
+             .symbol = "SOLUSDT",
+             .qty = 1.0,
+             .avg_entry_price = 100.0,
+             .mark_price = 100.0,
+         }},
+        10000.0);
+    app.oms_.SeedNetPositionBaseline(
+        {ai_trade::RemotePositionSnapshot{
+            .symbol = "SOLUSDT",
+            .qty = 1.0,
+            .avg_entry_price = 100.0,
+            .mark_price = 100.0,
+        }});
+
+    ai_trade::OrderIntent exit_intent;
+    exit_intent.client_order_id = "candidate-inherited-exit";
+    exit_intent.symbol = "SOLUSDT";
+    exit_intent.direction = -1;
+    exit_intent.qty = 1.0;
+    exit_intent.price = 110.0;
+    exit_intent.purpose = ai_trade::OrderPurpose::kReduce;
+    exit_intent.reduce_only = true;
+    ai_trade::BotApplication::IntegratorCandidateEpisode episode;
+    episode.lineage.decision_id = "entry-decision-a";
+    episode.lineage.candidate_id = "candidate-a";
+    episode.lineage.model_version = "model-a";
+    episode.lineage.mode = "canary";
+    episode.lineage.policy_reason = "candidate_entry";
+    episode.lineage.position_episode_id = "episode-a";
+    episode.signed_open_qty = 1.0;
+    episode.avg_entry_price = 100.0;
+    episode.entry_observed_from_flat = true;
+    app.integrator_episode_by_symbol_["SOLUSDT"] = episode;
+    const ai_trade::BotApplication::IntegratorCandidateLineage newer_decision{
+        .decision_id = "exit-decision-b",
+        .candidate_id = "candidate-b",
+        .model_version = "model-b",
+        .mode = "canary",
+        .policy_reason = "new_decision_must_not_steal_exit",
+        .position_episode_id = "episode-b",
+    };
+    if (!app.EnqueueIntent(exit_intent, &newer_decision)) {
+      std::cerr << "candidate exit lineage 减仓入队失败\n";
+      return 1;
+    }
+    const auto persisted_it =
+        app.persisted_intent_by_id_.find(exit_intent.client_order_id);
+    if (persisted_it == app.persisted_intent_by_id_.end() ||
+        persisted_it->second.candidate_id != "candidate-a" ||
+        persisted_it->second.model_version != "model-a" ||
+        persisted_it->second.position_episode_id != "episode-a" ||
+        persisted_it->second.decision_id != "entry-decision-a") {
+      std::cerr << "candidate 减仓必须继承当前持仓 episode，不能被新决策覆盖\n";
+      return 1;
+    }
+
+    ai_trade::FillEvent fill;
+    fill.fill_id = "candidate-inherited-exit-fill";
+    fill.client_order_id = exit_intent.client_order_id;
+    fill.symbol = "SOLUSDT";
+    fill.direction = -1;
+    fill.qty = 1.0;
+    fill.price = 110.0;
+    fill.fee = 0.1;
+    app.ProcessFillEvent(fill);
+    if (!NearlyEqual(app.system_.account().position_qty("SOLUSDT"), 0.0) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), 0.0) ||
+        app.integrator_episode_by_symbol_.count("SOLUSDT") != 0U ||
+        app.persisted_closed_episode_ids_.count("episode-a") != 1U ||
+        app.persisted_closed_episode_ids_.count("episode-b") != 0U) {
+      std::cerr << "candidate exit 必须按原 episode 独立结算并持久化闭合\n";
+      return 1;
+    }
+    app.Shutdown();
     std::filesystem::remove_all(data_dir, ec);
   }
 
@@ -7111,7 +7826,7 @@ int main() {
         "/v5/order/realtime",
         ai_trade::BybitHttpResponse{
             .status_code = 200,
-            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","orderLinkId":"cid-open-1","orderStatus":"New","leavesQty":"1"},{"symbol":"BTCUSDT","orderLinkId":"cid-zero-leaves-1","orderStatus":"New","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"cid-filled-1","orderStatus":"Filled","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"cid-cancelled-1","orderStatus":"Cancelled","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"","orderStatus":"New","leavesQty":"1"}]}})",
+            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","orderId":"exchange-open-1","orderLinkId":"cid-open-1","orderStatus":"New","side":"Sell","qty":"1","leavesQty":"1","cumExecQty":"0","price":"0","triggerPrice":"98.8","triggerDirection":"2","orderType":"Market","timeInForce":"GTC","reduceOnly":true,"closeOnTrigger":true},{"symbol":"BTCUSDT","orderLinkId":"cid-zero-leaves-1","orderStatus":"New","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"cid-filled-1","orderStatus":"Filled","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"cid-cancelled-1","orderStatus":"Cancelled","leavesQty":"0"},{"symbol":"BTCUSDT","orderLinkId":"","orderStatus":"New","leavesQty":"1"}]}})",
             .error = "",
         });
 
@@ -7131,8 +7846,8 @@ int main() {
       std::cerr << "bybit adapter 连接失败（撤单幂等测试）\n";
       return 1;
     }
-    if (!adapter.CancelOrder("cid-stale-1")) {
-      std::cerr << "Bybit 110001 撤单应按幂等成功处理\n";
+    if (adapter.CancelOrder("cid-stale-1")) {
+      std::cerr << "Bybit 110001 撤单语义不确定时不得释放 pending\n";
       return 1;
     }
     std::unordered_set<std::string> open_order_ids;
@@ -7142,6 +7857,22 @@ int main() {
         open_order_ids.find("cid-filled-1") != open_order_ids.end() ||
         open_order_ids.find("cid-cancelled-1") != open_order_ids.end()) {
       std::cerr << "Bybit 活动订单集合读取不符合预期\n";
+      return 1;
+    }
+    std::vector<ai_trade::RemoteOpenOrderSnapshot> open_orders;
+    if (!adapter.GetRemoteOpenOrders(&open_orders) ||
+        open_orders.size() != 1U ||
+        open_orders.front().client_order_id != "cid-open-1" ||
+        open_orders.front().exchange_order_id != "exchange-open-1" ||
+        open_orders.front().symbol != "BTCUSDT" ||
+        open_orders.front().direction != -1 ||
+        !NearlyEqual(open_orders.front().original_qty, 1.0) ||
+        !NearlyEqual(open_orders.front().leaves_qty, 1.0) ||
+        !NearlyEqual(open_orders.front().trigger_price, 98.8) ||
+        open_orders.front().trigger_direction != 2 ||
+        !open_orders.front().reduce_only ||
+        !open_orders.front().close_on_trigger) {
+      std::cerr << "Bybit 活动订单完整快照读取不符合预期\n";
       return 1;
     }
   }
@@ -7278,6 +8009,12 @@ int main() {
         {ScriptedWsAction::kText,
          R"({"ts":1700000000500,"topic":"tickers.BTCUSDT","type":"delta","data":{"symbol":"BTCUSDT","lastPrice":"123.5","markPrice":"123.6","volume24h":"999","fundingRate":"0.0004"}})",
          ""},
+        {ScriptedWsAction::kText,
+         R"({"ts":1700000300000,"topic":"kline.5.BTCUSDT","type":"snapshot","data":[{"start":1700000000000,"end":1700000299999,"interval":"5","open":"120","high":"125","low":"119","close":"123.5","volume":"42","confirm":false}]})",
+         ""},
+        {ScriptedWsAction::kText,
+         R"({"ts":1700000300000,"topic":"kline.5.BTCUSDT","type":"snapshot","data":[{"start":1700000000000,"end":1700000299999,"interval":"5","open":"120","high":"125","low":"119","close":"123.5","volume":"42","confirm":true}]})",
+         ""},
     };
     ai_trade::BybitPublicStream stream(
         ws_options,
@@ -7330,6 +8067,20 @@ int main() {
         event.interval_ms != 200 ||
         !NearlyEqual(event.volume, kExpectedRollingFallbackVolume, 1e-12)) {
       std::cerr << "public ws ticker rolling volume 回退语义不符合预期\n";
+      return 1;
+    }
+    if (stream.PollTicker(&event)) {
+      std::cerr << "未闭合 kline 不应产出模型特征事件\n";
+      return 1;
+    }
+    if (!stream.PollTicker(&event) || !event.feature_only ||
+        event.symbol != "BTCUSDT" || event.interval_ms != 300000 ||
+        !NearlyEqual(event.open_price, 120.0) ||
+        !NearlyEqual(event.high_price, 125.0) ||
+        !NearlyEqual(event.low_price, 119.0) ||
+        !NearlyEqual(event.price, 123.5) ||
+        !NearlyEqual(event.volume, 42.0)) {
+      std::cerr << "已闭合 kline 模型特征事件解析不符合预期\n";
       return 1;
     }
   }
@@ -7889,7 +8640,7 @@ int main() {
         "/v5/market/instruments-info",
         ai_trade::BybitHttpResponse{
             .status_code = 200,
-            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","lotSizeFilter":{"minOrderQty":"0.001","maxMktOrderQty":"100","qtyStep":"0.001","minNotionalValue":"5"},"priceFilter":{"tickSize":"0.1"}}]}})",
+            .body = R"({"retCode":0,"retMsg":"OK","result":{"list":[{"symbol":"BTCUSDT","lotSizeFilter":{"minOrderQty":"0.001","maxMktOrderQty":"100","qtyStep":"0.001","minNotionalValue":"5"},"priceFilter":{"tickSize":"0.1"}},{"symbol":"ETHUSDT","lotSizeFilter":{"minOrderQty":"0.01","maxMktOrderQty":"100","qtyStep":"0.01","minNotionalValue":"5"},"priceFilter":{"tickSize":"0.01"}}]}})",
             .error = "",
         });
     transport->AddRoute(
@@ -7900,11 +8651,20 @@ int main() {
             .body = R"({"retCode":0,"retMsg":"OK","result":{"orderId":"oid-1"}})",
             .error = "",
         });
+    transport->AddRoute(
+        "POST",
+        "/v5/order/cancel",
+        ai_trade::BybitHttpResponse{
+            .status_code = 200,
+            .body = R"({"retCode":0,"retMsg":"OK","result":{}})",
+            .error = "",
+        });
 
     ai_trade::BybitAdapterOptions options;
     options.mode = "paper";
     options.testnet = true;
-    options.symbols = {"BTCUSDT"};
+    options.symbols = {"BTCUSDT", "ETHUSDT"};
+    options.primary_symbol = "BTCUSDT";
     options.maker_entry_enabled = true;
     options.maker_fallback_to_market = false;
     options.maker_price_offset_bps = 1.0;
@@ -7964,6 +8724,21 @@ int main() {
     small_intent.qty = 0.0004;
     if (adapter.SubmitOrder(small_intent)) {
       std::cerr << "Bybit 小于最小下单数量的订单应被拒绝\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent retry_cancel_intent = ok_intent;
+    retry_cancel_intent.client_order_id = "eth-cancel-retry-1";
+    retry_cancel_intent.symbol = "ETHUSDT";
+    retry_cancel_intent.qty = 0.01;
+    retry_cancel_intent.price = 2000.0;
+    if (!adapter.SubmitOrder(retry_cancel_intent) ||
+        !adapter.CancelOrder(retry_cancel_intent.client_order_id) ||
+        !adapter.CancelOrder(retry_cancel_intent.client_order_id) ||
+        transport->last_body().find("\"symbol\":\"ETHUSDT\"") ==
+            std::string::npos) {
+      std::cerr << "Bybit 撤单确认前必须保留原 symbol 供安全重试，body="
+                << transport->last_body() << "\n";
       return 1;
     }
   }
@@ -8119,6 +8894,142 @@ int main() {
   }
 
   {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_replay_terminal_settlement_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.mode = "replay";
+    config.data_path = data_dir.string();
+    config.primary_symbol = "BTCUSDT";
+    config.protection.enabled = false;
+    config.execution_exit_fee_bps = 10.0;
+    config.execution_expected_slippage_bps = 5.0;
+    ai_trade::BotApplication app(config);
+    std::string wal_error;
+    if (!app.wal_.Initialize(&wal_error)) {
+      std::cerr << "replay 末端结算 WAL 初始化失败: " << wal_error << "\n";
+      return 1;
+    }
+
+    ai_trade::BybitAdapterOptions options;
+    options.mode = "replay";
+    options.allow_no_auth_in_replay = true;
+    options.symbols = {"BTCUSDT"};
+    options.replay_prices = {100.0};
+    options.replay_exit_fee_bps = config.execution_exit_fee_bps;
+    options.replay_expected_slippage_bps =
+        config.execution_expected_slippage_bps;
+    auto adapter =
+        std::make_unique<ai_trade::BybitExchangeAdapter>(options);
+    if (!adapter->Connect()) {
+      std::cerr << "replay 末端结算适配器连接失败\n";
+      return 1;
+    }
+    app.adapter_ = std::move(adapter);
+    app.executor_ =
+        std::make_unique<ai_trade::AsyncExecutor>(app.adapter_.get());
+    app.executor_->Start();
+
+    ai_trade::OrderIntent entry;
+    entry.client_order_id = "replay-terminal-entry";
+    entry.symbol = "BTCUSDT";
+    entry.purpose = ai_trade::OrderPurpose::kEntry;
+    entry.direction = 1;
+    entry.qty = 1.0;
+    entry.price = 100.0;
+    entry.liquidity_preference = ai_trade::LiquidityPreference::kTaker;
+    if (!app.EnqueueIntent(entry, nullptr)) {
+      std::cerr << "replay 末端结算测试建仓入队失败\n";
+      return 1;
+    }
+    for (int retry = 0;
+         retry < 200 &&
+         app.system_.account().GetActiveSymbols().empty();
+         ++retry) {
+      app.ProcessAsyncResults();
+      ai_trade::FillEvent fill;
+      while (app.adapter_->PollFill(&fill)) {
+        app.ProcessFillEvent(fill);
+      }
+      if (app.system_.account().GetActiveSymbols().empty()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+    }
+    if (app.system_.account().GetActiveSymbols().empty()) {
+      std::cerr << "replay 末端结算测试建仓未成交\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent stop_loss;
+    stop_loss.client_order_id = "replay-terminal-pending-sl";
+    stop_loss.parent_order_id = entry.client_order_id;
+    stop_loss.symbol = "BTCUSDT";
+    stop_loss.purpose = ai_trade::OrderPurpose::kSl;
+    stop_loss.direction = -1;
+    stop_loss.qty = 1.0;
+    stop_loss.price = 90.0;
+    stop_loss.reduce_only = true;
+    if (!app.EnqueueIntent(stop_loss, nullptr)) {
+      std::cerr << "replay 末端结算保护单入队失败\n";
+      return 1;
+    }
+    for (int retry = 0; retry < 200; ++retry) {
+      app.ProcessAsyncResults();
+      const auto* record = app.oms_.Find(stop_loss.client_order_id);
+      if (record != nullptr &&
+          record->state == ai_trade::OrderState::kSent) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const auto* stop_record = app.oms_.Find(stop_loss.client_order_id);
+    if (stop_record == nullptr ||
+        stop_record->state != ai_trade::OrderState::kSent ||
+        !app.oms_.HasPendingOrders()) {
+      std::cerr << "replay 末端结算测试保护单未进入待撤状态\n";
+      return 1;
+    }
+
+    if (app.AdvanceReplayTerminalSettlement()) {
+      std::cerr << "replay 末端结算不应在首轮清理时提前完成\n";
+      return 1;
+    }
+
+    bool settled = false;
+    for (int retry = 0; retry < 200 && !settled; ++retry) {
+      app.ProcessAsyncResults();
+      ai_trade::FillEvent fill;
+      while (app.adapter_->PollFill(&fill)) {
+        app.ProcessFillEvent(fill);
+      }
+      settled = app.AdvanceReplayTerminalSettlement();
+      if (!settled) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+    }
+    app.executor_->Stop();
+    if (!settled || app.replay_terminal_settlement_failed_ ||
+        !app.system_.account().GetActiveSymbols().empty() ||
+        app.oms_.HasPendingOrders()) {
+      std::cerr << "replay 数据耗尽后必须完成空仓且无悬挂订单结算\n";
+      return 1;
+    }
+    if (!NearlyEqual(app.system_.account().cumulative_fee_usd(), 0.099999975,
+                     1e-8) ||
+        !NearlyEqual(
+            app.system_.account().cumulative_realized_net_pnl_usd(),
+            -0.150024975,
+            1e-8)) {
+      std::cerr << "replay 末端结算必须计入退出手续费与 taker 滑点\n";
+      return 1;
+    }
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
     ai_trade::BybitAdapterOptions options;
     options.mode = "replay";
     options.allow_no_auth_in_replay = true;
@@ -8201,12 +9112,243 @@ int main() {
 
   {
     const std::filesystem::path replay_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_replay_oco_gap_stop.csv";
+    {
+      std::ofstream out(replay_path);
+      out << "timestamp,symbol,open,high,low,price,volume,interval_ms\n"
+          << "1700000000000,BTCUSDT,100,101,99,100,10,300000\n"
+          << "1700000300000,BTCUSDT,95,106,94,100,10,300000\n";
+    }
+    ai_trade::BybitAdapterOptions options;
+    options.mode = "replay";
+    options.allow_no_auth_in_replay = true;
+    options.symbols = {"BTCUSDT"};
+    options.replay_prices.clear();
+    options.replay_market_data_path = replay_path.string();
+    ai_trade::BybitExchangeAdapter adapter(options);
+    if (!adapter.Connect()) {
+      std::cerr << "same-bar OCO 回放连接失败\n";
+      return 1;
+    }
+    ai_trade::MarketEvent market;
+    if (!adapter.PollMarket(&market)) {
+      std::cerr << "same-bar OCO 首条行情缺失\n";
+      return 1;
+    }
+    ai_trade::OrderIntent entry;
+    entry.client_order_id = "oco-gap-entry";
+    entry.symbol = "BTCUSDT";
+    entry.purpose = ai_trade::OrderPurpose::kEntry;
+    entry.direction = 1;
+    entry.qty = 1.0;
+    entry.price = 100.0;
+    if (!adapter.SubmitOrder(entry)) {
+      std::cerr << "same-bar OCO 入场失败\n";
+      return 1;
+    }
+    ai_trade::FillEvent fill;
+    while (adapter.PollFill(&fill)) {
+    }
+
+    ai_trade::OrderIntent sl;
+    sl.client_order_id = "oco-gap-sl";
+    sl.parent_order_id = entry.client_order_id;
+    sl.symbol = "BTCUSDT";
+    sl.purpose = ai_trade::OrderPurpose::kSl;
+    sl.reduce_only = true;
+    sl.direction = -1;
+    sl.qty = 1.0;
+    sl.price = 99.0;
+    ai_trade::OrderIntent tp = sl;
+    tp.client_order_id = "oco-gap-tp";
+    tp.purpose = ai_trade::OrderPurpose::kTp;
+    tp.price = 105.0;
+    if (!adapter.SubmitOrder(sl) || !adapter.SubmitOrder(tp) ||
+        !adapter.PollMarket(&market)) {
+      std::cerr << "same-bar OCO 保护单提交或触发失败\n";
+      return 1;
+    }
+
+    int fill_count = 0;
+    double filled_qty = 0.0;
+    while (adapter.PollFill(&fill)) {
+      ++fill_count;
+      filled_qty += fill.qty;
+      if (fill.client_order_id != sl.client_order_id ||
+          !NearlyEqual(fill.price, 95.0, 1e-9)) {
+        std::cerr << "same-bar OCO 必须选择跳空后最不利的 SL 成交\n";
+        return 1;
+      }
+    }
+    double remote_notional = 0.0;
+    std::vector<ai_trade::RemoteOpenOrderSnapshot> open_orders;
+    if (fill_count != 2 || !NearlyEqual(filled_qty, 1.0) ||
+        !adapter.GetRemoteNotionalUsd(&remote_notional) ||
+        !NearlyEqual(remote_notional, 0.0, 1e-9) ||
+        !adapter.GetRemoteOpenOrders(&open_orders) || !open_orders.empty()) {
+      std::cerr << "same-bar OCO 必须原子取消 sibling 且不得超平翻仓\n";
+      return 1;
+    }
+    std::filesystem::remove(replay_path);
+  }
+
+  {
+    ai_trade::BybitAdapterOptions options;
+    options.mode = "replay";
+    options.allow_no_auth_in_replay = true;
+    options.symbols = {"BTCUSDT"};
+    options.maker_entry_enabled = true;
+    options.replay_prices.assign(2000, 100.0);
+    ai_trade::BybitExchangeAdapter adapter(options);
+    if (!adapter.Connect()) {
+      std::cerr << "Adapter 并发不变量测试连接失败\n";
+      return 1;
+    }
+    std::atomic<bool> start{false};
+    std::atomic<bool> execution_ok{true};
+    std::thread market_thread([&]() {
+      while (!start.load()) {
+        std::this_thread::yield();
+      }
+      ai_trade::MarketEvent event;
+      ai_trade::FillEvent fill;
+      while (adapter.PollMarket(&event)) {
+        while (adapter.PollFill(&fill)) {
+        }
+      }
+    });
+    std::thread execution_thread([&]() {
+      while (!start.load()) {
+        std::this_thread::yield();
+      }
+      for (int i = 0; i < 1000; ++i) {
+        ai_trade::OrderIntent maker;
+        maker.client_order_id = "concurrent-maker-" + std::to_string(i);
+        maker.symbol = "BTCUSDT";
+        maker.purpose = ai_trade::OrderPurpose::kEntry;
+        maker.direction = 1;
+        maker.qty = 1.0;
+        maker.price = 50.0;
+        maker.liquidity_preference = ai_trade::LiquidityPreference::kMaker;
+        if (!adapter.SubmitOrder(maker) ||
+            !adapter.CancelOrder(maker.client_order_id)) {
+          execution_ok.store(false);
+          return;
+        }
+      }
+    });
+    start.store(true);
+    market_thread.join();
+    execution_thread.join();
+    std::vector<ai_trade::RemoteOpenOrderSnapshot> open_orders;
+    ai_trade::FillEvent fill;
+    if (!execution_ok.load() ||
+        !adapter.GetRemoteOpenOrders(&open_orders) || !open_orders.empty() ||
+        adapter.PollFill(&fill)) {
+      std::cerr << "并发 Submit/Cancel 与 Poll 后共享队列必须完全收敛\n";
+      return 1;
+    }
+  }
+
+  {
+    const std::filesystem::path replay_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_replay_maker_touch.csv";
+    {
+      std::ofstream out(replay_path);
+      out << "timestamp,symbol,open,high,low,price,volume,interval_ms\n"
+          << "1700000000000,BTCUSDT,100,101,99,100,10,300000\n"
+          << "1700000300000,BTCUSDT,100,102,99.5,101,10,300000\n"
+          << "1700000600000,BTCUSDT,101,102,98,99,10,300000\n"
+          << "1700000900000,BTCUSDT,99,101,97,100,10,300000\n";
+    }
+    ai_trade::BybitAdapterOptions options;
+    options.mode = "replay";
+    options.allow_no_auth_in_replay = true;
+    options.symbols = {"BTCUSDT"};
+    options.replay_prices.clear();
+    options.replay_market_data_path = replay_path.string();
+    options.maker_entry_enabled = true;
+    options.maker_post_only = true;
+    ai_trade::BybitExchangeAdapter adapter(options);
+    if (!adapter.Connect()) {
+      std::cerr << "bybit maker 触价回放连接失败\n";
+      return 1;
+    }
+    ai_trade::MarketEvent market;
+    if (!adapter.PollMarket(&market)) {
+      std::cerr << "bybit maker 触价回放首条行情失败\n";
+      return 1;
+    }
+    ai_trade::OrderIntent maker;
+    maker.client_order_id = "maker-touch";
+    maker.symbol = "BTCUSDT";
+    maker.direction = 1;
+    maker.qty = 1.0;
+    maker.price = 99.0;
+    maker.liquidity_preference = ai_trade::LiquidityPreference::kMaker;
+    if (!adapter.SubmitOrder(maker)) {
+      std::cerr << "bybit maker 触价回放下单失败\n";
+      return 1;
+    }
+    ai_trade::FillEvent fill;
+    if (adapter.PollFill(&fill)) {
+      std::cerr << "maker 回放订单不得提交即成交\n";
+      return 1;
+    }
+    std::vector<ai_trade::RemoteOpenOrderSnapshot> open_orders;
+    if (!adapter.GetRemoteOpenOrders(&open_orders) ||
+        open_orders.size() != 1 ||
+        open_orders.front().client_order_id != maker.client_order_id) {
+      std::cerr << "maker 回放挂单未出现在活动订单快照\n";
+      return 1;
+    }
+    if (!adapter.PollMarket(&market) || adapter.PollFill(&fill)) {
+      std::cerr << "maker 回放订单在未触价 bar 不应成交\n";
+      return 1;
+    }
+    if (!adapter.PollMarket(&market)) {
+      std::cerr << "maker 回放订单触价行情缺失\n";
+      return 1;
+    }
+    int maker_fill_count = 0;
+    while (adapter.PollFill(&fill)) {
+      ++maker_fill_count;
+      if (fill.client_order_id != maker.client_order_id ||
+          fill.liquidity != ai_trade::FillLiquidity::kMaker ||
+          !NearlyEqual(fill.price, 99.0, 1e-9)) {
+        std::cerr << "maker 回放触价成交字段不符合预期\n";
+        return 1;
+      }
+    }
+    if (maker_fill_count != 2) {
+      std::cerr << "maker 回放触价成交数量不符合预期\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent cancelled = maker;
+    cancelled.client_order_id = "maker-cancel-before-touch";
+    cancelled.price = 98.0;
+    if (!adapter.SubmitOrder(cancelled) ||
+        !adapter.CancelOrder(cancelled.client_order_id) ||
+        !adapter.PollMarket(&market) || adapter.PollFill(&fill)) {
+      std::cerr << "maker 回放撤单后不得在后续触价 bar 成交\n";
+      return 1;
+    }
+    std::filesystem::remove(replay_path);
+  }
+
+  {
+    const std::filesystem::path replay_path =
         std::filesystem::temp_directory_path() / "ai_trade_replay_market.csv";
     {
       std::ofstream out(replay_path);
-      out << "timestamp,symbol,price,volume,interval_ms,funding_rate_per_interval\n"
-          << "1700000000000,BTCUSDT,50000,12.5,300000,\n"
-          << "1700000300000,BTCUSDT,50120,10.0,300000,0.00001\n";
+      out << "timestamp,symbol,open,high,low,price,volume,interval_ms,"
+             "funding_rate_per_interval\n"
+          << "1700000000000,BTCUSDT,49900,50100,49800,50000,12.5,300000,\n"
+          << "1700000300000,BTCUSDT,50000,50200,49950,50120,10.0,300000,"
+             "0.00001\n";
     }
     ai_trade::BybitAdapterOptions options;
     options.mode = "replay";
@@ -8234,7 +9376,10 @@ int main() {
       return 1;
     }
     if (!NearlyEqual(first.price, 50000.0) || !NearlyEqual(first.volume, 12.5) ||
-        first.interval_ms != 300000) {
+        first.interval_ms != 300000 ||
+        !NearlyEqual(first.open_price, 49900.0) ||
+        !NearlyEqual(first.high_price, 50100.0) ||
+        !NearlyEqual(first.low_price, 49800.0)) {
       std::cerr << "bybit CSV replay 第一条行情不符合预期\n";
       return 1;
     }
@@ -8901,6 +10046,77 @@ int main() {
   }
 
   {
+    // Canary may create a bounded model proposal from a flat heuristic base.
+    ai_trade::IntegratorConfig config;
+    config.enabled = true;
+    config.mode = ai_trade::IntegratorMode::kCanary;
+    config.canary_confidence_threshold = 0.50;
+    config.canary_allow_independent_signal = true;
+    config.canary_independent_notional_usd = 80.0;
+    ai_trade::ShadowInference inference;
+    inference.enabled = true;
+    inference.model_version = "candidate-test";
+    inference.p_up = 0.80;
+    inference.p_down = 0.20;
+    ai_trade::Signal flat;
+    flat.symbol = "SOLUSDT";
+    flat.reason_codes = {"STR_FLAT_SIGNAL", "REG_RANGE"};
+
+    const auto policy =
+        ai_trade::EvaluateIntegratorPolicy(config, inference, flat,
+                                           false, false, true);
+    if (!policy.applied ||
+        policy.reason != "canary_independent_signal" ||
+        !NearlyEqual(policy.signal.suggested_notional_usd, 80.0) ||
+        policy.signal.direction != 1 ||
+        !NearlyEqual(policy.signal.confidence, 0.60)) {
+      std::cerr << "canary 独立模型提案未按固定风险额度生效\n";
+      return 1;
+    }
+
+    const auto exposed = ai_trade::EvaluateIntegratorPolicy(
+        config, inference, flat, true, false, true);
+    if (exposed.applied || exposed.reason != "canary_account_not_flat") {
+      std::cerr << "canary 独立模型提案不应覆盖真实或在途仓位\n";
+      return 1;
+    }
+
+    const auto pending = ai_trade::EvaluateIntegratorPolicy(
+        config, inference, flat, false, true, true);
+    if (pending.applied ||
+        pending.reason != "canary_pending_order_present") {
+      std::cerr << "canary 独立模型提案不应被反向在途单伪装为空仓\n";
+      return 1;
+    }
+
+    const auto stale = ai_trade::EvaluateIntegratorPolicy(
+        config, inference, flat, false, false, false);
+    if (stale.applied || stale.reason != "canary_base_signal_ineligible") {
+      std::cerr << "canary 独立模型提案不应复活过期或策略拦截信号\n";
+      return 1;
+    }
+
+    config.canary_allow_independent_signal = false;
+    const auto blocked =
+        ai_trade::EvaluateIntegratorPolicy(config, inference, flat,
+                                           false, false, true);
+    if (blocked.applied || blocked.reason != "flat_base_signal" ||
+        !NearlyEqual(blocked.signal.suggested_notional_usd, 0.0)) {
+      std::cerr << "未显式授权时 canary 不应从空仓创建提案\n";
+      return 1;
+    }
+
+    config.mode = ai_trade::IntegratorMode::kActive;
+    const auto active =
+        ai_trade::EvaluateIntegratorPolicy(config, inference, flat,
+                                           false, false, true);
+    if (active.applied || active.reason != "flat_base_signal") {
+      std::cerr << "active 模式不应从空仓创建独立提案\n";
+      return 1;
+    }
+  }
+
+  {
     // 模型运行时不可用时，canary 应显式降级为 shadow_unavailable，不得伪造打分。
     const std::filesystem::path report_path =
         std::filesystem::temp_directory_path() /
@@ -9219,6 +10435,19 @@ int main() {
     ai_trade::research::Miner miner;
     const ai_trade::research::MinerReport report_1 = miner.Run(bars, config);
     const ai_trade::research::MinerReport report_2 = miner.Run(bars, config);
+    auto validation_perturbed_bars = bars;
+    for (std::size_t i = 180; i < validation_perturbed_bars.size(); ++i) {
+      validation_perturbed_bars[i].close +=
+          (i % 2 == 0 ? 1.0 : -1.0) * static_cast<double>(i) * 4.0;
+      validation_perturbed_bars[i].open =
+          validation_perturbed_bars[i].close - 0.20;
+      validation_perturbed_bars[i].high =
+          validation_perturbed_bars[i].close + 0.35;
+      validation_perturbed_bars[i].low =
+          validation_perturbed_bars[i].close - 0.40;
+    }
+    const ai_trade::research::MinerReport validation_perturbed_report =
+        miner.Run(validation_perturbed_bars, config);
 
     if (report_1.factors.size() != 5 || report_2.factors.size() != 5) {
       std::cerr << "Miner TopK 结果数量不符合预期\n";
@@ -9229,6 +10458,15 @@ int main() {
         report_1.random_baseline_trials <= 0 ||
         report_1.random_baseline_oos_abs_ic.sample_count <= 0) {
       std::cerr << "Miner 报告元数据/随机基线统计不符合预期\n";
+      return 1;
+    }
+    if (report_1.selection_policy !=
+            "train_ic_only_validation_diagnostic_v1" ||
+        report_1.optimization_domain != "development_train" ||
+        report_1.validation_domain !=
+            "development_validation_diagnostic_only" ||
+        report_1.validation_feedback_used) {
+      std::cerr << "Miner validation 隔离契约不符合预期\n";
       return 1;
     }
     if (!ai_trade::research::IsFinite(report_1.oos_random_baseline_threshold_p90) ||
@@ -9245,6 +10483,22 @@ int main() {
     if (report_1.factors[0].expression != report_2.factors[0].expression) {
       std::cerr << "Miner Top 因子复现性不符合预期\n";
       return 1;
+    }
+    if (validation_perturbed_report.factor_set_version !=
+            report_1.factor_set_version ||
+        validation_perturbed_report.factors.size() !=
+            report_1.factors.size()) {
+      std::cerr << "Miner validation 数据反馈改变候选集合\n";
+      return 1;
+    }
+    for (std::size_t i = 0; i < report_1.factors.size(); ++i) {
+      if (validation_perturbed_report.factors[i].expression !=
+              report_1.factors[i].expression ||
+          validation_perturbed_report.factors[i].invert_signal !=
+              report_1.factors[i].invert_signal) {
+        std::cerr << "Miner validation 数据反馈改变候选排序或方向\n";
+        return 1;
+      }
     }
     const auto has_delay =
         std::any_of(report_1.candidate_expressions.begin(),
@@ -9380,6 +10634,54 @@ int main() {
     if (results.size() != 2 || !NearlyEqual(results[0], 119.0) || !NearlyEqual(results[1], 2900.0)) {
        std::cerr << "OnlineFeatureEngine EvaluateBatch 计算错误\n";
        return 1;
+    }
+  }
+
+  {
+    ai_trade::research::OnlineFeatureEngine engine(10, 300000);
+    ai_trade::MarketEvent first_tick;
+    first_tick.ts_ms = 1700000000000;
+    first_tick.price = 100.0;
+    first_tick.volume = 2.0;
+    engine.OnMarket(first_tick);
+    first_tick.ts_ms += 1000;
+    first_tick.price = 102.0;
+    first_tick.volume = 3.0;
+    engine.OnMarket(first_tick);
+    if (engine.SampleCount() != 0U) {
+      std::cerr << "5m 在线特征不应消费未闭合 ticker bar\n";
+      return 1;
+    }
+    first_tick.ts_ms = 1700000300000;
+    first_tick.price = 101.0;
+    first_tick.volume = 1.0;
+    engine.OnMarket(first_tick);
+    if (engine.SampleCount() != 1U ||
+        !NearlyEqual(engine.Evaluate("open"), 100.0) ||
+        !NearlyEqual(engine.Evaluate("high"), 102.0) ||
+        !NearlyEqual(engine.Evaluate("low"), 100.0) ||
+        !NearlyEqual(engine.Evaluate("close"), 102.0) ||
+        !NearlyEqual(engine.Evaluate("volume"), 5.0)) {
+      std::cerr << "5m ticker 聚合 OHLCV 语义不符合预期\n";
+      return 1;
+    }
+
+    ai_trade::MarketEvent completed_bar;
+    completed_bar.ts_ms = 1700000600000;
+    completed_bar.price = 105.0;
+    completed_bar.volume = 9.0;
+    completed_bar.interval_ms = 300000;
+    completed_bar.open_price = 101.0;
+    completed_bar.high_price = 106.0;
+    completed_bar.low_price = 99.0;
+    engine.OnMarket(completed_bar);
+    if (engine.SampleCount() != 2U ||
+        !NearlyEqual(engine.Evaluate("open"), 101.0) ||
+        !NearlyEqual(engine.Evaluate("high"), 106.0) ||
+        !NearlyEqual(engine.Evaluate("low"), 99.0) ||
+        !NearlyEqual(engine.Evaluate("close"), 105.0)) {
+      std::cerr << "完整 OHLCV bar 应按原始语义进入在线特征\n";
+      return 1;
     }
   }
 

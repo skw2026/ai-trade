@@ -23,6 +23,7 @@ import datetime as dt
 import hashlib
 import json
 import math
+import os
 import pathlib
 import statistics
 import sys
@@ -43,6 +44,14 @@ except ImportError:  # pragma: no cover
 
 def log_info(message: str) -> None:
     print(f"[INFO] {message}")
+
+
+def file_sha256(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def to_iso_utc(timestamp_ms: int) -> str:
@@ -176,6 +185,48 @@ def build_feature_transform(
         "normalization_max_abs": normalization_max_abs,
         "clip_bounds": clip_bounds,
     }
+
+
+def apply_feature_transform(
+    features: np.ndarray,
+    feature_names: Sequence[str],
+    transform: Dict[str, Any],
+) -> np.ndarray:
+    transformed = sanitize_array(features)
+    bounds = transform.get("clip_bounds", [])
+    if not isinstance(bounds, list) or not bounds:
+        return transformed
+    bounds_by_name = {
+        str(item.get("feature")): item
+        for item in bounds
+        if isinstance(item, dict) and item.get("feature")
+    }
+    for index, name in enumerate(feature_names):
+        item = bounds_by_name.get(name)
+        if not isinstance(item, dict):
+            continue
+        column = transformed[:, index]
+        finite = np.isfinite(column)
+        if bool(item.get("enabled")):
+            lower = item.get("lower")
+            upper = item.get("upper")
+            if lower is not None and upper is not None:
+                column[finite] = np.clip(column[finite], float(lower), float(upper))
+        if bool(item.get("normalization_enabled")):
+            center = item.get("center")
+            scale = item.get("scale")
+            max_abs = item.get("normalized_max_abs")
+            if center is not None and scale is not None and float(scale) > 1e-12:
+                normalized = (column[finite] - float(center)) / float(scale)
+                if max_abs is not None:
+                    normalized = np.clip(
+                        normalized,
+                        -float(max_abs),
+                        float(max_abs),
+                    )
+                column[finite] = normalized
+        transformed[:, index] = column
+    return transformed
 
 
 def ts_delay(x: np.ndarray, window: int) -> np.ndarray:
@@ -415,6 +466,31 @@ def load_ohlcv_csv(csv_path: pathlib.Path) -> Dict[str, np.ndarray]:
     }
 
 
+def validate_time_axis(timestamp: np.ndarray, bar_interval_ms: int) -> Dict[str, int]:
+    if len(timestamp) < 2:
+        raise ValueError("OHLCV 时间轴至少需要 2 根 bar")
+    interval = int(bar_interval_ms)
+    if interval <= 0:
+        raise ValueError("bar_interval_ms 必须 > 0")
+    deltas = np.diff(timestamp.astype(np.int64))
+    duplicate_count = int(np.sum(deltas == 0))
+    non_monotonic_count = int(np.sum(deltas < 0))
+    gap_count = int(np.sum(deltas != interval))
+    if duplicate_count or non_monotonic_count or gap_count:
+        raise ValueError(
+            "OHLCV 时间轴不满足严格固定周期: "
+            f"duplicates={duplicate_count}, non_monotonic={non_monotonic_count}, "
+            f"gap_or_interval_mismatch={gap_count}, interval_ms={interval}"
+        )
+    return {
+        "rows": int(len(timestamp)),
+        "duplicate_count": duplicate_count,
+        "non_monotonic_count": non_monotonic_count,
+        "gap_or_interval_mismatch_count": gap_count,
+        "bar_interval_ms": interval,
+    }
+
+
 @dataclass
 class FactorSpec:
     expression: str
@@ -499,15 +575,17 @@ def build_label(
     horizon: int,
     label_round_trip_cost_bps: float = 0.0,
     label_min_net_edge_bps: float = 0.0,
+    execution_latency_bars: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(close)
     forward_return = np.full(n, np.nan, dtype=np.float64)
     if horizon <= 0:
         return forward_return, np.full(n, np.nan, dtype=np.float64)
-    # 反泄漏口径：t 时刻特征，标签使用 (t+1)->(t+h+1) 的前瞻收益。
-    for i in range(n - horizon - 1):
-        base = close[i + 1]
-        future = close[i + horizon + 1]
+    latency = max(0, int(execution_latency_bars))
+    # feature@t only earns returns after the declared execution latency.
+    for i in range(n - horizon - latency):
+        base = close[i + latency]
+        future = close[i + horizon + latency]
         if not math.isfinite(float(base)) or abs(base) < 1e-12 or not math.isfinite(float(future)):
             continue
         forward_return[i] = future / base - 1.0
@@ -524,6 +602,21 @@ def build_label(
     label[finite & (forward_return > threshold)] = 1.0
     label[finite & (forward_return < -threshold)] = 0.0
     return label, forward_return
+
+
+def build_next_bar_returns(ret_1: np.ndarray) -> np.ndarray:
+    return build_execution_bar_returns(ret_1, execution_latency_bars=0)
+
+
+def build_execution_bar_returns(
+    ret_1: np.ndarray,
+    execution_latency_bars: int,
+) -> np.ndarray:
+    result = np.full(len(ret_1), np.nan, dtype=np.float64)
+    shift = max(0, int(execution_latency_bars)) + 1
+    if len(ret_1) > shift:
+        result[:-shift] = ret_1[shift:]
+    return result
 
 
 def build_label_policy_summary(
@@ -592,33 +685,46 @@ def median_ignore_nan(values: Sequence[float]) -> float:
     return float(statistics.median(finite)) if finite else float("nan")
 
 
-def model_net_objective_samples(
-    score: np.ndarray,
-    forward_return: np.ndarray,
-    round_trip_cost_bps: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    mask = np.isfinite(score) & np.isfinite(forward_return)
-    if np.sum(mask) == 0:
-        empty = np.asarray([], dtype=np.float64)
-        return empty, empty, empty
-    clean_score = score[mask]
-    direction = np.where(clean_score >= 0.5, 1.0, -1.0).astype(np.float64)
-    gross_bps = direction * forward_return[mask] * 10000.0
-    net_bps = gross_bps - max(0.0, float(round_trip_cost_bps))
-    return gross_bps.astype(np.float64), net_bps.astype(np.float64), direction
-
-
 def summarize_model_net_objective(
     score: np.ndarray,
-    forward_return: np.ndarray,
+    next_bar_return: np.ndarray,
     round_trip_cost_bps: float,
+    confidence_threshold: float = 0.5,
 ) -> Dict[str, Any]:
-    gross_bps, net_bps, direction = model_net_objective_samples(
-        score=score,
-        forward_return=forward_return,
-        round_trip_cost_bps=round_trip_cost_bps,
-    )
-    if len(net_bps) <= 0:
+    if len(score) != len(next_bar_return):
+        raise ValueError("score and next_bar_return must align")
+    one_way_cost_bps = max(0.0, float(round_trip_cost_bps)) / 2.0
+    position = 0.0
+    gross_bps: List[float] = []
+    net_bps: List[float] = []
+    turnover_total = 0.0
+    trade_count = 0
+    active_positions: List[float] = []
+    for raw_score, raw_return in zip(score, next_bar_return):
+        if not (math.isfinite(float(raw_score)) and math.isfinite(float(raw_return))):
+            continue
+        directional_confidence = 2.0 * float(raw_score) - 1.0
+        target = (
+            math.copysign(1.0, directional_confidence)
+            if abs(directional_confidence) >= max(0.0, float(confidence_threshold))
+            else 0.0
+        )
+        turnover = abs(target - position)
+        if turnover > 1e-12:
+            trade_count += 1
+        gross = target * float(raw_return) * 10000.0
+        net = gross - turnover * one_way_cost_bps
+        gross_bps.append(gross)
+        net_bps.append(net)
+        active_positions.append(target)
+        turnover_total += turnover
+        position = target
+    if net_bps and abs(position) > 1e-12:
+        net_bps[-1] -= abs(position) * one_way_cost_bps
+        turnover_total += abs(position)
+        trade_count += 1
+        position = 0.0
+    if not net_bps:
         return {
             "model_net_objective_sample_count": 0,
             "mean_model_gross_edge_bps": float("nan"),
@@ -628,20 +734,52 @@ def summarize_model_net_objective(
             "long_signal_ratio": float("nan"),
             "short_signal_ratio": float("nan"),
             "round_trip_cost_bps": float(round_trip_cost_bps),
+            "trade_count": 0,
+            "turnover": 0.0,
+            "active_bar_count": 0,
+            "positive_net_bar_count": 0,
+            "evaluated_bar_count": 0,
+            "total_model_gross_edge_bps": 0.0,
+            "total_model_net_edge_bps": 0.0,
+            "net_bps_sum_squares": 0.0,
+            "terminal_position_closed": True,
         }
-    positive_count = int(np.sum(net_bps > 0.0))
-    long_count = int(np.sum(direction > 0.0))
-    short_count = int(np.sum(direction < 0.0))
-    sample_count = int(len(net_bps))
+    net_array = np.asarray(net_bps, dtype=np.float64)
+    gross_array = np.asarray(gross_bps, dtype=np.float64)
+    total_net_bps = float(np.sum(net_array))
+    total_gross_bps = float(np.sum(gross_array))
+    turnover_denominator = max(1e-12, turnover_total)
+    positions = np.asarray(active_positions, dtype=np.float64)
+    sample_count = len(net_bps)
+    active_mask = np.abs(positions) > 1e-12
+    active_bar_count = int(np.sum(active_mask))
+    positive_net_bar_count = int(np.sum((net_array > 0.0) & active_mask))
     return {
         "model_net_objective_sample_count": sample_count,
-        "mean_model_gross_edge_bps": float(np.mean(gross_bps)),
-        "mean_model_net_edge_bps": float(np.mean(net_bps)),
-        "median_model_net_edge_bps": float(np.median(net_bps)),
-        "positive_model_net_edge_ratio": float(positive_count) / float(sample_count),
-        "long_signal_ratio": float(long_count) / float(sample_count),
-        "short_signal_ratio": float(short_count) / float(sample_count),
+        "mean_model_gross_edge_bps": total_gross_bps / turnover_denominator,
+        "mean_model_net_edge_bps": total_net_bps / turnover_denominator,
+        "total_model_gross_edge_bps": total_gross_bps,
+        "total_model_net_edge_bps": total_net_bps,
+        "median_model_net_edge_bps": float(np.median(net_array)),
+        "positive_model_net_edge_ratio": (
+            float(positive_net_bar_count) / float(active_bar_count)
+            if active_bar_count > 0
+            else float("nan")
+        ),
+        "long_signal_ratio": float(np.mean(positions > 0.0)),
+        "short_signal_ratio": float(np.mean(positions < 0.0)),
         "round_trip_cost_bps": float(round_trip_cost_bps),
+        "one_way_cost_bps": one_way_cost_bps,
+        "trade_count": trade_count,
+        "turnover": turnover_total,
+        "active_bar_count": active_bar_count,
+        "positive_net_bar_count": positive_net_bar_count,
+        "evaluated_bar_count": sample_count,
+        "net_bps_sum_squares": float(np.sum(net_array * net_array)),
+        "terminal_position_closed": position == 0.0,
+        "objective_definition": (
+            "net_bps_per_unit_turnover_after_terminal_close"
+        ),
     }
 
 
@@ -660,6 +798,7 @@ def build_splits(
     train_window: int,
     test_window: int,
     step_window: int,
+    purge_bars: int = 0,
 ) -> List[SplitRange]:
     if n_splits <= 0:
         raise ValueError("n_splits 必须大于 0")
@@ -675,9 +814,9 @@ def build_splits(
         if first_train_end <= 10:
             raise ValueError("样本不足以构建 TimeSeriesSplit")
         for idx in range(n_splits):
+            test_start = first_train_end + idx * test_window
             train_start = 0
-            train_end = first_train_end + idx * test_window
-            test_start = train_end
+            train_end = test_start - max(0, int(purge_bars))
             test_end = test_start + test_window
             if test_end > sample_count:
                 break
@@ -692,17 +831,20 @@ def build_splits(
     if step_window <= 0:
         step_window = test_window
 
-    max_splits = (sample_count - train_window - test_window) // step_window + 1
+    purge = max(0, int(purge_bars))
+    max_splits = (
+        sample_count - train_window - test_window - purge
+    ) // step_window + 1
     if max_splits <= 0:
         raise ValueError("rolling 参数导致无法切分，请增大样本或减小窗口")
     use_splits = min(n_splits, max_splits)
     first_test_start = sample_count - (use_splits * step_window + test_window - step_window)
-    first_test_start = max(first_test_start, train_window)
+    first_test_start = max(first_test_start, train_window + purge)
 
     for idx in range(use_splits):
         test_start = first_test_start + idx * step_window
         test_end = test_start + test_window
-        train_end = test_start
+        train_end = test_start - purge
         train_start = train_end - train_window
         if train_start < 0 or test_end > sample_count:
             continue
@@ -710,6 +852,39 @@ def build_splits(
     if not splits:
         raise ValueError("rolling 未生成有效切分")
     return splits
+
+
+def purge_splits_by_raw_index(
+    splits: Sequence[SplitRange],
+    raw_indices: np.ndarray,
+    label_lookahead_bars: int,
+    rolling_train_window: int,
+    method: str,
+) -> List[SplitRange]:
+    purged: List[SplitRange] = []
+    lookahead = max(0, int(label_lookahead_bars))
+    for split in splits:
+        test_raw_start = int(raw_indices[split.test_start])
+        # A label rooted at raw row i ends at i+lookahead and must end before test.
+        raw_cutoff = test_raw_start - lookahead
+        train_end = min(
+            split.train_end,
+            int(np.searchsorted(raw_indices, raw_cutoff, side="left")),
+        )
+        train_start = split.train_start
+        if method.lower() == "rolling" and rolling_train_window > 0:
+            train_start = train_end - int(rolling_train_window)
+        if train_start < 0 or train_end - train_start <= 10:
+            continue
+        purged.append(
+            SplitRange(
+                train_start=train_start,
+                train_end=train_end,
+                test_start=split.test_start,
+                test_end=split.test_end,
+            )
+        )
+    return purged
 
 
 def mean_ignore_nan(values: Sequence[float]) -> float:
@@ -722,6 +897,48 @@ def stdev_ignore_nan(values: Sequence[float]) -> float:
     if len(finite) <= 1:
         return float("nan")
     return float(statistics.stdev(finite))
+
+
+def student_t_975(df: int) -> float:
+    # Two-sided 95% critical values. OOS split counts are normally small, so
+    # using a normal approximation here would materially overstate confidence.
+    critical = (
+        12.706,
+        4.303,
+        3.182,
+        2.776,
+        2.571,
+        2.447,
+        2.365,
+        2.306,
+        2.262,
+        2.228,
+        2.201,
+        2.179,
+        2.160,
+        2.145,
+        2.131,
+        2.120,
+        2.110,
+        2.101,
+        2.093,
+        2.086,
+        2.080,
+        2.074,
+        2.069,
+        2.064,
+        2.060,
+        2.056,
+        2.052,
+        2.048,
+        2.045,
+        2.042,
+    )
+    if df <= 0:
+        return float("nan")
+    if df <= len(critical):
+        return critical[df - 1]
+    return 1.96
 
 
 def class_count(values: np.ndarray) -> Dict[int, int]:
@@ -738,11 +955,14 @@ def split_temporal_train_validation(
     y: np.ndarray,
     validation_fraction: float,
     min_validation_samples: int,
+    purge_samples: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, Dict[str, int]]:
     sample_count = int(len(x))
     metadata = {
         "train_fit_count": sample_count,
         "validation_count": 0,
+        "validation_start": sample_count,
+        "purge_count": 0,
     }
     if sample_count <= 0 or validation_fraction <= 0.0 or min_validation_samples <= 0:
         return x, y, None, None, metadata
@@ -757,22 +977,110 @@ def split_temporal_train_validation(
     candidate_validation = min(candidate_validation, max_validation)
 
     for validation_size in range(candidate_validation, int(min_validation_samples) - 1, -1):
-        fit_size = sample_count - validation_size
+        validation_start = sample_count - validation_size
+        fit_size = validation_start - max(0, int(purge_samples))
         if fit_size < max(int(min_validation_samples), 2):
             continue
         x_fit = x[:fit_size]
         y_fit = y[:fit_size]
-        x_val = x[fit_size:]
-        y_val = y[fit_size:]
+        x_val = x[validation_start:]
+        y_val = y[validation_start:]
         if len(class_count(y_fit).keys()) < 2:
             continue
         if len(class_count(y_val).keys()) < 2:
             continue
         metadata["train_fit_count"] = int(len(x_fit))
         metadata["validation_count"] = int(len(x_val))
+        metadata["validation_start"] = int(validation_start)
+        metadata["purge_count"] = int(validation_start - fit_size)
         return x_fit, y_fit, x_val, y_val, metadata
 
     return x, y, None, None, metadata
+
+
+def split_raw_temporal_train_validation(
+    raw_features: np.ndarray,
+    label: np.ndarray,
+    raw_start: int,
+    raw_end: int,
+    validation_fraction: float,
+    min_validation_samples: int,
+    purge_bars: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None, Dict[str, int]]:
+    raw_start = max(0, int(raw_start))
+    raw_end = min(len(raw_features), int(raw_end))
+    valid = np.isfinite(label) & np.all(np.isfinite(raw_features), axis=1)
+    full_indices = np.flatnonzero(valid & (np.arange(len(valid)) >= raw_start) & (
+        np.arange(len(valid)) < raw_end
+    ))
+    metadata = {
+        "raw_train_start": raw_start,
+        "raw_train_end_exclusive": raw_end,
+        "train_fit_count": int(len(full_indices)),
+        "validation_count": 0,
+        "validation_start_raw": raw_end,
+        "purge_count_raw": 0,
+    }
+    x_full = raw_features[full_indices]
+    y_full = label[full_indices]
+    raw_count = raw_end - raw_start
+    if (
+        raw_count <= 0
+        or validation_fraction <= 0.0
+        or min_validation_samples <= 0
+    ):
+        return x_full, y_full, None, None, metadata
+
+    candidate_validation_raw = max(
+        int(round(raw_count * validation_fraction)),
+        int(min_validation_samples),
+    )
+    max_validation_raw = raw_count - max(int(min_validation_samples), 2)
+    candidate_validation_raw = min(candidate_validation_raw, max_validation_raw)
+    for validation_raw_size in range(
+        candidate_validation_raw,
+        int(min_validation_samples) - 1,
+        -1,
+    ):
+        validation_start_raw = raw_end - validation_raw_size
+        fit_end_raw = validation_start_raw - max(0, int(purge_bars))
+        if fit_end_raw <= raw_start:
+            continue
+        fit_indices = np.flatnonzero(
+            valid
+            & (np.arange(len(valid)) >= raw_start)
+            & (np.arange(len(valid)) < fit_end_raw)
+        )
+        validation_indices = np.flatnonzero(
+            valid
+            & (np.arange(len(valid)) >= validation_start_raw)
+            & (np.arange(len(valid)) < raw_end)
+        )
+        if (
+            len(fit_indices) < max(int(min_validation_samples), 2)
+            or len(validation_indices) < int(min_validation_samples)
+        ):
+            continue
+        y_fit = label[fit_indices]
+        y_val = label[validation_indices]
+        if len(class_count(y_fit)) < 2 or len(class_count(y_val)) < 2:
+            continue
+        metadata.update(
+            {
+                "train_fit_count": int(len(fit_indices)),
+                "validation_count": int(len(validation_indices)),
+                "validation_start_raw": int(validation_start_raw),
+                "purge_count_raw": int(max(0, purge_bars)),
+            }
+        )
+        return (
+            raw_features[fit_indices],
+            y_fit,
+            raw_features[validation_indices],
+            y_val,
+            metadata,
+        )
+    return x_full, y_full, None, None, metadata
 
 
 def build_catboost_classifier(
@@ -854,6 +1162,10 @@ def evaluate_governance(
     max_random_label_auc: float,
     min_mean_model_net_edge_bps: float,
     min_positive_model_net_edge_ratio: float,
+    min_model_net_total_trades: int = 0,
+    min_model_net_active_bars: int = 0,
+    min_positive_model_net_splits_ratio: float = 0.0,
+    min_model_net_edge_lcb_bps: float = float("-inf"),
 ) -> Tuple[bool, List[str], List[str]]:
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
@@ -873,6 +1185,12 @@ def evaluate_governance(
     random_label_auc = metrics_oos.get("random_label_auc", float("nan"))
     random_label_auc_mean = metrics_oos.get("random_label_auc_mean", random_label_auc)
     random_label_auc_max = metrics_oos.get("random_label_auc_max", random_label_auc)
+    total_trades = metrics_oos.get("model_net_total_trades", float("nan"))
+    active_bars = metrics_oos.get("model_net_active_bar_count", float("nan"))
+    positive_splits_ratio = metrics_oos.get(
+        "positive_model_net_edge_ratio_by_split", float("nan")
+    )
+    net_edge_lcb = metrics_oos.get("model_net_edge_lcb_bps", float("nan"))
 
     if not math.isfinite(mean_model_net_edge_bps):
         fail_reasons.append("缺少或无效 metrics_oos.mean_model_net_edge_bps")
@@ -890,6 +1208,31 @@ def evaluate_governance(
             "positive_model_net_edge_ratio="
             f"{positive_model_net_edge_ratio:.6f} < "
             f"min_positive_model_net_edge_ratio={min_positive_model_net_edge_ratio:.6f}"
+        )
+
+    if not math.isfinite(total_trades) or int(total_trades) < min_model_net_total_trades:
+        fail_reasons.append(
+            f"model_net_total_trades={int(total_trades) if math.isfinite(total_trades) else 0} "
+            f"< min_model_net_total_trades={min_model_net_total_trades}"
+        )
+    if not math.isfinite(active_bars) or int(active_bars) < min_model_net_active_bars:
+        fail_reasons.append(
+            f"model_net_active_bar_count={int(active_bars) if math.isfinite(active_bars) else 0} "
+            f"< min_model_net_active_bars={min_model_net_active_bars}"
+        )
+    if (
+        not math.isfinite(positive_splits_ratio)
+        or positive_splits_ratio < min_positive_model_net_splits_ratio
+    ):
+        fail_reasons.append(
+            "positive_model_net_edge_ratio_by_split="
+            f"{positive_splits_ratio:.6f} < "
+            f"min_positive_model_net_splits_ratio={min_positive_model_net_splits_ratio:.6f}"
+        )
+    if not math.isfinite(net_edge_lcb) or net_edge_lcb < min_model_net_edge_lcb_bps:
+        fail_reasons.append(
+            f"model_net_edge_lcb_bps={net_edge_lcb:.6f} < "
+            f"min_model_net_edge_lcb_bps={min_model_net_edge_lcb_bps:.6f}"
         )
 
     if not math.isfinite(auc_mean):
@@ -959,6 +1302,21 @@ def evaluate_governance(
 def main() -> int:
     parser = argparse.ArgumentParser(description="CatBoost Integrator 离线训练（R2）")
     parser.add_argument("--csv", required=True, help="研究数据 CSV 路径（OHLCV）")
+    parser.add_argument(
+        "--training_symbol",
+        default="BTCUSDT",
+        help="该模型唯一允许消费的交易币对",
+    )
+    parser.add_argument(
+        "--bar_interval_ms",
+        type=int,
+        default=300000,
+        help="训练 OHLCV bar 周期（毫秒），必须与线上完整 K 线一致",
+    )
+    parser.add_argument("--source_venue", required=True)
+    parser.add_argument("--source_category", required=True)
+    parser.add_argument("--price_type", required=True)
+    parser.add_argument("--volume_unit", required=True)
     parser.add_argument("--miner_report", required=True, help="miner_report.json 路径")
     parser.add_argument("--output", required=True, help="Integrator 训练报告输出路径（JSON）")
     parser.add_argument("--model_out", required=True, help="CatBoost 模型输出路径（.cbm）")
@@ -1070,6 +1428,12 @@ def main() -> int:
         help="随机标签对照重复次数（统计均值/波动，降低单次噪声）",
     )
     parser.add_argument(
+        "--execution_latency_bars",
+        type=int,
+        default=1,
+        help="feature bar 收盘到可执行持仓之间的延迟 bar 数",
+    )
+    parser.add_argument(
         "--label_round_trip_cost_bps",
         type=float,
         default=0.0,
@@ -1094,6 +1458,30 @@ def main() -> int:
         help="治理主目标：模型 OOS 净 edge 为正的最小样本比例",
     )
     parser.add_argument(
+        "--min_model_net_total_trades",
+        type=int,
+        default=20,
+        help="治理主目标：OOS 模型经济预筛最小换仓事件数",
+    )
+    parser.add_argument(
+        "--min_model_net_active_bars",
+        type=int,
+        default=100,
+        help="治理主目标：OOS 模型持仓活跃 bar 下限",
+    )
+    parser.add_argument(
+        "--min_positive_model_net_splits_ratio",
+        type=float,
+        default=0.50,
+        help="治理主目标：成本后为正的 OOS split 比例下限",
+    )
+    parser.add_argument(
+        "--min_model_net_edge_lcb_bps",
+        type=float,
+        default=0.0,
+        help="治理主目标：OOS 每 bar 净收益 95% 正态下置信界下限",
+    )
+    parser.add_argument(
         "--feature_clip_quantile",
         type=float,
         default=0.0,
@@ -1102,7 +1490,7 @@ def main() -> int:
     parser.add_argument(
         "--fail_on_governance",
         action="store_true",
-        help="治理门槛不通过时返回非零退出码",
+        help="兼容旧调用；治理失败现在始终返回非零并禁止发布模型",
     )
     parser.add_argument(
         "--min_samples",
@@ -1111,6 +1499,21 @@ def main() -> int:
         help="最小有效样本数（小样本烟囱测试可调低）",
     )
     args = parser.parse_args()
+    args.training_symbol = str(args.training_symbol).strip().upper()
+    if not args.training_symbol:
+        parser.error("--training_symbol 不能为空")
+    if args.bar_interval_ms <= 0:
+        parser.error("--bar_interval_ms 必须 > 0")
+    if (
+        args.source_venue != "bybit"
+        or args.source_category != "linear"
+        or args.price_type != "trade_price"
+        or args.volume_unit != "base_asset"
+    ):
+        parser.error(
+            "training data contract must be "
+            "bybit/linear/trade_price/base_asset"
+        )
 
     if np is None:
         raise SystemExit(
@@ -1132,6 +1535,10 @@ def main() -> int:
     model_out_path = pathlib.Path(args.model_out)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     model_out_path.parent.mkdir(parents=True, exist_ok=True)
+    if model_out_path.exists():
+        raise FileExistsError(
+            f"拒绝覆盖已有模型产物，避免治理失败复用旧文件: {model_out_path}"
+        )
     if not (0.0 <= float(args.min_auc_mean) <= 1.0):
         raise ValueError("--min_auc_mean 必须在 [0,1] 范围")
     if not (0.0 <= float(args.min_split_trained_ratio) <= 1.0):
@@ -1170,43 +1577,39 @@ def main() -> int:
         raise ValueError("--min_validation_samples 不能为负数")
     if int(args.early_stopping_rounds) <= 0:
         raise ValueError("--early_stopping_rounds 必须大于 0")
+    if int(args.execution_latency_bars) < 1:
+        raise ValueError("--execution_latency_bars 必须大于等于 1")
+    if (
+        args.split_method == "rolling"
+        and int(args.rolling_step_bars) < int(args.test_window_bars)
+    ):
+        raise ValueError(
+            "--rolling_step_bars 必须 >= --test_window_bars，禁止重叠 OOS 窗口"
+        )
+    if int(args.min_model_net_total_trades) <= 0:
+        raise ValueError("--min_model_net_total_trades 必须大于 0")
+    if int(args.min_model_net_active_bars) <= 0:
+        raise ValueError("--min_model_net_active_bars 必须大于 0")
+    if not (0.0 <= float(args.min_positive_model_net_splits_ratio) <= 1.0):
+        raise ValueError("--min_positive_model_net_splits_ratio 必须在 [0,1] 范围")
 
     series = load_ohlcv_csv(csv_path)
+    time_axis_quality = validate_time_axis(
+        series["timestamp"],
+        int(args.bar_interval_ms),
+    )
     factor_set_version, factor_specs = load_factor_specs(miner_report_path, max(1, args.top_k))
     log_info(f"INTEGRATOR_START: bars={len(series['close'])}, factors={len(factor_specs)}")
 
     raw_features, feature_names, ret_1 = build_feature_matrix(series, factor_specs)
-    features, feature_transform = build_feature_transform(
-        raw_features,
-        feature_names,
-        feature_clip_quantile=float(args.feature_clip_quantile),
-    )
-    if feature_transform.get("feature_clipping_enabled"):
-        clipped_feature_count = sum(
-            1
-            for item in feature_transform.get("clip_bounds", [])
-            if isinstance(item, dict) and bool(item.get("enabled"))
-        )
-        log_info(
-            "INTEGRATOR_FEATURE_TRANSFORM: "
-            f"clip_quantile={float(args.feature_clip_quantile):.6f}, "
-            f"clipped_features={clipped_feature_count}/{len(feature_names)}"
-        )
-    if feature_transform.get("feature_normalization_enabled"):
-        normalized_feature_count = int(feature_transform.get("enabled_normalization_count") or 0)
-        log_info(
-            "INTEGRATOR_FEATURE_NORMALIZATION: "
-            f"method={feature_transform.get('normalization_method')}, "
-            f"normalized_features={normalized_feature_count}/{len(feature_names)}, "
-            f"max_abs={feature_transform.get('normalization_max_abs')}"
-        )
     label, forward_return = build_label(
         series["close"],
         args.predict_horizon_bars,
         label_round_trip_cost_bps=float(args.label_round_trip_cost_bps),
         label_min_net_edge_bps=float(args.label_min_net_edge_bps),
+        execution_latency_bars=int(args.execution_latency_bars),
     )
-    valid_mask = np.isfinite(label) & np.all(np.isfinite(features), axis=1)
+    valid_mask = np.isfinite(label) & np.all(np.isfinite(raw_features), axis=1)
     label_policy = build_label_policy_summary(
         label=label,
         forward_return=forward_return,
@@ -1223,15 +1626,15 @@ def main() -> int:
         f"valid_neg={label_policy['valid_negative_label_count']}"
     )
 
-    X = features[valid_mask]
+    X_raw = raw_features[valid_mask]
     y = label[valid_mask]
-    ret1_valid = ret_1[valid_mask]
-    ts_valid = series["timestamp"][valid_mask]
-
-    economic_valid_mask = np.isfinite(forward_return) & np.all(np.isfinite(features), axis=1)
-    X_economic = features[economic_valid_mask]
-    forward_return_economic = forward_return[economic_valid_mask]
-    ts_economic = series["timestamp"][economic_valid_mask]
+    execution_bar_return = build_execution_bar_returns(
+        ret_1,
+        execution_latency_bars=int(args.execution_latency_bars),
+    )
+    label_lookahead_bars = (
+        int(args.predict_horizon_bars) + int(args.execution_latency_bars)
+    )
 
     if args.split_method == "rolling" and args.train_window_bars > 0:
         required = (
@@ -1239,27 +1642,31 @@ def main() -> int:
             + args.test_window_bars
             + max(0, args.n_splits - 1) * max(1, args.rolling_step_bars)
         )
-        if len(X) < required:
+        required += label_lookahead_bars
+        if len(raw_features) < required:
             raise ValueError(
                 "rolling 参数与样本规模不匹配："
-                f"至少需要 {required} 条有效样本，当前仅 {len(X)}。"
+                f"至少需要 {required} 条原始 bar，当前仅 {len(raw_features)}。"
                 "可增大历史数据，或降低 train/test/step/n_splits。"
             )
 
-    if len(X) < args.min_samples:
+    if len(X_raw) < args.min_samples:
         raise ValueError(
-            f"有效样本过少: {len(X)}，小于 --min_samples={args.min_samples}。"
+            f"有效样本过少: {len(X_raw)}，小于 --min_samples={args.min_samples}。"
             "若仅做功能验证可下调 --min_samples；正式验收建议使用更长历史样本。"
         )
 
     splits = build_splits(
-        sample_count=len(X),
+        sample_count=len(raw_features),
         method=args.split_method,
         n_splits=args.n_splits,
         train_window=args.train_window_bars,
         test_window=args.test_window_bars,
         step_window=args.rolling_step_bars,
+        purge_bars=label_lookahead_bars,
     )
+    if not splits:
+        raise ValueError("按原始 bar 时间轴执行 label purge 后没有可用时序切分")
 
     split_reports: List[dict] = []
     auc_values: List[float] = []
@@ -1270,26 +1677,65 @@ def main() -> int:
     acc_values: List[float] = []
     baseline_auc_values: List[float] = []
     best_iteration_values: List[float] = []
-    model_gross_edge_values: List[float] = []
-    model_net_edge_values: List[float] = []
     model_net_edge_split_values: List[float] = []
-    model_positive_net_edge_split_ratios: List[float] = []
+    model_net_total_gross_bps = 0.0
+    model_net_total_net_bps = 0.0
+    model_net_total_turnover = 0.0
+    model_net_total_trades = 0
+    model_net_active_bar_count = 0
+    model_net_positive_bar_count = 0
+    model_net_evaluated_bar_count = 0
+    model_net_bps_sum_squares = 0.0
+    model_net_economic_split_count = 0
+    model_net_positive_split_count = 0
     trained_split_count = 0
     first_trained_split: Dict[str, np.ndarray] | None = None
+    raw_indices = np.arange(len(raw_features))
+    finite_feature_mask = np.all(np.isfinite(raw_features), axis=1)
+    previous_test_end = -1
 
     for split_id, split in enumerate(splits, start=1):
-        X_train = X[split.train_start : split.train_end]
-        y_train = y[split.train_start : split.train_end]
-        X_test = X[split.test_start : split.test_end]
-        y_test = y[split.test_start : split.test_end]
-        test_ret1 = ret1_valid[split.test_start : split.test_end]
-        test_ts_start = int(ts_valid[split.test_start])
-        test_ts_end = int(ts_valid[split.test_end - 1])
-        economic_test_mask = (ts_economic >= test_ts_start) & (ts_economic <= test_ts_end)
-        X_economic_test = X_economic[economic_test_mask]
-        test_forward_return = forward_return_economic[economic_test_mask]
+        if split.test_start < previous_test_end:
+            raise ValueError(
+                "检测到重叠 OOS 窗口，拒绝重复计算同一市场证据: "
+                f"previous_test_end={previous_test_end}, test_start={split.test_start}"
+            )
+        previous_test_end = split.test_end
+        train_mask = (
+            valid_mask
+            & (raw_indices >= split.train_start)
+            & (raw_indices < split.train_end)
+        )
+        test_mask = (
+            valid_mask
+            & (raw_indices >= split.test_start)
+            & (raw_indices < split.test_end)
+        )
+        economic_test_mask = (
+            finite_feature_mask
+            & np.isfinite(execution_bar_return)
+            & (raw_indices >= split.test_start)
+            & (raw_indices < split.test_end)
+        )
+        X_train_raw = raw_features[train_mask]
+        y_train = label[train_mask]
+        X_test_raw = raw_features[test_mask]
+        y_test = label[test_mask]
+        test_ret1 = ret_1[test_mask]
         train_counts = class_count(y_train)
         test_counts = class_count(y_test)
+        train_range = {
+            "start": int(split.train_start),
+            "end_exclusive": int(split.train_end),
+            "ts_start": to_iso_utc(int(series["timestamp"][split.train_start])),
+            "ts_end": to_iso_utc(int(series["timestamp"][split.train_end - 1])),
+        }
+        test_range = {
+            "start": int(split.test_start),
+            "end_exclusive": int(split.test_end),
+            "ts_start": to_iso_utc(int(series["timestamp"][split.test_start])),
+            "ts_end": to_iso_utc(int(series["timestamp"][split.test_end - 1])),
+        }
 
         if len(train_counts.keys()) < 2:
             log_info(
@@ -1303,34 +1749,52 @@ def main() -> int:
                     "skip_reason": "train_single_class",
                     "train_class_counts": train_counts,
                     "test_class_counts": test_counts,
-                    "train_range": {
-                        "start": int(split.train_start),
-                        "end_exclusive": int(split.train_end),
-                        "ts_start": to_iso_utc(int(ts_valid[split.train_start])),
-                        "ts_end": to_iso_utc(int(ts_valid[split.train_end - 1])),
-                    },
-                    "test_range": {
-                        "start": int(split.test_start),
-                        "end_exclusive": int(split.test_end),
-                        "ts_start": to_iso_utc(int(ts_valid[split.test_start])),
-                        "ts_end": to_iso_utc(int(ts_valid[split.test_end - 1])),
-                    },
+                    "train_range": train_range,
+                    "test_range": test_range,
                 }
             )
             continue
 
         (
-            X_fit,
+            X_fit_raw,
             y_fit,
-            X_val,
+            X_val_raw,
             y_val,
             fit_meta,
-        ) = split_temporal_train_validation(
-            X_train,
-            y_train,
+        ) = split_raw_temporal_train_validation(
+            raw_features,
+            label,
+            raw_start=split.train_start,
+            raw_end=split.train_end,
             validation_fraction=float(args.validation_fraction),
             min_validation_samples=int(args.min_validation_samples),
+            purge_bars=label_lookahead_bars,
         )
+        X_fit, split_feature_transform = build_feature_transform(
+            X_fit_raw,
+            feature_names,
+            feature_clip_quantile=float(args.feature_clip_quantile),
+        )
+        X_val = (
+            apply_feature_transform(
+                X_val_raw,
+                feature_names,
+                split_feature_transform,
+            )
+            if X_val_raw is not None
+            else None
+        )
+        X_test = apply_feature_transform(
+            X_test_raw,
+            feature_names,
+            split_feature_transform,
+        )
+        X_economic_test = apply_feature_transform(
+            raw_features[economic_test_mask],
+            feature_names,
+            split_feature_transform,
+        )
+        test_execution_return = execution_bar_return[economic_test_mask]
         model = build_catboost_classifier(
             random_seed=int(args.random_seed),
             iterations=int(args.iterations),
@@ -1351,7 +1815,11 @@ def main() -> int:
             }
         model.fit(X_fit, y_fit, **fit_kwargs)
         train_score = model.predict_proba(X_fit)[:, 1]
-        score = model.predict_proba(X_test)[:, 1]
+        score = (
+            model.predict_proba(X_test)[:, 1]
+            if len(X_test) > 0
+            else np.asarray([], dtype=np.float64)
+        )
         if X_val is not None and y_val is not None:
             validation_score = model.predict_proba(X_val)[:, 1]
             validation_auc = auc_score(y_val, validation_score)
@@ -1363,24 +1831,35 @@ def main() -> int:
         )
         net_objective = summarize_model_net_objective(
             score=economic_score,
-            forward_return=test_forward_return,
+            next_bar_return=test_execution_return,
             round_trip_cost_bps=float(args.label_round_trip_cost_bps),
         )
-        split_gross_bps, split_net_bps, _ = model_net_objective_samples(
-            score=economic_score,
-            forward_return=test_forward_return,
-            round_trip_cost_bps=float(args.label_round_trip_cost_bps),
-        )
-        model_gross_edge_values.extend(float(v) for v in split_gross_bps)
-        model_net_edge_values.extend(float(v) for v in split_net_bps)
         split_mean_net = float(net_objective.get("mean_model_net_edge_bps", float("nan")))
-        split_positive_ratio = float(
-            net_objective.get("positive_model_net_edge_ratio", float("nan"))
-        )
         if math.isfinite(split_mean_net):
             model_net_edge_split_values.append(split_mean_net)
-        if math.isfinite(split_positive_ratio):
-            model_positive_net_edge_split_ratios.append(split_positive_ratio)
+            model_net_economic_split_count += 1
+            if split_mean_net > 0.0:
+                model_net_positive_split_count += 1
+        model_net_total_gross_bps += float(
+            net_objective.get("total_model_gross_edge_bps", 0.0)
+        )
+        model_net_total_net_bps += float(
+            net_objective.get("total_model_net_edge_bps", 0.0)
+        )
+        model_net_total_turnover += float(net_objective.get("turnover", 0.0))
+        model_net_total_trades += int(net_objective.get("trade_count", 0))
+        model_net_active_bar_count += int(
+            net_objective.get("active_bar_count", 0)
+        )
+        model_net_positive_bar_count += int(
+            net_objective.get("positive_net_bar_count", 0)
+        )
+        model_net_evaluated_bar_count += int(
+            net_objective.get("evaluated_bar_count", 0)
+        )
+        model_net_bps_sum_squares += float(
+            net_objective.get("net_bps_sum_squares", 0.0)
+        )
 
         train_auc = auc_score(y_fit, train_score)
         auc = auc_score(y_test, score)
@@ -1401,12 +1880,13 @@ def main() -> int:
         baseline_auc_values.append(base_auc)
         trained_split_count += 1
         if first_trained_split is None:
-            first_trained_split = {
-                "x_train": X_fit,
-                "y_train": y_fit,
-                "x_test": X_test,
-                "y_test": y_test,
-            }
+            if len(X_test) > 0:
+                first_trained_split = {
+                    "x_train": X_fit,
+                    "y_train": y_fit,
+                    "x_test": X_test,
+                    "y_test": y_test,
+                }
 
         split_reports.append(
             {
@@ -1414,18 +1894,8 @@ def main() -> int:
                 "status": "trained",
                 "train_class_counts": train_counts,
                 "test_class_counts": test_counts,
-                "train_range": {
-                    "start": int(split.train_start),
-                    "end_exclusive": int(split.train_end),
-                    "ts_start": to_iso_utc(int(ts_valid[split.train_start])),
-                    "ts_end": to_iso_utc(int(ts_valid[split.train_end - 1])),
-                },
-                "test_range": {
-                    "start": int(split.test_start),
-                    "end_exclusive": int(split.test_end),
-                    "ts_start": to_iso_utc(int(ts_valid[split.test_start])),
-                    "ts_end": to_iso_utc(int(ts_valid[split.test_end - 1])),
-                },
+                "train_range": train_range,
+                "test_range": test_range,
                 "metrics": {
                     "train_auc": train_auc,
                     "validation_auc": validation_auc,
@@ -1435,9 +1905,12 @@ def main() -> int:
                     "baseline_auc": base_auc,
                     "best_iteration": int(best_iteration + 1) if isinstance(best_iteration, int) and best_iteration >= 0 else None,
                     "net_objective": net_objective,
-                    "net_objective_evaluation_scope": "all_finite_forward_rows_in_test_time_range",
+                    "net_objective_evaluation_scope": (
+                        "all_finite_execution_bar_rows_on_raw_test_axis"
+                    ),
                 },
                 "fit_window": fit_meta,
+                "feature_transform_scope": "split_fit_only_before_purged_validation",
             }
         )
         log_info(
@@ -1498,19 +1971,62 @@ def main() -> int:
             f"max_auc={random_label_auc_max:.6f}, max_allowed={float(args.max_random_label_auc):.6f}"
         )
 
-    # 用全部有效样本训练最终模型并导出（供后续影子推理使用）。
+    # Fit the deployable transform without looking at the temporal validation tail.
     (
-        X_final_fit,
+        X_final_fit_raw,
         y_final_fit,
-        X_final_val,
+        X_final_val_raw,
         y_final_val,
         final_fit_meta,
-    ) = split_temporal_train_validation(
-        X,
-        y,
+    ) = split_raw_temporal_train_validation(
+        raw_features,
+        label,
+        raw_start=0,
+        raw_end=len(raw_features),
         validation_fraction=float(args.validation_fraction),
         min_validation_samples=int(args.min_validation_samples),
+        purge_bars=label_lookahead_bars,
     )
+    transform_fit_source = (
+        X_final_fit_raw if X_final_val_raw is not None else X_raw
+    )
+    _, feature_transform = build_feature_transform(
+        transform_fit_source,
+        feature_names,
+        feature_clip_quantile=float(args.feature_clip_quantile),
+    )
+    X = apply_feature_transform(X_raw, feature_names, feature_transform)
+    X_final_fit = apply_feature_transform(
+        X_final_fit_raw,
+        feature_names,
+        feature_transform,
+    )
+    X_final_val = (
+        apply_feature_transform(
+            X_final_val_raw,
+            feature_names,
+            feature_transform,
+        )
+        if X_final_val_raw is not None
+        else None
+    )
+    if feature_transform.get("feature_clipping_enabled"):
+        log_info(
+            "INTEGRATOR_FEATURE_TRANSFORM: "
+            f"scope=final_train_only, "
+            f"clip_quantile={float(args.feature_clip_quantile):.6f}, "
+            f"clipped_features={feature_transform.get('enabled_clip_bound_count', 0)}/"
+            f"{len(feature_names)}"
+        )
+    if feature_transform.get("feature_normalization_enabled"):
+        log_info(
+            "INTEGRATOR_FEATURE_NORMALIZATION: "
+            f"scope=final_train_only, "
+            f"method={feature_transform.get('normalization_method')}, "
+            f"normalized_features={feature_transform.get('enabled_normalization_count', 0)}/"
+            f"{len(feature_names)}, "
+            f"max_abs={feature_transform.get('normalization_max_abs')}"
+        )
     final_iterations = int(args.iterations)
     if X_final_val is not None and y_final_val is not None:
         tune_model = build_catboost_classifier(
@@ -1544,7 +2060,6 @@ def main() -> int:
         rsm=float(args.rsm),
     )
     final_model.fit(X, y)
-    final_model.save_model(str(model_out_path))
 
     importance = final_model.get_feature_importance()
     feature_importance = sorted(
@@ -1564,6 +2079,7 @@ def main() -> int:
     schema_hash = hashlib.sha256(schema_seed.encode("utf-8")).hexdigest()[:16]
     model_hash_seed = (
         f"{schema_hash}|{args.split_method}|{args.predict_horizon_bars}|"
+        f"{int(args.execution_latency_bars)}|"
         f"{float(args.label_round_trip_cost_bps):.6f}|"
         f"{float(args.label_min_net_edge_bps):.6f}|"
         f"{float(args.feature_clip_quantile):.6f}|"
@@ -1573,23 +2089,79 @@ def main() -> int:
     model_version = f"integrator_cb_v1_{model_hash}"
     feature_schema_version = f"feature_schema_v1_{schema_hash}"
 
+    turnover_denominator = max(1e-12, model_net_total_turnover)
+    mean_net_per_bar = (
+        model_net_total_net_bps / float(model_net_evaluated_bar_count)
+        if model_net_evaluated_bar_count > 0
+        else float("nan")
+    )
+    model_net_edge_lcb_bps = float("nan")
+    split_net_mean = mean_ignore_nan(model_net_edge_split_values)
+    split_net_stdev = stdev_ignore_nan(model_net_edge_split_values)
+    if (
+        len(model_net_edge_split_values) >= 2
+        and math.isfinite(split_net_mean)
+        and math.isfinite(split_net_stdev)
+    ):
+        split_standard_error = split_net_stdev / math.sqrt(
+            float(len(model_net_edge_split_values))
+        )
+        model_net_edge_lcb_bps = split_net_mean - student_t_975(
+            len(model_net_edge_split_values) - 1
+        ) * split_standard_error
+
     metrics_oos = {
-        "primary_objective": "model_net_edge_bps_after_cost",
-        "mean_model_gross_edge_bps": mean_ignore_nan(model_gross_edge_values),
-        "mean_model_net_edge_bps": mean_ignore_nan(model_net_edge_values),
-        "median_model_net_edge_bps": median_ignore_nan(model_net_edge_values),
+        "primary_objective": "aggregate_model_net_bps_per_unit_turnover_after_cost",
+        "primary_objective_definition": (
+            "aggregate non-overlapping OOS execution-bar position PnL divided by "
+            "aggregate turnover, after one-way cost and terminal close"
+        ),
+        "evidence_tier": "offline_model_economic_prescreen",
+        "authoritative_promotion_evidence": "live_candidate_episode_canary",
+        "required_offline_prescreen": "independent_cpp_replay_next_bar_ohlc_touch",
+        "mean_model_gross_edge_bps": (
+            model_net_total_gross_bps / turnover_denominator
+        ),
+        "mean_model_net_edge_bps": (
+            model_net_total_net_bps / turnover_denominator
+        ),
+        "mean_model_net_edge_bps_per_round_trip": (
+            2.0 * model_net_total_net_bps / turnover_denominator
+        ),
+        "median_model_net_edge_bps": median_ignore_nan(
+            model_net_edge_split_values
+        ),
         "positive_model_net_edge_ratio": (
-            float(sum(1 for item in model_net_edge_values if item > 0.0))
-            / float(len(model_net_edge_values))
-            if model_net_edge_values
+            float(model_net_positive_bar_count)
+            / float(model_net_active_bar_count)
+            if model_net_active_bar_count > 0
             else float("nan")
         ),
-        "model_net_objective_sample_count": len(model_net_edge_values),
-        "mean_model_net_edge_bps_by_split": mean_ignore_nan(model_net_edge_split_values),
-        "model_net_edge_bps_split_stdev": stdev_ignore_nan(model_net_edge_split_values),
-        "positive_model_net_edge_ratio_by_split": mean_ignore_nan(
-            model_positive_net_edge_split_ratios
+        "model_net_objective_sample_count": model_net_evaluated_bar_count,
+        "model_net_total_gross_edge_bps": model_net_total_gross_bps,
+        "model_net_total_net_edge_bps": model_net_total_net_bps,
+        "model_net_total_turnover": model_net_total_turnover,
+        "model_net_total_trades": model_net_total_trades,
+        "model_net_active_bar_count": model_net_active_bar_count,
+        "model_net_positive_bar_count": model_net_positive_bar_count,
+        "model_net_evaluated_bar_count": model_net_evaluated_bar_count,
+        "model_net_mean_per_bar_bps": mean_net_per_bar,
+        "model_net_edge_lcb_bps": model_net_edge_lcb_bps,
+        "model_net_edge_lcb_method": "non_overlapping_oos_split_student_t_95",
+        "mean_model_net_edge_bps_by_split": split_net_mean,
+        "model_net_edge_bps_split_stdev": split_net_stdev,
+        "positive_model_net_edge_ratio_by_split": (
+            float(model_net_positive_split_count)
+            / float(model_net_economic_split_count)
+            if model_net_economic_split_count > 0
+            else float("nan")
         ),
+        "oos_economic_split_count": model_net_economic_split_count,
+        "oos_test_window_bar_count": int(
+            sum(split.test_end - split.test_start for split in splits)
+        ),
+        "oos_duplicate_bar_count": 0,
+        "oos_duplicate_bar_ratio": 0.0,
         "net_objective_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
         "train_auc_mean": mean_ignore_nan(train_auc_values),
         "train_auc_stdev": stdev_ignore_nan(train_auc_values),
@@ -1629,16 +2201,30 @@ def main() -> int:
         max_random_label_auc=float(args.max_random_label_auc),
         min_mean_model_net_edge_bps=float(args.min_mean_model_net_edge_bps),
         min_positive_model_net_edge_ratio=float(args.min_positive_model_net_edge_ratio),
+        min_model_net_total_trades=int(args.min_model_net_total_trades),
+        min_model_net_active_bars=int(args.min_model_net_active_bars),
+        min_positive_model_net_splits_ratio=float(
+            args.min_positive_model_net_splits_ratio
+        ),
+        min_model_net_edge_lcb_bps=float(args.min_model_net_edge_lcb_bps),
     )
     governance = {
         "pass": governance_pass,
         "fail_reasons": governance_fail_reasons,
         "warn_reasons": governance_warn_reasons,
-        "primary_objective": "model_net_edge_bps_after_cost",
+        "primary_objective": "aggregate_model_net_bps_per_unit_turnover_after_cost",
         "thresholds": {
             "min_mean_model_net_edge_bps": float(args.min_mean_model_net_edge_bps),
             "min_positive_model_net_edge_ratio": float(
                 args.min_positive_model_net_edge_ratio
+            ),
+            "min_model_net_total_trades": int(args.min_model_net_total_trades),
+            "min_model_net_active_bars": int(args.min_model_net_active_bars),
+            "min_positive_model_net_splits_ratio": float(
+                args.min_positive_model_net_splits_ratio
+            ),
+            "min_model_net_edge_lcb_bps": float(
+                args.min_model_net_edge_lcb_bps
             ),
             "min_auc_mean": float(args.min_auc_mean),
             "min_delta_auc_vs_baseline": float(args.min_delta_auc_vs_baseline),
@@ -1651,6 +2237,16 @@ def main() -> int:
             "random_label_trials": int(args.random_label_trials),
         },
     }
+    model_artifact_status = "published" if governance_pass else "rejected_not_published"
+    if governance_pass:
+        temporary_model_path = model_out_path.with_name(
+            f".{model_out_path.name}.tmp-{os.getpid()}"
+        )
+        try:
+            final_model.save_model(str(temporary_model_path))
+            os.replace(temporary_model_path, model_out_path)
+        finally:
+            temporary_model_path.unlink(missing_ok=True)
 
     report_payload = {
         "model_version": model_version,
@@ -1660,19 +2256,61 @@ def main() -> int:
         "created_at_utc": dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "data": {
             "csv_path": str(csv_path),
+            "csv_sha256": file_sha256(csv_path),
+            "research_domain": "development",
+            "training_symbol": args.training_symbol,
+            "bar_interval_ms": int(args.bar_interval_ms),
+            "online_bar_source": "closed_ohlcv",
+            "source_venue": args.source_venue,
+            "source_category": args.source_category,
+            "price_type": args.price_type,
+            "volume_unit": args.volume_unit,
             "miner_report_path": str(miner_report_path),
-            "sample_count_after_filter": int(len(X)),
+            "sample_count_after_filter": int(len(X_raw)),
+            "raw_bar_count": int(len(raw_features)),
             "predict_horizon_bars": int(args.predict_horizon_bars),
+            "execution_latency_bars": int(args.execution_latency_bars),
             "label_policy": label_policy,
+            "time_axis_quality": time_axis_quality,
         },
         "feature_transform": feature_transform,
         "anti_leakage": {
             "feature_time": "t",
-            "label_time": f"t+1..t+{args.predict_horizon_bars + 1}",
+            "label_time": (
+                f"close[t+{int(args.execution_latency_bars)}] -> "
+                f"close[t+{int(args.execution_latency_bars) + int(args.predict_horizon_bars)}]"
+            ),
+            "economic_return_time": (
+                f"close[t+{int(args.execution_latency_bars)}] -> "
+                f"close[t+{int(args.execution_latency_bars) + 1}]"
+            ),
             "split_method": args.split_method,
             "random_kfold_forbidden": True,
             "window_boundary_logged": True,
+            "split_axis": "raw_bar_index_before_label_filter",
+            "oos_windows_non_overlapping": True,
+            "label_lookahead_bars": label_lookahead_bars,
+            "purge_bars": label_lookahead_bars,
+            "purge_uses_original_row_indices": True,
+            "inner_validation_purge_bars": label_lookahead_bars,
+            "feature_transform_scope": "split_fit_only_before_purged_validation",
+            "final_feature_transform_scope": (
+                "final_fit_only_before_purged_validation_tail"
+            ),
             "random_label_control_enabled": run_random_label_control,
+            "online_feature_contract": {
+                "symbol_scope": "single_symbol",
+                "training_symbol": args.training_symbol,
+                "bar_interval_ms": int(args.bar_interval_ms),
+                "ohlcv_semantics": "closed_bar",
+                "source_venue": args.source_venue,
+                "source_category": args.source_category,
+                "price_type": args.price_type,
+                "volume_unit": args.volume_unit,
+                "live_ticker_as_training_bar_forbidden": True,
+                "production_history_bootstrap_required": True,
+                "replay_history_bootstrap_forbidden": True,
+            },
         },
         "train_config": {
             "split_method": args.split_method,
@@ -1694,9 +2332,18 @@ def main() -> int:
             "random_seed": int(args.random_seed),
             "label_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
             "label_min_net_edge_bps": float(args.label_min_net_edge_bps),
+            "execution_latency_bars": int(args.execution_latency_bars),
             "min_mean_model_net_edge_bps": float(args.min_mean_model_net_edge_bps),
             "min_positive_model_net_edge_ratio": float(
                 args.min_positive_model_net_edge_ratio
+            ),
+            "min_model_net_total_trades": int(args.min_model_net_total_trades),
+            "min_model_net_active_bars": int(args.min_model_net_active_bars),
+            "min_positive_model_net_splits_ratio": float(
+                args.min_positive_model_net_splits_ratio
+            ),
+            "min_model_net_edge_lcb_bps": float(
+                args.min_model_net_edge_lcb_bps
             ),
             "feature_clip_quantile": float(args.feature_clip_quantile),
         },
@@ -1704,7 +2351,8 @@ def main() -> int:
         "governance": governance,
         "feature_importance": feature_importance,
         "feature_names": feature_names,
-        "model_out": str(model_out_path),
+        "model_out": str(model_out_path) if governance_pass else None,
+        "model_artifact_status": model_artifact_status,
         "final_fit_window": final_fit_meta,
     }
 
@@ -1714,7 +2362,8 @@ def main() -> int:
     log_info(
         "INTEGRATOR_DONE: "
         f"model_version={model_version}, feature_schema_version={feature_schema_version}, "
-        f"output={output_path}, model_out={model_out_path}"
+        f"output={output_path}, "
+        f"model_out={model_out_path if governance_pass else 'none'}"
     )
     log_info(
         "INTEGRATOR_GOVERNANCE: "
@@ -1722,7 +2371,7 @@ def main() -> int:
         f"fail_reasons={len(governance_fail_reasons)}, "
         f"warn_reasons={len(governance_warn_reasons)}"
     )
-    if args.fail_on_governance and not governance_pass:
+    if not governance_pass:
         print(
             "[ERROR] 治理门槛未通过: " + "; ".join(governance_fail_reasons),
             file=sys.stderr,

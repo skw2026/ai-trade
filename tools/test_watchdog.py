@@ -4,6 +4,7 @@ import importlib.util
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 
 def load_watchdog_module():
@@ -37,7 +38,36 @@ class WatchdogUtilsTest(unittest.TestCase):
         self.assertEqual(ts.year, 2026)
         self.assertIsNone(WATCHDOG.parse_log_time("invalid line"))
 
+    def test_scheduler_health_accepts_healthy_and_starting(self):
+        for status in ("healthy", "starting"):
+            body = (
+                '{"State":{"Running":true,"Health":{"Status":"'
+                + status
+                + '"}}}'
+            ).encode()
+            with mock.patch.object(
+                WATCHDOG,
+                "docker_http_get",
+                return_value=("HTTP/1.1 200 OK", {}, body),
+            ):
+                ok, message = WATCHDOG.check_scheduler()
+            self.assertTrue(ok)
+            self.assertIn(status, message)
+
+    def test_scheduler_health_rejects_failed_or_missing_health(self):
+        for body in (
+            b'{"State":{"Running":true,"Health":{"Status":"unhealthy"}}}',
+            b'{"State":{"Running":true}}',
+            b'{"State":{"Running":false,"Status":"exited"}}',
+        ):
+            with mock.patch.object(
+                WATCHDOG,
+                "docker_http_get",
+                return_value=("HTTP/1.1 200 OK", {}, body),
+            ):
+                ok, _ = WATCHDOG.check_scheduler()
+            self.assertFalse(ok)
+
 
 if __name__ == "__main__":
     unittest.main()
-

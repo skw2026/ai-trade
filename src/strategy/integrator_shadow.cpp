@@ -1,12 +1,23 @@
 #include "strategy/integrator_shadow.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cctype>
 #include <cmath>
+#include <cstdlib>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#if defined(__APPLE__)
+#include <CommonCrypto/CommonDigest.h>
+#include <mach-o/dyld.h>
+#else
+#include <openssl/evp.h>
+#include <unistd.h>
+#endif
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -196,6 +207,193 @@ namespace ai_trade {
 
 namespace {
 
+constexpr const char* kIntegratorPrimaryObjective =
+    "aggregate_model_net_bps_per_unit_turnover_after_cost";
+
+std::string BytesToHex(const unsigned char* bytes, std::size_t size) {
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string output(size * 2U, '0');
+  for (std::size_t i = 0; i < size; ++i) {
+    output[i * 2U] = kHex[(bytes[i] >> 4U) & 0x0FU];
+    output[i * 2U + 1U] = kHex[bytes[i] & 0x0FU];
+  }
+  return output;
+}
+
+std::optional<std::string> Sha256Bytes(const void* data, std::size_t size) {
+#if defined(__APPLE__)
+  unsigned char digest[CC_SHA256_DIGEST_LENGTH] = {};
+  if (CC_SHA256(data, static_cast<CC_LONG>(size), digest) == nullptr) {
+    return std::nullopt;
+  }
+  return BytesToHex(digest, CC_SHA256_DIGEST_LENGTH);
+#else
+  EVP_MD_CTX* context = EVP_MD_CTX_new();
+  if (context == nullptr) return std::nullopt;
+  unsigned char digest[EVP_MAX_MD_SIZE] = {};
+  unsigned int digest_size = 0;
+  const bool ok =
+      EVP_DigestInit_ex(context, EVP_sha256(), nullptr) == 1 &&
+      EVP_DigestUpdate(context, data, size) == 1 &&
+      EVP_DigestFinal_ex(context, digest, &digest_size) == 1;
+  EVP_MD_CTX_free(context);
+  if (!ok) return std::nullopt;
+  return BytesToHex(digest, digest_size);
+#endif
+}
+
+std::optional<std::string> Sha256File(const std::string& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) return std::nullopt;
+#if defined(__APPLE__)
+  CC_SHA256_CTX context;
+  bool ok = CC_SHA256_Init(&context) == 1;
+  char buffer[64 * 1024];
+  while (ok && input.good()) {
+    input.read(buffer, sizeof(buffer));
+    const std::streamsize count = input.gcount();
+    if (count > 0) {
+      ok = CC_SHA256_Update(
+               &context, buffer, static_cast<CC_LONG>(count)) == 1;
+    }
+  }
+  ok = ok && input.eof();
+  unsigned char digest[CC_SHA256_DIGEST_LENGTH] = {};
+  ok = ok && CC_SHA256_Final(digest, &context) == 1;
+  if (!ok) return std::nullopt;
+  return BytesToHex(digest, CC_SHA256_DIGEST_LENGTH);
+#else
+  EVP_MD_CTX* context = EVP_MD_CTX_new();
+  if (context == nullptr) return std::nullopt;
+  bool ok = EVP_DigestInit_ex(context, EVP_sha256(), nullptr) == 1;
+  char buffer[64 * 1024];
+  while (ok && input.good()) {
+    input.read(buffer, sizeof(buffer));
+    const std::streamsize count = input.gcount();
+    if (count > 0) {
+      ok = EVP_DigestUpdate(context, buffer, static_cast<std::size_t>(count)) == 1;
+    }
+  }
+  ok = ok && input.eof();
+  unsigned char digest[EVP_MAX_MD_SIZE] = {};
+  unsigned int digest_size = 0;
+  ok = ok && EVP_DigestFinal_ex(context, digest, &digest_size) == 1;
+  EVP_MD_CTX_free(context);
+  if (!ok) return std::nullopt;
+  return BytesToHex(digest, digest_size);
+#endif
+}
+
+std::optional<std::string> CurrentExecutablePath() {
+#if defined(__APPLE__)
+  std::uint32_t size = 0;
+  (void)_NSGetExecutablePath(nullptr, &size);
+  if (size == 0) return std::nullopt;
+  std::vector<char> path(size + 1, '\0');
+  if (_NSGetExecutablePath(path.data(), &size) != 0) {
+    return std::nullopt;
+  }
+  std::error_code ec;
+  const auto canonical = std::filesystem::weakly_canonical(path.data(), ec);
+  return ec ? std::optional<std::string>(path.data())
+            : std::optional<std::string>(canonical.string());
+#else
+  std::vector<char> path(4096, '\0');
+  const ssize_t count =
+      readlink("/proc/self/exe", path.data(), path.size() - 1);
+  if (count <= 0) return std::nullopt;
+  path[static_cast<std::size_t>(count)] = '\0';
+  return std::string(path.data());
+#endif
+}
+
+std::string TrimCopy(const std::string& text) {
+  std::size_t begin = 0;
+  while (begin < text.size() &&
+         std::isspace(static_cast<unsigned char>(text[begin])) != 0) {
+    ++begin;
+  }
+  std::size_t end = text.size();
+  while (end > begin &&
+         std::isspace(static_cast<unsigned char>(text[end - 1])) != 0) {
+    --end;
+  }
+  return text.substr(begin, end - begin);
+}
+
+std::string ToUpperCopy(const std::string& text) {
+  std::string out = TrimCopy(text);
+  std::transform(out.begin(), out.end(), out.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::toupper(ch));
+  });
+  return out;
+}
+
+std::vector<std::string> SplitCsvLine(const std::string& line) {
+  std::vector<std::string> fields;
+  std::string field;
+  bool quoted = false;
+  for (std::size_t i = 0; i < line.size(); ++i) {
+    const char ch = line[i];
+    if (ch == '"') {
+      if (quoted && i + 1 < line.size() && line[i + 1] == '"') {
+        field.push_back('"');
+        ++i;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (ch == ',' && !quoted) {
+      fields.push_back(TrimCopy(field));
+      field.clear();
+    } else {
+      field.push_back(ch);
+    }
+  }
+  fields.push_back(TrimCopy(field));
+  return fields;
+}
+
+bool ParseFiniteDouble(const std::string& text, double* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  try {
+    std::size_t consumed = 0;
+    const double value = std::stod(TrimCopy(text), &consumed);
+    if (consumed != TrimCopy(text).size() || !std::isfinite(value)) {
+      return false;
+    }
+    *out = value;
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+bool ParsePositiveTimestamp(const std::string& text, std::int64_t* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  try {
+    std::size_t consumed = 0;
+    const std::string normalized = TrimCopy(text);
+    const std::int64_t value = std::stoll(normalized, &consumed);
+    if (consumed != normalized.size() || value <= 0) {
+      return false;
+    }
+    *out = value;
+    return true;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+std::int64_t CurrentTimestampMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
 std::string JoinReasons(const std::vector<std::string>& reasons) {
   std::ostringstream oss;
   for (std::size_t i = 0; i < reasons.size(); ++i) {
@@ -357,6 +555,16 @@ IntegratorShadow::~IntegratorShadow() {
 bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) {
   initialized_ = false;
   model_version_ = "n/a";
+  activation_transaction_id_.clear();
+  runtime_config_sha256_.clear();
+  trade_bot_sha256_.clear();
+  expected_net_edge_available_ = false;
+  expected_net_edge_per_trade_bps_ = 0.0;
+  training_symbol_.clear();
+  training_csv_path_.clear();
+  feature_bar_interval_ms_ = 0;
+  last_observed_market_ts_ms_ = 0;
+  last_completed_bar_ts_ms_ = 0;
   feature_names_.clear();
   feature_expressions_.clear();
   feature_clipping_enabled_ = false;
@@ -373,9 +581,13 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     return true;
   }
 
+  const bool candidate_validation =
+      strict_takeover && config_.candidate_validation_mode;
   const bool require_model_file = strict_takeover || config_.require_model_file;
-  const bool require_active_meta = strict_takeover || config_.require_active_meta;
-  const bool require_gate_pass = strict_takeover || config_.require_gate_pass;
+  const bool require_active_meta =
+      (strict_takeover && !candidate_validation) || config_.require_active_meta;
+  const bool require_active_gate_pass =
+      !candidate_validation && (strict_takeover || config_.require_gate_pass);
   const bool require_report_quality = strict_takeover || config_.require_gate_pass;
 
   auto fail = [&](const std::string& message) {
@@ -392,9 +604,12 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
 
   std::ostringstream buffer;
   buffer << input.rdbuf();
+  const std::string report_json = buffer.str();
+  const auto report_sha256 =
+      Sha256Bytes(report_json.data(), report_json.size());
   JsonValue root;
   std::string parse_error;
-  if (!ParseJson(buffer.str(), &root, &parse_error)) {
+  if (!ParseJson(report_json, &root, &parse_error)) {
     return fail("integrator 报告解析失败: " + parse_error);
   }
 
@@ -500,32 +715,123 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
   }
 
   std::vector<std::string> quality_failures;
+  if (const auto symbol =
+          JsonAsString(JsonObjectField(data_section, "training_symbol"));
+      symbol.has_value()) {
+    training_symbol_ = ToUpperCopy(*symbol);
+  }
+  if (const auto path = JsonAsString(JsonObjectField(data_section, "csv_path"));
+      path.has_value()) {
+    training_csv_path_ = TrimCopy(*path);
+  }
+  if (const auto interval =
+          JsonAsNumber(JsonObjectField(data_section, "bar_interval_ms"));
+      interval.has_value() && std::isfinite(*interval) && *interval > 0.0) {
+    feature_bar_interval_ms_ =
+        static_cast<std::int64_t>(std::llround(*interval));
+  }
+  bool legacy_feature_contract_used = false;
+  if (training_symbol_.empty() &&
+      config_.allow_legacy_feature_contract) {
+    training_symbol_ = ToUpperCopy(config_.legacy_training_symbol);
+    legacy_feature_contract_used = true;
+  }
+  if (training_symbol_.empty()) {
+    quality_failures.push_back("data.training_symbol 缺失");
+  }
+  if (training_csv_path_.empty()) {
+    quality_failures.push_back("data.csv_path 缺失");
+  }
+  if (feature_bar_interval_ms_ <= 0 &&
+      config_.allow_legacy_feature_contract) {
+    feature_bar_interval_ms_ = config_.legacy_bar_interval_ms;
+    legacy_feature_contract_used = true;
+  }
+  if (feature_bar_interval_ms_ <= 0) {
+    quality_failures.push_back("data.bar_interval_ms 必须 > 0");
+  }
+  const auto online_bar_source =
+      JsonAsString(JsonObjectField(data_section, "online_bar_source"));
+  if ((!online_bar_source.has_value() ||
+       *online_bar_source != "closed_ohlcv") &&
+      !config_.allow_legacy_feature_contract) {
+    quality_failures.push_back(
+        "data.online_bar_source 必须为 closed_ohlcv");
+  }
+  const auto source_venue =
+      JsonAsString(JsonObjectField(data_section, "source_venue"));
+  const auto source_category =
+      JsonAsString(JsonObjectField(data_section, "source_category"));
+  const auto price_type =
+      JsonAsString(JsonObjectField(data_section, "price_type"));
+  const auto volume_unit =
+      JsonAsString(JsonObjectField(data_section, "volume_unit"));
+  if (!source_venue.has_value() || *source_venue != "bybit") {
+    quality_failures.push_back("data.source_venue 必须为 bybit");
+  }
+  if (!source_category.has_value() || *source_category != "linear") {
+    quality_failures.push_back("data.source_category 必须为 linear");
+  }
+  if (!price_type.has_value() || *price_type != "trade_price") {
+    quality_failures.push_back("data.price_type 必须为 trade_price");
+  }
+  if (!volume_unit.has_value() || *volume_unit != "base_asset") {
+    quality_failures.push_back("data.volume_unit 必须为 base_asset");
+  }
+  if (legacy_feature_contract_used) {
+    LogInfo("INTEGRATOR_LEGACY_FEATURE_CONTRACT: training_symbol=" +
+            training_symbol_ + ", bar_interval_ms=" +
+            std::to_string(feature_bar_interval_ms_) +
+            ", model_version=" + model_version_);
+  }
+  feature_engine_.Reset(feature_bar_interval_ms_);
+
   const JsonValue* metrics = JsonObjectField(&root, "metrics_oos");
   if (metrics == nullptr || metrics->type != JsonType::kObject) {
     quality_failures.push_back("缺少 metrics_oos");
   } else {
+    const auto primary_objective =
+        JsonAsString(JsonObjectField(metrics, "primary_objective"));
     auto auc_mean = JsonAsNumber(JsonObjectField(metrics, "auc_mean"));
     auto delta_auc =
         JsonAsNumber(JsonObjectField(metrics, "delta_auc_vs_baseline"));
     auto split_trained_count =
         JsonAsNumber(JsonObjectField(metrics, "split_trained_count"));
     auto split_count = JsonAsNumber(JsonObjectField(metrics, "split_count"));
+    auto expected_net_edge_per_trade = JsonAsNumber(
+        JsonObjectField(metrics, "mean_model_net_edge_bps_per_round_trip"));
+    if (expected_net_edge_per_trade.has_value() &&
+        std::isfinite(*expected_net_edge_per_trade)) {
+      expected_net_edge_available_ = true;
+      expected_net_edge_per_trade_bps_ = *expected_net_edge_per_trade;
+    } else {
+      quality_failures.push_back(
+          "缺少 metrics_oos.mean_model_net_edge_bps_per_round_trip");
+    }
+    if (!primary_objective.has_value() ||
+        *primary_objective != kIntegratorPrimaryObjective) {
+      quality_failures.push_back(
+          "metrics_oos.primary_objective 必须为 "
+          + std::string(kIntegratorPrimaryObjective));
+    }
 
     if (!auc_mean.has_value() || !std::isfinite(*auc_mean)) {
-      quality_failures.push_back("缺少 metrics_oos.auc_mean");
+      LogInfo("INTEGRATOR_QUALITY_DIAGNOSTIC: missing metrics_oos.auc_mean");
     } else if (*auc_mean < config_.min_auc_mean) {
-      quality_failures.push_back("auc_mean=" + std::to_string(*auc_mean) +
-                                 " < min_auc_mean=" +
-                                 std::to_string(config_.min_auc_mean));
+      LogInfo("INTEGRATOR_QUALITY_DIAGNOSTIC: auc_mean=" +
+              std::to_string(*auc_mean) + " < min_auc_mean=" +
+              std::to_string(config_.min_auc_mean));
     }
 
     if (!delta_auc.has_value() || !std::isfinite(*delta_auc)) {
-      quality_failures.push_back("缺少 metrics_oos.delta_auc_vs_baseline");
+      LogInfo(
+          "INTEGRATOR_QUALITY_DIAGNOSTIC: missing "
+          "metrics_oos.delta_auc_vs_baseline");
     } else if (*delta_auc < config_.min_delta_auc_vs_baseline) {
-      quality_failures.push_back(
-          "delta_auc_vs_baseline=" + std::to_string(*delta_auc) +
-          " < min_delta_auc_vs_baseline=" +
-          std::to_string(config_.min_delta_auc_vs_baseline));
+      LogInfo("INTEGRATOR_QUALITY_DIAGNOSTIC: delta_auc_vs_baseline=" +
+              std::to_string(*delta_auc) +
+              " < min_delta_auc_vs_baseline=" +
+              std::to_string(config_.min_delta_auc_vs_baseline));
     }
 
     int trained = 0;
@@ -561,6 +867,21 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     }
   }
 
+  const JsonValue* governance = JsonObjectField(&root, "governance");
+  const auto governance_pass =
+      JsonAsBool(JsonObjectField(governance, "pass"));
+  const auto governance_primary_objective =
+      JsonAsString(JsonObjectField(governance, "primary_objective"));
+  if (!governance_pass.value_or(false)) {
+    quality_failures.push_back("governance.pass 必须为 true");
+  }
+  if (!governance_primary_objective.has_value() ||
+      *governance_primary_objective != kIntegratorPrimaryObjective) {
+    quality_failures.push_back(
+        "governance.primary_objective 必须为 "
+        + std::string(kIntegratorPrimaryObjective));
+  }
+
   if (require_report_quality && !quality_failures.empty()) {
     return fail("integrator 报告治理门槛未通过: " + JoinReasons(quality_failures));
   }
@@ -579,7 +900,14 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     }
     LogInfo("INTEGRATOR_DEGRADED: 模型文件不可用，shadow 推理将降级关闭: " +
             model_file_error);
-  } else {
+  }
+  const auto model_sha256_before_load =
+      model_file_ok ? Sha256File(config_.model_path) : std::nullopt;
+  if (model_file_ok && !model_sha256_before_load.has_value()) {
+    return fail("integrator 模型加载前 SHA-256 计算失败: " +
+                config_.model_path);
+  }
+  if (model_file_ok) {
 #ifdef AI_TRADE_ENABLE_CATBOOST
     // 1. 延迟加载库
     if (!g_catboost_lib_loaded) {
@@ -648,6 +976,20 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
     LogInfo("INTEGRATOR_DEGRADED: 未启用 AI_TRADE_ENABLE_CATBOOST，shadow 推理将降级关闭");
 #endif
   }
+  const auto model_sha256 =
+      model_file_ok ? Sha256File(config_.model_path) : std::nullopt;
+  if (model_file_ok && !model_sha256.has_value()) {
+    return fail("integrator 模型 SHA-256 计算失败: " + config_.model_path);
+  }
+  if (model_file_ok &&
+      *model_sha256_before_load != *model_sha256) {
+    return fail("integrator 模型文件在加载期间发生变化: " +
+                config_.model_path);
+  }
+  if (!report_sha256.has_value()) {
+    return fail("integrator 报告 SHA-256 计算失败: " +
+                config_.model_report_path);
+  }
 
   bool active_meta_found = false;
   if (!config_.active_meta_path.empty()) {
@@ -677,23 +1019,86 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
         return fail("active_meta 与 report model_version 不一致: active_meta=" +
                     *active_model_version + ", report=" + model_version_);
       }
+      const auto expected_model_sha256 =
+          JsonAsString(JsonObjectField(&active_root, "model_sha256"));
+      const auto expected_report_sha256 =
+          JsonAsString(JsonObjectField(&active_root, "report_sha256"));
+      const auto expected_runtime_config_sha256 =
+          JsonAsString(JsonObjectField(&active_root, "runtime_config_sha256"));
+      const auto expected_trade_bot_sha256 =
+          JsonAsString(JsonObjectField(&active_root, "trade_bot_sha256"));
+      const JsonValue* activation_transaction =
+          JsonObjectField(&active_root, "activation_transaction");
+      const auto activation_transaction_id =
+          JsonAsString(JsonObjectField(activation_transaction, "run_id"));
+      if (require_active_meta) {
+        if (!expected_model_sha256.has_value() ||
+            expected_model_sha256->empty() || !model_sha256.has_value() ||
+            *expected_model_sha256 != *model_sha256) {
+          return fail("active_meta.model_sha256 与实际模型文件不一致");
+        }
+        if (!expected_report_sha256.has_value() ||
+            expected_report_sha256->empty() ||
+            *expected_report_sha256 != *report_sha256) {
+          return fail("active_meta.report_sha256 与实际报告文件不一致");
+        }
+        const auto runtime_config_sha256 =
+            config_.runtime_config_path.empty()
+                ? std::nullopt
+                : Sha256File(config_.runtime_config_path);
+        if (!expected_runtime_config_sha256.has_value() ||
+            expected_runtime_config_sha256->empty() ||
+            !runtime_config_sha256.has_value() ||
+            *expected_runtime_config_sha256 != *runtime_config_sha256) {
+          return fail(
+              "active_meta.runtime_config_sha256 与实际运行配置不一致");
+        }
+        const auto executable_path = CurrentExecutablePath();
+        const auto trade_bot_sha256 =
+            executable_path.has_value()
+                ? Sha256File(*executable_path)
+                : std::nullopt;
+        if (!expected_trade_bot_sha256.has_value() ||
+            expected_trade_bot_sha256->empty() ||
+            !trade_bot_sha256.has_value() ||
+            *expected_trade_bot_sha256 != *trade_bot_sha256) {
+          return fail("active_meta.trade_bot_sha256 与当前进程不一致");
+        }
+        if (!activation_transaction_id.has_value() ||
+            activation_transaction_id->empty()) {
+          return fail("active_meta.activation_transaction.run_id 缺失");
+        }
+        activation_transaction_id_ = *activation_transaction_id;
+        runtime_config_sha256_ = *runtime_config_sha256;
+        trade_bot_sha256_ = *trade_bot_sha256;
+        LogInfo(
+            "INTEGRATOR_RUNTIME_IDENTITY: runtime_config_sha256=" +
+            *runtime_config_sha256 + ", trade_bot_sha256=" +
+            *trade_bot_sha256 + ", activation_transaction_id=" +
+            activation_transaction_id_);
+      }
 
-      if (require_gate_pass) {
+      if (require_active_gate_pass) {
         const JsonValue* gate = JsonObjectField(&active_root, "gate");
         const auto gate_pass = JsonAsBool(JsonObjectField(gate, "pass"));
         if (!gate_pass.value_or(false)) {
           return fail("active_meta.gate.pass != true，不允许进入接管模式");
         }
       }
-    } else if (require_active_meta || require_gate_pass) {
+    } else if (require_active_meta || require_active_gate_pass) {
       return fail("缺少 integrator active_meta: " + config_.active_meta_path);
     }
-  } else if (require_active_meta || require_gate_pass) {
+  } else if (require_active_meta || require_active_gate_pass) {
     return fail("integrator.active_meta_path 为空");
   }
 
   if (require_active_meta && !active_meta_found) {
     return fail("require_active_meta=true 但未找到 active_meta");
+  }
+  if (model_sha256.has_value()) {
+    LogInfo("INTEGRATOR_ARTIFACT_IDENTITY: model_version=" + model_version_ +
+            ", model_sha256=" + *model_sha256 +
+            ", report_sha256=" + *report_sha256);
   }
 
   // 3. 加载 Miner 报告并构建特征表达式映射
@@ -791,6 +1196,126 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
   return true;
 }
 
+bool IntegratorShadow::BootstrapHistory(std::string* out_error) {
+  if (!enabled()) {
+    if (out_error != nullptr) {
+      *out_error = "integrator 未初始化";
+    }
+    return false;
+  }
+  if (training_csv_path_.empty() || training_symbol_.empty() ||
+      feature_bar_interval_ms_ <= 0) {
+    if (out_error != nullptr) {
+      *out_error = "integrator 训练数据契约不完整";
+    }
+    return false;
+  }
+
+  std::ifstream input(training_csv_path_);
+  if (!input.is_open()) {
+    if (out_error != nullptr) {
+      *out_error = "无法打开 integrator 训练 CSV: " + training_csv_path_;
+    }
+    return false;
+  }
+  std::string header_line;
+  if (!std::getline(input, header_line)) {
+    if (out_error != nullptr) {
+      *out_error = "integrator 训练 CSV 为空: " + training_csv_path_;
+    }
+    return false;
+  }
+  const auto headers = SplitCsvLine(header_line);
+  std::unordered_map<std::string, std::size_t> header_index;
+  for (std::size_t i = 0; i < headers.size(); ++i) {
+    std::string key = TrimCopy(headers[i]);
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
+      return static_cast<char>(std::tolower(ch));
+    });
+    header_index[key] = i;
+  }
+  const auto find_index = [&](const char* name) -> std::optional<std::size_t> {
+    const auto it = header_index.find(name);
+    return it == header_index.end() ? std::nullopt
+                                    : std::optional<std::size_t>(it->second);
+  };
+  const auto timestamp_idx = find_index("timestamp");
+  const auto open_idx = find_index("open");
+  const auto high_idx = find_index("high");
+  const auto low_idx = find_index("low");
+  const auto close_idx = find_index("close");
+  const auto volume_idx = find_index("volume");
+  if (!timestamp_idx || !open_idx || !high_idx || !low_idx || !close_idx ||
+      !volume_idx) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator 训练 CSV 缺少 timestamp/open/high/low/close/volume";
+    }
+    return false;
+  }
+
+  struct Bar {
+    std::int64_t ts_ms{0};
+    double open{0.0};
+    double high{0.0};
+    double low{0.0};
+    double close{0.0};
+    double volume{0.0};
+  };
+  const std::size_t required_samples =
+      static_cast<std::size_t>(std::max(1, config_.feature_window_ticks));
+  std::deque<Bar> recent;
+  const std::int64_t now_ms = CurrentTimestampMs();
+  std::string line;
+  while (std::getline(input, line)) {
+    if (TrimCopy(line).empty()) {
+      continue;
+    }
+    const auto fields = SplitCsvLine(line);
+    const auto field = [&](std::size_t index) -> std::string {
+      return index < fields.size() ? fields[index] : std::string();
+    };
+    Bar bar;
+    if (!ParsePositiveTimestamp(field(*timestamp_idx), &bar.ts_ms) ||
+        !ParseFiniteDouble(field(*open_idx), &bar.open) ||
+        !ParseFiniteDouble(field(*high_idx), &bar.high) ||
+        !ParseFiniteDouble(field(*low_idx), &bar.low) ||
+        !ParseFiniteDouble(field(*close_idx), &bar.close) ||
+        !ParseFiniteDouble(field(*volume_idx), &bar.volume)) {
+      continue;
+    }
+    // CSV timestamp 是 bar open；当前未闭合 bar 不得用于生产预热。
+    if (bar.ts_ms + feature_bar_interval_ms_ > now_ms) {
+      continue;
+    }
+    recent.push_back(bar);
+    if (recent.size() > required_samples) {
+      recent.pop_front();
+    }
+  }
+  if (recent.size() < required_samples) {
+    if (out_error != nullptr) {
+      *out_error = "integrator 历史预热样本不足: samples=" +
+                   std::to_string(recent.size()) +
+                   ", required=" + std::to_string(required_samples);
+    }
+    return false;
+  }
+  feature_engine_.Reset(feature_bar_interval_ms_);
+  for (const auto& bar : recent) {
+    feature_engine_.AddCompletedBar(
+        bar.open, bar.high, bar.low, bar.close, bar.volume);
+    last_completed_bar_ts_ms_ = bar.ts_ms;
+  }
+  LogInfo("INTEGRATOR_HISTORY_BOOTSTRAP: model_version=" + model_version_ +
+          ", training_symbol=" + training_symbol_ +
+          ", bar_interval_ms=" + std::to_string(feature_bar_interval_ms_) +
+          ", samples=" + std::to_string(feature_engine_.SampleCount()) +
+          ", last_bar_ts_ms=" + std::to_string(last_completed_bar_ts_ms_) +
+          ", csv_path=" + training_csv_path_);
+  return true;
+}
+
 double IntegratorShadow::Sigmoid(double x) {
   if (x >= 0.0) {
     const double z = std::exp(-x);
@@ -801,7 +1326,27 @@ double IntegratorShadow::Sigmoid(double x) {
 }
 
 void IntegratorShadow::OnMarket(const MarketEvent& event) {
+  if (!training_symbol_.empty() &&
+      ToUpperCopy(event.symbol) != training_symbol_) {
+    return;
+  }
+  last_observed_market_ts_ms_ =
+      std::max(last_observed_market_ts_ms_, event.ts_ms);
+  const bool has_explicit_ohlc =
+      std::isfinite(event.open_price) && event.open_price > 0.0 &&
+      std::isfinite(event.high_price) && event.high_price > 0.0 &&
+      std::isfinite(event.low_price) && event.low_price > 0.0;
+  if (feature_bar_interval_ms_ > 0) {
+    if (!has_explicit_ohlc ||
+        std::llabs(event.interval_ms - feature_bar_interval_ms_) > 1 ||
+        event.ts_ms <= last_completed_bar_ts_ms_) {
+      return;
+    }
+  }
   feature_engine_.OnMarket(event);
+  if (has_explicit_ohlc) {
+    last_completed_bar_ts_ms_ = event.ts_ms;
+  }
 }
 
 ShadowInference IntegratorShadow::Infer(const Signal& signal,
@@ -814,6 +1359,31 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   }
 
   out.model_version = model_version_;
+  if (!training_symbol_.empty() &&
+      ToUpperCopy(signal.symbol) != training_symbol_) {
+    out.enabled = false;
+    return out;
+  }
+  if (feature_bar_interval_ms_ > 0 &&
+      (last_completed_bar_ts_ms_ <= 0 ||
+       last_observed_market_ts_ms_ - last_completed_bar_ts_ms_ >
+           feature_bar_interval_ms_ * 2)) {
+    if (config_.log_model_score) {
+      static int stale_log_counter = 0;
+      if (stale_log_counter++ % 100 == 0) {
+        LogInfo("INTEGRATOR_FEATURE_STALE: training_symbol=" +
+                training_symbol_ + ", last_bar_ts_ms=" +
+                std::to_string(last_completed_bar_ts_ms_) +
+                ", observed_ts_ms=" +
+                std::to_string(last_observed_market_ts_ms_) +
+                ", bar_interval_ms=" +
+                std::to_string(feature_bar_interval_ms_) +
+                ", model_version=" + model_version_);
+      }
+    }
+    out.enabled = false;
+    return out;
+  }
   if (!model_runtime_ready_ || model_handle_ == nullptr) {
     out.enabled = false;
     return out;
@@ -980,6 +1550,9 @@ ShadowInference IntegratorShadow::Infer(const Signal& signal,
   out.model_score = std::clamp(raw * config_.score_gain, -6.0, 6.0);
   out.p_up = Sigmoid(out.model_score);
   out.p_down = 1.0 - out.p_up;
+  out.expected_net_edge_available = expected_net_edge_available_;
+  out.expected_net_edge_per_trade_bps =
+      expected_net_edge_per_trade_bps_;
   return out;
 }
 

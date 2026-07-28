@@ -12,10 +12,11 @@ paths:
 
 archive:
   enabled: true
-  market: futures_um
-  interval: 5m
+  provider: bybit
+  category: linear
+  interval_minutes: 5
   days: 365
-  base_url: https://data.binance.vision
+  base_url: https://api.bybit.com
   # start_date: 2025-01-01
   # end_date: 2026-01-01
 
@@ -32,7 +33,7 @@ gap_fill:
   interval_minutes: 5
   category: linear
   max_ranges: 200
-  strict: false
+  strict: true
 
 feature_store:
   enabled: true
@@ -57,4 +58,11 @@ walkforward:
   catboost_depth: 6
   catboost_learning_rate: 0.05
   min_calibration_ic: 0.015
+  # Purge at least the label horizon between train and test.
+  embargo_bars: 12
+  min_traded_splits: 1
+  min_total_trades: 1
+  min_avg_split_return: 0.0
+  min_traded_avg_split_return: 0.0
+  max_worst_drawdown: 0.10
   random_seed: 42

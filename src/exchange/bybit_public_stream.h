@@ -18,6 +18,8 @@ struct BybitPublicStreamOptions {
   bool enabled{true};
   std::string category{"linear"};
   std::vector<std::string> symbols{"BTCUSDT"};
+  // 与离线 Integrator 训练契约一致的已闭合 K 线周期。
+  std::string feature_bar_interval{"5"};
   int ack_timeout_ms{2500};
   int heartbeat_interval_ms{20000};
 };
@@ -26,8 +28,8 @@ struct BybitPublicStreamOptions {
  * @brief Bybit 公共行情流
  *
  * 负责：
- * 1. 建立公共 WS 并订阅 `tickers`；
- * 2. 将原始消息解析为统一 `MarketEvent`；
+ * 1. 建立公共 WS 并订阅 `tickers` 与已闭合 `kline`；
+ * 2. 将交易 ticker 和模型专用 K 线解析为统一 `MarketEvent`；
  * 3. 维护心跳与连接健康状态。
  */
 class BybitPublicStream {

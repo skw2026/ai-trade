@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <iomanip>
 #include <limits>
@@ -67,6 +68,21 @@ std::string CurrentUtcIsoTimestamp() {
 
 std::string BuildBootId() {
   return "boot-" + std::to_string(CurrentTimestampMs());
+}
+
+std::string ReadEnvValue(const char* key) {
+  if (key == nullptr) {
+    return {};
+  }
+  const char* value = std::getenv(key);
+  return value == nullptr ? std::string() : std::string(value);
+}
+
+bool IsSha256Hex(const std::string& value) {
+  return value.size() == 64 &&
+         std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+           return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+         });
 }
 
 int SignOf(double value) {
@@ -283,6 +299,10 @@ const char* OrderStateToString(OrderState state) {
       return "sent";
     case OrderState::kPartial:
       return "partial";
+    case OrderState::kCancelPending:
+      return "cancel_pending";
+    case OrderState::kCancelConfirmed:
+      return "cancel_confirmed";
     case OrderState::kFilled:
       return "filled";
     case OrderState::kRejected:
@@ -316,22 +336,6 @@ double EstimateFillRealizedPnlUsd(double position_qty_before,
                                     std::fabs(signed_qty));
   return close_qty * (fill.price - avg_entry_price_before) *
          SignOf(position_qty_before);
-}
-
-bool AccountAlreadyReflectsFill(const FillEvent& fill,
-                                double local_qty_before,
-                                double oms_net_qty_before) {
-  const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
-  const double tolerance_qty =
-      std::max(kFillOverrunToleranceMinQty, std::fabs(fill.qty) * 1e-6);
-  if (std::fabs(signed_qty) <= tolerance_qty) {
-    return false;
-  }
-  const double local_oms_delta = local_qty_before - oms_net_qty_before;
-  if (std::fabs(local_oms_delta) <= tolerance_qty) {
-    return false;
-  }
-  return std::fabs(local_oms_delta - signed_qty) <= tolerance_qty;
 }
 
 std::string FormatFillSummary(const FillEvent& fill) {
@@ -401,6 +405,7 @@ std::string FormatLocalAccountLedgerSummary(const AccountState& account) {
       << ", unrealized=" << account.unrealized_pnl_usd()
       << ", realized_pnl=" << account.cumulative_realized_pnl_usd()
       << ", fees=" << account.cumulative_fee_usd()
+      << ", funding_paid=" << account.cumulative_funding_paid_usd()
       << ", realized_net=" << account.cumulative_realized_net_pnl_usd()
       << ", positions=" << FormatAccountPositions(account) << "}";
   return oss.str();
@@ -786,6 +791,19 @@ double BotApplication::EstimateEntryEdgeBps(const MarketDecision& decision,
   const int direction = decision.intent->direction;
   if (direction == 0) {
     return 0.0;
+  }
+  if (decision.integrator_policy_reason == "canary_independent_signal") {
+    if (!decision.shadow.expected_net_edge_available ||
+        !std::isfinite(
+            decision.shadow.expected_net_edge_per_trade_bps)) {
+      return 0.0;
+    }
+    // The model report metric is already net of observed OOS turnover cost.
+    // Convert it back to a gross-equivalent edge so the common fee gate can
+    // compare it against the configured round-trip cost and safety margin.
+    return ClampNonNegative(
+        RoundTripCostBps() +
+        decision.shadow.expected_net_edge_per_trade_bps);
   }
   const double price = event.price > 0.0 ? event.price : decision.intent->price;
   double deadband_bps = 0.0;
@@ -1977,6 +1995,8 @@ void BotApplication::ManageCandidateProbeLifecycle(const MarketEvent& event) {
   state.replacement_pending = can_reprice || can_taker_fallback;
   state.replacement_taker = !can_reprice && can_taker_fallback;
   state.next_attempts = can_reprice ? state.attempts + 1 : state.attempts;
+  oms_.MarkCancelPending(state.client_order_id);
+  pending_net_order_enqueued_ms_[state.client_order_id] = CurrentTimestampMs();
   executor_->Cancel(state.client_order_id);
   ++funnel_window_.candidate_probe_cancel_submitted;
   if (!state.replacement_pending) {
@@ -2950,9 +2970,13 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
   total->integrator_scored += delta.integrator_scored;
   total->integrator_pred_up += delta.integrator_pred_up;
   total->integrator_pred_down += delta.integrator_pred_down;
+  total->integrator_policy_proposed += delta.integrator_policy_proposed;
+  total->integrator_policy_risk_accepted +=
+      delta.integrator_policy_risk_accepted;
   total->integrator_policy_applied += delta.integrator_policy_applied;
   total->integrator_policy_canary += delta.integrator_policy_canary;
   total->integrator_policy_active += delta.integrator_policy_active;
+  total->integrator_policy_filled += delta.integrator_policy_filled;
   total->entry_edge_samples += delta.entry_edge_samples;
   total->strategy_mix_samples += delta.strategy_mix_samples;
   total->strategy_policy_flat_samples += delta.strategy_policy_flat_samples;
@@ -3031,8 +3055,10 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
 }
 
 bool BotApplication::IsForceReduceOnlyActive() const {
-  return protection_forced_reduce_only_ || gate_forced_reduce_only_ ||
-         reconcile_forced_reduce_only_;
+  return protection_forced_reduce_only_ ||
+         evidence_persistence_failed_ ||
+         startup_protection_recovery_pending_ ||
+         gate_forced_reduce_only_ || reconcile_forced_reduce_only_;
 }
 
 void BotApplication::RefreshReduceOnlyMode() {
@@ -3090,7 +3116,7 @@ int BotApplication::Run() {
   }
   RunLoop();
   Shutdown();
-  return 0;
+  return replay_terminal_settlement_failed_ ? 1 : 0;
 }
 
 int BotApplication::CheckStartup() {
@@ -3125,17 +3151,124 @@ bool BotApplication::Initialize() {
     LogInfo("replay 模式：跳过历史 WAL 恢复");
   } else {
     std::vector<FillEvent> historical_fills;
-    if (!wal_.LoadState(&intent_ids_, &fill_ids_, &historical_fills, &wal_error)) {
+    if (!wal_.LoadState(&intent_ids_,
+                        &fill_ids_,
+                        &historical_fills,
+                        &wal_error,
+                        &persisted_intent_by_id_,
+                        &persisted_closed_episode_ids_,
+                        &persisted_episode_closures_)) {
       LogError("WAL 加载失败: " + wal_error);
       return false;
     }
-    // 仅回放成交恢复仓位和权益，Intent 去重由 intent_ids_ 负责。
+    for (const auto& [episode_id, closure] :
+         persisted_episode_closures_) {
+      LogInfo(
+          "INTEGRATOR_POLICY_EPISODE_RECOVERED: position_episode_id=" +
+          episode_id +
+          ", decision_id=" + closure.decision_id +
+          ", candidate_id=" + closure.candidate_id +
+          ", model_version=" + closure.model_version +
+          ", mode=" + closure.mode +
+          ", policy_reason=" + closure.policy_reason +
+          ", symbol=" + closure.symbol +
+          ", realized_net_usd=" +
+          std::to_string(closure.realized_net_usd) +
+          ", funding_paid_usd=" +
+          std::to_string(closure.funding_paid_usd) +
+          ", fill_event_count=" +
+          std::to_string(closure.fill_event_count) +
+          ", unique_order_count=" +
+          std::to_string(closure.unique_order_count) +
+          ", evidence_complete=" +
+          std::string(closure.evidence_complete ? "true" : "false") +
+          ", activation_transaction_id=" +
+          closure.activation_transaction_id +
+          ", evidence_boot_id=" + closure.boot_id +
+          ", runtime_config_sha256=" + closure.runtime_config_sha256 +
+          ", trade_bot_sha256=" + closure.trade_bot_sha256 +
+          ", closed_at_utc=" + closure.closed_at_utc +
+          ", recovered_after_restart=true");
+    }
+    for (const auto& [intent_id, intent] : persisted_intent_by_id_) {
+      if (!oms_.RegisterIntent(intent)) {
+        LogError("WAL OMS 恢复失败: client_order_id=" + intent_id);
+        return false;
+      }
+      if (intent.candidate_id.empty()) {
+        continue;
+      }
+      integrator_lineage_by_intent_id_[intent_id] =
+          IntegratorCandidateLineage{
+              .decision_id = intent.decision_id,
+              .candidate_id = intent.candidate_id,
+              .model_version = intent.model_version,
+              .mode = intent.integrator_mode,
+              .policy_reason = intent.integrator_policy_reason,
+              .position_episode_id = intent.position_episode_id,
+          };
+    }
+    // 回放成交恢复仓位、权益及尚未闭合的候选 episode。
     for (const auto& fill : historical_fills) {
+      const double position_qty_before =
+          system_.account().position_qty(fill.symbol);
       oms_.OnFill(fill);
       system_.OnFill(fill);
+      const auto intent_it =
+          persisted_intent_by_id_.find(fill.client_order_id);
+      if (intent_it == persisted_intent_by_id_.end() ||
+          intent_it->second.candidate_id.empty() ||
+          intent_it->second.position_episode_id.empty()) {
+        continue;
+      }
+      const OrderIntent& intent = intent_it->second;
+      auto episode_it = integrator_episode_by_symbol_.find(fill.symbol);
+      const bool entry_fill =
+          intent.purpose == OrderPurpose::kEntry && !intent.reduce_only;
+      if (entry_fill &&
+          (episode_it == integrator_episode_by_symbol_.end() ||
+           episode_it->second.lineage.position_episode_id !=
+               intent.position_episode_id)) {
+        IntegratorCandidateEpisode episode;
+        episode.lineage = IntegratorCandidateLineage{
+            .decision_id = intent.decision_id,
+            .candidate_id = intent.candidate_id,
+            .model_version = intent.model_version,
+            .mode = intent.integrator_mode,
+            .policy_reason = intent.integrator_policy_reason,
+            .position_episode_id = intent.position_episode_id,
+        };
+        episode.entry_observed_from_flat =
+            std::fabs(position_qty_before) <= kNotionalEpsilon;
+        episode_it =
+            integrator_episode_by_symbol_
+                .insert_or_assign(fill.symbol, std::move(episode))
+                .first;
+      }
+      if (episode_it == integrator_episode_by_symbol_.end() ||
+          episode_it->second.lineage.position_episode_id !=
+              intent.position_episode_id) {
+        continue;
+      }
+      IntegratorCandidateEpisode& episode = episode_it->second;
+      const double episode_qty_before = episode.signed_open_qty;
+      ApplyCandidateEpisodeFill(&episode, fill);
+      if (std::fabs(episode_qty_before) > kNotionalEpsilon &&
+          std::fabs(episode.signed_open_qty) <= kNotionalEpsilon) {
+        if (persisted_closed_episode_ids_.find(
+                episode.lineage.position_episode_id) ==
+            persisted_closed_episode_ids_.end()) {
+          if (!RecordCandidateEpisodeClosure(fill.symbol, episode, true)) {
+            return false;
+          }
+        }
+        integrator_episode_by_symbol_.erase(episode_it);
+      }
     }
     LogInfo("WAL 恢复完成: intents=" + std::to_string(intent_ids_.size()) +
-            ", fills=" + std::to_string(fill_ids_.size()));
+            ", fills=" + std::to_string(fill_ids_.size()) +
+            ", candidate_open_episodes=" +
+            std::to_string(integrator_episode_by_symbol_.size()));
   }
 
   adapter_ = CreateAdapter(config_);
@@ -3155,24 +3288,66 @@ bool BotApplication::Initialize() {
   executor_->Start();
 
   InitializeUniverse();
-  SyncRemotePositions();
+  if (!SyncRemotePositions()) {
+    return false;
+  }
+  if (!RecoverStartupOrdersAndProtection()) {
+    return false;
+  }
 
   if (config_.integrator.enabled &&
       system_.integrator_mode() != IntegratorMode::kOff &&
       config_.integrator.shadow.enabled) {
     std::string shadow_error;
     if (system_.InitializeIntegratorShadow(&shadow_error)) {
-      LogInfo("INTEGRATOR_INIT: mode=" +
-              std::string(ToString(system_.integrator_mode())) +
-              ", model_version=" +
-              system_.integrator_shadow_model_version());
+      bool history_ready = true;
+      if (config_.mode != "replay") {
+        history_ready = system_.BootstrapIntegratorHistory(&shadow_error);
+      }
+      if (history_ready) {
+        LogInfo("INTEGRATOR_INIT: mode=" +
+                std::string(ToString(system_.integrator_mode())) +
+                ", model_version=" +
+                system_.integrator_shadow_model_version() +
+                ", training_symbol=" +
+                system_.integrator_training_symbol() +
+                ", bar_interval_ms=" +
+                std::to_string(system_.integrator_feature_bar_interval_ms()) +
+                ", feature_samples=" +
+                std::to_string(system_.integrator_feature_sample_count()));
+      } else {
+        LogInfo("INTEGRATOR_DEGRADED: " + shadow_error);
+        if (system_.integrator_mode() == IntegratorMode::kCanary ||
+            system_.integrator_mode() == IntegratorMode::kActive) {
+          if (config_.integrator.shadow.strict_failure_degrade_to_off) {
+            system_.SetIntegratorMode(IntegratorMode::kOff);
+            config_.integrator.mode = IntegratorMode::kOff;
+            LogInfo(
+                "INTEGRATOR_SAFE_OFF: strict history bootstrap failed; "
+                "baseline runtime remains active and model orders are disabled");
+          } else {
+            LogError(
+                "INTEGRATOR_STARTUP_BLOCKED: strict mode history bootstrap failed");
+            return false;
+          }
+        }
+      }
     } else {
       LogInfo("INTEGRATOR_DEGRADED: " + shadow_error);
-      // 兜底策略：canary/active 在模型不可用时立即退回 off，避免“盲下单”。
       if (system_.integrator_mode() == IntegratorMode::kCanary ||
           system_.integrator_mode() == IntegratorMode::kActive) {
-        system_.SetIntegratorMode(IntegratorMode::kOff);
-        LogInfo("INTEGRATOR_FAILSAFE: mode switched to off");
+        if (config_.integrator.shadow.strict_failure_degrade_to_off) {
+          system_.SetIntegratorMode(IntegratorMode::kOff);
+          config_.integrator.mode = IntegratorMode::kOff;
+          LogInfo(
+              "INTEGRATOR_SAFE_OFF: strict identity/model initialization "
+              "failed; baseline runtime remains active and model orders are "
+              "disabled");
+        } else {
+          LogError(
+              "INTEGRATOR_STARTUP_BLOCKED: strict mode identity/model init failed");
+          return false;
+        }
       }
     }
   }
@@ -3256,19 +3431,49 @@ void BotApplication::InitializeUniverse() {
  * - 非 replay 模式优先以交易所快照重建本地视图；
  * - 失败时继续运行，但明确记录“状态可能不准确”。
  */
-void BotApplication::SyncRemotePositions() {
-  if (config_.mode == "replay") return;
+bool BotApplication::SyncRemotePositions() {
+  startup_remote_positions_.clear();
+  if (config_.mode == "replay") return true;
 
   std::vector<RemotePositionSnapshot> remote_positions;
   bool position_sync_ok = false;
   if (adapter_->GetRemotePositions(&remote_positions)) {
     system_.SyncAccountFromRemotePositions(remote_positions);
-    // 启动基线：将远端持仓映射到 OMS 净仓位，避免远端快照暂不可用时弱对账误判。
+    startup_remote_positions_ = remote_positions;
+    if (!persisted_intent_by_id_.empty()) {
+      std::unordered_map<std::string, double> remote_qty_by_symbol;
+      std::unordered_set<std::string> symbols;
+      for (const auto& remote : remote_positions) {
+        remote_qty_by_symbol[remote.symbol] = remote.qty;
+        symbols.insert(remote.symbol);
+      }
+      for (const auto& [_, intent] : persisted_intent_by_id_) {
+        symbols.insert(intent.symbol);
+      }
+      for (const auto& symbol : symbols) {
+        const double delta =
+            remote_qty_by_symbol[symbol] - oms_.net_filled_qty(symbol);
+        if (std::fabs(delta) <= kNotionalEpsilon) {
+          continue;
+        }
+        evidence_persistence_failed_ = true;
+        LogError(
+            "CRITICAL: STARTUP_POSITION_LINEAGE_UNCERTAIN: symbol=" + symbol +
+            ", remote_qty=" + std::to_string(remote_qty_by_symbol[symbol]) +
+            ", wal_oms_qty=" + std::to_string(oms_.net_filled_qty(symbol)) +
+            ", delta_qty=" + std::to_string(delta) +
+            ", action=force_reduce_only");
+      }
+    }
+    // 远端持仓是启动时唯一可执行仓位基线。若 WAL 与远端不一致，上面的
+    // fail-closed 标记会阻止新增风险；禁止把未知差额套用到未来任意同向成交。
     oms_.SeedNetPositionBaseline(remote_positions);
+    RefreshReduceOnlyMode();
     position_sync_ok = true;
     LogInfo("远端持仓同步完成: count=" + std::to_string(remote_positions.size()));
   } else {
-    LogInfo("警告: 无法同步远端持仓，账户状态可能不准确");
+    LogError("无法同步远端持仓，拒绝开放交易");
+    return false;
   }
 
   RemoteAccountBalanceSnapshot balance;
@@ -3285,6 +3490,386 @@ void BotApplication::SyncRemotePositions() {
   } else if (position_sync_ok) {
     LogInfo("警告: 远端持仓已同步，但远端资金读取失败，回撤口径可能存在偏差");
   }
+  return position_sync_ok;
+}
+
+bool BotApplication::RecoverStartupOrdersAndProtection() {
+  if (config_.mode == "replay") {
+    return true;
+  }
+
+  std::vector<RemoteOpenOrderSnapshot> remote_open_orders;
+  if (!adapter_->GetRemoteOpenOrders(&remote_open_orders)) {
+    LogError("STARTUP_ORDER_RECOVERY_FAILED: remote_open_orders_unavailable");
+    return false;
+  }
+  std::unordered_set<std::string> remote_open_order_ids;
+  std::unordered_map<std::string, const RemoteOpenOrderSnapshot*>
+      remote_open_order_by_id;
+  for (const auto& order : remote_open_orders) {
+    if (order.client_order_id.empty()) {
+      LogError("STARTUP_ORDER_RECOVERY_FAILED: remote_order_missing_client_id");
+      return false;
+    }
+    remote_open_order_ids.insert(order.client_order_id);
+    remote_open_order_by_id[order.client_order_id] = &order;
+  }
+
+  for (const auto& [remote_id, _] : remote_open_order_by_id) {
+    const auto intent_it = persisted_intent_by_id_.find(remote_id);
+    if (intent_it == persisted_intent_by_id_.end()) {
+      if (!adapter_->CancelOrder(remote_id)) {
+        LogError("STARTUP_ORDER_RECOVERY_FAILED: unknown_remote_order_cancel_failed"
+                 ", client_order_id=" + remote_id);
+        return false;
+      }
+      LogInfo("STARTUP_UNKNOWN_ORDER_CANCELLED: client_order_id=" + remote_id);
+      continue;
+    }
+    const OrderIntent& intent = intent_it->second;
+    if (intent.purpose == OrderPurpose::kEntry ||
+        intent.purpose == OrderPurpose::kReduce) {
+      if (!adapter_->CancelOrder(remote_id)) {
+        LogError("STARTUP_ORDER_RECOVERY_FAILED: net_order_cancel_failed"
+                 ", client_order_id=" + remote_id);
+        return false;
+      }
+      oms_.MarkCancelled(remote_id);
+      LogInfo("STARTUP_NET_ORDER_CANCELLED: client_order_id=" + remote_id +
+              ", symbol=" + intent.symbol);
+      continue;
+    }
+    oms_.MarkSent(remote_id);
+  }
+
+  if (!config_.protection.enabled || !config_.protection.require_sl) {
+    return true;
+  }
+
+  for (const auto& remote : startup_remote_positions_) {
+    if (remote.symbol.empty() ||
+        std::fabs(remote.qty) <= kNotionalEpsilon) {
+      continue;
+    }
+    const int position_direction = SignOf(remote.qty);
+    const double position_qty = std::fabs(remote.qty);
+    SymbolInfo symbol_info;
+    const bool has_symbol_info =
+        adapter_->GetSymbolInfo(remote.symbol, &symbol_info);
+    const double qty_tolerance = std::max(
+        kFillOverrunToleranceMinQty,
+        has_symbol_info && symbol_info.qty_step > 0.0
+            ? symbol_info.qty_step * 0.51
+            : position_qty * 1e-6);
+    const double price_tolerance =
+        std::max(1e-8,
+                 has_symbol_info && symbol_info.price_tick > 0.0
+                     ? symbol_info.price_tick * 0.51
+                     : std::fabs(remote.avg_entry_price) * 1e-8);
+    const OrderIntent* recovered_sl = nullptr;
+    const OrderIntent* recovered_tp = nullptr;
+    for (const auto& remote_id : remote_open_order_ids) {
+      const auto intent_it = persisted_intent_by_id_.find(remote_id);
+      if (intent_it == persisted_intent_by_id_.end()) {
+        continue;
+      }
+      const OrderIntent& intent = intent_it->second;
+      if (intent.symbol != remote.symbol || !intent.reduce_only ||
+          intent.direction != -position_direction) {
+        continue;
+      }
+      if (std::fabs(intent.qty - position_qty) > qty_tolerance) {
+        continue;
+      }
+      const auto snapshot_it = remote_open_order_by_id.find(remote_id);
+      if (snapshot_it == remote_open_order_by_id.end() ||
+          snapshot_it->second == nullptr) {
+        continue;
+      }
+      const RemoteOpenOrderSnapshot& snapshot = *snapshot_it->second;
+      const bool protection_intent =
+          intent.purpose == OrderPurpose::kSl ||
+          intent.purpose == OrderPurpose::kTp;
+      const int expected_trigger_direction =
+          intent.purpose == OrderPurpose::kSl
+              ? (intent.direction < 0 ? 2 : 1)
+              : (intent.direction < 0 ? 1 : 2);
+      const bool snapshot_matches =
+          protection_intent &&
+          snapshot.symbol == intent.symbol &&
+          snapshot.direction == intent.direction &&
+          snapshot.reduce_only &&
+          snapshot.close_on_trigger &&
+          snapshot.original_qty > 0.0 &&
+          std::fabs(snapshot.original_qty - position_qty) <= qty_tolerance &&
+          snapshot.leaves_qty > 0.0 &&
+          snapshot.trigger_price > 0.0 &&
+          std::fabs(snapshot.trigger_price - intent.price) <=
+              price_tolerance &&
+          snapshot.trigger_direction == expected_trigger_direction;
+      if (!snapshot_matches) {
+        LogError(
+            "STARTUP_PROTECTION_SNAPSHOT_MISMATCH: client_order_id=" +
+            remote_id + ", symbol=" + intent.symbol +
+            ", remote_symbol=" + snapshot.symbol +
+            ", remote_direction=" +
+            std::to_string(snapshot.direction) +
+            ", remote_reduce_only=" +
+            std::string(snapshot.reduce_only ? "true" : "false") +
+            ", remote_close_on_trigger=" +
+            std::string(snapshot.close_on_trigger ? "true" : "false") +
+            ", remote_original_qty=" +
+            std::to_string(snapshot.original_qty) +
+            ", remote_leaves_qty=" +
+            std::to_string(snapshot.leaves_qty) +
+            ", remote_trigger_price=" +
+            std::to_string(snapshot.trigger_price) +
+            ", expected_trigger_price=" +
+            std::to_string(intent.price));
+        if (!adapter_->CancelOrder(remote_id)) {
+          LogError(
+              "STARTUP_ORDER_RECOVERY_FAILED: invalid_protection_cancel_failed"
+              ", client_order_id=" +
+              remote_id);
+          return false;
+        }
+        oms_.MarkCancelled(remote_id);
+        continue;
+      }
+      if (intent.purpose == OrderPurpose::kSl && intent.price > 0.0) {
+        recovered_sl = &intent;
+      } else if (intent.purpose == OrderPurpose::kTp && intent.price > 0.0) {
+        recovered_tp = &intent;
+      }
+    }
+
+    if (recovered_sl != nullptr) {
+      ManagedProtectionState state;
+      state.symbol = remote.symbol;
+      state.protection_group_id =
+          recovered_sl->parent_order_id.empty()
+              ? BuildProtectionGroupId(remote.symbol)
+              : recovered_sl->parent_order_id;
+      state.direction = position_direction;
+      state.qty = position_qty;
+      state.avg_entry_price = remote.avg_entry_price;
+      state.best_price =
+          remote.mark_price > 0.0 ? remote.mark_price : remote.avg_entry_price;
+      state.stop_loss_ratio = config_.protection.stop_loss_ratio;
+      state.take_profit_ratio = config_.protection.take_profit_ratio;
+      state.active_sl_client_order_id = recovered_sl->client_order_id;
+      state.active_sl_price = recovered_sl->price;
+      if (recovered_tp != nullptr) {
+        state.active_tp_client_order_id = recovered_tp->client_order_id;
+        state.active_tp_price = recovered_tp->price;
+      }
+      managed_protection_by_symbol_[remote.symbol] = std::move(state);
+      LogInfo("STARTUP_PROTECTION_RECOVERED: symbol=" + remote.symbol +
+              ", sl_client_order_id=" + recovered_sl->client_order_id);
+    }
+
+    const bool complete_existing_protection =
+        recovered_sl != nullptr &&
+        (!config_.protection.enable_tp || recovered_tp != nullptr);
+    if (complete_existing_protection) {
+      continue;
+    }
+
+    startup_protection_recovery_pending_ = true;
+    RefreshReduceOnlyMode();
+    RefreshManagedProtectionForSymbol(
+        remote.symbol,
+        remote.mark_price > 0.0 ? remote.mark_price : remote.avg_entry_price,
+        "startup_remote_position_recovery");
+    const auto state_it = managed_protection_by_symbol_.find(remote.symbol);
+    if (state_it == managed_protection_by_symbol_.end() ||
+        state_it->second.active_sl_client_order_id.empty()) {
+      LogError("STARTUP_PROTECTION_RECOVERY_FAILED: symbol=" + remote.symbol +
+               ", reason=sl_not_enqueued");
+      return false;
+    }
+    if (remote_open_order_ids.find(
+            state_it->second.active_sl_client_order_id) ==
+        remote_open_order_ids.end()) {
+      startup_protection_sl_ids_.insert(
+          state_it->second.active_sl_client_order_id);
+    }
+  }
+
+  if (startup_protection_recovery_pending_ &&
+      startup_protection_sl_ids_.empty()) {
+    LogError("STARTUP_PROTECTION_RECOVERY_FAILED: no_pending_sl_confirmation");
+    return false;
+  }
+  return true;
+}
+
+bool BotApplication::RecordCandidateEpisodeClosure(
+    const std::string& symbol,
+    const IntegratorCandidateEpisode& episode,
+    bool recovered_after_restart) {
+  CandidateEpisodeClosureRecord closure;
+  closure.position_episode_id =
+      episode.lineage.position_episode_id;
+  closure.decision_id = episode.lineage.decision_id;
+  closure.candidate_id = episode.lineage.candidate_id;
+  closure.model_version = episode.lineage.model_version;
+  closure.mode = episode.lineage.mode;
+  closure.policy_reason = episode.lineage.policy_reason;
+  closure.symbol = symbol;
+  closure.realized_net_usd = episode.realized_net_usd;
+  closure.funding_paid_usd = episode.funding_paid_usd;
+  closure.fill_event_count = episode.fill_event_count;
+  closure.unique_order_count =
+      static_cast<int>(episode.order_ids.size());
+  closure.evidence_complete = episode.entry_observed_from_flat;
+  closure.activation_transaction_id =
+      system_.integrator_activation_transaction_id();
+  if (closure.activation_transaction_id.empty()) {
+    closure.activation_transaction_id =
+        ReadEnvValue("CLOSED_LOOP_ACTIVATION_TRANSACTION_ID");
+  }
+  closure.boot_id = boot_id_;
+  closure.runtime_config_sha256 =
+      system_.integrator_runtime_config_sha256();
+  if (closure.runtime_config_sha256.empty()) {
+    closure.runtime_config_sha256 =
+        ReadEnvValue("AI_TRADE_RUNTIME_CONFIG_SHA256");
+  }
+  if (closure.runtime_config_sha256.empty()) {
+    closure.runtime_config_sha256 =
+        config_.integrator.shadow.source_runtime_config_sha256;
+  }
+  closure.trade_bot_sha256 =
+      system_.integrator_trade_bot_sha256();
+  if (closure.trade_bot_sha256.empty()) {
+    closure.trade_bot_sha256 =
+        ReadEnvValue("AI_TRADE_TRADE_BOT_SHA256");
+  }
+  closure.closed_at_utc = CurrentUtcIsoTimestamp();
+  if (config_.mode != "replay" && closure.mode == "canary" &&
+      (closure.activation_transaction_id.empty() ||
+       closure.boot_id.empty() ||
+       !IsSha256Hex(closure.runtime_config_sha256) ||
+       !IsSha256Hex(closure.trade_bot_sha256))) {
+    LogError(
+        "INTEGRATOR_EPISODE_CLOSURE_WAL_FAILED: position_episode_id=" +
+        closure.position_episode_id +
+        ", error=incomplete_authoritative_candidate_identity");
+    return false;
+  }
+  std::string wal_error;
+  if (!wal_.AppendCandidateEpisodeClosure(closure, &wal_error)) {
+    LogError("INTEGRATOR_EPISODE_CLOSURE_WAL_FAILED: position_episode_id=" +
+             closure.position_episode_id + ", error=" + wal_error);
+    return false;
+  }
+  persisted_closed_episode_ids_.insert(closure.position_episode_id);
+  persisted_episode_closures_.insert_or_assign(
+      closure.position_episode_id, closure);
+  LogInfo(
+      std::string(recovered_after_restart
+                      ? "INTEGRATOR_POLICY_EPISODE_RECOVERED_CLOSED: "
+                      : "INTEGRATOR_POLICY_EPISODE_CLOSED: ") +
+      "position_episode_id=" +
+      closure.position_episode_id +
+      ", decision_id=" + closure.decision_id +
+      ", candidate_id=" + closure.candidate_id +
+      ", model_version=" + closure.model_version +
+      ", mode=" + closure.mode +
+      ", policy_reason=" + closure.policy_reason +
+      ", symbol=" + symbol +
+      ", realized_net_usd=" +
+      std::to_string(closure.realized_net_usd) +
+      ", funding_paid_usd=" +
+      std::to_string(closure.funding_paid_usd) +
+      ", fill_event_count=" +
+      std::to_string(closure.fill_event_count) +
+      ", unique_order_count=" +
+      std::to_string(closure.unique_order_count) +
+      ", evidence_complete=" +
+      std::string(closure.evidence_complete ? "true" : "false") +
+      ", activation_transaction_id=" +
+      closure.activation_transaction_id +
+      ", evidence_boot_id=" + closure.boot_id +
+      ", runtime_config_sha256=" + closure.runtime_config_sha256 +
+      ", trade_bot_sha256=" + closure.trade_bot_sha256 +
+      ", closed_at_utc=" + closure.closed_at_utc +
+      ", recovered_after_restart=" +
+      std::string(recovered_after_restart ? "true" : "false") +
+      ", wal_persisted=true");
+  return true;
+}
+
+bool BotApplication::HasCandidateIsolationForSymbol(
+    const std::string& symbol,
+    const std::string& allowed_episode_id) const {
+  if (const auto episode_it = integrator_episode_by_symbol_.find(symbol);
+      episode_it != integrator_episode_by_symbol_.end() &&
+      (allowed_episode_id.empty() ||
+       episode_it->second.lineage.position_episode_id != allowed_episode_id)) {
+    return true;
+  }
+  for (const auto& [intent_id, lineage] : integrator_lineage_by_intent_id_) {
+    if (!allowed_episode_id.empty() &&
+        lineage.position_episode_id == allowed_episode_id) {
+      continue;
+    }
+    const auto persisted_it = persisted_intent_by_id_.find(intent_id);
+    if (persisted_it == persisted_intent_by_id_.end() ||
+        persisted_it->second.symbol != symbol) {
+      continue;
+    }
+    const OrderRecord* record = oms_.Find(intent_id);
+    if (record != nullptr && !OrderManager::IsTerminalState(record->state)) {
+      return true;
+    }
+  }
+  const auto grace_it =
+      candidate_isolation_grace_until_tick_by_symbol_.find(symbol);
+  return grace_it != candidate_isolation_grace_until_tick_by_symbol_.end() &&
+         market_tick_count_ <= grace_it->second;
+}
+
+void BotApplication::ApplyCandidateEpisodeFill(
+    IntegratorCandidateEpisode* episode,
+    const FillEvent& fill) {
+  if (episode == nullptr || fill.qty <= kNotionalEpsilon ||
+      fill.price <= kNotionalEpsilon) {
+    return;
+  }
+  const double signed_fill_qty =
+      static_cast<double>(fill.direction) * fill.qty;
+  const double before_qty = episode->signed_open_qty;
+  const double before_avg = episode->avg_entry_price;
+  episode->realized_net_usd +=
+      EstimateFillRealizedPnlUsd(before_qty, before_avg, fill) - fill.fee;
+
+  if (std::fabs(before_qty) <= kNotionalEpsilon ||
+      SignOf(before_qty) == SignOf(signed_fill_qty)) {
+    const double next_qty = before_qty + signed_fill_qty;
+    const double total_abs_qty =
+        std::fabs(before_qty) + std::fabs(signed_fill_qty);
+    episode->avg_entry_price =
+        total_abs_qty > kNotionalEpsilon
+            ? (std::fabs(before_qty) * before_avg +
+               std::fabs(signed_fill_qty) * fill.price) /
+                  total_abs_qty
+            : 0.0;
+    episode->signed_open_qty = next_qty;
+  } else if (std::fabs(signed_fill_qty) + kNotionalEpsilon <
+             std::fabs(before_qty)) {
+    episode->signed_open_qty = before_qty + signed_fill_qty;
+  } else if (std::fabs(signed_fill_qty) <=
+             std::fabs(before_qty) + kNotionalEpsilon) {
+    episode->signed_open_qty = 0.0;
+    episode->avg_entry_price = 0.0;
+  } else {
+    episode->signed_open_qty = before_qty + signed_fill_qty;
+    episode->avg_entry_price = fill.price;
+  }
+  ++episode->fill_event_count;
+  episode->order_ids.insert(fill.client_order_id);
 }
 
 /**
@@ -3299,7 +3884,8 @@ void BotApplication::SyncRemotePositions() {
 void BotApplication::RunLoop() {
   MarketEvent event;
   while (true) {
-    const bool has_market = adapter_->PollMarket(&event);
+    const bool has_market =
+        !replay_terminal_settlement_started_ && adapter_->PollMarket(&event);
     bool advanced_tick = false;
     bool has_fill = false;
 
@@ -3382,6 +3968,11 @@ void BotApplication::RunRemoteRiskRefresh() {
  * 5. 满足条件则入队异步执行。
  */
 void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
+  if (event.feature_only) {
+    system_.OnIntegratorMarket(event);
+    return;
+  }
+
   if (const auto update = universe_selector_.OnMarket(event); update.has_value()) {
     std::string message =
         "Universe Updated: active_count=" +
@@ -3422,6 +4013,33 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   // 保护单和即时 reduce 需要用当前 tick 的账户名义值计算减仓数量；
   // Evaluate() 内部也会刷新一次 mark，重复刷新是幂等的，但这里必须先于保护逻辑。
   system_.OnMarketSnapshot(event);
+  const double effective_funding_rate =
+      std::isfinite(event.funding_rate_per_interval)
+          ? event.funding_rate_per_interval
+          : config_.self_evolution.virtual_funding_rate_per_tick;
+  const double funding_paid =
+      system_.ApplyFunding(event.symbol, effective_funding_rate);
+  if (std::fabs(funding_paid) > kNotionalEpsilon) {
+    LogInfo("FUNDING_APPLIED: symbol=" + event.symbol +
+            ", rate_per_interval=" +
+            std::to_string(effective_funding_rate) +
+            ", funding_paid_usd=" + std::to_string(funding_paid) +
+            ", source=" +
+            std::string(std::isfinite(event.funding_rate_per_interval)
+                            ? "market"
+                            : "configured_fallback"));
+  }
+  if (const auto episode_it =
+          integrator_episode_by_symbol_.find(event.symbol);
+      episode_it != integrator_episode_by_symbol_.end() &&
+      std::isfinite(mark_price_for_evolution) &&
+      mark_price_for_evolution > kNotionalEpsilon) {
+    const double episode_funding_paid =
+        episode_it->second.signed_open_qty * mark_price_for_evolution *
+        effective_funding_rate;
+    episode_it->second.realized_net_usd -= episode_funding_paid;
+    episode_it->second.funding_paid_usd += episode_funding_paid;
+  }
   UpdateProfitProtection(event);
   ManageCandidateProbeLifecycle(event);
   RefreshProtectionReduceOnlyRelease("market_tick_flat_idle");
@@ -3454,8 +4072,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
       symbol_inflight_notional_usd = inflight_qty * effective_price;
     }
   }
-  auto decision =
-      system_.Evaluate(event, trade_ok, symbol_inflight_notional_usd);
+  auto decision = system_.Evaluate(event, trade_ok,
+                                   symbol_inflight_notional_usd,
+                                   has_pending_symbol_net_orders);
   constexpr double kRebalanceGapEpsilon = 1e-6;
   if (!decision.risk_adjusted.symbol.empty()) {
     const double settled_symbol_notional =
@@ -3622,15 +4241,18 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     last_shadow_inference_ = decision.shadow;
     has_last_shadow_inference_ = true;
   }
+  std::string integrator_decision_id;
   if (decision.integrator_policy_applied) {
-    ++funnel_window_.integrator_policy_applied;
-    if (system_.integrator_mode() == IntegratorMode::kCanary) {
-      ++funnel_window_.integrator_policy_canary;
-    } else if (system_.integrator_mode() == IntegratorMode::kActive) {
-      ++funnel_window_.integrator_policy_active;
-    }
-    LogInfo("INTEGRATOR_POLICY_APPLIED: mode=" +
+    integrator_decision_id =
+        boot_id_ + ":" + std::to_string(market_tick_count_) + ":" +
+        decision.signal.symbol + ":" + decision.shadow.model_version;
+    ++funnel_window_.integrator_policy_proposed;
+    LogInfo("INTEGRATOR_POLICY_PROPOSED: decision_id=" +
+            integrator_decision_id +
+            ", candidate_id=" + decision.shadow.model_version +
+            ", mode=" +
             std::string(ToString(system_.integrator_mode())) +
+            ", model_version=" + decision.shadow.model_version +
             ", reason=" + decision.integrator_policy_reason +
             ", symbol=" + decision.signal.symbol +
             ", confidence=" + std::to_string(decision.integrator_confidence) +
@@ -3658,6 +4280,9 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   if (HasExposure(decision.risk_adjusted.adjusted_notional_usd)) {
     ++funnel_window_.risk_adjusted_signals;
   }
+  IntegratorCandidateLineage integrator_lineage;
+  const IntegratorCandidateLineage* integrator_lineage_ptr = nullptr;
+
   if (decision.intent.has_value()) {
     ++funnel_window_.intents_generated;
   }
@@ -4063,6 +4688,31 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
 
   if (decision.intent.has_value()) {
+    if (decision.integrator_policy_applied &&
+        !integrator_decision_id.empty()) {
+      integrator_lineage = IntegratorCandidateLineage{
+          .decision_id = integrator_decision_id,
+          .candidate_id = decision.shadow.model_version,
+          .model_version = decision.shadow.model_version,
+          .mode = std::string(ToString(system_.integrator_mode())),
+          .policy_reason = decision.integrator_policy_reason,
+          .position_episode_id = integrator_decision_id,
+      };
+      integrator_lineage_ptr = &integrator_lineage;
+      ++funnel_window_.integrator_policy_risk_accepted;
+      LogInfo("INTEGRATOR_POLICY_RISK_ACCEPTED: decision_id=" +
+              integrator_lineage.decision_id +
+              ", candidate_id=" + integrator_lineage.candidate_id +
+              ", model_version=" + integrator_lineage.model_version +
+              ", mode=" + integrator_lineage.mode +
+              ", client_order_id=" + decision.intent->client_order_id +
+              ", symbol=" + decision.intent->symbol +
+              ", purpose=" +
+              std::string(OrderPurposeToString(decision.intent->purpose)) +
+              ", reduce_only=" +
+              std::string(decision.intent->reduce_only ? "true" : "false"));
+    }
+
     // 同币种同方向在途单限额控制：
     // - Entry 仅统计同方向 Entry，在“先平后开”场景允许与同方向 Reduce 并存；
     // - Reduce 仍按净仓位在途单统计，避免连续平仓风暴。
@@ -4092,7 +4742,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     std::string reason;
     const auto now = CurrentTimestampMs();
     if (order_throttle_.Allow(*decision.intent, now, market_tick_count_, &reason)) {
-      if (EnqueueIntent(*decision.intent)) {
+      if (EnqueueIntent(*decision.intent, integrator_lineage_ptr)) {
         order_throttle_.OnAccepted(*decision.intent, now, market_tick_count_);
       }
     } else {
@@ -4114,22 +4764,106 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
  * - 成功后才投递 AsyncExecutor；
  * - WAL 失败时立即标记 Rejected，防止“已发单但不可恢复”。
  */
-bool BotApplication::EnqueueIntent(const OrderIntent& intent) {
+bool BotApplication::EnqueueIntent(
+    const OrderIntent& intent,
+    const IntegratorCandidateLineage* integrator_lineage) {
   if (intent_ids_.count(intent.client_order_id)) return false;
-  if (!oms_.RegisterIntent(intent)) return false;
+
+  OrderIntent attributed_intent = intent;
+  const bool closes_existing_position =
+      attributed_intent.reduce_only ||
+      attributed_intent.purpose == OrderPurpose::kReduce ||
+      attributed_intent.purpose == OrderPurpose::kSl ||
+      attributed_intent.purpose == OrderPurpose::kTp;
+  bool inherited_active_episode = false;
+  if (closes_existing_position) {
+    const auto episode_it =
+        integrator_episode_by_symbol_.find(attributed_intent.symbol);
+    if (episode_it != integrator_episode_by_symbol_.end()) {
+      const auto& lineage = episode_it->second.lineage;
+      attributed_intent.decision_id = lineage.decision_id;
+      attributed_intent.candidate_id = lineage.candidate_id;
+      attributed_intent.model_version = lineage.model_version;
+      attributed_intent.integrator_mode = lineage.mode;
+      attributed_intent.position_episode_id = lineage.position_episode_id;
+      attributed_intent.integrator_policy_reason = lineage.policy_reason;
+      inherited_active_episode = true;
+    }
+  }
+  if (!inherited_active_episode && integrator_lineage != nullptr) {
+    attributed_intent.decision_id = integrator_lineage->decision_id;
+    attributed_intent.candidate_id = integrator_lineage->candidate_id;
+    attributed_intent.model_version = integrator_lineage->model_version;
+    attributed_intent.integrator_mode = integrator_lineage->mode;
+    attributed_intent.position_episode_id =
+        integrator_lineage->position_episode_id;
+    attributed_intent.integrator_policy_reason =
+        integrator_lineage->policy_reason;
+  }
+
+  if (attributed_intent.purpose == OrderPurpose::kEntry &&
+      !attributed_intent.reduce_only &&
+      HasCandidateIsolationForSymbol(
+          attributed_intent.symbol,
+          attributed_intent.candidate_id.empty()
+              ? ""
+              : attributed_intent.position_episode_id)) {
+    LogInfo("ORDER_REJECTED_CANARY_ISOLATION: symbol=" +
+            attributed_intent.symbol +
+            ", client_order_id=" + attributed_intent.client_order_id +
+            ", reason=" +
+            std::string(attributed_intent.candidate_id.empty()
+                            ? "baseline_entry_during_candidate_reservation"
+                            : "overlapping_candidate_episode"));
+    return false;
+  }
+
+  if (!oms_.RegisterIntent(attributed_intent)) return false;
 
   std::string wal_err;
-  if (!wal_.AppendIntent(intent, &wal_err)) {
+  if (!wal_.AppendIntent(attributed_intent, &wal_err)) {
     LogError("WAL Write Error: " + wal_err);
     oms_.MarkRejected(intent.client_order_id);
     return false;
   }
   intent_ids_.insert(intent.client_order_id);
+  persisted_intent_by_id_.insert_or_assign(intent.client_order_id,
+                                           attributed_intent);
   if (IsNetPositionOrderPurpose(intent.purpose)) {
     pending_net_order_enqueued_ms_[intent.client_order_id] = CurrentTimestampMs();
   }
-  executor_->Submit(intent);
+  executor_->Submit(attributed_intent);
   ++funnel_window_.intents_enqueued;
+  if (!attributed_intent.candidate_id.empty()) {
+    const IntegratorCandidateLineage persisted_lineage{
+        .decision_id = attributed_intent.decision_id,
+        .candidate_id = attributed_intent.candidate_id,
+        .model_version = attributed_intent.model_version,
+        .mode = attributed_intent.integrator_mode,
+        .policy_reason = attributed_intent.integrator_policy_reason,
+        .position_episode_id = attributed_intent.position_episode_id,
+    };
+    integrator_lineage_by_intent_id_[intent.client_order_id] =
+        persisted_lineage;
+    ++funnel_window_.integrator_policy_applied;
+    if (persisted_lineage.mode == "canary") {
+      ++funnel_window_.integrator_policy_canary;
+    } else if (persisted_lineage.mode == "active") {
+      ++funnel_window_.integrator_policy_active;
+    }
+    const std::string lineage =
+        "decision_id=" + persisted_lineage.decision_id +
+        ", candidate_id=" + persisted_lineage.candidate_id +
+        ", model_version=" + persisted_lineage.model_version +
+        ", mode=" + persisted_lineage.mode +
+        ", position_episode_id=" +
+        persisted_lineage.position_episode_id +
+        ", client_order_id=" + intent.client_order_id +
+        ", symbol=" + intent.symbol;
+    LogInfo("INTEGRATOR_POLICY_ENQUEUED: " + lineage);
+    // Compatibility event: its semantics are now explicitly WAL-persisted and enqueued.
+    LogInfo("INTEGRATOR_POLICY_APPLIED: stage=enqueued, " + lineage);
+  }
   if (IsTrendCandidateProbeIntent(intent.client_order_id)) {
     const auto attempt_it =
         candidate_probe_attempt_by_intent_id_.find(intent.client_order_id);
@@ -4195,14 +4929,41 @@ void BotApplication::ProcessAsyncResults() {
   executor_->PollResults(&results);
   for (const auto& res : results) {
     if (res.is_cancel) {
+      const auto* record = oms_.Find(res.client_order_id);
+      const bool net_position_order =
+          record != nullptr &&
+          IsNetPositionOrderPurpose(record->intent.purpose);
       if (res.success) {
-        oms_.MarkCancelled(res.client_order_id);
-        pending_net_order_enqueued_ms_.erase(res.client_order_id);
+        if (record != nullptr &&
+            !record->intent.candidate_id.empty() &&
+            record->intent.purpose == OrderPurpose::kEntry) {
+          candidate_isolation_grace_until_tick_by_symbol_[
+              record->intent.symbol] = market_tick_count_ + 12;
+        }
+        if (net_position_order && config_.mode != "replay") {
+          // REST cancel 成功只代表交易所已受理。继续阻塞新净仓位订单，
+          // 直到远端活动订单消失且迟到成交观察窗口结束。
+          oms_.MarkCancelConfirmed(res.client_order_id);
+          pending_net_order_enqueued_ms_[res.client_order_id] =
+              CurrentTimestampMs();
+        } else {
+          oms_.MarkCancelled(res.client_order_id);
+          pending_net_order_enqueued_ms_.erase(res.client_order_id);
+          integrator_lineage_by_intent_id_.erase(res.client_order_id);
+        }
       } else {
+        oms_.MarkCancelFailed(res.client_order_id);
+        if (net_position_order) {
+          pending_net_order_enqueued_ms_[res.client_order_id] =
+              CurrentTimestampMs();
+        }
         LogError("Async Cancel Failed: " + res.error +
                  ", client_order_id=" + res.client_order_id);
+        if (replay_terminal_settlement_started_) {
+          replay_terminal_settlement_failed_ = true;
+        }
+        OnCandidateProbeCancelResult(res.client_order_id, false);
       }
-      OnCandidateProbeCancelResult(res.client_order_id, res.success);
       continue;
     }
 
@@ -4215,7 +4976,15 @@ void BotApplication::ProcessAsyncResults() {
       ++funnel_window_.async_submit_ok;
     } else {
       oms_.MarkRejected(res.client_order_id);
+      const auto* rejected_record = oms_.Find(res.client_order_id);
+      if (rejected_record != nullptr &&
+          !rejected_record->intent.candidate_id.empty() &&
+          rejected_record->intent.purpose == OrderPurpose::kEntry) {
+        candidate_isolation_grace_until_tick_by_symbol_[
+            rejected_record->intent.symbol] = market_tick_count_ + 12;
+      }
       pending_net_order_enqueued_ms_.erase(res.client_order_id);
+      integrator_lineage_by_intent_id_.erase(res.client_order_id);
       if (IsTrendCandidateProbeIntent(res.client_order_id)) {
         for (auto it = active_candidate_probe_by_symbol_.begin();
              it != active_candidate_probe_by_symbol_.end(); ++it) {
@@ -4227,6 +4996,9 @@ void BotApplication::ProcessAsyncResults() {
       }
       ++funnel_window_.async_submit_failed;
       LogError("Async Submit Failed: " + res.error);
+      if (replay_terminal_close_order_ids_.count(res.client_order_id) != 0U) {
+        replay_terminal_settlement_failed_ = true;
+      }
 
       const auto* record = oms_.Find(res.client_order_id);
       if (record != nullptr && record->intent.purpose == OrderPurpose::kSl) {
@@ -4290,8 +5062,6 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   const OrderState order_state_before =
       fill_order_record_before != nullptr ? fill_order_record_before->state
                                           : OrderState::kNew;
-  const bool account_already_reflects_fill =
-      AccountAlreadyReflectsFill(fill, local_qty_before, oms_net_qty_before);
   if (fill_order_record_before != nullptr &&
       fill_order_record_before->intent.qty > kFillQtyAuditEpsilon) {
     const double projected_filled_qty = order_filled_qty_before + fill.qty;
@@ -4318,16 +5088,17 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   }
   fill_ids_.insert(fill.fill_id);
   oms_.OnFill(fill);
-  if (account_already_reflects_fill) {
-    LogInfo("FILL_ACCOUNT_ALREADY_REFLECTED: " + FormatFillSummary(fill) +
-            ", order_state_before=" + OrderStateToString(order_state_before) +
-            ", local_qty_before=" + std::to_string(local_qty_before) +
-            ", oms_net_qty_before=" + std::to_string(oms_net_qty_before));
-  } else {
-    system_.OnFill(fill);
-  }
+  system_.OnFill(fill);
   gate_monitor_.OnFill(fill);
   const auto* fill_order_record = oms_.Find(fill.client_order_id);
+  const auto persisted_intent_it =
+      persisted_intent_by_id_.find(fill.client_order_id);
+  const OrderIntent* attributed_fill_intent =
+      fill_order_record != nullptr
+          ? &fill_order_record->intent
+          : (persisted_intent_it != persisted_intent_by_id_.end()
+                 ? &persisted_intent_it->second
+                 : nullptr);
   const bool candidate_probe_fill =
       IsTrendCandidateProbeIntent(fill.client_order_id);
   const double local_qty_after = system_.account().position_qty(fill.symbol);
@@ -4343,13 +5114,41 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
           ", order_filled_qty_before=" + std::to_string(order_filled_qty_before) +
           ", order_filled_qty_after=" + std::to_string(order_filled_qty_after) +
           ", local_qty_before=" + std::to_string(local_qty_before) +
+          ", avg_entry_price_before=" +
+          std::to_string(avg_entry_price_before) +
           ", local_qty_after=" + std::to_string(local_qty_after) +
           ", oms_net_qty_before=" + std::to_string(oms_net_qty_before) +
           ", oms_net_qty_after=" + std::to_string(oms_net_qty_after) +
-          ", account_already_reflected=" +
-          std::string(account_already_reflects_fill ? "true" : "false"));
-  if (fill_order_record != nullptr &&
-      fill_order_record->intent.purpose == OrderPurpose::kSl) {
+          ", account_already_reflected=false");
+  if (attributed_fill_intent != nullptr &&
+      !attributed_fill_intent->candidate_id.empty()) {
+    candidate_isolation_grace_until_tick_by_symbol_.erase(fill.symbol);
+    const IntegratorCandidateLineage lineage{
+        .decision_id = attributed_fill_intent->decision_id,
+        .candidate_id = attributed_fill_intent->candidate_id,
+        .model_version = attributed_fill_intent->model_version,
+        .mode = attributed_fill_intent->integrator_mode,
+        .policy_reason = attributed_fill_intent->integrator_policy_reason,
+        .position_episode_id =
+            attributed_fill_intent->position_episode_id,
+    };
+    ++funnel_window_.integrator_policy_filled;
+    LogInfo("INTEGRATOR_POLICY_FILLED: decision_id=" +
+            lineage.decision_id +
+            ", candidate_id=" + lineage.candidate_id +
+            ", model_version=" + lineage.model_version +
+            ", mode=" + lineage.mode +
+            ", position_episode_id=" + lineage.position_episode_id +
+            ", client_order_id=" + fill.client_order_id +
+            ", fill_id=" + fill.fill_id +
+            ", symbol=" + fill.symbol +
+            ", qty=" + std::to_string(fill.qty) +
+            ", price=" + std::to_string(fill.price) +
+            ", fee=" + std::to_string(fill.fee) +
+            ", liquidity=" + std::string(ToString(fill.liquidity)));
+  }
+  if (attributed_fill_intent != nullptr &&
+      attributed_fill_intent->purpose == OrderPurpose::kSl) {
     ClearPendingRequiredSl(fill.client_order_id);
   }
   if (candidate_probe_fill) {
@@ -4370,6 +5169,7 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   if (const auto* record = oms_.Find(fill.client_order_id);
       record != nullptr && OrderManager::IsTerminalState(record->state)) {
     pending_net_order_enqueued_ms_.erase(fill.client_order_id);
+    integrator_lineage_by_intent_id_.erase(fill.client_order_id);
   }
   // 记录最近成交 tick，供对账阶段应用短暂宽限窗口。
   last_fill_tick_ = market_tick_count_;
@@ -4385,21 +5185,60 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
               ", notional_abs_usd=" + std::to_string(fill_notional_abs_usd));
     }
     const bool entry_fill =
-        fill_order_record != nullptr &&
-        fill_order_record->intent.purpose == OrderPurpose::kEntry &&
-        !fill_order_record->intent.reduce_only;
+        attributed_fill_intent != nullptr &&
+        attributed_fill_intent->purpose == OrderPurpose::kEntry &&
+        !attributed_fill_intent->reduce_only;
     const bool symbol_quality_fill =
-        fill_order_record != nullptr &&
-        (fill_order_record->intent.purpose == OrderPurpose::kEntry ||
-         fill_order_record->intent.purpose == OrderPurpose::kReduce ||
-         fill_order_record->intent.purpose == OrderPurpose::kTp ||
-         fill_order_record->intent.purpose == OrderPurpose::kSl);
+        attributed_fill_intent != nullptr &&
+        (attributed_fill_intent->purpose == OrderPurpose::kEntry ||
+         attributed_fill_intent->purpose == OrderPurpose::kReduce ||
+         attributed_fill_intent->purpose == OrderPurpose::kTp ||
+         attributed_fill_intent->purpose == OrderPurpose::kSl);
     const double realized_pnl_usd =
-        account_already_reflects_fill
-            ? 0.0
-            : EstimateFillRealizedPnlUsd(local_qty_before,
-                                         avg_entry_price_before,
-                                         fill);
+        EstimateFillRealizedPnlUsd(local_qty_before,
+                                   avg_entry_price_before,
+                                   fill);
+    if (attributed_fill_intent != nullptr &&
+        !attributed_fill_intent->candidate_id.empty()) {
+      const OrderIntent& attributed_intent = *attributed_fill_intent;
+      auto episode_it =
+          integrator_episode_by_symbol_.find(fill.symbol);
+      if (entry_fill &&
+          (episode_it == integrator_episode_by_symbol_.end() ||
+           episode_it->second.lineage.position_episode_id !=
+               attributed_intent.position_episode_id)) {
+        IntegratorCandidateEpisode episode;
+        episode.lineage = IntegratorCandidateLineage{
+            .decision_id = attributed_intent.decision_id,
+            .candidate_id = attributed_intent.candidate_id,
+            .model_version = attributed_intent.model_version,
+            .mode = attributed_intent.integrator_mode,
+            .policy_reason = attributed_intent.integrator_policy_reason,
+            .position_episode_id = attributed_intent.position_episode_id,
+        };
+        episode.entry_observed_from_flat =
+            std::fabs(local_qty_before) <= kNotionalEpsilon;
+        episode_it =
+            integrator_episode_by_symbol_
+                .insert_or_assign(fill.symbol, std::move(episode))
+                .first;
+      }
+      if (episode_it != integrator_episode_by_symbol_.end() &&
+          episode_it->second.lineage.position_episode_id ==
+              attributed_intent.position_episode_id) {
+        IntegratorCandidateEpisode& episode = episode_it->second;
+        const double episode_qty_before = episode.signed_open_qty;
+        ApplyCandidateEpisodeFill(&episode, fill);
+        if (std::fabs(episode_qty_before) > kNotionalEpsilon &&
+            std::fabs(episode.signed_open_qty) <= kNotionalEpsilon) {
+          if (!RecordCandidateEpisodeClosure(fill.symbol, episode, false)) {
+            evidence_persistence_failed_ = true;
+            RefreshReduceOnlyMode();
+          }
+          integrator_episode_by_symbol_.erase(episode_it);
+        }
+      }
+    }
     constexpr double kFeeSignEpsilon = 1e-12;
     const bool explicit_liquidity =
         fill.liquidity == FillLiquidity::kMaker ||
@@ -4435,7 +5274,7 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
       auto& symbol_quality =
           funnel_window_.symbol_fill_quality_by_symbol[fill.symbol];
       ++symbol_quality.fills;
-      if (fill_order_record->intent.purpose != OrderPurpose::kEntry ||
+      if (attributed_fill_intent->purpose != OrderPurpose::kEntry ||
           std::fabs(realized_pnl_usd) > kFillQtyAuditEpsilon) {
         ++symbol_quality.net_quality_fills;
       }
@@ -4443,7 +5282,7 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
       symbol_quality.realized_net_sum_usd += realized_pnl_usd - fill.fee;
       symbol_quality.notional_abs_usd_sum += fill_notional_abs_usd;
     }
-    if (!account_already_reflects_fill && fill_order_record != nullptr) {
+    if (fill_order_record != nullptr) {
       LogExitCaptureSample(fill,
                            *fill_order_record,
                            local_qty_before,
@@ -5224,6 +6063,12 @@ void BotApplication::ClearPendingRequiredSl(
     return;
   }
   pending_required_sl_attach_.erase(sl_client_order_id);
+  if (startup_protection_sl_ids_.erase(sl_client_order_id) > 0 &&
+      startup_protection_sl_ids_.empty()) {
+    startup_protection_recovery_pending_ = false;
+    RefreshReduceOnlyMode();
+    LogInfo("STARTUP_PROTECTION_RECOVERY_CONFIRMED: all_required_sl_sent=true");
+  }
   RefreshProtectionReduceOnlyRelease("required_sl_cleared");
 }
 
@@ -5310,6 +6155,48 @@ void BotApplication::RunReconcile() {
       adapter_->GetRemoteOpenOrderClientIds(&remote_open_order_ids);
   for (const auto& client_order_id : oms_.PendingNetPositionOrderIds()) {
     const auto it = pending_net_order_enqueued_ms_.find(client_order_id);
+    const OrderRecord* record = oms_.Find(client_order_id);
+    if (record != nullptr &&
+        record->state == OrderState::kCancelPending) {
+      ++fresh_net_orders;
+      continue;
+    }
+    if (record != nullptr &&
+        record->state == OrderState::kCancelConfirmed) {
+      const bool observation_elapsed =
+          it == pending_net_order_enqueued_ms_.end() ||
+          now_ms - it->second > stale_ms;
+      if (!observation_elapsed) {
+        ++fresh_net_orders;
+        continue;
+      }
+      const bool absent_on_remote =
+          remote_open_orders_ok &&
+          remote_open_order_ids.find(client_order_id) ==
+              remote_open_order_ids.end();
+      if (absent_on_remote) {
+        oms_.MarkCancelled(client_order_id);
+        pending_net_order_enqueued_ms_.erase(client_order_id);
+        integrator_lineage_by_intent_id_.erase(client_order_id);
+        OnCandidateProbeCancelResult(client_order_id, true);
+        ++stale_net_orders;
+        ++remote_missing_net_orders;
+        LogInfo("OMS_CANCEL_FINALIZED: client_order_id=" + client_order_id +
+                ", observation_ms=" + std::to_string(stale_ms) +
+                ", remote_absent=true");
+        continue;
+      }
+
+      // 交易所仍报告活动订单或快照不可用，撤单确认不能当作终态。
+      oms_.MarkCancelFailed(client_order_id);
+      if (executor_ != nullptr) {
+        oms_.MarkCancelPending(client_order_id);
+        pending_net_order_enqueued_ms_[client_order_id] = now_ms;
+        executor_->Cancel(client_order_id);
+      }
+      ++stale_net_orders;
+      continue;
+    }
     bool is_stale = false;
     bool missing_on_remote = false;
     if (remote_open_orders_ok &&
@@ -5335,14 +6222,15 @@ void BotApplication::RunReconcile() {
       ++remote_missing_net_orders;
     }
     if (executor_ != nullptr) {
+      oms_.MarkCancelPending(client_order_id);
+      pending_net_order_enqueued_ms_[client_order_id] = now_ms;
       executor_->Cancel(client_order_id);
     }
-    oms_.MarkCancelled(client_order_id);
-    pending_net_order_enqueued_ms_.erase(client_order_id);
   }
 
   if (stale_net_orders > 0) {
-    LogInfo("OMS_STALE_PENDING_CLOSED: count=" + std::to_string(stale_net_orders) +
+    LogInfo("OMS_STALE_PENDING_CANCEL_PROGRESS: count=" +
+            std::to_string(stale_net_orders) +
             ", remote_missing=" + std::to_string(remote_missing_net_orders) +
             ", stale_ms=" + std::to_string(stale_ms));
   }
@@ -5623,15 +6511,6 @@ void BotApplication::RunSelfEvolution() {
   if (!config_.self_evolution.enabled) {
     return;
   }
-  if (system_.integrator_mode() == IntegratorMode::kCanary ||
-      system_.integrator_mode() == IntegratorMode::kActive) {
-    if (market_tick_count_ == self_evolution_.next_eval_tick()) {
-      ++funnel_window_.self_evolution_skipped;
-      LogInfo("SELF_EVOLUTION_ACTION: type=skipped, reason=EVOLUTION_INTEGRATOR_ACTIVE_MODE, integrator_mode=" +
-              std::string(ToString(system_.integrator_mode())));
-    }
-    return;
-  }
 
   const RegimeBucket active_bucket =
       has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange;
@@ -5735,6 +6614,13 @@ void BotApplication::RunSelfEvolution() {
           ", t_stat=" + std::to_string(action->counterfactual_superiority_t_stat) +
           ", samples=" +
           std::to_string(action->counterfactual_superiority_samples) + "}" +
+          ", counterfactual_split={temporal_required=" +
+          std::string(action->counterfactual_temporal_holdout_required ? "true"
+                                                                       : "false") +
+          ", train_samples=" +
+          std::to_string(action->counterfactual_train_samples) +
+          ", holdout_samples=" +
+          std::to_string(action->counterfactual_holdout_samples) + "}" +
           ", factor_ic={trend=" + std::to_string(action->trend_factor_ic) +
           ", defensive=" + std::to_string(action->defensive_factor_ic) +
           ", samples=" + std::to_string(action->factor_ic_samples) + "}" +
@@ -6075,6 +6961,8 @@ void BotApplication::LogStatus() {
           std::string(force_reduce_only ? "true" : "false") +
           ", protection_reduce_only=" +
           std::string(protection_forced_reduce_only_ ? "true" : "false") +
+          ", evidence_persistence_failed=" +
+          std::string(evidence_persistence_failed_ ? "true" : "false") +
           ", gate_reduce_only=" +
           std::string(gate_forced_reduce_only_ ? "true" : "false") +
           ", reconcile_reduce_only=" +
@@ -6346,12 +7234,18 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.integrator_scored) +
           ", pred_up=" + std::to_string(funnel_window.integrator_pred_up) +
           ", pred_down=" + std::to_string(funnel_window.integrator_pred_down) +
+          ", policy_proposed=" +
+          std::to_string(funnel_window.integrator_policy_proposed) +
+          ", policy_risk_accepted=" +
+          std::to_string(funnel_window.integrator_policy_risk_accepted) +
           ", policy_applied=" +
           std::to_string(funnel_window.integrator_policy_applied) +
           ", policy_canary=" +
           std::to_string(funnel_window.integrator_policy_canary) +
           ", policy_active=" +
           std::to_string(funnel_window.integrator_policy_active) +
+          ", policy_filled=" +
+          std::to_string(funnel_window.integrator_policy_filled) +
           ", avg_model_score=" + std::to_string(shadow_avg_model_score) +
           ", avg_p_up=" + std::to_string(shadow_avg_p_up) +
           ", avg_p_down=" + std::to_string(shadow_avg_p_down) + "}" +
@@ -6606,14 +7500,114 @@ void BotApplication::LogStatus() {
  * - replay: 数据耗尽后自动退出。
  */
 bool BotApplication::ShouldExit(bool has_market, bool has_fill) {
+  if (config_.mode == "replay") {
+    const bool data_exhausted = !has_market && !has_fill;
+    const bool max_ticks_reached =
+        config_.system_max_ticks > 0 &&
+        market_tick_count_ >= config_.system_max_ticks;
+    if (replay_terminal_settlement_started_ || data_exhausted ||
+        max_ticks_reached) {
+      return AdvanceReplayTerminalSettlement();
+    }
+    return false;
+  }
   if (config_.system_max_ticks > 0 &&
       market_tick_count_ >= config_.system_max_ticks) {
     return true;
   }
-  if (config_.mode == "replay" && !has_market && !has_fill) {
+  return false;
+}
+
+bool BotApplication::AdvanceReplayTerminalSettlement() {
+  if (config_.mode != "replay") {
+    return false;
+  }
+  if (replay_terminal_settlement_failed_) {
+    LogError("REPLAY_TERMINAL_SETTLEMENT_FAILED: reason=prior_async_failure");
     return true;
   }
-  return false;
+  if (++replay_terminal_settlement_idle_polls_ > 1000) {
+    replay_terminal_settlement_failed_ = true;
+    LogError("REPLAY_TERMINAL_SETTLEMENT_FAILED: reason=timeout");
+    return true;
+  }
+
+  if (!replay_terminal_settlement_started_) {
+    replay_terminal_settlement_started_ = true;
+    const auto pending_order_ids = oms_.PendingOrderIds();
+    for (const auto& order_id : pending_order_ids) {
+      oms_.MarkCancelPending(order_id);
+      executor_->Cancel(order_id);
+    }
+    LogInfo("REPLAY_TERMINAL_SETTLEMENT_START: pending_orders=" +
+            std::to_string(pending_order_ids.size()) +
+            ", gross_notional_usd=" +
+            std::to_string(system_.account().gross_notional_usd()));
+    return false;
+  }
+
+  if (oms_.HasPendingOrders()) {
+    return false;
+  }
+
+  const auto active_symbols = system_.account().GetActiveSymbols();
+  if (!active_symbols.empty() && !replay_terminal_close_submitted_) {
+    replay_terminal_close_submitted_ = true;
+    int submitted_count = 0;
+    for (const auto& symbol : active_symbols) {
+      const double position_qty = system_.account().position_qty(symbol);
+      const double mark_price = system_.account().mark_price(symbol);
+      if (std::fabs(position_qty) <= kNotionalEpsilon) {
+        continue;
+      }
+      if (!std::isfinite(mark_price) || mark_price <= kNotionalEpsilon) {
+        replay_terminal_settlement_failed_ = true;
+        LogError("REPLAY_TERMINAL_SETTLEMENT_FAILED: reason=invalid_mark_price"
+                 ", symbol=" +
+                 symbol + ", mark_price=" + std::to_string(mark_price));
+        return true;
+      }
+
+      OrderIntent close_intent;
+      close_intent.client_order_id =
+          "replay-terminal-close-" + std::to_string(market_tick_count_) +
+          "-" + symbol;
+      close_intent.symbol = symbol;
+      close_intent.purpose = OrderPurpose::kReduce;
+      close_intent.direction = position_qty > 0.0 ? -1 : 1;
+      close_intent.qty = std::fabs(position_qty);
+      close_intent.price = mark_price;
+      close_intent.reduce_only = true;
+      close_intent.liquidity_preference = LiquidityPreference::kTaker;
+      replay_terminal_close_order_ids_.insert(close_intent.client_order_id);
+      if (!EnqueueIntent(close_intent, nullptr)) {
+        replay_terminal_settlement_failed_ = true;
+        LogError("REPLAY_TERMINAL_SETTLEMENT_FAILED: reason=close_enqueue_failed"
+                 ", symbol=" +
+                 symbol);
+        return true;
+      }
+      ++submitted_count;
+    }
+    LogInfo("REPLAY_TERMINAL_CLOSE_SUBMITTED: order_count=" +
+            std::to_string(submitted_count));
+    return false;
+  }
+
+  if (!system_.account().GetActiveSymbols().empty() ||
+      oms_.HasPendingOrders()) {
+    return false;
+  }
+
+  LogInfo("REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=0"
+          ", realized_net_usd=" +
+          std::to_string(
+              system_.account().cumulative_realized_net_pnl_usd()) +
+          ", fees_usd=" +
+          std::to_string(system_.account().cumulative_fee_usd()) +
+          ", funding_paid_usd=" +
+          std::to_string(system_.account().cumulative_funding_paid_usd()));
+  return true;
 }
 
 // 停机顺序：先停执行线程，再输出结束日志。

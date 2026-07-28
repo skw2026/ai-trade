@@ -88,6 +88,12 @@ bool BinanceExchangeAdapter::GetRemoteOpenOrderClientIds(
   return false;
 }
 
+bool BinanceExchangeAdapter::GetRemoteOpenOrders(
+    std::vector<RemoteOpenOrderSnapshot>* out_orders) const {
+  (void)out_orders;
+  return false;
+}
+
 bool BinanceExchangeAdapter::GetSymbolInfo(const std::string& symbol,
                                            SymbolInfo* out_info) const {
   (void)symbol;
