@@ -1,3 +1,5 @@
+name: ${AI_TRADE_COMPOSE_PROJECT_NAME:-ai-trade}
+
 services:
   ai-trade:
     image: ${AI_TRADE_IMAGE:-ai-trade:latest}

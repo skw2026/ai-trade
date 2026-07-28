@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+import os
 import pathlib
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 
@@ -78,6 +80,13 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("scheduler", self.prod_services)
         self.assertIn("ai-trade-research", self.prod_services)
         self.assertIn("ai-trade-web", self.prod_services)
+
+    def test_prod_uses_stable_compose_project_identity(self):
+        compose = PROD_COMPOSE.read_text(encoding="utf-8")
+        self.assertIn(
+            "name: ${AI_TRADE_COMPOSE_PROJECT_NAME:-ai-trade}",
+            compose,
+        )
 
     def test_research_image_uses_dockerfile_research_target(self):
         dev_research = self.dev_services["ai-trade-research"]
@@ -829,6 +838,25 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("immutable release identity mismatch", script)
+        self.assertIn(
+            'AI_TRADE_COMPOSE_PROJECT_NAME="${AI_TRADE_COMPOSE_PROJECT_NAME:-ai-trade}"',
+            script,
+        )
+        self.assertEqual(
+            script.count(
+                '--project-name "${AI_TRADE_COMPOSE_PROJECT_NAME}"'
+            ),
+            2,
+        )
+        self.assertIn("reconcile_compose_project_identity()", script)
+        self.assertIn("legacy compose project detected", script)
+        self.assertIn("migrating managed container to stable compose project", script)
+        self.assertIn("refusing to replace unmanaged container", script)
+        self.assertIn(
+            'upsert_env "AI_TRADE_COMPOSE_PROJECT_NAME" '
+            '"${AI_TRADE_COMPOSE_PROJECT_NAME}"',
+            script,
+        )
 
     def test_deploy_mutations_are_guarded_until_atomic_commit(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
@@ -907,6 +935,76 @@ class ComposeConsistencyTest(unittest.TestCase):
             script.index('if ! run_startup_preflight; then'),
             script.index('stopping deferred services before gate'),
         )
+
+    def test_deploy_compose_project_migration_behavior(self):
+        deploy_script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        function_start = deploy_script.index("service_to_container_name() {")
+        function_end = deploy_script.index("extract_json_string_field() {")
+        function_block = deploy_script[function_start:function_end]
+        harness = f"""
+set -euo pipefail
+{function_block}
+AI_TRADE_COMPOSE_PROJECT_NAME=ai-trade
+CONTAINER_NAME=ai-trade-project-migration-test
+deploy_services=(ai-trade)
+docker() {{
+  if [[ "$1" == "ps" ]]; then
+    printf '%s\\n' "${{CONTAINER_NAME}}"
+    return 0
+  fi
+  if [[ "$1" == "inspect" ]]; then
+    if [[ "$3" == *com.docker.compose.project* ]]; then
+      printf '%s\\n' "${{FAKE_EXISTING_PROJECT}}"
+    elif [[ "$3" == *com.docker.compose.service* ]]; then
+      printf '%s\\n' "${{FAKE_EXISTING_SERVICE}}"
+    fi
+    return 0
+  fi
+  if [[ "$1" == "rm" && "$2" == "-f" ]]; then
+    printf '%s\\n' "$3" >> "${{FAKE_REMOVE_LOG}}"
+    return 0
+  fi
+  return 1
+}}
+reconcile_compose_project_identity
+"""
+        cases = (
+            ("same_project", "ai-trade", "ai-trade", 0, False),
+            ("legacy_project", "release-deadbeef", "ai-trade", 0, True),
+            ("unmanaged_container", "", "", 1, False),
+            ("wrong_service", "release-deadbeef", "other", 1, False),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            remove_log = pathlib.Path(tmp) / "removed.log"
+            for name, project, service, expected_status, expect_remove in cases:
+                with self.subTest(case=name):
+                    remove_log.unlink(missing_ok=True)
+                    env = dict(os.environ)
+                    env.update(
+                        {
+                            "FAKE_EXISTING_PROJECT": project,
+                            "FAKE_EXISTING_SERVICE": service,
+                            "FAKE_REMOVE_LOG": str(remove_log),
+                        }
+                    )
+                    result = subprocess.run(
+                        ["bash", "-c", harness],
+                        cwd=ROOT,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        expected_status,
+                        msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+                    )
+                    self.assertEqual(remove_log.exists(), expect_remove)
+                    if expect_remove:
+                        self.assertEqual(
+                            remove_log.read_text(encoding="utf-8").strip(),
+                            "ai-trade-project-migration-test",
+                        )
 
     def test_optional_compose_config_validation(self):
         docker_bin = shutil.which("docker")

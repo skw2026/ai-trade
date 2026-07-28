@@ -22,6 +22,7 @@ if [[ -z "${DEPLOY_SERVICES_RAW// }" ]]; then
 fi
 REQUIRED_CONTAINERS_RAW="${REQUIRED_CONTAINERS:-}"
 CONTAINER_NAME="${CONTAINER_NAME:-ai-trade}"
+AI_TRADE_COMPOSE_PROJECT_NAME="${AI_TRADE_COMPOSE_PROJECT_NAME:-ai-trade}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-300}"
 CLOSED_LOOP_ENFORCE="${CLOSED_LOOP_ENFORCE:-false}"
 CLOSED_LOOP_ACTION="${CLOSED_LOOP_ACTION:-assess}"
@@ -42,6 +43,11 @@ DEPLOY_ROLLBACK_ATTEMPTED="false"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
+  exit 1
+fi
+
+if [[ ! "${AI_TRADE_COMPOSE_PROJECT_NAME}" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  echo "[deploy] invalid AI_TRADE_COMPOSE_PROJECT_NAME: ${AI_TRADE_COMPOSE_PROJECT_NAME}"
   exit 1
 fi
 
@@ -268,6 +274,59 @@ service_to_container_name() {
       echo "${service}"
       ;;
   esac
+}
+
+read_container_compose_label() {
+  local container="$1"
+  local label="$2"
+  docker inspect \
+    --format "{{with index .Config.Labels \"${label}\"}}{{.}}{{end}}" \
+    "${container}" 2>/dev/null || true
+}
+
+reconcile_compose_project_identity() {
+  local service=""
+  local container=""
+  local existing_project=""
+  local existing_service=""
+  local -a foreign_containers
+  local foreign_container_count=0
+  local index=0
+
+  # Validate the complete migration set before removing anything. Fixed
+  # container_name values must never cause an unrelated container to be deleted.
+  for service in "${deploy_services[@]}"; do
+    container="$(service_to_container_name "${service}")"
+    if ! docker ps -a --format '{{.Names}}' | grep -qx "${container}"; then
+      continue
+    fi
+    existing_project="$(
+      read_container_compose_label "${container}" "com.docker.compose.project"
+    )"
+    existing_service="$(
+      read_container_compose_label "${container}" "com.docker.compose.service"
+    )"
+    if [[ "${existing_project}" == "${AI_TRADE_COMPOSE_PROJECT_NAME}" &&
+          "${existing_service}" == "${service}" ]]; then
+      continue
+    fi
+    if [[ -z "${existing_project}" || "${existing_service}" != "${service}" ]]; then
+      echo "[deploy] refusing to replace unmanaged container: name=${container} compose_project=${existing_project:-<none>} compose_service=${existing_service:-<none>} expected_service=${service}"
+      return 1
+    fi
+    foreign_containers[foreign_container_count]="${container}"
+    foreign_container_count=$((foreign_container_count + 1))
+    echo "[deploy] legacy compose project detected: container=${container} project=${existing_project} target_project=${AI_TRADE_COMPOSE_PROJECT_NAME}"
+  done
+
+  for ((index = 0; index < foreign_container_count; index++)); do
+    container="${foreign_containers[index]}"
+    echo "[deploy] migrating managed container to stable compose project: ${container}"
+    if ! docker rm -f "${container}" >/dev/null; then
+      echo "[deploy] failed to remove legacy compose container: ${container}"
+      return 1
+    fi
+  done
 }
 
 extract_json_string_field() {
@@ -703,6 +762,7 @@ rollback_to_previous() {
 
   local -a rollback_compose_cmd=(
     docker compose
+    --project-name "${AI_TRADE_COMPOSE_PROJECT_NAME}"
     -f "${PREVIOUS_RELEASE_PATH}/docker-compose.prod.yml"
     --env-file "${ENV_FILE}"
   )
@@ -1053,13 +1113,19 @@ echo "[deploy] previous_runtime_image=${previous_runtime_image}"
 echo "[deploy] previous_research_image=${previous_research_image}"
 echo "[deploy] previous_web_image=${previous_web_image}"
 echo "[deploy] target_image=${AI_TRADE_IMAGE}"
+echo "[deploy] compose_project=${AI_TRADE_COMPOSE_PROJECT_NAME}"
 echo "[deploy] deploy_services=${deploy_services[*]}"
 echo "[deploy] initial_deploy_services=${initial_deploy_services[*]}"
 echo "[deploy] deferred_deploy_services=${deferred_deploy_services[*]}"
 echo "[deploy] required_containers=${required_containers[*]}"
 echo "[deploy] initial_required_containers=${initial_required_containers[*]}"
 
-compose_cmd=(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}")
+compose_cmd=(
+  docker compose
+  --project-name "${AI_TRADE_COMPOSE_PROJECT_NAME}"
+  -f "${COMPOSE_FILE}"
+  --env-file "${ENV_FILE}"
+)
 DEPLOY_TRANSACTION_GUARD_ACTIVE="true"
 trap 'deployment_exit_guard "$?"' EXIT
 trap 'exit 130' INT
@@ -1073,6 +1139,7 @@ if [[ -n "${AI_TRADE_WEB_IMAGE:-}" ]]; then
   upsert_env "AI_TRADE_WEB_IMAGE" "${AI_TRADE_WEB_IMAGE}"
 fi
 upsert_env "AI_TRADE_PROJECT_DIR" "${COMPOSE_DIR}"
+upsert_env "AI_TRADE_COMPOSE_PROJECT_NAME" "${AI_TRADE_COMPOSE_PROJECT_NAME}"
 upsert_env "AI_TRADE_DATA_DIR" "${DEPLOY_RELEASE_ROOT}/data"
 upsert_env "AI_TRADE_ENV_FILE_HOST" "${ENV_FILE}"
 if [[ "${ENV_FILE}" == "${COMPOSE_DIR}/"* ]]; then
@@ -1083,6 +1150,11 @@ fi
 
 if ! run_startup_preflight; then
   rollback_to_previous "startup preflight failed, restore complete previous release" || true
+  exit 1
+fi
+
+if ! reconcile_compose_project_identity; then
+  rollback_to_previous "compose project identity migration failed, start rollback" || true
   exit 1
 fi
 
