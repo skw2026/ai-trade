@@ -18,6 +18,7 @@ DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
 CLOSED_LOOP_WORKFLOW = ROOT / ".github" / "workflows" / "closed-loop.yml"
 CD_WORKFLOW = ROOT / ".github" / "workflows" / "cd.yml"
 SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
+WORKFLOWS_DIR = ROOT / ".github" / "workflows"
 S5_CONFIG = ROOT / "config" / "bybit.demo.s5.yaml"
 REPLAY_MAKER_FIRST_CONFIG = ROOT / "config" / "bybit.replay.assess.maker_first.yaml"
 
@@ -89,6 +90,31 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("file: Dockerfile", cd_workflow)
         self.assertIn("target: research", cd_workflow)
         self.assertNotIn("file: Dockerfile.research", cd_workflow)
+
+    def test_all_ctest_workflows_install_pinned_research_dependencies(self):
+        ctest_workflows = {}
+        for workflow_path in WORKFLOWS_DIR.glob("*.yml"):
+            workflow = workflow_path.read_text(encoding="utf-8")
+            if "ctest --test-dir build --output-on-failure" in workflow:
+                ctest_workflows[workflow_path.name] = workflow
+
+        self.assertEqual(set(ctest_workflows), {"ci.yml", "cd.yml"})
+        for name, workflow in ctest_workflows.items():
+            with self.subTest(workflow=name):
+                self.assertIn("python-version: '3.12'", workflow)
+                self.assertIn(
+                    "cache-dependency-path: tools/requirements-research.txt",
+                    workflow,
+                )
+                self.assertIn(
+                    "python -m pip install -r tools/requirements-research.txt",
+                    workflow,
+                )
+                self.assertIn(
+                    'grep -q "feature_parity_contract_test" '
+                    "/tmp/ctest-list.txt",
+                    workflow,
+                )
 
     def test_prod_ai_trade_mounts_config_and_data(self):
         runtime = self.prod_services["ai-trade"]
