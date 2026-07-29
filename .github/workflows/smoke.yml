@@ -34,9 +34,16 @@ jobs:
     env:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
       SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '10' }}
-      SMOKE_OUTPUT_ROOT: ./data/reports/closed_loop_smoke
+      SMOKE_OUTPUT_ROOT: /opt/ai-trade/data/reports/closed_loop_smoke
+      SMOKE_RUN_ID: smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      SMOKE_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS: "5400"
     steps:
+      - name: Checkout deployed revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SMOKE_EXPECTED_SHA }}
+
       - name: Check deploy secrets
         run: |
           set -euo pipefail
@@ -50,6 +57,8 @@ jobs:
           SMOKE_SINCE: ${{ env.SMOKE_SINCE }}
           SMOKE_MIN_RUNTIME_STATUS: ${{ env.SMOKE_MIN_RUNTIME_STATUS }}
           SMOKE_OUTPUT_ROOT: ${{ env.SMOKE_OUTPUT_ROOT }}
+          SMOKE_RUN_ID: ${{ env.SMOKE_RUN_ID }}
+          SMOKE_EXPECTED_SHA: ${{ env.SMOKE_EXPECTED_SHA }}
           CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS: "900"
           CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS: "15"
         with:
@@ -59,21 +68,91 @@ jobs:
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
           command_timeout: 20m
-          envs: SMOKE_SINCE,SMOKE_MIN_RUNTIME_STATUS,SMOKE_OUTPUT_ROOT,CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS,CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS
+          envs: SMOKE_SINCE,SMOKE_MIN_RUNTIME_STATUS,SMOKE_OUTPUT_ROOT,SMOKE_RUN_ID,SMOKE_EXPECTED_SHA,CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS,CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS
           script: |
             set -euo pipefail
-            cd /opt/ai-trade
-            set -a && source .env.runtime && set +a
+            DEPLOY_ROOT="/opt/ai-trade"
+            RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"
+            if [[ -z "${RELEASE_DIR}" ||
+                  "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/${SMOKE_EXPECTED_SHA}" ]]; then
+              echo "smoke release mismatch: ${RELEASE_DIR:-<missing>}" >&2
+              exit 1
+            fi
+            RELEASE_MANIFEST="${RELEASE_DIR}/release_manifest.json"
+            RELEASE_RUNTIME_IMAGE="$(
+              python3 - "${RELEASE_MANIFEST}" "${SMOKE_EXPECTED_SHA}" <<'PY'
+            import json
+            import re
+            import sys
+            from pathlib import Path
+
+            manifest_path = Path(sys.argv[1])
+            expected_sha = sys.argv[2]
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if payload.get("schema_version") != "ai_trade_release_manifest_v1":
+                raise SystemExit("invalid release manifest schema")
+            if payload.get("git_sha") != expected_sha:
+                raise SystemExit("release manifest git_sha mismatch")
+            runtime_image = str(payload.get("images", {}).get("runtime") or "")
+            if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", runtime_image):
+                raise SystemExit("release runtime image is not digest-pinned")
+            print(runtime_image)
+            PY
+            )"
+            set -a && source "${DEPLOY_ROOT}/.env.runtime" && set +a
+            if [[ "${AI_TRADE_IMAGE:-}" != "${RELEASE_RUNTIME_IMAGE}" ]]; then
+              echo "runtime env/release image mismatch" >&2
+              exit 1
+            fi
+            export AI_TRADE_PROJECT_DIR="${RELEASE_DIR}"
+            export AI_TRADE_DATA_DIR="${DEPLOY_ROOT}/data"
+            export AI_TRADE_ENV_FILE_HOST="${DEPLOY_ROOT}/.env.runtime"
+            export CLOSED_LOOP_RUN_ID="${SMOKE_RUN_ID}"
+            export CLOSED_LOOP_GIT_COMMIT="${SMOKE_EXPECTED_SHA}"
+            export CLOSED_LOOP_EXECUTED_RELEASE_SHA="${SMOKE_EXPECTED_SHA}"
+            export CLOSED_LOOP_EXECUTED_RELEASE_DIR="${RELEASE_DIR}"
+            export CLOSED_LOOP_RUNNER_SHA256="$(
+              sha256sum "${RELEASE_DIR}/tools/closed_loop_runner.sh" | awk '{print $1}'
+            )"
+            cd "${RELEASE_DIR}"
             chmod +x tools/closed_loop_runner.sh
+            runner_status=0
             tools/closed_loop_runner.sh assess \
-              --compose-file docker-compose.prod.yml \
-              --env-file .env.runtime \
+              --compose-file "${RELEASE_DIR}/docker-compose.prod.yml" \
+              --env-file "${DEPLOY_ROOT}/.env.runtime" \
               --output-root "${SMOKE_OUTPUT_ROOT}" \
               --stage SMOKE \
               --since "${SMOKE_SINCE}" \
-              --min-runtime-status "${SMOKE_MIN_RUNTIME_STATUS}"
+              --min-runtime-status "${SMOKE_MIN_RUNTIME_STATUS}" \
+              || runner_status=$?
+            RUN_DIR="${SMOKE_OUTPUT_ROOT}/${SMOKE_RUN_ID}"
+            python3 deploy/validate_deploy_gate.py \
+              --manifest "${RUN_DIR}/run_manifest.json" \
+              --step-status "${RUN_DIR}/step_status.jsonl" \
+              --runtime-assess "${RUN_DIR}/runtime_assess.json" \
+              --closed-loop-report "${RUN_DIR}/closed_loop_report.json" \
+              --expected-run-id "${SMOKE_RUN_ID}" \
+              --expected-stage SMOKE
+            runtime_verdict="$(
+              python3 - "${RUN_DIR}/runtime_assess.json" <<'PY'
+            import json
+            import sys
+            from pathlib import Path
+
+            payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+            print(str(payload.get("verdict") or "").upper())
+            PY
+            )"
+            if [[ "${runtime_verdict}" != "PASS" &&
+                  "${runtime_verdict}" != "PASS_WITH_ACTIONS" ]]; then
+              echo "smoke runtime verdict failed: ${runtime_verdict:-<missing>}" >&2
+              exit 1
+            fi
+            if (( runner_status != 0 )); then
+              echo "smoke runner returned ${runner_status}; accepted only because strict runtime evidence passed and the remaining failure is audit-only"
+            fi
             echo "=== smoke closed_loop_report ==="
-            cat "${SMOKE_OUTPUT_ROOT}/latest/closed_loop_report.json"
+            cat "${RUN_DIR}/closed_loop_report.json"
 
       - name: Download Smoke Reports
         if: always()
@@ -91,6 +170,7 @@ jobs:
           HOST="${{ secrets.ECS_HOST }}"
           USER="${{ secrets.ECS_USER }}"
           REPORT_ROOT="/opt/ai-trade/data/reports/closed_loop_smoke"
+          EXPECTED_RUN_ID="${{ env.SMOKE_RUN_ID }}"
           KNOWN_HOSTS_FILE=".artifacts/known_hosts"
           if [[ -z "${HOST}" || -z "${USER}" ]] || \
              ! ssh-keygen -y -f .artifacts/ecs_key >/dev/null 2>&1 || \
@@ -103,204 +183,72 @@ jobs:
             rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
             exit 0
           fi
-          scp -i .artifacts/ecs_key -P "${PORT}" \
-            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-            -o StrictHostKeyChecking=yes \
-            "${USER}@${HOST}:${REPORT_ROOT}/latest/closed_loop_report.json" \
-            ".artifacts/closed_loop_report.json" || true
-          scp -i .artifacts/ecs_key -P "${PORT}" \
-            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-            -o StrictHostKeyChecking=yes \
-            "${USER}@${HOST}:${REPORT_ROOT}/latest/runtime_assess.json" \
-            ".artifacts/runtime_assess.json" || true
-          scp -i .artifacts/ecs_key -P "${PORT}" \
-            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-            -o StrictHostKeyChecking=yes \
-            "${USER}@${HOST}:${REPORT_ROOT}/latest/runtime.log" \
-            ".artifacts/runtime.log" || true
-          ssh -i .artifacts/ecs_key -p "${PORT}" \
-            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-            -o StrictHostKeyChecking=yes \
-            "${USER}@${HOST}" \
-            "docker inspect --format '{{.Config.Image}}|{{.State.StartedAt}}|{{.State.Status}}|{{.RestartCount}}' ai-trade 2>/dev/null || true" \
-            > ".artifacts/container_state.txt" || true
-          ssh -i .artifacts/ecs_key -p "${PORT}" \
-            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-            -o StrictHostKeyChecking=yes \
-            "${USER}@${HOST}" \
-            "grep '^AI_TRADE_IMAGE=' /opt/ai-trade/.env.runtime | tail -n1 | cut -d= -f2- || true" \
-            > ".artifacts/env_image.txt" || true
-          cat > .artifacts/smoke_download_status.json <<'EOF'
-          {
-            "status": "DONE"
+          download_failed=0
+          fetch_report() {
+            local remote_path="$1"
+            local local_path="$2"
+            if ! scp -i .artifacts/ecs_key -P "${PORT}" \
+              -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+              -o StrictHostKeyChecking=yes \
+              "${USER}@${HOST}:${remote_path}" "${local_path}"; then
+              echo "failed to download ${remote_path}" >&2
+              download_failed=1
+            fi
           }
-          EOF
+          REMOTE_BASE="${REPORT_ROOT}/${EXPECTED_RUN_ID}"
+          fetch_report "${REMOTE_BASE}/closed_loop_report.json" \
+            ".artifacts/closed_loop_report.json"
+          fetch_report "${REMOTE_BASE}/runtime_assess.json" \
+            ".artifacts/runtime_assess.json"
+          fetch_report "${REMOTE_BASE}/runtime.log" \
+            ".artifacts/runtime.log"
+          fetch_report "${REMOTE_BASE}/run_manifest.json" \
+            ".artifacts/run_manifest.json"
+          fetch_report "/opt/ai-trade/current/release_manifest.json" \
+            ".artifacts/release_manifest.json"
+          if ! ssh -i .artifacts/ecs_key -p "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}" \
+            "docker inspect --format '{{.Config.Image}}|{{index .Config.Labels \"org.opencontainers.image.revision\"}}|{{.Image}}|{{.State.StartedAt}}|{{.State.Status}}|{{.RestartCount}}' ai-trade" \
+            > ".artifacts/container_state.txt"; then
+            download_failed=1
+          fi
+          if ! ssh -i .artifacts/ecs_key -p "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}" \
+            "grep '^AI_TRADE_IMAGE=' /opt/ai-trade/.env.runtime | tail -n1 | cut -d= -f2-" \
+            > ".artifacts/env_image.txt"; then
+            download_failed=1
+          fi
+          if (( download_failed == 0 )); then
+            download_status="DONE"
+          else
+            download_status="FAILED"
+          fi
+          printf '{\n  "status": "%s",\n  "run_id": "%s"\n}\n' \
+            "${download_status}" "${EXPECTED_RUN_ID}" \
+            > .artifacts/smoke_download_status.json
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
 
-      - name: Evaluate Deploy Freshness
+      - name: Evaluate Smoke Evidence
         if: always()
         env:
           SMOKE_TRIGGER_MODE: ${{ github.event_name }}
-          SMOKE_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          SMOKE_EXPECTED_SHA: ${{ env.SMOKE_EXPECTED_SHA }}
+          SMOKE_EXPECTED_RUN_ID: ${{ env.SMOKE_RUN_ID }}
           SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS: ${{ env.SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          import sys
-          from datetime import datetime, timezone
-
-          artifacts_dir = ".artifacts"
-          trigger_mode = os.environ.get("SMOKE_TRIGGER_MODE", "").strip() or "unknown"
-          expected_sha = os.environ.get("SMOKE_EXPECTED_SHA", "").strip()
-          max_age_seconds = int(
-              os.environ.get("SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS", "5400")
-          )
-
-          def parse_iso_utc(value: str):
-              value = (value or "").strip()
-              if not value:
-                  return None
-              if value.endswith("Z"):
-                  body = value[:-1]
-                  if "." in body:
-                      head, frac = body.split(".", 1)
-                      frac = (frac + "000000")[:6]
-                      value = f"{head}.{frac}+00:00"
-                  else:
-                      value = body + "+00:00"
-              return datetime.fromisoformat(value).astimezone(timezone.utc)
-
-          def read_text(path: str) -> str:
-              if not os.path.exists(path):
-                  return ""
-              with open(path, "r", encoding="utf-8", errors="ignore") as handle:
-                  return handle.read().strip()
-
-          container_state_raw = read_text(os.path.join(artifacts_dir, "container_state.txt"))
-          env_image = read_text(os.path.join(artifacts_dir, "env_image.txt"))
-          runtime_log = read_text(os.path.join(artifacts_dir, "runtime.log"))
-
-          container_image = ""
-          container_started_at = ""
-          container_status = ""
-          container_restart_count = None
-          if container_state_raw:
-              parts = container_state_raw.split("|")
-              if len(parts) >= 4:
-                  container_image = parts[0].strip()
-                  container_started_at = parts[1].strip()
-                  container_status = parts[2].strip()
-                  try:
-                      container_restart_count = int(parts[3].strip())
-                  except ValueError:
-                      container_restart_count = None
-
-          boot_matches = re.findall(
-              r"boot=\{id=([^,}]+), startup_utc=([^}]+)\}", runtime_log
-          )
-          boot_ids = sorted({item[0] for item in boot_matches if item[0]})
-          startup_values = sorted({item[1] for item in boot_matches if item[1]})
-          runtime_startup_utc = startup_values[0] if len(startup_values) == 1 else ""
-
-          container_started_dt = parse_iso_utc(container_started_at)
-          runtime_started_dt = parse_iso_utc(runtime_startup_utc)
-          now_utc = datetime.now(timezone.utc)
-          container_age_seconds = None
-          startup_container_delta_seconds = None
-          if container_started_dt is not None:
-              container_age_seconds = max(
-                  0, int((now_utc - container_started_dt).total_seconds())
-              )
-          if container_started_dt is not None and runtime_started_dt is not None:
-              startup_container_delta_seconds = int(
-                  abs((runtime_started_dt - container_started_dt).total_seconds())
-              )
-
-          fail_reasons = []
-          warn_reasons = []
-
-          if not container_image:
-              fail_reasons.append("missing_container_image")
-          if not container_started_at:
-              fail_reasons.append("missing_container_started_at")
-          if container_status and container_status != "running":
-              fail_reasons.append(f"container_status={container_status}")
-          if container_restart_count is not None and container_restart_count > 0:
-              warn_reasons.append(f"container_restart_count={container_restart_count}")
-          if not boot_ids:
-              warn_reasons.append("missing_boot_marker_in_runtime_log")
-          elif len(boot_ids) > 1:
-              warn_reasons.append(
-                  f"multiple_boot_ids_detected={','.join(boot_ids)}"
-              )
-          if (
-              startup_container_delta_seconds is not None
-              and startup_container_delta_seconds > 300
-          ):
-              warn_reasons.append(
-                  "runtime_startup_vs_container_started_delta_seconds="
-                  f"{startup_container_delta_seconds}"
-              )
-
-          image_tag_match = None
-          if expected_sha:
-              image_tag_match = container_image.endswith(f":{expected_sha}")
-
-          if trigger_mode == "workflow_run":
-              if image_tag_match is False:
-                  fail_reasons.append(
-                      f"container_image_mismatch={container_image} expected_sha={expected_sha}"
-                  )
-              if (
-                  container_age_seconds is not None
-                  and container_age_seconds > max_age_seconds
-              ):
-                  fail_reasons.append(
-                      f"container_age_seconds={container_age_seconds} > {max_age_seconds}"
-                  )
-
-          if fail_reasons:
-              status = "FAIL"
-          elif trigger_mode == "workflow_run":
-              status = "PASS"
-          else:
-              status = "NOT_EVALUATED_MANUAL"
-
-          payload = {
-              "status": status,
-              "trigger_mode": trigger_mode,
-              "expected_sha": expected_sha or None,
-              "expected_image_tag_suffix": f":{expected_sha}" if expected_sha else None,
-              "container_image": container_image or None,
-              "env_runtime_image": env_image or None,
-              "container_started_at_utc": container_started_at or None,
-              "container_status": container_status or None,
-              "container_restart_count": container_restart_count,
-              "container_age_seconds": container_age_seconds,
-              "deploy_freshness_max_age_seconds": max_age_seconds,
-              "image_tag_match": image_tag_match,
-              "runtime_boot_id": boot_ids[0] if len(boot_ids) == 1 else None,
-              "runtime_boot_id_unique_count": len(boot_ids),
-              "runtime_startup_utc": runtime_startup_utc or None,
-              "startup_vs_container_started_delta_seconds": startup_container_delta_seconds,
-              "fail_reasons": fail_reasons,
-              "warn_reasons": warn_reasons,
-          }
-          os.makedirs(artifacts_dir, exist_ok=True)
-          with open(
-              os.path.join(artifacts_dir, "deploy_freshness.json"),
-              "w",
-              encoding="utf-8",
-          ) as handle:
-              json.dump(payload, handle, ensure_ascii=False, indent=2)
-          print(json.dumps(payload, ensure_ascii=False))
-          if status == "FAIL":
-              sys.exit(1)
-          PY
+          python3 tools/evaluate_smoke_freshness.py \
+            --artifacts-dir .artifacts \
+            --trigger-mode "${SMOKE_TRIGGER_MODE}" \
+            --expected-sha "${SMOKE_EXPECTED_SHA}" \
+            --expected-run-id "${SMOKE_EXPECTED_RUN_ID}" \
+            --max-age-seconds "${SMOKE_DEPLOY_FRESHNESS_MAX_AGE_SECONDS}" \
+            --output .artifacts/deploy_freshness.json
 
       - name: Upload Smoke Artifacts
         if: always()

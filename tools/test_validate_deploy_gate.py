@@ -113,13 +113,18 @@ class ValidateDeployGateTest(unittest.TestCase):
             "closed_loop_report": report_path,
         }
 
-    def validate(self, paths: dict[str, pathlib.Path]) -> dict[str, str]:
+    def validate(
+        self,
+        paths: dict[str, pathlib.Path],
+        expected_stage: str = "DEPLOY",
+    ) -> dict[str, str]:
         return MODULE.validate_deploy_gate(
             paths["manifest"],
             paths["step_status"],
             paths["runtime_assess_report"],
             paths["closed_loop_report"],
             "deploy-run-1",
+            expected_stage,
         )
 
     def test_accepts_runtime_pass_with_audit_only_failure(self):
@@ -134,6 +139,14 @@ class ValidateDeployGateTest(unittest.TestCase):
                 self.write_case(pathlib.Path(tmp), audit_result="pass")
             )
         self.assertEqual(result["mechanism_audit"], "pass")
+
+    def test_accepts_smoke_runtime_pass_with_audit_only_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.write_case(pathlib.Path(tmp), stage="SMOKE")
+            result = self.validate(paths, expected_stage="SMOKE")
+        self.assertEqual(result["stage"], "SMOKE")
+        self.assertEqual(result["runtime_verdict"], "PASS")
+        self.assertEqual(result["mechanism_audit"], "fail")
 
     def test_rejects_operational_step_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

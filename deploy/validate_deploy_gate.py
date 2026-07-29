@@ -8,7 +8,7 @@ from typing import Any
 
 
 EXPECTED_ACTION = "assess"
-EXPECTED_STAGE = "DEPLOY"
+DEFAULT_EXPECTED_STAGE = "DEPLOY"
 OPERATIONAL_STEPS = (
     "s5_learning_switches",
     "runtime_assess",
@@ -187,9 +187,13 @@ def validate_deploy_gate(
     runtime_assess_path: Path,
     closed_loop_report_path: Path,
     expected_run_id: str,
+    expected_stage: str = DEFAULT_EXPECTED_STAGE,
 ) -> dict[str, str]:
     if not expected_run_id:
         raise GateValidationError("expected run_id is empty")
+    expected_stage = expected_stage.strip().upper()
+    if not expected_stage:
+        raise GateValidationError("expected stage is empty")
 
     run_dir = manifest_path.resolve().parent
     expected_paths = {
@@ -206,7 +210,7 @@ def validate_deploy_gate(
         raise GateValidationError("run_manifest run_id mismatch")
     if manifest.get("action") != EXPECTED_ACTION:
         raise GateValidationError("run_manifest action mismatch")
-    if str(manifest.get("stage") or "").upper() != EXPECTED_STAGE:
+    if str(manifest.get("stage") or "").upper() != expected_stage:
         raise GateValidationError("run_manifest stage mismatch")
 
     artifacts = validate_artifacts(manifest, run_dir)
@@ -221,7 +225,7 @@ def validate_deploy_gate(
     verdict = str(runtime_assess.get("verdict") or "").upper()
     if verdict not in VALID_RUNTIME_VERDICTS:
         raise GateValidationError("runtime_assess verdict is invalid")
-    if str(runtime_assess.get("stage") or "").upper() != EXPECTED_STAGE:
+    if str(runtime_assess.get("stage") or "").upper() != expected_stage:
         raise GateValidationError("runtime_assess stage mismatch")
 
     report = load_json(expected_paths["closed_loop_report"], "closed_loop_report")
@@ -248,6 +252,7 @@ def validate_deploy_gate(
 
     return {
         "run_id": expected_run_id,
+        "stage": expected_stage,
         "runtime_verdict": verdict,
         "overall_status": overall_status,
         "mechanism_audit": audit_result,
@@ -257,13 +262,18 @@ def validate_deploy_gate(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Validate fail-closed evidence for the DEPLOY runtime gate."
+        description="Validate fail-closed evidence for a runtime assessment gate."
     )
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--step-status", required=True, type=Path)
     parser.add_argument("--runtime-assess", required=True, type=Path)
     parser.add_argument("--closed-loop-report", required=True, type=Path)
     parser.add_argument("--expected-run-id", required=True)
+    parser.add_argument(
+        "--expected-stage",
+        default=DEFAULT_EXPECTED_STAGE,
+        help="Expected runtime stage (default: DEPLOY).",
+    )
     return parser.parse_args()
 
 
@@ -276,13 +286,15 @@ def main() -> int:
             args.runtime_assess,
             args.closed_loop_report,
             args.expected_run_id,
+            args.expected_stage,
         )
     except GateValidationError as exc:
-        print(f"DEPLOY_GATE_EVIDENCE_INVALID: {exc}")
+        print(f"RUNTIME_GATE_EVIDENCE_INVALID: {exc}")
         return 1
     print(
-        "DEPLOY_GATE_EVIDENCE_OK: "
+        "RUNTIME_GATE_EVIDENCE_OK: "
         f"run_id={result['run_id']} "
+        f"stage={result['stage']} "
         f"runtime_verdict={result['runtime_verdict']} "
         f"overall_status={result['overall_status']} "
         f"mechanism_audit={result['mechanism_audit']} "

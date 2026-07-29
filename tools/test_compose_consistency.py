@@ -148,6 +148,47 @@ class ComposeConsistencyTest(unittest.TestCase):
                     "/tmp/ctest-list.txt",
                     workflow,
                 )
+                self.assertIn(
+                    'grep -q "evaluate_smoke_freshness_test" '
+                    "/tmp/ctest-list.txt",
+                    workflow,
+                )
+
+    def test_smoke_uses_immutable_release_and_run_specific_evidence(self):
+        workflow = SMOKE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "SMOKE_OUTPUT_ROOT: /opt/ai-trade/data/reports/closed_loop_smoke",
+            workflow,
+        )
+        self.assertIn(
+            "SMOKE_RUN_ID: smoke-${{ github.run_id }}-${{ github.run_attempt }}",
+            workflow,
+        )
+        self.assertIn(
+            'RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"',
+            workflow,
+        )
+        self.assertIn("--expected-stage SMOKE", workflow)
+        self.assertIn(
+            'REMOTE_BASE="${REPORT_ROOT}/${EXPECTED_RUN_ID}"',
+            workflow,
+        )
+        self.assertIn(
+            "tools/evaluate_smoke_freshness.py",
+            workflow,
+        )
+        self.assertIn(
+            'org.opencontainers.image.revision',
+            workflow,
+        )
+        self.assertNotIn(
+            "${REPORT_ROOT}/latest/",
+            workflow,
+        )
+        self.assertNotIn(
+            'endswith(f":{expected_sha}")',
+            workflow,
+        )
 
     def test_prod_ai_trade_mounts_config_and_data(self):
         runtime = self.prod_services["ai-trade"]

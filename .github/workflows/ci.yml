@@ -58,6 +58,7 @@ jobs:
           grep -q "compose_consistency_test" /tmp/ctest-list.txt
           grep -q "materialize_release_compose_test" /tmp/ctest-list.txt
           grep -q "validate_deploy_gate_test" /tmp/ctest-list.txt
+          grep -q "evaluate_smoke_freshness_test" /tmp/ctest-list.txt
           grep -q "watchdog_utils_test" /tmp/ctest-list.txt
           grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
           grep -q "docker_gc_test" /tmp/ctest-list.txt

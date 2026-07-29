@@ -114,6 +114,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_materialize_release_compose.py)
     add_test(NAME validate_deploy_gate_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_deploy_gate.py)
+    add_test(NAME evaluate_smoke_freshness_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_evaluate_smoke_freshness.py)
     add_test(NAME watchdog_utils_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_watchdog.py)
     add_test(NAME recycle_artifacts_test
