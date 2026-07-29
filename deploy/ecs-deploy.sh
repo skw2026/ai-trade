@@ -42,6 +42,7 @@ DEPLOY_TRANSACTION_COMMITTED="false"
 DEPLOY_ROLLBACK_ATTEMPTED="false"
 DEPLOY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_MATERIALIZER="${DEPLOY_SCRIPT_DIR}/materialize_release_compose.py"
+DEPLOY_GATE_VALIDATOR="${DEPLOY_SCRIPT_DIR}/validate_deploy_gate.py"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
@@ -60,6 +61,10 @@ fi
 
 if [[ ! -f "${COMPOSE_MATERIALIZER}" ]]; then
   echo "[deploy] compose materializer missing: ${COMPOSE_MATERIALIZER}"
+  exit 1
+fi
+if [[ ! -f "${DEPLOY_GATE_VALIDATOR}" ]]; then
+  echo "[deploy] deploy gate validator missing: ${DEPLOY_GATE_VALIDATOR}"
   exit 1
 fi
 
@@ -548,7 +553,9 @@ prepare_previous_release() {
   if ! cp -f "${DEPLOY_RELEASE_ROOT}/deploy/ecs-deploy.sh" \
        "${legacy_tmp}/deploy/ecs-deploy.sh" ||
      ! cp -f "${COMPOSE_MATERIALIZER}" \
-       "${legacy_tmp}/deploy/materialize_release_compose.py"; then
+       "${legacy_tmp}/deploy/materialize_release_compose.py" ||
+     ! cp -f "${DEPLOY_GATE_VALIDATOR}" \
+       "${legacy_tmp}/deploy/validate_deploy_gate.py"; then
     echo "[deploy] failed to copy legacy deploy tooling"
     rm -rf "${legacy_tmp}" || true
     return 1
@@ -769,12 +776,43 @@ rollback_to_previous() {
     -f "${rollback_runtime_compose}"
     --env-file "${ENV_FILE}"
   )
-  if ! "${rollback_compose_cmd[@]}" pull "${deploy_services[@]}"; then
+  rollback_compose() {
+    AI_TRADE_IMAGE="${previous_runtime_image}" \
+    AI_TRADE_RESEARCH_IMAGE="${previous_research_image}" \
+    AI_TRADE_WEB_IMAGE="${previous_web_image}" \
+    AI_TRADE_PROJECT_DIR="${PREVIOUS_RELEASE_PATH}" \
+    AI_TRADE_DATA_DIR="${DEPLOY_RELEASE_ROOT}/data" \
+    AI_TRADE_ENV_FILE_HOST="${ENV_FILE}" \
+    AI_TRADE_ENV_FILE_CONTAINER="/run/ai-trade/.env.runtime" \
+    AI_TRADE_ENV_FILE="/run/ai-trade/.env.runtime" \
+      "${rollback_compose_cmd[@]}" "$@"
+  }
+  local rollback_rendered_images=""
+  if ! rollback_rendered_images="$(
+    rollback_compose --profile "*" config --images
+  )"; then
+    echo "[deploy] rollback compose rendering failed"
+    stop_managed_containers
+    return 1
+  fi
+  local expected_rollback_image=""
+  for expected_rollback_image in \
+    "${previous_runtime_image}" \
+    "${previous_research_image}" \
+    "${previous_web_image}"; do
+    if ! grep -Fxq "${expected_rollback_image}" <<< "${rollback_rendered_images}"; then
+      echo "[deploy] rollback compose identity mismatch: missing=${expected_rollback_image}"
+      stop_managed_containers
+      return 1
+    fi
+  done
+  echo "[deploy] rollback compose identity verified"
+  if ! rollback_compose pull "${deploy_services[@]}"; then
     echo "[deploy] rollback image pull failed"
     stop_managed_containers
     return 1
   fi
-  if ! "${rollback_compose_cmd[@]}" up -d "${deploy_services[@]}"; then
+  if ! rollback_compose up -d --force-recreate "${deploy_services[@]}"; then
     echo "[deploy] rollback service restore failed"
     stop_managed_containers
     return 1
@@ -826,11 +864,13 @@ run_closed_loop_gate() {
   local assess_json="${output_root}/latest_runtime_assess.json"
   local report_json="${output_root}/latest_closed_loop_report.json"
   local manifest_json=""
+  local step_status_json=""
   if [[ -n "${CLOSED_LOOP_RUN_ID}" ]]; then
     local run_dir="${output_root%/}/${CLOSED_LOOP_RUN_ID}"
     assess_json="${run_dir}/runtime_assess.json"
     report_json="${run_dir}/closed_loop_report.json"
     manifest_json="${run_dir}/run_manifest.json"
+    step_status_json="${run_dir}/step_status.jsonl"
   fi
   local verdict=""
   local overall_status=""
@@ -934,16 +974,28 @@ PY
       return 1
     fi
   fi
-  if (( gate_status != 0 )); then
-    echo "[deploy] closed-loop gate failed: runner exit_code=${gate_status}"
-    return 1
-  fi
   verdict="$(extract_json_string_field "verdict" "${assess_json}")"
   overall_status="$(extract_json_string_field "overall_status" "${report_json}")"
   echo "[deploy] closed-loop gate result: verdict=${verdict:-<empty>}, overall_status=${overall_status:-<empty>}"
 
   if [[ "${stage_name}" == "DEPLOY" ]]; then
     echo "[deploy] DEPLOY stage gate uses runtime verdict only; overall_status is audit-only"
+    if [[ -z "${manifest_json}" || -z "${step_status_json}" ]]; then
+      echo "[deploy] DEPLOY gate failed: run-specific evidence path missing"
+      return 1
+    fi
+    if ! python3 "${DEPLOY_GATE_VALIDATOR}" \
+      --manifest "${manifest_json}" \
+      --step-status "${step_status_json}" \
+      --runtime-assess "${assess_json}" \
+      --closed-loop-report "${report_json}" \
+      --expected-run-id "${CLOSED_LOOP_RUN_ID}"; then
+      echo "[deploy] DEPLOY gate failed: operational evidence validation failed"
+      return 1
+    fi
+    if (( gate_status != 0 )); then
+      echo "[deploy] DEPLOY runner returned status=${gate_status}; evaluating runtime verdict because audit sections are not deploy blockers"
+    fi
     if [[ -z "${verdict}" ]]; then
       echo "[deploy] DEPLOY gate failed: runtime verdict missing"
       return 1
@@ -960,6 +1012,11 @@ PY
       return 1
     fi
     return 0
+  fi
+
+  if (( gate_status != 0 )); then
+    echo "[deploy] closed-loop gate failed: runner exit_code=${gate_status}"
+    return 1
   fi
 
   if is_true "${CLOSED_LOOP_STRICT_PASS}"; then

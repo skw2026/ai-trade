@@ -143,6 +143,11 @@ class ComposeConsistencyTest(unittest.TestCase):
                     "/tmp/ctest-list.txt",
                     workflow,
                 )
+                self.assertIn(
+                    'grep -q "validate_deploy_gate_test" '
+                    "/tmp/ctest-list.txt",
+                    workflow,
+                )
 
     def test_prod_ai_trade_mounts_config_and_data(self):
         runtime = self.prod_services["ai-trade"]
@@ -777,6 +782,15 @@ class ComposeConsistencyTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("deploy/materialize_release_compose.py", workflow)
+        self.assertIn("deploy/validate_deploy_gate.py", workflow)
+        self.assertIn(
+            'fetch_report "${REMOTE_BASE}/step_status.jsonl"',
+            workflow,
+        )
+        self.assertIn(
+            'fetch_report "${REMOTE_BASE}/closed_loop_mechanism_report.json"',
+            workflow,
+        )
         self.assertNotIn(
             "release compose source contract changed",
             workflow,
@@ -853,6 +867,19 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('cd "${COMPOSE_DIR}"', script)
         self.assertIn("prepare_runtime_compose()", script)
         self.assertIn("rollback runtime compose preparation failed", script)
+        self.assertIn("rollback compose identity verified", script)
+        self.assertIn(
+            'AI_TRADE_IMAGE="${previous_runtime_image}"',
+            script,
+        )
+        self.assertIn(
+            'AI_TRADE_PROJECT_DIR="${PREVIOUS_RELEASE_PATH}"',
+            script,
+        )
+        self.assertIn(
+            "rollback_compose up -d --force-recreate",
+            script,
+        )
         self.assertIn('log_managed_container_diagnostics "post-rollback"', script)
         self.assertIn(
             '--project-directory "${PREVIOUS_RELEASE_PATH}"',
@@ -921,7 +948,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("trap 'exit 130' INT", script)
         self.assertIn("trap 'exit 143' TERM", script)
 
-    def test_deploy_gate_requires_zero_runner_exit_before_deploy_verdict(self):
+    def test_deploy_gate_allows_only_validated_audit_failure_before_verdict(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('local stage_name="${CLOSED_LOOP_STAGE^^}"', script)
         self.assertIn('if [[ "${stage_name}" == "DEPLOY" ]]; then', script)
@@ -930,8 +957,16 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("closed-loop gate failed: runner exit_code=", script)
-        self.assertNotIn(
+        self.assertIn(
             "evaluating runtime verdict because audit sections are not deploy blockers",
+            script,
+        )
+        self.assertIn(
+            'python3 "${DEPLOY_GATE_VALIDATOR}"',
+            script,
+        )
+        self.assertIn(
+            "DEPLOY gate failed: operational evidence validation failed",
             script,
         )
         self.assertIn('if [[ "${verdict}" != "PASS" ]]; then', script)
@@ -940,7 +975,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         gate_failure_index = script.index(
             'echo "[deploy] closed-loop gate failed: runner exit_code=${gate_status}"',
         )
-        self.assertLess(gate_failure_index, deploy_block_index)
+        self.assertGreater(gate_failure_index, deploy_block_index)
 
     def test_closed_loop_assess_summary_failure_is_a_hard_gate(self):
         runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
