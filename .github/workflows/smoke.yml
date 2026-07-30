@@ -71,6 +71,7 @@ jobs:
           envs: SMOKE_SINCE,SMOKE_MIN_RUNTIME_STATUS,SMOKE_OUTPUT_ROOT,SMOKE_RUN_ID,SMOKE_EXPECTED_SHA,CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS,CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS
           script: |
             set -euo pipefail
+            export PYTHONDONTWRITEBYTECODE=1
             DEPLOY_ROOT="/opt/ai-trade"
             RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"
             if [[ -z "${RELEASE_DIR}" ||
@@ -115,7 +116,10 @@ jobs:
               sha256sum "${RELEASE_DIR}/tools/closed_loop_runner.sh" | awk '{print $1}'
             )"
             cd "${RELEASE_DIR}"
-            chmod +x tools/closed_loop_runner.sh
+            if [[ ! -x tools/closed_loop_runner.sh ]]; then
+              echo "closed-loop runner is not executable" >&2
+              exit 1
+            fi
             runner_status=0
             tools/closed_loop_runner.sh assess \
               --compose-file "${RELEASE_DIR}/docker-compose.prod.yml" \

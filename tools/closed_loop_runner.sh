@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 # 说明：
 # 1) train  : 数据加速(可开关) + R0/R1/R2 + 模型注册 + 汇总报告
@@ -4573,8 +4574,6 @@ run_gc() {
     echo "[WARN] recycle script missing, skip: ${gc_script}"
     return 0
   fi
-  chmod +x "${gc_script}" || true
-
   echo "[INFO] recycle start"
   local gc_args=(
     --reports-root "${OUTPUT_ROOT}"
@@ -4591,7 +4590,7 @@ run_gc() {
   if is_true "${GC_DRY_RUN}"; then
     gc_args+=(--dry-run)
   fi
-  "${gc_script}" "${gc_args[@]}"
+  /bin/bash "${gc_script}" "${gc_args[@]}"
   echo "[INFO] recycle done"
 }
 

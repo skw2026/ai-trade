@@ -13,6 +13,8 @@ set -euo pipefail
 # 3. 发布失败会恢复上一个完整 release，恢复失败则停止受管服务；
 # 4. 可选启用“强闭环门禁”：部署后立即执行 closed_loop assess，失败即回滚。
 
+export PYTHONDONTWRITEBYTECODE=1
+
 COMPOSE_FILE="${1:-/opt/ai-trade/docker-compose.prod.yml}"
 ENV_FILE="${2:-/opt/ai-trade/.env.runtime}"
 SERVICE_NAME="${SERVICE_NAME:-}"
@@ -43,6 +45,7 @@ DEPLOY_ROLLBACK_ATTEMPTED="false"
 DEPLOY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_MATERIALIZER="${DEPLOY_SCRIPT_DIR}/materialize_release_compose.py"
 DEPLOY_GATE_VALIDATOR="${DEPLOY_SCRIPT_DIR}/validate_deploy_gate.py"
+RELEASE_INTEGRITY_VALIDATOR="${DEPLOY_SCRIPT_DIR}/release_integrity.py"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
@@ -65,6 +68,10 @@ if [[ ! -f "${COMPOSE_MATERIALIZER}" ]]; then
 fi
 if [[ ! -f "${DEPLOY_GATE_VALIDATOR}" ]]; then
   echo "[deploy] deploy gate validator missing: ${DEPLOY_GATE_VALIDATOR}"
+  exit 1
+fi
+if [[ ! -f "${RELEASE_INTEGRITY_VALIDATOR}" ]]; then
+  echo "[deploy] release integrity validator missing: ${RELEASE_INTEGRITY_VALIDATOR}"
   exit 1
 fi
 
@@ -150,7 +157,6 @@ validate_target_release() {
   EXPECTED_RESEARCH_IMAGE="${AI_TRADE_RESEARCH_IMAGE:-}" \
   EXPECTED_WEB_IMAGE="${AI_TRADE_WEB_IMAGE:-}" \
   python3 - <<'PY'
-import hashlib
 import json
 import os
 import re
@@ -160,7 +166,6 @@ root = Path(os.environ["TARGET_RELEASE_VALUE"])
 manifest = json.loads(
     (root / "release_manifest.json").read_text(encoding="utf-8")
 )
-content_path = root / ".release-content.sha256"
 failures = []
 if manifest.get("schema_version") != "ai_trade_release_manifest_v1":
     failures.append("schema_version")
@@ -179,38 +184,27 @@ for role, image_ref in {
 }.items():
     if not re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", image_ref):
         failures.append(f"images.{role}.digest")
-content_manifest = manifest.get("content_manifest", {})
-if content_manifest.get("path") != ".release-content.sha256":
-    failures.append("content_manifest.path")
-elif content_manifest.get("sha256") != hashlib.sha256(
-    content_path.read_bytes()
-).hexdigest():
-    failures.append("content_manifest.sha256")
-listed = set()
-for raw in content_path.read_text(encoding="utf-8").splitlines():
-    digest, relative = raw.split(maxsplit=1)
-    relative = relative.lstrip("*").removeprefix("./")
-    if len(digest) != 64 or not relative:
-        failures.append("content_manifest.entry")
-        continue
-    listed.add(relative)
-actual = {
-    path.relative_to(root).as_posix()
-    for path in root.rglob("*")
-    if path.is_file()
-    and path.name not in {"release_manifest.json", ".release-content.sha256"}
-}
-if listed != actual:
-    failures.append("content_manifest.file_set")
 if failures:
     raise SystemExit(
         "target release validation failed: " + ",".join(failures)
     )
 PY
-  (
-    cd "${target_real}"
-    sha256sum -c .release-content.sha256
-  )
+  python3 "${RELEASE_INTEGRITY_VALIDATOR}" --release-dir "${target_real}"
+  seal_release_tree "${target_real}"
+}
+
+seal_release_tree() {
+  local release_path="$1"
+  if ! chmod -R a-w "${release_path}"; then
+    echo "[deploy] failed to seal immutable release: ${release_path}"
+    return 1
+  fi
+  local writable_path=""
+  writable_path="$(find "${release_path}" -perm /222 -print -quit)"
+  if [[ -n "${writable_path}" ]]; then
+    echo "[deploy] immutable release remains writable: ${writable_path}"
+    return 1
+  fi
 }
 
 release_deploy_lock() {
@@ -405,14 +399,12 @@ validate_previous_release() {
     return 1
   fi
   if ! PREVIOUS_RELEASE_VALUE="${release_real}" python3 - <<'PY'
-import hashlib
 import json
 import os
 from pathlib import Path
 
 root = Path(os.environ["PREVIOUS_RELEASE_VALUE"])
 manifest_path = root / "release_manifest.json"
-content_path = root / ".release-content.sha256"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 failures = []
 if manifest.get("schema_version") not in {
@@ -420,33 +412,10 @@ if manifest.get("schema_version") not in {
     "ai_trade_legacy_release_v1",
 }:
     failures.append("schema_version")
-content_manifest = manifest.get("content_manifest", {})
-if content_manifest.get("path") != ".release-content.sha256":
-    failures.append("content_manifest.path")
-elif content_manifest.get("sha256") != hashlib.sha256(
-    content_path.read_bytes()
-).hexdigest():
-    failures.append("content_manifest.sha256")
 images = manifest.get("images") or {}
 for role in ("runtime", "research", "web"):
     if not str(images.get(role) or ""):
         failures.append(f"images.{role}")
-listed = set()
-for raw in content_path.read_text(encoding="utf-8").splitlines():
-    digest, relative = raw.split(maxsplit=1)
-    relative = relative.lstrip("*").removeprefix("./")
-    if len(digest) != 64 or not relative:
-        failures.append("content_manifest.entry")
-        continue
-    listed.add(relative)
-actual = {
-    path.relative_to(root).as_posix()
-    for path in root.rglob("*")
-    if path.is_file()
-    and path.name not in {"release_manifest.json", ".release-content.sha256"}
-}
-if listed != actual:
-    failures.append("content_manifest.file_set")
 if failures:
     raise SystemExit(
         "previous release validation failed: " + ",".join(failures)
@@ -455,12 +424,13 @@ PY
   then
     return 1
   fi
-  if ! (
-    cd "${release_real}"
-    sha256sum -c .release-content.sha256
-  ); then
+  if ! python3 "${RELEASE_INTEGRITY_VALIDATOR}" \
+      --release-dir "${release_real}" \
+      --repair-runtime-contamination \
+      --quarantine-root "${DEPLOY_RELEASE_ROOT}/data/release-contamination"; then
     return 1
   fi
+  seal_release_tree "${release_real}"
 }
 
 materialize_immutable_release_compose() {
@@ -555,7 +525,9 @@ prepare_previous_release() {
      ! cp -f "${COMPOSE_MATERIALIZER}" \
        "${legacy_tmp}/deploy/materialize_release_compose.py" ||
      ! cp -f "${DEPLOY_GATE_VALIDATOR}" \
-       "${legacy_tmp}/deploy/validate_deploy_gate.py"; then
+       "${legacy_tmp}/deploy/validate_deploy_gate.py" ||
+     ! cp -f "${RELEASE_INTEGRITY_VALIDATOR}" \
+       "${legacy_tmp}/deploy/release_integrity.py"; then
     echo "[deploy] failed to copy legacy deploy tooling"
     rm -rf "${legacy_tmp}" || true
     return 1
@@ -638,8 +610,17 @@ PY
     rm -rf "${legacy_tmp}" || true
     return 1
   fi
+  if ! python3 "${RELEASE_INTEGRITY_VALIDATOR}" \
+       --release-dir "${legacy_tmp}" ||
+     ! seal_release_tree "${legacy_tmp}"; then
+    echo "[deploy] failed to validate or seal legacy release snapshot"
+    chmod -R u+w "${legacy_tmp}" 2>/dev/null || true
+    rm -rf "${legacy_tmp}" || true
+    return 1
+  fi
   if ! mv "${legacy_tmp}" "${legacy_release}"; then
     echo "[deploy] failed to publish legacy release snapshot"
+    chmod -R u+w "${legacy_tmp}" 2>/dev/null || true
     rm -rf "${legacy_tmp}" || true
     return 1
   fi
@@ -884,7 +865,10 @@ run_closed_loop_gate() {
     echo "[deploy] closed-loop gate failed: python3 not found on host"
     return 1
   fi
-  chmod +x "${runner}"
+  if [[ ! -x "${runner}" ]]; then
+    echo "[deploy] closed-loop runner is not executable: ${runner}"
+    return 1
+  fi
   local runner_sha256=""
   runner_sha256="$(sha256sum "${runner}" | awk '{print $1}')"
   local release_git_sha="${DEPLOY_GIT_SHA:-}"

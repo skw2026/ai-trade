@@ -114,6 +114,9 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("target: research", cd_workflow)
         self.assertNotIn("file: Dockerfile.research", cd_workflow)
 
+        prod_research = self.prod_services["ai-trade-research"]
+        self.assertIn('PYTHONDONTWRITEBYTECODE: "1"', prod_research)
+
     def test_all_ctest_workflows_install_pinned_research_dependencies(self):
         ctest_workflows = {}
         for workflow_path in WORKFLOWS_DIR.glob("*.yml"):
@@ -145,6 +148,11 @@ class ComposeConsistencyTest(unittest.TestCase):
                 )
                 self.assertIn(
                     'grep -q "validate_deploy_gate_test" '
+                    "/tmp/ctest-list.txt",
+                    workflow,
+                )
+                self.assertIn(
+                    'grep -q "release_integrity_test" '
                     "/tmp/ctest-list.txt",
                     workflow,
                 )
@@ -824,6 +832,17 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("deploy/materialize_release_compose.py", workflow)
         self.assertIn("deploy/validate_deploy_gate.py", workflow)
+        self.assertIn("deploy/release_integrity.py", workflow)
+        self.assertIn(
+            '--repair-runtime-contamination',
+            workflow,
+        )
+        self.assertIn(
+            '--quarantine-root "${DEPLOY_ROOT}/data/release-contamination"',
+            workflow,
+        )
+        self.assertIn("seal_release_tree()", workflow)
+        self.assertIn('chmod -R a-w "${release_path}"', workflow)
         self.assertIn(
             'fetch_report "${REMOTE_BASE}/step_status.jsonl"',
             workflow,
@@ -851,6 +870,21 @@ class ComposeConsistencyTest(unittest.TestCase):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("prepare_previous_release()", script)
         self.assertIn("validate_previous_release()", script)
+        self.assertIn(
+            'RELEASE_INTEGRITY_VALIDATOR="${DEPLOY_SCRIPT_DIR}/release_integrity.py"',
+            script,
+        )
+        self.assertIn(
+            'python3 "${RELEASE_INTEGRITY_VALIDATOR}"',
+            script,
+        )
+        self.assertIn("--repair-runtime-contamination", script)
+        self.assertIn(
+            '--quarantine-root "${DEPLOY_RELEASE_ROOT}/data/release-contamination"',
+            script,
+        )
+        self.assertIn("seal_release_tree()", script)
+        self.assertIn('chmod -R a-w "${release_path}"', script)
         self.assertIn("previous release validation failed", script)
         self.assertIn("complete rollback release validation failed", script)
         self.assertIn("legacy release snapshot created", script)
@@ -959,6 +993,35 @@ class ComposeConsistencyTest(unittest.TestCase):
             '"${AI_TRADE_COMPOSE_PROJECT_NAME}"',
             script,
         )
+
+    def test_release_runtime_paths_preserve_immutable_release(self):
+        deploy = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        closed_loop = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
+        smoke = SMOKE_WORKFLOW.read_text(encoding="utf-8")
+        prod = PROD_COMPOSE.read_text(encoding="utf-8")
+
+        for name, content in {
+            "deploy": deploy,
+            "runner": runner,
+            "closed-loop": closed_loop,
+            "smoke": smoke,
+            "prod-compose": prod,
+        }.items():
+            with self.subTest(path=name):
+                self.assertNotIn("chmod +x", content)
+
+        for name, content in {
+            "deploy": deploy,
+            "runner": runner,
+            "closed-loop": closed_loop,
+            "smoke": smoke,
+            "prod-compose": prod,
+        }.items():
+            with self.subTest(path=name):
+                self.assertIn("PYTHONDONTWRITEBYTECODE", content)
+
+        self.assertIn('/bin/bash "${gc_script}"', runner)
 
     def test_deploy_mutations_are_guarded_until_atomic_commit(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

@@ -40,6 +40,8 @@ services:
     working_dir: /opt/ai-trade
     entrypoint: ["python3", "tools/integrator_train.py"]
     command: ["--help"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ${AI_TRADE_PROJECT_DIR:-.}:/opt/ai-trade
     profiles: ["research"]
@@ -75,11 +77,6 @@ services:
         if ! command -v bash >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1 || ! command -v flock >/dev/null 2>&1; then
           apk add --no-cache bash docker-cli-compose python3 util-linux
         fi
-
-        if [ -f "tools/closed_loop_runner.sh" ]; then chmod +x tools/closed_loop_runner.sh; fi
-        if [ -f "tools/scheduler_healthcheck.sh" ]; then chmod +x tools/scheduler_healthcheck.sh; fi
-        if [ -f "tools/recycle_artifacts.sh" ]; then chmod +x tools/recycle_artifacts.sh; fi
-        if [ -f "tools/docker_gc.sh" ]; then chmod +x tools/docker_gc.sh; fi
 
         # Docker socket 嵌套 compose: 需要把宿主机项目绝对路径传给下一层 compose。
         if [ -z "${AI_TRADE_PROJECT_DIR:-}" ]; then
@@ -172,6 +169,7 @@ services:
           sleep "$${SCHEDULER_INTERVAL_VALUE}"
         done
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       AI_TRADE_IMAGE: ${AI_TRADE_IMAGE:-ai-trade:latest}
       AI_TRADE_RESEARCH_IMAGE: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
       AI_TRADE_PROJECT_DIR: ${AI_TRADE_PROJECT_DIR:-}
