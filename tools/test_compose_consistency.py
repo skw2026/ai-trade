@@ -1109,6 +1109,179 @@ class ComposeConsistencyTest(unittest.TestCase):
             script.index('stopping deferred services before gate'),
         )
 
+    def test_deploy_disk_preflight_cleans_pressure_before_service_mutation(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        workflow = CD_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"',
+            script,
+        )
+        self.assertIn(
+            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-4294967296}"',
+            script,
+        )
+        self.assertIn(
+            'DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"',
+            script,
+        )
+        self.assertIn("ensure_deploy_disk_capacity()", script)
+        self.assertIn("DOCKER_GC_PRUNE_VOLUMES=false", script)
+        self.assertIn(
+            "disk preflight failed before managed service mutation",
+            script,
+        )
+        call_index = script.index("if ! ensure_deploy_disk_capacity; then")
+        guard_index = script.index(
+            'DEPLOY_TRANSACTION_GUARD_ACTIVE="true"',
+            call_index,
+        )
+        startup_index = script.index("if ! run_startup_preflight; then")
+        self.assertLess(call_index, guard_index)
+        self.assertLess(call_index, startup_index)
+
+        for variable in (
+            "DEPLOY_DISK_PREFLIGHT_ENABLED",
+            "DEPLOY_MIN_FREE_BYTES",
+            "DEPLOY_DOCKER_GC_UNTIL",
+        ):
+            with self.subTest(workflow_variable=variable):
+                self.assertIn(f"{variable}:", workflow)
+                self.assertIn(variable, workflow.split("envs:", 1)[1].splitlines()[0])
+
+        block_start = script.index("docker_storage_available_bytes() {")
+        block_end = script.index(
+            '\nif ! is_true "${CLOSED_LOOP_RUNNER_LOCK_HELD:-false}"; then',
+            block_start,
+        )
+        function_block = script[block_start:block_end]
+        harness = (
+            """set -euo pipefail
+is_true() {
+  case "$1" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+  esac
+  return 1
+}
+"""
+            + function_block
+            + r'''
+COMPOSE_DIR="${FAKE_COMPOSE_DIR}"
+DEPLOY_DISK_PREFLIGHT_ENABLED=true
+DEPLOY_MIN_FREE_BYTES="${FAKE_MIN_FREE_BYTES}"
+DEPLOY_DOCKER_GC_UNTIL=1h
+DEPLOY_DOCKER_ROOT="${FAKE_DOCKER_ROOT}"
+
+docker() {
+  if [[ "${1:-}" == "info" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+df() {
+  local count=0
+  if [[ -f "${FAKE_DF_COUNT}" ]]; then
+    count="$(cat "${FAKE_DF_COUNT}")"
+  fi
+  count=$((count + 1))
+  printf '%s\n' "${count}" > "${FAKE_DF_COUNT}"
+  local available_kib="${FAKE_FREE_AFTER_KIB}"
+  if (( count == 1 )); then
+    available_kib="${FAKE_FREE_BEFORE_KIB}"
+  fi
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+  printf 'fake 10000000 1 %s 1%% %s\n' \
+    "${available_kib}" "${DEPLOY_DOCKER_ROOT}"
+}
+
+ensure_deploy_disk_capacity
+'''
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            temp = pathlib.Path(td)
+            compose_dir = temp / "release"
+            docker_root = temp / "docker-root"
+            tools_dir = compose_dir / "tools"
+            tools_dir.mkdir(parents=True)
+            docker_root.mkdir()
+            gc_log = temp / "gc.env"
+            gc_script = tools_dir / "docker_gc.sh"
+            gc_script.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+{
+  echo "until=${DOCKER_GC_UNTIL}"
+  echo "containers=${DOCKER_GC_PRUNE_CONTAINERS}"
+  echo "images=${DOCKER_GC_PRUNE_IMAGES}"
+  echo "build_cache=${DOCKER_GC_PRUNE_BUILD_CACHE}"
+  echo "networks=${DOCKER_GC_PRUNE_NETWORKS}"
+  echo "volumes=${DOCKER_GC_PRUNE_VOLUMES}"
+} > "${FAKE_GC_LOG}"
+""",
+                encoding="utf-8",
+            )
+
+            base_env = os.environ.copy()
+            base_env.update(
+                {
+                    "FAKE_COMPOSE_DIR": str(compose_dir),
+                    "FAKE_DOCKER_ROOT": str(docker_root),
+                    "FAKE_DF_COUNT": str(temp / "df.count"),
+                    "FAKE_GC_LOG": str(gc_log),
+                    "FAKE_MIN_FREE_BYTES": "4294967296",
+                    "FAKE_FREE_BEFORE_KIB": "1000000",
+                    "FAKE_FREE_AFTER_KIB": "6000000",
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            self.assertIn("disk pressure detected", result.stdout)
+            gc_env = gc_log.read_text(encoding="utf-8")
+            self.assertIn("until=1h", gc_env)
+            self.assertIn("containers=true", gc_env)
+            self.assertIn("images=true", gc_env)
+            self.assertIn("build_cache=true", gc_env)
+            self.assertIn("networks=false", gc_env)
+            self.assertIn("volumes=false", gc_env)
+
+            pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            gc_log.unlink()
+            base_env["FAKE_FREE_BEFORE_KIB"] = "6000000"
+            result = subprocess.run(
+                ["bash", "-c", harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            self.assertFalse(gc_log.exists())
+
+            pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            base_env["FAKE_FREE_BEFORE_KIB"] = "1000000"
+            base_env["FAKE_FREE_AFTER_KIB"] = "1000000"
+            result = subprocess.run(
+                ["bash", "-c", harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "insufficient Docker disk space after cleanup",
+                result.stdout,
+            )
+
     def test_deploy_compose_project_migration_behavior(self):
         deploy_script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         function_start = deploy_script.index("service_to_container_name() {")

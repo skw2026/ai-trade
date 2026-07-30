@@ -36,6 +36,10 @@ CLOSED_LOOP_STRICT_PASS="${CLOSED_LOOP_STRICT_PASS:-true}"
 CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"
 GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-watchdog scheduler ai-trade-web}"
 DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"
+DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"
+DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-4294967296}"
+DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"
+DEPLOY_DOCKER_ROOT="${DEPLOY_DOCKER_ROOT:-}"
 DEPLOY_RELEASE_ROOT="${DEPLOY_RELEASE_ROOT:-}"
 DEPLOY_TARGET_RELEASE="${DEPLOY_TARGET_RELEASE:-}"
 DEPLOY_CURRENT_LINK="${DEPLOY_CURRENT_LINK:-}"
@@ -235,6 +239,87 @@ is_true() {
       ;;
   esac
   return 1
+}
+
+docker_storage_available_bytes() {
+  local docker_root="${DEPLOY_DOCKER_ROOT}"
+  if [[ -z "${docker_root}" ]]; then
+    docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  fi
+  if [[ -z "${docker_root}" || ! -e "${docker_root}" ]]; then
+    echo "[deploy] disk preflight cannot resolve Docker root: ${docker_root:-<empty>}" >&2
+    return 1
+  fi
+
+  local available_bytes=""
+  available_bytes="$(
+    df -Pk "${docker_root}" 2>/dev/null \
+      | awk 'NR == 2 {printf "%.0f\n", $4 * 1024}'
+  )"
+  if [[ ! "${available_bytes}" =~ ^[0-9]+$ ]]; then
+    echo "[deploy] disk preflight cannot read available bytes: ${docker_root}" >&2
+    return 1
+  fi
+  printf '%s\n' "${available_bytes}"
+}
+
+ensure_deploy_disk_capacity() {
+  if ! is_true "${DEPLOY_DISK_PREFLIGHT_ENABLED}"; then
+    echo "[deploy] disk preflight skipped (DEPLOY_DISK_PREFLIGHT_ENABLED=${DEPLOY_DISK_PREFLIGHT_ENABLED})"
+    return 0
+  fi
+  if [[ ! "${DEPLOY_MIN_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[deploy] invalid DEPLOY_MIN_FREE_BYTES: ${DEPLOY_MIN_FREE_BYTES}"
+    return 1
+  fi
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    echo "[deploy] disk preflight requires an available Docker daemon"
+    return 1
+  fi
+  if ! command -v df >/dev/null 2>&1; then
+    echo "[deploy] disk preflight requires df"
+    return 1
+  fi
+
+  local available_before=""
+  if ! available_before="$(docker_storage_available_bytes)"; then
+    return 1
+  fi
+  echo "[deploy] disk preflight: available_bytes=${available_before} required_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  if (( available_before >= DEPLOY_MIN_FREE_BYTES )); then
+    return 0
+  fi
+
+  local gc_script="${COMPOSE_DIR}/tools/docker_gc.sh"
+  if [[ ! -f "${gc_script}" ]]; then
+    echo "[deploy] disk pressure cleanup script missing: ${gc_script}"
+    return 1
+  fi
+  echo "[deploy] disk pressure detected; pruning stopped containers, unused images, and build cache"
+  if ! DOCKER_GC_ENABLED=true \
+    DOCKER_GC_DRY_RUN=false \
+    DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL}" \
+    DOCKER_GC_KEEP_RECENT_TAGS=0 \
+    DOCKER_GC_PRUNE_CONTAINERS=true \
+    DOCKER_GC_PRUNE_IMAGES=true \
+    DOCKER_GC_PRUNE_BUILD_CACHE=true \
+    DOCKER_GC_PRUNE_NETWORKS=false \
+    DOCKER_GC_PRUNE_VOLUMES=false \
+    /bin/bash "${gc_script}"; then
+    echo "[deploy] disk pressure cleanup failed"
+    return 1
+  fi
+
+  local available_after=""
+  if ! available_after="$(docker_storage_available_bytes)"; then
+    return 1
+  fi
+  echo "[deploy] disk preflight after cleanup: available_bytes=${available_after} required_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
+    echo "[deploy] insufficient Docker disk space after cleanup"
+    return 1
+  fi
+  return 0
 }
 
 if ! is_true "${CLOSED_LOOP_RUNNER_LOCK_HELD:-false}"; then
@@ -1164,6 +1249,11 @@ echo "[deploy] initial_deploy_services=${initial_deploy_services[*]}"
 echo "[deploy] deferred_deploy_services=${deferred_deploy_services[*]}"
 echo "[deploy] required_containers=${required_containers[*]}"
 echo "[deploy] initial_required_containers=${initial_required_containers[*]}"
+
+if ! ensure_deploy_disk_capacity; then
+  echo "[deploy] disk preflight failed before managed service mutation"
+  exit 1
+fi
 
 target_runtime_compose="$(
   prepare_runtime_compose "${COMPOSE_FILE}" "${COMPOSE_DIR}" "target"
