@@ -37,7 +37,8 @@ CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"
 GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-watchdog scheduler ai-trade-web}"
 DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"
 DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"
-DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-4294967296}"
+DEPLOY_GC_TRIGGER_FREE_BYTES="${DEPLOY_GC_TRIGGER_FREE_BYTES:-4294967296}"
+DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-2147483648}"
 DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"
 DEPLOY_DOCKER_ROOT="${DEPLOY_DOCKER_ROOT:-}"
 DEPLOY_RELEASE_ROOT="${DEPLOY_RELEASE_ROOT:-}"
@@ -272,6 +273,14 @@ ensure_deploy_disk_capacity() {
     echo "[deploy] invalid DEPLOY_MIN_FREE_BYTES: ${DEPLOY_MIN_FREE_BYTES}"
     return 1
   fi
+  if [[ ! "${DEPLOY_GC_TRIGGER_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[deploy] invalid DEPLOY_GC_TRIGGER_FREE_BYTES: ${DEPLOY_GC_TRIGGER_FREE_BYTES}"
+    return 1
+  fi
+  if (( DEPLOY_GC_TRIGGER_FREE_BYTES < DEPLOY_MIN_FREE_BYTES )); then
+    echo "[deploy] DEPLOY_GC_TRIGGER_FREE_BYTES must be >= DEPLOY_MIN_FREE_BYTES"
+    return 1
+  fi
   if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
     echo "[deploy] disk preflight requires an available Docker daemon"
     return 1
@@ -285,8 +294,8 @@ ensure_deploy_disk_capacity() {
   if ! available_before="$(docker_storage_available_bytes)"; then
     return 1
   fi
-  echo "[deploy] disk preflight: available_bytes=${available_before} required_bytes=${DEPLOY_MIN_FREE_BYTES}"
-  if (( available_before >= DEPLOY_MIN_FREE_BYTES )); then
+  echo "[deploy] disk preflight: available_bytes=${available_before} cleanup_trigger_bytes=${DEPLOY_GC_TRIGGER_FREE_BYTES} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  if (( available_before >= DEPLOY_GC_TRIGGER_FREE_BYTES )); then
     return 0
   fi
 
@@ -314,7 +323,7 @@ ensure_deploy_disk_capacity() {
   if ! available_after="$(docker_storage_available_bytes)"; then
     return 1
   fi
-  echo "[deploy] disk preflight after cleanup: available_bytes=${available_after} required_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  echo "[deploy] disk preflight after cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
   if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
     echo "[deploy] insufficient Docker disk space after cleanup"
     return 1

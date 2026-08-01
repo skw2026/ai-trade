@@ -1117,7 +1117,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-4294967296}"',
+            'DEPLOY_GC_TRIGGER_FREE_BYTES="${DEPLOY_GC_TRIGGER_FREE_BYTES:-4294967296}"',
+            script,
+        )
+        self.assertIn(
+            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-2147483648}"',
             script,
         )
         self.assertIn(
@@ -1141,6 +1145,7 @@ class ComposeConsistencyTest(unittest.TestCase):
 
         for variable in (
             "DEPLOY_DISK_PREFLIGHT_ENABLED",
+            "DEPLOY_GC_TRIGGER_FREE_BYTES",
             "DEPLOY_MIN_FREE_BYTES",
             "DEPLOY_DOCKER_GC_UNTIL",
         ):
@@ -1169,6 +1174,7 @@ is_true() {
             + r'''
 COMPOSE_DIR="${FAKE_COMPOSE_DIR}"
 DEPLOY_DISK_PREFLIGHT_ENABLED=true
+DEPLOY_GC_TRIGGER_FREE_BYTES="${FAKE_GC_TRIGGER_FREE_BYTES}"
 DEPLOY_MIN_FREE_BYTES="${FAKE_MIN_FREE_BYTES}"
 DEPLOY_DOCKER_GC_UNTIL=1h
 DEPLOY_DOCKER_ROOT="${FAKE_DOCKER_ROOT}"
@@ -1231,9 +1237,10 @@ set -euo pipefail
                     "FAKE_DOCKER_ROOT": str(docker_root),
                     "FAKE_DF_COUNT": str(temp / "df.count"),
                     "FAKE_GC_LOG": str(gc_log),
-                    "FAKE_MIN_FREE_BYTES": "4294967296",
+                    "FAKE_GC_TRIGGER_FREE_BYTES": "4294967296",
+                    "FAKE_MIN_FREE_BYTES": "2147483648",
                     "FAKE_FREE_BEFORE_KIB": "1000000",
-                    "FAKE_FREE_AFTER_KIB": "6000000",
+                    "FAKE_FREE_AFTER_KIB": "2400000",
                 }
             )
             result = subprocess.run(
@@ -1279,6 +1286,21 @@ set -euo pipefail
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(
                 "insufficient Docker disk space after cleanup",
+                result.stdout,
+            )
+
+            base_env["FAKE_GC_TRIGGER_FREE_BYTES"] = "1073741824"
+            base_env["FAKE_MIN_FREE_BYTES"] = "2147483648"
+            result = subprocess.run(
+                ["bash", "-c", harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "DEPLOY_GC_TRIGGER_FREE_BYTES must be >= DEPLOY_MIN_FREE_BYTES",
                 result.stdout,
             )
 
