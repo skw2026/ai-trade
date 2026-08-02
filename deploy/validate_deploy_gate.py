@@ -159,16 +159,11 @@ def validate_step_records(
     audit_result = str(audit.get("result") or "")
     if (
         audit.get("kind") != "required"
-        or audit_result not in {"pass", "fail"}
+        or audit_result != "pass"
+        or audit.get("exit_code") != 0
         or audit.get("blocked_by_prior_failure") is not False
     ):
-        raise GateValidationError("mechanism_audit step evidence is invalid")
-    if audit_result == "pass" and audit.get("exit_code") != 0:
-        raise GateValidationError("mechanism_audit pass has a non-zero exit code")
-    if audit_result == "fail":
-        exit_code = audit.get("exit_code")
-        if not isinstance(exit_code, int) or exit_code == 0:
-            raise GateValidationError("mechanism_audit fail lacks a non-zero exit code")
+        raise GateValidationError("mechanism_audit execution did not pass")
 
     for record in records:
         if record.get("kind") != "required":
@@ -245,10 +240,6 @@ def validate_deploy_gate(
     mechanism_status = str(mechanism_report.get("status") or "").lower()
     if mechanism_status not in {"pass", "pass_with_actions", "fail"}:
         raise GateValidationError("closed_loop_mechanism_report status is invalid")
-    if audit_result == "pass" and mechanism_status != "pass":
-        raise GateValidationError("mechanism_audit step/report status mismatch")
-    if audit_result == "fail" and mechanism_status == "pass":
-        raise GateValidationError("mechanism_audit step/report status mismatch")
 
     return {
         "run_id": expected_run_id,

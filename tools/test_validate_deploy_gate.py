@@ -21,7 +21,8 @@ class ValidateDeployGateTest(unittest.TestCase):
         self,
         root: pathlib.Path,
         *,
-        audit_result: str = "fail",
+        audit_result: str = "pass",
+        mechanism_status: str = "fail",
         runtime_result: str = "pass",
         stage: str = "DEPLOY",
     ) -> dict[str, pathlib.Path]:
@@ -39,7 +40,6 @@ class ValidateDeployGateTest(unittest.TestCase):
             encoding="utf-8",
         )
         files["trade_ledger_report"].write_text("{}\n", encoding="utf-8")
-        mechanism_status = "fail" if audit_result == "fail" else "pass"
         files["closed_loop_mechanism_report"].write_text(
             json.dumps({"status": mechanism_status}) + "\n",
             encoding="utf-8",
@@ -131,14 +131,16 @@ class ValidateDeployGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = self.validate(self.write_case(pathlib.Path(tmp)))
         self.assertEqual(result["runtime_verdict"], "PASS")
-        self.assertEqual(result["mechanism_audit"], "fail")
+        self.assertEqual(result["mechanism_audit"], "pass")
+        self.assertEqual(result["mechanism_status"], "fail")
 
     def test_accepts_all_steps_passed(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = self.validate(
-                self.write_case(pathlib.Path(tmp), audit_result="pass")
+                self.write_case(pathlib.Path(tmp), mechanism_status="pass")
             )
         self.assertEqual(result["mechanism_audit"], "pass")
+        self.assertEqual(result["mechanism_status"], "pass")
 
     def test_accepts_smoke_runtime_pass_with_audit_only_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,7 +148,17 @@ class ValidateDeployGateTest(unittest.TestCase):
             result = self.validate(paths, expected_stage="SMOKE")
         self.assertEqual(result["stage"], "SMOKE")
         self.assertEqual(result["runtime_verdict"], "PASS")
-        self.assertEqual(result["mechanism_audit"], "fail")
+        self.assertEqual(result["mechanism_audit"], "pass")
+        self.assertEqual(result["mechanism_status"], "fail")
+
+    def test_rejects_mechanism_audit_execution_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self.write_case(pathlib.Path(tmp), audit_result="fail")
+            with self.assertRaisesRegex(
+                MODULE.GateValidationError,
+                "mechanism_audit execution did not pass",
+            ):
+                self.validate(paths)
 
     def test_rejects_operational_step_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
