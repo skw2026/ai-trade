@@ -1207,6 +1207,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT",
             "DEPLOY_REPORT_KEEP_RUN_DIRS",
             "DEPLOY_REPORT_MAX_AGE_HOURS",
+            "DEPLOY_REPORT_MAX_BYTES",
             "DEPLOY_LOCK_WAIT_SECONDS",
         ):
             with self.subTest(workflow_variable=variable):
@@ -1217,6 +1218,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             'DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1800}"',
             script,
         )
+        self.assertIn(
+            'DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"',
+            script,
+        )
+        self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
         self.assertIn('flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9', script)
         self.assertIn(
             'flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9',

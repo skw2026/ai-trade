@@ -6,6 +6,7 @@ KEEP_RUN_DIRS="${CLOSED_LOOP_GC_KEEP_RUN_DIRS:-120}"
 KEEP_DAILY_FILES="${CLOSED_LOOP_GC_KEEP_DAILY_FILES:-120}"
 KEEP_WEEKLY_FILES="${CLOSED_LOOP_GC_KEEP_WEEKLY_FILES:-104}"
 MAX_AGE_HOURS="${CLOSED_LOOP_GC_MAX_AGE_HOURS:-72}"
+MAX_RUN_BYTES="${CLOSED_LOOP_GC_MAX_RUN_BYTES:-0}"
 LOG_FILE="${CLOSED_LOOP_GC_LOG_FILE:-}"
 LOG_MAX_BYTES="${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}"
 LOG_KEEP_BYTES="${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}"
@@ -23,6 +24,7 @@ Options:
   --keep-daily-files <int>    保留 daily_*.json 数量（default: 120）
   --keep-weekly-files <int>   保留 weekly_*.json 数量（default: 104）
   --max-age-hours <int>       仅保留最近 N 小时产物（default: 72, 0=关闭）
+  --max-run-bytes <int>       run 目录总容量上限（default: 0=关闭）
   --log-file <path>           可选：需要回收的日志文件（例如 cron.log）
   --log-max-bytes <int>       日志超过该大小时触发截断（default: 104857600）
   --log-keep-bytes <int>      截断后保留尾部字节数（default: 20971520）
@@ -46,6 +48,8 @@ while [[ $# -gt 0 ]]; do
       KEEP_WEEKLY_FILES="$2"; shift 2;;
     --max-age-hours)
       MAX_AGE_HOURS="$2"; shift 2;;
+    --max-run-bytes)
+      MAX_RUN_BYTES="$2"; shift 2;;
     --log-file)
       LOG_FILE="$2"; shift 2;;
     --log-max-bytes)
@@ -64,7 +68,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for value_name in KEEP_RUN_DIRS KEEP_DAILY_FILES KEEP_WEEKLY_FILES MAX_AGE_HOURS LOG_MAX_BYTES LOG_KEEP_BYTES; do
+for value_name in KEEP_RUN_DIRS KEEP_DAILY_FILES KEEP_WEEKLY_FILES MAX_AGE_HOURS MAX_RUN_BYTES LOG_MAX_BYTES LOG_KEEP_BYTES; do
   value="${!value_name}"
   if ! is_nonneg_int "${value}"; then
     echo "[GC] ${value_name} must be a non-negative integer: ${value}"
@@ -118,6 +122,23 @@ run_id_is_protected() {
     return 1
   fi
   printf '%s\n' "${PROTECTED_RUN_IDS}" | grep -Fxq "${id}"
+}
+
+is_run_dir_name() {
+  local name="$1"
+  [[ "${name}" =~ ^[0-9]{8}T[0-9]{6}Z$ ||
+     "${name}" =~ ^deploy-[0-9]+-[0-9]+$ ||
+     "${name}" =~ ^gha-[0-9]+-[0-9]+$ ]]
+}
+
+path_size_bytes() {
+  local target="$1"
+  local size_kib=""
+  size_kib="$(du -sk "${target}" 2>/dev/null | awk 'NR == 1 {print $1}')"
+  if [[ ! "${size_kib}" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  printf '%s\n' "$((size_kib * 1024))"
 }
 
 cleanup_ranked_files() {
@@ -196,8 +217,7 @@ rank=0
 while IFS= read -r dir_path; do
   [[ -n "${dir_path}" ]] || continue
   dir_name="$(basename "${dir_path}")"
-  if [[ ! "${dir_name}" =~ ^[0-9]{8}T[0-9]{6}Z$ &&
-        ! "${dir_name}" =~ ^deploy-[0-9]+-[0-9]+$ ]]; then
+  if ! is_run_dir_name "${dir_name}"; then
     continue
   fi
   run_total=$((run_total + 1))
@@ -229,6 +249,41 @@ echo "[GC] run_dirs: total=${run_total} keep=${run_kept} deleted=${run_deleted} 
 if [[ -n "${PROTECTED_RUN_IDS}" ]]; then
   echo "[GC] protected_run_ids:"
   printf '%s\n' "${PROTECTED_RUN_IDS}" | sed '/^$/d' | sort -u | sed 's/^/[GC]   - /'
+fi
+
+if (( MAX_RUN_BYTES > 0 )); then
+  run_bytes_before=0
+  while IFS= read -r dir_path; do
+    [[ -n "${dir_path}" ]] || continue
+    dir_name="$(basename "${dir_path}")"
+    if ! is_run_dir_name "${dir_name}"; then
+      continue
+    fi
+    dir_size_bytes="$(path_size_bytes "${dir_path}" || echo 0)"
+    run_bytes_before=$((run_bytes_before + dir_size_bytes))
+  done < <(find "${REPORTS_ROOT}" -mindepth 1 -maxdepth 1 -type d -print)
+
+  projected_run_bytes="${run_bytes_before}"
+  capacity_deleted=0
+  while IFS= read -r dir_path; do
+    [[ -n "${dir_path}" ]] || continue
+    if (( projected_run_bytes <= MAX_RUN_BYTES )); then
+      break
+    fi
+    dir_name="$(basename "${dir_path}")"
+    if ! is_run_dir_name "${dir_name}" || run_id_is_protected "${dir_name}"; then
+      continue
+    fi
+    dir_size_bytes="$(path_size_bytes "${dir_path}" || echo 0)"
+    delete_path "${dir_path}"
+    projected_run_bytes=$((projected_run_bytes - dir_size_bytes))
+    capacity_deleted=$((capacity_deleted + 1))
+  done < <(find "${REPORTS_ROOT}" -mindepth 1 -maxdepth 1 -type d -print | sort)
+
+  echo "[GC] run_capacity: bytes_before=${run_bytes_before} projected_bytes_after=${projected_run_bytes} max_bytes=${MAX_RUN_BYTES} deleted=${capacity_deleted}"
+  if (( projected_run_bytes > MAX_RUN_BYTES )); then
+    echo "[GC] run_capacity limit remains exceeded by protected runs: projected_bytes_after=${projected_run_bytes} max_bytes=${MAX_RUN_BYTES}"
+  fi
 fi
 
 SUMMARY_DIR="${REPORTS_ROOT}/summary"

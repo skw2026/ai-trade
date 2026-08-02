@@ -47,6 +47,7 @@ DEPLOY_RELEASE_KEEP_COUNT="${DEPLOY_RELEASE_KEEP_COUNT:-3}"
 DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT="${DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT:-8}"
 DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"
 DEPLOY_REPORT_MAX_AGE_HOURS="${DEPLOY_REPORT_MAX_AGE_HOURS:-72}"
+DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"
 DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1800}"
 DEPLOY_RELEASE_ROOT="${DEPLOY_RELEASE_ROOT:-}"
 DEPLOY_TARGET_RELEASE="${DEPLOY_TARGET_RELEASE:-}"
@@ -276,7 +277,8 @@ cleanup_deploy_host_storage() {
     DEPLOY_RELEASE_KEEP_COUNT \
     DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT \
     DEPLOY_REPORT_KEEP_RUN_DIRS \
-    DEPLOY_REPORT_MAX_AGE_HOURS
+    DEPLOY_REPORT_MAX_AGE_HOURS \
+    DEPLOY_REPORT_MAX_BYTES
   do
     if [[ ! "${!variable_name}" =~ ^[0-9]+$ ]]; then
       echo "[deploy] invalid ${variable_name}: ${!variable_name}"
@@ -311,6 +313,7 @@ cleanup_deploy_host_storage() {
         --reports-root "${reports_root}" \
         --keep-run-dirs "${DEPLOY_REPORT_KEEP_RUN_DIRS}" \
         --max-age-hours "${DEPLOY_REPORT_MAX_AGE_HOURS}" \
+        --max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}" \
         --log-file "${reports_root}/cron.log"; then
       echo "[deploy] closed-loop report cleanup failed"
       return 1

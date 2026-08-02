@@ -177,6 +177,46 @@ class RecycleArtifactsTest(unittest.TestCase):
             self.assertTrue(protected.is_dir())
             self.assertTrue(newest.is_dir())
 
+    def test_capacity_cleanup_recognizes_gha_runs_and_preserves_latest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reports_root = pathlib.Path(tmp) / "closed_loop"
+            reports_root.mkdir(parents=True, exist_ok=True)
+
+            oldest = reports_root / "gha-100-1"
+            protected = reports_root / "gha-200-1"
+            newest = reports_root / "gha-300-1"
+            for run_dir in (oldest, protected, newest):
+                run_dir.mkdir()
+                (run_dir / "runtime.log").write_bytes(b"x" * 8192)
+            (reports_root / "latest_run_id").write_text(
+                protected.name + "\n",
+                encoding="utf-8",
+            )
+
+            result = run_gc(
+                "--reports-root",
+                str(reports_root),
+                "--keep-run-dirs",
+                "100",
+                "--keep-daily-files",
+                "0",
+                "--keep-weekly-files",
+                "0",
+                "--max-age-hours",
+                "0",
+                "--max-run-bytes",
+                "1",
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stderr:\n{result.stderr}\nstdout:\n{result.stdout}",
+            )
+            self.assertFalse(oldest.exists())
+            self.assertTrue(protected.is_dir())
+            self.assertFalse(newest.exists())
+            self.assertIn("run_capacity limit remains exceeded by protected runs", result.stdout)
+
     def test_log_rotation_keeps_log_tail(self):
         with tempfile.TemporaryDirectory() as tmp:
             reports_root = pathlib.Path(tmp) / "closed_loop"
