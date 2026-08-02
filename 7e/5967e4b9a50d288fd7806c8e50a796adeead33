@@ -1,0 +1,11 @@
+tools/test_validate_deploy_gate.py
+  ai_agent 24-25,134-135,140,143,151-161
+deploy/validate_deploy_gate.py
+  ai_agent 162-163,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "7e5967e4b9a50d288fd7806c8e50a796adeead33",
+  "prompts": {}
+}
