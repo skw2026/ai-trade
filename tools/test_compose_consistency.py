@@ -1207,10 +1207,21 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT",
             "DEPLOY_REPORT_KEEP_RUN_DIRS",
             "DEPLOY_REPORT_MAX_AGE_HOURS",
+            "DEPLOY_LOCK_WAIT_SECONDS",
         ):
             with self.subTest(workflow_variable=variable):
                 self.assertIn(f"{variable}:", workflow)
                 self.assertIn(variable, workflow.split("envs:", 1)[1].splitlines()[0])
+
+        self.assertIn(
+            'DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1800}"',
+            script,
+        )
+        self.assertIn('flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9', script)
+        self.assertIn(
+            'flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9',
+            workflow,
+        )
 
         block_start = script.index("docker_storage_available_bytes() {")
         block_end = script.index(

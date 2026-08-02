@@ -47,6 +47,7 @@ DEPLOY_RELEASE_KEEP_COUNT="${DEPLOY_RELEASE_KEEP_COUNT:-3}"
 DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT="${DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT:-8}"
 DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"
 DEPLOY_REPORT_MAX_AGE_HOURS="${DEPLOY_REPORT_MAX_AGE_HOURS:-72}"
+DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1800}"
 DEPLOY_RELEASE_ROOT="${DEPLOY_RELEASE_ROOT:-}"
 DEPLOY_TARGET_RELEASE="${DEPLOY_TARGET_RELEASE:-}"
 DEPLOY_CURRENT_LINK="${DEPLOY_CURRENT_LINK:-}"
@@ -88,6 +89,10 @@ if [[ ! -f "${RELEASE_INTEGRITY_VALIDATOR}" ]]; then
 fi
 if [[ ! -f "${DEPLOY_STORAGE_PRUNER}" ]]; then
   echo "[deploy] release storage pruner missing: ${DEPLOY_STORAGE_PRUNER}"
+  exit 1
+fi
+if [[ ! "${DEPLOY_LOCK_WAIT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "[deploy] invalid DEPLOY_LOCK_WAIT_SECONDS: ${DEPLOY_LOCK_WAIT_SECONDS}"
   exit 1
 fi
 
@@ -441,8 +446,9 @@ if ! is_true "${CLOSED_LOOP_RUNNER_LOCK_HELD:-false}"; then
   fi
   mkdir -p "$(dirname "${DEPLOY_TRANSACTION_LOCK_PATH}")"
   exec 9> "${DEPLOY_TRANSACTION_LOCK_PATH}"
-  if ! flock -n 9; then
-    echo "[deploy] deployment blocked: closed-loop transaction lock is held"
+  echo "[deploy] waiting up to ${DEPLOY_LOCK_WAIT_SECONDS}s for closed-loop transaction lock"
+  if ! flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9; then
+    echo "[deploy] deployment blocked: closed-loop transaction lock wait timed out"
     exit 1
   fi
   DEPLOY_LOCK_BACKEND="flock"
