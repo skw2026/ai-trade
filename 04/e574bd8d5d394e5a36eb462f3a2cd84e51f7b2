@@ -1,0 +1,13 @@
+.github/workflows/cd.yml
+  ai_agent 353,361,392-395,397-399
+deploy/ecs-deploy.sh
+  ai_agent 50,94-97,449-451
+tools/test_compose_consistency.py
+  ai_agent 1210,1216-1224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "04e574bd8d5d394e5a36eb462f3a2cd84e51f7b2",
+  "prompts": {}
+}
