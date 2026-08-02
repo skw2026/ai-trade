@@ -83,8 +83,7 @@ RUN /usr/local/bin/apt-install \
       libcurl4 \
       libssl3 \
       libboost-system1.83.0 \
-      python3 \
-      python3-dev
+      python3
 
 WORKDIR /app
 
@@ -104,8 +103,15 @@ RUN mkdir -p /app/data
 # 这确保了 ai-trade-research 服务能运行 integrator_train.py
 FROM runtime AS research
 RUN /usr/local/bin/apt-install python3-pip
-RUN pip3 install --no-cache-dir --break-system-packages \
-      -r /app/tools/requirements-research.txt
+RUN pip3 install --no-cache-dir --no-compile --break-system-packages \
+      -r /app/tools/requirements-research.txt && \
+    find /usr/local/lib/python3.12/dist-packages \
+      -type d \( -name __pycache__ -o -name test -o -name tests \) \
+      -prune -print0 \
+      | xargs -0 -r rm -rf && \
+    find /usr/local/lib/python3.12/dist-packages \
+      -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete && \
+    python3 -c 'import catboost, numpy; print(catboost.__version__, numpy.__version__)'
 
 # [修改] 默认目标恢复为 runtime，确保主服务轻量
 FROM runtime

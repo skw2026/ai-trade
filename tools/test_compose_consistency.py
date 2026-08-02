@@ -103,6 +103,9 @@ class ComposeConsistencyTest(unittest.TestCase):
             "-r /app/tools/requirements-research.txt",
             research_stage,
         )
+        self.assertIn("--no-compile", research_stage)
+        self.assertIn("-name tests", research_stage)
+        self.assertIn("import catboost, numpy", research_stage)
         self.assertNotIn(
             "pip3 install --no-cache-dir --break-system-packages numpy catboost",
             research_stage,
@@ -833,6 +836,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("deploy/materialize_release_compose.py", workflow)
         self.assertIn("deploy/validate_deploy_gate.py", workflow)
         self.assertIn("deploy/release_integrity.py", workflow)
+        self.assertIn("deploy/prune_release_storage.py", workflow)
         self.assertIn(
             '--repair-runtime-contamination',
             workflow,
@@ -857,6 +861,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("grep -q '^\\./data/$'", workflow)
         self.assertIn("cleanup_release_unpack()", workflow)
+        self.assertIn('rm -rf "${INCOMING_DIR}" || true', workflow)
         self.assertIn("warning: failed to clean incoming release", workflow)
         self.assertIn("immutable release collision", workflow)
         self.assertNotIn(
@@ -934,9 +939,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             'rollback_to_previous "startup preflight failed',
             script,
         )
-        self.assertIn("initial service image pull failed", script)
+        self.assertIn(
+            "target service image prefetch failed; previous services left unchanged",
+            script,
+        )
         self.assertIn("initial service deployment failed", script)
-        self.assertIn("deferred service image pull failed", script)
         self.assertIn("deferred service deployment failed", script)
         self.assertIn("target release validation failed", script)
         self.assertIn('cd "${COMPOSE_DIR}"', script)
@@ -1081,6 +1088,22 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertGreater(gate_failure_index, deploy_block_index)
 
+    def test_deploy_gate_uses_host_python_without_research_image_pull(self):
+        runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("run_analysis_python()", runner)
+        helper_start = runner.index("run_analysis_python() {")
+        helper_end = runner.index("\n}", helper_start)
+        helper = runner[helper_start:helper_end]
+        self.assertIn('if [[ "${STAGE}" == "DEPLOY" ]]; then', helper)
+        self.assertIn('python3 "$@"', helper)
+        self.assertIn(
+            "compose_cmd --profile research run --rm --entrypoint python3",
+            helper,
+        )
+        self.assertEqual(runner.count('run_analysis_python "${ASSESS_ARGS[@]}"'), 1)
+        self.assertEqual(runner.count('run_analysis_python "${audit_args[@]}"'), 1)
+        self.assertIn("run_analysis_python \\\n    tools/build_trade_ledger.py", runner)
+
     def test_closed_loop_assess_summary_failure_is_a_hard_gate(self):
         runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("build_summary_for_assess()", runner)
@@ -1121,7 +1144,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-2147483648}"',
+            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1073741824}"',
+            script,
+        )
+        self.assertIn(
+            'DEPLOY_POST_PULL_MIN_FREE_BYTES="${DEPLOY_POST_PULL_MIN_FREE_BYTES:-536870912}"',
             script,
         )
         self.assertIn(
@@ -1129,17 +1156,41 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("ensure_deploy_disk_capacity()", script)
+        self.assertIn("cleanup_deploy_host_storage()", script)
+        self.assertIn('DEPLOY_RELEASE_KEEP_COUNT="${DEPLOY_RELEASE_KEEP_COUNT:-3}"', script)
+        self.assertIn('DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"', script)
+        self.assertIn('CLOSED_LOOP_GC_PROTECTED_RUN_IDS="${CLOSED_LOOP_RUN_ID}"', script)
+        self.assertIn('python3 "${DEPLOY_STORAGE_PRUNER}"', script)
+        self.assertIn('--previous-release "${PREVIOUS_RELEASE_PATH}"', script)
         self.assertIn("DOCKER_GC_PRUNE_VOLUMES=false", script)
         self.assertIn(
             "disk preflight failed before managed service mutation",
             script,
         )
+        self.assertIn(
+            "prefetching all target service images before managed service mutation",
+            script,
+        )
+        self.assertIn(
+            '"${compose_cmd[@]}" pull "${deploy_services[@]}"',
+            script,
+        )
+        self.assertIn("ensure_deploy_post_pull_capacity()", script)
         call_index = script.index("if ! ensure_deploy_disk_capacity; then")
+        host_cleanup_index = script.index("if ! cleanup_deploy_host_storage; then")
+        prefetch_index = script.index(
+            'if ! "${compose_cmd[@]}" pull "${deploy_services[@]}"; then'
+        )
+        post_pull_index = script.index("if ! ensure_deploy_post_pull_capacity; then")
         guard_index = script.index(
             'DEPLOY_TRANSACTION_GUARD_ACTIVE="true"',
             call_index,
         )
         startup_index = script.index("if ! run_startup_preflight; then")
+        self.assertLess(host_cleanup_index, call_index)
+        self.assertLess(call_index, prefetch_index)
+        self.assertLess(prefetch_index, post_pull_index)
+        self.assertLess(post_pull_index, guard_index)
         self.assertLess(call_index, guard_index)
         self.assertLess(call_index, startup_index)
 
@@ -1147,7 +1198,13 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_DISK_PREFLIGHT_ENABLED",
             "DEPLOY_GC_TRIGGER_FREE_BYTES",
             "DEPLOY_MIN_FREE_BYTES",
+            "DEPLOY_POST_PULL_MIN_FREE_BYTES",
             "DEPLOY_DOCKER_GC_UNTIL",
+            "DEPLOY_HOST_GC_ENABLED",
+            "DEPLOY_RELEASE_KEEP_COUNT",
+            "DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT",
+            "DEPLOY_REPORT_KEEP_RUN_DIRS",
+            "DEPLOY_REPORT_MAX_AGE_HOURS",
         ):
             with self.subTest(workflow_variable=variable):
                 self.assertIn(f"{variable}:", workflow)
@@ -1238,9 +1295,9 @@ set -euo pipefail
                     "FAKE_DF_COUNT": str(temp / "df.count"),
                     "FAKE_GC_LOG": str(gc_log),
                     "FAKE_GC_TRIGGER_FREE_BYTES": "4294967296",
-                    "FAKE_MIN_FREE_BYTES": "2147483648",
+                    "FAKE_MIN_FREE_BYTES": "1073741824",
                     "FAKE_FREE_BEFORE_KIB": "1000000",
-                    "FAKE_FREE_AFTER_KIB": "2400000",
+                    "FAKE_FREE_AFTER_KIB": "5000000",
                 }
             )
             result = subprocess.run(
@@ -1262,7 +1319,7 @@ set -euo pipefail
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             gc_log.unlink()
-            base_env["FAKE_FREE_BEFORE_KIB"] = "6000000"
+            base_env["FAKE_FREE_BEFORE_KIB"] = "7000000"
             result = subprocess.run(
                 ["bash", "-c", harness],
                 cwd=ROOT,
@@ -1289,8 +1346,8 @@ set -euo pipefail
                 result.stdout,
             )
 
-            base_env["FAKE_GC_TRIGGER_FREE_BYTES"] = "1073741824"
-            base_env["FAKE_MIN_FREE_BYTES"] = "2147483648"
+            base_env["FAKE_GC_TRIGGER_FREE_BYTES"] = "2147483648"
+            base_env["FAKE_MIN_FREE_BYTES"] = "4294967296"
             result = subprocess.run(
                 ["bash", "-c", harness],
                 cwd=ROOT,

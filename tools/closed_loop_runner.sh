@@ -692,6 +692,20 @@ compose_cmd() {
   "${COMPOSE_BASE[@]}" "$@"
 }
 
+run_analysis_python() {
+  if [[ "${STAGE}" == "DEPLOY" ]]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "[ERROR] DEPLOY analysis requires python3 on the host"
+      return 1
+    fi
+    echo "[INFO] DEPLOY analysis uses host python3: $1"
+    python3 "$@"
+    return $?
+  fi
+  compose_cmd --profile research run --rm --entrypoint python3 \
+    ai-trade-research "$@"
+}
+
 default_min_runtime_status_for_stage() {
   case "${STAGE}" in
     DEPLOY)
@@ -3677,7 +3691,7 @@ run_mechanism_audit() {
   fi
 
   local audit_status=0
-  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${audit_args[@]}" \
+  run_analysis_python "${audit_args[@]}" \
     || audit_status=$?
   if (( audit_status != 0 )); then
     echo "[WARN] closed-loop mechanism audit reported action required: status=${audit_status}"
@@ -3713,7 +3727,7 @@ run_trade_ledger() {
     return 1
   fi
   echo "[INFO] canonical trade ledger start"
-  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+  run_analysis_python \
     tools/build_trade_ledger.py \
     --log "${ASSESS_LOG_PATH}" \
     --output "${TRADE_LEDGER_REPORT_PATH}" \
@@ -3813,7 +3827,7 @@ run_assess() {
     fi
   fi
   local assess_status=0
-  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${ASSESS_ARGS[@]}" \
+  run_analysis_python "${ASSESS_ARGS[@]}" \
     || assess_status=$?
   local ledger_status=0
   run_trade_ledger || ledger_status=$?

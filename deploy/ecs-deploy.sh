@@ -38,9 +38,15 @@ GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-watchdog scheduler ai-trade-web}"
 DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"
 DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"
 DEPLOY_GC_TRIGGER_FREE_BYTES="${DEPLOY_GC_TRIGGER_FREE_BYTES:-4294967296}"
-DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-2147483648}"
+DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1073741824}"
+DEPLOY_POST_PULL_MIN_FREE_BYTES="${DEPLOY_POST_PULL_MIN_FREE_BYTES:-536870912}"
 DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"
 DEPLOY_DOCKER_ROOT="${DEPLOY_DOCKER_ROOT:-}"
+DEPLOY_HOST_GC_ENABLED="${DEPLOY_HOST_GC_ENABLED:-true}"
+DEPLOY_RELEASE_KEEP_COUNT="${DEPLOY_RELEASE_KEEP_COUNT:-3}"
+DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT="${DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT:-8}"
+DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"
+DEPLOY_REPORT_MAX_AGE_HOURS="${DEPLOY_REPORT_MAX_AGE_HOURS:-72}"
 DEPLOY_RELEASE_ROOT="${DEPLOY_RELEASE_ROOT:-}"
 DEPLOY_TARGET_RELEASE="${DEPLOY_TARGET_RELEASE:-}"
 DEPLOY_CURRENT_LINK="${DEPLOY_CURRENT_LINK:-}"
@@ -51,6 +57,7 @@ DEPLOY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_MATERIALIZER="${DEPLOY_SCRIPT_DIR}/materialize_release_compose.py"
 DEPLOY_GATE_VALIDATOR="${DEPLOY_SCRIPT_DIR}/validate_deploy_gate.py"
 RELEASE_INTEGRITY_VALIDATOR="${DEPLOY_SCRIPT_DIR}/release_integrity.py"
+DEPLOY_STORAGE_PRUNER="${DEPLOY_SCRIPT_DIR}/prune_release_storage.py"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
@@ -77,6 +84,10 @@ if [[ ! -f "${DEPLOY_GATE_VALIDATOR}" ]]; then
 fi
 if [[ ! -f "${RELEASE_INTEGRITY_VALIDATOR}" ]]; then
   echo "[deploy] release integrity validator missing: ${RELEASE_INTEGRITY_VALIDATOR}"
+  exit 1
+fi
+if [[ ! -f "${DEPLOY_STORAGE_PRUNER}" ]]; then
+  echo "[deploy] release storage pruner missing: ${DEPLOY_STORAGE_PRUNER}"
   exit 1
 fi
 
@@ -242,6 +253,78 @@ is_true() {
   return 1
 }
 
+closed_loop_reports_root() {
+  local reports_root="${CLOSED_LOOP_OUTPUT_ROOT}"
+  if [[ "${reports_root}" != /* ]]; then
+    reports_root="${DEPLOY_RELEASE_ROOT}/${reports_root#./}"
+  fi
+  printf '%s\n' "${reports_root%/}"
+}
+
+cleanup_deploy_host_storage() {
+  if ! is_true "${DEPLOY_HOST_GC_ENABLED}"; then
+    echo "[deploy] host storage cleanup skipped (DEPLOY_HOST_GC_ENABLED=${DEPLOY_HOST_GC_ENABLED})"
+    return 0
+  fi
+  local variable_name=""
+  for variable_name in \
+    DEPLOY_RELEASE_KEEP_COUNT \
+    DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT \
+    DEPLOY_REPORT_KEEP_RUN_DIRS \
+    DEPLOY_REPORT_MAX_AGE_HOURS
+  do
+    if [[ ! "${!variable_name}" =~ ^[0-9]+$ ]]; then
+      echo "[deploy] invalid ${variable_name}: ${!variable_name}"
+      return 1
+    fi
+  done
+  if (( DEPLOY_RELEASE_KEEP_COUNT < 2 )); then
+    echo "[deploy] DEPLOY_RELEASE_KEEP_COUNT must be at least 2"
+    return 1
+  fi
+
+  if [[ "${RELEASE_TRANSACTION_ENABLED}" == "true" ]]; then
+    if ! python3 "${DEPLOY_STORAGE_PRUNER}" \
+      --release-root "${DEPLOY_RELEASE_ROOT}" \
+      --target-release "${DEPLOY_TARGET_RELEASE}" \
+      --current-link "${DEPLOY_CURRENT_LINK}" \
+      --previous-release "${PREVIOUS_RELEASE_PATH}" \
+      --active-release-id "${DEPLOY_RELEASE_ID:-}" \
+      --keep-releases "${DEPLOY_RELEASE_KEEP_COUNT}" \
+      --keep-runtime-compose "${DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT}"; then
+      echo "[deploy] release storage cleanup failed"
+      return 1
+    fi
+  fi
+
+  local reports_root=""
+  local recycle_script="${COMPOSE_DIR}/tools/recycle_artifacts.sh"
+  reports_root="$(closed_loop_reports_root)"
+  if [[ -f "${recycle_script}" ]]; then
+    if ! CLOSED_LOOP_GC_PROTECTED_RUN_IDS="${CLOSED_LOOP_RUN_ID}" \
+      /bin/bash "${recycle_script}" \
+        --reports-root "${reports_root}" \
+        --keep-run-dirs "${DEPLOY_REPORT_KEEP_RUN_DIRS}" \
+        --max-age-hours "${DEPLOY_REPORT_MAX_AGE_HOURS}" \
+        --log-file "${reports_root}/cron.log"; then
+      echo "[deploy] closed-loop report cleanup failed"
+      return 1
+    fi
+  else
+    echo "[deploy] report cleanup script missing: ${recycle_script}"
+    return 1
+  fi
+
+  echo "[deploy] host storage usage after lifecycle cleanup:"
+  du -sh \
+    "${DEPLOY_RELEASE_ROOT}/incoming" \
+    "${DEPLOY_RELEASE_ROOT}/releases" \
+    "${DEPLOY_RELEASE_ROOT}/data/deploy-runtime-compose" \
+    "${reports_root}" \
+    2>/dev/null || true
+  df -Pk "${DEPLOY_RELEASE_ROOT}" 2>/dev/null || true
+}
+
 docker_storage_available_bytes() {
   local docker_root="${DEPLOY_DOCKER_ROOT}"
   if [[ -z "${docker_root}" ]]; then
@@ -326,6 +409,26 @@ ensure_deploy_disk_capacity() {
   echo "[deploy] disk preflight after cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
   if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
     echo "[deploy] insufficient Docker disk space after cleanup"
+    return 1
+  fi
+  return 0
+}
+
+ensure_deploy_post_pull_capacity() {
+  if ! is_true "${DEPLOY_DISK_PREFLIGHT_ENABLED}"; then
+    return 0
+  fi
+  if [[ ! "${DEPLOY_POST_PULL_MIN_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[deploy] invalid DEPLOY_POST_PULL_MIN_FREE_BYTES: ${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+    return 1
+  fi
+  local available_after_pull=""
+  if ! available_after_pull="$(docker_storage_available_bytes)"; then
+    return 1
+  fi
+  echo "[deploy] disk headroom after target image pull: available_bytes=${available_after_pull} minimum_bytes=${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+  if (( available_after_pull < DEPLOY_POST_PULL_MIN_FREE_BYTES )); then
+    echo "[deploy] insufficient Docker disk headroom after target image pull"
     return 1
   fi
   return 0
@@ -1175,6 +1278,10 @@ if ! validate_previous_release "${PREVIOUS_RELEASE_PATH}"; then
   echo "[deploy] complete rollback release validation failed"
   exit 1
 fi
+if ! cleanup_deploy_host_storage; then
+  echo "[deploy] host storage cleanup failed before managed service mutation"
+  exit 1
+fi
 if [[ -f "${PREVIOUS_RELEASE_PATH}/release_manifest.json" ]]; then
   previous_runtime_image="$(
     read_release_manifest_image "${PREVIOUS_RELEASE_PATH}" runtime
@@ -1274,6 +1381,17 @@ compose_cmd=(
   -f "${target_runtime_compose}"
   --env-file "${ENV_FILE}"
 )
+
+echo "[deploy] prefetching all target service images before managed service mutation"
+if ! "${compose_cmd[@]}" pull "${deploy_services[@]}"; then
+  echo "[deploy] target service image prefetch failed; previous services left unchanged"
+  exit 1
+fi
+if ! ensure_deploy_post_pull_capacity; then
+  echo "[deploy] disk headroom check failed after target image pull; previous services left unchanged"
+  exit 1
+fi
+
 DEPLOY_TRANSACTION_GUARD_ACTIVE="true"
 trap 'deployment_exit_guard "$?"' EXIT
 trap 'exit 130' INT
@@ -1318,10 +1436,6 @@ if is_true "${CLOSED_LOOP_ENFORCE}" && (( ${#deferred_deploy_services[@]} > 0 ))
   fi
 fi
 
-if ! "${compose_cmd[@]}" pull "${initial_deploy_services[@]}"; then
-  rollback_to_previous "initial service image pull failed, start rollback"
-  exit 1
-fi
 if ! "${compose_cmd[@]}" up -d "${initial_deploy_services[@]}"; then
   rollback_to_previous "initial service deployment failed, start rollback"
   exit 1
@@ -1330,10 +1444,6 @@ fi
 if wait_for_services_ready "${initial_required_containers[@]}"; then
   if run_closed_loop_gate; then
     if (( ${#deferred_deploy_services[@]} > 0 )); then
-      if ! "${compose_cmd[@]}" pull "${deferred_deploy_services[@]}"; then
-        rollback_to_previous "deferred service image pull failed, start rollback"
-        exit 1
-      fi
       if ! "${compose_cmd[@]}" up -d "${deferred_deploy_services[@]}"; then
         rollback_to_previous "deferred service deployment failed, start rollback"
         exit 1

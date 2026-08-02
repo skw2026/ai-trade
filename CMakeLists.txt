@@ -116,6 +116,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_deploy_gate.py)
     add_test(NAME release_integrity_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_release_integrity.py)
+    add_test(NAME prune_release_storage_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_prune_release_storage.py)
     add_test(NAME evaluate_smoke_freshness_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_evaluate_smoke_freshness.py)
     add_test(NAME watchdog_utils_test

@@ -12,10 +12,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
 
 
-def run_gc(*args: str) -> subprocess.CompletedProcess:
+def run_gc(*args: str, env=None) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
         cwd=ROOT,
+        env=env,
         capture_output=True,
         text=True,
     )
@@ -138,6 +139,43 @@ class RecycleArtifactsTest(unittest.TestCase):
                 weekly_files,
                 ["weekly_2026W08.json", "weekly_latest.json"],
             )
+
+    def test_deploy_run_retention_and_explicit_protection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reports_root = pathlib.Path(tmp) / "closed_loop"
+            reports_root.mkdir(parents=True, exist_ok=True)
+
+            oldest = reports_root / "deploy-100-1"
+            protected = reports_root / "deploy-200-1"
+            newest = reports_root / "deploy-300-1"
+            for index, run_dir in enumerate((oldest, protected, newest), start=1):
+                run_dir.mkdir()
+                (run_dir / "runtime.log").write_text("log\n", encoding="utf-8")
+                os.utime(run_dir, (index, index))
+
+            env = os.environ.copy()
+            env["CLOSED_LOOP_GC_PROTECTED_RUN_IDS"] = protected.name
+            result = run_gc(
+                "--reports-root",
+                str(reports_root),
+                "--keep-run-dirs",
+                "1",
+                "--keep-daily-files",
+                "0",
+                "--keep-weekly-files",
+                "0",
+                "--max-age-hours",
+                "0",
+                env=env,
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"stderr:\n{result.stderr}\nstdout:\n{result.stdout}",
+            )
+            self.assertFalse(oldest.exists())
+            self.assertTrue(protected.is_dir())
+            self.assertTrue(newest.is_dir())
 
     def test_log_rotation_keeps_log_tail(self):
         with tempfile.TemporaryDirectory() as tmp:

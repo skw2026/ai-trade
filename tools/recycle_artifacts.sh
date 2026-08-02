@@ -9,6 +9,7 @@ MAX_AGE_HOURS="${CLOSED_LOOP_GC_MAX_AGE_HOURS:-72}"
 LOG_FILE="${CLOSED_LOOP_GC_LOG_FILE:-}"
 LOG_MAX_BYTES="${CLOSED_LOOP_GC_LOG_MAX_BYTES:-104857600}"
 LOG_KEEP_BYTES="${CLOSED_LOOP_GC_LOG_KEEP_BYTES:-20971520}"
+EXTRA_PROTECTED_RUN_IDS="${CLOSED_LOOP_GC_PROTECTED_RUN_IDS:-}"
 DRY_RUN="false"
 
 usage() {
@@ -165,6 +166,11 @@ LATEST_SYMLINK="${REPORTS_ROOT}/latest"
 LATEST_RUN_ID_FILE="${REPORTS_ROOT}/latest_run_id"
 CUTOFF_EPOCH=0
 
+while IFS= read -r protected_run_id; do
+  protected_run_id="$(printf '%s' "${protected_run_id}" | tr -d '[:space:]')"
+  protect_run_id "${protected_run_id}"
+done < <(printf '%s\n' "${EXTRA_PROTECTED_RUN_IDS}" | tr ',' '\n')
+
 if (( MAX_AGE_HOURS > 0 )); then
   now_epoch="$(date +%s)"
   CUTOFF_EPOCH=$((now_epoch - MAX_AGE_HOURS * 3600))
@@ -190,7 +196,8 @@ rank=0
 while IFS= read -r dir_path; do
   [[ -n "${dir_path}" ]] || continue
   dir_name="$(basename "${dir_path}")"
-  if [[ ! "${dir_name}" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
+  if [[ ! "${dir_name}" =~ ^[0-9]{8}T[0-9]{6}Z$ &&
+        ! "${dir_name}" =~ ^deploy-[0-9]+-[0-9]+$ ]]; then
     continue
   fi
   run_total=$((run_total + 1))
