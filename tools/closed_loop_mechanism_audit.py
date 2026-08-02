@@ -771,6 +771,11 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Audit closed-loop mechanism proof")
     parser.add_argument("--output", required=True, help="Output JSON report path")
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Write the evidence verdict without using it as the process exit status",
+    )
     parser.add_argument("--run_manifest", default="", help="run_manifest.json path")
     parser.add_argument("--integrator_report", default="", help="integrator_report.json path")
     parser.add_argument("--registry_report", default="", help="model_registry_entry.json path")
@@ -810,6 +815,8 @@ def main() -> int:
         encoding="utf-8",
     )
     print(json.dumps({"status": report["status"], "conclusion": report["conclusion"]}, ensure_ascii=False))
+    if args.report_only:
+        return 0
     return 0 if report["status"] == "pass" else 1
 
 

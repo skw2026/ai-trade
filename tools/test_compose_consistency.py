@@ -1121,6 +1121,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("run_runtime_chain", assess_block)
         self.assertIn("build_summary_for_assess", assess_block)
         self.assertNotIn("      build_summary\n", assess_block)
+        self.assertGreaterEqual(runner.count('if [[ "${ACTION}" == "assess" ]]'), 2)
+        self.assertGreaterEqual(runner.count("--report-only"), 2)
 
     def test_deploy_runs_startup_preflight_before_service_stop(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

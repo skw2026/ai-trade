@@ -24,6 +24,42 @@ REPORT = load_module()
 
 
 class BuildClosedLoopReportTest(unittest.TestCase):
+    def test_report_only_preserves_failed_strategy_status_without_failing_process(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            mechanism_report = root / "closed_loop_mechanism_report.json"
+            mechanism_report.write_text(
+                json.dumps(
+                    {
+                        "status": "fail",
+                        "readiness_status": "FAIL",
+                        "conclusion": "MECHANISM_NOT_PROVEN",
+                        "fail_reasons": ["mechanism evidence is incomplete"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--closed_loop_mechanism_report",
+                    str(mechanism_report),
+                    "--report-only",
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["overall_status"], "FAIL")
+            self.assertEqual(payload["closed_loop_mechanism_status"], "FAIL")
+
     def test_mechanism_report_becomes_first_blocking_layer(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

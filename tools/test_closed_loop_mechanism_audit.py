@@ -28,6 +28,26 @@ def write_json(path: pathlib.Path, payload) -> pathlib.Path:
 
 
 class ClosedLoopMechanismAuditTest(unittest.TestCase):
+    def test_report_only_preserves_failed_verdict_without_failing_process(self):
+        with tempfile.TemporaryDirectory() as td:
+            output = pathlib.Path(td) / "mechanism_report.json"
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "closed_loop_mechanism_audit.py",
+                    "--output",
+                    str(output),
+                    "--report-only",
+                ]
+                code = AUDIT.main()
+            finally:
+                sys.argv = old_argv
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "fail")
+            self.assertEqual(payload["conclusion"], "MECHANISM_NOT_PROVEN")
+
     def test_auc_shadow_pipeline_is_not_mechanism_proven(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

@@ -11,6 +11,48 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    def test_policy_flat_s5_learning_activity_does_not_require_events(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=policy-flat-learning-test
+                source tools/closed_loop_runner.sh assess \
+                  --stage S5 \
+                  --output-root "${TMP_ROOT}/reports"
+
+                ASSESS_JSON_PATH="${TMP_ROOT}/runtime_assess.json"
+                cat > "${ASSESS_JSON_PATH}" <<'EOF'
+                {
+                  "runtime_validation_mode": "POLICY_FLAT_PROTECTION",
+                  "strategy_mix_nonzero_window_count": 0,
+                  "self_evolution_factor_ic_action_count": 0,
+                  "self_evolution_effective_update_count": 0,
+                  "self_evolution_learnability_pass_count": 0,
+                  "self_evolution_learnability_skip_count": 0
+                }
+                EOF
+                verify_s5_learning_activity
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "TMP_ROOT": td,
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(
+                "S5 learning activity skipped: policy-flat dominant",
+                result.stdout,
+            )
+
     def test_deadline_wrapper_preserves_action_and_all_arguments(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

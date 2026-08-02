@@ -837,6 +837,27 @@ json_number_value() {
   trim "$(echo "${raw}" | sed -E 's/.*:[[:space:]]*//')"
 }
 
+json_string_value() {
+  local key="$1"
+  local path="$2"
+  JSON_KEY_VALUE="${key}" JSON_PATH_VALUE="${path}" python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ["JSON_PATH_VALUE"])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(0)
+if not isinstance(payload, dict):
+    raise SystemExit(0)
+value = payload.get(os.environ["JSON_KEY_VALUE"])
+if isinstance(value, str):
+    print(value)
+PY
+}
+
 to_int() {
   local raw="$1"
   if [[ -z "${raw}" ]]; then
@@ -3668,6 +3689,9 @@ run_mechanism_audit() {
     --min_live_policy_applied "${MECHANISM_AUDIT_MIN_LIVE_POLICY_APPLIED}"
     --min_replay_total_fills "${MECHANISM_AUDIT_MIN_REPLAY_TOTAL_FILLS}"
   )
+  if [[ "${ACTION}" == "assess" ]]; then
+    audit_args+=(--report-only)
+  fi
   if [[ -f "${INTEGRATOR_REPORT_PATH}" ]]; then
     audit_args+=(--integrator_report "${INTEGRATOR_REPORT_PATH}")
   fi
@@ -4420,6 +4444,9 @@ build_summary() {
     --trend_validation_min_bars="${TREND_VALIDATION_MIN_BARS}"
     --trend_validation_min_trades="${TREND_VALIDATION_MIN_TRADES}"
   )
+  if [[ "${ACTION}" == "assess" ]]; then
+    SUMMARY_ARGS+=(--report-only)
+  fi
   if is_true "${WALKFORWARD_FOCUS_BUCKET_PRIMARY}"; then
     SUMMARY_ARGS+=(--walkforward_focus_bucket_primary)
   fi

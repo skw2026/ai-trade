@@ -2691,6 +2691,11 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="生成闭环汇总报告")
     parser.add_argument("--output", required=True, help="输出 JSON 路径")
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="生成策略状态报告，但不使用策略状态作为进程退出码",
+    )
     parser.add_argument("--pipeline_name", default="ai-trade-closed-loop", help="流水线名称")
     parser.add_argument("--run_id", default="", help="可选：闭环运行 ID")
     parser.add_argument("--run_manifest", default="", help="run_manifest.json 路径")
@@ -3433,6 +3438,8 @@ def main() -> int:
         for item in warn_reasons:
             print(f"  - {item}")
 
+    if args.report_only:
+        return 0
     return 0 if overall_status in {"PASS", "PASS_WITH_ACTIONS"} else 1
 
 
