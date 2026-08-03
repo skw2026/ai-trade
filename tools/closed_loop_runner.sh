@@ -3829,6 +3829,9 @@ run_assess() {
     --stage="${STAGE}"
     --json_out="${ASSESS_JSON_PATH}"
   )
+  if [[ "${ACTION}" == "assess" ]]; then
+    ASSESS_ARGS+=(--report-only)
+  fi
   if [[ -n "${MIN_RUNTIME_STATUS}" ]]; then
     ASSESS_ARGS+=(--min_runtime_status "${MIN_RUNTIME_STATUS}")
   fi

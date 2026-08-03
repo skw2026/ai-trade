@@ -397,6 +397,11 @@ def parse_args() -> argparse.Namespace:
         help="可选：将结构化结果输出到 JSON 文件",
     )
     parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="始终以 0 退出；验收结论仍写入 verdict/fail_reasons",
+    )
+    parser.add_argument(
         "--s5-min-effective-updates",
         type=int,
         default=DEFAULT_S5_MIN_EFFECTIVE_UPDATES,
@@ -4776,6 +4781,8 @@ def main() -> int:
         print(f"JSON written: {out_path}")
 
     verdict = report["verdict"]
+    if args.report_only:
+        return 0
     return 0 if verdict in {"PASS", "PASS_WITH_ACTIONS"} else 1
 
 

@@ -1122,7 +1122,12 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("build_summary_for_assess", assess_block)
         self.assertNotIn("      build_summary\n", assess_block)
         self.assertGreaterEqual(runner.count('if [[ "${ACTION}" == "assess" ]]'), 2)
-        self.assertGreaterEqual(runner.count("--report-only"), 2)
+        self.assertGreaterEqual(runner.count("--report-only"), 3)
+        run_assess_start = runner.index("run_assess() {")
+        run_assess_end = runner.index("\n}", run_assess_start)
+        run_assess_block = runner[run_assess_start:run_assess_end]
+        self.assertIn('if [[ "${ACTION}" == "assess" ]]', run_assess_block)
+        self.assertIn("ASSESS_ARGS+=(--report-only)", run_assess_block)
 
     def test_deploy_runs_startup_preflight_before_service_stop(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

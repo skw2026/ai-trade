@@ -4,7 +4,10 @@ import importlib.util
 import pathlib
 import sys
 import datetime as dt
+import json
 import re
+import subprocess
+import tempfile
 import unittest
 
 
@@ -23,6 +26,76 @@ ASSESS = load_assess_module()
 
 
 class AssessRunLogTest(unittest.TestCase):
+    def test_report_only_preserves_fail_verdict_but_exits_successfully(self):
+        script = pathlib.Path(__file__).with_name("assess_run_log.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            log_path = tmp_path / "runtime.log"
+            strict_report_path = tmp_path / "strict.json"
+            report_only_path = tmp_path / "report_only.json"
+            log_path.write_text("", encoding="utf-8")
+
+            strict = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log",
+                    str(log_path),
+                    "--stage",
+                    "S5",
+                    "--min_runtime_status",
+                    "1",
+                    "--json_out",
+                    str(strict_report_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            report_only = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log",
+                    str(log_path),
+                    "--stage",
+                    "S5",
+                    "--min_runtime_status",
+                    "1",
+                    "--json_out",
+                    str(report_only_path),
+                    "--report-only",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(strict.returncode, 1, msg=strict.stdout + strict.stderr)
+            self.assertEqual(
+                report_only.returncode,
+                0,
+                msg=report_only.stdout + report_only.stderr,
+            )
+            self.assertEqual(
+                json.loads(report_only_path.read_text(encoding="utf-8"))["verdict"],
+                "FAIL",
+            )
+
+            missing_log = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log",
+                    str(tmp_path / "missing.log"),
+                    "--report-only",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(missing_log.returncode, 2)
+
     @staticmethod
     def _runtime_line(
         tick: int,
