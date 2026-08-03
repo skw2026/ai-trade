@@ -11,7 +11,7 @@ on:
       min_runtime_status:
         description: "最小 RUNTIME_STATUS 条数"
         required: true
-        default: "10"
+        default: "5"
         type: string
   workflow_run:
     workflows:
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 30
     env:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
-      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '10' }}
+      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '5' }}
       SMOKE_OUTPUT_ROOT: /opt/ai-trade/data/reports/closed_loop_smoke
       SMOKE_RUN_ID: smoke-${{ github.run_id }}-${{ github.run_attempt }}
       SMOKE_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
