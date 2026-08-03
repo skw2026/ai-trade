@@ -439,6 +439,12 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_REAL_MARKET_FEATURES", script)
         self.assertIn("CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS", script)
         self.assertIn("--selection_feature_csv_by_symbol", script)
+        self.assertIn("--development-feature-csv", script)
+        self.assertIn("RESEARCH_DEVELOPMENT_FEATURE_CSV_BY_SYMBOL", script)
+        self.assertIn("REPLAY_SELECTION_PREVALIDATION_REPORT_PATH", script)
+        self.assertIn("--prevalidated_selection_report", script)
+        self.assertIn("--require_candidate_identity", script)
+        self.assertIn("--allow_baseline_candidate_identity", script)
         self.assertNotIn(
             "replay validation corpus refresh enabled for bounded feature window",
             script,

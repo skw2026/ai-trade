@@ -99,6 +99,7 @@ class SplitResearchDomainsTest(unittest.TestCase):
             raw = root / "raw.csv"
             feature = root / "feature.csv"
             development = root / "development.csv"
+            development_feature = root / "development_feature.csv"
             selection = root / "selection.csv"
             holdout = root / "holdout.csv"
             report_path = root / "report.json"
@@ -119,10 +120,12 @@ class SplitResearchDomainsTest(unittest.TestCase):
                 min_selection_feature_bars=5,
                 min_holdout_feature_bars=3,
                 symbol="SOLUSDT",
+                development_feature_csv=development_feature,
             )
 
             self.assertEqual(report["schema_version"], "research_domain_split_v2")
             self.assertEqual(report["rows"]["development"], 16)
+            self.assertEqual(report["rows"]["development_feature"], 16)
             self.assertEqual(report["rows"]["selection_embargo"], 2)
             self.assertEqual(report["rows"]["selection_raw"], 5)
             self.assertEqual(report["rows"]["selection_feature"], 5)
@@ -139,6 +142,11 @@ class SplitResearchDomainsTest(unittest.TestCase):
             )
             self.assertFalse(report["contract"]["domains_overlap"])
             self.assertTrue(report_path.is_file())
+            self.assertTrue(development_feature.is_file())
+            self.assertEqual(
+                report["artifacts"]["development_feature_csv"]["sha256"],
+                MODULE.file_sha256(development_feature),
+            )
 
     def test_rejects_insufficient_source_history(self):
         with tempfile.TemporaryDirectory() as tmp:

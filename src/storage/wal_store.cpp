@@ -723,9 +723,14 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
         }
         return false;
       }
-      // fill_ids 继续保留全历史去重集合；仓位与未闭合 episode 只允许从
-      // 最近一次权威空仓检查点之后的成交重建。
+      // fill_ids 继续保留全历史去重集合；仓位、未闭合 episode 与活动意图
+      // 只允许从最近一次权威空仓检查点之后重建。检查点已经同时
+      // 确认交易所无持仓且无活动订单，若仍恢复检查点之前的 intent，
+      // OMS 会在每次重启后重新制造虚假在途头寸。
       out_fills->clear();
+      if (out_intents != nullptr) {
+        out_intents->clear();
+      }
       continue;
     }
     if (type == "EPISODE_CLOSED") {

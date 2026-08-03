@@ -354,15 +354,15 @@ class ReplayValidationToolsTest(unittest.TestCase):
             content = output.read_text(encoding="utf-8").strip().splitlines()
             self.assertEqual(
                 content[0],
-                "timestamp,symbol,open,high,low,price,volume,interval_ms,funding_rate_per_interval",
+                "timestamp,symbol,open,high,low,price,volume,interval_ms,funding_rate_per_interval,execution_enabled",
             )
             self.assertEqual(
                 content[1],
-                "1000,BTCUSDT,101.0000000000,102.0000000000,100.5000000000,101.5000000000,12.0000000000,3000,",
+                "1000,BTCUSDT,101.0000000000,102.0000000000,100.5000000000,101.5000000000,12.0000000000,3000,,1",
             )
             self.assertEqual(
                 content[2],
-                "4000,BTCUSDT,101.5000000000,103.0000000000,101.0000000000,102.0000000000,9.0000000000,3000,",
+                "4000,BTCUSDT,101.5000000000,103.0000000000,101.0000000000,102.0000000000,9.0000000000,3000,,1",
             )
 
     def test_aggregate_run_summaries_reports_pass_with_actions(self):

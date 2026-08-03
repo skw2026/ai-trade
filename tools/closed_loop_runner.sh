@@ -123,6 +123,8 @@ INTEGRATOR_MIN_MODEL_NET_ACTIVE_BARS="${CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_ACT
 INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO="${CLOSED_LOOP_INTEGRATOR_MIN_POSITIVE_MODEL_NET_SPLITS_RATIO:-0.50}"
 INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS="${CLOSED_LOOP_INTEGRATOR_MIN_MODEL_NET_EDGE_LCB_BPS:-0.0}"
 INTEGRATOR_EXECUTION_LATENCY_BARS="${CLOSED_LOOP_INTEGRATOR_EXECUTION_LATENCY_BARS:-1}"
+INTEGRATOR_MODEL_CONFIDENCE_THRESHOLD="${CLOSED_LOOP_INTEGRATOR_MODEL_CONFIDENCE_THRESHOLD:-0.50}"
+INTEGRATOR_MODEL_SCORE_GAIN="${CLOSED_LOOP_INTEGRATOR_MODEL_SCORE_GAIN:-1.0}"
 INTEGRATOR_FEATURE_CLIP_QUANTILE="${CLOSED_LOOP_INTEGRATOR_FEATURE_CLIP_QUANTILE:-0.001}"
 
 GC_ENABLED="${CLOSED_LOOP_GC_ENABLED:-true}"
@@ -1164,16 +1166,20 @@ DATA_PIPELINE_REPORT_PATH="${DATA_PIPELINE_RUN_DIR}/data_pipeline_report.json"
 WALKFORWARD_REPORT_PATH="${RUN_DIR}/walkforward_report.json"
 FEATURE_STORE_PATH="${RUN_DIR}/feature_store_5m.csv"
 RESEARCH_DEVELOPMENT_CSV_PATH="${RUN_DIR}/research_development_ohlcv_5m.csv"
+RESEARCH_DEVELOPMENT_FEATURE_PATH="${RUN_DIR}/research_development_feature_5m.csv"
 RESEARCH_SELECTION_FEATURE_PATH="${RUN_DIR}/research_selection_feature_5m.csv"
 RESEARCH_HOLDOUT_FEATURE_PATH="${RUN_DIR}/research_holdout_feature_5m.csv"
 RESEARCH_DOMAIN_SPLIT_REPORT_PATH="${RUN_DIR}/research_domain_split_report.json"
 FEATURE_PARITY_REPORT_PATH="${RUN_DIR}/feature_parity_report.json"
 REPLAY_VALIDATION_DIR="${RUN_DIR}/replay_validation"
 REPLAY_VALIDATION_FEATURE_DIR="${REPLAY_VALIDATION_DIR}/features"
+REPLAY_SELECTION_PREVALIDATION_DIR="${REPLAY_VALIDATION_DIR}/selection_prevalidation"
+REPLAY_SELECTION_PREVALIDATION_REPORT_PATH="${REPLAY_SELECTION_PREVALIDATION_DIR}/replay_validation_report.json"
 REPLAY_VALIDATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_report.json"
 REPLAY_OPTIMIZATION_REPORT_PATH="${REPLAY_VALIDATION_DIR}/replay_optimization_report.json"
 SELECTION_CANDIDATE_MANIFEST_PATH="${REPLAY_VALIDATION_DIR}/selection_candidate_manifest.json"
 REPLAY_VALIDATION_COMMAND_LOG_PATH="${REPLAY_VALIDATION_DIR}/replay_validation_command.log"
+REPLAY_SELECTION_PREVALIDATION_COMMAND_LOG_PATH="${REPLAY_VALIDATION_DIR}/selection_prevalidation_command.log"
 REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH="${REPLAY_VALIDATION_DIR}/feature_build_records.jsonl"
 REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH="${REPLAY_VALIDATION_DIR}/feature_build_report.json"
 REPLAY_CANDIDATE_CONFIG_PATH="${RUN_DIR}/replay_candidate_config.yaml"
@@ -1210,6 +1216,8 @@ ACTIVATION_TRANSACTION_DIR="${ACTIVATION_TRANSACTION_ROOT}/${RUN_ID}"
 ACTIVATION_TRANSACTION_STATE_PATH="${CLOSED_LOOP_ACTIVATION_TRANSACTION_STATE_PATH:-./data/models/activation_transaction.json}"
 ACTIVATION_TRANSACTION_SNAPSHOT_PATH="${RUN_DIR}/activation_transaction.json"
 ACTIVATION_DECISION_PATH="${RUN_DIR}/activation_decision.json"
+ACTIVE_OFFLINE_EVIDENCE_ROOT="${CLOSED_LOOP_ACTIVE_OFFLINE_EVIDENCE_ROOT:-${OUTPUT_ROOT}/active_offline_evidence}"
+ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH="${ACTIVE_OFFLINE_EVIDENCE_ROOT}/manifest.json"
 CLOSED_LOOP_RUNNER_LOCK_PATH="${CLOSED_LOOP_RUNNER_LOCK_PATH:-./data/models/closed_loop_runner.lock}"
 LATEST_REPORT_PATH="${OUTPUT_ROOT}/latest_closed_loop_report.json"
 LATEST_RUNTIME_ASSESS_PATH="${OUTPUT_ROOT}/latest_runtime_assess.json"
@@ -1415,6 +1423,8 @@ run_miner() {
     --miner_generations="${MINER_GENERATIONS}" \
     --miner_population="${MINER_POPULATION}" \
     --miner_elite="${MINER_ELITE}" \
+    --miner_predict_horizon_bars="${PREDICT_HORIZON_BARS}" \
+    --miner_execution_latency_bars="${INTEGRATOR_EXECUTION_LATENCY_BARS}" \
     --miner_output="${MINER_REPORT_PATH}"
   echo "[INFO] R1 miner done"
 }
@@ -1460,6 +1470,8 @@ run_integrator() {
     --label_round_trip_cost_bps="${INTEGRATOR_LABEL_ROUND_TRIP_COST_BPS}"
     --label_min_net_edge_bps="${INTEGRATOR_LABEL_MIN_NET_EDGE_BPS}"
     --execution_latency_bars="${INTEGRATOR_EXECUTION_LATENCY_BARS}"
+    --model_confidence_threshold="${INTEGRATOR_MODEL_CONFIDENCE_THRESHOLD}"
+    --model_score_gain="${INTEGRATOR_MODEL_SCORE_GAIN}"
     --min_mean_model_net_edge_bps="${INTEGRATOR_MIN_MEAN_MODEL_NET_EDGE_BPS}"
     --min_positive_model_net_edge_ratio="${INTEGRATOR_MIN_POSITIVE_MODEL_NET_EDGE_RATIO}"
     --min_model_net_total_trades="${INTEGRATOR_MIN_MODEL_NET_TOTAL_TRADES}"
@@ -2555,11 +2567,223 @@ PY
   echo "[INFO] activation offline evidence hydrated from transaction"
 }
 
+# 已提交候选的离线证据不能只留在某一次 full run 目录或
+# latest_closed_loop_report 的裁剪 section 中。assess 在机制审计之前需要
+# 可校验的原始 integrator/replay/alpha 证据。
+publish_active_offline_evidence() {
+  ACTIVE_OFFLINE_EVIDENCE_ROOT_VALUE="${ACTIVE_OFFLINE_EVIDENCE_ROOT}" \
+  ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH_VALUE="${ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH}" \
+  RUN_ID_VALUE="${RUN_ID}" \
+  INTEGRATOR_REPORT_PATH_VALUE="${INTEGRATOR_REPORT_PATH}" \
+  REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" \
+  REPLAY_VALIDATION_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  REPLAY_OPTIMIZATION_REPORT_PATH_VALUE="${REPLAY_OPTIMIZATION_REPORT_PATH}" \
+  STRATEGY_DIAGNOSE_REPORT_PATH_VALUE="${STRATEGY_DIAGNOSE_REPORT_PATH}" \
+  ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE="${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
+  RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE="${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}" \
+  FEATURE_PARITY_REPORT_PATH_VALUE="${FEATURE_PARITY_REPORT_PATH}" \
+  python3 - <<'PY' || return $?
+import datetime as dt
+import hashlib
+import json
+import os
+import shutil
+from pathlib import Path
+
+root = Path(os.environ["ACTIVE_OFFLINE_EVIDENCE_ROOT_VALUE"])
+manifest_path = Path(os.environ["ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH_VALUE"])
+run_id = os.environ["RUN_ID_VALUE"]
+sources = {
+    "integrator_report": Path(os.environ["INTEGRATOR_REPORT_PATH_VALUE"]),
+    "registry_report": Path(os.environ["REGISTRY_RESULT_PATH_VALUE"]),
+    "replay_validation_report": Path(
+        os.environ["REPLAY_VALIDATION_REPORT_PATH_VALUE"]
+    ),
+    "replay_optimization_report": Path(
+        os.environ["REPLAY_OPTIMIZATION_REPORT_PATH_VALUE"]
+    ),
+    "strategy_diagnose_report": Path(
+        os.environ["STRATEGY_DIAGNOSE_REPORT_PATH_VALUE"]
+    ),
+    "alpha_mechanism_probe_report": Path(
+        os.environ["ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE"]
+    ),
+    "research_domain_split_report": Path(
+        os.environ["RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE"]
+    ),
+    "feature_parity_report": Path(
+        os.environ["FEATURE_PARITY_REPORT_PATH_VALUE"]
+    ),
+}
+required = {
+    "integrator_report",
+    "registry_report",
+    "replay_validation_report",
+    "strategy_diagnose_report",
+    "alpha_mechanism_probe_report",
+}
+missing = sorted(name for name in required if not sources[name].is_file())
+if missing:
+    raise SystemExit(
+        "active offline evidence missing required artifacts: " + ",".join(missing)
+    )
+
+version_dir = root / "versions" / run_id
+version_dir.mkdir(parents=True, exist_ok=True)
+artifacts = {}
+for name, source in sources.items():
+    if not source.is_file():
+        continue
+    target = version_dir / f"{name}.json"
+    temp = target.with_suffix(target.suffix + ".tmp")
+    shutil.copy2(source, temp)
+    temp.replace(target)
+    artifacts[name] = {
+        "path": str(target),
+        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+        "source_path": str(source),
+    }
+
+registry = json.loads(sources["registry_report"].read_text(encoding="utf-8"))
+checksums = registry.get("checksums", {})
+if not isinstance(checksums, dict):
+    checksums = {}
+payload = {
+    "schema_version": "active_offline_evidence_v1",
+    "run_id": run_id,
+    "published_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    ),
+    "candidate_identity": {
+        "model_version": registry.get("model_version"),
+        "model_sha256": checksums.get("model_sha256"),
+        "integrator_report_sha256": checksums.get("integrator_report_sha256"),
+    },
+    "artifacts": artifacts,
+}
+root.mkdir(parents=True, exist_ok=True)
+temp_manifest = manifest_path.with_suffix(manifest_path.suffix + ".tmp")
+temp_manifest.write_text(
+    json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+temp_manifest.replace(manifest_path)
+PY
+  echo "[INFO] active offline evidence published: run_id=${RUN_ID}"
+}
+
+hydrate_active_offline_evidence() {
+  if [[ ! -f "${ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH}" ]]; then
+    echo "[WARN] active offline evidence manifest missing: ${ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH}"
+    return 1
+  fi
+  ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH_VALUE="${ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH}" \
+  ACTIVE_META_PATH_VALUE="${ACTIVE_META_PATH}" \
+  INTEGRATOR_REPORT_PATH_VALUE="${INTEGRATOR_REPORT_PATH}" \
+  REGISTRY_RESULT_PATH_VALUE="${REGISTRY_RESULT_PATH}" \
+  REPLAY_VALIDATION_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+  REPLAY_OPTIMIZATION_REPORT_PATH_VALUE="${REPLAY_OPTIMIZATION_REPORT_PATH}" \
+  STRATEGY_DIAGNOSE_REPORT_PATH_VALUE="${STRATEGY_DIAGNOSE_REPORT_PATH}" \
+  ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE="${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
+  RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE="${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}" \
+  FEATURE_PARITY_REPORT_PATH_VALUE="${FEATURE_PARITY_REPORT_PATH}" \
+  python3 - <<'PY' || return $?
+import hashlib
+import json
+import os
+import shutil
+from pathlib import Path
+
+manifest_path = Path(os.environ["ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH_VALUE"])
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+if manifest.get("schema_version") != "active_offline_evidence_v1":
+    raise SystemExit("active offline evidence schema mismatch")
+artifacts = manifest.get("artifacts", {})
+if not isinstance(artifacts, dict):
+    raise SystemExit("active offline evidence artifacts missing")
+required = {
+    "integrator_report",
+    "registry_report",
+    "replay_validation_report",
+    "strategy_diagnose_report",
+    "alpha_mechanism_probe_report",
+}
+missing = sorted(name for name in required if name not in artifacts)
+if missing:
+    raise SystemExit(
+        "active offline evidence manifest incomplete: " + ",".join(missing)
+    )
+
+identity = manifest.get("candidate_identity", {})
+if not isinstance(identity, dict):
+    identity = {}
+active_meta_path = Path(os.environ["ACTIVE_META_PATH_VALUE"])
+if active_meta_path.is_file():
+    active_meta = json.loads(active_meta_path.read_text(encoding="utf-8"))
+    manifest_version = str(identity.get("model_version") or "")
+    active_version = str(active_meta.get("model_version") or "")
+    if manifest_version and active_version and manifest_version != active_version:
+        raise SystemExit(
+            "active offline evidence model_version mismatch: "
+            f"evidence={manifest_version}, active={active_version}"
+        )
+    manifest_report_sha = str(identity.get("integrator_report_sha256") or "")
+    active_report_sha = str(active_meta.get("report_sha256") or "")
+    if (
+        manifest_report_sha
+        and active_report_sha
+        and manifest_report_sha != active_report_sha
+    ):
+        raise SystemExit("active offline evidence report checksum differs from active meta")
+
+targets = {
+    "integrator_report": Path(os.environ["INTEGRATOR_REPORT_PATH_VALUE"]),
+    "registry_report": Path(os.environ["REGISTRY_RESULT_PATH_VALUE"]),
+    "replay_validation_report": Path(
+        os.environ["REPLAY_VALIDATION_REPORT_PATH_VALUE"]
+    ),
+    "replay_optimization_report": Path(
+        os.environ["REPLAY_OPTIMIZATION_REPORT_PATH_VALUE"]
+    ),
+    "strategy_diagnose_report": Path(
+        os.environ["STRATEGY_DIAGNOSE_REPORT_PATH_VALUE"]
+    ),
+    "alpha_mechanism_probe_report": Path(
+        os.environ["ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE"]
+    ),
+    "research_domain_split_report": Path(
+        os.environ["RESEARCH_DOMAIN_SPLIT_REPORT_PATH_VALUE"]
+    ),
+    "feature_parity_report": Path(
+        os.environ["FEATURE_PARITY_REPORT_PATH_VALUE"]
+    ),
+}
+for name, item in artifacts.items():
+    if name not in targets or not isinstance(item, dict):
+        continue
+    source = Path(str(item.get("path") or ""))
+    expected_sha256 = str(item.get("sha256") or "")
+    if not source.is_file():
+        raise SystemExit(f"active offline evidence artifact missing: {name}")
+    if hashlib.sha256(source.read_bytes()).hexdigest() != expected_sha256:
+        raise SystemExit(f"active offline evidence checksum mismatch: {name}")
+    target = targets[name]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_suffix(target.suffix + ".tmp")
+    shutil.copy2(source, temp)
+    temp.replace(target)
+PY
+  echo "[INFO] active offline evidence hydrated before mechanism audit"
+}
+
 commit_activation_transaction() {
   if [[ ! -f "${ACTIVATION_TRANSACTION_STATE_PATH}" ]]; then
     echo "[ERROR] activation transaction state missing at commit"
     return 1
   fi
+  # 先持久化原始离线证据，再把事务标记为 committed。若此步
+  # 失败，保留非终态事务，后续 assess 仍可从冻结证据恢复。
+  publish_active_offline_evidence || return $?
   set_activation_transaction_status "committed"
   echo "[INFO] activation transaction committed"
 }
@@ -2972,6 +3196,7 @@ run_research_domain_split() {
     --raw-csv "${CSV_PATH}" \
     --feature-csv "${FEATURE_STORE_PATH}" \
     --development-csv "${RESEARCH_DEVELOPMENT_CSV_PATH}" \
+    --development-feature-csv "${RESEARCH_DEVELOPMENT_FEATURE_PATH}" \
     --selection-feature-csv "${RESEARCH_SELECTION_FEATURE_PATH}" \
     --holdout-feature-csv "${RESEARCH_HOLDOUT_FEATURE_PATH}" \
     --report "${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}" \
@@ -3039,12 +3264,14 @@ split_symbol_replay_holdout() {
   local feature_path="$2"
   local symbol_dir="$3"
   local symbol="$4"
+  local development_feature_path="${symbol_dir}/development_feature_store_5m.csv"
   local selection_path="${symbol_dir}/selection_feature_store_5m.csv"
   local holdout_path="${symbol_dir}/holdout_feature_store_5m.csv"
   python3 tools/split_research_domains.py \
     --raw-csv "${raw_path}" \
     --feature-csv "${feature_path}" \
     --development-csv "${symbol_dir}/development_ohlcv_5m.csv" \
+    --development-feature-csv "${development_feature_path}" \
     --selection-feature-csv "${selection_path}" \
     --holdout-feature-csv "${holdout_path}" \
     --report "${symbol_dir}/research_domain_split_report.json" \
@@ -3061,6 +3288,7 @@ split_symbol_replay_holdout() {
 
 build_replay_validation_feature_map() {
   REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
+  RESEARCH_DEVELOPMENT_FEATURE_CSV_BY_SYMBOL=""
   RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL=""
   mkdir -p "${REPLAY_VALIDATION_DIR}"
   : > "${REPLAY_VALIDATION_FEATURE_BUILD_RECORDS_PATH}"
@@ -3089,6 +3317,7 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
   echo "[INFO] replay validation per-symbol feature build start"
   mkdir -p "${REPLAY_VALIDATION_FEATURE_DIR}"
   local mapping_parts=()
+  local development_mapping_parts=()
   local selection_mapping_parts=()
   local symbol
   while IFS= read -r symbol; do
@@ -3101,8 +3330,9 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
     local backtest_path="${symbol_dir}/walkforward_report.json"
     mkdir -p "${symbol_dir}"
 
-    if [[ "${symbol}" == "${REPLAY_VALIDATION_SOURCE_SYMBOL}" && "${REPLAY_VALIDATION_SOURCE_SYMBOL}" == "${SYMBOL}" && -f "${RESEARCH_SELECTION_FEATURE_PATH}" && -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
+    if [[ "${symbol}" == "${REPLAY_VALIDATION_SOURCE_SYMBOL}" && "${REPLAY_VALIDATION_SOURCE_SYMBOL}" == "${SYMBOL}" && -f "${RESEARCH_DEVELOPMENT_FEATURE_PATH}" && -f "${RESEARCH_SELECTION_FEATURE_PATH}" && -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
       mapping_parts+=("${symbol}=${RESEARCH_HOLDOUT_FEATURE_PATH}")
+      development_mapping_parts+=("${symbol}=${RESEARCH_DEVELOPMENT_FEATURE_PATH}")
       selection_mapping_parts+=("${symbol}=${RESEARCH_SELECTION_FEATURE_PATH}")
       echo "[INFO] replay validation reuse source holdout: symbol=${symbol} feature=${RESEARCH_HOLDOUT_FEATURE_PATH}"
       append_replay_validation_feature_build_record \
@@ -3127,8 +3357,10 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
         if split_symbol_replay_holdout \
           "${ohlcv_path}" "${feature_path}" "${symbol_dir}" "${symbol}"; then
           local symbol_selection_path="${symbol_dir}/selection_feature_store_5m.csv"
+          local symbol_development_path="${symbol_dir}/development_feature_store_5m.csv"
           local symbol_holdout_path="${symbol_dir}/holdout_feature_store_5m.csv"
           mapping_parts+=("${symbol}=${symbol_holdout_path}")
+          development_mapping_parts+=("${symbol}=${symbol_development_path}")
           selection_mapping_parts+=("${symbol}=${symbol_selection_path}")
           append_replay_validation_feature_build_record \
             "${symbol}" "built" "${symbol_holdout_path}" "${symbol_dir}" \
@@ -3169,11 +3401,20 @@ print("\n".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}"
   else
     echo "[WARN] research selection feature map empty"
   fi
+  if (( ${#development_mapping_parts[@]} > 0 )); then
+    local old_development_ifs="${IFS}"
+    IFS=","
+    RESEARCH_DEVELOPMENT_FEATURE_CSV_BY_SYMBOL="${development_mapping_parts[*]}"
+    IFS="${old_development_ifs}"
+    echo "[INFO] research development feature map: ${RESEARCH_DEVELOPMENT_FEATURE_CSV_BY_SYMBOL}"
+  else
+    echo "[WARN] research development feature map empty"
+  fi
   write_replay_validation_feature_build_report
 }
 
 ensure_replay_validation_source_feature_store() {
-  if [[ -f "${FEATURE_STORE_PATH}" && -f "${RESEARCH_SELECTION_FEATURE_PATH}" && -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
+  if [[ -f "${FEATURE_STORE_PATH}" && -f "${RESEARCH_DEVELOPMENT_FEATURE_PATH}" && -f "${RESEARCH_SELECTION_FEATURE_PATH}" && -f "${RESEARCH_HOLDOUT_FEATURE_PATH}" ]]; then
     echo "[INFO] replay validation source holdout ready: ${RESEARCH_HOLDOUT_FEATURE_PATH}"
     return 0
   fi
@@ -3207,6 +3448,7 @@ ensure_replay_validation_source_feature_store() {
         "${ohlcv_path}" "${FEATURE_STORE_PATH}" "${source_dir}" "${source_symbol}" \
         >/dev/null; then
         cp -f "${source_dir}/development_ohlcv_5m.csv" "${RESEARCH_DEVELOPMENT_CSV_PATH}"
+        cp -f "${source_dir}/development_feature_store_5m.csv" "${RESEARCH_DEVELOPMENT_FEATURE_PATH}"
         cp -f "${source_dir}/selection_feature_store_5m.csv" "${RESEARCH_SELECTION_FEATURE_PATH}"
         cp -f "${source_dir}/holdout_feature_store_5m.csv" "${RESEARCH_HOLDOUT_FEATURE_PATH}"
         cp -f "${source_dir}/research_domain_split_report.json" "${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}"
@@ -3446,23 +3688,18 @@ run_replay_validation() {
   build_replay_validation_feature_map
 
   echo "[INFO] replay validation start"
-  mkdir -p "${REPLAY_VALIDATION_DIR}"
-  REPLAY_ARGS=(
-    tools/run_replay_validation.py
-    --feature_csv "${RESEARCH_HOLDOUT_FEATURE_PATH}"
+  mkdir -p "${REPLAY_VALIDATION_DIR}" "${REPLAY_SELECTION_PREVALIDATION_DIR}"
+  REPLAY_COMMON_ARGS=(
     --base_config "${REPLAY_EFFECTIVE_CONFIG_PATH}"
     --trade_bot "/app/trade_bot"
-    --output_dir "${REPLAY_VALIDATION_DIR}"
     --symbol "${REPLAY_VALIDATION_SYMBOL}"
     --symbols "${REPLAY_VALIDATION_SYMBOLS}"
     --source_symbol "${REPLAY_VALIDATION_SOURCE_SYMBOL}"
-    --feature_csv_by_symbol "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
-    --selection_feature_csv "${RESEARCH_SELECTION_FEATURE_PATH}"
-    --selection_feature_csv_by_symbol "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}"
     --target_bucket "${REPLAY_VALIDATION_TARGET_BUCKET}"
     --max_segments "${REPLAY_VALIDATION_MAX_SEGMENTS}"
     --min_segment_bars "${REPLAY_VALIDATION_MIN_SEGMENT_BARS}"
     --corpus_manifest "${REPLAY_VALIDATION_CORPUS_PATH}"
+    --assess_stage S3
     --min_runtime_status "${REPLAY_VALIDATION_MIN_RUNTIME_STATUS}"
     --min_execution_active_runs "${REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS}"
     --min_execution_pass_runs "${REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS}"
@@ -3471,19 +3708,75 @@ run_replay_validation() {
     --min_break_even_fee_multiplier "${REPLAY_VALIDATION_MIN_BREAK_EVEN_FEE_MULTIPLIER}"
     --warn_mean_filtered_cost_ratio "${REPLAY_VALIDATION_WARN_MEAN_FILTERED_COST_RATIO}"
     --min_tradable_symbols "${REPLAY_VALIDATION_MIN_TRADABLE_SYMBOLS}"
+  )
+  REPLAY_CANDIDATE_ARGS=()
+  if [[ -f "${MODEL_OUTPUT_PATH}" && -f "${INTEGRATOR_REPORT_PATH}" ]]; then
+    REPLAY_CANDIDATE_ARGS+=(
+      --candidate_model "${MODEL_OUTPUT_PATH}"
+      --candidate_report "${INTEGRATOR_REPORT_PATH}"
+    )
+  else
+    REPLAY_CANDIDATE_ARGS+=(--allow_baseline_candidate_identity)
+  fi
+
+  # Phase 1: development freezes the corpus; the exact executable candidate
+  # must pass the independent selection domain. No final holdout or ledger is
+  # opened in this phase.
+  REPLAY_SELECTION_ARGS=(
+    tools/run_replay_validation.py
+    --feature_csv "${RESEARCH_SELECTION_FEATURE_PATH}"
+    --feature_csv_by_symbol "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}"
+    --selection_feature_csv "${RESEARCH_DEVELOPMENT_FEATURE_PATH}"
+    --selection_feature_csv_by_symbol "${RESEARCH_DEVELOPMENT_FEATURE_CSV_BY_SYMBOL}"
+    --output_dir "${REPLAY_SELECTION_PREVALIDATION_DIR}"
+    "${REPLAY_COMMON_ARGS[@]}"
+    "${REPLAY_CANDIDATE_ARGS[@]}"
+  )
+  local replay_command_json
+  replay_command_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:], ensure_ascii=False))' "${REPLAY_SELECTION_ARGS[@]}")"
+  local replay_exit_code=0
+  rm -f "${REPLAY_SELECTION_PREVALIDATION_COMMAND_LOG_PATH}"
+  set +e
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    "${REPLAY_SELECTION_ARGS[@]}" >"${REPLAY_SELECTION_PREVALIDATION_COMMAND_LOG_PATH}" 2>&1
+  replay_exit_code=$?
+  set -e
+  if [[ -f "${REPLAY_SELECTION_PREVALIDATION_COMMAND_LOG_PATH}" ]]; then
+    cat "${REPLAY_SELECTION_PREVALIDATION_COMMAND_LOG_PATH}"
+  fi
+  if (( replay_exit_code != 0 )) ||
+     [[ ! -s "${REPLAY_SELECTION_PREVALIDATION_REPORT_PATH}" ]]; then
+    if (( replay_exit_code == 0 )); then
+      replay_exit_code=1
+    fi
+    echo "[WARN] replay selection prevalidation failed: exit_code=${replay_exit_code}, log=${REPLAY_SELECTION_PREVALIDATION_COMMAND_LOG_PATH}"
+    write_replay_validation_fail_report \
+      "${replay_exit_code}" \
+      "${REPLAY_SELECTION_PREVALIDATION_COMMAND_LOG_PATH}" \
+      "${replay_command_json}"
+    attach_replay_validation_feature_build_report
+    REPLAY_VALIDATION_LAST_STATUS="fail"
+    return "${replay_exit_code}"
+  fi
+
+  # Phase 2: verify the identity-bound selection proof and frozen corpus, then
+  # append the final-holdout claim before the first final data read.
+  REPLAY_ARGS=(
+    tools/run_replay_validation.py
+    --feature_csv "${RESEARCH_HOLDOUT_FEATURE_PATH}"
+    --feature_csv_by_symbol "${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+    --selection_feature_csv "${RESEARCH_SELECTION_FEATURE_PATH}"
+    --selection_feature_csv_by_symbol "${RESEARCH_SELECTION_FEATURE_CSV_BY_SYMBOL}"
+    --output_dir "${REPLAY_VALIDATION_DIR}"
+    "${REPLAY_COMMON_ARGS[@]}"
+    "${REPLAY_CANDIDATE_ARGS[@]}"
+    --require_candidate_identity
+    --prevalidated_selection_report "${REPLAY_SELECTION_PREVALIDATION_REPORT_PATH}"
     --holdout_ledger "${HOLDOUT_CONSUMPTION_LEDGER_PATH}"
     --experiment_id "${RUN_ID}"
   )
-  if [[ -f "${MODEL_OUTPUT_PATH}" && -f "${INTEGRATOR_REPORT_PATH}" ]]; then
-    REPLAY_ARGS+=(
-      --candidate_model "${MODEL_OUTPUT_PATH}"
-      --candidate_report "${INTEGRATOR_REPORT_PATH}"
-      --require_candidate_identity
-    )
-  fi
-  local replay_command_json
   replay_command_json="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:], ensure_ascii=False))' "${REPLAY_ARGS[@]}")"
-  local replay_exit_code=0
+  replay_exit_code=0
   rm -f "${REPLAY_VALIDATION_COMMAND_LOG_PATH}"
   set +e
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
@@ -3500,7 +3793,7 @@ run_replay_validation() {
     return 0
   fi
 
-  echo "[WARN] replay validation failed: exit_code=${replay_exit_code}, log=${REPLAY_VALIDATION_COMMAND_LOG_PATH}"
+  echo "[WARN] replay final validation failed: exit_code=${replay_exit_code}, log=${REPLAY_VALIDATION_COMMAND_LOG_PATH}"
   if [[ ! -s "${REPLAY_VALIDATION_REPORT_PATH}" ]]; then
     write_replay_validation_fail_report \
       "${replay_exit_code}" \
@@ -4934,6 +5227,23 @@ run_main() {
     assess)
       local assess_activation_status=""
       assess_activation_status="$(activation_transaction_status)"
+      case "${assess_activation_status}" in
+        none|committed|rolled_back|rolled_back_service_stopped)
+          # assess 本身不重跑训练链，先恢复已提交候选的原始离线
+          # 证据，使后续 mechanism audit 与最终 summary 看到同一份
+          # integrator/replay/strategy/alpha 候选身份。
+          if [[ -f "${ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH}" ]]; then
+            capture_step_status hydrate_active_offline_evidence
+            if (( LAST_CAPTURED_STATUS != 0 )); then
+              echo "[ERROR] active offline evidence hydration failed"
+            fi
+          else
+            echo "[WARN] active offline evidence unavailable; next successful candidate commit will initialize it"
+          fi
+          ;;
+        *)
+          ;;
+      esac
       if is_true "${ASSESS_REFRESH_REPLAY_VALIDATION}"; then
         case "${assess_activation_status}" in
           none|committed|rolled_back|rolled_back_service_stopped)

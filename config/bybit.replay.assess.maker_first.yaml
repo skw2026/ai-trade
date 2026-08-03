@@ -166,6 +166,16 @@ regime:
   extreme_threshold: 0.0080
   volatility_threshold: 0.0025
 
+integrator:
+  # Baseline replay is an explicit model-free candidate. Keeping this section
+  # in the policy contract prevents an absent model from becoming an implicit,
+  # unhashable runtime fallback.
+  enabled: false
+  mode: "off"
+  shadow:
+    enabled: false
+    score_gain: 1.0
+
 self_evolution:
   enabled: false
   update_interval_ticks: 60

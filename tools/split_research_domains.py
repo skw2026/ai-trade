@@ -187,6 +187,7 @@ def split_domains(
     min_holdout_feature_bars: int,
     symbol: str = "",
     holdout_ledger_path: pathlib.Path | None = None,
+    development_feature_csv: pathlib.Path | None = None,
 ) -> dict[str, Any]:
     if selection_bars <= 0 or holdout_bars <= 0 or embargo_bars < 0:
         raise ValueError(
@@ -231,6 +232,7 @@ def split_domains(
     selection_raw_rows = raw_rows[selection_start_index:selection_end_index]
     holdout_embargo_rows = raw_rows[selection_end_index:holdout_start_index]
     holdout_raw_rows = raw_rows[holdout_start_index:]
+    development_end_ts = int(development_rows[-1]["timestamp"])
     selection_start_ts = int(selection_raw_rows[0]["timestamp"])
     selection_end_ts = int(selection_raw_rows[-1]["timestamp"])
     holdout_start_ts = int(holdout_raw_rows[0]["timestamp"])
@@ -263,6 +265,11 @@ def split_domains(
         for row in feature_rows
         if holdout_start_ts <= int(row["timestamp"]) <= holdout_end_ts
     ]
+    development_feature_rows = [
+        row
+        for row in feature_rows
+        if int(row["timestamp"]) <= development_end_ts
+    ]
     if len(development_rows) < min_development_bars:
         raise ValueError(
             f"development rows={len(development_rows)} below "
@@ -279,7 +286,6 @@ def split_domains(
             f"minimum={min_holdout_feature_bars}"
         )
 
-    development_end_ts = int(development_rows[-1]["timestamp"])
     selection_embargo_start_ts = (
         int(selection_embargo_rows[0]["timestamp"])
         if selection_embargo_rows
@@ -307,6 +313,14 @@ def split_domains(
         raise ValueError("research domains overlap")
 
     write_csv(development_csv, raw_fields, development_rows)
+    if development_feature_csv is not None:
+        if not development_feature_rows:
+            raise ValueError("development feature domain has no rows")
+        write_csv(
+            development_feature_csv,
+            feature_fields,
+            development_feature_rows,
+        )
     write_csv(selection_feature_csv, feature_fields, selection_feature_rows)
     write_csv(holdout_feature_csv, feature_fields, holdout_feature_rows)
     report = {
@@ -368,6 +382,7 @@ def split_domains(
             "raw_total": len(raw_rows),
             "feature_total": len(feature_rows),
             "development": len(development_rows),
+            "development_feature": len(development_feature_rows),
             "selection_embargo": len(selection_embargo_rows),
             "selection_raw": len(selection_raw_rows),
             "selection_feature": len(selection_feature_rows),
@@ -388,6 +403,14 @@ def split_domains(
                 "path": str(development_csv),
                 "sha256": file_sha256(development_csv),
             },
+            "development_feature_csv": (
+                {
+                    "path": str(development_feature_csv),
+                    "sha256": file_sha256(development_feature_csv),
+                }
+                if development_feature_csv is not None
+                else None
+            ),
             "selection_feature_csv": {
                 "path": str(selection_feature_csv),
                 "sha256": file_sha256(selection_feature_csv),
@@ -416,6 +439,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--raw-csv", required=True)
     parser.add_argument("--feature-csv", required=True)
     parser.add_argument("--development-csv", required=True)
+    parser.add_argument("--development-feature-csv", default="")
     parser.add_argument("--selection-feature-csv", required=True)
     parser.add_argument("--holdout-feature-csv", required=True)
     parser.add_argument("--report", required=True)
@@ -449,6 +473,11 @@ def main() -> int:
         holdout_ledger_path=(
             pathlib.Path(args.holdout_ledger)
             if args.holdout_ledger
+            else None
+        ),
+        development_feature_csv=(
+            pathlib.Path(args.development_feature_csv)
+            if args.development_feature_csv
             else None
         ),
     )

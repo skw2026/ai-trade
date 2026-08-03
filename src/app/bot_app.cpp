@@ -3521,13 +3521,22 @@ bool BotApplication::RecoverStartupOrdersAndProtection() {
     remote_open_order_by_id[order.client_order_id] = &order;
   }
 
-  if (!startup_position_lineage_mismatches_.empty()) {
-    const bool remote_positions_flat =
-        std::none_of(startup_remote_positions_.begin(),
-                     startup_remote_positions_.end(),
-                     [](const RemotePositionSnapshot& position) {
-                       return std::fabs(position.qty) > kNotionalEpsilon;
-                     });
+  const bool remote_positions_flat =
+      std::none_of(startup_remote_positions_.begin(),
+                   startup_remote_positions_.end(),
+                   [](const RemotePositionSnapshot& position) {
+                     return std::fabs(position.qty) > kNotionalEpsilon;
+                   });
+  std::vector<std::string> recovered_net_orders_absent_on_remote;
+  for (const auto& client_order_id : oms_.PendingNetPositionOrderIds()) {
+    if (remote_open_order_ids.find(client_order_id) ==
+        remote_open_order_ids.end()) {
+      recovered_net_orders_absent_on_remote.push_back(client_order_id);
+    }
+  }
+
+  if (!startup_position_lineage_mismatches_.empty() ||
+      !recovered_net_orders_absent_on_remote.empty()) {
     if (remote_positions_flat && remote_open_orders.empty()) {
       std::string wal_error;
       if (!wal_.AppendFlatPositionRebase(
@@ -3540,12 +3549,21 @@ bool BotApplication::RecoverStartupOrdersAndProtection() {
       }
       const std::size_t mismatch_count =
           startup_position_lineage_mismatches_.size();
+      for (const auto& client_order_id :
+           recovered_net_orders_absent_on_remote) {
+        oms_.MarkCancelled(client_order_id);
+        pending_net_order_enqueued_ms_.erase(client_order_id);
+        integrator_lineage_by_intent_id_.erase(client_order_id);
+      }
       integrator_episode_by_symbol_.clear();
       startup_position_lineage_mismatches_.clear();
       LogInfo(
           "STARTUP_POSITION_REBASE_COMMITTED: state=flat, "
           "remote_open_orders=0, mismatch_symbols=" +
-          std::to_string(mismatch_count) + ", boot_id=" + boot_id_);
+          std::to_string(mismatch_count) +
+          ", recovered_pending_net_orders=" +
+          std::to_string(recovered_net_orders_absent_on_remote.size()) +
+          ", boot_id=" + boot_id_);
     } else {
       for (const auto& mismatch : startup_position_lineage_mismatches_) {
         // 非空仓或仍有活动订单时不能宣告空仓检查点。隔离旧 candidate
@@ -4111,7 +4129,11 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     return;
   }
 
-  const bool trade_ok = adapter_->TradeOk() && !IsForceReduceOnlyActive();
+  // Segment replay prepends causal history so stateful regime/strategy
+  // features are warm before the measured segment. Those context bars update
+  // state but must never create exposure.
+  const bool trade_ok = adapter_->TradeOk() && !IsForceReduceOnlyActive() &&
+                        !event.execution_disabled;
   double symbol_inflight_notional_usd = 0.0;
   if (config_.execution_include_inflight_notional_in_position) {
     const double effective_price =
@@ -5004,8 +5026,10 @@ void BotApplication::ProcessAsyncResults() {
       } else {
         oms_.MarkCancelFailed(res.client_order_id);
         if (net_position_order) {
-          pending_net_order_enqueued_ms_[res.client_order_id] =
-              CurrentTimestampMs();
+          // 保留原始入队时间。若每次撤单失败都重置该时间，
+          // 110001 等模糊结果会使陈旧单永远无法达到对账超时。
+          pending_net_order_enqueued_ms_.try_emplace(
+              res.client_order_id, CurrentTimestampMs());
         }
         LogError("Async Cancel Failed: " + res.error +
                  ", client_order_id=" + res.client_order_id);
@@ -6247,15 +6271,11 @@ void BotApplication::RunReconcile() {
       ++stale_net_orders;
       continue;
     }
-    bool is_stale = false;
-    bool missing_on_remote = false;
-    if (remote_open_orders_ok &&
+    const bool missing_on_remote =
+        remote_open_orders_ok &&
         remote_open_order_ids.find(client_order_id) ==
-            remote_open_order_ids.end()) {
-      // 远端活动订单列表中已不存在该订单，优先按陈旧单收敛。
-      is_stale = true;
-      missing_on_remote = true;
-    }
+            remote_open_order_ids.end();
+    bool is_stale = false;
     if (it == pending_net_order_enqueued_ms_.end()) {
       // WAL恢复或历史遗留订单：缺少本次进程入队时间，按陈旧单处理。
       is_stale = true;
@@ -6270,6 +6290,17 @@ void BotApplication::RunReconcile() {
     ++stale_net_orders;
     if (missing_on_remote) {
       ++remote_missing_net_orders;
+      // 活动订单快照可靠、订单已超过迟到成交观察窗口，
+      // 此时远端不存在就是本地终态的权威依据。不再重复发送
+      // CancelOrder，避免 Bybit 110001 将 OMS 永久卡在 Sent/CancelPending。
+      oms_.MarkCancelled(client_order_id);
+      pending_net_order_enqueued_ms_.erase(client_order_id);
+      integrator_lineage_by_intent_id_.erase(client_order_id);
+      OnCandidateProbeCancelResult(client_order_id, true);
+      LogInfo("OMS_REMOTE_MISSING_FINALIZED: client_order_id=" +
+              client_order_id + ", stale_ms=" +
+              std::to_string(stale_ms));
+      continue;
     }
     if (executor_ != nullptr) {
       oms_.MarkCancelPending(client_order_id);

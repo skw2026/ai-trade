@@ -38,13 +38,16 @@ FEATURE_COLUMNS = [
 
 DEFAULT_MAX_SEGMENTS = 16
 DEFAULT_MIN_SEGMENT_BARS = 40
+REPLAY_WARMUP_CONTEXT_BARS = 96
 MIN_RECOMMENDED_EXECUTION_ACTIVE_RUNS = 4
 MIN_RECOMMENDED_EXECUTION_PASS_RUNS = 4
 MIN_RECOMMENDED_TOTAL_FILLS = 20
 MIN_POSITIVE_FILLED_SEGMENT_RATIO = 0.55
-SELECTION_CORPUS_SCHEMA_VERSION = "replay_selection_manifest_v2"
+SELECTION_CORPUS_SCHEMA_VERSION = "replay_selection_manifest_v3"
 SELECTION_CORPUS_EVIDENCE_DOMAIN = "selection_validation"
-SELECTION_SAMPLING_POLICY = "chronological_quantiles_without_outcome_v1"
+SELECTION_SAMPLING_POLICY = "chronological_quantiles_without_outcome_v2"
+TREND_THRESHOLD_QUANTILE = 0.50
+EXTREME_THRESHOLD_QUANTILE = 0.90
 
 
 @dataclass
@@ -159,10 +162,23 @@ def derive_regime_thresholds(rows: list[FeatureRow]) -> RegimeThresholds:
     vol_12 = [row.features["vol_12"] for row in rows]
     range_pct = [row.features["range_pct"] for row in rows]
     return RegimeThresholds(
-        trend_abs_ema_diff=max(5e-4, quantile(ema_diff, 0.65, 5e-4)),
-        trend_abs_mom_48=max(2e-3, quantile(mom_48, 0.65, 2e-3)),
-        extreme_vol_12=max(1.5e-3, quantile(vol_12, 0.90, 1.5e-3)),
-        extreme_range_pct=max(3e-3, quantile(range_pct, 0.90, 3e-3)),
+        # Joint above-median strength plus aligned direction remains a strict
+        # TREND definition without making the validation corpus disappear
+        # after an ordinary volatility regime shift.
+        trend_abs_ema_diff=max(
+            5e-4, quantile(ema_diff, TREND_THRESHOLD_QUANTILE, 5e-4)
+        ),
+        trend_abs_mom_48=max(
+            2e-3, quantile(mom_48, TREND_THRESHOLD_QUANTILE, 2e-3)
+        ),
+        extreme_vol_12=max(
+            1.5e-3,
+            quantile(vol_12, EXTREME_THRESHOLD_QUANTILE, 1.5e-3),
+        ),
+        extreme_range_pct=max(
+            3e-3,
+            quantile(range_pct, EXTREME_THRESHOLD_QUANTILE, 3e-3),
+        ),
     )
 
 
@@ -373,8 +389,13 @@ def write_replay_csv(
     symbol: str,
     output_path: pathlib.Path,
     default_interval_ms: int,
-) -> None:
+    warmup_context_bars: int = REPLAY_WARMUP_CONTEXT_BARS,
+) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    replay_start_index = max(
+        0, segment.start_index - max(0, int(warmup_context_bars))
+    )
+    actual_warmup_bars = segment.start_index - replay_start_index
     with output_path.open("w", encoding="utf-8", newline="") as fp:
         writer = csv.writer(fp)
         writer.writerow(
@@ -388,10 +409,12 @@ def write_replay_csv(
                 "volume",
                 "interval_ms",
                 "funding_rate_per_interval",
+                "execution_enabled",
             ]
         )
         previous_timestamp: int | None = None
-        for row in rows[segment.start_index : segment.end_index + 1]:
+        for row_index in range(replay_start_index, segment.end_index + 1):
+            row = rows[row_index]
             interval_ms = default_interval_ms
             if previous_timestamp is not None:
                 interval_ms = max(1, row.timestamp - previous_timestamp)
@@ -406,9 +429,11 @@ def write_replay_csv(
                     f"{row.volume:.10f}",
                     interval_ms,
                     "",
+                    1 if row_index >= segment.start_index else 0,
                 ]
             )
             previous_timestamp = row.timestamp
+    return actual_warmup_bars
 
 
 def isoformat_ms(timestamp_ms: int) -> str:
@@ -568,6 +593,12 @@ def write_corpus_manifest(
             "min_segment_bars": int(max(1, min_segment_bars)),
         },
         "selection_policy": SELECTION_SAMPLING_POLICY,
+        "threshold_policy": {
+            "trend_quantile": TREND_THRESHOLD_QUANTILE,
+            "extreme_quantile": EXTREME_THRESHOLD_QUANTILE,
+            "fit_domain": SELECTION_CORPUS_EVIDENCE_DOMAIN,
+            "holdout_refit_forbidden": True,
+        },
         "sampling_quantiles": sampling_quantiles,
         "selection_domain_eligible_segment_count": len(chronological_segments),
         "selection_domain_segments": [
@@ -671,6 +702,22 @@ def validate_selection_corpus_manifest(
             "selection corpus manifest selection_policy must be "
             f"{SELECTION_SAMPLING_POLICY}"
         )
+    threshold_policy = manifest.get("threshold_policy")
+    if not isinstance(threshold_policy, dict):
+        reasons.append("selection corpus manifest threshold_policy missing")
+    else:
+        if threshold_policy.get("trend_quantile") != TREND_THRESHOLD_QUANTILE:
+            reasons.append(
+                "selection corpus manifest trend threshold quantile mismatch"
+            )
+        if threshold_policy.get("extreme_quantile") != EXTREME_THRESHOLD_QUANTILE:
+            reasons.append(
+                "selection corpus manifest extreme threshold quantile mismatch"
+            )
+        if threshold_policy.get("holdout_refit_forbidden") is not True:
+            reasons.append(
+                "selection corpus manifest holdout_refit_forbidden must be true"
+            )
     thresholds = manifest.get("thresholds")
     if not isinstance(thresholds, dict):
         reasons.append("selection corpus manifest thresholds missing")
@@ -1099,6 +1146,25 @@ def summarize_assess(assess_payload: dict[str, Any]) -> dict[str, Any]:
         "entry_gate_observed_filtered_ratio_avg": metrics.get(
             "entry_gate_observed_filtered_ratio_avg"
         ),
+        # Replay emits the same per-exit capture evidence as live runtime.  Keep
+        # it in the compact summary so the economic gate can prefer actual
+        # trade episodes over the much coarser whole-segment path proxy.
+        "exit_capture_sample_count": metrics.get("exit_capture_sample_count"),
+        "exit_capture_low_count": metrics.get("exit_capture_low_count"),
+        "exit_capture_low_ratio": metrics.get("exit_capture_low_ratio"),
+        "exit_capture_mean_path_mfe_bps": metrics.get(
+            "exit_capture_mean_path_mfe_bps"
+        ),
+        "exit_capture_mean_captured_gross_bps": metrics.get(
+            "exit_capture_mean_captured_gross_bps"
+        ),
+        "exit_capture_mean_captured_net_bps": metrics.get(
+            "exit_capture_mean_captured_net_bps"
+        ),
+        "exit_capture_mean_fee_bps": metrics.get("exit_capture_mean_fee_bps"),
+        "exit_capture_mean_capture_ratio": metrics.get(
+            "exit_capture_mean_capture_ratio"
+        ),
         "execution_attribution_fill_count": metrics.get(
             "execution_attribution_fill_count"
         ),
@@ -1358,6 +1424,30 @@ def build_run_economics_attribution(run: dict[str, Any]) -> dict[str, Any]:
         "entry_gate_observed_filtered_ratio_avg": number_or_none(
             summary.get("entry_gate_observed_filtered_ratio_avg")
         ),
+        "exit_capture_sample_count": int_or_zero(
+            summary.get("exit_capture_sample_count")
+        ),
+        "exit_capture_low_count": int_or_zero(
+            summary.get("exit_capture_low_count")
+        ),
+        "exit_capture_low_ratio": number_or_none(
+            summary.get("exit_capture_low_ratio")
+        ),
+        "exit_capture_mean_path_mfe_bps": number_or_none(
+            summary.get("exit_capture_mean_path_mfe_bps")
+        ),
+        "exit_capture_mean_captured_gross_bps": number_or_none(
+            summary.get("exit_capture_mean_captured_gross_bps")
+        ),
+        "exit_capture_mean_captured_net_bps": number_or_none(
+            summary.get("exit_capture_mean_captured_net_bps")
+        ),
+        "exit_capture_mean_fee_bps": number_or_none(
+            summary.get("exit_capture_mean_fee_bps")
+        ),
+        "exit_capture_mean_capture_ratio": number_or_none(
+            summary.get("exit_capture_mean_capture_ratio")
+        ),
         "main_fill_count": int_or_zero(
             summary.get("execution_attribution_main_fill_count")
         ),
@@ -1564,43 +1654,134 @@ def build_exit_capture_report(
         1 for item in samples if float(item["gross_fee_coverage_ratio"]) < 1.0
     )
 
-    diagnostics: list[str] = []
+    proxy_diagnostics: list[str] = []
     if rows_with_fills and not samples:
-        diagnostics.append("insufficient_exit_capture_samples")
+        proxy_diagnostics.append("insufficient_exit_capture_samples")
     if samples and fee_bound_count >= max(1, math.ceil(len(samples) * 0.5)):
-        diagnostics.append("path_mfe_does_not_cover_fee_buffer")
+        proxy_diagnostics.append("path_mfe_does_not_cover_fee_buffer")
     if samples and low_capture_count >= max(1, math.ceil(len(samples) * 0.5)):
-        diagnostics.append("path_mfe_covers_cost_but_gross_capture_low")
+        proxy_diagnostics.append("path_mfe_covers_cost_but_gross_capture_low")
     if samples and gross_cost_bound_count >= max(1, math.ceil(len(samples) * 0.5)):
-        diagnostics.append("gross_edge_does_not_cover_current_fee")
+        proxy_diagnostics.append("gross_edge_does_not_cover_current_fee")
+
+    live_sample_count = sum(
+        int_or_zero(row.get("exit_capture_sample_count"))
+        for row in rows_with_fills
+    )
+    live_low_count = sum(
+        int_or_zero(row.get("exit_capture_low_count"))
+        for row in rows_with_fills
+    )
+
+    def live_weighted_mean(field: str) -> float | None:
+        weighted_sum = 0.0
+        weight = 0
+        for row in rows_with_fills:
+            samples_in_row = int_or_zero(row.get("exit_capture_sample_count"))
+            value = number_or_none(row.get(field))
+            if samples_in_row <= 0 or value is None:
+                continue
+            weighted_sum += value * samples_in_row
+            weight += samples_in_row
+        return weighted_sum / weight if weight > 0 else None
+
+    live_low_ratio = (
+        float(live_low_count) / float(live_sample_count)
+        if live_sample_count > 0
+        else None
+    )
+    live_mean_capture = live_weighted_mean("exit_capture_mean_capture_ratio")
+    live_mean_net_bps = live_weighted_mean("exit_capture_mean_captured_net_bps")
+    live_mean_gross_bps = live_weighted_mean(
+        "exit_capture_mean_captured_gross_bps"
+    )
+    live_mean_path_mfe_bps = live_weighted_mean("exit_capture_mean_path_mfe_bps")
+    live_mean_fee_bps = live_weighted_mean("exit_capture_mean_fee_bps")
+
+    authoritative_source = (
+        "order_episode_runtime" if live_sample_count > 0 else "segment_path_proxy"
+    )
+    diagnostics: list[str] = []
+    if live_sample_count > 0:
+        if live_low_ratio is not None and live_low_ratio >= 0.50:
+            diagnostics.append("path_mfe_covers_cost_but_gross_capture_low")
+        if live_mean_net_bps is not None and live_mean_net_bps <= 0.0:
+            diagnostics.append("captured_net_edge_non_positive")
+    else:
+        diagnostics.extend(proxy_diagnostics)
 
     if "path_mfe_covers_cost_but_gross_capture_low" in diagnostics:
         primary_diagnosis = "exit_capture_low"
     elif "path_mfe_does_not_cover_fee_buffer" in diagnostics:
         primary_diagnosis = "fee_bound_or_low_path"
-    elif "gross_edge_does_not_cover_current_fee" in diagnostics:
+    elif (
+        "gross_edge_does_not_cover_current_fee" in diagnostics
+        or "captured_net_edge_non_positive" in diagnostics
+    ):
         primary_diagnosis = "execution_cost_bound"
-    elif not samples:
+    elif live_sample_count <= 0 and not samples:
         primary_diagnosis = "insufficient_samples"
     else:
         primary_diagnosis = "no_obvious_exit_capture_issue"
+
+    authoritative_sample_count = (
+        live_sample_count if live_sample_count > 0 else len(samples)
+    )
+    authoritative_low_count = (
+        live_low_count if live_sample_count > 0 else low_capture_count
+    )
+    authoritative_mean_capture = (
+        live_mean_capture
+        if live_sample_count > 0
+        else finite_mean(gross_capture_ratios)
+    )
 
     return {
         "status": "action_required" if diagnostics else "pass",
         "primary_diagnosis": primary_diagnosis,
         "diagnostics": diagnostics,
+        "authoritative_source": authoritative_source,
+        "authoritative_sample_count": authoritative_sample_count,
+        "authoritative_mean_capture_ratio": authoritative_mean_capture,
+        "proxy_diagnostics": proxy_diagnostics,
         "filled_segment_count": len(rows_with_fills),
-        "sample_count": len(samples),
-        "low_capture_segment_count": low_capture_count,
+        "sample_count": authoritative_sample_count,
+        "low_capture_segment_count": authoritative_low_count,
+        "low_capture_sample_count": authoritative_low_count,
         "fee_bound_segment_count": fee_bound_count,
         "gross_cost_bound_segment_count": gross_cost_bound_count,
         "mean_path_fee_coverage_ratio": finite_mean(path_fee_coverages),
         "median_path_fee_coverage_ratio": finite_median(path_fee_coverages),
-        "mean_gross_capture_of_path_mfe": finite_mean(gross_capture_ratios),
-        "median_gross_capture_of_path_mfe": finite_median(gross_capture_ratios),
+        "mean_gross_capture_of_path_mfe": authoritative_mean_capture,
+        "median_gross_capture_of_path_mfe": (
+            live_mean_capture
+            if live_sample_count > 0
+            else finite_median(gross_capture_ratios)
+        ),
         "mean_gross_fee_coverage_ratio": finite_mean(gross_fee_coverages),
-        "mean_fee_bps_per_fill": finite_mean(fee_bps_values),
-        "mean_path_mfe_bps": finite_mean(path_mfe_bps_values),
+        "mean_fee_bps_per_fill": (
+            live_mean_fee_bps
+            if live_sample_count > 0
+            else finite_mean(fee_bps_values)
+        ),
+        "mean_path_mfe_bps": (
+            live_mean_path_mfe_bps
+            if live_sample_count > 0
+            else finite_mean(path_mfe_bps_values)
+        ),
+        "mean_captured_gross_bps": live_mean_gross_bps,
+        "mean_captured_net_bps": live_mean_net_bps,
+        "live_low_capture_ratio": live_low_ratio,
+        "segment_proxy": {
+            "sample_count": len(samples),
+            "low_capture_segment_count": low_capture_count,
+            "mean_gross_capture_of_path_mfe": finite_mean(gross_capture_ratios),
+            "median_gross_capture_of_path_mfe": finite_median(
+                gross_capture_ratios
+            ),
+            "mean_path_mfe_bps": finite_mean(path_mfe_bps_values),
+            "mean_fee_bps_per_fill": finite_mean(fee_bps_values),
+        },
         "samples": samples,
     }
 
@@ -2406,7 +2587,6 @@ def build_activation_gate_report(
     if not isinstance(optimizer, dict):
         optimizer = {}
     selected_candidate = select_deployable_optimizer_candidate(optimizer)
-    optimizer_candidate_passed = selected_candidate is not None
 
     aggregate_status = str(aggregate_validation.get("status", "")).strip().lower()
     aggregate_fail_reasons = [
@@ -2427,11 +2607,6 @@ def build_activation_gate_report(
 
     if str(optimizer.get("status", "")).strip().lower() == "fail":
         fail_reasons.append("execution_optimizer.status=fail")
-    elif optimizer_candidate_passed:
-        warn_reasons.append(
-            "diagnostic_optimizer_candidate_not_promotion_authority="
-            + str(selected_candidate.get("name", "unknown"))
-        )
 
     cost_plan = economics_report.get("execution_cost_plan", {})
     if not isinstance(cost_plan, dict):
@@ -2937,8 +3112,11 @@ def build_economic_objective_contract(
         "segment_sampling": {
             "target_bucket": str(args.target_bucket).strip().lower(),
             "selection_policy": SELECTION_SAMPLING_POLICY,
+            "trend_threshold_quantile": TREND_THRESHOLD_QUANTILE,
             "max_segments": int(args.max_segments),
             "min_segment_bars": int(args.min_segment_bars),
+            "warmup_context_bars": REPLAY_WARMUP_CONTEXT_BARS,
+            "warmup_context_execution_disabled": True,
             "final_outcome_ranking_forbidden": True,
         },
         "implementation_sha256": {
@@ -2963,6 +3141,46 @@ def build_economic_objective_contract(
         ).encode("utf-8")
     ).hexdigest()
     return payload
+
+
+def build_baseline_candidate_identity(
+    args: argparse.Namespace,
+    *,
+    root: pathlib.Path,
+    base_config: pathlib.Path,
+    trade_bot: pathlib.Path,
+) -> dict[str, Any]:
+    execution_policy = policy_payload(base_config)
+    trade_bot_sha256 = hashlib.sha256(trade_bot.read_bytes()).hexdigest()
+    economic_objective_contract = build_economic_objective_contract(
+        args,
+        root=root,
+        execution_policy_sha256=str(execution_policy["sha256"]),
+        trade_bot_sha256=trade_bot_sha256,
+    )
+    identity: dict[str, Any] = {
+        "candidate_type": "baseline_runtime_v1",
+        "candidate_version": (
+            "baseline_" + str(execution_policy["sha256"])[:16]
+        ),
+        "model_version": "baseline_no_integrator_model",
+        "base_config_path": str(base_config),
+        "base_config_sha256": hashlib.sha256(base_config.read_bytes()).hexdigest(),
+        "execution_policy": execution_policy,
+        "economic_objective_contract": economic_objective_contract,
+        "trade_bot_sha256": trade_bot_sha256,
+        "config_binds_candidate": True,
+        "integrator_model_required": False,
+    }
+    identity["identity_sha256"] = hashlib.sha256(
+        json.dumps(
+            identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return identity
 
 
 def inspect_feature_time_range(path: pathlib.Path) -> tuple[int, int, int]:
@@ -3225,6 +3443,203 @@ def corpus_manifest_for_symbol(
         return corpus_manifest
     suffix = corpus_manifest.suffix or ".json"
     return corpus_manifest.with_name(f"{corpus_manifest.stem}_{symbol}{suffix}")
+
+
+def build_frozen_corpus_binding(
+    corpus_manifest: pathlib.Path | None,
+    *,
+    symbols: list[str],
+    per_symbol: bool,
+) -> dict[str, Any]:
+    if corpus_manifest is None:
+        raise ValueError("frozen corpus manifest is required")
+    per_symbol_binding: dict[str, dict[str, Any]] = {}
+    for symbol in symbols:
+        path = corpus_manifest_for_symbol(
+            corpus_manifest,
+            symbol,
+            per_symbol=per_symbol,
+        )
+        if path is None or not path.is_file():
+            raise FileNotFoundError(
+                f"{symbol} frozen corpus manifest missing: {path}"
+            )
+        payload = load_corpus_manifest(path)
+        per_symbol_binding[symbol] = {
+            "path": str(path),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "schema_version": payload.get("schema_version"),
+            "evidence_domain": payload.get("evidence_domain"),
+            "candidate_set_frozen": payload.get("candidate_set_frozen"),
+            "source_feature_csv": payload.get("source_feature_csv"),
+            "source_feature_sha256": payload.get("source_feature_sha256"),
+            "target_bucket": payload.get("target_bucket"),
+            "thresholds": payload.get("thresholds"),
+            "sampling_quantiles": payload.get("sampling_quantiles"),
+        }
+    binding: dict[str, Any] = {
+        "schema_version": "frozen_replay_corpus_binding_v1",
+        "per_symbol": per_symbol_binding,
+    }
+    binding["binding_sha256"] = hashlib.sha256(
+        json.dumps(
+            binding,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return binding
+
+
+def validate_prevalidated_selection_report(
+    report_path: pathlib.Path,
+    *,
+    candidate_identity: dict[str, Any],
+    symbols: list[str],
+    selection_feature_csv: pathlib.Path | None,
+    selection_feature_csv_by_symbol: dict[str, pathlib.Path],
+    final_feature_csv: pathlib.Path,
+    final_feature_csv_by_symbol: dict[str, pathlib.Path],
+    frozen_corpus_binding: dict[str, Any],
+    target_bucket: str,
+) -> dict[str, Any]:
+    if not report_path.is_file():
+        raise FileNotFoundError(
+            f"prevalidated selection report missing: {report_path}"
+        )
+    report_sha256 = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("prevalidated selection report must be a JSON object")
+
+    reasons: list[str] = []
+    expected_identity_sha256 = str(
+        candidate_identity.get("identity_sha256") or ""
+    )
+    reported_identity = payload.get("candidate_identity")
+    if not isinstance(reported_identity, dict):
+        reasons.append("candidate identity missing")
+    else:
+        reported_identity_sha256 = str(
+            reported_identity.get("identity_sha256") or ""
+        )
+        identity_payload = dict(reported_identity)
+        identity_payload.pop("identity_sha256", None)
+        computed_identity_sha256 = hashlib.sha256(
+            json.dumps(
+                identity_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if reported_identity_sha256 != computed_identity_sha256:
+            reasons.append("reported candidate identity checksum is invalid")
+        if reported_identity_sha256 != expected_identity_sha256:
+            reasons.append("candidate identity does not match frozen candidate")
+        if reported_identity != candidate_identity:
+            reasons.append("candidate identity payload does not match")
+
+    activation_gate = payload.get("activation_gate")
+    activation_status = (
+        str(activation_gate.get("status") or "").strip().lower()
+        if isinstance(activation_gate, dict)
+        else ""
+    )
+    if activation_status not in {"pass", "pass_with_actions"}:
+        reasons.append("selection activation gate did not pass")
+    if str(payload.get("status") or "").strip().lower() not in {
+        "pass",
+        "pass_with_actions",
+    }:
+        reasons.append("selection report status did not pass")
+    if str(payload.get("target_bucket") or "").strip().lower() != str(
+        target_bucket
+    ).strip().lower():
+        reasons.append("target bucket mismatch")
+    if payload.get("real_market_replay") is not True:
+        reasons.append("selection evidence is not real-market replay")
+
+    execution_contract = payload.get("execution_evidence_contract")
+    if not isinstance(execution_contract, dict) or (
+        execution_contract.get("schema_version")
+        != "replay_execution_prescreen_v1"
+    ):
+        reasons.append("execution evidence contract missing or invalid")
+
+    reported_binding = payload.get("frozen_corpus_binding")
+    if reported_binding != frozen_corpus_binding:
+        reasons.append("frozen corpus binding mismatch")
+
+    report_symbols = payload.get("symbols")
+    if report_symbols != symbols:
+        reasons.append("selection report symbol set/order mismatch")
+    symbol_reports = payload.get("symbol_reports")
+    if not isinstance(symbol_reports, dict):
+        reasons.append("selection symbol reports missing")
+        symbol_reports = {}
+    expected_selection_hashes: dict[str, str] = {}
+    for symbol in symbols:
+        expected_selection_path = selection_feature_csv_by_symbol.get(
+            symbol,
+            selection_feature_csv,
+        )
+        if expected_selection_path is None or not expected_selection_path.is_file():
+            reasons.append(f"{symbol} selection feature csv missing")
+            continue
+        final_path = final_feature_csv_by_symbol.get(symbol, final_feature_csv)
+        if (
+            expected_selection_path.resolve(strict=False)
+            == final_path.resolve(strict=False)
+        ):
+            reasons.append(f"{symbol} selection and final datasets are identical")
+        expected_hash = hashlib.sha256(
+            expected_selection_path.read_bytes()
+        ).hexdigest()
+        expected_selection_hashes[symbol] = expected_hash
+        symbol_report = symbol_reports.get(symbol)
+        if not isinstance(symbol_report, dict):
+            reasons.append(f"{symbol} selection symbol report missing")
+            continue
+        reported_path_text = str(symbol_report.get("feature_csv") or "")
+        reported_path = pathlib.Path(reported_path_text).expanduser().resolve(
+            strict=False
+        )
+        if reported_path != expected_selection_path.resolve(strict=False):
+            reasons.append(f"{symbol} selection feature path mismatch")
+        if str(symbol_report.get("feature_sha256") or "") != expected_hash:
+            reasons.append(f"{symbol} selection feature checksum mismatch")
+        symbol_gate = symbol_report.get("aggregate_validation")
+        if not isinstance(symbol_gate, dict) or str(
+            symbol_gate.get("status") or ""
+        ).strip().lower() not in {"pass", "pass_with_actions"}:
+            reasons.append(f"{symbol} aggregate selection validation did not pass")
+
+    holdout_consumption = payload.get("holdout_consumption")
+    if isinstance(holdout_consumption, dict) and (
+        bool(holdout_consumption.get("claimed_before_evaluation"))
+        or bool(str(holdout_consumption.get("ledger_path") or "").strip())
+    ):
+        reasons.append("selection evidence must not consume a final-holdout ledger")
+
+    if reasons:
+        raise RuntimeError(
+            "prevalidated selection evidence rejected; final holdout remains "
+            "unopened: " + "; ".join(reasons)
+        )
+    return {
+        "schema_version": "prevalidated_selection_binding_v1",
+        "path": str(report_path),
+        "sha256": report_sha256,
+        "status": activation_status,
+        "candidate_identity_sha256": expected_identity_sha256,
+        "frozen_corpus_binding_sha256": frozen_corpus_binding.get(
+            "binding_sha256"
+        ),
+        "selection_feature_sha256_by_symbol": expected_selection_hashes,
+        "report": payload,
+    }
 
 
 def thresholds_to_payload(thresholds: RegimeThresholds) -> dict[str, float]:
@@ -3607,7 +4022,13 @@ def run_replay_for_symbol(
         replay_csv = segment_dir / "replay_market.csv"
         runtime_log = segment_dir / "runtime.log"
         runtime_assess = segment_dir / "runtime_assess.json"
-        write_replay_csv(rows, segment, symbol, replay_csv, base_interval_ms)
+        warmup_context_bars = write_replay_csv(
+            rows,
+            segment,
+            symbol,
+            replay_csv,
+            base_interval_ms,
+        )
 
         trade_cmd = [
             str(trade_bot),
@@ -3654,6 +4075,8 @@ def run_replay_for_symbol(
             "replay_csv": str(replay_csv),
             "state_dir": str(state_dir),
             "state_isolation": "fresh_segment_wal",
+            "warmup_context_bars": warmup_context_bars,
+            "warmup_context_execution_disabled": True,
             "runtime_log": str(runtime_log),
             "runtime_assess": str(runtime_assess),
             "trade_bot_exit_code": trade_exit,
@@ -3877,7 +4300,20 @@ def main() -> int:
     parser.add_argument(
         "--require_candidate_identity",
         action="store_true",
-        help="要求 exact Integrator candidate 先通过 selection，再允许读取 final holdout",
+        help="要求 exact candidate 先通过 selection，再允许读取 final holdout",
+    )
+    parser.add_argument(
+        "--allow_baseline_candidate_identity",
+        action="store_true",
+        help="无 Integrator 模型时，以 trade_bot + runtime config 绑定 baseline candidate",
+    )
+    parser.add_argument(
+        "--prevalidated_selection_report",
+        default="",
+        help=(
+            "开发域冻结语料后，在独立 selection 域生成的 exact-candidate "
+            "replay_validation_report.json；严格 final 模式必填"
+        ),
     )
     parser.add_argument(
         "--holdout_ledger",
@@ -3914,6 +4350,11 @@ def main() -> int:
         if args.holdout_ledger
         else None
     )
+    prevalidated_selection_report = (
+        resolve_path(args.prevalidated_selection_report, root)
+        if args.prevalidated_selection_report
+        else None
+    )
     corpus_manifest = None
     if args.corpus_manifest:
         corpus_manifest = (
@@ -3930,6 +4371,10 @@ def main() -> int:
     candidate_identity: dict[str, Any] | None = None
     if bool(args.candidate_model) != bool(args.candidate_report):
         raise ValueError("--candidate_model 与 --candidate_report 必须同时提供")
+    if args.allow_baseline_candidate_identity and args.candidate_model:
+        raise ValueError(
+            "baseline candidate identity 与 Integrator candidate 不可同时启用"
+        )
     if args.candidate_model:
         candidate_model = resolve_path(args.candidate_model, root)
         candidate_report = resolve_path(args.candidate_report, root)
@@ -3988,6 +4433,13 @@ def main() -> int:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
+    elif args.allow_baseline_candidate_identity:
+        candidate_identity = build_baseline_candidate_identity(
+            args,
+            root=root,
+            base_config=base_config,
+            trade_bot=trade_bot,
+        )
     if args.require_candidate_identity and candidate_identity is None:
         raise RuntimeError(
             "exact candidate identity is required before selection/final replay"
@@ -3997,6 +4449,14 @@ def main() -> int:
     ):
         raise RuntimeError(
             "strict candidate replay requires holdout ledger and experiment id"
+        )
+    if (
+        args.require_candidate_identity
+        and prevalidated_selection_report is None
+    ):
+        raise RuntimeError(
+            "strict final replay requires a prevalidated selection report; "
+            "final holdout remains unopened"
         )
 
     symbols = normalize_symbols(args.symbols, args.symbol)
@@ -4020,9 +4480,41 @@ def main() -> int:
     use_per_symbol_corpus = bool(
         feature_csv_by_symbol or selection_feature_csv_by_symbol
     )
+    frozen_corpus_binding: dict[str, Any] | None = None
+    prevalidated_selection_binding: dict[str, Any] | None = None
+    if prevalidated_selection_report is not None:
+        if candidate_identity is None:
+            raise RuntimeError(
+                "prevalidated selection report requires exact candidate identity"
+            )
+        frozen_corpus_binding = build_frozen_corpus_binding(
+            corpus_manifest,
+            symbols=symbols,
+            per_symbol=use_per_symbol_corpus,
+        )
+        prevalidated_selection_binding = (
+            validate_prevalidated_selection_report(
+                prevalidated_selection_report,
+                candidate_identity=candidate_identity,
+                symbols=symbols,
+                selection_feature_csv=selection_feature_csv,
+                selection_feature_csv_by_symbol=(
+                    selection_feature_csv_by_symbol
+                ),
+                final_feature_csv=feature_csv,
+                final_feature_csv_by_symbol=feature_csv_by_symbol,
+                frozen_corpus_binding=frozen_corpus_binding,
+                target_bucket=args.target_bucket,
+            )
+        )
 
     # Freeze every symbol's selection policy before opening any final-holdout CSV.
-    for symbol in symbols:
+    # A strict three-domain final run reuses a verified development-frozen
+    # corpus and selection proof, so it must never enter this refit loop.
+    selection_symbols = (
+        [] if prevalidated_selection_binding is not None else symbols
+    )
+    for symbol in selection_symbols:
         symbol_selection_csv = selection_feature_csv_by_symbol.get(
             symbol,
             selection_feature_csv,
@@ -4143,6 +4635,30 @@ def main() -> int:
             "runs": symbol_selection_runs,
         }
 
+    if prevalidated_selection_binding is not None:
+        prevalidated_report = prevalidated_selection_binding["report"]
+        prevalidated_runs = prevalidated_report.get("runs")
+        prevalidated_symbol_reports = prevalidated_report.get(
+            "symbol_reports"
+        )
+        if not isinstance(prevalidated_runs, list) or not isinstance(
+            prevalidated_symbol_reports,
+            dict,
+        ):
+            raise RuntimeError(
+                "prevalidated selection evidence payload became invalid; "
+                "final holdout remains unopened"
+            )
+        selection_candidate_runs = prevalidated_runs
+        selection_candidate_symbol_reports = prevalidated_symbol_reports
+
+    if frozen_corpus_binding is None:
+        frozen_corpus_binding = build_frozen_corpus_binding(
+            corpus_manifest,
+            symbols=symbols,
+            per_symbol=use_per_symbol_corpus,
+        )
+
     # The exact Integrator candidate must clear selection before any final
     # holdout CSV is opened. Alpha probes remain diagnostics and cannot
     # substitute for this executable-candidate gate.
@@ -4196,6 +4712,16 @@ def main() -> int:
             else ""
         ),
         "evidence_domain": SELECTION_CORPUS_EVIDENCE_DOMAIN,
+        "frozen_corpus_binding": frozen_corpus_binding,
+        "prevalidated_selection_binding": (
+            {
+                key: value
+                for key, value in prevalidated_selection_binding.items()
+                if key != "report"
+            }
+            if prevalidated_selection_binding is not None
+            else None
+        ),
         "status": selection_candidate_gate["status"],
         "activation_gate": selection_candidate_gate,
         "aggregate_summary": selection_candidate_summary,
@@ -4220,7 +4746,7 @@ def main() -> int:
         and selection_candidate_gate["status"] == "fail"
     ):
         raise RuntimeError(
-            "exact Integrator candidate failed selection-validation; "
+            "exact candidate failed selection-validation; "
             "final holdout remains unopened: "
             + "; ".join(selection_candidate_gate["fail_reasons"])
         )
@@ -4384,6 +4910,9 @@ def main() -> int:
             "output_dir": str(symbol_output_dir),
             "source": per_symbol_source[symbol],
             "feature_csv": str(context["feature_csv"]),
+            "feature_sha256": hashlib.sha256(
+                context["feature_csv"].read_bytes()
+            ).hexdigest(),
             "base_interval_ms": context["base_interval_ms"],
             "thresholds": thresholds_by_symbol[symbol],
             "available_segments": context["available_segments"],
@@ -4463,6 +4992,16 @@ def main() -> int:
         "real_market_replay": real_market_replay,
         "base_config": str(base_config),
         "candidate_identity": candidate_identity,
+        "frozen_corpus_binding": frozen_corpus_binding,
+        "prevalidated_selection_binding": (
+            {
+                key: value
+                for key, value in prevalidated_selection_binding.items()
+                if key != "report"
+            }
+            if prevalidated_selection_binding is not None
+            else None
+        ),
         "selection_candidate_manifest": {
             "path": str(selection_candidate_manifest_path),
             "sha256": hashlib.sha256(

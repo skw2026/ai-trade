@@ -158,6 +158,12 @@ def build_features(data: Dict[str, np.ndarray], forward_bars: int) -> Dict[str, 
 
     return {
         "timestamp": data["timestamp"],
+        # 保留权威 OHLC，使同一份 feature store 可用于研究与
+        # C++ next-bar OHLC touch replay。只输出 close 会迫使回放依赖
+        # 历史缓存或旁路 merge，破坏本地/部署证据同构性。
+        "open": open_price,
+        "high": high,
+        "low": low,
         "close": close,
         "volume": volume,
         "ret_1": ret_1,
@@ -203,6 +209,9 @@ def write_feature_csv(
 ) -> int:
     ordered_cols = [
         "timestamp",
+        "open",
+        "high",
+        "low",
         "close",
         "volume",
         "ret_1",

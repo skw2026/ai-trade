@@ -497,11 +497,35 @@ class FactorSpec:
     invert_signal: bool
 
 
-def load_factor_specs(report_path: pathlib.Path, top_k: int) -> Tuple[str, List[FactorSpec]]:
+def load_factor_specs(
+    report_path: pathlib.Path,
+    top_k: int,
+    *,
+    expected_horizon_bars: int,
+    expected_execution_latency_bars: int,
+) -> Tuple[str, List[FactorSpec]]:
     with report_path.open("r", encoding="utf-8") as fp:
         payload = json.load(fp)
 
     factor_set_version = str(payload.get("factor_set_version", "unknown_factor_set"))
+    miner_horizon = int(payload.get("predict_horizon_bars", -1))
+    miner_latency = int(payload.get("execution_latency_bars", -1))
+    miner_purge = int(payload.get("purge_bars", -1))
+    required_purge = int(expected_horizon_bars) + int(
+        expected_execution_latency_bars
+    )
+    if (
+        miner_horizon != int(expected_horizon_bars)
+        or miner_latency != int(expected_execution_latency_bars)
+        or miner_purge < required_purge
+    ):
+        raise ValueError(
+            "miner/integrator 标签时间契约不一致: "
+            f"miner_horizon={miner_horizon}, expected_horizon={expected_horizon_bars}, "
+            f"miner_latency={miner_latency}, "
+            f"expected_latency={expected_execution_latency_bars}, "
+            f"miner_purge={miner_purge}, required_purge={required_purge}"
+        )
     factors = payload.get("factors", [])
     specs: List[FactorSpec] = []
     used = set()
@@ -780,6 +804,120 @@ def summarize_model_net_objective(
         "objective_definition": (
             "net_bps_per_unit_turnover_after_terminal_close"
         ),
+    }
+
+
+def apply_model_score_gain(score: np.ndarray, score_gain: float) -> np.ndarray:
+    """Mirror the C++ runtime: sigmoid(raw CatBoost logit * score_gain)."""
+    values = np.asarray(score, dtype=np.float64)
+    clipped_probability = np.clip(values, 1e-12, 1.0 - 1e-12)
+    raw_logit = np.log(clipped_probability / (1.0 - clipped_probability))
+    amplified = np.clip(raw_logit * float(score_gain), -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-amplified))
+
+
+def summarize_model_episode_objective(
+    score: np.ndarray,
+    execution_bar_return: np.ndarray,
+    round_trip_cost_bps: float,
+    confidence_threshold: float,
+    holding_bars: int,
+) -> Dict[str, Any]:
+    """Evaluate non-overlapping entries held for the label horizon.
+
+    Canary mode only opens from a flat account and exits through its protection
+    lifecycle.  Treating every low-confidence bar as an immediate flat order
+    over-counts turnover and does not match that runtime policy.  This prescreen
+    therefore opens only on an eligible score, ignores overlapping entries, and
+    realizes one round-trip cost when the fixed diagnostic horizon completes.
+    """
+    if len(score) != len(execution_bar_return):
+        raise ValueError("score and execution_bar_return must align")
+    horizon = max(1, int(holding_bars))
+    cost_bps = max(0.0, float(round_trip_cost_bps))
+    gross_values: List[float] = []
+    net_values: List[float] = []
+    directions: List[float] = []
+    active_bar_count = 0
+    index = 0
+    while index + horizon <= len(score):
+        raw_score = float(score[index])
+        confidence = 2.0 * raw_score - 1.0
+        if (
+            not math.isfinite(raw_score)
+            or abs(confidence) < max(0.0, float(confidence_threshold))
+        ):
+            index += 1
+            continue
+        path = np.asarray(
+            execution_bar_return[index : index + horizon],
+            dtype=np.float64,
+        )
+        if len(path) != horizon or not np.all(np.isfinite(path)):
+            index += 1
+            continue
+        direction = math.copysign(1.0, confidence)
+        gross_return = float(np.prod(1.0 + direction * path) - 1.0)
+        gross_bps = gross_return * 10000.0
+        gross_values.append(gross_bps)
+        net_values.append(gross_bps - cost_bps)
+        directions.append(direction)
+        active_bar_count += horizon
+        index += horizon
+
+    episode_count = len(net_values)
+    if episode_count == 0:
+        return {
+            "model_net_objective_sample_count": int(len(score)),
+            "mean_model_gross_edge_bps": 0.0,
+            "mean_model_net_edge_bps": 0.0,
+            "total_model_gross_edge_bps": 0.0,
+            "total_model_net_edge_bps": 0.0,
+            "median_model_net_edge_bps": 0.0,
+            "positive_model_net_edge_ratio": float("nan"),
+            "long_signal_ratio": 0.0,
+            "short_signal_ratio": 0.0,
+            "round_trip_cost_bps": cost_bps,
+            "trade_count": 0,
+            "turnover": 0.0,
+            "active_bar_count": 0,
+            "positive_trade_count": 0,
+            "positive_net_bar_count": 0,
+            "evaluated_bar_count": int(len(score)),
+            "net_bps_sum_squares": 0.0,
+            "terminal_position_closed": True,
+            "holding_bars": horizon,
+            "objective_definition": "non_overlapping_fixed_horizon_episodes",
+        }
+
+    gross_array = np.asarray(gross_values, dtype=np.float64)
+    net_array = np.asarray(net_values, dtype=np.float64)
+    direction_array = np.asarray(directions, dtype=np.float64)
+    turnover = float(episode_count * 2)
+    positive_trade_count = int(np.sum(net_array > 0.0))
+    return {
+        "model_net_objective_sample_count": int(len(score)),
+        "mean_model_gross_edge_bps": float(np.sum(gross_array)) / turnover,
+        "mean_model_net_edge_bps": float(np.sum(net_array)) / turnover,
+        "total_model_gross_edge_bps": float(np.sum(gross_array)),
+        "total_model_net_edge_bps": float(np.sum(net_array)),
+        "median_model_net_edge_bps": float(np.median(net_array)),
+        "positive_model_net_edge_ratio": (
+            float(positive_trade_count) / float(episode_count)
+        ),
+        "long_signal_ratio": float(np.mean(direction_array > 0.0)),
+        "short_signal_ratio": float(np.mean(direction_array < 0.0)),
+        "round_trip_cost_bps": cost_bps,
+        "trade_count": episode_count,
+        "turnover": turnover,
+        "active_bar_count": active_bar_count,
+        "positive_trade_count": positive_trade_count,
+        "positive_net_bar_count": positive_trade_count,
+        "evaluated_bar_count": int(len(score)),
+        "net_bps_sum_squares": float(np.sum(net_array * net_array)),
+        "terminal_position_closed": True,
+        "holding_bars": horizon,
+        "objective_definition": "non_overlapping_fixed_horizon_episodes",
     }
 
 
@@ -1434,6 +1572,21 @@ def main() -> int:
         help="feature bar 收盘到可执行持仓之间的延迟 bar 数",
     )
     parser.add_argument(
+        "--model_confidence_threshold",
+        type=float,
+        default=0.5,
+        help=(
+            "经济预筛与运行时一致的方向置信阈值，定义为 abs(2*p_up-1)；"
+            "0.1 对应 p_up >= 0.55 或 <= 0.45"
+        ),
+    )
+    parser.add_argument(
+        "--model_score_gain",
+        type=float,
+        default=1.0,
+        help="与 integrator.shadow.score_gain 一致的 CatBoost raw-logit 放大倍数",
+    )
+    parser.add_argument(
         "--label_round_trip_cost_bps",
         type=float,
         default=0.0,
@@ -1479,13 +1632,13 @@ def main() -> int:
         "--min_model_net_edge_lcb_bps",
         type=float,
         default=0.0,
-        help="治理主目标：OOS 每 bar 净收益 95% 正态下置信界下限",
+        help="治理主目标：OOS 每 bar 净收益 95%% 正态下置信界下限",
     )
     parser.add_argument(
         "--feature_clip_quantile",
         type=float,
         default=0.0,
-        help="特征稳健裁剪分位数；0 表示关闭，0.001 表示按 0.1%/99.9% 裁剪",
+        help="特征稳健裁剪分位数；0 表示关闭，0.001 表示按 0.1%%/99.9%% 裁剪",
     )
     parser.add_argument(
         "--fail_on_governance",
@@ -1579,6 +1732,10 @@ def main() -> int:
         raise ValueError("--early_stopping_rounds 必须大于 0")
     if int(args.execution_latency_bars) < 1:
         raise ValueError("--execution_latency_bars 必须大于等于 1")
+    if not (0.0 <= float(args.model_confidence_threshold) <= 1.0):
+        raise ValueError("--model_confidence_threshold 必须在 [0,1] 范围")
+    if float(args.model_score_gain) <= 0.0:
+        raise ValueError("--model_score_gain 必须大于 0")
     if (
         args.split_method == "rolling"
         and int(args.rolling_step_bars) < int(args.test_window_bars)
@@ -1598,7 +1755,12 @@ def main() -> int:
         series["timestamp"],
         int(args.bar_interval_ms),
     )
-    factor_set_version, factor_specs = load_factor_specs(miner_report_path, max(1, args.top_k))
+    factor_set_version, factor_specs = load_factor_specs(
+        miner_report_path,
+        max(1, args.top_k),
+        expected_horizon_bars=int(args.predict_horizon_bars),
+        expected_execution_latency_bars=int(args.execution_latency_bars),
+    )
     log_info(f"INTEGRATOR_START: bars={len(series['close'])}, factors={len(factor_specs)}")
 
     raw_features, feature_names, ret_1 = build_feature_matrix(series, factor_specs)
@@ -1683,7 +1845,7 @@ def main() -> int:
     model_net_total_turnover = 0.0
     model_net_total_trades = 0
     model_net_active_bar_count = 0
-    model_net_positive_bar_count = 0
+    model_net_positive_trade_count = 0
     model_net_evaluated_bar_count = 0
     model_net_bps_sum_squares = 0.0
     model_net_economic_split_count = 0
@@ -1829,10 +1991,16 @@ def main() -> int:
             if len(X_economic_test) > 0
             else np.asarray([], dtype=np.float64)
         )
-        net_objective = summarize_model_net_objective(
-            score=economic_score,
-            next_bar_return=test_execution_return,
+        economic_policy_score = apply_model_score_gain(
+            economic_score,
+            float(args.model_score_gain),
+        )
+        net_objective = summarize_model_episode_objective(
+            score=economic_policy_score,
+            execution_bar_return=test_execution_return,
             round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+            confidence_threshold=float(args.model_confidence_threshold),
+            holding_bars=int(args.predict_horizon_bars),
         )
         split_mean_net = float(net_objective.get("mean_model_net_edge_bps", float("nan")))
         if math.isfinite(split_mean_net):
@@ -1851,8 +2019,8 @@ def main() -> int:
         model_net_active_bar_count += int(
             net_objective.get("active_bar_count", 0)
         )
-        model_net_positive_bar_count += int(
-            net_objective.get("positive_net_bar_count", 0)
+        model_net_positive_trade_count += int(
+            net_objective.get("positive_trade_count", 0)
         )
         model_net_evaluated_bar_count += int(
             net_objective.get("evaluated_bar_count", 0)
@@ -2082,6 +2250,8 @@ def main() -> int:
         f"{int(args.execution_latency_bars)}|"
         f"{float(args.label_round_trip_cost_bps):.6f}|"
         f"{float(args.label_min_net_edge_bps):.6f}|"
+        f"{float(args.model_confidence_threshold):.6f}|"
+        f"{float(args.model_score_gain):.6f}|"
         f"{float(args.feature_clip_quantile):.6f}|"
         f"{args.random_seed}|{int(time.time() * 1000)}"
     )
@@ -2113,9 +2283,10 @@ def main() -> int:
     metrics_oos = {
         "primary_objective": "aggregate_model_net_bps_per_unit_turnover_after_cost",
         "primary_objective_definition": (
-            "aggregate non-overlapping OOS execution-bar position PnL divided by "
-            "aggregate turnover, after one-way cost and terminal close"
+            "aggregate non-overlapping OOS fixed-horizon canary episode PnL "
+            "divided by aggregate round-trip turnover after declared cost"
         ),
+        "model_economic_episode_holding_bars": int(args.predict_horizon_bars),
         "evidence_tier": "offline_model_economic_prescreen",
         "authoritative_promotion_evidence": "live_candidate_episode_canary",
         "required_offline_prescreen": "independent_cpp_replay_next_bar_ohlc_touch",
@@ -2132,9 +2303,9 @@ def main() -> int:
             model_net_edge_split_values
         ),
         "positive_model_net_edge_ratio": (
-            float(model_net_positive_bar_count)
-            / float(model_net_active_bar_count)
-            if model_net_active_bar_count > 0
+            float(model_net_positive_trade_count)
+            / float(model_net_total_trades)
+            if model_net_total_trades > 0
             else float("nan")
         ),
         "model_net_objective_sample_count": model_net_evaluated_bar_count,
@@ -2143,7 +2314,7 @@ def main() -> int:
         "model_net_total_turnover": model_net_total_turnover,
         "model_net_total_trades": model_net_total_trades,
         "model_net_active_bar_count": model_net_active_bar_count,
-        "model_net_positive_bar_count": model_net_positive_bar_count,
+        "model_net_positive_trade_count": model_net_positive_trade_count,
         "model_net_evaluated_bar_count": model_net_evaluated_bar_count,
         "model_net_mean_per_bar_bps": mean_net_per_bar,
         "model_net_edge_lcb_bps": model_net_edge_lcb_bps,
@@ -2163,6 +2334,8 @@ def main() -> int:
         "oos_duplicate_bar_count": 0,
         "oos_duplicate_bar_ratio": 0.0,
         "net_objective_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
+        "model_confidence_threshold": float(args.model_confidence_threshold),
+        "model_score_gain": float(args.model_score_gain),
         "train_auc_mean": mean_ignore_nan(train_auc_values),
         "train_auc_stdev": stdev_ignore_nan(train_auc_values),
         "auc_mean": mean_ignore_nan(auc_values),
@@ -2226,6 +2399,10 @@ def main() -> int:
             "min_model_net_edge_lcb_bps": float(
                 args.min_model_net_edge_lcb_bps
             ),
+            "model_confidence_threshold": float(
+                args.model_confidence_threshold
+            ),
+            "model_score_gain": float(args.model_score_gain),
             "min_auc_mean": float(args.min_auc_mean),
             "min_delta_auc_vs_baseline": float(args.min_delta_auc_vs_baseline),
             "min_split_trained_count": int(args.min_split_trained_count),
@@ -2270,6 +2447,10 @@ def main() -> int:
             "raw_bar_count": int(len(raw_features)),
             "predict_horizon_bars": int(args.predict_horizon_bars),
             "execution_latency_bars": int(args.execution_latency_bars),
+            "model_confidence_threshold": float(
+                args.model_confidence_threshold
+            ),
+            "model_score_gain": float(args.model_score_gain),
             "label_policy": label_policy,
             "time_axis_quality": time_axis_quality,
         },
@@ -2333,6 +2514,10 @@ def main() -> int:
             "label_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
             "label_min_net_edge_bps": float(args.label_min_net_edge_bps),
             "execution_latency_bars": int(args.execution_latency_bars),
+            "model_confidence_threshold": float(
+                args.model_confidence_threshold
+            ),
+            "model_score_gain": float(args.model_score_gain),
             "min_mean_model_net_edge_bps": float(args.min_mean_model_net_edge_bps),
             "min_positive_model_net_edge_ratio": float(
                 args.min_positive_model_net_edge_ratio

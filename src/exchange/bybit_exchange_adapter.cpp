@@ -381,6 +381,8 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
       LookupHeaderIndex(header_map, options.replay_interval_column);
   const auto funding_idx =
       LookupHeaderIndex(header_map, options.replay_funding_rate_column);
+  const auto execution_enabled_idx =
+      LookupHeaderIndex(header_map, "execution_enabled");
   const std::string default_symbol =
       options.symbols.empty() ? std::string("BTCUSDT") : options.symbols.front();
 
@@ -507,6 +509,25 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
       }
     }
 
+    bool execution_disabled = false;
+    if (execution_enabled_idx.has_value()) {
+      const std::string raw_execution_enabled =
+          CsvFieldAt(fields, *execution_enabled_idx);
+      if (!raw_execution_enabled.empty()) {
+        std::int64_t execution_enabled = 0;
+        if (!ParseReplayInt64(raw_execution_enabled, &execution_enabled) ||
+            (execution_enabled != 0 && execution_enabled != 1)) {
+          if (out_error != nullptr) {
+            *out_error =
+                "replay execution_enabled 必须为 0 或 1，行号: " +
+                std::to_string(line_no);
+          }
+          return false;
+        }
+        execution_disabled = execution_enabled == 0;
+      }
+    }
+
     out_events->push_back(MarketEvent{
         ts_ms,
         symbol,
@@ -519,6 +540,7 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
         high,
         low,
         false,
+        execution_disabled,
     });
   }
 

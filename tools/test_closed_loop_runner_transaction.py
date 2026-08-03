@@ -243,6 +243,66 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_committed_offline_evidence_is_published_hydrated_and_hash_verified(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=active-evidence-test
+                source tools/closed_loop_runner.sh assess \
+                  --output-root "${TMP_ROOT}/reports"
+
+                ACTIVE_OFFLINE_EVIDENCE_ROOT="${TMP_ROOT}/active-evidence"
+                ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH="${ACTIVE_OFFLINE_EVIDENCE_ROOT}/manifest.json"
+                ACTIVE_META_PATH="${TMP_ROOT}/active/meta.json"
+                REGISTRY_RESULT_PATH="${TMP_ROOT}/current/registry.json"
+                INTEGRATOR_REPORT_PATH="${TMP_ROOT}/current/integrator.json"
+                REPLAY_VALIDATION_REPORT_PATH="${TMP_ROOT}/current/replay.json"
+                REPLAY_OPTIMIZATION_REPORT_PATH="${TMP_ROOT}/current/optimization.json"
+                STRATEGY_DIAGNOSE_REPORT_PATH="${TMP_ROOT}/current/strategy.json"
+                ALPHA_MECHANISM_PROBE_REPORT_PATH="${TMP_ROOT}/current/alpha.json"
+                RESEARCH_DOMAIN_SPLIT_REPORT_PATH="${TMP_ROOT}/current/domains.json"
+                FEATURE_PARITY_REPORT_PATH="${TMP_ROOT}/current/parity.json"
+                mkdir -p "${TMP_ROOT}/active" "${TMP_ROOT}/current"
+                printf '{"model_version":"candidate-active"}\n' > "${ACTIVE_META_PATH}"
+                printf '{"model_version":"candidate-active","checksums":{}}\n' > "${REGISTRY_RESULT_PATH}"
+                printf '{"name":"integrator-original"}\n' > "${INTEGRATOR_REPORT_PATH}"
+                printf '{"name":"replay-original"}\n' > "${REPLAY_VALIDATION_REPORT_PATH}"
+                printf '{"name":"optimization-original"}\n' > "${REPLAY_OPTIMIZATION_REPORT_PATH}"
+                printf '{"name":"strategy-original"}\n' > "${STRATEGY_DIAGNOSE_REPORT_PATH}"
+                printf '{"name":"alpha-original"}\n' > "${ALPHA_MECHANISM_PROBE_REPORT_PATH}"
+                printf '{"name":"domains-original"}\n' > "${RESEARCH_DOMAIN_SPLIT_REPORT_PATH}"
+                printf '{"name":"parity-original"}\n' > "${FEATURE_PARITY_REPORT_PATH}"
+
+                publish_active_offline_evidence
+                printf '{"name":"integrator-mutated"}\n' > "${INTEGRATOR_REPORT_PATH}"
+                printf '{"name":"replay-mutated"}\n' > "${REPLAY_VALIDATION_REPORT_PATH}"
+                hydrate_active_offline_evidence
+                grep -F 'integrator-original' "${INTEGRATOR_REPORT_PATH}"
+                grep -F 'replay-original' "${REPLAY_VALIDATION_REPORT_PATH}"
+
+                ACTIVE_REPLAY="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifacts"]["replay_validation_report"]["path"])' "${ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH}")"
+                printf '{"name":"tampered"}\n' > "${ACTIVE_REPLAY}"
+                if hydrate_active_offline_evidence; then
+                  echo "tampered active evidence unexpectedly accepted"
+                  exit 1
+                fi
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "TMP_ROOT": td,
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_activation_resolver_accumulates_episode_evidence_then_commits(self):
         with tempfile.TemporaryDirectory() as td:
             script = textwrap.dedent(
@@ -261,7 +321,13 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 ACTIVATION_TRANSACTION_STATE_PATH="${ACTIVATION_TRANSACTION_DIR}/state.json"
                 ACTIVATION_TRANSACTION_SNAPSHOT_PATH="${TMP_ROOT}/transaction_snapshot.json"
                 ACTIVATION_DECISION_PATH="${TMP_ROOT}/activation_decision.json"
+                ACTIVE_OFFLINE_EVIDENCE_ROOT="${TMP_ROOT}/active-evidence"
+                ACTIVE_OFFLINE_EVIDENCE_MANIFEST_PATH="${ACTIVE_OFFLINE_EVIDENCE_ROOT}/manifest.json"
                 REGISTRY_RESULT_PATH="${TMP_ROOT}/registry_result.json"
+                INTEGRATOR_REPORT_PATH="${TMP_ROOT}/integrator_report.json"
+                REPLAY_VALIDATION_REPORT_PATH="${TMP_ROOT}/replay_report.json"
+                STRATEGY_DIAGNOSE_REPORT_PATH="${TMP_ROOT}/strategy_report.json"
+                ALPHA_MECHANISM_PROBE_REPORT_PATH="${TMP_ROOT}/alpha_report.json"
                 ASSESS_JSON_PATH="${TMP_ROOT}/runtime_assess.json"
                 MECHANISM_AUDIT_REPORT_PATH="${TMP_ROOT}/mechanism_audit.json"
                 ACTIVATION_MIN_CANARY_EPISODES=30
@@ -296,6 +362,10 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                   }
                 }
                 EOF
+                printf '{"name":"integrator"}\n' > "${INTEGRATOR_REPORT_PATH}"
+                printf '{"name":"replay"}\n' > "${REPLAY_VALIDATION_REPORT_PATH}"
+                printf '{"name":"strategy"}\n' > "${STRATEGY_DIAGNOSE_REPORT_PATH}"
+                printf '{"name":"alpha"}\n' > "${ALPHA_MECHANISM_PROBE_REPORT_PATH}"
                 mark_activation_applied
 
                 CLOSED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

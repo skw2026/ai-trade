@@ -112,6 +112,8 @@ RUN pip3 install --no-cache-dir --no-compile --break-system-packages \
     find /usr/local/lib/python3.12/dist-packages \
       -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete && \
     python3 -c 'import catboost, numpy; print(catboost.__version__, numpy.__version__)'
+ENTRYPOINT ["python3", "/app/tools/integrator_train.py"]
+CMD ["--help"]
 
 # [修改] 默认目标恢复为 runtime，确保主服务轻量
 FROM runtime

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import json
 import math
 import pathlib
 import sys
+import tempfile
 import unittest
 
 
@@ -26,6 +28,35 @@ TRAIN = load_module("integrator_train")
 
 @unittest.skipIf(TRAIN.np is None, "numpy is required")
 class IntegratorTrainTest(unittest.TestCase):
+    def test_miner_factor_contract_must_match_integrator_label_axis(self):
+        payload = {
+            "factor_set_version": "factor_set_test",
+            "predict_horizon_bars": 12,
+            "execution_latency_bars": 1,
+            "purge_bars": 13,
+            "factors": [
+                {"expression": "ts_delta(close,12)", "invert_signal": False}
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = pathlib.Path(temp_dir) / "miner.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            version, factors = TRAIN.load_factor_specs(
+                path,
+                10,
+                expected_horizon_bars=12,
+                expected_execution_latency_bars=1,
+            )
+            self.assertEqual(version, "factor_set_test")
+            self.assertEqual(len(factors), 1)
+            with self.assertRaisesRegex(ValueError, "标签时间契约不一致"):
+                TRAIN.load_factor_specs(
+                    path,
+                    10,
+                    expected_horizon_bars=48,
+                    expected_execution_latency_bars=1,
+                )
+
     def test_ts_rank_matches_online_feature_engine_semantics(self):
         values = TRAIN.np.asarray([1.0, 2.0, 3.0, 4.0, 5.0], dtype=TRAIN.np.float64)
         rank = TRAIN.ts_rank(values, window=5)
@@ -74,6 +105,49 @@ class IntegratorTrainTest(unittest.TestCase):
         self.assertEqual(summary["neutral_dropped_count"], 1)
         self.assertEqual(summary["valid_positive_label_count"], 1)
         self.assertEqual(summary["valid_negative_label_count"], 2)
+
+    def test_model_net_objective_uses_runtime_confidence_definition(self):
+        score = TRAIN.np.asarray([0.56, 0.54, 0.44, 0.46], dtype=TRAIN.np.float64)
+        returns = TRAIN.np.asarray([0.002, 0.002, -0.002, -0.002], dtype=TRAIN.np.float64)
+        active = TRAIN.summarize_model_net_objective(
+            score,
+            returns,
+            round_trip_cost_bps=10.0,
+            confidence_threshold=0.10,
+        )
+        blocked = TRAIN.summarize_model_net_objective(
+            score,
+            returns,
+            round_trip_cost_bps=10.0,
+            confidence_threshold=0.50,
+        )
+        self.assertEqual(active["active_bar_count"], 2)
+        self.assertGreater(active["mean_model_net_edge_bps"], 0.0)
+        self.assertEqual(blocked["active_bar_count"], 0)
+        self.assertEqual(blocked["trade_count"], 0)
+
+    def test_model_score_gain_matches_runtime_raw_logit_amplification(self):
+        score = TRAIN.np.asarray([0.55, 0.45, 0.5], dtype=TRAIN.np.float64)
+        amplified = TRAIN.apply_model_score_gain(score, 8.0)
+        self.assertGreater(float(amplified[0]), 0.75)
+        self.assertLess(float(amplified[1]), 0.25)
+        self.assertAlmostEqual(float(amplified[2]), 0.5, places=12)
+
+    def test_episode_objective_uses_non_overlapping_horizon_and_round_trip_cost(self):
+        score = TRAIN.np.asarray([0.9, 0.1, 0.1, 0.9], dtype=TRAIN.np.float64)
+        returns = TRAIN.np.asarray([0.002, 0.002, -0.002, -0.002], dtype=TRAIN.np.float64)
+        result = TRAIN.summarize_model_episode_objective(
+            score,
+            returns,
+            round_trip_cost_bps=10.0,
+            confidence_threshold=0.5,
+            holding_bars=2,
+        )
+        self.assertEqual(result["trade_count"], 2)
+        self.assertEqual(result["active_bar_count"], 4)
+        self.assertEqual(result["turnover"], 4.0)
+        self.assertEqual(result["positive_trade_count"], 2)
+        self.assertGreater(result["mean_model_net_edge_bps"], 0.0)
 
     def test_feature_transform_clips_extreme_values_and_reports_bounds(self):
         feature = TRAIN.np.asarray([[float(i)] for i in range(100)], dtype=TRAIN.np.float64)

@@ -41,6 +41,8 @@ struct RuntimeOptions {
   std::optional<int> miner_generations;
   std::optional<int> miner_population;
   std::optional<int> miner_elite;
+  std::optional<int> miner_predict_horizon_bars;
+  std::optional<int> miner_execution_latency_bars;
   bool run_feature_parity{false};
   std::string feature_parity_bars_path{
       "tools/fixtures/feature_parity_bars_v1.csv"};
@@ -339,6 +341,34 @@ RuntimeOptions ParseOptions(int argc, char** argv) {
       ParseOptionalIntArg(argv[i], "--miner_elite", &options.miner_elite);
       continue;
     }
+    if (arg.rfind("--miner_predict_horizon_bars=", 0) == 0) {
+      ParseOptionalIntArg(
+          arg.substr(std::string("--miner_predict_horizon_bars=").size()),
+          "--miner_predict_horizon_bars",
+          &options.miner_predict_horizon_bars);
+      continue;
+    }
+    if (arg == "--miner_predict_horizon_bars" && i + 1 < argc) {
+      ++i;
+      ParseOptionalIntArg(argv[i],
+                          "--miner_predict_horizon_bars",
+                          &options.miner_predict_horizon_bars);
+      continue;
+    }
+    if (arg.rfind("--miner_execution_latency_bars=", 0) == 0) {
+      ParseOptionalIntArg(
+          arg.substr(std::string("--miner_execution_latency_bars=").size()),
+          "--miner_execution_latency_bars",
+          &options.miner_execution_latency_bars);
+      continue;
+    }
+    if (arg == "--miner_execution_latency_bars" && i + 1 < argc) {
+      ++i;
+      ParseOptionalIntArg(argv[i],
+                          "--miner_execution_latency_bars",
+                          &options.miner_execution_latency_bars);
+      continue;
+    }
   }
   return options;
 }
@@ -429,11 +459,25 @@ int RunOfflineMiner(const RuntimeOptions& options) {
   if (options.miner_elite.has_value() && *options.miner_elite > 0) {
     miner_config.elite_size = *options.miner_elite;
   }
+  if (options.miner_predict_horizon_bars.has_value() &&
+      *options.miner_predict_horizon_bars > 0) {
+    miner_config.predict_horizon_bars =
+        *options.miner_predict_horizon_bars;
+  }
+  if (options.miner_execution_latency_bars.has_value() &&
+      *options.miner_execution_latency_bars >= 0) {
+    miner_config.execution_latency_bars =
+        *options.miner_execution_latency_bars;
+  }
   ai_trade::LogInfo("MINER_START: bars=" + std::to_string(bars.size()) +
                     ", top_k=" + std::to_string(miner_config.top_k) +
                     ", generations=" + std::to_string(miner_config.generations) +
                     ", population=" + std::to_string(miner_config.population_size) +
-                    ", elite=" + std::to_string(miner_config.elite_size));
+                    ", elite=" + std::to_string(miner_config.elite_size) +
+                    ", horizon=" +
+                    std::to_string(miner_config.predict_horizon_bars) +
+                    ", latency=" +
+                    std::to_string(miner_config.execution_latency_bars));
 
   ai_trade::research::Miner miner;
   const ai_trade::research::MinerReport report = miner.Run(bars, miner_config);

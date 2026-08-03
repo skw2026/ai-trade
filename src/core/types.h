@@ -64,6 +64,8 @@ struct MarketEvent {
   Price low_price{std::numeric_limits<double>::quiet_NaN()};
   // 模型专用 K 线不应再次驱动账户、策略和执行链。
   bool feature_only{false};
+  // Replay 可先注入因果历史来预热 regime/strategy，但该阶段禁止下单。
+  bool execution_disabled{false};
 };
 
 /// Regime Analysis Snapshot

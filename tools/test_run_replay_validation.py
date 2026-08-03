@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import csv
 import importlib.util
 import hashlib
 import json
@@ -93,8 +94,128 @@ class RunReplayValidationTest(unittest.TestCase):
         self.assertEqual(
             first["state_isolation_policy"], "fresh_wal_per_symbol_segment"
         )
+        self.assertEqual(first["segment_sampling"]["warmup_context_bars"], 96)
+        self.assertTrue(
+            first["segment_sampling"]["warmup_context_execution_disabled"]
+        )
         self.assertTrue(first["selection_and_final_share_contract"])
         self.assertNotEqual(first["sha256"], second["sha256"])
+
+    def test_baseline_candidate_identity_binds_binary_config_and_objective(self):
+        root = pathlib.Path(__file__).resolve().parent.parent
+        args = argparse.Namespace(
+            assess_stage="S3",
+            min_runtime_status=1,
+            min_execution_active_runs=3,
+            min_execution_pass_runs=3,
+            min_total_fills=20,
+            min_mean_realized_net_per_fill=0.0,
+            min_break_even_fee_multiplier=1.25,
+            warn_mean_filtered_cost_ratio=0.8,
+            min_tradable_symbols=1,
+            target_bucket="trend",
+            max_segments=16,
+            min_segment_bars=40,
+        )
+        identity = REPLAY.build_baseline_candidate_identity(
+            args,
+            root=root,
+            base_config=root / "config" / "bybit.replay.assess.maker_first.yaml",
+            trade_bot=pathlib.Path(__file__),
+        )
+
+        self.assertEqual(identity["candidate_type"], "baseline_runtime_v1")
+        self.assertFalse(identity["integrator_model_required"])
+        self.assertEqual(len(identity["trade_bot_sha256"]), 64)
+        self.assertEqual(len(identity["identity_sha256"]), 64)
+
+    def test_prevalidated_selection_report_binds_identity_data_and_corpus(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            selection_csv = root / "selection.csv"
+            selection_csv.write_text(
+                "timestamp,close,volume\n1000,100,1\n",
+                encoding="utf-8",
+            )
+            final_csv = root / "final.csv"
+            identity = {
+                "candidate_type": "baseline_runtime_v1",
+                "trade_bot_sha256": "b" * 64,
+            }
+            identity["identity_sha256"] = hashlib.sha256(
+                json.dumps(
+                    identity,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            corpus_binding = {
+                "schema_version": "frozen_replay_corpus_binding_v1",
+                "per_symbol": {"SOLUSDT": {"sha256": "c" * 64}},
+                "binding_sha256": "d" * 64,
+            }
+            report = {
+                "status": "pass",
+                "activation_gate": {"status": "pass"},
+                "candidate_identity": identity,
+                "target_bucket": "trend",
+                "symbols": ["SOLUSDT"],
+                "real_market_replay": True,
+                "execution_evidence_contract": {
+                    "schema_version": "replay_execution_prescreen_v1"
+                },
+                "frozen_corpus_binding": corpus_binding,
+                "symbol_reports": {
+                    "SOLUSDT": {
+                        "feature_csv": str(selection_csv),
+                        "feature_sha256": hashlib.sha256(
+                            selection_csv.read_bytes()
+                        ).hexdigest(),
+                        "aggregate_validation": {"status": "pass"},
+                    }
+                },
+                "holdout_consumption": {
+                    "ledger_path": "",
+                    "claimed_before_evaluation": False,
+                },
+                "runs": [],
+            }
+            report_path = root / "selection_report.json"
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+
+            binding = REPLAY.validate_prevalidated_selection_report(
+                report_path,
+                candidate_identity=identity,
+                symbols=["SOLUSDT"],
+                selection_feature_csv=selection_csv,
+                selection_feature_csv_by_symbol={},
+                final_feature_csv=final_csv,
+                final_feature_csv_by_symbol={},
+                frozen_corpus_binding=corpus_binding,
+                target_bucket="trend",
+            )
+
+            self.assertEqual(binding["status"], "pass")
+            self.assertEqual(
+                binding["candidate_identity_sha256"],
+                identity["identity_sha256"],
+            )
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "frozen corpus binding mismatch",
+            ):
+                REPLAY.validate_prevalidated_selection_report(
+                    report_path,
+                    candidate_identity=identity,
+                    symbols=["SOLUSDT"],
+                    selection_feature_csv=selection_csv,
+                    selection_feature_csv_by_symbol={},
+                    final_feature_csv=final_csv,
+                    final_feature_csv_by_symbol={},
+                    frozen_corpus_binding={**corpus_binding, "binding_sha256": "e" * 64},
+                    target_bucket="trend",
+                )
 
     def test_replay_state_directory_is_fresh_and_non_reusable(self):
         with tempfile.TemporaryDirectory() as td:
@@ -144,7 +265,7 @@ class RunReplayValidationTest(unittest.TestCase):
             corpus_manifest.write_text(
                 json.dumps(
                     {
-                        "schema_version": "replay_selection_manifest_v2",
+                        "schema_version": "replay_selection_manifest_v3",
                         "evidence_domain": "selection_validation",
                         "candidate_set_frozen": True,
                         "symbol": "SOLUSDT",
@@ -161,8 +282,14 @@ class RunReplayValidationTest(unittest.TestCase):
                             "extreme_range_pct": 0.01,
                         },
                         "selection_policy": (
-                            "chronological_quantiles_without_outcome_v1"
+                            "chronological_quantiles_without_outcome_v2"
                         ),
+                        "threshold_policy": {
+                            "trend_quantile": 0.50,
+                            "extreme_quantile": 0.90,
+                            "fit_domain": "selection_validation",
+                            "holdout_refit_forbidden": True,
+                        },
                         "sampling_quantiles": [0.0, 1.0],
                     }
                 ),
@@ -424,6 +551,30 @@ class RunReplayValidationTest(unittest.TestCase):
             activation["fail_reasons"],
         )
 
+    def test_activation_gate_baseline_candidate_has_no_false_diagnostic_warning(self):
+        candidate = {
+            "name": "baseline_all",
+            "diagnostic_only": False,
+            "status": "pass",
+            "deployable_config": {"requires_rerun": False},
+        }
+        activation = REPLAY.build_activation_gate_report(
+            aggregate_validation={"status": "pass", "fail_reasons": []},
+            economics_report={
+                "optimizer": {
+                    "status": "pass",
+                    "best_deployable_candidate": candidate,
+                },
+                "execution_cost_plan": {"status": "pass"},
+            },
+            symbol_reports={},
+            source_symbol="",
+        )
+
+        self.assertEqual(activation["status"], "pass")
+        self.assertEqual(activation["warn_reasons"], [])
+        self.assertEqual(activation["selected_candidate"]["name"], "baseline_all")
+
     def test_aggregate_run_summaries_fails_when_mean_masks_negative_median(self):
         runs = []
         for realized_net in (-0.002, -0.001, -0.001, 0.020):
@@ -673,6 +824,47 @@ class RunReplayValidationTest(unittest.TestCase):
         self.assertEqual(report["low_capture_segment_count"], 2)
         self.assertGreater(report["mean_path_fee_coverage_ratio"], 2.0)
 
+    def test_exit_capture_prefers_order_episode_evidence_over_segment_proxy(self):
+        economics_rows = [
+            {
+                "symbol": "SOLUSDT",
+                "segment_index": 1,
+                "fill_count": 6,
+                "realized_net_per_fill": 0.10,
+                "fee_usd": 0.30,
+                "fee_per_fill_usd": 0.05,
+                "fee_bps_per_fill": 4.0,
+                "estimated_gross_pnl_usd": 0.90,
+                "estimated_gross_per_fill_usd": 0.15,
+                # The whole replay segment continued much farther than the
+                # actual trade episode, so this proxy deliberately looks poor.
+                "segment_close_path_mfe": 0.02,
+                "segment_close_path_efficiency": 0.9,
+                "exit_capture_sample_count": 4,
+                "exit_capture_low_count": 0,
+                "exit_capture_low_ratio": 0.0,
+                "exit_capture_mean_path_mfe_bps": 36.0,
+                "exit_capture_mean_captured_gross_bps": 32.0,
+                "exit_capture_mean_captured_net_bps": 26.0,
+                "exit_capture_mean_fee_bps": 5.5,
+                "exit_capture_mean_capture_ratio": 0.84,
+            }
+        ]
+
+        report = REPLAY.build_exit_capture_report(economics_rows)
+
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["authoritative_source"], "order_episode_runtime")
+        self.assertEqual(report["sample_count"], 4)
+        self.assertAlmostEqual(report["mean_gross_capture_of_path_mfe"], 0.84)
+        self.assertLess(
+            report["segment_proxy"]["mean_gross_capture_of_path_mfe"],
+            0.10,
+        )
+        self.assertEqual(report["proxy_diagnostics"], [
+            "path_mfe_covers_cost_but_gross_capture_low"
+        ])
+
     def test_execution_cost_plan_marks_lower_cost_candidate_requires_rerun(self):
         economics_rows = [
             {
@@ -736,6 +928,46 @@ class RunReplayValidationTest(unittest.TestCase):
         self.assertAlmostEqual(attribution["close_return"], 0.05)
         self.assertAlmostEqual(attribution["close_path_mfe"], 0.05)
         self.assertAlmostEqual(attribution["close_path_mae"], 0.0)
+
+    def test_replay_csv_prepends_execution_disabled_causal_warmup(self):
+        rows = [
+            REPLAY.FeatureRow(
+                timestamp=1_700_000_000_000 + idx * 300_000,
+                open=100.0 + idx,
+                high=101.0 + idx,
+                low=99.0 + idx,
+                close=100.0 + idx,
+                volume=10.0,
+                features={},
+            )
+            for idx in range(8)
+        ]
+        segment = REPLAY.ReplaySegment(
+            start_index=5,
+            end_index=7,
+            start_timestamp=rows[5].timestamp,
+            end_timestamp=rows[7].timestamp,
+            bars=3,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            output = pathlib.Path(td) / "replay.csv"
+            context_bars = REPLAY.write_replay_csv(
+                rows,
+                segment,
+                "SOLUSDT",
+                output,
+                300_000,
+                warmup_context_bars=4,
+            )
+            with output.open("r", encoding="utf-8") as fp:
+                payload = list(csv.DictReader(fp))
+
+        self.assertEqual(context_bars, 4)
+        self.assertEqual(len(payload), 7)
+        self.assertEqual(
+            [row["execution_enabled"] for row in payload],
+            ["0", "0", "0", "0", "1", "1", "1"],
+        )
 
     def test_symbol_tradeability_cannot_suppress_negative_aggregate_fail(self):
         aggregate_validation = {

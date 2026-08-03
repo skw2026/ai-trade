@@ -2680,17 +2680,169 @@ int main() {
     std::unordered_set<std::string> recovered_intent_ids;
     std::unordered_set<std::string> recovered_fill_ids;
     std::vector<ai_trade::FillEvent> recovered_position_fills;
+    std::unordered_map<std::string, ai_trade::OrderIntent>
+        recovered_active_intents;
     if (!app.wal_.LoadState(&recovered_intent_ids,
                             &recovered_fill_ids,
                             &recovered_position_fills,
-                            &wal_error) ||
+                            &wal_error,
+                            &recovered_active_intents) ||
         recovered_fill_ids.count(stale_fill.fill_id) != 1U ||
-        !recovered_position_fills.empty()) {
-      std::cerr << "空仓检查点后只能重放检查点之后的仓位成交\n";
+        !recovered_position_fills.empty() ||
+        !recovered_active_intents.empty()) {
+      std::cerr << "空仓检查点后只能恢复检查点之后的成交与活动意图\n";
       return 1;
     }
     app.Shutdown();
     std::filesystem::remove_all(temp_dir, ec);
+  }
+
+  {
+    const auto temp_dir = std::filesystem::temp_directory_path() /
+                          "ai_trade_startup_ghost_order_rebase_test";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+    std::filesystem::create_directories(temp_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = temp_dir.string();
+    config.exchange = "mock";
+    config.mode = "paper";
+    config.primary_symbol = "SOLUSDT";
+    config.protection.enabled = false;
+
+    auto adapter = std::make_unique<ai_trade::MockExchangeAdapter>(
+        std::vector<double>{100.0}, "SOLUSDT");
+    if (!adapter->Connect()) {
+      std::cerr << "启动幽灵单测试 mock 连接失败\n";
+      return 1;
+    }
+
+    ai_trade::BotApplication app(config);
+    app.adapter_ = std::move(adapter);
+    std::string wal_error;
+    if (!app.wal_.Initialize(&wal_error)) {
+      std::cerr << "启动幽灵单测试 WAL 初始化失败: " << wal_error
+                << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent stale_intent;
+    stale_intent.client_order_id = "startup-ghost-entry";
+    stale_intent.symbol = "SOLUSDT";
+    stale_intent.purpose = ai_trade::OrderPurpose::kEntry;
+    stale_intent.direction = 1;
+    stale_intent.qty = 5.0;
+    stale_intent.price = 100.0;
+    if (!app.wal_.AppendIntent(stale_intent, &wal_error) ||
+        !app.oms_.RegisterIntent(stale_intent)) {
+      std::cerr << "启动幽灵单测试 intent 构造失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(stale_intent.client_order_id);
+    app.persisted_intent_by_id_[stale_intent.client_order_id] = stale_intent;
+
+    if (!app.SyncRemotePositions() ||
+        !app.startup_position_lineage_mismatches_.empty() ||
+        !app.RecoverStartupOrdersAndProtection()) {
+      std::cerr << "远端空仓无挂单时幽灵单恢复失败\n";
+      return 1;
+    }
+    const auto* stale_record = app.oms_.Find(stale_intent.client_order_id);
+    if (stale_record == nullptr ||
+        stale_record->state != ai_trade::OrderState::kCancelled ||
+        app.oms_.HasPendingNetPositionOrders()) {
+      std::cerr << "权威空仓快照必须终态化本地幽灵净仓位订单\n";
+      return 1;
+    }
+
+    std::unordered_set<std::string> recovered_intent_ids;
+    std::unordered_set<std::string> recovered_fill_ids;
+    std::vector<ai_trade::FillEvent> recovered_fills;
+    std::unordered_map<std::string, ai_trade::OrderIntent>
+        recovered_active_intents;
+    if (!app.wal_.LoadState(&recovered_intent_ids,
+                            &recovered_fill_ids,
+                            &recovered_fills,
+                            &wal_error,
+                            &recovered_active_intents) ||
+        !recovered_active_intents.empty()) {
+      std::cerr << "启动幽灵单不得跨空仓检查点再次恢复\n";
+      return 1;
+    }
+    app.Shutdown();
+    std::filesystem::remove_all(temp_dir, ec);
+  }
+
+  {
+    ai_trade::AppConfig config;
+    config.exchange = "mock";
+    config.mode = "paper";
+    config.primary_symbol = "SOLUSDT";
+    config.reconcile.enabled = true;
+    config.reconcile.interval_ticks = 1;
+    config.reconcile.pending_order_stale_ms = 60000;
+    config.protection.enabled = false;
+
+    auto adapter = std::make_unique<ai_trade::MockExchangeAdapter>(
+        std::vector<double>{100.0, 100.0}, "SOLUSDT");
+    if (!adapter->Connect()) {
+      std::cerr << "对账幽灵单测试 mock 连接失败\n";
+      return 1;
+    }
+    ai_trade::MarketEvent market;
+    adapter->PollMarket(&market);
+
+    ai_trade::BotApplication app(config);
+    app.adapter_ = std::move(adapter);
+    ai_trade::OrderIntent stale_intent;
+    stale_intent.client_order_id = "runtime-ghost-entry";
+    stale_intent.symbol = "SOLUSDT";
+    stale_intent.purpose = ai_trade::OrderPurpose::kEntry;
+    stale_intent.direction = 1;
+    stale_intent.qty = 5.0;
+    stale_intent.price = 100.0;
+    if (!app.oms_.RegisterIntent(stale_intent)) {
+      std::cerr << "对账幽灵单测试注册失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(stale_intent.client_order_id);
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+    app.pending_net_order_enqueued_ms_[stale_intent.client_order_id] =
+        now_ms - config.reconcile.pending_order_stale_ms - 1;
+    app.integrator_lineage_by_intent_id_[stale_intent.client_order_id] =
+        ai_trade::BotApplication::IntegratorCandidateLineage{
+            .candidate_id = "ghost-candidate"};
+    app.RunReconcile();
+    const auto* stale_record = app.oms_.Find(stale_intent.client_order_id);
+    if (stale_record == nullptr ||
+        stale_record->state != ai_trade::OrderState::kCancelled ||
+        app.oms_.HasPendingNetPositionOrders() ||
+        !app.pending_net_order_enqueued_ms_.empty() ||
+        !app.integrator_lineage_by_intent_id_.empty()) {
+      std::cerr << "远端快照缺失的陈旧单应直接收敛，不得循环撤单\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent fresh_intent = stale_intent;
+    fresh_intent.client_order_id = "fresh-submit-snapshot-race";
+    if (!app.oms_.RegisterIntent(fresh_intent)) {
+      std::cerr << "新单快照竞态测试注册失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(fresh_intent.client_order_id);
+    app.pending_net_order_enqueued_ms_[fresh_intent.client_order_id] = now_ms;
+    app.RunReconcile();
+    const auto* fresh_record = app.oms_.Find(fresh_intent.client_order_id);
+    if (fresh_record == nullptr ||
+        fresh_record->state != ai_trade::OrderState::kSent ||
+        !app.oms_.HasPendingNetPositionOrders()) {
+      std::cerr << "未超时新单不得因远端快照短暂缺失被终态化\n";
+      return 1;
+    }
+    app.Shutdown();
   }
 
   {
@@ -9429,10 +9581,10 @@ int main() {
     {
       std::ofstream out(replay_path);
       out << "timestamp,symbol,open,high,low,price,volume,interval_ms,"
-             "funding_rate_per_interval\n"
-          << "1700000000000,BTCUSDT,49900,50100,49800,50000,12.5,300000,\n"
+             "funding_rate_per_interval,execution_enabled\n"
+          << "1700000000000,BTCUSDT,49900,50100,49800,50000,12.5,300000,,0\n"
           << "1700000300000,BTCUSDT,50000,50200,49950,50120,10.0,300000,"
-             "0.00001\n";
+             "0.00001,1\n";
     }
     ai_trade::BybitAdapterOptions options;
     options.mode = "replay";
@@ -9460,7 +9612,7 @@ int main() {
       return 1;
     }
     if (!NearlyEqual(first.price, 50000.0) || !NearlyEqual(first.volume, 12.5) ||
-        first.interval_ms != 300000 ||
+        first.interval_ms != 300000 || first.execution_disabled != true ||
         !NearlyEqual(first.open_price, 49900.0) ||
         !NearlyEqual(first.high_price, 50100.0) ||
         !NearlyEqual(first.low_price, 49800.0)) {
@@ -9468,7 +9620,7 @@ int main() {
       return 1;
     }
     if (!NearlyEqual(second.price, 50120.0) || !NearlyEqual(second.volume, 10.0) ||
-        second.interval_ms != 300000 ||
+        second.interval_ms != 300000 || second.execution_disabled ||
         !NearlyEqual(second.funding_rate_per_interval, 0.00001)) {
       std::cerr << "bybit CSV replay 第二条行情不符合预期\n";
       return 1;
@@ -10539,9 +10691,24 @@ int main() {
     }
     if (report_1.random_seed != 42 ||
         report_1.search_space_version.empty() ||
+        report_1.predict_horizon_bars != 1 ||
+        report_1.execution_latency_bars != 0 ||
+        report_1.purge_bars != 1 ||
         report_1.random_baseline_trials <= 0 ||
         report_1.random_baseline_oos_abs_ic.sample_count <= 0) {
       std::cerr << "Miner 报告元数据/随机基线统计不符合预期\n";
+      return 1;
+    }
+    auto horizon_config = config;
+    horizon_config.predict_horizon_bars = 12;
+    horizon_config.execution_latency_bars = 1;
+    const ai_trade::research::MinerReport horizon_report =
+        miner.Run(bars, horizon_config);
+    if (horizon_report.predict_horizon_bars != 12 ||
+        horizon_report.execution_latency_bars != 1 ||
+        horizon_report.purge_bars != 13 ||
+        horizon_report.factor_set_version == report_1.factor_set_version) {
+      std::cerr << "Miner 标签周期/延迟/净化契约未进入因子版本\n";
       return 1;
     }
     if (report_1.selection_policy !=

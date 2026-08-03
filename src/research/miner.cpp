@@ -146,13 +146,21 @@ std::vector<double> ElementWiseAbs(const std::vector<double>& values) {
   return out;
 }
 
-std::vector<double> BuildForwardReturns(const std::vector<double>& close) {
+std::vector<double> BuildForwardReturns(const std::vector<double>& close,
+                                        int predict_horizon_bars,
+                                        int execution_latency_bars) {
   std::vector<double> out(close.size(), NaN());
-  if (close.size() < 2) {
+  const std::size_t horizon =
+      static_cast<std::size_t>(std::max(1, predict_horizon_bars));
+  const std::size_t latency =
+      static_cast<std::size_t>(std::max(0, execution_latency_bars));
+  if (close.size() <= horizon + latency) {
     return out;
   }
-  for (std::size_t i = 0; i + 1 < close.size(); ++i) {
-    out[i] = SafeDiv(close[i + 1] - close[i], close[i]);
+  for (std::size_t i = 0; i + latency + horizon < close.size(); ++i) {
+    const double entry = close[i + latency];
+    const double exit = close[i + latency + horizon];
+    out[i] = SafeDiv(exit - entry, entry);
   }
   return out;
 }
@@ -197,17 +205,18 @@ IcSummary ComputeRollingSummaryInRange(const std::vector<double>& factor_values,
 
 CandidateEval EvaluateCandidate(const Candidate& candidate,
                                 const std::vector<double>& future_returns,
-                                std::size_t split_index,
+                                std::size_t train_end,
+                                std::size_t oos_start,
                                 int rolling_window,
                                 double complexity_penalty) {
   const SpearmanIcResult train_ic =
-      ComputeIcInRange(candidate.values, future_returns, 0, split_index);
+      ComputeIcInRange(candidate.values, future_returns, 0, train_end);
   const SpearmanIcResult oos_ic =
-      ComputeIcInRange(candidate.values, future_returns, split_index, future_returns.size());
+      ComputeIcInRange(candidate.values, future_returns, oos_start, future_returns.size());
   const IcSummary rolling_train = ComputeRollingSummaryInRange(
-      candidate.values, future_returns, rolling_window, 0, split_index);
+      candidate.values, future_returns, rolling_window, 0, train_end);
   const IcSummary rolling_oos = ComputeRollingSummaryInRange(
-      candidate.values, future_returns, rolling_window, split_index, future_returns.size());
+      candidate.values, future_returns, rolling_window, oos_start, future_returns.size());
   // Validation is diagnostic only. Reusing it as the GA fitness function
   // turns every generation into another validation-set optimization round.
   const double objective =
@@ -431,12 +440,12 @@ IcSummary BuildRandomBaselineAbsIcSummary(
 }
 
 std::vector<Candidate> BuildCandidates(const std::vector<double>& close,
-                                       const std::vector<double>& volume) {
+                                       const std::vector<double>& volume,
+                                       int predict_horizon_bars) {
   std::vector<Candidate> candidates;
 
   const std::vector<double> delay1 = TsDelay(close, 1);
   const std::vector<double> delta1 = TsDelta(close, 1);
-  const std::vector<double> delta3 = TsDelta(close, 3);
   const std::vector<double> vdelay1 = TsDelay(volume, 1);
   const std::vector<double> vdelay3 = TsDelay(volume, 3);
   const std::vector<double> vdelta1 = TsDelta(volume, 1);
@@ -466,12 +475,7 @@ std::vector<Candidate> BuildCandidates(const std::vector<double>& close,
                         ElementWiseAbs(vdelay3),
                         [](double a, double b) { return SafeDiv(a, b + 1e-9); });
 
-  candidates.push_back({"ts_delay(close,1)", delay1, 1.0});
-  candidates.push_back({"ts_delta(close,1)", delta1, 1.0});
-  candidates.push_back({"ts_delta(close,3)", delta3, 1.0});
   candidates.push_back({"ts_rank(close,10)", rank10, 1.0});
-  candidates.push_back({"ts_delta(volume,1)", vdelta1, 1.0});
-  candidates.push_back({"ts_delta(volume,3)", vdelta3, 1.0});
   candidates.push_back({"ts_rank(volume,10)", vrank10, 1.0});
   candidates.push_back({"ts_corr(close,volume,10)", corr_cv_10, 1.0});
   candidates.push_back({"ts_corr(close,volume,20)", corr_cv_20, 1.0});
@@ -485,17 +489,6 @@ std::vector<Candidate> BuildCandidates(const std::vector<double>& close,
   candidates.push_back({"ts_corr(ts_delta(close,1),volume,20)",
                         corr_delta1_volume_20,
                         3.0});
-
-  candidates.push_back({"ts_delta(close,1)-ts_delta(close,3)",
-                        ElementWiseBinary(delta1,
-                                          delta3,
-                                          [](double a, double b) {
-                                            if (!IsFinite(a) || !IsFinite(b)) {
-                                              return NaN();
-                                            }
-                                            return a - b;
-                                          }),
-                        2.0});
 
   candidates.push_back({"ts_rank(volume,20)-ts_rank(volume,5)",
                         ElementWiseBinary(vrank20,
@@ -538,6 +531,43 @@ std::vector<Candidate> BuildCandidates(const std::vector<double>& close,
          return a * b;
        }),
        3.0});
+
+  std::vector<int> horizon_windows{
+      std::max(3, predict_horizon_bars / 4),
+      std::max(3, predict_horizon_bars / 2),
+      std::max(3, predict_horizon_bars),
+      std::min(288, std::max(3, predict_horizon_bars * 2)),
+  };
+  std::sort(horizon_windows.begin(), horizon_windows.end());
+  horizon_windows.erase(
+      std::unique(horizon_windows.begin(), horizon_windows.end()),
+      horizon_windows.end());
+  for (const int window : horizon_windows) {
+    if (window == 5 || window == 10 || window == 20) {
+      continue;
+    }
+    const std::string suffix = std::to_string(window);
+    const std::vector<double> delayed = TsDelay(close, window);
+    const std::vector<double> delta = TsDelta(close, window);
+    const std::vector<double> rank = TsRank(close, window);
+    const std::vector<double> volume_rank = TsRank(volume, window);
+    const std::vector<double> correlation = TsCorr(close, volume, window);
+    const std::vector<double> normalized_return = ElementWiseBinary(
+        delta, delayed, [](double a, double b) {
+          return SafeDiv(a, std::fabs(b) + 1e-9);
+        });
+    candidates.push_back(
+        {"ts_rank(close," + suffix + ")", rank, 1.0});
+    candidates.push_back(
+        {"ts_rank(volume," + suffix + ")", volume_rank, 1.0});
+    candidates.push_back(
+        {"ts_corr(close,volume," + suffix + ")", correlation, 1.0});
+    candidates.push_back(
+        {"ts_delta(close," + suffix + ")/(abs(ts_delay(close," + suffix +
+             "))+1e-9)",
+         normalized_return,
+         2.0});
+  }
   candidates.push_back(
       {"ts_rank(volume,20)-ts_rank(close,20)",
        ElementWiseBinary(vrank20, rank20, [](double a, double b) {
@@ -564,6 +594,10 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
   report.random_baseline_trials = std::max(0, config.random_baseline_trials);
   report.generations = std::max(1, config.generations);
   report.population_size = std::max(1, config.population_size);
+  report.predict_horizon_bars = std::max(1, config.predict_horizon_bars);
+  report.execution_latency_bars = std::max(0, config.execution_latency_bars);
+  report.purge_bars =
+      report.predict_horizon_bars + report.execution_latency_bars;
 
   std::vector<double> close;
   std::vector<double> volume;
@@ -573,14 +607,23 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
     close.push_back(bar.close);
     volume.push_back(bar.volume);
   }
-  const std::vector<double> future_returns = BuildForwardReturns(close);
-  std::vector<Candidate> population = BuildCandidates(close, volume);
+  const std::vector<double> future_returns = BuildForwardReturns(
+      close, report.predict_horizon_bars, report.execution_latency_bars);
+  std::vector<Candidate> population = BuildCandidates(
+      close, volume, report.predict_horizon_bars);
 
   std::size_t split_index =
       static_cast<std::size_t>(config.train_split_ratio *
                                static_cast<double>(bars.size()));
   // 为 OOS 留出最小样本，避免 split 极端导致结果无意义。
   split_index = std::clamp<std::size_t>(split_index, 10, bars.size() - 10);
+  const std::size_t train_end =
+      split_index > static_cast<std::size_t>(report.purge_bars)
+          ? split_index - static_cast<std::size_t>(report.purge_bars)
+          : 0;
+  if (train_end < 10) {
+    return report;
+  }
 
   std::unordered_map<std::string, CandidateEval> best_eval_by_expression;
   best_eval_by_expression.reserve(static_cast<std::size_t>(report.population_size) *
@@ -597,6 +640,7 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
     for (const Candidate& candidate : population) {
       evaluations.push_back(EvaluateCandidate(candidate,
                                              future_returns,
+                                             train_end,
                                              split_index,
                                              rolling_window,
                                              config.complexity_penalty));
@@ -681,6 +725,9 @@ MinerReport Miner::Run(const std::vector<ResearchBar>& bars,
   std::ostringstream id_seed;
   id_seed << "seed=" << config.random_seed << "|train_bars=" << split_index
           << "|top=" << count
+          << "|horizon=" << report.predict_horizon_bars
+          << "|latency=" << report.execution_latency_bars
+          << "|purge=" << report.purge_bars
           << "|selection_policy=train_ic_only_validation_diagnostic_v1";
   for (const RankedFactor& factor : report.factors) {
     id_seed << "|" << factor.expression << "|" << std::fixed
@@ -859,6 +906,11 @@ bool SaveMinerReport(const MinerReport& report,
       << JsonEscape(report.validation_domain) << "\",\n";
   out << "  \"validation_feedback_used\": "
       << (report.validation_feedback_used ? "true" : "false") << ",\n";
+  out << "  \"predict_horizon_bars\": " << report.predict_horizon_bars
+      << ",\n";
+  out << "  \"execution_latency_bars\": " << report.execution_latency_bars
+      << ",\n";
+  out << "  \"purge_bars\": " << report.purge_bars << ",\n";
   out << "  \"candidate_count\": " << report.candidate_expressions.size() << ",\n";
   out << "  \"generations\": " << report.generations << ",\n";
   out << "  \"population_size\": " << report.population_size << ",\n";
