@@ -1,0 +1,34 @@
+{
+  "schema_version": "demo_incubation_policy_v1",
+  "environment": {
+    "system_mode": "paper",
+    "exchange_platform": "bybit",
+    "testnet": false,
+    "demo_trading": true,
+    "self_evolution_enabled": true
+  },
+  "min_observation_hours": 336,
+  "min_observation_count": 14,
+  "min_distinct_trading_days": 7,
+  "min_complete_closed_lots": 100,
+  "min_positive_closed_lot_ratio": 0.55,
+  "min_total_closed_lot_net_usd": 0.0,
+  "min_mean_closed_lot_net_lcb95_usd": 0.0,
+  "min_account_equity_change_usd": 0.0,
+  "min_account_realized_net_change_usd": 0.0,
+  "max_drawdown_pct": 0.05,
+  "min_effective_learning_updates": 10,
+  "min_learning_update_days": 5,
+  "min_learnability_passed_updates": 5,
+  "max_learning_rollback_ratio": 0.20,
+  "require_state_restore_after_restart": true,
+  "require_latest_flat": true,
+  "required_latest_overall_status": "PASS",
+  "required_latest_runtime_verdict": "PASS",
+  "required_latest_replay_status": "PASS",
+  "required_latest_mechanism_statuses": [
+    "PASS",
+    "PASS_WITH_ACTIONS"
+  ],
+  "required_latest_convergence_status": "CONVERGED_CANARY_VALIDATED_WITH_LIVE_FILLS"
+}

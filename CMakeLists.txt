@@ -120,6 +120,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_prune_release_storage.py)
     add_test(NAME evaluate_smoke_freshness_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_evaluate_smoke_freshness.py)
+    add_test(NAME evaluate_demo_incubation_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_evaluate_demo_incubation.py)
     add_test(NAME watchdog_utils_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_watchdog.py)
     add_test(NAME recycle_artifacts_test

@@ -5,12 +5,23 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <limits>
+#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <unordered_set>
 #include <utility>
+#include <vector>
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
 
 #include "core/log.h"
 #include "app/intent_policy.h"
@@ -83,6 +94,72 @@ bool IsSha256Hex(const std::string& value) {
          std::all_of(value.begin(), value.end(), [](unsigned char ch) {
            return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
          });
+}
+
+std::string Fnv1a64Hex(const std::string& value) {
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (const unsigned char ch : value) {
+    hash ^= static_cast<std::uint64_t>(ch);
+    hash *= 1099511628211ULL;
+  }
+  std::ostringstream oss;
+  oss << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return oss.str();
+}
+
+std::optional<std::string> CurrentExecutablePath() {
+#if defined(__APPLE__)
+  std::uint32_t size = 0;
+  (void)_NSGetExecutablePath(nullptr, &size);
+  if (size == 0) return std::nullopt;
+  std::vector<char> path(size + 1, '\0');
+  if (_NSGetExecutablePath(path.data(), &size) != 0) return std::nullopt;
+  std::error_code error;
+  const auto canonical = std::filesystem::weakly_canonical(path.data(), error);
+  return error ? std::optional<std::string>(path.data())
+               : std::optional<std::string>(canonical.string());
+#elif defined(__linux__)
+  std::vector<char> path(4096, '\0');
+  const ssize_t count =
+      readlink("/proc/self/exe", path.data(), path.size() - 1);
+  if (count <= 0) return std::nullopt;
+  path[static_cast<std::size_t>(count)] = '\0';
+  return std::string(path.data());
+#else
+  return std::nullopt;
+#endif
+}
+
+std::optional<std::string> Fnv1a64File(const std::string& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) return std::nullopt;
+  std::uint64_t hash = 14695981039346656037ULL;
+  char buffer[64 * 1024];
+  while (input.good()) {
+    input.read(buffer, sizeof(buffer));
+    const std::streamsize count = input.gcount();
+    for (std::streamsize index = 0; index < count; ++index) {
+      hash ^= static_cast<unsigned char>(buffer[index]);
+      hash *= 1099511628211ULL;
+    }
+  }
+  if (!input.eof()) return std::nullopt;
+  std::ostringstream oss;
+  oss << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return oss.str();
+}
+
+std::vector<std::string> SplitTabFields(const std::string& line) {
+  std::vector<std::string> fields;
+  std::size_t start = 0;
+  while (start <= line.size()) {
+    const std::size_t end = line.find('\t', start);
+    fields.push_back(line.substr(
+        start, end == std::string::npos ? std::string::npos : end - start));
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return fields;
 }
 
 int SignOf(double value) {
@@ -774,6 +851,174 @@ BotApplication::BotApplication(const AppConfig& config)
       gate_monitor_(config.gate),
       universe_selector_(config.universe, config.primary_symbol),
       wal_(config.data_path + "/trade.wal") {}
+
+std::string BotApplication::SelfEvolutionPolicyFingerprint() const {
+  std::string payload;
+  if (!config_.source_config_path.empty()) {
+    std::ifstream input(config_.source_config_path, std::ios::binary);
+    if (input.is_open()) {
+      std::ostringstream buffer;
+      buffer << input.rdbuf();
+      payload = buffer.str();
+    }
+  }
+  if (payload.empty()) {
+    std::ostringstream fallback;
+    fallback << std::setprecision(17)
+             << config_.self_evolution.enabled << '|'
+             << config_.self_evolution.update_interval_ticks << '|'
+             << config_.self_evolution.min_update_interval_ticks << '|'
+             << config_.self_evolution.max_single_strategy_weight << '|'
+             << config_.self_evolution.max_weight_step << '|'
+             << config_.self_evolution.initial_trend_weight << '|'
+             << config_.self_evolution.initial_defensive_weight << '|'
+             << config_.self_evolution.use_counterfactual_search << '|'
+             << config_.self_evolution.counterfactual_require_temporal_holdout
+             << '|' << config_.self_evolution.enable_learnability_gate;
+    payload = fallback.str();
+  }
+  static const std::optional<std::string> executable_hash = [] {
+    const auto executable_path = CurrentExecutablePath();
+    return executable_path.has_value() ? Fnv1a64File(*executable_path)
+                                       : std::optional<std::string>{};
+  }();
+  payload += "|executable_fnv1a64=" +
+             executable_hash.value_or("unavailable");
+  return Fnv1a64Hex(payload);
+}
+
+bool BotApplication::LoadSelfEvolutionWeights(
+    std::array<EvolutionWeights, 3>* out_weights,
+    bool* out_state_exists,
+    std::string* out_error) const {
+  if (out_weights == nullptr || out_state_exists == nullptr) {
+    if (out_error != nullptr) *out_error = "自进化恢复输出参数为空";
+    return false;
+  }
+  *out_state_exists = false;
+  const std::filesystem::path path =
+      std::filesystem::path(config_.data_path) /
+      "self_evolution_weights_v1.tsv";
+  if (!std::filesystem::exists(path)) {
+    return true;
+  }
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) {
+    if (out_error != nullptr) *out_error = "无法读取自进化权重状态";
+    return false;
+  }
+  std::vector<std::string> lines;
+  std::string line;
+  while (std::getline(input, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    lines.push_back(line);
+  }
+  if (lines.size() != 6 || lines[0] != "AI_TRADE_SELF_EVOLUTION_STATE_V1") {
+    if (out_error != nullptr) *out_error = "自进化权重状态 schema/行数非法";
+    return false;
+  }
+  const auto policy_fields = SplitTabFields(lines[1]);
+  const auto checksum_fields = SplitTabFields(lines[5]);
+  if (policy_fields.size() != 2 || policy_fields[0] != "policy_fingerprint" ||
+      checksum_fields.size() != 2 || checksum_fields[0] != "checksum_fnv1a64") {
+    if (out_error != nullptr) *out_error = "自进化权重状态头部非法";
+    return false;
+  }
+  std::string checksum_payload;
+  for (std::size_t index = 0; index < 5; ++index) {
+    checksum_payload += lines[index] + "\n";
+  }
+  if (checksum_fields[1] != Fnv1a64Hex(checksum_payload)) {
+    if (out_error != nullptr) *out_error = "自进化权重状态 checksum 不匹配";
+    return false;
+  }
+  if (policy_fields[1] != SelfEvolutionPolicyFingerprint()) {
+    if (out_error != nullptr) *out_error = "policy_fingerprint_mismatch";
+    return true;
+  }
+
+  constexpr std::array<const char*, 3> kBucketNames{
+      "TREND", "RANGE", "EXTREME"};
+  for (std::size_t index = 0; index < kBucketNames.size(); ++index) {
+    const auto fields = SplitTabFields(lines[index + 2]);
+    if (fields.size() != 3 || fields[0] != kBucketNames[index]) {
+      if (out_error != nullptr) *out_error = "自进化权重分桶状态非法";
+      return false;
+    }
+    try {
+      std::size_t trend_consumed = 0;
+      std::size_t defensive_consumed = 0;
+      const double trend = std::stod(fields[1], &trend_consumed);
+      const double defensive = std::stod(fields[2], &defensive_consumed);
+      if (trend_consumed != fields[1].size() ||
+          defensive_consumed != fields[2].size() || !std::isfinite(trend) ||
+          !std::isfinite(defensive)) {
+        throw std::invalid_argument("non-finite or trailing characters");
+      }
+      (*out_weights)[index] = EvolutionWeights{trend, defensive};
+    } catch (const std::exception&) {
+      if (out_error != nullptr) *out_error = "自进化权重数值非法";
+      return false;
+    }
+  }
+  *out_state_exists = true;
+  return true;
+}
+
+bool BotApplication::PersistSelfEvolutionWeights(std::string* out_error) const {
+  if (config_.mode == "replay" || !config_.self_evolution.enabled) return true;
+  const std::filesystem::path directory(config_.data_path);
+  std::error_code error_code;
+  std::filesystem::create_directories(directory, error_code);
+  if (error_code) {
+    if (out_error != nullptr) {
+      *out_error = "创建自进化状态目录失败: " + error_code.message();
+    }
+    return false;
+  }
+  const std::filesystem::path path =
+      directory / "self_evolution_weights_v1.tsv";
+  const std::filesystem::path temp =
+      directory / ("self_evolution_weights_v1.tsv.tmp." + boot_id_);
+  const auto weights = system_.evolution_weights_all();
+  constexpr std::array<const char*, 3> kBucketNames{
+      "TREND", "RANGE", "EXTREME"};
+  std::ostringstream payload;
+  payload << "AI_TRADE_SELF_EVOLUTION_STATE_V1\n"
+          << "policy_fingerprint\t" << SelfEvolutionPolicyFingerprint() << "\n"
+          << std::setprecision(17);
+  for (std::size_t index = 0; index < weights.size(); ++index) {
+    payload << kBucketNames[index] << '\t' << weights[index].trend_weight << '\t'
+            << weights[index].defensive_weight << "\n";
+  }
+  const std::string payload_text = payload.str();
+  std::ofstream output(temp, std::ios::binary | std::ios::trunc);
+  if (!output.is_open()) {
+    if (out_error != nullptr) *out_error = "创建自进化临时状态失败";
+    return false;
+  }
+  output << payload_text << "checksum_fnv1a64\t" << Fnv1a64Hex(payload_text)
+         << "\n";
+  output.flush();
+  if (!output.good()) {
+    output.close();
+    std::filesystem::remove(temp, error_code);
+    if (out_error != nullptr) *out_error = "写入自进化临时状态失败";
+    return false;
+  }
+  output.close();
+  std::filesystem::rename(temp, path, error_code);
+  if (error_code) {
+    const std::string rename_error = error_code.message();
+    std::error_code cleanup_error;
+    std::filesystem::remove(temp, cleanup_error);
+    if (out_error != nullptr) {
+      *out_error = "提交自进化状态失败: " + rename_error;
+    }
+    return false;
+  }
+  return true;
+}
 
 double BotApplication::RoundTripCostBps() const {
   const double entry_fee_bps = std::max(0.0, config_.execution_entry_fee_bps);
@@ -3372,10 +3617,60 @@ bool BotApplication::Initialize() {
       LogError("自进化控制器初始化失败: " + error);
       return false;
     }
+    bool restored = false;
+    std::array<EvolutionWeights, 3> restored_weights{};
+    if (config_.mode != "replay") {
+      std::string restore_error;
+      if (!LoadSelfEvolutionWeights(
+              &restored_weights, &restored, &restore_error)) {
+        LogError("SELF_EVOLUTION_STATE_RESTORE_FAILED: boot_id=" + boot_id_ +
+                 ", reason=" + restore_error);
+        return false;
+      }
+      if (restored) {
+        if (!self_evolution_.RestoreCurrentWeights(restored_weights, &error)) {
+          LogError("SELF_EVOLUTION_STATE_RESTORE_FAILED: boot_id=" + boot_id_ +
+                   ", reason=" + error);
+          return false;
+        }
+        constexpr std::array<RegimeBucket, 3> kBuckets{
+            RegimeBucket::kTrend,
+            RegimeBucket::kRange,
+            RegimeBucket::kExtreme,
+        };
+        for (std::size_t index = 0; index < kBuckets.size(); ++index) {
+          if (!system_.SetEvolutionWeightsForBucket(
+                  kBuckets[index],
+                  restored_weights[index].trend_weight,
+                  restored_weights[index].defensive_weight,
+                  &error)) {
+            LogError("SELF_EVOLUTION_STATE_RESTORE_FAILED: boot_id=" + boot_id_ +
+                     ", reason=" + error);
+            return false;
+          }
+        }
+        LogInfo("SELF_EVOLUTION_STATE_RESTORED: boot_id=" + boot_id_ +
+                ", path=" + config_.data_path +
+                "/self_evolution_weights_v1.tsv, policy_fingerprint=" +
+                SelfEvolutionPolicyFingerprint());
+      } else if (!restore_error.empty()) {
+        LogInfo("SELF_EVOLUTION_STATE_IGNORED: boot_id=" + boot_id_ +
+                ", reason=" + restore_error + ", policy_fingerprint=" +
+                SelfEvolutionPolicyFingerprint());
+      }
+      if (!PersistSelfEvolutionWeights(&error)) {
+        LogError("SELF_EVOLUTION_STATE_PERSIST_FAILED: boot_id=" + boot_id_ +
+                 ", reason=" + error);
+        return false;
+      }
+    }
+    const auto active_weights =
+        self_evolution_.current_weights(RegimeBucket::kRange);
     LogInfo("SELF_EVOLUTION_INIT: trend_weight=" +
-            std::to_string(config_.self_evolution.initial_trend_weight) +
+            std::to_string(active_weights.trend_weight) +
             ", defensive_weight=" +
-            std::to_string(config_.self_evolution.initial_defensive_weight) +
+            std::to_string(active_weights.defensive_weight) +
+            ", restored=" + std::string(restored ? "true" : "false") +
             ", update_interval_ticks=" +
             std::to_string(config_.self_evolution.update_interval_ticks) +
             ", factor_ic_weighting=" +
@@ -6640,6 +6935,13 @@ void BotApplication::RunSelfEvolution() {
               ", defensive_weight=" +
               std::to_string(action->defensive_weight_after));
       return;
+    }
+    std::string persistence_error;
+    if (!PersistSelfEvolutionWeights(&persistence_error)) {
+      evidence_persistence_failed_ = true;
+      RefreshReduceOnlyMode();
+      LogError("CRITICAL: SELF_EVOLUTION_STATE_PERSIST_FAILED: boot_id=" +
+               boot_id_ + ", reason=" + persistence_error);
     }
   }
 

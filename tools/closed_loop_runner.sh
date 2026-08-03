@@ -53,6 +53,9 @@ ACTIVATION_MIN_CANARY_EPISODES="${CLOSED_LOOP_ACTIVATION_MIN_CANARY_EPISODES:-30
 ACTIVATION_MIN_POSITIVE_EPISODE_RATIO="${CLOSED_LOOP_ACTIVATION_MIN_POSITIVE_EPISODE_RATIO:-0.50}"
 ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD="${CLOSED_LOOP_ACTIVATION_MIN_MEAN_REALIZED_NET_PER_FILL_USD:-0.0}"
 ACTIVATION_MAX_PENDING_HOURS="${CLOSED_LOOP_ACTIVATION_MAX_PENDING_HOURS:-72}"
+DEMO_INCUBATION_ENABLED="${CLOSED_LOOP_DEMO_INCUBATION_ENABLED:-true}"
+DEMO_INCUBATION_POLICY_PATH="${CLOSED_LOOP_DEMO_INCUBATION_POLICY_PATH:-config/demo_incubation_policy.json}"
+DEMO_INCUBATION_STATE_PATH="${CLOSED_LOOP_DEMO_INCUBATION_STATE_PATH:-${AI_TRADE_DATA_DIR:-./data}/models/demo_incubation_state.json}"
 ALPHA_MECHANISM_PROBE_ENABLED="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ENABLED:-auto}"
 ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS:-3.5}"
 ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES:-100}"
@@ -1203,6 +1206,7 @@ ASSESS_JSON_PATH="${RUN_DIR}/runtime_assess.json"
 TRADE_LEDGER_REPORT_PATH="${RUN_DIR}/trade_ledger_report.json"
 MECHANISM_AUDIT_REPORT_PATH="${RUN_DIR}/closed_loop_mechanism_report.json"
 FINAL_REPORT_PATH="${RUN_DIR}/closed_loop_report.json"
+DEMO_INCUBATION_REPORT_PATH="${RUN_DIR}/demo_incubation_report.json"
 RUN_META_PATH="${RUN_DIR}/run_meta.json"
 RUN_MANIFEST_PATH="${RUN_DIR}/run_manifest.json"
 FINAL_ARTIFACT_ATTESTATION_PATH="${RUN_DIR}/artifact_attestation.json"
@@ -1226,6 +1230,7 @@ LATEST_RUN_ID_PATH="${OUTPUT_ROOT}/latest_run_id"
 SUMMARY_OUTPUT_DIR="${OUTPUT_ROOT}/summary"
 LATEST_DAILY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_daily_summary.json"
 LATEST_WEEKLY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_weekly_summary.json"
+LATEST_DEMO_INCUBATION_REPORT_PATH="${OUTPUT_ROOT}/latest_demo_incubation_report.json"
 : > "${STEP_STATUS_PATH}"
 
 verify_s5_learning_switches() {
@@ -4674,6 +4679,7 @@ write_final_artifact_attestation() {
   CONTRACT_PATH_VALUE="${CLOSED_LOOP_CONTRACT_PATH:-config/closed_loop_contract.json}" \
   RUN_MANIFEST_PATH_VALUE="${RUN_MANIFEST_PATH}" \
   FINAL_REPORT_PATH_VALUE="${FINAL_REPORT_PATH}" \
+  DEMO_INCUBATION_REPORT_PATH_VALUE="${DEMO_INCUBATION_REPORT_PATH}" \
   RUN_META_PATH_VALUE="${RUN_META_PATH}" \
   python3 - <<'PY'
 import datetime as dt
@@ -4698,6 +4704,16 @@ def attest(path_text: str) -> dict:
 contract_path = Path(os.environ["CONTRACT_PATH_VALUE"])
 if not contract_path.is_file():
     raise SystemExit(f"closed-loop contract missing: {contract_path}")
+artifacts = {
+    "run_manifest": attest(os.environ["RUN_MANIFEST_PATH_VALUE"]),
+    "closed_loop_report": attest(os.environ["FINAL_REPORT_PATH_VALUE"]),
+    "run_meta": attest(os.environ["RUN_META_PATH_VALUE"]),
+}
+demo_incubation_path = Path(
+    os.environ.get("DEMO_INCUBATION_REPORT_PATH_VALUE", "")
+)
+if demo_incubation_path.is_file():
+    artifacts["demo_incubation_report"] = attest(str(demo_incubation_path))
 payload = {
     "schema_version": "closed_loop_artifact_attestation_v1",
     "run_id": os.environ["RUN_ID_VALUE"],
@@ -4706,17 +4722,51 @@ payload = {
         "%Y-%m-%dT%H:%M:%SZ"
     ),
     "contract": attest(str(contract_path)),
-    "artifacts": {
-        "run_manifest": attest(os.environ["RUN_MANIFEST_PATH_VALUE"]),
-        "closed_loop_report": attest(os.environ["FINAL_REPORT_PATH_VALUE"]),
-        "run_meta": attest(os.environ["RUN_META_PATH_VALUE"]),
-    },
+    "artifacts": artifacts,
 }
 Path(os.environ["ATTESTATION_OUTPUT_VALUE"]).write_text(
     json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
 )
 PY
+}
+
+evaluate_demo_incubation() {
+  if ! is_true "${DEMO_INCUBATION_ENABLED}"; then
+    echo "[INFO] Demo incubation evaluation disabled"
+    return 0
+  fi
+  if [[ "${STAGE}" != "S5" ||
+        ( "${ACTION}" != "assess" && "${ACTION}" != "full" ) ]]; then
+    echo "[INFO] Demo incubation evaluation skipped: action=${ACTION}, stage=${STAGE}"
+    return 0
+  fi
+  local required_path
+  for required_path in \
+    "${DEMO_INCUBATION_POLICY_PATH}" \
+    "${RUNTIME_CONFIG_PATH}" \
+    "${RUN_MANIFEST_PATH}" \
+    "${FINAL_REPORT_PATH}" \
+    "${ASSESS_JSON_PATH}" \
+    "${TRADE_LEDGER_REPORT_PATH}" \
+    "${ASSESS_LOG_PATH}"; do
+    if [[ ! -f "${required_path}" ]]; then
+      echo "[ERROR] Demo incubation source artifact missing: ${required_path}"
+      return 1
+    fi
+  done
+  echo "[INFO] Demo incubation longitudinal evaluation start"
+  python3 tools/evaluate_demo_incubation.py \
+    --policy "${DEMO_INCUBATION_POLICY_PATH}" \
+    --state "${DEMO_INCUBATION_STATE_PATH}" \
+    --config "${RUNTIME_CONFIG_PATH}" \
+    --run-manifest "${RUN_MANIFEST_PATH}" \
+    --closed-loop-report "${FINAL_REPORT_PATH}" \
+    --runtime-assess "${ASSESS_JSON_PATH}" \
+    --trade-ledger "${TRADE_LEDGER_REPORT_PATH}" \
+    --runtime-log "${ASSESS_LOG_PATH}" \
+    --output "${DEMO_INCUBATION_REPORT_PATH}"
+  echo "[INFO] Demo incubation longitudinal evaluation done"
 }
 
 build_summary() {
@@ -4800,6 +4850,14 @@ build_summary() {
   local summary_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${SUMMARY_ARGS[@]}" \
     || summary_status=$?
+  local incubation_status=0
+  if (( summary_status == 0 )); then
+    evaluate_demo_incubation || incubation_status=$?
+  fi
+  if (( incubation_status != 0 )); then
+    echo "[ERROR] Demo incubation evaluation failed: status=${incubation_status}"
+    summary_status="${incubation_status}"
+  fi
   local periodic_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/build_periodic_summary.py \
@@ -4860,6 +4918,8 @@ build_summary() {
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
   "activation_transaction": "${ACTIVATION_TRANSACTION_SNAPSHOT_PATH}",
   "activation_decision": "${ACTIVATION_DECISION_PATH}",
+  "demo_incubation_report": "${DEMO_INCUBATION_REPORT_PATH}",
+  "demo_incubation_state": "${DEMO_INCUBATION_STATE_PATH}",
   "daily_summary_report": "${SUMMARY_OUTPUT_DIR}/daily_latest.json",
   "weekly_summary_report": "${SUMMARY_OUTPUT_DIR}/weekly_latest.json"
 }
@@ -4881,6 +4941,9 @@ EOF
     fi
     if [[ -f "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" ]]; then
       atomic_copy_file "${SUMMARY_OUTPUT_DIR}/weekly_latest.json" "${LATEST_WEEKLY_SUMMARY_PATH}"
+    fi
+    if [[ -f "${DEMO_INCUBATION_REPORT_PATH}" ]]; then
+      atomic_copy_file "${DEMO_INCUBATION_REPORT_PATH}" "${LATEST_DEMO_INCUBATION_REPORT_PATH}"
     fi
     atomic_write_text_file "${LATEST_RUN_ID_PATH}" "${RUN_ID}"
     atomic_copy_file "${RUN_META_PATH}" "${LATEST_META_PATH}"

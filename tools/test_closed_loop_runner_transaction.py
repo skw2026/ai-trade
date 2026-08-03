@@ -417,6 +417,8 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                     "integrator_episode_identity_invalid_count": 0,
                     "policy_flat_residual_position_count": 0,
                     "tp_attach_failed_count": 0,
+                    "self_evolution_state_restore_failed_count": 0,
+                    "self_evolution_state_persist_failed_count": 0,
                     "runtime_boot_id_latest": "boot-candidate-v2",
                     "integrator_model_version_latest": "candidate-v2",
                     "integrator_model_sha256_latest": "${CANDIDATE_MODEL_SHA}",

@@ -38,6 +38,8 @@ HARD_SAFETY_METRICS = (
     "integrator_episode_identity_invalid_count",
     "policy_flat_residual_position_count",
     "tp_attach_failed_count",
+    "self_evolution_state_restore_failed_count",
+    "self_evolution_state_persist_failed_count",
 )
 ACTIVATION_POLICY_SCHEMA = "closed_loop_activation_policy_v1"
 T_CRITICAL_975 = (

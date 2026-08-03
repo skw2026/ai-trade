@@ -23,6 +23,8 @@ SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "smoke.yml"
 WORKFLOWS_DIR = ROOT / ".github" / "workflows"
 S5_CONFIG = ROOT / "config" / "bybit.demo.s5.yaml"
 REPLAY_MAKER_FIRST_CONFIG = ROOT / "config" / "bybit.replay.assess.maker_first.yaml"
+DEMO_INCUBATION_POLICY = ROOT / "config" / "demo_incubation_policy.json"
+DEMO_INCUBATION_EVALUATOR = ROOT / "tools" / "evaluate_demo_incubation.py"
 
 
 def parse_services(compose_path: pathlib.Path):
@@ -224,6 +226,24 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("closed-loop runtime config resolved", script)
         self.assertIn('export AI_TRADE_CONFIG_PATH="${RUNTIME_CONFIG_PATH}"', script)
+
+    def test_demo_incubation_keeps_mainnet_out_of_runtime(self):
+        for runtime in (
+            self.dev_services["ai-trade"],
+            self.prod_services["ai-trade"],
+        ):
+            self.assertIn("AI_TRADE_BYBIT_DEMO_API_KEY", runtime)
+            self.assertNotIn("AI_TRADE_BYBIT_MAINNET_API_KEY", runtime)
+            self.assertNotIn("AI_TRADE_BYBIT_MAINNET_API_SECRET", runtime)
+        self.assertTrue(DEMO_INCUBATION_POLICY.is_file())
+        self.assertTrue(DEMO_INCUBATION_EVALUATOR.is_file())
+        runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("evaluate_demo_incubation.py", runner)
+        self.assertIn("latest_demo_incubation_report.json", runner)
+        adapter = (ROOT / "src" / "exchange" / "bybit_exchange_adapter.cpp").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Bybit 主网实盘连接已硬性禁用", adapter)
 
     def test_s5_live_canary_uses_replay_tradable_symbol(self):
         config = S5_CONFIG.read_text(encoding="utf-8")
@@ -847,6 +867,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("deploy/validate_deploy_gate.py", workflow)
         self.assertIn("deploy/release_integrity.py", workflow)
         self.assertIn("deploy/prune_release_storage.py", workflow)
+        self.assertIn("config/demo_incubation_policy.json", workflow)
+        self.assertIn("tools/evaluate_demo_incubation.py", workflow)
         self.assertIn(
             '--repair-runtime-contamination',
             workflow,

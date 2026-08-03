@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -319,6 +320,12 @@ class BotApplication {
    * 仅触发组合层权重变化，不触碰风控不可动层参数。
    */
   void RunSelfEvolution();
+  bool LoadSelfEvolutionWeights(
+      std::array<EvolutionWeights, 3>* out_weights,
+      bool* out_state_exists,
+      std::string* out_error) const;
+  bool PersistSelfEvolutionWeights(std::string* out_error) const;
+  std::string SelfEvolutionPolicyFingerprint() const;
 
   /**
    * @brief 判断主循环是否应退出

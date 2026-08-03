@@ -126,6 +126,10 @@ class SelfEvolutionController {
   bool initialized() const { return initialized_; }
   EvolutionWeights current_weights(RegimeBucket bucket) const;
   EvolutionWeights rollback_anchor_weights(RegimeBucket bucket) const;
+  /// 恢复跨进程持久化的分桶权重；基线仍使用当前配置，回滚锚点重置为恢复值。
+  bool RestoreCurrentWeights(
+      const std::array<EvolutionWeights, 3>& weights,
+      std::string* out_error);
   EvolutionWeights current_weights() const {
     return current_weights(RegimeBucket::kRange);
   }

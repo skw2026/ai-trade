@@ -2705,6 +2705,15 @@ def assess(
             r"FILL_APPLIED:.*order_state_before=cancelled", text
         ),
         "self_evolution_init_count": count(r"SELF_EVOLUTION_INIT", text),
+        "self_evolution_state_restored_count": count(
+            r"SELF_EVOLUTION_STATE_RESTORED", text
+        ),
+        "self_evolution_state_restore_failed_count": count(
+            r"SELF_EVOLUTION_STATE_RESTORE_FAILED", text
+        ),
+        "self_evolution_state_persist_failed_count": count(
+            r"SELF_EVOLUTION_STATE_PERSIST_FAILED", text
+        ),
         "self_evolution_action_count": count(r"SELF_EVOLUTION_ACTION", text),
         "self_evolution_init_total_count": global_self_evolution_init_count,
         "self_evolution_action_total_count": global_self_evolution_action_count,

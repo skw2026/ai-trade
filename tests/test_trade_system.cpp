@@ -3544,6 +3544,108 @@ int main() {
   }
 
   {
+    // 分桶权重恢复必须保留当前配置基线，并重置回滚锚点。
+    ai_trade::SelfEvolutionConfig config;
+    config.enabled = true;
+    config.max_single_strategy_weight = 0.60;
+    ai_trade::SelfEvolutionController controller(config);
+    std::string error;
+    if (!controller.Initialize(0, 10000.0, {0.50, 0.50}, &error, 0.0)) {
+      std::cerr << "自进化恢复测试初始化失败: " << error << "\n";
+      return 1;
+    }
+    const std::array<ai_trade::EvolutionWeights, 3> restored{{
+        {0.54, 0.46},
+        {0.48, 0.52},
+        {0.51, 0.49},
+    }};
+    if (!controller.RestoreCurrentWeights(restored, &error) ||
+        !NearlyEqual(controller.current_weights(ai_trade::RegimeBucket::kTrend)
+                         .trend_weight,
+                     0.54) ||
+        !NearlyEqual(controller.current_weights(ai_trade::RegimeBucket::kRange)
+                         .trend_weight,
+                     0.48) ||
+        !NearlyEqual(controller.rollback_anchor_weights(
+                         ai_trade::RegimeBucket::kExtreme)
+                         .trend_weight,
+                     0.51)) {
+      std::cerr << "自进化分桶权重恢复不符合预期: " << error << "\n";
+      return 1;
+    }
+  }
+
+  {
+    // Demo 自进化权重必须跨进程持久化；配置变更时不得拼接旧状态。
+    const auto data_dir = std::filesystem::temp_directory_path() /
+                          "ai_trade_self_evolution_state_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+    std::filesystem::create_directories(data_dir, ec);
+    const auto config_path = data_dir / "runtime.yaml";
+    {
+      std::ofstream output(config_path);
+      output << "policy: v1\n";
+    }
+    ai_trade::AppConfig config;
+    config.mode = "paper";
+    config.data_path = data_dir.string();
+    config.source_config_path = config_path.string();
+    config.self_evolution.enabled = true;
+    ai_trade::BotApplication writer(config);
+    std::string error;
+    if (!writer.system_.SetEvolutionWeightsForBucket(
+            ai_trade::RegimeBucket::kTrend, 0.54, 0.46, &error) ||
+        !writer.system_.SetEvolutionWeightsForBucket(
+            ai_trade::RegimeBucket::kRange, 0.48, 0.52, &error) ||
+        !writer.system_.SetEvolutionWeightsForBucket(
+            ai_trade::RegimeBucket::kExtreme, 0.51, 0.49, &error) ||
+        !writer.PersistSelfEvolutionWeights(&error)) {
+      std::cerr << "自进化权重持久化失败: " << error << "\n";
+      return 1;
+    }
+
+    ai_trade::BotApplication reader(config);
+    std::array<ai_trade::EvolutionWeights, 3> loaded{};
+    bool state_exists = false;
+    if (!reader.LoadSelfEvolutionWeights(&loaded, &state_exists, &error) ||
+        !state_exists || !NearlyEqual(loaded[0].trend_weight, 0.54) ||
+        !NearlyEqual(loaded[1].trend_weight, 0.48) ||
+        !NearlyEqual(loaded[2].trend_weight, 0.51)) {
+      std::cerr << "自进化权重重启恢复失败: " << error << "\n";
+      return 1;
+    }
+
+    {
+      std::ofstream output(config_path, std::ios::trunc);
+      output << "policy: v2\n";
+    }
+    ai_trade::BotApplication changed_policy(config);
+    state_exists = true;
+    error.clear();
+    if (!changed_policy.LoadSelfEvolutionWeights(
+            &loaded, &state_exists, &error) ||
+        state_exists || error != "policy_fingerprint_mismatch") {
+      std::cerr << "配置变化后不应恢复旧自进化权重: " << error << "\n";
+      return 1;
+    }
+
+    {
+      std::ofstream output(data_dir / "self_evolution_weights_v1.tsv",
+                           std::ios::app);
+      output << "tampered\n";
+    }
+    state_exists = false;
+    error.clear();
+    if (changed_policy.LoadSelfEvolutionWeights(
+            &loaded, &state_exists, &error)) {
+      std::cerr << "损坏的自进化状态必须恢复失败\n";
+      return 1;
+    }
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
     // 自进化控制器：窗口评估优先使用当前 active bucket，避免跨 bucket 污染。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;
@@ -9017,6 +9119,23 @@ int main() {
     ai_trade::BybitExchangeAdapter adapter(options);
     if (!adapter.Connect()) {
       std::cerr << "Bybit demo 专用环境变量连接失败\n";
+      return 1;
+    }
+  }
+
+  {
+    ScopedEnvVar mainnet_key("AI_TRADE_BYBIT_MAINNET_API_KEY", "k-mainnet");
+    ScopedEnvVar mainnet_secret("AI_TRADE_BYBIT_MAINNET_API_SECRET", "s-mainnet");
+    ai_trade::BybitAdapterOptions options;
+    options.mode = "live";
+    options.testnet = false;
+    options.demo_trading = false;
+    options.symbols = {"BTCUSDT"};
+    options.public_ws_enabled = false;
+    options.private_ws_enabled = false;
+    ai_trade::BybitExchangeAdapter adapter(options);
+    if (adapter.Connect()) {
+      std::cerr << "Demo 孵化阶段不得连接 Bybit 主网实盘\n";
       return 1;
     }
   }

@@ -1236,6 +1236,12 @@ bool BybitExchangeAdapter::Connect() {
   }
 
   const bool replay_mode = IsReplayMode(options_);
+  if (!replay_mode && !options_.testnet && !options_.demo_trading) {
+    connected_ = false;
+    LogInfo(
+        "Bybit 主网实盘连接已硬性禁用：必须先完成 Demo 长期孵化并通过人工实盘测试复核");
+    return false;
+  }
   std::string api_key;
   std::string api_secret;
   ResolveBybitCredentials(options_.testnet,

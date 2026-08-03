@@ -303,6 +303,16 @@ export AI_TRADE_BYBIT_DEMO_API_SECRET=your_demo_secret
 ./build/trade_bot --config=config/bybit.demo.yaml --exchange=bybit
 ```
 
+当前生产路径固定处于 Demo 孵化阶段：运行容器只注入 Demo/Testnet 密钥，
+Bybit 主网实盘连接在适配器中硬性禁用。S5 Closed Loop 会把跨运行证据累积到
+`data/models/demo_incubation_state.json`，并输出
+`data/reports/closed_loop/latest_demo_incubation_report.json`。只有连续 14 天、
+至少 7 个交易日/100 个完整闭合交易、成本后收益置信下界为正、自学习更新稳定且
+无硬安全事件时，报告才会标记为 `ELIGIBLE_FOR_MANUAL_LIVE_TEST_REVIEW`；该状态
+仍不会自动开启实盘。自进化分桶权重会校验后原子持久化到
+`data/self_evolution_weights_v1.tsv`；配置或程序版本变化时不继承旧权重，进程重启后
+未成功恢复权重也不能通过 Demo 孵化门槛。
+
 稳态参数模板（更低频、更强防抖）：
 ```bash
 # Demo 稳态模板

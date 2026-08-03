@@ -120,6 +120,35 @@ EvolutionWeights SelfEvolutionController::rollback_anchor_weights(
           runtime.rollback_anchor_defensive_weight};
 }
 
+bool SelfEvolutionController::RestoreCurrentWeights(
+    const std::array<EvolutionWeights, 3>& weights,
+    std::string* out_error) {
+  if (!initialized_) {
+    if (out_error != nullptr) {
+      *out_error = "自进化控制器尚未初始化";
+    }
+    return false;
+  }
+  for (const auto& weight : weights) {
+    if (!ValidateWeights(weight.trend_weight,
+                         weight.defensive_weight,
+                         out_error)) {
+      return false;
+    }
+  }
+  for (std::size_t index = 0; index < weights.size(); ++index) {
+    BucketRuntime& runtime = bucket_runtime_[index];
+    runtime.current_trend_weight = weights[index].trend_weight;
+    runtime.current_defensive_weight = weights[index].defensive_weight;
+    runtime.rollback_anchor_trend_weight = weights[index].trend_weight;
+    runtime.rollback_anchor_defensive_weight = weights[index].defensive_weight;
+    runtime.degrade_windows.clear();
+    runtime.pending_direction = 0;
+    runtime.pending_direction_streak = 0;
+  }
+  return true;
+}
+
 int SelfEvolutionController::degrade_window_count(RegimeBucket bucket) const {
   return static_cast<int>(RuntimeFor(bucket).degrade_windows.size());
 }

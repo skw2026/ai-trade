@@ -98,6 +98,7 @@ jobs:
           grep -q "release_integrity_test" /tmp/ctest-list.txt
           grep -q "prune_release_storage_test" /tmp/ctest-list.txt
           grep -q "evaluate_smoke_freshness_test" /tmp/ctest-list.txt
+          grep -q "evaluate_demo_incubation_test" /tmp/ctest-list.txt
           grep -q "watchdog_utils_test" /tmp/ctest-list.txt
           grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
           grep -q "docker_gc_test" /tmp/ctest-list.txt
@@ -294,8 +295,10 @@ jobs:
             /tmp/deploy_bundle.list
           grep -q '^\./data/$' /tmp/deploy_bundle.list
           grep -q '^\./config/data_pipeline.yaml$' /tmp/deploy_bundle.list
+          grep -q '^\./config/demo_incubation_policy.json$' /tmp/deploy_bundle.list
           grep -q '^\./ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
           grep -q '^\./tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
+          grep -q '^\./tools/evaluate_demo_incubation.py$' /tmp/deploy_bundle.list
           (
             cd "${PAYLOAD_DIR}"
             sha256sum -c .release-content.sha256
@@ -526,7 +529,9 @@ jobs:
               "${RELEASE_TMP}/deploy/prune_release_storage.py" \
               "${RELEASE_TMP}/config/default.yaml" \
               "${RELEASE_TMP}/config/data_pipeline.yaml" \
+              "${RELEASE_TMP}/config/demo_incubation_policy.json" \
               "${RELEASE_TMP}/tools/closed_loop_runner.sh" \
+              "${RELEASE_TMP}/tools/evaluate_demo_incubation.py" \
               "${RELEASE_TMP}/tools/fetch_bybit_kline.py" \
               "${RELEASE_TMP}/tools/fetch_binance_archive.py" \
               "${RELEASE_TMP}/tools/stream_market_ws.py" \
