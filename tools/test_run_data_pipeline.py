@@ -229,6 +229,49 @@ class RunDataPipelineTest(unittest.TestCase):
                 failures,
             )
 
+    def test_source_contract_normalizes_string_expected_interval(self):
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = pathlib.Path(td)
+            common = {
+                "venue": "bybit",
+                "category": "linear",
+                "symbol": "SOLUSDT",
+                "base_url": "https://api.bybit.com",
+                "price_type": "trade_price",
+                "volume_unit": "base_asset",
+                "bar_semantics": "closed_ohlcv",
+            }
+            (run_dir / "archive_report.json").write_text(
+                json.dumps(
+                    {
+                        **common,
+                        "interval_minutes": 5,
+                        "server_time_ms": 1_700_000_600_000,
+                        "closed_boundary_ms": 1_700_000_400_000,
+                        "end_ms_exclusive": 1_700_000_400_000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            final_ohlcv = run_dir / "ohlcv.csv"
+            final_ohlcv.write_text(
+                "timestamp,open,high,low,close,volume\n"
+                "1700000000000,1,1,1,1,1\n",
+                encoding="utf-8",
+            )
+
+            failures = PIPELINE.validate_source_contract(
+                run_dir=run_dir,
+                enabled_steps={"archive_download": True},
+                expected_base_url="https://api.bybit.com",
+                expected_category="linear",
+                expected_symbol="SOLUSDT",
+                expected_interval_minutes="5",
+                final_ohlcv_path=final_ohlcv,
+            )
+
+            self.assertEqual(failures, [])
+
     def test_walkforward_failure_is_diagnostic_only(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

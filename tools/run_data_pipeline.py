@@ -168,10 +168,16 @@ def validate_source_contract(
     expected_base_url: str,
     expected_category: str,
     expected_symbol: str,
-    expected_interval_minutes: int,
+    expected_interval_minutes: int | str,
     final_ohlcv_path: pathlib.Path | None = None,
 ) -> List[str]:
     failures: List[str] = []
+    interval_minutes = as_int(expected_interval_minutes, 0)
+    if interval_minutes <= 0:
+        return [
+            "expected_interval_minutes must be a positive integer: "
+            f"actual={expected_interval_minutes!r}"
+        ]
     report_specs = {
         "archive_download": (
             run_dir / "archive_report.json",
@@ -223,10 +229,10 @@ def validate_source_contract(
             actual_interval = int(payload.get(interval_key, 0))
         except (TypeError, ValueError):
             actual_interval = 0
-        if actual_interval != expected_interval_minutes:
+        if actual_interval != interval_minutes:
             failures.append(
                 f"{step_name}: interval={actual_interval} "
-                f"expected={expected_interval_minutes}"
+                f"expected={interval_minutes}"
             )
         if step_name in {"archive_download", "incremental_update"}:
             try:
@@ -264,7 +270,7 @@ def validate_source_contract(
             if (
                 last_timestamp <= 0
                 or server_time_ms <= 0
-                or last_timestamp + expected_interval_minutes * 60 * 1000
+                or last_timestamp + interval_minutes * 60 * 1000
                 > server_time_ms
             ):
                 failures.append(
@@ -290,7 +296,7 @@ def validate_source_contract(
             )
         elif (
             latest_timestamp <= 0
-            or latest_timestamp + expected_interval_minutes * 60 * 1000
+            or latest_timestamp + interval_minutes * 60 * 1000
             > max(authoritative_server_times)
         ):
             failures.append("final OHLCV latest bar is not proven closed")
@@ -354,7 +360,7 @@ def main() -> int:
     )
 
     symbol = str(args.symbol or deep_get(config, ["common", "symbol"], "BTCUSDT")).upper()
-    interval_min = str(deep_get(config, ["common", "interval_minutes"], 5))
+    interval_min = as_int(deep_get(config, ["common", "interval_minutes"], 5), 5)
     category = str(deep_get(config, ["common", "category"], "linear"))
 
     py = sys.executable
