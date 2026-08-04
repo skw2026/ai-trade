@@ -76,7 +76,7 @@ jobs:
       - name: Run Closed Loop on ECS
         uses: appleboy/ssh-action@v1.2.0
         env:
-          CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || github.event_name == 'push' && 'assess' || inputs.action }}
+          CLOSED_LOOP_ACTION: ${{ github.event_name == 'schedule' && 'assess' || github.event_name == 'push' && 'full' || inputs.action }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'schedule' && 'S5' || github.event_name == 'push' && 'S5' || inputs.stage }}
           CLOSED_LOOP_SINCE: ${{ github.event_name == 'schedule' && '7h' || github.event_name == 'push' && '24h' || inputs.since }}
           CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'schedule' && 'SOLUSDT' || github.event_name == 'push' && 'SOLUSDT' || inputs.replay_symbols }}
