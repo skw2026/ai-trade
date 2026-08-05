@@ -102,7 +102,7 @@ jobs:
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ (github.event_name == 'schedule' || github.event_name == 'push') && 'false' || 'true' }}
           CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ (github.event_name == 'schedule' || github.event_name == 'push') && '' || inputs.replay_feature_days }}
           CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
-          CLOSED_LOOP_GIT_COMMIT: f65b8d7e5ded2cb6867decc582d164f57f344469
+          CLOSED_LOOP_GIT_COMMIT: b7df73d1d2df51873d7ec0e1e6436fb761501d6b
           CLOSED_LOOP_GIT_BRANCH: ${{ github.ref_name }}
         with:
           host: ${{ secrets.ECS_HOST }}
@@ -473,7 +473,7 @@ jobs:
           import hashlib
           from pathlib import Path
           expected = "gha-${{ github.run_id }}-${{ github.run_attempt }}"
-          expected_git_sha = "f65b8d7e5ded2cb6867decc582d164f57f344469"
+          expected_git_sha = "b7df73d1d2df51873d7ec0e1e6436fb761501d6b"
           checks = []
           for label, path in (
               ("closed_loop_report", Path(".artifacts/closed_loop_report.json")),
