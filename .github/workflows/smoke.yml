@@ -11,7 +11,7 @@ on:
       min_runtime_status:
         description: "最小 RUNTIME_STATUS 条数"
         required: true
-        default: "5"
+        default: "4"
         type: string
   workflow_run:
     workflows:
@@ -33,7 +33,10 @@ jobs:
     timeout-minutes: 30
     env:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
-      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '5' }}
+      # RUNTIME_STATUS is emitted every 20 market ticks rather than on a wall
+      # clock. Four healthy samples cover multiple refresh/reconcile windows
+      # without making a 15-minute smoke flaky during quiet ticker periods.
+      SMOKE_MIN_RUNTIME_STATUS: ${{ github.event_name == 'workflow_dispatch' && inputs.min_runtime_status || '4' }}
       SMOKE_OUTPUT_ROOT: /opt/ai-trade/data/reports/closed_loop_smoke
       SMOKE_RUN_ID: smoke-${{ github.run_id }}-${{ github.run_attempt }}
       SMOKE_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}

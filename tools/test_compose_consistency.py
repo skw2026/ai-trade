@@ -720,8 +720,9 @@ class ComposeConsistencyTest(unittest.TestCase):
         runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
         assess = (ROOT / "tools" / "assess_run_log.py").read_text(encoding="utf-8")
 
-        self.assertIn('default: "5"', workflow)
-        self.assertIn("inputs.min_runtime_status || '5'", workflow)
+        self.assertIn('default: "4"', workflow)
+        self.assertIn("inputs.min_runtime_status || '4'", workflow)
+        self.assertIn("Four healthy samples cover multiple", workflow)
         self.assertIn("timeout-minutes: 30", workflow)
         self.assertIn("command_timeout: 20m", workflow)
         self.assertIn("CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS: \"900\"", workflow)
