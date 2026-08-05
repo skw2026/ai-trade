@@ -1421,7 +1421,8 @@ run_data_quality() {
 
 run_miner() {
   echo "[INFO] R1 miner start"
-  compose_cmd run --rm ai-trade \
+  compose_cmd --profile research run --rm --entrypoint /app/trade_bot \
+    ai-trade-research \
     --run_miner \
     --miner_csv="${RESEARCH_DEVELOPMENT_CSV_PATH}" \
     --miner_top_k="${MINER_TOP_K}" \
