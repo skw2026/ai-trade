@@ -11,6 +11,39 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    def test_default_csv_path_uses_persistent_data_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            data_root = root / "persistent-data"
+            reports = root / "reports"
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=persistent-csv-path-test
+                source tools/closed_loop_runner.sh data \
+                  --output-root "${REPORTS_ROOT}"
+                printf 'resolved_csv_path=%s\n' "${CSV_PATH}"
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "AI_TRADE_DATA_DIR": str(data_root),
+                    "REPORTS_ROOT": str(reports),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn(
+                f"resolved_csv_path={data_root / 'research' / 'ohlcv_5m.csv'}",
+                result.stdout,
+            )
+
     def test_policy_flat_s5_learning_activity_does_not_require_events(self):
         with tempfile.TemporaryDirectory() as td:
             script = textwrap.dedent(
