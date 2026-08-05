@@ -816,6 +816,237 @@ def apply_model_score_gain(score: np.ndarray, score_gain: float) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-amplified))
 
 
+def summarize_probability_distribution(
+    score: np.ndarray,
+    score_gain: float,
+) -> Dict[str, Any]:
+    """Expose calibrated probability/confidence distance to runtime gates."""
+    calibrated = apply_model_score_gain(score, score_gain)
+    finite = calibrated[np.isfinite(calibrated)]
+    if len(finite) == 0:
+        return {
+            "sample_count": 0,
+            "score_gain": float(score_gain),
+            "probability_quantiles": {},
+            "absolute_directional_confidence_quantiles": {},
+        }
+
+    confidence = np.abs(2.0 * finite - 1.0)
+
+    def quantiles(values: np.ndarray) -> Dict[str, float]:
+        points = (
+            ("min", 0.00),
+            ("p01", 0.01),
+            ("p05", 0.05),
+            ("p10", 0.10),
+            ("p25", 0.25),
+            ("p50", 0.50),
+            ("p75", 0.75),
+            ("p90", 0.90),
+            ("p95", 0.95),
+            ("p99", 0.99),
+            ("max", 1.00),
+        )
+        return {
+            name: float(np.quantile(values, point)) for name, point in points
+        }
+
+    return {
+        "sample_count": int(len(finite)),
+        "score_gain": float(score_gain),
+        "probability_quantiles": quantiles(finite),
+        "absolute_directional_confidence_quantiles": quantiles(confidence),
+    }
+
+
+def parse_positive_float_csv(raw: str) -> List[float]:
+    values: List[float] = []
+    for item in str(raw).split(","):
+        text = item.strip()
+        if not text:
+            continue
+        value = float(text)
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError("diagnostic score gains must be finite and > 0")
+        if value not in values:
+            values.append(value)
+    if not values:
+        raise ValueError("diagnostic score gains cannot be empty")
+    return values
+
+
+def build_score_gain_diagnostics(
+    split_inputs: Sequence[Tuple[np.ndarray, np.ndarray]],
+    score_gains: Sequence[float],
+    confidence_threshold: float,
+    round_trip_cost_bps: float,
+    holding_bars: int,
+    configured_score_gain: float,
+) -> Dict[str, Any]:
+    """Evaluate calibration sensitivity without turning it into promotion evidence.
+
+    The sweep uses development OOS windows only.  It helps diagnose a model whose
+    probabilities never reach the runtime confidence gate, but any gain selected
+    from it must still pass the independent selection domain and untouched final
+    holdout before registration.
+    """
+    normalized_gains: List[float] = []
+    for value in [configured_score_gain, *score_gains]:
+        gain = float(value)
+        if not math.isfinite(gain) or gain <= 0.0:
+            raise ValueError("score gains must be finite and > 0")
+        if gain not in normalized_gains:
+            normalized_gains.append(gain)
+
+    finite_raw_scores = [
+        np.asarray(score, dtype=np.float64)[np.isfinite(score)]
+        for score, _ in split_inputs
+        if len(score) > 0
+    ]
+    combined_raw_score = (
+        np.concatenate(finite_raw_scores)
+        if finite_raw_scores
+        else np.asarray([], dtype=np.float64)
+    )
+    sweep: List[Dict[str, Any]] = []
+    for gain in normalized_gains:
+        total_gross_bps = 0.0
+        total_net_bps = 0.0
+        total_turnover = 0.0
+        total_trades = 0
+        total_active_bars = 0
+        total_positive_trades = 0
+        total_evaluated_bars = 0
+        split_net_edges: List[float] = []
+        positive_splits = 0
+        eligible_signal_count = 0
+        finite_score_count = 0
+
+        for raw_score, execution_returns in split_inputs:
+            calibrated = apply_model_score_gain(raw_score, gain)
+            finite_mask = np.isfinite(calibrated)
+            finite_values = calibrated[finite_mask]
+            finite_score_count += int(len(finite_values))
+            eligible_signal_count += int(
+                np.sum(
+                    np.abs(2.0 * finite_values - 1.0)
+                    >= max(0.0, float(confidence_threshold))
+                )
+            )
+            objective = summarize_model_episode_objective(
+                score=calibrated,
+                execution_bar_return=execution_returns,
+                round_trip_cost_bps=round_trip_cost_bps,
+                confidence_threshold=confidence_threshold,
+                holding_bars=holding_bars,
+            )
+            split_net = float(
+                objective.get("mean_model_net_edge_bps", float("nan"))
+            )
+            if math.isfinite(split_net):
+                split_net_edges.append(split_net)
+                if split_net > 0.0:
+                    positive_splits += 1
+            total_gross_bps += float(
+                objective.get("total_model_gross_edge_bps", 0.0)
+            )
+            total_net_bps += float(
+                objective.get("total_model_net_edge_bps", 0.0)
+            )
+            total_turnover += float(objective.get("turnover", 0.0))
+            total_trades += int(objective.get("trade_count", 0))
+            total_active_bars += int(objective.get("active_bar_count", 0))
+            total_positive_trades += int(
+                objective.get("positive_trade_count", 0)
+            )
+            total_evaluated_bars += int(
+                objective.get("evaluated_bar_count", 0)
+            )
+
+        split_mean = mean_ignore_nan(split_net_edges)
+        split_stdev = stdev_ignore_nan(split_net_edges)
+        edge_lcb = float("nan")
+        if (
+            len(split_net_edges) >= 2
+            and math.isfinite(split_mean)
+            and math.isfinite(split_stdev)
+        ):
+            edge_lcb = split_mean - student_t_975(
+                len(split_net_edges) - 1
+            ) * split_stdev / math.sqrt(float(len(split_net_edges)))
+
+        sweep.append(
+            {
+                "score_gain": gain,
+                "configured": math.isclose(
+                    gain, float(configured_score_gain), rel_tol=0.0, abs_tol=1e-12
+                ),
+                "confidence_distribution": summarize_probability_distribution(
+                    combined_raw_score,
+                    gain,
+                ),
+                "eligible_signal_count": eligible_signal_count,
+                "eligible_signal_ratio": (
+                    float(eligible_signal_count) / float(finite_score_count)
+                    if finite_score_count > 0
+                    else None
+                ),
+                "mean_model_gross_edge_bps": (
+                    total_gross_bps / total_turnover
+                    if total_turnover > 0.0
+                    else 0.0
+                ),
+                "mean_model_net_edge_bps": (
+                    total_net_bps / total_turnover
+                    if total_turnover > 0.0
+                    else 0.0
+                ),
+                "positive_model_net_edge_ratio": (
+                    float(total_positive_trades) / float(total_trades)
+                    if total_trades > 0
+                    else None
+                ),
+                "model_net_total_gross_edge_bps": total_gross_bps,
+                "model_net_total_net_edge_bps": total_net_bps,
+                "model_net_total_turnover": total_turnover,
+                "model_net_total_trades": total_trades,
+                "model_net_active_bar_count": total_active_bars,
+                "model_net_positive_trade_count": total_positive_trades,
+                "model_net_evaluated_bar_count": total_evaluated_bars,
+                "mean_model_net_edge_bps_by_split": (
+                    split_mean if math.isfinite(split_mean) else None
+                ),
+                "model_net_edge_bps_split_stdev": (
+                    split_stdev if math.isfinite(split_stdev) else None
+                ),
+                "model_net_edge_lcb_bps": (
+                    edge_lcb if math.isfinite(edge_lcb) else None
+                ),
+                "positive_model_net_edge_ratio_by_split": (
+                    float(positive_splits) / float(len(split_net_edges))
+                    if split_net_edges
+                    else None
+                ),
+                "oos_economic_split_count": len(split_net_edges),
+            }
+        )
+
+    return {
+        "schema_version": "integrator_score_gain_diagnostics_v1",
+        "research_domain": "development_oos",
+        "promotion_evidence": False,
+        "selection_domain_validation_required": True,
+        "untouched_final_holdout_required": True,
+        "confidence_definition": "abs(2*p_up-1)",
+        "confidence_threshold": float(confidence_threshold),
+        "raw_probability_distribution": summarize_probability_distribution(
+            combined_raw_score,
+            1.0,
+        ),
+        "gain_sweep": sweep,
+    }
+
+
 def summarize_model_episode_objective(
     score: np.ndarray,
     execution_bar_return: np.ndarray,
@@ -1587,6 +1818,14 @@ def main() -> int:
         help="与 integrator.shadow.score_gain 一致的 CatBoost raw-logit 放大倍数",
     )
     parser.add_argument(
+        "--diagnostic_score_gains",
+        default="1,2,4,8,16,32,64",
+        help=(
+            "development OOS 置信校准诊断倍数；仅用于报告，"
+            "不得替代 selection/final holdout 晋级证据"
+        ),
+    )
+    parser.add_argument(
         "--label_round_trip_cost_bps",
         type=float,
         default=0.0,
@@ -1736,6 +1975,9 @@ def main() -> int:
         raise ValueError("--model_confidence_threshold 必须在 [0,1] 范围")
     if float(args.model_score_gain) <= 0.0:
         raise ValueError("--model_score_gain 必须大于 0")
+    diagnostic_score_gains = parse_positive_float_csv(
+        args.diagnostic_score_gains
+    )
     if (
         args.split_method == "rolling"
         and int(args.rolling_step_bars) < int(args.test_window_bars)
@@ -1852,6 +2094,7 @@ def main() -> int:
     model_net_positive_split_count = 0
     trained_split_count = 0
     first_trained_split: Dict[str, np.ndarray] | None = None
+    economic_diagnostic_inputs: List[Tuple[np.ndarray, np.ndarray]] = []
     raw_indices = np.arange(len(raw_features))
     finite_feature_mask = np.all(np.isfinite(raw_features), axis=1)
     previous_test_end = -1
@@ -1990,6 +2233,12 @@ def main() -> int:
             model.predict_proba(X_economic_test)[:, 1]
             if len(X_economic_test) > 0
             else np.asarray([], dtype=np.float64)
+        )
+        economic_diagnostic_inputs.append(
+            (
+                np.asarray(economic_score, dtype=np.float64).copy(),
+                np.asarray(test_execution_return, dtype=np.float64).copy(),
+            )
         )
         economic_policy_score = apply_model_score_gain(
             economic_score,
@@ -2280,6 +2529,15 @@ def main() -> int:
             len(model_net_edge_split_values) - 1
         ) * split_standard_error
 
+    score_gain_diagnostics = build_score_gain_diagnostics(
+        split_inputs=economic_diagnostic_inputs,
+        score_gains=diagnostic_score_gains,
+        confidence_threshold=float(args.model_confidence_threshold),
+        round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+        holding_bars=int(args.predict_horizon_bars),
+        configured_score_gain=float(args.model_score_gain),
+    )
+
     metrics_oos = {
         "primary_objective": "aggregate_model_net_bps_per_unit_turnover_after_cost",
         "primary_objective_definition": (
@@ -2336,6 +2594,7 @@ def main() -> int:
         "net_objective_round_trip_cost_bps": float(args.label_round_trip_cost_bps),
         "model_confidence_threshold": float(args.model_confidence_threshold),
         "model_score_gain": float(args.model_score_gain),
+        "score_gain_diagnostics": score_gain_diagnostics,
         "train_auc_mean": mean_ignore_nan(train_auc_values),
         "train_auc_stdev": stdev_ignore_nan(train_auc_values),
         "auc_mean": mean_ignore_nan(auc_values),
