@@ -11,6 +11,53 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    def test_miner_uses_research_container_with_persistent_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            capture_path = root / "compose_args.txt"
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=miner-container-test
+                source tools/closed_loop_runner.sh train \
+                  --output-root "${REPORTS_ROOT}"
+                compose_cmd() {
+                  printf '%s\n' "$@" > "${CAPTURE_PATH}"
+                }
+                run_miner
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "AI_TRADE_DATA_DIR": str(root / "persistent-data"),
+                    "REPORTS_ROOT": str(root / "reports"),
+                    "CAPTURE_PATH": str(capture_path),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            args = capture_path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                args[:7],
+                [
+                    "--profile",
+                    "research",
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "/app/trade_bot",
+                    "ai-trade-research",
+                ],
+            )
+            miner_csv = next(item for item in args if item.startswith("--miner_csv="))
+            self.assertTrue(miner_csv.startswith(f"--miner_csv={root / 'reports'}/"))
+
     def test_default_csv_path_uses_persistent_data_root(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
