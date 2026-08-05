@@ -3183,6 +3183,7 @@ run_data_pipeline() {
   if compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/run_data_pipeline.py \
     --config "${DATA_CONFIG_PATH}" \
+    --symbol "${SYMBOL}" \
     --run-dir "${DATA_PIPELINE_RUN_DIR}" \
     --ohlcv-out "${CSV_PATH}" \
     --feature-out "${FEATURE_STORE_PATH}" \

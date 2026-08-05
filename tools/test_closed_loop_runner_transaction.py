@@ -11,6 +11,42 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    def test_training_pipeline_binds_runner_symbol(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            capture_path = root / "compose_args.txt"
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=training-symbol-test
+                source tools/closed_loop_runner.sh data \
+                  --symbol SOLUSDT \
+                  --output-root "${REPORTS_ROOT}"
+                compose_cmd() {
+                  printf '%s\n' "$@" > "${CAPTURE_PATH}"
+                }
+                run_data_pipeline
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "AI_TRADE_DATA_DIR": str(root / "persistent-data"),
+                    "REPORTS_ROOT": str(root / "reports"),
+                    "CAPTURE_PATH": str(capture_path),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            args = capture_path.read_text(encoding="utf-8").splitlines()
+            symbol_index = args.index("--symbol")
+            self.assertEqual(args[symbol_index + 1], "SOLUSDT")
+
     def test_miner_uses_research_container_with_persistent_paths(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
