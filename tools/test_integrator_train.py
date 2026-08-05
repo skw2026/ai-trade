@@ -133,6 +133,42 @@ class IntegratorTrainTest(unittest.TestCase):
         self.assertLess(float(amplified[1]), 0.25)
         self.assertAlmostEqual(float(amplified[2]), 0.5, places=12)
 
+    def test_score_gain_diagnostics_exposes_gate_distance_and_economics(self):
+        score = TRAIN.np.asarray(
+            [0.56, 0.56, 0.44, 0.44], dtype=TRAIN.np.float64
+        )
+        returns = TRAIN.np.asarray(
+            [0.002, 0.002, -0.002, -0.002], dtype=TRAIN.np.float64
+        )
+        report = TRAIN.build_score_gain_diagnostics(
+            split_inputs=[(score, returns)],
+            score_gains=[1.0, 8.0],
+            confidence_threshold=0.5,
+            round_trip_cost_bps=10.0,
+            holding_bars=2,
+            configured_score_gain=1.0,
+        )
+        self.assertFalse(report["promotion_evidence"])
+        self.assertTrue(report["selection_domain_validation_required"])
+        sweep = {item["score_gain"]: item for item in report["gain_sweep"]}
+        self.assertEqual(sweep[1.0]["eligible_signal_count"], 0)
+        self.assertEqual(sweep[1.0]["model_net_total_trades"], 0)
+        self.assertEqual(sweep[8.0]["eligible_signal_count"], 4)
+        self.assertEqual(sweep[8.0]["model_net_total_trades"], 2)
+        self.assertGreater(sweep[8.0]["mean_model_net_edge_bps"], 0.0)
+        self.assertGreater(
+            sweep[8.0]["confidence_distribution"]
+            ["absolute_directional_confidence_quantiles"]["max"],
+            0.5,
+        )
+
+    def test_parse_positive_float_csv_rejects_invalid_gain(self):
+        self.assertEqual(
+            TRAIN.parse_positive_float_csv("1,2,2,4"), [1.0, 2.0, 4.0]
+        )
+        with self.assertRaisesRegex(ValueError, "finite and > 0"):
+            TRAIN.parse_positive_float_csv("1,0")
+
     def test_episode_objective_uses_non_overlapping_horizon_and_round_trip_cost(self):
         score = TRAIN.np.asarray([0.9, 0.1, 0.1, 0.9], dtype=TRAIN.np.float64)
         returns = TRAIN.np.asarray([0.002, 0.002, -0.002, -0.002], dtype=TRAIN.np.float64)

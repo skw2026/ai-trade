@@ -438,6 +438,7 @@ jobs:
           fetch_report "${REMOTE_BASE}/data_quality_report.json" ".artifacts/data_quality_report.json" "data_quality_report" "json"
           fetch_report "${REMOTE_BASE}/walkforward_report.json" ".artifacts/walkforward_report.json" "walkforward_report" "json"
           fetch_report "${REMOTE_BASE}/feature_store_5m.csv" ".artifacts/feature_store_5m.csv" "feature_store" "text"
+          fetch_report "${REMOTE_BASE}/research_development_ohlcv_5m.csv" ".artifacts/research_development_ohlcv_5m.csv" "research_development_raw" "text"
           fetch_report "${REMOTE_BASE}/research_domain_split_report.json" ".artifacts/research_domain_split_report.json" "research_domain_split_report" "json"
           fetch_report "${REMOTE_BASE}/feature_parity_report.json" ".artifacts/feature_parity_report.json" "feature_parity_report" "json"
           fetch_report "${REMOTE_BASE}/research_selection_feature_5m.csv" ".artifacts/research_selection_feature_5m.csv" "research_selection_feature_store" "text"
