@@ -1,0 +1,13 @@
+tools/integrator_train.py
+  ai_agent 819-1049,1820-1827,1978-1980,2097,2237-2242,2532-2540,2597
+.github/workflows/closed-loop.yml
+  ai_agent 441
+tools/test_integrator_train.py
+  ai_agent 136-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "b7df73d1d2df51873d7ec0e1e6436fb761501d6b",
+  "prompts": {}
+}
