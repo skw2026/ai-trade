@@ -1,0 +1,11 @@
+tools/closed_loop_runner.sh
+  ai_agent 3186
+tools/test_closed_loop_runner_transaction.py
+  ai_agent 14-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "f65b8d7e5ded2cb6867decc582d164f57f344469",
+  "prompts": {}
+}
