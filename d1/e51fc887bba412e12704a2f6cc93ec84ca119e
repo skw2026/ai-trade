@@ -1,0 +1,11 @@
+.github/workflows/smoke.yml
+  ai_agent 14,36-39
+tools/test_compose_consistency.py
+  ai_agent 723-725
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "d1e51fc887bba412e12704a2f6cc93ec84ca119e",
+  "prompts": {}
+}
