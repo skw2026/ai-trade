@@ -105,6 +105,10 @@ jobs:
           grep -q "validate_reports_test" /tmp/ctest-list.txt
           grep -q "build_closed_loop_report_test" /tmp/ctest-list.txt
           grep -q "data_pipeline_tools_test" /tmp/ctest-list.txt
+          grep -q "fetch_market_alpha_history_test" /tmp/ctest-list.txt
+          grep -q "fetch_bybit_trade_history_test" /tmp/ctest-list.txt
+          grep -q "collect_bybit_microstructure_test" /tmp/ctest-list.txt
+          grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt
           grep -q "run_data_pipeline_test" /tmp/ctest-list.txt
           grep -q "feature_parity_contract_test" /tmp/ctest-list.txt
           grep -q "web_report_store_test" /tmp/ctest-list.txt
@@ -295,6 +299,7 @@ jobs:
             /tmp/deploy_bundle.list
           grep -q '^\./data/$' /tmp/deploy_bundle.list
           grep -q '^\./config/data_pipeline.yaml$' /tmp/deploy_bundle.list
+          grep -q '^\./config/market_alpha_development.json$' /tmp/deploy_bundle.list
           grep -q '^\./config/demo_incubation_policy.json$' /tmp/deploy_bundle.list
           grep -q '^\./ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
           grep -q '^\./tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
@@ -529,11 +534,17 @@ jobs:
               "${RELEASE_TMP}/deploy/prune_release_storage.py" \
               "${RELEASE_TMP}/config/default.yaml" \
               "${RELEASE_TMP}/config/data_pipeline.yaml" \
+              "${RELEASE_TMP}/config/market_alpha_development.json" \
               "${RELEASE_TMP}/config/demo_incubation_policy.json" \
               "${RELEASE_TMP}/tools/closed_loop_runner.sh" \
               "${RELEASE_TMP}/tools/evaluate_demo_incubation.py" \
               "${RELEASE_TMP}/tools/fetch_bybit_kline.py" \
               "${RELEASE_TMP}/tools/fetch_binance_archive.py" \
+              "${RELEASE_TMP}/tools/fetch_market_alpha_history.py" \
+              "${RELEASE_TMP}/tools/fetch_bybit_trade_history.py" \
+              "${RELEASE_TMP}/tools/collect_bybit_microstructure.py" \
+              "${RELEASE_TMP}/tools/run_market_alpha_development.py" \
+              "${RELEASE_TMP}/tools/economic_target_probe.py" \
               "${RELEASE_TMP}/tools/stream_market_ws.py" \
               "${RELEASE_TMP}/tools/gap_fill_klines.py" \
               "${RELEASE_TMP}/tools/build_feature_store.py" \

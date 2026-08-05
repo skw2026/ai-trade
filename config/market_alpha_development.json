@@ -1,0 +1,47 @@
+{
+  "schema_version": "market_alpha_development_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "bar_contract": {
+    "target_symbol": "SOLUSDT",
+    "interval_ms": 300000,
+    "timestamp_semantics": "bar_open_time",
+    "usable_after": "bar_open_time+interval_ms",
+    "execution_latency_bars": 1
+  },
+  "historical_sources": {
+    "cross_market_cross_asset": {
+      "provider": "Binance public data",
+      "market": "futures_um",
+      "symbols": ["SOLUSDT", "BTCUSDT", "ETHUSDT"],
+      "fields": ["close", "quote_volume", "trade_count", "taker_buy_quote_volume"],
+      "checksum_required": true,
+      "exact_anchor_axis_required": true
+    },
+    "target_trade_flow": {
+      "provider": "Bybit public trade archive",
+      "symbol": "SOLUSDT",
+      "sample_days_required": 1,
+      "full_backfill_supported": true
+    }
+  },
+  "forward_sources": {
+    "provider": "Bybit public WebSocket v5",
+    "topics": ["orderbook.50.SOLUSDT", "publicTrade.SOLUSDT"],
+    "raw_capture_required": true,
+    "deterministic_replay_required": true,
+    "bucket_ms": 1000
+  },
+  "development_economic_gate": {
+    "calibration": "nested_validation_quantile",
+    "minimum_total_trades": 20,
+    "minimum_positive_split_ratio": 0.5,
+    "minimum_net_edge_lcb_bps": 0.0
+  },
+  "remaining_promotion_gates": [
+    "independent_selection",
+    "untouched_final_holdout",
+    "offline_online_feature_parity",
+    "demo_forward_profitability"
+  ]
+}

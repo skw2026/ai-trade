@@ -68,6 +68,10 @@ jobs:
           grep -q "validate_reports_test" /tmp/ctest-list.txt
           grep -q "build_closed_loop_report_test" /tmp/ctest-list.txt
           grep -q "data_pipeline_tools_test" /tmp/ctest-list.txt
+          grep -q "fetch_market_alpha_history_test" /tmp/ctest-list.txt
+          grep -q "fetch_bybit_trade_history_test" /tmp/ctest-list.txt
+          grep -q "collect_bybit_microstructure_test" /tmp/ctest-list.txt
+          grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt
           grep -q "run_data_pipeline_test" /tmp/ctest-list.txt
           grep -q "feature_parity_contract_test" /tmp/ctest-list.txt
           grep -q "web_report_store_test" /tmp/ctest-list.txt

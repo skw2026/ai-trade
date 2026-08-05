@@ -108,6 +108,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("--no-compile", research_stage)
         self.assertIn("-name tests", research_stage)
         self.assertIn("import catboost, numpy", research_stage)
+        self.assertIn("websockets.__version__", research_stage)
         self.assertNotIn(
             "pip3 install --no-cache-dir --break-system-packages numpy catboost",
             research_stage,

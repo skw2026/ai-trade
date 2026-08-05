@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import pathlib
@@ -47,7 +48,50 @@ PROBE_VARIANTS = (
     "continuous_return_huber",
     "ternary_action_rmse",
 )
-FEATURE_SETS = ("baseline", "expanded_ohlcv_v1", "expanded_derivatives_v1")
+FEATURE_SETS = (
+    "baseline",
+    "expanded_ohlcv_v1",
+    "expanded_derivatives_v1",
+    "expanded_market_alpha_v1",
+    "expanded_market_alpha_derivatives_v1",
+)
+
+
+def assert_development_only_path(path: pathlib.Path, label: str) -> None:
+    lowered = str(path).lower()
+    if "development" not in lowered or any(
+        token in lowered for token in ("selection", "holdout", "final_test")
+    ):
+        raise ValueError(
+            f"{label} must be explicitly development-only and must not reference "
+            "selection/holdout/final_test"
+        )
+
+
+def sha256_file(path: pathlib.Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_miner_development_contract(path: pathlib.Path, horizon_bars: int) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    required = {
+        "optimization_domain": "development_train",
+        "validation_domain": "development_validation_diagnostic_only",
+        "validation_feedback_used": False,
+        "predict_horizon_bars": int(horizon_bars),
+        "execution_latency_bars": 1,
+    }
+    mismatches = {
+        key: {"expected": expected, "actual": payload.get(key)}
+        for key, expected in required.items()
+        if payload.get(key) != expected
+    }
+    if mismatches:
+        raise ValueError(f"miner development-domain contract mismatch: {mismatches}")
 
 
 def lagged_return(values: np.ndarray, bars: int) -> np.ndarray:
@@ -208,6 +252,110 @@ def load_derivatives_features(
             (imbalance - imbalance_mean)
             / np.where(imbalance_std > 1e-12, imbalance_std, np.nan),
         )
+    return np.column_stack(arrays), names
+
+
+def load_market_alpha_features(
+    path: pathlib.Path,
+    expected_timestamps: np.ndarray,
+    anchor_close: np.ndarray,
+) -> Tuple[np.ndarray, List[str]]:
+    """Load exact-axis Binance trade-flow/cross-asset bars as causal features."""
+    source_fields = tuple(
+        f"binance_{symbol}_{field}"
+        for symbol in ("sol", "btc", "eth")
+        for field in ("close", "quote_volume", "trade_count", "taker_buy_quote_volume")
+    )
+    timestamps: List[int] = []
+    values: Dict[str, List[float]] = {name: [] for name in source_fields}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"timestamp", *source_fields}
+        if not required.issubset(set(reader.fieldnames or [])):
+            missing = sorted(required.difference(set(reader.fieldnames or [])))
+            raise ValueError(f"market alpha CSV is missing required columns: {missing}")
+        for row in reader:
+            timestamps.append(int(row["timestamp"]))
+            for name in source_fields:
+                raw = str(row.get(name, "")).strip()
+                values[name].append(float(raw) if raw else float("nan"))
+    actual = np.asarray(timestamps, dtype=np.int64)
+    expected = np.asarray(expected_timestamps, dtype=np.int64)
+    anchor = np.asarray(anchor_close, dtype=np.float64)
+    if len(actual) != len(expected) or not np.array_equal(actual, expected):
+        raise ValueError("market alpha/OHLCV timestamp axes differ")
+    if len(anchor) != len(expected):
+        raise ValueError("anchor close/OHLCV timestamp axes differ")
+
+    arrays: List[np.ndarray] = []
+    names: List[str] = []
+
+    def add(name: str, data: np.ndarray) -> None:
+        names.append(name)
+        arrays.append(np.asarray(data, dtype=np.float64))
+
+    close = {
+        symbol: np.asarray(values[f"binance_{symbol}_close"], dtype=np.float64)
+        for symbol in ("sol", "btc", "eth")
+    }
+    quote_volume = {
+        symbol: np.asarray(values[f"binance_{symbol}_quote_volume"], dtype=np.float64)
+        for symbol in ("sol", "btc", "eth")
+    }
+    trade_count = {
+        symbol: np.asarray(values[f"binance_{symbol}_trade_count"], dtype=np.float64)
+        for symbol in ("sol", "btc", "eth")
+    }
+    taker_buy = {
+        symbol: np.asarray(
+            values[f"binance_{symbol}_taker_buy_quote_volume"], dtype=np.float64
+        )
+        for symbol in ("sol", "btc", "eth")
+    }
+    imbalance = {
+        symbol: 2.0 * taker_buy[symbol]
+        / np.where(quote_volume[symbol] > 1e-12, quote_volume[symbol], np.nan)
+        - 1.0
+        for symbol in ("sol", "btc", "eth")
+    }
+
+    basis = close["sol"] / np.where(np.abs(anchor) > 1e-12, anchor, np.nan) - 1.0
+    add("market_sol_cross_venue_basis", basis)
+    add("market_sol_taker_imbalance", imbalance["sol"])
+    add("market_sol_log_quote_volume", np.log1p(quote_volume["sol"]))
+    add("market_sol_log_trade_count", np.log1p(trade_count["sol"]))
+    for window in (12, 48, 288):
+        basis_mean, basis_std = rolling_moments(basis, window)
+        flow_mean, flow_std = rolling_moments(imbalance["sol"], window)
+        add(
+            f"market_sol_basis_zscore_{window}",
+            (basis - basis_mean) / np.where(basis_std > 1e-12, basis_std, np.nan),
+        )
+        add(
+            f"market_sol_flow_zscore_{window}",
+            (imbalance["sol"] - flow_mean)
+            / np.where(flow_std > 1e-12, flow_std, np.nan),
+        )
+
+    for symbol in ("btc", "eth"):
+        add(f"market_{symbol}_taker_imbalance", imbalance[symbol])
+        for window in (1, 6, 12, 48):
+            add(f"market_{symbol}_return_{window}", lagged_return(close[symbol], window))
+
+    anchor_return_1 = lagged_return(anchor, 1)
+    btc_return_1 = lagged_return(close["btc"], 1)
+    eth_return_1 = lagged_return(close["eth"], 1)
+    add("market_cross_asset_residual_1", anchor_return_1 - 0.5 * (btc_return_1 + eth_return_1))
+    add("market_btc_eth_dispersion_1", btc_return_1 - eth_return_1)
+    for window in (12, 48):
+        anchor_return = lagged_return(anchor, window)
+        btc_return = lagged_return(close["btc"], window)
+        eth_return = lagged_return(close["eth"], window)
+        add(
+            f"market_cross_asset_residual_{window}",
+            anchor_return - 0.5 * (btc_return + eth_return),
+        )
+        add(f"market_btc_eth_dispersion_{window}", btc_return - eth_return)
     return np.column_stack(arrays), names
 
 
@@ -626,6 +774,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--feature_set", choices=FEATURE_SETS, default="baseline")
     parser.add_argument("--derivatives_csv", default="")
+    parser.add_argument("--market_alpha_csv", default="")
+    parser.add_argument("--research_domain", default="development", choices=("development",))
     parser.add_argument("--n_splits", type=int, default=10)
     parser.add_argument("--train_window_bars", type=int, default=17280)
     parser.add_argument("--test_window_bars", type=int, default=2016)
@@ -693,6 +843,8 @@ def main() -> int:
 
     csv_path = pathlib.Path(args.csv)
     miner_path = pathlib.Path(args.miner_report)
+    assert_development_only_path(csv_path, "OHLCV CSV")
+    validate_miner_development_contract(miner_path, int(args.predict_horizon_bars))
     series = load_ohlcv_csv(csv_path)
     time_axis_quality = validate_time_axis(series["timestamp"], int(args.bar_interval_ms))
     factor_set_version, factors = load_factor_specs(
@@ -702,18 +854,40 @@ def main() -> int:
         expected_execution_latency_bars=int(args.execution_latency_bars),
     )
     raw_features, feature_names, ret_1 = build_feature_matrix(series, factors)
-    if args.feature_set in {"expanded_ohlcv_v1", "expanded_derivatives_v1"}:
+    if args.feature_set != "baseline":
         expanded_features, expanded_names = build_expanded_ohlcv_features(series)
         raw_features = np.column_stack((raw_features, expanded_features))
         feature_names = [*feature_names, *expanded_names]
-    if args.feature_set == "expanded_derivatives_v1":
+    if args.feature_set in {
+        "expanded_derivatives_v1",
+        "expanded_market_alpha_derivatives_v1",
+    }:
         if not str(args.derivatives_csv).strip():
-            raise ValueError("expanded_derivatives_v1 requires --derivatives_csv")
+            raise ValueError(f"{args.feature_set} requires --derivatives_csv")
+        assert_development_only_path(
+            pathlib.Path(args.derivatives_csv), "derivatives CSV"
+        )
         derivative_features, derivative_names = load_derivatives_features(
             pathlib.Path(args.derivatives_csv), series["timestamp"]
         )
         raw_features = np.column_stack((raw_features, derivative_features))
         feature_names = [*feature_names, *derivative_names]
+    if args.feature_set in {
+        "expanded_market_alpha_v1",
+        "expanded_market_alpha_derivatives_v1",
+    }:
+        if not str(args.market_alpha_csv).strip():
+            raise ValueError(f"{args.feature_set} requires --market_alpha_csv")
+        assert_development_only_path(
+            pathlib.Path(args.market_alpha_csv), "market alpha CSV"
+        )
+        market_features, market_names = load_market_alpha_features(
+            pathlib.Path(args.market_alpha_csv),
+            series["timestamp"],
+            series["close"],
+        )
+        raw_features = np.column_stack((raw_features, market_features))
+        feature_names = [*feature_names, *market_names]
     direction_label, forward_return = build_label(
         series["close"],
         int(args.predict_horizon_bars),
@@ -780,6 +954,9 @@ def main() -> int:
         ),
         "data": {
             "csv": str(csv_path),
+            "csv_sha256": sha256_file(csv_path),
+            "miner_report": str(miner_path),
+            "miner_report_sha256": sha256_file(miner_path),
             "training_symbol": str(args.training_symbol).strip().upper(),
             "bar_interval_ms": int(args.bar_interval_ms),
             "row_count": int(len(raw_features)),
@@ -788,6 +965,17 @@ def main() -> int:
             "feature_count": len(feature_names),
             "feature_set": args.feature_set,
             "derivatives_csv": str(args.derivatives_csv) or None,
+            "derivatives_csv_sha256": (
+                sha256_file(pathlib.Path(args.derivatives_csv))
+                if str(args.derivatives_csv).strip()
+                else None
+            ),
+            "market_alpha_csv": str(args.market_alpha_csv) or None,
+            "market_alpha_csv_sha256": (
+                sha256_file(pathlib.Path(args.market_alpha_csv))
+                if str(args.market_alpha_csv).strip()
+                else None
+            ),
         },
         "split_contract": {
             "method": "rolling",

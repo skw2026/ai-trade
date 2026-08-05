@@ -111,7 +111,7 @@ RUN pip3 install --no-cache-dir --no-compile --break-system-packages \
       | xargs -0 -r rm -rf && \
     find /usr/local/lib/python3.12/dist-packages \
       -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete && \
-    python3 -c 'import catboost, numpy; print(catboost.__version__, numpy.__version__)'
+    python3 -c 'import catboost, numpy, websockets; print(catboost.__version__, numpy.__version__, websockets.__version__)'
 ENTRYPOINT ["python3", "/app/tools/integrator_train.py"]
 CMD ["--help"]
 
