@@ -146,6 +146,10 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_closed_loop_mechanism_audit.py)
     add_test(NAME integrator_train_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_integrator_train.py)
+    add_test(NAME economic_target_probe_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_economic_target_probe.py)
+    add_test(NAME fetch_bybit_derivatives_history_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_fetch_bybit_derivatives_history.py)
     add_test(NAME feature_parity_contract_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_feature_parity_contract.py)
     add_test(NAME check_runtime_health_test
