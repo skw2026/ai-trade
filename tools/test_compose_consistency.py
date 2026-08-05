@@ -702,6 +702,23 @@ class ComposeConsistencyTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("WORKFLOW_BLOCK_REGISTRY_ON_ALPHA_FAIL", workflow)
+        self.assertIn(
+            "github.event_name == 'schedule' && 'skip' || 'fail'",
+            workflow,
+        )
+        self.assertIn("CLOSED_LOOP_LOCK_BUSY_POLICY", workflow)
+        self.assertIn(
+            'if (( runner_status == 5 )) &&',
+            workflow,
+        )
+        self.assertIn(
+            '[[ "${WORKFLOW_LOCK_BUSY_POLICY}" == "skip" ]]',
+            workflow,
+        )
+        self.assertIn("closed_loop_overlap_skip_v1", workflow)
+        self.assertIn("closed_loop_runner_lock_busy", workflow)
+        self.assertIn("SKIPPED_OVERLAP", workflow)
+        self.assertIn("scheduled overlap receipt verified", workflow)
         self.assertIn("replay_optimization_report.json", workflow)
         self.assertIn("closed_loop_mechanism_report.json", workflow)
         self.assertIn("CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
