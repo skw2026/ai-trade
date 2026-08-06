@@ -83,10 +83,15 @@ def run(args: argparse.Namespace) -> int:
     completed = 0
     successful = 0
     while args.max_segments <= 0 or completed < args.max_segments:
+        duration_sec = (
+            args.bootstrap_segment_duration_sec
+            if completed == 0
+            else args.segment_duration_sec
+        )
         command, report_path = segment_command(
             root=root,
             symbol=args.symbol,
-            duration_sec=args.segment_duration_sec,
+            duration_sec=duration_sec,
             url=args.url,
         )
         started_ms = int(time.time() * 1000)
@@ -174,6 +179,9 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument("--root", required=True)
     run_parser.add_argument("--symbol", default="SOLUSDT", choices=("SOLUSDT",))
     run_parser.add_argument("--segment-duration-sec", type=float, default=3605.0)
+    run_parser.add_argument(
+        "--bootstrap-segment-duration-sec", type=float, default=65.0
+    )
     run_parser.add_argument("--retention-days", type=int, default=120)
     run_parser.add_argument("--max-backoff-sec", type=int, default=60)
     run_parser.add_argument("--max-segments", type=int, default=0)
@@ -189,8 +197,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if args.action == "run":
-        if args.segment_duration_sec <= 0 or args.retention_days <= 0:
-            raise ValueError("segment duration and retention days must be positive")
+        if (
+            args.segment_duration_sec <= 0
+            or args.bootstrap_segment_duration_sec <= 0
+            or args.retention_days <= 0
+        ):
+            raise ValueError(
+                "bootstrap/regular segment duration and retention days must be positive"
+            )
         return run(args)
     return healthcheck(args)
 

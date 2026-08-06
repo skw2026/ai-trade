@@ -8,6 +8,7 @@ import pathlib
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import assess_microstructure_capture as assessment
 import run_microstructure_collector as supervisor
@@ -125,6 +126,36 @@ class MicrostructureRuntimeTest(unittest.TestCase):
             self.assertTrue(payload["capture_in_progress"])
             self.assertEqual(payload["collector_health"]["status"], "PASS")
             self.assertEqual(payload["failures"], ["minimum_forward_capture_duration"])
+
+    def test_supervisor_uses_short_bootstrap_then_regular_segments(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            args = argparse.Namespace(
+                root=str(root),
+                symbol="SOLUSDT",
+                bootstrap_segment_duration_sec=65.0,
+                segment_duration_sec=3605.0,
+                retention_days=1,
+                max_backoff_sec=1,
+                max_segments=2,
+                url="wss://example.invalid",
+            )
+            observed_durations = []
+
+            def fake_segment_command(*, root, symbol, duration_sec, url):
+                observed_durations.append(duration_sec)
+                report = root / "reports" / symbol / f"{len(observed_durations)}.json"
+                report.parent.mkdir(parents=True, exist_ok=True)
+                report.write_text(json.dumps({"status": "PASS"}), encoding="utf-8")
+                return ["true"], report
+
+            with mock.patch.object(
+                supervisor, "segment_command", side_effect=fake_segment_command
+            ), mock.patch.object(supervisor.subprocess, "run"):
+                status = supervisor.run(args)
+
+            self.assertEqual(status, 0)
+            self.assertEqual(observed_durations, [65.0, 3605.0])
 
 
 if __name__ == "__main__":

@@ -285,6 +285,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("restart: unless-stopped", collector)
             self.assertIn("healthcheck", collector)
             self.assertIn("SOLUSDT", collector)
+            self.assertIn("bootstrap-segment-duration-sec", collector)
+            self.assertIn("MARKET_ALPHA_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
         self.assertIn(
             "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
             self.prod_services["market-alpha-collector"],

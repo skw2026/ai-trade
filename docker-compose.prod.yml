@@ -53,6 +53,7 @@ services:
     command:
       - "--root=/app/data/research/microstructure"
       - "--symbol=SOLUSDT"
+      - "--bootstrap-segment-duration-sec=${MARKET_ALPHA_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
       - "--segment-duration-sec=${MARKET_ALPHA_SEGMENT_DURATION_SEC:-3605}"
       - "--retention-days=${MARKET_ALPHA_RETENTION_DAYS:-120}"
     environment:
