@@ -14,6 +14,7 @@ DEV_COMPOSE = ROOT / "docker-compose.yml"
 PROD_COMPOSE = ROOT / "docker-compose.prod.yml"
 DEPLOY_SCRIPT = ROOT / "deploy" / "ecs-deploy.sh"
 RUNNER_SCRIPT = ROOT / "tools" / "closed_loop_runner.sh"
+REPORT_DOWNLOADER_SCRIPT = ROOT / "tools" / "download_closed_loop_reports.sh"
 WATCHDOG_SCRIPT = ROOT / "ops" / "watchdog.py"
 RECYCLE_SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
 DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
@@ -650,28 +651,38 @@ class ComposeConsistencyTest(unittest.TestCase):
 
     def test_closed_loop_workflow_enforces_versioned_artifact_contract(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("config/closed_loop_contract.json", workflow)
+        downloader = REPORT_DOWNLOADER_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("config/closed_loop_contract.json", downloader)
         self.assertIn(
             'failures.append(f"{name}:required_not_manifested")',
-            workflow,
+            downloader,
         )
-        self.assertIn("artifact_contract:sha256", workflow)
-        self.assertIn("closed_loop_artifact_attestation_v1", workflow)
+        self.assertIn("artifact_contract:sha256", downloader)
+        self.assertIn("closed_loop_artifact_attestation_v1", downloader)
         self.assertIn(
             'fetch_report "${REMOTE_BASE}/artifact_attestation.json"',
-            workflow,
+            downloader,
         )
         self.assertIn(
             '"replay_validation_feature_build_report": Path(',
-            workflow,
+            downloader,
         )
         self.assertIn(
             '"replay_validation_command_log": Path(',
+            downloader,
+        )
+        self.assertIn("run: bash tools/download_closed_loop_reports.sh", workflow)
+        self.assertNotIn("fetch_report() {", workflow)
+        run_blocks = re.findall(
+            r"(?ms)^        run: \|\n((?:(?:^          .*\n)|(?:^\s*$))*)",
             workflow,
         )
+        self.assertTrue(run_blocks)
+        self.assertTrue(all(len(block) < 21_000 for block in run_blocks))
 
     def test_closed_loop_workflow_default_replay_symbols_focus_mechanism_proof(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
+        downloader = REPORT_DOWNLOADER_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
             'default: "SOLUSDT"',
             workflow,
@@ -735,15 +746,15 @@ class ComposeConsistencyTest(unittest.TestCase):
             '[[ "${WORKFLOW_LOCK_BUSY_POLICY}" == "skip" ]]',
             workflow,
         )
-        self.assertIn("closed_loop_overlap_skip_v1", workflow)
-        self.assertIn("closed_loop_runner_lock_busy", workflow)
-        self.assertIn("SKIPPED_OVERLAP", workflow)
-        self.assertIn("scheduled overlap receipt verified", workflow)
-        self.assertIn("replay_optimization_report.json", workflow)
-        self.assertIn("closed_loop_mechanism_report.json", workflow)
+        self.assertIn("closed_loop_overlap_skip_v1", downloader)
+        self.assertIn("closed_loop_runner_lock_busy", downloader)
+        self.assertIn("SKIPPED_OVERLAP", downloader)
+        self.assertIn("scheduled overlap receipt verified", downloader)
+        self.assertIn("replay_optimization_report.json", downloader)
+        self.assertIn("closed_loop_mechanism_report.json", downloader)
         self.assertIn("CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
-        self.assertIn('REMOTE_BASE="/opt/ai-trade/data/reports/closed_loop/${EXPECTED_RUN_ID}"', workflow)
-        self.assertIn("run/release identity mismatch: expected_run_id=", workflow)
+        self.assertIn('REMOTE_BASE="/opt/ai-trade/data/reports/closed_loop/${EXPECTED_RUN_ID}"', downloader)
+        self.assertIn("run/release identity mismatch: expected_run_id=", downloader)
         self.assertIn('RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"', workflow)
         self.assertIn("sha256sum -c .release-content.sha256", workflow)
         self.assertIn("runtime/release identity mismatch", workflow)
