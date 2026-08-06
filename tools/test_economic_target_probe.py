@@ -13,6 +13,10 @@ import economic_target_probe as probe
 
 
 class EconomicTargetProbeTest(unittest.TestCase):
+    def test_default_variants_do_not_require_optional_market_data(self):
+        self.assertIn(probe.RESIDUAL_VARIANT, probe.PROBE_VARIANTS)
+        self.assertNotIn(probe.RESIDUAL_VARIANT, probe.DEFAULT_PROBE_VARIANTS)
+
     def test_development_path_guard_rejects_other_domains(self):
         probe.assert_development_only_path(
             pathlib.Path("research_development_ohlcv.csv"), "test"

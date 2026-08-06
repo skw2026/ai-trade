@@ -52,6 +52,12 @@ PROBE_VARIANTS = (
     "ternary_action_rmse",
     "path_utility_huber",
 )
+RESIDUAL_VARIANT = (
+    "continuous_return_cross_asset_residual_huber_side_calibrated"
+)
+DEFAULT_PROBE_VARIANTS = tuple(
+    variant for variant in PROBE_VARIANTS if variant != RESIDUAL_VARIANT
+)
 DIRECTION_MODES = ("both", "long_only", "short_only")
 FEATURE_SETS = (
     "baseline",
@@ -1069,7 +1075,7 @@ def run_variant(
                             DIRECTION_MODES
                             if variant in {
                                 "continuous_return_huber_side_calibrated",
-                                "continuous_return_cross_asset_residual_huber_side_calibrated",
+                                RESIDUAL_VARIANT,
                             }
                             else ("both",)
                         ),
@@ -1174,14 +1180,14 @@ def run_variant(
                 "nested_validation_long_short_abstention"
                 if variant in {
                     "continuous_return_huber_side_calibrated",
-                    "continuous_return_cross_asset_residual_huber_side_calibrated",
+                    RESIDUAL_VARIANT,
                 }
                 else "both_sides"
             ),
             "return_target": (
                 "bybit_sol_minus_equal_weight_binance_btc_eth"
                 if variant
-                == "continuous_return_cross_asset_residual_huber_side_calibrated"
+                == RESIDUAL_VARIANT
                 else "bybit_sol_absolute"
             ),
             "economic_evaluation_return": "bybit_sol_absolute_after_real_cost",
@@ -1254,7 +1260,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min_positive_splits_ratio", type=float, default=0.5)
     parser.add_argument(
         "--variants",
-        default=",".join(PROBE_VARIANTS),
+        default=",".join(DEFAULT_PROBE_VARIANTS),
         help="comma-separated fixed probe variants",
     )
     return parser.parse_args()
@@ -1388,8 +1394,7 @@ def main() -> int:
     reports: List[Dict[str, Any]] = []
     for variant in variants:
         residual_variant = (
-            variant
-            == "continuous_return_cross_asset_residual_huber_side_calibrated"
+            variant == RESIDUAL_VARIANT
         )
         if residual_variant and residual_forward_return is None:
             raise ValueError(
