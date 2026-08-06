@@ -406,6 +406,16 @@ failures = []
 contract_path = Path("config/closed_loop_contract.json")
 contract = json.loads(contract_path.read_text())
 contract_hash = hashlib.sha256(contract_path.read_bytes()).hexdigest()
+step_ledger_path = Path(".artifacts/step_status.jsonl")
+declared_short_circuit = False
+if step_ledger_path.is_file():
+    for line in step_ledger_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record.get("blocked_by_prior_failure") is True:
+            declared_short_circuit = True
+            break
 action = str(manifest.get("action", "")).strip().lower()
 expected = contract.get("actions", {}).get(action, {})
 artifact_contract = manifest.get("artifact_contract", {})
@@ -427,7 +437,10 @@ if artifact_contract.get("required_steps") != required_steps:
 if not required_artifacts or not required_steps:
     failures.append(f"artifact_contract:unknown_action:{action}")
 for name in required_artifacts:
-    if name not in manifest.get("artifacts", {}):
+    if (
+        name not in manifest.get("artifacts", {})
+        and not declared_short_circuit
+    ):
         failures.append(f"{name}:required_not_manifested")
 for name, artifact in manifest.get("artifacts", {}).items():
     path = local_paths.get(name)

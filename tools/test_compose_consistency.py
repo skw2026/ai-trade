@@ -664,6 +664,9 @@ class ComposeConsistencyTest(unittest.TestCase):
             downloader,
         )
         self.assertIn("artifact_contract:sha256", downloader)
+        self.assertIn("declared_short_circuit = False", downloader)
+        self.assertIn('record.get("blocked_by_prior_failure") is True', downloader)
+        self.assertIn("and not declared_short_circuit", downloader)
         self.assertIn("closed_loop_artifact_attestation_v1", downloader)
         self.assertIn(
             'fetch_report "${REMOTE_BASE}/artifact_attestation.json"',
