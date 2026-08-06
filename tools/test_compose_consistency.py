@@ -682,6 +682,7 @@ class ComposeConsistencyTest(unittest.TestCase):
 
     def test_closed_loop_workflow_default_replay_symbols_focus_mechanism_proof(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
+        smoke_workflow = SMOKE_WORKFLOW.read_text(encoding="utf-8")
         downloader = REPORT_DOWNLOADER_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
             'default: "SOLUSDT"',
@@ -702,6 +703,12 @@ class ComposeConsistencyTest(unittest.TestCase):
             "github.event.workflow_run.head_sha == github.sha",
             workflow,
         )
+        self.assertIn(
+            "github.event.workflow_run.head_sha == github.sha",
+            smoke_workflow,
+        )
+        self.assertIn("group: ai-trade-remote-closed-loop", workflow)
+        self.assertIn("group: ai-trade-remote-closed-loop", smoke_workflow)
         self.assertIn(
             "github.event_name == 'workflow_run' && 'full'", workflow
         )

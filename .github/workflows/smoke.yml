@@ -23,13 +23,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: closed-loop-smoke-${{ github.ref }}
+  # Must match closed-loop.yml: both workflows execute the same remote runner
+  # and use the same persistent transaction lock.
+  group: ai-trade-remote-closed-loop
   cancel-in-progress: false
 
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event.workflow_run.conclusion == 'success' &&
+           github.event.workflow_run.head_sha == github.sha) }}
     timeout-minutes: 30
     env:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}

@@ -53,7 +53,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: closed-loop-${{ github.ref }}
+  # Full/assess and post-CD smoke share one remote transaction lock. Keep all
+  # entry points in the same Actions concurrency group so they queue before
+  # opening concurrent SSH sessions and racing on the host lock.
+  group: ai-trade-remote-closed-loop
   cancel-in-progress: false
 
 jobs:
