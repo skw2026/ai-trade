@@ -677,12 +677,18 @@ class ComposeConsistencyTest(unittest.TestCase):
             workflow,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'SOLUSDT'",
+            "github.event_name == 'workflow_dispatch' && inputs.replay_symbols || 'SOLUSDT'",
             workflow,
         )
         self.assertIn('default: "SOLUSDT"', workflow)
         self.assertIn(
-            "github.event_name == 'schedule' && 'SOLUSDT'", workflow
+            "github.event_name == 'workflow_dispatch' && inputs.replay_source_symbol || 'SOLUSDT'",
+            workflow,
+        )
+        self.assertIn('workflows: ["CD"]', workflow)
+        self.assertIn("github.event.workflow_run.head_sha", workflow)
+        self.assertIn(
+            "github.event_name == 'workflow_run' && 'full'", workflow
         )
         self.assertIn('RUNNER_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"', workflow)
         self.assertIn('RUNNER_SYMBOL="${CLOSED_LOOP_SYMBOL:-SOLUSDT}"', workflow)
