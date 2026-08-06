@@ -394,6 +394,38 @@ double FillOverrunToleranceQty(const OrderRecord& record) {
   return std::max(kFillOverrunToleranceMinQty, std::fabs(record.intent.qty) * 1e-6);
 }
 
+bool AccountAlreadyReflectsFill(const FillEvent& fill,
+                                const OrderRecord* order_record,
+                                double local_qty_before,
+                                double oms_net_qty_before) {
+  if (order_record == nullptr || !std::isfinite(fill.qty) ||
+      fill.qty <= kFillQtyAuditEpsilon) {
+    return false;
+  }
+  const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
+  const double tolerance_qty =
+      std::max(kFillOverrunToleranceMinQty, std::fabs(fill.qty) * 1e-6);
+  if (!std::isfinite(signed_qty) || std::fabs(signed_qty) <= tolerance_qty) {
+    return false;
+  }
+
+  // REST position snapshots and WS fills are independently delivered. If the
+  // OMS is behind the account in the same direction as this known fill and
+  // applying the fill to the OMS closes that gap, the account side has already
+  // incorporated it. This also handles a REST snapshot that contains several
+  // fills which subsequently arrive one by one over WS.
+  const double account_oms_gap = local_qty_before - oms_net_qty_before;
+  if (!std::isfinite(account_oms_gap) ||
+      SignOf(account_oms_gap) != SignOf(signed_qty)) {
+    return false;
+  }
+  const double gap_before = std::fabs(account_oms_gap);
+  const double gap_after = std::fabs(local_qty_before -
+                                     (oms_net_qty_before + signed_qty));
+  return gap_before + tolerance_qty >= std::fabs(signed_qty) &&
+         gap_after + tolerance_qty < gap_before;
+}
+
 double EstimateFillRealizedPnlUsd(double position_qty_before,
                                   double avg_entry_price_before,
                                   const FillEvent& fill) {
@@ -5450,6 +5482,26 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
     }
   }
 
+  const bool account_already_reflects_fill = AccountAlreadyReflectsFill(
+      fill, fill_order_record_before, local_qty_before, oms_net_qty_before);
+  double attribution_qty_before = local_qty_before;
+  double attribution_avg_entry_price_before = avg_entry_price_before;
+  if (account_already_reflects_fill) {
+    attribution_qty_before = oms_net_qty_before;
+    if (std::fabs(attribution_qty_before) > kNotionalEpsilon &&
+        (!std::isfinite(attribution_avg_entry_price_before) ||
+         attribution_avg_entry_price_before <= kNotionalEpsilon ||
+         SignOf(local_qty_before) != SignOf(attribution_qty_before))) {
+      if (const auto protection_it =
+              managed_protection_by_symbol_.find(fill.symbol);
+          protection_it != managed_protection_by_symbol_.end() &&
+          protection_it->second.avg_entry_price > kNotionalEpsilon) {
+        attribution_avg_entry_price_before =
+            protection_it->second.avg_entry_price;
+      }
+    }
+  }
+
   std::string wal_err;
   if (!wal_.AppendFill(fill, &wal_err)) {
     LogError("WAL Fill Error: " + wal_err);
@@ -5457,7 +5509,20 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
   }
   fill_ids_.insert(fill.fill_id);
   oms_.OnFill(fill);
-  system_.OnFill(fill);
+  if (account_already_reflects_fill) {
+    system_.OnReflectedFill(fill,
+                            attribution_qty_before,
+                            attribution_avg_entry_price_before);
+    LogInfo("FILL_ACCOUNT_ALREADY_REFLECTED: " + FormatFillSummary(fill) +
+            ", local_qty_before=" + std::to_string(local_qty_before) +
+            ", oms_net_qty_before=" + std::to_string(oms_net_qty_before) +
+            ", attribution_qty_before=" +
+            std::to_string(attribution_qty_before) +
+            ", attribution_avg_entry_price_before=" +
+            std::to_string(attribution_avg_entry_price_before));
+  } else {
+    system_.OnFill(fill);
+  }
   gate_monitor_.OnFill(fill);
   const auto* fill_order_record = oms_.Find(fill.client_order_id);
   const auto persisted_intent_it =
@@ -5488,7 +5553,8 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
           ", local_qty_after=" + std::to_string(local_qty_after) +
           ", oms_net_qty_before=" + std::to_string(oms_net_qty_before) +
           ", oms_net_qty_after=" + std::to_string(oms_net_qty_after) +
-          ", account_already_reflected=false");
+          ", account_already_reflected=" +
+          std::string(account_already_reflects_fill ? "true" : "false"));
   if (attributed_fill_intent != nullptr &&
       !attributed_fill_intent->candidate_id.empty()) {
     candidate_isolation_grace_until_tick_by_symbol_.erase(fill.symbol);
@@ -5564,8 +5630,8 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
          attributed_fill_intent->purpose == OrderPurpose::kTp ||
          attributed_fill_intent->purpose == OrderPurpose::kSl);
     const double realized_pnl_usd =
-        EstimateFillRealizedPnlUsd(local_qty_before,
-                                   avg_entry_price_before,
+        EstimateFillRealizedPnlUsd(attribution_qty_before,
+                                   attribution_avg_entry_price_before,
                                    fill);
     if (attributed_fill_intent != nullptr &&
         !attributed_fill_intent->candidate_id.empty()) {
@@ -5654,8 +5720,8 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
     if (fill_order_record != nullptr) {
       LogExitCaptureSample(fill,
                            *fill_order_record,
-                           local_qty_before,
-                           avg_entry_price_before,
+                           attribution_qty_before,
+                           attribution_avg_entry_price_before,
                            realized_pnl_usd);
     }
     if (entry_fill) {
@@ -5985,7 +6051,9 @@ void BotApplication::RefreshManagedProtectionForSymbol(
   if (!state.active_sl_client_order_id.empty()) {
     if (const auto* sl_record = oms_.Find(state.active_sl_client_order_id);
         sl_record != nullptr && !OrderManager::IsTerminalState(sl_record->state)) {
-      executor_->Cancel(state.active_sl_client_order_id);
+      if (executor_ != nullptr) {
+        executor_->Cancel(state.active_sl_client_order_id);
+      }
       oms_.MarkCancelled(state.active_sl_client_order_id);
     }
     ClearPendingRequiredSl(state.active_sl_client_order_id);
@@ -5995,7 +6063,9 @@ void BotApplication::RefreshManagedProtectionForSymbol(
   if (!state.active_tp_client_order_id.empty()) {
     if (const auto* tp_record = oms_.Find(state.active_tp_client_order_id);
         tp_record != nullptr && !OrderManager::IsTerminalState(tp_record->state)) {
-      executor_->Cancel(state.active_tp_client_order_id);
+      if (executor_ != nullptr) {
+        executor_->Cancel(state.active_tp_client_order_id);
+      }
       oms_.MarkCancelled(state.active_tp_client_order_id);
     }
     state.active_tp_client_order_id.clear();
@@ -6161,7 +6231,9 @@ void BotApplication::CancelManagedProtectionForSymbol(
   if (!state.active_sl_client_order_id.empty()) {
     if (const auto* sl_record = oms_.Find(state.active_sl_client_order_id);
         sl_record != nullptr && !OrderManager::IsTerminalState(sl_record->state)) {
-      executor_->Cancel(state.active_sl_client_order_id);
+      if (executor_ != nullptr) {
+        executor_->Cancel(state.active_sl_client_order_id);
+      }
       oms_.MarkCancelled(state.active_sl_client_order_id);
     }
     ClearPendingRequiredSl(state.active_sl_client_order_id);
@@ -6169,7 +6241,9 @@ void BotApplication::CancelManagedProtectionForSymbol(
   if (!state.active_tp_client_order_id.empty()) {
     if (const auto* tp_record = oms_.Find(state.active_tp_client_order_id);
         tp_record != nullptr && !OrderManager::IsTerminalState(tp_record->state)) {
-      executor_->Cancel(state.active_tp_client_order_id);
+      if (executor_ != nullptr) {
+        executor_->Cancel(state.active_tp_client_order_id);
+      }
       oms_.MarkCancelled(state.active_tp_client_order_id);
     }
   }
@@ -6178,6 +6252,66 @@ void BotApplication::CancelManagedProtectionForSymbol(
           ", protection_group_id=" + state.protection_group_id);
   managed_protection_by_symbol_.erase(it);
   RefreshProtectionReduceOnlyRelease(reason + "_protection_cancelled");
+}
+
+void BotApplication::ReconcileProtectionAfterAuthoritativePositionSync(
+    const std::string& reason) {
+  std::unordered_set<std::string> symbols;
+  for (const auto& [symbol, _] : managed_protection_by_symbol_) {
+    symbols.insert(symbol);
+  }
+  for (const auto& symbol : system_.account().GetActiveSymbols()) {
+    symbols.insert(symbol);
+  }
+
+  // Cancel any live protective order whose symbol is now authoritatively flat,
+  // including legacy/orphan orders that are no longer present in the managed
+  // protection map.
+  for (const auto& client_order_id : oms_.PendingOrderIds()) {
+    const OrderRecord* record = oms_.Find(client_order_id);
+    if (record == nullptr ||
+        (record->intent.purpose != OrderPurpose::kSl &&
+         record->intent.purpose != OrderPurpose::kTp) ||
+        HasExposure(system_.account().position_qty(record->intent.symbol))) {
+      continue;
+    }
+    if (executor_ != nullptr) {
+      executor_->Cancel(client_order_id);
+    }
+    oms_.MarkCancelled(client_order_id);
+    ClearPendingRequiredSl(client_order_id);
+    startup_protection_sl_ids_.erase(client_order_id);
+    symbols.insert(record->intent.symbol);
+    LogInfo("PROTECTION_ORPHAN_CANCELLED: symbol=" + record->intent.symbol +
+            ", client_order_id=" + client_order_id +
+            ", reason=" + reason + "_flat_snapshot");
+  }
+
+  for (const auto& symbol : symbols) {
+    const double position_qty = system_.account().position_qty(symbol);
+    if (!HasExposure(position_qty)) {
+      CancelManagedProtectionForSymbol(symbol, reason + "_flat_snapshot");
+      candidate_probe_position_entry_tick_by_symbol_.erase(symbol);
+      active_candidate_probe_by_symbol_.erase(symbol);
+      continue;
+    }
+    const double reference_price =
+        latest_mark_price_by_symbol_.count(symbol) > 0
+            ? latest_mark_price_by_symbol_.at(symbol)
+            : system_.account().mark_price(symbol);
+    RefreshManagedProtectionForSymbol(symbol,
+                                      reference_price,
+                                      reason + "_open_snapshot");
+  }
+
+  if (!HasExposure(system_.account().gross_notional_usd())) {
+    pending_required_sl_attach_.clear();
+    startup_protection_sl_ids_.clear();
+    startup_protection_recovery_pending_ = false;
+    candidate_probe_position_entry_tick_by_symbol_.clear();
+    active_candidate_probe_by_symbol_.clear();
+  }
+  RefreshProtectionReduceOnlyRelease(reason + "_authoritative_sync");
 }
 
 bool BotApplication::TryEnqueueProfitProtectionImmediateReduce(
@@ -6705,6 +6839,8 @@ void BotApplication::RunReconcile() {
         system_.ForceSyncAccountPositionsFromRemote(remote_positions);
         oms_.SeedNetPositionBaseline(remote_positions);
         pending_net_order_enqueued_ms_.clear();
+        ReconcileProtectionAfterAuthoritativePositionSync(
+            "reconcile_autoresync");
         RemoteAccountBalanceSnapshot balance;
         if (adapter_->GetRemoteAccountBalance(&balance)) {
           system_.SyncAccountFromRemoteBalance(balance,

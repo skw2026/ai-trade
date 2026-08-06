@@ -95,6 +95,53 @@ class EconomicTargetProbeTest(unittest.TestCase):
         self.assertEqual(scale, 0.0)
         self.assertEqual(report["status"], "no_validation_candidate_passed")
 
+    def test_path_first_touch_uses_latency_and_conservative_same_bar_order(self):
+        series = {
+            "close": np.asarray([100.0, 100.0, 100.1, 100.2, 100.3]),
+            "high": np.asarray([100.0, 100.0, 101.0, 100.3, 100.4]),
+            "low": np.asarray([100.0, 100.0, 99.0, 100.0, 100.1]),
+        }
+        long_gross, short_gross, long_duration, short_duration = (
+            probe.build_path_first_touch_outcomes(
+                series,
+                execution_latency_bars=1,
+                horizon_bars=2,
+                take_profit_bps=32.0,
+                stop_loss_bps=20.0,
+            )
+        )
+        # The first post-entry bar touches both barriers. Both directions must
+        # conservatively receive the stop, never the favorable barrier.
+        self.assertAlmostEqual(float(long_gross[0]), -20.0)
+        self.assertAlmostEqual(float(short_gross[0]), -20.0)
+        self.assertEqual(int(long_duration[0]), 1)
+        self.assertEqual(int(short_duration[0]), 1)
+
+    def test_path_utility_target_and_episode_objective_include_real_cost(self):
+        long_gross = np.asarray([32.0, -20.0, 32.0])
+        short_gross = np.asarray([-20.0, 32.0, -20.0])
+        target = probe.build_path_utility_target(
+            long_gross,
+            short_gross,
+            round_trip_cost_bps=13.0,
+            minimum_net_edge_bps=1.3,
+            target_clip=6.0,
+        )
+        self.assertGreater(float(target[0]), 0.0)
+        self.assertLess(float(target[1]), 0.0)
+        objective = probe.summarize_path_episode_objective(
+            score=np.asarray([0.9, 0.1, 0.9]),
+            long_gross_bps=long_gross,
+            short_gross_bps=short_gross,
+            long_duration=np.ones(3, dtype=np.int32),
+            short_duration=np.ones(3, dtype=np.int32),
+            round_trip_cost_bps=13.0,
+            confidence_threshold=0.5,
+        )
+        self.assertEqual(objective["trade_count"], 3)
+        self.assertAlmostEqual(objective["total_model_net_edge_bps"], 57.0)
+        self.assertAlmostEqual(objective["mean_model_net_edge_bps"], 9.5)
+
     def test_derivative_axis_mismatch_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = pathlib.Path(temp_dir) / "derivatives.csv"

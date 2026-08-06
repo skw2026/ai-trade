@@ -346,7 +346,7 @@ jobs:
           CLOSED_LOOP_OUTPUT_ROOT: ${{ vars.CLOSED_LOOP_OUTPUT_ROOT || '/opt/ai-trade/data/reports/closed_loop' }}
           CLOSED_LOOP_STRICT_PASS: ${{ vars.CLOSED_LOOP_STRICT_PASS || 'true' }}
           CLOSED_LOOP_RUN_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}
-          DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'ai-trade watchdog scheduler ai-trade-web' }}
+          DEPLOY_SERVICES: ${{ vars.DEPLOY_SERVICES || 'ai-trade market-alpha-collector watchdog scheduler ai-trade-web' }}
           GATE_DEFER_SERVICES: ${{ vars.GATE_DEFER_SERVICES || 'watchdog scheduler ai-trade-web' }}
           DEPLOY_DISK_PREFLIGHT_ENABLED: ${{ vars.DEPLOY_DISK_PREFLIGHT_ENABLED || 'true' }}
           DEPLOY_GC_TRIGGER_FREE_BYTES: ${{ vars.DEPLOY_GC_TRIGGER_FREE_BYTES || '4294967296' }}
@@ -543,6 +543,8 @@ jobs:
               "${RELEASE_TMP}/tools/fetch_market_alpha_history.py" \
               "${RELEASE_TMP}/tools/fetch_bybit_trade_history.py" \
               "${RELEASE_TMP}/tools/collect_bybit_microstructure.py" \
+              "${RELEASE_TMP}/tools/run_microstructure_collector.py" \
+              "${RELEASE_TMP}/tools/assess_microstructure_capture.py" \
               "${RELEASE_TMP}/tools/run_market_alpha_development.py" \
               "${RELEASE_TMP}/tools/economic_target_probe.py" \
               "${RELEASE_TMP}/tools/stream_market_ws.py" \

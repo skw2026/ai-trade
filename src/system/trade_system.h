@@ -82,6 +82,9 @@ class TradeSystem {
   // --- State Updates ---
 
   void OnFill(const FillEvent& fill);
+  void OnReflectedFill(const FillEvent& fill,
+                       double position_qty_before,
+                       double avg_entry_price_before);
   void OnMarketSnapshot(const MarketEvent& event);
   double ApplyFunding(const std::string& symbol,
                       double funding_rate_per_interval) {

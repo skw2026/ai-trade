@@ -36,6 +36,12 @@ class AccountState {
 
   /// Applies a fill execution to the portfolio.
   void ApplyFill(const FillEvent& fill);
+  /// Records fee/realized-PnL audit counters for a fill already reflected by
+  /// an authoritative remote position/balance snapshot. Does not mutate
+  /// positions or cash, preventing REST/WS races from double applying fills.
+  void RecordReflectedFillEconomics(const FillEvent& fill,
+                                    double position_qty_before,
+                                    double avg_entry_price_before);
   /// Applies one interval of funding. Positive means the account paid funding.
   double ApplyFunding(const std::string& symbol,
                       double funding_rate_per_interval);

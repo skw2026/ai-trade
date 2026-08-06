@@ -232,6 +232,34 @@ void AccountState::ApplyFill(const FillEvent& fill) {
   RefreshPeakEquity();
 }
 
+void AccountState::RecordReflectedFillEconomics(
+    const FillEvent& fill,
+    double position_qty_before,
+    double avg_entry_price_before) {
+  const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
+  if (!std::isfinite(signed_qty) || std::fabs(signed_qty) < kEpsilon) {
+    return;
+  }
+
+  // The remote balance already contains this fee and any realized PnL. Keep
+  // the local cumulative audit counters complete without changing cash again.
+  if (std::isfinite(fill.fee)) {
+    cumulative_fee_usd_ += fill.fee;
+  }
+  if (!std::isfinite(position_qty_before) ||
+      !std::isfinite(avg_entry_price_before) ||
+      !std::isfinite(fill.price) || fill.price <= kEpsilon ||
+      std::fabs(position_qty_before) <= kEpsilon ||
+      Sign(position_qty_before) == Sign(signed_qty)) {
+    return;
+  }
+  const double close_qty =
+      std::min(std::fabs(position_qty_before), std::fabs(signed_qty));
+  cumulative_realized_pnl_usd_ +=
+      close_qty * (fill.price - avg_entry_price_before) *
+      Sign(position_qty_before);
+}
+
 double AccountState::ApplyFunding(const std::string& symbol,
                                   double funding_rate_per_interval) {
   if (!std::isfinite(funding_rate_per_interval) ||
@@ -284,14 +312,10 @@ void AccountState::RefreshRiskFromRemotePositions(
 
     auto it = positions_.find(remote.symbol);
     if (it == positions_.end()) {
-      // Add missing position for risk tracking
-      if (std::fabs(remote.qty) <= kEpsilon) continue;
-      PositionState state;
-      state.qty = remote.qty;
-      state.avg_entry_price = std::max(0.0, remote.avg_entry_price);
-      state.mark_price = (remote.mark_price > kEpsilon) ? remote.mark_price : state.avg_entry_price;
-      state.liquidation_price = std::max(0.0, remote.liquidation_price);
-      positions_[remote.symbol] = state;
+      // This path is intentionally risk-only. Position quantity ownership
+      // belongs to fills or the explicit authoritative reconcile path; adding
+      // a REST-observed position here races with the later WS fill and doubles
+      // exposure. Unknown remote positions are handled by reconciliation.
       continue;
     }
 
@@ -301,14 +325,6 @@ void AccountState::RefreshRiskFromRemotePositions(
     }
     local.liquidation_price = std::max(0.0, remote.liquidation_price);
 
-    // Sync quantity if local is zero but remote is not (safety net)
-    if (std::fabs(local.qty) <= kEpsilon && std::fabs(remote.qty) > kEpsilon) {
-      local.qty = remote.qty;
-      local.avg_entry_price = std::max(0.0, remote.avg_entry_price);
-      if (local.mark_price <= kEpsilon) {
-        local.mark_price = local.avg_entry_price;
-      }
-    }
   }
   RefreshPeakEquity();
 }

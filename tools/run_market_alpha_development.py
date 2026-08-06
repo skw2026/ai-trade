@@ -18,7 +18,9 @@ SCHEMA_VERSION = "market_alpha_development_verification_v1"
 FIXED_VARIANTS = (
     "continuous_return_rmse",
     "continuous_return_huber",
+    "continuous_return_path_huber",
     "ternary_action_rmse",
+    "path_utility_huber",
 )
 
 
@@ -158,6 +160,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bybit-trade-sample-days", type=int, default=1)
     parser.add_argument("--variants", default=",".join(FIXED_VARIANTS))
     parser.add_argument("--iterations", type=int, default=150)
+    parser.add_argument("--round-trip-cost-bps", type=float, default=13.0)
+    parser.add_argument("--path-take-profit-bps", type=float, default=32.0)
+    parser.add_argument("--path-stop-loss-bps", type=float, default=20.0)
     parser.add_argument("--research-domain", default="development", choices=("development",))
     return parser.parse_args()
 
@@ -248,6 +253,12 @@ def main() -> int:
             args.variants,
             "--iterations",
             str(args.iterations),
+            "--label_round_trip_cost_bps",
+            str(args.round_trip_cost_bps),
+            "--path_take_profit_bps",
+            str(args.path_take_profit_bps),
+            "--path_stop_loss_bps",
+            str(args.path_stop_loss_bps),
         ]
         if derivatives is not None:
             command.extend(["--derivatives_csv", str(derivatives)])

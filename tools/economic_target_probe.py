@@ -46,7 +46,9 @@ RUNTIME_ENTRY_RAW_SCORE = math.log(3.0)
 PROBE_VARIANTS = (
     "continuous_return_rmse",
     "continuous_return_huber",
+    "continuous_return_path_huber",
     "ternary_action_rmse",
+    "path_utility_huber",
 )
 FEATURE_SETS = (
     "baseline",
@@ -391,6 +393,188 @@ def build_target(
     return target
 
 
+def build_path_first_touch_outcomes(
+    series: Dict[str, np.ndarray],
+    *,
+    execution_latency_bars: int,
+    horizon_bars: int,
+    take_profit_bps: float,
+    stop_loss_bps: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Build causal-entry, conservative same-bar first-touch outcomes."""
+    close = np.asarray(series["close"], dtype=np.float64)
+    high = np.asarray(series["high"], dtype=np.float64)
+    low = np.asarray(series["low"], dtype=np.float64)
+    n = len(close)
+    long_gross = np.full(n, np.nan, dtype=np.float64)
+    short_gross = np.full(n, np.nan, dtype=np.float64)
+    long_duration = np.zeros(n, dtype=np.int32)
+    short_duration = np.zeros(n, dtype=np.int32)
+    latency = max(1, int(execution_latency_bars))
+    horizon = max(1, int(horizon_bars))
+    tp = float(take_profit_bps)
+    sl = float(stop_loss_bps)
+    if tp <= 0.0 or sl <= 0.0:
+        raise ValueError("path take-profit/stop-loss bps must be positive")
+
+    for anchor in range(0, n - latency - horizon):
+        entry_index = anchor + latency
+        entry = float(close[entry_index])
+        if not math.isfinite(entry) or entry <= 0.0:
+            continue
+        long_result = None
+        short_result = None
+        long_steps = horizon
+        short_steps = horizon
+        for step in range(1, horizon + 1):
+            bar = entry_index + step
+            if not (math.isfinite(float(high[bar])) and math.isfinite(float(low[bar]))):
+                break
+            high_bps = (float(high[bar]) / entry - 1.0) * 10000.0
+            low_bps = (float(low[bar]) / entry - 1.0) * 10000.0
+            # If both barriers are touched inside one OHLC bar, assume the stop
+            # was hit first. This avoids optimistic intrabar ordering leakage.
+            if long_result is None:
+                if low_bps <= -sl:
+                    long_result, long_steps = -sl, step
+                elif high_bps >= tp:
+                    long_result, long_steps = tp, step
+            if short_result is None:
+                if high_bps >= sl:
+                    short_result, short_steps = -sl, step
+                elif low_bps <= -tp:
+                    short_result, short_steps = tp, step
+            if long_result is not None and short_result is not None:
+                break
+        terminal = float(close[entry_index + horizon])
+        if not math.isfinite(terminal) or terminal <= 0.0:
+            continue
+        if long_result is None:
+            long_result = (terminal / entry - 1.0) * 10000.0
+        if short_result is None:
+            short_result = (entry / terminal - 1.0) * 10000.0
+        long_gross[anchor] = float(long_result)
+        short_gross[anchor] = float(short_result)
+        long_duration[anchor] = int(long_steps)
+        short_duration[anchor] = int(short_steps)
+    return long_gross, short_gross, long_duration, short_duration
+
+
+def build_path_utility_target(
+    long_gross_bps: np.ndarray,
+    short_gross_bps: np.ndarray,
+    *,
+    round_trip_cost_bps: float,
+    minimum_net_edge_bps: float,
+    target_clip: float,
+) -> np.ndarray:
+    long_net = np.asarray(long_gross_bps, dtype=np.float64) - float(round_trip_cost_bps)
+    short_net = np.asarray(short_gross_bps, dtype=np.float64) - float(round_trip_cost_bps)
+    target = np.full(len(long_net), np.nan, dtype=np.float64)
+    finite = np.isfinite(long_net) & np.isfinite(short_net)
+    target[finite] = 0.0
+    choose_long = finite & (long_net >= short_net) & (
+        long_net > float(minimum_net_edge_bps)
+    )
+    choose_short = finite & (short_net > long_net) & (
+        short_net > float(minimum_net_edge_bps)
+    )
+    scale = max(1.0, float(round_trip_cost_bps) + float(minimum_net_edge_bps))
+    target[choose_long] = np.clip(
+        long_net[choose_long] / scale * RUNTIME_ENTRY_RAW_SCORE,
+        0.0,
+        float(target_clip),
+    )
+    target[choose_short] = -np.clip(
+        short_net[choose_short] / scale * RUNTIME_ENTRY_RAW_SCORE,
+        0.0,
+        float(target_clip),
+    )
+    return target
+
+
+def summarize_path_episode_objective(
+    *,
+    score: np.ndarray,
+    long_gross_bps: np.ndarray,
+    short_gross_bps: np.ndarray,
+    long_duration: np.ndarray,
+    short_duration: np.ndarray,
+    round_trip_cost_bps: float,
+    confidence_threshold: float,
+) -> Dict[str, Any]:
+    if not (
+        len(score)
+        == len(long_gross_bps)
+        == len(short_gross_bps)
+        == len(long_duration)
+        == len(short_duration)
+    ):
+        raise ValueError("path objective arrays must align")
+    gross_values: List[float] = []
+    net_values: List[float] = []
+    directions: List[int] = []
+    active_bars = 0
+    index = 0
+    while index < len(score):
+        probability = float(score[index])
+        confidence = 2.0 * probability - 1.0
+        if not math.isfinite(probability) or abs(confidence) < float(confidence_threshold):
+            index += 1
+            continue
+        direction = 1 if confidence > 0.0 else -1
+        gross = float(long_gross_bps[index] if direction > 0 else short_gross_bps[index])
+        duration = int(long_duration[index] if direction > 0 else short_duration[index])
+        if not math.isfinite(gross) or duration <= 0:
+            index += 1
+            continue
+        gross_values.append(gross)
+        net_values.append(gross - float(round_trip_cost_bps))
+        directions.append(direction)
+        active_bars += duration
+        index += max(1, duration)
+    count = len(net_values)
+    turnover = float(count * 2)
+    if count == 0:
+        return {
+            "model_net_objective_sample_count": int(len(score)),
+            "mean_model_gross_edge_bps": 0.0,
+            "mean_model_net_edge_bps": 0.0,
+            "total_model_gross_edge_bps": 0.0,
+            "total_model_net_edge_bps": 0.0,
+            "model_net_total_turnover": 0.0,
+            "trade_count": 0,
+            "turnover": 0.0,
+            "active_bar_count": 0,
+            "positive_trade_count": 0,
+            "evaluated_bar_count": int(len(score)),
+            "objective_definition": "non_overlapping_path_first_touch_episodes",
+        }
+    gross_array = np.asarray(gross_values, dtype=np.float64)
+    net_array = np.asarray(net_values, dtype=np.float64)
+    positive = int(np.sum(net_array > 0.0))
+    return {
+        "model_net_objective_sample_count": int(len(score)),
+        "mean_model_gross_edge_bps": float(np.sum(gross_array)) / turnover,
+        "mean_model_net_edge_bps": float(np.sum(net_array)) / turnover,
+        "total_model_gross_edge_bps": float(np.sum(gross_array)),
+        "total_model_net_edge_bps": float(np.sum(net_array)),
+        "median_model_net_edge_bps": float(np.median(net_array)),
+        "positive_model_net_edge_ratio": float(positive) / float(count),
+        "long_signal_ratio": float(np.mean(np.asarray(directions) > 0)),
+        "short_signal_ratio": float(np.mean(np.asarray(directions) < 0)),
+        "round_trip_cost_bps": float(round_trip_cost_bps),
+        "trade_count": count,
+        "turnover": turnover,
+        "active_bar_count": active_bars,
+        "positive_trade_count": positive,
+        "evaluated_bar_count": int(len(score)),
+        "net_bps_sum_squares": float(np.sum(net_array * net_array)),
+        "terminal_position_closed": True,
+        "objective_definition": "non_overlapping_path_first_touch_episodes",
+    }
+
+
 def raw_score_to_probability(raw_score: np.ndarray) -> np.ndarray:
     raw = np.asarray(raw_score, dtype=np.float64)
     return 1.0 / (1.0 + np.exp(-np.clip(raw, -60.0, 60.0)))
@@ -432,6 +616,80 @@ def select_nested_validation_scale(
             and mean_net > 0.0
             and math.isfinite(positive_ratio)
             and positive_ratio >= 0.5
+        )
+        candidates.append(
+            {
+                "quantile": float(quantile),
+                "raw_threshold": raw_threshold,
+                "raw_score_scale": scale,
+                "eligible": eligible,
+                "net_objective": objective,
+            }
+        )
+    eligible_candidates = [item for item in candidates if item["eligible"]]
+    if not eligible_candidates:
+        return 0.0, {
+            "status": "no_validation_candidate_passed",
+            "selected": None,
+            "candidates": candidates,
+        }
+    selected = max(
+        eligible_candidates,
+        key=lambda item: (
+            float(item["net_objective"]["mean_model_net_edge_bps"]),
+            int(item["net_objective"]["trade_count"]),
+            float(item["quantile"]),
+        ),
+    )
+    return float(selected["raw_score_scale"]), {
+        "status": "selected_on_nested_validation",
+        "selected": {
+            "quantile": selected["quantile"],
+            "raw_threshold": selected["raw_threshold"],
+            "raw_score_scale": selected["raw_score_scale"],
+            "net_objective": selected["net_objective"],
+        },
+        "candidates": candidates,
+    }
+
+
+def select_nested_validation_path_scale(
+    *,
+    raw_prediction: np.ndarray,
+    long_gross_bps: np.ndarray,
+    short_gross_bps: np.ndarray,
+    long_duration: np.ndarray,
+    short_duration: np.ndarray,
+    quantiles: Sequence[float],
+    round_trip_cost_bps: float,
+    confidence_threshold: float,
+    min_trades: int,
+) -> Tuple[float, Dict[str, Any]]:
+    finite_abs = np.abs(np.asarray(raw_prediction, dtype=np.float64))
+    finite_abs = finite_abs[np.isfinite(finite_abs)]
+    candidates: List[Dict[str, Any]] = []
+    if len(finite_abs) == 0:
+        return 0.0, {"status": "no_finite_validation_prediction", "candidates": []}
+    for quantile in quantiles:
+        raw_threshold = float(np.quantile(finite_abs, float(quantile)))
+        scale = RUNTIME_ENTRY_RAW_SCORE / max(raw_threshold, 1e-12)
+        objective = summarize_path_episode_objective(
+            score=raw_score_to_probability(raw_prediction * scale),
+            long_gross_bps=long_gross_bps,
+            short_gross_bps=short_gross_bps,
+            long_duration=long_duration,
+            short_duration=short_duration,
+            round_trip_cost_bps=round_trip_cost_bps,
+            confidence_threshold=confidence_threshold,
+        )
+        trades = int(objective.get("trade_count", 0))
+        mean_net = float(objective.get("mean_model_net_edge_bps", 0.0))
+        positive = float(objective.get("positive_model_net_edge_ratio", float("nan")))
+        eligible = bool(
+            trades >= int(min_trades)
+            and mean_net > 0.0
+            and math.isfinite(positive)
+            and positive >= 0.5
         )
         candidates.append(
             {
@@ -571,16 +829,44 @@ def run_variant(
     execution_bar_return: np.ndarray,
     splits: Sequence[Any],
     threshold_bps: float,
+    path_long_gross_bps: np.ndarray,
+    path_short_gross_bps: np.ndarray,
+    path_long_duration: np.ndarray,
+    path_short_duration: np.ndarray,
 ) -> Dict[str, Any]:
-    target = build_target(
-        forward_return,
-        variant=variant,
-        threshold_bps=threshold_bps,
-        target_clip=float(args.target_clip),
+    path_target_variant = variant == "path_utility_huber"
+    path_objective_variant = variant in {
+        "continuous_return_path_huber",
+        "path_utility_huber",
+    }
+    target = (
+        build_path_utility_target(
+            path_long_gross_bps,
+            path_short_gross_bps,
+            round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+            minimum_net_edge_bps=float(args.label_min_net_edge_bps),
+            target_clip=float(args.target_clip),
+        )
+        if path_target_variant
+        else build_target(
+            forward_return,
+            variant=variant,
+            threshold_bps=threshold_bps,
+            target_clip=float(args.target_clip),
+        )
     )
     finite_features = np.all(np.isfinite(raw_features), axis=1)
     target_valid = finite_features & np.isfinite(target)
-    economic_valid = finite_features & np.isfinite(execution_bar_return)
+    economic_valid = finite_features & (
+        (
+            np.isfinite(path_long_gross_bps)
+            & np.isfinite(path_short_gross_bps)
+            & (path_long_duration > 0)
+            & (path_short_duration > 0)
+        )
+        if path_objective_variant
+        else np.isfinite(execution_bar_return)
+    )
     raw_indices = np.arange(len(raw_features))
     objectives: List[Dict[str, Any]] = []
     split_reports: List[Dict[str, Any]] = []
@@ -667,25 +953,50 @@ def run_variant(
                     raw_features[validation_economic_mask], feature_names, transform
                 )
                 raw_validation_prediction = model.predict(x_economic_validation)
-                raw_score_scale, calibration = select_nested_validation_scale(
-                    raw_prediction=raw_validation_prediction,
-                    execution_bar_return=execution_bar_return[validation_economic_mask],
-                    quantiles=args.calibration_quantiles,
-                    round_trip_cost_bps=float(args.label_round_trip_cost_bps),
-                    confidence_threshold=float(args.model_confidence_threshold),
-                    holding_bars=int(args.predict_horizon_bars),
-                    min_trades=int(args.min_calibration_trades),
-                )
+                if path_objective_variant:
+                    raw_score_scale, calibration = select_nested_validation_path_scale(
+                        raw_prediction=raw_validation_prediction,
+                        long_gross_bps=path_long_gross_bps[validation_economic_mask],
+                        short_gross_bps=path_short_gross_bps[validation_economic_mask],
+                        long_duration=path_long_duration[validation_economic_mask],
+                        short_duration=path_short_duration[validation_economic_mask],
+                        quantiles=args.calibration_quantiles,
+                        round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+                        confidence_threshold=float(args.model_confidence_threshold),
+                        min_trades=int(args.min_calibration_trades),
+                    )
+                else:
+                    raw_score_scale, calibration = select_nested_validation_scale(
+                        raw_prediction=raw_validation_prediction,
+                        execution_bar_return=execution_bar_return[validation_economic_mask],
+                        quantiles=args.calibration_quantiles,
+                        round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+                        confidence_threshold=float(args.model_confidence_threshold),
+                        holding_bars=int(args.predict_horizon_bars),
+                        min_trades=int(args.min_calibration_trades),
+                    )
                 calibration["raw_score_scale"] = raw_score_scale
                 calibration["validation_start_raw"] = validation_start_raw
                 calibration["validation_end_raw_exclusive"] = int(split.train_end)
         probability = raw_score_to_probability(raw_prediction * raw_score_scale)
-        objective = summarize_model_episode_objective(
-            score=probability,
-            execution_bar_return=test_execution_return,
-            round_trip_cost_bps=float(args.label_round_trip_cost_bps),
-            confidence_threshold=float(args.model_confidence_threshold),
-            holding_bars=int(args.predict_horizon_bars),
+        objective = (
+            summarize_path_episode_objective(
+                score=probability,
+                long_gross_bps=path_long_gross_bps[economic_mask],
+                short_gross_bps=path_short_gross_bps[economic_mask],
+                long_duration=path_long_duration[economic_mask],
+                short_duration=path_short_duration[economic_mask],
+                round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+                confidence_threshold=float(args.model_confidence_threshold),
+            )
+            if path_objective_variant
+            else summarize_model_episode_objective(
+                score=probability,
+                execution_bar_return=test_execution_return,
+                round_trip_cost_bps=float(args.label_round_trip_cost_bps),
+                confidence_threshold=float(args.model_confidence_threshold),
+                holding_bars=int(args.predict_horizon_bars),
+            )
         )
         objectives.append(objective)
 
@@ -752,6 +1063,16 @@ def run_variant(
             "target_clip": float(args.target_clip),
             "loss_function": "Huber:delta=1.0" if variant.endswith("_huber") else "RMSE",
             "calibration_mode": args.calibration_mode,
+            "exit_objective": (
+                {
+                    "mode": "path_first_touch",
+                    "take_profit_bps": float(args.path_take_profit_bps),
+                    "stop_loss_bps": float(args.path_stop_loss_bps),
+                    "same_bar_conflict": "stop_first_conservative",
+                }
+                if path_objective_variant
+                else {"mode": "fixed_horizon"}
+            ),
         },
         "target_sample_count": int(np.sum(target_valid)),
         "metrics_development_oos": aggregate,
@@ -770,6 +1091,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execution_latency_bars", type=int, default=1)
     parser.add_argument("--label_round_trip_cost_bps", type=float, default=13.0)
     parser.add_argument("--label_min_net_edge_bps", type=float, default=1.3)
+    parser.add_argument("--path_take_profit_bps", type=float, default=32.0)
+    parser.add_argument("--path_stop_loss_bps", type=float, default=20.0)
     parser.add_argument("--model_confidence_threshold", type=float, default=0.5)
     parser.add_argument("--top_k", type=int, default=10)
     parser.add_argument("--feature_set", choices=FEATURE_SETS, default="baseline")
@@ -827,6 +1150,8 @@ def main() -> int:
         raise ValueError("duplicate variants are forbidden")
     if int(args.execution_latency_bars) < 1:
         raise ValueError("execution_latency_bars must be >= 1")
+    if float(args.path_take_profit_bps) <= 0.0 or float(args.path_stop_loss_bps) <= 0.0:
+        raise ValueError("path take-profit/stop-loss bps must be > 0")
     if int(args.rolling_step_bars) < int(args.test_window_bars):
         raise ValueError("overlapping OOS test windows are forbidden")
     args.calibration_quantiles = [
@@ -899,6 +1224,18 @@ def main() -> int:
         ret_1,
         execution_latency_bars=int(args.execution_latency_bars),
     )
+    (
+        path_long_gross_bps,
+        path_short_gross_bps,
+        path_long_duration,
+        path_short_duration,
+    ) = build_path_first_touch_outcomes(
+        series,
+        execution_latency_bars=int(args.execution_latency_bars),
+        horizon_bars=int(args.predict_horizon_bars),
+        take_profit_bps=float(args.path_take_profit_bps),
+        stop_loss_bps=float(args.path_stop_loss_bps),
+    )
     purge_bars = int(args.predict_horizon_bars) + int(args.execution_latency_bars)
     splits = build_splits(
         sample_count=len(raw_features),
@@ -924,6 +1261,10 @@ def main() -> int:
             execution_bar_return=execution_bar_return,
             splits=splits,
             threshold_bps=threshold_bps,
+            path_long_gross_bps=path_long_gross_bps,
+            path_short_gross_bps=path_short_gross_bps,
+            path_long_duration=path_long_duration,
+            path_short_duration=path_short_duration,
         ))
         checkpoint = {
             "schema_version": "economic_target_probe_v1",
@@ -991,6 +1332,8 @@ def main() -> int:
             "execution_latency_bars": int(args.execution_latency_bars),
             "round_trip_cost_bps": float(args.label_round_trip_cost_bps),
             "minimum_net_edge_bps": float(args.label_min_net_edge_bps),
+            "path_take_profit_bps": float(args.path_take_profit_bps),
+            "path_stop_loss_bps": float(args.path_stop_loss_bps),
             "confidence_definition": "abs(2*sigmoid(raw_score)-1)",
             "confidence_threshold": float(args.model_confidence_threshold),
         },

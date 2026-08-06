@@ -81,6 +81,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("watchdog", self.prod_services)
         self.assertIn("scheduler", self.prod_services)
         self.assertIn("ai-trade-research", self.prod_services)
+        self.assertIn("market-alpha-collector", self.prod_services)
         self.assertIn("ai-trade-web", self.prod_services)
 
     def test_prod_uses_stable_compose_project_identity(self):
@@ -275,6 +276,18 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_prod_only_services_match_expectation(self):
         prod_only = set(self.prod_services.keys()) - set(self.dev_services.keys())
         self.assertEqual(prod_only, {"watchdog", "scheduler"})
+
+    def test_market_alpha_collector_is_persistent_and_health_checked(self):
+        for services in (self.dev_services, self.prod_services):
+            collector = services["market-alpha-collector"]
+            self.assertIn("run_microstructure_collector.py", collector)
+            self.assertIn("restart: unless-stopped", collector)
+            self.assertIn("healthcheck", collector)
+            self.assertIn("SOLUSDT", collector)
+        self.assertIn(
+            "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
+            self.prod_services["market-alpha-collector"],
+        )
 
     def test_watchdog_paths_are_consistent(self):
         watchdog = self.prod_services["watchdog"]
@@ -815,7 +828,7 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_deploy_defaults_match_prod_container_names(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
-            'DEPLOY_SERVICES_RAW="ai-trade watchdog scheduler ai-trade-web"',
+            'DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector watchdog scheduler ai-trade-web"',
             script,
         )
         self.assertIn('echo "ai-trade-watchdog"', script)
@@ -828,6 +841,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertEqual(prod_container_names.get("ai-trade"), "ai-trade")
         self.assertEqual(prod_container_names.get("watchdog"), "ai-trade-watchdog")
         self.assertEqual(prod_container_names.get("scheduler"), "ai-trade-scheduler")
+        self.assertEqual(
+            prod_container_names.get("market-alpha-collector"),
+            "ai-trade-market-alpha-collector",
+        )
 
     def test_cd_uses_immutable_run_bound_release_bundle(self):
         workflow = CD_WORKFLOW.read_text(encoding="utf-8")

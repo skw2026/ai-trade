@@ -57,15 +57,18 @@ DEMO_INCUBATION_ENABLED="${CLOSED_LOOP_DEMO_INCUBATION_ENABLED:-true}"
 DEMO_INCUBATION_POLICY_PATH="${CLOSED_LOOP_DEMO_INCUBATION_POLICY_PATH:-config/demo_incubation_policy.json}"
 DEMO_INCUBATION_STATE_PATH="${CLOSED_LOOP_DEMO_INCUBATION_STATE_PATH:-${AI_TRADE_DATA_DIR:-./data}/models/demo_incubation_state.json}"
 ALPHA_MECHANISM_PROBE_ENABLED="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ENABLED:-auto}"
-ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS:-3.5}"
+ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS:-13.0}"
 ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_HOLDOUT_SAMPLES:-100}"
 ALPHA_MECHANISM_PROBE_MIN_MEAN_NET_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_MEAN_NET_BPS:-0.0}"
 ALPHA_MECHANISM_PROBE_MIN_POSITIVE_RATIO="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_POSITIVE_RATIO:-0.50}"
 ALPHA_MECHANISM_PROBE_OBJECTIVE_MODE="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_OBJECTIVE_MODE:-path_first_touch}"
 ALPHA_MECHANISM_PROBE_PATH_HORIZON_BARS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_HORIZON_BARS:-12}"
-ALPHA_MECHANISM_PROBE_PATH_TAKE_PROFIT_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_TAKE_PROFIT_BPS:-16.0}"
-ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS:-8.0}"
+ALPHA_MECHANISM_PROBE_PATH_TAKE_PROFIT_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_TAKE_PROFIT_BPS:-32.0}"
+ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS:-20.0}"
 ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE="${CLOSED_LOOP_ALPHA_MECHANISM_PROBE_MIN_MFE_COST_COVERAGE:-1.2}"
+MARKET_ALPHA_DEVELOPMENT_ENABLED="${CLOSED_LOOP_MARKET_ALPHA_DEVELOPMENT_ENABLED:-true}"
+MARKET_ALPHA_DEVELOPMENT_ITERATIONS="${CLOSED_LOOP_MARKET_ALPHA_DEVELOPMENT_ITERATIONS:-100}"
+MARKET_ALPHA_DEVELOPMENT_CACHE_DIR="${CLOSED_LOOP_MARKET_ALPHA_DEVELOPMENT_CACHE_DIR:-${AI_TRADE_DATA_DIR:-./data}/research/market_alpha_cache}"
 
 SYMBOL="SOLUSDT"
 INTERVAL="5"
@@ -203,6 +206,9 @@ DATA_PIPELINE_REQUIRED="${CLOSED_LOOP_DATA_PIPELINE_REQUIRED:-true}"
 DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS="${CLOSED_LOOP_DATA_PIPELINE_SKIP_FETCH_ON_SUCCESS:-true}"
 DATA_PIPELINE_LAST_STATUS="not_run"
 REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
+MICROSTRUCTURE_CAPTURE_ROOT="${CLOSED_LOOP_MICROSTRUCTURE_CAPTURE_ROOT:-data/research/microstructure}"
+MICROSTRUCTURE_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MIN_CAPTURE_SECONDS:-86400}"
+MICROSTRUCTURE_MAX_STALE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-7200}"
 
 usage() {
   cat <<'EOF'
@@ -1190,6 +1196,9 @@ REPLAY_EFFECTIVE_CONFIG_PATH="${REPLAY_VALIDATION_CONFIG_PATH}"
 REPLAY_VALIDATION_LAST_STATUS="not_run"
 STRATEGY_DIAGNOSE_REPORT_PATH="${RUN_DIR}/strategy_diagnose_report.json"
 ALPHA_MECHANISM_PROBE_REPORT_PATH="${RUN_DIR}/alpha_mechanism_probe_report.json"
+MICROSTRUCTURE_CAPTURE_REPORT_PATH="${RUN_DIR}/microstructure_capture_report.json"
+MARKET_ALPHA_DEVELOPMENT_DIR="${RUN_DIR}/market_alpha_development"
+MARKET_ALPHA_DEVELOPMENT_REPORT_PATH="${MARKET_ALPHA_DEVELOPMENT_DIR}/market_alpha_verification_h${PREDICT_HORIZON_BARS}.json"
 ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/alpha_candidate_manifest.json"
 STRATEGY_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/strategy_candidate_manifest.json"
 MINER_REPORT_PATH="${RUN_DIR}/miner_report.json"
@@ -3197,6 +3206,57 @@ run_data_pipeline() {
   return 1
 }
 
+run_microstructure_capture_gate() {
+  echo "[INFO] microstructure forward capture gate start"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/assess_microstructure_capture.py \
+    --root "${MICROSTRUCTURE_CAPTURE_ROOT}" \
+    --output "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
+    --symbol "${SYMBOL}" \
+    --min-capture-duration-sec "${MICROSTRUCTURE_MIN_CAPTURE_SECONDS}" \
+    --max-stale-sec "${MICROSTRUCTURE_MAX_STALE_SECONDS}"
+  echo "[INFO] microstructure forward capture gate done"
+}
+
+run_market_alpha_development_gate() {
+  if ! is_true "${MARKET_ALPHA_DEVELOPMENT_ENABLED}"; then
+    echo "[ERROR] cross-market development screen is required by the closed-loop contract"
+    return 1
+  fi
+  echo "[INFO] cross-market/cross-asset development screen start"
+  mkdir -p "${MARKET_ALPHA_DEVELOPMENT_DIR}" "${MARKET_ALPHA_DEVELOPMENT_CACHE_DIR}"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_market_alpha_development.py \
+    --ohlcv-csv "${RESEARCH_DEVELOPMENT_CSV_PATH}" \
+    --miner-report "${MINER_REPORT_PATH}" \
+    --output-dir "${MARKET_ALPHA_DEVELOPMENT_DIR}" \
+    --cache-dir "${MARKET_ALPHA_DEVELOPMENT_CACHE_DIR}" \
+    --predict-horizon-bars "${PREDICT_HORIZON_BARS}" \
+    --iterations "${MARKET_ALPHA_DEVELOPMENT_ITERATIONS}" \
+    --round-trip-cost-bps "${ALPHA_MECHANISM_PROBE_ROUND_TRIP_COST_BPS}" \
+    --path-take-profit-bps "${ALPHA_MECHANISM_PROBE_PATH_TAKE_PROFIT_BPS}" \
+    --path-stop-loss-bps "${ALPHA_MECHANISM_PROBE_PATH_STOP_LOSS_BPS}"
+  MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+    python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ["MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE"])
+payload = json.loads(path.read_text(encoding="utf-8"))
+passed = bool(
+    payload.get("fully_verifiable")
+    and payload.get("economic_screen", {}).get("development_passed")
+    and payload.get("promotion_evidence") is False
+    and payload.get("promotion_eligible") is False
+)
+if not passed:
+    print("[ERROR] development market-alpha screen found no positive-cost candidate")
+raise SystemExit(0 if passed else 1)
+PY
+  echo "[INFO] cross-market/cross-asset development screen done"
+}
+
 run_research_domain_split() {
   echo "[INFO] research domain split start"
   python3 tools/split_research_domains.py \
@@ -4417,6 +4477,7 @@ write_run_manifest() {
   REPLAY_OPTIMIZATION_REPORT_PATH_VALUE="${REPLAY_OPTIMIZATION_REPORT_PATH}" \
   STRATEGY_DIAGNOSE_REPORT_PATH_VALUE="${STRATEGY_DIAGNOSE_REPORT_PATH}" \
   ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE="${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
+  MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" \
   ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${ALPHA_CANDIDATE_MANIFEST_PATH}" \
   STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE="${STRATEGY_CANDIDATE_MANIFEST_PATH}" \
   REPLAY_CANDIDATE_CONFIG_PATH_VALUE="${REPLAY_CANDIDATE_CONFIG_PATH}" \
@@ -4649,6 +4710,7 @@ artifact_env_names = {
     "replay_optimization_report": "REPLAY_OPTIMIZATION_REPORT_PATH_VALUE",
     "strategy_diagnose_report": "STRATEGY_DIAGNOSE_REPORT_PATH_VALUE",
     "alpha_mechanism_probe_report": "ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE",
+    "market_alpha_development_report": "MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
     "alpha_candidate_manifest": "ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
     "strategy_candidate_manifest": "STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE",
     "replay_candidate_config": "REPLAY_CANDIDATE_CONFIG_PATH_VALUE",
@@ -4831,6 +4893,12 @@ build_summary() {
   if [[ -f "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--alpha_mechanism_probe_report "${ALPHA_MECHANISM_PROBE_REPORT_PATH}")
   fi
+  if [[ -f "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--market_alpha_development_report "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}")
+  fi
+  if [[ -f "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--microstructure_capture_report "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}")
+  fi
   if [[ -f "${MECHANISM_AUDIT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--closed_loop_mechanism_report "${MECHANISM_AUDIT_REPORT_PATH}")
   fi
@@ -4915,6 +4983,7 @@ build_summary() {
   "replay_validation_feature_build_report": "${REPLAY_VALIDATION_FEATURE_BUILD_REPORT_PATH}",
   "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
   "alpha_mechanism_probe_report": "${ALPHA_MECHANISM_PROBE_REPORT_PATH}",
+  "market_alpha_development_report": "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}",
   "alpha_candidate_manifest": "${ALPHA_CANDIDATE_MANIFEST_PATH}",
   "strategy_candidate_manifest": "${STRATEGY_CANDIDATE_MANIFEST_PATH}",
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
@@ -5135,6 +5204,27 @@ run_collecting_step() {
   return 0
 }
 
+run_observation_step() {
+  local step_name="$1"
+  shift
+  capture_step_status "$@"
+  local status="${LAST_CAPTURED_STATUS}"
+  if (( status != 0 )); then
+    echo "[WARN] observational step not ready: ${step_name}, status=${status}"
+    capture_step_status \
+      record_step_status "${step_name}" "observation" "fail" "${status}" "false"
+  else
+    refresh_step_outputs "${step_name}"
+    capture_step_status \
+      record_step_status "${step_name}" "observation" "pass" "0" "false"
+  fi
+  if (( LAST_CAPTURED_STATUS != 0 )); then
+    echo "[ERROR] observational step status write failed: ${step_name}"
+    RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+  fi
+  return 0
+}
+
 run_training_chain() {
   RUN_REQUIRED_STEP_STATUS=0
   run_required_step baseline_freeze run_freeze_baseline
@@ -5143,6 +5233,12 @@ run_training_chain() {
   run_required_step feature_parity run_feature_parity
   run_required_step data_quality run_data_quality
   run_required_step miner run_miner
+  if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
+    # Both alpha-source gates are independent diagnostics. Collect both pieces
+    # of evidence before blocking integrator training on either failure.
+    run_collecting_step market_alpha_development run_market_alpha_development_gate
+    run_collecting_step microstructure_forward_data run_microstructure_capture_gate
+  fi
   run_required_step integrator run_integrator
   run_required_step replay_candidate_config prepare_replay_candidate_config
   if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
@@ -5273,6 +5369,7 @@ run_main() {
       run_required_step research_domain_split run_research_domain_split
       run_required_step feature_parity run_feature_parity
       run_required_step data_quality run_data_quality
+      run_required_step microstructure_forward_data run_microstructure_capture_gate
       if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
         run_collecting_step replay_validation run_replay_validation
         run_collecting_step strategy_diagnose run_strategy_diagnose
@@ -5290,6 +5387,7 @@ run_main() {
       echo "[INFO] train completed without production activation or restart"
       ;;
     assess)
+      run_observation_step microstructure_forward_data run_microstructure_capture_gate
       local assess_activation_status=""
       assess_activation_status="$(activation_transaction_status)"
       case "${assess_activation_status}" in

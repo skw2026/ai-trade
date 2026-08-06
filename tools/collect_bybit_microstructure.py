@@ -411,6 +411,13 @@ def main() -> int:
             "first_timestamp": int(rows[0]["timestamp"]),
             "last_timestamp": int(rows[-1]["timestamp"]),
         },
+        "quality": {
+            "book_update_count": sum(int(row["book_update_count"]) for row in rows),
+            "trade_count": sum(int(row["trade_count"]) for row in rows),
+            "trade_bucket_count": sum(int(row["trade_count"]) > 0 for row in rows),
+            "mean_spread_bps": sum(float(row["spread_bps"]) for row in rows)
+            / len(rows),
+        },
         "gates_remaining": [
             "minimum_forward_capture_duration",
             "offline_online_feature_parity",

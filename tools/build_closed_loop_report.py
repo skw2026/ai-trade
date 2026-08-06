@@ -881,6 +881,77 @@ def assess_alpha_mechanism_probe(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    status_raw = str(payload.get("status", "")).strip().upper()
+    failures = [
+        str(item).strip()
+        for item in payload.get("failures", [])
+        if str(item).strip()
+    ]
+    status = "pass" if status_raw == "PASS" else "fail"
+    if status == "fail" and not failures:
+        failures.append(f"microstructure capture status={status_raw or 'UNKNOWN'}")
+    return {
+        "status": status,
+        "readiness_status": "PASS" if status == "pass" else "FAIL",
+        "fail_reasons": failures if status == "fail" else [],
+        "warn_reasons": [],
+        "research_domain": payload.get("research_domain"),
+        "promotion_evidence": payload.get("promotion_evidence"),
+        "promotion_eligible": payload.get("promotion_eligible"),
+        "development_screen_ready": payload.get("development_screen_ready"),
+        "symbol": payload.get("symbol"),
+        "segment_count": payload.get("segment_count"),
+        "valid_segment_count": payload.get("valid_segment_count"),
+        "coverage_ms": payload.get("coverage_ms"),
+        "minimum_coverage_ms": payload.get("minimum_coverage_ms"),
+        "freshness_age_ms": payload.get("freshness_age_ms"),
+        "feature_row_count": payload.get("feature_row_count"),
+        "feature_row_density": payload.get("feature_row_density"),
+        "book_update_count": payload.get("book_update_count"),
+        "trade_count": payload.get("trade_count"),
+        "next_gate": payload.get("next_gate"),
+    }
+
+
+def assess_market_alpha_development(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    schema_ok = payload.get("schema_version") == "market_alpha_development_verification_v1"
+    fully_verifiable = payload.get("fully_verifiable") is True
+    economic_screen = payload.get("economic_screen", {})
+    if not isinstance(economic_screen, dict):
+        economic_screen = {}
+    development_passed = economic_screen.get("development_passed") is True
+    domain_ok = (
+        payload.get("research_domain") == "development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+    )
+    fail_reasons: List[str] = []
+    if not schema_ok:
+        fail_reasons.append("market alpha development report schema mismatch")
+    if not fully_verifiable:
+        fail_reasons.append("market alpha development data/probe evidence is incomplete")
+    if not domain_ok:
+        fail_reasons.append("market alpha development-domain isolation contract failed")
+    if not development_passed:
+        fail_reasons.append("no cross-market/cross-asset candidate passed real-cost development screen")
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [],
+        "research_domain": payload.get("research_domain"),
+        "promotion_evidence": payload.get("promotion_evidence"),
+        "promotion_eligible": payload.get("promotion_eligible"),
+        "fully_verifiable": fully_verifiable,
+        "data_gates": payload.get("data_gates", {}),
+        "economic_screen": economic_screen,
+        "next_gate": payload.get("next_gate"),
+    }
+
+
 def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     status_raw = str(payload.get("status", "")).strip().lower()
@@ -2562,13 +2633,22 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
         ),
         layer_from_sections(
             name="data_feature_quality",
-            section_names=["data_pipeline", "data_quality", "feature_parity"],
+            section_names=[
+                "data_pipeline",
+                "data_quality",
+                "feature_parity",
+                "microstructure_capture",
+            ],
             sections=sections,
             next_action="fix_data_pipeline_data_quality_or_live_replay_feature_parity",
         ),
         layer_from_sections(
             name="mechanism_proof",
-            section_names=["alpha_mechanism_probe", "closed_loop_mechanism"],
+            section_names=[
+                "market_alpha_development",
+                "alpha_mechanism_probe",
+                "closed_loop_mechanism",
+            ],
             sections=sections,
             next_action="prove_closed_loop_mechanism_before_more_strategy_tuning",
         ),
@@ -2731,6 +2811,16 @@ def parse_args() -> argparse.Namespace:
         "--alpha_mechanism_probe_report",
         default="",
         help="alpha_mechanism_probe_report.json 路径",
+    )
+    parser.add_argument(
+        "--microstructure_capture_report",
+        default="",
+        help="订单簿/逐笔成交前向采集质量报告路径",
+    )
+    parser.add_argument(
+        "--market_alpha_development_report",
+        default="",
+        help="跨市场/跨资产 development-only 经济筛选报告路径",
     )
     parser.add_argument(
         "--closed_loop_mechanism_report",
@@ -3025,6 +3115,30 @@ def main() -> int:
             sections["alpha_mechanism_probe"] = {
                 "status": "fail",
                 "fail_reasons": [f"文件不存在: {alpha_probe_path}"],
+            }
+    if args.microstructure_capture_report:
+        microstructure_path = Path(args.microstructure_capture_report)
+        if microstructure_path.is_file():
+            sections["microstructure_capture"] = assess_microstructure_capture(
+                microstructure_path
+            )
+        else:
+            sections["microstructure_capture"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {microstructure_path}"],
+            }
+    if args.market_alpha_development_report:
+        market_alpha_path = Path(args.market_alpha_development_report)
+        if market_alpha_path.is_file():
+            sections["market_alpha_development"] = assess_market_alpha_development(
+                market_alpha_path
+            )
+        else:
+            sections["market_alpha_development"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {market_alpha_path}"],
             }
     if args.closed_loop_mechanism_report:
         mechanism_path = Path(args.closed_loop_mechanism_report)

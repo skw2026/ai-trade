@@ -24,6 +24,30 @@ REPORT = load_module()
 
 
 class BuildClosedLoopReportTest(unittest.TestCase):
+    def test_market_alpha_development_requires_positive_real_cost_candidate(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "market_alpha.json"
+            payload = {
+                "schema_version": "market_alpha_development_verification_v1",
+                "fully_verifiable": True,
+                "research_domain": "development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "economic_screen": {"development_passed": False},
+                "next_gate": "remain_in_development_and_reject_candidate",
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            failed = REPORT.assess_market_alpha_development(path)
+            self.assertEqual(failed["status"], "fail")
+            self.assertIn("no cross-market", failed["fail_reasons"][-1])
+
+            payload["economic_screen"]["development_passed"] = True
+            payload["next_gate"] = "independent_selection_required"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            passed = REPORT.assess_market_alpha_development(path)
+            self.assertEqual(passed["status"], "pass")
+            self.assertEqual(passed["readiness_status"], "PASS")
+
     def test_report_only_preserves_failed_strategy_status_without_failing_process(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

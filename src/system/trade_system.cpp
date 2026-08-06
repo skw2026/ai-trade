@@ -239,6 +239,14 @@ void TradeSystem::OnFill(const FillEvent& fill) {
   account_.ApplyFill(fill);
 }
 
+void TradeSystem::OnReflectedFill(const FillEvent& fill,
+                                  double position_qty_before,
+                                  double avg_entry_price_before) {
+  account_.RecordReflectedFillEconomics(fill,
+                                        position_qty_before,
+                                        avg_entry_price_before);
+}
+
 void TradeSystem::OnMarketSnapshot(const MarketEvent& event) {
   account_.OnMarket(event);
 }

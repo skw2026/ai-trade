@@ -1555,7 +1555,7 @@ int main() {
     local_fill.fee = 50.0;
     account.ApplyFill(local_fill);
 
-    // 刷新远端风险字段时，不应重置现金基线；同时应补录远端新增 symbol 的风险样本。
+    // 刷新远端风险字段时，不应重置现金基线，也不得抢先写入尚未由成交/对账确认的仓位。
     account.RefreshRiskFromRemotePositions({
         ai_trade::RemotePositionSnapshot{
             .symbol = "BTCUSDT",
@@ -1574,7 +1574,7 @@ int main() {
     });
 
     if (!NearlyEqual(account.position_qty("BTCUSDT"), 1.0) ||
-        !NearlyEqual(account.position_qty("ETHUSDT"), 2.0)) {
+        !NearlyEqual(account.position_qty("ETHUSDT"), 0.0)) {
       std::cerr << "运行时风险刷新后仓位视图不符合预期\n";
       return 1;
     }
@@ -2491,6 +2491,31 @@ int main() {
     app.RefreshProtectionReduceOnlyRelease("unit_test_flat_idle");
     if (app.IsForceReduceOnlyActive()) {
       std::cerr << "空仓且无保护/在途订单时应自动释放保护单 reduce-only\n";
+      return 1;
+    }
+
+    ai_trade::BotApplication::ManagedProtectionState stale_protection;
+    stale_protection.symbol = "SOLUSDT";
+    stale_protection.protection_group_id = "stale-flat-protection";
+    stale_protection.direction = 1;
+    stale_protection.qty = 1.0;
+    stale_protection.avg_entry_price = 100.0;
+    app.managed_protection_by_symbol_["SOLUSDT"] = stale_protection;
+    app.pending_required_sl_attach_["stale-flat-sl"] =
+        ai_trade::BotApplication::PendingRequiredSlAttach{
+            .parent_order_id = "stale-flat-protection",
+            .deadline_ms = 1,
+        };
+    app.candidate_probe_position_entry_tick_by_symbol_["SOLUSDT"] = 10;
+    app.protection_forced_reduce_only_ = true;
+    app.RefreshReduceOnlyMode();
+    app.ReconcileProtectionAfterAuthoritativePositionSync(
+        "unit_test_authoritative_flat");
+    if (!app.managed_protection_by_symbol_.empty() ||
+        !app.pending_required_sl_attach_.empty() ||
+        !app.candidate_probe_position_entry_tick_by_symbol_.empty() ||
+        app.IsForceReduceOnlyActive()) {
+      std::cerr << "权威空仓同步必须清除残留保护状态并释放 reduce-only\n";
       return 1;
     }
 
@@ -7453,6 +7478,139 @@ int main() {
         !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), -4.4) ||
         app.fill_ids_.size() != 1U) {
       std::cerr << "cancelled late fill 应合法落地一次并补齐 OMS 状态\n";
+      return 1;
+    }
+
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_remote_reflected_fill_race_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "远端先反映成交竞态测试 WAL 初始化失败: " << error << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent intent;
+    intent.client_order_id = "remote-reflected-before-fill";
+    intent.symbol = "SOLUSDT";
+    intent.direction = 1;
+    intent.qty = 1.0;
+    intent.price = 100.0;
+    intent.purpose = ai_trade::OrderPurpose::kEntry;
+    if (!app.oms_.RegisterIntent(intent)) {
+      std::cerr << "远端先反映成交竞态测试 OMS 注册失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(intent.client_order_id);
+
+    // REST 仓位快照比 WS 成交更早到达：账户已经含该笔成交，OMS 尚未含该笔成交。
+    app.system_.SyncAccountFromRemotePositions(
+        {ai_trade::RemotePositionSnapshot{
+             .symbol = "SOLUSDT",
+             .qty = 1.0,
+             .avg_entry_price = 100.0,
+             .mark_price = 100.0,
+         }},
+        9999.9);
+
+    ai_trade::FillEvent fill = ToFill(intent, "remote-reflected-fill-1");
+    fill.fee = 0.1;
+    app.ProcessFillEvent(fill);
+    const auto* record = app.oms_.Find(intent.client_order_id);
+    if (record == nullptr || record->state != ai_trade::OrderState::kFilled ||
+        !NearlyEqual(record->filled_qty, 1.0) ||
+        !NearlyEqual(app.system_.account().position_qty("SOLUSDT"), 1.0) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), 1.0) ||
+        !NearlyEqual(app.system_.account().cash_usd(), 9999.9) ||
+        !NearlyEqual(app.system_.account().cumulative_fee_usd(), 0.1) ||
+        app.fill_ids_.size() != 1U) {
+      std::cerr << "远端已反映的成交只能补齐 OMS/经济审计，不得重复改变仓位或现金\n";
+      return 1;
+    }
+
+    std::filesystem::remove_all(data_dir, ec);
+  }
+
+  {
+    const std::filesystem::path data_dir =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_remote_reflected_exit_economics_test";
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir, ec);
+
+    ai_trade::AppConfig config;
+    config.data_path = data_dir.string();
+    config.protection.enabled = true;
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.wal_.Initialize(&error)) {
+      std::cerr << "远端先反映退出成交测试 WAL 初始化失败: " << error << "\n";
+      return 1;
+    }
+
+    ai_trade::OrderIntent intent;
+    intent.client_order_id = "remote-reflected-exit";
+    intent.symbol = "SOLUSDT";
+    intent.direction = -1;
+    intent.qty = 1.0;
+    intent.price = 105.0;
+    intent.reduce_only = true;
+    intent.purpose = ai_trade::OrderPurpose::kReduce;
+    if (!app.oms_.RegisterIntent(intent)) {
+      std::cerr << "远端先反映退出成交测试 OMS 注册失败\n";
+      return 1;
+    }
+    app.oms_.MarkSent(intent.client_order_id);
+    app.oms_.SeedNetPositionBaseline(
+        {ai_trade::RemotePositionSnapshot{
+             .symbol = "SOLUSDT",
+             .qty = 1.0,
+             .avg_entry_price = 100.0,
+             .mark_price = 100.0,
+         }});
+    // REST 已报告平仓和含收益/费用的余额；保留保护状态中的入场价用于经济归因。
+    app.system_.SyncAccountFromRemotePositions({}, 10004.9);
+    ai_trade::BotApplication::ManagedProtectionState protection;
+    protection.symbol = "SOLUSDT";
+    protection.protection_group_id = "remote-reflected-exit-group";
+    protection.direction = 1;
+    protection.qty = 1.0;
+    protection.avg_entry_price = 100.0;
+    app.managed_protection_by_symbol_["SOLUSDT"] = protection;
+
+    ai_trade::FillEvent fill = ToFill(intent, "remote-reflected-exit-fill-1");
+    fill.fee = 0.1;
+    app.ProcessFillEvent(fill);
+    if (!NearlyEqual(app.system_.account().position_qty("SOLUSDT"), 0.0) ||
+        !NearlyEqual(app.oms_.net_filled_qty("SOLUSDT"), 0.0) ||
+        !NearlyEqual(app.system_.account().cash_usd(), 10004.9) ||
+        !NearlyEqual(app.system_.account().cumulative_realized_pnl_usd(), 5.0) ||
+        !NearlyEqual(app.system_.account().cumulative_fee_usd(), 0.1) ||
+        !NearlyEqual(app.system_.account().cumulative_realized_net_pnl_usd(),
+                     4.9) ||
+        !app.managed_protection_by_symbol_.empty()) {
+      std::cerr << "远端已反映的退出成交必须保留真实收益归因且不得重复改变余额"
+                << ": position="
+                << app.system_.account().position_qty("SOLUSDT")
+                << ", oms=" << app.oms_.net_filled_qty("SOLUSDT")
+                << ", cash=" << app.system_.account().cash_usd()
+                << ", realized="
+                << app.system_.account().cumulative_realized_pnl_usd()
+                << ", fee=" << app.system_.account().cumulative_fee_usd()
+                << ", net="
+                << app.system_.account().cumulative_realized_net_pnl_usd()
+                << ", protection_count="
+                << app.managed_protection_by_symbol_.size() << "\n";
       return 1;
     }
 

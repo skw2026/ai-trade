@@ -261,6 +261,11 @@ class BotApplication {
   /// 撤销并清理 symbol 级保护状态。
   void CancelManagedProtectionForSymbol(const std::string& symbol,
                                         const std::string& reason);
+  /// Reconciles protection/candidate state after positions were overwritten by
+  /// an authoritative remote snapshot. In particular, a flat snapshot must
+  /// cancel orphan SL/TP orders and release protection-only reduce mode.
+  void ReconcileProtectionAfterAuthoritativePositionSync(
+      const std::string& reason);
   /// 基于最新行情推进盈利保护（break-even / trailing）。
   void UpdateProfitProtection(const MarketEvent& event);
   /// 当盈利保护候选 stop 已被当前价穿越且仍有净收益空间时，直接 reduce
