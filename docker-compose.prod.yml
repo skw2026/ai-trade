@@ -118,7 +118,10 @@ services:
         fi
         SCHEDULER_ACTION_VALUE="$${SCHEDULER_ACTION:-assess}"
         SCHEDULER_INTERVAL_VALUE="$${SCHEDULER_INTERVAL_SECONDS:-86400}"
-        SCHEDULER_INITIAL_DELAY_VALUE="$${SCHEDULER_INITIAL_DELAY_SECONDS:-300}"
+        # Post-deploy Smoke + Full own the same transaction lock.  Giving them
+        # a 30-minute head start prevents the freshly recreated scheduler from
+        # racing the deployment verification sequence on every release.
+        SCHEDULER_INITIAL_DELAY_VALUE="$${SCHEDULER_INITIAL_DELAY_SECONDS:-1800}"
         SCHEDULER_HEALTH_PATH_VALUE="$${CLOSED_LOOP_SCHEDULER_HEALTH_PATH:-/opt/ai-trade/data/reports/closed_loop/scheduler_health.env}"
         SCHEDULER_CONSECUTIVE_FAILURES=0
         mkdir -p "$$(dirname "$${SCHEDULER_HEALTH_PATH_VALUE}")"
@@ -146,8 +149,8 @@ services:
           SCHEDULER_INTERVAL_VALUE="86400"
         fi
         if ! echo "$${SCHEDULER_INITIAL_DELAY_VALUE}" | grep -Eq '^[0-9]+$'; then
-          echo "[Scheduler] invalid SCHEDULER_INITIAL_DELAY_SECONDS=$${SCHEDULER_INITIAL_DELAY_VALUE}, fallback=300"
-          SCHEDULER_INITIAL_DELAY_VALUE="300"
+          echo "[Scheduler] invalid SCHEDULER_INITIAL_DELAY_SECONDS=$${SCHEDULER_INITIAL_DELAY_VALUE}, fallback=1800"
+          SCHEDULER_INITIAL_DELAY_VALUE="1800"
         fi
 
         write_scheduler_health() {
@@ -203,7 +206,7 @@ services:
       DATA_PIPELINE_CONFIG: ${DATA_PIPELINE_CONFIG:-config/data_pipeline.yaml}
       SCHEDULER_ACTION: ${SCHEDULER_ACTION:-assess}
       SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}
-      SCHEDULER_INITIAL_DELAY_SECONDS: ${SCHEDULER_INITIAL_DELAY_SECONDS:-300}
+      SCHEDULER_INITIAL_DELAY_SECONDS: ${SCHEDULER_INITIAL_DELAY_SECONDS:-1800}
       CLOSED_LOOP_SCHEDULER_HEALTH_PATH: ${CLOSED_LOOP_SCHEDULER_HEALTH_PATH:-/opt/ai-trade/data/reports/closed_loop/scheduler_health.env}
       CLOSED_LOOP_SCHEDULER_JOB_TIMEOUT_SECONDS: ${CLOSED_LOOP_SCHEDULER_JOB_TIMEOUT_SECONDS:-4800}
       CLOSED_LOOP_SCHEDULER_HEALTH_GRACE_SECONDS: ${CLOSED_LOOP_SCHEDULER_HEALTH_GRACE_SECONDS:-300}

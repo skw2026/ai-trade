@@ -69,7 +69,7 @@ jobs:
           SMOKE_EXPECTED_SHA: ${{ env.SMOKE_EXPECTED_SHA }}
           CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS: "900"
           CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS: "15"
-          CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "120"
+          CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}

@@ -316,7 +316,11 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("SCHEDULER_ACTION: ${SCHEDULER_ACTION:-assess}", scheduler)
         self.assertIn("SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}", scheduler)
-        self.assertIn("SCHEDULER_INITIAL_DELAY_SECONDS: ${SCHEDULER_INITIAL_DELAY_SECONDS:-300}", scheduler)
+        self.assertIn("SCHEDULER_INITIAL_DELAY_SECONDS: ${SCHEDULER_INITIAL_DELAY_SECONDS:-1800}", scheduler)
+        self.assertIn(
+            'SCHEDULER_INITIAL_DELAY_VALUE="$${SCHEDULER_INITIAL_DELAY_SECONDS:-1800}"',
+            scheduler,
+        )
         self.assertIn("Initial deployment-lock delay", scheduler)
         self.assertIn("tools/scheduler_healthcheck.sh", scheduler)
         self.assertIn("CLOSED_LOOP_SCHEDULER_JOB_TIMEOUT_SECONDS", scheduler)
@@ -722,8 +726,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("group: ai-trade-remote-closed-loop", workflow)
         self.assertIn("group: ai-trade-remote-closed-loop", smoke_workflow)
-        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "120"', workflow)
-        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "120"', smoke_workflow)
+        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"', workflow)
+        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"', smoke_workflow)
         self.assertIn(
             "github.event_name == 'workflow_run' && 'full'", workflow
         )

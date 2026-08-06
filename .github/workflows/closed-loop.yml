@@ -110,7 +110,10 @@ jobs:
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
           CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.replay_feature_days || '0' }}
           CLOSED_LOOP_LOCK_BUSY_POLICY: ${{ github.event_name == 'schedule' && 'skip' || 'fail' }}
-          CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "120"
+          # The remote scheduler may already be finishing an assess cycle.
+          # Wait long enough for that transaction instead of manufacturing a
+          # lock-only Full failure with an empty evidence directory.
+          CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"
           CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
           CLOSED_LOOP_GIT_COMMIT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           CLOSED_LOOP_GIT_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
