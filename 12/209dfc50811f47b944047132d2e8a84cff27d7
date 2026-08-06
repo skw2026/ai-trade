@@ -1,0 +1,9 @@
+tools/run_microstructure_alpha_lifecycle.py
+  ai_agent 356-359,363-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "12209dfc50811f47b944047132d2e8a84cff27d7",
+  "prompts": {}
+}
