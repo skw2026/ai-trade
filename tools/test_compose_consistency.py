@@ -673,6 +673,17 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("run: bash tools/download_closed_loop_reports.sh", workflow)
         self.assertNotIn("fetch_report() {", workflow)
+        self.assertIn("ControlMaster=auto", downloader)
+        self.assertIn("ControlPersist=15", downloader)
+        self.assertEqual(downloader.count('scp "${SCP_OPTIONS[@]}"'), 1)
+        self.assertEqual(downloader.count('scp -q "${SCP_OPTIONS[@]}"'), 1)
+        for development_report in (
+            "economic_h12_expanded_ohlcv_v1.json",
+            "economic_h12_expanded_market_alpha_v1.json",
+            "market_alpha_history_report.json",
+            "bybit_trade_history_sample_report.json",
+        ):
+            self.assertIn(development_report, downloader)
         run_blocks = re.findall(
             r"(?ms)^        run: \|\n((?:(?:^          .*\n)|(?:^\s*$))*)",
             workflow,

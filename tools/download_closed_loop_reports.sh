@@ -73,6 +73,17 @@ fi
 downloaded=0
 missing=()
 invalid=()
+CONTROL_SOCKET=".artifacts/ssh_mux"
+rm -f "${CONTROL_SOCKET}"
+SCP_OPTIONS=(
+  -i .artifacts/ecs_key
+  -P "${PORT}"
+  -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}"
+  -o StrictHostKeyChecking=yes
+  -o ControlMaster=auto
+  -o ControlPersist=15
+  -o ControlPath="${CONTROL_SOCKET}"
+)
 validate_json_file() {
   local path="$1"
   if [[ ! -s "${path}" ]]; then
@@ -91,9 +102,7 @@ fetch_report() {
   local kind="${4:-json}"
   local tmp_path="${local_path}.tmp"
   rm -f "${tmp_path}" "${local_path}"
-  if scp -i .artifacts/ecs_key -P "${PORT}" \
-    -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-    -o StrictHostKeyChecking=yes \
+  if scp "${SCP_OPTIONS[@]}" \
     "${USER}@${HOST}:${remote_path}" "${tmp_path}"; then
     if [[ "${kind}" == "json" ]]; then
       if ! validate_json_file "${tmp_path}"; then
@@ -120,9 +129,7 @@ REMOTE_BASE="/opt/ai-trade/data/reports/closed_loop/${EXPECTED_RUN_ID}"
 echo "[closed-loop] expected run-specific artifact path: run_id=${EXPECTED_RUN_ID}"
 
 OVERLAP_SKIP_TMP=".artifacts/overlap_skip.json.tmp"
-if scp -q -i .artifacts/ecs_key -P "${PORT}" \
-  -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-  -o StrictHostKeyChecking=yes \
+if scp -q "${SCP_OPTIONS[@]}" \
   "${USER}@${HOST}:${REMOTE_BASE}/overlap_skip.json" \
   "${OVERLAP_SKIP_TMP}"; then
   mv -f "${OVERLAP_SKIP_TMP}" .artifacts/overlap_skip.json
@@ -220,6 +227,10 @@ fetch_report "${REMOTE_BASE}/replay_validation/replay_validation_command.log" ".
 fetch_report "${REMOTE_BASE}/strategy_diagnose_report.json" ".artifacts/strategy_diagnose_report.json" "strategy_diagnose_report" "json"
 fetch_report "${REMOTE_BASE}/alpha_mechanism_probe_report.json" ".artifacts/alpha_mechanism_probe_report.json" "alpha_mechanism_probe_report" "json"
 fetch_report "${REMOTE_BASE}/market_alpha_development/market_alpha_verification_h12.json" ".artifacts/market_alpha_development_report.json" "market_alpha_development_report" "json"
+fetch_report "${REMOTE_BASE}/market_alpha_development/economic_h12_expanded_ohlcv_v1.json" ".artifacts/market_alpha_economic_ohlcv_report.json" "market_alpha_economic_ohlcv_report" "json"
+fetch_report "${REMOTE_BASE}/market_alpha_development/economic_h12_expanded_market_alpha_v1.json" ".artifacts/market_alpha_economic_cross_market_report.json" "market_alpha_economic_cross_market_report" "json"
+fetch_report "${REMOTE_BASE}/market_alpha_development/market_alpha_history_report.json" ".artifacts/market_alpha_history_report.json" "market_alpha_history_report" "json"
+fetch_report "${REMOTE_BASE}/market_alpha_development/bybit_trade_history_sample_report.json" ".artifacts/bybit_trade_history_sample_report.json" "bybit_trade_history_sample_report" "json"
 fetch_report "${REMOTE_BASE}/microstructure_capture_report.json" ".artifacts/microstructure_capture_report.json" "microstructure_capture_report" "json"
 fetch_report "${REMOTE_BASE}/alpha_candidate_manifest.json" ".artifacts/alpha_candidate_manifest.json" "alpha_candidate_manifest" "json"
 fetch_report "${REMOTE_BASE}/strategy_candidate_manifest.json" ".artifacts/strategy_candidate_manifest.json" "strategy_candidate_manifest" "json"
@@ -487,4 +498,3 @@ rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
 if [[ "${#invalid[@]}" -gt 0 ]]; then
   exit 1
 fi
-
