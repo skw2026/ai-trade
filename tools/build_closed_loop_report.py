@@ -281,20 +281,35 @@ def assess_data_pipeline(path: Path) -> Dict[str, Any]:
     steps = payload.get("steps", [])
     if not isinstance(steps, list):
         steps = []
-    failed_steps = [
+    failed_required_steps = [
         str(step.get("name", "unknown"))
         for step in steps
         if isinstance(step, dict)
         and bool(step.get("enabled", False))
         and str(step.get("status", "")).lower() == "fail"
+        and bool(step.get("required", True))
+    ]
+    failed_diagnostic_steps = [
+        str(step.get("name", "unknown"))
+        for step in steps
+        if isinstance(step, dict)
+        and bool(step.get("enabled", False))
+        and str(step.get("status", "")).lower() == "fail"
+        and not bool(step.get("required", True))
     ]
     warns: List[str] = []
     if status_raw == "PLANNED":
         warns.append("数据加速链路为 dry-run（PLANNED），未执行真实更新")
-    ok = status_raw in {"PASS", "PLANNED"} and not failed_steps
+    if failed_diagnostic_steps:
+        warns.append(
+            "研究基准诊断未通过（不影响数据管线契约）: "
+            + ", ".join(failed_diagnostic_steps)
+        )
+    ok = status_raw in {"PASS", "PLANNED"} and not failed_required_steps
     status, fails = status_tuple(ok, f"数据加速链路未通过: status={status_raw or 'UNKNOWN'}")
-    if failed_steps:
-        fails.append("失败步骤: " + ", ".join(failed_steps))
+    if failed_required_steps:
+        fails.append("必需步骤失败: " + ", ".join(failed_required_steps))
+    failed_steps = [*failed_required_steps, *failed_diagnostic_steps]
     return {
         "status": status,
         "fail_reasons": fails,
@@ -303,6 +318,10 @@ def assess_data_pipeline(path: Path) -> Dict[str, Any]:
         "step_count": len(steps),
         "failed_step_count": len(failed_steps),
         "failed_steps": failed_steps,
+        "failed_required_step_count": len(failed_required_steps),
+        "failed_required_steps": failed_required_steps,
+        "failed_diagnostic_step_count": len(failed_diagnostic_steps),
+        "failed_diagnostic_steps": failed_diagnostic_steps,
         "outputs": payload.get("outputs", {}),
     }
 
@@ -2619,6 +2638,44 @@ def layer_from_sections(
     }
 
 
+def manifest_contract_view(section: Dict[str, Any]) -> Dict[str, Any]:
+    """Separate a valid fail-closed short circuit from contract corruption."""
+    if not isinstance(section, dict) or not section:
+        return section
+    reasons = section_fail_reasons(section)
+    declared_execution_failure = any(
+        reason.startswith("closed-loop step failed:") for reason in reasons
+    )
+    execution_prefixes = (
+        "closed-loop step failed:",
+        "closed-loop required step skipped:",
+        "step status ledger missing required steps:",
+    )
+    contract_failures: List[str] = []
+    execution_warnings: List[str] = []
+    for reason in reasons:
+        expected_short_circuit = bool(
+            declared_execution_failure
+            and (
+                reason.startswith(execution_prefixes)
+                or reason.startswith("run manifest missing required ")
+            )
+        )
+        if expected_short_circuit:
+            execution_warnings.append(reason)
+        else:
+            contract_failures.append(reason)
+    warnings = [*section_warn_reasons(section), *execution_warnings]
+    return {
+        **section,
+        "status": "fail" if contract_failures else "pass",
+        "fail_reasons": contract_failures,
+        "warn_reasons": warnings,
+        "execution_short_circuit_detected": declared_execution_failure,
+        "execution_short_circuit_reasons": execution_warnings,
+    }
+
+
 def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     runtime_section = sections.get("runtime", {})
     replay_section = sections.get("replay_validation", {})
@@ -2632,11 +2689,15 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
     if not isinstance(failure_diagnostics, dict):
         failure_diagnostics = {}
 
+    artifact_sections = dict(sections)
+    artifact_sections["run_manifest"] = manifest_contract_view(
+        sections.get("run_manifest", {})
+    )
     layers = [
         layer_from_sections(
             name="artifact_contract",
             section_names=["run_manifest"],
-            sections=sections,
+            sections=artifact_sections,
             next_action="fix_run_manifest_or_artifact_contract_before_interpreting_strategy",
         ),
         layer_from_sections(

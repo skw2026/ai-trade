@@ -24,6 +24,66 @@ REPORT = load_module()
 
 
 class BuildClosedLoopReportTest(unittest.TestCase):
+    def test_data_pipeline_keeps_research_benchmark_failure_diagnostic_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            report = pathlib.Path(td) / "data_pipeline_report.json"
+            report.write_text(
+                json.dumps(
+                    {
+                        "status": "PASS",
+                        "steps": [
+                            {
+                                "name": "feature_build",
+                                "enabled": True,
+                                "required": True,
+                                "status": "pass",
+                            },
+                            {
+                                "name": "walkforward_backtest",
+                                "enabled": True,
+                                "required": False,
+                                "status": "fail",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_data_pipeline(report)
+
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["failed_required_steps"], [])
+            self.assertEqual(
+                section["failed_diagnostic_steps"], ["walkforward_backtest"]
+            )
+            self.assertIn("研究基准诊断未通过", section["warn_reasons"][0])
+
+    def test_fail_closed_short_circuit_is_not_artifact_contract_corruption(self):
+        sections = {
+            "run_manifest": {
+                "status": "fail",
+                "fail_reasons": [
+                    "run manifest missing required full artifacts: integrator_report",
+                    "closed-loop step failed: market_alpha_development",
+                    "closed-loop required step skipped: integrator",
+                    "step status ledger missing required steps: replay_validation",
+                ],
+                "warn_reasons": [],
+            },
+            "market_alpha_development": {
+                "status": "fail",
+                "fail_reasons": ["no positive-cost candidate"],
+            },
+        }
+
+        payload = REPORT.build_convergence_layers(sections)
+
+        artifact = payload["layers"][0]
+        self.assertEqual(artifact["name"], "artifact_contract")
+        self.assertEqual(artifact["status"], "PASS_WITH_ACTIONS")
+        self.assertEqual(payload["first_blocking_layer"], "mechanism_proof")
+
     def test_market_alpha_development_requires_positive_real_cost_candidate(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "market_alpha.json"
