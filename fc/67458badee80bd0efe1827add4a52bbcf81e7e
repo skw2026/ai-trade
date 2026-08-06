@@ -1,0 +1,11 @@
+tools/economic_target_probe.py
+  ai_agent 55-60,1078,1183,1190,1263,1397
+tools/test_economic_target_probe.py
+  ai_agent 16-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "fc67458badee80bd0efe1827add4a52bbcf81e7e",
+  "prompts": {}
+}
