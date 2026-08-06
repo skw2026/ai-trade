@@ -96,6 +96,36 @@ class MicrostructureRuntimeTest(unittest.TestCase):
             supervisor.atomic_write_json(health, payload)
             self.assertEqual(supervisor.healthcheck(args), 1)
 
+    def test_assessment_distinguishes_active_first_segment_from_broken_collector(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            supervisor.atomic_write_json(
+                root / "collector_health.json",
+                {
+                    "schema_version": supervisor.SCHEMA_VERSION,
+                    "state": "capturing",
+                    "symbol": "SOLUSDT",
+                    "segment_started_epoch_ms": 1000,
+                    "consecutive_failures": 0,
+                },
+            )
+            args = argparse.Namespace(
+                root=str(root),
+                output=str(root / "assessment.json"),
+                symbol="SOLUSDT",
+                min_capture_duration_sec=2,
+                max_stale_sec=10,
+                min_row_density=0.8,
+                now_epoch_ms=2500,
+            )
+
+            payload = assessment.assess(args)
+
+            self.assertEqual(payload["status"], "FAIL")
+            self.assertTrue(payload["capture_in_progress"])
+            self.assertEqual(payload["collector_health"]["status"], "PASS")
+            self.assertEqual(payload["failures"], ["minimum_forward_capture_duration"])
+
 
 if __name__ == "__main__":
     unittest.main()

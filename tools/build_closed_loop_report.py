@@ -1475,6 +1475,7 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                 )
                 continue
             step = str(record.get("step", "")).strip()
+            kind = str(record.get("kind", "")).strip().lower()
             result = str(record.get("result", "")).strip().lower()
             blocked = record.get("blocked_by_prior_failure")
             exit_code = record.get("exit_code")
@@ -1490,6 +1491,8 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                 fail_reasons.append(f"step status run_id mismatch: {step}")
             if str(record.get("action", "")).strip().lower() != action:
                 fail_reasons.append(f"step status action mismatch: {step}")
+            if kind not in {"required", "diagnostic", "observation"}:
+                fail_reasons.append(f"step status invalid kind: {step}={kind}")
             if result not in {"pass", "fail", "skipped"}:
                 fail_reasons.append(f"step status invalid result: {step}={result}")
             elif result == "pass" and exit_code != 0:
@@ -1499,7 +1502,12 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                     fail_reasons.append(
                         f"step status fail has invalid exit code: {step}"
                     )
-                fail_reasons.append(f"closed-loop step failed: {step}")
+                if kind == "observation":
+                    warn_reasons.append(
+                        f"closed-loop observational step not ready: {step}"
+                    )
+                else:
+                    fail_reasons.append(f"closed-loop step failed: {step}")
             elif result == "skipped":
                 if blocked is not True or exit_code is not None:
                     fail_reasons.append(

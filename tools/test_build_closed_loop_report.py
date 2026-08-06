@@ -2153,7 +2153,19 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 "mechanism_audit",
             ]
             step_status.write_text(
-                "\n".join(
+                json.dumps(
+                    {
+                        "run_id": "run-1",
+                        "action": "assess",
+                        "step": "microstructure_forward_data",
+                        "kind": "observation",
+                        "result": "fail",
+                        "exit_code": 2,
+                        "blocked_by_prior_failure": False,
+                    }
+                )
+                + "\n"
+                + "\n".join(
                     json.dumps(
                         {
                             "run_id": "run-1",
@@ -2220,6 +2232,10 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             section = REPORT.assess_run_manifest(manifest, "run-1")
 
         self.assertEqual(section["status"], "pass")
+        self.assertIn(
+            "closed-loop observational step not ready: microstructure_forward_data",
+            section["warn_reasons"],
+        )
 
     def test_run_manifest_rejects_contract_hash_mismatch(self):
         with tempfile.TemporaryDirectory() as td:

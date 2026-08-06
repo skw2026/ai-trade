@@ -39,8 +39,60 @@ def resolve_artifact(root: pathlib.Path, recorded: str, kind: str, symbol: str) 
     return candidate
 
 
+def assess_collector_health(
+    root: pathlib.Path,
+    *,
+    symbol: str,
+    now_ms: int,
+    max_stale_ms: int,
+) -> Dict[str, Any]:
+    path = root / "collector_health.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        state = str(payload.get("state") or "").strip().lower()
+        recorded_symbol = str(payload.get("symbol") or "").strip().upper()
+        reference_ms = int(
+            payload.get("last_success_epoch_ms")
+            or payload.get("segment_started_epoch_ms")
+            or 0
+        )
+        age_ms = now_ms - reference_ms if reference_ms > 0 else None
+        fresh = bool(
+            payload.get("schema_version") == "microstructure_collector_health_v1"
+            and state in {"capturing", "healthy"}
+            and recorded_symbol == symbol
+            and age_ms is not None
+            and 0 <= age_ms <= max_stale_ms
+        )
+        return {
+            "status": "PASS" if fresh else "FAIL",
+            "state": state or None,
+            "symbol": recorded_symbol or None,
+            "reference_epoch_ms": reference_ms or None,
+            "age_ms": age_ms,
+            "path": str(path),
+        }
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "status": "FAIL",
+            "state": None,
+            "symbol": None,
+            "reference_epoch_ms": None,
+            "age_ms": None,
+            "path": str(path),
+            "error": str(exc),
+        }
+
+
 def assess(args: argparse.Namespace) -> Dict[str, Any]:
     root = pathlib.Path(args.root).resolve()
+    now_ms = int(args.now_epoch_ms or time.time() * 1000)
+    collector_health = assess_collector_health(
+        root,
+        symbol=args.symbol,
+        now_ms=now_ms,
+        max_stale_ms=args.max_stale_sec * 1000,
+    )
     report_paths = sorted((root / "reports" / args.symbol).glob("*.json"))
     intervals: List[Tuple[int, int]] = []
     total_rows = 0
@@ -84,23 +136,30 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
             invalid.append(f"{report_path.name}:{exc}")
 
     coverage_ms = merge_duration_ms(intervals)
-    now_ms = int(args.now_epoch_ms or time.time() * 1000)
     freshness_age_ms = now_ms - latest_exchange_timestamp if latest_exchange_timestamp else None
     expected_rows = coverage_ms / 1000.0
     row_density = total_rows / expected_rows if expected_rows > 0 else 0.0
+    capture_in_progress = bool(
+        not intervals
+        and collector_health.get("status") == "PASS"
+        and collector_health.get("state") in {"capturing", "healthy"}
+    )
     failures = []
     if invalid:
         failures.append("invalid_segment_contract")
     if coverage_ms < args.min_capture_duration_sec * 1000:
         failures.append("minimum_forward_capture_duration")
-    if freshness_age_ms is None or freshness_age_ms < 0 or freshness_age_ms > args.max_stale_sec * 1000:
-        failures.append("capture_freshness")
-    if row_density < args.min_row_density:
-        failures.append("feature_row_density")
-    if total_book_updates <= 0:
-        failures.append("book_updates_missing")
-    if total_trades <= 0:
-        failures.append("public_trades_missing")
+    if not capture_in_progress:
+        if freshness_age_ms is None or freshness_age_ms < 0 or freshness_age_ms > args.max_stale_sec * 1000:
+            failures.append("capture_freshness")
+        if row_density < args.min_row_density:
+            failures.append("feature_row_density")
+        if total_book_updates <= 0:
+            failures.append("book_updates_missing")
+        if total_trades <= 0:
+            failures.append("public_trades_missing")
+        if not intervals and collector_health.get("status") != "PASS":
+            failures.append("collector_health")
     return {
         "schema_version": "microstructure_capture_assessment_v1",
         "status": "PASS" if not failures else "FAIL",
@@ -108,6 +167,8 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
         "promotion_evidence": False,
         "promotion_eligible": False,
         "development_screen_ready": not failures,
+        "capture_in_progress": capture_in_progress,
+        "collector_health": collector_health,
         "symbol": args.symbol,
         "segment_count": len(report_paths),
         "valid_segment_count": len(report_paths) - len(invalid),
