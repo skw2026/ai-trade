@@ -1,0 +1,15 @@
+tools/assess_microstructure_capture.py
+  ai_agent 42-86,89-95,142-146,152-162,170-171
+tools/test_build_closed_loop_report.py
+  ai_agent 2156-2168,2235-2238
+tools/test_microstructure_runtime.py
+  ai_agent 99-128
+tools/build_closed_loop_report.py
+  ai_agent 1478,1494-1495,1505-1510
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "39e5be065696f1bd029d049c4f33ace1b000c9a0",
+  "prompts": {}
+}
