@@ -53,10 +53,11 @@ permissions:
   contents: read
 
 concurrency:
-  # Full/assess and post-CD smoke share one remote transaction lock. Keep all
-  # entry points in the same Actions concurrency group so they queue before
-  # opening concurrent SSH sessions and racing on the host lock.
-  group: ai-trade-remote-closed-loop
+  # GitHub keeps only one pending run per concurrency group.  A scheduled Full
+  # must not replace the post-CD Smoke while another Full is active.  Full and
+  # Smoke therefore use separate Actions queues; the persistent ECS
+  # closed_loop_runner lock remains the cross-workflow serialization boundary.
+  group: ai-trade-remote-closed-loop-full
   cancel-in-progress: false
 
 jobs:

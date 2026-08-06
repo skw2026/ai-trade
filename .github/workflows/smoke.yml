@@ -23,9 +23,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Must match closed-loop.yml: both workflows execute the same remote runner
-  # and use the same persistent transaction lock.
-  group: ai-trade-remote-closed-loop
+  # Keep a dedicated pending slot.  Sharing the Full group lets a scheduled
+  # Full replace a queued post-CD Smoke before the Smoke job is ever created.
+  # The persistent ECS runner lock still serializes remote state mutations.
+  group: ai-trade-remote-closed-loop-smoke
   cancel-in-progress: false
 
 jobs:
@@ -35,7 +36,7 @@ jobs:
       ${{ github.event_name == 'workflow_dispatch' ||
           (github.event.workflow_run.conclusion == 'success' &&
            github.event.workflow_run.head_sha == github.sha) }}
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       SMOKE_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '15m' }}
       # RUNTIME_STATUS is emitted every 20 market ticks rather than on a wall
@@ -69,14 +70,14 @@ jobs:
           SMOKE_EXPECTED_SHA: ${{ env.SMOKE_EXPECTED_SHA }}
           CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS: "900"
           CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS: "15"
-          CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"
+          CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "3600"
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          command_timeout: 20m
+          command_timeout: 75m
           envs: SMOKE_SINCE,SMOKE_MIN_RUNTIME_STATUS,SMOKE_OUTPUT_ROOT,SMOKE_RUN_ID,SMOKE_EXPECTED_SHA,CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS,CLOSED_LOOP_ASSESS_WAIT_POLL_SECONDS,CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS
           script: |
             set -euo pipefail

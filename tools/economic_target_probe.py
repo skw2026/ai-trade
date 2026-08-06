@@ -47,6 +47,7 @@ PROBE_VARIANTS = (
     "continuous_return_rmse",
     "continuous_return_huber",
     "continuous_return_huber_side_calibrated",
+    "continuous_return_cross_asset_residual_huber_side_calibrated",
     "continuous_return_path_huber",
     "ternary_action_rmse",
     "path_utility_huber",
@@ -361,6 +362,70 @@ def load_market_alpha_features(
         )
         add(f"market_btc_eth_dispersion_{window}", btc_return - eth_return)
     return np.column_stack(arrays), names
+
+
+def load_market_alpha_closes(
+    path: pathlib.Path,
+    expected_timestamps: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    """Load exact-axis cross-asset closes used only to construct research labels."""
+    fields = tuple(f"binance_{symbol}_close" for symbol in ("btc", "eth"))
+    timestamps: List[int] = []
+    values: Dict[str, List[float]] = {name: [] for name in fields}
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"timestamp", *fields}
+        if not required.issubset(set(reader.fieldnames or [])):
+            missing = sorted(required.difference(set(reader.fieldnames or [])))
+            raise ValueError(
+                f"market alpha CSV is missing residual-label columns: {missing}"
+            )
+        for row in reader:
+            timestamps.append(int(row["timestamp"]))
+            for name in fields:
+                raw = str(row.get(name, "")).strip()
+                values[name].append(float(raw) if raw else float("nan"))
+    actual = np.asarray(timestamps, dtype=np.int64)
+    expected = np.asarray(expected_timestamps, dtype=np.int64)
+    if len(actual) != len(expected) or not np.array_equal(actual, expected):
+        raise ValueError("market alpha/OHLCV timestamp axes differ")
+    return {
+        symbol: np.asarray(values[f"binance_{symbol}_close"], dtype=np.float64)
+        for symbol in ("btc", "eth")
+    }
+
+
+def build_cross_asset_residual_forward_return(
+    anchor_forward_return: np.ndarray,
+    cross_asset_closes: Dict[str, np.ndarray],
+    *,
+    horizon_bars: int,
+    execution_latency_bars: int,
+) -> np.ndarray:
+    """Remove equal-weight BTC/ETH beta from the SOL development target.
+
+    The future cross-asset values are labels, never features.  Candidate
+    calibration and OOS scoring continue to use absolute realized SOL return,
+    so relative outperformance alone cannot pass the economic screen.
+    """
+    anchor = np.asarray(anchor_forward_return, dtype=np.float64)
+    component_returns: List[np.ndarray] = []
+    for symbol in ("btc", "eth"):
+        if symbol not in cross_asset_closes:
+            raise ValueError(f"missing cross-asset close series: {symbol}")
+        _, future_return = build_label(
+            np.asarray(cross_asset_closes[symbol], dtype=np.float64),
+            int(horizon_bars),
+            execution_latency_bars=int(execution_latency_bars),
+        )
+        if len(future_return) != len(anchor):
+            raise ValueError("cross-asset/anchor forward-return axes differ")
+        component_returns.append(future_return)
+    market_return = 0.5 * (component_returns[0] + component_returns[1])
+    residual = np.full(len(anchor), np.nan, dtype=np.float64)
+    valid = np.isfinite(anchor) & np.isfinite(market_return)
+    residual[valid] = anchor[valid] - market_return[valid]
+    return residual
 
 
 def build_target(
@@ -849,6 +914,7 @@ def run_variant(
     raw_features: np.ndarray,
     feature_names: Sequence[str],
     forward_return: np.ndarray,
+    target_forward_return: np.ndarray | None,
     direction_label: np.ndarray,
     execution_bar_return: np.ndarray,
     splits: Sequence[Any],
@@ -873,7 +939,7 @@ def run_variant(
         )
         if path_target_variant
         else build_target(
-            forward_return,
+            forward_return if target_forward_return is None else target_forward_return,
             variant=variant,
             threshold_bps=threshold_bps,
             target_clip=float(args.target_clip),
@@ -1001,8 +1067,10 @@ def run_variant(
                         min_trades=int(args.min_calibration_trades),
                         direction_modes=(
                             DIRECTION_MODES
-                            if variant
-                            == "continuous_return_huber_side_calibrated"
+                            if variant in {
+                                "continuous_return_huber_side_calibrated",
+                                "continuous_return_cross_asset_residual_huber_side_calibrated",
+                            }
                             else ("both",)
                         ),
                     )
@@ -1104,9 +1172,19 @@ def run_variant(
             "calibration_mode": args.calibration_mode,
             "direction_calibration": (
                 "nested_validation_long_short_abstention"
-                if variant == "continuous_return_huber_side_calibrated"
+                if variant in {
+                    "continuous_return_huber_side_calibrated",
+                    "continuous_return_cross_asset_residual_huber_side_calibrated",
+                }
                 else "both_sides"
             ),
+            "return_target": (
+                "bybit_sol_minus_equal_weight_binance_btc_eth"
+                if variant
+                == "continuous_return_cross_asset_residual_huber_side_calibrated"
+                else "bybit_sol_absolute"
+            ),
+            "economic_evaluation_return": "bybit_sol_absolute_after_real_cost",
             "exit_objective": (
                 {
                     "mode": "path_first_touch",
@@ -1227,6 +1305,7 @@ def main() -> int:
         expanded_features, expanded_names = build_expanded_ohlcv_features(series)
         raw_features = np.column_stack((raw_features, expanded_features))
         feature_names = [*feature_names, *expanded_names]
+    cross_asset_closes: Dict[str, np.ndarray] | None = None
     if args.feature_set in {
         "expanded_derivatives_v1",
         "expanded_market_alpha_derivatives_v1",
@@ -1257,12 +1336,25 @@ def main() -> int:
         )
         raw_features = np.column_stack((raw_features, market_features))
         feature_names = [*feature_names, *market_names]
+        cross_asset_closes = load_market_alpha_closes(
+            pathlib.Path(args.market_alpha_csv), series["timestamp"]
+        )
     direction_label, forward_return = build_label(
         series["close"],
         int(args.predict_horizon_bars),
         label_round_trip_cost_bps=float(args.label_round_trip_cost_bps),
         label_min_net_edge_bps=float(args.label_min_net_edge_bps),
         execution_latency_bars=int(args.execution_latency_bars),
+    )
+    residual_forward_return = (
+        build_cross_asset_residual_forward_return(
+            forward_return,
+            cross_asset_closes,
+            horizon_bars=int(args.predict_horizon_bars),
+            execution_latency_bars=int(args.execution_latency_bars),
+        )
+        if cross_asset_closes is not None
+        else None
     )
     execution_bar_return = build_execution_bar_returns(
         ret_1,
@@ -1295,12 +1387,23 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     reports: List[Dict[str, Any]] = []
     for variant in variants:
+        residual_variant = (
+            variant
+            == "continuous_return_cross_asset_residual_huber_side_calibrated"
+        )
+        if residual_variant and residual_forward_return is None:
+            raise ValueError(
+                "cross-asset residual variant requires a market-alpha feature set"
+            )
         reports.append(run_variant(
             args=args,
             variant=variant,
             raw_features=raw_features,
             feature_names=feature_names,
             forward_return=forward_return,
+            target_forward_return=(
+                residual_forward_return if residual_variant else None
+            ),
             direction_label=direction_label,
             execution_bar_return=execution_bar_return,
             splits=splits,

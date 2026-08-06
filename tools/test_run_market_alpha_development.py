@@ -8,6 +8,17 @@ import run_market_alpha_development as runner
 
 
 class MarketAlphaDevelopmentRunnerTest(unittest.TestCase):
+    def test_residual_variant_is_only_run_with_market_alpha_features(self):
+        variants = ["continuous_return_huber", runner.RESIDUAL_VARIANT]
+        self.assertEqual(
+            runner.variants_for_feature_set(variants, "expanded_ohlcv_v1"),
+            ["continuous_return_huber"],
+        )
+        self.assertEqual(
+            runner.variants_for_feature_set(variants, "expanded_market_alpha_v1"),
+            variants,
+        )
+
     def test_domain_guard_rejects_selection_and_unnamed_input(self):
         with self.assertRaisesRegex(ValueError, "development"):
             runner.ensure_development_input(pathlib.Path("research_selection.csv"))

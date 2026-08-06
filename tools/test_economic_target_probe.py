@@ -65,6 +65,45 @@ class EconomicTargetProbeTest(unittest.TestCase):
             target_clip=6.0,
         )
         np.testing.assert_allclose(side_calibrated[:-1], continuous[:-1])
+        residual = probe.build_target(
+            returns,
+            variant="continuous_return_cross_asset_residual_huber_side_calibrated",
+            threshold_bps=14.3,
+            target_clip=6.0,
+        )
+        np.testing.assert_allclose(residual[:-1], continuous[:-1])
+
+    def test_cross_asset_residual_target_matches_latency_aligned_market_beta(self):
+        anchor_forward = np.asarray([0.03, 0.02, np.nan, np.nan, np.nan])
+        closes = {
+            "btc": np.asarray([100.0, 101.0, 103.02, 106.05, 108.0]),
+            "eth": np.asarray([200.0, 202.0, 206.04, 208.0, 210.0]),
+        }
+        residual = probe.build_cross_asset_residual_forward_return(
+            anchor_forward,
+            closes,
+            horizon_bars=1,
+            execution_latency_bars=1,
+        )
+        # feature@0 executes at close[1] and exits at close[2].  Both market
+        # legs return 2%, leaving 1% idiosyncratic SOL return.
+        self.assertAlmostEqual(float(residual[0]), 0.01, places=12)
+        expected_market_1 = 0.5 * (
+            (106.05 / 103.02 - 1.0) + (208.0 / 206.04 - 1.0)
+        )
+        self.assertAlmostEqual(
+            float(residual[1]), 0.02 - expected_market_1, places=12
+        )
+        self.assertTrue(math.isnan(float(residual[2])))
+
+    def test_residual_target_requires_both_cross_assets(self):
+        with self.assertRaisesRegex(ValueError, "missing cross-asset"):
+            probe.build_cross_asset_residual_forward_return(
+                np.asarray([0.1, np.nan]),
+                {"btc": np.asarray([1.0, 2.0])},
+                horizon_bars=1,
+                execution_latency_bars=0,
+            )
 
     def test_rolling_moments_are_causal_full_window(self):
         mean, stdev = probe.rolling_moments(np.asarray([1.0, 2.0, 3.0, 4.0]), 3)

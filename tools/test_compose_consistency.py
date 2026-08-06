@@ -727,10 +727,16 @@ class ComposeConsistencyTest(unittest.TestCase):
             "github.event.workflow_run.head_sha == github.sha",
             smoke_workflow,
         )
-        self.assertIn("group: ai-trade-remote-closed-loop", workflow)
-        self.assertIn("group: ai-trade-remote-closed-loop", smoke_workflow)
+        self.assertIn("group: ai-trade-remote-closed-loop-full", workflow)
+        self.assertIn("group: ai-trade-remote-closed-loop-smoke", smoke_workflow)
+        self.assertNotIn(
+            "group: ai-trade-remote-closed-loop\n", workflow
+        )
+        self.assertNotIn(
+            "group: ai-trade-remote-closed-loop\n", smoke_workflow
+        )
         self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"', workflow)
-        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"', smoke_workflow)
+        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "3600"', smoke_workflow)
         self.assertIn(
             "github.event_name == 'workflow_run' && 'full'", workflow
         )
@@ -804,8 +810,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('default: "4"', workflow)
         self.assertIn("inputs.min_runtime_status || '4'", workflow)
         self.assertIn("Four healthy samples cover multiple", workflow)
-        self.assertIn("timeout-minutes: 30", workflow)
-        self.assertIn("command_timeout: 20m", workflow)
+        self.assertIn("timeout-minutes: 90", workflow)
+        self.assertIn("command_timeout: 75m", workflow)
         self.assertIn("CLOSED_LOOP_ASSESS_WAIT_TIMEOUT_SECONDS: \"900\"", workflow)
         self.assertRegex(
             runner,

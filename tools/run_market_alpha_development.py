@@ -19,10 +19,21 @@ FIXED_VARIANTS = (
     "continuous_return_rmse",
     "continuous_return_huber",
     "continuous_return_huber_side_calibrated",
+    "continuous_return_cross_asset_residual_huber_side_calibrated",
     "continuous_return_path_huber",
     "ternary_action_rmse",
     "path_utility_huber",
 )
+
+RESIDUAL_VARIANT = "continuous_return_cross_asset_residual_huber_side_calibrated"
+
+
+def variants_for_feature_set(variants: Sequence[str], feature_set: str) -> List[str]:
+    """Keep the cross-asset target scoped to feature sets with market inputs."""
+    selected = [str(item).strip() for item in variants if str(item).strip()]
+    if "market_alpha" not in feature_set:
+        selected = [item for item in selected if item != RESIDUAL_VARIANT]
+    return selected
 
 
 def ensure_development_input(path: pathlib.Path) -> None:
@@ -178,6 +189,14 @@ def main() -> int:
         raise ValueError("runner is development-only")
     if args.predict_horizon_bars <= 0 or args.bybit_trade_sample_days <= 0:
         raise ValueError("horizon and Bybit trade sample days must be positive")
+    requested_variants = [
+        item.strip() for item in str(args.variants).split(",") if item.strip()
+    ]
+    unknown_variants = [item for item in requested_variants if item not in FIXED_VARIANTS]
+    if not requested_variants or unknown_variants:
+        raise ValueError(f"invalid variants: {unknown_variants or requested_variants}")
+    if len(set(requested_variants)) != len(requested_variants):
+        raise ValueError("duplicate variants are forbidden")
     output_dir = pathlib.Path(args.output_dir).resolve()
     cache_dir = pathlib.Path(args.cache_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -232,6 +251,7 @@ def main() -> int:
         feature_sets.append("expanded_market_alpha_derivatives_v1")
     probe_payloads = []
     for feature_set in feature_sets:
+        feature_set_variants = variants_for_feature_set(requested_variants, feature_set)
         output = output_dir / f"economic_h{args.predict_horizon_bars}_{feature_set}.json"
         command: List[str] = [
             sys.executable,
@@ -251,7 +271,7 @@ def main() -> int:
             "--calibration_mode",
             "nested_validation_quantile",
             "--variants",
-            args.variants,
+            ",".join(feature_set_variants),
             "--iterations",
             str(args.iterations),
             "--label_round_trip_cost_bps",
