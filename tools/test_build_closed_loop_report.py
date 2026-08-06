@@ -108,6 +108,42 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(passed["status"], "pass")
             self.assertEqual(passed["readiness_status"], "PASS")
 
+    def test_microstructure_alpha_requires_stressed_cost_development_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "microstructure_alpha.json"
+            payload = {
+                "schema_version": "microstructure_alpha_development_v1",
+                "status": "PASS",
+                "fully_verifiable": True,
+                "research_domain": "forward_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "economic_screen": {
+                    "development_passed": False,
+                    "oos_stress_cost_by_split": {"lcb_bps": -1.0},
+                },
+                "next_gate": "reject_microstructure_candidate_and_remain_in_development",
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            failed = REPORT.assess_microstructure_alpha_development(path)
+            self.assertEqual(failed["status"], "fail")
+            self.assertIn("joint direction/exit", failed["fail_reasons"][-1])
+
+            payload["economic_screen"]["development_passed"] = True
+            payload["next_gate"] = (
+                "freeze_candidate_and_collect_independent_forward_selection"
+            )
+            model_path = pathlib.Path(td) / "microstructure.cbm"
+            model_path.write_bytes(b"frozen-development-model")
+            payload["frozen_candidate"] = {
+                "model_path": str(model_path),
+                "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            passed = REPORT.assess_microstructure_alpha_development(path)
+            self.assertEqual(passed["status"], "pass")
+            self.assertFalse(passed["promotion_eligible"])
+
     def test_report_only_preserves_failed_strategy_status_without_failing_process(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

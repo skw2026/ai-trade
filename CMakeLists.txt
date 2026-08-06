@@ -160,6 +160,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_microstructure_runtime.py)
     add_test(NAME run_market_alpha_development_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_market_alpha_development.py)
+    add_test(NAME run_microstructure_alpha_development_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_microstructure_alpha_development.py)
     add_test(NAME feature_parity_contract_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_feature_parity_contract.py)
     add_test(NAME check_runtime_health_test

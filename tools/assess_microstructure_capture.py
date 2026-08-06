@@ -100,6 +100,7 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
     total_book_updates = 0
     total_trades = 0
     invalid: List[str] = []
+    segments: List[Dict[str, Any]] = []
     latest_exchange_timestamp = 0
     for report_path in report_paths:
         try:
@@ -132,6 +133,19 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
             quality = payload.get("quality", {})
             total_book_updates += int(quality.get("book_update_count", 0))
             total_trades += int(quality.get("trade_count", 0))
+            segments.append(
+                {
+                    "report_path": str(report_path.resolve()),
+                    "report_sha256": sha256_file(report_path),
+                    "raw_path": str(raw_path.resolve()),
+                    "raw_sha256": str(raw.get("sha256") or ""),
+                    "feature_path": str(feature_path.resolve()),
+                    "feature_sha256": str(features.get("sha256") or ""),
+                    "first_timestamp_ms": start,
+                    "last_timestamp_ms": end,
+                    "feature_row_count": int(features.get("row_count", 0)),
+                }
+            )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             invalid.append(f"{report_path.name}:{exc}")
 
@@ -181,6 +195,10 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
         "raw_message_count": total_messages,
         "book_update_count": total_book_updates,
         "trade_count": total_trades,
+        # This checksum-bound manifest is the only input contract accepted by
+        # the downstream development economic screen.  It prevents that screen
+        # from silently globbing a different or subsequently mutated capture.
+        "segments": segments,
         "failures": failures,
         "invalid_segments": invalid,
         "next_gate": "development_economic_screen" if not failures else "continue_forward_capture",
@@ -193,7 +211,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True)
     parser.add_argument("--symbol", default="SOLUSDT", choices=("SOLUSDT",))
     parser.add_argument("--min-capture-duration-sec", type=int, default=86400)
-    parser.add_argument("--max-stale-sec", type=int, default=7200)
+    parser.add_argument("--max-stale-sec", type=int, default=1800)
     parser.add_argument("--min-row-density", type=float, default=0.80)
     parser.add_argument("--now-epoch-ms", type=int, default=0)
     return parser.parse_args()

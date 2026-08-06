@@ -16,6 +16,8 @@
         "research_domain_split",
         "feature_parity",
         "data_quality",
+        "microstructure_forward_data",
+        "microstructure_alpha_development",
         "replay_validation",
         "strategy_diagnose",
         "alpha_mechanism_probe"
@@ -36,7 +38,10 @@
         "replay_validation_command_log",
         "strategy_diagnose_report",
         "alpha_mechanism_probe_report",
-        "alpha_candidate_manifest"
+        "alpha_candidate_manifest",
+        "microstructure_capture_report",
+        "microstructure_alpha_development_report",
+        "microstructure_alpha_candidate_manifest"
       ]
     },
     "train": {
@@ -47,6 +52,9 @@
         "feature_parity",
         "data_quality",
         "miner",
+        "market_alpha_development",
+        "microstructure_forward_data",
+        "microstructure_alpha_development",
         "integrator",
         "replay_candidate_config",
         "replay_validation",
@@ -77,7 +85,11 @@
         "alpha_mechanism_probe_report",
         "alpha_candidate_manifest",
         "model_registry_entry",
-        "strategy_candidate_manifest"
+        "strategy_candidate_manifest",
+        "market_alpha_development_report",
+        "microstructure_capture_report",
+        "microstructure_alpha_development_report",
+        "microstructure_alpha_candidate_manifest"
       ]
     },
     "full": {
@@ -88,6 +100,9 @@
         "feature_parity",
         "data_quality",
         "miner",
+        "market_alpha_development",
+        "microstructure_forward_data",
+        "microstructure_alpha_development",
         "integrator",
         "replay_candidate_config",
         "replay_validation",
@@ -129,7 +144,11 @@
         "runtime_log",
         "runtime_assess_report",
         "trade_ledger_report",
-        "closed_loop_mechanism_report"
+        "closed_loop_mechanism_report",
+        "market_alpha_development_report",
+        "microstructure_capture_report",
+        "microstructure_alpha_development_report",
+        "microstructure_alpha_candidate_manifest"
       ]
     },
     "assess": {

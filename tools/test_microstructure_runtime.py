@@ -73,6 +73,8 @@ class MicrostructureRuntimeTest(unittest.TestCase):
             self.assertEqual(payload["status"], "PASS")
             self.assertTrue(payload["development_screen_ready"])
             self.assertFalse(payload["promotion_eligible"])
+            self.assertEqual(len(payload["segments"]), 1)
+            self.assertEqual(payload["segments"][0]["feature_sha256"], sha256(features))
 
             features.write_text("tampered\n", encoding="utf-8")
             failed = assessment.assess(args)
@@ -171,6 +173,17 @@ class MicrostructureRuntimeTest(unittest.TestCase):
         ):
             health_args = supervisor.parse_args()
         self.assertEqual(health_args.max_stale_sec, 1800)
+        with mock.patch.object(
+            sys,
+            "argv",
+            [
+                "assessment",
+                "--root=/tmp/research",
+                "--output=/tmp/assessment.json",
+            ],
+        ):
+            assessment_args = assessment.parse_args()
+        self.assertEqual(assessment_args.max_stale_sec, 1800)
 
 
 if __name__ == "__main__":

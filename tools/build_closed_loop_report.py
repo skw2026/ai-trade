@@ -937,6 +937,63 @@ def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    schema_ok = payload.get("schema_version") == "microstructure_alpha_development_v1"
+    fully_verifiable = payload.get("fully_verifiable") is True
+    economic_screen = payload.get("economic_screen", {})
+    if not isinstance(economic_screen, dict):
+        economic_screen = {}
+    development_passed = economic_screen.get("development_passed") is True
+    domain_ok = (
+        payload.get("research_domain") == "forward_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+    )
+    fail_reasons: List[str] = []
+    if not schema_ok:
+        fail_reasons.append("microstructure alpha development report schema mismatch")
+    if not fully_verifiable:
+        fail_reasons.append("microstructure alpha development evidence is incomplete")
+    if not domain_ok:
+        fail_reasons.append("microstructure alpha development-domain isolation contract failed")
+    if not development_passed:
+        fail_reasons.append(
+            "no order-book/trade-flow joint direction/exit candidate passed stressed-cost development screen"
+        )
+    else:
+        frozen_candidate = payload.get("frozen_candidate", {})
+        if not isinstance(frozen_candidate, dict):
+            frozen_candidate = {}
+        model_path = Path(str(frozen_candidate.get("model_path") or ""))
+        expected_model_hash = str(frozen_candidate.get("model_sha256") or "")
+        if (
+            not model_path.is_file()
+            or len(expected_model_hash) != 64
+            or hashlib.sha256(model_path.read_bytes()).hexdigest()
+            != expected_model_hash
+        ):
+            fail_reasons.append(
+                "microstructure alpha frozen model artifact identity mismatch"
+            )
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [],
+        "research_domain": payload.get("research_domain"),
+        "promotion_evidence": payload.get("promotion_evidence"),
+        "promotion_eligible": payload.get("promotion_eligible"),
+        "fully_verifiable": fully_verifiable,
+        "source_assessment": payload.get("source_assessment", {}),
+        "data": payload.get("data", {}),
+        "target_contract": payload.get("target_contract", {}),
+        "validation_contract": payload.get("validation_contract", {}),
+        "economic_screen": economic_screen,
+        "next_gate": payload.get("next_gate"),
+    }
+
+
 def assess_market_alpha_development(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     schema_ok = payload.get("schema_version") == "market_alpha_development_verification_v1"
@@ -2718,6 +2775,7 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
             name="mechanism_proof",
             section_names=[
                 "market_alpha_development",
+                "microstructure_alpha_development",
                 "alpha_mechanism_probe",
                 "closed_loop_mechanism",
             ],
@@ -2888,6 +2946,11 @@ def parse_args() -> argparse.Namespace:
         "--microstructure_capture_report",
         default="",
         help="订单簿/逐笔成交前向采集质量报告路径",
+    )
+    parser.add_argument(
+        "--microstructure_alpha_development_report",
+        default="",
+        help="订单簿/逐笔成交成本感知联合方向/退出 development-only 报告路径",
     )
     parser.add_argument(
         "--market_alpha_development_report",
@@ -3199,6 +3262,20 @@ def main() -> int:
                 "status": "fail",
                 "readiness_status": "FAIL",
                 "fail_reasons": [f"文件不存在: {microstructure_path}"],
+            }
+    if args.microstructure_alpha_development_report:
+        microstructure_alpha_path = Path(
+            args.microstructure_alpha_development_report
+        )
+        if microstructure_alpha_path.is_file():
+            sections["microstructure_alpha_development"] = (
+                assess_microstructure_alpha_development(microstructure_alpha_path)
+            )
+        else:
+            sections["microstructure_alpha_development"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {microstructure_alpha_path}"],
             }
     if args.market_alpha_development_report:
         market_alpha_path = Path(args.market_alpha_development_report)
