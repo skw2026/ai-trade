@@ -1,0 +1,13 @@
+tools/test_compose_consistency.py
+  ai_agent 685,706-711
+.github/workflows/closed-loop.yml
+  ai_agent 56-59
+.github/workflows/smoke.yml
+  ai_agent 26-28,34-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "d06885dba3410e89f1aa89fb6039cde274ee03d4",
+  "prompts": {}
+}
