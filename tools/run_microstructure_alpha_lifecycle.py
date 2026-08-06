@@ -353,24 +353,40 @@ def register_candidate(
     if any(str(event.get("candidate_id") or "") == candidate_id for event in events):
         raise LifecycleError("a consumed/rejected candidate id cannot be registered again")
     candidate_dir = paths.candidate_dir(candidate_id)
-    candidate_dir.mkdir(parents=True, exist_ok=False)
+    candidates_root = candidate_dir.parent
+    candidates_root.mkdir(parents=True, exist_ok=True)
+    if candidate_dir.exists():
+        raise LifecycleError("uncommitted or duplicate candidate directory already exists")
     report_target = candidate_dir / "development_report.json"
     manifest_target = candidate_dir / "candidate_manifest.json"
     model_target = candidate_dir / "model.cbm"
-    copy_verified(source_model, model_target, str(candidate["model_sha256"]))
-    # Normalize only artifact locations after copying into the immutable
-    # registry.  Candidate identity deliberately excludes filesystem paths, so
-    # this preserves the candidate id while ensuring later reports do not
-    # depend on a garbage-collected run directory.
-    registered_report = read_json_object(source_report)
-    registered_report["frozen_candidate"]["model_path"] = str(model_target.resolve())
-    atomic_write_json(report_target, registered_report)
-    registered_manifest = read_json_object(source_manifest)
-    registered_manifest["development_report"] = {
-        "path": str(report_target.resolve()),
-        "sha256": sha256_file(report_target),
-    }
-    atomic_write_json(manifest_target, registered_manifest)
+    temporary_dir = pathlib.Path(
+        tempfile.mkdtemp(prefix=f".{candidate_id}.", dir=candidates_root)
+    )
+    try:
+        temporary_report = temporary_dir / report_target.name
+        temporary_manifest = temporary_dir / manifest_target.name
+        temporary_model = temporary_dir / model_target.name
+        copy_verified(source_model, temporary_model, str(candidate["model_sha256"]))
+        # Normalize only artifact locations after copying into the immutable
+        # registry.  Candidate identity deliberately excludes filesystem
+        # paths, so this preserves the candidate id while ensuring later
+        # reports do not depend on a garbage-collected run directory.
+        registered_report = read_json_object(source_report)
+        registered_report["frozen_candidate"]["model_path"] = str(
+            model_target.resolve()
+        )
+        atomic_write_json(temporary_report, registered_report)
+        registered_manifest = read_json_object(source_manifest)
+        registered_manifest["development_report"] = {
+            "path": str(report_target.resolve()),
+            "sha256": sha256_file(temporary_report),
+        }
+        atomic_write_json(temporary_manifest, registered_manifest)
+        temporary_dir.replace(candidate_dir)
+    except Exception:
+        shutil.rmtree(temporary_dir, ignore_errors=True)
+        raise
     cutoff_ms = int(candidate["development_cutoff_ms"])
     embargo_seconds = int(candidate["embargo_seconds"])
     selection_start = cutoff_ms + embargo_seconds * 1000
