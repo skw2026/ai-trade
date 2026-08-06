@@ -699,6 +699,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('workflows: ["CD"]', workflow)
         self.assertIn("github.event.workflow_run.head_sha", workflow)
         self.assertIn(
+            "github.event.workflow_run.head_sha == github.sha",
+            workflow,
+        )
+        self.assertIn(
             "github.event_name == 'workflow_run' && 'full'", workflow
         )
         self.assertIn('RUNNER_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"', workflow)
