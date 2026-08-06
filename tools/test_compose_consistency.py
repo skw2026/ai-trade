@@ -709,6 +709,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("group: ai-trade-remote-closed-loop", workflow)
         self.assertIn("group: ai-trade-remote-closed-loop", smoke_workflow)
+        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "120"', workflow)
+        self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "120"', smoke_workflow)
         self.assertIn(
             "github.event_name == 'workflow_run' && 'full'", workflow
         )

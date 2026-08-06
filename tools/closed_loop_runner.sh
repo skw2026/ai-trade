@@ -83,6 +83,7 @@ RESEARCH_MIN_SELECTION_FEATURE_BARS="${CLOSED_LOOP_RESEARCH_MIN_SELECTION_FEATUR
 RESEARCH_MIN_HOLDOUT_FEATURE_BARS="${CLOSED_LOOP_RESEARCH_MIN_HOLDOUT_FEATURE_BARS:-4000}"
 HOLDOUT_CONSUMPTION_LEDGER_PATH="${CLOSED_LOOP_HOLDOUT_CONSUMPTION_LEDGER_PATH:-data/models/final_holdout_consumption.jsonl}"
 RUNNER_MAX_SECONDS="${CLOSED_LOOP_RUNNER_MAX_SECONDS:-4800}"
+RUNNER_LOCK_WAIT_SECONDS="${CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS:-0}"
 MINER_TOP_K="10"
 MINER_GENERATIONS="4"
 MINER_POPULATION="32"
@@ -396,6 +397,7 @@ Env toggles:
                                                        alpha 候选 horizon 列表 (default: 6,12,24)
   CLOSED_LOOP_BLOCK_REGISTRY_ON_ALPHA_FAIL=true|false   alpha viability 失败时跳过模型注册激活 (default: true)
   CLOSED_LOOP_RUN_ID=<id>                              可选：外部 workflow 指定本轮 run_id，避免 artifact 读取 latest 漂移
+  CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS=<int>            等待远端闭环事务锁的秒数；0=立即失败 (default: 0)
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_USD=<float>          S5 可选强门禁：权益变化下限（未设置=关闭）
   CLOSED_LOOP_S5_MIN_EQUITY_CHANGE_SAMPLES=<int>        S5 权益门槛生效所需最小 account 采样数 (default: 0)
   CLOSED_LOOP_S5_MAX_EQUITY_VS_REALIZED_GAP_USD=<float> S5 可选强门禁：|equity-realized_net| 上限（未设置=关闭）
@@ -1148,6 +1150,11 @@ report_path.write_text(
 )
 PY
 }
+
+if [[ ! "${RUNNER_LOCK_WAIT_SECONDS}" =~ ^[0-9]+$ ]]; then
+  echo "[ERROR] invalid CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS=${RUNNER_LOCK_WAIT_SECONDS}"
+  exit 2
+fi
 
 if ! is_true "${CLOSED_LOOP_RUNNER_LIBRARY_MODE:-false}" &&
    ! is_true "${CLOSED_LOOP_RUNNER_DEADLINE_GUARD:-false}"; then
@@ -5314,8 +5321,18 @@ acquire_closed_loop_lock() {
   mkdir -p "$(dirname "${CLOSED_LOOP_RUNNER_LOCK_PATH}")"
   if command -v flock >/dev/null 2>&1; then
     exec 9> "${CLOSED_LOOP_RUNNER_LOCK_PATH}"
-    if ! flock -n 9; then
-      echo "[ERROR] another closed-loop process holds ${CLOSED_LOOP_RUNNER_LOCK_PATH}"
+    local -a flock_args=(-n)
+    if (( RUNNER_LOCK_WAIT_SECONDS > 0 )); then
+      flock_args=(-w "${RUNNER_LOCK_WAIT_SECONDS}")
+      echo "[INFO] waiting up to ${RUNNER_LOCK_WAIT_SECONDS}s for closed-loop lock: ${CLOSED_LOOP_RUNNER_LOCK_PATH}"
+    fi
+    if ! flock "${flock_args[@]}" 9; then
+      echo "[ERROR] another closed-loop process holds ${CLOSED_LOOP_RUNNER_LOCK_PATH} after wait_seconds=${RUNNER_LOCK_WAIT_SECONDS}"
+      if command -v lslocks >/dev/null 2>&1; then
+        lslocks -n -o PID,COMMAND,PATH 2>/dev/null \
+          | awk -v path="${CLOSED_LOOP_RUNNER_LOCK_PATH}" '$3 == path {print "[ERROR] lock_owner pid=" $1 " command=" $2 " path=" $3}' \
+          || true
+      fi
       return 1
     fi
     CLOSED_LOOP_LOCK_BACKEND="flock"
@@ -5324,10 +5341,14 @@ acquire_closed_loop_lock() {
   fi
 
   local lock_dir="${CLOSED_LOOP_RUNNER_LOCK_PATH}.d"
-  if ! mkdir "${lock_dir}" 2>/dev/null; then
-    echo "[ERROR] another closed-loop process holds ${lock_dir}"
-    return 1
-  fi
+  local lock_deadline=$(( $(date +%s) + RUNNER_LOCK_WAIT_SECONDS ))
+  while ! mkdir "${lock_dir}" 2>/dev/null; do
+    if (( RUNNER_LOCK_WAIT_SECONDS == 0 || $(date +%s) >= lock_deadline )); then
+      echo "[ERROR] another closed-loop process holds ${lock_dir} after wait_seconds=${RUNNER_LOCK_WAIT_SECONDS}"
+      return 1
+    fi
+    sleep 1
+  done
   printf '%s\n' "$$" > "${lock_dir}/pid"
   CLOSED_LOOP_LOCK_BACKEND="mkdir"
   install_runner_exit_guards

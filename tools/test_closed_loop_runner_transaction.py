@@ -11,6 +11,67 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    def test_runner_rejects_invalid_lock_wait(self):
+        result = subprocess.run(
+            ["bash", "tools/closed_loop_runner.sh", "assess"],
+            cwd=ROOT,
+            env={
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS": "invalid",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn(
+            "invalid CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS=invalid",
+            result.stdout,
+        )
+
+    def test_runner_lock_uses_bounded_wait_when_configured(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            capture_path = root / "flock_args.txt"
+            flock_path = fake_bin / "flock"
+            flock_path.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CAPTURE_PATH\"\n",
+                encoding="utf-8",
+            )
+            flock_path.chmod(0o755)
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=bounded-lock-wait-test
+                export CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS=7
+                export CLOSED_LOOP_RUNNER_LOCK_PATH="${TMP_ROOT}/closed-loop.lock"
+                source tools/closed_loop_runner.sh assess \
+                  --output-root "${TMP_ROOT}/reports"
+                acquire_closed_loop_lock
+                release_closed_loop_lock
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": f"{fake_bin}:/usr/bin:/bin:/usr/sbin:/sbin",
+                    "CAPTURE_PATH": str(capture_path),
+                    "TMP_ROOT": td,
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                capture_path.read_text(encoding="utf-8").splitlines(),
+                ["-w 7 9", "-u 9"],
+            )
+
     def test_training_pipeline_binds_runner_symbol(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
