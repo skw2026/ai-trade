@@ -73,6 +73,7 @@ jobs:
           grep -q "collect_bybit_microstructure_test" /tmp/ctest-list.txt
           grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt
           grep -q "run_microstructure_alpha_development_test" /tmp/ctest-list.txt
+          grep -q "run_microstructure_alpha_lifecycle_test" /tmp/ctest-list.txt
           grep -q "run_data_pipeline_test" /tmp/ctest-list.txt
           grep -q "feature_parity_contract_test" /tmp/ctest-list.txt
           grep -q "web_report_store_test" /tmp/ctest-list.txt

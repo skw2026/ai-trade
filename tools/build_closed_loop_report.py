@@ -994,6 +994,114 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_microstructure_alpha_lifecycle(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    schema_ok = payload.get("schema_version") == "microstructure_alpha_lifecycle_v1"
+    phase = str(payload.get("phase") or "")
+    candidate_id = str(payload.get("candidate_id") or "")
+    state = payload.get("state")
+    if not isinstance(state, dict):
+        state = {}
+    fail_reasons: List[str] = []
+    if not schema_ok:
+        fail_reasons.append("microstructure alpha lifecycle report schema mismatch")
+    if payload.get("fully_verifiable") is not True:
+        fail_reasons.append("microstructure alpha lifecycle registry/evidence is not fully verifiable")
+    if phase != "demo_ready" or payload.get("status") != "PASS":
+        reason = str(payload.get("not_ready_reason") or "").strip()
+        fail_reasons.append(
+            "frozen microstructure candidate has not passed independent selection, "
+            "untouched holdout, and raw replay"
+            + (f": {reason}" if reason else "")
+        )
+    if not (
+        len(candidate_id) == 64
+        and state.get("candidate_id") == candidate_id
+        and state.get("phase") == phase
+    ):
+        fail_reasons.append("microstructure lifecycle candidate/state identity mismatch")
+    if not (
+        payload.get("demo_entry_eligible") is True
+        and payload.get("live_promotion_eligible") is False
+        and payload.get("promotion_eligible") is False
+    ) and phase == "demo_ready":
+        fail_reasons.append("microstructure lifecycle demo-only isolation contract failed")
+
+    evidence = state.get("evidence")
+    if not isinstance(evidence, dict):
+        evidence = {}
+    evidence_summaries: Dict[str, Any] = {}
+    required_evidence = {
+        "selection_passed": (
+            "microstructure_alpha_future_domain_v1",
+            "independent_forward_selection",
+        ),
+        "final_holdout_passed": (
+            "microstructure_alpha_future_domain_v1",
+            "untouched_final_holdout",
+        ),
+        "raw_replay_passed": (
+            "microstructure_alpha_raw_replay_v1",
+            "untouched_final_holdout_replay",
+        ),
+    }
+    if phase == "demo_ready":
+        for name, (expected_schema, expected_domain) in required_evidence.items():
+            ref = evidence.get(name)
+            if not isinstance(ref, dict):
+                fail_reasons.append(f"microstructure lifecycle evidence missing: {name}")
+                continue
+            evidence_path = Path(str(ref.get("path") or ""))
+            expected_hash = str(ref.get("sha256") or "")
+            if (
+                not evidence_path.is_file()
+                or len(expected_hash) != 64
+                or hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+                != expected_hash
+            ):
+                fail_reasons.append(
+                    f"microstructure lifecycle evidence identity mismatch: {name}"
+                )
+                continue
+            item = read_json(evidence_path)
+            evidence_summaries[name] = {
+                "path": str(evidence_path),
+                "sha256": expected_hash,
+                "status": item.get("status"),
+                "research_domain": item.get("research_domain"),
+            }
+            if not (
+                item.get("schema_version") == expected_schema
+                and item.get("status") == "PASS"
+                and item.get("candidate_id") == candidate_id
+                and item.get("research_domain") == expected_domain
+            ):
+                fail_reasons.append(
+                    f"microstructure lifecycle evidence contract failed: {name}"
+                )
+            if name == "raw_replay_passed" and not (
+                item.get("raw_to_feature_parity") is True
+                and item.get("fixed_model_prediction_economics_deterministic") is True
+                and item.get("live_promotion_eligible") is False
+            ):
+                fail_reasons.append("microstructure lifecycle raw replay determinism failed")
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [],
+        "candidate_id": candidate_id or None,
+        "phase": phase or None,
+        "fully_verifiable": payload.get("fully_verifiable"),
+        "research_domain_contract": payload.get("research_domain_contract", {}),
+        "registry": payload.get("registry", {}),
+        "evidence": evidence_summaries,
+        "next_gate": payload.get("next_gate"),
+        "demo_entry_eligible": payload.get("demo_entry_eligible"),
+        "live_promotion_eligible": payload.get("live_promotion_eligible"),
+    }
+
+
 def assess_market_alpha_development(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     schema_ok = payload.get("schema_version") == "market_alpha_development_verification_v1"
@@ -2776,6 +2884,7 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
             section_names=[
                 "market_alpha_development",
                 "microstructure_alpha_development",
+                "microstructure_alpha_lifecycle",
                 "alpha_mechanism_probe",
                 "closed_loop_mechanism",
             ],
@@ -2951,6 +3060,11 @@ def parse_args() -> argparse.Namespace:
         "--microstructure_alpha_development_report",
         default="",
         help="订单簿/逐笔成交成本感知联合方向/退出 development-only 报告路径",
+    )
+    parser.add_argument(
+        "--microstructure_alpha_lifecycle_report",
+        default="",
+        help="冻结微结构候选的 selection/holdout/raw-replay 生命周期报告路径",
     )
     parser.add_argument(
         "--market_alpha_development_report",
@@ -3276,6 +3390,18 @@ def main() -> int:
                 "status": "fail",
                 "readiness_status": "FAIL",
                 "fail_reasons": [f"文件不存在: {microstructure_alpha_path}"],
+            }
+    if args.microstructure_alpha_lifecycle_report:
+        lifecycle_path = Path(args.microstructure_alpha_lifecycle_report)
+        if lifecycle_path.is_file():
+            sections["microstructure_alpha_lifecycle"] = (
+                assess_microstructure_alpha_lifecycle(lifecycle_path)
+            )
+        else:
+            sections["microstructure_alpha_lifecycle"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {lifecycle_path}"],
             }
     if args.market_alpha_development_report:
         market_alpha_path = Path(args.market_alpha_development_report)

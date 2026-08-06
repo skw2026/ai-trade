@@ -73,6 +73,13 @@ MICROSTRUCTURE_ALPHA_DEVELOPMENT_ENABLED="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_DEV
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_ITERATIONS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_DEVELOPMENT_ITERATIONS:-100}"
 MICROSTRUCTURE_ALPHA_ADDITIONAL_COST_BPS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_ADDITIONAL_COST_BPS:-11.0}"
 MICROSTRUCTURE_ALPHA_STRESS_COST_MULTIPLIER="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_STRESS_COST_MULTIPLIER:-1.25}"
+MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT:-${AI_TRADE_DATA_DIR:-./data}/models/microstructure_alpha_lifecycle}"
+MICROSTRUCTURE_ALPHA_SELECTION_DURATION_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_SELECTION_DURATION_SECONDS:-21600}"
+MICROSTRUCTURE_ALPHA_HOLDOUT_DURATION_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_HOLDOUT_DURATION_SECONDS:-21600}"
+MICROSTRUCTURE_ALPHA_FUTURE_MIN_TRADES="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTURE_MIN_TRADES:-30}"
+MICROSTRUCTURE_ALPHA_FUTURE_BLOCK_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTURE_BLOCK_SECONDS:-3600}"
+MICROSTRUCTURE_ALPHA_FUTURE_MIN_BLOCKS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTURE_MIN_BLOCKS:-4}"
+MICROSTRUCTURE_ALPHA_FUTURE_MIN_POSITIVE_BLOCKS_RATIO="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTURE_MIN_POSITIVE_BLOCKS_RATIO:-0.60}"
 
 SYMBOL="SOLUSDT"
 INTERVAL="5"
@@ -1211,6 +1218,7 @@ MICROSTRUCTURE_CAPTURE_REPORT_PATH="${RUN_DIR}/microstructure_capture_report.jso
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
 MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/microstructure_alpha_candidate_manifest.json"
 MICROSTRUCTURE_ALPHA_MODEL_PATH="${RUN_DIR}/microstructure_alpha_development.cbm"
+MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH="${RUN_DIR}/microstructure_alpha_lifecycle_report.json"
 MARKET_ALPHA_DEVELOPMENT_DIR="${RUN_DIR}/market_alpha_development"
 MARKET_ALPHA_DEVELOPMENT_REPORT_PATH="${MARKET_ALPHA_DEVELOPMENT_DIR}/market_alpha_verification_h${PREDICT_HORIZON_BARS}.json"
 ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/alpha_candidate_manifest.json"
@@ -3237,6 +3245,26 @@ run_microstructure_alpha_development_gate() {
     echo "[ERROR] microstructure development economic screen is required by the closed-loop contract"
     return 1
   fi
+  # Once a candidate is registered, hydrate that exact immutable development
+  # identity into the run directory.  Do not retrain it on its own selection or
+  # holdout observations.  Exit 3 means no active candidate (or a terminally
+  # rejected one), so a fresh development screen is required.
+  local prepare_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_microstructure_alpha_lifecycle.py prepare \
+    --registry-root "${MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT}" \
+    --development-report "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+    --candidate-manifest "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
+    --model "${MICROSTRUCTURE_ALPHA_MODEL_PATH}" \
+    || prepare_status=$?
+  if (( prepare_status == 0 )); then
+    echo "[INFO] immutable microstructure development candidate hydrated"
+    return 0
+  fi
+  if (( prepare_status != 3 )); then
+    echo "[ERROR] microstructure candidate registry integrity check failed: status=${prepare_status}"
+    return "${prepare_status}"
+  fi
   echo "[INFO] cost-aware microstructure joint direction/exit development screen start"
   local probe_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
@@ -3276,6 +3304,31 @@ if not contract_ok:
 raise SystemExit(0 if contract_ok else 1)
 PY
   echo "[INFO] cost-aware microstructure joint direction/exit development screen done"
+}
+
+run_microstructure_alpha_lifecycle_gate() {
+  echo "[INFO] frozen microstructure selection/holdout/raw-replay lifecycle start"
+  local lifecycle_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_microstructure_alpha_lifecycle.py advance \
+    --registry-root "${MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT}" \
+    --capture-assessment "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
+    --development-report "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+    --candidate-manifest "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
+    --model "${MICROSTRUCTURE_ALPHA_MODEL_PATH}" \
+    --output "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" \
+    --selection-duration-seconds "${MICROSTRUCTURE_ALPHA_SELECTION_DURATION_SECONDS}" \
+    --holdout-duration-seconds "${MICROSTRUCTURE_ALPHA_HOLDOUT_DURATION_SECONDS}" \
+    --min-trades "${MICROSTRUCTURE_ALPHA_FUTURE_MIN_TRADES}" \
+    --block-seconds "${MICROSTRUCTURE_ALPHA_FUTURE_BLOCK_SECONDS}" \
+    --min-blocks "${MICROSTRUCTURE_ALPHA_FUTURE_MIN_BLOCKS}" \
+    --min-positive-blocks-ratio "${MICROSTRUCTURE_ALPHA_FUTURE_MIN_POSITIVE_BLOCKS_RATIO}" \
+    || lifecycle_status=$?
+  if (( lifecycle_status != 0 )); then
+    echo "[WARN] frozen microstructure future-domain lifecycle is not ready: status=${lifecycle_status}"
+    return "${lifecycle_status}"
+  fi
+  echo "[INFO] frozen microstructure selection/holdout/raw-replay lifecycle passed; demo-only eligibility established"
 }
 
 run_market_alpha_development_gate() {
@@ -4542,6 +4595,7 @@ write_run_manifest() {
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
   MICROSTRUCTURE_ALPHA_MODEL_PATH_VALUE="${MICROSTRUCTURE_ALPHA_MODEL_PATH}" \
+  MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" \
   ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${ALPHA_CANDIDATE_MANIFEST_PATH}" \
   STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE="${STRATEGY_CANDIDATE_MANIFEST_PATH}" \
   REPLAY_CANDIDATE_CONFIG_PATH_VALUE="${REPLAY_CANDIDATE_CONFIG_PATH}" \
@@ -4779,6 +4833,7 @@ artifact_env_names = {
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_candidate_manifest": "MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
     "microstructure_alpha_model": "MICROSTRUCTURE_ALPHA_MODEL_PATH_VALUE",
+    "microstructure_alpha_lifecycle_report": "MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE",
     "alpha_candidate_manifest": "ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
     "strategy_candidate_manifest": "STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE",
     "replay_candidate_config": "REPLAY_CANDIDATE_CONFIG_PATH_VALUE",
@@ -4970,6 +5025,9 @@ build_summary() {
   if [[ -f "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--microstructure_alpha_development_report "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}")
   fi
+  if [[ -f "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--microstructure_alpha_lifecycle_report "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}")
+  fi
   if [[ -f "${MECHANISM_AUDIT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--closed_loop_mechanism_report "${MECHANISM_AUDIT_REPORT_PATH}")
   fi
@@ -5059,6 +5117,7 @@ build_summary() {
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
   "microstructure_alpha_candidate_manifest": "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}",
   "microstructure_alpha_model": "${MICROSTRUCTURE_ALPHA_MODEL_PATH}",
+  "microstructure_alpha_lifecycle_report": "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}",
   "alpha_candidate_manifest": "${ALPHA_CANDIDATE_MANIFEST_PATH}",
   "strategy_candidate_manifest": "${STRATEGY_CANDIDATE_MANIFEST_PATH}",
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
@@ -5314,6 +5373,7 @@ run_training_chain() {
     run_collecting_step market_alpha_development run_market_alpha_development_gate
     run_collecting_step microstructure_forward_data run_microstructure_capture_gate
     run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
+    run_collecting_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
   fi
   run_required_step integrator run_integrator
   run_required_step replay_candidate_config prepare_replay_candidate_config
@@ -5461,6 +5521,7 @@ run_main() {
       run_required_step data_quality run_data_quality
       run_required_step microstructure_forward_data run_microstructure_capture_gate
       run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
+      run_collecting_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
       if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
         run_collecting_step replay_validation run_replay_validation
         run_collecting_step strategy_diagnose run_strategy_diagnose
@@ -5480,6 +5541,7 @@ run_main() {
     assess)
       run_observation_step microstructure_forward_data run_microstructure_capture_gate
       run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
+      run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
       local assess_activation_status=""
       assess_activation_status="$(activation_transaction_status)"
       case "${assess_activation_status}" in

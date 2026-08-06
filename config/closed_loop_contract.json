@@ -18,6 +18,7 @@
         "data_quality",
         "microstructure_forward_data",
         "microstructure_alpha_development",
+        "microstructure_alpha_lifecycle",
         "replay_validation",
         "strategy_diagnose",
         "alpha_mechanism_probe"
@@ -41,7 +42,8 @@
         "alpha_candidate_manifest",
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
-        "microstructure_alpha_candidate_manifest"
+        "microstructure_alpha_candidate_manifest",
+        "microstructure_alpha_lifecycle_report"
       ]
     },
     "train": {
@@ -55,6 +57,7 @@
         "market_alpha_development",
         "microstructure_forward_data",
         "microstructure_alpha_development",
+        "microstructure_alpha_lifecycle",
         "integrator",
         "replay_candidate_config",
         "replay_validation",
@@ -89,7 +92,8 @@
         "market_alpha_development_report",
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
-        "microstructure_alpha_candidate_manifest"
+        "microstructure_alpha_candidate_manifest",
+        "microstructure_alpha_lifecycle_report"
       ]
     },
     "full": {
@@ -103,6 +107,7 @@
         "market_alpha_development",
         "microstructure_forward_data",
         "microstructure_alpha_development",
+        "microstructure_alpha_lifecycle",
         "integrator",
         "replay_candidate_config",
         "replay_validation",
@@ -148,7 +153,8 @@
         "market_alpha_development_report",
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
-        "microstructure_alpha_candidate_manifest"
+        "microstructure_alpha_candidate_manifest",
+        "microstructure_alpha_lifecycle_report"
       ]
     },
     "assess": {

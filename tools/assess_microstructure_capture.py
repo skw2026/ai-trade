@@ -139,6 +139,7 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
                     "report_sha256": sha256_file(report_path),
                     "raw_path": str(raw_path.resolve()),
                     "raw_sha256": str(raw.get("sha256") or ""),
+                    "raw_message_count": int(raw.get("message_count", 0)),
                     "feature_path": str(feature_path.resolve()),
                     "feature_sha256": str(features.get("sha256") or ""),
                     "first_timestamp_ms": start,

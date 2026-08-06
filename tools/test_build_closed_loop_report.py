@@ -144,6 +144,78 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(passed["status"], "pass")
             self.assertFalse(passed["promotion_eligible"])
 
+    def test_microstructure_lifecycle_requires_bound_selection_holdout_and_raw_replay(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            candidate_id = "a" * 64
+            evidence = {}
+            contracts = {
+                "selection_passed": (
+                    "microstructure_alpha_future_domain_v1",
+                    "independent_forward_selection",
+                ),
+                "final_holdout_passed": (
+                    "microstructure_alpha_future_domain_v1",
+                    "untouched_final_holdout",
+                ),
+                "raw_replay_passed": (
+                    "microstructure_alpha_raw_replay_v1",
+                    "untouched_final_holdout_replay",
+                ),
+            }
+            for name, (schema, domain) in contracts.items():
+                path = root / f"{name}.json"
+                item = {
+                    "schema_version": schema,
+                    "status": "PASS",
+                    "candidate_id": candidate_id,
+                    "research_domain": domain,
+                }
+                if name == "raw_replay_passed":
+                    item.update(
+                        {
+                            "raw_to_feature_parity": True,
+                            "fixed_model_prediction_economics_deterministic": True,
+                            "live_promotion_eligible": False,
+                        }
+                    )
+                path.write_text(json.dumps(item), encoding="utf-8")
+                evidence[name] = {
+                    "path": str(path),
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            lifecycle_path = root / "lifecycle.json"
+            payload = {
+                "schema_version": "microstructure_alpha_lifecycle_v1",
+                "status": "PASS",
+                "fully_verifiable": True,
+                "candidate_id": candidate_id,
+                "phase": "demo_ready",
+                "state": {
+                    "candidate_id": candidate_id,
+                    "phase": "demo_ready",
+                    "evidence": evidence,
+                },
+                "demo_entry_eligible": True,
+                "live_promotion_eligible": False,
+                "promotion_eligible": False,
+                "next_gate": "demo_incubation_only",
+            }
+            lifecycle_path.write_text(json.dumps(payload), encoding="utf-8")
+            passed = REPORT.assess_microstructure_alpha_lifecycle(lifecycle_path)
+            self.assertEqual(passed["status"], "pass")
+            self.assertTrue(passed["demo_entry_eligible"])
+
+            replay_path = pathlib.Path(evidence["raw_replay_passed"]["path"])
+            replay_payload = json.loads(replay_path.read_text())
+            replay_payload["raw_to_feature_parity"] = False
+            replay_path.write_text(json.dumps(replay_payload), encoding="utf-8")
+            failed = REPORT.assess_microstructure_alpha_lifecycle(lifecycle_path)
+            self.assertEqual(failed["status"], "fail")
+            self.assertTrue(
+                any("identity mismatch" in reason for reason in failed["fail_reasons"])
+            )
+
     def test_report_only_preserves_failed_strategy_status_without_failing_process(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
