@@ -58,6 +58,13 @@ class EconomicTargetProbeTest(unittest.TestCase):
         self.assertEqual(ternary[:3].tolist(), [0.0, 0.0, 0.0])
         self.assertAlmostEqual(float(ternary[3]), math.log(3.0), places=12)
         self.assertTrue(math.isnan(float(continuous[-1])))
+        side_calibrated = probe.build_target(
+            returns,
+            variant="continuous_return_huber_side_calibrated",
+            threshold_bps=14.3,
+            target_clip=6.0,
+        )
+        np.testing.assert_allclose(side_calibrated[:-1], continuous[:-1])
 
     def test_rolling_moments_are_causal_full_window(self):
         mean, stdev = probe.rolling_moments(np.asarray([1.0, 2.0, 3.0, 4.0]), 3)
@@ -94,6 +101,25 @@ class EconomicTargetProbeTest(unittest.TestCase):
         )
         self.assertEqual(scale, 0.0)
         self.assertEqual(report["status"], "no_validation_candidate_passed")
+
+    def test_nested_calibration_can_abstain_from_losing_side(self):
+        raw = np.asarray([2.0, -2.0] * 5)
+        # Positive model scores are profitable longs; negative scores would
+        # open losing shorts because the realized return is also positive.
+        execution_return = np.asarray([0.01, 0.01] * 5)
+        scale, report = probe.select_nested_validation_scale(
+            raw_prediction=raw,
+            execution_bar_return=execution_return,
+            quantiles=[0.5],
+            round_trip_cost_bps=13.0,
+            confidence_threshold=0.5,
+            holding_bars=1,
+            min_trades=5,
+            direction_modes=probe.DIRECTION_MODES,
+        )
+        self.assertGreater(scale, 0.0)
+        self.assertEqual(report["status"], "selected_on_nested_validation")
+        self.assertEqual(report["selected"]["direction_mode"], "long_only")
 
     def test_path_first_touch_uses_latency_and_conservative_same_bar_order(self):
         series = {

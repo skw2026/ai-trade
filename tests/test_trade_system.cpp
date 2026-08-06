@@ -6873,12 +6873,30 @@ int main() {
       std::cerr << "WAL 追加 episode closure 失败: " << error << "\n";
       return 1;
     }
+    ai_trade::AccountEquityCheckpointRecord account_checkpoint;
+    account_checkpoint.boot_id = "boot-account-1";
+    account_checkpoint.captured_at_utc = "2026-08-06T00:00:00Z";
+    account_checkpoint.stage = "runtime_refresh";
+    account_checkpoint.has_equity = true;
+    account_checkpoint.equity_usd = 10012.345678901234;
+    account_checkpoint.has_wallet_balance = true;
+    account_checkpoint.wallet_balance_usd = 10010.25;
+    account_checkpoint.has_unrealized_pnl = true;
+    account_checkpoint.unrealized_pnl_usd = 2.095678901234;
+    account_checkpoint.positions_flat = false;
+    account_checkpoint.persisted_fill_count = 2;
+    if (!wal.AppendAccountEquityCheckpoint(account_checkpoint, &error)) {
+      std::cerr << "WAL 追加 account checkpoint 失败: " << error << "\n";
+      return 1;
+    }
 
     std::unordered_set<std::string> intent_ids;
     std::unordered_set<std::string> fill_ids;
     std::unordered_set<std::string> closed_episode_ids;
     std::unordered_map<std::string, ai_trade::CandidateEpisodeClosureRecord>
         episode_closures;
+    std::optional<ai_trade::AccountEquityCheckpointRecord>
+        recovered_account_checkpoint;
     std::vector<ai_trade::FillEvent> fills;
     std::unordered_map<std::string, ai_trade::OrderIntent> intents;
     if (!wal.LoadState(&intent_ids,
@@ -6887,8 +6905,28 @@ int main() {
                        &error,
                        &intents,
                        &closed_episode_ids,
-                       &episode_closures)) {
+                       &episode_closures,
+                       &recovered_account_checkpoint)) {
       std::cerr << "WAL 加载失败: " << error << "\n";
+      return 1;
+    }
+    if (!recovered_account_checkpoint.has_value() ||
+        recovered_account_checkpoint->boot_id != account_checkpoint.boot_id ||
+        recovered_account_checkpoint->captured_at_utc !=
+            account_checkpoint.captured_at_utc ||
+        recovered_account_checkpoint->stage != account_checkpoint.stage ||
+        !recovered_account_checkpoint->has_equity ||
+        !NearlyEqual(recovered_account_checkpoint->equity_usd,
+                     account_checkpoint.equity_usd, 1e-12) ||
+        !recovered_account_checkpoint->has_wallet_balance ||
+        !NearlyEqual(recovered_account_checkpoint->wallet_balance_usd,
+                     account_checkpoint.wallet_balance_usd, 1e-12) ||
+        !recovered_account_checkpoint->has_unrealized_pnl ||
+        !NearlyEqual(recovered_account_checkpoint->unrealized_pnl_usd,
+                     account_checkpoint.unrealized_pnl_usd, 1e-12) ||
+        recovered_account_checkpoint->positions_flat ||
+        recovered_account_checkpoint->persisted_fill_count != 2U) {
+      std::cerr << "WAL account checkpoint 恢复不符合预期\n";
       return 1;
     }
 

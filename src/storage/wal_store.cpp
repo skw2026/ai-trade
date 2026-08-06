@@ -118,6 +118,71 @@ std::string SerializeCandidateEpisodeClosureV4(
   return oss.str();
 }
 
+std::string SerializeAccountEquityCheckpointV1(
+    const AccountEquityCheckpointRecord& checkpoint) {
+  std::ostringstream oss;
+  oss.precision(17);
+  oss << "ACCOUNT_EQUITY_CHECKPOINT1"
+      << '\t' << EncodeWalText(checkpoint.boot_id)
+      << '\t' << EncodeWalText(checkpoint.captured_at_utc)
+      << '\t' << EncodeWalText(checkpoint.stage)
+      << '\t' << (checkpoint.has_equity ? 1 : 0)
+      << '\t' << checkpoint.equity_usd
+      << '\t' << (checkpoint.has_wallet_balance ? 1 : 0)
+      << '\t' << checkpoint.wallet_balance_usd
+      << '\t' << (checkpoint.has_unrealized_pnl ? 1 : 0)
+      << '\t' << checkpoint.unrealized_pnl_usd
+      << '\t' << (checkpoint.positions_flat ? 1 : 0)
+      << '\t' << checkpoint.persisted_fill_count;
+  return oss.str();
+}
+
+bool ParseAccountEquityCheckpointV1(
+    const std::vector<std::string>& fields,
+    AccountEquityCheckpointRecord* out_checkpoint,
+    std::string* out_error) {
+  if (out_checkpoint == nullptr || fields.size() != 12) {
+    if (out_error != nullptr) {
+      *out_error = "ACCOUNT_EQUITY_CHECKPOINT1 WAL 字段数异常";
+    }
+    return false;
+  }
+  AccountEquityCheckpointRecord checkpoint;
+  checkpoint.boot_id = DecodeWalText(fields[1]);
+  checkpoint.captured_at_utc = DecodeWalText(fields[2]);
+  checkpoint.stage = DecodeWalText(fields[3]);
+  try {
+    checkpoint.has_equity = std::stoi(fields[4]) != 0;
+    checkpoint.equity_usd = std::stod(fields[5]);
+    checkpoint.has_wallet_balance = std::stoi(fields[6]) != 0;
+    checkpoint.wallet_balance_usd = std::stod(fields[7]);
+    checkpoint.has_unrealized_pnl = std::stoi(fields[8]) != 0;
+    checkpoint.unrealized_pnl_usd = std::stod(fields[9]);
+    checkpoint.positions_flat = std::stoi(fields[10]) != 0;
+    checkpoint.persisted_fill_count = std::stoull(fields[11]);
+  } catch (const std::exception&) {
+    if (out_error != nullptr) {
+      *out_error = "ACCOUNT_EQUITY_CHECKPOINT1 WAL 字段解析失败";
+    }
+    return false;
+  }
+  if (checkpoint.boot_id.empty() || checkpoint.captured_at_utc.empty() ||
+      checkpoint.stage.empty() ||
+      (!checkpoint.has_equity && !checkpoint.has_wallet_balance) ||
+      (checkpoint.has_equity && !std::isfinite(checkpoint.equity_usd)) ||
+      (checkpoint.has_wallet_balance &&
+       !std::isfinite(checkpoint.wallet_balance_usd)) ||
+      (checkpoint.has_unrealized_pnl &&
+       !std::isfinite(checkpoint.unrealized_pnl_usd))) {
+    if (out_error != nullptr) {
+      *out_error = "ACCOUNT_EQUITY_CHECKPOINT1 WAL 必填字段异常";
+    }
+    return false;
+  }
+  *out_checkpoint = std::move(checkpoint);
+  return true;
+}
+
 bool ParseCandidateEpisodeClosureV2(
     const std::vector<std::string>& fields,
     CandidateEpisodeClosureRecord* out_closure,
@@ -604,6 +669,25 @@ bool WalStore::AppendCandidateEpisodeClosure(
   return AppendLine(SerializeCandidateEpisodeClosureV4(closure), out_error);
 }
 
+bool WalStore::AppendAccountEquityCheckpoint(
+    const AccountEquityCheckpointRecord& checkpoint,
+    std::string* out_error) const {
+  if (checkpoint.boot_id.empty() || checkpoint.captured_at_utc.empty() ||
+      checkpoint.stage.empty() ||
+      (!checkpoint.has_equity && !checkpoint.has_wallet_balance) ||
+      (checkpoint.has_equity && !std::isfinite(checkpoint.equity_usd)) ||
+      (checkpoint.has_wallet_balance &&
+       !std::isfinite(checkpoint.wallet_balance_usd)) ||
+      (checkpoint.has_unrealized_pnl &&
+       !std::isfinite(checkpoint.unrealized_pnl_usd))) {
+    if (out_error != nullptr) {
+      *out_error = "account equity checkpoint 必填字段异常";
+    }
+    return false;
+  }
+  return AppendLine(SerializeAccountEquityCheckpointV1(checkpoint), out_error);
+}
+
 bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
                          std::unordered_set<std::string>* out_fill_ids,
                          std::vector<FillEvent>* out_fills,
@@ -615,7 +699,9 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
                          std::unordered_map<
                              std::string,
                              CandidateEpisodeClosureRecord>*
-                             out_episode_closures) const {
+                             out_episode_closures,
+                         std::optional<AccountEquityCheckpointRecord>*
+                             out_latest_account_checkpoint) const {
   if (out_intent_ids == nullptr || out_fill_ids == nullptr ||
       out_fills == nullptr) {
     if (out_error != nullptr) {
@@ -635,6 +721,9 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
   }
   if (out_episode_closures != nullptr) {
     out_episode_closures->clear();
+  }
+  if (out_latest_account_checkpoint != nullptr) {
+    out_latest_account_checkpoint->reset();
   }
 
   std::ifstream in(file_path_);
@@ -730,6 +819,21 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
       out_fills->clear();
       if (out_intents != nullptr) {
         out_intents->clear();
+      }
+      continue;
+    }
+    if (type == "ACCOUNT_EQUITY_CHECKPOINT1") {
+      AccountEquityCheckpointRecord checkpoint;
+      std::string parse_error;
+      if (!ParseAccountEquityCheckpointV1(fields, &checkpoint, &parse_error)) {
+        if (out_error != nullptr) {
+          *out_error = "WAL 行解析失败（line=" +
+                       std::to_string(line_no) + "）: " + parse_error;
+        }
+        return false;
+      }
+      if (out_latest_account_checkpoint != nullptr) {
+        *out_latest_account_checkpoint = std::move(checkpoint);
       }
       continue;
     }

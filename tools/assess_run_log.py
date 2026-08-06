@@ -346,6 +346,21 @@ RUNTIME_STATUS_BOOT_START_RE = re.compile(
 RUNTIME_STATUS_TS_RE = re.compile(
     r"(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?RUNTIME_STATUS:"
 )
+ACCOUNT_EQUITY_CONTINUITY_RE = re.compile(
+    r"ACCOUNT_EQUITY_CONTINUITY: status=(?P<status>[A-Z_]+), "
+    r"basis=(?P<basis>[a-z]+), comparable=(?P<comparable>true|false), "
+    r"previous_boot_id=(?P<previous_boot_id>[^,]+), "
+    r"current_boot_id=(?P<current_boot_id>[^,]+), "
+    r"previous_captured_at_utc=(?P<previous_captured_at_utc>[^,]+), "
+    r"current_captured_at_utc=(?P<current_captured_at_utc>[^,]+), "
+    r"previous_value_usd=(?P<previous_value>-?[0-9]+(?:\.[0-9]+)?), "
+    r"current_value_usd=(?P<current_value>-?[0-9]+(?:\.[0-9]+)?), "
+    r"delta_usd=(?P<delta>-?[0-9]+(?:\.[0-9]+)?), "
+    r"previous_fill_count=(?P<previous_fill_count>\d+), "
+    r"current_fill_count=(?P<current_fill_count>\d+), "
+    r"previous_positions_flat=(?P<previous_flat>true|false), "
+    r"current_positions_flat=(?P<current_flat>true|false)"
+)
 FEATURES_RE = re.compile(r"FEATURES:\s*(?P<body>.*)")
 FEATURE_VALUE_RE = re.compile(
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)="
@@ -361,6 +376,30 @@ INTEGRATOR_NAN_SKIP_LEGACY_RE = re.compile(
 TREND_CANDIDATE_MIN_THRESHOLD_RATIO = 0.60
 FEATURE_LARGE_ABS_WARN_THRESHOLD = 1000.0
 FEATURE_LARGE_ABS_RATIO_WARN_THRESHOLD = 0.10
+
+
+def extract_account_equity_continuity(text: str) -> Dict[str, object]:
+    matches = list(ACCOUNT_EQUITY_CONTINUITY_RE.finditer(text))
+    if not matches:
+        return {"observed": False, "status": "NOT_OBSERVED"}
+    match = matches[-1]
+    return {
+        "observed": True,
+        "status": match.group("status"),
+        "basis": match.group("basis"),
+        "comparable": match.group("comparable") == "true",
+        "previous_boot_id": match.group("previous_boot_id"),
+        "current_boot_id": match.group("current_boot_id"),
+        "previous_captured_at_utc": match.group("previous_captured_at_utc"),
+        "current_captured_at_utc": match.group("current_captured_at_utc"),
+        "previous_value_usd": float(match.group("previous_value")),
+        "current_value_usd": float(match.group("current_value")),
+        "delta_usd": float(match.group("delta")),
+        "previous_fill_count": int(match.group("previous_fill_count")),
+        "current_fill_count": int(match.group("current_fill_count")),
+        "previous_positions_flat": match.group("previous_flat") == "true",
+        "current_positions_flat": match.group("current_flat") == "true",
+    }
 
 
 def parse_bool_arg(raw: str) -> bool:
@@ -2508,6 +2547,7 @@ def assess(
     replay_terminal_settlement = extract_replay_terminal_settlement(text)
     exit_capture_live = extract_exit_capture_samples(text)
     feature_scale = extract_feature_scale_diagnostics(text)
+    account_equity_continuity = extract_account_equity_continuity(original_text)
     integrator_model_version_events = extract_integrator_model_version_events(text)
     integrator_model_versions = list(dict.fromkeys(integrator_model_version_events))
     integrator_feature_contract_events = extract_integrator_feature_contract_events(text)
@@ -3699,10 +3739,46 @@ def assess(
     else:
         account_sync_status = "OK"
 
+    continuity_status = str(account_equity_continuity.get("status", "NOT_OBSERVED"))
+    continuity_delta = account_equity_continuity.get("delta_usd")
+    if continuity_status in {
+        "UNATTRIBUTED_EXTERNAL_DELTA",
+        "UNATTRIBUTED_EVIDENCE_GAP",
+    }:
+        account_sync_status = "CROSS_BOOT_EQUITY_UNATTRIBUTED"
+    elif continuity_status == "WAL_ACTIVITY_PRESENT" and account_sync_status == "OK":
+        account_sync_status = "CROSS_BOOT_WAL_ACTIVITY"
+
+    metrics["account_equity_continuity_observed_count"] = (
+        1 if account_equity_continuity.get("observed") else 0
+    )
+    metrics["account_equity_continuity_status"] = continuity_status
+    metrics["account_equity_continuity_delta_usd"] = continuity_delta
+
     protection_fail_reasons: list[str] = []
     execution_fail_reasons: list[str] = []
     fail_reasons: list[str] = []
     warn_reasons: list[str] = []
+    if account_sync_status == "CROSS_BOOT_EQUITY_UNATTRIBUTED":
+        continuity_message = (
+            "跨进程权益变化无法由 WAL 成交证据解释: "
+            f"status={continuity_status}, delta_usd={float(continuity_delta or 0.0):.6f}, "
+            f"basis={account_equity_continuity.get('basis', 'none')}"
+        )
+        warn_reasons.append(continuity_message)
+        if (
+            stage.name == "S5"
+            and isinstance(continuity_delta, (int, float))
+            and continuity_delta < -0.01
+        ):
+            fail_reasons.append(
+                "S5 盈利证据不连续：" + continuity_message
+            )
+    elif account_sync_status == "CROSS_BOOT_WAL_ACTIVITY":
+        warn_reasons.append(
+            "跨进程权益发生变化且期间存在 WAL 成交，需结合成交/费用闭环核对: "
+            f"delta_usd={float(continuity_delta or 0.0):.6f}"
+        )
     filtered_window_pressure = metrics.get(
         "trend_candidate_probe_filtered_fee_window_pressure_count",
         0,
@@ -4572,6 +4648,7 @@ def assess(
         "account_sync_status": account_sync_status,
         "metrics": metrics,
         "account_pnl": account_pnl,
+        "account_equity_continuity": account_equity_continuity,
         "execution_attribution": execution_attribution,
         "replay_terminal_settlement": replay_terminal_settlement,
         "exit_capture_live": exit_capture_live,

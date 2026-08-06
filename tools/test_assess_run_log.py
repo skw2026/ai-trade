@@ -923,6 +923,42 @@ class AssessRunLogTest(unittest.TestCase):
             series["realized_net_pnl_change_usd"], -6.2, places=6
         )
 
+    def test_cross_boot_unattributed_equity_delta_is_explicit(self):
+        continuity = (
+            "2026-08-06 15:00:00 [INFO] ACCOUNT_EQUITY_CONTINUITY: "
+            "status=UNATTRIBUTED_EXTERNAL_DELTA, basis=equity, comparable=true, "
+            "previous_boot_id=boot-old, current_boot_id=boot-new, "
+            "previous_captured_at_utc=2026-08-06T14:00:00Z, "
+            "current_captured_at_utc=2026-08-06T15:00:00Z, "
+            "previous_value_usd=150896.318315, current_value_usd=150780.963011, "
+            "delta_usd=-115.355304, previous_fill_count=4465, "
+            "current_fill_count=4465, previous_positions_flat=true, "
+            "current_positions_flat=true\n"
+        )
+        text = continuity + self._runtime_line(
+            20,
+            0.0,
+            funnel_enqueued=0,
+            funnel_fills=0,
+            equity=150780.963011,
+            realized_pnl=0.0,
+            fees=0.0,
+            realized_net=0.0,
+        )
+        smoke = ASSESS.assess(
+            text, ASSESS.STAGE_RULES["SMOKE"], min_runtime_status=1
+        )
+        self.assertEqual(
+            smoke["account_sync_status"], "CROSS_BOOT_EQUITY_UNATTRIBUTED"
+        )
+        self.assertAlmostEqual(
+            smoke["account_equity_continuity"]["delta_usd"], -115.355304
+        )
+        self.assertIn("跨进程权益变化无法", "\n".join(smoke["warn_reasons"]))
+
+        s5 = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=1)
+        self.assertIn("S5 盈利证据不连续", "\n".join(s5["fail_reasons"]))
+
     def test_open_position_gap_is_not_marked_as_noisy(self):
         text = (
             self._runtime_line(

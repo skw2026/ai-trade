@@ -46,10 +46,12 @@ RUNTIME_ENTRY_RAW_SCORE = math.log(3.0)
 PROBE_VARIANTS = (
     "continuous_return_rmse",
     "continuous_return_huber",
+    "continuous_return_huber_side_calibrated",
     "continuous_return_path_huber",
     "ternary_action_rmse",
     "path_utility_huber",
 )
+DIRECTION_MODES = ("both", "long_only", "short_only")
 FEATURE_SETS = (
     "baseline",
     "expanded_ohlcv_v1",
@@ -580,6 +582,19 @@ def raw_score_to_probability(raw_score: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(raw, -60.0, 60.0)))
 
 
+def constrain_probability_direction(
+    probability: np.ndarray, direction_mode: str
+) -> np.ndarray:
+    if direction_mode not in DIRECTION_MODES:
+        raise ValueError(f"unsupported direction mode: {direction_mode}")
+    constrained = np.asarray(probability, dtype=np.float64).copy()
+    if direction_mode == "long_only":
+        constrained[np.isfinite(constrained) & (constrained < 0.5)] = 0.5
+    elif direction_mode == "short_only":
+        constrained[np.isfinite(constrained) & (constrained > 0.5)] = 0.5
+    return constrained
+
+
 def select_nested_validation_scale(
     *,
     raw_prediction: np.ndarray,
@@ -589,6 +604,7 @@ def select_nested_validation_scale(
     confidence_threshold: float,
     holding_bars: int,
     min_trades: int,
+    direction_modes: Sequence[str] = ("both",),
 ) -> Tuple[float, Dict[str, Any]]:
     finite_abs = np.abs(np.asarray(raw_prediction, dtype=np.float64))
     finite_abs = finite_abs[np.isfinite(finite_abs)]
@@ -601,31 +617,37 @@ def select_nested_validation_scale(
         raw_threshold = float(np.quantile(finite_abs, float(quantile)))
         scale = RUNTIME_ENTRY_RAW_SCORE / max(raw_threshold, 1e-12)
         probability = raw_score_to_probability(raw_prediction * scale)
-        objective = summarize_model_episode_objective(
-            score=probability,
-            execution_bar_return=execution_bar_return,
-            round_trip_cost_bps=round_trip_cost_bps,
-            confidence_threshold=confidence_threshold,
-            holding_bars=holding_bars,
-        )
-        trade_count = int(objective.get("trade_count", 0))
-        mean_net = float(objective.get("mean_model_net_edge_bps", 0.0))
-        positive_ratio = float(objective.get("positive_model_net_edge_ratio", float("nan")))
-        eligible = bool(
-            trade_count >= int(min_trades)
-            and mean_net > 0.0
-            and math.isfinite(positive_ratio)
-            and positive_ratio >= 0.5
-        )
-        candidates.append(
-            {
-                "quantile": float(quantile),
-                "raw_threshold": raw_threshold,
-                "raw_score_scale": scale,
-                "eligible": eligible,
-                "net_objective": objective,
-            }
-        )
+        for direction_mode in direction_modes:
+            objective = summarize_model_episode_objective(
+                score=constrain_probability_direction(
+                    probability, str(direction_mode)
+                ),
+                execution_bar_return=execution_bar_return,
+                round_trip_cost_bps=round_trip_cost_bps,
+                confidence_threshold=confidence_threshold,
+                holding_bars=holding_bars,
+            )
+            trade_count = int(objective.get("trade_count", 0))
+            mean_net = float(objective.get("mean_model_net_edge_bps", 0.0))
+            positive_ratio = float(
+                objective.get("positive_model_net_edge_ratio", float("nan"))
+            )
+            eligible = bool(
+                trade_count >= int(min_trades)
+                and mean_net > 0.0
+                and math.isfinite(positive_ratio)
+                and positive_ratio >= 0.5
+            )
+            candidates.append(
+                {
+                    "quantile": float(quantile),
+                    "direction_mode": str(direction_mode),
+                    "raw_threshold": raw_threshold,
+                    "raw_score_scale": scale,
+                    "eligible": eligible,
+                    "net_objective": objective,
+                }
+            )
     eligible_candidates = [item for item in candidates if item["eligible"]]
     if not eligible_candidates:
         return 0.0, {
@@ -639,12 +661,14 @@ def select_nested_validation_scale(
             float(item["net_objective"]["mean_model_net_edge_bps"]),
             int(item["net_objective"]["trade_count"]),
             float(item["quantile"]),
+            str(item["direction_mode"]),
         ),
     )
     return float(selected["raw_score_scale"]), {
         "status": "selected_on_nested_validation",
         "selected": {
             "quantile": selected["quantile"],
+            "direction_mode": selected["direction_mode"],
             "raw_threshold": selected["raw_threshold"],
             "raw_score_scale": selected["raw_score_scale"],
             "net_objective": selected["net_objective"],
@@ -800,7 +824,7 @@ def aggregate_economic_objectives(
 
 
 def build_regressor(args: argparse.Namespace, variant: str) -> Any:
-    loss_function = "Huber:delta=1.0" if variant.endswith("_huber") else "RMSE"
+    loss_function = "Huber:delta=1.0" if "huber" in variant else "RMSE"
     return CatBoostRegressor(
         loss_function=loss_function,
         eval_metric="RMSE",
@@ -935,6 +959,7 @@ def run_variant(
             "status": "fixed_economic_target_scale",
             "raw_score_scale": 1.0,
         }
+        direction_mode = "both"
         if args.calibration_mode == "nested_validation_quantile":
             validation_start_raw = int(fit_meta.get("validation_start_raw", split.train_end))
             validation_economic_mask = (
@@ -974,11 +999,25 @@ def run_variant(
                         confidence_threshold=float(args.model_confidence_threshold),
                         holding_bars=int(args.predict_horizon_bars),
                         min_trades=int(args.min_calibration_trades),
+                        direction_modes=(
+                            DIRECTION_MODES
+                            if variant
+                            == "continuous_return_huber_side_calibrated"
+                            else ("both",)
+                        ),
                     )
                 calibration["raw_score_scale"] = raw_score_scale
                 calibration["validation_start_raw"] = validation_start_raw
                 calibration["validation_end_raw_exclusive"] = int(split.train_end)
-        probability = raw_score_to_probability(raw_prediction * raw_score_scale)
+                selected_calibration = calibration.get("selected")
+                if isinstance(selected_calibration, dict):
+                    direction_mode = str(
+                        selected_calibration.get("direction_mode", "both")
+                    )
+        probability = constrain_probability_direction(
+            raw_score_to_probability(raw_prediction * raw_score_scale),
+            direction_mode,
+        )
         objective = (
             summarize_path_episode_objective(
                 score=probability,
@@ -1061,8 +1100,13 @@ def run_variant(
             "runtime_entry_raw_score": RUNTIME_ENTRY_RAW_SCORE,
             "threshold_bps": threshold_bps,
             "target_clip": float(args.target_clip),
-            "loss_function": "Huber:delta=1.0" if variant.endswith("_huber") else "RMSE",
+            "loss_function": "Huber:delta=1.0" if "huber" in variant else "RMSE",
             "calibration_mode": args.calibration_mode,
+            "direction_calibration": (
+                "nested_validation_long_short_abstention"
+                if variant == "continuous_return_huber_side_calibrated"
+                else "both_sides"
+            ),
             "exit_objective": (
                 {
                     "mode": "path_first_touch",

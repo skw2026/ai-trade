@@ -81,6 +81,11 @@ class BotApplication {
    * 拉取持仓与资金口径，用于初始化本地 OMS/AccountState。
    */
   bool SyncRemotePositions();
+  /// 将远端资金快照固化到 WAL；启动阶段同时核对上一进程的权益连续性。
+  bool PersistRemoteAccountCheckpoint(
+      const std::string& stage,
+      const RemoteAccountBalanceSnapshot& balance,
+      bool evaluate_cross_boot_continuity);
   /// 重启时以 WAL + 远端活动订单建立确定状态；遗留净仓位订单一律取消，
   /// 非零持仓必须恢复或重新挂载 SL 后才允许新增风险。
   bool RecoverStartupOrdersAndProtection();
@@ -533,6 +538,8 @@ class BotApplication {
   std::unordered_set<std::string> persisted_closed_episode_ids_;
   std::unordered_map<std::string, CandidateEpisodeClosureRecord>
       persisted_episode_closures_;
+  std::optional<AccountEquityCheckpointRecord>
+      latest_account_equity_checkpoint_;
   std::vector<std::string> tracked_symbols_;   ///< 当前关注的 Symbol 列表
   // 仅跟踪“净仓位相关订单（Entry/Reduce）”的入队时间，用于超时收敛。
   std::unordered_map<std::string, std::int64_t> pending_net_order_enqueued_ms_;

@@ -3434,7 +3434,8 @@ bool BotApplication::Initialize() {
                         &wal_error,
                         &persisted_intent_by_id_,
                         &persisted_closed_episode_ids_,
-                        &persisted_episode_closures_)) {
+                        &persisted_episode_closures_,
+                        &latest_account_equity_checkpoint_)) {
       LogError("WAL 加载失败: " + wal_error);
       return false;
     }
@@ -3814,6 +3815,10 @@ bool BotApplication::SyncRemotePositions() {
     // 启动阶段重置回撤峰值基线到远端权益，避免固定初始值引入伪回撤。
     system_.SyncAccountFromRemoteBalance(balance, /*reset_peak_to_equity=*/true);
     LogAccountSyncSnapshot("startup", balance, system_.account());
+    if (!PersistRemoteAccountCheckpoint(
+            "startup", balance, /*evaluate_cross_boot_continuity=*/true)) {
+      return false;
+    }
     if (balance.has_equity) {
       LogInfo("远端资金同步完成: equity=" + std::to_string(balance.equity_usd));
     } else if (balance.has_wallet_balance) {
@@ -3824,6 +3829,110 @@ bool BotApplication::SyncRemotePositions() {
     LogInfo("警告: 远端持仓已同步，但远端资金读取失败，回撤口径可能存在偏差");
   }
   return position_sync_ok;
+}
+
+bool BotApplication::PersistRemoteAccountCheckpoint(
+    const std::string& stage,
+    const RemoteAccountBalanceSnapshot& balance,
+    bool evaluate_cross_boot_continuity) {
+  AccountEquityCheckpointRecord checkpoint;
+  checkpoint.boot_id = boot_id_;
+  checkpoint.captured_at_utc = CurrentUtcIsoTimestamp();
+  checkpoint.stage = stage;
+  checkpoint.equity_usd = balance.equity_usd;
+  checkpoint.wallet_balance_usd = balance.wallet_balance_usd;
+  checkpoint.unrealized_pnl_usd = balance.unrealized_pnl_usd;
+  checkpoint.has_equity = balance.has_equity;
+  checkpoint.has_wallet_balance = balance.has_wallet_balance;
+  checkpoint.has_unrealized_pnl = balance.has_unrealized_pnl;
+  checkpoint.positions_flat = system_.account().GetActiveSymbols().empty();
+  checkpoint.persisted_fill_count = fill_ids_.size();
+
+  if (evaluate_cross_boot_continuity) {
+    std::string status = "BASELINE_CREATED";
+    std::string basis = "none";
+    bool comparable = false;
+    double previous_value = 0.0;
+    double current_value = 0.0;
+    double delta_usd = 0.0;
+    std::string previous_boot_id = "none";
+    std::string previous_captured_at_utc = "none";
+    bool previous_positions_flat = false;
+    std::uint64_t previous_fill_count = 0;
+    if (latest_account_equity_checkpoint_.has_value()) {
+      const auto& previous = *latest_account_equity_checkpoint_;
+      previous_boot_id = previous.boot_id;
+      previous_captured_at_utc = previous.captured_at_utc;
+      previous_positions_flat = previous.positions_flat;
+      previous_fill_count = previous.persisted_fill_count;
+      if (previous.has_equity && checkpoint.has_equity) {
+        basis = "equity";
+        previous_value = previous.equity_usd;
+        current_value = checkpoint.equity_usd;
+        comparable = true;
+      } else if (previous.has_wallet_balance &&
+                 checkpoint.has_wallet_balance) {
+        basis = "wallet";
+        previous_value = previous.wallet_balance_usd;
+        current_value = checkpoint.wallet_balance_usd;
+        comparable = true;
+      }
+      if (!comparable) {
+        status = "INSUFFICIENT_BALANCE_BASIS";
+      } else {
+        delta_usd = current_value - previous_value;
+        constexpr double kContinuityToleranceUsd = 0.01;
+        if (std::fabs(delta_usd) <= kContinuityToleranceUsd) {
+          status = "MATCHED";
+        } else if (checkpoint.positions_flat && previous.positions_flat &&
+                   checkpoint.persisted_fill_count ==
+                       previous.persisted_fill_count) {
+          status = "UNATTRIBUTED_EXTERNAL_DELTA";
+        } else if (checkpoint.persisted_fill_count >
+                   previous.persisted_fill_count) {
+          status = "WAL_ACTIVITY_PRESENT";
+        } else {
+          status = "UNATTRIBUTED_EVIDENCE_GAP";
+        }
+      }
+    }
+    LogInfo(
+        "ACCOUNT_EQUITY_CONTINUITY: status=" + status +
+        ", basis=" + basis +
+        ", comparable=" + std::string(comparable ? "true" : "false") +
+        ", previous_boot_id=" + previous_boot_id +
+        ", current_boot_id=" + boot_id_ +
+        ", previous_captured_at_utc=" + previous_captured_at_utc +
+        ", current_captured_at_utc=" + checkpoint.captured_at_utc +
+        ", previous_value_usd=" + std::to_string(previous_value) +
+        ", current_value_usd=" + std::to_string(current_value) +
+        ", delta_usd=" + std::to_string(delta_usd) +
+        ", previous_fill_count=" + std::to_string(previous_fill_count) +
+        ", current_fill_count=" +
+        std::to_string(checkpoint.persisted_fill_count) +
+        ", previous_positions_flat=" +
+        std::string(previous_positions_flat ? "true" : "false") +
+        ", current_positions_flat=" +
+        std::string(checkpoint.positions_flat ? "true" : "false"));
+  }
+
+  std::string wal_error;
+  if (!wal_.AppendAccountEquityCheckpoint(checkpoint, &wal_error)) {
+    evidence_persistence_failed_ = true;
+    RefreshReduceOnlyMode();
+    LogError("CRITICAL: ACCOUNT_EQUITY_CHECKPOINT_FAILED: stage=" + stage +
+             ", error=" + wal_error);
+    return false;
+  }
+  latest_account_equity_checkpoint_ = checkpoint;
+  LogInfo("ACCOUNT_EQUITY_CHECKPOINT_PERSISTED: stage=" + stage +
+          ", boot_id=" + boot_id_ +
+          ", captured_at_utc=" + checkpoint.captured_at_utc +
+          ", fill_count=" +
+          std::to_string(checkpoint.persisted_fill_count) +
+          ", positions_flat=" +
+          std::string(checkpoint.positions_flat ? "true" : "false"));
+  return true;
 }
 
 bool BotApplication::RecoverStartupOrdersAndProtection() {
@@ -4348,6 +4457,9 @@ void BotApplication::RunRemoteRiskRefresh() {
     // 运行中只上调峰值，不重置峰值，避免人为清零回撤统计。
     system_.SyncAccountFromRemoteBalance(balance, /*reset_peak_to_equity=*/false);
     LogAccountSyncSnapshot("runtime_refresh", balance, system_.account());
+    PersistRemoteAccountCheckpoint(
+        "runtime_refresh", balance,
+        /*evaluate_cross_boot_continuity=*/false);
   }
   LogInfo("REMOTE_RISK_REFRESH: count=" + std::to_string(remote_positions.size()));
 }

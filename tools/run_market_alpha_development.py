@@ -18,6 +18,7 @@ SCHEMA_VERSION = "market_alpha_development_verification_v1"
 FIXED_VARIANTS = (
     "continuous_return_rmse",
     "continuous_return_huber",
+    "continuous_return_huber_side_calibrated",
     "continuous_return_path_huber",
     "ternary_action_rmse",
     "path_utility_huber",

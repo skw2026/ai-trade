@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,6 +29,20 @@ struct CandidateEpisodeClosureRecord {
   std::string runtime_config_sha256;
   std::string trade_bot_sha256;
   std::string closed_at_utc;
+};
+
+struct AccountEquityCheckpointRecord {
+  std::string boot_id;
+  std::string captured_at_utc;
+  std::string stage;
+  double equity_usd{0.0};
+  double wallet_balance_usd{0.0};
+  double unrealized_pnl_usd{0.0};
+  bool has_equity{false};
+  bool has_wallet_balance{false};
+  bool has_unrealized_pnl{false};
+  bool positions_flat{false};
+  std::uint64_t persisted_fill_count{0};
 };
 
 /**
@@ -58,6 +74,10 @@ class WalStore {
   bool AppendCandidateEpisodeClosure(
       const CandidateEpisodeClosureRecord& closure,
       std::string* out_error) const;
+  /// 追加远端账户权益检查点，用于跨进程收益连续性与外部变动归因。
+  bool AppendAccountEquityCheckpoint(
+      const AccountEquityCheckpointRecord& checkpoint,
+      std::string* out_error) const;
 
   /// 加载 WAL 中的意图与成交，用于重启恢复。
   bool LoadState(std::unordered_set<std::string>* out_intent_ids,
@@ -69,7 +89,9 @@ class WalStore {
                  std::unordered_set<std::string>* out_closed_episode_ids =
                      nullptr,
                  std::unordered_map<std::string, CandidateEpisodeClosureRecord>*
-                     out_episode_closures = nullptr) const;
+                     out_episode_closures = nullptr,
+                 std::optional<AccountEquityCheckpointRecord>*
+                     out_latest_account_checkpoint = nullptr) const;
 
  private:
   /// 追加单行文本到 WAL 文件（append + fsync）。

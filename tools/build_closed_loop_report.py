@@ -271,6 +271,9 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
         "execution_fail_reasons": payload.get("execution_fail_reasons", []),
         "metrics": payload.get("metrics", {}),
         "account_pnl": payload.get("account_pnl", {}),
+        "account_equity_continuity": payload.get(
+            "account_equity_continuity", {}
+        ),
         "execution_attribution": payload.get("execution_attribution", {}),
     }
 
