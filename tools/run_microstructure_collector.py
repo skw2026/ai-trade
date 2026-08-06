@@ -178,7 +178,7 @@ def parse_args() -> argparse.Namespace:
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--root", required=True)
     run_parser.add_argument("--symbol", default="SOLUSDT", choices=("SOLUSDT",))
-    run_parser.add_argument("--segment-duration-sec", type=float, default=3605.0)
+    run_parser.add_argument("--segment-duration-sec", type=float, default=905.0)
     run_parser.add_argument(
         "--bootstrap-segment-duration-sec", type=float, default=65.0
     )
@@ -190,7 +190,7 @@ def parse_args() -> argparse.Namespace:
     )
     health_parser = subparsers.add_parser("healthcheck")
     health_parser.add_argument("--root", required=True)
-    health_parser.add_argument("--max-stale-sec", type=int, default=7200)
+    health_parser.add_argument("--max-stale-sec", type=int, default=1800)
     return parser.parse_args()
 
 

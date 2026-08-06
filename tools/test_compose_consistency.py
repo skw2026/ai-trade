@@ -287,9 +287,15 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("SOLUSDT", collector)
             self.assertIn("bootstrap-segment-duration-sec", collector)
             self.assertIn("MARKET_ALPHA_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
+            self.assertIn("MARKET_ALPHA_SEGMENT_DURATION_SEC:-905", collector)
+            self.assertIn("--max-stale-sec=1800", collector)
         self.assertIn(
             "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
             self.prod_services["market-alpha-collector"],
+        )
+        scheduler = self.prod_services["scheduler"]
+        self.assertIn(
+            "CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-1800", scheduler
         )
 
     def test_watchdog_paths_are_consistent(self):

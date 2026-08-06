@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import json
 import pathlib
+import sys
 import tempfile
 import time
 import unittest
@@ -134,7 +135,7 @@ class MicrostructureRuntimeTest(unittest.TestCase):
                 root=str(root),
                 symbol="SOLUSDT",
                 bootstrap_segment_duration_sec=65.0,
-                segment_duration_sec=3605.0,
+                segment_duration_sec=905.0,
                 retention_days=1,
                 max_backoff_sec=1,
                 max_segments=2,
@@ -155,7 +156,21 @@ class MicrostructureRuntimeTest(unittest.TestCase):
                 status = supervisor.run(args)
 
             self.assertEqual(status, 0)
-            self.assertEqual(observed_durations, [65.0, 3605.0])
+            self.assertEqual(observed_durations, [65.0, 905.0])
+
+    def test_parser_defaults_bound_unpersisted_capture_and_staleness(self):
+        with mock.patch.object(
+            sys, "argv", ["collector", "run", "--root=/tmp/research"]
+        ):
+            run_args = supervisor.parse_args()
+        self.assertEqual(run_args.segment_duration_sec, 905.0)
+        with mock.patch.object(
+            sys,
+            "argv",
+            ["collector", "healthcheck", "--root=/tmp/research"],
+        ):
+            health_args = supervisor.parse_args()
+        self.assertEqual(health_args.max_stale_sec, 1800)
 
 
 if __name__ == "__main__":
