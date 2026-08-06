@@ -1,0 +1,21 @@
+tools/test_run_market_alpha_development.py
+  ai_agent 11-21
+tools/test_economic_target_probe.py
+  ai_agent 68-106
+tools/test_compose_consistency.py
+  ai_agent 730-737,739,813-814
+.github/workflows/closed-loop.yml
+  ai_agent 56-60
+tools/economic_target_probe.py
+  ai_agent 50,367-430,917,942,1070-1073,1175-1178,1181-1187,1308,1339-1341,1349-1358,1390-1397,1404-1406
+.github/workflows/smoke.yml
+  ai_agent 26-29,39,73,80
+tools/run_market_alpha_development.py
+  ai_agent 22,28-37,192-199,254,274
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "0933ff28b12b2b83667f6567f96a9a475a8c552f",
+  "prompts": {}
+}
