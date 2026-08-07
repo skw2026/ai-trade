@@ -232,6 +232,10 @@ fetch_report "${REMOTE_BASE}/market_alpha_development/economic_h12_expanded_mark
 fetch_report "${REMOTE_BASE}/market_alpha_development/market_alpha_history_report.json" ".artifacts/market_alpha_history_report.json" "market_alpha_history_report" "json"
 fetch_report "${REMOTE_BASE}/market_alpha_development/bybit_trade_history_sample_report.json" ".artifacts/bybit_trade_history_sample_report.json" "bybit_trade_history_sample_report" "json"
 fetch_report "${REMOTE_BASE}/microstructure_capture_report.json" ".artifacts/microstructure_capture_report.json" "microstructure_capture_report" "json"
+fetch_report "${REMOTE_BASE}/microstructure_alpha_development_report.json" ".artifacts/microstructure_alpha_development_report.json" "microstructure_alpha_development_report" "json"
+fetch_report "${REMOTE_BASE}/microstructure_alpha_candidate_manifest.json" ".artifacts/microstructure_alpha_candidate_manifest.json" "microstructure_alpha_candidate_manifest" "json"
+fetch_report "${REMOTE_BASE}/microstructure_alpha_development.cbm" ".artifacts/microstructure_alpha_development.cbm" "microstructure_alpha_development_model" "text"
+fetch_report "${REMOTE_BASE}/microstructure_alpha_lifecycle_report.json" ".artifacts/microstructure_alpha_lifecycle_report.json" "microstructure_alpha_lifecycle_report" "json"
 fetch_report "${REMOTE_BASE}/alpha_candidate_manifest.json" ".artifacts/alpha_candidate_manifest.json" "alpha_candidate_manifest" "json"
 fetch_report "${REMOTE_BASE}/strategy_candidate_manifest.json" ".artifacts/strategy_candidate_manifest.json" "strategy_candidate_manifest" "json"
 fetch_report "${REMOTE_BASE}/replay_candidate_config.yaml" ".artifacts/replay_candidate_config.yaml" "replay_candidate_config" "text"
@@ -390,6 +394,18 @@ local_paths = {
     "alpha_mechanism_probe_report": Path(".artifacts/alpha_mechanism_probe_report.json"),
     "market_alpha_development_report": Path(".artifacts/market_alpha_development_report.json"),
     "microstructure_capture_report": Path(".artifacts/microstructure_capture_report.json"),
+    "microstructure_alpha_development_report": Path(
+        ".artifacts/microstructure_alpha_development_report.json"
+    ),
+    "microstructure_alpha_candidate_manifest": Path(
+        ".artifacts/microstructure_alpha_candidate_manifest.json"
+    ),
+    "microstructure_alpha_model": Path(
+        ".artifacts/microstructure_alpha_development.cbm"
+    ),
+    "microstructure_alpha_lifecycle_report": Path(
+        ".artifacts/microstructure_alpha_lifecycle_report.json"
+    ),
     "alpha_candidate_manifest": Path(".artifacts/alpha_candidate_manifest.json"),
     "strategy_candidate_manifest": Path(".artifacts/strategy_candidate_manifest.json"),
     "replay_candidate_config": Path(".artifacts/replay_candidate_config.yaml"),

@@ -697,8 +697,19 @@ class ComposeConsistencyTest(unittest.TestCase):
             "economic_h12_expanded_market_alpha_v1.json",
             "market_alpha_history_report.json",
             "bybit_trade_history_sample_report.json",
+            "microstructure_alpha_development_report.json",
+            "microstructure_alpha_candidate_manifest.json",
+            "microstructure_alpha_development.cbm",
+            "microstructure_alpha_lifecycle_report.json",
         ):
             self.assertIn(development_report, downloader)
+        for artifact_name in (
+            "microstructure_alpha_development_report",
+            "microstructure_alpha_candidate_manifest",
+            "microstructure_alpha_model",
+            "microstructure_alpha_lifecycle_report",
+        ):
+            self.assertIn(f'"{artifact_name}": Path(', downloader)
         run_blocks = re.findall(
             r"(?ms)^        run: \|\n((?:(?:^          .*\n)|(?:^\s*$))*)",
             workflow,
