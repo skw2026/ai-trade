@@ -638,6 +638,20 @@ class ComposeConsistencyTest(unittest.TestCase):
             "train completed without production activation or restart",
             train_chain,
         )
+        self.assertIn("skip_collecting_step() {", script)
+        for diagnostic_step in (
+            "market_alpha_development",
+            "microstructure_forward_data",
+            "microstructure_alpha_development",
+            "microstructure_alpha_lifecycle",
+            "replay_validation",
+            "strategy_diagnose",
+            "alpha_mechanism_probe",
+        ):
+            self.assertIn(
+                f"skip_collecting_step {diagnostic_step}",
+                training_chain,
+            )
         self.assertIn("begin_activation_transaction() {", script)
         self.assertIn("commit_activation_transaction() {", script)
         self.assertIn("rollback_activation_transaction() {", script)

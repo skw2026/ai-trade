@@ -5338,6 +5338,18 @@ run_collecting_step() {
   return 0
 }
 
+skip_collecting_step() {
+  local step_name="$1"
+  echo "[INFO] required diagnostic step skipped after prior failure: ${step_name}"
+  capture_step_status \
+    record_step_status "${step_name}" "diagnostic" "skipped" "" "true"
+  if (( LAST_CAPTURED_STATUS != 0 )); then
+    echo "[ERROR] diagnostic step status write failed: ${step_name}"
+    RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+  fi
+  return 0
+}
+
 run_observation_step() {
   local step_name="$1"
   shift
@@ -5374,6 +5386,11 @@ run_training_chain() {
     run_collecting_step microstructure_forward_data run_microstructure_capture_gate
     run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
     run_collecting_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
+  else
+    skip_collecting_step market_alpha_development
+    skip_collecting_step microstructure_forward_data
+    skip_collecting_step microstructure_alpha_development
+    skip_collecting_step microstructure_alpha_lifecycle
   fi
   run_required_step integrator run_integrator
   run_required_step replay_candidate_config prepare_replay_candidate_config
@@ -5381,6 +5398,10 @@ run_training_chain() {
     run_collecting_step replay_validation run_replay_validation
     run_collecting_step strategy_diagnose run_strategy_diagnose
     run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
+  else
+    skip_collecting_step replay_validation
+    skip_collecting_step strategy_diagnose
+    skip_collecting_step alpha_mechanism_probe
   fi
   run_required_step model_registry run_registry
   return 0
@@ -5526,6 +5547,10 @@ run_main() {
         run_collecting_step replay_validation run_replay_validation
         run_collecting_step strategy_diagnose run_strategy_diagnose
         run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
+      else
+        skip_collecting_step replay_validation
+        skip_collecting_step strategy_diagnose
+        skip_collecting_step alpha_mechanism_probe
       fi
       step_status="${RUN_REQUIRED_STEP_STATUS}"
       capture_step_status build_summary
