@@ -129,6 +129,15 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(failed["status"], "fail")
             self.assertIn("joint direction/exit", failed["fail_reasons"][-1])
 
+            payload["status"] = "NOT_READY"
+            payload["fully_verifiable"] = False
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            not_ready = REPORT.assess_microstructure_alpha_development(path)
+            self.assertEqual(not_ready["status"], "fail")
+            self.assertEqual(not_ready["readiness_status"], "NOT_READY")
+
+            payload["status"] = "PASS"
+            payload["fully_verifiable"] = True
             payload["economic_screen"]["development_passed"] = True
             payload["next_gate"] = (
                 "freeze_candidate_and_collect_independent_forward_selection"
@@ -214,6 +223,33 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(failed["status"], "fail")
             self.assertTrue(
                 any("identity mismatch" in reason for reason in failed["fail_reasons"])
+            )
+
+    def test_unregistered_microstructure_lifecycle_is_not_ready_without_identity_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            lifecycle_path = pathlib.Path(td) / "lifecycle.json"
+            lifecycle_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "microstructure_alpha_lifecycle_v1",
+                        "status": "NOT_READY",
+                        "fully_verifiable": False,
+                        "candidate_id": None,
+                        "phase": "unregistered",
+                        "state": None,
+                        "not_ready_reason": "minimum_forward_capture_duration",
+                        "demo_entry_eligible": False,
+                        "live_promotion_eligible": False,
+                        "promotion_eligible": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = REPORT.assess_microstructure_alpha_lifecycle(lifecycle_path)
+            self.assertEqual(result["status"], "fail")
+            self.assertEqual(result["readiness_status"], "NOT_READY")
+            self.assertFalse(
+                any("identity mismatch" in reason for reason in result["fail_reasons"])
             )
 
     def test_report_only_preserves_failed_strategy_status_without_failing_process(self):

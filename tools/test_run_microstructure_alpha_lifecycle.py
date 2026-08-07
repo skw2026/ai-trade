@@ -301,6 +301,44 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
             self.assertEqual(result["phase"], "selection_collecting")
             self.assertEqual(len(lifecycle.read_event_chain(paths)), 1)
 
+    def test_not_ready_development_candidate_stays_unregistered(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            report = root / "development.json"
+            manifest = root / "candidate.json"
+            model = root / "candidate.cbm"
+            report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": development.SCHEMA_VERSION,
+                        "status": "NOT_READY",
+                        "failures": ["minimum_forward_capture_duration"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": lifecycle.CANDIDATE_MANIFEST_SCHEMA_VERSION,
+                        "status": "rejected",
+                        "candidate_id": None,
+                        "promotion_evidence": False,
+                        "promotion_eligible": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = make_args(root, report, manifest, model)
+            paths = lifecycle.RegistryPaths(root / "registry")
+            result, status = lifecycle.advance(args, paths)
+            self.assertEqual(status, 2)
+            self.assertEqual(result["status"], "NOT_READY")
+            self.assertEqual(result["phase"], "unregistered")
+            self.assertEqual(result["failures"], [])
+            self.assertIn("minimum_forward_capture_duration", result["not_ready_reason"])
+            self.assertEqual(lifecycle.read_event_chain(paths), [])
+
     def test_raw_replay_rebuilds_features_and_detects_semantic_mutation(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

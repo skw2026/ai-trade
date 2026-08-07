@@ -252,6 +252,25 @@ def validate_development_candidate(
     manifest = read_json_object(manifest_path)
     if report.get("schema_version") != development.SCHEMA_VERSION:
         raise LifecycleError("development report schema mismatch")
+    if manifest.get("schema_version") != CANDIDATE_MANIFEST_SCHEMA_VERSION:
+        raise LifecycleError("development candidate manifest schema mismatch")
+    if report.get("status") == "NOT_READY":
+        if not (
+            manifest.get("status") == "rejected"
+            and manifest.get("candidate_id") is None
+            and manifest.get("promotion_evidence") is False
+            and manifest.get("promotion_eligible") is False
+        ):
+            raise LifecycleError(
+                "not-ready development candidate manifest isolation contract failed"
+            )
+        reasons = report.get("failures")
+        reason = (
+            str(reasons[0]).strip()
+            if isinstance(reasons, list) and reasons
+            else "forward development capture is not ready"
+        )
+        raise LifecycleNotReady(f"development candidate not ready: {reason}")
     if not (
         report.get("status") == "PASS"
         and report.get("fully_verifiable") is True
@@ -261,8 +280,6 @@ def validate_development_candidate(
         and report.get("economic_screen", {}).get("development_passed") is True
     ):
         raise LifecycleError("development candidate has not passed its isolated economic gate")
-    if manifest.get("schema_version") != CANDIDATE_MANIFEST_SCHEMA_VERSION:
-        raise LifecycleError("development candidate manifest schema mismatch")
     if not (
         manifest.get("status") == "development_candidate_frozen"
         and manifest.get("research_domain") == "forward_development_only"

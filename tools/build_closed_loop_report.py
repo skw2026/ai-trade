@@ -940,6 +940,7 @@ def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
 def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     schema_ok = payload.get("schema_version") == "microstructure_alpha_development_v1"
+    reported_not_ready = payload.get("status") == "NOT_READY"
     fully_verifiable = payload.get("fully_verifiable") is True
     economic_screen = payload.get("economic_screen", {})
     if not isinstance(economic_screen, dict):
@@ -978,7 +979,11 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
             )
     return {
         "status": "fail" if fail_reasons else "pass",
-        "readiness_status": "FAIL" if fail_reasons else "PASS",
+        "readiness_status": (
+            "NOT_READY"
+            if reported_not_ready and schema_ok and domain_ok
+            else ("FAIL" if fail_reasons else "PASS")
+        ),
         "fail_reasons": fail_reasons,
         "warn_reasons": [],
         "research_domain": payload.get("research_domain"),
@@ -1002,10 +1007,16 @@ def assess_microstructure_alpha_lifecycle(path: Path) -> Dict[str, Any]:
     state = payload.get("state")
     if not isinstance(state, dict):
         state = {}
+    unregistered_not_ready = (
+        payload.get("status") == "NOT_READY"
+        and phase == "unregistered"
+        and not candidate_id
+        and not state
+    )
     fail_reasons: List[str] = []
     if not schema_ok:
         fail_reasons.append("microstructure alpha lifecycle report schema mismatch")
-    if payload.get("fully_verifiable") is not True:
+    if payload.get("fully_verifiable") is not True and not unregistered_not_ready:
         fail_reasons.append("microstructure alpha lifecycle registry/evidence is not fully verifiable")
     if phase != "demo_ready" or payload.get("status") != "PASS":
         reason = str(payload.get("not_ready_reason") or "").strip()
@@ -1014,7 +1025,7 @@ def assess_microstructure_alpha_lifecycle(path: Path) -> Dict[str, Any]:
             "untouched holdout, and raw replay"
             + (f": {reason}" if reason else "")
         )
-    if not (
+    if not unregistered_not_ready and not (
         len(candidate_id) == 64
         and state.get("candidate_id") == candidate_id
         and state.get("phase") == phase
@@ -1087,7 +1098,11 @@ def assess_microstructure_alpha_lifecycle(path: Path) -> Dict[str, Any]:
                 fail_reasons.append("microstructure lifecycle raw replay determinism failed")
     return {
         "status": "fail" if fail_reasons else "pass",
-        "readiness_status": "FAIL" if fail_reasons else "PASS",
+        "readiness_status": (
+            "NOT_READY"
+            if unregistered_not_ready and schema_ok
+            else ("FAIL" if fail_reasons else "PASS")
+        ),
         "fail_reasons": fail_reasons,
         "warn_reasons": [],
         "candidate_id": candidate_id or None,
