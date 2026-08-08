@@ -878,11 +878,11 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and validation.get("oos_windows_non_overlapping") is True
         and isinstance(model_contract, dict)
         and model_contract.get("training_target")
-        == "fit_only_standardized_stress_profitability_indicator"
+        == "fit_only_standardized_bounded_stressed_net_utility"
         and model_contract.get("target_normalization")
         == "per_action_zero_mean_unit_variance_on_fit_domain_only"
         and model_contract.get("inference_score")
-        == "fit_class_conditional_expected_base_net_return_bps"
+        == "inverse_bounded_stressed_utility_base_net_return_bps"
         and model_contract.get("economic_acceptance_target")
         == "untransformed_executable_base_and_stress_net_return"
         and model_contract.get("validation_or_test_target_statistics_used_for_fit")

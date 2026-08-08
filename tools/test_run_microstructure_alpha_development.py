@@ -239,7 +239,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(report["action_counts"], {"long_2s": 3})
         self.assertAlmostEqual(report["stress_cost"]["mean_bps"], 2.0)
 
-    def test_fit_only_profitability_target_is_balanced_and_reconstructed_in_bps(self):
+    def test_fit_only_stressed_utility_is_balanced_and_reconstructed_in_bps(self):
         outcomes = np.asarray(
             [
                 [5.0, -1.0],
@@ -249,7 +249,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             ],
             dtype=np.float64,
         )
-        targets, transform = probe.fit_stress_profitability_transform(
+        targets, transform = probe.fit_stressed_utility_transform(
             outcomes,
             base_cost_bps=4.0,
             stress_cost_multiplier=1.25,
@@ -262,29 +262,49 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertFalse(transform["validation_or_test_statistics_used"])
         self.assertEqual(transform["stress_incremental_cost_bps"], 1.0)
 
-        # A zero standardized prediction reconstructs each action's fit-domain
-        # unconditional base-net mean.  No validation statistic participates.
+        # A zero standardized prediction reconstructs the inverse of each
+        # action's fit-domain mean bounded utility.  No validation statistic
+        # participates.
         reconstructed = probe.reconstruct_base_net_scores(
             np.zeros((1, 2), dtype=np.float64), transform
         )
-        np.testing.assert_allclose(reconstructed[0], np.mean(outcomes, axis=0))
+        utility = np.tanh((outcomes - 1.0) / 4.0)
+        expected = 1.0 + 4.0 * np.arctanh(np.mean(utility, axis=0))
+        np.testing.assert_allclose(reconstructed[0], expected)
 
         shifted = outcomes.copy()
         shifted[:, 0] = 1000.0
-        transformed_validation = probe.transform_stress_profitability_targets(
+        original_center = transform["action_statistics"][0]["utility_center"]
+        transformed_validation = probe.transform_stressed_utility_targets(
             shifted, transform
         )
         self.assertEqual(
-            transform["action_statistics"][0]["positive_rate"], 0.5
+            transform["action_statistics"][0]["utility_center"], original_center
         )
         self.assertTrue(np.all(np.isfinite(transformed_validation)))
 
         tampered = copy.deepcopy(transform)
-        tampered["action_statistics"][0]["standardization_scale"] = 0.123
+        tampered["action_statistics"][0]["utility_center"] = 2.0
         with self.assertRaisesRegex(ValueError, "statistic contract failed"):
             probe.reconstruct_base_net_scores(
                 np.zeros((1, 2), dtype=np.float64), tampered
             )
+
+    def test_quiet_fit_window_retains_continuous_training_gradient(self):
+        # Every raw outcome remains below the +1 bps stressed-profit hurdle,
+        # but relative margins still produce a non-degenerate target.
+        outcomes = np.asarray(
+            [[-8.0], [-7.0], [-6.0], [-5.0], [-4.0]], dtype=np.float64
+        )
+        targets, transform = probe.fit_stressed_utility_transform(
+            outcomes,
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+        )
+
+        self.assertTrue(transform["action_statistics"][0]["learnable"])
+        self.assertGreater(float(np.ptp(targets[:, 0])), 0.0)
+        self.assertAlmostEqual(float(np.var(targets[:, 0])), 1.0)
 
     def test_nested_calibration_uses_ranked_negative_scores_without_weakening_economics(self):
         timestamps = np.arange(100, dtype=np.int64) * 1000

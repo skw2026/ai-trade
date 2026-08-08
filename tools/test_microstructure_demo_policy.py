@@ -55,21 +55,21 @@ class DemoPolicyTest(unittest.TestCase):
             {"direction": "short", "horizon_seconds": 15},
         ]
         target_transform = {
-            "method": "fit_only_standardized_stress_profitability_v1",
-            "profitability_hurdle": "base_net_return_bps_gt_stress_incremental_cost_bps",
-            "inference_reconstruction": "clipped_probability_times_fit_class_conditional_base_net_means",
+            "method": "fit_only_standardized_bounded_stressed_utility_v1",
+            "utility_transform": "tanh((base_net_bps-stress_incremental_cost_bps)/utility_scale_bps)",
+            "inference_reconstruction": "inverse_tanh_to_base_net_bps_after_fit_only_destandardization",
             "validation_or_test_statistics_used": False,
             "stress_incremental_cost_bps": 1.0,
+            "utility_scale_bps": 10.0,
+            "reconstruction_clip_abs": 0.999,
             "action_statistics": [
                 {
                     "action_index": index,
                     "row_count": 100,
-                    "positive_count": 50,
-                    "nonpositive_count": 50,
-                    "positive_rate": 0.5,
+                    "utility_minimum": -0.8,
+                    "utility_maximum": 0.8,
+                    "utility_center": 0.0,
                     "standardization_scale": 0.5,
-                    "positive_mean_base_net_bps": 10.0,
-                    "nonpositive_mean_base_net_bps": -10.0,
                     "learnable": True,
                 }
                 for index in range(len(actions))

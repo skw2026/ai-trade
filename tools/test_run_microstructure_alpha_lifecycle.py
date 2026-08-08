@@ -69,9 +69,9 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     model_contract = {
         "library": "catboost",
         "loss_function": "MultiRMSE",
-        "training_target": "fit_only_standardized_stress_profitability_indicator",
+        "training_target": "fit_only_standardized_bounded_stressed_net_utility",
         "target_normalization": "per_action_zero_mean_unit_variance_on_fit_domain_only",
-        "inference_score": "fit_class_conditional_expected_base_net_return_bps",
+        "inference_score": "inverse_bounded_stressed_utility_base_net_return_bps",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
         "validation_or_test_target_statistics_used_for_fit": False,
     }
@@ -91,21 +91,21 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "output_feature_row_count": 500,
     }
     target_transform = {
-        "method": "fit_only_standardized_stress_profitability_v1",
-        "profitability_hurdle": "base_net_return_bps_gt_stress_incremental_cost_bps",
-        "inference_reconstruction": "clipped_probability_times_fit_class_conditional_base_net_means",
+        "method": "fit_only_standardized_bounded_stressed_utility_v1",
+        "utility_transform": "tanh((base_net_bps-stress_incremental_cost_bps)/utility_scale_bps)",
+        "inference_reconstruction": "inverse_tanh_to_base_net_bps_after_fit_only_destandardization",
         "validation_or_test_statistics_used": False,
         "stress_incremental_cost_bps": 0.025,
+        "utility_scale_bps": 0.1,
+        "reconstruction_clip_abs": 0.999,
         "action_statistics": [
             {
                 "action_index": index,
                 "row_count": 1000,
-                "positive_count": 500,
-                "nonpositive_count": 500,
-                "positive_rate": 0.5,
+                "utility_minimum": -0.8,
+                "utility_maximum": 0.8,
+                "utility_center": 0.0,
                 "standardization_scale": 0.5,
-                "positive_mean_base_net_bps": 10.0,
-                "nonpositive_mean_base_net_bps": -10.0,
                 "learnable": True,
             }
             for index in range(2)
@@ -116,7 +116,7 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "model_sha256": model_hash,
         "final_training_row_count": 1000,
         "final_iterations": 5,
-        "policy_threshold_bps": 1.0,
+        "policy_threshold_bps": 0.1,
         "threshold_aggregation": "median_of_nested_split_thresholds",
         "target_transform": target_transform,
         "model_contract": model_contract,
