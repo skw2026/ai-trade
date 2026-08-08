@@ -285,6 +285,14 @@ def validate_development_candidate(
         and int(report.get("negative_control", {}).get("trial_count") or 0) >= 5
     ):
         raise LifecycleError("development candidate has not passed its isolated economic gate")
+    capture_merge = report.get("capture_merge_contract")
+    capture_merge_audit = report.get("data", {}).get("capture_merge_audit")
+    if not isinstance(capture_merge, dict) or capture_merge != development.CAPTURE_MERGE_CONTRACT:
+        raise LifecycleError("development capture merge contract mismatch")
+    try:
+        development.validate_capture_merge_audit(capture_merge_audit)
+    except ValueError as exc:
+        raise LifecycleError("development capture merge audit contract failed") from exc
     if not (
         manifest.get("status") == "development_candidate_frozen"
         and manifest.get("research_domain") == "forward_development_only"
@@ -302,6 +310,20 @@ def validate_development_candidate(
     frozen = report.get("frozen_candidate")
     if not isinstance(frozen, dict):
         raise LifecycleError("development report has no frozen model")
+    frozen_identity = dict(frozen)
+    frozen_identity.pop("model_path", None)
+    expected_identity = {
+        "source_assessment_sha256": report.get("source_assessment", {}).get("sha256"),
+        "capture_merge_contract": capture_merge,
+        "capture_merge_audit": capture_merge_audit,
+        "target_contract": report.get("target_contract"),
+        "validation_contract": report.get("validation_contract"),
+        "feature_names": report.get("data", {}).get("feature_names"),
+        "model_contract": report.get("model_contract"),
+        "frozen_candidate": frozen_identity,
+    }
+    if identity != expected_identity:
+        raise LifecycleError("development candidate identity contract mismatch")
     model_hash = str(frozen.get("model_sha256") or "")
     if len(model_hash) != 64 or not model_path.is_file() or sha256_file(model_path) != model_hash:
         raise LifecycleError("frozen development model checksum mismatch")

@@ -34,6 +34,14 @@ except ImportError:  # pragma: no cover - exercised by the research image
 
 SCHEMA_VERSION = "microstructure_alpha_development_v2"
 ASSESSMENT_SCHEMA_VERSION = "microstructure_capture_assessment_v1"
+CAPTURE_MERGE_CONTRACT = {
+    "method": "drop_shared_adjacent_boundary_buckets_v1",
+    "segment_order": "strictly_chronological_manifest_order",
+    "allowed_duplicate_scope": "exact_shared_endpoint_of_two_adjacent_segments_only",
+    "boundary_action": "drop_entire_shared_one_second_bucket",
+    "non_boundary_action": "fail_closed",
+    "maximum_segments_per_boundary": 2,
+}
 REQUIRED_FIELDS = (
     "timestamp",
     "best_bid",
@@ -131,12 +139,89 @@ def _row_values(row: Mapping[str, str]) -> Tuple[float, ...]:
     return tuple(values)
 
 
-def load_capture_rows(assessment: Mapping[str, Any]) -> Dict[str, np.ndarray]:
-    """Load the exact feature files attested by the readiness report."""
-    by_timestamp: Dict[int, Tuple[float, ...]] = {}
-    for item in assessment.get("segments", []):
+def validate_capture_merge_audit(audit: Any) -> Dict[str, Any]:
+    if not isinstance(audit, dict):
+        raise ValueError("capture merge audit is missing")
+    try:
+        input_segments = int(audit.get("input_segment_count", 0))
+        manifest_rows = int(audit.get("manifest_feature_row_count", -1))
+        output_rows = int(audit.get("output_feature_row_count", -1))
+        dropped = int(audit.get("dropped_boundary_bucket_count", -1))
+        shared = int(audit.get("shared_adjacent_boundary_bucket_count", -1))
+        conflicting = int(audit.get("conflicting_shared_boundary_bucket_count", -1))
+        identical = int(audit.get("identical_shared_boundary_bucket_count", -1))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("capture merge audit counts are invalid") from exc
+    timestamp_hash = str(audit.get("dropped_boundary_timestamps_sha256") or "")
+    hash_valid = len(timestamp_hash) == 64
+    if hash_valid:
+        try:
+            int(timestamp_hash, 16)
+        except ValueError:
+            hash_valid = False
+    first_dropped = audit.get("first_dropped_boundary_timestamp_ms")
+    last_dropped = audit.get("last_dropped_boundary_timestamp_ms")
+    boundary_range_valid = bool(
+        (dropped == 0 and first_dropped is None and last_dropped is None)
+        or (
+            dropped > 0
+            and isinstance(first_dropped, int)
+            and isinstance(last_dropped, int)
+            and 0 <= first_dropped <= last_dropped
+        )
+    )
+    if not (
+        audit.get("method") == CAPTURE_MERGE_CONTRACT["method"]
+        and input_segments > 0
+        and manifest_rows > 0
+        and output_rows > 0
+        and dropped >= 0
+        and shared == dropped
+        and conflicting >= 0
+        and identical >= 0
+        and conflicting + identical == dropped
+        and manifest_rows - output_rows == 2 * dropped
+        and hash_valid
+        and boundary_range_valid
+    ):
+        raise ValueError("capture merge audit contract failed")
+    return audit
+
+
+def load_capture_rows(assessment: Mapping[str, Any]) -> Dict[str, Any]:
+    """Load attested features and deterministically remove partial restart buckets."""
+    manifest = assessment.get("segments", [])
+    if not isinstance(manifest, list) or not manifest:
+        raise ValueError("capture segment manifest is empty")
+    segment_bounds: List[Tuple[int, int]] = []
+    for item in manifest:
         if not isinstance(item, dict):
             raise ValueError("capture segment manifest item is not an object")
+        try:
+            first = int(item.get("first_timestamp_ms", -1))
+            last = int(item.get("last_timestamp_ms", -1))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("capture segment manifest timestamp is invalid") from exc
+        if first < 0 or last < first:
+            raise ValueError("capture segment manifest interval is invalid")
+        if segment_bounds:
+            previous_first, previous_last = segment_bounds[-1]
+            if first < previous_first:
+                raise ValueError("capture segment manifest is not chronological")
+            if first < previous_last:
+                raise ValueError(
+                    "non-boundary capture segment overlap: "
+                    f"previous_last={previous_last} current_first={first}"
+                )
+        segment_bounds.append((first, last))
+
+    by_timestamp: Dict[int, Tuple[float, ...]] = {}
+    owner_by_timestamp: Dict[int, int] = {}
+    dropped_boundaries: set[int] = set()
+    conflicting_boundary_count = 0
+    identical_boundary_count = 0
+    manifest_feature_row_count = 0
+    for segment_index, item in enumerate(manifest):
         path = pathlib.Path(str(item.get("feature_path") or ""))
         expected_hash = str(item.get("feature_sha256") or "")
         if not path.is_file() or len(expected_hash) != 64:
@@ -154,13 +239,45 @@ def load_capture_rows(assessment: Mapping[str, Any]) -> Dict[str, np.ndarray]:
                 raise ValueError(f"capture feature CSV missing columns {missing}: {path}")
             for row in reader:
                 timestamp = int(row["timestamp"])
+                if last_timestamp is not None and timestamp <= last_timestamp:
+                    raise ValueError(
+                        f"capture feature timestamps are not strictly increasing: {path}"
+                    )
                 values = _row_values(row)
                 if values[0] <= 0.0 or values[1] <= values[0] or values[2] <= 0.0:
                     raise ValueError(f"invalid executable quote at timestamp={timestamp}")
+                if timestamp in dropped_boundaries:
+                    raise ValueError(
+                        f"capture boundary timestamp appears in more than two segments: {timestamp}"
+                    )
                 previous = by_timestamp.get(timestamp)
-                if previous is not None and previous != values:
-                    raise ValueError(f"conflicting duplicate feature row at timestamp={timestamp}")
-                by_timestamp[timestamp] = values
+                if previous is not None:
+                    previous_owner = owner_by_timestamp[timestamp]
+                    previous_last = segment_bounds[previous_owner][1]
+                    current_first = segment_bounds[segment_index][0]
+                    exact_adjacent_boundary = bool(
+                        previous_owner == segment_index - 1
+                        and previous_last == timestamp
+                        and current_first == timestamp
+                    )
+                    if not exact_adjacent_boundary:
+                        raise ValueError(
+                            f"non-boundary duplicate feature row at timestamp={timestamp}"
+                        )
+                    if previous == values:
+                        identical_boundary_count += 1
+                    else:
+                        conflicting_boundary_count += 1
+                    # A restart can leave two independently aggregated partial
+                    # representations of the same second.  Neither row is a
+                    # lossless full bucket, so choosing either one would inject
+                    # a segment-order-dependent feature.  Remove the entire
+                    # shared bucket and retain a checksum-bound audit below.
+                    del by_timestamp[timestamp]
+                    dropped_boundaries.add(timestamp)
+                else:
+                    by_timestamp[timestamp] = values
+                    owner_by_timestamp[timestamp] = segment_index
                 segment_count += 1
                 first_timestamp = timestamp if first_timestamp is None else first_timestamp
                 last_timestamp = timestamp
@@ -170,12 +287,35 @@ def load_capture_rows(assessment: Mapping[str, Any]) -> Dict[str, np.ndarray]:
             raise ValueError(f"capture first timestamp mismatch: {path}")
         if last_timestamp != int(item.get("last_timestamp_ms", -1)):
             raise ValueError(f"capture last timestamp mismatch: {path}")
+        manifest_feature_row_count += segment_count
     if not by_timestamp:
         raise ValueError("capture manifest produced no feature rows")
     timestamps = np.asarray(sorted(by_timestamp), dtype=np.int64)
     matrix = np.asarray([by_timestamp[int(ts)] for ts in timestamps], dtype=np.float64)
+    dropped_sorted = sorted(dropped_boundaries)
+    merge_audit = {
+        "method": CAPTURE_MERGE_CONTRACT["method"],
+        "input_segment_count": len(manifest),
+        "manifest_feature_row_count": manifest_feature_row_count,
+        "shared_adjacent_boundary_bucket_count": len(dropped_sorted),
+        "conflicting_shared_boundary_bucket_count": conflicting_boundary_count,
+        "identical_shared_boundary_bucket_count": identical_boundary_count,
+        "dropped_boundary_bucket_count": len(dropped_sorted),
+        "dropped_boundary_timestamps_sha256": canonical_sha256(
+            {"timestamps_ms": dropped_sorted}
+        ),
+        "first_dropped_boundary_timestamp_ms": (
+            dropped_sorted[0] if dropped_sorted else None
+        ),
+        "last_dropped_boundary_timestamp_ms": (
+            dropped_sorted[-1] if dropped_sorted else None
+        ),
+        "output_feature_row_count": len(timestamps),
+    }
+    validate_capture_merge_audit(merge_audit)
     return {
         "timestamp": timestamps,
+        "capture_merge_audit": merge_audit,
         **{
             name: matrix[:, index]
             for index, name in enumerate(REQUIRED_FIELDS[1:])
@@ -650,6 +790,9 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
     assessment_path = pathlib.Path(args.capture_assessment).resolve()
     assessment = validate_capture_assessment(assessment_path)
     series = load_capture_rows(assessment)
+    capture_merge_audit = validate_capture_merge_audit(
+        series.get("capture_merge_audit")
+    )
     timestamps = np.asarray(series["timestamp"], dtype=np.int64)
     features, feature_names = build_causal_features(series)
     outcomes, actions = build_joint_action_returns(
@@ -886,8 +1029,10 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 "latest_exchange_timestamp_ms"
             ),
         },
+        "capture_merge_contract": CAPTURE_MERGE_CONTRACT,
         "data": {
             "raw_feature_row_count": int(len(series["timestamp"])),
+            "capture_merge_audit": capture_merge_audit,
             "eligible_row_count": int(len(timestamps)),
             "first_timestamp_ms": int(timestamps[0]),
             "last_timestamp_ms": int(timestamps[-1]),
@@ -958,6 +1103,8 @@ def write_candidate_manifest(
         frozen_identity.pop("model_path", None)
     identity_contract = {
         "source_assessment_sha256": report.get("source_assessment", {}).get("sha256"),
+        "capture_merge_contract": report.get("capture_merge_contract"),
+        "capture_merge_audit": report.get("data", {}).get("capture_merge_audit"),
         "target_contract": report.get("target_contract"),
         "validation_contract": report.get("validation_contract"),
         "feature_names": report.get("data", {}).get("feature_names"),

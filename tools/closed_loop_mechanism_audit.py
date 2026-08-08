@@ -825,6 +825,10 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
     target = development.get("target_contract", {})
     validation = development.get("validation_contract", {})
     negative_control = development.get("negative_control", {})
+    capture_merge = development.get("capture_merge_contract", {})
+    capture_merge_audit = development.get("data", {}).get(
+        "capture_merge_audit", {}
+    )
     if not (
         development.get("schema_version") == "microstructure_alpha_development_v2"
         and development.get("status") == "PASS"
@@ -839,6 +843,27 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and negative_control.get("fully_verifiable") is True
         and negative_control.get("passed") is True
         and as_int(negative_control.get("trial_count")) >= 5
+        and isinstance(capture_merge, dict)
+        and capture_merge.get("method")
+        == "drop_shared_adjacent_boundary_buckets_v1"
+        and capture_merge.get("boundary_action")
+        == "drop_entire_shared_one_second_bucket"
+        and capture_merge.get("non_boundary_action") == "fail_closed"
+        and isinstance(capture_merge_audit, dict)
+        and capture_merge_audit.get("method") == capture_merge.get("method")
+        and as_int(capture_merge_audit.get("input_segment_count")) > 0
+        and as_int(capture_merge_audit.get("manifest_feature_row_count"))
+        - as_int(capture_merge_audit.get("output_feature_row_count"))
+        == 2 * as_int(capture_merge_audit.get("dropped_boundary_bucket_count"))
+        and as_int(capture_merge_audit.get("shared_adjacent_boundary_bucket_count"))
+        == as_int(capture_merge_audit.get("dropped_boundary_bucket_count"))
+        and as_int(capture_merge_audit.get("conflicting_shared_boundary_bucket_count"))
+        + as_int(capture_merge_audit.get("identical_shared_boundary_bucket_count"))
+        == as_int(capture_merge_audit.get("dropped_boundary_bucket_count"))
+        and len(
+            str(capture_merge_audit.get("dropped_boundary_timestamps_sha256") or "")
+        )
+        == 64
         and isinstance(target, dict)
         and target.get("objective")
         == "joint_direction_and_exit_horizon_executable_net_return"

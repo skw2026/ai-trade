@@ -89,6 +89,24 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                     "promotion_evidence": False,
                     "promotion_eligible": False,
                     "economic_screen": {"development_passed": True},
+                    "capture_merge_contract": {
+                        "method": "drop_shared_adjacent_boundary_buckets_v1",
+                        "boundary_action": "drop_entire_shared_one_second_bucket",
+                        "non_boundary_action": "fail_closed",
+                    },
+                    "data": {
+                        "capture_merge_audit": {
+                            "method": "drop_shared_adjacent_boundary_buckets_v1",
+                            "input_segment_count": 1,
+                            "manifest_feature_row_count": 100,
+                            "output_feature_row_count": 100,
+                            "shared_adjacent_boundary_bucket_count": 0,
+                            "conflicting_shared_boundary_bucket_count": 0,
+                            "identical_shared_boundary_bucket_count": 0,
+                            "dropped_boundary_bucket_count": 0,
+                            "dropped_boundary_timestamps_sha256": "b" * 64,
+                        }
+                    },
                     "negative_control": {
                         "method": "deterministic_oos_prediction_time_permutation",
                         "fully_verifiable": True,

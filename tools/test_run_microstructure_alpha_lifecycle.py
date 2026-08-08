@@ -64,6 +64,21 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "embargo_seconds": 2,
     }
     model_contract = {"library": "catboost", "loss_function": "MultiRMSE"}
+    capture_merge_audit = {
+        "method": development.CAPTURE_MERGE_CONTRACT["method"],
+        "input_segment_count": 1,
+        "manifest_feature_row_count": 500,
+        "shared_adjacent_boundary_bucket_count": 0,
+        "conflicting_shared_boundary_bucket_count": 0,
+        "identical_shared_boundary_bucket_count": 0,
+        "dropped_boundary_bucket_count": 0,
+        "dropped_boundary_timestamps_sha256": development.canonical_sha256(
+            {"timestamps_ms": []}
+        ),
+        "first_dropped_boundary_timestamp_ms": None,
+        "last_dropped_boundary_timestamp_ms": None,
+        "output_feature_row_count": 500,
+    }
     frozen = {
         "model_path": str(model),
         "model_sha256": model_hash,
@@ -84,7 +99,11 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
             "sha256": "a" * 64,
             "development_cutoff_ms": 60_000,
         },
-        "data": {"feature_names": feature_names},
+        "capture_merge_contract": development.CAPTURE_MERGE_CONTRACT,
+        "data": {
+            "feature_names": feature_names,
+            "capture_merge_audit": capture_merge_audit,
+        },
         "target_contract": target_contract,
         "validation_contract": validation_contract,
         "model_contract": model_contract,
@@ -103,6 +122,8 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     frozen_identity.pop("model_path")
     identity = {
         "source_assessment_sha256": "a" * 64,
+        "capture_merge_contract": development.CAPTURE_MERGE_CONTRACT,
+        "capture_merge_audit": capture_merge_audit,
         "target_contract": target_contract,
         "validation_contract": validation_contract,
         "feature_names": feature_names,
@@ -149,6 +170,24 @@ def make_args(root: pathlib.Path, report: pathlib.Path, manifest: pathlib.Path, 
 
 
 class MicrostructureAlphaLifecycleTest(unittest.TestCase):
+    def test_candidate_identity_must_bind_exact_development_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            report, manifest, model = make_candidate(root)
+            payload = json.loads(manifest.read_text())
+            payload["identity_contract"]["capture_merge_audit"][
+                "output_feature_row_count"
+            ] = 499
+            payload["candidate_id"] = lifecycle.canonical_sha256(
+                payload["identity_contract"]
+            )
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                lifecycle.LifecycleError, "identity contract mismatch"
+            ):
+                lifecycle.validate_development_candidate(report, manifest, model)
+
     def test_registry_chain_detects_event_tampering(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

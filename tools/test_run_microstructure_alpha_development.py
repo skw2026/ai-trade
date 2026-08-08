@@ -41,6 +41,32 @@ def synthetic_series(row_count: int = 400) -> dict[str, np.ndarray]:
 
 
 class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
+    def write_custom_feature_segment(
+        self,
+        root: pathlib.Path,
+        name: str,
+        row_indices: list[int],
+        overrides=None,
+    ) -> dict:
+        path = root / "features" / "SOLUSDT" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        series = synthetic_series(max(row_indices) + 1)
+        overrides = overrides or {}
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=probe.REQUIRED_FIELDS)
+            writer.writeheader()
+            for index in row_indices:
+                row = {name: series[name][index] for name in probe.REQUIRED_FIELDS}
+                row.update(overrides.get(index, {}))
+                writer.writerow(row)
+        return {
+            "feature_path": str(path),
+            "feature_sha256": sha256(path),
+            "feature_row_count": len(row_indices),
+            "first_timestamp_ms": row_indices[0] * 1000,
+            "last_timestamp_ms": row_indices[-1] * 1000,
+        }
+
     def write_feature_segment(self, root: pathlib.Path) -> tuple[pathlib.Path, dict]:
         path = root / "features" / "SOLUSDT" / "development-segment.csv"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +97,64 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             path.write_text("tampered\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "checksum mismatch"):
                 probe.load_capture_rows({"segments": [item]})
+
+    def test_adjacent_shared_boundary_bucket_is_dropped_and_audited(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            first = self.write_custom_feature_segment(
+                root, "segment-1.csv", [0, 1]
+            )
+            second = self.write_custom_feature_segment(
+                root,
+                "segment-2.csv",
+                [1, 2],
+                overrides={1: {"trade_count": 99.0}},
+            )
+
+            loaded = probe.load_capture_rows({"segments": [first, second]})
+
+            self.assertEqual(loaded["timestamp"].tolist(), [0, 2000])
+            audit = loaded["capture_merge_audit"]
+            self.assertEqual(audit["method"], probe.CAPTURE_MERGE_CONTRACT["method"])
+            self.assertEqual(audit["manifest_feature_row_count"], 4)
+            self.assertEqual(audit["shared_adjacent_boundary_bucket_count"], 1)
+            self.assertEqual(audit["conflicting_shared_boundary_bucket_count"], 1)
+            self.assertEqual(audit["identical_shared_boundary_bucket_count"], 0)
+            self.assertEqual(audit["output_feature_row_count"], 2)
+            self.assertEqual(
+                audit["dropped_boundary_timestamps_sha256"],
+                probe.canonical_sha256({"timestamps_ms": [1000]}),
+            )
+
+    def test_identical_adjacent_shared_boundary_is_also_dropped(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            first = self.write_custom_feature_segment(
+                root, "segment-1.csv", [0, 1]
+            )
+            second = self.write_custom_feature_segment(
+                root, "segment-2.csv", [1, 2]
+            )
+
+            loaded = probe.load_capture_rows({"segments": [first, second]})
+
+            self.assertEqual(loaded["timestamp"].tolist(), [0, 2000])
+            audit = loaded["capture_merge_audit"]
+            self.assertEqual(audit["identical_shared_boundary_bucket_count"], 1)
+            self.assertEqual(audit["conflicting_shared_boundary_bucket_count"], 0)
+
+    def test_non_boundary_segment_overlap_remains_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            first = self.write_custom_feature_segment(
+                root, "segment-1.csv", [0, 1, 2]
+            )
+            second = self.write_custom_feature_segment(
+                root, "segment-2.csv", [1, 2, 3]
+            )
+
+            with self.assertRaisesRegex(ValueError, "non-boundary capture segment overlap"):
+                probe.load_capture_rows({"segments": [first, second]})
 
     def test_capture_assessment_is_development_only_and_not_promotion_evidence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -260,6 +344,21 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             series["best_bid"] = mid - 0.005
             series["best_ask"] = mid + 0.005
             series["microprice"] = mid
+            series["capture_merge_audit"] = {
+                "method": probe.CAPTURE_MERGE_CONTRACT["method"],
+                "input_segment_count": 1,
+                "manifest_feature_row_count": 5000,
+                "shared_adjacent_boundary_bucket_count": 0,
+                "conflicting_shared_boundary_bucket_count": 0,
+                "identical_shared_boundary_bucket_count": 0,
+                "dropped_boundary_bucket_count": 0,
+                "dropped_boundary_timestamps_sha256": probe.canonical_sha256(
+                    {"timestamps_ms": []}
+                ),
+                "first_dropped_boundary_timestamp_ms": None,
+                "last_dropped_boundary_timestamp_ms": None,
+                "output_feature_row_count": 5000,
+            }
             args = type(
                 "Args",
                 (),
