@@ -524,6 +524,221 @@ def summarize_score_distribution(values: Sequence[float]) -> Dict[str, Any]:
     }
 
 
+def fit_stress_profitability_transform(
+    outcomes: np.ndarray,
+    *,
+    base_cost_bps: float,
+    stress_cost_multiplier: float,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Build a fit-domain-only target that learns economically useful tails.
+
+    Raw one-second forward returns are dominated by the many observations that
+    cannot recover spread, fees, and slippage.  A joint MultiRMSE model trained
+    directly on those returns therefore tends to minimize loss with an almost
+    constant prediction.  For each action we instead standardize the indicator
+    that its *stressed-cost* return is positive.  Standardization gives every
+    action unit target variance without using validation/test observations.
+
+    The model output is not trusted as PnL.  ``reconstruct_base_net_scores``
+    converts it back to a fit-domain conditional-mean proxy in bps, and every
+    threshold is still accepted only by realized raw base/stress returns in the
+    nested and untouched future gates.
+    """
+    matrix = np.asarray(outcomes, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[0] < 1 or matrix.shape[1] < 1:
+        raise ValueError("stress-profitability transform requires a non-empty matrix")
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError("stress-profitability transform outcomes must be finite")
+    base_cost = float(base_cost_bps)
+    multiplier = float(stress_cost_multiplier)
+    if not math.isfinite(base_cost) or base_cost <= 0.0:
+        raise ValueError("stress-profitability transform base cost must be positive")
+    if not math.isfinite(multiplier) or multiplier <= 1.0:
+        raise ValueError("stress-profitability transform multiplier must exceed one")
+
+    stress_increment = base_cost * (multiplier - 1.0)
+    profitable = matrix > stress_increment
+    transformed = np.zeros_like(matrix, dtype=np.float64)
+    action_statistics: List[Dict[str, Any]] = []
+    for action_index in range(matrix.shape[1]):
+        labels = profitable[:, action_index].astype(np.float64)
+        positive_count = int(np.sum(labels))
+        nonpositive_count = int(len(labels) - positive_count)
+        positive_rate = float(positive_count / len(labels))
+        scale = math.sqrt(positive_rate * (1.0 - positive_rate))
+        learnable = bool(positive_count > 0 and nonpositive_count > 0 and scale > 0.0)
+        if learnable:
+            transformed[:, action_index] = (labels - positive_rate) / scale
+        positive_values = matrix[profitable[:, action_index], action_index]
+        nonpositive_values = matrix[~profitable[:, action_index], action_index]
+        # A missing class is explicitly non-learnable.  Its fallback mean keeps
+        # inference finite and constant; future economics can never manufacture
+        # evidence from a class that was absent in the fit domain.
+        positive_mean = (
+            float(np.mean(positive_values))
+            if len(positive_values)
+            else float(np.mean(matrix[:, action_index]))
+        )
+        nonpositive_mean = (
+            float(np.mean(nonpositive_values))
+            if len(nonpositive_values)
+            else float(np.mean(matrix[:, action_index]))
+        )
+        action_statistics.append(
+            {
+                "action_index": action_index,
+                "row_count": int(len(labels)),
+                "positive_count": positive_count,
+                "nonpositive_count": nonpositive_count,
+                "positive_rate": positive_rate,
+                "standardization_scale": scale,
+                "positive_mean_base_net_bps": positive_mean,
+                "nonpositive_mean_base_net_bps": nonpositive_mean,
+                "learnable": learnable,
+            }
+        )
+    return transformed, {
+        "method": "fit_only_standardized_stress_profitability_v1",
+        "profitability_hurdle": "base_net_return_bps_gt_stress_incremental_cost_bps",
+        "stress_incremental_cost_bps": stress_increment,
+        "inference_reconstruction": "clipped_probability_times_fit_class_conditional_base_net_means",
+        "validation_or_test_statistics_used": False,
+        "action_statistics": action_statistics,
+    }
+
+
+def validate_stress_profitability_transform(
+    transform: Mapping[str, Any],
+    *,
+    action_count: int,
+    expected_row_count: int | None = None,
+) -> List[Dict[str, Any]]:
+    if not (
+        isinstance(transform, dict)
+        and transform.get("method")
+        == "fit_only_standardized_stress_profitability_v1"
+        and transform.get("profitability_hurdle")
+        == "base_net_return_bps_gt_stress_incremental_cost_bps"
+        and transform.get("inference_reconstruction")
+        == "clipped_probability_times_fit_class_conditional_base_net_means"
+        and transform.get("validation_or_test_statistics_used") is False
+    ):
+        raise ValueError("stress-profitability transform contract is invalid")
+    hurdle = float(transform.get("stress_incremental_cost_bps"))
+    items = transform.get("action_statistics")
+    if (
+        not math.isfinite(hurdle)
+        or hurdle <= 0.0
+        or not isinstance(items, list)
+        or len(items) != int(action_count)
+    ):
+        raise ValueError("stress-profitability transform shape/hurdle is invalid")
+    for action_index, item in enumerate(items):
+        if not isinstance(item, dict) or int(item.get("action_index", -1)) != action_index:
+            raise ValueError("stress-profitability action statistics are invalid")
+        try:
+            row_count = int(item.get("row_count"))
+            positive_count = int(item.get("positive_count"))
+            nonpositive_count = int(item.get("nonpositive_count"))
+            rate = float(item.get("positive_rate"))
+            scale = float(item.get("standardization_scale"))
+            positive_mean = float(item.get("positive_mean_base_net_bps"))
+            nonpositive_mean = float(item.get("nonpositive_mean_base_net_bps"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("stress-profitability action statistic type is invalid") from exc
+        expected_rate = positive_count / row_count if row_count > 0 else float("nan")
+        expected_scale = (
+            math.sqrt(expected_rate * (1.0 - expected_rate))
+            if math.isfinite(expected_rate) and 0.0 <= expected_rate <= 1.0
+            else float("nan")
+        )
+        expected_learnable = positive_count > 0 and nonpositive_count > 0
+        if not (
+            row_count > 0
+            and positive_count >= 0
+            and nonpositive_count >= 0
+            and positive_count + nonpositive_count == row_count
+            and (expected_row_count is None or row_count == int(expected_row_count))
+            and math.isfinite(rate)
+            and math.isclose(rate, expected_rate, rel_tol=0.0, abs_tol=1e-15)
+            and math.isfinite(scale)
+            and math.isclose(scale, expected_scale, rel_tol=0.0, abs_tol=1e-15)
+            and math.isfinite(positive_mean)
+            and math.isfinite(nonpositive_mean)
+            and item.get("learnable") is expected_learnable
+            and (positive_count == 0 or positive_mean > hurdle)
+            and (nonpositive_count == 0 or nonpositive_mean <= hurdle)
+        ):
+            raise ValueError("stress-profitability action statistic contract failed")
+    return items
+
+
+def transform_stress_profitability_targets(
+    outcomes: np.ndarray, transform: Mapping[str, Any]
+) -> np.ndarray:
+    """Apply fit-only normalization to another domain without refitting it."""
+    matrix = np.asarray(outcomes, dtype=np.float64)
+    if matrix.ndim != 2:
+        raise ValueError("stress-profitability target transform shape mismatch")
+    statistics_by_action = validate_stress_profitability_transform(
+        transform, action_count=matrix.shape[1]
+    )
+    hurdle = float(transform.get("stress_incremental_cost_bps"))
+    if not math.isfinite(hurdle):
+        raise ValueError("stress-profitability target hurdle is invalid")
+    result = np.zeros_like(matrix, dtype=np.float64)
+    for action_index, item in enumerate(statistics_by_action):
+        if not isinstance(item, dict) or int(item.get("action_index", -1)) != action_index:
+            raise ValueError("stress-profitability action statistics are invalid")
+        rate = float(item.get("positive_rate"))
+        scale = float(item.get("standardization_scale"))
+        if not (0.0 <= rate <= 1.0) or not math.isfinite(scale) or scale < 0.0:
+            raise ValueError("stress-profitability action normalization is invalid")
+        if item.get("learnable") is True:
+            if scale <= 0.0:
+                raise ValueError("learnable stress-profitability action has zero scale")
+            labels = (matrix[:, action_index] > hurdle).astype(np.float64)
+            result[:, action_index] = (labels - rate) / scale
+    return result
+
+
+def reconstruct_base_net_scores(
+    raw_prediction: np.ndarray, transform: Mapping[str, Any]
+) -> np.ndarray:
+    """Map standardized profitability predictions to a bps-scale policy score."""
+    prediction = np.asarray(raw_prediction, dtype=np.float64)
+    if prediction.ndim == 1:
+        prediction = prediction.reshape(-1, 1)
+    if prediction.ndim != 2:
+        raise ValueError("stress-profitability prediction transform shape mismatch")
+    statistics_by_action = validate_stress_profitability_transform(
+        transform, action_count=prediction.shape[1]
+    )
+    result = np.empty_like(prediction, dtype=np.float64)
+    for action_index, item in enumerate(statistics_by_action):
+        if not isinstance(item, dict) or int(item.get("action_index", -1)) != action_index:
+            raise ValueError("stress-profitability prediction statistics are invalid")
+        rate = float(item.get("positive_rate"))
+        scale = float(item.get("standardization_scale"))
+        positive_mean = float(item.get("positive_mean_base_net_bps"))
+        nonpositive_mean = float(item.get("nonpositive_mean_base_net_bps"))
+        if not all(
+            math.isfinite(value)
+            for value in (rate, scale, positive_mean, nonpositive_mean)
+        ) or not (0.0 <= rate <= 1.0 and scale >= 0.0):
+            raise ValueError("stress-profitability prediction statistics are non-finite")
+        implied_probability = np.clip(
+            rate + prediction[:, action_index] * scale, 0.0, 1.0
+        )
+        result[:, action_index] = (
+            implied_probability * positive_mean
+            + (1.0 - implied_probability) * nonpositive_mean
+        )
+    if not np.all(np.isfinite(result)):
+        raise ValueError("reconstructed base-net policy score is non-finite")
+    return result
+
+
 def evaluate_joint_policy(
     *,
     timestamps: np.ndarray,
@@ -801,6 +1016,11 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
         "library": "catboost",
         "library_version": getattr(catboost, "__version__", None),
         "loss_function": "MultiRMSE",
+        "training_target": "fit_only_standardized_stress_profitability_indicator",
+        "target_normalization": "per_action_zero_mean_unit_variance_on_fit_domain_only",
+        "inference_score": "fit_class_conditional_expected_base_net_return_bps",
+        "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
+        "validation_or_test_target_statistics_used_for_fit": False,
         "iterations": int(args.iterations),
         "depth": int(args.depth),
         "learning_rate": float(args.learning_rate),
@@ -880,16 +1100,27 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
             continue
+        fit_targets, target_transform = fit_stress_profitability_transform(
+            outcomes[fit_indices],
+            base_cost_bps=float(args.additional_round_trip_cost_bps),
+            stress_cost_multiplier=float(args.stress_cost_multiplier),
+        )
+        validation_targets = transform_stress_profitability_targets(
+            outcomes[validation_indices], target_transform
+        )
         model = build_model(args)
         model.fit(
             features[fit_indices],
-            outcomes[fit_indices],
-            eval_set=(features[validation_indices], outcomes[validation_indices]),
+            fit_targets,
+            eval_set=(features[validation_indices], validation_targets),
             early_stopping_rounds=int(args.early_stopping_rounds),
             verbose=False,
         )
-        validation_prediction = np.asarray(
+        validation_raw_prediction = np.asarray(
             model.predict(features[validation_indices]), dtype=np.float64
+        )
+        validation_prediction = reconstruct_base_net_scores(
+            validation_raw_prediction, target_transform
         )
         calibration = select_nested_threshold(
             timestamps=timestamps[validation_indices],
@@ -908,8 +1139,11 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             if isinstance(selected, dict)
             else float("inf")
         )
-        test_prediction = np.asarray(
+        test_raw_prediction = np.asarray(
             model.predict(features[test_indices]), dtype=np.float64
+        )
+        test_prediction = reconstruct_base_net_scores(
+            test_raw_prediction, target_transform
         )
         objective = evaluate_joint_policy(
             timestamps=timestamps[test_indices],
@@ -965,6 +1199,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     and model.get_best_iteration() >= 0
                     else None
                 ),
+                "training_target_transform": target_transform,
                 "nested_calibration": calibration,
                 "validation_target_opportunity_distribution": summarize_score_distribution(
                     np.max(outcomes[validation_indices], axis=1)
@@ -974,6 +1209,9 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 ),
                 "test_prediction_score_distribution": summarize_score_distribution(
                     np.max(test_prediction, axis=1)
+                ),
+                "test_raw_model_output_distribution": summarize_score_distribution(
+                    np.max(test_raw_prediction, axis=1)
                 ),
                 "oos_objective": objective,
                 "oos_prediction_permutation_controls": permutation_controls,
@@ -1032,9 +1270,14 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             if best_iterations
             else int(args.iterations)
         )
+        final_targets, final_target_transform = fit_stress_profitability_transform(
+            outcomes,
+            base_cost_bps=float(args.additional_round_trip_cost_bps),
+            stress_cost_multiplier=float(args.stress_cost_multiplier),
+        )
         final_model = build_model(args)
         final_model.set_params(iterations=final_iterations)
-        final_model.fit(features, outcomes, verbose=False)
+        final_model.fit(features, final_targets, verbose=False)
         model_path = pathlib.Path(args.model_output).resolve()
         model_path.parent.mkdir(parents=True, exist_ok=True)
         final_model.save_model(str(model_path))
@@ -1045,6 +1288,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "final_iterations": final_iterations,
             "policy_threshold_bps": float(statistics.median(selected_thresholds)),
             "threshold_aggregation": "median_of_nested_split_thresholds",
+            "target_transform": final_target_transform,
             "model_contract": model_contract(args),
         }
     return {

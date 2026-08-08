@@ -66,7 +66,15 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "negative_model_score_threshold_permitted": True,
         "threshold_viability_contract": "realized_base_and_stress_net_lcb_positive_in_nested_validation",
     }
-    model_contract = {"library": "catboost", "loss_function": "MultiRMSE"}
+    model_contract = {
+        "library": "catboost",
+        "loss_function": "MultiRMSE",
+        "training_target": "fit_only_standardized_stress_profitability_indicator",
+        "target_normalization": "per_action_zero_mean_unit_variance_on_fit_domain_only",
+        "inference_score": "fit_class_conditional_expected_base_net_return_bps",
+        "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
+        "validation_or_test_target_statistics_used_for_fit": False,
+    }
     capture_merge_audit = {
         "method": development.CAPTURE_MERGE_CONTRACT["method"],
         "input_segment_count": 1,
@@ -82,6 +90,27 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "last_dropped_boundary_timestamp_ms": None,
         "output_feature_row_count": 500,
     }
+    target_transform = {
+        "method": "fit_only_standardized_stress_profitability_v1",
+        "profitability_hurdle": "base_net_return_bps_gt_stress_incremental_cost_bps",
+        "inference_reconstruction": "clipped_probability_times_fit_class_conditional_base_net_means",
+        "validation_or_test_statistics_used": False,
+        "stress_incremental_cost_bps": 0.025,
+        "action_statistics": [
+            {
+                "action_index": index,
+                "row_count": 1000,
+                "positive_count": 500,
+                "nonpositive_count": 500,
+                "positive_rate": 0.5,
+                "standardization_scale": 0.5,
+                "positive_mean_base_net_bps": 10.0,
+                "nonpositive_mean_base_net_bps": -10.0,
+                "learnable": True,
+            }
+            for index in range(2)
+        ],
+    }
     frozen = {
         "model_path": str(model),
         "model_sha256": model_hash,
@@ -89,6 +118,7 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "final_iterations": 5,
         "policy_threshold_bps": 1.0,
         "threshold_aggregation": "median_of_nested_split_thresholds",
+        "target_transform": target_transform,
         "model_contract": model_contract,
     }
     report_payload = {

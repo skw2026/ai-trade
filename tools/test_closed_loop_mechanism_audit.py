@@ -117,6 +117,13 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                         "objective": "joint_direction_and_exit_horizon_executable_net_return",
                         "overlapping_episodes_forbidden": True,
                     },
+                    "model_contract": {
+                        "training_target": "fit_only_standardized_stress_profitability_indicator",
+                        "target_normalization": "per_action_zero_mean_unit_variance_on_fit_domain_only",
+                        "inference_score": "fit_class_conditional_expected_base_net_return_bps",
+                        "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
+                        "validation_or_test_target_statistics_used_for_fit": False,
+                    },
                     "validation_contract": {
                         "method": "rolling_purged_nested_validation",
                         "score_threshold_floor_bps": None,

@@ -54,6 +54,27 @@ class DemoPolicyTest(unittest.TestCase):
             {"direction": "long", "horizon_seconds": 15},
             {"direction": "short", "horizon_seconds": 15},
         ]
+        target_transform = {
+            "method": "fit_only_standardized_stress_profitability_v1",
+            "profitability_hurdle": "base_net_return_bps_gt_stress_incremental_cost_bps",
+            "inference_reconstruction": "clipped_probability_times_fit_class_conditional_base_net_means",
+            "validation_or_test_statistics_used": False,
+            "stress_incremental_cost_bps": 1.0,
+            "action_statistics": [
+                {
+                    "action_index": index,
+                    "row_count": 100,
+                    "positive_count": 50,
+                    "nonpositive_count": 50,
+                    "positive_rate": 0.5,
+                    "standardization_scale": 0.5,
+                    "positive_mean_base_net_bps": 10.0,
+                    "nonpositive_mean_base_net_bps": -10.0,
+                    "learnable": True,
+                }
+                for index in range(len(actions))
+            ],
+        }
         return policy.CandidateBundle(
             candidate_id="a" * 64,
             state_sha256="b" * 64,
@@ -63,7 +84,7 @@ class DemoPolicyTest(unittest.TestCase):
             actions=actions,
             threshold_bps=2.0,
             execution_latency_seconds=1,
-            report={},
+            report={"frozen_candidate": {"target_transform": target_transform}},
             model=FakeModel(prediction),
         )
 
@@ -71,7 +92,7 @@ class DemoPolicyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = pathlib.Path(temp_dir) / "signal.json"
             engine = policy.DemoPolicyEngine(signal_output=output)
-            engine.set_candidate(self.candidate([3.5, 1.0]))
+            engine.set_candidate(self.candidate([0.35, 0.1]))
             payload = None
             for index in range(62):
                 payload = engine.on_row(feature_row(index * 1000, index * 0.001))
@@ -80,7 +101,7 @@ class DemoPolicyTest(unittest.TestCase):
             first_until = payload["active_until_exchange_ms"]
             first_started = payload["action"]["started_exchange_ms"]
 
-            engine.candidate.model = FakeModel([0.0, 9.0])
+            engine.candidate.model = FakeModel([0.0, 0.9])
             held = engine.on_row(feature_row(62_000, 0.062))
             self.assertEqual(held["reason"], "frozen_action_holding_window")
             self.assertEqual(held["action"]["direction"], 1)
@@ -93,7 +114,7 @@ class DemoPolicyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = pathlib.Path(temp_dir) / "signal.json"
             engine = policy.DemoPolicyEngine(signal_output=output)
-            engine.set_candidate(self.candidate([1.5, 1.0]))
+            engine.set_candidate(self.candidate([-0.35, -0.4]))
             payload = None
             for index in range(62):
                 payload = engine.on_row(feature_row(index * 1000, index * 0.001))

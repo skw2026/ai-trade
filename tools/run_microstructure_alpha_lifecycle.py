@@ -295,6 +295,21 @@ def validate_development_candidate(
         == "realized_base_and_stress_net_lcb_positive_in_nested_validation"
     ):
         raise LifecycleError("development candidate has not passed its isolated economic gate")
+    model_contract = report.get("model_contract", {})
+    if not (
+        isinstance(model_contract, dict)
+        and model_contract.get("training_target")
+        == "fit_only_standardized_stress_profitability_indicator"
+        and model_contract.get("target_normalization")
+        == "per_action_zero_mean_unit_variance_on_fit_domain_only"
+        and model_contract.get("inference_score")
+        == "fit_class_conditional_expected_base_net_return_bps"
+        and model_contract.get("economic_acceptance_target")
+        == "untransformed_executable_base_and_stress_net_return"
+        and model_contract.get("validation_or_test_target_statistics_used_for_fit")
+        is False
+    ):
+        raise LifecycleError("development model economic-target contract failed")
     capture_merge = report.get("capture_merge_contract")
     capture_merge_audit = report.get("data", {}).get("capture_merge_audit")
     if not isinstance(capture_merge, dict) or capture_merge != development.CAPTURE_MERGE_CONTRACT:
@@ -320,6 +335,21 @@ def validate_development_candidate(
     frozen = report.get("frozen_candidate")
     if not isinstance(frozen, dict):
         raise LifecycleError("development report has no frozen model")
+    target_transform = frozen.get("target_transform")
+    action_statistics = (
+        target_transform.get("action_statistics")
+        if isinstance(target_transform, dict)
+        else None
+    )
+    if not (
+        isinstance(target_transform, dict)
+        and target_transform.get("method")
+        == "fit_only_standardized_stress_profitability_v1"
+        and target_transform.get("validation_or_test_statistics_used") is False
+        and isinstance(action_statistics, list)
+        and len(action_statistics) == len(report.get("target_contract", {}).get("actions", []))
+    ):
+        raise LifecycleError("development target transform contract is incomplete")
     frozen_identity = dict(frozen)
     frozen_identity.pop("model_path", None)
     expected_identity = {
@@ -348,6 +378,33 @@ def validate_development_candidate(
     actions = target.get("actions")
     if not isinstance(actions, list) or not actions:
         raise LifecycleError("development action contract is incomplete")
+    try:
+        expected_stress_increment = float(
+            target.get("additional_round_trip_cost_bps")
+        ) * (float(target.get("stress_cost_multiplier")) - 1.0)
+        actual_stress_increment = float(
+            target_transform.get("stress_incremental_cost_bps")
+        )
+        development.validate_stress_profitability_transform(
+            target_transform,
+            action_count=len(actions),
+            expected_row_count=int(frozen.get("final_training_row_count")),
+        )
+        development.reconstruct_base_net_scores(
+            np.zeros((1, len(actions)), dtype=np.float64), target_transform
+        )
+    except (TypeError, ValueError) as exc:
+        raise LifecycleError("development target transform statistics are invalid") from exc
+    if not (
+        math.isfinite(expected_stress_increment)
+        and math.isclose(
+            actual_stress_increment,
+            expected_stress_increment,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
+    ):
+        raise LifecycleError("development target transform cost hurdle mismatch")
     horizons = [int(item.get("horizon_seconds") or 0) for item in actions if isinstance(item, dict)]
     if len(horizons) != len(actions) or min(horizons) <= 0:
         raise LifecycleError("development action horizons are invalid")
@@ -614,9 +671,13 @@ def evaluate_domain(
     frozen = report.get("frozen_candidate", {})
     target = report.get("target_contract", {})
     threshold = float(frozen.get("policy_threshold_bps"))
-    prediction = np.asarray(model.predict(features[indices]), dtype=np.float64)
-    if prediction.ndim == 1:
-        prediction = prediction.reshape(-1, 1)
+    raw_prediction = np.asarray(model.predict(features[indices]), dtype=np.float64)
+    try:
+        prediction = development.reconstruct_base_net_scores(
+            raw_prediction, frozen.get("target_transform", {})
+        )
+    except ValueError as exc:
+        raise LifecycleError("frozen model score reconstruction failed") from exc
     if prediction.shape != outcomes[indices].shape:
         raise LifecycleError(
             f"frozen model output shape {prediction.shape} != target {outcomes[indices].shape}"

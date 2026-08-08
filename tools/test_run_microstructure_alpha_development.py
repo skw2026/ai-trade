@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import copy
 import csv
 import hashlib
 import json
@@ -237,6 +238,53 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(report["base_cost"]["count"], 3)
         self.assertEqual(report["action_counts"], {"long_2s": 3})
         self.assertAlmostEqual(report["stress_cost"]["mean_bps"], 2.0)
+
+    def test_fit_only_profitability_target_is_balanced_and_reconstructed_in_bps(self):
+        outcomes = np.asarray(
+            [
+                [5.0, -1.0],
+                [6.0, -2.0],
+                [-1.0, 4.0],
+                [-2.0, -3.0],
+            ],
+            dtype=np.float64,
+        )
+        targets, transform = probe.fit_stress_profitability_transform(
+            outcomes,
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+        )
+
+        np.testing.assert_allclose(
+            np.mean(targets, axis=0), [0.0, 0.0], atol=1e-12
+        )
+        np.testing.assert_allclose(np.var(targets, axis=0), [1.0, 1.0])
+        self.assertFalse(transform["validation_or_test_statistics_used"])
+        self.assertEqual(transform["stress_incremental_cost_bps"], 1.0)
+
+        # A zero standardized prediction reconstructs each action's fit-domain
+        # unconditional base-net mean.  No validation statistic participates.
+        reconstructed = probe.reconstruct_base_net_scores(
+            np.zeros((1, 2), dtype=np.float64), transform
+        )
+        np.testing.assert_allclose(reconstructed[0], np.mean(outcomes, axis=0))
+
+        shifted = outcomes.copy()
+        shifted[:, 0] = 1000.0
+        transformed_validation = probe.transform_stress_profitability_targets(
+            shifted, transform
+        )
+        self.assertEqual(
+            transform["action_statistics"][0]["positive_rate"], 0.5
+        )
+        self.assertTrue(np.all(np.isfinite(transformed_validation)))
+
+        tampered = copy.deepcopy(transform)
+        tampered["action_statistics"][0]["standardization_scale"] = 0.123
+        with self.assertRaisesRegex(ValueError, "statistic contract failed"):
+            probe.reconstruct_base_net_scores(
+                np.zeros((1, 2), dtype=np.float64), tampered
+            )
 
     def test_nested_calibration_uses_ranked_negative_scores_without_weakening_economics(self):
         timestamps = np.arange(100, dtype=np.int64) * 1000

@@ -825,6 +825,7 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
     target = development.get("target_contract", {})
     validation = development.get("validation_contract", {})
     negative_control = development.get("negative_control", {})
+    model_contract = development.get("model_contract", {})
     capture_merge = development.get("capture_merge_contract", {})
     capture_merge_audit = development.get("data", {}).get(
         "capture_merge_audit", {}
@@ -875,6 +876,17 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and validation.get("threshold_viability_contract")
         == "realized_base_and_stress_net_lcb_positive_in_nested_validation"
         and validation.get("oos_windows_non_overlapping") is True
+        and isinstance(model_contract, dict)
+        and model_contract.get("training_target")
+        == "fit_only_standardized_stress_profitability_indicator"
+        and model_contract.get("target_normalization")
+        == "per_action_zero_mean_unit_variance_on_fit_domain_only"
+        and model_contract.get("inference_score")
+        == "fit_class_conditional_expected_base_net_return_bps"
+        and model_contract.get("economic_acceptance_target")
+        == "untransformed_executable_base_and_stress_net_return"
+        and model_contract.get("validation_or_test_target_statistics_used_for_fit")
+        is False
     ):
         fail_reasons.append("microstructure development economic/anti-leakage contract failed")
     for label, payload, domain in (
