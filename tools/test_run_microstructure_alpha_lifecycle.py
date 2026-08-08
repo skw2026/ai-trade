@@ -62,6 +62,9 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     validation_contract = {
         "method": "rolling_purged_nested_validation",
         "embargo_seconds": 2,
+        "score_threshold_floor_bps": None,
+        "negative_model_score_threshold_permitted": True,
+        "threshold_viability_contract": "realized_base_and_stress_net_lcb_positive_in_nested_validation",
     }
     model_contract = {"library": "catboost", "loss_function": "MultiRMSE"}
     capture_merge_audit = {

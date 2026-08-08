@@ -870,6 +870,10 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and target.get("overlapping_episodes_forbidden") is True
         and isinstance(validation, dict)
         and validation.get("method") == "rolling_purged_nested_validation"
+        and validation.get("score_threshold_floor_bps") is None
+        and validation.get("negative_model_score_threshold_permitted") is True
+        and validation.get("threshold_viability_contract")
+        == "realized_base_and_stress_net_lcb_positive_in_nested_validation"
         and validation.get("oos_windows_non_overlapping") is True
     ):
         fail_reasons.append("microstructure development economic/anti-leakage contract failed")

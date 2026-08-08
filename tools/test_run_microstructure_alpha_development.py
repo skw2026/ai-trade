@@ -238,6 +238,28 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(report["action_counts"], {"long_2s": 3})
         self.assertAlmostEqual(report["stress_cost"]["mean_bps"], 2.0)
 
+    def test_nested_calibration_uses_ranked_negative_scores_without_weakening_economics(self):
+        timestamps = np.arange(100, dtype=np.int64) * 1000
+        prediction = np.linspace(-10.0, -1.0, 100).reshape(-1, 1)
+        realized = np.where(prediction >= -2.8, 10.0, -10.0)
+        report = probe.select_nested_threshold(
+            timestamps=timestamps,
+            prediction=prediction,
+            realized_base=realized,
+            actions=[{"direction": "long", "horizon_seconds": 1}],
+            quantiles=[0.5, 0.8],
+            min_trades=8,
+            base_cost_bps=1.0,
+            stress_cost_multiplier=1.25,
+            execution_latency_seconds=1,
+        )
+
+        self.assertIsNotNone(report["selected"])
+        self.assertLess(report["selected"]["threshold_bps"], 0.0)
+        self.assertGreater(report["selected"]["base_net_lcb_bps"], 0.0)
+        self.assertGreater(report["selected"]["stress_net_lcb_bps"], 0.0)
+        self.assertIsNone(report["score_threshold_floor_bps"])
+
     def test_time_splits_are_purged_and_oos_windows_do_not_overlap(self):
         timestamps = np.arange(100000, dtype=np.int64) * 1000
         splits = probe.build_time_splits(

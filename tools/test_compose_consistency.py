@@ -718,6 +718,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("ControlPersist=15", downloader)
         self.assertEqual(downloader.count('scp "${SCP_OPTIONS[@]}"'), 1)
         self.assertEqual(downloader.count('scp -q "${SCP_OPTIONS[@]}"'), 1)
+        self.assertIn("SCP_OPTIONS=(\n  -C", downloader)
         for development_report in (
             "economic_h12_expanded_ohlcv_v1.json",
             "economic_h12_expanded_market_alpha_v1.json",

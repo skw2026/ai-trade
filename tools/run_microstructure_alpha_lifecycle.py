@@ -283,6 +283,16 @@ def validate_development_candidate(
         and report.get("negative_control", {}).get("fully_verifiable") is True
         and report.get("negative_control", {}).get("passed") is True
         and int(report.get("negative_control", {}).get("trial_count") or 0) >= 5
+        and report.get("validation_contract", {}).get("score_threshold_floor_bps")
+        is None
+        and report.get("validation_contract", {}).get(
+            "negative_model_score_threshold_permitted"
+        )
+        is True
+        and report.get("validation_contract", {}).get(
+            "threshold_viability_contract"
+        )
+        == "realized_base_and_stress_net_lcb_positive_in_nested_validation"
     ):
         raise LifecycleError("development candidate has not passed its isolated economic gate")
     capture_merge = report.get("capture_merge_contract")

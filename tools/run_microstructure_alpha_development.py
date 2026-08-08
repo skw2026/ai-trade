@@ -506,6 +506,24 @@ def summarize_edges(values: Sequence[float]) -> Dict[str, Any]:
     }
 
 
+def summarize_score_distribution(values: Sequence[float]) -> Dict[str, Any]:
+    finite = np.asarray(
+        [float(value) for value in values if math.isfinite(float(value))],
+        dtype=np.float64,
+    )
+    if len(finite) == 0:
+        return {"count": 0, "minimum_bps": None, "maximum_bps": None, "quantiles_bps": {}}
+    return {
+        "count": int(len(finite)),
+        "minimum_bps": float(np.min(finite)),
+        "maximum_bps": float(np.max(finite)),
+        "quantiles_bps": {
+            str(quantile): float(np.quantile(finite, quantile))
+            for quantile in (0.5, 0.8, 0.9, 0.95, 0.98)
+        },
+    }
+
+
 def evaluate_joint_policy(
     *,
     timestamps: np.ndarray,
@@ -697,7 +715,12 @@ def select_nested_threshold(
         return {"selected": None, "candidates": [], "reason": "no_finite_predictions"}
     thresholds = sorted(
         {
-            max(0.0, float(np.quantile(finite, quantile)))
+            # CatBoost shrinkage can preserve economically useful ranking while
+            # shifting every net-target score below zero.  The nested window,
+            # not an arbitrary zero score floor, determines whether a ranking
+            # threshold has positive realized base/stress economics.  Future
+            # OOS and permutation-control gates remain untouched.
+            float(np.quantile(finite, quantile))
             for quantile in quantiles
         }
     )
@@ -746,6 +769,8 @@ def select_nested_threshold(
     return {
         "selected": selected,
         "candidates": candidates,
+        "score_distribution": summarize_score_distribution(finite),
+        "score_threshold_floor_bps": None,
         "reason": "positive_stress_lcb" if selected else "no_positive_stress_lcb_threshold",
     }
 
@@ -941,6 +966,15 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     else None
                 ),
                 "nested_calibration": calibration,
+                "validation_target_opportunity_distribution": summarize_score_distribution(
+                    np.max(outcomes[validation_indices], axis=1)
+                ),
+                "test_target_opportunity_distribution": summarize_score_distribution(
+                    np.max(outcomes[test_indices], axis=1)
+                ),
+                "test_prediction_score_distribution": summarize_score_distribution(
+                    np.max(test_prediction, axis=1)
+                ),
                 "oos_objective": objective,
                 "oos_prediction_permutation_controls": permutation_controls,
             }
@@ -1059,6 +1093,11 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "threshold_quantiles": list(args.calibration_quantiles),
             "action_hypothesis_count": len(actions),
             "nested_threshold_hypothesis_count": len(args.calibration_quantiles),
+            "score_threshold_floor_bps": None,
+            "negative_model_score_threshold_permitted": True,
+            "threshold_viability_contract": (
+                "realized_base_and_stress_net_lcb_positive_in_nested_validation"
+            ),
             "oos_windows_non_overlapping": True,
         },
         "model_contract": model_contract(args),

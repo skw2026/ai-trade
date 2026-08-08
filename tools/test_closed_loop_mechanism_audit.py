@@ -119,6 +119,9 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                     },
                     "validation_contract": {
                         "method": "rolling_purged_nested_validation",
+                        "score_threshold_floor_bps": None,
+                        "negative_model_score_threshold_permitted": True,
+                        "threshold_viability_contract": "realized_base_and_stress_net_lcb_positive_in_nested_validation",
                         "oos_windows_non_overlapping": True,
                     },
                 },
