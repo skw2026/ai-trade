@@ -215,6 +215,16 @@ integrator:
     allow_legacy_feature_contract: false
     legacy_training_symbol: ""
     legacy_bar_interval_ms: 0
+  # 独立微观结构源仅在 append-only lifecycle 达到 demo_ready 后接管；
+  # sidecar/信号异常时 C++ 端会发布显式空仓目标，且永不允许实盘晋级。
+  microstructure_demo:
+    enabled: true
+    log_signal: true
+    lifecycle_root: "./data/models/microstructure_alpha_lifecycle"
+    signal_path: "./data/runtime/microstructure_demo_signal.json"
+    max_signal_stale_ms: 10000
+    lifecycle_refresh_ms: 5000
+    target_notional_usd: 80
 
 self_evolution:
   enabled: true

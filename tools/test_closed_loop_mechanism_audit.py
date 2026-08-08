@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import hashlib
 import json
 import pathlib
 import sys
@@ -27,7 +28,240 @@ def write_json(path: pathlib.Path, payload) -> pathlib.Path:
     return path
 
 
+def artifact(path: pathlib.Path) -> dict:
+    return {
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
 class ClosedLoopMechanismAuditTest(unittest.TestCase):
+    def test_existing_unresolved_route_does_not_fall_back_to_legacy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            route = write_json(
+                root / "route.json",
+                {
+                    "schema_version": "alpha_source_route_v1",
+                    "status": "NOT_READY",
+                    "selected_route": None,
+                    "reason": "no_independently_gated_alpha_source_ready",
+                },
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "integrator_report": "",
+                    "registry_report": "",
+                    "runtime_assess_report": "",
+                    "replay_validation_report": "",
+                    "replay_optimization_report": "",
+                    "strategy_diagnose_report": "",
+                    "alpha_mechanism_probe_report": "",
+                    "alpha_source_route_report": str(route),
+                    "microstructure_alpha_lifecycle_report": "",
+                    "microstructure_demo_binding_report": "",
+                    "run_manifest": "",
+                    "control_cost_bps": 3.5,
+                    "min_live_policy_applied": 1,
+                    "min_replay_total_fills": 20,
+                },
+            )()
+
+            report = AUDIT.build_report(args)
+
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["selected_alpha_route"], "unresolved")
+            self.assertIn("alpha_source_route", report["checks"])
+
+    def test_microstructure_route_uses_its_own_frozen_evidence_chain(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            candidate_id = "a" * 64
+            development = write_json(
+                root / "development.json",
+                {
+                    "schema_version": "microstructure_alpha_development_v2",
+                    "status": "PASS",
+                    "fully_verifiable": True,
+                    "research_domain": "forward_development_only",
+                    "promotion_evidence": False,
+                    "promotion_eligible": False,
+                    "economic_screen": {"development_passed": True},
+                    "negative_control": {
+                        "method": "deterministic_oos_prediction_time_permutation",
+                        "fully_verifiable": True,
+                        "passed": True,
+                        "trial_count": 7,
+                    },
+                    "target_contract": {
+                        "objective": "joint_direction_and_exit_horizon_executable_net_return",
+                        "overlapping_episodes_forbidden": True,
+                    },
+                    "validation_contract": {
+                        "method": "rolling_purged_nested_validation",
+                        "oos_windows_non_overlapping": True,
+                    },
+                },
+            )
+            def future(path: pathlib.Path, domain: str, episodes: int):
+                return write_json(
+                    path,
+                    {
+                        "schema_version": "microstructure_alpha_future_domain_v1",
+                        "status": "PASS",
+                        "fully_verifiable": True,
+                        "candidate_id": candidate_id,
+                        "research_domain": domain,
+                        "policy_frozen": True,
+                        "threshold_tuning_permitted": False,
+                        "episode_count": episodes,
+                    },
+                )
+            selection = future(root / "selection.json", "independent_forward_selection", 24)
+            holdout = future(root / "holdout.json", "untouched_final_holdout", 25)
+            raw_replay = write_json(
+                root / "raw_replay.json",
+                {
+                    "schema_version": "microstructure_alpha_raw_replay_v1",
+                    "status": "PASS",
+                    "fully_verifiable": True,
+                    "candidate_id": candidate_id,
+                    "research_domain": "untouched_final_holdout_replay",
+                    "raw_to_feature_parity": True,
+                    "fixed_model_prediction_economics_deterministic": True,
+                    "economic_replay": {"episode_count": 25},
+                    "demo_entry_eligible": True,
+                    "live_promotion_eligible": False,
+                },
+            )
+            state = {
+                "candidate_id": candidate_id,
+                "phase": "demo_ready",
+                "demo_entry_eligible": True,
+                "live_promotion_eligible": False,
+                "artifacts": {"development_report": artifact(development)},
+                "evidence": {
+                    "selection_passed": artifact(selection),
+                    "final_holdout_passed": artifact(holdout),
+                    "raw_replay_passed": artifact(raw_replay),
+                },
+            }
+            lifecycle = write_json(
+                root / "lifecycle.json",
+                {
+                    "schema_version": "microstructure_alpha_lifecycle_v1",
+                    "status": "PASS",
+                    "fully_verifiable": True,
+                    "candidate_id": candidate_id,
+                    "phase": "demo_ready",
+                    "state": state,
+                    "promotion_eligible": False,
+                    "demo_entry_eligible": True,
+                    "live_promotion_eligible": False,
+                },
+            )
+            route = write_json(
+                root / "route.json",
+                {
+                    "schema_version": "alpha_source_route_v1",
+                    "status": "PASS",
+                    "selected_route": "microstructure_demo",
+                    "selection_policy": {
+                        "method": "fixed_predeclared_precedence",
+                        "cross_source_return_comparison_permitted": False,
+                        "nonselected_source_failure_blocks_selected_route": False,
+                    },
+                    "sources": {
+                        "microstructure_demo": {
+                            "readiness": "READY",
+                            "candidate_id": candidate_id,
+                        }
+                    },
+                    "demo_only": True,
+                    "live_promotion_eligible": False,
+                },
+            )
+            binding = write_json(
+                root / "binding.json",
+                {
+                    "schema_version": "microstructure_demo_binding_v1",
+                    "status": "PASS",
+                    "selected_route": "microstructure_demo",
+                    "candidate_id": candidate_id,
+                    "signal_status": "FLAT",
+                    "health_age_ms": 100,
+                    "signal_age_ms": 100,
+                    "demo_entry_eligible": True,
+                    "live_promotion_eligible": False,
+                },
+            )
+            runtime = write_json(
+                root / "runtime.json",
+                {
+                    "metrics": {
+                        "integrator_mode_canary_count": 10,
+                        "microstructure_demo_signal_accepted_count": 1,
+                        "microstructure_demo_accepted_candidate_ids": [candidate_id],
+                        "integrator_policy_applied_count": 0,
+                        "integrator_policy_complete_episode_count": 0,
+                        "integrator_policy_unique_filled_order_count": 0,
+                        "integrator_policy_proposed_candidate_ids": [],
+                        "integrator_policy_filled_candidate_ids": [],
+                    }
+                },
+            )
+            args = type(
+                "Args",
+                (),
+                {
+                    "integrator_report": "",
+                    "registry_report": "",
+                    "runtime_assess_report": str(runtime),
+                    "replay_validation_report": "",
+                    "replay_optimization_report": "",
+                    "strategy_diagnose_report": "",
+                    "alpha_mechanism_probe_report": "",
+                    "alpha_source_route_report": str(route),
+                    "microstructure_alpha_lifecycle_report": str(lifecycle),
+                    "microstructure_demo_binding_report": str(binding),
+                    "run_manifest": "",
+                    "control_cost_bps": 3.5,
+                    "min_live_policy_applied": 1,
+                    "min_replay_total_fills": 20,
+                },
+            )()
+
+            report = AUDIT.build_report(args)
+
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["selected_alpha_route"], "microstructure_demo")
+            self.assertEqual(report["checks"]["target_consistency"]["status"], "pass")
+            self.assertEqual(
+                report["checks"]["alpha_mechanism_probe"]["status"],
+                "not_applicable",
+            )
+
+    def test_microstructure_runtime_rejects_wrong_accepted_candidate(self):
+        candidate_id = "a" * 64
+        report = AUDIT.audit_microstructure_model_influence(
+            {
+                "metrics": {
+                    "integrator_mode_canary_count": 1,
+                    "microstructure_demo_signal_accepted_count": 1,
+                    "microstructure_demo_accepted_candidate_ids": ["b" * 64],
+                }
+            },
+            candidate_id,
+            1,
+        )
+
+        self.assertEqual(report["status"], "fail")
+        self.assertTrue(
+            any("outside the selected route" in reason for reason in report["fail_reasons"])
+        )
+
     def test_report_only_preserves_failed_verdict_without_failing_process(self):
         with tempfile.TemporaryDirectory() as td:
             output = pathlib.Path(td) / "mechanism_report.json"

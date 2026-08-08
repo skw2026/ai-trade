@@ -43,6 +43,7 @@ add_library(ai_trade_system STATIC
   src/universe/universe_selector.cpp
   src/strategy/strategy_engine.cpp
   src/strategy/integrator_shadow.cpp
+  src/strategy/microstructure_demo_overlay.cpp
   src/regime/regime_engine.cpp
   src/risk/risk_engine.cpp
   src/execution/execution_engine.cpp
@@ -158,6 +159,12 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_bybit_microstructure.py)
     add_test(NAME microstructure_runtime_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_microstructure_runtime.py)
+    add_test(NAME microstructure_demo_policy_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_microstructure_demo_policy.py)
+    add_test(NAME select_alpha_source_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_select_alpha_source.py)
+    add_test(NAME verify_microstructure_demo_binding_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_microstructure_demo_binding.py)
     add_test(NAME run_market_alpha_development_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_market_alpha_development.py)
     add_test(NAME run_microstructure_alpha_development_test

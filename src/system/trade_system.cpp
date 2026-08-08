@@ -85,6 +85,7 @@ TradeSystem::TradeSystem(const AppConfig& config)
       risk_(config.risk_max_abs_notional_usd, config.risk_thresholds),
       execution_(config.GetExecutionEngineConfig()),
       integrator_shadow_(config.integrator.shadow),
+      microstructure_demo_overlay_(config.integrator.microstructure_demo),
       integrator_config_(config.integrator),
       max_account_gross_notional_usd_(config.risk_max_abs_notional_usd) {
   
@@ -106,6 +107,7 @@ TradeSystem::TradeSystem(double risk_cap_usd, double max_order_notional_usd,
           .min_rebalance_notional_usd = min_rebalance_notional_usd,
       }),
       integrator_shadow_(integrator_config.shadow),
+      microstructure_demo_overlay_(integrator_config.microstructure_demo),
       integrator_config_(integrator_config),
       max_account_gross_notional_usd_(risk_cap_usd) {
   evolution_weights_by_bucket_.fill({1.0, 0.0});
@@ -146,7 +148,9 @@ std::optional<OrderIntent> TradeSystem::OnMarket(
 MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
                                      bool trade_ok,
                                      double symbol_inflight_notional_usd,
-                                     bool has_pending_symbol_net_orders) {
+                                     bool has_pending_symbol_net_orders,
+                                     const std::string& settled_position_candidate_id,
+                                     const std::string& settled_position_policy_reason) {
   MarketDecision decision;
 
   // 1. Update Account Valuation
@@ -184,13 +188,27 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   // 4. Integrator / ML Overlay
   integrator_shadow_.OnMarket(event);
   decision.shadow = integrator_shadow_.Infer(decision.base_signal, decision.regime);
-  const bool settled_symbol_exposure_present =
-      HasExposure(account_.current_notional_usd(event.symbol));
+  const ShadowInference microstructure_demo =
+      microstructure_demo_overlay_.Infer(event);
+  // Source routing is deterministic and fail closed: a lifecycle-approved
+  // microstructure target has priority in demo; before demo_ready, the legacy
+  // OHLCV integrator remains the only possible source.
+  if (microstructure_demo.target_position_signal) {
+    decision.shadow = microstructure_demo;
+  }
+  const double settled_symbol_notional_usd =
+      account_.current_notional_usd(event.symbol);
+  const bool settled_exposure_owned_by_target_candidate =
+      decision.shadow.target_position_signal &&
+      decision.shadow.source == "microstructure_demo" &&
+      settled_position_candidate_id == decision.shadow.model_version &&
+      settled_position_policy_reason.rfind("microstructure_demo_", 0) == 0;
   const IntegratorPolicyDecision policy = EvaluateIntegratorPolicy(
       integrator_config_, decision.shadow, decision.base_signal,
-      settled_symbol_exposure_present, has_pending_symbol_net_orders,
+      settled_symbol_notional_usd, has_pending_symbol_net_orders,
       IsIndependentCanaryBaseEligible(decision.base_signal,
-                                      base_signal_expired));
+                                      base_signal_expired),
+      settled_exposure_owned_by_target_candidate);
   decision.signal = policy.signal;
   decision.integrator_policy_applied = policy.applied;
   decision.integrator_confidence = policy.confidence;
@@ -329,9 +347,10 @@ IntegratorPolicyDecision EvaluateIntegratorPolicy(
     const IntegratorConfig& config,
     const ShadowInference& shadow,
     const Signal& base_signal,
-    bool settled_symbol_exposure_present,
+    double settled_symbol_notional_usd,
     bool pending_net_position_order_present,
-    bool independent_base_signal_eligible) {
+    bool independent_base_signal_eligible,
+    bool settled_exposure_owned_by_target_candidate) {
   IntegratorPolicyDecision result;
   result.signal = base_signal;
   const double confidence = shadow.p_up - shadow.p_down;
@@ -355,6 +374,65 @@ IntegratorPolicyDecision EvaluateIntegratorPolicy(
     result.reason = "shadow_unavailable";
     return result;
   }
+  if (shadow.target_position_signal) {
+    if (config.mode != IntegratorMode::kCanary) {
+      result.reason = "external_target_requires_canary";
+      return result;
+    }
+    const int target_direction = std::clamp(shadow.target_direction, -1, 1);
+    const bool settled_symbol_exposure_present =
+        HasExposure(settled_symbol_notional_usd);
+    result.signal.symbol = base_signal.symbol;
+    result.signal.trend_notional_usd = 0.0;
+    result.signal.defensive_notional_usd = 0.0;
+    result.signal.valid_until_ms = shadow.target_valid_until_ms;
+    if (target_direction == 0 || shadow.fail_closed) {
+      result.signal.suggested_notional_usd = 0.0;
+      result.signal.direction = 0;
+      result.signal.confidence = 1.0;
+      result.confidence = 0.0;
+      result.applied = settled_symbol_exposure_present ||
+                       HasExposure(base_signal.suggested_notional_usd) ||
+                       pending_net_position_order_present;
+      result.reason = shadow.fail_closed
+                          ? "microstructure_demo_fail_closed_flat"
+                          : "microstructure_demo_policy_flat";
+      return result;
+    }
+    if (settled_symbol_exposure_present &&
+        !settled_exposure_owned_by_target_candidate) {
+      // A newly selected source may not inherit a position opened by the
+      // previous candidate. Flatten it under the existing episode lineage;
+      // only a later flat-account tick may begin the microstructure episode.
+      result.signal.suggested_notional_usd = 0.0;
+      result.signal.direction = 0;
+      result.signal.confidence = 1.0;
+      result.confidence = 0.0;
+      result.applied = true;
+      result.reason = "microstructure_demo_route_transition_flat";
+      return result;
+    }
+    if (!config.canary_allow_independent_signal) {
+      result.reason = "microstructure_demo_independent_signal_disabled";
+      return result;
+    }
+    const double target_notional =
+        std::max(0.0, shadow.target_notional_usd);
+    if (!HasExposure(target_notional)) {
+      result.reason = "microstructure_demo_notional_disabled";
+      return result;
+    }
+    result.signal.suggested_notional_usd =
+        static_cast<double>(target_direction) * target_notional;
+    result.signal.direction = target_direction;
+    result.signal.confidence = 1.0;
+    result.confidence = static_cast<double>(target_direction);
+    result.applied = true;
+    result.reason = pending_net_position_order_present
+                        ? "microstructure_demo_target_pending"
+                        : "microstructure_demo_target";
+    return result;
+  }
   if (shadow_direction == 0) {
     result.reason = "neutral_confidence";
     return result;
@@ -366,7 +444,7 @@ IntegratorPolicyDecision EvaluateIntegratorPolicy(
       return result;
     }
     // Canary 是独立实验仓位，禁止缩放、减仓或接管任何既有 baseline 暴露。
-    if (settled_symbol_exposure_present) {
+    if (HasExposure(settled_symbol_notional_usd)) {
       result.reason = "canary_account_not_flat";
       return result;
     }

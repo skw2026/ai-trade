@@ -576,6 +576,23 @@ bool IntegratorShadow::Initialize(bool strict_takeover, std::string* out_error) 
   feature_norm_max_abs_.clear();
   model_runtime_ready_ = false;
 
+  // Runtime identity is independent of the legacy OHLCV model.  Keep it
+  // available even when that source fails so a separately lifecycle-gated
+  // microstructure candidate can persist auditable episode evidence.
+  if (!config_.runtime_config_path.empty()) {
+    runtime_config_sha256_ =
+        Sha256File(config_.runtime_config_path).value_or("");
+  }
+  if (const auto executable_path = CurrentExecutablePath();
+      executable_path.has_value()) {
+    trade_bot_sha256_ = Sha256File(*executable_path).value_or("");
+  }
+  if (!runtime_config_sha256_.empty() && !trade_bot_sha256_.empty()) {
+    LogInfo("PROCESS_RUNTIME_IDENTITY: runtime_config_sha256=" +
+            runtime_config_sha256_ + ", trade_bot_sha256=" +
+            trade_bot_sha256_);
+  }
+
   if (!config_.enabled) {
     initialized_ = true;
     return true;

@@ -236,6 +236,8 @@ fetch_report "${REMOTE_BASE}/microstructure_alpha_development_report.json" ".art
 fetch_report "${REMOTE_BASE}/microstructure_alpha_candidate_manifest.json" ".artifacts/microstructure_alpha_candidate_manifest.json" "microstructure_alpha_candidate_manifest" "json"
 fetch_report "${REMOTE_BASE}/microstructure_alpha_development.cbm" ".artifacts/microstructure_alpha_development.cbm" "microstructure_alpha_development_model" "text"
 fetch_report "${REMOTE_BASE}/microstructure_alpha_lifecycle_report.json" ".artifacts/microstructure_alpha_lifecycle_report.json" "microstructure_alpha_lifecycle_report" "json"
+fetch_report "${REMOTE_BASE}/alpha_source_route_report.json" ".artifacts/alpha_source_route_report.json" "alpha_source_route_report" "json"
+fetch_report "${REMOTE_BASE}/microstructure_demo_binding_report.json" ".artifacts/microstructure_demo_binding_report.json" "microstructure_demo_binding_report" "json"
 fetch_report "${REMOTE_BASE}/alpha_candidate_manifest.json" ".artifacts/alpha_candidate_manifest.json" "alpha_candidate_manifest" "json"
 fetch_report "${REMOTE_BASE}/strategy_candidate_manifest.json" ".artifacts/strategy_candidate_manifest.json" "strategy_candidate_manifest" "json"
 fetch_report "${REMOTE_BASE}/replay_candidate_config.yaml" ".artifacts/replay_candidate_config.yaml" "replay_candidate_config" "text"
@@ -406,6 +408,12 @@ local_paths = {
     "microstructure_alpha_lifecycle_report": Path(
         ".artifacts/microstructure_alpha_lifecycle_report.json"
     ),
+    "alpha_source_route_report": Path(
+        ".artifacts/alpha_source_route_report.json"
+    ),
+    "microstructure_demo_binding_report": Path(
+        ".artifacts/microstructure_demo_binding_report.json"
+    ),
     "alpha_candidate_manifest": Path(".artifacts/alpha_candidate_manifest.json"),
     "strategy_candidate_manifest": Path(".artifacts/strategy_candidate_manifest.json"),
     "replay_candidate_config": Path(".artifacts/replay_candidate_config.yaml"),
@@ -437,6 +445,7 @@ expected = contract.get("actions", {}).get(action, {})
 artifact_contract = manifest.get("artifact_contract", {})
 required_artifacts = expected.get("required_artifacts", [])
 required_steps = expected.get("required_steps", [])
+route_contracts = expected.get("route_contracts", {})
 if not isinstance(artifact_contract, dict):
     failures.append("artifact_contract:missing")
     artifact_contract = {}
@@ -450,9 +459,32 @@ if artifact_contract.get("required_artifacts") != required_artifacts:
     failures.append("artifact_contract:required_artifacts")
 if artifact_contract.get("required_steps") != required_steps:
     failures.append("artifact_contract:required_steps")
+if artifact_contract.get("route_contracts", {}) != route_contracts:
+    failures.append("artifact_contract:route_contracts")
 if not required_artifacts or not required_steps:
     failures.append(f"artifact_contract:unknown_action:{action}")
-for name in required_artifacts:
+effective_required_artifacts = list(required_artifacts)
+if route_contracts:
+    route_path = Path(".artifacts/alpha_source_route_report.json")
+    route_payload = (
+        json.loads(route_path.read_text()) if route_path.is_file() else {}
+    )
+    selected_route = str(route_payload.get("selected_route") or "")
+    if not (
+        route_payload.get("schema_version") == "alpha_source_route_v1"
+        and route_payload.get("status") == "PASS"
+        and selected_route in route_contracts
+    ):
+        failures.append("alpha_source_route:invalid")
+    else:
+        selected_contract = route_contracts[selected_route]
+        route_artifacts = selected_contract.get("required_artifacts", [])
+        route_steps = selected_contract.get("required_steps", [])
+        if not isinstance(route_artifacts, list) or not isinstance(route_steps, list):
+            failures.append(f"alpha_source_route:contract:{selected_route}")
+        else:
+            effective_required_artifacts.extend(route_artifacts)
+for name in effective_required_artifacts:
     if (
         name not in manifest.get("artifacts", {})
         and not declared_short_circuit

@@ -181,6 +181,9 @@ class BotApplication {
   /// 主链 reduce-only 只能针对真实持仓，不能针对未成交的在途开仓。
   bool NormalizeReduceIntentToActualPosition(MarketDecision* decision,
                                              const MarketEvent& event);
+  /// 微观结构目标变平/换向时先撤销同候选冲突开仓，防止迟到成交穿透 fail-closed。
+  void CancelConflictingMicrostructureEntries(
+      const MarketDecision& decision);
   /// 当前订单是否来源于 TREND_CANDIDATE 探针。
   bool IsTrendCandidateProbeIntent(const std::string& client_order_id) const;
   /// 执行质量守卫：根据窗口成交质量动态启停开仓惩罚。

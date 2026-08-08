@@ -11,6 +11,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -939,13 +940,23 @@ def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
 
 def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
-    schema_ok = payload.get("schema_version") == "microstructure_alpha_development_v1"
+    schema_ok = payload.get("schema_version") == "microstructure_alpha_development_v2"
     reported_not_ready = payload.get("status") == "NOT_READY"
     fully_verifiable = payload.get("fully_verifiable") is True
     economic_screen = payload.get("economic_screen", {})
     if not isinstance(economic_screen, dict):
         economic_screen = {}
     development_passed = economic_screen.get("development_passed") is True
+    negative_control = payload.get("negative_control", {})
+    if not isinstance(negative_control, dict):
+        negative_control = {}
+    negative_control_ok = bool(
+        negative_control.get("method")
+        == "deterministic_oos_prediction_time_permutation"
+        and negative_control.get("fully_verifiable") is True
+        and negative_control.get("passed") is True
+        and as_int(negative_control.get("trial_count")) >= 5
+    )
     domain_ok = (
         payload.get("research_domain") == "forward_development_only"
         and payload.get("promotion_evidence") is False
@@ -962,7 +973,11 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
         fail_reasons.append(
             "no order-book/trade-flow joint direction/exit candidate passed stressed-cost development screen"
         )
-    else:
+    if not negative_control_ok:
+        fail_reasons.append(
+            "microstructure alpha did not beat the OOS prediction-time permutation control"
+        )
+    if development_passed and negative_control_ok:
         frozen_candidate = payload.get("frozen_candidate", {})
         if not isinstance(frozen_candidate, dict):
             frozen_candidate = {}
@@ -1080,6 +1095,16 @@ def assess_microstructure_alpha_lifecycle(path: Path) -> Dict[str, Any]:
                 "sha256": expected_hash,
                 "status": item.get("status"),
                 "research_domain": item.get("research_domain"),
+                "episode_count": (
+                    item.get("economic_replay", {}).get("episode_count")
+                    if name == "raw_replay_passed"
+                    and isinstance(item.get("economic_replay"), dict)
+                    else item.get("episode_count")
+                ),
+                "raw_to_feature_parity": item.get("raw_to_feature_parity"),
+                "fixed_model_prediction_economics_deterministic": item.get(
+                    "fixed_model_prediction_economics_deterministic"
+                ),
             }
             if not (
                 item.get("schema_version") == expected_schema
@@ -1112,6 +1137,73 @@ def assess_microstructure_alpha_lifecycle(path: Path) -> Dict[str, Any]:
         "registry": payload.get("registry", {}),
         "evidence": evidence_summaries,
         "next_gate": payload.get("next_gate"),
+        "demo_entry_eligible": payload.get("demo_entry_eligible"),
+        "live_promotion_eligible": payload.get("live_promotion_eligible"),
+    }
+
+
+def assess_alpha_source_route(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    selected = str(payload.get("selected_route") or "")
+    policy = payload.get("selection_policy", {})
+    if not isinstance(policy, dict):
+        policy = {}
+    fail_reasons: List[str] = []
+    if payload.get("schema_version") != "alpha_source_route_v1":
+        fail_reasons.append("alpha source route schema mismatch")
+    if payload.get("status") != "PASS":
+        fail_reasons.append("no independently gated alpha source is ready")
+    if selected not in {"legacy_integrator", "microstructure_demo"}:
+        fail_reasons.append("alpha source selected route is invalid")
+    if not (
+        policy.get("method") == "fixed_predeclared_precedence"
+        and policy.get("cross_source_return_comparison_permitted") is False
+        and policy.get("nonselected_source_failure_blocks_selected_route") is False
+        and payload.get("live_promotion_eligible") is False
+    ):
+        fail_reasons.append("alpha source routing leakage/isolation contract failed")
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [],
+        "selected_route": selected or None,
+        "selection_policy": policy,
+        "sources": payload.get("sources", {}),
+        "demo_only": payload.get("demo_only"),
+        "live_promotion_eligible": payload.get("live_promotion_eligible"),
+    }
+
+
+def assess_microstructure_demo_binding(path: Path) -> Dict[str, Any]:
+    payload = read_json(path)
+    failures = [
+        str(item).strip()
+        for item in payload.get("failures", [])
+        if str(item).strip()
+    ]
+    if payload.get("schema_version") != "microstructure_demo_binding_v1":
+        failures.append("microstructure demo binding schema mismatch")
+    if not (
+        payload.get("status") == "PASS"
+        and payload.get("selected_route") == "microstructure_demo"
+        and isinstance(payload.get("candidate_id"), str)
+        and len(payload["candidate_id"]) == 64
+        and payload.get("demo_entry_eligible") is True
+        and payload.get("live_promotion_eligible") is False
+    ):
+        failures.append("microstructure demo runtime binding has not passed")
+    return {
+        "status": "fail" if failures else "pass",
+        "readiness_status": "FAIL" if failures else "PASS",
+        "fail_reasons": failures,
+        "warn_reasons": [],
+        "candidate_id": payload.get("candidate_id"),
+        "selected_route": payload.get("selected_route"),
+        "health_age_ms": payload.get("health_age_ms"),
+        "signal_age_ms": payload.get("signal_age_ms"),
+        "signal_status": payload.get("signal_status"),
+        "artifacts": payload.get("artifacts", {}),
         "demo_entry_eligible": payload.get("demo_entry_eligible"),
         "live_promotion_eligible": payload.get("live_promotion_eligible"),
     }
@@ -1609,6 +1701,7 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
         "required_artifacts", []
     )
     expected_required_steps = expected_action_contract.get("required_steps", [])
+    expected_route_contracts = expected_action_contract.get("route_contracts", {})
     artifact_contract = payload.get("artifact_contract", {})
     if not isinstance(artifact_contract, dict):
         fail_reasons.append("run manifest missing artifact contract")
@@ -1624,9 +1717,47 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
         fail_reasons.append("run manifest required artifact contract mismatch")
     if artifact_contract.get("required_steps") != expected_required_steps:
         fail_reasons.append("run manifest required step contract mismatch")
+    if artifact_contract.get("route_contracts", {}) != expected_route_contracts:
+        fail_reasons.append("run manifest route contract mismatch")
     if not expected_required_artifacts or not expected_required_steps:
         fail_reasons.append(f"closed-loop contract missing action={action}")
-    missing = sorted(set(expected_required_artifacts) - set(artifacts))
+    selected_route = ""
+    effective_required_artifacts = list(expected_required_artifacts)
+    effective_required_steps = list(expected_required_steps)
+    if expected_route_contracts:
+        route_artifact = artifacts.get("alpha_source_route_report", {})
+        route_path = (
+            Path(str(route_artifact.get("path", "")))
+            if isinstance(route_artifact, dict)
+            else Path()
+        )
+        try:
+            route_payload = read_json(route_path) if route_path.is_file() else {}
+        except (OSError, json.JSONDecodeError, ValueError):
+            route_payload = {}
+        selected_route = str(route_payload.get("selected_route") or "")
+        if not (
+            route_payload.get("schema_version") == "alpha_source_route_v1"
+            and route_payload.get("status") == "PASS"
+            and selected_route in expected_route_contracts
+        ):
+            fail_reasons.append("run manifest alpha source route missing or invalid")
+        else:
+            selected_contract = expected_route_contracts.get(selected_route, {})
+            route_artifacts = selected_contract.get("required_artifacts", [])
+            route_steps = selected_contract.get("required_steps", [])
+            if not isinstance(route_artifacts, list) or not isinstance(route_steps, list):
+                fail_reasons.append(
+                    f"closed-loop route contract invalid: {selected_route}"
+                )
+            else:
+                effective_required_artifacts.extend(route_artifacts)
+                try:
+                    insertion = effective_required_steps.index("alpha_source_route") + 1
+                except ValueError:
+                    insertion = len(effective_required_steps)
+                effective_required_steps[insertion:insertion] = route_steps
+    missing = sorted(set(effective_required_artifacts) - set(artifacts))
     if missing:
         fail_reasons.append(
             f"run manifest missing required {action} artifacts: {','.join(missing)}"
@@ -1693,7 +1824,7 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                 fail_reasons.append(f"step status run_id mismatch: {step}")
             if str(record.get("action", "")).strip().lower() != action:
                 fail_reasons.append(f"step status action mismatch: {step}")
-            if kind not in {"required", "diagnostic", "observation"}:
+            if kind not in {"required", "diagnostic", "observation", "route"}:
                 fail_reasons.append(f"step status invalid kind: {step}={kind}")
             if result not in {"pass", "fail", "skipped"}:
                 fail_reasons.append(f"step status invalid result: {step}={result}")
@@ -1711,18 +1842,24 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                 else:
                     fail_reasons.append(f"closed-loop step failed: {step}")
             elif result == "skipped":
-                if blocked is not True or exit_code is not None:
-                    fail_reasons.append(
-                        f"step status skipped lacks prior-failure contract: {step}"
-                    )
-                fail_reasons.append(f"closed-loop required step skipped: {step}")
+                if kind == "route":
+                    if blocked is not False or exit_code is not None:
+                        fail_reasons.append(
+                            f"route-inapplicable step skip contract invalid: {step}"
+                        )
+                else:
+                    if blocked is not True or exit_code is not None:
+                        fail_reasons.append(
+                            f"step status skipped lacks prior-failure contract: {step}"
+                        )
+                    fail_reasons.append(f"closed-loop required step skipped: {step}")
             if result in {"pass", "fail"} and blocked is not False:
                 fail_reasons.append(
                     f"step status blocked flag invalid for {result}: {step}"
                 )
             step_records.append(record)
         missing_steps = [
-            step for step in expected_required_steps if step not in seen_steps
+            step for step in effective_required_steps if step not in seen_steps
         ]
         if missing_steps:
             fail_reasons.append(
@@ -1731,7 +1868,7 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
             )
         order = {str(item.get("step", "")): idx for idx, item in enumerate(step_records)}
         present_required = [
-            step for step in expected_required_steps if step in order
+            step for step in effective_required_steps if step in order
         ]
         if present_required != sorted(present_required, key=order.get):
             fail_reasons.append("step status ledger violates required DAG order")
@@ -1740,6 +1877,9 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
         "manifest": payload,
+        "selected_alpha_route": selected_route or None,
+        "effective_required_steps": effective_required_steps,
+        "effective_required_artifacts": effective_required_artifacts,
     }
 
 
@@ -2754,6 +2894,238 @@ def assess_trading_convergence(
     }
 
 
+def assess_microstructure_trading_convergence(
+    runtime_section: Dict[str, Any],
+    lifecycle_section: Dict[str, Any],
+    binding_section: Dict[str, Any],
+) -> Dict[str, Any]:
+    blockers: List[str] = []
+    lifecycle_candidate = str(lifecycle_section.get("candidate_id") or "")
+    evidence = lifecycle_section.get("evidence", {})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    raw_replay = evidence.get("raw_replay_passed", {})
+    if not isinstance(raw_replay, dict):
+        raw_replay = {}
+    replay_episodes = as_int(raw_replay.get("episode_count"))
+    parity_pass = (
+        raw_replay.get("raw_to_feature_parity") is True
+        and raw_replay.get("fixed_model_prediction_economics_deterministic") is True
+    )
+    if section_readiness(lifecycle_section) != "PASS":
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_LIFECYCLE_NOT_READY")
+    if section_readiness(binding_section) != "PASS":
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_RUNTIME_BINDING_FAILED")
+    if not parity_pass:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_RAW_REPLAY_PARITY_FAILED")
+    if replay_episodes < CANARY_MIN_REPLAY_TOTAL_FILLS:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_REPLAY_SAMPLE_INSUFFICIENT")
+
+    metrics = runtime_section.get("metrics", {}) if isinstance(runtime_section, dict) else {}
+    if not isinstance(metrics, dict):
+        metrics = {}
+    episodes = metrics.get("integrator_policy_closed_episode_events", [])
+    if not isinstance(episodes, list):
+        episodes = []
+    candidate_episodes = [
+        item
+        for item in episodes
+        if isinstance(item, dict)
+        and item.get("candidate_id") == lifecycle_candidate
+        and item.get("evidence_complete") is True
+    ]
+    live_episode_count = len(candidate_episodes)
+    episode_net = [
+        value
+        for item in candidate_episodes
+        for value in [as_float(item.get("realized_net_usd"))]
+        if value is not None
+    ]
+    realized_net_usd = sum(episode_net) if episode_net else None
+    positive_ratio = (
+        sum(value > 0.0 for value in episode_net) / len(episode_net)
+        if episode_net
+        else None
+    )
+    realized_net_sum_squares = (
+        sum(value * value for value in episode_net) if episode_net else None
+    )
+    episode_evidence_source = "current_runtime_log_events"
+    summaries = metrics.get("integrator_candidate_episode_summaries", [])
+    if not isinstance(summaries, list):
+        summaries = []
+    process_runtime_config_sha256 = str(
+        metrics.get("process_runtime_config_sha256_latest") or ""
+    )
+    process_trade_bot_sha256 = str(
+        metrics.get("process_trade_bot_sha256_latest") or ""
+    )
+    process_identity_complete = (
+        len(process_runtime_config_sha256) == 64
+        and len(process_trade_bot_sha256) == 64
+    )
+    candidate_summaries = [
+        item
+        for item in summaries
+        if isinstance(item, dict)
+        and item.get("candidate_id") == lifecycle_candidate
+    ]
+    if any(
+        item.get("model_version") != lifecycle_candidate
+        for item in candidate_summaries
+    ):
+        blockers.append(
+            "NOT_CONVERGED_MICROSTRUCTURE_CANDIDATE_ATTRIBUTION_MISMATCH"
+        )
+    matching_summaries = [
+        item
+        for item in candidate_summaries
+        if process_identity_complete
+        and item.get("model_version") == lifecycle_candidate
+        and item.get("runtime_config_sha256") == process_runtime_config_sha256
+        and item.get("trade_bot_sha256") == process_trade_bot_sha256
+    ]
+    if matching_summaries:
+        summary = max(
+            matching_summaries,
+            key=lambda item: as_int(item.get("complete_episode_count")),
+        )
+        live_episode_count = as_int(summary.get("complete_episode_count"))
+        realized_net_usd = as_float(summary.get("realized_net_usd"))
+        realized_net_sum_squares = as_float(
+            summary.get("realized_net_usd_sum_squares")
+        )
+        total_episode_count = as_int(summary.get("total_episode_count"))
+        positive_episode_count = as_int(summary.get("positive_episode_count"))
+        minimum_sum_squares = (
+            realized_net_usd * realized_net_usd / live_episode_count
+            if realized_net_usd is not None and live_episode_count > 0
+            else 0.0
+        )
+        if (
+            live_episode_count > total_episode_count
+            or positive_episode_count > live_episode_count
+            or positive_episode_count < 0
+            or realized_net_sum_squares is None
+            or realized_net_sum_squares < -1e-9
+            or realized_net_sum_squares + 1e-6 < minimum_sum_squares
+        ):
+            blockers.append(
+                "NOT_CONVERGED_MICROSTRUCTURE_EPISODE_SUMMARY_INVALID"
+            )
+        positive_ratio = (
+            positive_episode_count / live_episode_count
+            if live_episode_count > 0
+            else None
+        )
+        episode_evidence_source = "wal_candidate_runtime_identity_summary"
+    elif candidate_summaries and not process_identity_complete:
+        blockers.append(
+            "NOT_CONVERGED_MICROSTRUCTURE_RUNTIME_IDENTITY_MISSING"
+        )
+    elif candidate_summaries:
+        blockers.append(
+            "NOT_CONVERGED_MICROSTRUCTURE_RUNTIME_IDENTITY_MISMATCH"
+        )
+    realized_net_mean_usd = (
+        realized_net_usd / live_episode_count
+        if realized_net_usd is not None and live_episode_count > 0
+        else None
+    )
+    realized_net_lcb_usd = None
+    if (
+        live_episode_count >= 2
+        and realized_net_usd is not None
+        and realized_net_sum_squares is not None
+    ):
+        centered_sum_squares = (
+            realized_net_sum_squares
+            - realized_net_usd * realized_net_usd / live_episode_count
+        )
+        if centered_sum_squares >= -1e-9:
+            sample_stdev = math.sqrt(
+                max(0.0, centered_sum_squares) / (live_episode_count - 1)
+            )
+            # t(29, 97.5%) is conservative for the required n>=30 and all
+            # larger samples: use the lower endpoint of a two-sided 95% CI.
+            realized_net_lcb_usd = (
+                realized_net_mean_usd
+                - 2.045 * sample_stdev / math.sqrt(live_episode_count)
+            )
+        else:
+            blockers.append(
+                "NOT_CONVERGED_MICROSTRUCTURE_EPISODE_SUMMARY_INVALID"
+            )
+    if live_episode_count < 30:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_DEMO_EPISODES_INSUFFICIENT")
+    if realized_net_usd is None:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_DEMO_NET_NOT_OBSERVED")
+    elif realized_net_usd <= 0.0:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_DEMO_NET_NOT_POSITIVE")
+    if realized_net_lcb_usd is None or realized_net_lcb_usd <= 0.0:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_DEMO_NET_LCB_NOT_POSITIVE")
+    if positive_ratio is None or positive_ratio < CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_DEMO_POSITIVE_RATIO_LOW")
+    proposed_ids = metrics.get("integrator_policy_proposed_candidate_ids", [])
+    filled_ids = metrics.get("integrator_policy_filled_candidate_ids", [])
+    if not isinstance(proposed_ids, list):
+        proposed_ids = []
+    if not isinstance(filled_ids, list):
+        filled_ids = []
+    wrong_ids = [
+        str(item)
+        for item in [*proposed_ids, *filled_ids]
+        if str(item) and str(item) != lifecycle_candidate
+    ]
+    if wrong_ids:
+        blockers.append("NOT_CONVERGED_MICROSTRUCTURE_CANDIDATE_ATTRIBUTION_MISMATCH")
+    blockers = list(dict.fromkeys(blockers))
+    return {
+        "status": "pass",
+        "readiness_status": (
+            "CONVERGED_MICROSTRUCTURE_DEMO_PROFITABLE"
+            if not blockers
+            else blockers[0]
+        ),
+        "fail_reasons": [],
+        "warn_reasons": (
+            ["trading convergence not reached: " + ",".join(blockers)]
+            if blockers
+            else []
+        ),
+        "blockers": blockers,
+        "selected_alpha_route": "microstructure_demo",
+        "thresholds": {
+            "min_raw_replay_episodes": CANARY_MIN_REPLAY_TOTAL_FILLS,
+            "min_complete_demo_episodes": 30,
+            "min_realized_net_usd": 0.0,
+            "min_realized_net_95pct_lcb_usd": 0.0,
+            "min_positive_episode_ratio": CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO,
+            "live_promotion_eligible": False,
+        },
+        "metrics": {
+            "candidate_id": lifecycle_candidate or None,
+            "raw_replay_episode_count": replay_episodes,
+            "raw_to_feature_parity": raw_replay.get("raw_to_feature_parity"),
+            "fixed_model_prediction_economics_deterministic": raw_replay.get(
+                "fixed_model_prediction_economics_deterministic"
+            ),
+            "complete_demo_episode_count": live_episode_count,
+            "realized_net_usd": realized_net_usd,
+            "realized_net_usd_sum_squares": realized_net_sum_squares,
+            "realized_net_mean_usd": realized_net_mean_usd,
+            "realized_net_95pct_lcb_usd": realized_net_lcb_usd,
+            "positive_episode_ratio": positive_ratio,
+            "episode_evidence_source": episode_evidence_source,
+            "process_runtime_config_sha256": (
+                process_runtime_config_sha256 or None
+            ),
+            "process_trade_bot_sha256": process_trade_bot_sha256 or None,
+            "candidate_attribution_mismatch_count": len(wrong_ids),
+        },
+    }
+
+
 def section_status(section: Dict[str, Any]) -> str:
     if not isinstance(section, dict) or not section:
         return "NOT_EVALUATED"
@@ -2876,7 +3248,67 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
     artifact_sections["run_manifest"] = manifest_contract_view(
         sections.get("run_manifest", {})
     )
-    layers = [
+    selected_route = str(
+        sections.get("alpha_source_route", {}).get("selected_route") or ""
+    )
+    if selected_route == "microstructure_demo":
+        layers = [
+            layer_from_sections(
+                name="artifact_contract",
+                section_names=["run_manifest"],
+                sections=artifact_sections,
+                next_action="fix_run_manifest_or_artifact_contract_before_interpreting_strategy",
+            ),
+            layer_from_sections(
+                name="data_feature_quality",
+                section_names=["data_pipeline", "data_quality", "microstructure_capture"],
+                sections=sections,
+                next_action="fix_microstructure_capture_or_raw_replay_feature_parity",
+            ),
+            layer_from_sections(
+                name="mechanism_proof",
+                section_names=[
+                    "alpha_source_route",
+                    "microstructure_alpha_development",
+                    "microstructure_alpha_lifecycle",
+                    "microstructure_demo_binding",
+                    "closed_loop_mechanism",
+                ],
+                sections=sections,
+                next_action="prove_frozen_microstructure_lifecycle_and_demo_influence",
+            ),
+            layer_from_sections(
+                name="model_candidate",
+                section_names=[
+                    "microstructure_alpha_development",
+                    "microstructure_alpha_lifecycle",
+                    "microstructure_demo_binding",
+                ],
+                sections=sections,
+                next_action="fix_microstructure_candidate_before_demo_incubation",
+            ),
+            layer_from_sections(
+                name="research_benchmark",
+                section_names=["walkforward", "trend_validation"],
+                sections=sections,
+                next_action="review_legacy_research_benchmark_without_blocking_microstructure_route",
+                blocking=False,
+            ),
+            layer_from_sections(
+                name="replay_execution",
+                section_names=["microstructure_alpha_lifecycle", "feature_parity"],
+                sections=sections,
+                next_action="fix_microstructure_raw_replay_or_frozen_economics",
+            ),
+            layer_from_sections(
+                name="live_canary",
+                section_names=["runtime", "trading_convergence"],
+                sections=sections,
+                next_action="continue_demo_incubation_until_candidate_attributed_profitability_converges",
+            ),
+        ]
+    else:
+        layers = [
         layer_from_sections(
             name="artifact_contract",
             section_names=["run_manifest"],
@@ -2937,7 +3369,7 @@ def build_convergence_layers(sections: Dict[str, Dict[str, Any]]) -> Dict[str, A
             sections=sections,
             next_action="run_live_canary_only_after_replay_and_strategy_edge_are_verified",
         ),
-    ]
+        ]
 
     runtime_metrics = runtime_section.get("metrics", {}) if isinstance(runtime_section, dict) else {}
     if not isinstance(runtime_metrics, dict):
@@ -3080,6 +3512,16 @@ def parse_args() -> argparse.Namespace:
         "--microstructure_alpha_lifecycle_report",
         default="",
         help="冻结微结构候选的 selection/holdout/raw-replay 生命周期报告路径",
+    )
+    parser.add_argument(
+        "--alpha_source_route_report",
+        default="",
+        help="独立 alpha source 固定路由报告路径",
+    )
+    parser.add_argument(
+        "--microstructure_demo_binding_report",
+        default="",
+        help="微观结构 demo sidecar/runtime 绑定报告路径",
     )
     parser.add_argument(
         "--market_alpha_development_report",
@@ -3418,6 +3860,28 @@ def main() -> int:
                 "readiness_status": "FAIL",
                 "fail_reasons": [f"文件不存在: {lifecycle_path}"],
             }
+    if args.alpha_source_route_report:
+        route_path = Path(args.alpha_source_route_report)
+        if route_path.is_file():
+            sections["alpha_source_route"] = assess_alpha_source_route(route_path)
+        else:
+            sections["alpha_source_route"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {route_path}"],
+            }
+    if args.microstructure_demo_binding_report:
+        binding_path = Path(args.microstructure_demo_binding_report)
+        if binding_path.is_file():
+            sections["microstructure_demo_binding"] = (
+                assess_microstructure_demo_binding(binding_path)
+            )
+        else:
+            sections["microstructure_demo_binding"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {binding_path}"],
+            }
     if args.market_alpha_development_report:
         market_alpha_path = Path(args.market_alpha_development_report)
         if market_alpha_path.is_file():
@@ -3493,6 +3957,32 @@ def main() -> int:
         for name in inherited_sections
         if name in INHERITED_SECTIONS_EXCLUDED_FROM_CURRENT_GATE
     ]
+    selected_alpha_route = str(
+        sections.get("alpha_source_route", {}).get("selected_route") or ""
+    )
+    if selected_alpha_route == "microstructure_demo":
+        for name in (
+            "market_alpha_development",
+            "integrator",
+            "registry",
+            "replay_validation",
+            "strategy_diagnose",
+            "alpha_mechanism_probe",
+            "strategy_candidate",
+        ):
+            if name in sections:
+                sections[name]["authoritative_for_integrator_promotion"] = False
+                sections[name]["evidence_role"] = "nonselected_alpha_route_diagnostic"
+    elif selected_alpha_route == "legacy_integrator":
+        for name in (
+            "microstructure_capture",
+            "microstructure_alpha_development",
+            "microstructure_alpha_lifecycle",
+            "microstructure_demo_binding",
+        ):
+            if name in sections:
+                sections[name]["authoritative_for_integrator_promotion"] = False
+                sections[name]["evidence_role"] = "nonselected_alpha_route_diagnostic"
     if "strategy_candidate" in sections and "runtime" in sections:
         sections["strategy_candidate"] = refresh_strategy_candidate_runtime(
             sections["strategy_candidate"],
@@ -3509,39 +3999,105 @@ def main() -> int:
     runtime_section_for_derived = sections.get("runtime", {})
     replay_section_for_derived = sections.get("replay_validation", {})
     feature_parity_for_derived: Dict[str, Any] = {}
-    if runtime_section_for_derived:
-        feature_parity_for_derived = assess_feature_parity(runtime_section_for_derived)
-        sections["feature_parity"] = feature_parity_for_derived
-    if replay_section_for_derived:
-        runtime_for_derived = (
-            runtime_section_for_derived
-            if isinstance(runtime_section_for_derived, dict)
+    if selected_alpha_route == "microstructure_demo":
+        lifecycle_for_derived = sections.get("microstructure_alpha_lifecycle", {})
+        binding_for_derived = sections.get("microstructure_demo_binding", {})
+        lifecycle_evidence = (
+            lifecycle_for_derived.get("evidence", {})
+            if isinstance(lifecycle_for_derived, dict)
             else {}
         )
-        sections["exit_capture"] = assess_exit_capture(
-            replay_section_for_derived,
-            runtime_for_derived,
-        )
-        sections["canary_validation"] = assess_canary_validation(
-            replay_section_for_derived,
-            runtime_for_derived,
-        )
-    if sections.get("strategy_diagnose") and replay_section_for_derived:
-        sections["strategy_diagnose"] = (
-            downgrade_strategy_raw_edge_if_optimizer_candidate_passed(
-                sections.get("strategy_diagnose", {}),
-                replay_section_for_derived,
+        if not isinstance(lifecycle_evidence, dict):
+            lifecycle_evidence = {}
+        raw_replay_evidence = lifecycle_evidence.get("raw_replay_passed", {})
+        if not isinstance(raw_replay_evidence, dict):
+            raw_replay_evidence = {}
+        micro_parity_pass = bool(
+            section_readiness(lifecycle_for_derived) == "PASS"
+            and raw_replay_evidence.get("raw_to_feature_parity") is True
+            and raw_replay_evidence.get(
+                "fixed_model_prediction_economics_deterministic"
             )
+            is True
         )
-    if runtime_section_for_derived or replay_section_for_derived:
-        sections["trading_convergence"] = assess_trading_convergence(
-            runtime_section_for_derived,
-            replay_section_for_derived,
-            sections.get("strategy_diagnose", {}),
-            feature_parity_for_derived or sections.get("feature_parity", {}),
-            sections.get("exit_capture", {}),
-            sections.get("canary_validation", {}),
-        )
+        sections["feature_parity"] = {
+            "status": "pass" if micro_parity_pass else "fail",
+            "readiness_status": "PASS" if micro_parity_pass else "FAIL",
+            "fail_reasons": (
+                []
+                if micro_parity_pass
+                else ["microstructure raw-to-feature deterministic replay is not proven"]
+            ),
+            "warn_reasons": [],
+            "source": "microstructure_lifecycle_raw_replay",
+            "candidate_id": lifecycle_for_derived.get("candidate_id"),
+        }
+        sections["canary_validation"] = {
+            "status": (
+                "pass"
+                if section_readiness(binding_for_derived) == "PASS"
+                else "fail"
+            ),
+            "readiness_status": (
+                "PASS_WITH_ACTIONS"
+                if section_readiness(binding_for_derived) == "PASS"
+                else "FAIL"
+            ),
+            "fail_reasons": (
+                []
+                if section_readiness(binding_for_derived) == "PASS"
+                else ["microstructure demo sidecar/runtime binding failed"]
+            ),
+            "warn_reasons": (
+                ["demo profitability still requires candidate-attributed complete episodes"]
+                if section_readiness(binding_for_derived) == "PASS"
+                else []
+            ),
+            "validation_mode": "MICROSTRUCTURE_DEMO_ONLY",
+            "live_promotion_eligible": False,
+        }
+        if runtime_section_for_derived or lifecycle_for_derived:
+            sections["trading_convergence"] = (
+                assess_microstructure_trading_convergence(
+                    runtime_section_for_derived,
+                    lifecycle_for_derived,
+                    binding_for_derived,
+                )
+            )
+    else:
+        if runtime_section_for_derived:
+            feature_parity_for_derived = assess_feature_parity(runtime_section_for_derived)
+            sections["feature_parity"] = feature_parity_for_derived
+        if replay_section_for_derived:
+            runtime_for_derived = (
+                runtime_section_for_derived
+                if isinstance(runtime_section_for_derived, dict)
+                else {}
+            )
+            sections["exit_capture"] = assess_exit_capture(
+                replay_section_for_derived,
+                runtime_for_derived,
+            )
+            sections["canary_validation"] = assess_canary_validation(
+                replay_section_for_derived,
+                runtime_for_derived,
+            )
+        if sections.get("strategy_diagnose") and replay_section_for_derived:
+            sections["strategy_diagnose"] = (
+                downgrade_strategy_raw_edge_if_optimizer_candidate_passed(
+                    sections.get("strategy_diagnose", {}),
+                    replay_section_for_derived,
+                )
+            )
+        if runtime_section_for_derived or replay_section_for_derived:
+            sections["trading_convergence"] = assess_trading_convergence(
+                runtime_section_for_derived,
+                replay_section_for_derived,
+                sections.get("strategy_diagnose", {}),
+                feature_parity_for_derived or sections.get("feature_parity", {}),
+                sections.get("exit_capture", {}),
+                sections.get("canary_validation", {}),
+            )
     convergence_layers = build_convergence_layers(sections)
 
     for section_name, section in sections.items():

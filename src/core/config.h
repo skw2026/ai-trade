@@ -182,6 +182,18 @@ struct IntegratorShadowConfig {
   int legacy_bar_interval_ms{0};
 };
 
+struct MicrostructureDemoConfig {
+  bool enabled{false};
+  bool log_signal{true};
+  std::string lifecycle_root{
+      "./data/models/microstructure_alpha_lifecycle"};
+  std::string signal_path{
+      "./data/runtime/microstructure_demo_signal.json"};
+  int max_signal_stale_ms{10000};
+  int lifecycle_refresh_ms{5000};
+  double target_notional_usd{80.0};
+};
+
 enum class IntegratorMode { kOff, kShadow, kCanary, kActive };
 
 inline const char* ToString(IntegratorMode mode) {
@@ -209,6 +221,7 @@ struct IntegratorConfig {
   double active_partial_notional_ratio{0.5};
   double active_full_notional_confidence_threshold{0.80};
   IntegratorShadowConfig shadow{};
+  MicrostructureDemoConfig microstructure_demo{};
 };
 
 struct RegimeConfig {

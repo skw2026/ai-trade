@@ -5572,6 +5572,40 @@ int main() {
   {
     const std::filesystem::path temp_path =
         std::filesystem::temp_directory_path() /
+        "ai_trade_test_microstructure_requires_independent_signal.yaml";
+    std::ofstream out(temp_path);
+    out << "system:\n"
+        << "  mode: \"paper\"\n"
+        << "exchange:\n"
+        << "  platform: \"bybit\"\n"
+        << "  bybit:\n"
+        << "    testnet: false\n"
+        << "    demo_trading: true\n"
+        << "integrator:\n"
+        << "  enabled: true\n"
+        << "  mode: \"canary\"\n"
+        << "  canary_allow_independent_signal: false\n"
+        << "  microstructure_demo:\n"
+        << "    enabled: true\n";
+    out.close();
+
+    ai_trade::AppConfig config;
+    std::string error;
+    if (ai_trade::LoadAppConfigFromYaml(temp_path.string(), &config, &error)) {
+      std::cerr << "微观结构路由关闭独立信号时应在启动期加载失败\n";
+      return 1;
+    }
+    if (error.find("canary_allow_independent_signal") == std::string::npos) {
+      std::cerr << "微观结构独立信号非法配置错误信息不符合预期\n";
+      return 1;
+    }
+
+    std::filesystem::remove(temp_path);
+  }
+
+  {
+    const std::filesystem::path temp_path =
+        std::filesystem::temp_directory_path() /
         "ai_trade_test_candidate_validation_outside_replay.yaml";
     std::ofstream out(temp_path);
     out << "system:\n"
@@ -10663,6 +10697,93 @@ int main() {
                                            false, false, true);
     if (active.applied || active.reason != "flat_base_signal") {
       std::cerr << "active 模式不应从空仓创建独立提案\n";
+      return 1;
+    }
+  }
+
+  {
+    // A demo-ready microstructure policy owns an exact bounded target.  Its
+    // explicit flat/fail-closed signal must override both baseline and an open
+    // candidate position so the sidecar can never strand exposure.
+    ai_trade::IntegratorConfig config;
+    config.enabled = true;
+    config.mode = ai_trade::IntegratorMode::kCanary;
+    config.canary_allow_independent_signal = true;
+    ai_trade::Signal flat;
+    flat.symbol = "SOLUSDT";
+    flat.reason_codes = {"STR_FLAT_SIGNAL", "REG_RANGE"};
+    ai_trade::ShadowInference target;
+    target.enabled = true;
+    target.model_version = std::string(64, 'a');
+    target.source = "microstructure_demo";
+    target.target_position_signal = true;
+    target.target_direction = -1;
+    target.target_notional_usd = 80.0;
+    target.target_valid_until_ms = 123456;
+    target.expected_net_edge_available = true;
+    target.expected_net_edge_per_trade_bps = 2.5;
+
+    const auto opened = ai_trade::EvaluateIntegratorPolicy(
+        config, target, flat, 0.0, false, false);
+    if (!opened.applied || opened.reason != "microstructure_demo_target" ||
+        !NearlyEqual(opened.signal.suggested_notional_usd, -80.0) ||
+        opened.signal.direction != -1 ||
+        opened.signal.valid_until_ms != 123456) {
+      std::cerr << "microstructure demo 固定目标未进入 canary 风险链\n";
+      return 1;
+    }
+
+    const auto pending = ai_trade::EvaluateIntegratorPolicy(
+        config, target, flat, -80.0, true, false, true);
+    if (!pending.applied ||
+        pending.reason != "microstructure_demo_target_pending" ||
+        !NearlyEqual(pending.signal.suggested_notional_usd, -80.0)) {
+      std::cerr << "microstructure demo 在途目标不应回退到 baseline\n";
+      return 1;
+    }
+
+    const auto transition = ai_trade::EvaluateIntegratorPolicy(
+        config, target, flat, 80.0, true, false, false);
+    if (!transition.applied ||
+        transition.reason != "microstructure_demo_route_transition_flat" ||
+        !NearlyEqual(transition.signal.suggested_notional_usd, 0.0) ||
+        transition.signal.direction != 0) {
+      std::cerr << "microstructure demo 不应继承旧来源仓位或在途单\n";
+      return 1;
+    }
+
+    ai_trade::Signal baseline = flat;
+    baseline.suggested_notional_usd = 200.0;
+    baseline.direction = 1;
+    target.target_direction = 0;
+    target.target_notional_usd = 0.0;
+    target.fail_closed = true;
+    const auto closed = ai_trade::EvaluateIntegratorPolicy(
+        config, target, baseline, -80.0, false, false);
+    if (!closed.applied ||
+        closed.reason != "microstructure_demo_fail_closed_flat" ||
+        !NearlyEqual(closed.signal.suggested_notional_usd, 0.0) ||
+        closed.signal.direction != 0) {
+      std::cerr << "microstructure demo stale/integrity failure 未强制空仓\n";
+      return 1;
+    }
+
+    const auto pending_cancel = ai_trade::EvaluateIntegratorPolicy(
+        config, target, flat, 0.0, true, false);
+    if (!pending_cancel.applied ||
+        pending_cancel.reason != "microstructure_demo_fail_closed_flat") {
+      std::cerr << "microstructure demo fail-closed 未标记在途开仓撤销动作\n";
+      return 1;
+    }
+
+    config.mode = ai_trade::IntegratorMode::kActive;
+    target.fail_closed = false;
+    target.target_direction = 1;
+    const auto live_blocked = ai_trade::EvaluateIntegratorPolicy(
+        config, target, flat, 0.0, false, true);
+    if (live_blocked.applied ||
+        live_blocked.reason != "external_target_requires_canary") {
+      std::cerr << "microstructure demo 外部目标不得进入 active/live 路径\n";
       return 1;
     }
   }

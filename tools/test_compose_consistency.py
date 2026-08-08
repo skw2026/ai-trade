@@ -83,6 +83,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("scheduler", self.prod_services)
         self.assertIn("ai-trade-research", self.prod_services)
         self.assertIn("market-alpha-collector", self.prod_services)
+        self.assertIn("microstructure-demo-policy", self.prod_services)
         self.assertIn("ai-trade-web", self.prod_services)
 
     def test_prod_uses_stable_compose_project_identity(self):
@@ -297,6 +298,17 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn(
             "CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-1800", scheduler
         )
+
+    def test_microstructure_demo_policy_is_credential_free_and_fail_closed(self):
+        for services in (self.dev_services, self.prod_services):
+            demo = services["microstructure-demo-policy"]
+            self.assertIn("microstructure_demo_policy.py", demo)
+            self.assertIn("restart: unless-stopped", demo)
+            self.assertIn("healthcheck", demo)
+            self.assertIn("microstructure_alpha_lifecycle", demo)
+            self.assertIn("microstructure_demo_signal.json", demo)
+            self.assertNotIn("API_KEY", demo)
+            self.assertNotIn("API_SECRET", demo)
 
     def test_watchdog_paths_are_consistent(self):
         watchdog = self.prod_services["watchdog"]
@@ -915,7 +927,7 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_deploy_defaults_match_prod_container_names(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
-            'DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector watchdog scheduler ai-trade-web"',
+            'DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector microstructure-demo-policy watchdog scheduler ai-trade-web"',
             script,
         )
         self.assertIn('echo "ai-trade-watchdog"', script)
@@ -931,6 +943,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertEqual(
             prod_container_names.get("market-alpha-collector"),
             "ai-trade-market-alpha-collector",
+        )
+        self.assertEqual(
+            prod_container_names.get("microstructure-demo-policy"),
+            "ai-trade-microstructure-demo-policy",
         )
 
     def test_cd_uses_immutable_run_bound_release_bundle(self):

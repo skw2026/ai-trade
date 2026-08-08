@@ -74,6 +74,32 @@ services:
         max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
         max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
+  microstructure-demo-policy:
+    image: ${AI_TRADE_RESEARCH_IMAGE:-ai-trade-research:latest}
+    container_name: ai-trade-microstructure-demo-policy
+    restart: unless-stopped
+    working_dir: /app
+    entrypoint: ["python3", "/app/tools/microstructure_demo_policy.py", "run"]
+    command:
+      - "--registry-root=/app/data/models/microstructure_alpha_lifecycle"
+      - "--signal-output=/app/data/runtime/microstructure_demo_signal.json"
+      - "--health-output=/app/data/runtime/microstructure_demo_policy_health.json"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data
+    healthcheck:
+      test: ["CMD", "python3", "/app/tools/microstructure_demo_policy.py", "healthcheck", "--health-output=/app/data/runtime/microstructure_demo_policy_health.json", "--max-stale-ms=10000"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
   watchdog:
     image: ${AI_TRADE_IMAGE:-ai-trade:latest}
     container_name: ai-trade-watchdog

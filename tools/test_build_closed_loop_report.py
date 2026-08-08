@@ -112,7 +112,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "microstructure_alpha.json"
             payload = {
-                "schema_version": "microstructure_alpha_development_v1",
+                "schema_version": "microstructure_alpha_development_v2",
                 "status": "PASS",
                 "fully_verifiable": True,
                 "research_domain": "forward_development_only",
@@ -122,12 +122,20 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                     "development_passed": False,
                     "oos_stress_cost_by_split": {"lcb_bps": -1.0},
                 },
+                "negative_control": {
+                    "method": "deterministic_oos_prediction_time_permutation",
+                    "fully_verifiable": True,
+                    "passed": False,
+                    "trial_count": 7,
+                },
                 "next_gate": "reject_microstructure_candidate_and_remain_in_development",
             }
             path.write_text(json.dumps(payload), encoding="utf-8")
             failed = REPORT.assess_microstructure_alpha_development(path)
             self.assertEqual(failed["status"], "fail")
-            self.assertIn("joint direction/exit", failed["fail_reasons"][-1])
+            self.assertTrue(
+                any("joint direction/exit" in reason for reason in failed["fail_reasons"])
+            )
 
             payload["status"] = "NOT_READY"
             payload["fully_verifiable"] = False
@@ -139,6 +147,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             payload["status"] = "PASS"
             payload["fully_verifiable"] = True
             payload["economic_screen"]["development_passed"] = True
+            payload["negative_control"]["passed"] = True
             payload["next_gate"] = (
                 "freeze_candidate_and_collect_independent_forward_selection"
             )
@@ -2338,6 +2347,410 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 "run manifest run_id missing; expected=gha-1-1",
                 section["fail_reasons"],
             )
+
+    def test_microstructure_convergence_uses_candidate_attributed_demo_episodes(self):
+        candidate_id = "a" * 64
+        runtime = {
+            "metrics": {
+                "integrator_policy_proposed_candidate_ids": [candidate_id] * 30,
+                "integrator_policy_filled_candidate_ids": [candidate_id] * 30,
+                "integrator_policy_closed_episode_events": [
+                    {
+                        "candidate_id": candidate_id,
+                        "evidence_complete": True,
+                        "realized_net_usd": 0.1,
+                    }
+                    for _ in range(30)
+                ],
+            }
+        }
+        lifecycle = {
+            "status": "pass",
+            "readiness_status": "PASS",
+            "candidate_id": candidate_id,
+            "evidence": {
+                "raw_replay_passed": {
+                    "episode_count": 25,
+                    "raw_to_feature_parity": True,
+                    "fixed_model_prediction_economics_deterministic": True,
+                }
+            },
+        }
+        binding = {"status": "pass", "readiness_status": "PASS"}
+
+        section = REPORT.assess_microstructure_trading_convergence(
+            runtime, lifecycle, binding
+        )
+
+        self.assertEqual(
+            section["readiness_status"],
+            "CONVERGED_MICROSTRUCTURE_DEMO_PROFITABLE",
+        )
+        self.assertEqual(section["blockers"], [])
+        self.assertAlmostEqual(section["metrics"]["realized_net_usd"], 3.0)
+
+    def test_microstructure_convergence_uses_wal_summary_for_current_runtime_identity(self):
+        candidate_id = "a" * 64
+        runtime_config_sha = "b" * 64
+        trade_bot_sha = "c" * 64
+        runtime = {
+            "metrics": {
+                "process_runtime_config_sha256_latest": runtime_config_sha,
+                "process_trade_bot_sha256_latest": trade_bot_sha,
+                "integrator_candidate_episode_summaries": [
+                    {
+                        "candidate_id": candidate_id,
+                        "model_version": candidate_id,
+                        "runtime_config_sha256": runtime_config_sha,
+                        "trade_bot_sha256": trade_bot_sha,
+                        "total_episode_count": 30,
+                        "complete_episode_count": 30,
+                        "positive_episode_count": 18,
+                        "realized_net_usd": 1.5,
+                        "realized_net_usd_sum_squares": 0.1875,
+                    },
+                    {
+                        "candidate_id": candidate_id,
+                        "model_version": candidate_id,
+                        "runtime_config_sha256": "d" * 64,
+                        "trade_bot_sha256": "e" * 64,
+                        "total_episode_count": 100,
+                        "complete_episode_count": 100,
+                        "positive_episode_count": 100,
+                        "realized_net_usd": 100.0,
+                        "realized_net_usd_sum_squares": 100.0,
+                    },
+                ],
+                "integrator_policy_closed_episode_events": [],
+                "integrator_policy_proposed_candidate_ids": [],
+                "integrator_policy_filled_candidate_ids": [],
+            }
+        }
+        lifecycle = {
+            "status": "pass",
+            "readiness_status": "PASS",
+            "candidate_id": candidate_id,
+            "evidence": {
+                "raw_replay_passed": {
+                    "episode_count": 25,
+                    "raw_to_feature_parity": True,
+                    "fixed_model_prediction_economics_deterministic": True,
+                }
+            },
+        }
+
+        section = REPORT.assess_microstructure_trading_convergence(
+            runtime,
+            lifecycle,
+            {"status": "pass", "readiness_status": "PASS"},
+        )
+
+        self.assertEqual(
+            section["readiness_status"],
+            "CONVERGED_MICROSTRUCTURE_DEMO_PROFITABLE",
+        )
+        self.assertEqual(
+            section["metrics"]["episode_evidence_source"],
+            "wal_candidate_runtime_identity_summary",
+        )
+        self.assertEqual(section["metrics"]["realized_net_usd"], 1.5)
+
+    def test_microstructure_positive_total_with_unstable_returns_does_not_converge(self):
+        candidate_id = "a" * 64
+        episode_values = [0.2] * 18 + [-0.25] * 12
+        runtime = {
+            "metrics": {
+                "integrator_policy_closed_episode_events": [
+                    {
+                        "candidate_id": candidate_id,
+                        "evidence_complete": True,
+                        "realized_net_usd": value,
+                    }
+                    for value in episode_values
+                ],
+                "integrator_policy_proposed_candidate_ids": [candidate_id],
+                "integrator_policy_filled_candidate_ids": [candidate_id],
+            }
+        }
+        lifecycle = {
+            "status": "pass",
+            "readiness_status": "PASS",
+            "candidate_id": candidate_id,
+            "evidence": {
+                "raw_replay_passed": {
+                    "episode_count": 25,
+                    "raw_to_feature_parity": True,
+                    "fixed_model_prediction_economics_deterministic": True,
+                }
+            },
+        }
+
+        section = REPORT.assess_microstructure_trading_convergence(
+            runtime,
+            lifecycle,
+            {"status": "pass", "readiness_status": "PASS"},
+        )
+
+        self.assertGreater(section["metrics"]["realized_net_usd"], 0.0)
+        self.assertGreaterEqual(section["metrics"]["positive_episode_ratio"], 0.55)
+        self.assertLess(section["metrics"]["realized_net_95pct_lcb_usd"], 0.0)
+        self.assertIn(
+            "NOT_CONVERGED_MICROSTRUCTURE_DEMO_NET_LCB_NOT_POSITIVE",
+            section["blockers"],
+        )
+
+    def test_microstructure_wal_summary_requires_current_process_identity(self):
+        candidate_id = "a" * 64
+        runtime = {
+            "metrics": {
+                "integrator_candidate_episode_summaries": [
+                    {
+                        "candidate_id": candidate_id,
+                        "model_version": candidate_id,
+                        "runtime_config_sha256": "b" * 64,
+                        "trade_bot_sha256": "c" * 64,
+                        "total_episode_count": 30,
+                        "complete_episode_count": 30,
+                        "positive_episode_count": 18,
+                        "realized_net_usd": 1.5,
+                        "realized_net_usd_sum_squares": 0.1875,
+                    }
+                ],
+                "integrator_policy_closed_episode_events": [],
+                "integrator_policy_proposed_candidate_ids": [],
+                "integrator_policy_filled_candidate_ids": [],
+            }
+        }
+        lifecycle = {
+            "status": "pass",
+            "readiness_status": "PASS",
+            "candidate_id": candidate_id,
+            "evidence": {
+                "raw_replay_passed": {
+                    "episode_count": 25,
+                    "raw_to_feature_parity": True,
+                    "fixed_model_prediction_economics_deterministic": True,
+                }
+            },
+        }
+
+        section = REPORT.assess_microstructure_trading_convergence(
+            runtime,
+            lifecycle,
+            {"status": "pass", "readiness_status": "PASS"},
+        )
+
+        self.assertIn(
+            "NOT_CONVERGED_MICROSTRUCTURE_RUNTIME_IDENTITY_MISSING",
+            section["blockers"],
+        )
+        self.assertNotEqual(
+            section["readiness_status"],
+            "CONVERGED_MICROSTRUCTURE_DEMO_PROFITABLE",
+        )
+
+    def test_microstructure_wal_summary_rejects_candidate_model_mismatch(self):
+        candidate_id = "a" * 64
+        runtime_config_sha = "b" * 64
+        trade_bot_sha = "c" * 64
+        runtime = {
+            "metrics": {
+                "process_runtime_config_sha256_latest": runtime_config_sha,
+                "process_trade_bot_sha256_latest": trade_bot_sha,
+                "integrator_candidate_episode_summaries": [
+                    {
+                        "candidate_id": candidate_id,
+                        "model_version": "wrong-model-version",
+                        "runtime_config_sha256": runtime_config_sha,
+                        "trade_bot_sha256": trade_bot_sha,
+                        "total_episode_count": 30,
+                        "complete_episode_count": 30,
+                        "positive_episode_count": 30,
+                        "realized_net_usd": 3.0,
+                        "realized_net_usd_sum_squares": 0.3,
+                    }
+                ],
+                "integrator_policy_closed_episode_events": [],
+                "integrator_policy_proposed_candidate_ids": [candidate_id],
+                "integrator_policy_filled_candidate_ids": [candidate_id],
+            }
+        }
+        lifecycle = {
+            "status": "pass",
+            "readiness_status": "PASS",
+            "candidate_id": candidate_id,
+            "evidence": {
+                "raw_replay_passed": {
+                    "episode_count": 25,
+                    "raw_to_feature_parity": True,
+                    "fixed_model_prediction_economics_deterministic": True,
+                }
+            },
+        }
+
+        section = REPORT.assess_microstructure_trading_convergence(
+            runtime,
+            lifecycle,
+            {"status": "pass", "readiness_status": "PASS"},
+        )
+
+        self.assertIn(
+            "NOT_CONVERGED_MICROSTRUCTURE_CANDIDATE_ATTRIBUTION_MISMATCH",
+            section["blockers"],
+        )
+        self.assertNotEqual(
+            section["readiness_status"],
+            "CONVERGED_MICROSTRUCTURE_DEMO_PROFITABLE",
+        )
+
+    def test_microstructure_layers_ignore_failed_nonselected_legacy_route(self):
+        sections = {
+            "alpha_source_route": {
+                "status": "pass",
+                "readiness_status": "PASS",
+                "selected_route": "microstructure_demo",
+            },
+            "microstructure_alpha_development": {
+                "status": "pass",
+                "readiness_status": "PASS",
+            },
+            "microstructure_alpha_lifecycle": {
+                "status": "pass",
+                "readiness_status": "PASS",
+            },
+            "microstructure_demo_binding": {
+                "status": "pass",
+                "readiness_status": "PASS",
+            },
+            "closed_loop_mechanism": {
+                "status": "pass",
+                "readiness_status": "PASS",
+            },
+            "market_alpha_development": {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": ["legacy alpha negative"],
+                "authoritative_for_integrator_promotion": False,
+            },
+            "integrator": {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": ["legacy model missing"],
+                "authoritative_for_integrator_promotion": False,
+            },
+        }
+
+        layers = REPORT.build_convergence_layers(sections)
+
+        mechanism = next(
+            item for item in layers["layers"] if item["name"] == "mechanism_proof"
+        )
+        self.assertEqual(mechanism["status"], "PASS")
+        self.assertNotIn("market_alpha_development", mechanism["section_statuses"])
+
+    def test_run_manifest_applies_selected_microstructure_route_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            contract_path = (
+                pathlib.Path(__file__).resolve().parents[1]
+                / "config"
+                / "closed_loop_contract.json"
+            )
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            action_contract = contract["actions"]["train"]
+            route_contract = action_contract["route_contracts"][
+                "microstructure_demo"
+            ]
+            route_path = root / "alpha_source_route_report"
+            route_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "alpha_source_route_v1",
+                        "status": "PASS",
+                        "selected_route": "microstructure_demo",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            effective_steps = list(action_contract["required_steps"])
+            insertion = effective_steps.index("alpha_source_route") + 1
+            effective_steps[insertion:insertion] = route_contract["required_steps"]
+            step_records = []
+            for step in effective_steps:
+                observation_failure = step == "market_alpha_development"
+                step_records.append(
+                    {
+                        "run_id": "run-micro",
+                        "action": "train",
+                        "step": step,
+                        "kind": "observation" if observation_failure else "required",
+                        "result": "fail" if observation_failure else "pass",
+                        "exit_code": 2 if observation_failure else 0,
+                        "blocked_by_prior_failure": False,
+                    }
+                )
+            step_status = root / "step_status"
+            step_status.write_text(
+                "\n".join(json.dumps(item) for item in step_records) + "\n",
+                encoding="utf-8",
+            )
+            required_artifacts = [
+                *action_contract["required_artifacts"],
+                *route_contract["required_artifacts"],
+            ]
+            artifacts = {}
+            for name in required_artifacts:
+                if name == "step_status":
+                    artifact_path = step_status
+                elif name == "alpha_source_route_report":
+                    artifact_path = route_path
+                else:
+                    artifact_path = root / name
+                    artifact_path.write_text(name, encoding="utf-8")
+                artifacts[name] = {
+                    "path": str(artifact_path),
+                    "sha256": hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+                }
+            manifest = root / "run_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "run_id": "run-micro",
+                        "action": "train",
+                        "git": {"commit": "abc"},
+                        "config_hashes": {},
+                        "replay_validation": {},
+                        "runtime": {
+                            "image_id": "sha256:image",
+                            "image_revision": "abc",
+                        },
+                        "artifact_contract": {
+                            "schema_version": contract["schema_version"],
+                            "contract_sha256": hashlib.sha256(
+                                contract_path.read_bytes()
+                            ).hexdigest(),
+                            "action": "train",
+                            "required_artifacts": action_contract[
+                                "required_artifacts"
+                            ],
+                            "required_steps": action_contract["required_steps"],
+                            "route_contracts": action_contract["route_contracts"],
+                        },
+                        "artifacts": artifacts,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_run_manifest(manifest, "run-micro")
+
+        self.assertEqual(section["status"], "pass", section["fail_reasons"])
+        self.assertEqual(section["selected_alpha_route"], "microstructure_demo")
+        self.assertIn("microstructure_demo_binding", section["effective_required_steps"])
+        self.assertIn(
+            "closed-loop observational step not ready: market_alpha_development",
+            section["warn_reasons"],
+        )
 
     def test_run_manifest_validates_step_status_semantics(self):
         with tempfile.TemporaryDirectory() as td:

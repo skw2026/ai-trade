@@ -110,11 +110,19 @@ struct Signal {
 struct ShadowInference {
   bool enabled{false};
   std::string model_version{"n/a"};
+  std::string source{"integrator_ohlcv"};
   double model_score{0.0};
   double p_up{0.5};
   double p_down{0.5};
   bool expected_net_edge_available{false};
   double expected_net_edge_per_trade_bps{0.0};
+  // A lifecycle-gated external policy publishes an exact demo target instead
+  // of a probability overlay. Direction 0 is an explicit fail-closed flatten.
+  bool target_position_signal{false};
+  int target_direction{0};
+  double target_notional_usd{0.0};
+  Timestamp target_valid_until_ms{0};
+  bool fail_closed{false};
 };
 
 /// Risk Engine Input

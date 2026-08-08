@@ -170,6 +170,21 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             self.assertLessEqual(split.validation_end_ms + 301000, split.test_start_ms)
         self.assertLessEqual(splits[0].test_end_ms, splits[1].test_start_ms)
 
+    def test_prediction_permutation_control_rejects_unconditional_drift(self):
+        report = probe.summarize_prediction_permutation_controls(
+            base_means_by_trial=[[2.0, 2.0] for _ in range(7)],
+            stress_means_by_trial=[[1.0, 1.0] for _ in range(7)],
+            required_split_count=2,
+            candidate_base_split_lcb_bps=2.0,
+            candidate_stress_split_lcb_bps=1.0,
+            minimum_excess_lcb_bps=0.0,
+            seed=1,
+        )
+
+        self.assertTrue(report["fully_verifiable"])
+        self.assertFalse(report["passed"])
+        self.assertEqual(report["maximum_control_base_split_lcb_bps"], 2.0)
+
     def test_not_ready_capture_still_writes_fail_closed_audit_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)
@@ -285,11 +300,23 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
                 probe, "load_capture_rows", return_value=series
             ), mock.patch.object(
                 probe, "build_model", side_effect=lambda unused: FakeMultiModel()
+            ), mock.patch.object(
+                probe,
+                "evaluate_prediction_permutation_controls",
+                side_effect=lambda **kwargs: [
+                    {
+                        "trial": trial,
+                        "base_cost": {"mean_bps": -2.0},
+                        "stress_cost": {"mean_bps": -2.25},
+                    }
+                    for trial in range(kwargs["trials"])
+                ],
             ):
                 report = probe.run_probe(args)
 
             self.assertTrue(report["fully_verifiable"])
             self.assertTrue(report["economic_screen"]["development_passed"])
+            self.assertTrue(report["negative_control"]["passed"])
             self.assertEqual(len(report["frozen_candidate"]["model_sha256"]), 64)
             self.assertFalse(report["promotion_eligible"])
 

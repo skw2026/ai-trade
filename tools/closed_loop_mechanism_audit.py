@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import math
 import random
@@ -42,6 +43,10 @@ def read_json_optional(path_text: str) -> Dict[str, Any]:
     if not path.is_file():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def as_float(value: Any) -> float | None:
@@ -685,6 +690,324 @@ def infer_cost_bps(replay: Dict[str, Any]) -> float:
     return DEFAULT_COST_BPS
 
 
+def audit_microstructure_route(
+    route: Dict[str, Any], lifecycle: Dict[str, Any], binding: Dict[str, Any]
+) -> Dict[str, Any]:
+    fail_reasons: List[str] = []
+    policy = route.get("selection_policy", {}) if isinstance(route, dict) else {}
+    if not isinstance(policy, dict):
+        policy = {}
+    candidate_id = str(lifecycle.get("candidate_id") or "")
+    source = route.get("sources", {}).get("microstructure_demo", {})
+    if not isinstance(source, dict):
+        source = {}
+    if not (
+        route.get("schema_version") == "alpha_source_route_v1"
+        and route.get("status") == "PASS"
+        and route.get("selected_route") == "microstructure_demo"
+        and route.get("demo_only") is True
+        and route.get("live_promotion_eligible") is False
+    ):
+        fail_reasons.append("microstructure_demo is not the valid selected alpha route")
+    if not (
+        policy.get("method") == "fixed_predeclared_precedence"
+        and policy.get("cross_source_return_comparison_permitted") is False
+        and policy.get("nonselected_source_failure_blocks_selected_route") is False
+    ):
+        fail_reasons.append("alpha route selection is not leakage-isolated")
+    if not (
+        len(candidate_id) == 64
+        and source.get("candidate_id") == candidate_id
+        and source.get("readiness") == "READY"
+    ):
+        fail_reasons.append("selected route does not bind the lifecycle candidate")
+    if not (
+        binding.get("schema_version") == "microstructure_demo_binding_v1"
+        and binding.get("status") == "PASS"
+        and binding.get("selected_route") == "microstructure_demo"
+        and binding.get("candidate_id") == candidate_id
+        and binding.get("demo_entry_eligible") is True
+        and binding.get("live_promotion_eligible") is False
+    ):
+        fail_reasons.append("demo sidecar/runtime binding did not pass for selected candidate")
+    return {
+        "status": json_status(fail_reasons),
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [],
+        "observed": {
+            "selected_route": route.get("selected_route"),
+            "candidate_id": candidate_id or None,
+            "binding_signal_status": binding.get("signal_status"),
+            "binding_health_age_ms": binding.get("health_age_ms"),
+            "binding_signal_age_ms": binding.get("signal_age_ms"),
+            "live_promotion_eligible": False,
+        },
+    }
+
+
+def read_verified_reference(
+    reference: Any, *, label: str, fail_reasons: List[str]
+) -> Dict[str, Any]:
+    if not isinstance(reference, dict):
+        fail_reasons.append(f"microstructure lifecycle evidence missing: {label}")
+        return {}
+    path = Path(str(reference.get("path") or ""))
+    expected_hash = str(reference.get("sha256") or "")
+    if (
+        not path.is_file()
+        or len(expected_hash) != 64
+        or sha256_file(path) != expected_hash
+    ):
+        fail_reasons.append(f"microstructure lifecycle evidence identity mismatch: {label}")
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        fail_reasons.append(f"microstructure lifecycle evidence unreadable: {label}")
+        return {}
+    if not isinstance(payload, dict):
+        fail_reasons.append(f"microstructure lifecycle evidence is not an object: {label}")
+        return {}
+    return payload
+
+
+def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
+    fail_reasons: List[str] = []
+    candidate_id = str(lifecycle.get("candidate_id") or "")
+    state = lifecycle.get("state", {})
+    if not isinstance(state, dict):
+        state = {}
+    if not (
+        lifecycle.get("schema_version") == "microstructure_alpha_lifecycle_v1"
+        and lifecycle.get("status") == "PASS"
+        and lifecycle.get("fully_verifiable") is True
+        and lifecycle.get("phase") == "demo_ready"
+        and lifecycle.get("demo_entry_eligible") is True
+        and lifecycle.get("live_promotion_eligible") is False
+        and lifecycle.get("promotion_eligible") is False
+        and len(candidate_id) == 64
+    ):
+        fail_reasons.append("microstructure lifecycle is not fully verified demo_ready")
+    if not (
+        state.get("candidate_id") == candidate_id
+        and state.get("phase") == "demo_ready"
+        and state.get("demo_entry_eligible") is True
+        and state.get("live_promotion_eligible") is False
+    ):
+        fail_reasons.append("microstructure lifecycle state/candidate isolation mismatch")
+
+    evidence = state.get("evidence", {})
+    artifacts = state.get("artifacts", {})
+    if not isinstance(evidence, dict):
+        evidence = {}
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    development = read_verified_reference(
+        artifacts.get("development_report"),
+        label="development_report",
+        fail_reasons=fail_reasons,
+    )
+    selection = read_verified_reference(
+        evidence.get("selection_passed"),
+        label="selection_passed",
+        fail_reasons=fail_reasons,
+    )
+    holdout = read_verified_reference(
+        evidence.get("final_holdout_passed"),
+        label="final_holdout_passed",
+        fail_reasons=fail_reasons,
+    )
+    raw_replay = read_verified_reference(
+        evidence.get("raw_replay_passed"),
+        label="raw_replay_passed",
+        fail_reasons=fail_reasons,
+    )
+    target = development.get("target_contract", {})
+    validation = development.get("validation_contract", {})
+    negative_control = development.get("negative_control", {})
+    if not (
+        development.get("schema_version") == "microstructure_alpha_development_v2"
+        and development.get("status") == "PASS"
+        and development.get("fully_verifiable") is True
+        and development.get("research_domain") == "forward_development_only"
+        and development.get("promotion_evidence") is False
+        and development.get("promotion_eligible") is False
+        and development.get("economic_screen", {}).get("development_passed") is True
+        and isinstance(negative_control, dict)
+        and negative_control.get("method")
+        == "deterministic_oos_prediction_time_permutation"
+        and negative_control.get("fully_verifiable") is True
+        and negative_control.get("passed") is True
+        and as_int(negative_control.get("trial_count")) >= 5
+        and isinstance(target, dict)
+        and target.get("objective")
+        == "joint_direction_and_exit_horizon_executable_net_return"
+        and target.get("overlapping_episodes_forbidden") is True
+        and isinstance(validation, dict)
+        and validation.get("method") == "rolling_purged_nested_validation"
+        and validation.get("oos_windows_non_overlapping") is True
+    ):
+        fail_reasons.append("microstructure development economic/anti-leakage contract failed")
+    for label, payload, domain in (
+        ("selection", selection, "independent_forward_selection"),
+        ("holdout", holdout, "untouched_final_holdout"),
+    ):
+        if not (
+            payload.get("schema_version") == "microstructure_alpha_future_domain_v1"
+            and payload.get("status") == "PASS"
+            and payload.get("fully_verifiable") is True
+            and payload.get("candidate_id") == candidate_id
+            and payload.get("research_domain") == domain
+            and payload.get("policy_frozen") is True
+            and payload.get("threshold_tuning_permitted") is False
+        ):
+            fail_reasons.append(f"microstructure {label} frozen-policy economics failed")
+    if not (
+        raw_replay.get("schema_version") == "microstructure_alpha_raw_replay_v1"
+        and raw_replay.get("status") == "PASS"
+        and raw_replay.get("fully_verifiable") is True
+        and raw_replay.get("candidate_id") == candidate_id
+        and raw_replay.get("research_domain")
+        == "untouched_final_holdout_replay"
+        and raw_replay.get("raw_to_feature_parity") is True
+        and raw_replay.get("fixed_model_prediction_economics_deterministic") is True
+        and raw_replay.get("demo_entry_eligible") is True
+        and raw_replay.get("live_promotion_eligible") is False
+    ):
+        fail_reasons.append("microstructure raw replay determinism/economics failed")
+    replay_economic = raw_replay.get("economic_replay", {})
+    if not isinstance(replay_economic, dict):
+        replay_economic = {}
+    return {
+        "status": json_status(fail_reasons),
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [],
+        "observed": {
+            "candidate_id": candidate_id or None,
+            "objective": target.get("objective") if isinstance(target, dict) else None,
+            "selection_episode_count": as_int(selection.get("episode_count")),
+            "holdout_episode_count": as_int(holdout.get("episode_count")),
+            "raw_replay_episode_count": as_int(replay_economic.get("episode_count")),
+            "raw_to_feature_parity": raw_replay.get("raw_to_feature_parity"),
+            "fixed_model_prediction_economics_deterministic": raw_replay.get(
+                "fixed_model_prediction_economics_deterministic"
+            ),
+            "development_prediction_permutation_control_passed": (
+                negative_control.get("passed")
+            ),
+            "live_promotion_eligible": False,
+        },
+    }
+
+
+def audit_microstructure_negative_control(
+    lifecycle_check: Dict[str, Any], cost_bps: float
+) -> Dict[str, Any]:
+    synthetic_negative, _ = run_synthetic_controls(cost_bps)
+    fail_reasons = list(synthetic_negative.get("fail_reasons", []))
+    if lifecycle_check.get("status") != "pass":
+        fail_reasons.append(
+            "independent selection/holdout cannot reject an overfit development candidate"
+        )
+    return {
+        "status": json_status(fail_reasons),
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [],
+        "synthetic_negative_control": synthetic_negative,
+        "source_negative_control": {
+            "method": "frozen_policy_independent_future_selection_and_untouched_holdout",
+            "status": lifecycle_check.get("status"),
+        },
+    }
+
+
+def audit_microstructure_model_influence(
+    runtime: Dict[str, Any], candidate_id: str, min_live_policy_applied: int
+) -> Dict[str, Any]:
+    metrics = runtime.get("metrics", {}) if isinstance(runtime, dict) else {}
+    if not isinstance(metrics, dict):
+        metrics = {}
+    canary_count = as_int(metrics.get("integrator_mode_canary_count"))
+    accepted_count = as_int(
+        metrics.get("microstructure_demo_signal_accepted_count")
+    )
+    accepted = metrics.get("microstructure_demo_accepted_candidate_ids", [])
+    proposed = metrics.get("integrator_policy_proposed_candidate_ids", [])
+    filled = metrics.get("integrator_policy_filled_candidate_ids", [])
+    if not isinstance(accepted, list):
+        accepted = []
+    if not isinstance(proposed, list):
+        proposed = []
+    if not isinstance(filled, list):
+        filled = []
+    accepted = [str(item) for item in accepted if str(item)]
+    proposed = [str(item) for item in proposed if str(item)]
+    filled = [str(item) for item in filled if str(item)]
+    failures: List[str] = []
+    if not runtime:
+        failures.append(
+            "runtime_assess_report missing; cannot verify microstructure policy consumption"
+        )
+    elif canary_count <= 0:
+        failures.append("microstructure route never entered canary mode")
+    if accepted_count <= 0 or not accepted:
+        failures.append(
+            "runtime never accepted an integrity-checked microstructure candidate signal"
+        )
+    if accepted and any(item != candidate_id for item in accepted):
+        failures.append("runtime accepted a candidate outside the selected route")
+    if proposed and any(item != candidate_id for item in proposed):
+        failures.append("runtime proposed a candidate outside the selected microstructure route")
+    if filled and any(item != candidate_id for item in filled):
+        failures.append("runtime fills were attributed to a different candidate")
+    return {
+        "status": json_status(failures),
+        "fail_reasons": failures,
+        "warn_reasons": [],
+        "observed": {
+            "expected_candidate_id": candidate_id or None,
+            "integrator_mode_canary_count": canary_count,
+            "accepted_signal_count": accepted_count,
+            "accepted_candidate_ids": accepted,
+            "proposed_candidate_ids": proposed,
+            "filled_candidate_ids": filled,
+            "required_live_policy_applied_for_economic_convergence": (
+                min_live_policy_applied
+            ),
+        },
+    }
+
+
+def audit_microstructure_sample_sufficiency(
+    runtime: Dict[str, Any], lifecycle_check: Dict[str, Any], min_replay_total_fills: int
+) -> Dict[str, Any]:
+    fail_reasons: List[str] = []
+    warn_reasons: List[str] = []
+    observed = lifecycle_check.get("observed", {})
+    if not isinstance(observed, dict):
+        observed = {}
+    replay_episodes = as_int(observed.get("raw_replay_episode_count"))
+    metrics = runtime.get("metrics", {}) if isinstance(runtime, dict) else {}
+    if not isinstance(metrics, dict):
+        metrics = {}
+    live_fills = as_int(metrics.get("integrator_policy_unique_filled_order_count"))
+    live_episodes = as_int(metrics.get("integrator_policy_complete_episode_count"))
+    if replay_episodes < min_replay_total_fills:
+        fail_reasons.append(
+            f"raw replay episodes={replay_episodes} < required {min_replay_total_fills}"
+        )
+    return {
+        "status": json_status(fail_reasons, warn_reasons),
+        "fail_reasons": fail_reasons,
+        "warn_reasons": warn_reasons,
+        "observed": {
+            "raw_replay_episode_count": replay_episodes,
+            "live_fills": live_fills,
+            "live_complete_episodes": live_episodes,
+        },
+    }
+
+
 def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     integrator = read_json_optional(args.integrator_report)
     registry = read_json_optional(args.registry_report)
@@ -695,34 +1018,94 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
     strategy = read_json_optional(args.strategy_diagnose_report)
     alpha_probe = read_json_optional(args.alpha_mechanism_probe_report)
     run_manifest = read_json_optional(args.run_manifest)
+    route = read_json_optional(getattr(args, "alpha_source_route_report", ""))
+    lifecycle = read_json_optional(
+        getattr(args, "microstructure_alpha_lifecycle_report", "")
+    )
+    binding = read_json_optional(
+        getattr(args, "microstructure_demo_binding_report", "")
+    )
 
     cost_bps = float(args.control_cost_bps) if args.control_cost_bps is not None else infer_cost_bps(replay)
 
-    checks = {
-        "negative_control": audit_negative_control(integrator, cost_bps),
-        "positive_control": audit_positive_control(cost_bps),
-        "alpha_mechanism_probe": audit_alpha_mechanism_probe(alpha_probe),
-        "target_consistency": audit_target_consistency(
-            integrator=integrator,
-            registry=registry,
-            replay=replay,
-            strategy=strategy,
-        ),
-        "feature_contract": audit_feature_contract(
-            integrator=integrator,
-            runtime=runtime,
-            replay=replay,
-        ),
-        "model_influence": audit_model_influence(
-            runtime=runtime,
-            min_live_policy_applied=int(args.min_live_policy_applied),
-        ),
-        "sample_sufficiency": audit_sample_sufficiency(
-            runtime=runtime,
-            replay=replay,
-            min_replay_total_fills=int(args.min_replay_total_fills),
-        ),
-    }
+    selected_route = str(route.get("selected_route") or "")
+    if selected_route == "microstructure_demo":
+        lifecycle_check = audit_microstructure_lifecycle(lifecycle)
+        candidate_id = str(lifecycle.get("candidate_id") or "")
+        checks = {
+            "alpha_source_route": audit_microstructure_route(route, lifecycle, binding),
+            "negative_control": audit_microstructure_negative_control(
+                lifecycle_check, cost_bps
+            ),
+            "positive_control": audit_positive_control(cost_bps),
+            "target_consistency": lifecycle_check,
+            "feature_contract": {
+                "status": lifecycle_check.get("status"),
+                "fail_reasons": list(lifecycle_check.get("fail_reasons", [])),
+                "warn_reasons": [],
+                "observed": lifecycle_check.get("observed", {}),
+            },
+            "model_influence": audit_microstructure_model_influence(
+                runtime=runtime,
+                candidate_id=candidate_id,
+                min_live_policy_applied=int(args.min_live_policy_applied),
+            ),
+            "sample_sufficiency": audit_microstructure_sample_sufficiency(
+                runtime=runtime,
+                lifecycle_check=lifecycle_check,
+                min_replay_total_fills=int(args.min_replay_total_fills),
+            ),
+            "alpha_mechanism_probe": {
+                "status": "not_applicable",
+                "fail_reasons": [],
+                "warn_reasons": [],
+                "evidence_role": "nonselected_legacy_route_diagnostic",
+            },
+        }
+    elif selected_route == "legacy_integrator" or not route:
+        selected_route = "legacy_integrator"
+        checks = {
+            "negative_control": audit_negative_control(integrator, cost_bps),
+            "positive_control": audit_positive_control(cost_bps),
+            "alpha_mechanism_probe": audit_alpha_mechanism_probe(alpha_probe),
+            "target_consistency": audit_target_consistency(
+                integrator=integrator,
+                registry=registry,
+                replay=replay,
+                strategy=strategy,
+            ),
+            "feature_contract": audit_feature_contract(
+                integrator=integrator,
+                runtime=runtime,
+                replay=replay,
+            ),
+            "model_influence": audit_model_influence(
+                runtime=runtime,
+                min_live_policy_applied=int(args.min_live_policy_applied),
+            ),
+            "sample_sufficiency": audit_sample_sufficiency(
+                runtime=runtime,
+                replay=replay,
+                min_replay_total_fills=int(args.min_replay_total_fills),
+            ),
+        }
+    else:
+        selected_route = "unresolved"
+        checks = {
+            "alpha_source_route": {
+                "status": "fail",
+                "fail_reasons": [
+                    "alpha source route evidence exists but selects no valid route"
+                ],
+                "warn_reasons": [],
+                "observed": {
+                    "route_status": route.get("status"),
+                    "selected_route": route.get("selected_route"),
+                    "reason": route.get("reason"),
+                },
+            },
+            "positive_control": audit_positive_control(cost_bps),
+        }
 
     fail_reasons: List[str] = []
     warn_reasons: List[str] = []
@@ -752,6 +1135,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
         "control_cost_bps": cost_bps,
+        "selected_alpha_route": selected_route,
         "checks": checks,
         "run_context": {
             "run_id": run_manifest.get("run_id") if isinstance(run_manifest, dict) else None,
@@ -784,6 +1168,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--replay_optimization_report", default="", help="replay_optimization_report.json path")
     parser.add_argument("--strategy_diagnose_report", default="", help="strategy_diagnose_report.json path")
     parser.add_argument("--alpha_mechanism_probe_report", default="", help="alpha_mechanism_probe_report.json path")
+    parser.add_argument("--alpha_source_route_report", default="", help="alpha_source_route_report.json path")
+    parser.add_argument("--microstructure_alpha_lifecycle_report", default="", help="microstructure_alpha_lifecycle_report.json path")
+    parser.add_argument("--microstructure_demo_binding_report", default="", help="microstructure_demo_binding_report.json path")
     parser.add_argument(
         "--control_cost_bps",
         type=float,

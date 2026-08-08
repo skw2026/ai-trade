@@ -278,6 +278,11 @@ def validate_development_candidate(
         and report.get("promotion_evidence") is False
         and report.get("promotion_eligible") is False
         and report.get("economic_screen", {}).get("development_passed") is True
+        and report.get("negative_control", {}).get("method")
+        == "deterministic_oos_prediction_time_permutation"
+        and report.get("negative_control", {}).get("fully_verifiable") is True
+        and report.get("negative_control", {}).get("passed") is True
+        and int(report.get("negative_control", {}).get("trial_count") or 0) >= 5
     ):
         raise LifecycleError("development candidate has not passed its isolated economic gate")
     if not (

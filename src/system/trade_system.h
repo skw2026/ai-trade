@@ -13,6 +13,7 @@
 #include "regime/regime_engine.h"
 #include "risk/risk_engine.h"
 #include "strategy/integrator_shadow.h"
+#include "strategy/microstructure_demo_overlay.h"
 #include "strategy/strategy_engine.h"
 
 namespace ai_trade {
@@ -42,9 +43,10 @@ IntegratorPolicyDecision EvaluateIntegratorPolicy(
     const IntegratorConfig& config,
     const ShadowInference& shadow,
     const Signal& base_signal,
-    bool settled_symbol_exposure_present,
+    double settled_symbol_notional_usd,
     bool pending_net_position_order_present,
-    bool independent_base_signal_eligible);
+    bool independent_base_signal_eligible,
+    bool settled_exposure_owned_by_target_candidate = false);
 
 /**
  * @brief Trade System (Pipeline Orchestrator)
@@ -68,7 +70,9 @@ class TradeSystem {
   MarketDecision Evaluate(const MarketEvent& event,
                           bool trade_ok = true,
                           double symbol_inflight_notional_usd = 0.0,
-                          bool has_pending_symbol_net_orders = false);
+                          bool has_pending_symbol_net_orders = false,
+                          const std::string& settled_position_candidate_id = "",
+                          const std::string& settled_position_policy_reason = "");
 
   /// Simplified entry point returning just the order intent (if any).
   std::optional<OrderIntent> OnMarket(const MarketEvent& event,
@@ -172,6 +176,7 @@ class TradeSystem {
   RiskEngine risk_;
   ExecutionEngine execution_;
   IntegratorShadow integrator_shadow_;
+  MicrostructureDemoOverlay microstructure_demo_overlay_;
   AccountState account_;
 
   // Configuration

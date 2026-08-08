@@ -2972,6 +2972,99 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "integrator" &&
+        current_subsection == "microstructure_demo" && key == "enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.microstructure_demo.enabled 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.microstructure_demo.enabled = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" &&
+        current_subsection == "microstructure_demo" &&
+        key == "log_signal") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.microstructure_demo.log_signal 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.microstructure_demo.log_signal = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" &&
+        current_subsection == "microstructure_demo" &&
+        key == "lifecycle_root") {
+      config.integrator.microstructure_demo.lifecycle_root = value;
+      continue;
+    }
+
+    if (current_section == "integrator" &&
+        current_subsection == "microstructure_demo" &&
+        key == "signal_path") {
+      config.integrator.microstructure_demo.signal_path = value;
+      continue;
+    }
+
+    if (current_section == "integrator" &&
+        current_subsection == "microstructure_demo" &&
+        key == "max_signal_stale_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.microstructure_demo.max_signal_stale_ms 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.microstructure_demo.max_signal_stale_ms = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" &&
+        current_subsection == "microstructure_demo" &&
+        key == "lifecycle_refresh_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.microstructure_demo.lifecycle_refresh_ms 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.microstructure_demo.lifecycle_refresh_ms = parsed;
+      continue;
+    }
+
+    if (current_section == "integrator" &&
+        current_subsection == "microstructure_demo" &&
+        key == "target_notional_usd") {
+      double parsed = 0.0;
+      if (!ParseDouble(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error =
+              "integrator.microstructure_demo.target_notional_usd 解析失败，行号: " +
+              std::to_string(line_no);
+        }
+        return false;
+      }
+      config.integrator.microstructure_demo.target_notional_usd = parsed;
+      continue;
+    }
+
     if (current_section == "integrator" && current_subsection == "shadow" &&
         key == "enabled") {
       bool parsed = false;
@@ -4762,6 +4855,30 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
           "integrator.shadow.candidate_validation_mode 仅允许 system.mode=replay 的 canary，"
           "并要求 require_model_file=true、require_active_meta=false、"
           "source_runtime_config_sha256=有效 SHA-256";
+    }
+    return false;
+  }
+  if (config.integrator.microstructure_demo.enabled &&
+      (!config.integrator.enabled ||
+       config.integrator.mode != IntegratorMode::kCanary ||
+       !config.integrator.canary_allow_independent_signal ||
+       (config.mode != "live" && config.mode != "paper") ||
+       config.exchange != "bybit" ||
+       !config.bybit.demo_trading || config.bybit.testnet ||
+       config.integrator.microstructure_demo.lifecycle_root.empty() ||
+       config.integrator.microstructure_demo.signal_path.empty() ||
+       config.integrator.microstructure_demo.max_signal_stale_ms <= 0 ||
+       config.integrator.microstructure_demo.lifecycle_refresh_ms <= 0 ||
+       !std::isfinite(
+           config.integrator.microstructure_demo.target_notional_usd) ||
+       config.integrator.microstructure_demo.target_notional_usd <= 0.0 ||
+       config.integrator.microstructure_demo.target_notional_usd >
+           config.execution_max_order_notional)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "integrator.microstructure_demo 仅允许 live/paper Bybit demo canary，"
+          "必须启用 canary_allow_independent_signal，且要求有效路径/时效/"
+          "正数 target_notional_usd（不得超过 max_order_notional）";
     }
     return false;
   }

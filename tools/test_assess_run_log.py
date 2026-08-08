@@ -464,13 +464,34 @@ class AssessRunLogTest(unittest.TestCase):
                 "bar_interval_ms=300000, feature_samples=300",
                 "2026-07-27 10:00:00 [INFO] INTEGRATOR_HISTORY_BOOTSTRAP: "
                 "model_version=model-v1, training_symbol=SOLUSDT",
+                "2026-07-27 10:00:00 [INFO] "
+                "MICROSTRUCTURE_DEMO_SIGNAL_ACCEPTED: "
+                "candidate_id=model-v1, status=FLAT, direction=0, "
+                "predicted_net_edge_bps=0.000000",
+                "2026-07-27 10:00:00 [INFO] "
+                "MICROSTRUCTURE_DEMO_PENDING_ENTRY_CANCEL: "
+                "candidate_id=model-v1, client_order_id=order-pending, "
+                "symbol=SOLUSDT, pending_direction=1, target_direction=0, "
+                "reason=microstructure_demo_policy_flat",
                 "2026-07-27 10:00:00 [INFO] INTEGRATOR_RUNTIME_IDENTITY: "
                 f"runtime_config_sha256={'a' * 64}, "
                 f"trade_bot_sha256={'b' * 64}",
+                "2026-07-27 10:00:00 [INFO] PROCESS_RUNTIME_IDENTITY: "
+                f"runtime_config_sha256={'a' * 64}, "
+                f"trade_bot_sha256={'b' * 64}",
+                "2026-07-27 10:00:00 [INFO] "
+                "INTEGRATOR_CANDIDATE_EPISODE_SUMMARY: "
+                "candidate_id=model-v1, model_version=model-v1, "
+                f"runtime_config_sha256={'a' * 64}, "
+                f"trade_bot_sha256={'b' * 64}, total_episode_count=3, "
+                "complete_episode_count=3, positive_episode_count=2, "
+                "realized_net_usd=0.300000, "
+                "realized_net_usd_sum_squares=0.050000",
                 "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_APPLIED: "
                 "mode=canary, model_version=model-v1, reason=canary",
                 "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_PROPOSED: "
-                "decision_id=d1, candidate_id=model-v1, mode=canary",
+                "decision_id=d1, candidate_id=model-v1, mode=canary, "
+                "model_version=model-v1, source=microstructure_demo",
                 "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_RISK_ACCEPTED: "
                 "decision_id=d1, candidate_id=model-v1, mode=canary",
                 "2026-07-27 10:00:01 [INFO] INTEGRATOR_POLICY_ENQUEUED: "
@@ -528,8 +549,41 @@ class AssessRunLogTest(unittest.TestCase):
             report["metrics"]["integrator_model_version_latest"],
             "model-v2",
         )
+        self.assertEqual(
+            report["metrics"]["process_runtime_config_sha256_latest"], "a" * 64
+        )
+        self.assertEqual(
+            report["metrics"]["process_trade_bot_sha256_latest"], "b" * 64
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_candidate_episode_summaries"][0][
+                "complete_episode_count"
+            ],
+            3,
+        )
         self.assertEqual(report["metrics"]["integrator_policy_applied_count"], 1)
         self.assertEqual(report["metrics"]["integrator_policy_proposed_count"], 1)
+        self.assertEqual(
+            report["metrics"]["integrator_policy_proposed_candidate_ids"],
+            ["model-v1"],
+        )
+        self.assertEqual(
+            report["metrics"]["integrator_policy_proposed_sources"],
+            ["microstructure_demo"],
+        )
+        self.assertEqual(
+            report["metrics"]["microstructure_demo_signal_accepted_count"], 1
+        )
+        self.assertEqual(
+            report["metrics"]["microstructure_demo_accepted_candidate_ids"],
+            ["model-v1"],
+        )
+        self.assertEqual(
+            report["metrics"]["microstructure_demo_accepted_statuses"], ["FLAT"]
+        )
+        self.assertEqual(
+            report["metrics"]["microstructure_demo_pending_entry_cancel_count"], 1
+        )
         self.assertEqual(
             report["metrics"]["integrator_policy_risk_accepted_count"], 1
         )

@@ -2641,6 +2641,51 @@ def assess(
     integrator_closed_episode_events = list(
         integrator_closed_episode_events_by_id.values()
     )
+    process_runtime_identity_events = [
+        {
+            "runtime_config_sha256": match.group(1),
+            "trade_bot_sha256": match.group(2),
+        }
+        for match in re.finditer(
+            r"PROCESS_RUNTIME_IDENTITY:[^\n]*runtime_config_sha256=([0-9a-f]{64})"
+            r"[^\n]*trade_bot_sha256=([0-9a-f]{64})",
+            text,
+        )
+    ]
+    candidate_episode_summary_events = [
+        {
+            "candidate_id": match.group(1),
+            "model_version": match.group(2),
+            "runtime_config_sha256": match.group(3),
+            "trade_bot_sha256": match.group(4),
+            "total_episode_count": int(match.group(5)),
+            "complete_episode_count": int(match.group(6)),
+            "positive_episode_count": int(match.group(7)),
+            "realized_net_usd": float(match.group(8)),
+            "realized_net_usd_sum_squares": float(match.group(9)),
+        }
+        for match in re.finditer(
+            r"INTEGRATOR_CANDIDATE_EPISODE_SUMMARY:[^\n]*candidate_id=([^,\s]+)"
+            r"[^\n]*model_version=([^,\s]+)"
+            r"[^\n]*runtime_config_sha256=([0-9a-f]{64})"
+            r"[^\n]*trade_bot_sha256=([0-9a-f]{64})"
+            r"[^\n]*total_episode_count=(\d+)"
+            r"[^\n]*complete_episode_count=(\d+)"
+            r"[^\n]*positive_episode_count=(\d+)"
+            r"[^\n]*realized_net_usd=([-+0-9.eE]+)"
+            r"[^\n]*realized_net_usd_sum_squares=([-+0-9.eE]+)",
+            text,
+        )
+    ]
+    candidate_episode_summaries_by_identity = {
+        (
+            event["candidate_id"],
+            event["model_version"],
+            event["runtime_config_sha256"],
+            event["trade_bot_sha256"],
+        ): event
+        for event in candidate_episode_summary_events
+    }
     integrator_closed_episode_raw_count = count(
         r"INTEGRATOR_POLICY_EPISODE_CLOSED:", text
     )
@@ -2799,6 +2844,12 @@ def assess(
         "integrator_policy_proposed_count": count(
             r"INTEGRATOR_POLICY_PROPOSED:", text
         ),
+        "integrator_policy_proposed_candidate_ids": re.findall(
+            r"INTEGRATOR_POLICY_PROPOSED:[^\n]*candidate_id=([^,\s]+)", text
+        ),
+        "integrator_policy_proposed_sources": re.findall(
+            r"INTEGRATOR_POLICY_PROPOSED:[^\n]*source=([^,\s]+)", text
+        ),
         "integrator_policy_risk_accepted_count": count(
             r"INTEGRATOR_POLICY_RISK_ACCEPTED:", text
         ),
@@ -2825,6 +2876,20 @@ def assess(
             r"INTEGRATOR_POLICY_FILLED:[^\n]*model_version=([^,\s]+)", text
         ),
         "integrator_policy_closed_episode_events": integrator_closed_episode_events,
+        "process_runtime_identity_events": process_runtime_identity_events,
+        "process_runtime_config_sha256_latest": (
+            process_runtime_identity_events[-1]["runtime_config_sha256"]
+            if process_runtime_identity_events
+            else ""
+        ),
+        "process_trade_bot_sha256_latest": (
+            process_runtime_identity_events[-1]["trade_bot_sha256"]
+            if process_runtime_identity_events
+            else ""
+        ),
+        "integrator_candidate_episode_summaries": list(
+            candidate_episode_summaries_by_identity.values()
+        ),
         "integrator_policy_closed_episode_ids": [
             event["position_episode_id"]
             for event in integrator_closed_episode_events
@@ -2843,6 +2908,30 @@ def assess(
         ),
         "integrator_policy_active_count": count(
             r"INTEGRATOR_POLICY_APPLIED:.*mode=active", text
+        ),
+        "microstructure_demo_signal_recovered_count": count(
+            r"MICROSTRUCTURE_DEMO_SIGNAL_RECOVERED:", text
+        ),
+        "microstructure_demo_signal_accepted_count": count(
+            r"MICROSTRUCTURE_DEMO_SIGNAL_ACCEPTED:", text
+        ),
+        "microstructure_demo_accepted_candidate_ids": re.findall(
+            r"MICROSTRUCTURE_DEMO_SIGNAL_ACCEPTED:[^\n]*candidate_id=([^,\s]+)",
+            text,
+        ),
+        "microstructure_demo_accepted_statuses": re.findall(
+            r"MICROSTRUCTURE_DEMO_SIGNAL_ACCEPTED:[^\n]*status=([^,\s]+)",
+            text,
+        ),
+        "microstructure_demo_fail_closed_count": count(
+            r"MICROSTRUCTURE_DEMO_FAIL_CLOSED:", text
+        ),
+        "microstructure_demo_pending_entry_cancel_count": count(
+            r"MICROSTRUCTURE_DEMO_PENDING_ENTRY_CANCEL:", text
+        ),
+        "microstructure_demo_candidate_ids": re.findall(
+            r"MICROSTRUCTURE_DEMO_SIGNAL_RECOVERED:[^\n]*candidate_id=([^,\s]+)",
+            text,
         ),
         "integrator_model_versions": integrator_model_versions,
         "integrator_model_version_events": integrator_model_version_events,

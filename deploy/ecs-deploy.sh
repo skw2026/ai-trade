@@ -20,7 +20,7 @@ ENV_FILE="${2:-/opt/ai-trade/.env.runtime}"
 SERVICE_NAME="${SERVICE_NAME:-}"
 DEPLOY_SERVICES_RAW="${DEPLOY_SERVICES:-${SERVICE_NAME}}"
 if [[ -z "${DEPLOY_SERVICES_RAW// }" ]]; then
-  DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector watchdog scheduler ai-trade-web"
+  DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector microstructure-demo-policy watchdog scheduler ai-trade-web"
 fi
 REQUIRED_CONTAINERS_RAW="${REQUIRED_CONTAINERS:-}"
 CONTAINER_NAME="${CONTAINER_NAME:-ai-trade}"
@@ -487,6 +487,9 @@ service_to_container_name() {
       ;;
     market-alpha-collector)
       echo "ai-trade-market-alpha-collector"
+      ;;
+    microstructure-demo-policy)
+      echo "ai-trade-microstructure-demo-policy"
       ;;
     *)
       echo "${service}"

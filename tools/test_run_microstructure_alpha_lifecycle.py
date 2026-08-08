@@ -89,6 +89,12 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "validation_contract": validation_contract,
         "model_contract": model_contract,
         "economic_screen": {"development_passed": True},
+        "negative_control": {
+            "method": "deterministic_oos_prediction_time_permutation",
+            "fully_verifiable": True,
+            "passed": True,
+            "trial_count": 7,
+        },
         "frozen_candidate": frozen,
     }
     report = root / "development.json"

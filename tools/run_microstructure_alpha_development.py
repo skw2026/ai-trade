@@ -32,7 +32,7 @@ except ImportError:  # pragma: no cover - exercised by the research image
     CatBoostRegressor = None
 
 
-SCHEMA_VERSION = "microstructure_alpha_development_v1"
+SCHEMA_VERSION = "microstructure_alpha_development_v2"
 ASSESSMENT_SCHEMA_VERSION = "microstructure_capture_assessment_v1"
 REQUIRED_FIELDS = (
     "timestamp",
@@ -416,6 +416,129 @@ def evaluate_joint_policy(
     }
 
 
+def evaluate_prediction_permutation_controls(
+    *,
+    timestamps: np.ndarray,
+    prediction: np.ndarray,
+    realized_base: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    threshold_bps: float,
+    base_cost_bps: float,
+    stress_cost_multiplier: float,
+    execution_latency_seconds: int,
+    trials: int,
+    seed: int,
+) -> List[Dict[str, Any]]:
+    """Destroy prediction/outcome timing while preserving score/action marginals."""
+    if trials <= 0:
+        raise ValueError("permutation control trials must be positive")
+    rng = np.random.default_rng(int(seed))
+    controls: List[Dict[str, Any]] = []
+    for trial in range(int(trials)):
+        permutation = rng.permutation(len(prediction))
+        report = evaluate_joint_policy(
+            timestamps=timestamps,
+            prediction=np.asarray(prediction)[permutation],
+            realized_base=realized_base,
+            actions=actions,
+            threshold_bps=threshold_bps,
+            base_cost_bps=base_cost_bps,
+            stress_cost_multiplier=stress_cost_multiplier,
+            execution_latency_seconds=execution_latency_seconds,
+        )
+        report.pop("base_edges_bps", None)
+        report.pop("stress_edges_bps", None)
+        report["trial"] = trial
+        controls.append(report)
+    return controls
+
+
+def summarize_prediction_permutation_controls(
+    *,
+    base_means_by_trial: Sequence[Sequence[float]],
+    stress_means_by_trial: Sequence[Sequence[float]],
+    required_split_count: int,
+    candidate_base_split_lcb_bps: float | None,
+    candidate_stress_split_lcb_bps: float | None,
+    minimum_excess_lcb_bps: float,
+    seed: int,
+) -> Dict[str, Any]:
+    trial_summaries: List[Dict[str, Any]] = []
+    fully_verifiable = bool(required_split_count > 0)
+    for trial, (base_values, stress_values) in enumerate(
+        zip(base_means_by_trial, stress_means_by_trial)
+    ):
+        base = summarize_edges(base_values)
+        stress = summarize_edges(stress_values)
+        complete = bool(
+            base["count"] == required_split_count
+            and stress["count"] == required_split_count
+        )
+        fully_verifiable = fully_verifiable and complete
+        trial_summaries.append(
+            {
+                "trial": trial,
+                "complete": complete,
+                "base_cost_by_split": base,
+                "stress_cost_by_split": stress,
+            }
+        )
+    if not trial_summaries:
+        fully_verifiable = False
+    finite_base_lcbs = [
+        float(item["base_cost_by_split"]["lcb_bps"])
+        for item in trial_summaries
+        if item["base_cost_by_split"]["lcb_bps"] is not None
+    ]
+    finite_stress_lcbs = [
+        float(item["stress_cost_by_split"]["lcb_bps"])
+        for item in trial_summaries
+        if item["stress_cost_by_split"]["lcb_bps"] is not None
+    ]
+    maximum_base_lcb = max(finite_base_lcbs, default=float("inf"))
+    maximum_stress_lcb = max(finite_stress_lcbs, default=float("inf"))
+    required_base_lcb = max(0.0, maximum_base_lcb) + float(
+        minimum_excess_lcb_bps
+    )
+    required_stress_lcb = max(0.0, maximum_stress_lcb) + float(
+        minimum_excess_lcb_bps
+    )
+    passed = bool(
+        fully_verifiable
+        and candidate_base_split_lcb_bps is not None
+        and candidate_stress_split_lcb_bps is not None
+        and float(candidate_base_split_lcb_bps) > required_base_lcb
+        and float(candidate_stress_split_lcb_bps) > required_stress_lcb
+    )
+    return {
+        "method": "deterministic_oos_prediction_time_permutation",
+        "contract": (
+            "preserve_prediction_score_and_action_marginals_destroy_feature_outcome_timing"
+        ),
+        "seed": int(seed),
+        "trial_count": len(trial_summaries),
+        "required_split_count": int(required_split_count),
+        "minimum_excess_lcb_bps": float(minimum_excess_lcb_bps),
+        "fully_verifiable": fully_verifiable,
+        "passed": passed,
+        "maximum_control_base_split_lcb_bps": (
+            maximum_base_lcb if math.isfinite(maximum_base_lcb) else None
+        ),
+        "maximum_control_stress_split_lcb_bps": (
+            maximum_stress_lcb if math.isfinite(maximum_stress_lcb) else None
+        ),
+        "required_candidate_base_split_lcb_bps": (
+            required_base_lcb if math.isfinite(required_base_lcb) else None
+        ),
+        "required_candidate_stress_split_lcb_bps": (
+            required_stress_lcb if math.isfinite(required_stress_lcb) else None
+        ),
+        "candidate_base_split_lcb_bps": candidate_base_split_lcb_bps,
+        "candidate_stress_split_lcb_bps": candidate_stress_split_lcb_bps,
+        "trial_summaries": trial_summaries,
+    }
+
+
 def select_nested_threshold(
     *,
     timestamps: np.ndarray,
@@ -558,6 +681,17 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
     all_stress_edges: List[float] = []
     split_base_means: List[float] = []
     split_stress_means: List[float] = []
+    permutation_trials = int(getattr(args, "permutation_control_trials", 7))
+    permutation_seed = int(getattr(args, "permutation_control_seed", 20260808))
+    permutation_minimum_excess_lcb_bps = float(
+        getattr(args, "permutation_control_minimum_excess_lcb_bps", 0.0)
+    )
+    permutation_base_means_by_trial: List[List[float]] = [
+        [] for _ in range(permutation_trials)
+    ]
+    permutation_stress_means_by_trial: List[List[float]] = [
+        [] for _ in range(permutation_trials)
+    ]
     failures: List[str] = []
     for split in splits:
         fit_indices = indices_between(timestamps, split.fit_start_ms, split.fit_end_ms)
@@ -619,6 +753,29 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             stress_cost_multiplier=float(args.stress_cost_multiplier),
             execution_latency_seconds=int(args.execution_latency_seconds),
         )
+        permutation_controls = evaluate_prediction_permutation_controls(
+            timestamps=timestamps[test_indices],
+            prediction=test_prediction,
+            realized_base=outcomes[test_indices],
+            actions=actions,
+            threshold_bps=threshold,
+            base_cost_bps=float(args.additional_round_trip_cost_bps),
+            stress_cost_multiplier=float(args.stress_cost_multiplier),
+            execution_latency_seconds=int(args.execution_latency_seconds),
+            trials=permutation_trials,
+            seed=permutation_seed + split.split_id * 1_000_003,
+        )
+        for trial, control in enumerate(permutation_controls):
+            control_base_mean = control["base_cost"].get("mean_bps")
+            control_stress_mean = control["stress_cost"].get("mean_bps")
+            if control_base_mean is not None:
+                permutation_base_means_by_trial[trial].append(
+                    float(control_base_mean)
+                )
+            if control_stress_mean is not None:
+                permutation_stress_means_by_trial[trial].append(
+                    float(control_stress_mean)
+                )
         base = objective["base_cost"]
         stress = objective["stress_cost"]
         all_base_edges.extend(objective.pop("base_edges_bps"))
@@ -642,6 +799,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 ),
                 "nested_calibration": calibration,
                 "oos_objective": objective,
+                "oos_prediction_permutation_controls": permutation_controls,
             }
         )
     base_trade_summary = summarize_edges(all_base_edges)
@@ -654,9 +812,23 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         if split_base_means
         else 0.0
     )
-    fully_verifiable = trained_split_count == len(splits) and not failures
+    permutation_control = summarize_prediction_permutation_controls(
+        base_means_by_trial=permutation_base_means_by_trial,
+        stress_means_by_trial=permutation_stress_means_by_trial,
+        required_split_count=len(splits),
+        candidate_base_split_lcb_bps=base_split_summary["lcb_bps"],
+        candidate_stress_split_lcb_bps=stress_split_summary["lcb_bps"],
+        minimum_excess_lcb_bps=permutation_minimum_excess_lcb_bps,
+        seed=permutation_seed,
+    )
+    fully_verifiable = bool(
+        trained_split_count == len(splits)
+        and not failures
+        and permutation_control["fully_verifiable"]
+    )
     development_passed = bool(
         fully_verifiable
+        and permutation_control["passed"]
         and base_trade_summary["count"] >= int(args.min_oos_trades)
         and positive_split_ratio >= float(args.min_positive_splits_ratio)
         and (base_split_summary["lcb_bps"] or float("-inf")) > 0.0
@@ -745,6 +917,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "oos_windows_non_overlapping": True,
         },
         "model_contract": model_contract(args),
+        "negative_control": permutation_control,
         "economic_screen": {
             "development_passed": development_passed,
             "trained_split_count": trained_split_count,
@@ -756,6 +929,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "positive_base_edge_split_ratio": positive_split_ratio,
             "minimum_oos_trades": int(args.min_oos_trades),
             "minimum_positive_splits_ratio": float(args.min_positive_splits_ratio),
+            "prediction_permutation_control_passed": permutation_control["passed"],
         },
         "split_reports": split_reports,
         "frozen_candidate": frozen_candidate,
@@ -855,6 +1029,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random-strength", type=float, default=2.0)
     parser.add_argument("--random-seed", type=int, default=20260806)
     parser.add_argument("--early-stopping-rounds", type=int, default=20)
+    parser.add_argument("--permutation-control-trials", type=int, default=7)
+    parser.add_argument("--permutation-control-seed", type=int, default=20260808)
+    parser.add_argument(
+        "--permutation-control-minimum-excess-lcb-bps", type=float, default=0.0
+    )
     parser.add_argument("--research-domain", choices=("development",), default="development")
     args = parser.parse_args()
     args.horizons_seconds = parse_csv_ints(args.horizons_seconds)
@@ -867,6 +1046,10 @@ def parse_args() -> argparse.Namespace:
         raise ValueError("additional round-trip cost must be positive")
     if args.stress_cost_multiplier <= 1.0:
         raise ValueError("stress cost multiplier must be > 1")
+    if args.permutation_control_trials < 5:
+        raise ValueError("permutation control trials must be >= 5")
+    if args.permutation_control_minimum_excess_lcb_bps < 0.0:
+        raise ValueError("permutation control minimum excess LCB must be non-negative")
     return args
 
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": "closed_loop_contract_v1",
+  "schema_version": "closed_loop_contract_v2",
   "trust_anchors": {
     "feature_parity_fixture": {
       "schema_version": "feature_parity_fixture_contract_v1",
@@ -58,12 +58,7 @@
         "microstructure_forward_data",
         "microstructure_alpha_development",
         "microstructure_alpha_lifecycle",
-        "integrator",
-        "replay_candidate_config",
-        "replay_validation",
-        "strategy_diagnose",
-        "alpha_mechanism_probe",
-        "model_registry"
+        "alpha_source_route"
       ],
       "required_artifacts": [
         "step_status",
@@ -76,25 +71,44 @@
         "research_selection_feature_store",
         "research_holdout_feature_store",
         "miner_report",
-        "integrator_report",
-        "integrator_model",
-        "replay_candidate_config",
-        "selection_candidate_manifest",
-        "replay_validation_report",
-        "replay_optimization_report",
-        "replay_validation_feature_build_report",
-        "replay_validation_command_log",
-        "strategy_diagnose_report",
-        "alpha_mechanism_probe_report",
-        "alpha_candidate_manifest",
-        "model_registry_entry",
-        "strategy_candidate_manifest",
         "market_alpha_development_report",
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
         "microstructure_alpha_candidate_manifest",
-        "microstructure_alpha_lifecycle_report"
-      ]
+        "microstructure_alpha_lifecycle_report",
+        "alpha_source_route_report"
+      ],
+      "route_contracts": {
+        "legacy_integrator": {
+          "required_steps": [
+            "integrator",
+            "replay_candidate_config",
+            "replay_validation",
+            "strategy_diagnose",
+            "alpha_mechanism_probe",
+            "model_registry"
+          ],
+          "required_artifacts": [
+            "integrator_report",
+            "integrator_model",
+            "replay_candidate_config",
+            "selection_candidate_manifest",
+            "replay_validation_report",
+            "replay_optimization_report",
+            "replay_validation_feature_build_report",
+            "replay_validation_command_log",
+            "strategy_diagnose_report",
+            "alpha_mechanism_probe_report",
+            "alpha_candidate_manifest",
+            "model_registry_entry",
+            "strategy_candidate_manifest"
+          ]
+        },
+        "microstructure_demo": {
+          "required_steps": ["microstructure_demo_binding"],
+          "required_artifacts": ["microstructure_demo_binding_report"]
+        }
+      }
     },
     "full": {
       "required_steps": [
@@ -108,13 +122,7 @@
         "microstructure_forward_data",
         "microstructure_alpha_development",
         "microstructure_alpha_lifecycle",
-        "integrator",
-        "replay_candidate_config",
-        "replay_validation",
-        "strategy_diagnose",
-        "alpha_mechanism_probe",
-        "model_registry",
-        "candidate_restart",
+        "alpha_source_route",
         "s5_learning_switches",
         "runtime_assess",
         "s5_learning_activity",
@@ -131,21 +139,6 @@
         "research_selection_feature_store",
         "research_holdout_feature_store",
         "miner_report",
-        "integrator_report",
-        "integrator_model",
-        "replay_candidate_config",
-        "selection_candidate_manifest",
-        "replay_validation_report",
-        "replay_optimization_report",
-        "replay_validation_feature_build_report",
-        "replay_validation_command_log",
-        "strategy_diagnose_report",
-        "alpha_mechanism_probe_report",
-        "alpha_candidate_manifest",
-        "model_registry_entry",
-        "strategy_candidate_manifest",
-        "activation_transaction",
-        "activation_decision",
         "runtime_log",
         "runtime_assess_report",
         "trade_ledger_report",
@@ -154,8 +147,43 @@
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
         "microstructure_alpha_candidate_manifest",
-        "microstructure_alpha_lifecycle_report"
-      ]
+        "microstructure_alpha_lifecycle_report",
+        "alpha_source_route_report"
+      ],
+      "route_contracts": {
+        "legacy_integrator": {
+          "required_steps": [
+            "integrator",
+            "replay_candidate_config",
+            "replay_validation",
+            "strategy_diagnose",
+            "alpha_mechanism_probe",
+            "model_registry",
+            "candidate_restart"
+          ],
+          "required_artifacts": [
+            "integrator_report",
+            "integrator_model",
+            "replay_candidate_config",
+            "selection_candidate_manifest",
+            "replay_validation_report",
+            "replay_optimization_report",
+            "replay_validation_feature_build_report",
+            "replay_validation_command_log",
+            "strategy_diagnose_report",
+            "alpha_mechanism_probe_report",
+            "alpha_candidate_manifest",
+            "model_registry_entry",
+            "strategy_candidate_manifest",
+            "activation_transaction",
+            "activation_decision"
+          ]
+        },
+        "microstructure_demo": {
+          "required_steps": ["microstructure_demo_binding"],
+          "required_artifacts": ["microstructure_demo_binding_report"]
+        }
+      }
     },
     "assess": {
       "required_steps": [

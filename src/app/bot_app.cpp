@@ -1069,7 +1069,10 @@ double BotApplication::EstimateEntryEdgeBps(const MarketDecision& decision,
   if (direction == 0) {
     return 0.0;
   }
-  if (decision.integrator_policy_reason == "canary_independent_signal") {
+  if (decision.integrator_policy_reason == "canary_independent_signal" ||
+      decision.integrator_policy_reason == "microstructure_demo_target" ||
+      decision.integrator_policy_reason ==
+          "microstructure_demo_target_pending") {
     if (!decision.shadow.expected_net_edge_available ||
         !std::isfinite(
             decision.shadow.expected_net_edge_per_trade_bps)) {
@@ -2031,6 +2034,48 @@ bool BotApplication::NormalizeReduceIntentToActualPosition(
     return false;
   }
   return true;
+}
+
+void BotApplication::CancelConflictingMicrostructureEntries(
+    const MarketDecision& decision) {
+  if (executor_ == nullptr ||
+      decision.shadow.source != "microstructure_demo" ||
+      !decision.shadow.target_position_signal ||
+      decision.shadow.model_version.empty()) {
+    return;
+  }
+  const int target_direction =
+      decision.shadow.fail_closed ||
+              decision.integrator_policy_reason ==
+                  "microstructure_demo_route_transition_flat"
+          ? 0
+          : std::clamp(decision.shadow.target_direction, -1, 1);
+  const std::int64_t now_ms = CurrentTimestampMs();
+  for (const auto& client_order_id : oms_.PendingNetPositionOrderIds()) {
+    const OrderRecord* record = oms_.Find(client_order_id);
+    if (record == nullptr || record->state == OrderState::kCancelPending ||
+        record->intent.purpose != OrderPurpose::kEntry ||
+        record->intent.reduce_only ||
+        record->intent.symbol != decision.signal.symbol ||
+        (target_direction != 0 &&
+         record->intent.candidate_id == decision.shadow.model_version &&
+         record->intent.direction == target_direction)) {
+      continue;
+    }
+    const std::string pending_symbol = record->intent.symbol;
+    const int pending_direction = record->intent.direction;
+    oms_.MarkCancelPending(client_order_id);
+    pending_net_order_enqueued_ms_[client_order_id] = now_ms;
+    executor_->Cancel(client_order_id);
+    LogInfo("MICROSTRUCTURE_DEMO_PENDING_ENTRY_CANCEL: candidate_id=" +
+            decision.shadow.model_version +
+            ", client_order_id=" + client_order_id +
+            ", symbol=" + pending_symbol +
+            ", pending_direction=" +
+            std::to_string(pending_direction) +
+            ", target_direction=" + std::to_string(target_direction) +
+            ", reason=" + decision.integrator_policy_reason);
+  }
 }
 
 void BotApplication::OnCandidateProbeCancelResult(
@@ -3597,16 +3642,21 @@ bool BotApplication::Initialize() {
         LogInfo("INTEGRATOR_DEGRADED: " + shadow_error);
         if (system_.integrator_mode() == IntegratorMode::kCanary ||
             system_.integrator_mode() == IntegratorMode::kActive) {
-          if (config_.integrator.shadow.strict_failure_degrade_to_off) {
+          if (config_.integrator.shadow.strict_failure_degrade_to_off &&
+              !config_.integrator.microstructure_demo.enabled) {
             system_.SetIntegratorMode(IntegratorMode::kOff);
             config_.integrator.mode = IntegratorMode::kOff;
             LogInfo(
                 "INTEGRATOR_SAFE_OFF: strict history bootstrap failed; "
                 "baseline runtime remains active and model orders are disabled");
-          } else {
+          } else if (!config_.integrator.microstructure_demo.enabled) {
             LogError(
                 "INTEGRATOR_STARTUP_BLOCKED: strict mode history bootstrap failed");
             return false;
+          } else {
+            LogInfo(
+                "ALPHA_SOURCE_ROUTER_ARMED: legacy OHLCV source unavailable; "
+                "microstructure demo source remains fail-closed until demo_ready");
           }
         }
       }
@@ -3614,17 +3664,22 @@ bool BotApplication::Initialize() {
       LogInfo("INTEGRATOR_DEGRADED: " + shadow_error);
       if (system_.integrator_mode() == IntegratorMode::kCanary ||
           system_.integrator_mode() == IntegratorMode::kActive) {
-        if (config_.integrator.shadow.strict_failure_degrade_to_off) {
+        if (config_.integrator.shadow.strict_failure_degrade_to_off &&
+            !config_.integrator.microstructure_demo.enabled) {
           system_.SetIntegratorMode(IntegratorMode::kOff);
           config_.integrator.mode = IntegratorMode::kOff;
           LogInfo(
               "INTEGRATOR_SAFE_OFF: strict identity/model initialization "
               "failed; baseline runtime remains active and model orders are "
               "disabled");
-        } else {
+        } else if (!config_.integrator.microstructure_demo.enabled) {
           LogError(
               "INTEGRATOR_STARTUP_BLOCKED: strict mode identity/model init failed");
           return false;
+        } else {
+          LogInfo(
+              "ALPHA_SOURCE_ROUTER_ARMED: legacy OHLCV source unavailable; "
+              "microstructure demo source remains fail-closed until demo_ready");
         }
       }
     }
@@ -4227,8 +4282,12 @@ bool BotApplication::RecordCandidateEpisodeClosure(
   closure.unique_order_count =
       static_cast<int>(episode.order_ids.size());
   closure.evidence_complete = episode.entry_observed_from_flat;
+  const bool microstructure_demo_episode =
+      closure.policy_reason.rfind("microstructure_demo_", 0) == 0;
   closure.activation_transaction_id =
-      system_.integrator_activation_transaction_id();
+      microstructure_demo_episode
+          ? "microstructure-demo:" + closure.candidate_id
+          : system_.integrator_activation_transaction_id();
   if (closure.activation_transaction_id.empty()) {
     closure.activation_transaction_id =
         ReadEnvValue("CLOSED_LOOP_ACTIVATION_TRANSACTION_ID");
@@ -4583,9 +4642,19 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
       symbol_inflight_notional_usd = inflight_qty * effective_price;
     }
   }
-  auto decision = system_.Evaluate(event, trade_ok,
-                                   symbol_inflight_notional_usd,
-                                   has_pending_symbol_net_orders);
+  std::string settled_position_candidate_id;
+  std::string settled_position_policy_reason;
+  if (const auto episode_it =
+          integrator_episode_by_symbol_.find(event.symbol);
+      episode_it != integrator_episode_by_symbol_.end()) {
+    settled_position_candidate_id = episode_it->second.lineage.candidate_id;
+    settled_position_policy_reason = episode_it->second.lineage.policy_reason;
+  }
+  auto decision = system_.Evaluate(
+      event, trade_ok, symbol_inflight_notional_usd,
+      has_pending_symbol_net_orders, settled_position_candidate_id,
+      settled_position_policy_reason);
+  CancelConflictingMicrostructureEntries(decision);
   constexpr double kRebalanceGapEpsilon = 1e-6;
   if (!decision.risk_adjusted.symbol.empty()) {
     const double settled_symbol_notional =
@@ -4764,6 +4833,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
             ", mode=" +
             std::string(ToString(system_.integrator_mode())) +
             ", model_version=" + decision.shadow.model_version +
+            ", source=" + decision.shadow.source +
             ", reason=" + decision.integrator_policy_reason +
             ", symbol=" + decision.signal.symbol +
             ", confidence=" + std::to_string(decision.integrator_confidence) +
@@ -8118,6 +8188,57 @@ void BotApplication::LogStatus() {
           ", cooldown=" + std::string(evolution_cooldown ? "true" : "false") +
           ", cooldown_remaining_ticks=" +
           std::to_string(evolution_cooldown_remaining) + "}");
+  struct CandidateEpisodeSummary {
+    std::string candidate_id;
+    std::string model_version;
+    std::string runtime_config_sha256;
+    std::string trade_bot_sha256;
+    int total_episode_count{0};
+    int complete_episode_count{0};
+    int positive_episode_count{0};
+    double realized_net_usd{0.0};
+    double realized_net_usd_sum_squares{0.0};
+  };
+  std::unordered_map<std::string, CandidateEpisodeSummary> candidate_summaries;
+  for (const auto& [episode_id, closure] : persisted_episode_closures_) {
+    (void)episode_id;
+    const std::string key = closure.candidate_id + "|" +
+                            closure.model_version + "|" +
+                            closure.runtime_config_sha256 + "|" +
+                            closure.trade_bot_sha256;
+    auto& summary = candidate_summaries[key];
+    summary.candidate_id = closure.candidate_id;
+    summary.model_version = closure.model_version;
+    summary.runtime_config_sha256 = closure.runtime_config_sha256;
+    summary.trade_bot_sha256 = closure.trade_bot_sha256;
+    ++summary.total_episode_count;
+    if (closure.evidence_complete) {
+      ++summary.complete_episode_count;
+      summary.realized_net_usd += closure.realized_net_usd;
+      summary.realized_net_usd_sum_squares +=
+          closure.realized_net_usd * closure.realized_net_usd;
+      if (closure.realized_net_usd > 0.0) {
+        ++summary.positive_episode_count;
+      }
+    }
+  }
+  for (const auto& [identity, summary] : candidate_summaries) {
+    (void)identity;
+    LogInfo("INTEGRATOR_CANDIDATE_EPISODE_SUMMARY: candidate_id=" +
+            summary.candidate_id + ", model_version=" +
+            summary.model_version + ", runtime_config_sha256=" +
+            summary.runtime_config_sha256 + ", trade_bot_sha256=" +
+            summary.trade_bot_sha256 + ", total_episode_count=" +
+            std::to_string(summary.total_episode_count) +
+            ", complete_episode_count=" +
+            std::to_string(summary.complete_episode_count) +
+            ", positive_episode_count=" +
+            std::to_string(summary.positive_episode_count) +
+            ", realized_net_usd=" +
+            std::to_string(summary.realized_net_usd) +
+            ", realized_net_usd_sum_squares=" +
+            std::to_string(summary.realized_net_usd_sum_squares));
+  }
   last_status_realized_net_pnl_usd_ =
       system_.account().cumulative_realized_net_pnl_usd();
   last_status_fee_usd_ = system_.account().cumulative_fee_usd();

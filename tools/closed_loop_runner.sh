@@ -80,6 +80,8 @@ MICROSTRUCTURE_ALPHA_FUTURE_MIN_TRADES="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTUR
 MICROSTRUCTURE_ALPHA_FUTURE_BLOCK_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTURE_BLOCK_SECONDS:-3600}"
 MICROSTRUCTURE_ALPHA_FUTURE_MIN_BLOCKS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTURE_MIN_BLOCKS:-4}"
 MICROSTRUCTURE_ALPHA_FUTURE_MIN_POSITIVE_BLOCKS_RATIO="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_FUTURE_MIN_POSITIVE_BLOCKS_RATIO:-0.60}"
+MICROSTRUCTURE_DEMO_HEALTH_PATH="${CLOSED_LOOP_MICROSTRUCTURE_DEMO_HEALTH_PATH:-${AI_TRADE_DATA_DIR:-./data}/runtime/microstructure_demo_policy_health.json}"
+MICROSTRUCTURE_DEMO_SIGNAL_PATH="${CLOSED_LOOP_MICROSTRUCTURE_DEMO_SIGNAL_PATH:-${AI_TRADE_DATA_DIR:-./data}/runtime/microstructure_demo_signal.json}"
 
 SYMBOL="SOLUSDT"
 INTERVAL="5"
@@ -1219,6 +1221,8 @@ MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_de
 MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/microstructure_alpha_candidate_manifest.json"
 MICROSTRUCTURE_ALPHA_MODEL_PATH="${RUN_DIR}/microstructure_alpha_development.cbm"
 MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH="${RUN_DIR}/microstructure_alpha_lifecycle_report.json"
+ALPHA_SOURCE_ROUTE_REPORT_PATH="${RUN_DIR}/alpha_source_route_report.json"
+MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH="${RUN_DIR}/microstructure_demo_binding_report.json"
 MARKET_ALPHA_DEVELOPMENT_DIR="${RUN_DIR}/market_alpha_development"
 MARKET_ALPHA_DEVELOPMENT_REPORT_PATH="${MARKET_ALPHA_DEVELOPMENT_DIR}/market_alpha_verification_h${PREDICT_HORIZON_BARS}.json"
 ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/alpha_candidate_manifest.json"
@@ -1242,6 +1246,7 @@ RUN_META_PATH="${RUN_DIR}/run_meta.json"
 RUN_MANIFEST_PATH="${RUN_DIR}/run_manifest.json"
 FINAL_ARTIFACT_ATTESTATION_PATH="${RUN_DIR}/artifact_attestation.json"
 STEP_STATUS_PATH="${RUN_DIR}/step_status.jsonl"
+ACTIVE_ALPHA_ROUTE=""
 ACTIVE_MODEL_PATH="./data/models/integrator_latest.cbm"
 ACTIVE_REPORT_PATH="./data/research/integrator_report.json"
 ACTIVE_MINER_REPORT_PATH="./data/research/miner_report.json"
@@ -3292,12 +3297,17 @@ payload = json.loads(
     .read_text(encoding="utf-8")
 )
 contract_ok = bool(
-    payload.get("schema_version") == "microstructure_alpha_development_v1"
+    payload.get("schema_version") == "microstructure_alpha_development_v2"
     and payload.get("status") == "PASS"
     and payload.get("fully_verifiable") is True
     and payload.get("research_domain") == "forward_development_only"
     and payload.get("promotion_evidence") is False
     and payload.get("promotion_eligible") is False
+    and payload.get("negative_control", {}).get("method")
+    == "deterministic_oos_prediction_time_permutation"
+    and payload.get("negative_control", {}).get("fully_verifiable") is True
+    and payload.get("negative_control", {}).get("passed") is True
+    and int(payload.get("negative_control", {}).get("trial_count") or 0) >= 5
 )
 if not contract_ok:
     print("[ERROR] microstructure development report contract is incomplete")
@@ -3368,6 +3378,41 @@ if not passed:
 raise SystemExit(0 if passed else 1)
 PY
   echo "[INFO] cross-market/cross-asset development screen done"
+}
+
+run_alpha_source_route_gate() {
+  echo "[INFO] independent alpha-source routing start"
+  python3 tools/select_alpha_source.py \
+    --market-alpha-report "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+    --microstructure-lifecycle-report "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" \
+    --output "${ALPHA_SOURCE_ROUTE_REPORT_PATH}"
+  echo "[INFO] independent alpha-source routing done"
+}
+
+run_microstructure_demo_binding_gate() {
+  echo "[INFO] microstructure demo runtime binding verification start"
+  local attempt
+  local binding_status=0
+  for attempt in $(seq 1 15); do
+    binding_status=0
+    python3 tools/verify_microstructure_demo_binding.py \
+      --route-report "${ALPHA_SOURCE_ROUTE_REPORT_PATH}" \
+      --lifecycle-report "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" \
+      --health "${MICROSTRUCTURE_DEMO_HEALTH_PATH}" \
+      --signal "${MICROSTRUCTURE_DEMO_SIGNAL_PATH}" \
+      --output "${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}" \
+      --max-stale-ms 10000 || binding_status=$?
+    if (( binding_status == 0 )); then
+      echo "[INFO] microstructure demo runtime binding verification done"
+      return 0
+    fi
+    if (( attempt < 15 )); then
+      echo "[INFO] waiting for sidecar candidate refresh: attempt=${attempt}/15"
+      sleep 2
+    fi
+  done
+  echo "[ERROR] microstructure demo runtime binding verification failed after 15 attempts"
+  return "${binding_status}"
 }
 
 run_research_domain_split() {
@@ -4186,6 +4231,15 @@ run_mechanism_audit() {
   if [[ -f "${ALPHA_MECHANISM_PROBE_REPORT_PATH}" ]]; then
     audit_args+=(--alpha_mechanism_probe_report "${ALPHA_MECHANISM_PROBE_REPORT_PATH}")
   fi
+  if [[ -f "${ALPHA_SOURCE_ROUTE_REPORT_PATH}" ]]; then
+    audit_args+=(--alpha_source_route_report "${ALPHA_SOURCE_ROUTE_REPORT_PATH}")
+  fi
+  if [[ -f "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" ]]; then
+    audit_args+=(--microstructure_alpha_lifecycle_report "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}")
+  fi
+  if [[ -f "${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}" ]]; then
+    audit_args+=(--microstructure_demo_binding_report "${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}")
+  fi
 
   local audit_status=0
   run_analysis_python "${audit_args[@]}" \
@@ -4596,6 +4650,8 @@ write_run_manifest() {
   MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
   MICROSTRUCTURE_ALPHA_MODEL_PATH_VALUE="${MICROSTRUCTURE_ALPHA_MODEL_PATH}" \
   MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" \
+  ALPHA_SOURCE_ROUTE_REPORT_PATH_VALUE="${ALPHA_SOURCE_ROUTE_REPORT_PATH}" \
+  MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH_VALUE="${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}" \
   ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${ALPHA_CANDIDATE_MANIFEST_PATH}" \
   STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE="${STRATEGY_CANDIDATE_MANIFEST_PATH}" \
   REPLAY_CANDIDATE_CONFIG_PATH_VALUE="${REPLAY_CANDIDATE_CONFIG_PATH}" \
@@ -4683,7 +4739,7 @@ if not contract_path.is_file():
 contract = load_json_file(str(contract_path))
 contract_schema = str(contract.get("schema_version") or "").strip()
 contract_actions = contract.get("actions")
-if contract_schema != "closed_loop_contract_v1" or not isinstance(contract_actions, dict):
+if contract_schema != "closed_loop_contract_v2" or not isinstance(contract_actions, dict):
     raise SystemExit(f"invalid closed-loop contract: {contract_path}")
 action = os.environ.get("ACTION_VALUE", "").strip().lower()
 action_contract = contract_actions.get(action)
@@ -4691,6 +4747,7 @@ if not isinstance(action_contract, dict):
     raise SystemExit(f"closed-loop contract missing action={action}")
 required_artifacts = action_contract.get("required_artifacts")
 required_steps = action_contract.get("required_steps")
+route_contracts = action_contract.get("route_contracts", {})
 if (
     not isinstance(required_artifacts, list)
     or not required_artifacts
@@ -4698,6 +4755,7 @@ if (
     or not isinstance(required_steps, list)
     or not required_steps
     or not all(isinstance(item, str) and item.strip() for item in required_steps)
+    or not isinstance(route_contracts, dict)
 ):
     raise SystemExit(f"invalid closed-loop action contract: action={action}")
 requested_symbol = os.environ.get("SYMBOL_VALUE", "")
@@ -4763,6 +4821,7 @@ payload = {
         "action": action,
         "required_artifacts": required_artifacts,
         "required_steps": required_steps,
+        "route_contracts": route_contracts,
         "run_specific_dir": str(out.parent),
         "latest_pointer_must_match_run_id": True,
         "workflow_success_is_not_strategy_success": True,
@@ -4834,6 +4893,8 @@ artifact_env_names = {
     "microstructure_alpha_candidate_manifest": "MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
     "microstructure_alpha_model": "MICROSTRUCTURE_ALPHA_MODEL_PATH_VALUE",
     "microstructure_alpha_lifecycle_report": "MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE",
+    "alpha_source_route_report": "ALPHA_SOURCE_ROUTE_REPORT_PATH_VALUE",
+    "microstructure_demo_binding_report": "MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH_VALUE",
     "alpha_candidate_manifest": "ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
     "strategy_candidate_manifest": "STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE",
     "replay_candidate_config": "REPLAY_CANDIDATE_CONFIG_PATH_VALUE",
@@ -5028,6 +5089,12 @@ build_summary() {
   if [[ -f "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--microstructure_alpha_lifecycle_report "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}")
   fi
+  if [[ -f "${ALPHA_SOURCE_ROUTE_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--alpha_source_route_report "${ALPHA_SOURCE_ROUTE_REPORT_PATH}")
+  fi
+  if [[ -f "${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--microstructure_demo_binding_report "${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}")
+  fi
   if [[ -f "${MECHANISM_AUDIT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--closed_loop_mechanism_report "${MECHANISM_AUDIT_REPORT_PATH}")
   fi
@@ -5118,6 +5185,8 @@ build_summary() {
   "microstructure_alpha_candidate_manifest": "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}",
   "microstructure_alpha_model": "${MICROSTRUCTURE_ALPHA_MODEL_PATH}",
   "microstructure_alpha_lifecycle_report": "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}",
+  "alpha_source_route_report": "${ALPHA_SOURCE_ROUTE_REPORT_PATH}",
+  "microstructure_demo_binding_report": "${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}",
   "alpha_candidate_manifest": "${ALPHA_CANDIDATE_MANIFEST_PATH}",
   "strategy_candidate_manifest": "${STRATEGY_CANDIDATE_MANIFEST_PATH}",
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
@@ -5238,6 +5307,24 @@ PY
     then
       DATA_PIPELINE_LAST_STATUS="pass"
     fi
+  fi
+  if [[ "${step_name}" == "alpha_source_route" &&
+        -f "${ALPHA_SOURCE_ROUTE_REPORT_PATH}" ]]; then
+    ACTIVE_ALPHA_ROUTE="$(
+      ALPHA_SOURCE_ROUTE_REPORT_PATH_VALUE="${ALPHA_SOURCE_ROUTE_REPORT_PATH}" \
+      python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(
+    Path(os.environ["ALPHA_SOURCE_ROUTE_REPORT_PATH_VALUE"]).read_text(
+        encoding="utf-8"
+    )
+)
+print(str(payload.get("selected_route") or ""))
+PY
+    )"
   fi
 }
 
@@ -5371,6 +5458,18 @@ run_observation_step() {
   return 0
 }
 
+skip_route_step() {
+  local step_name="$1"
+  echo "[INFO] step not applicable to selected alpha route=${ACTIVE_ALPHA_ROUTE}: ${step_name}"
+  capture_step_status \
+    record_step_status "${step_name}" "route" "skipped" "" "false"
+  if (( LAST_CAPTURED_STATUS != 0 )); then
+    echo "[ERROR] route step status write failed: ${step_name}"
+    RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+  fi
+  return 0
+}
+
 run_training_chain() {
   RUN_REQUIRED_STEP_STATUS=0
   run_required_step baseline_freeze run_freeze_baseline
@@ -5380,30 +5479,45 @@ run_training_chain() {
   run_required_step data_quality run_data_quality
   run_required_step miner run_miner
   if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
-    # Both alpha-source gates are independent diagnostics. Collect both pieces
-    # of evidence before blocking integrator training on either failure.
-    run_collecting_step market_alpha_development run_market_alpha_development_gate
-    run_collecting_step microstructure_forward_data run_microstructure_capture_gate
-    run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
-    run_collecting_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
+    # Each source is observed independently. Only the fixed route selector may
+    # decide whether the training chain can continue; source failures are OR,
+    # never an accidental AND.
+    run_observation_step market_alpha_development run_market_alpha_development_gate
+    run_observation_step microstructure_forward_data run_microstructure_capture_gate
+    run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
+    run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
+    run_required_step alpha_source_route run_alpha_source_route_gate
   else
     skip_collecting_step market_alpha_development
     skip_collecting_step microstructure_forward_data
     skip_collecting_step microstructure_alpha_development
     skip_collecting_step microstructure_alpha_lifecycle
+    skip_collecting_step alpha_source_route
   fi
-  run_required_step integrator run_integrator
-  run_required_step replay_candidate_config prepare_replay_candidate_config
-  if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
-    run_collecting_step replay_validation run_replay_validation
-    run_collecting_step strategy_diagnose run_strategy_diagnose
-    run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
+  if (( RUN_REQUIRED_STEP_STATUS == 0 )) &&
+     [[ "${ACTIVE_ALPHA_ROUTE}" == "microstructure_demo" ]]; then
+    skip_route_step integrator
+    skip_route_step replay_candidate_config
+    skip_route_step replay_validation
+    skip_route_step strategy_diagnose
+    skip_route_step alpha_mechanism_probe
+    skip_route_step model_registry
+    run_required_step microstructure_demo_binding run_microstructure_demo_binding_gate
   else
-    skip_collecting_step replay_validation
-    skip_collecting_step strategy_diagnose
-    skip_collecting_step alpha_mechanism_probe
+    run_required_step integrator run_integrator
+    run_required_step replay_candidate_config prepare_replay_candidate_config
+    if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
+      run_collecting_step replay_validation run_replay_validation
+      run_collecting_step strategy_diagnose run_strategy_diagnose
+      run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
+    else
+      skip_collecting_step replay_validation
+      skip_collecting_step strategy_diagnose
+      skip_collecting_step alpha_mechanism_probe
+    fi
+    run_required_step model_registry run_registry
+    skip_route_step microstructure_demo_binding
   fi
-  run_required_step model_registry run_registry
   return 0
 }
 
@@ -5564,9 +5678,16 @@ run_main() {
       echo "[INFO] train completed without production activation or restart"
       ;;
     assess)
+      run_observation_step market_alpha_development run_market_alpha_development_gate
       run_observation_step microstructure_forward_data run_microstructure_capture_gate
       run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
       run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
+      run_observation_step alpha_source_route run_alpha_source_route_gate
+      if [[ "${ACTIVE_ALPHA_ROUTE}" == "microstructure_demo" ]]; then
+        run_observation_step microstructure_demo_binding run_microstructure_demo_binding_gate
+      else
+        skip_route_step microstructure_demo_binding
+      fi
       local assess_activation_status=""
       assess_activation_status="$(activation_transaction_status)"
       case "${assess_activation_status}" in
@@ -5628,9 +5749,15 @@ run_main() {
       run_training_chain
       step_status="${RUN_REQUIRED_STEP_STATUS}"
       if (( step_status == 0 )); then
-        RUN_REQUIRED_STEP_STATUS=0
-        run_required_step candidate_restart restart_if_activated true
-        restart_status="${RUN_REQUIRED_STEP_STATUS}"
+        if [[ "${ACTIVE_ALPHA_ROUTE}" == "microstructure_demo" ]]; then
+          RUN_REQUIRED_STEP_STATUS=0
+          skip_route_step candidate_restart
+          restart_status="${RUN_REQUIRED_STEP_STATUS}"
+        else
+          RUN_REQUIRED_STEP_STATUS=0
+          run_required_step candidate_restart restart_if_activated true
+          restart_status="${RUN_REQUIRED_STEP_STATUS}"
+        fi
       else
         RUN_REQUIRED_STEP_STATUS="${step_status}"
         run_required_step candidate_restart restart_if_activated true
