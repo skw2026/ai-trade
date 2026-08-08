@@ -1,0 +1,23 @@
+tools/run_microstructure_alpha_lifecycle.py
+  ai_agent 286-295
+tools/test_run_microstructure_alpha_lifecycle.py
+  ai_agent 65-67
+tools/test_run_microstructure_alpha_development.py
+  ai_agent 241-262
+tools/test_compose_consistency.py
+  ai_agent 721
+tools/test_closed_loop_mechanism_audit.py
+  ai_agent 122-124
+tools/closed_loop_mechanism_audit.py
+  ai_agent 873-876
+tools/download_closed_loop_reports.sh
+  ai_agent 79,210-215,242-250
+tools/run_microstructure_alpha_development.py
+  ai_agent 509-526,718-723,772-773,969-977,1096-1100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "69209a717105f9050d64598886138835d4126bf5",
+  "prompts": {}
+}
