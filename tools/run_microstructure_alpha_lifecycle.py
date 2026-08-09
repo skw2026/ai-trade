@@ -299,7 +299,7 @@ def validate_development_candidate(
     if not (
         isinstance(model_contract, dict)
         and model_contract.get("training_target")
-        == "fit_only_joint_no_trade_or_stress_profitable_action_class"
+        == "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class"
         and model_contract.get("target_normalization")
         == "sqrt_balanced_fit_class_weights_with_posterior_prior_correction"
         and model_contract.get("inference_score")
@@ -352,7 +352,7 @@ def validate_development_candidate(
     if not (
         isinstance(target_transform, dict)
         and target_transform.get("method")
-        == "fit_only_multiclass_stress_profitable_action_v1"
+        == "fit_only_multiclass_shortest_stress_profitable_action_v2"
         and target_transform.get("validation_or_test_statistics_used") is False
         and isinstance(action_statistics, list)
         and len(action_statistics) == len(report.get("target_contract", {}).get("actions", []))
@@ -388,6 +388,8 @@ def validate_development_candidate(
     actions = target.get("actions")
     if not isinstance(actions, list) or not actions:
         raise LifecycleError("development action contract is incomplete")
+    if target_transform.get("actions") != actions:
+        raise LifecycleError("development target transform action contract mismatch")
     try:
         expected_stress_increment = float(
             target.get("additional_round_trip_cost_bps")

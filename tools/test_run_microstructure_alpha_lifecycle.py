@@ -70,7 +70,7 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     model_contract = {
         "library": "catboost",
         "loss_function": "MultiClass",
-        "training_target": "fit_only_joint_no_trade_or_stress_profitable_action_class",
+        "training_target": "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class",
         "target_normalization": "sqrt_balanced_fit_class_weights_with_posterior_prior_correction",
         "inference_score": "fit_pooled_expected_base_net_return_bps_from_prior_corrected_class_probability",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
@@ -92,8 +92,9 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "output_feature_row_count": 500,
     }
     target_transform = {
-        "method": "fit_only_multiclass_stress_profitable_action_v1",
-        "label_contract": "0=no_trade;1..N=argmax_base_net_action_when_best_base_net_bps_gt_stress_incremental_cost_bps",
+        "method": "fit_only_multiclass_shortest_stress_profitable_action_v2",
+        "label_contract": "0=no_trade;1..N=shortest_horizon_stress_profitable_action_with_max_base_net_direction_tiebreak",
+        "actions": target_contract["actions"],
         "class_weighting": "sqrt_max_count_over_class_count_fit_only",
         "probability_reconstruction": "divide_weighted_posterior_by_fit_class_weight_then_renormalize",
         "inference_reconstruction": "prior_corrected_action_probability_with_fit_pooled_selected_and_nonselected_base_net_means",
@@ -128,6 +129,8 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
                 "not_selected_count": 500 if index == 0 else 1000,
                 "selected_mean_base_net_bps": 1.0 if index == 0 else -1.0,
                 "not_selected_mean_base_net_bps": -1.0,
+                "stress_profitable_count": 500 if index == 0 else 0,
+                "stress_profitable_rate": 0.5 if index == 0 else 0.0,
                 "learnable": index == 0,
             }
             for index in range(2)

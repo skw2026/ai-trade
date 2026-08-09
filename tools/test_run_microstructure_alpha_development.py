@@ -251,6 +251,10 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         )
         targets, transform = probe.fit_joint_policy_target(
             outcomes,
+            actions=[
+                {"direction": "long", "horizon_seconds": 15},
+                {"direction": "short", "horizon_seconds": 15},
+            ],
             base_cost_bps=4.0,
             stress_cost_multiplier=1.25,
         )
@@ -311,6 +315,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         )
         targets, transform = probe.fit_joint_policy_target(
             outcomes,
+            actions=[{"direction": "long", "horizon_seconds": 15}],
             base_cost_bps=4.0,
             stress_cost_multiplier=1.25,
         )
@@ -320,6 +325,33 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(
             sum(item["observed"] for item in transform["class_statistics"]), 1
         )
+
+    def test_joint_policy_prefers_shortest_profitable_horizon_before_return(self):
+        actions = [
+            {"direction": "long", "horizon_seconds": 15},
+            {"direction": "long", "horizon_seconds": 300},
+            {"direction": "short", "horizon_seconds": 15},
+            {"direction": "short", "horizon_seconds": 300},
+        ]
+        outcomes = np.asarray(
+            [
+                [3.0, 30.0, 2.0, -5.0],
+                [-2.0, -3.0, 4.0, 40.0],
+                [-2.0, 8.0, -3.0, 9.0],
+                [-2.0, -3.0, -4.0, -5.0],
+            ]
+        )
+
+        targets, _, selected = probe.select_joint_policy_targets(
+            outcomes,
+            actions=actions,
+            stress_incremental_cost_bps=1.0,
+        )
+
+        # Rows 0/1 use 15s despite much larger 300s returns.  Row 2 has no
+        # profitable 15s action, so the better 300s direction wins.
+        np.testing.assert_array_equal(targets, [1, 3, 4, 0])
+        np.testing.assert_allclose(selected, [3.0, 4.0, 9.0, -2.0])
 
     def test_nested_calibration_uses_ranked_negative_scores_without_weakening_economics(self):
         timestamps = np.arange(100, dtype=np.int64) * 1000
@@ -429,7 +461,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             def predict_proba(self, features):
                 prediction = np.zeros((len(features), self.class_count))
                 prediction[:, 0] = 0.01
-                prediction[:, 2] = 0.99
+                prediction[:, 1] = 0.99
                 return prediction
 
             def get_best_iteration(self):

@@ -878,7 +878,7 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and validation.get("oos_windows_non_overlapping") is True
         and isinstance(model_contract, dict)
         and model_contract.get("training_target")
-        == "fit_only_joint_no_trade_or_stress_profitable_action_class"
+        == "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class"
         and model_contract.get("target_normalization")
         == "sqrt_balanced_fit_class_weights_with_posterior_prior_correction"
         and model_contract.get("inference_score")

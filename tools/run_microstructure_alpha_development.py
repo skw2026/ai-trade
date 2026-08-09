@@ -524,9 +524,56 @@ def summarize_score_distribution(values: Sequence[float]) -> Dict[str, Any]:
     }
 
 
+def select_joint_policy_targets(
+    outcomes: np.ndarray,
+    *,
+    actions: Sequence[Mapping[str, Any]],
+    stress_incremental_cost_bps: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Choose the shortest stressed-profitable action, then best direction.
+
+    Selecting the maximum raw future return across horizons systematically
+    favors the longest, highest-variance horizon.  It turned the order-book
+    model into a five-minute direction forecaster in the real 24h capture.
+    Every eligible label here is still profitable after stressed costs, but the
+    shortest holding period wins first; raw return breaks direction ties within
+    that horizon.
+    """
+    matrix = np.asarray(outcomes, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[1] != len(actions):
+        raise ValueError("joint-policy action/outcome shape mismatch")
+    horizons: List[int] = []
+    for item in actions:
+        if not isinstance(item, Mapping):
+            raise ValueError("joint-policy action contract item is invalid")
+        direction = str(item.get("direction") or "")
+        horizon = int(item.get("horizon_seconds") or 0)
+        if direction not in {"long", "short"} or horizon <= 0:
+            raise ValueError("joint-policy action contract is invalid")
+        horizons.append(horizon)
+    hurdle = float(stress_incremental_cost_bps)
+    if not math.isfinite(hurdle) or hurdle <= 0.0:
+        raise ValueError("joint-policy stress hurdle is invalid")
+    profitable = matrix > hurdle
+    has_profitable = np.any(profitable, axis=1)
+    horizon_matrix = np.broadcast_to(
+        np.asarray(horizons, dtype=np.int64), matrix.shape
+    )
+    shortest = np.min(
+        np.where(profitable, horizon_matrix, np.iinfo(np.int64).max), axis=1
+    )
+    eligible = profitable & (horizon_matrix == shortest.reshape(-1, 1))
+    ranked = np.where(eligible, matrix, float("-inf"))
+    selected_action = np.argmax(ranked, axis=1)
+    selected_outcome = matrix[np.arange(len(matrix)), selected_action]
+    targets = np.where(has_profitable, selected_action + 1, 0).astype(np.int64)
+    return targets, selected_action, selected_outcome
+
+
 def fit_joint_policy_target(
     outcomes: np.ndarray,
     *,
+    actions: Sequence[Mapping[str, Any]],
     base_cost_bps: float,
     stress_cost_multiplier: float,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -559,10 +606,10 @@ def fit_joint_policy_target(
         raise ValueError("joint-policy target multiplier must exceed one")
 
     stress_increment = base_cost * (multiplier - 1.0)
-    best_action = np.argmax(matrix, axis=1)
-    best_outcome = matrix[np.arange(len(matrix)), best_action]
-    targets = np.where(best_outcome > stress_increment, best_action + 1, 0).astype(
-        np.int64
+    targets, selected_action, selected_outcome = select_joint_policy_targets(
+        matrix,
+        actions=actions,
+        stress_incremental_cost_bps=stress_increment,
     )
     class_count = matrix.shape[1] + 1
     counts = np.bincount(targets, minlength=class_count)
@@ -583,16 +630,16 @@ def fit_joint_policy_target(
         for class_index in range(class_count)
     ]
     selected_event = targets > 0
-    selected_values = best_outcome[selected_event]
+    selected_values = selected_outcome[selected_event]
     nonselected_mask = np.ones_like(matrix, dtype=bool)
     selected_rows = np.flatnonzero(selected_event)
     if len(selected_rows):
-        nonselected_mask[selected_rows, best_action[selected_rows]] = False
+        nonselected_mask[selected_rows, selected_action[selected_rows]] = False
     nonselected_values = matrix[nonselected_mask]
     pooled_selected_mean = (
         float(np.mean(selected_values))
         if len(selected_values)
-        else float(np.mean(best_outcome))
+        else float(np.mean(selected_outcome))
     )
     pooled_nonselected_mean = (
         float(np.mean(nonselected_values))
@@ -623,15 +670,26 @@ def fit_joint_policy_target(
                 "not_selected_count": int(np.sum(not_selected)),
                 "selected_mean_base_net_bps": selected_mean,
                 "not_selected_mean_base_net_bps": not_selected_mean,
+                "stress_profitable_count": int(np.sum(values > stress_increment)),
+                "stress_profitable_rate": float(
+                    np.mean(values > stress_increment)
+                ),
                 "learnable": bool(np.any(selected)),
             }
         )
     return targets, {
-        "method": "fit_only_multiclass_stress_profitable_action_v1",
+        "method": "fit_only_multiclass_shortest_stress_profitable_action_v2",
         "label_contract": (
-            "0=no_trade;1..N=argmax_base_net_action_when_best_base_net_bps_gt_"
-            "stress_incremental_cost_bps"
+            "0=no_trade;1..N=shortest_horizon_stress_profitable_action_with_"
+            "max_base_net_direction_tiebreak"
         ),
+        "actions": [
+            {
+                "direction": str(item["direction"]),
+                "horizon_seconds": int(item["horizon_seconds"]),
+            }
+            for item in actions
+        ],
         "stress_incremental_cost_bps": stress_increment,
         "class_count": class_count,
         "no_trade_class_index": 0,
@@ -665,11 +723,11 @@ def validate_joint_policy_transform(
     if not (
         isinstance(transform, dict)
         and transform.get("method")
-        == "fit_only_multiclass_stress_profitable_action_v1"
+        == "fit_only_multiclass_shortest_stress_profitable_action_v2"
         and transform.get("label_contract")
         == (
-            "0=no_trade;1..N=argmax_base_net_action_when_best_base_net_bps_gt_"
-            "stress_incremental_cost_bps"
+            "0=no_trade;1..N=shortest_horizon_stress_profitable_action_with_"
+            "max_base_net_direction_tiebreak"
         )
         and transform.get("class_weighting")
         == "sqrt_max_count_over_class_count_fit_only"
@@ -686,6 +744,7 @@ def validate_joint_policy_transform(
     hurdle = float(transform.get("stress_incremental_cost_bps"))
     class_count = int(transform.get("class_count", 0))
     no_trade_class = int(transform.get("no_trade_class_index", -1))
+    actions = transform.get("actions")
     classes = transform.get("class_statistics")
     score_calibration = transform.get("score_calibration")
     items = transform.get("action_statistics")
@@ -694,6 +753,8 @@ def validate_joint_policy_transform(
         or hurdle <= 0.0
         or class_count != int(action_count) + 1
         or no_trade_class != 0
+        or not isinstance(actions, list)
+        or len(actions) != int(action_count)
         or not isinstance(classes, list)
         or len(classes) != class_count
         or not isinstance(score_calibration, dict)
@@ -701,6 +762,13 @@ def validate_joint_policy_transform(
         or len(items) != int(action_count)
     ):
         raise ValueError("joint-policy transform shape/hurdle is invalid")
+    for item in actions:
+        if not (
+            isinstance(item, dict)
+            and str(item.get("direction") or "") in {"long", "short"}
+            and int(item.get("horizon_seconds") or 0) > 0
+        ):
+            raise ValueError("joint-policy transform action contract is invalid")
     class_counts: List[int] = []
     fit_row_count: int | None = None
     for class_index, item in enumerate(classes):
@@ -778,6 +846,8 @@ def validate_joint_policy_transform(
             not_selected_count = int(item.get("not_selected_count"))
             selected_mean = float(item.get("selected_mean_base_net_bps"))
             not_selected_mean = float(item.get("not_selected_mean_base_net_bps"))
+            profitable_count = int(item.get("stress_profitable_count"))
+            profitable_rate = float(item.get("stress_profitable_rate"))
         except (TypeError, ValueError) as exc:
             raise ValueError("joint-policy action statistic type is invalid") from exc
         if not (
@@ -786,8 +856,16 @@ def validate_joint_policy_transform(
             and selected_count == class_counts[action_index + 1]
             and selected_count + not_selected_count == row_count
             and all(math.isfinite(value) for value in (selected_mean, not_selected_mean))
+            and 0 <= profitable_count <= row_count
+            and math.isclose(
+                profitable_rate,
+                profitable_count / row_count,
+                rel_tol=0.0,
+                abs_tol=1e-15,
+            )
             and item.get("learnable") is (selected_count > 0)
             and (selected_count == 0 or selected_mean > hurdle)
+            and selected_count <= profitable_count
         ):
             raise ValueError("joint-policy action statistic contract failed")
     return items
@@ -804,9 +882,12 @@ def transform_joint_policy_targets(
         transform, action_count=matrix.shape[1]
     )
     hurdle = float(transform.get("stress_incremental_cost_bps"))
-    best_action = np.argmax(matrix, axis=1)
-    best_outcome = matrix[np.arange(len(matrix)), best_action]
-    return np.where(best_outcome > hurdle, best_action + 1, 0).astype(np.int64)
+    targets, _, _ = select_joint_policy_targets(
+        matrix,
+        actions=transform["actions"],
+        stress_incremental_cost_bps=hurdle,
+    )
+    return targets
 
 
 def reconstruct_base_net_scores(
@@ -1140,7 +1221,9 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
         "library": "catboost",
         "library_version": getattr(catboost, "__version__", None),
         "loss_function": "MultiClass",
-        "training_target": "fit_only_joint_no_trade_or_stress_profitable_action_class",
+        "training_target": (
+            "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class"
+        ),
         "target_normalization": (
             "sqrt_balanced_fit_class_weights_with_posterior_prior_correction"
         ),
@@ -1231,6 +1314,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             continue
         fit_targets, target_transform = fit_joint_policy_target(
             outcomes[fit_indices],
+            actions=actions,
             base_cost_bps=float(args.additional_round_trip_cost_bps),
             stress_cost_multiplier=float(args.stress_cost_multiplier),
         )
@@ -1436,6 +1520,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         )
         final_targets, final_target_transform = fit_joint_policy_target(
             outcomes,
+            actions=actions,
             base_cost_bps=float(args.additional_round_trip_cost_bps),
             stress_cost_multiplier=float(args.stress_cost_multiplier),
         )

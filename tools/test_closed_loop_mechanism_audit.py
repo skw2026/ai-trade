@@ -118,7 +118,7 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                         "overlapping_episodes_forbidden": True,
                     },
                     "model_contract": {
-                        "training_target": "fit_only_joint_no_trade_or_stress_profitable_action_class",
+                        "training_target": "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class",
                         "target_normalization": "sqrt_balanced_fit_class_weights_with_posterior_prior_correction",
                         "inference_score": "fit_pooled_expected_base_net_return_bps_from_prior_corrected_class_probability",
                         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",

@@ -55,8 +55,9 @@ class DemoPolicyTest(unittest.TestCase):
             {"direction": "short", "horizon_seconds": 15},
         ]
         target_transform = {
-            "method": "fit_only_multiclass_stress_profitable_action_v1",
-            "label_contract": "0=no_trade;1..N=argmax_base_net_action_when_best_base_net_bps_gt_stress_incremental_cost_bps",
+            "method": "fit_only_multiclass_shortest_stress_profitable_action_v2",
+            "label_contract": "0=no_trade;1..N=shortest_horizon_stress_profitable_action_with_max_base_net_direction_tiebreak",
+            "actions": actions,
             "class_weighting": "sqrt_max_count_over_class_count_fit_only",
             "probability_reconstruction": "divide_weighted_posterior_by_fit_class_weight_then_renormalize",
             "inference_reconstruction": "prior_corrected_action_probability_with_fit_pooled_selected_and_nonselected_base_net_means",
@@ -91,6 +92,8 @@ class DemoPolicyTest(unittest.TestCase):
                     "not_selected_count": 200,
                     "selected_mean_base_net_bps": 10.0,
                     "not_selected_mean_base_net_bps": -2.0,
+                    "stress_profitable_count": 100,
+                    "stress_profitable_rate": 1.0 / 3.0,
                     "learnable": True,
                 }
                 for index in range(len(actions))
