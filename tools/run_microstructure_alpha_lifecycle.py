@@ -299,11 +299,14 @@ def validate_development_candidate(
     if not (
         isinstance(model_contract, dict)
         and model_contract.get("training_target")
-        == "fit_only_standardized_bounded_stressed_net_utility"
+        == "fit_only_joint_no_trade_or_stress_profitable_action_class"
         and model_contract.get("target_normalization")
-        == "per_action_zero_mean_unit_variance_on_fit_domain_only"
+        == "sqrt_balanced_fit_class_weights_with_posterior_prior_correction"
         and model_contract.get("inference_score")
-        == "inverse_bounded_stressed_utility_base_net_return_bps"
+        == (
+            "fit_pooled_expected_base_net_return_bps_from_prior_corrected_"
+            "class_probability"
+        )
         and model_contract.get("economic_acceptance_target")
         == "untransformed_executable_base_and_stress_net_return"
         and model_contract.get("validation_or_test_target_statistics_used_for_fit")
@@ -341,13 +344,20 @@ def validate_development_candidate(
         if isinstance(target_transform, dict)
         else None
     )
+    class_statistics = (
+        target_transform.get("class_statistics")
+        if isinstance(target_transform, dict)
+        else None
+    )
     if not (
         isinstance(target_transform, dict)
         and target_transform.get("method")
-        == "fit_only_standardized_bounded_stressed_utility_v1"
+        == "fit_only_multiclass_stress_profitable_action_v1"
         and target_transform.get("validation_or_test_statistics_used") is False
         and isinstance(action_statistics, list)
         and len(action_statistics) == len(report.get("target_contract", {}).get("actions", []))
+        and isinstance(class_statistics, list)
+        and len(class_statistics) == len(action_statistics) + 1
     ):
         raise LifecycleError("development target transform contract is incomplete")
     frozen_identity = dict(frozen)
@@ -385,26 +395,23 @@ def validate_development_candidate(
         actual_stress_increment = float(
             target_transform.get("stress_incremental_cost_bps")
         )
-        expected_utility_scale = float(target.get("additional_round_trip_cost_bps"))
-        actual_utility_scale = float(target_transform.get("utility_scale_bps"))
-        development.validate_stressed_utility_transform(
+        development.validate_joint_policy_transform(
             target_transform,
             action_count=len(actions),
             expected_row_count=int(frozen.get("final_training_row_count")),
         )
         development.reconstruct_base_net_scores(
-            np.zeros((1, len(actions)), dtype=np.float64), target_transform
+            np.full(
+                (1, len(actions) + 1),
+                1.0 / (len(actions) + 1),
+                dtype=np.float64,
+            ),
+            target_transform,
         )
     except (TypeError, ValueError) as exc:
         raise LifecycleError("development target transform statistics are invalid") from exc
     if not (
         math.isfinite(expected_stress_increment)
-        and math.isclose(
-            actual_utility_scale,
-            expected_utility_scale,
-            rel_tol=0.0,
-            abs_tol=1e-12,
-        )
         and math.isclose(
             actual_stress_increment,
             expected_stress_increment,
@@ -546,9 +553,9 @@ def register_candidate(
 
 
 def load_frozen_model(path: pathlib.Path) -> Any:
-    if development.CatBoostRegressor is None:
+    if development.CatBoostClassifier is None:
         raise LifecycleError("catboost is required; use ai-trade-research image")
-    model = development.CatBoostRegressor()
+    model = development.CatBoostClassifier()
     model.load_model(str(path))
     return model
 
@@ -679,10 +686,9 @@ def evaluate_domain(
     frozen = report.get("frozen_candidate", {})
     target = report.get("target_contract", {})
     threshold = float(frozen.get("policy_threshold_bps"))
-    raw_prediction = np.asarray(model.predict(features[indices]), dtype=np.float64)
     try:
-        prediction = development.reconstruct_base_net_scores(
-            raw_prediction, frozen.get("target_transform", {})
+        prediction, _ = development.predict_base_net_scores(
+            model, features[indices], frozen.get("target_transform", {})
         )
     except ValueError as exc:
         raise LifecycleError("frozen model score reconstruction failed") from exc

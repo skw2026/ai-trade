@@ -36,9 +36,10 @@ def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
 
 
 class FakeModel:
-    def predict(self, features):
-        prediction = np.zeros((len(features), 2), dtype=np.float64)
-        prediction[:, 0] = 10.0
+    def predict_proba(self, features):
+        prediction = np.zeros((len(features), 3), dtype=np.float64)
+        prediction[:, 0] = 0.01
+        prediction[:, 1] = 0.99
         return prediction
 
 
@@ -68,10 +69,10 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     }
     model_contract = {
         "library": "catboost",
-        "loss_function": "MultiRMSE",
-        "training_target": "fit_only_standardized_bounded_stressed_net_utility",
-        "target_normalization": "per_action_zero_mean_unit_variance_on_fit_domain_only",
-        "inference_score": "inverse_bounded_stressed_utility_base_net_return_bps",
+        "loss_function": "MultiClass",
+        "training_target": "fit_only_joint_no_trade_or_stress_profitable_action_class",
+        "target_normalization": "sqrt_balanced_fit_class_weights_with_posterior_prior_correction",
+        "inference_score": "fit_pooled_expected_base_net_return_bps_from_prior_corrected_class_probability",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
         "validation_or_test_target_statistics_used_for_fit": False,
     }
@@ -91,22 +92,43 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "output_feature_row_count": 500,
     }
     target_transform = {
-        "method": "fit_only_standardized_bounded_stressed_utility_v1",
-        "utility_transform": "tanh((base_net_bps-stress_incremental_cost_bps)/utility_scale_bps)",
-        "inference_reconstruction": "inverse_tanh_to_base_net_bps_after_fit_only_destandardization",
+        "method": "fit_only_multiclass_stress_profitable_action_v1",
+        "label_contract": "0=no_trade;1..N=argmax_base_net_action_when_best_base_net_bps_gt_stress_incremental_cost_bps",
+        "class_weighting": "sqrt_max_count_over_class_count_fit_only",
+        "probability_reconstruction": "divide_weighted_posterior_by_fit_class_weight_then_renormalize",
+        "inference_reconstruction": "prior_corrected_action_probability_with_fit_pooled_selected_and_nonselected_base_net_means",
         "validation_or_test_statistics_used": False,
         "stress_incremental_cost_bps": 0.025,
-        "utility_scale_bps": 0.1,
-        "reconstruction_clip_abs": 0.999,
+        "class_count": 3,
+        "no_trade_class_index": 0,
+        "class_statistics": [
+            {
+                "class_index": index,
+                "row_count": 1000,
+                "sample_count": count,
+                "sample_rate": count / 1000.0,
+                "class_weight": 1.0,
+                "observed": count > 0,
+            }
+            for index, count in enumerate([500, 500, 0])
+        ],
+        "score_calibration": {
+            "row_count": 1000,
+            "selected_event_count": 500,
+            "nonselected_action_outcome_count": 1500,
+            "selected_mean_base_net_bps": 1.0,
+            "nonselected_mean_base_net_bps": -1.0,
+        },
         "action_statistics": [
             {
                 "action_index": index,
+                "class_index": index + 1,
                 "row_count": 1000,
-                "utility_minimum": -0.8,
-                "utility_maximum": 0.8,
-                "utility_center": 0.0,
-                "standardization_scale": 0.5,
-                "learnable": True,
+                "selected_count": 500 if index == 0 else 0,
+                "not_selected_count": 500 if index == 0 else 1000,
+                "selected_mean_base_net_bps": 1.0 if index == 0 else -1.0,
+                "not_selected_mean_base_net_bps": -1.0,
+                "learnable": index == 0,
             }
             for index in range(2)
         ],

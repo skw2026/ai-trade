@@ -300,17 +300,15 @@ class DemoPolicyEngine:
             )
             atomic_write_json(self.signal_output, payload)
             return payload
-        raw_prediction = np.asarray(
-            self.candidate.model.predict(row_features.reshape(1, -1)),
-            dtype=np.float64,
-        )
         try:
-            prediction = development.reconstruct_base_net_scores(
-                raw_prediction,
+            prediction, _ = development.predict_base_net_scores(
+                self.candidate.model,
+                row_features.reshape(1, -1),
                 self.candidate.report.get("frozen_candidate", {}).get(
                     "target_transform", {}
                 ),
-            ).reshape(-1)
+            )
+            prediction = prediction.reshape(-1)
         except ValueError as exc:
             raise DemoPolicyError("frozen model score reconstruction failed") from exc
         if prediction.shape != (len(self.candidate.actions),) or not np.all(

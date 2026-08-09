@@ -21,7 +21,7 @@ class FakeModel:
     def __init__(self, prediction):
         self.prediction = np.asarray(prediction, dtype=np.float64)
 
-    def predict(self, features):
+    def predict_proba(self, features):
         return np.tile(self.prediction, (len(features), 1))
 
 
@@ -55,21 +55,42 @@ class DemoPolicyTest(unittest.TestCase):
             {"direction": "short", "horizon_seconds": 15},
         ]
         target_transform = {
-            "method": "fit_only_standardized_bounded_stressed_utility_v1",
-            "utility_transform": "tanh((base_net_bps-stress_incremental_cost_bps)/utility_scale_bps)",
-            "inference_reconstruction": "inverse_tanh_to_base_net_bps_after_fit_only_destandardization",
+            "method": "fit_only_multiclass_stress_profitable_action_v1",
+            "label_contract": "0=no_trade;1..N=argmax_base_net_action_when_best_base_net_bps_gt_stress_incremental_cost_bps",
+            "class_weighting": "sqrt_max_count_over_class_count_fit_only",
+            "probability_reconstruction": "divide_weighted_posterior_by_fit_class_weight_then_renormalize",
+            "inference_reconstruction": "prior_corrected_action_probability_with_fit_pooled_selected_and_nonselected_base_net_means",
             "validation_or_test_statistics_used": False,
             "stress_incremental_cost_bps": 1.0,
-            "utility_scale_bps": 10.0,
-            "reconstruction_clip_abs": 0.999,
+            "class_count": 3,
+            "no_trade_class_index": 0,
+            "class_statistics": [
+                {
+                    "class_index": index,
+                    "row_count": 300,
+                    "sample_count": 100,
+                    "sample_rate": 1.0 / 3.0,
+                    "class_weight": 1.0,
+                    "observed": True,
+                }
+                for index in range(3)
+            ],
+            "score_calibration": {
+                "row_count": 300,
+                "selected_event_count": 200,
+                "nonselected_action_outcome_count": 400,
+                "selected_mean_base_net_bps": 10.0,
+                "nonselected_mean_base_net_bps": -2.0,
+            },
             "action_statistics": [
                 {
                     "action_index": index,
-                    "row_count": 100,
-                    "utility_minimum": -0.8,
-                    "utility_maximum": 0.8,
-                    "utility_center": 0.0,
-                    "standardization_scale": 0.5,
+                    "class_index": index + 1,
+                    "row_count": 300,
+                    "selected_count": 100,
+                    "not_selected_count": 200,
+                    "selected_mean_base_net_bps": 10.0,
+                    "not_selected_mean_base_net_bps": -2.0,
                     "learnable": True,
                 }
                 for index in range(len(actions))
@@ -92,7 +113,7 @@ class DemoPolicyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = pathlib.Path(temp_dir) / "signal.json"
             engine = policy.DemoPolicyEngine(signal_output=output)
-            engine.set_candidate(self.candidate([0.35, 0.1]))
+            engine.set_candidate(self.candidate([0.55, 0.35, 0.10]))
             payload = None
             for index in range(62):
                 payload = engine.on_row(feature_row(index * 1000, index * 0.001))
@@ -101,7 +122,7 @@ class DemoPolicyTest(unittest.TestCase):
             first_until = payload["active_until_exchange_ms"]
             first_started = payload["action"]["started_exchange_ms"]
 
-            engine.candidate.model = FakeModel([0.0, 0.9])
+            engine.candidate.model = FakeModel([0.10, 0.0, 0.90])
             held = engine.on_row(feature_row(62_000, 0.062))
             self.assertEqual(held["reason"], "frozen_action_holding_window")
             self.assertEqual(held["action"]["direction"], 1)
@@ -114,7 +135,7 @@ class DemoPolicyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = pathlib.Path(temp_dir) / "signal.json"
             engine = policy.DemoPolicyEngine(signal_output=output)
-            engine.set_candidate(self.candidate([-0.35, -0.4]))
+            engine.set_candidate(self.candidate([0.80, 0.10, 0.10]))
             payload = None
             for index in range(62):
                 payload = engine.on_row(feature_row(index * 1000, index * 0.001))
