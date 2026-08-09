@@ -10,6 +10,8 @@ import pathlib
 import time
 from typing import Any, Dict, Iterable, List, Tuple
 
+import collect_bybit_microstructure as collector
+
 
 def sha256_file(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
@@ -61,6 +63,8 @@ def assess_collector_health(
             payload.get("schema_version") == "microstructure_collector_health_v1"
             and state in {"capturing", "healthy"}
             and recorded_symbol == symbol
+            and payload.get("capture_schema_version") == collector.SCHEMA_VERSION
+            and payload.get("symbols") == list(collector.CAPTURE_SYMBOLS)
             and age_ms is not None
             and 0 <= age_ms <= max_stale_ms
         )
@@ -99,12 +103,18 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
     total_messages = 0
     total_book_updates = 0
     total_trades = 0
+    per_symbol_book_updates = {symbol: 0 for symbol in collector.CAPTURE_SYMBOLS}
+    per_symbol_trades = {symbol: 0 for symbol in collector.CAPTURE_SYMBOLS}
     invalid: List[str] = []
+    superseded: List[str] = []
     segments: List[Dict[str, Any]] = []
     latest_exchange_timestamp = 0
     for report_path in report_paths:
         try:
             payload = json.loads(report_path.read_text(encoding="utf-8"))
+            if payload.get("schema_version") != collector.SCHEMA_VERSION:
+                superseded.append(report_path.name)
+                continue
             raw = payload["raw"]
             features = payload["features"]
             start = int(features["first_timestamp"])
@@ -114,11 +124,13 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
                 root, str(features["path"]), "features", args.symbol
             )
             contract_ok = bool(
-                payload.get("schema_version") == "bybit_microstructure_v1"
-                and payload.get("status") == "PASS"
+                payload.get("status") == "PASS"
                 and payload.get("research_domain") == "forward_development_only"
                 and payload.get("promotion_evidence") is False
                 and payload.get("promotion_eligible") is False
+                and payload.get("symbols") == list(collector.CAPTURE_SYMBOLS)
+                and payload.get("cross_asset_alignment_contract")
+                == collector.CROSS_ASSET_ALIGNMENT_CONTRACT
                 and raw_path.is_file()
                 and feature_path.is_file()
                 and sha256_file(raw_path) == raw.get("sha256")
@@ -126,15 +138,34 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
             )
             if not contract_ok:
                 raise ValueError("contract/checksum mismatch")
+            quality = payload.get("quality", {})
+            segment_book_updates = int(quality.get("book_update_count", 0))
+            segment_trades = int(quality.get("trade_count", 0))
+            by_symbol = quality.get("by_symbol", {})
+            if not isinstance(by_symbol, dict):
+                raise ValueError("per-symbol quality is missing")
+            segment_symbol_quality: Dict[str, Tuple[int, int]] = {}
+            for capture_symbol in collector.CAPTURE_SYMBOLS:
+                symbol_quality = by_symbol.get(capture_symbol)
+                if not isinstance(symbol_quality, dict):
+                    raise ValueError(f"quality missing for {capture_symbol}")
+                segment_symbol_quality[capture_symbol] = (
+                    int(symbol_quality.get("book_update_count", 0)),
+                    int(symbol_quality.get("trade_count", 0)),
+                )
             intervals.append((start, end))
             latest_exchange_timestamp = max(latest_exchange_timestamp, end)
             total_rows += int(features.get("row_count", 0))
             total_messages += int(raw.get("message_count", 0))
-            quality = payload.get("quality", {})
-            total_book_updates += int(quality.get("book_update_count", 0))
-            total_trades += int(quality.get("trade_count", 0))
+            total_book_updates += segment_book_updates
+            total_trades += segment_trades
+            for capture_symbol, counts in segment_symbol_quality.items():
+                per_symbol_book_updates[capture_symbol] += counts[0]
+                per_symbol_trades[capture_symbol] += counts[1]
             segments.append(
                 {
+                    "capture_schema_version": collector.SCHEMA_VERSION,
+                    "symbols": list(collector.CAPTURE_SYMBOLS),
                     "report_path": str(report_path.resolve()),
                     "report_sha256": sha256_file(report_path),
                     "raw_path": str(raw_path.resolve()),
@@ -173,6 +204,10 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
             failures.append("book_updates_missing")
         if total_trades <= 0:
             failures.append("public_trades_missing")
+        if any(value <= 0 for value in per_symbol_book_updates.values()):
+            failures.append("cross_asset_book_updates_missing")
+        if any(value <= 0 for value in per_symbol_trades.values()):
+            failures.append("cross_asset_public_trades_missing")
         if not intervals and collector_health.get("status") != "PASS":
             failures.append("collector_health")
     return {
@@ -185,8 +220,12 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
         "capture_in_progress": capture_in_progress,
         "collector_health": collector_health,
         "symbol": args.symbol,
-        "segment_count": len(report_paths),
-        "valid_segment_count": len(report_paths) - len(invalid),
+        "symbols": list(collector.CAPTURE_SYMBOLS),
+        "cross_asset_alignment_contract": collector.CROSS_ASSET_ALIGNMENT_CONTRACT,
+        "discovered_segment_count": len(report_paths),
+        "segment_count": len(segments) + len(invalid),
+        "valid_segment_count": len(segments),
+        "superseded_segment_count": len(superseded),
         "coverage_ms": coverage_ms,
         "minimum_coverage_ms": args.min_capture_duration_sec * 1000,
         "latest_exchange_timestamp_ms": latest_exchange_timestamp or None,
@@ -196,12 +235,15 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
         "raw_message_count": total_messages,
         "book_update_count": total_book_updates,
         "trade_count": total_trades,
+        "book_update_count_by_symbol": per_symbol_book_updates,
+        "trade_count_by_symbol": per_symbol_trades,
         # This checksum-bound manifest is the only input contract accepted by
         # the downstream development economic screen.  It prevents that screen
         # from silently globbing a different or subsequently mutated capture.
         "segments": segments,
         "failures": failures,
         "invalid_segments": invalid,
+        "superseded_segments": superseded,
         "next_gate": "development_economic_screen" if not failures else "continue_forward_capture",
     }
 

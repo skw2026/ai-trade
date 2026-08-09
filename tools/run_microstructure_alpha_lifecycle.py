@@ -38,7 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
-ALGORITHM_CONTRACT_REVISION = "independent_action_calibration_v3"
+ALGORITHM_CONTRACT_REVISION = "cross_asset_causal_context_v4"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -332,6 +332,8 @@ def validate_development_candidate(
         raise LifecycleError("development model economic-target contract failed")
     capture_merge = report.get("capture_merge_contract")
     capture_merge_audit = report.get("data", {}).get("capture_merge_audit")
+    if report.get("cross_asset_feature_contract") != collector.CROSS_ASSET_ALIGNMENT_CONTRACT:
+        raise LifecycleError("development cross-asset feature contract mismatch")
     if not isinstance(capture_merge, dict) or capture_merge != development.CAPTURE_MERGE_CONTRACT:
         raise LifecycleError("development capture merge contract mismatch")
     try:
@@ -383,6 +385,7 @@ def validate_development_candidate(
     frozen_identity.pop("model_path", None)
     expected_identity = {
         "source_assessment_sha256": report.get("source_assessment", {}).get("sha256"),
+        "cross_asset_feature_contract": report.get("cross_asset_feature_contract"),
         "capture_merge_contract": capture_merge,
         "capture_merge_audit": capture_merge_audit,
         "target_contract": report.get("target_contract"),
@@ -968,6 +971,13 @@ def replay_holdout(
     for item in assessment.get("segments", []):
         if not isinstance(item, dict):
             raise LifecycleError("capture segment manifest item invalid during replay")
+        if not (
+            item.get("capture_schema_version") == collector.SCHEMA_VERSION
+            and item.get("symbols") == list(collector.CAPTURE_SYMBOLS)
+        ):
+            raise LifecycleError(
+                "capture segment cross-asset contract invalid during replay"
+            )
         first = int(item.get("first_timestamp_ms") or 0)
         last = int(item.get("last_timestamp_ms") or 0)
         if last < replay_start or first >= replay_end:
@@ -979,7 +989,10 @@ def replay_holdout(
         if sha256_file(feature_path) != str(item.get("feature_sha256") or ""):
             raise LifecycleError(f"feature replay checksum mismatch: {feature_path}")
         replay_rows, raw_count = collector.replay_jsonl(
-            raw_path, symbol="SOLUSDT", bucket_ms=1000
+            raw_path,
+            symbol=collector.TARGET_SYMBOL,
+            context_symbols=collector.CONTEXT_SYMBOLS,
+            bucket_ms=1000,
         )
         expected_rows = csv_rows(feature_path)
         if not rows_equal(expected_rows, replay_rows):

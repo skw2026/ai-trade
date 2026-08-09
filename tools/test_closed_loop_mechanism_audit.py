@@ -88,6 +88,11 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                     "research_domain": "forward_development_only",
                     "promotion_evidence": False,
                     "promotion_eligible": False,
+                    "cross_asset_feature_contract": {
+                        **AUDIT.EXPECTED_CROSS_ASSET_CONTEXT,
+                        "timestamp_semantics": "test",
+                        "missing_context_action": "drop_target_second",
+                    },
                     "economic_screen": {"development_passed": True},
                     "capture_merge_contract": {
                         "method": "drop_shared_adjacent_boundary_buckets_v1",

@@ -27,7 +27,15 @@
   },
   "forward_sources": {
     "provider": "Bybit public WebSocket v5",
-    "topics": ["orderbook.50.SOLUSDT", "publicTrade.SOLUSDT"],
+    "topics": [
+      "orderbook.50.SOLUSDT",
+      "publicTrade.SOLUSDT",
+      "orderbook.50.BTCUSDT",
+      "publicTrade.BTCUSDT",
+      "orderbook.50.ETHUSDT",
+      "publicTrade.ETHUSDT"
+    ],
+    "cross_asset_alignment": "exact_exchange_second_inner_join_v1",
     "raw_capture_required": true,
     "deterministic_replay_required": true,
     "bucket_ms": 1000

@@ -118,6 +118,13 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 "research_domain": "forward_development_only",
                 "promotion_evidence": False,
                 "promotion_eligible": False,
+                "cross_asset_feature_contract": {
+                    "method": "exact_exchange_second_inner_join_v1",
+                    "target_symbol": "SOLUSDT",
+                    "context_symbols": ["BTCUSDT", "ETHUSDT"],
+                    "future_fill_permitted": False,
+                    "backfill_permitted": False,
+                },
                 "economic_screen": {
                     "development_passed": False,
                     "oos_stress_cost_by_split": {"lcb_bps": -1.0},

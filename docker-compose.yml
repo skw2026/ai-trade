@@ -50,6 +50,7 @@ services:
     command:
       - "--root=/app/data/research/microstructure"
       - "--symbol=SOLUSDT"
+      - "--context-symbols=BTCUSDT,ETHUSDT"
       - "--bootstrap-segment-duration-sec=${MARKET_ALPHA_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
       # Persist completed evidence often enough that normal CD churn cannot
       # repeatedly discard an hour-long in-progress capture.

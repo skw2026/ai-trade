@@ -12,6 +12,8 @@ import sys
 import time
 from typing import Any, Dict, Sequence
 
+import collect_bybit_microstructure as collector
+
 
 SCHEMA_VERSION = "microstructure_collector_health_v1"
 
@@ -46,7 +48,12 @@ def prune_old_segments(root: pathlib.Path, retention_days: int, now_epoch: float
 
 
 def segment_command(
-    *, root: pathlib.Path, symbol: str, duration_sec: float, url: str
+    *,
+    root: pathlib.Path,
+    symbol: str,
+    context_symbols: Sequence[str],
+    duration_sec: float,
+    url: str,
 ) -> tuple[Sequence[str], pathlib.Path]:
     segment_id = utc_segment_id()
     raw = root / "raw" / symbol / f"{segment_id}.jsonl.gz"
@@ -64,6 +71,8 @@ def segment_command(
         str(report),
         "--symbol",
         symbol,
+        "--context-symbols",
+        ",".join(context_symbols),
         "--duration-sec",
         str(duration_sec),
         "--url",
@@ -91,6 +100,7 @@ def run(args: argparse.Namespace) -> int:
         command, report_path = segment_command(
             root=root,
             symbol=args.symbol,
+            context_symbols=args.context_symbols,
             duration_sec=duration_sec,
             url=args.url,
         )
@@ -101,6 +111,8 @@ def run(args: argparse.Namespace) -> int:
                 "schema_version": SCHEMA_VERSION,
                 "state": "capturing",
                 "symbol": args.symbol,
+                "symbols": [args.symbol, *args.context_symbols],
+                "capture_schema_version": collector.SCHEMA_VERSION,
                 "segment_started_epoch_ms": started_ms,
                 "consecutive_failures": consecutive_failures,
             },
@@ -119,6 +131,8 @@ def run(args: argparse.Namespace) -> int:
                 {
                     "schema_version": "microstructure_latest_segment_v1",
                     "symbol": args.symbol,
+                    "symbols": [args.symbol, *args.context_symbols],
+                    "capture_schema_version": collector.SCHEMA_VERSION,
                     "report": str(relative_report),
                     "report_payload": report,
                     "completed_epoch_ms": completed_ms,
@@ -130,6 +144,8 @@ def run(args: argparse.Namespace) -> int:
                     "schema_version": SCHEMA_VERSION,
                     "state": "healthy",
                     "symbol": args.symbol,
+                    "symbols": [args.symbol, *args.context_symbols],
+                    "capture_schema_version": collector.SCHEMA_VERSION,
                     "segment_started_epoch_ms": started_ms,
                     "last_success_epoch_ms": completed_ms,
                     "consecutive_failures": 0,
@@ -145,6 +161,8 @@ def run(args: argparse.Namespace) -> int:
                     "schema_version": SCHEMA_VERSION,
                     "state": "degraded",
                     "symbol": args.symbol,
+                    "symbols": [args.symbol, *args.context_symbols],
+                    "capture_schema_version": collector.SCHEMA_VERSION,
                     "segment_started_epoch_ms": started_ms,
                     "last_failure_epoch_ms": int(time.time() * 1000),
                     "consecutive_failures": consecutive_failures,
@@ -169,7 +187,13 @@ def healthcheck(args: argparse.Namespace) -> int:
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return 1
     age_ms = int(time.time() * 1000) - reference_epoch_ms
-    return 0 if payload.get("state") in {"healthy", "capturing"} and 0 <= age_ms <= args.max_stale_sec * 1000 else 1
+    contract_ok = bool(
+        payload.get("schema_version") == SCHEMA_VERSION
+        and payload.get("capture_schema_version") == collector.SCHEMA_VERSION
+        and payload.get("symbol") == collector.TARGET_SYMBOL
+        and payload.get("symbols") == list(collector.CAPTURE_SYMBOLS)
+    )
+    return 0 if contract_ok and payload.get("state") in {"healthy", "capturing"} and 0 <= age_ms <= args.max_stale_sec * 1000 else 1
 
 
 def parse_args() -> argparse.Namespace:
@@ -177,7 +201,12 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="action", required=True)
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--root", required=True)
-    run_parser.add_argument("--symbol", default="SOLUSDT", choices=("SOLUSDT",))
+    run_parser.add_argument(
+        "--symbol", default=collector.TARGET_SYMBOL, choices=(collector.TARGET_SYMBOL,)
+    )
+    run_parser.add_argument(
+        "--context-symbols", default=",".join(collector.CONTEXT_SYMBOLS)
+    )
     run_parser.add_argument("--segment-duration-sec", type=float, default=905.0)
     run_parser.add_argument(
         "--bootstrap-segment-duration-sec", type=float, default=65.0
@@ -197,6 +226,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if args.action == "run":
+        args.context_symbols = tuple(
+            value.strip().upper()
+            for value in args.context_symbols.split(",")
+            if value.strip()
+        )
+        if args.context_symbols != collector.CONTEXT_SYMBOLS:
+            raise ValueError("context-symbols must be BTCUSDT,ETHUSDT in that order")
         if (
             args.segment_duration_sec <= 0
             or args.bootstrap_segment_duration_sec <= 0

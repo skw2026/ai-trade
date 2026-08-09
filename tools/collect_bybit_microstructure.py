@@ -25,8 +25,23 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, TextIO, Tuple
 
 
-SCHEMA_VERSION = "bybit_microstructure_v1"
+SCHEMA_VERSION = "bybit_cross_asset_microstructure_v2"
 DEFAULT_URL = "wss://stream.bybit.com/v5/public/linear"
+TARGET_SYMBOL = "SOLUSDT"
+CONTEXT_SYMBOLS = ("BTCUSDT", "ETHUSDT")
+CAPTURE_SYMBOLS = (TARGET_SYMBOL, *CONTEXT_SYMBOLS)
+CROSS_ASSET_ALIGNMENT_CONTRACT = {
+    "method": "exact_exchange_second_inner_join_v1",
+    "target_symbol": TARGET_SYMBOL,
+    "context_symbols": list(CONTEXT_SYMBOLS),
+    "timestamp_semantics": (
+        "exchange cts/T bucket start; a row is emitted only after order-book "
+        "and public-trade channels for every symbol advance beyond that second"
+    ),
+    "missing_context_action": "drop_target_second",
+    "future_fill_permitted": False,
+    "backfill_permitted": False,
+}
 
 
 def parse_level(raw: Any) -> Tuple[float, float]:
@@ -146,6 +161,42 @@ FEATURE_FIELDS = (
     "depth_slope",
 )
 
+TARGET_ROW_FIELDS = (
+    *FEATURE_FIELDS,
+    "book_update_count",
+    "trade_count",
+    "buy_quote_volume",
+    "sell_quote_volume",
+    "trade_imbalance",
+)
+CONTEXT_SOURCE_FIELDS = (
+    "mid",
+    "spread_bps",
+    "microprice",
+    "book_imbalance_l1",
+    "book_imbalance_l5",
+    "book_imbalance_l20",
+    "depth_slope",
+    "book_update_count",
+    "trade_count",
+    "buy_quote_volume",
+    "sell_quote_volume",
+    "trade_imbalance",
+)
+
+
+def context_prefix(symbol: str) -> str:
+    normalized = symbol.upper()
+    return normalized[:-4].lower() if normalized.endswith("USDT") else normalized.lower()
+
+
+CONTEXT_ROW_FIELDS = tuple(
+    f"{context_prefix(symbol)}_{name}"
+    for symbol in CONTEXT_SYMBOLS
+    for name in CONTEXT_SOURCE_FIELDS
+)
+OUTPUT_FIELDS = ("timestamp", *TARGET_ROW_FIELDS, *CONTEXT_ROW_FIELDS)
+
 
 class MicrostructureAggregator:
     def __init__(self, *, symbol: str, bucket_ms: int = 1000) -> None:
@@ -158,6 +209,8 @@ class MicrostructureAggregator:
         self.trade_ids: set[str] = set()
         self.trade_id_order: deque[str] = deque()
         self.trade_id_capacity = 200000
+        self.latest_book_bucket: int | None = None
+        self.latest_trade_bucket: int | None = None
 
     def _remember_trade_id(self, trade_id: str) -> bool:
         if trade_id in self.trade_ids:
@@ -181,6 +234,11 @@ class MicrostructureAggregator:
             bucket = self._bucket(timestamp)
             bucket.metrics = self.book.metrics()
             bucket.book_update_count += 1
+            current_bucket = timestamp - timestamp % self.bucket_ms
+            self.latest_book_bucket = max(
+                current_bucket,
+                self.latest_book_bucket if self.latest_book_bucket is not None else current_bucket,
+            )
             return True
         if topic == f"publicTrade.{self.symbol}":
             rows = message.get("data")
@@ -209,6 +267,11 @@ class MicrostructureAggregator:
                     bucket.buy_quote_volume += size * price
                 else:
                     bucket.sell_quote_volume += size * price
+                current_bucket = timestamp - timestamp % self.bucket_ms
+                self.latest_trade_bucket = max(
+                    current_bucket,
+                    self.latest_trade_bucket if self.latest_trade_bucket is not None else current_bucket,
+                )
                 processed = True
             return processed
         return False
@@ -241,6 +304,74 @@ class MicrostructureAggregator:
             output.append(row)
         return output
 
+    def finalized_through(self) -> int | None:
+        """Last bucket safe to emit after both public channels advanced."""
+        if self.latest_book_bucket is None or self.latest_trade_bucket is None:
+            return None
+        return min(self.latest_book_bucket, self.latest_trade_bucket) - self.bucket_ms
+
+
+class CrossAssetMicrostructureAggregator:
+    """Deterministically align target and context rows on exchange seconds."""
+
+    def __init__(
+        self,
+        *,
+        target_symbol: str = TARGET_SYMBOL,
+        context_symbols: Sequence[str] = CONTEXT_SYMBOLS,
+        bucket_ms: int = 1000,
+    ) -> None:
+        target = target_symbol.upper()
+        contexts = tuple(symbol.upper() for symbol in context_symbols)
+        if target != TARGET_SYMBOL or contexts != CONTEXT_SYMBOLS:
+            raise ValueError("cross-asset contract requires SOLUSDT with BTCUSDT,ETHUSDT")
+        self.target_symbol = target
+        self.context_symbols = contexts
+        self.bucket_ms = bucket_ms
+        self.aggregators = {
+            symbol: MicrostructureAggregator(symbol=symbol, bucket_ms=bucket_ms)
+            for symbol in (target, *contexts)
+        }
+
+    def process(self, message: Mapping[str, Any]) -> bool:
+        topic = str(message.get("topic", ""))
+        symbol = topic.rsplit(".", 1)[-1].upper() if "." in topic else ""
+        aggregator = self.aggregators.get(symbol)
+        return aggregator.process(message) if aggregator is not None else False
+
+    def finalized_through(self) -> int | None:
+        watermarks = [item.finalized_through() for item in self.aggregators.values()]
+        if any(value is None for value in watermarks):
+            return None
+        return min(int(value) for value in watermarks if value is not None)
+
+    def rows(self) -> List[Dict[str, float | int]]:
+        rows_by_symbol = {
+            symbol: {int(row["timestamp"]): row for row in aggregator.rows()}
+            for symbol, aggregator in self.aggregators.items()
+        }
+        common_timestamps = set(rows_by_symbol[self.target_symbol])
+        for symbol in self.context_symbols:
+            common_timestamps.intersection_update(rows_by_symbol[symbol])
+        output: List[Dict[str, float | int]] = []
+        for timestamp in sorted(common_timestamps):
+            target_row = rows_by_symbol[self.target_symbol][timestamp]
+            row: Dict[str, float | int] = {
+                "timestamp": timestamp,
+                **{name: target_row[name] for name in TARGET_ROW_FIELDS},
+            }
+            for symbol in self.context_symbols:
+                context_row = rows_by_symbol[symbol][timestamp]
+                prefix = context_prefix(symbol)
+                row.update(
+                    {
+                        f"{prefix}_{name}": context_row[name]
+                        for name in CONTEXT_SOURCE_FIELDS
+                    }
+                )
+            output.append(row)
+        return output
+
 
 def open_text_auto(path: pathlib.Path) -> TextIO:
     if path.suffix == ".gz":
@@ -248,8 +379,18 @@ def open_text_auto(path: pathlib.Path) -> TextIO:
     return path.open("r", encoding="utf-8")
 
 
-def replay_jsonl(path: pathlib.Path, *, symbol: str, bucket_ms: int) -> Tuple[List[Dict[str, Any]], int]:
-    aggregator = MicrostructureAggregator(symbol=symbol, bucket_ms=bucket_ms)
+def replay_jsonl(
+    path: pathlib.Path,
+    *,
+    symbol: str,
+    bucket_ms: int,
+    context_symbols: Sequence[str] = CONTEXT_SYMBOLS,
+) -> Tuple[List[Dict[str, Any]], int]:
+    aggregator = CrossAssetMicrostructureAggregator(
+        target_symbol=symbol,
+        context_symbols=context_symbols,
+        bucket_ms=bucket_ms,
+    )
     raw_count = 0
     with open_text_auto(path) as handle:
         for line_number, line in enumerate(handle, start=1):
@@ -271,15 +412,7 @@ def replay_jsonl(path: pathlib.Path, *, symbol: str, bucket_ms: int) -> Tuple[Li
 
 def write_feature_csv(path: pathlib.Path, rows: Sequence[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fields = [
-        "timestamp",
-        *FEATURE_FIELDS,
-        "book_update_count",
-        "trade_count",
-        "buy_quote_volume",
-        "sell_quote_volume",
-        "trade_imbalance",
-    ]
+    fields = list(OUTPUT_FIELDS)
     with tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", newline="", dir=path.parent, delete=False
     ) as handle:
@@ -292,7 +425,13 @@ def write_feature_csv(path: pathlib.Path, rows: Sequence[Mapping[str, Any]]) -> 
 
 
 async def capture_live(
-    *, url: str, symbol: str, depth: int, duration_sec: float, raw_output: pathlib.Path
+    *,
+    url: str,
+    symbol: str,
+    context_symbols: Sequence[str],
+    depth: int,
+    duration_sec: float,
+    raw_output: pathlib.Path,
 ) -> int:
     try:
         import websockets
@@ -317,13 +456,18 @@ async def capture_live(
             close_timeout=10,
             max_size=8 * 1024 * 1024,
         ) as socket:
+            symbols = (symbol, *context_symbols)
             await socket.send(
                 json.dumps(
                     {
                         "op": "subscribe",
                         "args": [
-                            f"orderbook.{depth}.{symbol}",
-                            f"publicTrade.{symbol}",
+                            topic
+                            for subscribed_symbol in symbols
+                            for topic in (
+                                f"orderbook.{depth}.{subscribed_symbol}",
+                                f"publicTrade.{subscribed_symbol}",
+                            )
                         ],
                     },
                     separators=(",", ":"),
@@ -361,6 +505,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--features", required=True)
     parser.add_argument("--report", required=True)
     parser.add_argument("--symbol", default="SOLUSDT")
+    parser.add_argument("--context-symbols", default=",".join(CONTEXT_SYMBOLS))
     parser.add_argument("--depth", type=int, default=50, choices=(50,))
     parser.add_argument("--bucket-ms", type=int, default=1000)
     parser.add_argument("--duration-sec", type=float, default=30.0)
@@ -373,8 +518,14 @@ def main() -> int:
     args = parse_args()
     if args.research_domain != "development":
         raise ValueError("microstructure collection is development-only")
-    if args.symbol.strip().upper() != "SOLUSDT":
-        raise ValueError("only the audited SOLUSDT contract is supported")
+    symbol = args.symbol.strip().upper()
+    context_symbols = tuple(
+        value.strip().upper()
+        for value in args.context_symbols.split(",")
+        if value.strip()
+    )
+    if symbol != TARGET_SYMBOL or context_symbols != CONTEXT_SYMBOLS:
+        raise ValueError("only the audited SOLUSDT+BTCUSDT+ETHUSDT contract is supported")
     raw_path = pathlib.Path(args.raw)
     if args.mode == "live":
         if args.duration_sec <= 0.0:
@@ -382,14 +533,18 @@ def main() -> int:
         asyncio.run(
             capture_live(
                 url=args.url,
-                symbol="SOLUSDT",
+                symbol=symbol,
+                context_symbols=context_symbols,
                 depth=args.depth,
                 duration_sec=args.duration_sec,
                 raw_output=raw_path,
             )
         )
     rows, raw_count = replay_jsonl(
-        raw_path, symbol="SOLUSDT", bucket_ms=args.bucket_ms
+        raw_path,
+        symbol=symbol,
+        context_symbols=context_symbols,
+        bucket_ms=args.bucket_ms,
     )
     feature_path = pathlib.Path(args.features)
     write_feature_csv(feature_path, rows)
@@ -401,8 +556,17 @@ def main() -> int:
         "promotion_eligible": False,
         "source": "bybit_public_websocket_v5",
         "url": args.url,
-        "topics": ["orderbook.50.SOLUSDT", "publicTrade.SOLUSDT"],
-        "timestamp_semantics": "exchange cts/T; one-second bucket includes only events at or before bucket end",
+        "symbols": list(CAPTURE_SYMBOLS),
+        "cross_asset_alignment_contract": CROSS_ASSET_ALIGNMENT_CONTRACT,
+        "topics": [
+            topic
+            for subscribed_symbol in CAPTURE_SYMBOLS
+            for topic in (
+                f"orderbook.50.{subscribed_symbol}",
+                f"publicTrade.{subscribed_symbol}",
+            )
+        ],
+        "timestamp_semantics": CROSS_ASSET_ALIGNMENT_CONTRACT["timestamp_semantics"],
         "raw": {"path": str(raw_path), "sha256": sha256_file(raw_path), "message_count": raw_count},
         "features": {
             "path": str(feature_path),
@@ -417,6 +581,29 @@ def main() -> int:
             "trade_bucket_count": sum(int(row["trade_count"]) > 0 for row in rows),
             "mean_spread_bps": sum(float(row["spread_bps"]) for row in rows)
             / len(rows),
+            "by_symbol": {
+                capture_symbol: {
+                    "book_update_count": sum(
+                        int(
+                            row["book_update_count"]
+                            if capture_symbol == symbol
+                            else row[
+                                f"{context_prefix(capture_symbol)}_book_update_count"
+                            ]
+                        )
+                        for row in rows
+                    ),
+                    "trade_count": sum(
+                        int(
+                            row["trade_count"]
+                            if capture_symbol == symbol
+                            else row[f"{context_prefix(capture_symbol)}_trade_count"]
+                        )
+                        for row in rows
+                    ),
+                }
+                for capture_symbol in CAPTURE_SYMBOLS
+            },
         },
         "gates_remaining": [
             "minimum_forward_capture_duration",

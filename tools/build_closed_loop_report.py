@@ -798,6 +798,10 @@ def assess_replay_validation(path: Path) -> Dict[str, Any]:
         "feature_build": feature_build,
         "feature_csv_by_symbol": payload.get("feature_csv_by_symbol", {}),
         "symbol": payload.get("symbol"),
+        "symbols": payload.get("symbols"),
+        "cross_asset_alignment_contract": payload.get(
+            "cross_asset_alignment_contract"
+        ),
         "symbols": payload.get("symbols", []),
         "selection": selection,
         "summary": aggregate_summary,
@@ -912,7 +916,17 @@ def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
         for item in payload.get("failures", [])
         if str(item).strip()
     ]
-    status = "pass" if status_raw == "PASS" else "fail"
+    alignment = payload.get("cross_asset_alignment_contract", {})
+    cross_asset_ok = bool(
+        payload.get("symbols") == ["SOLUSDT", "BTCUSDT", "ETHUSDT"]
+        and isinstance(alignment, dict)
+        and alignment.get("method") == "exact_exchange_second_inner_join_v1"
+        and alignment.get("future_fill_permitted") is False
+        and alignment.get("backfill_permitted") is False
+    )
+    status = "pass" if status_raw == "PASS" and cross_asset_ok else "fail"
+    if status_raw == "PASS" and not cross_asset_ok:
+        failures.append("microstructure capture cross-asset causal contract failed")
     if status == "fail" and not failures:
         failures.append(f"microstructure capture status={status_raw or 'UNKNOWN'}")
     return {
@@ -927,6 +941,7 @@ def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
         "symbol": payload.get("symbol"),
         "segment_count": payload.get("segment_count"),
         "valid_segment_count": payload.get("valid_segment_count"),
+        "superseded_segment_count": payload.get("superseded_segment_count"),
         "coverage_ms": payload.get("coverage_ms"),
         "minimum_coverage_ms": payload.get("minimum_coverage_ms"),
         "freshness_age_ms": payload.get("freshness_age_ms"),
@@ -934,6 +949,8 @@ def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
         "feature_row_density": payload.get("feature_row_density"),
         "book_update_count": payload.get("book_update_count"),
         "trade_count": payload.get("trade_count"),
+        "book_update_count_by_symbol": payload.get("book_update_count_by_symbol"),
+        "trade_count_by_symbol": payload.get("trade_count_by_symbol"),
         "next_gate": payload.get("next_gate"),
     }
 
@@ -962,6 +979,17 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
         and payload.get("promotion_evidence") is False
         and payload.get("promotion_eligible") is False
     )
+    cross_asset_contract = payload.get("cross_asset_feature_contract", {})
+    cross_asset_ok = bool(
+        isinstance(cross_asset_contract, dict)
+        and cross_asset_contract.get("method")
+        == "exact_exchange_second_inner_join_v1"
+        and cross_asset_contract.get("target_symbol") == "SOLUSDT"
+        and cross_asset_contract.get("context_symbols")
+        == ["BTCUSDT", "ETHUSDT"]
+        and cross_asset_contract.get("future_fill_permitted") is False
+        and cross_asset_contract.get("backfill_permitted") is False
+    )
     fail_reasons: List[str] = []
     if not schema_ok:
         fail_reasons.append("microstructure alpha development report schema mismatch")
@@ -969,6 +997,8 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
         fail_reasons.append("microstructure alpha development evidence is incomplete")
     if not domain_ok:
         fail_reasons.append("microstructure alpha development-domain isolation contract failed")
+    if not cross_asset_ok:
+        fail_reasons.append("microstructure alpha cross-asset causal contract failed")
     if not development_passed:
         fail_reasons.append(
             "no order-book/trade-flow joint direction/exit candidate passed stressed-cost development screen"
@@ -1006,6 +1036,7 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
         "promotion_eligible": payload.get("promotion_eligible"),
         "fully_verifiable": fully_verifiable,
         "source_assessment": payload.get("source_assessment", {}),
+        "cross_asset_feature_contract": cross_asset_contract,
         "data": payload.get("data", {}),
         "target_contract": payload.get("target_contract", {}),
         "validation_contract": payload.get("validation_contract", {}),

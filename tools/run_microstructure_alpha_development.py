@@ -25,6 +25,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
+import collect_bybit_microstructure as collector
+
 try:
     import catboost
     from catboost import CatBoostRegressor
@@ -43,23 +45,7 @@ CAPTURE_MERGE_CONTRACT = {
     "non_boundary_action": "fail_closed",
     "maximum_segments_per_boundary": 2,
 }
-REQUIRED_FIELDS = (
-    "timestamp",
-    "best_bid",
-    "best_ask",
-    "mid",
-    "spread_bps",
-    "microprice",
-    "book_imbalance_l1",
-    "book_imbalance_l5",
-    "book_imbalance_l20",
-    "depth_slope",
-    "book_update_count",
-    "trade_count",
-    "buy_quote_volume",
-    "sell_quote_volume",
-    "trade_imbalance",
-)
+REQUIRED_FIELDS = collector.OUTPUT_FIELDS
 
 
 class CaptureNotReady(RuntimeError):
@@ -110,6 +96,12 @@ def validate_capture_assessment(path: pathlib.Path) -> Dict[str, Any]:
         failures.append("capture assessment is not forward-development-only")
     if payload.get("promotion_evidence") is not False or payload.get("promotion_eligible") is not False:
         failures.append("capture assessment promotion isolation contract failed")
+    if not (
+        payload.get("symbols") == list(collector.CAPTURE_SYMBOLS)
+        and payload.get("cross_asset_alignment_contract")
+        == collector.CROSS_ASSET_ALIGNMENT_CONTRACT
+    ):
+        failures.append("capture assessment cross-asset alignment contract failed")
     try:
         coverage_ms = int(payload.get("coverage_ms") or 0)
         minimum_coverage_ms = int(payload.get("minimum_coverage_ms") or 0)
@@ -198,6 +190,11 @@ def load_capture_rows(assessment: Mapping[str, Any]) -> Dict[str, Any]:
     for item in manifest:
         if not isinstance(item, dict):
             raise ValueError("capture segment manifest item is not an object")
+        if not (
+            item.get("capture_schema_version") == collector.SCHEMA_VERSION
+            and item.get("symbols") == list(collector.CAPTURE_SYMBOLS)
+        ):
+            raise ValueError("capture segment cross-asset contract mismatch")
         try:
             first = int(item.get("first_timestamp_ms", -1))
             last = int(item.get("last_timestamp_ms", -1))
@@ -373,6 +370,79 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
         add(f"micro_book_l1_delta_{lag}s", imbalance_l1 - lag_l1)
         add(f"micro_book_l5_delta_{lag}s", imbalance_l5 - lag_l5)
         add(f"micro_trade_imbalance_delta_{lag}s", trade_imbalance - lag_trade)
+    target_returns: Dict[int, np.ndarray] = {
+        lag: mid / exact_lag(mid, timestamps, lag) - 1.0
+        for lag in (1, 5, 20, 60)
+    }
+    for symbol in collector.CONTEXT_SYMBOLS:
+        prefix = collector.context_prefix(symbol)
+        context_mid = np.asarray(series[f"{prefix}_mid"], dtype=np.float64)
+        context_microprice = np.asarray(
+            series[f"{prefix}_microprice"], dtype=np.float64
+        )
+        context_l1 = np.asarray(
+            series[f"{prefix}_book_imbalance_l1"], dtype=np.float64
+        )
+        context_l5 = np.asarray(
+            series[f"{prefix}_book_imbalance_l5"], dtype=np.float64
+        )
+        context_l20 = np.asarray(
+            series[f"{prefix}_book_imbalance_l20"], dtype=np.float64
+        )
+        context_trade = np.asarray(
+            series[f"{prefix}_trade_imbalance"], dtype=np.float64
+        )
+        context_dislocation = (context_microprice / context_mid - 1.0) * 10000.0
+        add(f"cross_asset_{prefix}_spread_bps", series[f"{prefix}_spread_bps"])
+        add(
+            f"cross_asset_{prefix}_microprice_dislocation_bps",
+            context_dislocation,
+        )
+        add(f"cross_asset_{prefix}_book_imbalance_l1", context_l1)
+        add(f"cross_asset_{prefix}_book_imbalance_l5", context_l5)
+        add(f"cross_asset_{prefix}_book_imbalance_l20", context_l20)
+        add(f"cross_asset_{prefix}_depth_slope", series[f"{prefix}_depth_slope"])
+        add(f"cross_asset_{prefix}_trade_imbalance", context_trade)
+        add(
+            f"cross_asset_{prefix}_log_book_updates",
+            np.log1p(series[f"{prefix}_book_update_count"]),
+        )
+        add(
+            f"cross_asset_{prefix}_log_trade_count",
+            np.log1p(series[f"{prefix}_trade_count"]),
+        )
+        add(
+            f"cross_asset_{prefix}_log_buy_quote_volume",
+            np.log1p(series[f"{prefix}_buy_quote_volume"]),
+        )
+        add(
+            f"cross_asset_{prefix}_log_sell_quote_volume",
+            np.log1p(series[f"{prefix}_sell_quote_volume"]),
+        )
+        for lag in (1, 5, 20, 60):
+            context_return = context_mid / exact_lag(context_mid, timestamps, lag) - 1.0
+            add(f"cross_asset_{prefix}_mid_return_{lag}s", context_return)
+            add(
+                f"cross_asset_sol_minus_{prefix}_return_{lag}s",
+                target_returns[lag] - context_return,
+            )
+            add(
+                f"cross_asset_{prefix}_dislocation_delta_{lag}s",
+                context_dislocation
+                - exact_lag(context_dislocation, timestamps, lag),
+            )
+            add(
+                f"cross_asset_{prefix}_book_l1_delta_{lag}s",
+                context_l1 - exact_lag(context_l1, timestamps, lag),
+            )
+            add(
+                f"cross_asset_{prefix}_book_l5_delta_{lag}s",
+                context_l5 - exact_lag(context_l5, timestamps, lag),
+            )
+            add(
+                f"cross_asset_{prefix}_trade_imbalance_delta_{lag}s",
+                context_trade - exact_lag(context_trade, timestamps, lag),
+            )
     day_phase = np.mod(timestamps, 86_400_000) / 86_400_000.0
     add("micro_time_day_sin", np.sin(2.0 * math.pi * day_phase))
     add("micro_time_day_cos", np.cos(2.0 * math.pi * day_phase))
@@ -1541,6 +1611,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 "latest_exchange_timestamp_ms"
             ),
         },
+        "cross_asset_feature_contract": collector.CROSS_ASSET_ALIGNMENT_CONTRACT,
         "capture_merge_contract": CAPTURE_MERGE_CONTRACT,
         "data": {
             "raw_feature_row_count": int(len(series["timestamp"])),
@@ -1631,6 +1702,7 @@ def write_candidate_manifest(
         frozen_identity.pop("model_path", None)
     identity_contract = {
         "source_assessment_sha256": report.get("source_assessment", {}).get("sha256"),
+        "cross_asset_feature_contract": report.get("cross_asset_feature_contract"),
         "capture_merge_contract": report.get("capture_merge_contract"),
         "capture_merge_audit": report.get("data", {}).get("capture_merge_audit"),
         "target_contract": report.get("target_contract"),
@@ -1744,6 +1816,7 @@ def not_ready_report(args: argparse.Namespace, reason: str) -> Dict[str, Any]:
             "path": str(assessment_path),
             "sha256": sha256_file(assessment_path) if assessment_path.is_file() else None,
         },
+        "cross_asset_feature_contract": collector.CROSS_ASSET_ALIGNMENT_CONTRACT,
         "economic_screen": {"development_passed": False},
         "failures": [reason],
         "next_gate": "continue_forward_capture",

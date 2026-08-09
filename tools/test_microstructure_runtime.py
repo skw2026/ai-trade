@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 import assess_microstructure_capture as assessment
+import collect_bybit_microstructure as collector
 import run_microstructure_collector as supervisor
 
 
@@ -32,11 +33,15 @@ class MicrostructureRuntimeTest(unittest.TestCase):
         report.write_text(
             json.dumps(
                 {
-                    "schema_version": "bybit_microstructure_v1",
+                    "schema_version": collector.SCHEMA_VERSION,
                     "status": "PASS",
                     "research_domain": "forward_development_only",
                     "promotion_evidence": False,
                     "promotion_eligible": False,
+                    "symbols": list(collector.CAPTURE_SYMBOLS),
+                    "cross_asset_alignment_contract": (
+                        collector.CROSS_ASSET_ALIGNMENT_CONTRACT
+                    ),
                     "raw": {
                         "path": "/app/data/research/microstructure/raw/SOLUSDT/segment.jsonl.gz",
                         "sha256": sha256(raw),
@@ -49,7 +54,14 @@ class MicrostructureRuntimeTest(unittest.TestCase):
                         "first_timestamp": 1000,
                         "last_timestamp": 2000,
                     },
-                    "quality": {"book_update_count": 8, "trade_count": 3},
+                    "quality": {
+                        "book_update_count": 8,
+                        "trade_count": 3,
+                        "by_symbol": {
+                            symbol: {"book_update_count": 2, "trade_count": 1}
+                            for symbol in collector.CAPTURE_SYMBOLS
+                        },
+                    },
                 }
             ),
             encoding="utf-8",
@@ -76,6 +88,16 @@ class MicrostructureRuntimeTest(unittest.TestCase):
             self.assertEqual(len(payload["segments"]), 1)
             self.assertEqual(payload["segments"][0]["feature_sha256"], sha256(features))
 
+            legacy = root / "reports" / "SOLUSDT" / "legacy.json"
+            legacy.write_text(
+                json.dumps({"schema_version": "bybit_microstructure_v1"}),
+                encoding="utf-8",
+            )
+            with_legacy = assessment.assess(args)
+            self.assertEqual(with_legacy["status"], "PASS")
+            self.assertEqual(with_legacy["valid_segment_count"], 1)
+            self.assertEqual(with_legacy["superseded_segment_count"], 1)
+
             features.write_text("tampered\n", encoding="utf-8")
             failed = assessment.assess(args)
             self.assertEqual(failed["status"], "FAIL")
@@ -90,6 +112,9 @@ class MicrostructureRuntimeTest(unittest.TestCase):
                 {
                     "schema_version": supervisor.SCHEMA_VERSION,
                     "state": "healthy",
+                    "symbol": collector.TARGET_SYMBOL,
+                    "symbols": list(collector.CAPTURE_SYMBOLS),
+                    "capture_schema_version": collector.SCHEMA_VERSION,
                     "last_success_epoch_ms": int(time.time() * 1000),
                 },
             )
@@ -109,6 +134,8 @@ class MicrostructureRuntimeTest(unittest.TestCase):
                     "schema_version": supervisor.SCHEMA_VERSION,
                     "state": "capturing",
                     "symbol": "SOLUSDT",
+                    "symbols": list(collector.CAPTURE_SYMBOLS),
+                    "capture_schema_version": collector.SCHEMA_VERSION,
                     "segment_started_epoch_ms": 1000,
                     "consecutive_failures": 0,
                 },
@@ -117,6 +144,7 @@ class MicrostructureRuntimeTest(unittest.TestCase):
                 root=str(root),
                 output=str(root / "assessment.json"),
                 symbol="SOLUSDT",
+                context_symbols=collector.CONTEXT_SYMBOLS,
                 min_capture_duration_sec=2,
                 max_stale_sec=10,
                 min_row_density=0.8,
@@ -136,6 +164,7 @@ class MicrostructureRuntimeTest(unittest.TestCase):
             args = argparse.Namespace(
                 root=str(root),
                 symbol="SOLUSDT",
+                context_symbols=collector.CONTEXT_SYMBOLS,
                 bootstrap_segment_duration_sec=65.0,
                 segment_duration_sec=905.0,
                 retention_days=1,
@@ -145,7 +174,8 @@ class MicrostructureRuntimeTest(unittest.TestCase):
             )
             observed_durations = []
 
-            def fake_segment_command(*, root, symbol, duration_sec, url):
+            def fake_segment_command(*, root, symbol, context_symbols, duration_sec, url):
+                self.assertEqual(context_symbols, collector.CONTEXT_SYMBOLS)
                 observed_durations.append(duration_sec)
                 report = root / "reports" / symbol / f"{len(observed_durations)}.json"
                 report.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +196,7 @@ class MicrostructureRuntimeTest(unittest.TestCase):
         ):
             run_args = supervisor.parse_args()
         self.assertEqual(run_args.segment_duration_sec, 905.0)
+        self.assertEqual(run_args.context_symbols, "BTCUSDT,ETHUSDT")
         with mock.patch.object(
             sys,
             "argv",

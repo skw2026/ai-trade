@@ -16,7 +16,7 @@ import run_microstructure_alpha_lifecycle as lifecycle
 def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
     timestamp = np.arange(row_count, dtype=np.int64) * 1000
     mid = 100.0 + np.arange(row_count, dtype=np.float64) * 0.02
-    return {
+    series = {
         "timestamp": timestamp,
         "best_bid": mid - 0.005,
         "best_ask": mid + 0.005,
@@ -33,6 +33,26 @@ def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
         "sell_quote_volume": np.full(row_count, 10.0),
         "trade_imbalance": np.full(row_count, 1.0 / 3.0),
     }
+    for symbol, scale in (("BTCUSDT", 10.0), ("ETHUSDT", 5.0)):
+        prefix = lifecycle.collector.context_prefix(symbol)
+        context_mid = mid * scale
+        series.update(
+            {
+                f"{prefix}_mid": context_mid,
+                f"{prefix}_spread_bps": np.full(row_count, 1.0),
+                f"{prefix}_microprice": context_mid,
+                f"{prefix}_book_imbalance_l1": np.full(row_count, 0.2),
+                f"{prefix}_book_imbalance_l5": np.full(row_count, 0.1),
+                f"{prefix}_book_imbalance_l20": np.full(row_count, 0.05),
+                f"{prefix}_depth_slope": np.full(row_count, 2.0),
+                f"{prefix}_book_update_count": np.full(row_count, 8.0),
+                f"{prefix}_trade_count": np.full(row_count, 2.0),
+                f"{prefix}_buy_quote_volume": np.full(row_count, 30.0),
+                f"{prefix}_sell_quote_volume": np.full(row_count, 20.0),
+                f"{prefix}_trade_imbalance": np.full(row_count, 0.2),
+            }
+        )
+    return series
 
 
 class FakeModel:
@@ -141,6 +161,9 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
             "sha256": "a" * 64,
             "development_cutoff_ms": 60_000,
         },
+        "cross_asset_feature_contract": (
+            lifecycle.collector.CROSS_ASSET_ALIGNMENT_CONTRACT
+        ),
         "capture_merge_contract": development.CAPTURE_MERGE_CONTRACT,
         "data": {
             "feature_names": feature_names,
@@ -164,6 +187,9 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     frozen_identity.pop("model_path")
     identity = {
         "source_assessment_sha256": "a" * 64,
+        "cross_asset_feature_contract": (
+            lifecycle.collector.CROSS_ASSET_ALIGNMENT_CONTRACT
+        ),
         "capture_merge_contract": development.CAPTURE_MERGE_CONTRACT,
         "capture_merge_audit": capture_merge_audit,
         "target_contract": target_contract,
@@ -485,40 +511,46 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
             report_path, _, _ = make_candidate(root)
             registered_report = json.loads(report_path.read_text())
             raw_path = root / "segment.jsonl"
-            previous_bid = previous_ask = None
+            previous_quotes = {}
             base_timestamp = 1_000_000
             with raw_path.open("w", encoding="utf-8") as handle:
                 for index in range(500):
                     timestamp = base_timestamp + index * 1000
-                    mid = 100.0 + index * 0.02
-                    bid = round(mid - 0.005, 6)
-                    ask = round(mid + 0.005, 6)
-                    if index == 0:
-                        message = {
-                            "topic": "orderbook.50.SOLUSDT",
-                            "type": "snapshot",
-                            "cts": timestamp,
-                            "data": {
-                                "u": 1,
-                                "seq": 1,
-                                "b": [[bid, 1.0]],
-                                "a": [[ask, 1.0]],
-                            },
-                        }
-                    else:
-                        message = {
-                            "topic": "orderbook.50.SOLUSDT",
-                            "type": "delta",
-                            "cts": timestamp,
-                            "data": {
-                                "u": index + 1,
-                                "seq": index + 1,
-                                "b": [[previous_bid, 0.0], [bid, 1.0]],
-                                "a": [[previous_ask, 0.0], [ask, 1.0]],
-                            },
-                        }
-                    handle.write(json.dumps(message) + "\n")
-                    previous_bid, previous_ask = bid, ask
+                    for symbol, scale in (
+                        ("SOLUSDT", 1.0),
+                        ("BTCUSDT", 10.0),
+                        ("ETHUSDT", 5.0),
+                    ):
+                        mid = (100.0 + index * 0.02) * scale
+                        bid = round(mid - 0.005 * scale, 6)
+                        ask = round(mid + 0.005 * scale, 6)
+                        if index == 0:
+                            message = {
+                                "topic": f"orderbook.50.{symbol}",
+                                "type": "snapshot",
+                                "cts": timestamp,
+                                "data": {
+                                    "u": 1,
+                                    "seq": 1,
+                                    "b": [[bid, 1.0]],
+                                    "a": [[ask, 1.0]],
+                                },
+                            }
+                        else:
+                            previous_bid, previous_ask = previous_quotes[symbol]
+                            message = {
+                                "topic": f"orderbook.50.{symbol}",
+                                "type": "delta",
+                                "cts": timestamp,
+                                "data": {
+                                    "u": index + 1,
+                                    "seq": index + 1,
+                                    "b": [[previous_bid, 0.0], [bid, 1.0]],
+                                    "a": [[previous_ask, 0.0], [ask, 1.0]],
+                                },
+                            }
+                        handle.write(json.dumps(message) + "\n")
+                        previous_quotes[symbol] = (bid, ask)
             rows, raw_count = lifecycle.collector.replay_jsonl(
                 raw_path, symbol="SOLUSDT", bucket_ms=1000
             )
@@ -527,6 +559,8 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
             assessment = {
                 "segments": [
                     {
+                        "capture_schema_version": lifecycle.collector.SCHEMA_VERSION,
+                        "symbols": list(lifecycle.collector.CAPTURE_SYMBOLS),
                         "raw_path": str(raw_path),
                         "raw_sha256": lifecycle.sha256_file(raw_path),
                         "raw_message_count": raw_count,

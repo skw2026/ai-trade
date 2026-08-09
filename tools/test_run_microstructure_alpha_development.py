@@ -22,7 +22,7 @@ def sha256(path: pathlib.Path) -> str:
 def synthetic_series(row_count: int = 400) -> dict[str, np.ndarray]:
     timestamp = np.arange(row_count, dtype=np.int64) * 1000
     mid = 100.0 + np.arange(row_count, dtype=np.float64) * 0.001
-    return {
+    series = {
         "timestamp": timestamp,
         "best_bid": mid - 0.005,
         "best_ask": mid + 0.005,
@@ -39,6 +39,26 @@ def synthetic_series(row_count: int = 400) -> dict[str, np.ndarray]:
         "sell_quote_volume": np.full(row_count, 10.0),
         "trade_imbalance": np.full(row_count, 1.0 / 3.0),
     }
+    for symbol, scale in (("BTCUSDT", 10.0), ("ETHUSDT", 5.0)):
+        prefix = probe.collector.context_prefix(symbol)
+        context_mid = mid * scale + np.sin(np.arange(row_count) / (13.0 + scale))
+        series.update(
+            {
+                f"{prefix}_mid": context_mid,
+                f"{prefix}_spread_bps": np.full(row_count, 0.8 + scale / 100.0),
+                f"{prefix}_microprice": context_mid + np.cos(np.arange(row_count)) * 0.003,
+                f"{prefix}_book_imbalance_l1": np.sin(np.arange(row_count) / 5.0),
+                f"{prefix}_book_imbalance_l5": np.sin(np.arange(row_count) / 9.0),
+                f"{prefix}_book_imbalance_l20": np.sin(np.arange(row_count) / 15.0),
+                f"{prefix}_depth_slope": np.full(row_count, 2.5),
+                f"{prefix}_book_update_count": np.full(row_count, 4.0),
+                f"{prefix}_trade_count": np.full(row_count, 2.0),
+                f"{prefix}_buy_quote_volume": np.full(row_count, 40.0 * scale),
+                f"{prefix}_sell_quote_volume": np.full(row_count, 30.0 * scale),
+                f"{prefix}_trade_imbalance": np.full(row_count, 1.0 / 7.0),
+            }
+        )
+    return series
 
 
 class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
@@ -61,6 +81,8 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
                 row.update(overrides.get(index, {}))
                 writer.writerow(row)
         return {
+            "capture_schema_version": probe.collector.SCHEMA_VERSION,
+            "symbols": list(probe.collector.CAPTURE_SYMBOLS),
             "feature_path": str(path),
             "feature_sha256": sha256(path),
             "feature_row_count": len(row_indices),
@@ -80,6 +102,8 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
                     {name: series[name][index] for name in probe.REQUIRED_FIELDS}
                 )
         item = {
+            "capture_schema_version": probe.collector.SCHEMA_VERSION,
+            "symbols": list(probe.collector.CAPTURE_SYMBOLS),
             "feature_path": str(path),
             "feature_sha256": sha256(path),
             "feature_row_count": 4,
@@ -167,6 +191,10 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
                 "research_domain": "forward_development_only",
                 "promotion_evidence": False,
                 "promotion_eligible": False,
+                "symbols": list(probe.collector.CAPTURE_SYMBOLS),
+                "cross_asset_alignment_contract": (
+                    probe.collector.CROSS_ASSET_ALIGNMENT_CONTRACT
+                ),
                 "coverage_ms": 86_400_000,
                 "minimum_coverage_ms": 86_400_000,
                 "latest_exchange_timestamp_ms": 86_399_000,
@@ -185,6 +213,9 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         mutated = {key: value.copy() for key, value in original.items()}
         mutated["mid"][250:] *= 2.0
         mutated["microprice"][250:] *= 2.0
+        mutated["btc_mid"][250:] *= 3.0
+        mutated["btc_microprice"][250:] *= 3.0
+        mutated["eth_trade_imbalance"][250:] *= -1.0
         first, names = probe.build_causal_features(original)
         second, second_names = probe.build_causal_features(mutated)
         self.assertEqual(names, second_names)

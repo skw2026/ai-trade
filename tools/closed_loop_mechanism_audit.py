@@ -30,6 +30,13 @@ DEFAULT_MIN_REPLAY_TOTAL_FILLS = 20
 EXPECTED_MODEL_OBJECTIVE = (
     "aggregate_model_net_bps_per_unit_turnover_after_cost"
 )
+EXPECTED_CROSS_ASSET_CONTEXT = {
+    "method": "exact_exchange_second_inner_join_v1",
+    "target_symbol": "SOLUSDT",
+    "context_symbols": ["BTCUSDT", "ETHUSDT"],
+    "future_fill_permitted": False,
+    "backfill_permitted": False,
+}
 
 
 def now_utc_iso() -> str:
@@ -830,6 +837,7 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
     capture_merge_audit = development.get("data", {}).get(
         "capture_merge_audit", {}
     )
+    cross_asset = development.get("cross_asset_feature_contract", {})
     if not (
         development.get("schema_version") == "microstructure_alpha_development_v2"
         and development.get("status") == "PASS"
@@ -838,6 +846,11 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and development.get("promotion_evidence") is False
         and development.get("promotion_eligible") is False
         and development.get("economic_screen", {}).get("development_passed") is True
+        and isinstance(cross_asset, dict)
+        and all(
+            cross_asset.get(name) == value
+            for name, value in EXPECTED_CROSS_ASSET_CONTEXT.items()
+        )
         and isinstance(negative_control, dict)
         and negative_control.get("method")
         == "deterministic_oos_prediction_time_permutation"

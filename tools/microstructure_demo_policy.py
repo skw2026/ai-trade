@@ -360,18 +360,28 @@ class DemoPolicyEngine:
 
 
 class StreamingFeatureRows:
-    """Finalize one-second buckets behind a one-second exchange watermark."""
+    """Finalize exact cross-asset seconds after every public channel advances."""
 
-    def __init__(self, symbol: str = "SOLUSDT", retention_seconds: int = 1200) -> None:
-        self.aggregator = collector.MicrostructureAggregator(symbol=symbol, bucket_ms=1000)
+    def __init__(
+        self,
+        symbol: str = collector.TARGET_SYMBOL,
+        context_symbols: Sequence[str] = collector.CONTEXT_SYMBOLS,
+        retention_seconds: int = 1200,
+    ) -> None:
+        self.aggregator = collector.CrossAssetMicrostructureAggregator(
+            target_symbol=symbol,
+            context_symbols=context_symbols,
+            bucket_ms=1000,
+        )
         self.last_emitted_timestamp = -1
         self.retention_ms = max(120_000, int(retention_seconds) * 1000)
 
     def process(self, message: Mapping[str, Any]) -> list[Dict[str, Any]]:
-        if not self.aggregator.process(message) or not self.aggregator.buckets:
+        if not self.aggregator.process(message):
             return []
-        maximum_bucket = max(self.aggregator.buckets)
-        watermark = maximum_bucket - 1000
+        watermark = self.aggregator.finalized_through()
+        if watermark is None:
+            return []
         output = [
             dict(row)
             for row in self.aggregator.rows()
@@ -379,10 +389,11 @@ class StreamingFeatureRows:
         ]
         if output:
             self.last_emitted_timestamp = int(output[-1]["timestamp"])
-        prune_before = maximum_bucket - self.retention_ms
-        for timestamp in list(self.aggregator.buckets):
-            if timestamp < prune_before:
-                del self.aggregator.buckets[timestamp]
+        prune_before = watermark - self.retention_ms
+        for symbol_aggregator in self.aggregator.aggregators.values():
+            for timestamp in list(symbol_aggregator.buckets):
+                if timestamp < prune_before:
+                    del symbol_aggregator.buckets[timestamp]
         return output
 
 
@@ -424,7 +435,14 @@ async def run_live(args: argparse.Namespace) -> int:
             json.dumps(
                 {
                     "op": "subscribe",
-                    "args": ["orderbook.50.SOLUSDT", "publicTrade.SOLUSDT"],
+                    "args": [
+                        topic
+                        for symbol in collector.CAPTURE_SYMBOLS
+                        for topic in (
+                            f"orderbook.50.{symbol}",
+                            f"publicTrade.{symbol}",
+                        )
+                    ],
                 },
                 separators=(",", ":"),
             )

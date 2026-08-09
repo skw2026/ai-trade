@@ -24,6 +24,48 @@ SNAPSHOT = {
 }
 
 
+def snapshot(symbol, timestamp=999, mid=100.0):
+    return {
+        "topic": f"orderbook.50.{symbol}",
+        "type": "snapshot",
+        "ts": timestamp + 1,
+        "cts": timestamp,
+        "data": {
+            "s": symbol,
+            "b": [[str(mid - 1.0), "2"], [str(mid - 2.0), "3"]],
+            "a": [[str(mid + 1.0), "1"], [str(mid + 2.0), "4"]],
+            "u": 10,
+            "seq": 20,
+        },
+    }
+
+
+def trades(symbol, timestamp=1200, mid=100.0):
+    return {
+        "topic": f"publicTrade.{symbol}",
+        "type": "snapshot",
+        "ts": timestamp,
+        "data": [
+            {
+                "T": timestamp,
+                "s": symbol,
+                "S": "Buy",
+                "v": "2",
+                "p": str(mid),
+                "i": f"{symbol}-a",
+            },
+            {
+                "T": timestamp + 100,
+                "s": symbol,
+                "S": "Sell",
+                "v": "1",
+                "p": str(mid + 1.0),
+                "i": f"{symbol}-b",
+            },
+        ],
+    }
+
+
 class MicrostructureTest(unittest.TestCase):
     def test_snapshot_delta_and_size_zero_delete(self):
         book = micro.OrderBook()
@@ -52,27 +94,30 @@ class MicrostructureTest(unittest.TestCase):
             micro.OrderBook().apply(delta)
 
     def test_replay_is_deterministic_and_aggregates_taker_flow(self):
-        trade = {
-            "topic": "publicTrade.SOLUSDT",
-            "type": "snapshot",
-            "ts": 1200,
-            "data": [
-                {"T": 1200, "s": "SOLUSDT", "S": "Buy", "v": "2", "p": "100", "i": "a"},
-                {"T": 1300, "s": "SOLUSDT", "S": "Sell", "v": "1", "p": "101", "i": "b"},
-            ],
-        }
         with tempfile.TemporaryDirectory() as temp_dir:
             raw = pathlib.Path(temp_dir) / "raw.jsonl.gz"
             with gzip.open(raw, "wt", encoding="utf-8") as handle:
-                handle.write(json.dumps(SNAPSHOT) + "\n")
-                handle.write(json.dumps(trade) + "\n")
+                for symbol, mid in (("SOLUSDT", 100.0), ("BTCUSDT", 1000.0), ("ETHUSDT", 500.0)):
+                    handle.write(json.dumps(snapshot(symbol, mid=mid)) + "\n")
+                    handle.write(json.dumps(trades(symbol, mid=mid)) + "\n")
             first, count = micro.replay_jsonl(raw, symbol="SOLUSDT", bucket_ms=1000)
             second, _ = micro.replay_jsonl(raw, symbol="SOLUSDT", bucket_ms=1000)
             self.assertEqual(first, second)
-            self.assertEqual(count, 2)
+            self.assertEqual(count, 6)
             trade_row = next(row for row in first if row["timestamp"] == 1000)
             self.assertEqual(trade_row["trade_count"], 2)
             self.assertAlmostEqual(trade_row["trade_imbalance"], 99.0 / 301.0)
+            self.assertEqual(trade_row["btc_trade_count"], 2)
+            self.assertEqual(trade_row["eth_mid"], 500.0)
+            self.assertEqual(tuple(trade_row), micro.OUTPUT_FIELDS)
+
+    def test_cross_asset_alignment_drops_target_second_missing_context(self):
+        aggregator = micro.CrossAssetMicrostructureAggregator()
+        aggregator.process(snapshot("SOLUSDT"))
+        aggregator.process(trades("SOLUSDT"))
+        aggregator.process(snapshot("BTCUSDT", mid=1000.0))
+        aggregator.process(trades("BTCUSDT", mid=1000.0))
+        self.assertEqual(aggregator.rows(), [])
 
 
 if __name__ == "__main__":
