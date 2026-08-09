@@ -38,6 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
+ALGORITHM_CONTRACT_REVISION = "independent_action_stress_profitability_v2"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -298,15 +299,13 @@ def validate_development_candidate(
     model_contract = report.get("model_contract", {})
     if not (
         isinstance(model_contract, dict)
+        and model_contract.get("loss_function") == "MultiRMSE"
         and model_contract.get("training_target")
-        == "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class"
+        == "fit_only_independent_active_action_stress_profitability"
         and model_contract.get("target_normalization")
-        == "sqrt_balanced_fit_class_weights_with_posterior_prior_correction"
+        == "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
         and model_contract.get("inference_score")
-        == (
-            "fit_pooled_expected_base_net_return_bps_from_prior_corrected_"
-            "class_probability"
-        )
+        == "clipped_fit_probability_weighted_action_conditional_base_net_return_bps"
         and model_contract.get("economic_acceptance_target")
         == "untransformed_executable_base_and_stress_net_return"
         and model_contract.get("validation_or_test_target_statistics_used_for_fit")
@@ -344,20 +343,22 @@ def validate_development_candidate(
         if isinstance(target_transform, dict)
         else None
     )
-    class_statistics = (
-        target_transform.get("class_statistics")
+    model_action_indices = (
+        target_transform.get("model_action_indices")
         if isinstance(target_transform, dict)
         else None
     )
     if not (
         isinstance(target_transform, dict)
         and target_transform.get("method")
-        == "fit_only_multiclass_shortest_stress_profitable_action_v2"
+        == "fit_only_active_action_stress_profitability_v2"
         and target_transform.get("validation_or_test_statistics_used") is False
         and isinstance(action_statistics, list)
         and len(action_statistics) == len(report.get("target_contract", {}).get("actions", []))
-        and isinstance(class_statistics, list)
-        and len(class_statistics) == len(action_statistics) + 1
+        and isinstance(model_action_indices, list)
+        and int(target_transform.get("model_output_count", -1))
+        == len(model_action_indices)
+        and len(model_action_indices) > 0
     ):
         raise LifecycleError("development target transform contract is incomplete")
     frozen_identity = dict(frozen)
@@ -403,11 +404,7 @@ def validate_development_candidate(
             expected_row_count=int(frozen.get("final_training_row_count")),
         )
         development.reconstruct_base_net_scores(
-            np.full(
-                (1, len(actions) + 1),
-                1.0 / (len(actions) + 1),
-                dtype=np.float64,
-            ),
+            np.zeros((1, len(model_action_indices)), dtype=np.float64),
             target_transform,
         )
     except (TypeError, ValueError) as exc:
@@ -523,6 +520,7 @@ def register_candidate(
     holdout_end = holdout_start + int(holdout_duration_seconds) * 1000
     state: Dict[str, Any] = {
         "schema_version": STATE_SCHEMA_VERSION,
+        "algorithm_contract_revision": ALGORITHM_CONTRACT_REVISION,
         "candidate_id": candidate_id,
         "phase": "selection_collecting",
         "development_cutoff_ms": cutoff_ms,
@@ -554,10 +552,44 @@ def register_candidate(
     return state, [*events, event]
 
 
+def expire_obsolete_candidate_contract(
+    paths: RegistryPaths,
+    events: Sequence[Mapping[str, Any]],
+    state: Mapping[str, Any],
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Fail closed and preserve history when the learning contract changes."""
+    if state.get("algorithm_contract_revision") == ALGORITHM_CONTRACT_REVISION:
+        return dict(state), [dict(item) for item in events]
+    previous_revision = str(
+        state.get("algorithm_contract_revision") or "legacy_unversioned"
+    )
+    updated = dict(state)
+    updated.update(
+        {
+            "algorithm_contract_revision": ALGORITHM_CONTRACT_REVISION,
+            "phase": "rejected",
+            "contract_obsolete": True,
+            "demo_entry_eligible": False,
+            "live_promotion_eligible": False,
+        }
+    )
+    event = append_transition(
+        paths,
+        events,
+        transition="candidate_contract_obsoleted",
+        state=updated,
+        evidence={
+            "previous_algorithm_contract_revision": previous_revision,
+            "required_algorithm_contract_revision": ALGORITHM_CONTRACT_REVISION,
+        },
+    )
+    return updated, [*events, event]
+
+
 def load_frozen_model(path: pathlib.Path) -> Any:
-    if development.CatBoostClassifier is None:
+    if development.CatBoostRegressor is None:
         raise LifecycleError("catboost is required; use ai-trade-research image")
-    model = development.CatBoostClassifier()
+    model = development.CatBoostRegressor()
     model.load_model(str(path))
     return model
 
@@ -990,6 +1022,17 @@ def prepare(args: argparse.Namespace, paths: RegistryPaths) -> int:
             print(json.dumps({"status": "NEEDS_DEVELOPMENT", "reason": "registry_empty"}))
             return 3
         state = dict(events[-1]["state"])
+        if state.get("algorithm_contract_revision") != ALGORITHM_CONTRACT_REVISION:
+            print(
+                json.dumps(
+                    {
+                        "status": "NEEDS_DEVELOPMENT",
+                        "reason": "algorithm_contract_obsolete",
+                        "candidate_id": state.get("candidate_id"),
+                    }
+                )
+            )
+            return 3
         if state.get("phase") == "rejected":
             print(
                 json.dumps(
@@ -1075,6 +1118,9 @@ def advance(args: argparse.Namespace, paths: RegistryPaths) -> Tuple[Dict[str, A
             events = read_event_chain(paths)
             if events:
                 state = dict(events[-1]["state"])
+                state, events = expire_obsolete_candidate_contract(
+                    paths, events, state
+                )
             if state is None or state.get("phase") == "rejected":
                 candidate = validate_development_candidate(
                     pathlib.Path(args.development_report).resolve(),

@@ -877,15 +877,13 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         == "realized_base_and_stress_net_lcb_positive_in_nested_validation"
         and validation.get("oos_windows_non_overlapping") is True
         and isinstance(model_contract, dict)
+        and model_contract.get("loss_function") == "MultiRMSE"
         and model_contract.get("training_target")
-        == "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class"
+        == "fit_only_independent_active_action_stress_profitability"
         and model_contract.get("target_normalization")
-        == "sqrt_balanced_fit_class_weights_with_posterior_prior_correction"
+        == "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
         and model_contract.get("inference_score")
-        == (
-            "fit_pooled_expected_base_net_return_bps_from_prior_corrected_"
-            "class_probability"
-        )
+        == "clipped_fit_probability_weighted_action_conditional_base_net_return_bps"
         and model_contract.get("economic_acceptance_target")
         == "untransformed_executable_base_and_stress_net_return"
         and model_contract.get("validation_or_test_target_statistics_used_for_fit")

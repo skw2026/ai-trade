@@ -239,7 +239,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(report["action_counts"], {"long_2s": 3})
         self.assertAlmostEqual(report["stress_cost"]["mean_bps"], 2.0)
 
-    def test_fit_only_joint_policy_target_is_prior_corrected_and_reconstructed_in_bps(self):
+    def test_fit_only_independent_action_targets_are_reconstructed_in_bps(self):
         outcomes = np.asarray(
             [
                 [5.0, -1.0],
@@ -259,57 +259,56 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             stress_cost_multiplier=1.25,
         )
 
-        np.testing.assert_array_equal(targets, [1, 1, 2, 0])
-        self.assertFalse(transform["validation_or_test_statistics_used"])
-        self.assertEqual(transform["stress_incremental_cost_bps"], 1.0)
-        self.assertEqual(
-            [item["sample_count"] for item in transform["class_statistics"]],
-            [1, 2, 1],
-        )
-
-        # Equal weighted posteriors are corrected by the fit-only class weights,
-        # then mapped through fit-only selected/not-selected outcome means.
-        reconstructed = probe.reconstruct_base_net_scores(
-            np.full((1, 3), 1.0 / 3.0, dtype=np.float64), transform
-        )
-        inverse_weights = np.asarray(
-            [1.0 / item["class_weight"] for item in transform["class_statistics"]]
-        )
-        corrected = inverse_weights / np.sum(inverse_weights)
-        expected = np.asarray(
+        expected_targets = np.asarray(
             [
-                corrected[1] * 5.0 + (1.0 - corrected[1]) * -1.8,
-                corrected[2] * 5.0 + (1.0 - corrected[2]) * -1.8,
+                [1.0, -1.0 / np.sqrt(3.0)],
+                [1.0, -1.0 / np.sqrt(3.0)],
+                [-1.0, np.sqrt(3.0)],
+                [-1.0, -1.0 / np.sqrt(3.0)],
             ]
         )
-        np.testing.assert_allclose(reconstructed[0], expected)
+        np.testing.assert_allclose(targets, expected_targets)
+        self.assertFalse(transform["validation_or_test_statistics_used"])
+        self.assertEqual(transform["stress_incremental_cost_bps"], 1.0)
+        self.assertEqual(transform["model_action_indices"], [0, 1])
+        self.assertEqual(transform["model_output_count"], 2)
         self.assertEqual(
-            int(np.argmax(reconstructed[0])) + 1,
-            int(np.argmax(corrected[1:])) + 1,
+            [item["positive_count"] for item in transform["action_statistics"]],
+            [2, 1],
         )
+
+        # Zero standardized output is exactly the fit prevalence for each
+        # independent action and uses only fit-domain conditional means.
+        reconstructed = probe.reconstruct_base_net_scores(
+            np.zeros((1, 2), dtype=np.float64), transform
+        )
+        np.testing.assert_allclose(reconstructed[0], [2.0, -0.5])
 
         shifted = outcomes.copy()
         shifted[:, 0] = 1000.0
         original_mean = transform["action_statistics"][0][
-            "selected_mean_base_net_bps"
+            "positive_mean_base_net_bps"
         ]
         transformed_validation = probe.transform_joint_policy_targets(
             shifted, transform
         )
         self.assertEqual(
-            transform["action_statistics"][0]["selected_mean_base_net_bps"],
+            transform["action_statistics"][0]["positive_mean_base_net_bps"],
             original_mean,
         )
-        np.testing.assert_array_equal(transformed_validation, [1, 1, 1, 1])
+        np.testing.assert_allclose(
+            transformed_validation,
+            np.column_stack((np.ones(4), expected_targets[:, 1])),
+        )
 
         tampered = copy.deepcopy(transform)
-        tampered["class_statistics"][1]["class_weight"] = 99.0
-        with self.assertRaisesRegex(ValueError, "class weight contract failed"):
+        tampered["action_statistics"][1]["standardization_scale"] = 99.0
+        with self.assertRaisesRegex(ValueError, "action statistic contract failed"):
             probe.reconstruct_base_net_scores(
-                np.full((1, 3), 1.0 / 3.0, dtype=np.float64), tampered
+                np.zeros((1, 2), dtype=np.float64), tampered
             )
 
-    def test_quiet_fit_window_is_explicitly_a_constant_no_trade_class(self):
+    def test_quiet_fit_window_has_no_active_model_output(self):
         outcomes = np.asarray(
             [[-8.0], [-7.0], [-6.0], [-5.0], [-4.0]], dtype=np.float64
         )
@@ -320,13 +319,31 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             stress_cost_multiplier=1.25,
         )
 
-        np.testing.assert_array_equal(targets, np.zeros(5, dtype=np.int64))
+        self.assertEqual(targets.shape, (5, 0))
         self.assertFalse(transform["action_statistics"][0]["learnable"])
-        self.assertEqual(
-            sum(item["observed"] for item in transform["class_statistics"]), 1
+        self.assertEqual(transform["model_output_count"], 0)
+        self.assertEqual(transform["model_action_indices"], [])
+
+    def test_single_active_catboost_output_is_normalized_to_two_dimensions(self):
+        _, transform = probe.fit_joint_policy_target(
+            np.asarray([[3.0], [-2.0], [4.0], [-3.0]]),
+            actions=[{"direction": "long", "horizon_seconds": 15}],
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
         )
 
-    def test_joint_policy_prefers_shortest_profitable_horizon_before_return(self):
+        class SingleOutputModel:
+            def predict(self, features):
+                return np.linspace(-0.5, 0.5, len(features))
+
+        scores, raw = probe.predict_base_net_scores(
+            SingleOutputModel(), np.zeros((3, 2)), transform
+        )
+        self.assertEqual(raw.shape, (3, 1))
+        self.assertEqual(scores.shape, (3, 1))
+        self.assertTrue(np.all(np.isfinite(scores)))
+
+    def test_independent_targets_preserve_simultaneous_profitable_actions(self):
         actions = [
             {"direction": "long", "horizon_seconds": 15},
             {"direction": "long", "horizon_seconds": 300},
@@ -342,16 +359,16 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             ]
         )
 
-        targets, _, selected = probe.select_joint_policy_targets(
+        targets, transform = probe.fit_joint_policy_target(
             outcomes,
             actions=actions,
-            stress_incremental_cost_bps=1.0,
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
         )
 
-        # Rows 0/1 use 15s despite much larger 300s returns.  Row 2 has no
-        # profitable 15s action, so the better 300s direction wins.
-        np.testing.assert_array_equal(targets, [1, 3, 4, 0])
-        np.testing.assert_allclose(selected, [3.0, 4.0, 9.0, -2.0])
+        self.assertEqual(transform["model_action_indices"], [0, 1, 2, 3])
+        np.testing.assert_array_equal(targets > 0.0, outcomes > 1.0)
+        self.assertGreater(np.sum(targets[0] > 0.0), 1)
 
     def test_nested_calibration_uses_ranked_negative_scores_without_weakening_economics(self):
         timestamps = np.arange(100, dtype=np.int64) * 1000
@@ -448,21 +465,22 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
 
     def test_complete_probe_freezes_model_bound_development_candidate(self):
         class FakeMultiModel:
-            def __init__(self, class_count):
+            def __init__(self):
                 self.iterations = 5
-                self.class_count = class_count
+                self.output_count = 0
 
             def set_params(self, **kwargs):
                 self.iterations = int(kwargs.get("iterations", self.iterations))
 
             def fit(self, features, targets, **kwargs):
+                target_matrix = np.asarray(targets)
+                self.output_count = (
+                    target_matrix.shape[1] if target_matrix.ndim == 2 else 1
+                )
                 return self
 
-            def predict_proba(self, features):
-                prediction = np.zeros((len(features), self.class_count))
-                prediction[:, 0] = 0.01
-                prediction[:, 1] = 0.99
-                return prediction
+            def predict(self, features):
+                return np.full((len(features), self.output_count), 20.0)
 
             def get_best_iteration(self):
                 return self.iterations - 1
@@ -477,9 +495,9 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             series = synthetic_series(5000)
             # Make the long 10-second action decisively positive after executable
             # spread, base cost, and stressed cost.
-            # The fit windows contain both an explicit no-trade regime and a
-            # profitable long regime; nested validation and OOS remain in the
-            # latter so the fake classifier exercises the complete lifecycle.
+            # The fit windows contain both profitable and nonprofitable action
+            # events; nested validation and OOS remain in the profitable regime
+            # so the fake multi-output regressor exercises the full lifecycle.
             mid = 100.0 + np.maximum(
                 0, np.arange(5000, dtype=np.float64) - 3600.0
             ) * 0.02
@@ -543,9 +561,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             ), mock.patch.object(
                 probe,
                 "build_model",
-                side_effect=lambda unused, **kwargs: FakeMultiModel(
-                    kwargs["class_count"]
-                ),
+                side_effect=lambda unused: FakeMultiModel(),
             ), mock.patch.object(
                 probe,
                 "evaluate_prediction_permutation_controls",

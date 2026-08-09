@@ -36,11 +36,8 @@ def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
 
 
 class FakeModel:
-    def predict_proba(self, features):
-        prediction = np.zeros((len(features), 3), dtype=np.float64)
-        prediction[:, 0] = 0.01
-        prediction[:, 1] = 0.99
-        return prediction
+    def predict(self, features):
+        return np.full((len(features), 1), 10.0, dtype=np.float64)
 
 
 def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
@@ -69,10 +66,10 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     }
     model_contract = {
         "library": "catboost",
-        "loss_function": "MultiClass",
-        "training_target": "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class",
-        "target_normalization": "sqrt_balanced_fit_class_weights_with_posterior_prior_correction",
-        "inference_score": "fit_pooled_expected_base_net_return_bps_from_prior_corrected_class_probability",
+        "loss_function": "MultiRMSE",
+        "training_target": "fit_only_independent_active_action_stress_profitability",
+        "target_normalization": "per_active_action_zero_mean_unit_variance_on_fit_domain_only",
+        "inference_score": "clipped_fit_probability_weighted_action_conditional_base_net_return_bps",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
         "validation_or_test_target_statistics_used_for_fit": False,
     }
@@ -92,45 +89,25 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "output_feature_row_count": 500,
     }
     target_transform = {
-        "method": "fit_only_multiclass_shortest_stress_profitable_action_v2",
-        "label_contract": "0=no_trade;1..N=shortest_horizon_stress_profitable_action_with_max_base_net_direction_tiebreak",
+        "method": "fit_only_active_action_stress_profitability_v2",
+        "profitability_hurdle": "base_net_return_bps_gt_stress_incremental_cost_bps",
         "actions": target_contract["actions"],
-        "class_weighting": "sqrt_max_count_over_class_count_fit_only",
-        "probability_reconstruction": "divide_weighted_posterior_by_fit_class_weight_then_renormalize",
-        "inference_reconstruction": "prior_corrected_action_probability_with_fit_pooled_selected_and_nonselected_base_net_means",
+        "model_action_indices": [0],
+        "model_output_count": 1,
+        "target_normalization": "per_active_action_zero_mean_unit_variance_on_fit_domain_only",
+        "inference_reconstruction": "clipped_fit_probability_times_action_conditional_base_net_means",
         "validation_or_test_statistics_used": False,
         "stress_incremental_cost_bps": 0.025,
-        "class_count": 3,
-        "no_trade_class_index": 0,
-        "class_statistics": [
-            {
-                "class_index": index,
-                "row_count": 1000,
-                "sample_count": count,
-                "sample_rate": count / 1000.0,
-                "class_weight": 1.0,
-                "observed": count > 0,
-            }
-            for index, count in enumerate([500, 500, 0])
-        ],
-        "score_calibration": {
-            "row_count": 1000,
-            "selected_event_count": 500,
-            "nonselected_action_outcome_count": 1500,
-            "selected_mean_base_net_bps": 1.0,
-            "nonselected_mean_base_net_bps": -1.0,
-        },
         "action_statistics": [
             {
                 "action_index": index,
-                "class_index": index + 1,
                 "row_count": 1000,
-                "selected_count": 500 if index == 0 else 0,
-                "not_selected_count": 500 if index == 0 else 1000,
-                "selected_mean_base_net_bps": 1.0 if index == 0 else -1.0,
-                "not_selected_mean_base_net_bps": -1.0,
-                "stress_profitable_count": 500 if index == 0 else 0,
-                "stress_profitable_rate": 0.5 if index == 0 else 0.0,
+                "positive_count": 500 if index == 0 else 0,
+                "nonpositive_count": 500 if index == 0 else 1000,
+                "positive_rate": 0.5 if index == 0 else 0.0,
+                "standardization_scale": 0.5 if index == 0 else 0.0,
+                "positive_mean_base_net_bps": 1.0 if index == 0 else -1.0,
+                "nonpositive_mean_base_net_bps": -1.0,
                 "learnable": index == 0,
             }
             for index in range(2)
@@ -268,6 +245,37 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
             paths.ledger.write_text(json.dumps(event) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(lifecycle.LifecycleError, "event hash mismatch"):
                 lifecycle.read_event_chain(paths)
+
+    def test_obsolete_algorithm_candidate_is_append_only_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            paths = lifecycle.RegistryPaths(pathlib.Path(td) / "registry")
+            legacy_state = {
+                "schema_version": lifecycle.STATE_SCHEMA_VERSION,
+                "candidate_id": "a" * 64,
+                "phase": "demo_ready",
+                "demo_entry_eligible": True,
+                "live_promotion_eligible": False,
+            }
+            first = lifecycle.append_transition(
+                paths,
+                [],
+                transition="legacy_candidate_registered",
+                state=legacy_state,
+                evidence={},
+            )
+            state, events = lifecycle.expire_obsolete_candidate_contract(
+                paths, [first], legacy_state
+            )
+
+            self.assertEqual(state["phase"], "rejected")
+            self.assertTrue(state["contract_obsolete"])
+            self.assertFalse(state["demo_entry_eligible"])
+            self.assertEqual(
+                state["algorithm_contract_revision"],
+                lifecycle.ALGORITHM_CONTRACT_REVISION,
+            )
+            self.assertEqual(events[-1]["transition"], "candidate_contract_obsoleted")
+            self.assertEqual(len(lifecycle.read_event_chain(paths)), 2)
 
     def test_prepare_hydrates_immutable_candidate_not_new_training_output(self):
         with tempfile.TemporaryDirectory() as td:

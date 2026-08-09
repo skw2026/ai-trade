@@ -2,9 +2,10 @@
 """Development-only cost-aware order-book/trade-flow economic screen.
 
 The probe consumes only the checksum-bound segment manifest emitted by
-``assess_microstructure_capture.py``.  It learns the direction and exit horizon
-jointly: every output is one (long|short, holding horizon) action whose label is
-the executable quote-to-quote return after explicit fees/slippage.  Thresholds
+``assess_microstructure_capture.py``.  It learns every (long|short, holding
+horizon) action as an independent stress-profitability hypothesis and converts
+the outputs back to executable quote-to-quote returns after explicit
+fees/slippage.  Thresholds
 are selected on a purged nested validation window and evaluated on disjoint
 forward OOS windows.  A PASS here is development evidence only and can never be
 used as promotion or final-holdout evidence.
@@ -26,10 +27,10 @@ import numpy as np
 
 try:
     import catboost
-    from catboost import CatBoostClassifier
+    from catboost import CatBoostRegressor
 except ImportError:  # pragma: no cover - exercised by the research image
     catboost = None
-    CatBoostClassifier = None
+    CatBoostRegressor = None
 
 
 SCHEMA_VERSION = "microstructure_alpha_development_v2"
@@ -524,50 +525,22 @@ def summarize_score_distribution(values: Sequence[float]) -> Dict[str, Any]:
     }
 
 
-def select_joint_policy_targets(
-    outcomes: np.ndarray,
-    *,
-    actions: Sequence[Mapping[str, Any]],
-    stress_incremental_cost_bps: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Choose the shortest stressed-profitable action, then best direction.
-
-    Selecting the maximum raw future return across horizons systematically
-    favors the longest, highest-variance horizon.  It turned the order-book
-    model into a five-minute direction forecaster in the real 24h capture.
-    Every eligible label here is still profitable after stressed costs, but the
-    shortest holding period wins first; raw return breaks direction ties within
-    that horizon.
-    """
-    matrix = np.asarray(outcomes, dtype=np.float64)
-    if matrix.ndim != 2 or matrix.shape[1] != len(actions):
-        raise ValueError("joint-policy action/outcome shape mismatch")
-    horizons: List[int] = []
-    for item in actions:
-        if not isinstance(item, Mapping):
-            raise ValueError("joint-policy action contract item is invalid")
-        direction = str(item.get("direction") or "")
-        horizon = int(item.get("horizon_seconds") or 0)
-        if direction not in {"long", "short"} or horizon <= 0:
-            raise ValueError("joint-policy action contract is invalid")
-        horizons.append(horizon)
-    hurdle = float(stress_incremental_cost_bps)
-    if not math.isfinite(hurdle) or hurdle <= 0.0:
-        raise ValueError("joint-policy stress hurdle is invalid")
-    profitable = matrix > hurdle
-    has_profitable = np.any(profitable, axis=1)
-    horizon_matrix = np.broadcast_to(
-        np.asarray(horizons, dtype=np.int64), matrix.shape
+def summarize_numeric_distribution(values: Sequence[float]) -> Dict[str, Any]:
+    finite = np.asarray(
+        [float(value) for value in values if math.isfinite(float(value))],
+        dtype=np.float64,
     )
-    shortest = np.min(
-        np.where(profitable, horizon_matrix, np.iinfo(np.int64).max), axis=1
-    )
-    eligible = profitable & (horizon_matrix == shortest.reshape(-1, 1))
-    ranked = np.where(eligible, matrix, float("-inf"))
-    selected_action = np.argmax(ranked, axis=1)
-    selected_outcome = matrix[np.arange(len(matrix)), selected_action]
-    targets = np.where(has_profitable, selected_action + 1, 0).astype(np.int64)
-    return targets, selected_action, selected_outcome
+    if len(finite) == 0:
+        return {"count": 0, "minimum": None, "maximum": None, "quantiles": {}}
+    return {
+        "count": int(len(finite)),
+        "minimum": float(np.min(finite)),
+        "maximum": float(np.max(finite)),
+        "quantiles": {
+            str(quantile): float(np.quantile(finite, quantile))
+            for quantile in (0.5, 0.8, 0.9, 0.95, 0.98)
+        },
+    }
 
 
 def fit_joint_policy_target(
@@ -577,21 +550,20 @@ def fit_joint_policy_target(
     base_cost_bps: float,
     stress_cost_multiplier: float,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """Build a fit-only joint no-trade/action classification target.
+    """Build independent fit-only stress-profitability targets per action.
 
-    Most one-second observations cannot recover spread, fees, and slippage.
-    Regressing every action return lets those observations dominate MultiRMSE
-    and produced nearly constant, economically inverted scores in the real 24h
-    capture.  The decision we actually need is narrower: abstain, or choose the
-    single action whose realized return clears stressed costs.  Class zero is
-    therefore no-trade; classes 1..N identify the best stressed-profitable
-    action.  Fit-only square-root class weights prevent the no-trade majority
-    from erasing rare opportunities without fully balancing noisy tail classes.
+    A mutually-exclusive action class makes the most frequent 300-second label
+    suppress rarer short-horizon opportunities even when their features differ.
+    Each action is therefore a separate binary economic hypothesis.  Only
+    actions containing both classes in the fit window become model outputs;
+    constant actions remain explicit audited constants, preventing CatBoost's
+    all-equal-target failure.  Every active target is standardized using fit
+    prevalence so rare actions retain a training gradient.
 
-    CatBoost probabilities trained with class weights are prior-corrected at
-    inference, then mapped to bps using fit-only selected/not-selected outcome
-    means.  Validation, OOS, and permutation gates still use untransformed raw
-    executable returns and are not weakened by this target change.
+    Predictions are converted back to fit-only probabilities and then to bps
+    through that action's positive/nonpositive conditional means.  Nested
+    validation and future gates still accept policies solely on untransformed
+    executable base/stress returns.
     """
     matrix = np.asarray(outcomes, dtype=np.float64)
     if matrix.ndim != 2 or matrix.shape[0] < 1 or matrix.shape[1] < 1:
@@ -606,110 +578,80 @@ def fit_joint_policy_target(
         raise ValueError("joint-policy target multiplier must exceed one")
 
     stress_increment = base_cost * (multiplier - 1.0)
-    targets, selected_action, selected_outcome = select_joint_policy_targets(
-        matrix,
-        actions=actions,
-        stress_incremental_cost_bps=stress_increment,
-    )
-    class_count = matrix.shape[1] + 1
-    counts = np.bincount(targets, minlength=class_count)
-    maximum_count = int(np.max(counts))
-    class_weights = [
-        math.sqrt(maximum_count / int(count)) if int(count) > 0 else 1.0
-        for count in counts
-    ]
-    class_statistics = [
-        {
-            "class_index": class_index,
-            "row_count": int(len(targets)),
-            "sample_count": int(counts[class_index]),
-            "sample_rate": float(counts[class_index] / len(targets)),
-            "class_weight": float(class_weights[class_index]),
-            "observed": bool(counts[class_index] > 0),
-        }
-        for class_index in range(class_count)
-    ]
-    selected_event = targets > 0
-    selected_values = selected_outcome[selected_event]
-    nonselected_mask = np.ones_like(matrix, dtype=bool)
-    selected_rows = np.flatnonzero(selected_event)
-    if len(selected_rows):
-        nonselected_mask[selected_rows, selected_action[selected_rows]] = False
-    nonselected_values = matrix[nonselected_mask]
-    pooled_selected_mean = (
-        float(np.mean(selected_values))
-        if len(selected_values)
-        else float(np.mean(selected_outcome))
-    )
-    pooled_nonselected_mean = (
-        float(np.mean(nonselected_values))
-        if len(nonselected_values)
-        else float(np.mean(matrix))
-    )
+    if len(actions) != matrix.shape[1]:
+        raise ValueError("joint-policy action/outcome shape mismatch")
+    normalized_actions: List[Dict[str, Any]] = []
+    for item in actions:
+        direction = str(item.get("direction") or "")
+        horizon = int(item.get("horizon_seconds") or 0)
+        if direction not in {"long", "short"} or horizon <= 0:
+            raise ValueError("joint-policy action contract is invalid")
+        normalized_actions.append(
+            {"direction": direction, "horizon_seconds": horizon}
+        )
+
+    active_targets: List[np.ndarray] = []
+    model_action_indices: List[int] = []
     action_statistics: List[Dict[str, Any]] = []
     for action_index in range(matrix.shape[1]):
-        selected = targets == action_index + 1
-        not_selected = ~selected
         values = matrix[:, action_index]
-        selected_mean = (
-            float(np.mean(values[selected]))
-            if np.any(selected)
+        profitable = values > stress_increment
+        positive_count = int(np.sum(profitable))
+        nonpositive_count = int(len(values) - positive_count)
+        positive_rate = float(positive_count / len(values))
+        scale = math.sqrt(positive_rate * (1.0 - positive_rate))
+        learnable = bool(
+            positive_count > 0 and nonpositive_count > 0 and scale > 0.0
+        )
+        if learnable:
+            model_action_indices.append(action_index)
+            active_targets.append(
+                (profitable.astype(np.float64) - positive_rate) / scale
+            )
+        positive_mean = (
+            float(np.mean(values[profitable]))
+            if positive_count > 0
             else float(np.mean(values))
         )
-        not_selected_mean = (
-            float(np.mean(values[not_selected]))
-            if np.any(not_selected)
+        nonpositive_mean = (
+            float(np.mean(values[~profitable]))
+            if nonpositive_count > 0
             else float(np.mean(values))
         )
         action_statistics.append(
             {
                 "action_index": action_index,
-                "class_index": action_index + 1,
-                "row_count": int(len(targets)),
-                "selected_count": int(np.sum(selected)),
-                "not_selected_count": int(np.sum(not_selected)),
-                "selected_mean_base_net_bps": selected_mean,
-                "not_selected_mean_base_net_bps": not_selected_mean,
-                "stress_profitable_count": int(np.sum(values > stress_increment)),
-                "stress_profitable_rate": float(
-                    np.mean(values > stress_increment)
-                ),
-                "learnable": bool(np.any(selected)),
+                "row_count": int(len(values)),
+                "positive_count": positive_count,
+                "nonpositive_count": nonpositive_count,
+                "positive_rate": positive_rate,
+                "standardization_scale": scale,
+                "positive_mean_base_net_bps": positive_mean,
+                "nonpositive_mean_base_net_bps": nonpositive_mean,
+                "learnable": learnable,
             }
         )
+    targets = (
+        np.column_stack(active_targets)
+        if active_targets
+        else np.empty((len(matrix), 0), dtype=np.float64)
+    )
     return targets, {
-        "method": "fit_only_multiclass_shortest_stress_profitable_action_v2",
-        "label_contract": (
-            "0=no_trade;1..N=shortest_horizon_stress_profitable_action_with_"
-            "max_base_net_direction_tiebreak"
+        "method": "fit_only_active_action_stress_profitability_v2",
+        "profitability_hurdle": (
+            "base_net_return_bps_gt_stress_incremental_cost_bps"
         ),
-        "actions": [
-            {
-                "direction": str(item["direction"]),
-                "horizon_seconds": int(item["horizon_seconds"]),
-            }
-            for item in actions
-        ],
+        "actions": normalized_actions,
         "stress_incremental_cost_bps": stress_increment,
-        "class_count": class_count,
-        "no_trade_class_index": 0,
-        "class_weighting": "sqrt_max_count_over_class_count_fit_only",
-        "probability_reconstruction": (
-            "divide_weighted_posterior_by_fit_class_weight_then_renormalize"
+        "model_action_indices": model_action_indices,
+        "model_output_count": len(model_action_indices),
+        "target_normalization": (
+            "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
         ),
         "inference_reconstruction": (
-            "prior_corrected_action_probability_with_fit_pooled_selected_and_"
-            "nonselected_base_net_means"
+            "clipped_fit_probability_times_action_conditional_base_net_means"
         ),
         "validation_or_test_statistics_used": False,
-        "class_statistics": class_statistics,
-        "score_calibration": {
-            "row_count": int(len(targets)),
-            "selected_event_count": int(len(selected_values)),
-            "nonselected_action_outcome_count": int(len(nonselected_values)),
-            "selected_mean_base_net_bps": pooled_selected_mean,
-            "nonselected_mean_base_net_bps": pooled_nonselected_mean,
-        },
         "action_statistics": action_statistics,
     }
 
@@ -723,41 +665,28 @@ def validate_joint_policy_transform(
     if not (
         isinstance(transform, dict)
         and transform.get("method")
-        == "fit_only_multiclass_shortest_stress_profitable_action_v2"
-        and transform.get("label_contract")
-        == (
-            "0=no_trade;1..N=shortest_horizon_stress_profitable_action_with_"
-            "max_base_net_direction_tiebreak"
-        )
-        and transform.get("class_weighting")
-        == "sqrt_max_count_over_class_count_fit_only"
-        and transform.get("probability_reconstruction")
-        == "divide_weighted_posterior_by_fit_class_weight_then_renormalize"
+        == "fit_only_active_action_stress_profitability_v2"
+        and transform.get("profitability_hurdle")
+        == "base_net_return_bps_gt_stress_incremental_cost_bps"
+        and transform.get("target_normalization")
+        == "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
         and transform.get("inference_reconstruction")
-        == (
-            "prior_corrected_action_probability_with_fit_pooled_selected_and_"
-            "nonselected_base_net_means"
-        )
+        == "clipped_fit_probability_times_action_conditional_base_net_means"
         and transform.get("validation_or_test_statistics_used") is False
     ):
         raise ValueError("joint-policy transform contract is invalid")
     hurdle = float(transform.get("stress_incremental_cost_bps"))
-    class_count = int(transform.get("class_count", 0))
-    no_trade_class = int(transform.get("no_trade_class_index", -1))
     actions = transform.get("actions")
-    classes = transform.get("class_statistics")
-    score_calibration = transform.get("score_calibration")
+    model_action_indices = transform.get("model_action_indices")
+    model_output_count = int(transform.get("model_output_count", -1))
     items = transform.get("action_statistics")
     if (
         not math.isfinite(hurdle)
         or hurdle <= 0.0
-        or class_count != int(action_count) + 1
-        or no_trade_class != 0
         or not isinstance(actions, list)
         or len(actions) != int(action_count)
-        or not isinstance(classes, list)
-        or len(classes) != class_count
-        or not isinstance(score_calibration, dict)
+        or not isinstance(model_action_indices, list)
+        or model_output_count != len(model_action_indices)
         or not isinstance(items, list)
         or len(items) != int(action_count)
     ):
@@ -769,105 +698,63 @@ def validate_joint_policy_transform(
             and int(item.get("horizon_seconds") or 0) > 0
         ):
             raise ValueError("joint-policy transform action contract is invalid")
-    class_counts: List[int] = []
-    fit_row_count: int | None = None
-    for class_index, item in enumerate(classes):
-        if not isinstance(item, dict) or int(item.get("class_index", -1)) != class_index:
-            raise ValueError("joint-policy class statistics are invalid")
-        try:
-            row_count = int(item.get("row_count"))
-            sample_count = int(item.get("sample_count"))
-            sample_rate = float(item.get("sample_rate"))
-            class_weight = float(item.get("class_weight"))
-        except (TypeError, ValueError) as exc:
-            raise ValueError("joint-policy class statistic type is invalid") from exc
-        if fit_row_count is None:
-            fit_row_count = row_count
-        if not (
-            row_count > 0
-            and row_count == fit_row_count
-            and (expected_row_count is None or row_count == int(expected_row_count))
-            and 0 <= sample_count <= row_count
-            and math.isclose(
-                sample_rate, sample_count / row_count, rel_tol=0.0, abs_tol=1e-15
-            )
-            and math.isfinite(class_weight)
-            and class_weight >= 1.0
-            and item.get("observed") is (sample_count > 0)
-        ):
-            raise ValueError("joint-policy class statistic contract failed")
-        class_counts.append(sample_count)
-    if fit_row_count is None or sum(class_counts) != fit_row_count:
-        raise ValueError("joint-policy class counts do not cover the fit rows")
-    maximum_count = max(class_counts)
-    for class_index, item in enumerate(classes):
-        count = class_counts[class_index]
-        expected_weight = math.sqrt(maximum_count / count) if count > 0 else 1.0
-        if not math.isclose(
-            float(item["class_weight"]), expected_weight, rel_tol=0.0, abs_tol=1e-12
-        ):
-            raise ValueError("joint-policy class weight contract failed")
-    try:
-        calibration_rows = int(score_calibration.get("row_count"))
-        selected_event_count = int(score_calibration.get("selected_event_count"))
-        nonselected_outcome_count = int(
-            score_calibration.get("nonselected_action_outcome_count")
-        )
-        pooled_selected_mean = float(
-            score_calibration.get("selected_mean_base_net_bps")
-        )
-        pooled_nonselected_mean = float(
-            score_calibration.get("nonselected_mean_base_net_bps")
-        )
-    except (TypeError, ValueError) as exc:
-        raise ValueError("joint-policy score calibration type is invalid") from exc
+    normalized_model_indices = [int(value) for value in model_action_indices]
     if not (
-        calibration_rows == fit_row_count
-        and selected_event_count == sum(class_counts[1:])
-        and nonselected_outcome_count
-        == calibration_rows * int(action_count) - selected_event_count
-        and all(
-            math.isfinite(value)
-            for value in (pooled_selected_mean, pooled_nonselected_mean)
-        )
-        and (selected_event_count == 0 or pooled_selected_mean > hurdle)
+        normalized_model_indices == sorted(set(normalized_model_indices))
+        and all(0 <= value < int(action_count) for value in normalized_model_indices)
     ):
-        raise ValueError("joint-policy score calibration contract failed")
+        raise ValueError("joint-policy model action indices are invalid")
+    fit_row_count: int | None = None
+    expected_model_indices: List[int] = []
     for action_index, item in enumerate(items):
         if not (
             isinstance(item, dict)
             and int(item.get("action_index", -1)) == action_index
-            and int(item.get("class_index", -1)) == action_index + 1
         ):
             raise ValueError("joint-policy action statistics are invalid")
         try:
             row_count = int(item.get("row_count"))
-            selected_count = int(item.get("selected_count"))
-            not_selected_count = int(item.get("not_selected_count"))
-            selected_mean = float(item.get("selected_mean_base_net_bps"))
-            not_selected_mean = float(item.get("not_selected_mean_base_net_bps"))
-            profitable_count = int(item.get("stress_profitable_count"))
-            profitable_rate = float(item.get("stress_profitable_rate"))
+            positive_count = int(item.get("positive_count"))
+            nonpositive_count = int(item.get("nonpositive_count"))
+            positive_rate = float(item.get("positive_rate"))
+            scale = float(item.get("standardization_scale"))
+            positive_mean = float(item.get("positive_mean_base_net_bps"))
+            nonpositive_mean = float(item.get("nonpositive_mean_base_net_bps"))
         except (TypeError, ValueError) as exc:
             raise ValueError("joint-policy action statistic type is invalid") from exc
+        if fit_row_count is None:
+            fit_row_count = row_count
+        expected_rate = positive_count / row_count if row_count > 0 else float("nan")
+        expected_scale = (
+            math.sqrt(expected_rate * (1.0 - expected_rate))
+            if math.isfinite(expected_rate) and 0.0 <= expected_rate <= 1.0
+            else float("nan")
+        )
+        learnable = positive_count > 0 and nonpositive_count > 0
         if not (
             row_count > 0
             and row_count == fit_row_count
-            and selected_count == class_counts[action_index + 1]
-            and selected_count + not_selected_count == row_count
-            and all(math.isfinite(value) for value in (selected_mean, not_selected_mean))
-            and 0 <= profitable_count <= row_count
+            and (expected_row_count is None or row_count == int(expected_row_count))
+            and positive_count >= 0
+            and nonpositive_count >= 0
+            and positive_count + nonpositive_count == row_count
             and math.isclose(
-                profitable_rate,
-                profitable_count / row_count,
+                positive_rate,
+                expected_rate,
                 rel_tol=0.0,
                 abs_tol=1e-15,
             )
-            and item.get("learnable") is (selected_count > 0)
-            and (selected_count == 0 or selected_mean > hurdle)
-            and selected_count <= profitable_count
+            and math.isclose(scale, expected_scale, rel_tol=0.0, abs_tol=1e-15)
+            and all(math.isfinite(value) for value in (positive_mean, nonpositive_mean))
+            and item.get("learnable") is learnable
+            and (positive_count == 0 or positive_mean > hurdle)
+            and (nonpositive_count == 0 or nonpositive_mean <= hurdle)
         ):
             raise ValueError("joint-policy action statistic contract failed")
+        if learnable:
+            expected_model_indices.append(action_index)
+    if expected_model_indices != normalized_model_indices:
+        raise ValueError("joint-policy active action mapping contract failed")
     return items
 
 
@@ -878,53 +765,69 @@ def transform_joint_policy_targets(
     matrix = np.asarray(outcomes, dtype=np.float64)
     if matrix.ndim != 2:
         raise ValueError("joint-policy target transform shape mismatch")
-    validate_joint_policy_transform(
+    statistics_by_action = validate_joint_policy_transform(
         transform, action_count=matrix.shape[1]
     )
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError("joint-policy target outcomes must be finite")
     hurdle = float(transform.get("stress_incremental_cost_bps"))
-    targets, _, _ = select_joint_policy_targets(
-        matrix,
-        actions=transform["actions"],
-        stress_incremental_cost_bps=hurdle,
+    columns: List[np.ndarray] = []
+    for action_index in transform["model_action_indices"]:
+        item = statistics_by_action[int(action_index)]
+        labels = (matrix[:, int(action_index)] > hurdle).astype(np.float64)
+        columns.append(
+            (labels - float(item["positive_rate"]))
+            / float(item["standardization_scale"])
+        )
+    return (
+        np.column_stack(columns)
+        if columns
+        else np.empty((len(matrix), 0), dtype=np.float64)
     )
-    return targets
 
 
 def reconstruct_base_net_scores(
     raw_prediction: np.ndarray, transform: Mapping[str, Any]
 ) -> np.ndarray:
-    """Map weighted class probabilities to a fit-only bps policy score."""
+    """Map active standardized profitability outputs to per-action bps scores."""
     prediction = np.asarray(raw_prediction, dtype=np.float64)
-    if prediction.ndim == 1:
-        prediction = prediction.reshape(-1, 1)
-    if prediction.ndim != 2:
-        raise ValueError("joint-policy prediction transform shape mismatch")
-    action_count = int(transform.get("class_count", 0)) - 1
+    action_count = len(transform.get("action_statistics", []))
     statistics_by_action = validate_joint_policy_transform(
         transform, action_count=action_count
     )
-    if prediction.shape[1] != action_count + 1:
-        raise ValueError("joint-policy class probability shape mismatch")
-    if not np.all(np.isfinite(prediction)) or np.any(prediction < 0.0):
-        raise ValueError("joint-policy class probabilities are invalid")
-    class_weights = np.asarray(
-        [float(item["class_weight"]) for item in transform["class_statistics"]],
-        dtype=np.float64,
-    )
-    corrected = prediction / class_weights.reshape(1, -1)
-    probability_sum = np.sum(corrected, axis=1, keepdims=True)
-    if np.any(probability_sum <= 0.0):
-        raise ValueError("joint-policy class probabilities have zero mass")
-    corrected /= probability_sum
+    active_indices = [int(value) for value in transform["model_action_indices"]]
+    if prediction.ndim == 1:
+        prediction = (
+            prediction.reshape(-1, 1)
+            if len(active_indices) == 1
+            else prediction.reshape(1, -1)
+        )
+    if prediction.ndim != 2 or prediction.shape[1] != len(active_indices):
+        raise ValueError("joint-policy active prediction shape mismatch")
+    if not np.all(np.isfinite(prediction)):
+        raise ValueError("joint-policy active predictions are invalid")
     result = np.empty((len(prediction), action_count), dtype=np.float64)
-    score_calibration = transform["score_calibration"]
-    selected_mean = float(score_calibration["selected_mean_base_net_bps"])
-    not_selected_mean = float(score_calibration["nonselected_mean_base_net_bps"])
-    for action_index, _ in enumerate(statistics_by_action):
-        probability = corrected[:, action_index + 1]
+    model_column_by_action = {
+        action_index: model_column
+        for model_column, action_index in enumerate(active_indices)
+    }
+    for action_index, item in enumerate(statistics_by_action):
+        rate = float(item["positive_rate"])
+        if item["learnable"] is True:
+            probability = np.clip(
+                rate
+                + prediction[:, model_column_by_action[action_index]]
+                * float(item["standardization_scale"]),
+                0.0,
+                1.0,
+            )
+        else:
+            probability = np.full(len(prediction), rate, dtype=np.float64)
+        positive_mean = float(item["positive_mean_base_net_bps"])
+        nonpositive_mean = float(item["nonpositive_mean_base_net_bps"])
         result[:, action_index] = (
-            probability * selected_mean
-            + (1.0 - probability) * not_selected_mean
+            probability * positive_mean
+            + (1.0 - probability) * nonpositive_mean
         )
     if not np.all(np.isfinite(result)):
         raise ValueError("reconstructed base-net policy score is non-finite")
@@ -934,9 +837,16 @@ def reconstruct_base_net_scores(
 def predict_base_net_scores(
     model: Any, features: np.ndarray, transform: Mapping[str, Any]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Run the frozen multiclass model and reconstruct comparable action scores."""
-    raw_probability = np.asarray(model.predict_proba(features), dtype=np.float64)
-    return reconstruct_base_net_scores(raw_probability, transform), raw_probability
+    """Run the frozen active-action model and reconstruct comparable scores."""
+    raw_prediction = np.asarray(model.predict(features), dtype=np.float64)
+    active_count = int(transform.get("model_output_count", -1))
+    if raw_prediction.ndim == 1:
+        raw_prediction = (
+            raw_prediction.reshape(-1, 1)
+            if active_count == 1
+            else raw_prediction.reshape(1, -1)
+        )
+    return reconstruct_base_net_scores(raw_prediction, transform), raw_prediction
 
 
 def evaluate_joint_policy(
@@ -1195,16 +1105,12 @@ def indices_between(timestamps: np.ndarray, start_ms: int, end_ms: int) -> np.nd
     return np.flatnonzero((timestamps >= start_ms) & (timestamps < end_ms))
 
 
-def build_model(
-    args: argparse.Namespace, *, class_count: int, class_weights: Sequence[float]
-) -> Any:
-    if CatBoostClassifier is None:
+def build_model(args: argparse.Namespace) -> Any:
+    if CatBoostRegressor is None:
         raise RuntimeError("catboost is required; use ai-trade-research image")
-    return CatBoostClassifier(
-        loss_function="MultiClass",
-        eval_metric="MultiClass",
-        classes_count=int(class_count),
-        class_weights=[float(value) for value in class_weights],
+    return CatBoostRegressor(
+        loss_function="MultiRMSE",
+        eval_metric="MultiRMSE",
         iterations=int(args.iterations),
         depth=int(args.depth),
         learning_rate=float(args.learning_rate),
@@ -1220,16 +1126,13 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
     return {
         "library": "catboost",
         "library_version": getattr(catboost, "__version__", None),
-        "loss_function": "MultiClass",
-        "training_target": (
-            "fit_only_joint_no_trade_or_shortest_stress_profitable_action_class"
-        ),
+        "loss_function": "MultiRMSE",
+        "training_target": "fit_only_independent_active_action_stress_profitability",
         "target_normalization": (
-            "sqrt_balanced_fit_class_weights_with_posterior_prior_correction"
+            "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
         ),
         "inference_score": (
-            "fit_pooled_expected_base_net_return_bps_from_prior_corrected_"
-            "class_probability"
+            "clipped_fit_probability_weighted_action_conditional_base_net_return_bps"
         ),
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
         "validation_or_test_target_statistics_used_for_fit": False,
@@ -1321,16 +1224,14 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         validation_targets = transform_joint_policy_targets(
             outcomes[validation_indices], target_transform
         )
-        observed_class_count = sum(
-            item.get("observed") is True
-            for item in target_transform["class_statistics"]
-        )
-        if observed_class_count < 2:
-            failures.append(f"split_{split.split_id}_constant_joint_policy_class")
+        if int(target_transform["model_output_count"]) <= 0:
+            failures.append(
+                f"split_{split.split_id}_no_active_stress_profitability_action"
+            )
             split_reports.append(
                 {
                     "split_id": split.split_id,
-                    "status": "constant_joint_policy_class",
+                    "status": "no_active_stress_profitability_action",
                     "time_contract": dataclasses.asdict(split),
                     "fit_rows": len(fit_indices),
                     "validation_rows": len(validation_indices),
@@ -1339,14 +1240,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
             continue
-        model = build_model(
-            args,
-            class_count=int(target_transform["class_count"]),
-            class_weights=[
-                float(item["class_weight"])
-                for item in target_transform["class_statistics"]
-            ],
-        )
+        model = build_model(args)
         try:
             model.fit(
                 features[fit_indices],
@@ -1458,8 +1352,8 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 "test_prediction_score_distribution": summarize_score_distribution(
                     np.max(test_prediction, axis=1)
                 ),
-                "test_action_probability_distribution": summarize_score_distribution(
-                    np.max(test_raw_prediction[:, 1:], axis=1)
+                "test_active_model_output_distribution": summarize_numeric_distribution(
+                    np.max(test_raw_prediction, axis=1)
                 ),
                 "oos_objective": objective,
                 "oos_prediction_permutation_controls": permutation_controls,
@@ -1524,14 +1418,11 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             base_cost_bps=float(args.additional_round_trip_cost_bps),
             stress_cost_multiplier=float(args.stress_cost_multiplier),
         )
-        final_model = build_model(
-            args,
-            class_count=int(final_target_transform["class_count"]),
-            class_weights=[
-                float(item["class_weight"])
-                for item in final_target_transform["class_statistics"]
-            ],
-        )
+        if int(final_target_transform["model_output_count"]) <= 0:
+            raise RuntimeError(
+                "development passed without an active stress-profitability action"
+            )
+        final_model = build_model(args)
         final_model.set_params(iterations=final_iterations)
         final_model.fit(features, final_targets, verbose=False)
         model_path = pathlib.Path(args.model_output).resolve()
