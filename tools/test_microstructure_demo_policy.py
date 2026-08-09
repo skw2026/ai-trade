@@ -86,6 +86,7 @@ class DemoPolicyTest(unittest.TestCase):
             development_report_sha256="d" * 64,
             feature_names=names,
             actions=actions,
+            policy_action_index=0,
             threshold_bps=2.0,
             execution_latency_seconds=1,
             report={"frozen_candidate": {"target_transform": target_transform}},
@@ -111,6 +112,10 @@ class DemoPolicyTest(unittest.TestCase):
             self.assertEqual(held["action"]["direction"], 1)
             self.assertEqual(held["action"]["started_exchange_ms"], first_started)
             self.assertEqual(held["active_until_exchange_ms"], first_until)
+            engine.candidate.model = FakeModel([-0.35, 0.9])
+            released = engine.on_row(feature_row(78_000, 0.078))
+            self.assertEqual(released["status"], "FLAT")
+            self.assertIsNone(released["action"])
             persisted = json.loads(output.read_text(encoding="utf-8"))
             self.assertFalse(persisted["live_promotion_eligible"])
 

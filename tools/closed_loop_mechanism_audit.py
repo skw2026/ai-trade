@@ -875,6 +875,13 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and validation.get("negative_model_score_threshold_permitted") is True
         and validation.get("threshold_viability_contract")
         == "realized_base_and_stress_net_lcb_positive_in_nested_validation"
+        and validation.get("calibration_scope")
+        == "independent_per_action_then_economic_selection"
+        and validation.get("frozen_action_aggregation")
+        == "mode_of_nested_split_selected_actions"
+        and as_float(validation.get("minimum_action_consensus_ratio")) is not None
+        and float(as_float(validation.get("minimum_action_consensus_ratio")))
+        >= 0.60
         and validation.get("oos_windows_non_overlapping") is True
         and isinstance(model_contract, dict)
         and model_contract.get("loss_function") == "MultiRMSE"
@@ -884,6 +891,8 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         == "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
         and model_contract.get("inference_score")
         == "clipped_fit_probability_weighted_action_conditional_base_net_return_bps"
+        and model_contract.get("policy_selection")
+        == "nested_per_action_threshold_then_mode_action_freeze"
         and model_contract.get("economic_acceptance_target")
         == "untransformed_executable_base_and_stress_net_return"
         and model_contract.get("validation_or_test_target_statistics_used_for_fit")

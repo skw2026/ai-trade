@@ -63,6 +63,9 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "score_threshold_floor_bps": None,
         "negative_model_score_threshold_permitted": True,
         "threshold_viability_contract": "realized_base_and_stress_net_lcb_positive_in_nested_validation",
+        "calibration_scope": "independent_per_action_then_economic_selection",
+        "frozen_action_aggregation": "mode_of_nested_split_selected_actions",
+        "minimum_action_consensus_ratio": 0.60,
     }
     model_contract = {
         "library": "catboost",
@@ -70,6 +73,7 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "training_target": "fit_only_independent_active_action_stress_profitability",
         "target_normalization": "per_active_action_zero_mean_unit_variance_on_fit_domain_only",
         "inference_score": "clipped_fit_probability_weighted_action_conditional_base_net_return_bps",
+        "policy_selection": "nested_per_action_threshold_then_mode_action_freeze",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
         "validation_or_test_target_statistics_used_for_fit": False,
     }
@@ -118,8 +122,11 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "model_sha256": model_hash,
         "final_training_row_count": 1000,
         "final_iterations": 5,
+        "policy_action_index": 0,
+        "policy_action": target_contract["actions"][0],
         "policy_threshold_bps": 0.1,
-        "threshold_aggregation": "median_of_nested_split_thresholds",
+        "action_aggregation": "mode_of_nested_split_selected_actions",
+        "threshold_aggregation": "median_of_nested_split_thresholds_for_frozen_action",
         "target_transform": target_transform,
         "model_contract": model_contract,
     }
@@ -351,6 +358,28 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                 first["economic_identity_sha256"], second["economic_identity_sha256"]
             )
             self.assertTrue(first["threshold_tuning_permitted"] is False)
+
+    def test_fixed_policy_never_switches_to_unfrozen_higher_score_action(self):
+        episodes = lifecycle.fixed_policy_episodes(
+            timestamps=np.arange(6, dtype=np.int64) * 1000,
+            prediction=np.tile(np.asarray([[2.0, 100.0]]), (6, 1)),
+            outcomes=np.tile(np.asarray([[3.0, -10.0]]), (6, 1)),
+            actions=[
+                {"direction": "long", "horizon_seconds": 1},
+                {"direction": "short", "horizon_seconds": 1},
+            ],
+            policy_action_index=0,
+            threshold_bps=1.0,
+            base_cost_bps=1.0,
+            stress_cost_multiplier=1.25,
+            execution_latency_seconds=1,
+        )
+
+        self.assertEqual(len(episodes), 3)
+        self.assertEqual({item["action"] for item in episodes}, {"long_1s"})
+        self.assertEqual(
+            {item["base_net_edge_bps"] for item in episodes}, {3.0}
+        )
 
     def test_advance_registers_then_passes_selection_holdout_and_replay(self):
         with tempfile.TemporaryDirectory() as td:

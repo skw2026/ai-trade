@@ -84,6 +84,7 @@ class CandidateBundle:
     development_report_sha256: str
     feature_names: list[str]
     actions: list[Dict[str, Any]]
+    policy_action_index: int
     threshold_bps: float
     execution_latency_seconds: int
     report: Dict[str, Any]
@@ -152,10 +153,16 @@ def load_demo_candidate(registry_root: pathlib.Path) -> CandidateBundle | None:
     frozen = report.get("frozen_candidate", {})
     target = report.get("target_contract", {})
     threshold = float(frozen.get("policy_threshold_bps"))
+    policy_action_index = int(frozen.get("policy_action_index"))
     latency = int(target.get("execution_latency_seconds") or 0)
     if not isinstance(feature_names, list) or not feature_names:
         raise DemoPolicyError("demo feature contract is empty")
-    if not math.isfinite(threshold) or latency < 1:
+    if not (
+        math.isfinite(threshold)
+        and latency >= 1
+        and 0 <= policy_action_index < len(actions)
+        and frozen.get("policy_action") == actions[policy_action_index]
+    ):
         raise DemoPolicyError("demo threshold/latency contract is invalid")
     return CandidateBundle(
         candidate_id=candidate_id,
@@ -164,6 +171,7 @@ def load_demo_candidate(registry_root: pathlib.Path) -> CandidateBundle | None:
         development_report_sha256=str(report_ref["sha256"]),
         feature_names=[str(name) for name in feature_names],
         actions=actions,
+        policy_action_index=policy_action_index,
         threshold_bps=threshold,
         execution_latency_seconds=latency,
         report=report,
@@ -315,7 +323,7 @@ class DemoPolicyEngine:
             np.isfinite(prediction)
         ):
             raise DemoPolicyError("frozen model online output contract failed")
-        action_index = int(np.argmax(prediction))
+        action_index = int(self.candidate.policy_action_index)
         predicted_edge = float(prediction[action_index])
         if predicted_edge < self.candidate.threshold_bps:
             payload = self._payload(

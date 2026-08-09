@@ -392,6 +392,37 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertGreater(report["selected"]["stress_net_lcb_bps"], 0.0)
         self.assertIsNone(report["score_threshold_floor_bps"])
 
+    def test_nested_calibration_does_not_let_high_baseline_action_hide_alpha(self):
+        timestamps = np.arange(100, dtype=np.int64) * 1000
+        prediction = np.column_stack(
+            (np.full(100, 20.0), np.linspace(0.0, 10.0, 100))
+        )
+        realized = np.column_stack(
+            (
+                np.full(100, -10.0),
+                np.where(prediction[:, 1] >= 8.0, 10.0, -10.0),
+            )
+        )
+        report = probe.select_nested_threshold(
+            timestamps=timestamps,
+            prediction=prediction,
+            realized_base=realized,
+            actions=[
+                {"direction": "long", "horizon_seconds": 1},
+                {"direction": "short", "horizon_seconds": 1},
+            ],
+            quantiles=[0.5, 0.8],
+            min_trades=8,
+            base_cost_bps=1.0,
+            stress_cost_multiplier=1.25,
+            execution_latency_seconds=1,
+        )
+
+        self.assertEqual(report["selected"]["action_index"], 1)
+        self.assertEqual(report["selected"]["direction"], "short")
+        self.assertGreater(report["selected"]["stress_net_lcb_bps"], 0.0)
+        self.assertEqual(len(report["action_score_distributions"]), 2)
+
     def test_time_splits_are_purged_and_oos_windows_do_not_overlap(self):
         timestamps = np.arange(100000, dtype=np.int64) * 1000
         splits = probe.build_time_splits(

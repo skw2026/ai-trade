@@ -859,7 +859,19 @@ def evaluate_joint_policy(
     base_cost_bps: float,
     stress_cost_multiplier: float,
     execution_latency_seconds: int,
+    allowed_action_indices: Sequence[int] | None = None,
 ) -> Dict[str, Any]:
+    action_count = len(actions)
+    allowed = (
+        list(range(action_count))
+        if allowed_action_indices is None
+        else [int(value) for value in allowed_action_indices]
+    )
+    if not (
+        len(set(allowed)) == len(allowed)
+        and all(0 <= value < action_count for value in allowed)
+    ):
+        raise ValueError("allowed joint-policy action indices are invalid")
     base_edges: List[float] = []
     stress_edges: List[float] = []
     action_counts: Dict[str, int] = {}
@@ -871,7 +883,11 @@ def evaluate_joint_policy(
         row_prediction = np.asarray(prediction[index], dtype=np.float64)
         if not np.all(np.isfinite(row_prediction)):
             continue
-        action_index = int(np.argmax(row_prediction))
+        if not allowed:
+            continue
+        action_index = allowed[
+            int(np.argmax(row_prediction[np.asarray(allowed, dtype=np.int64)]))
+        ]
         predicted_edge = float(row_prediction[action_index])
         if predicted_edge < threshold_bps:
             continue
@@ -911,6 +927,7 @@ def evaluate_prediction_permutation_controls(
     execution_latency_seconds: int,
     trials: int,
     seed: int,
+    allowed_action_indices: Sequence[int] | None = None,
 ) -> List[Dict[str, Any]]:
     """Destroy prediction/outcome timing while preserving score/action marginals."""
     if trials <= 0:
@@ -928,6 +945,7 @@ def evaluate_prediction_permutation_controls(
             base_cost_bps=base_cost_bps,
             stress_cost_multiplier=stress_cost_multiplier,
             execution_latency_seconds=execution_latency_seconds,
+            allowed_action_indices=allowed_action_indices,
         )
         report.pop("base_edges_bps", None)
         report.pop("stress_edges_bps", None)
@@ -1034,51 +1052,74 @@ def select_nested_threshold(
     stress_cost_multiplier: float,
     execution_latency_seconds: int,
 ) -> Dict[str, Any]:
-    maximum = np.max(np.asarray(prediction, dtype=np.float64), axis=1)
+    prediction_matrix = np.asarray(prediction, dtype=np.float64)
+    if (
+        prediction_matrix.ndim != 2
+        or prediction_matrix.shape[1] != len(actions)
+    ):
+        raise ValueError("nested action calibration prediction shape mismatch")
+    maximum = np.max(prediction_matrix, axis=1)
     finite = maximum[np.isfinite(maximum)]
     if len(finite) == 0:
         return {"selected": None, "candidates": [], "reason": "no_finite_predictions"}
-    thresholds = sorted(
-        {
-            # CatBoost shrinkage can preserve economically useful ranking while
-            # shifting every net-target score below zero.  The nested window,
-            # not an arbitrary zero score floor, determines whether a ranking
-            # threshold has positive realized base/stress economics.  Future
-            # OOS and permutation-control gates remain untouched.
-            float(np.quantile(finite, quantile))
-            for quantile in quantiles
-        }
-    )
     candidates: List[Dict[str, Any]] = []
-    for threshold in thresholds:
-        report = evaluate_joint_policy(
-            timestamps=timestamps,
-            prediction=prediction,
-            realized_base=realized_base,
-            actions=actions,
-            threshold_bps=threshold,
-            base_cost_bps=base_cost_bps,
-            stress_cost_multiplier=stress_cost_multiplier,
-            execution_latency_seconds=execution_latency_seconds,
-        )
-        base = report["base_cost"]
-        stress = report["stress_cost"]
-        viable = bool(
-            base["count"] >= int(min_trades)
-            and (base["lcb_bps"] or float("-inf")) > 0.0
-            and (stress["lcb_bps"] or float("-inf")) > 0.0
-        )
-        candidates.append(
+    action_score_distributions: List[Dict[str, Any]] = []
+    for action_index, action in enumerate(actions):
+        action_scores = prediction_matrix[:, action_index]
+        finite_action_scores = action_scores[np.isfinite(action_scores)]
+        action_score_distributions.append(
             {
-                "threshold_bps": threshold,
-                "trade_count": base["count"],
-                "mean_base_net_bps": base["mean_bps"],
-                "base_net_lcb_bps": base["lcb_bps"],
-                "stress_net_lcb_bps": stress["lcb_bps"],
-                "action_counts": report["action_counts"],
-                "viable": viable,
+                "action_index": action_index,
+                "direction": str(action["direction"]),
+                "horizon_seconds": int(action["horizon_seconds"]),
+                "distribution": summarize_score_distribution(finite_action_scores),
             }
         )
+        if len(finite_action_scores) == 0:
+            continue
+        thresholds = sorted(
+            {
+                # CatBoost shrinkage can preserve useful ranking while shifting
+                # all scores below zero.  Each action gets an independent rank
+                # threshold so a high-base-rate 300s action cannot suppress a
+                # rarer short-horizon hypothesis before economic validation.
+                float(np.quantile(finite_action_scores, quantile))
+                for quantile in quantiles
+            }
+        )
+        for threshold in thresholds:
+            report = evaluate_joint_policy(
+                timestamps=timestamps,
+                prediction=prediction_matrix,
+                realized_base=realized_base,
+                actions=actions,
+                threshold_bps=threshold,
+                base_cost_bps=base_cost_bps,
+                stress_cost_multiplier=stress_cost_multiplier,
+                execution_latency_seconds=execution_latency_seconds,
+                allowed_action_indices=[action_index],
+            )
+            base = report["base_cost"]
+            stress = report["stress_cost"]
+            viable = bool(
+                base["count"] >= int(min_trades)
+                and (base["lcb_bps"] or float("-inf")) > 0.0
+                and (stress["lcb_bps"] or float("-inf")) > 0.0
+            )
+            candidates.append(
+                {
+                    "action_index": action_index,
+                    "direction": str(action["direction"]),
+                    "horizon_seconds": int(action["horizon_seconds"]),
+                    "threshold_bps": threshold,
+                    "trade_count": base["count"],
+                    "mean_base_net_bps": base["mean_bps"],
+                    "base_net_lcb_bps": base["lcb_bps"],
+                    "stress_net_lcb_bps": stress["lcb_bps"],
+                    "action_counts": report["action_counts"],
+                    "viable": viable,
+                }
+            )
     viable_candidates = [item for item in candidates if item["viable"]]
     selected = (
         max(
@@ -1087,6 +1128,7 @@ def select_nested_threshold(
                 float(item["stress_net_lcb_bps"]),
                 float(item["base_net_lcb_bps"]),
                 -float(item["threshold_bps"]),
+                -int(item["action_index"]),
             ),
         )
         if viable_candidates
@@ -1096,6 +1138,7 @@ def select_nested_threshold(
         "selected": selected,
         "candidates": candidates,
         "score_distribution": summarize_score_distribution(finite),
+        "action_score_distributions": action_score_distributions,
         "score_threshold_floor_bps": None,
         "reason": "positive_stress_lcb" if selected else "no_positive_stress_lcb_threshold",
     }
@@ -1134,6 +1177,7 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
         "inference_score": (
             "clipped_fit_probability_weighted_action_conditional_base_net_return_bps"
         ),
+        "policy_selection": "nested_per_action_threshold_then_mode_action_freeze",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
         "validation_or_test_target_statistics_used_for_fit": False,
         "iterations": int(args.iterations),
@@ -1284,6 +1328,11 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             if isinstance(selected, dict)
             else float("inf")
         )
+        allowed_action_indices = (
+            [int(selected["action_index"])]
+            if isinstance(selected, dict)
+            else []
+        )
         test_prediction, test_raw_prediction = predict_base_net_scores(
             model, features[test_indices], target_transform
         )
@@ -1296,6 +1345,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             base_cost_bps=float(args.additional_round_trip_cost_bps),
             stress_cost_multiplier=float(args.stress_cost_multiplier),
             execution_latency_seconds=int(args.execution_latency_seconds),
+            allowed_action_indices=allowed_action_indices,
         )
         permutation_controls = evaluate_prediction_permutation_controls(
             timestamps=timestamps[test_indices],
@@ -1308,6 +1358,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             execution_latency_seconds=int(args.execution_latency_seconds),
             trials=permutation_trials,
             seed=permutation_seed + split.split_id * 1_000_003,
+            allowed_action_indices=allowed_action_indices,
         )
         for trial, control in enumerate(permutation_controls):
             control_base_mean = control["base_cost"].get("mean_bps")
@@ -1369,6 +1420,32 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         if split_base_means
         else 0.0
     )
+    selected_action_indices = [
+        int(selected["action_index"])
+        for item in split_reports
+        for selected in [item.get("nested_calibration", {}).get("selected")]
+        if isinstance(selected, dict)
+    ]
+    selected_action_counts = {
+        str(action_index): selected_action_indices.count(action_index)
+        for action_index in sorted(set(selected_action_indices))
+    }
+    dominant_action_index = (
+        min(
+            selected_action_counts,
+            key=lambda value: (-selected_action_counts[value], int(value)),
+        )
+        if selected_action_counts
+        else None
+    )
+    action_consensus_ratio = (
+        selected_action_counts[dominant_action_index] / len(splits)
+        if dominant_action_index is not None and splits
+        else 0.0
+    )
+    minimum_action_consensus_ratio = float(
+        getattr(args, "min_action_consensus_ratio", 0.60)
+    )
     permutation_control = summarize_prediction_permutation_controls(
         base_means_by_trial=permutation_base_means_by_trial,
         stress_means_by_trial=permutation_stress_means_by_trial,
@@ -1388,16 +1465,21 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         and permutation_control["passed"]
         and base_trade_summary["count"] >= int(args.min_oos_trades)
         and positive_split_ratio >= float(args.min_positive_splits_ratio)
+        and action_consensus_ratio >= minimum_action_consensus_ratio
         and (base_split_summary["lcb_bps"] or float("-inf")) > 0.0
         and (stress_split_summary["lcb_bps"] or float("-inf")) > 0.0
     )
     frozen_candidate: Dict[str, Any] | None = None
     if development_passed:
+        if dominant_action_index is None:
+            raise RuntimeError("development passed without a dominant policy action")
+        frozen_action_index = int(dominant_action_index)
         selected_thresholds = [
             float(selected["threshold_bps"])
             for item in split_reports
             for selected in [item.get("nested_calibration", {}).get("selected")]
             if isinstance(selected, dict)
+            and int(selected["action_index"]) == frozen_action_index
         ]
         if not selected_thresholds:
             raise RuntimeError("development passed without a frozen policy threshold")
@@ -1433,8 +1515,13 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "model_sha256": sha256_file(model_path),
             "final_training_row_count": int(len(features)),
             "final_iterations": final_iterations,
+            "policy_action_index": frozen_action_index,
+            "policy_action": actions[frozen_action_index],
             "policy_threshold_bps": float(statistics.median(selected_thresholds)),
-            "threshold_aggregation": "median_of_nested_split_thresholds",
+            "action_aggregation": "mode_of_nested_split_selected_actions",
+            "threshold_aggregation": (
+                "median_of_nested_split_thresholds_for_frozen_action"
+            ),
             "target_transform": final_target_transform,
             "model_contract": model_contract(args),
         }
@@ -1484,6 +1571,9 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "threshold_quantiles": list(args.calibration_quantiles),
             "action_hypothesis_count": len(actions),
             "nested_threshold_hypothesis_count": len(args.calibration_quantiles),
+            "calibration_scope": "independent_per_action_then_economic_selection",
+            "frozen_action_aggregation": "mode_of_nested_split_selected_actions",
+            "minimum_action_consensus_ratio": minimum_action_consensus_ratio,
             "score_threshold_floor_bps": None,
             "negative_model_score_threshold_permitted": True,
             "threshold_viability_contract": (
@@ -1502,6 +1592,14 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "oos_base_cost_by_split": base_split_summary,
             "oos_stress_cost_by_split": stress_split_summary,
             "positive_base_edge_split_ratio": positive_split_ratio,
+            "selected_action_counts": selected_action_counts,
+            "dominant_action_index": (
+                int(dominant_action_index)
+                if dominant_action_index is not None
+                else None
+            ),
+            "action_consensus_ratio": action_consensus_ratio,
+            "minimum_action_consensus_ratio": minimum_action_consensus_ratio,
             "minimum_oos_trades": int(args.min_oos_trades),
             "minimum_positive_splits_ratio": float(args.min_positive_splits_ratio),
             "prediction_permutation_control_passed": permutation_control["passed"],
@@ -1599,6 +1697,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-calibration-trades", type=int, default=8)
     parser.add_argument("--min-oos-trades", type=int, default=30)
     parser.add_argument("--min-positive-splits-ratio", type=float, default=0.60)
+    parser.add_argument("--min-action-consensus-ratio", type=float, default=0.60)
     parser.add_argument("--iterations", type=int, default=100)
     parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=0.035)
@@ -1627,6 +1726,8 @@ def parse_args() -> argparse.Namespace:
         raise ValueError("permutation control trials must be >= 5")
     if args.permutation_control_minimum_excess_lcb_bps < 0.0:
         raise ValueError("permutation control minimum excess LCB must be non-negative")
+    if not 0.60 <= args.min_action_consensus_ratio <= 1.0:
+        raise ValueError("minimum action consensus ratio must be in [0.60, 1]")
     return args
 
 

@@ -38,7 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
-ALGORITHM_CONTRACT_REVISION = "independent_action_stress_profitability_v2"
+ALGORITHM_CONTRACT_REVISION = "independent_action_calibration_v3"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -294,6 +294,22 @@ def validate_development_candidate(
             "threshold_viability_contract"
         )
         == "realized_base_and_stress_net_lcb_positive_in_nested_validation"
+        and report.get("validation_contract", {}).get("calibration_scope")
+        == "independent_per_action_then_economic_selection"
+        and report.get("validation_contract", {}).get("frozen_action_aggregation")
+        == "mode_of_nested_split_selected_actions"
+        and isinstance(
+            report.get("validation_contract", {}).get(
+                "minimum_action_consensus_ratio"
+            ),
+            (int, float),
+        )
+        and float(
+            report.get("validation_contract", {}).get(
+                "minimum_action_consensus_ratio"
+            )
+        )
+        >= 0.60
     ):
         raise LifecycleError("development candidate has not passed its isolated economic gate")
     model_contract = report.get("model_contract", {})
@@ -306,6 +322,8 @@ def validate_development_candidate(
         == "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
         and model_contract.get("inference_score")
         == "clipped_fit_probability_weighted_action_conditional_base_net_return_bps"
+        and model_contract.get("policy_selection")
+        == "nested_per_action_threshold_then_mode_action_freeze"
         and model_contract.get("economic_acceptance_target")
         == "untransformed_executable_base_and_stress_net_return"
         and model_contract.get("validation_or_test_target_statistics_used_for_fit")
@@ -391,6 +409,21 @@ def validate_development_candidate(
         raise LifecycleError("development action contract is incomplete")
     if target_transform.get("actions") != actions:
         raise LifecycleError("development target transform action contract mismatch")
+    try:
+        policy_action_index = int(frozen.get("policy_action_index"))
+        policy_threshold = float(frozen.get("policy_threshold_bps"))
+    except (TypeError, ValueError) as exc:
+        raise LifecycleError("frozen development policy contract is invalid") from exc
+    if not (
+        0 <= policy_action_index < len(actions)
+        and frozen.get("policy_action") == actions[policy_action_index]
+        and math.isfinite(policy_threshold)
+        and frozen.get("action_aggregation")
+        == "mode_of_nested_split_selected_actions"
+        and frozen.get("threshold_aggregation")
+        == "median_of_nested_split_thresholds_for_frozen_action"
+    ):
+        raise LifecycleError("frozen development action/threshold contract failed")
     try:
         expected_stress_increment = float(
             target.get("additional_round_trip_cost_bps")
@@ -642,11 +675,15 @@ def fixed_policy_episodes(
     prediction: np.ndarray,
     outcomes: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
+    policy_action_index: int,
     threshold_bps: float,
     base_cost_bps: float,
     stress_cost_multiplier: float,
     execution_latency_seconds: int,
 ) -> List[Dict[str, Any]]:
+    frozen_action_index = int(policy_action_index)
+    if not 0 <= frozen_action_index < len(actions):
+        raise LifecycleError("frozen policy action index is invalid")
     episodes: List[Dict[str, Any]] = []
     next_allowed_ms = -1
     for index, raw_timestamp in enumerate(timestamps):
@@ -656,8 +693,8 @@ def fixed_policy_episodes(
         row_prediction = np.asarray(prediction[index], dtype=np.float64)
         if not np.all(np.isfinite(row_prediction)):
             continue
-        action_index = int(np.argmax(row_prediction))
-        predicted_edge = float(row_prediction[action_index])
+        action_index = frozen_action_index
+        predicted_edge = float(row_prediction[frozen_action_index])
         if predicted_edge < threshold_bps:
             continue
         realized = float(outcomes[index, action_index])
@@ -720,6 +757,7 @@ def evaluate_domain(
     frozen = report.get("frozen_candidate", {})
     target = report.get("target_contract", {})
     threshold = float(frozen.get("policy_threshold_bps"))
+    policy_action_index = int(frozen.get("policy_action_index"))
     try:
         prediction, _ = development.predict_base_net_scores(
             model, features[indices], frozen.get("target_transform", {})
@@ -735,6 +773,7 @@ def evaluate_domain(
         prediction=prediction,
         outcomes=outcomes[indices],
         actions=actions,
+        policy_action_index=policy_action_index,
         threshold_bps=threshold,
         base_cost_bps=float(target.get("additional_round_trip_cost_bps") or 0.0),
         stress_cost_multiplier=float(target.get("stress_cost_multiplier") or 0.0),
@@ -771,6 +810,8 @@ def evaluate_domain(
         "start_ms": start_ms,
         "end_ms": end_ms,
         "policy_threshold_bps": threshold,
+        "policy_action_index": policy_action_index,
+        "policy_action": actions[policy_action_index],
         "row_count": len(indices),
         "episodes": episodes,
         "base_by_trade": base_by_trade,
@@ -793,6 +834,8 @@ def evaluate_domain(
         "policy_frozen": True,
         "threshold_tuning_permitted": False,
         "policy_threshold_bps": threshold,
+        "policy_action_index": policy_action_index,
+        "policy_action": actions[policy_action_index],
         "episode_count": len(episodes),
         "action_counts": action_counts,
         "base_cost_by_trade": base_by_trade,
