@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import pathlib
 import re
@@ -622,6 +623,23 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn(
             'CLOSED_LOOP_CONTRACT_PATH_VALUE="${CLOSED_LOOP_CONTRACT_PATH:-config/closed_loop_contract.json}"',
             script,
+        )
+        contract = json.loads(
+            (ROOT / "config" / "closed_loop_contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertRegex(
+            contract["schema_version"],
+            r"^closed_loop_contract_v[1-9][0-9]*$",
+        )
+        self.assertIn(
+            're.fullmatch(r"closed_loop_contract_v[1-9][0-9]*", contract_schema)',
+            script,
+        )
+        self.assertNotRegex(
+            script,
+            r'contract_schema\s*!=\s*"closed_loop_contract_v[0-9]+"',
         )
         self.assertIn('"required_artifacts": required_artifacts', script)
         self.assertIn('"required_steps": required_steps', script)

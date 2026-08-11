@@ -4746,7 +4746,10 @@ if not contract_path.is_file():
 contract = load_json_file(str(contract_path))
 contract_schema = str(contract.get("schema_version") or "").strip()
 contract_actions = contract.get("actions")
-if contract_schema != "closed_loop_contract_v3" or not isinstance(contract_actions, dict):
+if (
+    re.fullmatch(r"closed_loop_contract_v[1-9][0-9]*", contract_schema) is None
+    or not isinstance(contract_actions, dict)
+):
     raise SystemExit(f"invalid closed-loop contract: {contract_path}")
 action = os.environ.get("ACTION_VALUE", "").strip().lower()
 action_contract = contract_actions.get(action)
