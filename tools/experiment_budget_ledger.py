@@ -481,6 +481,9 @@ def _decision_report(
     experiment_id: str | None = None,
     family_id: str | None = None,
     information_set_id: str | None = None,
+    benchmark_id: str | None = None,
+    expected_benchmark_id: str | None = None,
+    actual_benchmark_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": DECISION_SCHEMA_VERSION,
@@ -490,6 +493,9 @@ def _decision_report(
         "experiment_id": experiment_id,
         "hypothesis_family_id": family_id,
         "information_set_id": information_set_id,
+        "benchmark_id": benchmark_id,
+        "expected_benchmark_id": expected_benchmark_id,
+        "actual_benchmark_id": actual_benchmark_id,
         "remaining_budgets": (
             dict(remaining_budgets) if remaining_budgets is not None else None
         ),
@@ -559,10 +565,23 @@ def register_experiment(
     request: object,
 ) -> dict[str, Any]:
     path = pathlib.Path(ledger_path)
+    expected_benchmark_id: str | None = None
+    verified_benchmark_id: str | None = None
+    actual_benchmark_id = (
+        request.get("benchmark_id")
+        if isinstance(request, Mapping)
+        and isinstance(request.get("benchmark_id"), str)
+        else None
+    )
     try:
         normalized = _normalize_registration(request)
+        actual_benchmark_id = normalized["benchmark_id"]
         budgets = _read_failure_budgets(pathlib.Path(config_path))
         state = audit_ledger(path)
+        expected_benchmark_id = state["benchmark_id"]
+        verified_benchmark_id = expected_benchmark_id or actual_benchmark_id
+        if expected_benchmark_id is None:
+            expected_benchmark_id = actual_benchmark_id
         experiment_id = normalized["experiment_id"]
         family_id = normalized["hypothesis_family_id"]
         information_id = normalized["information_set_id"]
@@ -600,6 +619,9 @@ def register_experiment(
                 experiment_id=experiment_id,
                 family_id=family_id,
                 information_set_id=information_id,
+                benchmark_id=verified_benchmark_id,
+                expected_benchmark_id=expected_benchmark_id,
+                actual_benchmark_id=actual_benchmark_id,
             )
         _append_record(path, state, "REGISTER", normalized)
         return _decision_report(
@@ -610,6 +632,9 @@ def register_experiment(
             experiment_id=experiment_id,
             family_id=family_id,
             information_set_id=information_id,
+            benchmark_id=verified_benchmark_id,
+            expected_benchmark_id=expected_benchmark_id,
+            actual_benchmark_id=actual_benchmark_id,
         )
     except MultipleChangedDimensions as exc:
         request_map = request if isinstance(request, Mapping) else {}
@@ -623,6 +648,9 @@ def register_experiment(
                 if request_map.get("experiment_id") is not None
                 else None
             ),
+            benchmark_id=verified_benchmark_id,
+            expected_benchmark_id=expected_benchmark_id,
+            actual_benchmark_id=actual_benchmark_id,
         )
     except (LedgerValidationError, OSError, TypeError, ValueError) as exc:
         return _decision_report(
@@ -630,6 +658,9 @@ def register_experiment(
             decision=DECISION_BLOCK,
             appended=False,
             reasons=[str(exc)],
+            benchmark_id=verified_benchmark_id,
+            expected_benchmark_id=expected_benchmark_id,
+            actual_benchmark_id=actual_benchmark_id,
         )
 
 
@@ -639,14 +670,20 @@ def observe_experiment(
     request: object,
 ) -> dict[str, Any]:
     path = pathlib.Path(ledger_path)
+    expected_benchmark_id: str | None = None
+    verified_benchmark_id: str | None = None
+    actual_benchmark_id: str | None = None
     try:
         normalized = _normalize_observation(request)
         budgets = _read_failure_budgets(pathlib.Path(config_path))
         state = audit_ledger(path)
+        expected_benchmark_id = state["benchmark_id"]
+        verified_benchmark_id = expected_benchmark_id
         experiment_id = normalized["experiment_id"]
         registration = state["registrations"].get(experiment_id)
         if registration is None:
             raise LedgerValidationError("experiment_id is not registered")
+        actual_benchmark_id = registration["benchmark_id"]
         if experiment_id in state["observations"]:
             raise LedgerValidationError("experiment outcome is already recorded")
         _, observed_time = _utc_timestamp(normalized["observed_at"], "observed_at")
@@ -672,6 +709,9 @@ def observe_experiment(
             experiment_id=experiment_id,
             family_id=family_id,
             information_set_id=information_id,
+            benchmark_id=verified_benchmark_id,
+            expected_benchmark_id=expected_benchmark_id,
+            actual_benchmark_id=actual_benchmark_id,
         )
     except (LedgerValidationError, OSError, TypeError, ValueError) as exc:
         return _decision_report(
@@ -679,6 +719,9 @@ def observe_experiment(
             decision=DECISION_BLOCK,
             appended=False,
             reasons=[str(exc)],
+            benchmark_id=verified_benchmark_id,
+            expected_benchmark_id=expected_benchmark_id,
+            actual_benchmark_id=actual_benchmark_id,
         )
 
 
@@ -687,9 +730,19 @@ def audit_next_experiment(
     config_path: pathlib.Path | str,
     proposal: object | None,
 ) -> dict[str, Any]:
+    expected_benchmark_id: str | None = None
+    verified_benchmark_id: str | None = None
+    actual_benchmark_id = (
+        proposal.get("benchmark_id")
+        if isinstance(proposal, Mapping)
+        and isinstance(proposal.get("benchmark_id"), str)
+        else None
+    )
     try:
         budgets = _read_failure_budgets(pathlib.Path(config_path))
         state = audit_ledger(ledger_path)
+        expected_benchmark_id = state["benchmark_id"]
+        verified_benchmark_id = expected_benchmark_id
         if proposal is None:
             proposal_map: Mapping[str, Any] = {}
         elif isinstance(proposal, Mapping):
@@ -708,11 +761,13 @@ def audit_next_experiment(
             if information_raw is not None
             else None
         )
-        benchmark_raw = proposal_map.get("benchmark_id")
-        if benchmark_raw is not None:
-            benchmark_id = _sha256(benchmark_raw, "benchmark_id")
-            if state["benchmark_id"] is not None and benchmark_id != state["benchmark_id"]:
-                raise LedgerValidationError("benchmark_id drift is forbidden")
+        benchmark_id = _sha256(proposal_map.get("benchmark_id"), "benchmark_id")
+        actual_benchmark_id = benchmark_id
+        if expected_benchmark_id is None:
+            expected_benchmark_id = benchmark_id
+            verified_benchmark_id = benchmark_id
+        elif benchmark_id != expected_benchmark_id:
+            raise LedgerValidationError("benchmark_id drift is forbidden")
         remaining = _remaining_budgets(
             state, budgets, family_id, information_id
         )
@@ -725,6 +780,9 @@ def audit_next_experiment(
             reasons=["failure budget is exhausted"] if stopped else [],
             family_id=family_id,
             information_set_id=information_id,
+            benchmark_id=verified_benchmark_id,
+            expected_benchmark_id=expected_benchmark_id,
+            actual_benchmark_id=actual_benchmark_id,
         )
     except (LedgerValidationError, OSError, TypeError, ValueError) as exc:
         return _decision_report(
@@ -732,6 +790,9 @@ def audit_next_experiment(
             decision=DECISION_BLOCK,
             appended=False,
             reasons=[str(exc)],
+            benchmark_id=verified_benchmark_id,
+            expected_benchmark_id=expected_benchmark_id,
+            actual_benchmark_id=actual_benchmark_id,
         )
 
 

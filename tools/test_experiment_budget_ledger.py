@@ -103,6 +103,9 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
         self.assertEqual(report["decision"], "ALLOW_NEXT_EXPERIMENT")
         self.assertTrue(report["appended"])
         self.assertEqual(report["remaining_budgets"], {"family": 3, "information_set": 8})
+        self.assertEqual(report["benchmark_id"], self.benchmark_id)
+        self.assertEqual(report["expected_benchmark_id"], self.benchmark_id)
+        self.assertEqual(report["actual_benchmark_id"], self.benchmark_id)
         records = LEDGER.audit_ledger(self.ledger_path)["records"]
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["sequence"], 1)
@@ -149,6 +152,12 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
             self.assertEqual(report["decision"], expected, report)
             self.assertFalse(report["appended"])
             self.assertEqual(self.ledger_path.read_bytes(), before)
+            if request is drift:
+                self.assertEqual(report["benchmark_id"], self.benchmark_id)
+                self.assertEqual(
+                    report["expected_benchmark_id"], self.benchmark_id
+                )
+                self.assertEqual(report["actual_benchmark_id"], "c" * 64)
 
     def test_outcomes_consume_budget_once_and_threshold_observation_is_appended_before_stop(self):
         family_id = LEDGER.stable_definition_id(self.family_definition)
@@ -168,11 +177,17 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
             expected = "STOP_CURRENT_FAMILY" if number == 4 else "ALLOW_NEXT_EXPERIMENT"
             self.assertEqual(observation["decision"], expected)
             self.assertTrue(observation["appended"])
+            self.assertEqual(observation["benchmark_id"], self.benchmark_id)
+            self.assertEqual(
+                observation["expected_benchmark_id"], self.benchmark_id
+            )
+            self.assertEqual(observation["actual_benchmark_id"], self.benchmark_id)
 
         audit = LEDGER.audit_next_experiment(
             self.ledger_path,
             self.config_path,
             {
+                "benchmark_id": self.benchmark_id,
                 "hypothesis_family_id": family_id,
                 "information_set_id": LEDGER.stable_definition_id(
                     self.information_set_definition
@@ -181,6 +196,9 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
         )
         self.assertEqual(audit["decision"], "STOP_CURRENT_FAMILY")
         self.assertEqual(audit["remaining_budgets"]["family"], 0)
+        self.assertEqual(audit["benchmark_id"], self.benchmark_id)
+        self.assertEqual(audit["expected_benchmark_id"], self.benchmark_id)
+        self.assertEqual(audit["actual_benchmark_id"], self.benchmark_id)
         before = self.ledger_path.read_bytes()
         blocked = self.register(
             self.registration("experiment-after-stop", "2026-08-11T00:10:00Z")
@@ -256,6 +274,150 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
             self.assertEqual(report["decision"], "BLOCK_INVALID_LEDGER")
             self.assertFalse(report["appended"])
             self.assertEqual(self.ledger_path.read_bytes(), before)
+
+    def test_audit_next_binds_empty_and_nonempty_ledger_to_benchmark_identity(self):
+        proposal = {
+            "benchmark_id": self.benchmark_id,
+            "hypothesis_family_id": LEDGER.stable_definition_id(
+                self.family_definition
+            ),
+            "information_set_id": LEDGER.stable_definition_id(
+                self.information_set_definition
+            ),
+        }
+
+        empty_report = LEDGER.audit_next_experiment(
+            self.ledger_path, self.config_path, proposal
+        )
+        self.assertEqual(empty_report["decision"], "ALLOW_NEXT_EXPERIMENT")
+        self.assertEqual(empty_report["benchmark_id"], self.benchmark_id)
+        self.assertEqual(
+            empty_report["expected_benchmark_id"], self.benchmark_id
+        )
+        self.assertEqual(empty_report["actual_benchmark_id"], self.benchmark_id)
+        self.assertFalse(self.ledger_path.exists())
+
+        self.assertEqual(
+            self.register(self.registration())["decision"],
+            "ALLOW_NEXT_EXPERIMENT",
+        )
+        nonempty_report = LEDGER.audit_next_experiment(
+            self.ledger_path, self.config_path, proposal
+        )
+        self.assertEqual(nonempty_report["decision"], "ALLOW_NEXT_EXPERIMENT")
+        self.assertEqual(nonempty_report["benchmark_id"], self.benchmark_id)
+        self.assertEqual(
+            nonempty_report["expected_benchmark_id"], self.benchmark_id
+        )
+        self.assertEqual(
+            nonempty_report["actual_benchmark_id"], self.benchmark_id
+        )
+
+    def test_audit_next_benchmark_drift_and_missing_identity_fail_closed(self):
+        self.assertEqual(
+            self.register(self.registration())["decision"],
+            "ALLOW_NEXT_EXPERIMENT",
+        )
+        family_id = LEDGER.stable_definition_id(self.family_definition)
+        information_id = LEDGER.stable_definition_id(
+            self.information_set_definition
+        )
+        before = self.ledger_path.read_bytes()
+
+        drifted = LEDGER.audit_next_experiment(
+            self.ledger_path,
+            self.config_path,
+            {
+                "benchmark_id": "c" * 64,
+                "hypothesis_family_id": family_id,
+                "information_set_id": information_id,
+            },
+        )
+        self.assertEqual(drifted["decision"], "BLOCK_INVALID_LEDGER")
+        self.assertEqual(drifted["benchmark_id"], self.benchmark_id)
+        self.assertEqual(drifted["expected_benchmark_id"], self.benchmark_id)
+        self.assertEqual(drifted["actual_benchmark_id"], "c" * 64)
+
+        missing = LEDGER.audit_next_experiment(
+            self.ledger_path,
+            self.config_path,
+            {
+                "hypothesis_family_id": family_id,
+                "information_set_id": information_id,
+            },
+        )
+        self.assertEqual(missing["decision"], "BLOCK_INVALID_LEDGER")
+        self.assertEqual(missing["benchmark_id"], self.benchmark_id)
+        self.assertEqual(missing["expected_benchmark_id"], self.benchmark_id)
+        self.assertIsNone(missing["actual_benchmark_id"])
+
+        invalid = LEDGER.audit_next_experiment(
+            self.ledger_path,
+            self.config_path,
+            {
+                "benchmark_id": "NOT-A-SHA256",
+                "hypothesis_family_id": family_id,
+                "information_set_id": information_id,
+            },
+        )
+        self.assertEqual(invalid["decision"], "BLOCK_INVALID_LEDGER")
+        self.assertEqual(invalid["benchmark_id"], self.benchmark_id)
+        self.assertEqual(invalid["expected_benchmark_id"], self.benchmark_id)
+        self.assertEqual(invalid["actual_benchmark_id"], "NOT-A-SHA256")
+        self.assertEqual(self.ledger_path.read_bytes(), before)
+
+    def test_audit_next_does_not_treat_proposal_as_verified_for_corrupt_ledger(self):
+        self.assertEqual(
+            self.register(self.registration())["decision"],
+            "ALLOW_NEXT_EXPERIMENT",
+        )
+        corrupted = self.ledger_path.read_bytes().replace(
+            b"experiment-001", b"experiment-xyz"
+        )
+        self.ledger_path.write_bytes(corrupted)
+
+        report = LEDGER.audit_next_experiment(
+            self.ledger_path,
+            self.config_path,
+            {
+                "benchmark_id": self.benchmark_id,
+                "hypothesis_family_id": LEDGER.stable_definition_id(
+                    self.family_definition
+                ),
+                "information_set_id": LEDGER.stable_definition_id(
+                    self.information_set_definition
+                ),
+            },
+        )
+        self.assertEqual(report["decision"], "BLOCK_INVALID_LEDGER")
+        self.assertIsNone(report["benchmark_id"])
+        self.assertIsNone(report["expected_benchmark_id"])
+        self.assertEqual(report["actual_benchmark_id"], self.benchmark_id)
+        self.assertEqual(self.ledger_path.read_bytes(), corrupted)
+
+    def test_audit_next_empty_ledger_rejects_missing_or_invalid_benchmark(self):
+        family_id = LEDGER.stable_definition_id(self.family_definition)
+        information_id = LEDGER.stable_definition_id(
+            self.information_set_definition
+        )
+        for benchmark, expected_actual in (
+            (None, None),
+            ("NOT-A-SHA256", "NOT-A-SHA256"),
+        ):
+            proposal = {
+                "hypothesis_family_id": family_id,
+                "information_set_id": information_id,
+            }
+            if benchmark is not None:
+                proposal["benchmark_id"] = benchmark
+            report = LEDGER.audit_next_experiment(
+                self.ledger_path, self.config_path, proposal
+            )
+            self.assertEqual(report["decision"], "BLOCK_INVALID_LEDGER")
+            self.assertIsNone(report["benchmark_id"])
+            self.assertIsNone(report["expected_benchmark_id"])
+            self.assertEqual(report["actual_benchmark_id"], expected_actual)
+            self.assertFalse(self.ledger_path.exists())
 
     def test_edit_delete_reorder_and_previous_hash_tampering_are_detected(self):
         for experiment_id, minute in (("experiment-001", 0), ("experiment-002", 2)):
@@ -334,6 +496,8 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
                 str(self.ledger_path),
                 "--config",
                 str(self.config_path),
+                "--benchmark-id",
+                self.benchmark_id,
                 "--hypothesis-family-id",
                 request["hypothesis_family_id"],
                 "--information-set-id",
@@ -344,7 +508,11 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
             text=True,
         )
         self.assertEqual(audited.returncode, 0, audited.stderr)
-        self.assertEqual(json.loads(audited.stdout)["decision"], "ALLOW_NEXT_EXPERIMENT")
+        audit_report = json.loads(audited.stdout)
+        self.assertEqual(audit_report["decision"], "ALLOW_NEXT_EXPERIMENT")
+        self.assertEqual(audit_report["benchmark_id"], self.benchmark_id)
+        self.assertEqual(audit_report["expected_benchmark_id"], self.benchmark_id)
+        self.assertEqual(audit_report["actual_benchmark_id"], self.benchmark_id)
 
 
 if __name__ == "__main__":
