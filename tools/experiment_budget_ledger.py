@@ -703,6 +703,30 @@ def _validate_recovery_marker(marker: object) -> tuple[dict[str, Any], dict[str,
     pending = marker.get("pending_record")
     if not isinstance(pending, dict):
         raise LedgerValidationError("recovery pending record is invalid")
+    record_type = pending.get("record_type")
+    payload_fields = (
+        _REGISTRATION_FIELDS
+        if record_type == "register"
+        else _OBSERVATION_FIELDS
+    )
+    if (
+        record_type not in {"register", "observe"}
+        or set(pending) != (_COMMON_RECORD_FIELDS | payload_fields)
+        or pending.get("schema_version") != RECORD_SCHEMA_VERSION
+        or not isinstance(pending.get("sequence"), int)
+        or isinstance(pending.get("sequence"), bool)
+        or not _is_sha256(pending.get("record_hash"))
+    ):
+        raise LedgerValidationError("recovery pending record shape is invalid")
+    payload = {key: pending[key] for key in payload_fields}
+    normalized = (
+        _normalize_registration_record(payload)
+        if record_type == "register"
+        else _normalize_observation_record(payload)
+    )
+    if normalized != payload:
+        raise LedgerValidationError("recovery pending record is not normalized")
+    _record_timestamp(pending)
     if (
         pending.get("sequence") != before["record_count"] + 1
         or pending.get("previous_record_hash") != before["tail_record_hash"]
@@ -725,26 +749,68 @@ def _validate_or_recover_checkpoint(
 
     if recovery_path.is_file():
         marker = _read_canonical_object(recovery_path, "ledger recovery marker")
-        before, after, _ = _validate_recovery_marker(marker)
+        before, after, pending = _validate_recovery_marker(marker)
+        pending_line = canonical_json_bytes(pending) + b"\n"
         persisted_checkpoint = (
             _read_canonical_object(checkpoint_path, "ledger checkpoint")
             if checkpoint_path.is_file()
             else None
         )
         if actual == before:
+            before_bytes = state["ledger_bytes"]
+            before_state = state
+            actual_position = "before"
+        elif actual == after:
+            actual_bytes = state["ledger_bytes"]
+            if not actual_bytes.endswith(pending_line):
+                raise LedgerValidationError(
+                    "committed recovery ledger does not end with pending record"
+                )
+            before_bytes = actual_bytes[: -len(pending_line)]
+            before_state = _parse_ledger_bytes(before_bytes)
+            actual_position = "after"
+        else:
+            raise LedgerValidationError("ledger is neither recovery before nor after state")
+
+        expected_before = _checkpoint_payload(
+            before_bytes,
+            len(before_state["records"]),
+            before_state["tail_record_hash"],
+        )
+        if expected_before != before:
+            raise LedgerValidationError(
+                "recovery before checkpoint does not match ledger prefix"
+            )
+        expected_after_bytes = before_bytes + pending_line
+        expected_after_state = _parse_ledger_bytes(expected_after_bytes)
+        expected_after = _checkpoint_payload(
+            expected_after_bytes,
+            len(expected_after_state["records"]),
+            expected_after_state["tail_record_hash"],
+        )
+        if expected_after != after:
+            raise LedgerValidationError(
+                "recovery after checkpoint is not before plus pending record"
+            )
+        if actual_position == "after" and state["ledger_bytes"] != expected_after_bytes:
+            raise LedgerValidationError(
+                "committed recovery ledger differs from exact after state"
+            )
+
+        if actual_position == "before":
             if persisted_checkpoint is not None and persisted_checkpoint != before:
                 raise LedgerValidationError("checkpoint is inconsistent with pre-append recovery state")
             if before["record_count"] == 0 and persisted_checkpoint is not None:
                 raise LedgerValidationError("empty ledger has unexpected checkpoint")
             _remove_durable(recovery_path)
             return True
-        if actual == after:
+        if actual_position == "after":
             if persisted_checkpoint not in (None, before, after):
                 raise LedgerValidationError("checkpoint is inconsistent with committed recovery state")
             _atomic_write(checkpoint_path, canonical_json_bytes(after) + b"\n")
             _remove_durable(recovery_path)
             return True
-        raise LedgerValidationError("ledger is neither recovery before nor after state")
+        raise LedgerValidationError("ledger recovery position is invalid")
 
     if not state["records"] and not state["ledger_bytes"]:
         if checkpoint_path.exists():
@@ -958,20 +1024,54 @@ def _read_result_artifact(registration: Mapping[str, Any]) -> dict[str, Any]:
         raise LedgerValidationError("registered result artifact must be read-only")
     _, registered_time = _utc_timestamp(registration["registered_at"], "registered_at")
     registered_ns = int(registered_time.timestamp() * 1_000_000_000)
-    now_ns = time.time_ns()
-    if lstat_result.st_mtime_ns <= registered_ns or lstat_result.st_mtime_ns > now_ns:
-        raise LedgerValidationError("result artifact mtime must be after registration")
-    birthtime = getattr(lstat_result, "st_birthtime", None)
-    if birthtime is not None:
-        birth_ns = int(float(birthtime) * 1_000_000_000)
-        if birth_ns <= registered_ns or birth_ns > now_ns:
-            raise LedgerValidationError("result artifact creation time must be after registration")
-
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise LedgerValidationError("safe no-follow result artifact open is unavailable")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     try:
         descriptor = os.open(path, flags)
         try:
             before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise LedgerValidationError(
+                    "opened result artifact must be a regular file"
+                )
+            if before.st_mode & 0o222:
+                raise LedgerValidationError(
+                    "opened result artifact must be read-only"
+                )
+            pre_open_identity = (
+                lstat_result.st_dev,
+                lstat_result.st_ino,
+                lstat_result.st_size,
+                lstat_result.st_mtime_ns,
+                lstat_result.st_ctime_ns,
+            )
+            opened_identity = (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+            if (
+                opened_identity != pre_open_identity
+                or before.st_mode != lstat_result.st_mode
+            ):
+                raise LedgerValidationError(
+                    "registered result artifact changed before safe open"
+                )
+            now_ns = time.time_ns()
+            if before.st_mtime_ns <= registered_ns or before.st_mtime_ns > now_ns:
+                raise LedgerValidationError(
+                    "result artifact mtime must be after registration"
+                )
+            birthtime = getattr(before, "st_birthtime", None)
+            if birthtime is not None:
+                birth_ns = int(float(birthtime) * 1_000_000_000)
+                if birth_ns <= registered_ns or birth_ns > now_ns:
+                    raise LedgerValidationError(
+                        "result artifact creation time must be after registration"
+                    )
             chunks: list[bytes] = []
             while True:
                 chunk = os.read(descriptor, 1024 * 1024)
@@ -985,7 +1085,27 @@ def _read_result_artifact(registration: Mapping[str, Any]) -> dict[str, Any]:
         raise LedgerValidationError("registered result artifact cannot be read safely") from exc
     identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
     identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
-    if identity_before != identity_after or before.st_ino != lstat_result.st_ino:
+    try:
+        post_read_stat = path.lstat()
+    except OSError as exc:
+        raise LedgerValidationError(
+            "registered result artifact path changed while reading"
+        ) from exc
+    identity_post_read = (
+        post_read_stat.st_dev,
+        post_read_stat.st_ino,
+        post_read_stat.st_size,
+        post_read_stat.st_mtime_ns,
+        post_read_stat.st_ctime_ns,
+    )
+    if (
+        identity_before != identity_after
+        or identity_after != identity_post_read
+        or after.st_mode != post_read_stat.st_mode
+        or not stat.S_ISREG(post_read_stat.st_mode)
+        or stat.S_ISLNK(post_read_stat.st_mode)
+        or post_read_stat.st_mode & 0o222
+    ):
         raise LedgerValidationError("registered result artifact changed while reading")
     content = b"".join(chunks)
     try:

@@ -449,6 +449,40 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
         )
         self.assertEqual(observe_record["registration_nonce"], record["registration_nonce"])
 
+    def test_observe_rechecks_open_descriptor_identity_and_read_only_mode(self):
+        proposal = self.registration()
+        self.assertEqual(self.register(proposal)["decision"], "ALLOW_NEXT_EXPERIMENT")
+        path, _ = self.write_result(proposal["experiment_id"], "SUPPORTED")
+        before = self.ledger_bytes()
+        real_open = os.open
+
+        def chmod_before_open(target, flags, *args, **kwargs):
+            if pathlib.Path(target) == path:
+                path.chmod(0o644)
+            return real_open(target, flags, *args, **kwargs)
+
+        with mock.patch.object(LEDGER.os, "open", side_effect=chmod_before_open):
+            blocked = self.observe(proposal["experiment_id"])
+        self.assertEqual(blocked["decision"], "BLOCK_INVALID_LEDGER", blocked)
+        self.assertFalse(blocked["appended"])
+        self.assertEqual(self.ledger_bytes(), before)
+
+        path.chmod(0o444)
+        replacement = self.root / "replacement-result.json"
+        replacement.write_bytes(path.read_bytes())
+        replacement.chmod(0o444)
+
+        def replace_before_open(target, flags, *args, **kwargs):
+            if pathlib.Path(target) == path and replacement.exists():
+                os.replace(replacement, path)
+            return real_open(target, flags, *args, **kwargs)
+
+        with mock.patch.object(LEDGER.os, "open", side_effect=replace_before_open):
+            blocked = self.observe(proposal["experiment_id"])
+        self.assertEqual(blocked["decision"], "BLOCK_INVALID_LEDGER", blocked)
+        self.assertFalse(blocked["appended"])
+        self.assertEqual(self.ledger_bytes(), before)
+
     def test_preexisting_or_timestamp_backdated_result_cannot_be_positive_evidence(self):
         proposal = self.registration()
         preexisting = pathlib.Path(proposal["result_source_path"])
@@ -590,6 +624,87 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
         self.assertEqual(recovered["decision"], "ALLOW_NEXT_EXPERIMENT")
         self.assertTrue(recovered["checkpoint_recovered"])
         self.assertFalse(marker_path.exists())
+
+    def test_recovery_marker_rejects_invalid_pending_or_impossible_after(self):
+        marker_path = self.ledger_path.with_suffix(".jsonl.recovery.json")
+        before = LEDGER._checkpoint_payload(b"", 0, LEDGER.GENESIS_HASH)
+        normalized = LEDGER._normalize_registration_request(self.registration())
+        pending = {
+            "schema_version": LEDGER.RECORD_SCHEMA_VERSION,
+            "record_type": "register",
+            "sequence": 1,
+            "previous_record_hash": LEDGER.GENESIS_HASH,
+            **normalized,
+            "registered_at": "2026-08-12T00:00:00.000001Z",
+            "registration_nonce": "a" * 64,
+        }
+        pending["record_hash"] = LEDGER.record_hash(pending)
+        pending_line = LEDGER.canonical_json_bytes(pending) + b"\n"
+        valid_after = LEDGER._checkpoint_payload(
+            pending_line, 1, pending["record_hash"]
+        )
+
+        cases = []
+        impossible_after = copy.deepcopy(valid_after)
+        impossible_after["ledger_sha256"] = "f" * 64
+        cases.append(("impossible-after", pending, impossible_after))
+
+        invalid_pending = {
+            "sequence": 1,
+            "previous_record_hash": LEDGER.GENESIS_HASH,
+            "junk": "not-a-ledger-record",
+        }
+        invalid_pending["record_hash"] = LEDGER.record_hash(invalid_pending)
+        invalid_after = LEDGER._checkpoint_payload(
+            LEDGER.canonical_json_bytes(invalid_pending) + b"\n",
+            1,
+            invalid_pending["record_hash"],
+        )
+        cases.append(("invalid-pending", invalid_pending, invalid_after))
+
+        for name, pending_record, after in cases:
+            with self.subTest(name=name):
+                marker = {
+                    "schema_version": LEDGER.RECOVERY_SCHEMA_VERSION,
+                    "before_checkpoint": before,
+                    "after_checkpoint": after,
+                    "pending_record": pending_record,
+                }
+                marker_path.write_bytes(
+                    LEDGER.canonical_json_bytes(marker) + b"\n"
+                )
+                with self.assertRaises(LEDGER.LedgerValidationError):
+                    LEDGER.audit_ledger(self.ledger_path)
+                self.assertTrue(marker_path.is_file())
+                marker_path.unlink()
+
+    def test_recovery_after_state_requires_exact_before_prefix_and_pending_tail(self):
+        proposal = self.registration()
+        self.assertEqual(self.register(proposal)["decision"], "ALLOW_NEXT_EXPERIMENT")
+        state = LEDGER.audit_ledger(self.ledger_path)
+        pending = state["records"][-1]
+        after = LEDGER._checkpoint_payload(
+            state["ledger_bytes"],
+            len(state["records"]),
+            state["tail_record_hash"],
+        )
+        impossible_before = LEDGER._checkpoint_payload(
+            b"not-the-ledger-prefix", 0, LEDGER.GENESIS_HASH
+        )
+        marker = {
+            "schema_version": LEDGER.RECOVERY_SCHEMA_VERSION,
+            "before_checkpoint": impossible_before,
+            "after_checkpoint": after,
+            "pending_record": pending,
+        }
+        marker_path = self.ledger_path.with_suffix(".jsonl.recovery.json")
+        marker_path.write_bytes(LEDGER.canonical_json_bytes(marker) + b"\n")
+
+        with self.assertRaises(LEDGER.LedgerValidationError):
+            LEDGER.audit_ledger(self.ledger_path)
+
+        self.assertTrue(marker_path.is_file())
+        self.assertEqual(self.ledger_bytes(), state["ledger_bytes"])
 
     def test_real_subprocess_crash_after_marker_before_append_is_retryable(self):
         proposal = self.registration()
