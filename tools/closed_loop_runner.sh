@@ -195,6 +195,10 @@ REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
 REPLAY_VALIDATION_CORPUS_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH:-}"
+REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT=false
+if [[ -n "${REPLAY_VALIDATION_CORPUS_PATH}" ]]; then
+  REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT=true
+fi
 REPLAY_VALIDATION_MIN_RUNTIME_STATUS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_RUNTIME_STATUS:-10}"
 REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}"
 REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
@@ -228,8 +232,8 @@ REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
 MICROSTRUCTURE_CAPTURE_ROOT="${CLOSED_LOOP_MICROSTRUCTURE_CAPTURE_ROOT:-data/research/microstructure}"
 MICROSTRUCTURE_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MIN_CAPTURE_SECONDS:-86400}"
 MICROSTRUCTURE_MAX_STALE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-1800}"
-DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-config/decision_evidence_benchmark.json}"
-DECISION_EVIDENCE_BENCHMARK_ROOT="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_ROOT:-.}"
+DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
+DECISION_EVIDENCE_BENCHMARK_ROOT="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_ROOT:-}"
 DECISION_EVIDENCE_CONFIG_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CONFIG:-config/decision_evidence_validation.json}"
 DECISION_EVIDENCE_ALIGNMENT_EVIDENCE_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_ALIGNMENT_EVIDENCE:-}"
 DECISION_EVIDENCE_ONLINE_TUNER_REPORT_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_ONLINE_TUNER_REPORT:-}"
@@ -237,10 +241,16 @@ DECISION_EVIDENCE_RUNTIME_CONFIG_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_RUNTIME_C
 DECISION_EVIDENCE_CANDIDATE_MODEL_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CANDIDATE_MODEL:-}"
 DECISION_EVIDENCE_CANDIDATE_REPORT_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CANDIDATE_REPORT:-}"
 DECISION_EVIDENCE_FEATURE_CSV_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_FEATURE_CSV:-}"
+DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL="${CLOSED_LOOP_DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL:-}"
 DECISION_EVIDENCE_CORPUS_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CORPUS_MANIFEST:-}"
+DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL="${CLOSED_LOOP_DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL:-}"
 DECISION_EVIDENCE_TRADE_BOT_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_TRADE_BOT:-/app/trade_bot}"
 DECISION_EVIDENCE_LEDGER_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_LEDGER:-data/research/experiment_budget_ledger.jsonl}"
 DECISION_EVIDENCE_LEDGER_PROPOSAL="${CLOSED_LOOP_DECISION_EVIDENCE_LEDGER_PROPOSAL:-{}}"
+DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT=false
+if [[ -n "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" ]]; then
+  DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT=true
+fi
 
 usage() {
   cat <<'EOF'
@@ -359,7 +369,9 @@ Options:
   --decision-evidence-candidate-model <path>
   --decision-evidence-candidate-report <path>
   --decision-evidence-feature-csv <path>
+  --decision-evidence-feature-csv-by-symbol <SYMBOL=path,...>
   --decision-evidence-corpus-manifest <path>
+  --decision-evidence-corpus-manifest-by-symbol <SYMBOL=path,...>
   --decision-evidence-trade-bot <path>
   --decision-evidence-ledger <path>
   --decision-evidence-ledger-proposal <json|@path>
@@ -593,7 +605,8 @@ while [[ $# -gt 0 ]]; do
     --replay-validation-min-segment-bars)
       REPLAY_VALIDATION_MIN_SEGMENT_BARS="$2"; shift 2;;
     --replay-validation-corpus-path)
-      REPLAY_VALIDATION_CORPUS_PATH="$2"; shift 2;;
+      REPLAY_VALIDATION_CORPUS_PATH="$2";
+      REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT=true; shift 2;;
     --replay-validation-min-execution-active-runs)
       REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="$2"; shift 2;;
     --replay-validation-min-execution-pass-runs)
@@ -611,7 +624,8 @@ while [[ $# -gt 0 ]]; do
     --block-registry-on-alpha-fail)
       BLOCK_REGISTRY_ON_ALPHA_FAIL="$2"; shift 2;;
     --decision-evidence-benchmark-manifest)
-      DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="$2"; shift 2;;
+      DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="$2";
+      DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT=true; shift 2;;
     --decision-evidence-benchmark-root)
       DECISION_EVIDENCE_BENCHMARK_ROOT="$2"; shift 2;;
     --decision-evidence-config)
@@ -628,8 +642,12 @@ while [[ $# -gt 0 ]]; do
       DECISION_EVIDENCE_CANDIDATE_REPORT_PATH="$2"; shift 2;;
     --decision-evidence-feature-csv)
       DECISION_EVIDENCE_FEATURE_CSV_PATH="$2"; shift 2;;
+    --decision-evidence-feature-csv-by-symbol)
+      DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL="$2"; shift 2;;
     --decision-evidence-corpus-manifest)
       DECISION_EVIDENCE_CORPUS_MANIFEST_PATH="$2"; shift 2;;
+    --decision-evidence-corpus-manifest-by-symbol)
+      DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL="$2"; shift 2;;
     --decision-evidence-trade-bot)
       DECISION_EVIDENCE_TRADE_BOT_PATH="$2"; shift 2;;
     --decision-evidence-ledger)
@@ -731,10 +749,6 @@ for item in sys.argv[1].replace(";", ",").split(","):
         seen.append(symbol)
 print(",".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}")"
 REPLAY_VALIDATION_SYMBOLS_JSON="$(python3 -c 'import json,sys; print(json.dumps([x.strip().upper() for x in sys.argv[1].replace(";", ",").split(",") if x.strip()]))' "${REPLAY_VALIDATION_SYMBOLS}")"
-if [[ -z "${REPLAY_VALIDATION_CORPUS_PATH}" ]]; then
-  REPLAY_VALIDATION_CORPUS_PATH="data/research/replay_validation_${REPLAY_VALIDATION_TARGET_BUCKET}_corpus.json"
-fi
-
 if [[ "${NEED_HELP}" == "true" ]]; then
   usage
   exit 0
@@ -1251,6 +1265,9 @@ if [[ -d "${RUN_DIR}" && -n "$(ls -A "${RUN_DIR}" 2>/dev/null)" ]]; then
   exit 2
 fi
 mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
+if [[ "${REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT}" != "true" ]]; then
+  REPLAY_VALIDATION_CORPUS_PATH="${RUN_DIR}/replay_validation/replay_validation_${REPLAY_VALIDATION_TARGET_BUCKET}_corpus.json"
+fi
 
 DATA_PIPELINE_RUN_DIR="${RUN_DIR}/data_pipeline"
 DATA_PIPELINE_REPORT_PATH="${DATA_PIPELINE_RUN_DIR}/data_pipeline_report.json"
@@ -1287,6 +1304,9 @@ MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH="${RUN_DIR}/microstructure_alpha_life
 ALPHA_SOURCE_ROUTE_REPORT_PATH="${RUN_DIR}/alpha_source_route_report.json"
 MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH="${RUN_DIR}/microstructure_demo_binding_report.json"
 DECISION_BENCHMARK_VALIDATION_REPORT_PATH="${RUN_DIR}/decision_benchmark_validation.json"
+DECISION_BENCHMARK_BUILD_DIR="${RUN_DIR}/decision_benchmark_build"
+DECISION_BENCHMARK_BUILD_REPORT_PATH="${DECISION_BENCHMARK_BUILD_DIR}/build_report.json"
+DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH="${DECISION_BENCHMARK_BUILD_DIR}/candidate_preflight.json"
 OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH="${RUN_DIR}/objective_alignment_validation.json"
 PAIRED_EVOLUTION_REPLAY_REPORT_PATH="${RUN_DIR}/paired_evolution_replay.json"
 PAIRED_EVOLUTION_REPLAY_WORK_DIR="${RUN_DIR}/paired_evolution_replay_work"
@@ -1338,14 +1358,20 @@ SUMMARY_OUTPUT_DIR="${OUTPUT_ROOT}/summary"
 LATEST_DAILY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_daily_summary.json"
 LATEST_WEEKLY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_weekly_summary.json"
 LATEST_DEMO_INCUBATION_REPORT_PATH="${OUTPUT_ROOT}/latest_demo_incubation_report.json"
+if [[ -z "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" ]]; then
+  DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${RUN_DIR}/decision_evidence_benchmark.json"
+fi
+if [[ -z "${DECISION_EVIDENCE_BENCHMARK_ROOT}" ]]; then
+  DECISION_EVIDENCE_BENCHMARK_ROOT="${RUN_DIR}"
+fi
 if [[ -z "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" ]]; then
-  DECISION_EVIDENCE_CANDIDATE_MODEL_PATH="${MICROSTRUCTURE_ALPHA_MODEL_PATH}"
+  DECISION_EVIDENCE_CANDIDATE_MODEL_PATH="${MODEL_OUTPUT_PATH}"
 fi
 if [[ -z "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" ]]; then
-  DECISION_EVIDENCE_CANDIDATE_REPORT_PATH="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}"
+  DECISION_EVIDENCE_CANDIDATE_REPORT_PATH="${INTEGRATOR_REPORT_PATH}"
 fi
 if [[ -z "${DECISION_EVIDENCE_FEATURE_CSV_PATH}" ]]; then
-  DECISION_EVIDENCE_FEATURE_CSV_PATH="${RESEARCH_SELECTION_FEATURE_PATH}"
+  DECISION_EVIDENCE_FEATURE_CSV_PATH="${RESEARCH_HOLDOUT_FEATURE_PATH}"
 fi
 if [[ -z "${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}" ]]; then
   DECISION_EVIDENCE_CORPUS_MANIFEST_PATH="${REPLAY_VALIDATION_CORPUS_PATH}"
@@ -5559,6 +5585,42 @@ finalize_decisive_artifact() {
 }
 
 run_decision_benchmark_validation() {
+  if [[ "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT}" != "true" ]]; then
+    local -a builder_args=(
+      tools/build_decision_benchmark.py
+      --replay-report "${REPLAY_VALIDATION_REPORT_PATH}"
+      --feature-csv "${DECISION_EVIDENCE_FEATURE_CSV_PATH}"
+      --corpus-manifest "${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}"
+      --runtime-config "${DECISION_EVIDENCE_RUNTIME_CONFIG_PATH}"
+      --replay-config "${REPLAY_EFFECTIVE_CONFIG_PATH}"
+      --candidate-model "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}"
+      --candidate-report "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}"
+      --validation-config "${DECISION_EVIDENCE_CONFIG_PATH}"
+      --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}"
+      --output-dir "${DECISION_BENCHMARK_BUILD_DIR}"
+      --manifest "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}"
+      --build-report "${DECISION_BENCHMARK_BUILD_REPORT_PATH}"
+    )
+    local feature_mapping="${DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL}"
+    if [[ -z "${feature_mapping}" ]]; then
+      feature_mapping="${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+    fi
+    if [[ -n "${feature_mapping}" ]]; then
+      builder_args+=(--feature-csv-by-symbol "${feature_mapping}")
+    fi
+    if [[ -n "${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}" ]]; then
+      builder_args+=(
+        --corpus-manifest-by-symbol
+        "${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
+      )
+    fi
+    local builder_status=0
+    compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+      "${builder_args[@]}" || builder_status=$?
+    if (( builder_status != 0 )); then
+      echo "[WARN] current-run decision benchmark build failed: status=${builder_status}"
+    fi
+  fi
   local status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/validate_decision_benchmark.py \
@@ -5569,6 +5631,94 @@ run_decision_benchmark_validation() {
   finalize_decisive_artifact \
     decision_benchmark_validation \
     "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" "${status}"
+}
+
+decision_benchmark_paired_input() {
+  local field="$1"
+  DECISION_BENCHMARK_BUILD_REPORT_PATH_VALUE="${DECISION_BENCHMARK_BUILD_REPORT_PATH}" \
+  PAIRED_INPUT_FIELD_VALUE="${field}" \
+  python3 - <<'PY'
+import json
+import os
+import pathlib
+
+try:
+    report = json.loads(
+        pathlib.Path(
+            os.environ["DECISION_BENCHMARK_BUILD_REPORT_PATH_VALUE"]
+        ).read_text(encoding="utf-8")
+    )
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    raise SystemExit(0)
+paired = report.get("paired_inputs") if isinstance(report, dict) else None
+if not isinstance(paired, dict):
+    raise SystemExit(0)
+value = paired.get(os.environ["PAIRED_INPUT_FIELD_VALUE"])
+if isinstance(value, str):
+    print(value)
+elif isinstance(value, dict):
+    print(",".join(f"{key}={value[key]}" for key in sorted(value)))
+PY
+}
+
+write_paired_candidate_preflight_failure() {
+  local exit_code="$1"
+  PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE="${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}" \
+  DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH_VALUE="${DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH}" \
+  DECISION_EVIDENCE_CANDIDATE_MODEL_PATH_VALUE="${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" \
+  DECISION_EVIDENCE_CANDIDATE_REPORT_PATH_VALUE="${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" \
+  EXIT_CODE_VALUE="${exit_code}" \
+  python3 - <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import tempfile
+
+
+def identity(path_text):
+    path = pathlib.Path(path_text)
+    return {
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest()
+        if path.is_file()
+        else "",
+    }
+
+
+preflight_path = pathlib.Path(
+    os.environ["DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH_VALUE"]
+)
+try:
+    preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    preflight = {"status": "UNVERIFIABLE", "errors": ["preflight_report_invalid"]}
+payload = {
+    "schema_version": "paired_evolution_replay_v1",
+    "status": "UNVERIFIABLE",
+    "research_decision_only": True,
+    "promotion_authority": False,
+    "candidate_model": identity(
+        os.environ["DECISION_EVIDENCE_CANDIDATE_MODEL_PATH_VALUE"]
+    ),
+    "candidate_report": identity(
+        os.environ["DECISION_EVIDENCE_CANDIDATE_REPORT_PATH_VALUE"]
+    ),
+    "candidate_preflight": preflight,
+    "commands": [],
+    "mismatches": ["candidate_preflight_failed"],
+    "exit_code": int(os.environ["EXIT_CODE_VALUE"]),
+}
+path = pathlib.Path(os.environ["PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE"])
+path.parent.mkdir(parents=True, exist_ok=True)
+with tempfile.NamedTemporaryFile(
+    mode="w", encoding="utf-8", dir=path.parent, delete=False
+) as handle:
+    temporary = pathlib.Path(handle.name)
+    json.dump(payload, handle, ensure_ascii=True, sort_keys=True, allow_nan=False)
+    handle.write("\n")
+temporary.replace(path)
+PY
 }
 
 run_objective_alignment_validation() {
@@ -5597,18 +5747,49 @@ run_objective_alignment_validation() {
 }
 
 run_paired_evolution_replay_observation() {
-  local status=0
+  local preflight_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
-    tools/run_paired_evolution_replay.py \
-    --runtime-config "${DECISION_EVIDENCE_RUNTIME_CONFIG_PATH}" \
+    tools/build_decision_benchmark.py \
+    --candidate-preflight-only \
     --candidate-model "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" \
     --candidate-report "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" \
-    --feature-csv "${DECISION_EVIDENCE_FEATURE_CSV_PATH}" \
-    --corpus-manifest "${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}" \
-    --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}" \
-    --output-dir "${PAIRED_EVOLUTION_REPLAY_WORK_DIR}" \
-    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
-    || status=$?
+    --build-report "${DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH}" \
+    || preflight_status=$?
+  if (( preflight_status != 0 )); then
+    write_paired_candidate_preflight_failure "${preflight_status}" || return 2
+    return "${preflight_status}"
+  fi
+
+  local paired_feature_csv="${DECISION_EVIDENCE_FEATURE_CSV_PATH}"
+  local paired_corpus_manifest="${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}"
+  local paired_feature_mapping="${DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL}"
+  local paired_corpus_mapping="${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
+  if [[ "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT}" != "true" ]]; then
+    paired_feature_csv="$(decision_benchmark_paired_input feature_csv)"
+    paired_corpus_manifest="$(decision_benchmark_paired_input corpus_manifest)"
+    paired_feature_mapping="$(decision_benchmark_paired_input feature_csv_by_symbol)"
+    paired_corpus_mapping="$(decision_benchmark_paired_input corpus_manifest_by_symbol)"
+  fi
+  local -a paired_args=(
+    tools/run_paired_evolution_replay.py
+    --runtime-config "${DECISION_EVIDENCE_RUNTIME_CONFIG_PATH}"
+    --candidate-model "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}"
+    --candidate-report "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}"
+    --feature-csv "${paired_feature_csv}"
+    --corpus-manifest "${paired_corpus_manifest}"
+    --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}"
+    --output-dir "${PAIRED_EVOLUTION_REPLAY_WORK_DIR}"
+    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}"
+  )
+  if [[ -n "${paired_feature_mapping}" ]]; then
+    paired_args+=(--feature-csv-by-symbol "${paired_feature_mapping}")
+  fi
+  if [[ -n "${paired_corpus_mapping}" ]]; then
+    paired_args+=(--corpus-manifest-by-symbol "${paired_corpus_mapping}")
+  fi
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    "${paired_args[@]}" || status=$?
   local source_manifest="${PAIRED_EVOLUTION_REPLAY_WORK_DIR}/paired_evolution_replay_manifest.json"
   if [[ -s "${source_manifest}" ]]; then
     local copy_status=0
@@ -5669,12 +5850,9 @@ if isinstance(benchmark, dict) and benchmark.get("identity_status") == "VERIFIED
     if isinstance(value, str):
         benchmark_id = value
 
-prepared = {}
-for key in ("benchmark_id", "hypothesis_family_id", "information_set_id"):
-    value = proposal.get(key)
-    if key == "benchmark_id" and value is None:
-        value = benchmark_id
-    prepared[key] = value if isinstance(value, str) else ""
+prepared = dict(proposal)
+if "benchmark_id" not in prepared:
+    prepared["benchmark_id"] = benchmark_id
 
 path = pathlib.Path(os.environ["DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH_VALUE"])
 path.parent.mkdir(parents=True, exist_ok=True)
@@ -6007,12 +6185,12 @@ run_training_chain() {
     skip_collecting_step microstructure_alpha_lifecycle
     skip_collecting_step alpha_source_route
   fi
-  run_decisive_observation_chain
   if (( RUN_REQUIRED_STEP_STATUS == 0 )) &&
      [[ "${ACTIVE_ALPHA_ROUTE}" == "microstructure_demo" ]]; then
     skip_route_step integrator
     skip_route_step replay_candidate_config
     skip_route_step replay_validation
+    run_decisive_observation_chain
     skip_route_step strategy_diagnose
     skip_route_step alpha_mechanism_probe
     skip_route_step model_registry
@@ -6022,10 +6200,14 @@ run_training_chain() {
     run_required_step replay_candidate_config prepare_replay_candidate_config
     if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
       run_collecting_step replay_validation run_replay_validation
+    else
+      skip_collecting_step replay_validation
+    fi
+    run_decisive_observation_chain
+    if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
       run_collecting_step strategy_diagnose run_strategy_diagnose
       run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
     else
-      skip_collecting_step replay_validation
       skip_collecting_step strategy_diagnose
       skip_collecting_step alpha_mechanism_probe
     fi

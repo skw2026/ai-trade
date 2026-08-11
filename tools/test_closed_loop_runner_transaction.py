@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import hashlib
 import os
 import pathlib
 import subprocess
@@ -39,6 +40,52 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
         "decision_evidence_report.json",
     ]
 
+    @staticmethod
+    def _proposal_payload():
+        information_definition = {
+            "actions": "frozen",
+            "data": "current-run",
+            "features": "current-run",
+        }
+        information_id = hashlib.sha256(
+            json.dumps(
+                information_definition,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        ).hexdigest()
+        family_definition = {"mechanism": "self-evolution", "target": "uplift"}
+        family_id = hashlib.sha256(
+            json.dumps(
+                {
+                    "information_set_id": information_id,
+                    "hypothesis_family_definition": family_definition,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        ).hexdigest()
+        return {
+            "experiment_id": "exp-current-run",
+            "validation_policy_sha256": "d" * 64,
+            "information_set_definition": information_definition,
+            "information_set_id": information_id,
+            "hypothesis_family_definition": family_definition,
+            "hypothesis_family_id": family_id,
+            "display_name": "current run",
+            "changed_dimensions": [
+                {"name": "self_evolution.enabled", "before": False, "after": True}
+            ],
+            "expected_direction": "increase",
+            "stop_condition": {"metric": "uplift_lcb", "operator": "gt", "value": 0.0},
+            "registered_at": "2026-08-12T00:00:00Z",
+            "earliest_result_at": "2026-08-12T01:00:00Z",
+            "earliest_result_identity": "not_available",
+            "result_source_identity": "e" * 64,
+        }
+
     def _write_fake_observation_python(self, root):
         fake_bin = root / "bin"
         fake_bin.mkdir()
@@ -54,6 +101,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
 
                 real_python = os.environ["REAL_PYTHON"]
                 known = {
+                    "build_decision_benchmark.py",
                     "validate_decision_benchmark.py",
                     "validate_objective_alignment.py",
                     "run_paired_evolution_replay.py",
@@ -92,7 +140,44 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
 
                 benchmark_id = "b" * 64
                 omit = os.environ.get("FAKE_OMIT_ARTIFACT_TOOL") == tool
-                if tool == "validate_decision_benchmark.py" and not omit:
+                exit_status = 0
+                if tool == "build_decision_benchmark.py" and not omit:
+                    candidate_model = pathlib.Path(option("--candidate-model"))
+                    candidate_report = pathlib.Path(option("--candidate-report"))
+                    verified = candidate_model.is_file() and candidate_report.is_file()
+                    if "--candidate-preflight-only" in args:
+                        write(
+                            option("--build-report"),
+                            {
+                                "schema_version": "integrator_candidate_preflight_v1",
+                                "status": "VERIFIED" if verified else "UNVERIFIABLE",
+                                "errors": [] if verified else ["candidate_missing"],
+                            },
+                        )
+                    else:
+                        manifest_path = option("--manifest")
+                        paired_root = pathlib.Path(option("--output-dir")) / "paired_inputs"
+                        paired_corpus = paired_root / "BTCUSDT" / "corpus.json"
+                        if verified:
+                            write(paired_corpus, {"candidate_set_frozen": True})
+                            write(manifest_path, {"schema_version": "decision_evidence_benchmark_v1"})
+                        write(
+                            option("--build-report"),
+                            {
+                                "schema_version": "decision_evidence_benchmark_build_v1",
+                                "status": "VERIFIED" if verified else "UNVERIFIABLE",
+                                "paired_inputs": {
+                                    "feature_csv": option("--feature-csv"),
+                                    "corpus_manifest": str(paired_corpus),
+                                    "feature_csv_by_symbol": {},
+                                    "corpus_manifest_by_symbol": {},
+                                },
+                                "errors": [] if verified else ["candidate_missing"],
+                            },
+                        )
+                    if not verified:
+                        exit_status = 2
+                elif tool == "validate_decision_benchmark.py" and not omit:
                     write(
                         option("--output"),
                         {
@@ -141,6 +226,8 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                                 "schema_version": "experiment_budget_ledger_decision_v1",
                                 "decision": "ALLOW_NEXT_EXPERIMENT",
                                 "benchmark_id": benchmark_id,
+                                "experiment_id": "exp-current-run",
+                                "registration_verified": True,
                             },
                             sort_keys=True,
                         )
@@ -159,7 +246,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                         },
                     )
                 raise SystemExit(
-                    19 if os.environ.get("FAKE_FAIL_TOOL") == tool else 0
+                    19 if os.environ.get("FAKE_FAIL_TOOL") == tool else exit_status
                 )
                 '''
             ),
@@ -170,14 +257,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
 
     def _run_decisive_chain(self, root, body, fail_tool="", omit_tool=""):
         fake_bin = self._write_fake_observation_python(root)
-        proposal = json.dumps(
-            {
-                "benchmark_id": "b" * 64,
-                "hypothesis_family_id": "a" * 64,
-                "information_set_id": "c" * 64,
-            },
-            sort_keys=True,
-        )
+        proposal = json.dumps(self._proposal_payload(), sort_keys=True)
         script = textwrap.dedent(
             r'''
             set -euo pipefail
@@ -208,6 +288,10 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
               done
               return 0
             }
+            mkdir -p "${TMP_ROOT}/inputs"
+            printf 'current-run-model\n' > "${TMP_ROOT}/inputs/candidate.cbm"
+            printf '{"model_version":"current-run"}\n' \
+              > "${TMP_ROOT}/inputs/candidate.json"
             '''
         ) + textwrap.dedent(body)
         return subprocess.run(
@@ -222,6 +306,92 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 "PROPOSAL_JSON": proposal,
                 "FAKE_FAIL_TOOL": fail_tool,
                 "FAKE_OMIT_ARTIFACT_TOOL": omit_tool,
+                "FAKE_RESEARCH_DECISION": "CONTINUE",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def _run_auto_training_chain(self, root, route):
+        fake_bin = self._write_fake_observation_python(root)
+        proposal = json.dumps(self._proposal_payload(), sort_keys=True)
+        script = textwrap.dedent(
+            r'''
+            set -euo pipefail
+            export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+            export CLOSED_LOOP_RUN_ID=auto-decisive-inputs
+            source tools/closed_loop_runner.sh full \
+              --output-root "${TMP_ROOT}/reports" \
+              --decision-evidence-config "${TMP_ROOT}/inputs/policy.json" \
+              --decision-evidence-runtime-config "${TMP_ROOT}/inputs/runtime.yaml" \
+              --decision-evidence-ledger "${TMP_ROOT}/inputs/ledger.jsonl" \
+              --decision-evidence-ledger-proposal "${PROPOSAL_JSON}"
+
+            compose_cmd() {
+              while (( $# > 0 )); do
+                if [[ "$1" == "ai-trade-research" ]]; then
+                  shift
+                  python3 "$@"
+                  return $?
+                fi
+                shift
+              done
+              return 0
+            }
+            run_freeze_baseline() { return 0; }
+            prepare_training_data() { return 0; }
+            run_research_domain_split() { return 0; }
+            run_feature_parity() { return 0; }
+            run_data_quality() { return 0; }
+            run_miner() { return 0; }
+            run_market_alpha_development_gate() { return 0; }
+            run_microstructure_capture_gate() { return 0; }
+            run_microstructure_alpha_development_gate() { return 0; }
+            run_microstructure_alpha_lifecycle_gate() { return 0; }
+            run_alpha_source_route_gate() {
+              printf '{"selected_route":"%s"}\n' "${ROUTE_VALUE}" \
+                > "${ALPHA_SOURCE_ROUTE_REPORT_PATH}"
+            }
+            run_integrator() {
+              printf 'integrator-model\n' > "${MODEL_OUTPUT_PATH}"
+              printf '{"model_version":"integrator-current-run"}\n' \
+                > "${INTEGRATOR_REPORT_PATH}"
+            }
+            prepare_replay_candidate_config() {
+              printf 'self_evolution: {enabled: false}\n' \
+                > "${REPLAY_CANDIDATE_CONFIG_PATH}"
+            }
+            run_replay_validation() {
+              mkdir -p "$(dirname "${REPLAY_VALIDATION_CORPUS_PATH}")"
+              printf 'timestamp,open,high,low,close,volume\n' \
+                > "${RESEARCH_HOLDOUT_FEATURE_PATH}"
+              printf '{"candidate_set_frozen":true}\n' \
+                > "${REPLAY_VALIDATION_CORPUS_PATH}"
+              printf '{"runs":[],"status":"fail"}\n' \
+                > "${REPLAY_VALIDATION_REPORT_PATH}"
+            }
+            run_strategy_diagnose() { return 0; }
+            run_alpha_mechanism_probe() { return 0; }
+            run_registry() { return 0; }
+            run_microstructure_demo_binding_gate() {
+              touch "${TMP_ROOT}/micro-demo-called"
+            }
+
+            run_training_chain
+            '''
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+                "REAL_PYTHON": sys.executable,
+                "OBSERVATION_LOG": str(root / "observation_commands.jsonl"),
+                "TMP_ROOT": str(root),
+                "PROPOSAL_JSON": proposal,
+                "ROUTE_VALUE": route,
                 "FAKE_RESEARCH_DECISION": "CONTINUE",
             },
             text=True,
@@ -265,7 +435,12 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 .splitlines()
             ]
             self.assertEqual(
-                [item["tool"] for item in commands], self.DECISIVE_TOOLS
+                [
+                    item["tool"]
+                    for item in commands
+                    if item["tool"] in self.DECISIVE_TOOLS
+                ],
+                self.DECISIVE_TOOLS,
             )
             run_dir = root / "reports" / "decisive-observation-test"
             for artifact in self.DECISIVE_ARTIFACTS:
@@ -293,8 +468,18 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 all(item["research_decision_only"] is True for item in decisive)
             )
             self.assertNotIn("skipped", {item["result"] for item in decisive})
+            status_steps = [item["step"] for item in statuses]
+            self.assertLess(
+                status_steps.index("integrator"),
+                status_steps.index("decision_benchmark_validation"),
+            )
+            self.assertLess(
+                status_steps.index("replay_validation"),
+                status_steps.index("decision_benchmark_validation"),
+            )
 
-            objective_args = commands[1]["args"]
+            by_tool = {item["tool"]: item for item in commands}
+            objective_args = by_tool["validate_objective_alignment.py"]["args"]
             self.assertNotIn("--evidence", objective_args)
             for option in (
                 "--miner-report",
@@ -303,14 +488,20 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 "--online-tuner-report",
             ):
                 self.assertIn(option, objective_args)
-            paired_args = commands[2]["args"]
+            paired_args = by_tool["run_paired_evolution_replay.py"]["args"]
             self.assertEqual(
                 paired_args[paired_args.index("--trade-bot") + 1],
                 "/app/trade_bot",
             )
-            ledger_args = commands[4]["args"]
+            ledger_args = by_tool["experiment_budget_ledger.py"]["args"]
             proposal_arg = ledger_args[ledger_args.index("--request-json") + 1]
             self.assertTrue(proposal_arg.startswith("@"), proposal_arg)
+            prepared_proposal = json.loads(
+                pathlib.Path(proposal_arg[1:]).read_text(encoding="utf-8")
+            )
+            expected_proposal = self._proposal_payload()
+            expected_proposal["benchmark_id"] = "b" * 64
+            self.assertEqual(prepared_proposal, expected_proposal)
 
             manifest = json.loads(
                 (run_dir / "run_manifest.json").read_text(encoding="utf-8")
@@ -358,7 +549,12 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                     .splitlines()
                 ]
                 self.assertEqual(
-                    [item["tool"] for item in commands], self.DECISIVE_TOOLS
+                    [
+                        item["tool"]
+                        for item in commands
+                        if item["tool"] in self.DECISIVE_TOOLS
+                    ],
+                    self.DECISIVE_TOOLS,
                 )
                 run_dir = root / "reports" / "decisive-observation-test"
                 for artifact in self.DECISIVE_ARTIFACTS:
@@ -404,6 +600,169 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
             self.assertEqual(report["research_decision"], "CONTINUE")
             self.assertTrue(report["research_decision_only"])
             self.assertFalse(report["promotion_authority"])
+
+    def test_default_decisive_inputs_are_current_run_integrator_and_replay_outputs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            script = textwrap.dedent(
+                r'''
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=current-run-defaults
+                source tools/closed_loop_runner.sh full \
+                  --output-root "${TMP_ROOT}/reports" \
+                  --replay-validation-corpus-path "${TMP_ROOT}/current-corpus.json"
+                printf '%s\n' \
+                  "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" \
+                  "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" \
+                  "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" \
+                  "${DECISION_EVIDENCE_FEATURE_CSV_PATH}" \
+                  "${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}"
+                '''
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "TMP_ROOT": str(root),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            values = result.stdout.splitlines()[-5:]
+            run_dir = root / "reports" / "current-run-defaults"
+            self.assertEqual(
+                values,
+                [
+                    str(run_dir / "decision_evidence_benchmark.json"),
+                    str(run_dir / "integrator_latest.cbm"),
+                    str(run_dir / "integrator_report.json"),
+                    str(run_dir / "research_holdout_feature_5m.csv"),
+                    str(root / "current-corpus.json"),
+                ],
+            )
+
+    def test_auto_benchmark_consumes_current_integrator_and_replay_outputs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_auto_training_chain(root, "legacy_integrator")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            run_dir = root / "reports" / "auto-decisive-inputs"
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            builders = [
+                item
+                for item in commands
+                if item["tool"] == "build_decision_benchmark.py"
+            ]
+            self.assertEqual(len(builders), 2)
+            full_builder = next(
+                item
+                for item in builders
+                if "--candidate-preflight-only" not in item["args"]
+            )
+            self.assertEqual(
+                full_builder["args"][full_builder["args"].index("--candidate-model") + 1],
+                str(run_dir / "integrator_latest.cbm"),
+            )
+            self.assertEqual(
+                full_builder["args"][full_builder["args"].index("--candidate-report") + 1],
+                str(run_dir / "integrator_report.json"),
+            )
+            self.assertEqual(
+                full_builder["args"][full_builder["args"].index("--corpus-manifest") + 1],
+                str(
+                    run_dir
+                    / "replay_validation"
+                    / "replay_validation_trend_corpus.json"
+                ),
+            )
+            paired = next(
+                item
+                for item in commands
+                if item["tool"] == "run_paired_evolution_replay.py"
+            )
+            self.assertEqual(
+                paired["args"][paired["args"].index("--candidate-model") + 1],
+                str(run_dir / "integrator_latest.cbm"),
+            )
+            self.assertIn(
+                str(
+                    run_dir
+                    / "decision_benchmark_build"
+                    / "paired_inputs"
+                    / "BTCUSDT"
+                    / "corpus.json"
+                ),
+                paired["args"],
+            )
+            self.assertTrue((run_dir / "decision_evidence_benchmark.json").is_file())
+            statuses = [
+                json.loads(line)
+                for line in (run_dir / "step_status.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            steps = [item["step"] for item in statuses]
+            self.assertLess(steps.index("integrator"), steps.index(self.DECISIVE_STEPS[0]))
+            self.assertLess(
+                steps.index("replay_validation"), steps.index(self.DECISIVE_STEPS[0])
+            )
+            self.assertLess(
+                steps.index(self.DECISIVE_STEPS[-1]), steps.index("strategy_diagnose")
+            )
+
+    def test_micro_route_never_uses_micro_sidecar_as_integrator_candidate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_auto_training_chain(root, "microstructure_demo")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            run_dir = root / "reports" / "auto-decisive-inputs"
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertNotIn(
+                "run_paired_evolution_replay.py",
+                [item["tool"] for item in commands],
+            )
+            for item in commands:
+                if item["tool"] == "build_decision_benchmark.py":
+                    candidate = item["args"][item["args"].index("--candidate-model") + 1]
+                    self.assertEqual(candidate, str(run_dir / "integrator_latest.cbm"))
+                    self.assertNotIn("microstructure", candidate)
+            paired = json.loads(
+                (run_dir / "paired_evolution_replay.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(paired["schema_version"], "paired_evolution_replay_v1")
+            self.assertEqual(paired["status"], "UNVERIFIABLE")
+            self.assertIn("candidate_preflight_failed", paired["mismatches"])
+            statuses = [
+                json.loads(line)
+                for line in (run_dir / "step_status.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            steps = [item["step"] for item in statuses]
+            self.assertEqual(
+                [item["step"] for item in statuses if item["step"] in self.DECISIVE_STEPS],
+                self.DECISIVE_STEPS,
+            )
+            self.assertLess(
+                steps.index(self.DECISIVE_STEPS[-1]),
+                steps.index("microstructure_demo_binding"),
+            )
+            self.assertTrue((root / "micro-demo-called").is_file())
 
     def test_runner_rejects_invalid_lock_wait(self):
         result = subprocess.run(
