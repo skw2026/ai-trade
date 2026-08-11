@@ -14,6 +14,10 @@ services:
       AI_TRADE_BYBIT_TESTNET_API_SECRET: ${AI_TRADE_BYBIT_TESTNET_API_SECRET:-}
       AI_TRADE_BYBIT_DEMO_API_KEY: ${AI_TRADE_BYBIT_DEMO_API_KEY:-}
       AI_TRADE_BYBIT_DEMO_API_SECRET: ${AI_TRADE_BYBIT_DEMO_API_SECRET:-}
+      # Legacy migration fallback; the runtime remains locked to Demo config
+      # and dedicated mainnet variables are intentionally never injected.
+      AI_TRADE_API_KEY: ${AI_TRADE_API_KEY:-}
+      AI_TRADE_API_SECRET: ${AI_TRADE_API_SECRET:-}
     volumes:
       - ${AI_TRADE_PROJECT_DIR:-.}/data:/app/data
       - ${AI_TRADE_PROJECT_DIR:-.}/config:/app/config:ro

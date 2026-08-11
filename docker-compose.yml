@@ -13,6 +13,9 @@ services:
       AI_TRADE_BYBIT_TESTNET_API_SECRET: ${AI_TRADE_BYBIT_TESTNET_API_SECRET:-}
       AI_TRADE_BYBIT_DEMO_API_KEY: ${AI_TRADE_BYBIT_DEMO_API_KEY:-}
       AI_TRADE_BYBIT_DEMO_API_SECRET: ${AI_TRADE_BYBIT_DEMO_API_SECRET:-}
+      # Legacy migration fallback; dedicated Demo variables remain preferred.
+      AI_TRADE_API_KEY: ${AI_TRADE_API_KEY:-}
+      AI_TRADE_API_SECRET: ${AI_TRADE_API_SECRET:-}
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data

@@ -242,6 +242,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.prod_services["ai-trade"],
         ):
             self.assertIn("AI_TRADE_BYBIT_DEMO_API_KEY", runtime)
+            self.assertIn("AI_TRADE_API_KEY", runtime)
+            self.assertIn("AI_TRADE_API_SECRET", runtime)
             self.assertNotIn("AI_TRADE_BYBIT_MAINNET_API_KEY", runtime)
             self.assertNotIn("AI_TRADE_BYBIT_MAINNET_API_SECRET", runtime)
         self.assertTrue(DEMO_INCUBATION_POLICY.is_file())
@@ -1155,6 +1157,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("startup preflight image pull failed", script)
+        self.assertIn("startup_preflight_credentials_missing", script)
+        self.assertIn('failure_class="authentication_failed"', script)
+        self.assertIn('"startup_preflight_${failure_class}"', script)
+        self.assertIn("DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS", script)
+        self.assertIn("credential_source=${credential_source}", script)
         self.assertIn(
             "startup preflight failed before managed service mutation",
             script,

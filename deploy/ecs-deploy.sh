@@ -36,6 +36,8 @@ CLOSED_LOOP_STRICT_PASS="${CLOSED_LOOP_STRICT_PASS:-true}"
 CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"
 GATE_DEFER_SERVICES="${GATE_DEFER_SERVICES:-watchdog scheduler ai-trade-web}"
 DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"
+DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS="${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS:-3}"
+DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS="${DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS:-10}"
 DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"
 DEPLOY_GC_TRIGGER_FREE_BYTES="${DEPLOY_GC_TRIGGER_FREE_BYTES:-4294967296}"
 DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1073741824}"
@@ -55,6 +57,7 @@ DEPLOY_CURRENT_LINK="${DEPLOY_CURRENT_LINK:-}"
 DEPLOY_TRANSACTION_GUARD_ACTIVE="false"
 DEPLOY_TRANSACTION_COMMITTED="false"
 DEPLOY_ROLLBACK_ATTEMPTED="false"
+STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_failed"
 DEPLOY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_MATERIALIZER="${DEPLOY_SCRIPT_DIR}/materialize_release_compose.py"
 DEPLOY_GATE_VALIDATOR="${DEPLOY_SCRIPT_DIR}/validate_deploy_gate.py"
@@ -99,6 +102,14 @@ if [[ ! -f "${DEPLOY_DIAGNOSTICS_WRITER}" ]]; then
 fi
 if [[ ! "${DEPLOY_LOCK_WAIT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
   echo "[deploy] invalid DEPLOY_LOCK_WAIT_SECONDS: ${DEPLOY_LOCK_WAIT_SECONDS}"
+  exit 1
+fi
+if [[ ! "${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "[deploy] invalid DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS: ${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS}"
+  exit 1
+fi
+if [[ ! "${DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS}" =~ ^[0-9]+$ ]]; then
+  echo "[deploy] invalid DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS: ${DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS}"
   exit 1
 fi
 
@@ -1301,6 +1312,7 @@ PY
 }
 
 run_startup_preflight() {
+  STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_failed"
   if ! is_true "${DEPLOY_STARTUP_PREFLIGHT}"; then
     echo "[deploy] startup preflight skipped (DEPLOY_STARTUP_PREFLIGHT=${DEPLOY_STARTUP_PREFLIGHT})"
     return 0
@@ -1313,25 +1325,89 @@ run_startup_preflight() {
   local runtime_config
   local runtime_exchange
   local preflight_status=0
+  local preflight_output=""
+  local failure_class="exchange_connection_failed"
+  local demo_api_key=""
+  local demo_api_secret=""
+  local legacy_api_key=""
+  local legacy_api_secret=""
+  local effective_api_key=""
+  local effective_api_secret=""
+  local credential_source="mixed"
   runtime_config="$(read_env_value "AI_TRADE_CONFIG_PATH" "config/bybit.demo.s5.yaml")"
   runtime_exchange="$(read_env_value "AI_TRADE_EXCHANGE" "bybit")"
 
-  echo "[deploy] startup preflight start: image=${AI_TRADE_IMAGE}, config=${runtime_config}, exchange=${runtime_exchange}"
-  if ! "${compose_cmd[@]}" pull ai-trade; then
-    echo "[deploy] startup preflight image pull failed"
+  demo_api_key="$(read_env_value "AI_TRADE_BYBIT_DEMO_API_KEY" "")"
+  demo_api_secret="$(read_env_value "AI_TRADE_BYBIT_DEMO_API_SECRET" "")"
+  legacy_api_key="$(read_env_value "AI_TRADE_API_KEY" "")"
+  legacy_api_secret="$(read_env_value "AI_TRADE_API_SECRET" "")"
+  effective_api_key="${demo_api_key:-${legacy_api_key}}"
+  effective_api_secret="${demo_api_secret:-${legacy_api_secret}}"
+  if [[ -z "${effective_api_key}" || -z "${effective_api_secret}" ]]; then
+    STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_credentials_missing"
+    echo "[deploy] startup preflight failed: demo credential pair is unavailable"
     return 1
   fi
-  "${compose_cmd[@]}" run --rm --no-deps ai-trade \
-    --config="${runtime_config}" \
-    --exchange="${runtime_exchange}" \
-    --check-startup || preflight_status=$?
-  if (( preflight_status != 0 )); then
-    echo "[deploy] startup preflight failed: status=${preflight_status}"
-    echo "[deploy] target image was not promoted; check runtime credentials/config before retry"
-    return "${preflight_status}"
+  if [[ -n "${demo_api_key}" && -n "${demo_api_secret}" ]]; then
+    credential_source="demo_dedicated"
+  elif [[ -z "${demo_api_key}" && -z "${demo_api_secret}" ]]; then
+    credential_source="legacy_fallback"
   fi
-  echo "[deploy] startup preflight passed"
-  return 0
+
+  echo "[deploy] startup preflight start: image=${AI_TRADE_IMAGE}, config=${runtime_config}, exchange=${runtime_exchange}, credential_source=${credential_source}, attempts=${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS}"
+  if ! "${compose_cmd[@]}" pull ai-trade; then
+    echo "[deploy] startup preflight image pull failed"
+    STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_image_pull_failed"
+    return 1
+  fi
+
+  local attempt=0
+  for ((attempt = 1; attempt <= DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS; attempt++)); do
+    preflight_status=0
+    preflight_output=""
+    if preflight_output="$(
+      "${compose_cmd[@]}" run --rm --no-deps ai-trade \
+        --config="${runtime_config}" \
+        --exchange="${runtime_exchange}" \
+        --check-startup 2>&1
+    )"; then
+      if [[ -n "${preflight_output}" ]]; then
+        printf '%s\n' "${preflight_output}"
+      fi
+      echo "[deploy] startup preflight passed: attempt=${attempt}"
+      STARTUP_PREFLIGHT_FAILURE_REASON=""
+      return 0
+    else
+      preflight_status=$?
+    fi
+    if [[ -n "${preflight_output}" ]]; then
+      printf '%s\n' "${preflight_output}"
+    fi
+
+    failure_class="exchange_connection_failed"
+    case "${preflight_output}" in
+      *"缺少API密钥"*|*"missing API key"*)
+        failure_class="credentials_missing"
+        ;;
+      *"10003"*|*"API key is invalid"*|*"authentication"*|*"认证失败"*)
+        failure_class="authentication_failed"
+        ;;
+      *"timestamp"*|*"recv_window"*|*"时间戳"*)
+        failure_class="clock_skew"
+        ;;
+    esac
+    STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_${failure_class}"
+    echo "[deploy] startup preflight failed: attempt=${attempt}/${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS} status=${preflight_status} class=${failure_class}"
+    if [[ "${failure_class}" == "credentials_missing" ||
+          "${failure_class}" == "authentication_failed" ]]; then
+      break
+    fi
+    if (( attempt < DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS )); then
+      sleep "${DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS}"
+    fi
+  done
+  echo "[deploy] target image was not promoted; check the classified startup preflight failure"
+  return "${preflight_status}"
 }
 
 if [[ -n "${GHCR_USER:-}" && -n "${GHCR_TOKEN:-}" ]]; then
@@ -1512,7 +1588,7 @@ upsert_env "AI_TRADE_ENV_FILE" "/run/ai-trade/.env.runtime"
 if ! run_startup_preflight; then
   echo "[deploy] startup preflight failed before managed service mutation"
   record_deployment_diagnostics \
-    "startup_preflight" "FAIL" "startup_preflight_failed" \
+    "startup_preflight" "FAIL" "${STARTUP_PREFLIGHT_FAILURE_REASON}" \
     "${initial_required_containers[@]}"
   if ! restore_previous_env_identity; then
     echo "[deploy] startup preflight env restore failed"
