@@ -44,38 +44,80 @@ def config_sha256(policy=None):
     return hashlib.sha256(config_bytes(policy)).hexdigest()
 
 
+def component_identity(name, logical_names, sha_by_name=None):
+    sha_by_name = sha_by_name or {}
+    return {
+        "logical_id": f"{name}-v1",
+        "files": [
+            {
+                "logical_name": logical_name,
+                "sha256": sha_by_name.get(
+                    logical_name,
+                    hashlib.sha256(f"{name}:{logical_name}".encode("ascii")).hexdigest(),
+                ),
+            }
+            for logical_name in sorted(logical_names)
+        ],
+    }
+
+
 def benchmark_report(block_count=5, policy=None, policy_sha256=None):
     policy = copy.deepcopy(policy if policy is not None else config())
     policy_sha256 = policy_sha256 or config_sha256(policy)
     blocks = []
+    execution_hashes = {}
     for index in range(block_count):
+        block_id = f"block-{index + 1:02d}"
+        execution_id = f"{block_id}:BTCUSDT"
+        event_sha256 = f"{index + 2:064x}"
+        execution_hashes[f"execution:{execution_id}"] = event_sha256
         blocks.append(
             {
-                "block_id": f"block-{index + 1:02d}",
+                "block_id": block_id,
                 "start_timestamp_ms": index * 1000,
                 "end_timestamp_ms": index * 1000 + 999,
-                "event_sha256": f"{index + 2:064x}",
+                "event_sha256": event_sha256,
                 "cells": [{"symbol": "BTCUSDT", "entry_regime": "trend"}],
+                "executions": [
+                    {
+                        "execution_id": execution_id,
+                        "symbol": "BTCUSDT",
+                        "planned_entry_regimes": ["trend"],
+                        "event_sha256": event_sha256,
+                    }
+                ],
             }
         )
     canonical_identity = {
         "schema_version": "decision_evidence_benchmark_v1",
         "components": {
-            name: {
-                "logical_id": f"{name}-v1",
-                "files": [{"logical_name": name, "sha256": f"{index + 100:064x}"}],
-            }
-            for index, name in enumerate(
+            "data": component_identity(
+                "data", execution_hashes, sha_by_name=execution_hashes
+            ),
+            "split": component_identity(
+                "split", ("corpus:BTCUSDT", "replay_validation_report")
+            ),
+            "cost": component_identity(
+                "cost", ("replay_candidate_config", "runtime_config")
+            ),
+            "features": component_identity("features", ("feature:BTCUSDT",)),
+            "actions": component_identity(
+                "actions", ("replay_policy", "runtime_policy")
+            ),
+            "baseline_policy": component_identity(
+                "baseline_policy", ("candidate_model", "candidate_report")
+            ),
+            "run_config": component_identity(
+                "run_config", ("decision_evidence_validation", "runtime_config")
+            ),
+            "implementation": component_identity(
+                "implementation",
                 (
-                    "data",
-                    "split",
-                    "cost",
-                    "features",
-                    "actions",
-                    "baseline_policy",
-                    "run_config",
-                    "implementation",
-                )
+                    "benchmark_builder",
+                    "paired_evolution_runner",
+                    "replay_validation_runner",
+                    "trade_bot",
+                ),
             )
         },
         "evaluation_universe": {"blocks": blocks},
@@ -271,11 +313,38 @@ class ObjectiveAlignmentValidationTest(unittest.TestCase):
 
         overlapping = benchmark_report()
         overlapping["canonical_identity"]["evaluation_universe"]["blocks"][1]["start_timestamp_ms"] = 999
-        report = self.validate(benchmark=overlapping)
+        overlapping["benchmark_id"] = canonical_sha256(overlapping["canonical_identity"])
+        overlapping_evidence = evidence()
+        overlapping_evidence["benchmark_id"] = overlapping["benchmark_id"]
+        report = self.validate(payload=overlapping_evidence, benchmark=overlapping)
         self.assertTrue(
             all(section["status"] == "UNVERIFIABLE" for section in report["subsystems"].values())
         )
-        self.assertIn("benchmark.evaluation_universe.non_overlapping", report["missing_fields"])
+        self.assertIn(
+            "benchmark.canonical_identity.evaluation_universe.blocks=non_overlapping",
+            report["missing_fields"],
+        )
+
+    def test_self_rehashed_malformed_universe_is_unverifiable(self):
+        malformed = benchmark_report()
+        malformed["canonical_identity"]["evaluation_universe"] = {"blocks": [{}]}
+        malformed["benchmark_id"] = canonical_sha256(malformed["canonical_identity"])
+        payload = evidence()
+        payload["benchmark_id"] = malformed["benchmark_id"]
+
+        report = self.validate(payload=payload, benchmark=malformed)
+
+        self.assertEqual(report["overall_status"], "UNVERIFIABLE")
+        self.assertTrue(
+            all(section["status"] == "UNVERIFIABLE" for section in report["subsystems"].values())
+        )
+        self.assertTrue(
+            any(
+                item.startswith("benchmark.canonical_identity.evaluation_universe")
+                for item in report["missing_fields"]
+            ),
+            report["missing_fields"],
+        )
 
     def test_alignment_policy_cannot_drift_from_the_frozen_v1_contract(self):
         drifted = config()
