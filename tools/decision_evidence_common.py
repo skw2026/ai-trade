@@ -648,6 +648,45 @@ def _validate_components(
     return drifts, identity
 
 
+def _strict_identity_contract_drifts(
+    components_identity: dict[str, Any], universe_identity: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Apply the consumer's strict canonical contract before producer approval."""
+
+    universe_errors, symbols, execution_hashes = (
+        _validate_canonical_evaluation_universe(universe_identity)
+    )
+    errors = [
+        *universe_errors,
+        *_validate_canonical_components(
+            components_identity,
+            symbols=symbols,
+            execution_hashes=execution_hashes,
+        ),
+    ]
+    drifts: list[dict[str, Any]] = []
+    component_prefix = "benchmark.canonical_identity.components."
+    universe_prefix = "benchmark.canonical_identity.evaluation_universe"
+    for error in sorted(set(errors)):
+        if error.startswith(component_prefix):
+            remainder = error[len(component_prefix) :]
+            component = remainder.split(".", 1)[0] or "components"
+        elif error.startswith(universe_prefix):
+            component = "evaluation_universe"
+        else:
+            component = "canonical_contract"
+        drifts.append(
+            _drift(
+                component,
+                "",
+                error,
+                "strict canonical contract",
+                "invalid",
+            )
+        )
+    return drifts
+
+
 def _validation_policy_binding(
     manifest: dict[str, Any],
     root: pathlib.Path,
@@ -1180,6 +1219,13 @@ def validate_benchmark(
     drifts.extend(component_drifts)
     drifts.extend(universe_drifts)
     drifts.extend(policy_drifts)
+    if not component_drifts and not universe_drifts:
+        drifts.extend(
+            _strict_identity_contract_drifts(
+                components_identity,
+                universe_identity,
+            )
+        )
     drifts.sort(key=_drift_sort_key)
 
     report: dict[str, Any] = {

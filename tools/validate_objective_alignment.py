@@ -870,13 +870,24 @@ def _read_optional(path: str | None) -> Any:
 
 def _write_json(path: pathlib.Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, delete=False
-    ) as handle:
-        temporary = pathlib.Path(handle.name)
-        json.dump(payload, handle, indent=2, ensure_ascii=False, allow_nan=False)
-        handle.write("\n")
-    temporary.replace(path)
+    temporary: pathlib.Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f"{path.name}.tmp.",
+            delete=False,
+        ) as handle:
+            temporary = pathlib.Path(handle.name)
+            json.dump(payload, handle, indent=2, ensure_ascii=False, allow_nan=False)
+            handle.write("\n")
+        temporary.replace(path)
+    except Exception:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        path.unlink(missing_ok=True)
+        raise
 
 
 def parse_args() -> argparse.Namespace:

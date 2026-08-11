@@ -323,6 +323,26 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
             ],
         )
 
+    def test_file_backed_producer_rejects_renamed_fixed_logical_names(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            manifest = self.fixtures(root)
+            split_files = manifest["components"]["split"]["files"]
+            split_files[0]["logical_name"] = "renamed-replay-report"
+            split_files[1]["logical_name"] = "renamed-corpus"
+
+            report = self.assert_unverifiable(manifest, root)
+
+        self.assertTrue(
+            any(
+                "components.split.files.logical_names" in item["field"]
+                for item in report["drifts"]
+            ),
+            report["drifts"],
+        )
+        self.assertNotIn("benchmark_id", report)
+        self.assertNotIn("canonical_identity", report)
+
     def test_consumer_rejects_self_rehashed_incomplete_contract_and_empty_block(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)

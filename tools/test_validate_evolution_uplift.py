@@ -11,6 +11,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 def load_module():
@@ -231,6 +232,44 @@ def policy_payload(enabled):
     }
 
 
+def input_binding_audit(benchmark):
+    rows = []
+    components = benchmark["canonical_identity"]["components"]
+    for component in (
+        "data",
+        "split",
+        "cost",
+        "features",
+        "actions",
+        "baseline_policy",
+        "run_config",
+        "implementation",
+    ):
+        for item in components[component]["files"]:
+            logical_name = item["logical_name"]
+            if component == "data":
+                symbol = logical_name.rsplit(":", 1)[-1]
+            elif component == "features" or (
+                component == "split" and logical_name.startswith("corpus:")
+            ):
+                symbol = logical_name.split(":", 1)[1]
+            else:
+                symbol = None
+            rows.append(
+                {
+                    "component": component,
+                    "logical_name": logical_name,
+                    "input_name": f"fixture_{component}_{logical_name}",
+                    "symbol": symbol,
+                    "path": f"/verified/{component}/{logical_name}",
+                    "expected_sha256": item["sha256"],
+                    "actual_sha256": item["sha256"],
+                    "status": "VERIFIED",
+                }
+            )
+    return rows
+
+
 def full_episode(
     *,
     arm,
@@ -418,9 +457,11 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
     }
     exact_blocks = []
     for index, block in enumerate(benchmark_blocks):
+        v1_block = copy.deepcopy(block)
+        v1_block.pop("executions", None)
         exact_blocks.append(
             {
-                **copy.deepcopy(block),
+                **v1_block,
                 "symbol": block["cells"][0]["symbol"],
                 "segment_identity_sha256": f"{index + 100:064x}",
                 "replay_csv": f"/frozen/replay/block-{index + 1:02d}.csv",
@@ -499,6 +540,7 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
         "demo_activation_authorized": False,
         "live_activation_authorized": False,
         "benchmark_id": benchmark["benchmark_id"],
+        "input_binding_audit": input_binding_audit(benchmark),
         "common_policy": {
             "schema_version": "paired_common_execution_policy_v1",
             "excluded_paths": ["self_evolution.enabled"],
@@ -518,6 +560,7 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
         },
         "trade_bot": {"path": "/trade_bot", "sha256": TRADE_BOT_SHA256},
         "exact_block_plan": {
+            "schema_version": "exact_replay_block_plan_v1",
             "path": "/exact_block_plan.json",
             "sha256": "7" * 64,
             "read_only": True,
@@ -535,7 +578,19 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
         "arms": arms,
         "mismatches": [],
     }
-    if any(block.get("executions") for block in benchmark_blocks):
+    if any(
+        len(block.get("executions", [])) != 1
+        or any(
+            len(execution.get("planned_entry_regimes", [])) != 1
+            for execution in block.get("executions", [])
+        )
+        or (
+            len(block.get("executions", [])) == 1
+            and block["executions"][0].get("event_sha256")
+            != block.get("event_sha256")
+        )
+        for block in benchmark_blocks
+    ):
         planned_blocks = []
         for block_index, block in enumerate(benchmark_blocks):
             executions = []
@@ -888,6 +943,115 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
         self.assertEqual(len(report["arms"]["adaptive"]["episodes"]), 8)
         self.assertEqual(report["missing_evidence"], [])
 
+    def test_input_binding_audit_is_complete_normalized_and_hash_bound(self):
+        benchmark = benchmark_report()
+        paired = paired_manifest(benchmark)
+
+        report = self.validate(paired, benchmark)
+
+        self.assertEqual(report["status"], "UPLIFT_PROVEN")
+        self.assertEqual(
+            report["input_binding_audit_sha256"],
+            canonical_sha256(report["input_binding_audit"]),
+        )
+        self.assertEqual(
+            len(report["input_binding_audit"]),
+            sum(
+                len(component["files"])
+                for component in benchmark["canonical_identity"]["components"].values()
+            ),
+        )
+
+        mutations = {
+            "missing": lambda rows: rows.pop(),
+            "duplicate": lambda rows: rows.append(copy.deepcopy(rows[0])),
+            "expected_sha": lambda rows: rows[0].update(
+                {"expected_sha256": "e" * 64}
+            ),
+            "actual_sha": lambda rows: rows[0].update(
+                {"actual_sha256": "f" * 64}
+            ),
+            "status": lambda rows: rows[0].update({"status": "MISMATCH"}),
+            "nonfinite_path": lambda rows: rows[0].update({"path": math.nan}),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                malformed = paired_manifest(benchmark)
+                mutate(malformed["input_binding_audit"])
+                invalid = self.validate(malformed, benchmark)
+                self.assertEqual(invalid["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(
+                        "input_binding_audit" in item
+                        for item in invalid["missing_evidence"]
+                    ),
+                    invalid["missing_evidence"],
+                )
+
+    def test_artifact_validator_rejects_missing_or_tampered_input_binding_audit(self):
+        benchmark = benchmark_report()
+        policy = config()
+        report = self.validate(paired_manifest(benchmark), benchmark, policy)
+
+        for name, mutate in (
+            ("missing", lambda item: item.pop("input_binding_audit")),
+            (
+                "tampered-row",
+                lambda item: item["input_binding_audit"][0].update(
+                    {"actual_sha256": "f" * 64}
+                ),
+            ),
+            (
+                "tampered-hash",
+                lambda item: item.update(
+                    {"input_binding_audit_sha256": "f" * 64}
+                ),
+            ),
+        ):
+            with self.subTest(name=name):
+                malformed = copy.deepcopy(report)
+                mutate(malformed)
+                audit = UPLIFT.validate_evolution_uplift_report_artifact(
+                    malformed,
+                    benchmark,
+                    policy,
+                    validation_config_sha256=config_sha256(policy),
+                )
+                self.assertFalse(audit["verified"])
+                self.assertTrue(
+                    any("input_binding_audit" in item for item in audit["errors"]),
+                    audit["errors"],
+                )
+
+    def test_atomic_writer_removes_old_positive_output_on_nonfinite_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = pathlib.Path(temp_dir) / "uplift.json"
+            output.write_text(
+                json.dumps({"status": "UPLIFT_PROVEN"}), encoding="utf-8"
+            )
+
+            with self.assertRaises(ValueError):
+                UPLIFT._write_json(output, {"actual_benchmark_id": math.nan})
+
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.iterdir()), [])
+
+    def test_atomic_writer_removes_old_positive_output_on_replace_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = pathlib.Path(temp_dir) / "uplift.json"
+            output.write_text(
+                json.dumps({"status": "UPLIFT_PROVEN"}), encoding="utf-8"
+            )
+
+            with mock.patch.object(
+                pathlib.Path, "replace", side_effect=OSError("replace failed")
+            ):
+                with self.assertRaises(OSError):
+                    UPLIFT._write_json(output, {"status": "NOT_PROVEN"})
+
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.iterdir()), [])
+
     def test_benchmark_identity_and_complete_policy_byte_drift_are_fail_closed(self):
         canonical_tamper = benchmark_report()
         canonical_tamper["canonical_identity"]["components"]["data"]["logical_id"] = "forged"
@@ -931,6 +1095,13 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
             ("arms", lambda item: item.pop("arms")),
             ("blocks", lambda item: item["blocks"].pop()),
             ("cells", lambda item: item["aggregation_cells"].pop()),
+            (
+                "exact_plan_schema",
+                lambda item: item["identity_audit"].__setitem__(
+                    "exact_block_plan_schema_version",
+                    "exact_replay_block_plan_v2",
+                ),
+            ),
             ("bootstrap", lambda item: item["bootstrap"].__setitem__("lower_confidence_bound", -1.0)),
             ("episode_lineage", lambda item: item["arms"]["frozen"]["episodes"][0].__setitem__("first_fill_id", "forged-fill")),
         ):

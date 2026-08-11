@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -561,6 +562,37 @@ class ObjectiveAlignmentValidationTest(unittest.TestCase):
             written = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(written["overall_status"], "UNVERIFIABLE")
             self.assertEqual(tuple(written["subsystems"]), SUBSYSTEMS)
+
+    def test_atomic_writer_removes_old_positive_output_on_nonfinite_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = pathlib.Path(temp_dir) / "alignment.json"
+            output.write_text(
+                json.dumps({"overall_status": "ALIGNED"}), encoding="utf-8"
+            )
+
+            with self.assertRaises(ValueError):
+                alignment._write_json(output, {"actual_benchmark_id": math.nan})
+
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.iterdir()), [])
+
+    def test_atomic_writer_removes_old_positive_output_on_replace_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = pathlib.Path(temp_dir) / "alignment.json"
+            output.write_text(
+                json.dumps({"overall_status": "ALIGNED"}), encoding="utf-8"
+            )
+
+            with mock.patch.object(
+                pathlib.Path, "replace", side_effect=OSError("replace failed")
+            ):
+                with self.assertRaises(OSError):
+                    alignment._write_json(
+                        output, {"overall_status": "UNVERIFIABLE"}
+                    )
+
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.iterdir()), [])
 
 
 if __name__ == "__main__":

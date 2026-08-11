@@ -20,6 +20,8 @@ from decision_evidence_common import (
 
 REPORT_SCHEMA_VERSION = "evolution_uplift_validation_v1"
 PAIRED_SCHEMA_VERSION = "paired_evolution_replay_v1"
+EXACT_PLAN_SCHEMA_VERSION = "exact_replay_block_plan_v1"
+EXACT_PLAN_V2_SCHEMA_VERSION = "exact_replay_block_plan_v2"
 BENCHMARK_SCHEMA_VERSION = "decision_evidence_benchmark_validation_v1"
 EPISODE_SCHEMA_VERSION = "episode_execution_evidence_v1"
 POLICY_SCHEMA_VERSION = "execution_policy_v2"
@@ -33,6 +35,26 @@ EXPECTED_UPLIFT_POLICY = {
     "block_coverage": 1,
     "bootstrap_trials": 10000,
     "lcb": 0.95,
+}
+REQUIRED_INPUT_COMPONENTS = (
+    "data",
+    "split",
+    "cost",
+    "features",
+    "actions",
+    "baseline_policy",
+    "run_config",
+    "implementation",
+)
+INPUT_BINDING_AUDIT_FIELDS = {
+    "component",
+    "logical_name",
+    "input_name",
+    "symbol",
+    "path",
+    "expected_sha256",
+    "actual_sha256",
+    "status",
 }
 EPISODE_EVIDENCE_EPSILON = 1e-6
 EPISODE_LINEAGE_FIELDS = (
@@ -96,6 +118,24 @@ def _is_non_empty_string(value: Any) -> bool:
 
 def _missing(values: Sequence[str]) -> list[str]:
     return sorted(set(str(value) for value in values if str(value)))
+
+
+def _benchmark_requires_exact_plan_v2(
+    benchmark_blocks: list[dict[str, Any]],
+) -> bool:
+    for block in benchmark_blocks:
+        executions = block.get("executions")
+        if not isinstance(executions, list) or len(executions) != 1:
+            return True
+        execution = executions[0]
+        if not isinstance(execution, Mapping):
+            return True
+        regimes = execution.get("planned_entry_regimes")
+        if not isinstance(regimes, list) or len(regimes) != 1:
+            return True
+        if execution.get("event_sha256") != block.get("event_sha256"):
+            return True
+    return False
 
 
 def bootstrap_draw_index(
@@ -185,6 +225,168 @@ def _uplift_policy(config: Any) -> tuple[dict[str, Any] | None, list[str]]:
         "lcb": float(confidence),
         "lcb_required": ">0",
     }, []
+
+
+def _expected_input_bindings(
+    canonical_identity: Any,
+) -> tuple[dict[tuple[str, str], str], list[str]]:
+    errors: list[str] = []
+    expected: dict[tuple[str, str], str] = {}
+    components = (
+        canonical_identity.get("components")
+        if isinstance(canonical_identity, Mapping)
+        else None
+    )
+    if not isinstance(components, Mapping) or set(components) != set(
+        REQUIRED_INPUT_COMPONENTS
+    ):
+        return expected, ["input_binding_audit.benchmark_components"]
+    for component_name in REQUIRED_INPUT_COMPONENTS:
+        component = components.get(component_name)
+        files = component.get("files") if isinstance(component, Mapping) else None
+        if not isinstance(files, list) or not files:
+            errors.append(
+                f"input_binding_audit.benchmark_components.{component_name}.files"
+            )
+            continue
+        for index, item in enumerate(files):
+            prefix = (
+                f"input_binding_audit.benchmark_components.{component_name}."
+                f"files[{index}]"
+            )
+            if not isinstance(item, Mapping):
+                errors.append(prefix)
+                continue
+            logical_name = item.get("logical_name")
+            sha256 = item.get("sha256")
+            if not _is_non_empty_string(logical_name) or not _is_sha256(sha256):
+                errors.append(prefix)
+                continue
+            key = (component_name, str(logical_name))
+            if key in expected:
+                errors.append(f"{prefix}.duplicate")
+                continue
+            expected[key] = str(sha256)
+    return expected, errors
+
+
+def _expected_binding_symbol(component: str, logical_name: str) -> str | None:
+    if component == "data" and logical_name.startswith("execution:"):
+        return logical_name.rsplit(":", 1)[-1]
+    if component == "features" and logical_name.startswith("feature:"):
+        return logical_name.split(":", 1)[1]
+    if component == "split" and logical_name.startswith("corpus:"):
+        return logical_name.split(":", 1)[1]
+    return None
+
+
+def _validate_input_binding_audit(
+    raw_audit: Any,
+    canonical_identity: Any,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Validate paired replay's complete pre-arm eight-component audit."""
+
+    expected, errors = _expected_input_bindings(canonical_identity)
+    if not isinstance(raw_audit, list):
+        return [], _missing([*errors, "input_binding_audit"])
+
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    observed: set[tuple[str, str]] = set()
+    for index, raw_row in enumerate(raw_audit):
+        prefix = f"input_binding_audit[{index}]"
+        if not isinstance(raw_row, Mapping):
+            errors.append(prefix)
+            continue
+        if set(raw_row) != INPUT_BINDING_AUDIT_FIELDS:
+            errors.append(f"{prefix}.fields")
+        component = raw_row.get("component")
+        logical_name = raw_row.get("logical_name")
+        if component not in REQUIRED_INPUT_COMPONENTS:
+            errors.append(f"{prefix}.component")
+            component_text = str(component or "")
+        else:
+            component_text = str(component)
+        if not _is_non_empty_string(logical_name):
+            errors.append(f"{prefix}.logical_name")
+            logical_name_text = str(logical_name or "")
+        else:
+            logical_name_text = str(logical_name)
+        key = (component_text, logical_name_text)
+        if key in seen:
+            errors.append(f"{prefix}.duplicate")
+        seen.add(key)
+        if key not in expected:
+            errors.append(f"{prefix}.unexpected")
+        else:
+            observed.add(key)
+        expected_sha = expected.get(key)
+        if raw_row.get("expected_sha256") != expected_sha:
+            errors.append(f"{prefix}.expected_sha256")
+        if raw_row.get("actual_sha256") != expected_sha:
+            errors.append(f"{prefix}.actual_sha256")
+        if raw_row.get("status") != "VERIFIED":
+            errors.append(f"{prefix}.status")
+        if not _is_non_empty_string(raw_row.get("input_name")):
+            errors.append(f"{prefix}.input_name")
+        if not _is_non_empty_string(raw_row.get("path")):
+            errors.append(f"{prefix}.path")
+        expected_symbol = _expected_binding_symbol(
+            component_text, logical_name_text
+        )
+        if raw_row.get("symbol") != expected_symbol:
+            errors.append(f"{prefix}.symbol")
+        normalized.append(
+            {
+                "component": component_text,
+                "logical_name": logical_name_text,
+                "input_name": (
+                    raw_row.get("input_name")
+                    if isinstance(raw_row.get("input_name"), str)
+                    else None
+                ),
+                "symbol": (
+                    raw_row.get("symbol")
+                    if isinstance(raw_row.get("symbol"), str)
+                    or raw_row.get("symbol") is None
+                    else None
+                ),
+                "path": (
+                    raw_row.get("path")
+                    if isinstance(raw_row.get("path"), str)
+                    else None
+                ),
+                "expected_sha256": (
+                    raw_row.get("expected_sha256")
+                    if isinstance(raw_row.get("expected_sha256"), str)
+                    else None
+                ),
+                "actual_sha256": (
+                    raw_row.get("actual_sha256")
+                    if isinstance(raw_row.get("actual_sha256"), str)
+                    else None
+                ),
+                "status": (
+                    raw_row.get("status")
+                    if isinstance(raw_row.get("status"), str)
+                    else None
+                ),
+            }
+        )
+
+    for component, logical_name in sorted(set(expected) - observed):
+        errors.append(f"input_binding_audit.missing.{component}.{logical_name}")
+    component_order = {
+        component: index
+        for index, component in enumerate(REQUIRED_INPUT_COMPONENTS)
+    }
+    normalized.sort(
+        key=lambda row: (
+            component_order.get(str(row["component"]), len(component_order)),
+            str(row["logical_name"]),
+        )
+    )
+    return normalized, _missing(errors)
 
 
 def _benchmark_universe(
@@ -1661,6 +1863,17 @@ def validate_evolution_uplift(
     if actual_benchmark_id != expected_benchmark_id:
         missing.append("paired.benchmark_id=frozen_benchmark")
 
+    normalized_input_binding_audit, input_binding_missing = (
+        _validate_input_binding_audit(
+            paired.get("input_binding_audit"),
+            benchmark_verification.get("canonical_identity"),
+        )
+    )
+    missing.extend(input_binding_missing)
+    input_binding_audit_sha256 = canonical_sha256(
+        normalized_input_binding_audit
+    )
+
     expected_ids = [block["block_id"] for block in benchmark_blocks]
     benchmark_by_id = {block["block_id"]: block for block in benchmark_blocks}
     if thresholds is not None and len(benchmark_blocks) < thresholds["min_independent_blocks"]:
@@ -1669,9 +1882,24 @@ def validate_evolution_uplift(
     exact_plan = paired.get("exact_block_plan")
     plan_by_id: dict[str, dict[str, Any]] = {}
     multi_execution_mode = False
+    exact_plan_schema_version = None
     if not isinstance(exact_plan, Mapping):
         missing.append("paired.exact_block_plan")
     else:
+        exact_plan_schema_version = exact_plan.get("schema_version")
+        if exact_plan_schema_version not in {
+            EXACT_PLAN_SCHEMA_VERSION,
+            EXACT_PLAN_V2_SCHEMA_VERSION,
+        }:
+            missing.append("paired.exact_block_plan.schema_version")
+        multi_execution_mode = (
+            exact_plan_schema_version == EXACT_PLAN_V2_SCHEMA_VERSION
+        )
+        if (
+            not multi_execution_mode
+            and _benchmark_requires_exact_plan_v2(benchmark_blocks)
+        ):
+            missing.append("paired.exact_block_plan.schema_version=v2_required")
         if exact_plan.get("benchmark_id") != expected_benchmark_id:
             missing.append("paired.exact_block_plan.benchmark_id")
         if exact_plan.get("read_only") is not True:
@@ -1697,14 +1925,10 @@ def validate_evolution_uplift(
                 missing.append(f"{prefix}.block_id=unique")
                 continue
             plan_by_id[str(block_id)] = dict(raw_plan)
-            if isinstance(raw_plan.get("executions"), list):
-                multi_execution_mode = True
+            if not multi_execution_mode and "executions" in raw_plan:
+                missing.append(f"{prefix}.executions_not_allowed_v1")
         if list(plan_by_id) != expected_ids:
             missing.append("paired.exact_block_plan.blocks.coverage")
-        if multi_execution_mode and exact_plan.get("schema_version") != (
-            "exact_replay_block_plan_v2"
-        ):
-            missing.append("paired.exact_block_plan.schema_version=v2")
         for block_id in expected_ids:
             planned = plan_by_id.get(block_id)
             expected = benchmark_by_id[block_id]
@@ -2041,9 +2265,12 @@ def validate_evolution_uplift(
         "actual_benchmark_id": actual_benchmark_id,
         "benchmark_verification": benchmark_verification,
         "thresholds": safe_thresholds,
+        "input_binding_audit": normalized_input_binding_audit,
+        "input_binding_audit_sha256": input_binding_audit_sha256,
         "identity_audit": {
             "paired_manifest_schema_version": paired.get("schema_version"),
             "paired_manifest_status": paired.get("status"),
+            "exact_block_plan_schema_version": exact_plan_schema_version,
             "common_policy_sha256": (
                 paired.get("common_policy", {}).get("sha256")
                 if isinstance(paired.get("common_policy"), Mapping)
@@ -2149,6 +2376,20 @@ def _validate_evolution_uplift_report_artifact_impl(
     if thresholds is None or report.get("thresholds") != thresholds:
         errors.append("uplift.thresholds=frozen_policy")
 
+    normalized_input_binding_audit, input_binding_errors = (
+        _validate_input_binding_audit(
+            report.get("input_binding_audit"),
+            benchmark_verification.get("canonical_identity"),
+        )
+    )
+    errors.extend(input_binding_errors)
+    if report.get("input_binding_audit") != normalized_input_binding_audit:
+        errors.append("input_binding_audit.normalized")
+    if report.get("input_binding_audit_sha256") != canonical_sha256(
+        normalized_input_binding_audit
+    ):
+        errors.append("input_binding_audit.sha256")
+
     expected_by_id = {block["block_id"]: block for block in benchmark_blocks}
     expected_ids = [block["block_id"] for block in benchmark_blocks]
     expected_cells = {
@@ -2156,14 +2397,8 @@ def _validate_evolution_uplift_report_artifact_impl(
         for block in benchmark_blocks
         for cell in block["cells"]
     }
-    multi_execution = any(block.get("executions") for block in benchmark_blocks)
-    expected_execution_count = (
-        sum(len(block.get("executions", [])) for block in benchmark_blocks)
-        if multi_execution
-        else len(benchmark_blocks)
-    )
-
     identity_audit = report.get("identity_audit")
+    multi_execution = False
     if not isinstance(identity_audit, Mapping):
         errors.append("uplift.identity_audit")
     else:
@@ -2171,6 +2406,26 @@ def _validate_evolution_uplift_report_artifact_impl(
             errors.append("uplift.identity_audit.paired_manifest_schema_version")
         if identity_audit.get("paired_manifest_status") != "VERIFIED":
             errors.append("uplift.identity_audit.paired_manifest_status")
+        exact_plan_schema_version = identity_audit.get(
+            "exact_block_plan_schema_version"
+        )
+        if exact_plan_schema_version not in {
+            EXACT_PLAN_SCHEMA_VERSION,
+            EXACT_PLAN_V2_SCHEMA_VERSION,
+        }:
+            errors.append(
+                "uplift.identity_audit.exact_block_plan_schema_version"
+            )
+        multi_execution = (
+            exact_plan_schema_version == EXACT_PLAN_V2_SCHEMA_VERSION
+        )
+        if (
+            not multi_execution
+            and _benchmark_requires_exact_plan_v2(benchmark_blocks)
+        ):
+            errors.append(
+                "uplift.identity_audit.exact_block_plan_schema_version=v2_required"
+            )
         for field in (
             "common_policy_sha256",
             "initial_weights_sha256",
@@ -2181,6 +2436,12 @@ def _validate_evolution_uplift_report_artifact_impl(
                 errors.append(f"uplift.identity_audit.{field}")
         if identity_audit.get("policy_differences") != [EXPECTED_POLICY_DIFFERENCE]:
             errors.append("uplift.identity_audit.policy_differences")
+
+    expected_execution_count = (
+        sum(len(block.get("executions", [])) for block in benchmark_blocks)
+        if multi_execution
+        else len(benchmark_blocks)
+    )
 
     block_coverage = report.get("block_coverage")
     if not isinstance(block_coverage, Mapping):
@@ -2326,7 +2587,7 @@ def _validate_evolution_uplift_report_artifact_impl(
             ):
                 errors.append(f"{block_prefix}.verified_evidence")
             expected_executions = expected_block.get("executions", [])
-            if expected_executions:
+            if multi_execution:
                 raw_executions = block_audit.get("executions")
                 if not isinstance(raw_executions, list) or len(raw_executions) != len(
                     expected_executions
@@ -2622,20 +2883,31 @@ def _read_optional(path: pathlib.Path) -> Any:
 
 def _write_json(path: pathlib.Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=path.parent, delete=False
-    ) as handle:
-        temporary = pathlib.Path(handle.name)
-        json.dump(
-            payload,
-            handle,
-            indent=2,
-            ensure_ascii=False,
-            sort_keys=True,
-            allow_nan=False,
-        )
-        handle.write("\n")
-    temporary.replace(path)
+    temporary: pathlib.Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f"{path.name}.tmp.",
+            delete=False,
+        ) as handle:
+            temporary = pathlib.Path(handle.name)
+            json.dump(
+                payload,
+                handle,
+                indent=2,
+                ensure_ascii=False,
+                sort_keys=True,
+                allow_nan=False,
+            )
+            handle.write("\n")
+        temporary.replace(path)
+    except Exception:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        path.unlink(missing_ok=True)
+        raise
 
 
 def parse_args() -> argparse.Namespace:
