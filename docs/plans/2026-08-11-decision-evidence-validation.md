@@ -561,4 +561,12 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 - [x] ledger 注册时间由持锁 append 生成；结果源在注册时必须不存在并绑定 nonce/path，observe 的不可变结果制品必须携带 nonce 且产生于注册之后。recovery marker 同时记录 before/after checkpoint 与 pending record，覆盖 marker-fsync 后进程终止窗口。
 - [x] 所有 fail-closed 决定性 fallback 显式写 `promotion_authority=false`、`demo_activation_authorized=false`、`live_activation_authorized=false`。
 
+### CR-8: 闭合真实串联与文件系统竞态
+
+- [ ] builder、Full Loop 与 paired replay 消费同一冻结 replay validation identity；默认相对 candidate 路径与 paired 派生路径必须产生相同 replay policy 字节，并由真实 builder→paired 集成测试证明。
+- [ ] file-backed benchmark producer 在输出 `VERIFIED` 前执行与消费者相同的固定 logical-name、动态 execution/symbol 和完整 universe 合同。
+- [ ] uplift 独立重验 paired `input_binding_audit` 的八组件完整性与 expected/actual 身份，并把验证后的 audit 纳入 uplift artifact；缺失或漂移不得 `UPLIFT_PROVEN`。
+- [ ] observe 以打开后的 fd 为权威重验 regular/read-only/dev/inode/size/mtime/ctime；recovery marker 必须证明 `after = before + canonical pending record`，非法 pending 或不可能 checkpoint 不得被静默清理。
+- [ ] alignment/uplift CLI 原子写失败必须清理临时文件并移除旧正向输出，禁止 run-dir 重用时继承陈旧证据。
+
 在 `/Users/sk.wang/Projects/c++/ai-trade/.worktrees/feat-decision-evidence-validation` 中按依赖图执行。实现 agent 必须先运行任务指定测试观察失败，再实现，再运行通过；每个 Task 单独提交。全部 Task 完成后运行完整 CTest 和 `keel-multi-agent-cr --post-coding --plan docs/plans/2026-08-11-decision-evidence-validation.md`。
