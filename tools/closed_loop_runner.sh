@@ -77,6 +77,7 @@ MICROSTRUCTURE_ALPHA_TRAIN_WINDOW_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_TR
 MICROSTRUCTURE_ALPHA_VALIDATION_WINDOW_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_VALIDATION_WINDOW_SECONDS:-14400}"
 MICROSTRUCTURE_ALPHA_TEST_WINDOW_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_TEST_WINDOW_SECONDS:-14400}"
 MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS:-14400}"
+MICROSTRUCTURE_ALPHA_MODEL_SELECTION_WINDOW_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_MODEL_SELECTION_WINDOW_SECONDS:-3600}"
 MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT:-${AI_TRADE_DATA_DIR:-./data}/models/microstructure_alpha_lifecycle}"
 MICROSTRUCTURE_ALPHA_SELECTION_DURATION_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_SELECTION_DURATION_SECONDS:-21600}"
 MICROSTRUCTURE_ALPHA_HOLDOUT_DURATION_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_HOLDOUT_DURATION_SECONDS:-21600}"
@@ -3295,6 +3296,7 @@ run_microstructure_alpha_development_gate() {
     --validation-window-seconds "${MICROSTRUCTURE_ALPHA_VALIDATION_WINDOW_SECONDS}" \
     --test-window-seconds "${MICROSTRUCTURE_ALPHA_TEST_WINDOW_SECONDS}" \
     --rolling-step-seconds "${MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS}" \
+    --model-selection-window-seconds "${MICROSTRUCTURE_ALPHA_MODEL_SELECTION_WINDOW_SECONDS}" \
     || probe_status=$?
   if (( probe_status != 0 )); then
     echo "[WARN] microstructure development screen is not ready: status=${probe_status}"
@@ -3311,7 +3313,7 @@ payload = json.loads(
     .read_text(encoding="utf-8")
 )
 contract_ok = bool(
-    payload.get("schema_version") == "microstructure_alpha_development_v6"
+    payload.get("schema_version") == "microstructure_alpha_development_v7"
     and payload.get("status") == "PASS"
     and payload.get("fully_verifiable") is True
     and payload.get("research_domain") == "forward_development_only"

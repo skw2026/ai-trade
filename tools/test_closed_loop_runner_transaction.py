@@ -121,6 +121,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_VALIDATION_WINDOW_SECONDS=10800
                 export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_TEST_WINDOW_SECONDS=10800
                 export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS=10800
+                export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_MODEL_SELECTION_WINDOW_SECONDS=2400
                 source tools/closed_loop_runner.sh full \
                   --output-root "${REPORTS_ROOT}"
                 compose_cmd() {
@@ -156,6 +157,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 ("--validation-window-seconds", "10800"),
                 ("--test-window-seconds", "10800"),
                 ("--rolling-step-seconds", "10800"),
+                ("--model-selection-window-seconds", "2400"),
             ):
                 option_index = args.index(option)
                 self.assertEqual(args[option_index + 1], expected)

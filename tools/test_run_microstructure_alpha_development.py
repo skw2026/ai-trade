@@ -489,8 +489,8 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         models = probe.fit_independent_action_models(
             fit_features=features[:1800],
             fit_targets=fit_targets,
-            validation_features=features[1800:],
-            validation_targets=validation_targets,
+            model_selection_features=features[1800:],
+            model_selection_targets=validation_targets,
             transform=transform,
             args=args,
         )
@@ -537,8 +537,8 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         models = probe.fit_independent_action_models(
             fit_features=fit_features,
             fit_targets=fit_targets,
-            validation_features=validation_features,
-            validation_targets=validation_targets,
+            model_selection_features=validation_features,
+            model_selection_targets=validation_targets,
             transform=transform,
             args=args,
         )
@@ -713,6 +713,35 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             self.assertLessEqual(split.validation_end_ms + 301000, split.test_start_ms)
         self.assertLessEqual(splits[0].test_end_ms, splits[1].test_start_ms)
 
+    def test_fit_internal_model_selection_is_purged_from_model_fit(self):
+        timestamps = np.arange(0, 30_000, 1000, dtype=np.int64)
+        split = probe.TimeSplit(
+            split_id=0,
+            fit_start_ms=0,
+            fit_end_ms=20_000,
+            validation_start_ms=22_000,
+            validation_end_ms=25_000,
+            test_start_ms=27_000,
+            test_end_ms=30_000,
+        )
+
+        model_fit, model_selection, contract = (
+            probe.build_fit_internal_model_selection_indices(
+                timestamps,
+                split,
+                model_selection_window_seconds=5,
+                embargo_seconds=2,
+            )
+        )
+
+        self.assertEqual(timestamps[model_fit].tolist(), list(range(0, 13_000, 1000)))
+        self.assertEqual(
+            timestamps[model_selection].tolist(), list(range(15_000, 20_000, 1000))
+        )
+        self.assertEqual(contract["model_fit_end_ms"], 13_000)
+        self.assertEqual(contract["model_selection_start_ms"], 15_000)
+        self.assertEqual(contract["embargo_seconds"], 2)
+
     def test_prediction_permutation_control_rejects_unconditional_drift(self):
         report = probe.summarize_prediction_permutation_controls(
             base_means_by_trial=[[2.0, 2.0] for _ in range(7)],
@@ -842,6 +871,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
                     "validation_window_seconds": 300,
                     "test_window_seconds": 300,
                     "rolling_step_seconds": 300,
+                    "model_selection_window_seconds": 300,
                     "min_window_rows": 200,
                     "calibration_quantiles": [0.5, 0.8],
                     "min_calibration_trades": 5,

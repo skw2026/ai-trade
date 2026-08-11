@@ -6,8 +6,9 @@ The probe consumes only the checksum-bound segment manifest emitted by
 (long|short, holding horizon) action with an independent classifier for the
 rare event that executable return remains positive under stressed costs.  A
 fit-only two-state economic reconstruction converts event probabilities back
-to comparable quote-to-quote return scores.  Thresholds are selected on a
-purged nested validation window and evaluated on disjoint forward OOS windows.
+to comparable quote-to-quote return scores.  Early stopping uses a purged tail
+inside each fit window; the outer validation window remains untouched until
+economic threshold selection and is followed by a disjoint forward OOS window.
 A PASS here is development evidence only and can never be used as promotion or
 final-holdout evidence.
 """
@@ -36,7 +37,7 @@ except ImportError:  # pragma: no cover - exercised by the research image
     CatBoostClassifier = None
 
 
-SCHEMA_VERSION = "microstructure_alpha_development_v6"
+SCHEMA_VERSION = "microstructure_alpha_development_v7"
 ASSESSMENT_SCHEMA_VERSION = "microstructure_capture_assessment_v1"
 CAPTURE_MERGE_CONTRACT = {
     "method": "drop_shared_adjacent_boundary_buckets_v1",
@@ -1712,6 +1713,36 @@ def indices_between(timestamps: np.ndarray, start_ms: int, end_ms: int) -> np.nd
     return np.flatnonzero((timestamps >= start_ms) & (timestamps < end_ms))
 
 
+def build_fit_internal_model_selection_indices(
+    timestamps: np.ndarray,
+    split: TimeSplit,
+    *,
+    model_selection_window_seconds: int,
+    embargo_seconds: int,
+) -> Tuple[np.ndarray, np.ndarray, Dict[str, int]]:
+    """Keep the outer nested-validation window untouched by model fitting."""
+    selection_end_ms = int(split.fit_end_ms)
+    selection_start_ms = (
+        selection_end_ms - int(model_selection_window_seconds) * 1000
+    )
+    model_fit_end_ms = selection_start_ms - int(embargo_seconds) * 1000
+    if model_fit_end_ms <= int(split.fit_start_ms):
+        raise ValueError("fit-internal model-selection window exhausts training data")
+    model_fit_indices = indices_between(
+        timestamps, int(split.fit_start_ms), model_fit_end_ms
+    )
+    model_selection_indices = indices_between(
+        timestamps, selection_start_ms, selection_end_ms
+    )
+    return model_fit_indices, model_selection_indices, {
+        "model_fit_start_ms": int(split.fit_start_ms),
+        "model_fit_end_ms": model_fit_end_ms,
+        "model_selection_start_ms": selection_start_ms,
+        "model_selection_end_ms": selection_end_ms,
+        "embargo_seconds": int(embargo_seconds),
+    }
+
+
 def build_model(args: argparse.Namespace, action_index: int = 0) -> Any:
     if CatBoostClassifier is None:
         raise RuntimeError("catboost is required; use ai-trade-research image")
@@ -1734,20 +1765,22 @@ def fit_independent_action_models(
     *,
     fit_features: np.ndarray,
     fit_targets: np.ndarray,
-    validation_features: np.ndarray,
-    validation_targets: np.ndarray,
+    model_selection_features: np.ndarray,
+    model_selection_targets: np.ndarray,
     transform: Mapping[str, Any],
     args: argparse.Namespace,
 ) -> List[Any]:
-    """Fit one tree ensemble per predeclared action target."""
+    """Fit one tree ensemble using only fit-internal model selection data."""
     action_indices = [int(value) for value in transform["model_action_indices"]]
     fit_matrix = np.asarray(fit_targets, dtype=np.float64)
-    validation_matrix = np.asarray(validation_targets, dtype=np.float64)
+    model_selection_matrix = np.asarray(
+        model_selection_targets, dtype=np.float64
+    )
     if not (
         fit_matrix.ndim == 2
-        and validation_matrix.ndim == 2
+        and model_selection_matrix.ndim == 2
         and fit_matrix.shape[1] == len(action_indices)
-        and validation_matrix.shape[1] == len(action_indices)
+        and model_selection_matrix.shape[1] == len(action_indices)
     ):
         raise ValueError("independent action training target shape mismatch")
     models: List[Any] = []
@@ -1756,7 +1789,10 @@ def fit_independent_action_models(
         model.fit(
             fit_features,
             fit_matrix[:, column],
-            eval_set=(validation_features, validation_matrix[:, column]),
+            eval_set=(
+                model_selection_features,
+                model_selection_matrix[:, column],
+            ),
             early_stopping_rounds=int(args.early_stopping_rounds),
             verbose=False,
         )
@@ -1791,12 +1827,14 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
         "class_weighting": "none",
         "model_topology": "independent_binary_stress_event_classifier_per_action",
         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
+        "early_stopping_scope": "fit_internal_purged_tail",
+        "external_nested_validation_used_for_model_fit_or_early_stopping": False,
         "frozen_model_scope": "single_consensus_action_model",
-        "training_target": "fit_only_stress_cost_profitable_event",
+        "training_target": "model_fit_subwindow_only_stress_cost_profitable_event",
         "estimation_statistic": "stress_profitability_probability",
         "target_encoding": "binary_zero_one",
         "inference_score": (
-            "fit_only_event_conditional_expected_base_net_bps"
+            "model_fit_subwindow_only_event_conditional_expected_base_net_bps"
         ),
         "policy_selection": "nested_per_action_threshold_then_mode_action_freeze",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
@@ -1884,12 +1922,49 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
             continue
+        model_fit_indices, model_selection_indices, model_selection_time_contract = (
+            build_fit_internal_model_selection_indices(
+                timestamps,
+                split,
+                model_selection_window_seconds=int(
+                    args.model_selection_window_seconds
+                ),
+                embargo_seconds=embargo_seconds,
+            )
+        )
+        minimum_model_selection_rows = max(256, minimum // 2)
+        if (
+            len(model_fit_indices) < minimum
+            or len(model_selection_indices) < minimum_model_selection_rows
+        ):
+            failures.append(
+                f"split_{split.split_id}_insufficient_fit_internal_model_selection_rows"
+            )
+            split_reports.append(
+                {
+                    "split_id": split.split_id,
+                    "status": "insufficient_fit_internal_model_selection_rows",
+                    "time_contract": dataclasses.asdict(split),
+                    "fit_internal_model_selection_time_contract": (
+                        model_selection_time_contract
+                    ),
+                    "fit_rows": len(fit_indices),
+                    "model_fit_rows": len(model_fit_indices),
+                    "model_selection_rows": len(model_selection_indices),
+                    "validation_rows": len(validation_indices),
+                    "test_rows": len(test_indices),
+                }
+            )
+            continue
         fit_targets, target_transform = fit_joint_policy_target(
-            outcomes[fit_indices],
+            outcomes[model_fit_indices],
             actions=actions,
             base_cost_bps=float(args.additional_round_trip_cost_bps),
             stress_cost_multiplier=float(args.stress_cost_multiplier),
             minimum_profitable_events=int(args.min_fit_profitable_events),
+        )
+        model_selection_targets = transform_joint_policy_targets(
+            outcomes[model_selection_indices], target_transform
         )
         validation_targets = transform_joint_policy_targets(
             outcomes[validation_indices], target_transform
@@ -1906,7 +1981,12 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "split_id": split.split_id,
                     "status": "no_supported_stress_event_action",
                     "time_contract": dataclasses.asdict(split),
+                    "fit_internal_model_selection_time_contract": (
+                        model_selection_time_contract
+                    ),
                     "fit_rows": len(fit_indices),
+                    "model_fit_rows": len(model_fit_indices),
+                    "model_selection_rows": len(model_selection_indices),
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
                     "training_target_transform": target_transform,
@@ -1915,10 +1995,10 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             continue
         try:
             models = fit_independent_action_models(
-                fit_features=features[fit_indices],
+                fit_features=features[model_fit_indices],
                 fit_targets=fit_targets,
-                validation_features=features[validation_indices],
-                validation_targets=validation_targets,
+                model_selection_features=features[model_selection_indices],
+                model_selection_targets=model_selection_targets,
                 transform=target_transform,
                 args=args,
             )
@@ -1929,7 +2009,12 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "split_id": split.split_id,
                     "status": "catboost_training_error",
                     "time_contract": dataclasses.asdict(split),
+                    "fit_internal_model_selection_time_contract": (
+                        model_selection_time_contract
+                    ),
                     "fit_rows": len(fit_indices),
+                    "model_fit_rows": len(model_fit_indices),
+                    "model_selection_rows": len(model_selection_indices),
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
                     "training_target_transform": target_transform,
@@ -2046,7 +2131,12 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 "split_id": split.split_id,
                 "status": "trained",
                 "time_contract": dataclasses.asdict(split),
+                "fit_internal_model_selection_time_contract": (
+                    model_selection_time_contract
+                ),
                 "fit_rows": len(fit_indices),
+                "model_fit_rows": len(model_fit_indices),
+                "model_selection_rows": len(model_selection_indices),
                 "validation_rows": len(validation_indices),
                 "test_rows": len(test_indices),
                 "best_iterations_by_action": best_iterations_by_action(
@@ -2276,6 +2366,10 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             "minimum_fit_profitable_events_per_action": int(
                 args.min_fit_profitable_events
             ),
+            "fit_internal_model_selection_window_seconds": int(
+                args.model_selection_window_seconds
+            ),
+            "external_nested_validation_used_for_model_fit_or_early_stopping": False,
             "score_threshold_floor_bps": None,
             "negative_model_score_threshold_permitted": True,
             "threshold_viability_contract": (
@@ -2394,6 +2488,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-window-seconds", type=int, default=14400)
     parser.add_argument("--test-window-seconds", type=int, default=14400)
     parser.add_argument("--rolling-step-seconds", type=int, default=14400)
+    parser.add_argument("--model-selection-window-seconds", type=int, default=3600)
     parser.add_argument("--min-eligible-rows", type=int, default=60000)
     parser.add_argument("--min-window-rows", type=int, default=3600)
     parser.add_argument("--calibration-quantiles", default="0.50,0.60,0.70,0.80,0.90,0.95,0.98")
@@ -2432,6 +2527,10 @@ def parse_args() -> argparse.Namespace:
         raise ValueError("permutation control minimum excess LCB must be non-negative")
     if args.min_fit_profitable_events < 16:
         raise ValueError("minimum fit profitable events must be >= 16")
+    if not 0 < args.model_selection_window_seconds < args.train_window_seconds:
+        raise ValueError(
+            "model-selection window must be positive and smaller than train window"
+        )
     if not 0.60 <= args.min_action_consensus_ratio <= 1.0:
         raise ValueError("minimum action consensus ratio must be in [0.60, 1]")
     return args
