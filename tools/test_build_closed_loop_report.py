@@ -130,7 +130,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "microstructure_alpha.json"
             payload = {
-                "schema_version": "microstructure_alpha_development_v3",
+                "schema_version": "microstructure_alpha_development_v4",
                 "status": "PASS",
                 "fully_verifiable": True,
                 "research_domain": "forward_development_only",

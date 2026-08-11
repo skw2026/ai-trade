@@ -3,9 +3,9 @@
 
 The probe consumes only the checksum-bound segment manifest emitted by
 ``assess_microstructure_capture.py``.  It learns every (long|short, holding
-horizon) action as an independent, fit-only normalized continuous executable
-net-return target and converts the outputs back to quote-to-quote returns after
-explicit fees/slippage.  Thresholds
+horizon) action with an independent single-output model over a fit-only
+normalized continuous executable net-return target and converts the outputs
+back to quote-to-quote returns after explicit fees/slippage.  Thresholds
 are selected on a purged nested validation window and evaluated on disjoint
 forward OOS windows.  A PASS here is development evidence only and can never be
 used as promotion or final-holdout evidence.
@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover - exercised by the research image
     CatBoostRegressor = None
 
 
-SCHEMA_VERSION = "microstructure_alpha_development_v3"
+SCHEMA_VERSION = "microstructure_alpha_development_v4"
 ASSESSMENT_SCHEMA_VERSION = "microstructure_capture_assessment_v1"
 CAPTURE_MERGE_CONTRACT = {
     "method": "drop_shared_adjacent_boundary_buckets_v1",
@@ -698,12 +698,13 @@ def fit_joint_policy_target(
         else np.empty((len(matrix), 0), dtype=np.float64)
     )
     return targets, {
-        "method": "fit_only_winsorized_action_net_return_v3",
+        "method": "fit_only_winsorized_action_net_return_v4",
         "training_objective": "independent_executable_base_net_return_bps",
         "actions": normalized_actions,
         "stress_incremental_cost_bps": stress_increment,
         "winsor_lower_quantile": lower_quantile,
         "winsor_upper_quantile": upper_quantile,
+        "available_action_indices": model_action_indices,
         "model_action_indices": model_action_indices,
         "model_output_count": len(model_action_indices),
         "target_normalization": (
@@ -726,7 +727,7 @@ def validate_joint_policy_transform(
     if not (
         isinstance(transform, dict)
         and transform.get("method")
-        == "fit_only_winsorized_action_net_return_v3"
+        == "fit_only_winsorized_action_net_return_v4"
         and transform.get("training_objective")
         == "independent_executable_base_net_return_bps"
         and transform.get("target_normalization")
@@ -740,6 +741,7 @@ def validate_joint_policy_transform(
     lower_quantile = float(transform.get("winsor_lower_quantile"))
     upper_quantile = float(transform.get("winsor_upper_quantile"))
     actions = transform.get("actions")
+    available_action_indices = transform.get("available_action_indices")
     model_action_indices = transform.get("model_action_indices")
     model_output_count = int(transform.get("model_output_count", -1))
     items = transform.get("action_statistics")
@@ -749,6 +751,7 @@ def validate_joint_policy_transform(
         or not (0.0 <= lower_quantile < upper_quantile <= 1.0)
         or not isinstance(actions, list)
         or len(actions) != int(action_count)
+        or not isinstance(available_action_indices, list)
         or not isinstance(model_action_indices, list)
         or model_output_count != len(model_action_indices)
         or not isinstance(items, list)
@@ -762,10 +765,20 @@ def validate_joint_policy_transform(
             and int(item.get("horizon_seconds") or 0) > 0
         ):
             raise ValueError("joint-policy transform action contract is invalid")
+    normalized_available_indices = [
+        int(value) for value in available_action_indices
+    ]
     normalized_model_indices = [int(value) for value in model_action_indices]
     if not (
-        normalized_model_indices == sorted(set(normalized_model_indices))
+        normalized_available_indices
+        == sorted(set(normalized_available_indices))
+        and all(
+            0 <= value < int(action_count)
+            for value in normalized_available_indices
+        )
+        and normalized_model_indices == sorted(set(normalized_model_indices))
         and all(0 <= value < int(action_count) for value in normalized_model_indices)
+        and set(normalized_model_indices).issubset(normalized_available_indices)
     ):
         raise ValueError("joint-policy model action indices are invalid")
     fit_row_count: int | None = None
@@ -813,9 +826,30 @@ def validate_joint_policy_transform(
             raise ValueError("joint-policy action statistic contract failed")
         if learnable:
             expected_model_indices.append(action_index)
-    if expected_model_indices != normalized_model_indices:
+    if expected_model_indices != normalized_available_indices:
         raise ValueError("joint-policy active action mapping contract failed")
     return items
+
+
+def select_model_action_indices(
+    transform: Mapping[str, Any], action_indices: Sequence[int]
+) -> Dict[str, Any]:
+    """Bind fit-only statistics to the exact action models being serialized."""
+    action_count = len(transform.get("action_statistics", []))
+    validate_joint_policy_transform(transform, action_count=action_count)
+    selected = [int(value) for value in action_indices]
+    available = [int(value) for value in transform["available_action_indices"]]
+    if not (
+        selected == sorted(set(selected))
+        and selected
+        and set(selected).issubset(available)
+    ):
+        raise ValueError("selected joint-policy model actions are invalid")
+    frozen = json.loads(json.dumps(transform))
+    frozen["model_action_indices"] = selected
+    frozen["model_output_count"] = len(selected)
+    validate_joint_policy_transform(frozen, action_count=action_count)
+    return frozen
 
 
 def transform_joint_policy_targets(
@@ -875,7 +909,7 @@ def reconstruct_base_net_scores(
         for model_column, action_index in enumerate(active_indices)
     }
     for action_index, item in enumerate(statistics_by_action):
-        if item["learnable"] is True:
+        if action_index in model_column_by_action:
             reconstructed = (
                 float(item["winsorized_location_bps"])
                 + prediction[:, model_column_by_action[action_index]]
@@ -896,15 +930,20 @@ def reconstruct_base_net_scores(
 def predict_base_net_scores(
     model: Any, features: np.ndarray, transform: Mapping[str, Any]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Run the frozen active-action model and reconstruct comparable scores."""
-    raw_prediction = np.asarray(model.predict(features), dtype=np.float64)
+    """Run independent active-action models and reconstruct comparable scores."""
     active_count = int(transform.get("model_output_count", -1))
-    if raw_prediction.ndim == 1:
-        raw_prediction = (
-            raw_prediction.reshape(-1, 1)
-            if active_count == 1
-            else raw_prediction.reshape(1, -1)
-        )
+    models = list(model) if isinstance(model, (list, tuple)) else [model]
+    if active_count <= 0 or len(models) != active_count:
+        raise ValueError("independent action model count mismatch")
+    raw_columns: List[np.ndarray] = []
+    for action_model in models:
+        column = np.asarray(action_model.predict(features), dtype=np.float64)
+        if column.ndim == 2 and column.shape[1] == 1:
+            column = column[:, 0]
+        if column.ndim != 1 or len(column) != len(features):
+            raise ValueError("independent action model prediction shape mismatch")
+        raw_columns.append(column)
+    raw_prediction = np.column_stack(raw_columns)
     return reconstruct_base_net_scores(raw_prediction, transform), raw_prediction
 
 
@@ -1207,28 +1246,80 @@ def indices_between(timestamps: np.ndarray, start_ms: int, end_ms: int) -> np.nd
     return np.flatnonzero((timestamps >= start_ms) & (timestamps < end_ms))
 
 
-def build_model(args: argparse.Namespace) -> Any:
+def build_model(args: argparse.Namespace, action_index: int = 0) -> Any:
     if CatBoostRegressor is None:
         raise RuntimeError("catboost is required; use ai-trade-research image")
     return CatBoostRegressor(
-        loss_function="MultiRMSE",
-        eval_metric="MultiRMSE",
+        loss_function="RMSE",
+        eval_metric="RMSE",
         iterations=int(args.iterations),
         depth=int(args.depth),
         learning_rate=float(args.learning_rate),
         l2_leaf_reg=float(args.l2_leaf_reg),
         random_strength=float(args.random_strength),
-        random_seed=int(args.random_seed),
+        random_seed=int(args.random_seed) + int(action_index) * 1009,
         allow_writing_files=False,
         verbose=False,
     )
+
+
+def fit_independent_action_models(
+    *,
+    fit_features: np.ndarray,
+    fit_targets: np.ndarray,
+    validation_features: np.ndarray,
+    validation_targets: np.ndarray,
+    transform: Mapping[str, Any],
+    args: argparse.Namespace,
+) -> List[Any]:
+    """Fit one tree ensemble per predeclared action target."""
+    action_indices = [int(value) for value in transform["model_action_indices"]]
+    fit_matrix = np.asarray(fit_targets, dtype=np.float64)
+    validation_matrix = np.asarray(validation_targets, dtype=np.float64)
+    if not (
+        fit_matrix.ndim == 2
+        and validation_matrix.ndim == 2
+        and fit_matrix.shape[1] == len(action_indices)
+        and validation_matrix.shape[1] == len(action_indices)
+    ):
+        raise ValueError("independent action training target shape mismatch")
+    models: List[Any] = []
+    for column, action_index in enumerate(action_indices):
+        model = build_model(args, action_index=action_index)
+        model.fit(
+            fit_features,
+            fit_matrix[:, column],
+            eval_set=(validation_features, validation_matrix[:, column]),
+            early_stopping_rounds=int(args.early_stopping_rounds),
+            verbose=False,
+        )
+        models.append(model)
+    return models
+
+
+def best_iterations_by_action(
+    models: Sequence[Any], transform: Mapping[str, Any]
+) -> Dict[str, int | None]:
+    action_indices = [int(value) for value in transform["model_action_indices"]]
+    if len(models) != len(action_indices):
+        raise ValueError("independent action best-iteration model count mismatch")
+    result: Dict[str, int | None] = {}
+    for action_index, model in zip(action_indices, models):
+        best = model.get_best_iteration()
+        result[str(action_index)] = (
+            int(best) + 1 if isinstance(best, int) and best >= 0 else None
+        )
+    return result
 
 
 def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
     return {
         "library": "catboost",
         "library_version": getattr(catboost, "__version__", None),
-        "loss_function": "MultiRMSE",
+        "loss_function": "RMSE",
+        "model_topology": "independent_single_output_regressor_per_action",
+        "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
+        "frozen_model_scope": "single_consensus_action_model",
         "training_target": "fit_only_independent_winsorized_executable_net_return",
         "target_normalization": (
             "per_action_fit_only_winsorized_zero_mean_unit_variance"
@@ -1245,6 +1336,7 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
         "l2_leaf_reg": float(args.l2_leaf_reg),
         "random_strength": float(args.random_strength),
         "random_seed": int(args.random_seed),
+        "per_action_seed": "random_seed_plus_action_index_times_1009",
         "early_stopping_rounds": int(args.early_stopping_rounds),
     }
 
@@ -1343,14 +1435,14 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
             continue
-        model = build_model(args)
         try:
-            model.fit(
-                features[fit_indices],
-                fit_targets,
-                eval_set=(features[validation_indices], validation_targets),
-                early_stopping_rounds=int(args.early_stopping_rounds),
-                verbose=False,
+            models = fit_independent_action_models(
+                fit_features=features[fit_indices],
+                fit_targets=fit_targets,
+                validation_features=features[validation_indices],
+                validation_targets=validation_targets,
+                transform=target_transform,
+                args=args,
             )
         except catboost.CatBoostError as exc:
             failures.append(f"split_{split.split_id}_catboost_training_error")
@@ -1368,7 +1460,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             )
             continue
         validation_prediction, validation_raw_prediction = predict_base_net_scores(
-            model, features[validation_indices], target_transform
+            models, features[validation_indices], target_transform
         )
         calibration = select_nested_threshold(
             timestamps=timestamps[validation_indices],
@@ -1393,7 +1485,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             else []
         )
         test_prediction, test_raw_prediction = predict_base_net_scores(
-            model, features[test_indices], target_transform
+            models, features[test_indices], target_transform
         )
         objective = evaluate_joint_policy(
             timestamps=timestamps[test_indices],
@@ -1445,11 +1537,8 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 "fit_rows": len(fit_indices),
                 "validation_rows": len(validation_indices),
                 "test_rows": len(test_indices),
-                "best_iteration": (
-                    int(model.get_best_iteration()) + 1
-                    if isinstance(model.get_best_iteration(), int)
-                    and model.get_best_iteration() >= 0
-                    else None
+                "best_iterations_by_action": best_iterations_by_action(
+                    models, target_transform
                 ),
                 "training_target_transform": target_transform,
                 "nested_calibration": calibration,
@@ -1543,29 +1632,44 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         if not selected_thresholds:
             raise RuntimeError("development passed without a frozen policy threshold")
         best_iterations = [
-            int(item["best_iteration"])
+            int(item["best_iterations_by_action"][str(frozen_action_index)])
             for item in split_reports
-            if isinstance(item.get("best_iteration"), int)
-            and int(item["best_iteration"]) > 0
+            if isinstance(item.get("best_iterations_by_action"), dict)
+            and isinstance(
+                item["best_iterations_by_action"].get(str(frozen_action_index)),
+                int,
+            )
+            and int(
+                item["best_iterations_by_action"][str(frozen_action_index)]
+            )
+            > 0
         ]
         final_iterations = int(
             round(statistics.median(best_iterations))
             if best_iterations
             else int(args.iterations)
         )
-        final_targets, final_target_transform = fit_joint_policy_target(
+        _, full_target_transform = fit_joint_policy_target(
             outcomes,
             actions=actions,
             base_cost_bps=float(args.additional_round_trip_cost_bps),
             stress_cost_multiplier=float(args.stress_cost_multiplier),
         )
-        if int(final_target_transform["model_output_count"]) <= 0:
+        if frozen_action_index not in full_target_transform[
+            "available_action_indices"
+        ]:
             raise RuntimeError(
-                "development passed without an active continuous-return action"
+                "development passed without a learnable consensus action"
             )
-        final_model = build_model(args)
+        final_target_transform = select_model_action_indices(
+            full_target_transform, [frozen_action_index]
+        )
+        final_targets = transform_joint_policy_targets(
+            outcomes, final_target_transform
+        )
+        final_model = build_model(args, action_index=frozen_action_index)
         final_model.set_params(iterations=final_iterations)
-        final_model.fit(features, final_targets, verbose=False)
+        final_model.fit(features, final_targets[:, 0], verbose=False)
         model_path = pathlib.Path(args.model_output).resolve()
         model_path.parent.mkdir(parents=True, exist_ok=True)
         final_model.save_model(str(model_path))

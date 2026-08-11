@@ -839,7 +839,7 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
     )
     cross_asset = development.get("cross_asset_feature_contract", {})
     if not (
-        development.get("schema_version") == "microstructure_alpha_development_v3"
+        development.get("schema_version") == "microstructure_alpha_development_v4"
         and development.get("status") == "PASS"
         and development.get("fully_verifiable") is True
         and development.get("research_domain") == "forward_development_only"
@@ -897,7 +897,13 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         >= 0.60
         and validation.get("oos_windows_non_overlapping") is True
         and isinstance(model_contract, dict)
-        and model_contract.get("loss_function") == "MultiRMSE"
+        and model_contract.get("loss_function") == "RMSE"
+        and model_contract.get("model_topology")
+        == "independent_single_output_regressor_per_action"
+        and model_contract.get("development_model_scope")
+        == "one_model_per_fit_learnable_predeclared_action"
+        and model_contract.get("frozen_model_scope")
+        == "single_consensus_action_model"
         and model_contract.get("training_target")
         == "fit_only_independent_winsorized_executable_net_return"
         and model_contract.get("target_normalization")

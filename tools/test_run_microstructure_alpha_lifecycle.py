@@ -89,7 +89,10 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     }
     model_contract = {
         "library": "catboost",
-        "loss_function": "MultiRMSE",
+        "loss_function": "RMSE",
+        "model_topology": "independent_single_output_regressor_per_action",
+        "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
+        "frozen_model_scope": "single_consensus_action_model",
         "training_target": "fit_only_independent_winsorized_executable_net_return",
         "target_normalization": "per_action_fit_only_winsorized_zero_mean_unit_variance",
         "inference_score": "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps",
@@ -113,9 +116,10 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "output_feature_row_count": 500,
     }
     target_transform = {
-        "method": "fit_only_winsorized_action_net_return_v3",
+        "method": "fit_only_winsorized_action_net_return_v4",
         "training_objective": "independent_executable_base_net_return_bps",
         "actions": target_contract["actions"],
+        "available_action_indices": [0],
         "model_action_indices": [0],
         "model_output_count": 1,
         "target_normalization": "per_action_fit_only_winsorized_zero_mean_unit_variance",

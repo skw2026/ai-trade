@@ -375,7 +375,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(scores)))
 
     @unittest.skipIf(probe.CatBoostRegressor is None, "catboost is unavailable")
-    def test_real_catboost_learns_continuous_multi_action_scores_in_bps(self):
+    def test_real_catboost_learns_independent_continuous_action_scores_in_bps(self):
         rng = np.random.default_rng(20260811)
         features = rng.normal(size=(2400, 6))
         noise = rng.normal(scale=0.25, size=(2400, 2))
@@ -405,17 +405,18 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             l2_leaf_reg=3.0,
             random_strength=0.0,
             random_seed=7,
-        )
-        model = probe.build_model(args)
-        model.fit(
-            features[:1800],
-            fit_targets,
-            eval_set=(features[1800:], validation_targets),
             early_stopping_rounds=10,
-            verbose=False,
+        )
+        models = probe.fit_independent_action_models(
+            fit_features=features[:1800],
+            fit_targets=fit_targets,
+            validation_features=features[1800:],
+            validation_targets=validation_targets,
+            transform=transform,
+            args=args,
         )
         scores, raw = probe.predict_base_net_scores(
-            model, features[1800:], transform
+            models, features[1800:], transform
         )
 
         self.assertEqual(raw.shape, (600, 2))
@@ -450,6 +451,28 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         np.testing.assert_allclose(np.mean(targets, axis=0), np.zeros(4), atol=1e-12)
         np.testing.assert_allclose(np.std(targets, axis=0), np.ones(4), atol=1e-12)
         self.assertGreater(np.sum(targets[0] > 0.0), 1)
+
+    def test_frozen_transform_serializes_only_consensus_action_model(self):
+        outcomes = np.asarray(
+            [[-4.0, 2.0], [-2.0, 4.0], [1.0, -3.0], [3.0, -1.0]]
+        )
+        _, transform = probe.fit_joint_policy_target(
+            outcomes,
+            actions=[
+                {"direction": "long", "horizon_seconds": 15},
+                {"direction": "short", "horizon_seconds": 15},
+            ],
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+        )
+
+        frozen = probe.select_model_action_indices(transform, [1])
+
+        self.assertEqual(frozen["available_action_indices"], [0, 1])
+        self.assertEqual(frozen["model_action_indices"], [1])
+        self.assertEqual(frozen["model_output_count"], 1)
+        targets = probe.transform_joint_policy_targets(outcomes, frozen)
+        self.assertEqual(targets.shape, (4, 1))
 
     def test_nested_calibration_uses_ranked_negative_scores_without_weakening_economics(self):
         timestamps = np.arange(100, dtype=np.int64) * 1000
@@ -673,7 +696,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             ), mock.patch.object(
                 probe,
                 "build_model",
-                side_effect=lambda unused: FakeMultiModel(),
+                side_effect=lambda unused, action_index=0: FakeMultiModel(),
             ), mock.patch.object(
                 probe,
                 "evaluate_prediction_permutation_controls",

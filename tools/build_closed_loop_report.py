@@ -957,7 +957,7 @@ def assess_microstructure_capture(path: Path) -> Dict[str, Any]:
 
 def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
-    schema_ok = payload.get("schema_version") == "microstructure_alpha_development_v3"
+    schema_ok = payload.get("schema_version") == "microstructure_alpha_development_v4"
     reported_not_ready = payload.get("status") == "NOT_READY"
     fully_verifiable = payload.get("fully_verifiable") is True
     economic_screen = payload.get("economic_screen", {})

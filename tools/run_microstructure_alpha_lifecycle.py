@@ -38,7 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
-ALGORITHM_CONTRACT_REVISION = "continuous_net_return_target_v5"
+ALGORITHM_CONTRACT_REVISION = "independent_action_regressors_v6"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -315,7 +315,13 @@ def validate_development_candidate(
     model_contract = report.get("model_contract", {})
     if not (
         isinstance(model_contract, dict)
-        and model_contract.get("loss_function") == "MultiRMSE"
+        and model_contract.get("loss_function") == "RMSE"
+        and model_contract.get("model_topology")
+        == "independent_single_output_regressor_per_action"
+        and model_contract.get("development_model_scope")
+        == "one_model_per_fit_learnable_predeclared_action"
+        and model_contract.get("frozen_model_scope")
+        == "single_consensus_action_model"
         and model_contract.get("training_target")
         == "fit_only_independent_winsorized_executable_net_return"
         and model_contract.get("target_normalization")
@@ -371,18 +377,26 @@ def validate_development_candidate(
     if not (
         isinstance(target_transform, dict)
         and target_transform.get("method")
-        == "fit_only_winsorized_action_net_return_v3"
+        == "fit_only_winsorized_action_net_return_v4"
         and target_transform.get("training_objective")
         == "independent_executable_base_net_return_bps"
         and target_transform.get("validation_or_test_statistics_used") is False
         and isinstance(action_statistics, list)
         and len(action_statistics) == len(report.get("target_contract", {}).get("actions", []))
+        and isinstance(target_transform.get("available_action_indices"), list)
         and isinstance(model_action_indices, list)
         and int(target_transform.get("model_output_count", -1))
         == len(model_action_indices)
-        and len(model_action_indices) > 0
+        and model_action_indices == [int(frozen.get("policy_action_index"))]
     ):
         raise LifecycleError("development target transform contract is incomplete")
+    try:
+        development.validate_joint_policy_transform(
+            target_transform,
+            action_count=len(report.get("target_contract", {}).get("actions", [])),
+        )
+    except ValueError as exc:
+        raise LifecycleError("development target transform contract failed") from exc
     frozen_identity = dict(frozen)
     frozen_identity.pop("model_path", None)
     expected_identity = {
