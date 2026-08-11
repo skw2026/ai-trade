@@ -5850,6 +5850,7 @@ run_paired_evolution_replay_observation() {
     --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}"
     --output-dir "${PAIRED_EVOLUTION_REPLAY_WORK_DIR}"
     --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}"
+    --replay-report "${REPLAY_VALIDATION_REPORT_PATH}"
     --validation-config "${DECISION_EVIDENCE_CONFIG_PATH}"
   )
   if [[ -n "${paired_feature_mapping}" ]]; then
@@ -5994,6 +5995,8 @@ run_decision_evidence_report() {
     --alignment-report "${OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH}" \
     --uplift-report "${EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH}" \
     --ledger-report "${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}" \
+    --ledger "${DECISION_EVIDENCE_LEDGER_PATH}" \
+    --ledger-proposal "${DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH}" \
     --alpha-route-report "${ALPHA_SOURCE_ROUTE_REPORT_PATH}" \
     --output "${DECISION_EVIDENCE_REPORT_PATH}" || status=$?
   finalize_decisive_artifact \

@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from functools import lru_cache
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -157,7 +158,7 @@ def uplift_report(status="UPLIFT_PROVEN"):
     return copy.deepcopy(_uplift_report_cached(status))
 
 
-def ledger_report(
+def forged_ledger_skeleton(
     decision="ALLOW_NEXT_EXPERIMENT",
     *,
     registration_verified=None,
@@ -207,6 +208,140 @@ def alpha_route_report(status="FAIL"):
 
 
 class DecisionEvidenceReportTest(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = pathlib.Path(self.temp_dir.name).resolve(strict=False)
+        self.config_path = self.root / "decision_evidence_validation.json"
+        self.config_path.write_bytes(VALIDATION_CONFIG_BYTES)
+        self.benchmark_path = self.root / "benchmark.json"
+        self.benchmark_path.write_text(
+            json.dumps(benchmark_report()), encoding="utf-8"
+        )
+        self.ledger_path = self.root / "experiments.jsonl"
+        self.proposal = self._proposal("experiment-001")
+        self.proposal_path = self.root / "proposal.json"
+        self.proposal_path.write_text(
+            json.dumps(self.proposal), encoding="utf-8"
+        )
+        registered = ledger.register_experiment(
+            self.ledger_path,
+            self.config_path,
+            self.proposal,
+            benchmark_report(),
+        )
+        self.assertEqual(registered["decision"], "ALLOW_NEXT_EXPERIMENT")
+        self.authoritative_ledger_reaudit = ledger.audit_next_experiment(
+            self.ledger_path,
+            self.config_path,
+            self.proposal,
+            benchmark_report(),
+        )
+        self.assertEqual(
+            self.authoritative_ledger_reaudit["decision"],
+            "ALLOW_NEXT_EXPERIMENT",
+        )
+
+    def _proposal(self, experiment_id, *, result_prefix="result"):
+        information_definition = {
+            "data": "d" * 64,
+            "features": "f" * 64,
+            "actions": "a" * 64,
+        }
+        information_id = ledger.stable_definition_id(information_definition)
+        family_definition = {
+            "mechanism": "lead-lag",
+            "target": "net-utility",
+        }
+        return {
+            "experiment_id": experiment_id,
+            "benchmark_id": BENCHMARK_ID,
+            "validation_policy_sha256": VALIDATION_CONFIG_SHA256,
+            "information_set_definition": information_definition,
+            "information_set_id": information_id,
+            "hypothesis_family_definition": family_definition,
+            "hypothesis_family_id": ledger.stable_family_id(
+                information_id, family_definition
+            ),
+            "display_name": "real ledger fixture",
+            "changed_dimensions": [
+                {"name": "target", "before": "a", "after": "b"}
+            ],
+            "expected_direction": "increase",
+            "stop_condition": {
+                "metric": "stress_lcb",
+                "operator": "gt",
+                "value": 0.0,
+            },
+            "result_source_path": str(
+                (self.root / f"{result_prefix}-{experiment_id}.json").resolve(
+                    strict=False
+                )
+            ),
+        }
+
+    def _real_stopped_ledger_reaudit(self):
+        cached = getattr(self, "_stopped_reaudit", None)
+        if cached is not None:
+            return copy.deepcopy(cached)
+        ledger_path = self.root / "stopped-experiments.jsonl"
+        pending = self._proposal("pending-after-budget", result_prefix="stopped")
+        self.assertEqual(
+            ledger.register_experiment(
+                ledger_path, self.config_path, pending, benchmark_report()
+            )["decision"],
+            "ALLOW_NEXT_EXPERIMENT",
+        )
+        for index in range(3):
+            proposal = self._proposal(
+                f"failed-{index}", result_prefix="stopped"
+            )
+            self.assertEqual(
+                ledger.register_experiment(
+                    ledger_path, self.config_path, proposal, benchmark_report()
+                )["decision"],
+                "ALLOW_NEXT_EXPERIMENT",
+            )
+            registration = ledger.audit_ledger(ledger_path)["registrations"][
+                proposal["experiment_id"]
+            ]
+            result_without_identity = {
+                "schema_version": "decision_experiment_result_v1",
+                "experiment_id": proposal["experiment_id"],
+                "registration_nonce": registration["registration_nonce"],
+                "outcome": "FALSIFIED",
+                "result": {"stress_lcb": -1.0},
+            }
+            result = {
+                **result_without_identity,
+                "result_identity": ledger.canonical_sha256(
+                    result_without_identity
+                ),
+            }
+            result_path = pathlib.Path(proposal["result_source_path"])
+            result_path.write_bytes(ledger.canonical_json_bytes(result) + b"\n")
+            result_path.chmod(0o444)
+            observed = ledger.observe_experiment(
+                ledger_path,
+                self.config_path,
+                {"experiment_id": proposal["experiment_id"]},
+                benchmark_report(),
+            )
+            self.assertIn(
+                observed["decision"],
+                {"ALLOW_NEXT_EXPERIMENT", "STOP_CURRENT_FAMILY"},
+            )
+        self._stopped_reaudit = ledger.audit_next_experiment(
+            ledger_path,
+            self.config_path,
+            pending,
+            benchmark_report(),
+        )
+        self.assertEqual(
+            self._stopped_reaudit["decision"], "STOP_CURRENT_FAMILY"
+        )
+        return copy.deepcopy(self._stopped_reaudit)
+
     def build(
         self,
         benchmark=UNSET,
@@ -214,15 +349,27 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         uplift=UNSET,
         ledger=UNSET,
         alpha_route=UNSET,
+        authoritative_ledger_reaudit=UNSET,
     ):
+        ledger_input = (
+            copy.deepcopy(self.authoritative_ledger_reaudit)
+            if ledger is UNSET
+            else ledger
+        )
+        authoritative = (
+            copy.deepcopy(self.authoritative_ledger_reaudit)
+            if authoritative_ledger_reaudit is UNSET
+            else authoritative_ledger_reaudit
+        )
         return builder.build_report(
             benchmark_report() if benchmark is UNSET else benchmark,
             alignment_report() if alignment is UNSET else alignment,
             uplift_report() if uplift is UNSET else uplift,
-            ledger_report() if ledger is UNSET else ledger,
+            ledger_input,
             alpha_route_report() if alpha_route is UNSET else alpha_route,
             validation_policy=VALIDATION_CONFIG,
             validation_config_sha256=VALIDATION_CONFIG_SHA256,
+            authoritative_ledger_reaudit=authoritative,
         )
 
     def assert_no_authority(self, report):
@@ -245,6 +392,93 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         self.assertTrue(report["ledger"]["registration_verified"])
         self.assertTrue(report["ledger"]["registration_audit"]["verified"])
         self.assert_no_authority(report)
+
+    def test_direct_api_cannot_continue_without_authoritative_ledger_reaudit(self):
+        report = self.build(authoritative_ledger_reaudit=None)
+
+        self.assertEqual(report["research_decision"], "STOP")
+        self.assertEqual(report["ledger"]["status"], "UNVERIFIABLE")
+        self.assert_no_authority(report)
+
+    def test_forged_all_hex_ledger_skeleton_cannot_replace_authoritative_reaudit(self):
+        forged = forged_ledger_skeleton()
+        authoritative = copy.deepcopy(forged)
+        authoritative["registration_nonce"] = "9" * 64
+
+        report = builder.build_report(
+            benchmark_report(),
+            alignment_report(),
+            uplift_report(),
+            forged,
+            alpha_route_report(),
+            validation_policy=VALIDATION_CONFIG,
+            validation_config_sha256=VALIDATION_CONFIG_SHA256,
+            authoritative_ledger_reaudit=authoritative,
+        )
+
+        self.assertEqual(report["research_decision"], "STOP")
+        self.assertFalse(report["ledger"]["registration_audit"]["verified"])
+        self.assertTrue(report["ledger"]["validation_errors"])
+
+    def test_budget_decision_must_match_remaining_budget_and_canonical_reason(self):
+        for name, authoritative in (
+            (
+                "allow_with_zero",
+                {
+                    **forged_ledger_skeleton(),
+                    "remaining_budgets": {"family": 0, "information_set": 7},
+                },
+            ),
+            (
+                "stop_without_zero",
+                {
+                    **forged_ledger_skeleton("STOP_CURRENT_FAMILY"),
+                    "reasons": ["failure budget is exhausted"],
+                },
+            ),
+        ):
+            with self.subTest(name=name):
+                report = builder.build_report(
+                    benchmark_report(),
+                    alignment_report(),
+                    uplift_report(),
+                    authoritative,
+                    alpha_route_report(),
+                    validation_policy=VALIDATION_CONFIG,
+                    validation_config_sha256=VALIDATION_CONFIG_SHA256,
+                    authoritative_ledger_reaudit=authoritative,
+                )
+                self.assertEqual(report["research_decision"], "STOP")
+                self.assertEqual(report["ledger"]["status"], "UNVERIFIABLE")
+
+    def test_child_validator_exception_is_fail_closed(self):
+        cases = (
+            ("benchmark", "validate_verified_benchmark_report"),
+            ("alignment", "validate_alignment_report_artifact"),
+            ("uplift", "validate_evolution_uplift_report_artifact"),
+        )
+        for channel, validator_name in cases:
+            with self.subTest(channel=channel), mock.patch.object(
+                builder,
+                validator_name,
+                side_effect=RuntimeError("malformed child"),
+            ):
+                report = builder.build_report(
+                    benchmark_report(),
+                    alignment_report(),
+                    uplift_report(),
+                    self.authoritative_ledger_reaudit,
+                    alpha_route_report(),
+                    validation_policy=VALIDATION_CONFIG,
+                    validation_config_sha256=VALIDATION_CONFIG_SHA256,
+                    authoritative_ledger_reaudit=(
+                        self.authoritative_ledger_reaudit
+                    ),
+                )
+
+            self.assertEqual(report["research_decision"], "STOP")
+            self.assertEqual(report[channel]["status"], "UNVERIFIABLE")
+            self.assert_no_authority(report)
 
     def test_self_reported_positive_skeletons_and_derived_tampering_cannot_continue(self):
         skeleton_alignment = {
@@ -280,24 +514,33 @@ class DecisionEvidenceReportTest(unittest.TestCase):
 
     def test_forged_allow_without_verified_pending_registration_stops(self):
         cases = []
-        not_verified = ledger_report(registration_verified=False)
+        not_verified = copy.deepcopy(self.authoritative_ledger_reaudit)
+        not_verified["registration_verified"] = False
         cases.append(("not_verified", not_verified))
-        missing_verification = ledger_report()
+        missing_verification = copy.deepcopy(self.authoritative_ledger_reaudit)
         missing_verification.pop("registration_verified")
         cases.append(("missing_verification", missing_verification))
         for value in (None, "", "bad experiment id"):
             cases.append(
-                (f"experiment_id={value!r}", ledger_report(experiment_id=value))
+                (
+                    f"experiment_id={value!r}",
+                    {
+                        **copy.deepcopy(self.authoritative_ledger_reaudit),
+                        "experiment_id": value,
+                    },
+                )
             )
-        mismatch_reason = ledger_report()
+        mismatch_reason = copy.deepcopy(self.authoritative_ledger_reaudit)
         mismatch_reason["reasons"] = ["audit-next proposal does not match preregistration"]
         cases.append(("identity_mismatch", mismatch_reason))
         cases.append(
             (
                 "unverified_stop_current_family",
-                ledger_report(
-                    "STOP_CURRENT_FAMILY", registration_verified=False
-                ),
+                {
+                    **copy.deepcopy(self.authoritative_ledger_reaudit),
+                    "decision": "STOP_CURRENT_FAMILY",
+                    "registration_verified": False,
+                },
             )
         )
 
@@ -314,7 +557,7 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         repository = pathlib.Path(__file__).resolve().parents[1]
         ledger_tool = repository / "tools" / "experiment_budget_ledger.py"
         with tempfile.TemporaryDirectory() as temp_dir:
-            root = pathlib.Path(temp_dir)
+            root = pathlib.Path(temp_dir).resolve(strict=False)
             config_path = root / "decision_evidence_validation.json"
             config_path.write_bytes(VALIDATION_CONFIG_BYTES)
             benchmark_path = root / "benchmark.json"
@@ -399,7 +642,10 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             audit_report = json.loads(audited.stdout)
             self.assertEqual(audit_report["decision"], "ALLOW_NEXT_EXPERIMENT")
             self.assertTrue(audit_report["registration_verified"])
-            continued = self.build(ledger=audit_report)
+            continued = self.build(
+                ledger=audit_report,
+                authoritative_ledger_reaudit=audit_report,
+            )
             self.assertEqual(continued["research_decision"], "CONTINUE")
             self.assertEqual(
                 continued["authorized_experiment_id"],
@@ -468,7 +714,10 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                 consumed_report["decision"], "BLOCK_INVALID_LEDGER"
             )
             self.assertFalse(consumed_report["registration_verified"])
-            stopped = self.build(ledger=consumed_report)
+            stopped = self.build(
+                ledger=consumed_report,
+                authoritative_ledger_reaudit=consumed_report,
+            )
 
         self.assertEqual(stopped["research_decision"], "STOP")
         self.assertEqual(stopped["ledger"]["status"], "UNVERIFIABLE")
@@ -487,9 +736,13 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         cases.append(
             ({"uplift": uplift_report("NOT_PROVEN")}, ["UPLIFT_NOT_PROVEN"])
         )
+        stopped_ledger = self._real_stopped_ledger_reaudit()
         cases.append(
             (
-                {"ledger": ledger_report("STOP_CURRENT_FAMILY")},
+                {
+                    "ledger": stopped_ledger,
+                    "authoritative_ledger_reaudit": stopped_ledger,
+                },
                 ["LEDGER_STOP_CURRENT_FAMILY"],
             )
         )
@@ -504,7 +757,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         report = self.build(
             alignment=alignment_report(statuses),
             uplift=uplift_report("NOT_PROVEN"),
-            ledger=ledger_report("STOP_CURRENT_FAMILY"),
+            ledger=stopped_ledger,
+            authoritative_ledger_reaudit=stopped_ledger,
         )
         self.assertEqual(
             report["reason_codes"],
@@ -528,13 +782,13 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             ),
             ({"uplift": uplift_report("UNVERIFIABLE")}, "UPLIFT_UNVERIFIABLE"),
             (
-                {"ledger": ledger_report("BLOCK_INVALID_LEDGER")},
-                "LEDGER_BLOCK_INVALID_LEDGER",
+                {"ledger": forged_ledger_skeleton("BLOCK_INVALID_LEDGER")},
+                "LEDGER_INPUT_UNVERIFIABLE",
             ),
             ({"uplift": uplift_report("MAYBE")}, "UPLIFT_UNKNOWN_STATUS"),
             (
-                {"ledger": ledger_report("UNKNOWN")},
-                "LEDGER_UNKNOWN_STATUS",
+                {"ledger": forged_ledger_skeleton("UNKNOWN")},
+                "LEDGER_INPUT_UNVERIFIABLE",
             ),
         ]
         for overrides, reason in cases:
@@ -553,7 +807,7 @@ class DecisionEvidenceReportTest(unittest.TestCase):
     def test_missing_or_damaged_input_only_invalidates_its_own_section(self):
         good_alignment = alignment_report()
         good_uplift = uplift_report()
-        good_ledger = ledger_report()
+        good_ledger = copy.deepcopy(self.authoritative_ledger_reaudit)
         cases = [
             ("benchmark", None, "benchmark", "BENCHMARK_UNVERIFIABLE"),
             ("alignment", None, "alignment", "ALIGNMENT_INPUT_UNVERIFIABLE"),
@@ -589,7 +843,7 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         cases = (
             ("alignment", alignment_report),
             ("uplift", uplift_report),
-            ("ledger", ledger_report),
+            ("ledger", lambda: copy.deepcopy(self.authoritative_ledger_reaudit)),
         )
         for section_name, factory in cases:
             with self.subTest(section=section_name):
@@ -611,7 +865,7 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         cases = (
             ("alignment", alignment_report),
             ("uplift", uplift_report),
-            ("ledger", ledger_report),
+            ("ledger", lambda: copy.deepcopy(self.authoritative_ledger_reaudit)),
         )
         for section_name, factory in cases:
             with self.subTest(section=section_name):
@@ -643,7 +897,7 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             benchmark_report(),
             alignment_report(),
             uplift_report(),
-            ledger_report(),
+            copy.deepcopy(self.authoritative_ledger_reaudit),
             alpha_route_report(),
         )
         before = copy.deepcopy(inputs)
@@ -677,6 +931,10 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(paths["uplift"]),
                     "--ledger-report",
                     str(paths["ledger"]),
+                    "--ledger",
+                    str(self.ledger_path),
+                    "--ledger-proposal",
+                    str(self.proposal_path),
                     "--config",
                     str(config_path),
                     "--alpha-route-report",
@@ -694,7 +952,13 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             self.assertEqual(json.loads(completed.stdout), written)
             self.assertEqual(list(root.glob(f"{output.name}.tmp.*")), [])
 
-            paths["uplift"].write_text("{bad", encoding="utf-8")
+            malformed_uplift = uplift_report()
+            malformed_uplift["aggregation_cells"][0][
+                "frozen_utility"
+            ] = "not-a-number"
+            paths["uplift"].write_text(
+                json.dumps(malformed_uplift), encoding="utf-8"
+            )
             failed = subprocess.run(
                 [
                     sys.executable,
@@ -707,6 +971,10 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(paths["uplift"]),
                     "--ledger-report",
                     str(paths["ledger"]),
+                    "--ledger",
+                    str(self.ledger_path),
+                    "--ledger-proposal",
+                    str(self.proposal_path),
                     "--config",
                     str(config_path),
                     "--output",
@@ -722,6 +990,20 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             self.assertEqual(stopped["uplift"]["status"], "UNVERIFIABLE")
             self.assertEqual(stopped["alignment"]["status"], "ALIGNED")
             self.assertEqual(stopped["ledger"]["status"], "ALLOW_NEXT_EXPERIMENT")
+
+    def test_atomic_writer_removes_old_positive_report_when_serialization_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = pathlib.Path(temp_dir) / "decision-evidence.json"
+            output.write_text(
+                json.dumps({"research_decision": "CONTINUE"}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError):
+                builder._write_json(output, {"non_finite": float("nan")})
+
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.glob(f"{output.name}.tmp.*")), [])
 
 
 if __name__ == "__main__":

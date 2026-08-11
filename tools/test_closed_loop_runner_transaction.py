@@ -611,6 +611,16 @@ PY
                 paired_args[paired_args.index("--trade-bot") + 1],
                 "/app/trade_bot",
             )
+            self.assertEqual(
+                paired_args[paired_args.index("--replay-report") + 1],
+                str(
+                    root
+                    / "reports"
+                    / "decisive-observation-test"
+                    / "replay_validation"
+                    / "replay_validation_report.json"
+                ),
+            )
             unified_args = by_tool["build_decision_evidence_report.py"]["args"]
             self.assertEqual(
                 unified_args[unified_args.index("--config") + 1],
@@ -631,6 +641,14 @@ PY
             )
             proposal_arg = ledger_args[ledger_args.index("--request-json") + 1]
             self.assertTrue(proposal_arg.startswith("@"), proposal_arg)
+            self.assertEqual(
+                unified_args[unified_args.index("--ledger") + 1],
+                ledger_args[ledger_args.index("--ledger") + 1],
+            )
+            self.assertEqual(
+                unified_args[unified_args.index("--ledger-proposal") + 1],
+                proposal_arg[1:],
+            )
             prepared_proposal = json.loads(
                 pathlib.Path(proposal_arg[1:]).read_text(encoding="utf-8")
             )

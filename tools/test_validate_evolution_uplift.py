@@ -71,14 +71,97 @@ def config_sha256(policy=None):
 def benchmark_from_blocks(blocks, policy=None, policy_sha256=None):
     policy = copy.deepcopy(policy if policy is not None else config())
     policy_sha256 = policy_sha256 or config_sha256(policy)
+    normalized_blocks = copy.deepcopy(blocks)
+    symbols = set()
+    execution_files = []
+    for block in normalized_blocks:
+        block["cells"] = sorted(
+            block["cells"], key=lambda cell: (cell["symbol"], cell["entry_regime"])
+        )
+        regimes_by_symbol = {}
+        for cell in block["cells"]:
+            symbols.add(cell["symbol"])
+            regimes_by_symbol.setdefault(cell["symbol"], []).append(
+                cell["entry_regime"]
+            )
+        if "executions" not in block:
+            block["executions"] = [
+                {
+                    "execution_id": f"{block['block_id']}:{symbol}",
+                    "symbol": symbol,
+                    "planned_entry_regimes": sorted(regimes_by_symbol[symbol]),
+                    "event_sha256": block["event_sha256"],
+                }
+                for symbol in sorted(regimes_by_symbol)
+            ]
+        block["executions"] = sorted(
+            block["executions"], key=lambda execution: execution["execution_id"]
+        )
+        if len(block["executions"]) > 1:
+            bundle = {
+                "schema_version": "decision_evidence_event_bundle_v1",
+                "block_id": block["block_id"],
+                "executions": [
+                    {
+                        "execution_id": execution["execution_id"],
+                        "symbol": execution["symbol"],
+                        "event_sha256": execution["event_sha256"],
+                    }
+                    for execution in block["executions"]
+                ],
+            }
+            block["event_sha256"] = hashlib.sha256(
+                json.dumps(
+                    bundle,
+                    ensure_ascii=True,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("ascii")
+                + b"\n"
+            ).hexdigest()
+        execution_files.extend(
+            {
+                "logical_name": f"execution:{execution['execution_id']}",
+                "sha256": execution["event_sha256"],
+            }
+            for execution in block["executions"]
+        )
+
+    def files(*logical_names):
+        return [
+            {
+                "logical_name": logical_name,
+                "sha256": hashlib.sha256(logical_name.encode("ascii")).hexdigest(),
+            }
+            for logical_name in sorted(logical_names)
+        ]
+
+    component_files = {
+        "data": sorted(execution_files, key=lambda item: item["logical_name"]),
+        "split": files(
+            "replay_validation_report", *(f"corpus:{symbol}" for symbol in symbols)
+        ),
+        "cost": files("replay_candidate_config", "runtime_config"),
+        "features": files(*(f"feature:{symbol}" for symbol in symbols)),
+        "actions": files("replay_policy", "runtime_policy"),
+        "baseline_policy": files("candidate_model", "candidate_report"),
+        "run_config": files("decision_evidence_validation", "runtime_config"),
+        "implementation": files(
+            "benchmark_builder",
+            "paired_evolution_runner",
+            "replay_validation_runner",
+            "trade_bot",
+        ),
+    }
     canonical_identity = {
         "schema_version": "decision_evidence_benchmark_v1",
         "components": {
             name: {
                 "logical_id": f"{name}-v1",
-                "files": [{"logical_name": name, "sha256": f"{index + 500:064x}"}],
+                "files": component_files[name],
             }
-            for index, name in enumerate(
+            for name in (
                 (
                     "data",
                     "split",
@@ -91,7 +174,7 @@ def benchmark_from_blocks(blocks, policy=None, policy_sha256=None):
                 )
             )
         },
-        "evaluation_universe": {"blocks": blocks},
+        "evaluation_universe": {"blocks": normalized_blocks},
         "validation_policy": {"sha256": policy_sha256, "policy": policy},
     }
     return {
@@ -409,7 +492,7 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
             "blocks": blocks,
             "mismatches": [],
         }
-    return {
+    paired = {
         "schema_version": "paired_evolution_replay_v1",
         "status": "VERIFIED",
         "promotion_authority": False,
@@ -452,6 +535,120 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
         "arms": arms,
         "mismatches": [],
     }
+    if any(block.get("executions") for block in benchmark_blocks):
+        planned_blocks = []
+        for block_index, block in enumerate(benchmark_blocks):
+            executions = []
+            for execution_index, execution in enumerate(block["executions"]):
+                executions.append(
+                    {
+                        **copy.deepcopy(execution),
+                        "target_bucket": "fixture",
+                        "start_timestamp_ms": block["start_timestamp_ms"],
+                        "end_timestamp_ms": block["end_timestamp_ms"],
+                        "segment_identity_sha256": (
+                            f"{block_index * 10 + execution_index + 300:064x}"
+                        ),
+                        "replay_csv": f"/frozen/replay/{execution['execution_id']}.csv",
+                        "source_feature_sha256": f"{execution_index + 400:064x}",
+                        "source_corpus_manifest_sha256": f"{execution_index + 500:064x}",
+                    }
+                )
+            planned_blocks.append({**copy.deepcopy(block), "executions": executions})
+        paired["exact_block_plan"].update(
+            {
+                "schema_version": "exact_replay_block_plan_v2",
+                "blocks": planned_blocks,
+            }
+        )
+        for arm_name, utility in (
+            ("frozen", frozen_utility),
+            ("adaptive", adaptive_utility),
+        ):
+            arm = paired["arms"][arm_name]
+            arm_policy = arm["config"]["policy"]
+            arm_blocks = []
+            for block_index, planned_block in enumerate(planned_blocks):
+                execution_rows = []
+                for execution_index, planned in enumerate(
+                    planned_block["executions"]
+                ):
+                    episodes = []
+                    if execution_index == 0:
+                        episodes = [
+                            full_episode(
+                                arm=arm_name,
+                                block_index=block_index,
+                                sequence=execution_index,
+                                symbol=planned["symbol"],
+                                entry_regime=planned["planned_entry_regimes"][0],
+                                utility=float(utility),
+                                segment_sha256=planned[
+                                    "segment_identity_sha256"
+                                ],
+                                policy=arm_policy,
+                            )
+                        ]
+                    evidence = episode_evidence(
+                        episodes, planned["segment_identity_sha256"], arm_policy
+                    )
+                    execution_rows.append(
+                        {
+                            "execution_id": planned["execution_id"],
+                            "symbol": planned["symbol"],
+                            "planned_entry_regimes": planned[
+                                "planned_entry_regimes"
+                            ],
+                            "event_sha256": planned["event_sha256"],
+                            "segment_identity_sha256": planned[
+                                "segment_identity_sha256"
+                            ],
+                            "state_dir": (
+                                f"/{arm_name}/{planned_block['block_id']}/"
+                                f"execution-{execution_index}/state"
+                            ),
+                            "initial_weights_sha256": paired["initial_weights"][
+                                "sha256"
+                            ],
+                            "initial_evolution_state_sha256": paired[
+                                "initial_evolution_state"
+                            ]["sha256"],
+                            "historical_state_loaded": False,
+                            "continued_from_block_id": None,
+                            "trade_bot_exit_code": 0,
+                            "assess_exit_code": 0,
+                            "execution_policy_identity": copy.deepcopy(arm_policy),
+                            "trade_bot_sha256": TRADE_BOT_SHA256,
+                            "episode_execution_evidence": evidence,
+                            "no_trade_zero_utility": not episodes,
+                        }
+                    )
+                arm_block = {
+                    "block_id": planned_block["block_id"],
+                    "start_timestamp_ms": planned_block["start_timestamp_ms"],
+                    "end_timestamp_ms": planned_block["end_timestamp_ms"],
+                    "event_sha256": planned_block["event_sha256"],
+                    "cells": copy.deepcopy(planned_block["cells"]),
+                    "executions": execution_rows,
+                }
+                if execution_rows:
+                    execution = execution_rows[0]
+                    for field in (
+                        "segment_identity_sha256",
+                        "state_dir",
+                        "initial_weights_sha256",
+                        "initial_evolution_state_sha256",
+                        "historical_state_loaded",
+                        "continued_from_block_id",
+                        "trade_bot_exit_code",
+                        "assess_exit_code",
+                        "episode_execution_evidence",
+                        "no_trade_zero_utility",
+                    ):
+                        arm_block[field] = execution[field]
+                arm_blocks.append(arm_block)
+            arm["blocks"] = arm_blocks
+    return paired
 
 
 def multi_execution_benchmark_report(block_count=8):
@@ -647,8 +844,29 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
     def validate(self, paired=None, benchmark=None, policy=None):
         benchmark = benchmark or benchmark_report()
         selected_policy = policy if policy is not None else config()
+        selected_paired = paired if paired is not None else paired_manifest(benchmark)
+        for arm in selected_paired.get("arms", {}).values():
+            for block in arm.get("blocks", []):
+                executions = block.get("executions")
+                if not isinstance(executions, list) or not executions:
+                    continue
+                execution = executions[0]
+                for field in (
+                    "segment_identity_sha256",
+                    "state_dir",
+                    "initial_weights_sha256",
+                    "initial_evolution_state_sha256",
+                    "historical_state_loaded",
+                    "continued_from_block_id",
+                    "trade_bot_exit_code",
+                    "assess_exit_code",
+                    "episode_execution_evidence",
+                    "no_trade_zero_utility",
+                ):
+                    if field in block:
+                        execution[field] = block[field]
         return UPLIFT.validate_evolution_uplift(
-            paired if paired is not None else paired_manifest(benchmark),
+            selected_paired,
             benchmark,
             selected_policy,
             validation_config_sha256=config_sha256(selected_policy),
@@ -721,6 +939,46 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
                 mutate(forged)
                 audit = UPLIFT.validate_evolution_uplift_report_artifact(
                     forged,
+                    benchmark,
+                    policy,
+                    validation_config_sha256=config_sha256(policy),
+                )
+                self.assertFalse(audit["verified"])
+                self.assertTrue(audit["errors"])
+
+    def test_artifact_validator_fail_closes_all_malformed_arithmetic_values(self):
+        benchmark = benchmark_report()
+        policy = config()
+        valid = self.validate(benchmark=benchmark, policy=policy)
+        mutations = {
+            "cell_string": lambda item: item["aggregation_cells"][0].__setitem__(
+                "frozen_utility", "not-a-number"
+            ),
+            "cell_container": lambda item: item["aggregation_cells"][0].__setitem__(
+                "adaptive_utility", []
+            ),
+            "cell_nan": lambda item: item["aggregation_cells"][0].__setitem__(
+                "delta", math.nan
+            ),
+            "cell_infinity": lambda item: item["aggregation_cells"][0].__setitem__(
+                "frozen_utility", math.inf
+            ),
+            "block_none": lambda item: item["blocks"][0].__setitem__(
+                "adaptive_utility", None
+            ),
+            "block_negative_infinity": lambda item: item["blocks"][0].__setitem__(
+                "delta", -math.inf
+            ),
+            "episode_nonfinite": lambda item: item["arms"]["frozen"]["episodes"][
+                0
+            ].__setitem__("executable_net_utility", math.nan),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                malformed = copy.deepcopy(valid)
+                mutate(malformed)
+                audit = UPLIFT.validate_evolution_uplift_report_artifact(
+                    malformed,
                     benchmark,
                     policy,
                     validation_config_sha256=config_sha256(policy),

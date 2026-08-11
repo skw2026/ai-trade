@@ -2102,7 +2102,7 @@ def validate_evolution_uplift(
     }
 
 
-def validate_evolution_uplift_report_artifact(
+def _validate_evolution_uplift_report_artifact_impl(
     report: Any,
     benchmark_report: Any,
     validation_policy: Any,
@@ -2400,6 +2400,19 @@ def validate_evolution_uplift_report_artifact(
         if expected_block is None or key in cell_by_key:
             errors.append(f"{prefix}.planned_cell_unique")
             continue
+        numeric_fields_valid = (
+            _is_integer(cell.get("frozen_episode_count"))
+            and int(cell["frozen_episode_count"]) >= 0
+            and _is_integer(cell.get("adaptive_episode_count"))
+            and int(cell["adaptive_episode_count"]) >= 0
+            and all(
+                _is_finite_number(cell.get(field))
+                for field in ("frozen_utility", "adaptive_utility", "delta")
+            )
+        )
+        if not numeric_fields_valid:
+            errors.append(f"{prefix}.finite_derived_utility")
+            continue
         cell_by_key[key] = cell
         frozen_utility, frozen_count = arm_utility.get("frozen", {}).get(
             key, (0.0, 0)
@@ -2407,13 +2420,17 @@ def validate_evolution_uplift_report_artifact(
         adaptive_utility, adaptive_count = arm_utility.get("adaptive", {}).get(
             key, (0.0, 0)
         )
+        derived_delta = adaptive_utility - frozen_utility
+        if not _is_finite_number(derived_delta):
+            errors.append(f"{prefix}.finite_derived_utility")
+            continue
         if (
             cell.get("event_sha256") != expected_block["event_sha256"]
             or cell.get("frozen_episode_count") != frozen_count
             or cell.get("adaptive_episode_count") != adaptive_count
             or cell.get("frozen_utility") != frozen_utility
             or cell.get("adaptive_utility") != adaptive_utility
-            or cell.get("delta") != adaptive_utility - frozen_utility
+            or cell.get("delta") != derived_delta
         ):
             errors.append(f"{prefix}.derived_utility")
     if set(cell_by_key) != set(expected_cells):
@@ -2421,6 +2438,7 @@ def validate_evolution_uplift_report_artifact(
 
     raw_blocks = report.get("blocks")
     derived_block_deltas: list[float] = []
+    verified_blocks: list[Mapping[str, Any]] = []
     if not isinstance(raw_blocks, list) or len(raw_blocks) != len(expected_ids):
         errors.append("uplift.blocks")
         raw_blocks = []
@@ -2431,18 +2449,41 @@ def validate_evolution_uplift_report_artifact(
             continue
         block_id = block.get("block_id")
         expected_block = expected_by_id.get(block_id)
+        if (
+            expected_block is None
+            or not _is_integer(block.get("cell_count"))
+            or int(block["cell_count"]) < 0
+            or not all(
+                _is_finite_number(block.get(field))
+                for field in ("frozen_utility", "adaptive_utility", "delta")
+            )
+        ):
+            errors.append(f"{prefix}.finite_derived_block")
+            continue
         planned_cells = [
             cell_by_key[(block_id, cell["symbol"], cell["entry_regime"])]
             for cell in expected_block["cells"]
-            if expected_block is not None
-            and (block_id, cell["symbol"], cell["entry_regime"]) in cell_by_key
-        ] if expected_block is not None else []
-        frozen_total = sum(float(cell["frozen_utility"]) for cell in planned_cells)
-        adaptive_total = sum(float(cell["adaptive_utility"]) for cell in planned_cells)
+            if (block_id, cell["symbol"], cell["entry_regime"]) in cell_by_key
+        ]
+        try:
+            frozen_total = math.fsum(
+                float(cell["frozen_utility"]) for cell in planned_cells
+            )
+            adaptive_total = math.fsum(
+                float(cell["adaptive_utility"]) for cell in planned_cells
+            )
+        except (OverflowError, TypeError, ValueError):
+            errors.append(f"{prefix}.finite_derived_block")
+            continue
         delta = adaptive_total - frozen_total
+        if not all(
+            _is_finite_number(value)
+            for value in (frozen_total, adaptive_total, delta)
+        ):
+            errors.append(f"{prefix}.finite_derived_block")
+            continue
         if (
-            expected_block is None
-            or block.get("event_sha256") != expected_block["event_sha256"]
+            block.get("event_sha256") != expected_block["event_sha256"]
             or block.get("cell_count") != len(expected_block["cells"])
             or block.get("evidence_complete") is not True
             or block.get("cells") != planned_cells
@@ -2453,6 +2494,7 @@ def validate_evolution_uplift_report_artifact(
             errors.append(f"{prefix}.derived_block")
         else:
             derived_block_deltas.append(delta)
+            verified_blocks.append(block)
     if [block.get("block_id") for block in raw_blocks if isinstance(block, Mapping)] != expected_ids:
         errors.append("uplift.blocks.coverage")
 
@@ -2501,29 +2543,70 @@ def validate_evolution_uplift_report_artifact(
             cells, field="entry_regime"
         ):
             errors.append("uplift.entry_regimes=derived_cells")
-        complete_blocks = [
-            block for block in raw_blocks
-            if isinstance(block, Mapping) and block.get("evidence_complete") is True
-        ]
-        overall = {
-            "frozen_utility": sum(float(block["frozen_utility"]) for block in complete_blocks),
-            "adaptive_utility": sum(float(block["adaptive_utility"]) for block in complete_blocks),
-        }
-        overall["delta"] = overall["adaptive_utility"] - overall["frozen_utility"]
-        overall["mean_block_delta"] = (
-            sum(float(block["delta"]) for block in complete_blocks)
-            / len(complete_blocks)
-            if complete_blocks
-            else None
-        )
-        if report.get("overall") != overall:
-            errors.append("uplift.overall=derived_blocks")
+        try:
+            overall_frozen = math.fsum(
+                float(block["frozen_utility"]) for block in verified_blocks
+            )
+            overall_adaptive = math.fsum(
+                float(block["adaptive_utility"]) for block in verified_blocks
+            )
+            overall_delta = overall_adaptive - overall_frozen
+            mean_block_delta = (
+                math.fsum(float(block["delta"]) for block in verified_blocks)
+                / len(verified_blocks)
+                if verified_blocks
+                else None
+            )
+        except (OverflowError, TypeError, ValueError):
+            errors.append("uplift.overall=finite_derived_blocks")
+        else:
+            numeric_overall = (overall_frozen, overall_adaptive, overall_delta)
+            if mean_block_delta is not None:
+                numeric_overall = (*numeric_overall, mean_block_delta)
+            if not all(_is_finite_number(value) for value in numeric_overall):
+                errors.append("uplift.overall=finite_derived_blocks")
+            else:
+                overall = {
+                    "frozen_utility": overall_frozen,
+                    "adaptive_utility": overall_adaptive,
+                    "delta": overall_delta,
+                    "mean_block_delta": mean_block_delta,
+                }
+                if report.get("overall") != overall:
+                    errors.append("uplift.overall=derived_blocks")
 
     return {
         "verified": not errors,
         "status": source_status,
         "errors": _missing(errors),
     }
+
+
+def validate_evolution_uplift_report_artifact(
+    report: Any,
+    benchmark_report: Any,
+    validation_policy: Any,
+    *,
+    validation_config_sha256: str | None,
+) -> dict[str, Any]:
+    """Fail closed for every malformed artifact, including hostile scalar types."""
+
+    try:
+        return _validate_evolution_uplift_report_artifact_impl(
+            report,
+            benchmark_report,
+            validation_policy,
+            validation_config_sha256=validation_config_sha256,
+        )
+    except Exception as exc:
+        source_status = report.get("status") if isinstance(report, Mapping) else None
+        return {
+            "verified": False,
+            "status": source_status,
+            "errors": [
+                f"uplift.artifact_validator_exception:{type(exc).__name__}"
+            ],
+        }
 
 
 def _read_json(path: pathlib.Path) -> Any:

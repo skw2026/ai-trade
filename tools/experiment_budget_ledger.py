@@ -277,6 +277,10 @@ def _canonical_result_path(value: object) -> str:
     if not path.is_absolute():
         raise LedgerValidationError("result_source_path must be absolute")
     canonical = path.resolve(strict=False)
+    if raw != str(canonical):
+        raise LedgerValidationError(
+            "result_source_path must be a canonical absolute path"
+        )
     return str(canonical)
 
 

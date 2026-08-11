@@ -16,6 +16,7 @@ from decision_evidence_common import (
     file_sha256,
     validate_verified_benchmark_report,
 )
+from experiment_budget_ledger import audit_next_experiment
 from validate_evolution_uplift import validate_evolution_uplift_report_artifact
 from validate_objective_alignment import validate_alignment_report_artifact
 
@@ -32,6 +33,32 @@ LEDGER_DECISIONS = frozenset(
     {"ALLOW_NEXT_EXPERIMENT", "STOP_CURRENT_FAMILY", "BLOCK_INVALID_LEDGER"}
 )
 EXPERIMENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+LEDGER_REAUDIT_FIELDS = (
+    "schema_version",
+    "operation",
+    "decision",
+    "appended",
+    "experiment_id",
+    "registration_verified",
+    "benchmark_verified",
+    "hypothesis_family_id",
+    "information_set_id",
+    "benchmark_id",
+    "expected_benchmark_id",
+    "actual_benchmark_id",
+    "validation_policy_sha256",
+    "remaining_budgets",
+    "registration_nonce",
+    "actual_proposal_sha256",
+    "registered_proposal_sha256",
+    "registration_record_hash",
+    "result_source_path",
+    "ledger_record_count",
+    "ledger_tail_record_hash",
+    "checkpoint_recovery_required",
+    "mismatches",
+    "reasons",
+)
 
 
 def _is_sha256(value: Any) -> bool:
@@ -51,6 +78,27 @@ def _is_experiment_id(value: Any) -> bool:
 
 def _copy_report(report: Any) -> Any:
     return copy.deepcopy(report)
+
+
+def _validator_exception_section(
+    channel: str,
+    report: Any,
+    expected_benchmark_id: str | None,
+    exc: Exception,
+) -> dict[str, Any]:
+    reason = f"{channel.upper()}_VALIDATOR_EXCEPTION"
+    return {
+        "status": "UNVERIFIABLE",
+        "source_status": None,
+        "expected_benchmark_id": expected_benchmark_id,
+        "actual_benchmark_id": None,
+        "benchmark_match": False if expected_benchmark_id is not None else None,
+        "validation_errors": [
+            f"{channel}.validator_exception:{type(exc).__name__}"
+        ],
+        "reason_codes": [reason],
+        "report": _copy_report(report),
+    }
 
 
 def _identity_values(
@@ -267,10 +315,15 @@ def _uplift_section(
 
 def _ledger_section(
     report: Any,
+    authoritative_reaudit: Any,
     expected_benchmark_id: str | None,
     validation_config_sha256: str | None,
 ) -> dict[str, Any]:
-    section, payload = _base_child_section(report, expected_benchmark_id)
+    section, payload = _base_child_section(
+        authoritative_reaudit, expected_benchmark_id
+    )
+    section["report"] = _copy_report(report)
+    section["authoritative_reaudit"] = _copy_report(authoritative_reaudit)
     experiment_id = payload.get("experiment_id") if payload is not None else None
     registration_verified = (
         payload.get("registration_verified") if payload is not None else None
@@ -291,8 +344,29 @@ def _ledger_section(
     }
     section["registration_audit"] = registration_audit
     if payload is None:
+        section["validation_errors"].append(
+            "authoritative ledger re-audit is required"
+        )
         section["reason_codes"] = ["LEDGER_INPUT_UNVERIFIABLE"]
         return section
+    input_mismatches: list[str] = []
+    if not isinstance(report, Mapping):
+        input_mismatches.append("ledger input report is not an object")
+    else:
+        input_actual_benchmark_id, input_benchmark_match = _identity_values(
+            report, expected_benchmark_id
+        )
+        section["actual_benchmark_id"] = input_actual_benchmark_id
+        section["benchmark_match"] = input_benchmark_match
+        registration_audit["actual_benchmark_id"] = input_actual_benchmark_id
+        registration_audit["benchmark_match"] = input_benchmark_match
+        for field in LEDGER_REAUDIT_FIELDS:
+            if report.get(field) != payload.get(field):
+                input_mismatches.append(
+                    f"ledger input report differs from authoritative re-audit:{field}"
+                )
+    section["input_report_mismatches"] = input_mismatches
+    section["validation_errors"].extend(input_mismatches)
     if payload.get("schema_version") != LEDGER_SCHEMA_VERSION:
         section["validation_errors"].append("ledger schema is invalid")
     if payload.get("operation") != "audit-next":
@@ -316,7 +390,11 @@ def _ledger_section(
         section["validation_errors"].append("ledger reasons are invalid")
     if section["validation_errors"]:
         section["status"] = "UNVERIFIABLE"
-        section["reason_codes"] = ["LEDGER_INPUT_UNVERIFIABLE"]
+        section["reason_codes"] = [
+            "LEDGER_BENCHMARK_MISMATCH"
+            if section["benchmark_match"] is False
+            else "LEDGER_INPUT_UNVERIFIABLE"
+        ]
         return section
     if source_status not in LEDGER_DECISIONS:
         section["status"] = "UNVERIFIABLE"
@@ -378,6 +456,27 @@ def _ledger_section(
         for value in remaining_budgets.values()
     ):
         registration_mismatches.append("remaining_budgets are invalid")
+    else:
+        family_remaining = int(remaining_budgets["family"])
+        information_remaining = int(remaining_budgets["information_set"])
+        if source_status == "ALLOW_NEXT_EXPERIMENT":
+            if family_remaining <= 0 or information_remaining <= 0:
+                registration_mismatches.append(
+                    "ALLOW_NEXT_EXPERIMENT requires both remaining budgets positive"
+                )
+            if source_reasons != []:
+                registration_mismatches.append(
+                    "ALLOW_NEXT_EXPERIMENT requires empty canonical reasons"
+                )
+        elif source_status == "STOP_CURRENT_FAMILY":
+            if family_remaining != 0 and information_remaining != 0:
+                registration_mismatches.append(
+                    "STOP_CURRENT_FAMILY requires an exhausted budget"
+                )
+            if source_reasons != ["failure budget is exhausted"]:
+                registration_mismatches.append(
+                    "STOP_CURRENT_FAMILY requires canonical exhausted-budget reason"
+                )
     if payload.get("checkpoint_recovery_required") is not False:
         registration_mismatches.append("checkpoint recovery is required")
     registration_audit["mismatches"] = registration_mismatches
@@ -426,33 +525,57 @@ def build_report(
     *,
     validation_policy: Any,
     validation_config_sha256: str | None,
+    authoritative_ledger_reaudit: Any = None,
 ) -> dict[str, Any]:
     """Build a deterministic decision without mutating source reports or runtime state."""
 
-    benchmark, expected_benchmark_id = _benchmark_section(
-        benchmark_report,
-        validation_policy,
-        validation_config_sha256,
-    )
-    alignment = _alignment_section(
-        alignment_report,
-        expected_benchmark_id,
-        benchmark_report,
-        validation_policy,
-        validation_config_sha256,
-    )
-    uplift = _uplift_section(
-        uplift_report,
-        expected_benchmark_id,
-        benchmark_report,
-        validation_policy,
-        validation_config_sha256,
-    )
-    ledger = _ledger_section(
-        ledger_report,
-        expected_benchmark_id,
-        validation_config_sha256,
-    )
+    try:
+        benchmark, expected_benchmark_id = _benchmark_section(
+            benchmark_report,
+            validation_policy,
+            validation_config_sha256,
+        )
+    except Exception as exc:
+        benchmark = _validator_exception_section(
+            "benchmark", benchmark_report, None, exc
+        )
+        benchmark["benchmark_id"] = None
+        expected_benchmark_id = None
+    try:
+        alignment = _alignment_section(
+            alignment_report,
+            expected_benchmark_id,
+            benchmark_report,
+            validation_policy,
+            validation_config_sha256,
+        )
+    except Exception as exc:
+        alignment = _validator_exception_section(
+            "alignment", alignment_report, expected_benchmark_id, exc
+        )
+    try:
+        uplift = _uplift_section(
+            uplift_report,
+            expected_benchmark_id,
+            benchmark_report,
+            validation_policy,
+            validation_config_sha256,
+        )
+    except Exception as exc:
+        uplift = _validator_exception_section(
+            "uplift", uplift_report, expected_benchmark_id, exc
+        )
+    try:
+        ledger = _ledger_section(
+            ledger_report,
+            authoritative_ledger_reaudit,
+            expected_benchmark_id,
+            validation_config_sha256,
+        )
+    except Exception as exc:
+        ledger = _validator_exception_section(
+            "ledger", ledger_report, expected_benchmark_id, exc
+        )
     sections = (benchmark, alignment, uplift, ledger)
     reason_codes = [
         reason
@@ -510,24 +633,31 @@ def _read_report(path: pathlib.Path) -> Any:
 
 def _write_json(path: pathlib.Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f"{path.name}.tmp.",
-        delete=False,
-    ) as handle:
-        temporary = pathlib.Path(handle.name)
-        json.dump(
-            payload,
-            handle,
-            ensure_ascii=False,
-            sort_keys=True,
-            indent=2,
-            allow_nan=False,
-        )
-        handle.write("\n")
-    temporary.replace(path)
+    temporary: pathlib.Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f"{path.name}.tmp.",
+            delete=False,
+        ) as handle:
+            temporary = pathlib.Path(handle.name)
+            json.dump(
+                payload,
+                handle,
+                ensure_ascii=False,
+                sort_keys=True,
+                indent=2,
+                allow_nan=False,
+            )
+            handle.write("\n")
+        temporary.replace(path)
+    except Exception:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        path.unlink(missing_ok=True)
+        raise
 
 
 def parse_args() -> argparse.Namespace:
@@ -536,6 +666,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--alignment-report", required=True)
     parser.add_argument("--uplift-report", required=True)
     parser.add_argument("--ledger-report", required=True)
+    parser.add_argument("--ledger", required=True)
+    parser.add_argument("--ledger-proposal", required=True)
     parser.add_argument("--config", required=True)
     parser.add_argument("--alpha-route-report")
     parser.add_argument("--output", required=True)
@@ -550,8 +682,21 @@ def main() -> int:
         validation_config_sha256 = file_sha256(config_path)
     except OSError:
         validation_config_sha256 = None
+    benchmark_report = _read_report(pathlib.Path(args.benchmark_report))
+    ledger_proposal = _read_report(pathlib.Path(args.ledger_proposal))
+    try:
+        authoritative_ledger_reaudit = audit_next_experiment(
+            args.ledger,
+            config_path,
+            ledger_proposal,
+            benchmark_report,
+        )
+    except Exception as exc:
+        authoritative_ledger_reaudit = {
+            "reaudit_error": f"{type(exc).__name__}"
+        }
     report = build_report(
-        _read_report(pathlib.Path(args.benchmark_report)),
+        benchmark_report,
         _read_report(pathlib.Path(args.alignment_report)),
         _read_report(pathlib.Path(args.uplift_report)),
         _read_report(pathlib.Path(args.ledger_report)),
@@ -562,6 +707,7 @@ def main() -> int:
         ),
         validation_policy=validation_policy,
         validation_config_sha256=validation_config_sha256,
+        authoritative_ledger_reaudit=authoritative_ledger_reaudit,
     )
     _write_json(pathlib.Path(args.output), report)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, allow_nan=False))

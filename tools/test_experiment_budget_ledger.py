@@ -80,6 +80,38 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def verified_benchmark_report(self):
+        execution_id = "block-01:BTCUSDT"
+        event_sha256 = "e" * 64
+        component_names = {
+            "data": [(f"execution:{execution_id}", event_sha256)],
+            "split": [
+                ("corpus:BTCUSDT", "1" * 64),
+                ("replay_validation_report", "2" * 64),
+            ],
+            "cost": [
+                ("replay_candidate_config", "3" * 64),
+                ("runtime_config", "4" * 64),
+            ],
+            "features": [("feature:BTCUSDT", "5" * 64)],
+            "actions": [
+                ("replay_policy", "6" * 64),
+                ("runtime_policy", "7" * 64),
+            ],
+            "baseline_policy": [
+                ("candidate_model", "8" * 64),
+                ("candidate_report", "9" * 64),
+            ],
+            "run_config": [
+                ("decision_evidence_validation", "a" * 64),
+                ("runtime_config", "4" * 64),
+            ],
+            "implementation": [
+                ("benchmark_builder", "b" * 64),
+                ("paired_evolution_runner", "c" * 64),
+                ("replay_validation_runner", "d" * 64),
+                ("trade_bot", "f" * 64),
+            ],
+        }
         identity = {
             "schema_version": "decision_evidence_benchmark_v1",
             "components": {
@@ -87,21 +119,13 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
                     "logical_id": f"{component}-v1",
                     "files": [
                         {
-                            "logical_name": component,
-                            "sha256": hashlib.sha256(component.encode("ascii")).hexdigest(),
+                            "logical_name": logical_name,
+                            "sha256": sha256,
                         }
+                        for logical_name, sha256 in sorted(component_names[component])
                     ],
                 }
-                for component in (
-                    "data",
-                    "split",
-                    "cost",
-                    "features",
-                    "actions",
-                    "baseline_policy",
-                    "run_config",
-                    "implementation",
-                )
+                for component in component_names
             },
             "evaluation_universe": {
                 "blocks": [
@@ -109,11 +133,18 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
                         "block_id": "block-01",
                         "start_timestamp_ms": 1000,
                         "end_timestamp_ms": 1999,
-                        "event_sha256": "e" * 64,
+                        "event_sha256": event_sha256,
                         "cells": [
                             {"symbol": "BTCUSDT", "entry_regime": "trend"}
                         ],
-                        "executions": [],
+                        "executions": [
+                            {
+                                "execution_id": execution_id,
+                                "symbol": "BTCUSDT",
+                                "planned_entry_regimes": ["trend"],
+                                "event_sha256": event_sha256,
+                            }
+                        ],
                     }
                 ]
             },
@@ -146,7 +177,7 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
         )
 
     def result_path(self, experiment_id):
-        return self.root / f"result-{experiment_id}.json"
+        return (self.root / f"result-{experiment_id}.json").resolve(strict=False)
 
     def registration(
         self,
@@ -257,6 +288,18 @@ class ExperimentBudgetLedgerTest(unittest.TestCase):
         self.assertNotIn("earliest_result_identity", record)
         persisted = LEDGER.audit_ledger(self.ledger_path)["records"][0]
         self.assertEqual(persisted["record_hash"], LEDGER.record_hash(persisted))
+
+    def test_register_rejects_noncanonical_absolute_result_path(self):
+        request = self.registration()
+        canonical = pathlib.Path(request["result_source_path"])
+        request["result_source_path"] = str(canonical.parent / "unused" / ".." / canonical.name)
+
+        report = self.register(request)
+
+        self.assertEqual(report["decision"], "BLOCK_INVALID_LEDGER")
+        self.assertFalse(report["appended"])
+        self.assertIn("canonical", " ".join(report["reasons"]))
+        self.assertEqual(self.ledger_bytes(), b"")
 
     def test_registration_schema_forbids_backfilled_time_and_existing_result(self):
         base = self.registration()
