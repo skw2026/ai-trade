@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
+import json
+import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -11,6 +14,397 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    DECISIVE_TOOLS = [
+        "validate_decision_benchmark.py",
+        "validate_objective_alignment.py",
+        "run_paired_evolution_replay.py",
+        "validate_evolution_uplift.py",
+        "experiment_budget_ledger.py",
+        "build_decision_evidence_report.py",
+    ]
+    DECISIVE_STEPS = [
+        "decision_benchmark_validation",
+        "objective_alignment_validation",
+        "paired_evolution_replay",
+        "evolution_uplift_validation",
+        "experiment_budget_audit",
+        "decision_evidence_report",
+    ]
+    DECISIVE_ARTIFACTS = [
+        "decision_benchmark_validation.json",
+        "objective_alignment_validation.json",
+        "paired_evolution_replay.json",
+        "evolution_uplift_validation.json",
+        "experiment_budget_audit.json",
+        "decision_evidence_report.json",
+    ]
+
+    def _write_fake_observation_python(self, root):
+        fake_bin = root / "bin"
+        fake_bin.mkdir()
+        fake_python = fake_bin / "python3"
+        fake_python.write_text(
+            f"#!{sys.executable}\n"
+            + textwrap.dedent(
+                r'''
+                import json
+                import os
+                import pathlib
+                import sys
+
+                real_python = os.environ["REAL_PYTHON"]
+                known = {
+                    "validate_decision_benchmark.py",
+                    "validate_objective_alignment.py",
+                    "run_paired_evolution_replay.py",
+                    "validate_evolution_uplift.py",
+                    "experiment_budget_ledger.py",
+                    "build_decision_evidence_report.py",
+                }
+                tool = pathlib.Path(sys.argv[1]).name if len(sys.argv) > 1 else ""
+                if tool not in known:
+                    os.execv(real_python, [real_python, *sys.argv[1:]])
+
+                args = sys.argv[2:]
+                with pathlib.Path(os.environ["OBSERVATION_LOG"]).open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(
+                        json.dumps({"tool": tool, "args": args}, sort_keys=True)
+                        + "\n"
+                    )
+
+                def option(name):
+                    for index, value in enumerate(args):
+                        if value == name and index + 1 < len(args):
+                            return args[index + 1]
+                        if value.startswith(name + "="):
+                            return value.split("=", 1)[1]
+                    return ""
+
+                def write(path_text, payload):
+                    path = pathlib.Path(path_text)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(
+                        json.dumps(payload, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+
+                benchmark_id = "b" * 64
+                omit = os.environ.get("FAKE_OMIT_ARTIFACT_TOOL") == tool
+                if tool == "validate_decision_benchmark.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "decision_evidence_benchmark_validation_v1",
+                            "identity_status": "VERIFIED",
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                elif tool == "validate_objective_alignment.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "objective_alignment_validation_v1",
+                            "overall_status": "UNVERIFIABLE",
+                            "benchmark_id": benchmark_id,
+                            "missing_fields": [
+                                "candidate_level_complete_execution_utility"
+                            ],
+                        },
+                    )
+                elif tool == "run_paired_evolution_replay.py" and not omit:
+                    write(
+                        str(
+                            pathlib.Path(option("--output-dir"))
+                            / "paired_evolution_replay_manifest.json"
+                        ),
+                        {
+                            "schema_version": "paired_evolution_replay_v1",
+                            "status": "UNVERIFIABLE",
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                elif tool == "validate_evolution_uplift.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "evolution_uplift_validation_v1",
+                            "status": "UNVERIFIABLE",
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                elif tool == "experiment_budget_ledger.py" and not omit:
+                    print(
+                        json.dumps(
+                            {
+                                "schema_version": "experiment_budget_ledger_decision_v1",
+                                "decision": "ALLOW_NEXT_EXPERIMENT",
+                                "benchmark_id": benchmark_id,
+                            },
+                            sort_keys=True,
+                        )
+                    )
+                elif tool == "build_decision_evidence_report.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "decision_evidence_report_v1",
+                            "research_decision": os.environ.get(
+                                "FAKE_RESEARCH_DECISION", "CONTINUE"
+                            ),
+                            "research_decision_only": True,
+                            "promotion_authority": False,
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                raise SystemExit(
+                    19 if os.environ.get("FAKE_FAIL_TOOL") == tool else 0
+                )
+                '''
+            ),
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+        return fake_bin
+
+    def _run_decisive_chain(self, root, body, fail_tool="", omit_tool=""):
+        fake_bin = self._write_fake_observation_python(root)
+        proposal = json.dumps(
+            {
+                "benchmark_id": "b" * 64,
+                "hypothesis_family_id": "a" * 64,
+                "information_set_id": "c" * 64,
+            },
+            sort_keys=True,
+        )
+        script = textwrap.dedent(
+            r'''
+            set -euo pipefail
+            export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+            export CLOSED_LOOP_RUN_ID=decisive-observation-test
+            source tools/closed_loop_runner.sh full \
+              --output-root "${TMP_ROOT}/reports" \
+              --decision-evidence-benchmark-manifest "${TMP_ROOT}/inputs/benchmark.json" \
+              --decision-evidence-benchmark-root "${TMP_ROOT}/benchmark-root" \
+              --decision-evidence-config "${TMP_ROOT}/inputs/policy.json" \
+              --decision-evidence-runtime-config "${TMP_ROOT}/inputs/runtime.yaml" \
+              --decision-evidence-candidate-model "${TMP_ROOT}/inputs/candidate.cbm" \
+              --decision-evidence-candidate-report "${TMP_ROOT}/inputs/candidate.json" \
+              --decision-evidence-feature-csv "${TMP_ROOT}/inputs/features.csv" \
+              --decision-evidence-corpus-manifest "${TMP_ROOT}/inputs/corpus.json" \
+              --decision-evidence-trade-bot "/app/trade_bot" \
+              --decision-evidence-ledger "${TMP_ROOT}/inputs/ledger.jsonl" \
+              --decision-evidence-ledger-proposal "${PROPOSAL_JSON}"
+
+            compose_cmd() {
+              while (( $# > 0 )); do
+                if [[ "$1" == "ai-trade-research" ]]; then
+                  shift
+                  python3 "$@"
+                  return $?
+                fi
+                shift
+              done
+              return 0
+            }
+            '''
+        ) + textwrap.dedent(body)
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+                "REAL_PYTHON": sys.executable,
+                "OBSERVATION_LOG": str(root / "observation_commands.jsonl"),
+                "TMP_ROOT": str(root),
+                "PROPOSAL_JSON": proposal,
+                "FAKE_FAIL_TOOL": fail_tool,
+                "FAKE_OMIT_ARTIFACT_TOOL": omit_tool,
+                "FAKE_RESEARCH_DECISION": "CONTINUE",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_alpha_route_failure_still_runs_ordered_decisive_observation_chain(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_decisive_chain(
+                root,
+                r'''
+                run_freeze_baseline() { return 0; }
+                prepare_training_data() { return 0; }
+                run_research_domain_split() { return 0; }
+                run_feature_parity() { return 0; }
+                run_data_quality() { return 0; }
+                run_miner() { return 0; }
+                run_market_alpha_development_gate() { return 0; }
+                run_microstructure_capture_gate() { return 0; }
+                run_microstructure_alpha_development_gate() { return 0; }
+                run_microstructure_alpha_lifecycle_gate() { return 0; }
+                run_alpha_source_route_gate() { return 23; }
+
+                run_training_chain
+                printf '%s\n' "${RUN_REQUIRED_STEP_STATUS}" > "${TMP_ROOT}/required-status"
+                write_run_manifest
+                ''',
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                (root / "required-status").read_text(encoding="utf-8").strip(),
+                "23",
+            )
+
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertEqual(
+                [item["tool"] for item in commands], self.DECISIVE_TOOLS
+            )
+            run_dir = root / "reports" / "decisive-observation-test"
+            for artifact in self.DECISIVE_ARTIFACTS:
+                self.assertTrue((run_dir / artifact).is_file(), artifact)
+
+            statuses = [
+                json.loads(line)
+                for line in (run_dir / "step_status.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            decisive = [
+                item for item in statuses if item["step"] in self.DECISIVE_STEPS
+            ]
+            self.assertEqual(
+                [item["step"] for item in decisive], self.DECISIVE_STEPS
+            )
+            self.assertTrue(
+                all(item["kind"] == "observation" for item in decisive)
+            )
+            self.assertTrue(
+                all(item["blocked_by_prior_failure"] is False for item in decisive)
+            )
+            self.assertTrue(
+                all(item["research_decision_only"] is True for item in decisive)
+            )
+            self.assertNotIn("skipped", {item["result"] for item in decisive})
+
+            objective_args = commands[1]["args"]
+            self.assertNotIn("--evidence", objective_args)
+            for option in (
+                "--miner-report",
+                "--market-alpha-report",
+                "--microstructure-report",
+                "--online-tuner-report",
+            ):
+                self.assertIn(option, objective_args)
+            paired_args = commands[2]["args"]
+            self.assertEqual(
+                paired_args[paired_args.index("--trade-bot") + 1],
+                "/app/trade_bot",
+            )
+            ledger_args = commands[4]["args"]
+            proposal_arg = ledger_args[ledger_args.index("--request-json") + 1]
+            self.assertTrue(proposal_arg.startswith("@"), proposal_arg)
+
+            manifest = json.loads(
+                (run_dir / "run_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(
+                manifest["decision_evidence"]["research_decision_only"]
+            )
+            self.assertFalse(manifest["decision_evidence"]["promotion_authority"])
+            self.assertEqual(
+                [item["step"] for item in manifest["decision_evidence"]["steps"]],
+                self.DECISIVE_STEPS,
+            )
+
+    def test_each_decisive_failure_keeps_running_unified_and_preserves_status(self):
+        for failed_tool in self.DECISIVE_TOOLS:
+            with self.subTest(failed_tool=failed_tool), tempfile.TemporaryDirectory() as td:
+                root = pathlib.Path(td)
+                result = self._run_decisive_chain(
+                    root,
+                    r'''
+                    RUN_REQUIRED_STEP_STATUS=0
+                    run_decisive_observation_chain
+                    printf '%s\n' "${RUN_REQUIRED_STEP_STATUS}" > "${TMP_ROOT}/required-status"
+                    ''',
+                    fail_tool=failed_tool,
+                    omit_tool=(
+                        failed_tool
+                        if failed_tool == "validate_objective_alignment.py"
+                        else ""
+                    ),
+                )
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                self.assertEqual(
+                    (root / "required-status")
+                    .read_text(encoding="utf-8")
+                    .strip(),
+                    "0",
+                )
+                commands = [
+                    json.loads(line)
+                    for line in (root / "observation_commands.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual(
+                    [item["tool"] for item in commands], self.DECISIVE_TOOLS
+                )
+                run_dir = root / "reports" / "decisive-observation-test"
+                for artifact in self.DECISIVE_ARTIFACTS:
+                    self.assertTrue((run_dir / artifact).is_file(), artifact)
+                statuses = [
+                    json.loads(line)
+                    for line in (run_dir / "step_status.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual(
+                    [item["step"] for item in statuses], self.DECISIVE_STEPS
+                )
+                self.assertTrue(
+                    all(item["blocked_by_prior_failure"] is False for item in statuses)
+                )
+
+    def test_continue_decision_never_calls_promotion_or_activation_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_decisive_chain(
+                root,
+                r'''
+                forbidden() { touch "${TMP_ROOT}/forbidden-promotion-call"; }
+                run_registry() { forbidden; }
+                restart_if_activated() { forbidden; }
+                run_microstructure_demo_binding_gate() { forbidden; }
+                begin_activation_transaction() { forbidden; }
+                RUN_REQUIRED_STEP_STATUS=0
+                run_decisive_observation_chain
+                ''',
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((root / "forbidden-promotion-call").exists())
+            report = json.loads(
+                (
+                    root
+                    / "reports"
+                    / "decisive-observation-test"
+                    / "decision_evidence_report.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(report["research_decision"], "CONTINUE")
+            self.assertTrue(report["research_decision_only"])
+            self.assertFalse(report["promotion_authority"])
+
     def test_runner_rejects_invalid_lock_wait(self):
         result = subprocess.run(
             ["bash", "tools/closed_loop_runner.sh", "assess"],
