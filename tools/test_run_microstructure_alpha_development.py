@@ -503,6 +503,52 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertGreater(np.corrcoef(scores[:, 0], outcomes[1800:, 0])[0, 1], 0.7)
         self.assertGreater(np.corrcoef(scores[:, 1], outcomes[1800:, 1])[0, 1], 0.7)
 
+    @unittest.skipIf(probe.CatBoostClassifier is None, "catboost is unavailable")
+    def test_real_catboost_accepts_zero_positive_validation_window(self):
+        rng = np.random.default_rng(20260812)
+        fit_features = rng.normal(size=(800, 4))
+        validation_features = rng.normal(size=(200, 4))
+        fit_outcomes = np.where(
+            fit_features[:, 0] > 0.8, 4.0, -2.0
+        ).reshape(-1, 1)
+        validation_outcomes = np.full((200, 1), -2.0)
+        actions = [{"direction": "long", "horizon_seconds": 60}]
+        fit_targets, transform = probe.fit_joint_policy_target(
+            fit_outcomes,
+            actions=actions,
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+            minimum_profitable_events=16,
+        )
+        validation_targets = probe.transform_joint_policy_targets(
+            validation_outcomes, transform
+        )
+        args = argparse.Namespace(
+            iterations=30,
+            depth=3,
+            learning_rate=0.08,
+            l2_leaf_reg=3.0,
+            random_strength=0.0,
+            random_seed=7,
+            early_stopping_rounds=5,
+            min_fit_profitable_events=16,
+        )
+
+        models = probe.fit_independent_action_models(
+            fit_features=fit_features,
+            fit_targets=fit_targets,
+            validation_features=validation_features,
+            validation_targets=validation_targets,
+            transform=transform,
+            args=args,
+        )
+        _, probabilities = probe.predict_base_net_scores(
+            models, validation_features, transform
+        )
+
+        self.assertEqual(probabilities.shape, (200, 1))
+        self.assertLess(float(np.median(probabilities)), 0.5)
+
     def test_independent_event_targets_preserve_every_supported_action(self):
         actions = [
             {"direction": "long", "horizon_seconds": 15},

@@ -1717,7 +1717,8 @@ def build_model(args: argparse.Namespace, action_index: int = 0) -> Any:
         raise RuntimeError("catboost is required; use ai-trade-research image")
     return CatBoostClassifier(
         loss_function="Logloss",
-        eval_metric="PRAUC:type=Classic",
+        eval_metric="Logloss",
+        boost_from_average=True,
         iterations=int(args.iterations),
         depth=int(args.depth),
         learning_rate=float(args.learning_rate),
@@ -1783,7 +1784,10 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
         "library": "catboost",
         "library_version": getattr(catboost, "__version__", None),
         "loss_function": "Logloss",
-        "eval_metric": "PRAUC:type=Classic",
+        "eval_metric": "Logloss",
+        "boost_from_average": True,
+        "ranking_diagnostics": "validation_and_test_roc_auc_average_precision",
+        "ranking_diagnostics_used_for_fit_or_selection": False,
         "class_weighting": "none",
         "model_topology": "independent_binary_stress_event_classifier_per_action",
         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",

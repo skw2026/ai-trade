@@ -316,7 +316,12 @@ def validate_development_candidate(
     if not (
         isinstance(model_contract, dict)
         and model_contract.get("loss_function") == "Logloss"
-        and model_contract.get("eval_metric") == "PRAUC:type=Classic"
+        and model_contract.get("eval_metric") == "Logloss"
+        and model_contract.get("boost_from_average") is True
+        and model_contract.get("ranking_diagnostics")
+        == "validation_and_test_roc_auc_average_precision"
+        and model_contract.get("ranking_diagnostics_used_for_fit_or_selection")
+        is False
         and model_contract.get("class_weighting") == "none"
         and model_contract.get("model_topology")
         == "independent_binary_stress_event_classifier_per_action"
