@@ -14,6 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEV_COMPOSE = ROOT / "docker-compose.yml"
 PROD_COMPOSE = ROOT / "docker-compose.prod.yml"
 DEPLOY_SCRIPT = ROOT / "deploy" / "ecs-deploy.sh"
+DEPLOY_DIAGNOSTICS_WRITER = ROOT / "deploy" / "write_deployment_diagnostics.py"
 RUNNER_SCRIPT = ROOT / "tools" / "closed_loop_runner.sh"
 REPORT_DOWNLOADER_SCRIPT = ROOT / "tools" / "download_closed_loop_reports.sh"
 ARTIFACT_CONTRACT_VALIDATOR = (
@@ -899,6 +900,7 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_cd_deploy_gate_uses_run_specific_artifacts(self):
         workflow = CD_WORKFLOW.read_text(encoding="utf-8")
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        diagnostics_writer = DEPLOY_DIAGNOSTICS_WRITER.read_text(encoding="utf-8")
         runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn("CLOSED_LOOP_RUN_ID: deploy-${{ github.run_id }}-${{ github.run_attempt }}", workflow)
@@ -909,6 +911,27 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"', script)
         self.assertIn('run_dir="${output_root%/}/${CLOSED_LOOP_RUN_ID}"', script)
         self.assertIn('run_manifest run_id mismatch', script)
+        self.assertIn("record_deployment_diagnostics()", script)
+        self.assertIn("write_deployment_diagnostics.py", script)
+        self.assertIn("ai_trade_deployment_diagnostics_v1", diagnostics_writer)
+        self.assertIn(
+            "cp -f deploy/write_deployment_diagnostics.py",
+            workflow,
+        )
+        self.assertIn(
+            'diagnostics_dir="${reports_root}/deployment_diagnostics"',
+            script,
+        )
+        self.assertIn(
+            '"initial_service_readiness" "${initial_required_containers[@]}"',
+            script,
+        )
+        self.assertNotIn('config.get("Env")', diagnostics_writer)
+        self.assertNotIn("docker logs", diagnostics_writer)
+        self.assertIn(
+            'fetch_report "${REMOTE_DIAGNOSTICS}" ".artifacts/deployment_diagnostics.json"',
+            workflow,
+        )
         self.assertIn("REPLAY_REPORT_PATH_VALUE", runner)
         self.assertIn("RUNTIME_LOG_PATH_VALUE", runner)
         self.assertIn("requested_symbol", runner)
@@ -1051,6 +1074,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             'fetch_report "${REMOTE_BASE}/closed_loop_mechanism_report.json"',
+            workflow,
+        )
+        self.assertIn(
+            'REMOTE_DIAGNOSTICS="${REMOTE_OUTPUT_ROOT%/}/deployment_diagnostics/${EXPECTED_RUN_ID}.json"',
             workflow,
         )
         self.assertNotIn(

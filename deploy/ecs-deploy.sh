@@ -60,6 +60,7 @@ COMPOSE_MATERIALIZER="${DEPLOY_SCRIPT_DIR}/materialize_release_compose.py"
 DEPLOY_GATE_VALIDATOR="${DEPLOY_SCRIPT_DIR}/validate_deploy_gate.py"
 RELEASE_INTEGRITY_VALIDATOR="${DEPLOY_SCRIPT_DIR}/release_integrity.py"
 DEPLOY_STORAGE_PRUNER="${DEPLOY_SCRIPT_DIR}/prune_release_storage.py"
+DEPLOY_DIAGNOSTICS_WRITER="${DEPLOY_SCRIPT_DIR}/write_deployment_diagnostics.py"
 
 if [[ -z "${AI_TRADE_IMAGE:-}" ]]; then
   echo "[deploy] AI_TRADE_IMAGE 未设置"
@@ -90,6 +91,10 @@ if [[ ! -f "${RELEASE_INTEGRITY_VALIDATOR}" ]]; then
 fi
 if [[ ! -f "${DEPLOY_STORAGE_PRUNER}" ]]; then
   echo "[deploy] release storage pruner missing: ${DEPLOY_STORAGE_PRUNER}"
+  exit 1
+fi
+if [[ ! -f "${DEPLOY_DIAGNOSTICS_WRITER}" ]]; then
+  echo "[deploy] deployment diagnostics writer missing: ${DEPLOY_DIAGNOSTICS_WRITER}"
   exit 1
 fi
 if [[ ! "${DEPLOY_LOCK_WAIT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
@@ -265,6 +270,57 @@ closed_loop_reports_root() {
     reports_root="${DEPLOY_RELEASE_ROOT}/${reports_root#./}"
   fi
   printf '%s\n' "${reports_root%/}"
+}
+
+record_deployment_diagnostics() {
+  local phase="$1"
+  local status="$2"
+  local reason="$3"
+  shift 3
+  local -a containers=("$@")
+
+  if [[ -z "${CLOSED_LOOP_RUN_ID}" ]]; then
+    return 0
+  fi
+  if [[ ! "${CLOSED_LOOP_RUN_ID}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+    echo "[deploy] deployment diagnostics skipped: invalid run id"
+    return 0
+  fi
+
+  local reports_root=""
+  local diagnostics_dir=""
+  local diagnostics_path=""
+  reports_root="$(closed_loop_reports_root)"
+  diagnostics_dir="${reports_root}/deployment_diagnostics"
+  diagnostics_path="${diagnostics_dir}/${CLOSED_LOOP_RUN_ID}.json"
+  if ! mkdir -p "${diagnostics_dir}"; then
+    echo "[deploy] failed to create deployment diagnostics directory"
+    return 0
+  fi
+
+  local -a diagnostics_cmd=(
+    python3 "${DEPLOY_DIAGNOSTICS_WRITER}"
+    --output "${diagnostics_path}"
+    --run-id "${CLOSED_LOOP_RUN_ID}"
+    --phase "${phase}"
+    --status "${status}"
+    --reason "${reason}"
+    --release-id "${DEPLOY_RELEASE_ID:-}"
+    --git-sha "${DEPLOY_GIT_SHA:-}"
+    --target-release "${DEPLOY_TARGET_RELEASE:-${COMPOSE_DIR}}"
+    --current-link "${DEPLOY_CURRENT_LINK}"
+    --previous-release "${PREVIOUS_RELEASE_PATH:-}"
+    --compose-project "${AI_TRADE_COMPOSE_PROJECT_NAME}"
+  )
+  local container=""
+  for container in "${containers[@]}"; do
+    diagnostics_cmd+=(--container "${container}")
+  done
+  if ! "${diagnostics_cmd[@]}"; then
+    echo "[deploy] failed to record deployment diagnostics: phase=${phase}"
+    return 0
+  fi
+  echo "[deploy] deployment diagnostics recorded: phase=${phase} status=${status}"
 }
 
 cleanup_deploy_host_storage() {
@@ -861,9 +917,13 @@ log_managed_container_diagnostics() {
 }
 
 wait_for_services_ready() {
+  local diagnostics_phase="$1"
+  shift
   local -a containers_to_check=("$@")
   if (( ${#containers_to_check[@]} == 0 )); then
     echo "[deploy] no containers to check"
+    record_deployment_diagnostics \
+      "${diagnostics_phase}" "FAIL" "no_containers_to_check"
     return 1
   fi
 
@@ -887,6 +947,10 @@ wait_for_services_ready() {
           ;;
         unhealthy|exited|dead|stopped|missing)
           echo "[deploy] container not ready: ${container} status=${status}"
+          record_deployment_diagnostics \
+            "${diagnostics_phase}" "FAIL" \
+            "container_not_ready:${container}:${status}" \
+            "${containers_to_check[@]}"
           return 1
           ;;
         *)
@@ -896,6 +960,9 @@ wait_for_services_ready() {
     done
 
     if [[ "${all_ready}" == "true" ]]; then
+      record_deployment_diagnostics \
+        "${diagnostics_phase}" "PASS" "all_containers_ready" \
+        "${containers_to_check[@]}"
       return 0
     fi
 
@@ -911,6 +978,9 @@ wait_for_services_ready() {
         echo "[deploy] timeout status: ${container}=${status}"
       done
       echo "[deploy] wait timeout: containers=${containers_to_check[*]}"
+      record_deployment_diagnostics \
+        "${diagnostics_phase}" "FAIL" "readiness_timeout" \
+        "${containers_to_check[@]}"
       return 1
     fi
     sleep 3
@@ -1010,7 +1080,7 @@ rollback_to_previous() {
     stop_managed_containers
     return 1
   fi
-  if ! wait_for_services_ready "${required_containers[@]}"; then
+  if ! wait_for_services_ready "rollback_readiness" "${required_containers[@]}"; then
     echo "[deploy] rollback readiness verification failed"
     log_managed_container_diagnostics "post-rollback"
     stop_managed_containers
@@ -1381,8 +1451,15 @@ echo "[deploy] deferred_deploy_services=${deferred_deploy_services[*]}"
 echo "[deploy] required_containers=${required_containers[*]}"
 echo "[deploy] initial_required_containers=${initial_required_containers[*]}"
 
+record_deployment_diagnostics \
+  "deployment_preflight" "IN_PROGRESS" "release_and_service_plan_validated" \
+  "${required_containers[@]}"
+
 if ! ensure_deploy_disk_capacity; then
   echo "[deploy] disk preflight failed before managed service mutation"
+  record_deployment_diagnostics \
+    "disk_preflight" "FAIL" "insufficient_capacity" \
+    "${required_containers[@]}"
   exit 1
 fi
 
@@ -1400,10 +1477,16 @@ compose_cmd=(
 echo "[deploy] prefetching all target service images before managed service mutation"
 if ! "${compose_cmd[@]}" pull "${deploy_services[@]}"; then
   echo "[deploy] target service image prefetch failed; previous services left unchanged"
+  record_deployment_diagnostics \
+    "image_prefetch" "FAIL" "target_service_image_prefetch_failed" \
+    "${required_containers[@]}"
   exit 1
 fi
 if ! ensure_deploy_post_pull_capacity; then
   echo "[deploy] disk headroom check failed after target image pull; previous services left unchanged"
+  record_deployment_diagnostics \
+    "post_pull_capacity" "FAIL" "insufficient_capacity" \
+    "${required_containers[@]}"
   exit 1
 fi
 
@@ -1428,6 +1511,9 @@ upsert_env "AI_TRADE_ENV_FILE" "/run/ai-trade/.env.runtime"
 
 if ! run_startup_preflight; then
   echo "[deploy] startup preflight failed before managed service mutation"
+  record_deployment_diagnostics \
+    "startup_preflight" "FAIL" "startup_preflight_failed" \
+    "${initial_required_containers[@]}"
   if ! restore_previous_env_identity; then
     echo "[deploy] startup preflight env restore failed"
     stop_managed_containers
@@ -1439,6 +1525,9 @@ if ! run_startup_preflight; then
 fi
 
 if ! reconcile_compose_project_identity; then
+  record_deployment_diagnostics \
+    "compose_identity" "FAIL" "compose_project_identity_migration_failed" \
+    "${required_containers[@]}"
   rollback_to_previous "compose project identity migration failed, start rollback" || true
   exit 1
 fi
@@ -1446,37 +1535,57 @@ fi
 if is_true "${CLOSED_LOOP_ENFORCE}" && (( ${#deferred_deploy_services[@]} > 0 )); then
   echo "[deploy] stopping deferred services before gate: ${deferred_deploy_services[*]}"
   if ! "${compose_cmd[@]}" stop "${deferred_deploy_services[@]}"; then
+    record_deployment_diagnostics \
+      "deferred_service_stop" "FAIL" "deferred_service_stop_failed" \
+      "${required_containers[@]}"
     rollback_to_previous "failed to stop deferred services, start rollback"
     exit 1
   fi
 fi
 
 if ! "${compose_cmd[@]}" up -d "${initial_deploy_services[@]}"; then
+  record_deployment_diagnostics \
+    "initial_service_start" "FAIL" "compose_up_failed" \
+    "${initial_required_containers[@]}"
   rollback_to_previous "initial service deployment failed, start rollback"
   exit 1
 fi
 
-if wait_for_services_ready "${initial_required_containers[@]}"; then
+if wait_for_services_ready \
+  "initial_service_readiness" "${initial_required_containers[@]}"; then
   if run_closed_loop_gate; then
     if (( ${#deferred_deploy_services[@]} > 0 )); then
       if ! "${compose_cmd[@]}" up -d "${deferred_deploy_services[@]}"; then
+        record_deployment_diagnostics \
+          "deferred_service_start" "FAIL" "compose_up_failed" \
+          "${required_containers[@]}"
         rollback_to_previous "deferred service deployment failed, start rollback"
         exit 1
       fi
-      if ! wait_for_services_ready "${required_containers[@]}"; then
+      if ! wait_for_services_ready \
+        "deferred_service_readiness" "${required_containers[@]}"; then
         rollback_to_previous "deferred services failed after gate pass, start rollback"
         exit 1
       fi
     fi
     if ! atomic_switch_current_release "${DEPLOY_TARGET_RELEASE:-${COMPOSE_DIR}}"; then
+      record_deployment_diagnostics \
+        "release_activation" "FAIL" "current_release_switch_failed" \
+        "${required_containers[@]}"
       rollback_to_previous "current release switch failed after gate pass, start rollback" || true
       exit 1
     fi
     DEPLOY_TRANSACTION_COMMITTED="true"
+    record_deployment_diagnostics \
+      "deployment" "PASS" "deployment_committed" \
+      "${required_containers[@]}"
     echo "[deploy] deploy success"
     "${compose_cmd[@]}" ps "${deploy_services[@]}" || true
     exit 0
   fi
+  record_deployment_diagnostics \
+    "closed_loop_gate" "FAIL" "closed_loop_gate_failed" \
+    "${initial_required_containers[@]}"
   rollback_to_previous "closed-loop gate failed, start rollback"
   exit 1
 fi

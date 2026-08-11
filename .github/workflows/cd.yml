@@ -226,6 +226,8 @@ jobs:
             "${PAYLOAD_DIR}/deploy/release_integrity.py"
           cp -f deploy/prune_release_storage.py \
             "${PAYLOAD_DIR}/deploy/prune_release_storage.py"
+          cp -f deploy/write_deployment_diagnostics.py \
+            "${PAYLOAD_DIR}/deploy/write_deployment_diagnostics.py"
           cp -a config observability ops tools "${PAYLOAD_DIR}/"
           python3 deploy/materialize_release_compose.py \
             --input "${PAYLOAD_DIR}/docker-compose.prod.yml" \
@@ -763,8 +765,10 @@ jobs:
             REMOTE_OUTPUT_ROOT="/opt/ai-trade/${REMOTE_OUTPUT_ROOT#./}"
           fi
           REMOTE_BASE="${REMOTE_OUTPUT_ROOT%/}/${EXPECTED_RUN_ID}"
+          REMOTE_DIAGNOSTICS="${REMOTE_OUTPUT_ROOT%/}/deployment_diagnostics/${EXPECTED_RUN_ID}.json"
           echo "[deploy] expected deploy gate artifact path: run_id=${EXPECTED_RUN_ID} remote_base=${REMOTE_BASE}"
 
+          fetch_report "${REMOTE_DIAGNOSTICS}" ".artifacts/deployment_diagnostics.json" "deployment_diagnostics" "json"
           fetch_report "${REMOTE_BASE}/closed_loop_report.json" ".artifacts/latest_closed_loop_report.json" "closed_loop_report" "json"
           fetch_report "${REMOTE_BASE}/runtime_assess.json" ".artifacts/latest_runtime_assess.json" "runtime_assess" "json"
           fetch_report "${REMOTE_BASE}/run_meta.json" ".artifacts/latest_run_meta.json" "run_meta" "json"
