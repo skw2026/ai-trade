@@ -1,0 +1,23 @@
+docs/plans/2026-08-11-compare-microstructure-target-architectures.md
+  ai_agent 1-118
+openspec/changes/compare-microstructure-target-architectures/proposal.md
+  ai_agent 1-6
+tools/build_closed_loop_report.py
+  ai_agent 970-974,1048
+tools/test_run_microstructure_alpha_development.py
+  ai_agent 933-1294
+tools/test_build_closed_loop_report.py
+  ai_agent 156-164,173-177
+tools/run_microstructure_alpha_development.py
+  ai_agent 26,35,39-41,46-57,116-123,1067-1205,2192-2526,2637-3043,3098-3480,3483,3531,3710-3724,3917-3927,4033,4104
+openspec/changes/compare-microstructure-target-architectures/specs/microstructure-alpha-development/spec.md
+  ai_agent 1-59
+tools/test_closed_loop_mechanism_audit.py
+  ai_agent 130-139,312-314
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "8d29c48e4dd6ba3f771f5b40fdb4be3fd8defdde",
+  "prompts": {}
+}
