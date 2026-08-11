@@ -15,11 +15,12 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 try:
     from build_replay_candidate_config import derive_candidate_config
     from config_policy_contract import policy_payload, policy_sha256
+    from decision_evidence_common import validate_verified_benchmark_report
     from run_replay_validation import (
         ReplaySegment,
         load_feature_rows,
@@ -29,6 +30,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - package import in tests
     from tools.build_replay_candidate_config import derive_candidate_config
     from tools.config_policy_contract import policy_payload, policy_sha256
+    from tools.decision_evidence_common import validate_verified_benchmark_report
     from tools.run_replay_validation import (
         ReplaySegment,
         load_feature_rows,
@@ -38,13 +40,17 @@ except ModuleNotFoundError:  # pragma: no cover - package import in tests
 
 
 SCHEMA_VERSION = "paired_evolution_replay_v1"
-BENCHMARK_REPORT_SCHEMA = "decision_evidence_benchmark_validation_v1"
 EXACT_PLAN_SCHEMA = "exact_replay_block_plan_v1"
 EXACT_PLAN_V2_SCHEMA = "exact_replay_block_plan_v2"
 EXACT_REPORT_SCHEMA = "exact_replay_block_audit_v1"
 MANIFEST_FILENAME = "paired_evolution_replay_manifest.json"
 ALLOWED_POLICY_DIFFERENCE = "self_evolution.enabled"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+DEFAULT_VALIDATION_CONFIG = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "config"
+    / "decision_evidence_validation.json"
+)
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -211,6 +217,196 @@ def parse_symbol_path_mapping(raw: str) -> dict[str, pathlib.Path]:
             raise ValueError(f"duplicate symbol path mapping: {normalized_symbol}")
         mapping[normalized_symbol] = pathlib.Path(normalized_path)
     return mapping
+
+
+def _benchmark_symbols(benchmark: Mapping[str, Any]) -> set[str]:
+    identity = benchmark.get("canonical_identity")
+    universe = identity.get("evaluation_universe") if isinstance(identity, Mapping) else None
+    blocks = universe.get("blocks") if isinstance(universe, Mapping) else None
+    symbols: set[str] = set()
+    for block in blocks if isinstance(blocks, list) else []:
+        if not isinstance(block, Mapping):
+            continue
+        executions = block.get("executions")
+        if isinstance(executions, list):
+            symbols.update(
+                str(item.get("symbol") or "").strip().upper()
+                for item in executions
+                if isinstance(item, Mapping) and str(item.get("symbol") or "").strip()
+            )
+        cells = block.get("cells")
+        if isinstance(cells, list):
+            symbols.update(
+                str(item.get("symbol") or "").strip().upper()
+                for item in cells
+                if isinstance(item, Mapping) and str(item.get("symbol") or "").strip()
+            )
+    return symbols
+
+
+def _component_file_entries(
+    canonical_identity: Mapping[str, Any], component_name: str, logical_name: str
+) -> list[Mapping[str, Any]]:
+    components = canonical_identity.get("components")
+    component = components.get(component_name) if isinstance(components, Mapping) else None
+    files = component.get("files") if isinstance(component, Mapping) else None
+    if not isinstance(files, list):
+        return []
+    return [
+        item
+        for item in files if isinstance(item, Mapping)
+        and item.get("logical_name") == logical_name
+    ]
+
+
+def _audit_component_binding(
+    *,
+    canonical_identity: Mapping[str, Any],
+    component_name: str,
+    logical_name: str,
+    input_name: str,
+    actual_path: pathlib.Path | None,
+    audit: list[dict[str, Any]],
+    mismatches: list[str],
+    symbol: str | None = None,
+) -> None:
+    entries = _component_file_entries(
+        canonical_identity, component_name, logical_name
+    )
+    expected_sha = (
+        str(entries[0].get("sha256") or "") if len(entries) == 1 else ""
+    )
+    resolved_path = (
+        actual_path.resolve(strict=False) if actual_path is not None else None
+    )
+    actual_sha = ""
+    if resolved_path is not None and resolved_path.is_file():
+        try:
+            actual_sha = file_sha256(resolved_path)
+        except OSError:
+            actual_sha = ""
+    status = (
+        "VERIFIED"
+        if len(entries) == 1
+        and _valid_sha256(expected_sha)
+        and actual_sha == expected_sha
+        else "MISMATCH"
+    )
+    row = {
+        "component": component_name,
+        "logical_name": logical_name,
+        "input_name": input_name,
+        "symbol": symbol,
+        "path": str(resolved_path) if resolved_path is not None else "",
+        "expected_sha256": expected_sha,
+        "actual_sha256": actual_sha,
+        "status": status,
+    }
+    audit.append(row)
+    if status != "VERIFIED":
+        prefix = f"input_binding.{component_name}.{logical_name}"
+        if len(entries) != 1:
+            mismatches.append(
+                f"{prefix}.identity_count_mismatch:expected=1:actual={len(entries)}"
+            )
+        else:
+            mismatches.append(
+                f"{prefix}.sha256_mismatch:expected={expected_sha}:actual={actual_sha}"
+            )
+
+
+def _bind_actual_inputs(
+    *,
+    benchmark: Mapping[str, Any],
+    runtime_config: pathlib.Path,
+    validation_config: pathlib.Path,
+    candidate_model: pathlib.Path,
+    candidate_report: pathlib.Path,
+    trade_bot: pathlib.Path,
+    feature_csv: pathlib.Path,
+    corpus_manifest: pathlib.Path,
+    feature_csv_by_symbol: Mapping[str, pathlib.Path],
+    corpus_manifest_by_symbol: Mapping[str, pathlib.Path],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    identity = benchmark.get("canonical_identity")
+    if not isinstance(identity, Mapping):
+        return [], ["input_binding.canonical_identity_missing"]
+    audit: list[dict[str, Any]] = []
+    mismatches: list[str] = []
+    fixed_bindings = (
+        ("cost", "runtime_config", "runtime_config", runtime_config),
+        ("actions", "runtime_policy", "runtime_config", runtime_config),
+        ("run_config", "runtime_config", "runtime_config", runtime_config),
+        (
+            "run_config",
+            "decision_evidence_validation",
+            "validation_config",
+            validation_config,
+        ),
+        (
+            "baseline_policy",
+            "candidate_model",
+            "candidate_model",
+            candidate_model,
+        ),
+        (
+            "baseline_policy",
+            "candidate_report",
+            "candidate_report",
+            candidate_report,
+        ),
+        ("implementation", "trade_bot", "trade_bot", trade_bot),
+    )
+    for component, logical_name, input_name, path in fixed_bindings:
+        _audit_component_binding(
+            canonical_identity=identity,
+            component_name=component,
+            logical_name=logical_name,
+            input_name=input_name,
+            actual_path=path,
+            audit=audit,
+            mismatches=mismatches,
+        )
+
+    symbols = _benchmark_symbols(benchmark)
+    features = dict(feature_csv_by_symbol)
+    corpora = dict(corpus_manifest_by_symbol)
+    if len(symbols) == 1:
+        symbol = next(iter(symbols))
+        features.setdefault(symbol, feature_csv.resolve(strict=False))
+        corpora.setdefault(symbol, corpus_manifest.resolve(strict=False))
+    extra_features = sorted(set(features) - symbols)
+    extra_corpora = sorted(set(corpora) - symbols)
+    if extra_features:
+        mismatches.append(
+            "input_binding.features.extra_symbols:" + ",".join(extra_features)
+        )
+    if extra_corpora:
+        mismatches.append(
+            "input_binding.split.extra_symbols:" + ",".join(extra_corpora)
+        )
+    for symbol in sorted(symbols):
+        _audit_component_binding(
+            canonical_identity=identity,
+            component_name="features",
+            logical_name=f"feature:{symbol}",
+            input_name="feature_csv_by_symbol",
+            actual_path=features.get(symbol),
+            audit=audit,
+            mismatches=mismatches,
+            symbol=symbol,
+        )
+        _audit_component_binding(
+            canonical_identity=identity,
+            component_name="split",
+            logical_name=f"corpus:{symbol}",
+            input_name="corpus_manifest_by_symbol",
+            actual_path=corpora.get(symbol),
+            audit=audit,
+            mismatches=mismatches,
+            symbol=symbol,
+        )
+    return audit, mismatches
 
 
 def _materialize_exact_plan(
@@ -488,6 +684,7 @@ def _materialize_exact_plan(
                     "replay_csv": str(replay_csv.resolve()),
                     "source_feature_sha256": source["feature_sha256"],
                     "source_corpus_manifest_sha256": source["corpus_sha256"],
+                    "source_selection_corpus_sha256": source["corpus_sha256"],
                 }
             )
         if len(planned_executions) != len(block_executions[index]):
@@ -517,6 +714,13 @@ def _materialize_exact_plan(
                         "segment_identity_sha256"
                     ],
                     "replay_csv": only["replay_csv"],
+                    "source_feature_sha256": only["source_feature_sha256"],
+                    "source_corpus_manifest_sha256": only[
+                        "source_corpus_manifest_sha256"
+                    ],
+                    "source_selection_corpus_sha256": only[
+                        "source_selection_corpus_sha256"
+                    ],
                     "cells": cells,
                 }
             )
@@ -1203,6 +1407,7 @@ def run_paired_evolution_replay(
     trade_bot: pathlib.Path,
     output_dir: pathlib.Path,
     benchmark_report: pathlib.Path,
+    validation_config: pathlib.Path | None = None,
     feature_csv_by_symbol: dict[str, pathlib.Path] | None = None,
     corpus_manifest_by_symbol: dict[str, pathlib.Path] | None = None,
     process_runner: Callable[..., Any] | None = None,
@@ -1215,6 +1420,9 @@ def run_paired_evolution_replay(
         "corpus_manifest": pathlib.Path(corpus_manifest).resolve(strict=False),
         "trade_bot": pathlib.Path(trade_bot).resolve(strict=False),
         "benchmark_report": pathlib.Path(benchmark_report).resolve(strict=False),
+        "validation_config": pathlib.Path(
+            validation_config or DEFAULT_VALIDATION_CONFIG
+        ).resolve(strict=False),
         "output_dir": pathlib.Path(output_dir).resolve(strict=False),
     }
     feature_paths_by_symbol = _normalized_path_mapping(feature_csv_by_symbol)
@@ -1275,6 +1483,16 @@ def run_paired_evolution_replay(
         "candidate_model": _identity(paths["candidate_model"]),
         "candidate_report": _identity(paths["candidate_report"]),
         "benchmark_report": _identity(paths["benchmark_report"]),
+        "validation_config": _identity(paths["validation_config"]),
+        "benchmark_verification": {
+            "verified": False,
+            "benchmark_id": None,
+            "canonical_identity": None,
+            "expected_validation_config_sha256": None,
+            "actual_validation_config_sha256": None,
+            "errors": ["benchmark_not_verified"],
+        },
+        "input_binding_audit": [],
         "exact_block_plan": {
             "schema_version": "",
             "path": str(exact_plan_path),
@@ -1315,6 +1533,7 @@ def run_paired_evolution_replay(
         "corpus_manifest",
         "trade_bot",
         "benchmark_report",
+        "validation_config",
     ):
         if name == "feature_csv" and feature_paths_by_symbol:
             continue
@@ -1333,22 +1552,43 @@ def run_paired_evolution_replay(
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
             mismatches.append(f"benchmark_report_invalid:{type(exc).__name__}")
         else:
-            if benchmark.get("schema_version") != BENCHMARK_REPORT_SCHEMA:
-                mismatches.append("benchmark_report.schema_version_invalid")
-            if benchmark.get("identity_status") != "VERIFIED":
-                mismatches.append("benchmark_report.identity_status_not_verified")
-            if benchmark.get("drifts") != []:
-                mismatches.append("benchmark_report.drifts_not_empty")
-            benchmark_id = benchmark.get("benchmark_id")
-            if not _valid_sha256(benchmark_id):
-                mismatches.append("benchmark_report.benchmark_id_invalid")
+            try:
+                validation_policy = _read_json_object(paths["validation_config"])
+                validation_config_sha256 = file_sha256(paths["validation_config"])
+            except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+                mismatches.append(
+                    f"validation_config_invalid:{type(exc).__name__}"
+                )
             else:
-                manifest["benchmark_id"] = benchmark_id
-                canonical_identity = benchmark.get("canonical_identity")
-                if not isinstance(canonical_identity, dict):
-                    mismatches.append("benchmark_report.canonical_identity_missing")
-                elif canonical_sha256(canonical_identity) != benchmark_id:
-                    mismatches.append("benchmark_report.canonical_identity_hash_mismatch")
+                verification = validate_verified_benchmark_report(
+                    benchmark,
+                    validation_policy=validation_policy,
+                    validation_config_sha256=validation_config_sha256,
+                )
+                manifest["benchmark_verification"] = verification
+                if not verification.get("verified"):
+                    mismatches.extend(
+                        f"benchmark_verification:{error}"
+                        for error in verification.get("errors", [])
+                    )
+                else:
+                    manifest["benchmark_id"] = str(
+                        verification.get("benchmark_id") or ""
+                    )
+                    binding_audit, binding_mismatches = _bind_actual_inputs(
+                        benchmark=benchmark,
+                        runtime_config=paths["runtime_config"],
+                        validation_config=paths["validation_config"],
+                        candidate_model=paths["candidate_model"],
+                        candidate_report=paths["candidate_report"],
+                        trade_bot=paths["trade_bot"],
+                        feature_csv=paths["feature_csv"],
+                        corpus_manifest=paths["corpus_manifest"],
+                        feature_csv_by_symbol=feature_paths_by_symbol,
+                        corpus_manifest_by_symbol=corpus_paths_by_symbol,
+                    )
+                    manifest["input_binding_audit"] = binding_audit
+                    mismatches.extend(binding_mismatches)
 
     arm_policies: dict[str, dict[str, Any]] = {}
     if paths["runtime_config"].is_file():
@@ -1539,6 +1779,7 @@ def run_paired_evolution_replay(
         ("candidate_model", manifest["candidate_model"]),
         ("candidate_report", manifest["candidate_report"]),
         ("benchmark_report", manifest["benchmark_report"]),
+        ("validation_config", manifest["validation_config"]),
         ("common_derived_config", manifest["common_derived_config"]),
         ("exact_block_plan", manifest["exact_block_plan"]),
         ("arm.frozen.config", manifest["arms"]["frozen"]["config"]),
@@ -1610,6 +1851,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trade-bot", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--benchmark-report", required=True)
+    parser.add_argument(
+        "--validation-config", default=str(DEFAULT_VALIDATION_CONFIG)
+    )
     return parser.parse_args()
 
 
@@ -1630,6 +1874,7 @@ def main() -> int:
         trade_bot=pathlib.Path(args.trade_bot),
         output_dir=pathlib.Path(args.output_dir),
         benchmark_report=pathlib.Path(args.benchmark_report),
+        validation_config=pathlib.Path(args.validation_config),
     )
     print(json.dumps(manifest, ensure_ascii=False, sort_keys=True, allow_nan=False))
     return 0 if manifest["status"] == "VERIFIED" else 2
