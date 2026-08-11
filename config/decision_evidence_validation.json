@@ -1,0 +1,23 @@
+{
+  "schema_version": "decision_evidence_validation_v1",
+  "alignment": {
+    "min_candidates": 8,
+    "min_independent_blocks": 5,
+    "alpha": 0.05,
+    "permutation_trials": 10000
+  },
+  "uplift": {
+    "min_independent_blocks": 8,
+    "block_coverage": 1,
+    "bootstrap_trials": 10000,
+    "lcb": 0.95
+  },
+  "failure_budgets": {
+    "family": 3,
+    "information_set": 8
+  },
+  "seed": {
+    "source": "benchmark_id+channel",
+    "cli_override_allowed": false
+  }
+}
