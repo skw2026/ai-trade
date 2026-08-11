@@ -7,6 +7,7 @@
 - **WHEN** 三类验证输入声明相同的 benchmark identity，且所有已声明文件的内容哈希与 manifest 一致
 - **THEN** 系统 SHALL 生成唯一的 canonical benchmark ID
 - **AND** 报告 SHALL 标记 benchmark identity 为 `VERIFIED`
+- **AND** file-backed benchmark producer MUST 在输出 `VERIFIED` 前执行与消费者相同的完整评估宇宙、固定 logical name、动态 execution/symbol 集和内容身份合同
 
 #### Scenario: benchmark 漂移被阻断
 - **WHEN** 任一输入的数据、split、成本、特征、动作、基线、配置或实现身份与冻结 manifest 不一致
@@ -42,6 +43,8 @@
 - **THEN** 系统 SHALL 在启动任一臂前重算实际事件数据、split 与 per-symbol corpus、成本配置、per-symbol 特征、动作策略、候选模型/报告、运行/验证配置和实现可执行文件的内容身份
 - **AND** 系统 SHALL 逐项证明这些实际输入与 benchmark 八个组件一致
 - **AND** `data` MUST 覆盖全部 `execution:*`，`split` MUST 包含实际 replay report 和全部 `corpus:*`，`actions` MUST 同时绑定 replay/runtime policy，`implementation` MUST 完整绑定四个预声明实现；输入绑定审计 MUST 拒绝缺失、额外或 SHA 漂移
+- **AND** 自动构建与显式 manifest 路径 MUST 都从 benchmark 冻结的 `replay_validation_report` sidecar 取得 replay identity，不得回退到本次运行或旧运行的其他 replay report
+- **AND** 默认相对 candidate model/report 路径 MUST 在 benchmark builder 与 paired runner 中产生字节完全一致的共同 replay policy
 - **AND** 任一实际输入缺失、多出或内容身份漂移时，系统 MUST 在两臂都未执行前结束为 `UNVERIFIABLE`
 
 #### Scenario: 真实 per-symbol source corpus 形成公共时间块日历
@@ -54,6 +57,7 @@
 #### Scenario: 自进化产生可归因 uplift
 - **WHEN** frozen 与 adaptive replay 的 benchmark、事件流、segment、初始权重、初始 evolution state 和除预注册 evolution 开关之外的执行配置身份完全一致，两臂均覆盖全部冻结 block、各自闭合 episode 执行路径完整，且独立 block 数达到门槛
 - **THEN** 系统 SHALL 保留两臂逐 episode 审计，并按相同 block、资产和入场 regime 聚合后输出 adaptive-minus-frozen 净效用；任一臂无交易的聚合单元 SHALL 以零效用参与比较
+- **AND** uplift validator MUST 独立重验 paired `input_binding_audit` 对八组件全部 logical name 的 expected/actual SHA、状态、唯一性和完整覆盖，并将规范化 audit 及其 canonical SHA256 纳入 uplift artifact
 - **AND** 仅当预声明 block bootstrap 下界为正且覆盖门槛满足时标记为 `UPLIFT_PROVEN`
 
 #### Scenario: 禁止用代理收益替代完整回放
@@ -83,12 +87,13 @@
 #### Scenario: observe 只从预声明的不可变结果 artifact 取证
 - **WHEN** `observe` 为已注册且未观察的 experiment ID 读取预声明的结果路径
 - **THEN** 结果 MUST 是注册后才创建或修改的只读、非符号链接、普通 canonical JSON 文件，其 experiment ID 和 `registration_nonce` MUST 与注册一致
-- **AND** 系统 MUST 在同一文件描述符上安全读取，验证读取前后的设备、inode、大小、mtime 和 ctime 身份不变，并从 artifact 内容重算 `result_identity`
+- **AND** 系统 MUST 以 no-follow 打开后的同一文件描述符为权威，在读取前后重验普通文件、只读权限、设备、inode、大小、mtime 和 ctime，并在读取后再次核对路径身份与权限未变化，再从 artifact 内容重算 `result_identity`
 - **AND** 时间、路径、文件类型/权限、schema、nonce、内容身份或安全读取任一不可验证时 MUST 返回 `BLOCK_INVALID_LEDGER` 且不得追加 observation
 
 #### Scenario: append 中断仅能恢复到完整 before 或 after 状态
 - **WHEN** 账本操作发现包含 before checkpoint、after checkpoint 和 pending canonical record 的 recovery 证据
 - **THEN** 系统 SHALL 仅在持久化账本精确匹配 before 状态时放弃 pending record，或精确匹配 after 状态时固化 after checkpoint
+- **AND** 系统 MUST 证明 `after` 的账本字节精确等于 `before` 的账本字节追加一条 canonical pending record，且 pending 的 schema、sequence、previous hash、record hash、规范化 payload 和时间顺序全部有效
 - **AND** 账本、checkpoint 或 pending record 无法形成上述两种完整状态时 MUST 失败关闭，不得猜测或接受半条记录
 
 ### Requirement: 三项验证独立运行与统一结论
@@ -98,6 +103,7 @@
 - **WHEN** Full Loop 的 Alpha source route 未通过，但三项验证的输入阶段已经完成
 - **THEN** 系统 SHALL 继续运行三项决定性验证
 - **AND** 对缺失证据使用 `UNVERIFIABLE` 或 `NOT_PROVEN`，不得使用 `SKIPPED_DUE_TO_PRIOR_FAILURE`
+- **AND** 目标对齐或 uplift CLI 原子写失败时 MUST 移除旧目标 artifact 并清理临时文件；两项清理 SHALL 独立尝试且 MUST 优先保证旧目标 artifact 不再可被消费
 
 #### Scenario: Full Loop 只读审计已预注册实验
 - **WHEN** Full Loop 执行实验预算证据步骤
