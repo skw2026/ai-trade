@@ -838,8 +838,9 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         "capture_merge_audit", {}
     )
     cross_asset = development.get("cross_asset_feature_contract", {})
+    causal_features = development.get("causal_feature_contract", {})
     if not (
-        development.get("schema_version") == "microstructure_alpha_development_v7"
+        development.get("schema_version") == "microstructure_alpha_development_v8"
         and development.get("status") == "PASS"
         and development.get("fully_verifiable") is True
         and development.get("research_domain") == "forward_development_only"
@@ -851,6 +852,17 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
             cross_asset.get(name) == value
             for name, value in EXPECTED_CROSS_ASSET_CONTEXT.items()
         )
+        and isinstance(causal_features, dict)
+        and causal_features.get("revision") == "order_flow_cross_asset_regime_v1"
+        and causal_features.get("exchange_time_lags_seconds")
+        == [1, 5, 20, 60, 120, 300]
+        and causal_features.get("regime_windows_seconds") == [20, 60, 120, 300]
+        and causal_features.get("maximum_lookback_seconds") == 300
+        and causal_features.get("rolling_interval_policy")
+        == "every_exchange_second_required"
+        and causal_features.get("missing_or_non_finite_policy")
+        == "non_finite_until_complete_exact_window"
+        and causal_features.get("future_values_permitted") is False
         and isinstance(negative_control, dict)
         and negative_control.get("method")
         == "deterministic_oos_prediction_time_permutation"
@@ -906,11 +918,11 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         and validation.get("oos_windows_non_overlapping") is True
         and isinstance(model_contract, dict)
         and model_contract.get("loss_function") == "Logloss"
-        and model_contract.get("eval_metric") == "Logloss"
+        and model_contract.get("eval_metric") == "AUC"
         and model_contract.get("boost_from_average") is True
         and model_contract.get("ranking_diagnostics")
         == "validation_and_test_roc_auc_average_precision"
-        and model_contract.get("ranking_diagnostics_used_for_fit_or_selection")
+        and model_contract.get("external_ranking_diagnostics_used_for_fit_or_selection")
         is False
         and model_contract.get("class_weighting") == "none"
         and model_contract.get("model_topology")
@@ -919,6 +931,8 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         == "one_model_per_fit_learnable_predeclared_action"
         and model_contract.get("early_stopping_scope")
         == "fit_internal_purged_tail"
+        and model_contract.get("early_stopping_objective")
+        == "fit_internal_roc_auc"
         and model_contract.get(
             "external_nested_validation_used_for_model_fit_or_early_stopping"
         )

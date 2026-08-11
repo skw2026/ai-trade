@@ -13,7 +13,7 @@ import run_microstructure_alpha_development as development
 import run_microstructure_alpha_lifecycle as lifecycle
 
 
-def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
+def synthetic_series(row_count: int = 600) -> dict[str, np.ndarray]:
     timestamp = np.arange(row_count, dtype=np.int64) * 1000
     mid = 100.0 + np.arange(row_count, dtype=np.float64) * 0.02
     series = {
@@ -119,14 +119,15 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     model_contract = {
         "library": "catboost",
         "loss_function": "Logloss",
-        "eval_metric": "Logloss",
+        "eval_metric": "AUC",
         "boost_from_average": True,
         "ranking_diagnostics": "validation_and_test_roc_auc_average_precision",
-        "ranking_diagnostics_used_for_fit_or_selection": False,
+        "external_ranking_diagnostics_used_for_fit_or_selection": False,
         "class_weighting": "none",
         "model_topology": "independent_binary_stress_event_classifier_per_action",
         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
         "early_stopping_scope": "fit_internal_purged_tail",
+        "early_stopping_objective": "fit_internal_roc_auc",
         "external_nested_validation_used_for_model_fit_or_early_stopping": False,
         "frozen_model_scope": "single_consensus_action_model",
         "training_target": "model_fit_subwindow_only_stress_cost_profitable_event",
@@ -207,11 +208,12 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "promotion_eligible": False,
         "source_assessment": {
             "sha256": "a" * 64,
-            "development_cutoff_ms": 60_000,
+            "development_cutoff_ms": 300_000,
         },
         "cross_asset_feature_contract": (
             lifecycle.collector.CROSS_ASSET_ALIGNMENT_CONTRACT
         ),
+        "causal_feature_contract": development.CAUSAL_FEATURE_CONTRACT,
         "capture_merge_contract": development.CAPTURE_MERGE_CONTRACT,
         "data": {
             "feature_names": feature_names,
@@ -238,6 +240,7 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "cross_asset_feature_contract": (
             lifecycle.collector.CROSS_ASSET_ALIGNMENT_CONTRACT
         ),
+        "causal_feature_contract": development.CAUSAL_FEATURE_CONTRACT,
         "capture_merge_contract": development.CAPTURE_MERGE_CONTRACT,
         "capture_merge_audit": capture_merge_audit,
         "target_contract": target_contract,
@@ -428,8 +431,8 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                 series=series,
                 report=report,
                 model=FakeModel(),
-                start_ms=100_000,
-                end_ms=300_000,
+                start_ms=300_000,
+                end_ms=500_000,
                 domain="independent_forward_selection",
                 min_trades=20,
                 block_seconds=20,
@@ -438,16 +441,16 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                 min_row_density=0.80,
             )
             mutated = {key: value.copy() for key, value in series.items()}
-            mutated["mid"][350:] *= 10.0
-            mutated["best_bid"][350:] *= 10.0
-            mutated["best_ask"][350:] *= 10.0
-            mutated["microprice"][350:] *= 10.0
+            mutated["mid"][550:] *= 10.0
+            mutated["best_bid"][550:] *= 10.0
+            mutated["best_ask"][550:] *= 10.0
+            mutated["microprice"][550:] *= 10.0
             second = lifecycle.evaluate_domain(
                 series=mutated,
                 report=report,
                 model=FakeModel(),
-                start_ms=100_000,
-                end_ms=300_000,
+                start_ms=300_000,
+                end_ms=500_000,
                 domain="independent_forward_selection",
                 min_trades=20,
                 block_seconds=20,
@@ -590,7 +593,7 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
             previous_quotes = {}
             base_timestamp = 1_000_000
             with raw_path.open("w", encoding="utf-8") as handle:
-                for index in range(500):
+                for index in range(600):
                     timestamp = base_timestamp + index * 1000
                     for symbol, scale in (
                         ("SOLUSDT", 1.0),
@@ -680,8 +683,8 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                 series=original_series,
                 report=registered_report,
                 model=FakeModel(),
-                start_ms=base_timestamp + 100_000,
-                end_ms=base_timestamp + 300_000,
+                start_ms=base_timestamp + 300_000,
+                end_ms=base_timestamp + 500_000,
                 domain="untouched_final_holdout",
                 min_trades=20,
                 block_seconds=20,
@@ -694,8 +697,8 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                 registered_report=registered_report,
                 model=FakeModel(),
                 candidate_id="a" * 64,
-                start_ms=base_timestamp + 100_000,
-                end_ms=base_timestamp + 300_000,
+                start_ms=base_timestamp + 300_000,
+                end_ms=base_timestamp + 500_000,
                 expected_economic_hash=economic["economic_identity_sha256"],
                 args=args,
             )
@@ -716,8 +719,8 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                     registered_report=registered_report,
                     model=FakeModel(),
                     candidate_id="a" * 64,
-                    start_ms=base_timestamp + 100_000,
-                    end_ms=base_timestamp + 300_000,
+                    start_ms=base_timestamp + 300_000,
+                    end_ms=base_timestamp + 500_000,
                     expected_economic_hash=economic["economic_identity_sha256"],
                     args=args,
                 )

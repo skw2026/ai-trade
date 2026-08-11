@@ -119,6 +119,16 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertTrue(np.isnan(result[2]))
         self.assertEqual(result[3], 12.0)
 
+    def test_exact_rolling_sum_recovers_after_non_finite_input_leaves_window(self):
+        values = np.asarray([1.0, np.nan, 4.0, 8.0])
+        timestamps = np.arange(4, dtype=np.int64) * 1000
+
+        result = probe.exact_rolling_sum(values, timestamps, 2)
+
+        self.assertTrue(np.isnan(result[1]))
+        self.assertTrue(np.isnan(result[2]))
+        self.assertEqual(result[3], 12.0)
+
     def write_custom_feature_segment(
         self,
         root: pathlib.Path,
@@ -277,6 +287,18 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         second, second_names = probe.build_causal_features(mutated)
         self.assertEqual(names, second_names)
         np.testing.assert_allclose(first[:250], second[:250], equal_nan=True)
+
+    def test_features_include_exact_long_horizon_regime_state(self):
+        features, names = probe.build_causal_features(synthetic_series())
+
+        self.assertIn("micro_mid_return_300s", names)
+        self.assertIn("micro_realized_volatility_300s_bps", names)
+        self.assertIn("micro_signed_trend_efficiency_300s", names)
+        self.assertIn("micro_normalized_return_300s", names)
+        self.assertIn("cross_asset_btc_mid_return_300s", names)
+        self.assertIn("cross_asset_eth_realized_volatility_300s_bps", names)
+        self.assertFalse(np.all(np.isfinite(features[299])))
+        self.assertTrue(np.all(np.isfinite(features[300])))
 
     def test_joint_target_uses_executable_quotes_latency_and_cost(self):
         series = synthetic_series(5)

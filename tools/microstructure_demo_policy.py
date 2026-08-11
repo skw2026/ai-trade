@@ -204,7 +204,10 @@ class DemoPolicyEngine:
     ) -> None:
         self.signal_output = signal_output
         self.history: Deque[Dict[str, Any]] = collections.deque(
-            maxlen=max(120, int(history_seconds))
+            maxlen=max(
+                development.MIN_CAUSAL_FEATURE_HISTORY_ROWS,
+                int(history_seconds),
+            )
         )
         self.candidate: CandidateBundle | None = None
         self.active_action: Dict[str, Any] | None = None
@@ -530,7 +533,8 @@ def parse_args() -> argparse.Namespace:
     health_parser.add_argument("--max-stale-ms", type=int, default=DEFAULT_SIGNAL_MAX_STALE_MS)
     args = parser.parse_args()
     if args.action == "run" and (
-        args.history_seconds < 120 or args.candidate_refresh_seconds <= 0.0
+        args.history_seconds < development.MIN_CAUSAL_FEATURE_HISTORY_ROWS
+        or args.candidate_refresh_seconds <= 0.0
     ):
         parser.error("history/refresh settings are invalid")
     return args

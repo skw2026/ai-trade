@@ -82,7 +82,7 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
             development = write_json(
                 root / "development.json",
                 {
-                    "schema_version": "microstructure_alpha_development_v7",
+                    "schema_version": "microstructure_alpha_development_v8",
                     "status": "PASS",
                     "fully_verifiable": True,
                     "research_domain": "forward_development_only",
@@ -92,6 +92,15 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                         **AUDIT.EXPECTED_CROSS_ASSET_CONTEXT,
                         "timestamp_semantics": "test",
                         "missing_context_action": "drop_target_second",
+                    },
+                    "causal_feature_contract": {
+                        "revision": "order_flow_cross_asset_regime_v1",
+                        "exchange_time_lags_seconds": [1, 5, 20, 60, 120, 300],
+                        "regime_windows_seconds": [20, 60, 120, 300],
+                        "maximum_lookback_seconds": 300,
+                        "rolling_interval_policy": "every_exchange_second_required",
+                        "missing_or_non_finite_policy": "non_finite_until_complete_exact_window",
+                        "future_values_permitted": False,
                     },
                     "economic_screen": {"development_passed": True},
                     "capture_merge_contract": {
@@ -124,14 +133,15 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                     },
                     "model_contract": {
                         "loss_function": "Logloss",
-                        "eval_metric": "Logloss",
+                        "eval_metric": "AUC",
                         "boost_from_average": True,
                         "ranking_diagnostics": "validation_and_test_roc_auc_average_precision",
-                        "ranking_diagnostics_used_for_fit_or_selection": False,
+                        "external_ranking_diagnostics_used_for_fit_or_selection": False,
                         "class_weighting": "none",
                         "model_topology": "independent_binary_stress_event_classifier_per_action",
                         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
                         "early_stopping_scope": "fit_internal_purged_tail",
+                        "early_stopping_objective": "fit_internal_roc_auc",
                         "external_nested_validation_used_for_model_fit_or_early_stopping": False,
                         "frozen_model_scope": "single_consensus_action_model",
                         "training_target": "model_fit_subwindow_only_stress_cost_profitable_event",

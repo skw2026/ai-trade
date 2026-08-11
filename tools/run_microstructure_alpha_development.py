@@ -37,8 +37,25 @@ except ImportError:  # pragma: no cover - exercised by the research image
     CatBoostClassifier = None
 
 
-SCHEMA_VERSION = "microstructure_alpha_development_v7"
+SCHEMA_VERSION = "microstructure_alpha_development_v8"
 ASSESSMENT_SCHEMA_VERSION = "microstructure_capture_assessment_v1"
+CAUSAL_FEATURE_LAGS_SECONDS = (1, 5, 20, 60, 120, 300)
+REGIME_FEATURE_WINDOWS_SECONDS = (20, 60, 120, 300)
+MAX_CAUSAL_FEATURE_LOOKBACK_SECONDS = max(CAUSAL_FEATURE_LAGS_SECONDS)
+MIN_CAUSAL_FEATURE_HISTORY_ROWS = MAX_CAUSAL_FEATURE_LOOKBACK_SECONDS + 1
+CAUSAL_FEATURE_CONTRACT = {
+    "revision": "order_flow_cross_asset_regime_v1",
+    "exchange_time_lags_seconds": list(CAUSAL_FEATURE_LAGS_SECONDS),
+    "regime_windows_seconds": list(REGIME_FEATURE_WINDOWS_SECONDS),
+    "maximum_lookback_seconds": MAX_CAUSAL_FEATURE_LOOKBACK_SECONDS,
+    "rolling_interval_policy": "every_exchange_second_required",
+    "missing_or_non_finite_policy": "non_finite_until_complete_exact_window",
+    "realized_volatility": "root_mean_square_one_second_mid_return_bps",
+    "trend_efficiency": "signed_window_return_bps_over_absolute_one_second_path_bps",
+    "normalized_return": "window_return_bps_over_realized_volatility_times_sqrt_window",
+    "cross_asset_scope": "same_exchange_second_btc_eth_context",
+    "future_values_permitted": False,
+}
 CAPTURE_MERGE_CONTRACT = {
     "method": "drop_shared_adjacent_boundary_buckets_v1",
     "segment_order": "strictly_chronological_manifest_order",
@@ -343,11 +360,19 @@ def exact_rolling_sum(
     array = np.asarray(values, dtype=np.float64)
     output = np.full(len(array), np.nan, dtype=np.float64)
     positions = {int(timestamp): index for index, timestamp in enumerate(timestamps)}
-    prefix = np.concatenate(([0.0], np.cumsum(array, dtype=np.float64)))
+    finite = np.isfinite(array)
+    prefix = np.concatenate(
+        ([0.0], np.cumsum(np.where(finite, array, 0.0), dtype=np.float64))
+    )
+    valid_prefix = np.concatenate(([0], np.cumsum(finite, dtype=np.int64)))
     offset_ms = (int(window_seconds) - 1) * 1000
     for index, timestamp in enumerate(timestamps):
         start = positions.get(int(timestamp) - offset_ms)
-        if start is not None and index - start + 1 == int(window_seconds):
+        if (
+            start is not None
+            and index - start + 1 == int(window_seconds)
+            and valid_prefix[index + 1] - valid_prefix[start] == int(window_seconds)
+        ):
             output[index] = prefix[index + 1] - prefix[start]
     return output
 
@@ -375,6 +400,53 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
     def add(name: str, values: Iterable[float]) -> None:
         names.append(name)
         arrays.append(np.asarray(values, dtype=np.float64))
+
+    def add_price_regime_features(
+        feature_prefix: str,
+        price_returns: Mapping[int, np.ndarray],
+    ) -> None:
+        one_second_return_bps = np.asarray(
+            price_returns[1], dtype=np.float64
+        ) * 10000.0
+        for window in REGIME_FEATURE_WINDOWS_SECONDS:
+            mean_square = exact_rolling_mean(
+                np.square(one_second_return_bps), timestamps, window
+            )
+            realized_volatility = np.sqrt(np.maximum(mean_square, 0.0))
+            absolute_path = exact_rolling_sum(
+                np.abs(one_second_return_bps), timestamps, window
+            )
+            window_return_bps = (
+                np.asarray(price_returns[window], dtype=np.float64) * 10000.0
+            )
+            complete = (
+                np.isfinite(realized_volatility)
+                & np.isfinite(absolute_path)
+                & np.isfinite(window_return_bps)
+            )
+            trend_efficiency = np.full(len(timestamps), np.nan, dtype=np.float64)
+            moving = complete & (absolute_path > 0.0)
+            trend_efficiency[moving] = window_return_bps[moving] / absolute_path[moving]
+            trend_efficiency[complete & (absolute_path == 0.0)] = 0.0
+            normalized_return = np.full(len(timestamps), np.nan, dtype=np.float64)
+            volatility_scale = realized_volatility * math.sqrt(float(window))
+            variable = complete & (volatility_scale > 0.0)
+            normalized_return[variable] = (
+                window_return_bps[variable] / volatility_scale[variable]
+            )
+            normalized_return[complete & (volatility_scale == 0.0)] = 0.0
+            add(
+                f"{feature_prefix}_realized_volatility_{window}s_bps",
+                realized_volatility,
+            )
+            add(
+                f"{feature_prefix}_signed_trend_efficiency_{window}s",
+                trend_efficiency,
+            )
+            add(
+                f"{feature_prefix}_normalized_return_{window}s",
+                normalized_return,
+            )
 
     add("micro_spread_bps", series["spread_bps"])
     add("micro_microprice_dislocation_bps", micro_dislocation)
@@ -431,7 +503,7 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
     )
     target_buy_quote = np.asarray(series["buy_quote_volume"], dtype=np.float64)
     target_sell_quote = np.asarray(series["sell_quote_volume"], dtype=np.float64)
-    for lag in (1, 5, 20, 60):
+    for lag in CAUSAL_FEATURE_LAGS_SECONDS:
         lag_mid = exact_lag(mid, timestamps, lag)
         lag_micro = exact_lag(micro_dislocation, timestamps, lag)
         lag_l1 = exact_lag(imbalance_l1, timestamps, lag)
@@ -479,8 +551,9 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
             )
     target_returns: Dict[int, np.ndarray] = {
         lag: mid / exact_lag(mid, timestamps, lag) - 1.0
-        for lag in (1, 5, 20, 60)
+        for lag in CAUSAL_FEATURE_LAGS_SECONDS
     }
+    add_price_regime_features("micro", target_returns)
     for symbol in collector.CONTEXT_SYMBOLS:
         prefix = collector.context_prefix(symbol)
         context_mid = np.asarray(series[f"{prefix}_mid"], dtype=np.float64)
@@ -596,8 +669,12 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
             f"cross_asset_{prefix}_log_sell_quote_volume",
             np.log1p(series[f"{prefix}_sell_quote_volume"]),
         )
-        for lag in (1, 5, 20, 60):
-            context_return = context_mid / exact_lag(context_mid, timestamps, lag) - 1.0
+        context_returns: Dict[int, np.ndarray] = {
+            lag: context_mid / exact_lag(context_mid, timestamps, lag) - 1.0
+            for lag in CAUSAL_FEATURE_LAGS_SECONDS
+        }
+        for lag in CAUSAL_FEATURE_LAGS_SECONDS:
+            context_return = context_returns[lag]
             add(f"cross_asset_{prefix}_mid_return_{lag}s", context_return)
             add(
                 f"cross_asset_sol_minus_{prefix}_return_{lag}s",
@@ -661,6 +738,7 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
                         where=trade_quote > 0.0,
                     ),
                 )
+        add_price_regime_features(f"cross_asset_{prefix}", context_returns)
     day_phase = np.mod(timestamps, 86_400_000) / 86_400_000.0
     add("micro_time_day_sin", np.sin(2.0 * math.pi * day_phase))
     add("micro_time_day_cos", np.cos(2.0 * math.pi * day_phase))
@@ -1748,7 +1826,7 @@ def build_model(args: argparse.Namespace, action_index: int = 0) -> Any:
         raise RuntimeError("catboost is required; use ai-trade-research image")
     return CatBoostClassifier(
         loss_function="Logloss",
-        eval_metric="Logloss",
+        eval_metric="AUC",
         boost_from_average=True,
         iterations=int(args.iterations),
         depth=int(args.depth),
@@ -1820,14 +1898,15 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
         "library": "catboost",
         "library_version": getattr(catboost, "__version__", None),
         "loss_function": "Logloss",
-        "eval_metric": "Logloss",
+        "eval_metric": "AUC",
         "boost_from_average": True,
         "ranking_diagnostics": "validation_and_test_roc_auc_average_precision",
-        "ranking_diagnostics_used_for_fit_or_selection": False,
+        "external_ranking_diagnostics_used_for_fit_or_selection": False,
         "class_weighting": "none",
         "model_topology": "independent_binary_stress_event_classifier_per_action",
         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
         "early_stopping_scope": "fit_internal_purged_tail",
+        "early_stopping_objective": "fit_internal_roc_auc",
         "external_nested_validation_used_for_model_fit_or_early_stopping": False,
         "frozen_model_scope": "single_consensus_action_model",
         "training_target": "model_fit_subwindow_only_stress_cost_profitable_event",
@@ -2330,6 +2409,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             ),
         },
         "cross_asset_feature_contract": collector.CROSS_ASSET_ALIGNMENT_CONTRACT,
+        "causal_feature_contract": CAUSAL_FEATURE_CONTRACT,
         "capture_merge_contract": CAPTURE_MERGE_CONTRACT,
         "data": {
             "raw_feature_row_count": int(len(series["timestamp"])),
@@ -2428,6 +2508,7 @@ def write_candidate_manifest(
     identity_contract = {
         "source_assessment_sha256": report.get("source_assessment", {}).get("sha256"),
         "cross_asset_feature_contract": report.get("cross_asset_feature_contract"),
+        "causal_feature_contract": report.get("causal_feature_contract"),
         "capture_merge_contract": report.get("capture_merge_contract"),
         "capture_merge_audit": report.get("data", {}).get("capture_merge_audit"),
         "target_contract": report.get("target_contract"),
@@ -2496,7 +2577,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-oos-trades", type=int, default=30)
     parser.add_argument("--min-positive-splits-ratio", type=float, default=0.60)
     parser.add_argument("--min-action-consensus-ratio", type=float, default=0.60)
-    parser.add_argument("--iterations", type=int, default=100)
+    parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=0.035)
     parser.add_argument("--l2-leaf-reg", type=float, default=30.0)

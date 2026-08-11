@@ -139,7 +139,10 @@ def stream_messages():
 
 class DemoPolicyTest(unittest.TestCase):
     def candidate(self, prediction) -> policy.CandidateBundle:
-        rows = [feature_row(index * 1000, index * 0.001) for index in range(61)]
+        rows = [
+            feature_row(index * 1000, index * 0.001)
+            for index in range(development.MIN_CAUSAL_FEATURE_HISTORY_ROWS)
+        ]
         _, names = development.build_causal_features(policy.series_from_rows(rows))
         actions = [
             {"direction": "long", "horizon_seconds": 15},
@@ -196,7 +199,7 @@ class DemoPolicyTest(unittest.TestCase):
             engine = policy.DemoPolicyEngine(signal_output=output)
             engine.set_candidate(self.candidate([0.8]))
             payload = None
-            for index in range(62):
+            for index in range(development.MIN_CAUSAL_FEATURE_HISTORY_ROWS):
                 payload = engine.on_row(feature_row(index * 1000, index * 0.001))
             self.assertEqual(payload["status"], "ACTIVE")
             self.assertEqual(payload["action"]["direction"], 1)
@@ -204,13 +207,13 @@ class DemoPolicyTest(unittest.TestCase):
             first_started = payload["action"]["started_exchange_ms"]
 
             engine.candidate.model = FakeModel([0.2])
-            held = engine.on_row(feature_row(62_000, 0.062))
+            held = engine.on_row(feature_row(301_000, 0.301))
             self.assertEqual(held["reason"], "frozen_action_holding_window")
             self.assertEqual(held["action"]["direction"], 1)
             self.assertEqual(held["action"]["started_exchange_ms"], first_started)
             self.assertEqual(held["active_until_exchange_ms"], first_until)
             engine.candidate.model = FakeModel([0.2])
-            released = engine.on_row(feature_row(78_000, 0.078))
+            released = engine.on_row(feature_row(317_000, 0.317))
             self.assertEqual(released["status"], "FLAT")
             self.assertIsNone(released["action"])
             persisted = json.loads(output.read_text(encoding="utf-8"))
@@ -222,11 +225,11 @@ class DemoPolicyTest(unittest.TestCase):
             engine = policy.DemoPolicyEngine(signal_output=output)
             engine.set_candidate(self.candidate([0.35]))
             payload = None
-            for index in range(62):
+            for index in range(development.MIN_CAUSAL_FEATURE_HISTORY_ROWS):
                 payload = engine.on_row(feature_row(index * 1000, index * 0.001))
             self.assertEqual(payload["status"], "FLAT")
             self.assertIsNone(payload["action"])
-            engine.publish_fail_closed("test_integrity_failure", 61_000)
+            engine.publish_fail_closed("test_integrity_failure", 300_000)
             failed = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(failed["status"], "FAIL_CLOSED")
             self.assertEqual(failed["active_until_exchange_ms"], 0)

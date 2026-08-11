@@ -38,7 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
-ALGORITHM_CONTRACT_REVISION = "causal_order_flow_stress_event_v9"
+ALGORITHM_CONTRACT_REVISION = "causal_order_flow_stress_event_v10"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -332,11 +332,11 @@ def validate_development_candidate(
     if not (
         isinstance(model_contract, dict)
         and model_contract.get("loss_function") == "Logloss"
-        and model_contract.get("eval_metric") == "Logloss"
+        and model_contract.get("eval_metric") == "AUC"
         and model_contract.get("boost_from_average") is True
         and model_contract.get("ranking_diagnostics")
         == "validation_and_test_roc_auc_average_precision"
-        and model_contract.get("ranking_diagnostics_used_for_fit_or_selection")
+        and model_contract.get("external_ranking_diagnostics_used_for_fit_or_selection")
         is False
         and model_contract.get("class_weighting") == "none"
         and model_contract.get("model_topology")
@@ -345,6 +345,8 @@ def validate_development_candidate(
         == "one_model_per_fit_learnable_predeclared_action"
         and model_contract.get("early_stopping_scope")
         == "fit_internal_purged_tail"
+        and model_contract.get("early_stopping_objective")
+        == "fit_internal_roc_auc"
         and model_contract.get(
             "external_nested_validation_used_for_model_fit_or_early_stopping"
         )
@@ -374,6 +376,8 @@ def validate_development_candidate(
     capture_merge_audit = report.get("data", {}).get("capture_merge_audit")
     if report.get("cross_asset_feature_contract") != collector.CROSS_ASSET_ALIGNMENT_CONTRACT:
         raise LifecycleError("development cross-asset feature contract mismatch")
+    if report.get("causal_feature_contract") != development.CAUSAL_FEATURE_CONTRACT:
+        raise LifecycleError("development causal feature contract mismatch")
     if not isinstance(capture_merge, dict) or capture_merge != development.CAPTURE_MERGE_CONTRACT:
         raise LifecycleError("development capture merge contract mismatch")
     try:
@@ -436,6 +440,7 @@ def validate_development_candidate(
     expected_identity = {
         "source_assessment_sha256": report.get("source_assessment", {}).get("sha256"),
         "cross_asset_feature_contract": report.get("cross_asset_feature_contract"),
+        "causal_feature_contract": report.get("causal_feature_contract"),
         "capture_merge_contract": capture_merge,
         "capture_merge_audit": capture_merge_audit,
         "target_contract": report.get("target_contract"),
