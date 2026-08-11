@@ -414,6 +414,205 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
     }
 
 
+def multi_execution_benchmark_report(block_count=8):
+    blocks = []
+    for index in range(block_count):
+        block_id = f"multi-block-{index + 1:02d}"
+        blocks.append(
+            {
+                "block_id": block_id,
+                "start_timestamp_ms": index * 1000,
+                "end_timestamp_ms": index * 1000 + 999,
+                "event_sha256": f"{index + 10:064x}",
+                "cells": [
+                    {"symbol": "BTCUSDT", "entry_regime": "range"},
+                    {"symbol": "BTCUSDT", "entry_regime": "trend"},
+                    {"symbol": "ETHUSDT", "entry_regime": "defensive"},
+                ],
+                "executions": [
+                    {
+                        "execution_id": f"{block_id}:BTCUSDT",
+                        "symbol": "BTCUSDT",
+                        "planned_entry_regimes": ["range", "trend"],
+                        "event_sha256": f"{index + 100:064x}",
+                    },
+                    {
+                        "execution_id": f"{block_id}:ETHUSDT",
+                        "symbol": "ETHUSDT",
+                        "planned_entry_regimes": ["defensive"],
+                        "event_sha256": f"{index + 200:064x}",
+                    },
+                ],
+            }
+        )
+    return {
+        "schema_version": "decision_evidence_benchmark_validation_v1",
+        "identity_status": "VERIFIED",
+        "benchmark_id": BENCHMARK_ID,
+        "canonical_identity": {
+            "schema_version": "decision_evidence_benchmark_v1",
+            "components": {},
+            "evaluation_universe": {"blocks": blocks},
+        },
+        "drifts": [],
+    }
+
+
+def multi_execution_paired_manifest(benchmark=None, adaptive_utility=1.0):
+    benchmark = benchmark or multi_execution_benchmark_report()
+    paired = paired_manifest(benchmark)
+    benchmark_blocks = benchmark["canonical_identity"]["evaluation_universe"][
+        "blocks"
+    ]
+    plan_blocks = []
+    for block_index, block in enumerate(benchmark_blocks):
+        executions = []
+        for execution_index, execution in enumerate(block["executions"]):
+            executions.append(
+                {
+                    **copy.deepcopy(execution),
+                    "target_bucket": "multi",
+                    "start_timestamp_ms": block["start_timestamp_ms"],
+                    "end_timestamp_ms": block["end_timestamp_ms"],
+                    "segment_identity_sha256": (
+                        f"{block_index * 10 + execution_index + 300:064x}"
+                    ),
+                    "replay_csv": (
+                        f"/frozen/replay/{execution['execution_id']}.csv"
+                    ),
+                    "source_feature_sha256": f"{execution_index + 400:064x}",
+                    "source_corpus_manifest_sha256": (
+                        f"{execution_index + 500:064x}"
+                    ),
+                }
+            )
+        plan_blocks.append({**copy.deepcopy(block), "executions": executions})
+    paired["exact_block_plan"].update(
+        {
+            "schema_version": "exact_replay_block_plan_v2",
+            "blocks": plan_blocks,
+        }
+    )
+
+    for arm_name in ("frozen", "adaptive"):
+        arm = paired["arms"][arm_name]
+        arm_policy = arm["config"]["policy"]
+        arm_blocks = []
+        for block_index, planned_block in enumerate(plan_blocks):
+            execution_rows = []
+            for execution_index, planned in enumerate(
+                planned_block["executions"]
+            ):
+                episodes = []
+                if arm_name == "frozen" and planned["symbol"] == "BTCUSDT":
+                    episodes = [
+                        full_episode(
+                            arm=arm_name,
+                            block_index=block_index,
+                            sequence=0,
+                            symbol="BTCUSDT",
+                            entry_regime="trend",
+                            utility=0.0,
+                            segment_sha256=planned[
+                                "segment_identity_sha256"
+                            ],
+                            policy=arm_policy,
+                        )
+                    ]
+                elif arm_name == "adaptive" and planned["symbol"] == "BTCUSDT":
+                    episodes = [
+                        full_episode(
+                            arm=arm_name,
+                            block_index=block_index,
+                            sequence=0,
+                            symbol="BTCUSDT",
+                            entry_regime="trend",
+                            utility=adaptive_utility,
+                            segment_sha256=planned[
+                                "segment_identity_sha256"
+                            ],
+                            policy=arm_policy,
+                        ),
+                        full_episode(
+                            arm=arm_name,
+                            block_index=block_index,
+                            sequence=1,
+                            symbol="BTCUSDT",
+                            entry_regime="range",
+                            utility=adaptive_utility / 2.0,
+                            segment_sha256=planned[
+                                "segment_identity_sha256"
+                            ],
+                            policy=arm_policy,
+                        ),
+                    ]
+                elif arm_name == "adaptive":
+                    episodes = [
+                        full_episode(
+                            arm=arm_name,
+                            block_index=block_index,
+                            sequence=2,
+                            symbol="ETHUSDT",
+                            entry_regime="defensive",
+                            utility=adaptive_utility / 2.0,
+                            segment_sha256=planned[
+                                "segment_identity_sha256"
+                            ],
+                            policy=arm_policy,
+                        )
+                    ]
+                evidence = episode_evidence(
+                    episodes,
+                    planned["segment_identity_sha256"],
+                    arm_policy,
+                )
+                execution_rows.append(
+                    {
+                        "execution_id": planned["execution_id"],
+                        "symbol": planned["symbol"],
+                        "planned_entry_regimes": planned[
+                            "planned_entry_regimes"
+                        ],
+                        "event_sha256": planned["event_sha256"],
+                        "segment_identity_sha256": planned[
+                            "segment_identity_sha256"
+                        ],
+                        "state_dir": (
+                            f"/{arm_name}/{planned_block['block_id']}/"
+                            f"execution-{execution_index}/state"
+                        ),
+                        "initial_weights_sha256": paired["initial_weights"][
+                            "sha256"
+                        ],
+                        "initial_evolution_state_sha256": paired[
+                            "initial_evolution_state"
+                        ]["sha256"],
+                        "historical_state_loaded": False,
+                        "continued_from_block_id": None,
+                        "trade_bot_exit_code": 0,
+                        "assess_exit_code": 0,
+                        "execution_policy_identity": copy.deepcopy(arm_policy),
+                        "trade_bot_sha256": TRADE_BOT_SHA256,
+                        "episode_execution_evidence": evidence,
+                        "no_trade_zero_utility": not episodes,
+                    }
+                )
+            arm_blocks.append(
+                {
+                    "block_id": planned_block["block_id"],
+                    "start_timestamp_ms": planned_block[
+                        "start_timestamp_ms"
+                    ],
+                    "end_timestamp_ms": planned_block["end_timestamp_ms"],
+                    "event_sha256": planned_block["event_sha256"],
+                    "cells": copy.deepcopy(planned_block["cells"]),
+                    "executions": execution_rows,
+                }
+            )
+        arm["blocks"] = arm_blocks
+    return paired
+
+
 class EvolutionUpliftValidationTest(unittest.TestCase):
     def validate(self, paired=None, benchmark=None, policy=None):
         benchmark = benchmark or benchmark_report()
@@ -438,6 +637,147 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
         self.assertEqual(len(report["arms"]["frozen"]["episodes"]), 8)
         self.assertEqual(len(report["arms"]["adaptive"]["episodes"]), 8)
         self.assertEqual(report["missing_evidence"], [])
+
+    def test_multi_execution_blocks_aggregate_all_symbols_as_one_bootstrap_unit(self):
+        benchmark = multi_execution_benchmark_report()
+        report = self.validate(
+            multi_execution_paired_manifest(benchmark), benchmark
+        )
+
+        self.assertEqual(report["status"], "UPLIFT_PROVEN", report["missing_evidence"])
+        self.assertEqual(len(report["blocks"]), 8)
+        self.assertEqual(len(report["aggregation_cells"]), 24)
+        self.assertEqual(report["blocks"][0]["cell_count"], 3)
+        self.assertAlmostEqual(report["blocks"][0]["delta"], 2.0)
+        self.assertEqual(report["bootstrap"]["sample_size_blocks"], 8)
+        self.assertEqual(
+            report["bootstrap"]["sampling_unit"],
+            "whole_block_with_all_planned_cells",
+        )
+        self.assertEqual(report["execution_coverage"]["expected_execution_count"], 16)
+        self.assertEqual(report["execution_coverage"]["frozen_ratio"], 1.0)
+        self.assertEqual(report["execution_coverage"]["adaptive_ratio"], 1.0)
+        first_frozen_block = report["arms"]["frozen"]["blocks"][0]
+        self.assertEqual(len(first_frozen_block["executions"]), 2)
+        self.assertTrue(first_frozen_block["executions"][1]["zero_trade"])
+        frozen_eth = next(
+            cell
+            for cell in report["aggregation_cells"]
+            if cell["block_id"] == "multi-block-01"
+            and cell["symbol"] == "ETHUSDT"
+        )
+        self.assertEqual(frozen_eth["frozen_utility"], 0.0)
+        self.assertEqual(frozen_eth["frozen_episode_count"], 0)
+
+    def test_multi_execution_complete_nonpositive_blocks_are_not_proven(self):
+        benchmark = multi_execution_benchmark_report()
+        report = self.validate(
+            multi_execution_paired_manifest(benchmark, adaptive_utility=0.0),
+            benchmark,
+        )
+
+        self.assertEqual(report["status"], "NOT_PROVEN", report["missing_evidence"])
+        self.assertEqual(report["bootstrap"]["sample_size_blocks"], 8)
+        self.assertEqual(report["bootstrap"]["lower_confidence_bound"], 0.0)
+
+    def test_multi_execution_coverage_and_identity_drift_fail_closed(self):
+        def event_drift(paired):
+            paired["arms"]["adaptive"]["blocks"][0]["executions"][0][
+                "event_sha256"
+            ] = "e" * 64
+
+        def segment_drift(paired):
+            paired["arms"]["adaptive"]["blocks"][0]["executions"][0][
+                "segment_identity_sha256"
+            ] = "f" * 64
+
+        def trade_bot_drift(paired):
+            paired["arms"]["adaptive"]["blocks"][0]["executions"][0][
+                "trade_bot_sha256"
+            ] = "d" * 64
+
+        def policy_drift(paired):
+            paired["arms"]["adaptive"]["blocks"][0]["executions"][0][
+                "execution_policy_identity"
+            ]["sha256"] = "c" * 64
+
+        def state_drift(paired):
+            paired["arms"]["adaptive"]["blocks"][0]["executions"][0][
+                "initial_evolution_state_sha256"
+            ] = "b" * 64
+
+        def missing_execution(paired):
+            paired["arms"]["adaptive"]["blocks"][0]["executions"].pop()
+
+        def extra_execution(paired):
+            extra = copy.deepcopy(
+                paired["arms"]["adaptive"]["blocks"][0]["executions"][0]
+            )
+            extra["execution_id"] = "multi-block-01:DOGEUSDT"
+            extra["symbol"] = "DOGEUSDT"
+            paired["arms"]["adaptive"]["blocks"][0]["executions"].append(extra)
+
+        def duplicate_execution(paired):
+            paired["arms"]["adaptive"]["blocks"][0]["executions"].append(
+                copy.deepcopy(
+                    paired["arms"]["adaptive"]["blocks"][0]["executions"][0]
+                )
+            )
+
+        cases = {
+            "event_sha256": event_drift,
+            "segment_identity_sha256": segment_drift,
+            "trade_bot_sha256": trade_bot_drift,
+            "execution_policy_identity": policy_drift,
+            "initial_evolution_state_sha256": state_drift,
+            "execution_coverage": missing_execution,
+            "execution_extra": extra_execution,
+            "execution_id_duplicate": duplicate_execution,
+        }
+        for expected, mutate in cases.items():
+            with self.subTest(expected=expected):
+                benchmark = multi_execution_benchmark_report()
+                paired = multi_execution_paired_manifest(benchmark)
+                mutate(paired)
+
+                report = self.validate(paired, benchmark)
+
+                self.assertEqual(report["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(expected in item for item in report["missing_evidence"]),
+                    report["missing_evidence"],
+                )
+                self.assertIsNone(report["blocks"][0]["delta"])
+
+    def test_multi_execution_rejects_wrong_cell_and_polluted_zero_trade(self):
+        def wrong_regime(paired):
+            episode = paired["arms"]["adaptive"]["blocks"][0][
+                "executions"
+            ][0]["episode_execution_evidence"]["episodes"][0]
+            episode["entry_regime"] = "defensive"
+
+        def polluted_zero(paired):
+            evidence = paired["arms"]["frozen"]["blocks"][0][
+                "executions"
+            ][1]["episode_execution_evidence"]
+            evidence["virtual_pnl"] = 999.0
+
+        for expected, mutate in (
+            ("planned_entry_regimes", wrong_regime),
+            ("aggregate_pollution", polluted_zero),
+        ):
+            with self.subTest(expected=expected):
+                benchmark = multi_execution_benchmark_report()
+                paired = multi_execution_paired_manifest(benchmark)
+                mutate(paired)
+
+                report = self.validate(paired, benchmark)
+
+                self.assertEqual(report["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(expected in item for item in report["missing_evidence"]),
+                    report["missing_evidence"],
+                )
 
     def test_real_task2_assessor_shape_is_consumed_without_mocked_exit_failure(self):
         benchmark = benchmark_report()

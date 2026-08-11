@@ -260,6 +260,62 @@ def _benchmark_universe(
                 else:
                     seen_cells.add(key)
                     cells.append({"symbol": key[0], "entry_regime": key[1]})
+        regimes_by_symbol: dict[str, list[str]] = {}
+        for cell in cells:
+            regimes_by_symbol.setdefault(cell["symbol"], []).append(
+                cell["entry_regime"]
+            )
+        executions: list[dict[str, Any]] = []
+        raw_executions = raw_block.get("executions")
+        if raw_executions is not None:
+            if not isinstance(raw_executions, list) or not raw_executions:
+                missing.append(f"{prefix}.executions")
+                raw_executions = []
+            seen_execution_ids: set[str] = set()
+            seen_execution_symbols: set[str] = set()
+            for execution_index, raw_execution in enumerate(raw_executions):
+                execution_prefix = f"{prefix}.executions[{execution_index}]"
+                if not isinstance(raw_execution, Mapping):
+                    missing.append(execution_prefix)
+                    continue
+                execution_id = raw_execution.get("execution_id")
+                symbol = raw_execution.get("symbol")
+                planned_regimes = raw_execution.get("planned_entry_regimes")
+                execution_event_sha = raw_execution.get("event_sha256")
+                expected_execution_id = f"{block_id}:{symbol}"
+                expected_regimes = sorted(regimes_by_symbol.get(str(symbol), []))
+                if execution_id != expected_execution_id:
+                    missing.append(f"{execution_prefix}.execution_id")
+                elif execution_id in seen_execution_ids:
+                    missing.append(f"{execution_prefix}.execution_id=unique")
+                else:
+                    seen_execution_ids.add(str(execution_id))
+                if not _is_non_empty_string(symbol):
+                    missing.append(f"{execution_prefix}.symbol")
+                elif symbol in seen_execution_symbols:
+                    missing.append(f"{execution_prefix}.symbol=unique")
+                else:
+                    seen_execution_symbols.add(str(symbol))
+                if planned_regimes != expected_regimes:
+                    missing.append(f"{execution_prefix}.planned_entry_regimes")
+                if not _is_sha256(execution_event_sha):
+                    missing.append(f"{execution_prefix}.event_sha256")
+                if (
+                    execution_id == expected_execution_id
+                    and _is_non_empty_string(symbol)
+                    and planned_regimes == expected_regimes
+                    and _is_sha256(execution_event_sha)
+                ):
+                    executions.append(
+                        {
+                            "execution_id": str(execution_id),
+                            "symbol": str(symbol),
+                            "planned_entry_regimes": list(expected_regimes),
+                            "event_sha256": str(execution_event_sha),
+                        }
+                    )
+            if seen_execution_symbols != set(regimes_by_symbol):
+                missing.append(f"{prefix}.executions.coverage")
         if (
             _is_non_empty_string(block_id)
             and _is_integer(start)
@@ -276,6 +332,7 @@ def _benchmark_universe(
                     "end_timestamp_ms": int(end),
                     "event_sha256": str(event_sha),
                     "cells": cells,
+                    "executions": executions,
                 }
             )
     previous: tuple[int, int, str] | None = None
@@ -591,8 +648,13 @@ def _audit_arm(
         "expected_block_ids": expected_ids,
         "executed_block_ids": [],
         "coverage_ratio": 0.0,
+        "expected_execution_count": len(expected_ids),
+        "verified_execution_count": 0,
+        "execution_coverage_ratio": 0.0,
         "episodes": [],
         "zero_trade_block_ids": [],
+        "zero_trade_execution_ids": [],
+        "blocks": [],
         "block_audit": [],
         "missing_evidence": [],
     }
@@ -941,18 +1003,585 @@ def _audit_arm(
     normalized_episodes.sort(
         key=lambda item: (item["block_id"], item["evaluator_episode_id"])
     )
+    verified_block_ids = [
+        block["block_id"]
+        for block in block_audit
+        if block["status"] == "VERIFIED"
+    ]
     base.update(
         {
             "status": "VERIFIED" if not missing else "UNVERIFIABLE",
             "episodes": normalized_episodes,
             "zero_trade_block_ids": zero_trade_blocks,
+            "zero_trade_execution_ids": list(zero_trade_blocks),
+            "blocks": block_audit,
             "block_audit": block_audit,
+            "verified_execution_count": len(verified_block_ids),
+            "execution_coverage_ratio": (
+                len(verified_block_ids) / len(expected_ids) if expected_ids else 0.0
+            ),
             "missing_evidence": _missing(missing),
             "policy_sha256": arm_policy_sha,
             "trade_bot_sha256": trade_bot_sha256,
         }
     )
     return base, aggregation, base["missing_evidence"]
+
+
+def _audit_execution_ledger(
+    *,
+    evidence: Any,
+    prefix: str,
+    block_id: str,
+    execution_id: str,
+    segment_sha256: str,
+    symbol: str,
+    planned_entry_regimes: list[str],
+    policy_sha256: str,
+    no_trade_declared: Any,
+    seen_episode_ids: set[str],
+    first_fill_segments: dict[str, str],
+) -> tuple[list[dict[str, Any]], bool, list[str]]:
+    missing: list[str] = []
+    normalized_episodes: list[dict[str, Any]] = []
+    if not isinstance(evidence, Mapping):
+        return [], False, [f"{prefix}.episode_ledger"]
+    if evidence.get("schema_version") != EPISODE_SCHEMA_VERSION:
+        missing.append(f"{prefix}.episode_ledger.schema_version")
+    if evidence.get("segment_identity_sha256") != segment_sha256:
+        missing.append(f"{prefix}.episode_ledger.segment_identity_sha256")
+    evidence_policy = evidence.get("execution_policy_identity")
+    if (
+        not isinstance(evidence_policy, Mapping)
+        or evidence_policy.get("sha256") != policy_sha256
+    ):
+        missing.append(f"{prefix}.episode_ledger.policy_identity")
+    episodes = evidence.get("episodes")
+    if not isinstance(episodes, list):
+        missing.append(f"{prefix}.episode_ledger.episodes")
+        episodes = []
+    episode_count = evidence.get("episode_count")
+    complete_count = evidence.get("complete_episode_count")
+    terminal = evidence.get("terminal_settlement")
+    terminal_complete = (
+        isinstance(terminal, Mapping)
+        and terminal.get("done_count") == 1
+        and terminal.get("failed_count") == 0
+        and terminal.get("position_count") == 0
+        and terminal.get("segment_identity_sha256") == segment_sha256
+        and all(
+            _is_finite_number(terminal.get(field))
+            for field in ("realized_net_usd", "fees_usd", "funding_paid_usd")
+        )
+    )
+    if not terminal_complete:
+        missing.append(f"{prefix}.episode_ledger.terminal_settlement")
+    planned_cells = {
+        (symbol, entry_regime) for entry_regime in planned_entry_regimes
+    }
+    if episodes:
+        if episode_count != len(episodes):
+            missing.append(f"{prefix}.episode_ledger.episode_count")
+        if complete_count != len(episodes):
+            missing.append(f"{prefix}.episode_ledger.complete_episode_count")
+        if evidence.get("execution_path_complete") is not True:
+            missing.append(f"{prefix}.episode_ledger.execution_path_complete")
+        if evidence.get("aggregate_only_rejected") is not False:
+            missing.append(f"{prefix}.episode_ledger.aggregate_only_rejected")
+        if evidence.get("missing_path_evidence") != []:
+            missing.append(f"{prefix}.episode_ledger.missing_path_evidence")
+        if no_trade_declared is not False:
+            missing.append(f"{prefix}.no_trade_zero_utility=false")
+        for episode_index, episode in enumerate(episodes):
+            episode_prefix = f"{prefix}.episodes[{episode_index}]"
+            if isinstance(episode, Mapping):
+                if episode.get("symbol") != symbol:
+                    missing.append(f"{episode_prefix}.execution_symbol")
+                if episode.get("entry_regime") not in planned_entry_regimes:
+                    missing.append(f"{episode_prefix}.planned_entry_regimes")
+            raw_episode_id = (
+                str(episode.get("evaluator_episode_id") or "")
+                if isinstance(episode, Mapping)
+                else ""
+            )
+            duplicate_episode_id = bool(
+                raw_episode_id and raw_episode_id in seen_episode_ids
+            )
+            if duplicate_episode_id:
+                missing.append(f"{prefix}.episode_id_duplicate:{raw_episode_id}")
+            elif raw_episode_id:
+                seen_episode_ids.add(raw_episode_id)
+            normalized, episode_missing = _validate_episode(
+                episode,
+                prefix=episode_prefix,
+                block_id=block_id,
+                segment_sha256=segment_sha256,
+                policy_sha256=policy_sha256,
+                planned_cells=planned_cells,
+            )
+            missing.extend(episode_missing)
+            if normalized is None or duplicate_episode_id:
+                continue
+            if normalized["symbol"] != symbol:
+                missing.append(f"{episode_prefix}.execution_symbol")
+                continue
+            if normalized["entry_regime"] not in planned_entry_regimes:
+                missing.append(f"{episode_prefix}.planned_entry_regimes")
+                continue
+            first_fill_id = str(normalized["first_fill_id"])
+            previous_segment = first_fill_segments.get(first_fill_id)
+            if previous_segment is not None and previous_segment != segment_sha256:
+                missing.append(
+                    f"{prefix}.first_fill_id_cross_segment_reuse:{first_fill_id}"
+                )
+            else:
+                first_fill_segments[first_fill_id] = segment_sha256
+            if isinstance(terminal, Mapping) and normalized.get(
+                "terminal_settlement"
+            ) != terminal:
+                missing.append(f"{episode_prefix}.terminal_settlement_identity")
+            normalized["execution_id"] = execution_id
+            normalized_episodes.append(normalized)
+        if terminal_complete and len(normalized_episodes) == len(episodes):
+            expected_terminal = {
+                "realized_net_usd": sum(
+                    float(episode["executable_net_utility"])
+                    for episode in normalized_episodes
+                ),
+                "fees_usd": sum(
+                    float(episode["fee_usd"])
+                    for episode in normalized_episodes
+                ),
+                "funding_paid_usd": sum(
+                    float(episode["funding_paid_usd"])
+                    for episode in normalized_episodes
+                ),
+            }
+            for field, expected_value in expected_terminal.items():
+                if not math.isclose(
+                    float(terminal[field]),
+                    expected_value,
+                    rel_tol=0.0,
+                    abs_tol=EPISODE_EVIDENCE_EPSILON,
+                ):
+                    missing.append(f"{prefix}.episode_ledger.terminal_{field}")
+        return normalized_episodes, False, _missing(missing)
+
+    aggregate_pollution = sorted(ZERO_TRADE_FORBIDDEN_FIELDS & set(evidence))
+    if aggregate_pollution:
+        missing.append(
+            f"{prefix}.episode_ledger.aggregate_pollution:"
+            + ",".join(aggregate_pollution)
+        )
+    zero_terminal_complete = terminal_complete and all(
+        math.isclose(
+            float(terminal[field]),
+            0.0,
+            rel_tol=0.0,
+            abs_tol=EPISODE_EVIDENCE_EPSILON,
+        )
+        for field in ("realized_net_usd", "fees_usd", "funding_paid_usd")
+    )
+    if terminal_complete and not zero_terminal_complete:
+        missing.append(f"{prefix}.episode_ledger.terminal_nonzero")
+    zero_trade = (
+        episode_count == 0
+        and complete_count == 0
+        and evidence.get("execution_path_complete") is False
+        and evidence.get("aggregate_only_rejected") is True
+        and evidence.get("missing_path_evidence") == ["fills"]
+        and no_trade_declared is True
+        and zero_terminal_complete
+        and not aggregate_pollution
+    )
+    if not zero_trade:
+        missing.append(f"{prefix}.episode_ledger.zero_trade_contract")
+    return [], zero_trade, _missing(missing)
+
+
+def _audit_multi_execution_arm(
+    *,
+    arm_name: str,
+    raw_arm: Any,
+    expected_enabled: bool,
+    expected_blocks: list[dict[str, Any]],
+    plan_by_id: dict[str, dict[str, Any]],
+    common_policy: dict[str, Any],
+    trade_bot_sha256: str,
+    initial_weights_sha256: str,
+    initial_state_sha256: str,
+) -> tuple[
+    dict[str, Any],
+    dict[tuple[str, str, str], tuple[float, int]],
+    list[str],
+]:
+    prefix = f"paired.arms.{arm_name}"
+    expected_block_ids = [block["block_id"] for block in expected_blocks]
+    expected_execution_count = sum(
+        len(block.get("executions", [])) for block in expected_blocks
+    )
+    base = {
+        "status": "UNVERIFIABLE",
+        "expected_block_ids": expected_block_ids,
+        "executed_block_ids": [],
+        "coverage_ratio": 0.0,
+        "expected_execution_count": expected_execution_count,
+        "verified_execution_count": 0,
+        "execution_coverage_ratio": 0.0,
+        "episodes": [],
+        "zero_trade_block_ids": [],
+        "zero_trade_execution_ids": [],
+        "blocks": [],
+        "block_audit": [],
+        "missing_evidence": [],
+    }
+    if not isinstance(raw_arm, Mapping):
+        base["missing_evidence"] = [prefix]
+        return base, {}, base["missing_evidence"]
+    missing: list[str] = []
+    if raw_arm.get("infrastructure_status") != "VERIFIED":
+        missing.append(f"{prefix}.infrastructure_status=VERIFIED")
+    if raw_arm.get("mismatches") != []:
+        missing.append(f"{prefix}.mismatches=empty")
+    business_status = raw_arm.get("business_gate_status")
+    report_identity = raw_arm.get("report")
+    if not isinstance(report_identity, Mapping):
+        missing.append(f"{prefix}.report")
+    else:
+        if report_identity.get("schema_version") != "exact_replay_block_audit_v1":
+            missing.append(f"{prefix}.report.schema_version")
+        if not _is_sha256(report_identity.get("sha256")):
+            missing.append(f"{prefix}.report.sha256")
+        expected_report_status = (
+            (0, "VERIFIED") if business_status == "PASSED" else (2, "UNVERIFIABLE")
+        )
+        if business_status not in {"PASSED", "FAILED"}:
+            missing.append(f"{prefix}.business_gate_status")
+        elif (
+            raw_arm.get("exit_code") != expected_report_status[0]
+            or report_identity.get("status") != expected_report_status[1]
+        ):
+            missing.append(f"{prefix}.business_report_consistency")
+    if raw_arm.get("trade_bot_sha256") not in (None, trade_bot_sha256):
+        missing.append(f"{prefix}.trade_bot_sha256")
+    config_identity = raw_arm.get("config")
+    raw_policy_identity = (
+        config_identity.get("policy") if isinstance(config_identity, Mapping) else None
+    )
+    arm_policy, arm_policy_sha, policy_missing = _policy_identity(
+        raw_policy_identity,
+        prefix=f"{prefix}.config.policy",
+    )
+    missing.extend(policy_missing)
+    if not isinstance(config_identity, Mapping) or not _is_sha256(
+        config_identity.get("sha256")
+    ):
+        missing.append(f"{prefix}.config.sha256")
+    if arm_policy.get("self_evolution.enabled") is not expected_enabled:
+        missing.append(
+            f"{prefix}.self_evolution.enabled={str(expected_enabled).lower()}"
+        )
+    if {
+        key: value
+        for key, value in arm_policy.items()
+        if key != "self_evolution.enabled"
+    } != common_policy:
+        missing.append(f"{prefix}.policy_difference_not_only_enabled")
+    if raw_arm.get("expected_block_ids") != expected_block_ids:
+        missing.append(f"{prefix}.expected_block_ids")
+    if raw_arm.get("executed_block_ids") != expected_block_ids:
+        missing.append(f"{prefix}.executed_block_ids")
+    if raw_arm.get("block_execution_counts") != {
+        block_id: 1 for block_id in expected_block_ids
+    }:
+        missing.append(f"{prefix}.block_execution_counts")
+
+    raw_blocks = raw_arm.get("blocks")
+    if not isinstance(raw_blocks, list):
+        missing.append(f"{prefix}.blocks")
+        raw_blocks = []
+    raw_block_by_id: dict[str, Mapping[str, Any]] = {}
+    for raw_block in raw_blocks:
+        if not isinstance(raw_block, Mapping):
+            missing.append(f"{prefix}.blocks.object")
+            continue
+        block_id = raw_block.get("block_id")
+        if not _is_non_empty_string(block_id):
+            missing.append(f"{prefix}.blocks.block_id")
+        elif block_id in raw_block_by_id:
+            missing.append(f"{prefix}.blocks.block_id=unique")
+        else:
+            raw_block_by_id[str(block_id)] = raw_block
+    if set(raw_block_by_id) != set(expected_block_ids):
+        missing.append(f"{prefix}.blocks.coverage")
+
+    aggregation: dict[tuple[str, str, str], tuple[float, int]] = {}
+    normalized_episodes: list[dict[str, Any]] = []
+    zero_trade_execution_ids: list[str] = []
+    verified_execution_count = 0
+    verified_block_ids: list[str] = []
+    block_audit: list[dict[str, Any]] = []
+    seen_episode_ids: set[str] = set()
+    first_fill_segments: dict[str, str] = {}
+    seen_state_dirs: set[str] = set()
+    assess_exit_codes: list[Any] = []
+    for expected_block in expected_blocks:
+        block_id = expected_block["block_id"]
+        block_prefix = f"{prefix}.blocks.{block_id}"
+        raw_block = raw_block_by_id.get(block_id)
+        block_missing: list[str] = []
+        execution_audits: list[dict[str, Any]] = []
+        if raw_block is None:
+            block_missing.append(block_prefix)
+        else:
+            for field in (
+                "start_timestamp_ms",
+                "end_timestamp_ms",
+                "event_sha256",
+                "cells",
+            ):
+                if raw_block.get(field) != expected_block[field]:
+                    block_missing.append(f"{block_prefix}.{field}")
+        plan = plan_by_id.get(block_id, {})
+        expected_executions = expected_block.get("executions")
+        expected_executions = (
+            expected_executions if isinstance(expected_executions, list) else []
+        )
+        planned_by_id = plan.get("executions_by_id")
+        planned_by_id = planned_by_id if isinstance(planned_by_id, Mapping) else {}
+        raw_executions = raw_block.get("executions") if raw_block is not None else []
+        if not isinstance(raw_executions, list):
+            block_missing.append(f"{block_prefix}.executions")
+            raw_executions = []
+        raw_execution_by_id: dict[str, Mapping[str, Any]] = {}
+        for execution_index, raw_execution in enumerate(raw_executions):
+            execution_id = (
+                raw_execution.get("execution_id")
+                if isinstance(raw_execution, Mapping)
+                else None
+            )
+            if not _is_non_empty_string(execution_id):
+                block_missing.append(
+                    f"{block_prefix}.executions[{execution_index}].execution_id"
+                )
+            elif execution_id in raw_execution_by_id:
+                block_missing.append(
+                    f"{block_prefix}.execution_id_duplicate:{execution_id}"
+                )
+            else:
+                raw_execution_by_id[str(execution_id)] = raw_execution
+        expected_execution_ids = {
+            execution["execution_id"] for execution in expected_executions
+        }
+        actual_execution_ids = set(raw_execution_by_id)
+        if actual_execution_ids != expected_execution_ids:
+            block_missing.append(f"{block_prefix}.execution_coverage")
+            for extra_id in sorted(actual_execution_ids - expected_execution_ids):
+                block_missing.append(f"{block_prefix}.execution_extra:{extra_id}")
+        for expected_execution in expected_executions:
+            execution_id = expected_execution["execution_id"]
+            execution_prefix = f"{block_prefix}.{execution_id}"
+            execution_missing: list[str] = []
+            raw_execution = raw_execution_by_id.get(execution_id)
+            planned_execution = planned_by_id.get(execution_id)
+            normalized_for_execution: list[dict[str, Any]] = []
+            zero_trade = False
+            if raw_execution is None:
+                execution_missing.append(f"{execution_prefix}.missing")
+            elif not isinstance(planned_execution, Mapping):
+                execution_missing.append(f"{execution_prefix}.planned_identity")
+            else:
+                for field in (
+                    "execution_id",
+                    "symbol",
+                    "planned_entry_regimes",
+                    "event_sha256",
+                    "segment_identity_sha256",
+                ):
+                    if raw_execution.get(field) != planned_execution.get(field):
+                        execution_missing.append(f"{execution_prefix}.{field}")
+                execution_policy = raw_execution.get("execution_policy_identity")
+                execution_policy_payload, execution_policy_sha, execution_policy_missing = (
+                    _policy_identity(
+                        execution_policy,
+                        prefix=f"{execution_prefix}.execution_policy_identity",
+                    )
+                )
+                execution_missing.extend(execution_policy_missing)
+                if (
+                    execution_policy_payload != arm_policy
+                    or execution_policy_sha != arm_policy_sha
+                ):
+                    execution_missing.append(
+                        f"{execution_prefix}.execution_policy_identity"
+                    )
+                if raw_execution.get("trade_bot_sha256") != trade_bot_sha256:
+                    execution_missing.append(f"{execution_prefix}.trade_bot_sha256")
+                if raw_execution.get("initial_weights_sha256") != initial_weights_sha256:
+                    execution_missing.append(
+                        f"{execution_prefix}.initial_weights_sha256"
+                    )
+                if (
+                    raw_execution.get("initial_evolution_state_sha256")
+                    != initial_state_sha256
+                ):
+                    execution_missing.append(
+                        f"{execution_prefix}.initial_evolution_state_sha256"
+                    )
+                if raw_execution.get("historical_state_loaded") is not False:
+                    execution_missing.append(
+                        f"{execution_prefix}.historical_state_loaded=false"
+                    )
+                if raw_execution.get("continued_from_block_id") not in (None, ""):
+                    execution_missing.append(
+                        f"{execution_prefix}.continued_from_block_id=empty"
+                    )
+                state_dir = raw_execution.get("state_dir")
+                if not _is_non_empty_string(state_dir):
+                    execution_missing.append(f"{execution_prefix}.state_dir")
+                elif state_dir in seen_state_dirs:
+                    execution_missing.append(f"{execution_prefix}.state_dir=unique")
+                else:
+                    seen_state_dirs.add(str(state_dir))
+                if raw_execution.get("trade_bot_exit_code") != 0:
+                    execution_missing.append(f"{execution_prefix}.trade_bot_exit_code=0")
+                assess_exit = raw_execution.get("assess_exit_code")
+                assess_exit_codes.append(assess_exit)
+                if assess_exit not in (0, 1):
+                    execution_missing.append(f"{execution_prefix}.assess_exit_code")
+                normalized_for_execution, zero_trade, ledger_missing = (
+                    _audit_execution_ledger(
+                        evidence=raw_execution.get("episode_execution_evidence"),
+                        prefix=execution_prefix,
+                        block_id=block_id,
+                        execution_id=execution_id,
+                        segment_sha256=str(
+                            planned_execution.get("segment_identity_sha256") or ""
+                        ),
+                        symbol=str(planned_execution.get("symbol") or ""),
+                        planned_entry_regimes=list(
+                            planned_execution.get("planned_entry_regimes") or []
+                        ),
+                        policy_sha256=arm_policy_sha,
+                        no_trade_declared=raw_execution.get(
+                            "no_trade_zero_utility"
+                        ),
+                        seen_episode_ids=seen_episode_ids,
+                        first_fill_segments=first_fill_segments,
+                    )
+                )
+                execution_missing.extend(ledger_missing)
+            execution_missing = _missing(execution_missing)
+            block_missing.extend(execution_missing)
+            if not execution_missing:
+                verified_execution_count += 1
+                if zero_trade:
+                    zero_trade_execution_ids.append(execution_id)
+                for episode in normalized_for_execution:
+                    key = (
+                        block_id,
+                        str(episode["symbol"]),
+                        str(episode["entry_regime"]),
+                    )
+                    previous_utility, previous_count = aggregation.get(
+                        key, (0.0, 0)
+                    )
+                    aggregation[key] = (
+                        previous_utility
+                        + float(episode["executable_net_utility"]),
+                        previous_count + 1,
+                    )
+                normalized_episodes.extend(normalized_for_execution)
+            execution_audits.append(
+                {
+                    "execution_id": execution_id,
+                    "status": (
+                        "VERIFIED" if not execution_missing else "UNVERIFIABLE"
+                    ),
+                    "symbol": expected_execution["symbol"],
+                    "planned_entry_regimes": expected_execution[
+                        "planned_entry_regimes"
+                    ],
+                    "event_sha256": (
+                        raw_execution.get("event_sha256")
+                        if isinstance(raw_execution, Mapping)
+                        else None
+                    ),
+                    "segment_identity_sha256": (
+                        raw_execution.get("segment_identity_sha256")
+                        if isinstance(raw_execution, Mapping)
+                        else None
+                    ),
+                    "episode_count": len(normalized_for_execution),
+                    "zero_trade": zero_trade,
+                    "missing_evidence": execution_missing,
+                }
+            )
+        block_missing = _missing(block_missing)
+        if not block_missing:
+            verified_block_ids.append(block_id)
+        block_audit.append(
+            {
+                "block_id": block_id,
+                "status": "VERIFIED" if not block_missing else "UNVERIFIABLE",
+                "event_sha256": (
+                    raw_block.get("event_sha256")
+                    if isinstance(raw_block, Mapping)
+                    else None
+                ),
+                "episode_count": sum(
+                    execution["episode_count"] for execution in execution_audits
+                ),
+                "execution_count": len(execution_audits),
+                "executions": execution_audits,
+                "missing_evidence": block_missing,
+            }
+        )
+        missing.extend(block_missing)
+    if business_status == "PASSED" and any(code != 0 for code in assess_exit_codes):
+        missing.append(f"{prefix}.business_gate_status_vs_executions")
+    if business_status == "FAILED" and 1 not in assess_exit_codes:
+        missing.append(f"{prefix}.business_gate_status_vs_executions")
+    normalized_episodes.sort(
+        key=lambda episode: (
+            episode["block_id"],
+            episode.get("execution_id", ""),
+            episode["evaluator_episode_id"],
+        )
+    )
+    missing = _missing(missing)
+    base.update(
+        {
+            "status": "VERIFIED" if not missing else "UNVERIFIABLE",
+            "executed_block_ids": verified_block_ids,
+            "coverage_ratio": (
+                len(verified_block_ids) / len(expected_block_ids)
+                if expected_block_ids
+                else 0.0
+            ),
+            "verified_execution_count": verified_execution_count,
+            "execution_coverage_ratio": (
+                verified_execution_count / expected_execution_count
+                if expected_execution_count
+                else 0.0
+            ),
+            "episodes": normalized_episodes,
+            "zero_trade_block_ids": [
+                block["block_id"]
+                for block in block_audit
+                if block["status"] == "VERIFIED"
+                and block["executions"]
+                and all(execution["zero_trade"] for execution in block["executions"])
+            ],
+            "zero_trade_execution_ids": zero_trade_execution_ids,
+            "blocks": block_audit,
+            "block_audit": block_audit,
+            "missing_evidence": missing,
+            "policy_sha256": arm_policy_sha,
+            "trade_bot_sha256": trade_bot_sha256,
+        }
+    )
+    return base, aggregation, missing
 
 
 def _aggregate_groups(
@@ -1021,6 +1650,7 @@ def validate_evolution_uplift(
 
     exact_plan = paired.get("exact_block_plan")
     plan_by_id: dict[str, dict[str, Any]] = {}
+    multi_execution_mode = False
     if not isinstance(exact_plan, Mapping):
         missing.append("paired.exact_block_plan")
     else:
@@ -1049,8 +1679,14 @@ def validate_evolution_uplift(
                 missing.append(f"{prefix}.block_id=unique")
                 continue
             plan_by_id[str(block_id)] = dict(raw_plan)
+            if isinstance(raw_plan.get("executions"), list):
+                multi_execution_mode = True
         if list(plan_by_id) != expected_ids:
             missing.append("paired.exact_block_plan.blocks.coverage")
+        if multi_execution_mode and exact_plan.get("schema_version") != (
+            "exact_replay_block_plan_v2"
+        ):
+            missing.append("paired.exact_block_plan.schema_version=v2")
         for block_id in expected_ids:
             planned = plan_by_id.get(block_id)
             expected = benchmark_by_id[block_id]
@@ -1064,12 +1700,90 @@ def validate_evolution_uplift(
             ):
                 if planned.get(field) != expected[field]:
                     missing.append(f"paired.exact_block_plan.{block_id}.{field}")
-            if not _is_sha256(planned.get("segment_identity_sha256")):
-                missing.append(
-                    f"paired.exact_block_plan.{block_id}.segment_identity_sha256"
+            if multi_execution_mode:
+                expected_executions = expected.get("executions")
+                expected_executions = (
+                    expected_executions
+                    if isinstance(expected_executions, list)
+                    else []
                 )
-            if not _is_non_empty_string(planned.get("replay_csv")):
-                missing.append(f"paired.exact_block_plan.{block_id}.replay_csv")
+                expected_execution_by_id = {
+                    item["execution_id"]: item for item in expected_executions
+                }
+                raw_executions = planned.get("executions")
+                if not isinstance(raw_executions, list):
+                    missing.append(
+                        f"paired.exact_block_plan.{block_id}.executions"
+                    )
+                    raw_executions = []
+                planned_execution_by_id: dict[str, dict[str, Any]] = {}
+                for execution_index, raw_execution in enumerate(raw_executions):
+                    execution_prefix = (
+                        f"paired.exact_block_plan.{block_id}."
+                        f"executions[{execution_index}]"
+                    )
+                    if not isinstance(raw_execution, Mapping):
+                        missing.append(execution_prefix)
+                        continue
+                    execution_id = raw_execution.get("execution_id")
+                    if not _is_non_empty_string(execution_id):
+                        missing.append(f"{execution_prefix}.execution_id")
+                        continue
+                    if execution_id in planned_execution_by_id:
+                        missing.append(f"{execution_prefix}.execution_id_duplicate")
+                        continue
+                    planned_execution_by_id[str(execution_id)] = dict(raw_execution)
+                if set(planned_execution_by_id) != set(expected_execution_by_id):
+                    missing.append(
+                        f"paired.exact_block_plan.{block_id}.execution_coverage"
+                    )
+                for execution_id, expected_execution in expected_execution_by_id.items():
+                    planned_execution = planned_execution_by_id.get(execution_id)
+                    if planned_execution is None:
+                        continue
+                    for field in (
+                        "execution_id",
+                        "symbol",
+                        "planned_entry_regimes",
+                        "event_sha256",
+                    ):
+                        if planned_execution.get(field) != expected_execution[field]:
+                            missing.append(
+                                f"paired.exact_block_plan.{block_id}."
+                                f"{execution_id}.{field}"
+                            )
+                    if (
+                        planned_execution.get("start_timestamp_ms")
+                        != expected["start_timestamp_ms"]
+                        or planned_execution.get("end_timestamp_ms")
+                        != expected["end_timestamp_ms"]
+                    ):
+                        missing.append(
+                            f"paired.exact_block_plan.{block_id}."
+                            f"{execution_id}.interval"
+                        )
+                    if not _is_sha256(
+                        planned_execution.get("segment_identity_sha256")
+                    ):
+                        missing.append(
+                            f"paired.exact_block_plan.{block_id}."
+                            f"{execution_id}.segment_identity_sha256"
+                        )
+                    if not _is_non_empty_string(
+                        planned_execution.get("replay_csv")
+                    ):
+                        missing.append(
+                            f"paired.exact_block_plan.{block_id}."
+                            f"{execution_id}.replay_csv"
+                        )
+                planned["executions_by_id"] = planned_execution_by_id
+            else:
+                if not _is_sha256(planned.get("segment_identity_sha256")):
+                    missing.append(
+                        f"paired.exact_block_plan.{block_id}.segment_identity_sha256"
+                    )
+                if not _is_non_empty_string(planned.get("replay_csv")):
+                    missing.append(f"paired.exact_block_plan.{block_id}.replay_csv")
 
     trade_bot = paired.get("trade_bot")
     trade_bot_sha = trade_bot.get("sha256") if isinstance(trade_bot, Mapping) else None
@@ -1153,7 +1867,8 @@ def validate_evolution_uplift(
         str, dict[tuple[str, str, str], tuple[float, int]]
     ] = {}
     for arm_name, enabled in (("frozen", False), ("adaptive", True)):
-        arm_report, aggregation, arm_missing = _audit_arm(
+        audit = _audit_multi_execution_arm if multi_execution_mode else _audit_arm
+        arm_report, aggregation, arm_missing = audit(
             arm_name=arm_name,
             raw_arm=raw_arms.get(arm_name),
             expected_enabled=enabled,
@@ -1170,6 +1885,14 @@ def validate_evolution_uplift(
 
     aggregation_cells: list[dict[str, Any]] = []
     block_rows: list[dict[str, Any]] = []
+    complete_blocks_by_arm = {
+        arm_name: {
+            block["block_id"]
+            for block in arm_reports.get(arm_name, {}).get("block_audit", [])
+            if isinstance(block, Mapping) and block.get("status") == "VERIFIED"
+        }
+        for arm_name in ("frozen", "adaptive")
+    }
     for block in benchmark_blocks:
         block_cells: list[dict[str, Any]] = []
         for cell in block["cells"]:
@@ -1195,14 +1918,27 @@ def validate_evolution_uplift(
             aggregation_cells.append(row)
         frozen_total = sum(float(cell["frozen_utility"]) for cell in block_cells)
         adaptive_total = sum(float(cell["adaptive_utility"]) for cell in block_cells)
+        block_evidence_complete = all(
+            block["block_id"] in complete_blocks_by_arm[arm_name]
+            for arm_name in ("frozen", "adaptive")
+        )
         block_rows.append(
             {
                 "block_id": block["block_id"],
                 "event_sha256": block["event_sha256"],
                 "cell_count": len(block_cells),
-                "frozen_utility": frozen_total,
-                "adaptive_utility": adaptive_total,
-                "delta": adaptive_total - frozen_total,
+                "evidence_complete": block_evidence_complete,
+                "frozen_utility": (
+                    frozen_total if block_evidence_complete else None
+                ),
+                "adaptive_utility": (
+                    adaptive_total if block_evidence_complete else None
+                ),
+                "delta": (
+                    adaptive_total - frozen_total
+                    if block_evidence_complete
+                    else None
+                ),
                 "cells": block_cells,
             }
         )
@@ -1218,6 +1954,19 @@ def validate_evolution_uplift(
         or adaptive_ratio < thresholds["block_coverage"]
     ):
         missing.append("paired.block_coverage=100_percent")
+    expected_execution_count = (
+        sum(len(block.get("executions", [])) for block in benchmark_blocks)
+        if multi_execution_mode
+        else len(benchmark_blocks)
+    )
+    frozen_execution_ratio = arm_reports.get("frozen", {}).get(
+        "execution_coverage_ratio", 0.0
+    )
+    adaptive_execution_ratio = arm_reports.get("adaptive", {}).get(
+        "execution_coverage_ratio", 0.0
+    )
+    if frozen_execution_ratio < 1.0 or adaptive_execution_ratio < 1.0:
+        missing.append("paired.execution_coverage=100_percent")
 
     missing = _missing(missing)
     bootstrap: dict[str, Any] | None = None
@@ -1258,8 +2007,11 @@ def validate_evolution_uplift(
         status = "UPLIFT_PROVEN"
     else:
         status = "NOT_PROVEN"
-    total_frozen = sum(float(row["frozen_utility"]) for row in block_rows)
-    total_adaptive = sum(float(row["adaptive_utility"]) for row in block_rows)
+    complete_block_rows = [
+        row for row in block_rows if row["evidence_complete"] is True
+    ]
+    total_frozen = sum(float(row["frozen_utility"]) for row in complete_block_rows)
+    total_adaptive = sum(float(row["adaptive_utility"]) for row in complete_block_rows)
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "status": status,
@@ -1296,6 +2048,18 @@ def validate_evolution_uplift(
                 "executed_block_ids", []
             ),
         },
+        "execution_coverage": {
+            "expected_execution_count": expected_execution_count,
+            "required_ratio": 1.0,
+            "frozen_verified_execution_count": arm_reports.get("frozen", {}).get(
+                "verified_execution_count", 0
+            ),
+            "adaptive_verified_execution_count": arm_reports.get(
+                "adaptive", {}
+            ).get("verified_execution_count", 0),
+            "frozen_ratio": frozen_execution_ratio,
+            "adaptive_ratio": adaptive_execution_ratio,
+        },
         "arms": arm_reports,
         "aggregation_cells": aggregation_cells,
         "blocks": block_rows,
@@ -1308,8 +2072,9 @@ def validate_evolution_uplift(
             "adaptive_utility": total_adaptive,
             "delta": total_adaptive - total_frozen,
             "mean_block_delta": (
-                sum(float(row["delta"]) for row in block_rows) / len(block_rows)
-                if block_rows
+                sum(float(row["delta"]) for row in complete_block_rows)
+                / len(complete_block_rows)
+                if complete_block_rows
                 else None
             ),
         },
