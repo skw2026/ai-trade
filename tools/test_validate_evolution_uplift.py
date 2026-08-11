@@ -1052,6 +1052,79 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
             self.assertFalse(output.exists())
             self.assertEqual(list(output.parent.iterdir()), [])
 
+    def test_atomic_writer_temp_cleanup_failure_does_not_preserve_old_positive(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = pathlib.Path(temp_dir) / "uplift.json"
+            output.write_text(
+                json.dumps({"status": "UPLIFT_PROVEN"}), encoding="utf-8"
+            )
+            real_unlink = pathlib.Path.unlink
+            unlink_calls = []
+
+            def fail_temporary_unlink(path, *args, **kwargs):
+                unlink_calls.append(path)
+                if path != output:
+                    raise PermissionError("temporary cleanup failed")
+                return real_unlink(path, *args, **kwargs)
+
+            with mock.patch.object(
+                pathlib.Path, "unlink", new=fail_temporary_unlink
+            ):
+                with self.assertRaises(ValueError):
+                    UPLIFT._write_json(output, {"actual_benchmark_id": math.nan})
+
+            self.assertGreaterEqual(len(unlink_calls), 2)
+            self.assertEqual(unlink_calls[0], output)
+            self.assertFalse(output.exists())
+
+    def test_uplift_cli_keeps_original_failure_when_target_cleanup_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            paired = root / "paired.json"
+            benchmark = root / "benchmark.json"
+            config_path = root / "config.json"
+            output = root / "uplift.json"
+            for path in (paired, benchmark, config_path):
+                path.write_text("{}", encoding="utf-8")
+            output.write_text(
+                json.dumps({"status": "UPLIFT_PROVEN"}), encoding="utf-8"
+            )
+            args = mock.Mock(
+                paired_manifest=str(paired),
+                benchmark_report=str(benchmark),
+                config=str(config_path),
+                output=str(output),
+            )
+            real_unlink = pathlib.Path.unlink
+            unlink_calls = []
+
+            def fail_target_unlink(path, *args, **kwargs):
+                unlink_calls.append(path)
+                if path == output:
+                    raise PermissionError("target cleanup failed")
+                return real_unlink(path, *args, **kwargs)
+
+            with (
+                mock.patch.object(UPLIFT, "parse_args", return_value=args),
+                mock.patch.object(
+                    UPLIFT,
+                    "validate_evolution_uplift",
+                    return_value={"status": "UNVERIFIABLE"},
+                ),
+                mock.patch.object(
+                    pathlib.Path, "replace", side_effect=OSError("replace failed")
+                ),
+                mock.patch.object(pathlib.Path, "unlink", new=fail_target_unlink),
+                mock.patch("builtins.print") as print_mock,
+            ):
+                with self.assertRaisesRegex(OSError, "replace failed"):
+                    UPLIFT.main()
+
+            self.assertIn(output, unlink_calls)
+            self.assertTrue(output.exists())
+            self.assertEqual(list(root.glob(f"{output.name}.tmp.*")), [])
+            print_mock.assert_not_called()
+
     def test_benchmark_identity_and_complete_policy_byte_drift_are_fail_closed(self):
         canonical_tamper = benchmark_report()
         canonical_tamper["canonical_identity"]["components"]["data"]["logical_id"] = "forged"

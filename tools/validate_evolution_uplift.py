@@ -2904,9 +2904,15 @@ def _write_json(path: pathlib.Path, payload: Mapping[str, Any]) -> None:
             handle.write("\n")
         temporary.replace(path)
     except Exception:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
-        path.unlink(missing_ok=True)
+            try:
+                temporary.unlink(missing_ok=True)
+            except Exception:
+                pass
         raise
 
 
