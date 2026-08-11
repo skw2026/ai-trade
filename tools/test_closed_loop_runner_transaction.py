@@ -108,6 +108,58 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
             symbol_index = args.index("--symbol")
             self.assertEqual(args[symbol_index + 1], "SOLUSDT")
 
+    def test_microstructure_development_transports_evaluation_windows(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            capture_path = root / "compose_args.txt"
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=microstructure-window-test
+                export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_TRAIN_WINDOW_SECONDS=18000
+                export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_VALIDATION_WINDOW_SECONDS=10800
+                export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_TEST_WINDOW_SECONDS=10800
+                export CLOSED_LOOP_MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS=10800
+                source tools/closed_loop_runner.sh full \
+                  --output-root "${REPORTS_ROOT}"
+                compose_cmd() {
+                  case "$*" in
+                    *run_microstructure_alpha_development.py*)
+                      printf '%s\n' "$@" > "${CAPTURE_PATH}"
+                      return 2
+                      ;;
+                    *) return 3 ;;
+                  esac
+                }
+                run_microstructure_alpha_development_gate || status=$?
+                test "${status:-0}" -eq 2
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "AI_TRADE_DATA_DIR": str(root / "persistent-data"),
+                    "REPORTS_ROOT": str(root / "reports"),
+                    "CAPTURE_PATH": str(capture_path),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            args = capture_path.read_text(encoding="utf-8").splitlines()
+            for option, expected in (
+                ("--train-window-seconds", "18000"),
+                ("--validation-window-seconds", "10800"),
+                ("--test-window-seconds", "10800"),
+                ("--rolling-step-seconds", "10800"),
+            ):
+                option_index = args.index(option)
+                self.assertEqual(args[option_index + 1], expected)
+
     def test_miner_uses_research_container_with_persistent_paths(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
