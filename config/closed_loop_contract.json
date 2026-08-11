@@ -1,5 +1,5 @@
 {
-  "schema_version": "closed_loop_contract_v3",
+  "schema_version": "closed_loop_contract_v4",
   "trust_anchors": {
     "feature_parity_fixture": {
       "schema_version": "feature_parity_fixture_contract_v1",
@@ -40,6 +40,7 @@
         "strategy_diagnose_report",
         "alpha_mechanism_probe_report",
         "alpha_candidate_manifest",
+        "microstructure_capture_upgrade_report",
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
         "microstructure_alpha_candidate_manifest",
@@ -72,6 +73,7 @@
         "research_holdout_feature_store",
         "miner_report",
         "market_alpha_development_report",
+        "microstructure_capture_upgrade_report",
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
         "microstructure_alpha_candidate_manifest",
@@ -148,6 +150,7 @@
         "trade_ledger_report",
         "closed_loop_mechanism_report",
         "market_alpha_development_report",
+        "microstructure_capture_upgrade_report",
         "microstructure_capture_report",
         "microstructure_alpha_development_report",
         "microstructure_alpha_candidate_manifest",

@@ -3,9 +3,9 @@
 
 The probe consumes only the checksum-bound segment manifest emitted by
 ``assess_microstructure_capture.py``.  It learns every (long|short, holding
-horizon) action with an independent single-output model over a fit-only
+horizon) action with an independent upper-quantile model over a fit-only
 normalized continuous executable net-return target and converts the outputs
-back to quote-to-quote returns after explicit fees/slippage.  Thresholds
+back to quote-to-quote return scores after explicit fees/slippage.  Thresholds
 are selected on a purged nested validation window and evaluated on disjoint
 forward OOS windows.  A PASS here is development evidence only and can never be
 used as promotion or final-holdout evidence.
@@ -35,7 +35,7 @@ except ImportError:  # pragma: no cover - exercised by the research image
     CatBoostRegressor = None
 
 
-SCHEMA_VERSION = "microstructure_alpha_development_v4"
+SCHEMA_VERSION = "microstructure_alpha_development_v5"
 ASSESSMENT_SCHEMA_VERSION = "microstructure_capture_assessment_v1"
 CAPTURE_MERGE_CONTRACT = {
     "method": "drop_shared_adjacent_boundary_buckets_v1",
@@ -332,6 +332,32 @@ def exact_lag(values: np.ndarray, timestamps: np.ndarray, lag_seconds: int) -> n
     return output
 
 
+def exact_rolling_sum(
+    values: np.ndarray, timestamps: np.ndarray, window_seconds: int
+) -> np.ndarray:
+    """Return a causal sum only when every second in the window is present."""
+    if int(window_seconds) <= 0:
+        raise ValueError("rolling window must be positive")
+    array = np.asarray(values, dtype=np.float64)
+    output = np.full(len(array), np.nan, dtype=np.float64)
+    positions = {int(timestamp): index for index, timestamp in enumerate(timestamps)}
+    prefix = np.concatenate(([0.0], np.cumsum(array, dtype=np.float64)))
+    offset_ms = (int(window_seconds) - 1) * 1000
+    for index, timestamp in enumerate(timestamps):
+        start = positions.get(int(timestamp) - offset_ms)
+        if start is not None and index - start + 1 == int(window_seconds):
+            output[index] = prefix[index + 1] - prefix[start]
+    return output
+
+
+def exact_rolling_mean(
+    values: np.ndarray, timestamps: np.ndarray, window_seconds: int
+) -> np.ndarray:
+    return exact_rolling_sum(values, timestamps, window_seconds) / float(
+        window_seconds
+    )
+
+
 def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
     timestamps = np.asarray(series["timestamp"], dtype=np.int64)
     mid = np.asarray(series["mid"], dtype=np.float64)
@@ -354,11 +380,55 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
     add("micro_book_imbalance_l5", imbalance_l5)
     add("micro_book_imbalance_l20", imbalance_l20)
     add("micro_depth_slope", series["depth_slope"])
+    add(
+        "micro_log_top_depth_quote",
+        np.log1p(
+            mid
+            * (
+                np.asarray(series["best_bid_size"], dtype=np.float64)
+                + np.asarray(series["best_ask_size"], dtype=np.float64)
+            )
+        ),
+    )
+    add(
+        "micro_log_depth_l5_quote",
+        np.log1p(
+            mid
+            * (
+                np.asarray(series["bid_depth_l5"], dtype=np.float64)
+                + np.asarray(series["ask_depth_l5"], dtype=np.float64)
+            )
+        ),
+    )
+    add(
+        "micro_log_depth_l20_quote",
+        np.log1p(
+            mid
+            * (
+                np.asarray(series["bid_depth_l20"], dtype=np.float64)
+                + np.asarray(series["ask_depth_l20"], dtype=np.float64)
+            )
+        ),
+    )
+    add("micro_book_flow_imbalance", series["book_flow_imbalance"])
+    add("micro_log_book_flow_quote_volume", np.log1p(series["book_flow_quote_volume"]))
+    add("micro_book_ofi", series["book_ofi"])
+    add("micro_book_mid_range_bps", series["book_mid_range_bps"])
     add("micro_trade_imbalance", trade_imbalance)
+    add("micro_trade_vwap_dislocation_bps", series["trade_vwap_dislocation_bps"])
     add("micro_log_book_updates", np.log1p(series["book_update_count"]))
     add("micro_log_trade_count", np.log1p(series["trade_count"]))
     add("micro_log_buy_quote_volume", np.log1p(series["buy_quote_volume"]))
     add("micro_log_sell_quote_volume", np.log1p(series["sell_quote_volume"]))
+    target_book_flow_volume = np.asarray(
+        series["book_flow_quote_volume"], dtype=np.float64
+    )
+    target_book_flow_signed = (
+        np.asarray(series["book_flow_imbalance"], dtype=np.float64)
+        * target_book_flow_volume
+    )
+    target_buy_quote = np.asarray(series["buy_quote_volume"], dtype=np.float64)
+    target_sell_quote = np.asarray(series["sell_quote_volume"], dtype=np.float64)
     for lag in (1, 5, 20, 60):
         lag_mid = exact_lag(mid, timestamps, lag)
         lag_micro = exact_lag(micro_dislocation, timestamps, lag)
@@ -370,6 +440,41 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
         add(f"micro_book_l1_delta_{lag}s", imbalance_l1 - lag_l1)
         add(f"micro_book_l5_delta_{lag}s", imbalance_l5 - lag_l5)
         add(f"micro_trade_imbalance_delta_{lag}s", trade_imbalance - lag_trade)
+        if lag > 1:
+            book_flow_abs = exact_rolling_sum(
+                target_book_flow_volume, timestamps, lag
+            )
+            trade_quote = exact_rolling_sum(
+                target_buy_quote + target_sell_quote, timestamps, lag
+            )
+            add(
+                f"micro_book_flow_imbalance_{lag}s",
+                np.divide(
+                    exact_rolling_sum(target_book_flow_signed, timestamps, lag),
+                    book_flow_abs,
+                    out=np.zeros_like(book_flow_abs),
+                    where=book_flow_abs > 0.0,
+                ),
+            )
+            add(
+                f"micro_book_ofi_mean_{lag}s",
+                exact_rolling_mean(
+                    np.asarray(series["book_ofi"], dtype=np.float64),
+                    timestamps,
+                    lag,
+                ),
+            )
+            add(
+                f"micro_trade_imbalance_{lag}s",
+                np.divide(
+                    exact_rolling_sum(
+                        target_buy_quote - target_sell_quote, timestamps, lag
+                    ),
+                    trade_quote,
+                    out=np.zeros_like(trade_quote),
+                    where=trade_quote > 0.0,
+                ),
+            )
     target_returns: Dict[int, np.ndarray] = {
         lag: mid / exact_lag(mid, timestamps, lag) - 1.0
         for lag in (1, 5, 20, 60)
@@ -392,6 +497,19 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
         context_trade = np.asarray(
             series[f"{prefix}_trade_imbalance"], dtype=np.float64
         )
+        context_book_flow_volume = np.asarray(
+            series[f"{prefix}_book_flow_quote_volume"], dtype=np.float64
+        )
+        context_book_flow_signed = (
+            np.asarray(series[f"{prefix}_book_flow_imbalance"], dtype=np.float64)
+            * context_book_flow_volume
+        )
+        context_buy_quote = np.asarray(
+            series[f"{prefix}_buy_quote_volume"], dtype=np.float64
+        )
+        context_sell_quote = np.asarray(
+            series[f"{prefix}_sell_quote_volume"], dtype=np.float64
+        )
         context_dislocation = (context_microprice / context_mid - 1.0) * 10000.0
         add(f"cross_asset_{prefix}_spread_bps", series[f"{prefix}_spread_bps"])
         add(
@@ -402,7 +520,64 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
         add(f"cross_asset_{prefix}_book_imbalance_l5", context_l5)
         add(f"cross_asset_{prefix}_book_imbalance_l20", context_l20)
         add(f"cross_asset_{prefix}_depth_slope", series[f"{prefix}_depth_slope"])
+        add(
+            f"cross_asset_{prefix}_log_top_depth_quote",
+            np.log1p(
+                context_mid
+                * (
+                    np.asarray(
+                        series[f"{prefix}_best_bid_size"], dtype=np.float64
+                    )
+                    + np.asarray(
+                        series[f"{prefix}_best_ask_size"], dtype=np.float64
+                    )
+                )
+            ),
+        )
+        add(
+            f"cross_asset_{prefix}_log_depth_l5_quote",
+            np.log1p(
+                context_mid
+                * (
+                    np.asarray(series[f"{prefix}_bid_depth_l5"], dtype=np.float64)
+                    + np.asarray(
+                        series[f"{prefix}_ask_depth_l5"], dtype=np.float64
+                    )
+                )
+            ),
+        )
+        add(
+            f"cross_asset_{prefix}_log_depth_l20_quote",
+            np.log1p(
+                context_mid
+                * (
+                    np.asarray(
+                        series[f"{prefix}_bid_depth_l20"], dtype=np.float64
+                    )
+                    + np.asarray(
+                        series[f"{prefix}_ask_depth_l20"], dtype=np.float64
+                    )
+                )
+            ),
+        )
+        add(
+            f"cross_asset_{prefix}_book_flow_imbalance",
+            series[f"{prefix}_book_flow_imbalance"],
+        )
+        add(
+            f"cross_asset_{prefix}_log_book_flow_quote_volume",
+            np.log1p(series[f"{prefix}_book_flow_quote_volume"]),
+        )
+        add(f"cross_asset_{prefix}_book_ofi", series[f"{prefix}_book_ofi"])
+        add(
+            f"cross_asset_{prefix}_book_mid_range_bps",
+            series[f"{prefix}_book_mid_range_bps"],
+        )
         add(f"cross_asset_{prefix}_trade_imbalance", context_trade)
+        add(
+            f"cross_asset_{prefix}_trade_vwap_dislocation_bps",
+            series[f"{prefix}_trade_vwap_dislocation_bps"],
+        )
         add(
             f"cross_asset_{prefix}_log_book_updates",
             np.log1p(series[f"{prefix}_book_update_count"]),
@@ -443,6 +618,47 @@ def build_causal_features(series: Mapping[str, np.ndarray]) -> Tuple[np.ndarray,
                 f"cross_asset_{prefix}_trade_imbalance_delta_{lag}s",
                 context_trade - exact_lag(context_trade, timestamps, lag),
             )
+            if lag > 1:
+                book_flow_abs = exact_rolling_sum(
+                    context_book_flow_volume, timestamps, lag
+                )
+                trade_quote = exact_rolling_sum(
+                    context_buy_quote + context_sell_quote, timestamps, lag
+                )
+                add(
+                    f"cross_asset_{prefix}_book_flow_imbalance_{lag}s",
+                    np.divide(
+                        exact_rolling_sum(
+                            context_book_flow_signed, timestamps, lag
+                        ),
+                        book_flow_abs,
+                        out=np.zeros_like(book_flow_abs),
+                        where=book_flow_abs > 0.0,
+                    ),
+                )
+                add(
+                    f"cross_asset_{prefix}_book_ofi_mean_{lag}s",
+                    exact_rolling_mean(
+                        np.asarray(
+                            series[f"{prefix}_book_ofi"], dtype=np.float64
+                        ),
+                        timestamps,
+                        lag,
+                    ),
+                )
+                add(
+                    f"cross_asset_{prefix}_trade_imbalance_{lag}s",
+                    np.divide(
+                        exact_rolling_sum(
+                            context_buy_quote - context_sell_quote,
+                            timestamps,
+                            lag,
+                        ),
+                        trade_quote,
+                        out=np.zeros_like(trade_quote),
+                        where=trade_quote > 0.0,
+                    ),
+                )
     day_phase = np.mod(timestamps, 86_400_000) / 86_400_000.0
     add("micro_time_day_sin", np.sin(2.0 * math.pi * day_phase))
     add("micro_time_day_cos", np.cos(2.0 * math.pi * day_phase))
@@ -517,7 +733,7 @@ def build_time_splits(
         validation_end = test_start - embargo_seconds * 1000
         validation_start = validation_end - validation_window_seconds * 1000
         fit_end = validation_start - embargo_seconds * 1000
-        fit_start = validation_end - train_window_seconds * 1000
+        fit_start = fit_end - train_window_seconds * 1000
         splits.append(
             TimeSplit(
                 split_id=split_id,
@@ -1219,6 +1435,13 @@ def select_nested_threshold(
                 }
             )
     viable_candidates = [item for item in candidates if item["viable"]]
+    diagnostic_candidates = [
+        item
+        for item in candidates
+        if int(item["trade_count"]) >= int(min_trades)
+        and item["base_net_lcb_bps"] is not None
+        and item["stress_net_lcb_bps"] is not None
+    ]
     selected = (
         max(
             viable_candidates,
@@ -1232,8 +1455,26 @@ def select_nested_threshold(
         if viable_candidates
         else None
     )
+    diagnostic_selected = (
+        max(
+            diagnostic_candidates,
+            key=lambda item: (
+                float(item["stress_net_lcb_bps"]),
+                float(item["base_net_lcb_bps"]),
+                -float(item["threshold_bps"]),
+                -int(item["action_index"]),
+            ),
+        )
+        if diagnostic_candidates
+        else None
+    )
     return {
         "selected": selected,
+        "diagnostic_selected": diagnostic_selected,
+        "diagnostic_selection_contract": (
+            "best_nested_validation_stress_lcb_with_minimum_trades;"
+            "non_promotional_never_used_by_economic_gate"
+        ),
         "candidates": candidates,
         "score_distribution": summarize_score_distribution(finite),
         "action_score_distributions": action_score_distributions,
@@ -1250,8 +1491,8 @@ def build_model(args: argparse.Namespace, action_index: int = 0) -> Any:
     if CatBoostRegressor is None:
         raise RuntimeError("catboost is required; use ai-trade-research image")
     return CatBoostRegressor(
-        loss_function="RMSE",
-        eval_metric="RMSE",
+        loss_function=f"Quantile:alpha={float(args.quantile_alpha):.12g}",
+        eval_metric=f"Quantile:alpha={float(args.quantile_alpha):.12g}",
         iterations=int(args.iterations),
         depth=int(args.depth),
         learning_rate=float(args.learning_rate),
@@ -1316,11 +1557,13 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
     return {
         "library": "catboost",
         "library_version": getattr(catboost, "__version__", None),
-        "loss_function": "RMSE",
-        "model_topology": "independent_single_output_regressor_per_action",
+        "loss_function": "Quantile",
+        "loss_alpha": float(args.quantile_alpha),
+        "model_topology": "independent_single_output_quantile_regressor_per_action",
         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
         "frozen_model_scope": "single_consensus_action_model",
         "training_target": "fit_only_independent_winsorized_executable_net_return",
+        "estimation_statistic": "conditional_upper_quantile",
         "target_normalization": (
             "per_action_fit_only_winsorized_zero_mean_unit_variance"
         ),
@@ -1498,6 +1741,28 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             execution_latency_seconds=int(args.execution_latency_seconds),
             allowed_action_indices=allowed_action_indices,
         )
+        diagnostic_selected = calibration.get("diagnostic_selected")
+        diagnostic_objective = evaluate_joint_policy(
+            timestamps=timestamps[test_indices],
+            prediction=test_prediction,
+            realized_base=outcomes[test_indices],
+            actions=actions,
+            threshold_bps=(
+                float(diagnostic_selected["threshold_bps"])
+                if isinstance(diagnostic_selected, dict)
+                else float("inf")
+            ),
+            base_cost_bps=float(args.additional_round_trip_cost_bps),
+            stress_cost_multiplier=float(args.stress_cost_multiplier),
+            execution_latency_seconds=int(args.execution_latency_seconds),
+            allowed_action_indices=(
+                [int(diagnostic_selected["action_index"])]
+                if isinstance(diagnostic_selected, dict)
+                else []
+            ),
+        )
+        diagnostic_objective.pop("base_edges_bps", None)
+        diagnostic_objective.pop("stress_edges_bps", None)
         permutation_controls = evaluate_prediction_permutation_controls(
             timestamps=timestamps[test_indices],
             prediction=test_prediction,
@@ -1555,6 +1820,8 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     np.max(test_raw_prediction, axis=1)
                 ),
                 "oos_objective": objective,
+                "diagnostic_oos_objective": diagnostic_objective,
+                "diagnostic_oos_is_promotion_evidence": False,
                 "oos_prediction_permutation_controls": permutation_controls,
             }
         )
@@ -1870,6 +2137,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random-strength", type=float, default=2.0)
     parser.add_argument("--random-seed", type=int, default=20260806)
     parser.add_argument("--early-stopping-rounds", type=int, default=20)
+    parser.add_argument("--quantile-alpha", type=float, default=0.95)
     parser.add_argument("--permutation-control-trials", type=int, default=7)
     parser.add_argument("--permutation-control-seed", type=int, default=20260808)
     parser.add_argument(
@@ -1891,6 +2159,8 @@ def parse_args() -> argparse.Namespace:
         raise ValueError("permutation control trials must be >= 5")
     if args.permutation_control_minimum_excess_lcb_bps < 0.0:
         raise ValueError("permutation control minimum excess LCB must be non-negative")
+    if not 0.90 <= args.quantile_alpha <= 0.99:
+        raise ValueError("quantile alpha must be in [0.90, 0.99]")
     if not 0.60 <= args.min_action_consensus_ratio <= 1.0:
         raise ValueError("minimum action consensus ratio must be in [0.60, 1]")
     return args

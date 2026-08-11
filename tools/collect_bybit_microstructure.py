@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, TextIO, Tuple
 
 
-SCHEMA_VERSION = "bybit_cross_asset_microstructure_v2"
+SCHEMA_VERSION = "bybit_cross_asset_microstructure_v3"
 DEFAULT_URL = "wss://stream.bybit.com/v5/public/linear"
 TARGET_SYMBOL = "SOLUSDT"
 CONTEXT_SYMBOLS = ("BTCUSDT", "ETHUSDT")
@@ -39,6 +39,7 @@ CROSS_ASSET_ALIGNMENT_CONTRACT = {
         "and public-trade channels for every symbol advance beyond that second"
     ),
     "missing_context_action": "drop_target_second",
+    "trailing_partial_second_action": "drop_until_all_public_channels_advance",
     "future_fill_permitted": False,
     "backfill_permitted": False,
 }
@@ -60,6 +61,11 @@ class OrderBook:
         self.initialized = False
         self.last_update_id = -1
         self.last_sequence = -1
+        self.last_flow_metrics = {
+            "book_flow_signed_quote": 0.0,
+            "book_flow_abs_quote": 0.0,
+            "book_ofi": 0.0,
+        }
 
     @staticmethod
     def _apply_levels(destination: Dict[float, float], rows: Iterable[Any]) -> None:
@@ -78,6 +84,21 @@ class OrderBook:
         sequence = int(data.get("seq", -1))
         message_type = str(message.get("type", ""))
         reset = message_type == "snapshot" or update_id == 1
+        previous_metrics = self.metrics() if self.initialized else None
+        bid_signed_quote = 0.0
+        ask_signed_quote = 0.0
+        absolute_quote = 0.0
+        if not reset:
+            for raw in data.get("b", []):
+                price, size = parse_level(raw)
+                change = size - self.bids.get(price, 0.0)
+                bid_signed_quote += change * price
+                absolute_quote += abs(change) * price
+            for raw in data.get("a", []):
+                price, size = parse_level(raw)
+                change = size - self.asks.get(price, 0.0)
+                ask_signed_quote += change * price
+                absolute_quote += abs(change) * price
         if reset:
             self.bids.clear()
             self.asks.clear()
@@ -98,6 +119,36 @@ class OrderBook:
             raise ValueError("order-book is crossed")
         self.last_update_id = update_id
         self.last_sequence = sequence
+        current_metrics = self.metrics()
+        book_ofi = 0.0
+        if previous_metrics is not None and not reset:
+            previous_bid = float(previous_metrics["best_bid"])
+            current_bid = float(current_metrics["best_bid"])
+            previous_bid_size = float(previous_metrics["best_bid_size"])
+            current_bid_size = float(current_metrics["best_bid_size"])
+            previous_ask = float(previous_metrics["best_ask"])
+            current_ask = float(current_metrics["best_ask"])
+            previous_ask_size = float(previous_metrics["best_ask_size"])
+            current_ask_size = float(current_metrics["best_ask_size"])
+            raw_ofi = (
+                (current_bid_size if current_bid >= previous_bid else 0.0)
+                - (previous_bid_size if current_bid <= previous_bid else 0.0)
+                - (current_ask_size if current_ask <= previous_ask else 0.0)
+                + (previous_ask_size if current_ask >= previous_ask else 0.0)
+            )
+            mean_top_depth = 0.5 * (
+                previous_bid_size
+                + previous_ask_size
+                + current_bid_size
+                + current_ask_size
+            )
+            if mean_top_depth > 0.0:
+                book_ofi = raw_ofi / mean_top_depth
+        self.last_flow_metrics = {
+            "book_flow_signed_quote": bid_signed_quote - ask_signed_quote,
+            "book_flow_abs_quote": absolute_quote,
+            "book_ofi": book_ofi,
+        }
         timestamp = int(message.get("cts") or message.get("ts") or 0)
         if timestamp <= 0:
             raise ValueError("order-book exchange timestamp is missing")
@@ -125,10 +176,20 @@ class OrderBook:
             else mid
         )
         depth_1 = top_total
-        depth_20 = sum(size for _, size in bids[:20]) + sum(size for _, size in asks[:20])
+        bid_depth_5 = sum(size for _, size in bids[:5])
+        ask_depth_5 = sum(size for _, size in asks[:5])
+        bid_depth_20 = sum(size for _, size in bids[:20])
+        ask_depth_20 = sum(size for _, size in asks[:20])
+        depth_20 = bid_depth_20 + ask_depth_20
         return {
             "best_bid": best_bid,
             "best_ask": best_ask,
+            "best_bid_size": bid_size,
+            "best_ask_size": ask_size,
+            "bid_depth_l5": bid_depth_5,
+            "ask_depth_l5": ask_depth_5,
+            "bid_depth_l20": bid_depth_20,
+            "ask_depth_l20": ask_depth_20,
             "mid": mid,
             "spread_bps": (best_ask - best_bid) / mid * 10000.0,
             "microprice": microprice,
@@ -144,14 +205,27 @@ class FeatureBucket:
     timestamp_ms: int
     metrics: Dict[str, float] | None = None
     book_update_count: int = 0
+    book_flow_signed_quote: float = 0.0
+    book_flow_abs_quote: float = 0.0
+    book_ofi_sum: float = 0.0
+    book_mid_low: float | None = None
+    book_mid_high: float | None = None
     trade_count: int = 0
     buy_quote_volume: float = 0.0
     sell_quote_volume: float = 0.0
+    buy_base_volume: float = 0.0
+    sell_base_volume: float = 0.0
 
 
 FEATURE_FIELDS = (
     "best_bid",
     "best_ask",
+    "best_bid_size",
+    "best_ask_size",
+    "bid_depth_l5",
+    "ask_depth_l5",
+    "bid_depth_l20",
+    "ask_depth_l20",
     "mid",
     "spread_bps",
     "microprice",
@@ -164,24 +238,44 @@ FEATURE_FIELDS = (
 TARGET_ROW_FIELDS = (
     *FEATURE_FIELDS,
     "book_update_count",
+    "book_flow_imbalance",
+    "book_flow_quote_volume",
+    "book_ofi",
+    "book_mid_range_bps",
     "trade_count",
     "buy_quote_volume",
     "sell_quote_volume",
+    "buy_base_volume",
+    "sell_base_volume",
     "trade_imbalance",
+    "trade_vwap_dislocation_bps",
 )
 CONTEXT_SOURCE_FIELDS = (
     "mid",
     "spread_bps",
     "microprice",
+    "best_bid_size",
+    "best_ask_size",
+    "bid_depth_l5",
+    "ask_depth_l5",
+    "bid_depth_l20",
+    "ask_depth_l20",
     "book_imbalance_l1",
     "book_imbalance_l5",
     "book_imbalance_l20",
     "depth_slope",
     "book_update_count",
+    "book_flow_imbalance",
+    "book_flow_quote_volume",
+    "book_ofi",
+    "book_mid_range_bps",
     "trade_count",
     "buy_quote_volume",
     "sell_quote_volume",
+    "buy_base_volume",
+    "sell_base_volume",
     "trade_imbalance",
+    "trade_vwap_dislocation_bps",
 )
 
 
@@ -234,6 +328,17 @@ class MicrostructureAggregator:
             bucket = self._bucket(timestamp)
             bucket.metrics = self.book.metrics()
             bucket.book_update_count += 1
+            flow = self.book.last_flow_metrics
+            bucket.book_flow_signed_quote += float(flow["book_flow_signed_quote"])
+            bucket.book_flow_abs_quote += float(flow["book_flow_abs_quote"])
+            bucket.book_ofi_sum += float(flow["book_ofi"])
+            mid = float(bucket.metrics["mid"])
+            bucket.book_mid_low = (
+                mid if bucket.book_mid_low is None else min(bucket.book_mid_low, mid)
+            )
+            bucket.book_mid_high = (
+                mid if bucket.book_mid_high is None else max(bucket.book_mid_high, mid)
+            )
             current_bucket = timestamp - timestamp % self.bucket_ms
             self.latest_book_bucket = max(
                 current_bucket,
@@ -260,13 +365,13 @@ class MicrostructureAggregator:
                 if timestamp <= 0 or side not in {"Buy", "Sell"} or size <= 0.0 or price <= 0.0:
                     raise ValueError("invalid publicTrade values")
                 bucket = self._bucket(timestamp)
-                if self.book.initialized:
-                    bucket.metrics = self.book.metrics()
                 bucket.trade_count += 1
                 if side == "Buy":
                     bucket.buy_quote_volume += size * price
+                    bucket.buy_base_volume += size
                 else:
                     bucket.sell_quote_volume += size * price
+                    bucket.sell_base_volume += size
                 current_bucket = timestamp - timestamp % self.bucket_ms
                 self.latest_trade_bucket = max(
                     current_bucket,
@@ -286,19 +391,50 @@ class MicrostructureAggregator:
             if carried_metrics is None:
                 continue
             total_quote = bucket.buy_quote_volume + bucket.sell_quote_volume
+            total_base = bucket.buy_base_volume + bucket.sell_base_volume
+            book_flow_imbalance = (
+                bucket.book_flow_signed_quote / bucket.book_flow_abs_quote
+                if bucket.book_flow_abs_quote > 0.0
+                else 0.0
+            )
+            book_mid_range_bps = (
+                (bucket.book_mid_high - bucket.book_mid_low)
+                / float(carried_metrics["mid"])
+                * 10000.0
+                if bucket.book_mid_low is not None
+                and bucket.book_mid_high is not None
+                else 0.0
+            )
+            trade_vwap_dislocation_bps = (
+                (total_quote / total_base / float(carried_metrics["mid"]) - 1.0)
+                * 10000.0
+                if total_base > 0.0
+                else 0.0
+            )
             row: Dict[str, float | int] = {"timestamp": timestamp}
             row.update(carried_metrics)
             row.update(
                 {
                     "book_update_count": bucket.book_update_count,
+                    "book_flow_imbalance": book_flow_imbalance,
+                    "book_flow_quote_volume": bucket.book_flow_abs_quote,
+                    "book_ofi": (
+                        bucket.book_ofi_sum / bucket.book_update_count
+                        if bucket.book_update_count > 0
+                        else 0.0
+                    ),
+                    "book_mid_range_bps": book_mid_range_bps,
                     "trade_count": bucket.trade_count,
                     "buy_quote_volume": bucket.buy_quote_volume,
                     "sell_quote_volume": bucket.sell_quote_volume,
+                    "buy_base_volume": bucket.buy_base_volume,
+                    "sell_base_volume": bucket.sell_base_volume,
                     "trade_imbalance": (
                         (bucket.buy_quote_volume - bucket.sell_quote_volume) / total_quote
                         if total_quote > 0.0
                         else 0.0
                     ),
+                    "trade_vwap_dislocation_bps": trade_vwap_dislocation_bps,
                 }
             )
             output.append(row)
@@ -404,7 +540,12 @@ def replay_jsonl(
                 aggregator.process(payload)
             except (json.JSONDecodeError, TypeError, ValueError) as exc:
                 raise ValueError(f"invalid raw message at line {line_number}: {exc}") from exc
-    rows = aggregator.rows()
+    watermark = aggregator.finalized_through()
+    rows = [
+        row
+        for row in aggregator.rows()
+        if watermark is not None and int(row["timestamp"]) <= watermark
+    ]
     if not rows:
         raise ValueError("capture produced no microstructure feature rows")
     return rows, raw_count
@@ -498,6 +639,95 @@ def sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def build_capture_report(
+    *,
+    raw_path: pathlib.Path,
+    feature_path: pathlib.Path,
+    rows: Sequence[Mapping[str, Any]],
+    raw_count: int,
+    symbol: str = TARGET_SYMBOL,
+    url: str = DEFAULT_URL,
+    derived_from_schema_version: str | None = None,
+) -> Dict[str, Any]:
+    """Build the checksum-bound report shared by live and raw replay upgrades."""
+    report: Dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "PASS",
+        "research_domain": "forward_development_only",
+        "promotion_evidence": False,
+        "promotion_eligible": False,
+        "source": "bybit_public_websocket_v5",
+        "url": url,
+        "symbols": list(CAPTURE_SYMBOLS),
+        "cross_asset_alignment_contract": CROSS_ASSET_ALIGNMENT_CONTRACT,
+        "topics": [
+            topic
+            for subscribed_symbol in CAPTURE_SYMBOLS
+            for topic in (
+                f"orderbook.50.{subscribed_symbol}",
+                f"publicTrade.{subscribed_symbol}",
+            )
+        ],
+        "timestamp_semantics": CROSS_ASSET_ALIGNMENT_CONTRACT["timestamp_semantics"],
+        "raw": {
+            "path": str(raw_path),
+            "sha256": sha256_file(raw_path),
+            "message_count": int(raw_count),
+        },
+        "features": {
+            "path": str(feature_path),
+            "sha256": sha256_file(feature_path),
+            "row_count": len(rows),
+            "first_timestamp": int(rows[0]["timestamp"]),
+            "last_timestamp": int(rows[-1]["timestamp"]),
+        },
+        "quality": {
+            "book_update_count": sum(int(row["book_update_count"]) for row in rows),
+            "trade_count": sum(int(row["trade_count"]) for row in rows),
+            "trade_bucket_count": sum(int(row["trade_count"]) > 0 for row in rows),
+            "mean_spread_bps": sum(float(row["spread_bps"]) for row in rows)
+            / len(rows),
+            "by_symbol": {
+                capture_symbol: {
+                    "book_update_count": sum(
+                        int(
+                            row["book_update_count"]
+                            if capture_symbol == symbol
+                            else row[
+                                f"{context_prefix(capture_symbol)}_book_update_count"
+                            ]
+                        )
+                        for row in rows
+                    ),
+                    "trade_count": sum(
+                        int(
+                            row["trade_count"]
+                            if capture_symbol == symbol
+                            else row[f"{context_prefix(capture_symbol)}_trade_count"]
+                        )
+                        for row in rows
+                    ),
+                }
+                for capture_symbol in CAPTURE_SYMBOLS
+            },
+        },
+        "gates_remaining": [
+            "minimum_forward_capture_duration",
+            "offline_online_feature_parity",
+            "development_economic_screen",
+            "independent_selection",
+            "untouched_final_holdout",
+        ],
+    }
+    if derived_from_schema_version is not None:
+        report["deterministic_raw_replay_upgrade"] = {
+            "source_schema_version": str(derived_from_schema_version),
+            "target_schema_version": SCHEMA_VERSION,
+            "raw_payload_mutated": False,
+        }
+    return report
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("live", "replay"))
@@ -548,71 +778,14 @@ def main() -> int:
     )
     feature_path = pathlib.Path(args.features)
     write_feature_csv(feature_path, rows)
-    report = {
-        "schema_version": SCHEMA_VERSION,
-        "status": "PASS",
-        "research_domain": "forward_development_only",
-        "promotion_evidence": False,
-        "promotion_eligible": False,
-        "source": "bybit_public_websocket_v5",
-        "url": args.url,
-        "symbols": list(CAPTURE_SYMBOLS),
-        "cross_asset_alignment_contract": CROSS_ASSET_ALIGNMENT_CONTRACT,
-        "topics": [
-            topic
-            for subscribed_symbol in CAPTURE_SYMBOLS
-            for topic in (
-                f"orderbook.50.{subscribed_symbol}",
-                f"publicTrade.{subscribed_symbol}",
-            )
-        ],
-        "timestamp_semantics": CROSS_ASSET_ALIGNMENT_CONTRACT["timestamp_semantics"],
-        "raw": {"path": str(raw_path), "sha256": sha256_file(raw_path), "message_count": raw_count},
-        "features": {
-            "path": str(feature_path),
-            "sha256": sha256_file(feature_path),
-            "row_count": len(rows),
-            "first_timestamp": int(rows[0]["timestamp"]),
-            "last_timestamp": int(rows[-1]["timestamp"]),
-        },
-        "quality": {
-            "book_update_count": sum(int(row["book_update_count"]) for row in rows),
-            "trade_count": sum(int(row["trade_count"]) for row in rows),
-            "trade_bucket_count": sum(int(row["trade_count"]) > 0 for row in rows),
-            "mean_spread_bps": sum(float(row["spread_bps"]) for row in rows)
-            / len(rows),
-            "by_symbol": {
-                capture_symbol: {
-                    "book_update_count": sum(
-                        int(
-                            row["book_update_count"]
-                            if capture_symbol == symbol
-                            else row[
-                                f"{context_prefix(capture_symbol)}_book_update_count"
-                            ]
-                        )
-                        for row in rows
-                    ),
-                    "trade_count": sum(
-                        int(
-                            row["trade_count"]
-                            if capture_symbol == symbol
-                            else row[f"{context_prefix(capture_symbol)}_trade_count"]
-                        )
-                        for row in rows
-                    ),
-                }
-                for capture_symbol in CAPTURE_SYMBOLS
-            },
-        },
-        "gates_remaining": [
-            "minimum_forward_capture_duration",
-            "offline_online_feature_parity",
-            "development_economic_screen",
-            "independent_selection",
-            "untouched_final_holdout",
-        ],
-    }
+    report = build_capture_report(
+        raw_path=raw_path,
+        feature_path=feature_path,
+        rows=rows,
+        raw_count=raw_count,
+        symbol=symbol,
+        url=args.url,
+    )
     report_path = pathlib.Path(args.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(

@@ -31,6 +31,9 @@ LOCAL_ARTIFACT_FILENAMES = {
     "strategy_diagnose_report": "strategy_diagnose_report.json",
     "alpha_mechanism_probe_report": "alpha_mechanism_probe_report.json",
     "market_alpha_development_report": "market_alpha_development_report.json",
+    "microstructure_capture_upgrade_report": (
+        "microstructure_capture_upgrade_report.json"
+    ),
     "microstructure_capture_report": "microstructure_capture_report.json",
     "microstructure_alpha_development_report": (
         "microstructure_alpha_development_report.json"

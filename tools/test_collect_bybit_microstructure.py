@@ -52,7 +52,7 @@ def trades(symbol, timestamp=1200, mid=100.0):
                 "S": "Buy",
                 "v": "2",
                 "p": str(mid),
-                "i": f"{symbol}-a",
+                "i": f"{symbol}-{timestamp}-a",
             },
             {
                 "T": timestamp + 100,
@@ -60,7 +60,7 @@ def trades(symbol, timestamp=1200, mid=100.0):
                 "S": "Sell",
                 "v": "1",
                 "p": str(mid + 1.0),
-                "i": f"{symbol}-b",
+                "i": f"{symbol}-{timestamp}-b",
             },
         ],
     }
@@ -82,6 +82,9 @@ class MicrostructureTest(unittest.TestCase):
         self.assertEqual(metrics["best_bid"], 100.0)
         self.assertNotIn(99.0, book.bids)
         self.assertGreater(metrics["book_imbalance_l1"], 0.0)
+        self.assertGreater(book.last_flow_metrics["book_flow_signed_quote"], 0.0)
+        self.assertGreater(book.last_flow_metrics["book_flow_abs_quote"], 0.0)
+        self.assertGreater(book.last_flow_metrics["book_ofi"], 0.0)
 
     def test_delta_before_snapshot_fails_closed(self):
         delta = {
@@ -100,13 +103,26 @@ class MicrostructureTest(unittest.TestCase):
                 for symbol, mid in (("SOLUSDT", 100.0), ("BTCUSDT", 1000.0), ("ETHUSDT", 500.0)):
                     handle.write(json.dumps(snapshot(symbol, mid=mid)) + "\n")
                     handle.write(json.dumps(trades(symbol, mid=mid)) + "\n")
+                    handle.write(
+                        json.dumps(snapshot(symbol, timestamp=2999, mid=mid)) + "\n"
+                    )
+                    handle.write(
+                        json.dumps(trades(symbol, timestamp=2200, mid=mid)) + "\n"
+                    )
             first, count = micro.replay_jsonl(raw, symbol="SOLUSDT", bucket_ms=1000)
             second, _ = micro.replay_jsonl(raw, symbol="SOLUSDT", bucket_ms=1000)
             self.assertEqual(first, second)
-            self.assertEqual(count, 6)
+            self.assertEqual(count, 12)
+            self.assertEqual([row["timestamp"] for row in first], [0, 1000])
             trade_row = next(row for row in first if row["timestamp"] == 1000)
             self.assertEqual(trade_row["trade_count"], 2)
             self.assertAlmostEqual(trade_row["trade_imbalance"], 99.0 / 301.0)
+            self.assertGreater(trade_row["buy_base_volume"], 0.0)
+            self.assertGreater(trade_row["sell_base_volume"], 0.0)
+            self.assertAlmostEqual(
+                trade_row["trade_vwap_dislocation_bps"],
+                ((301.0 / 3.0) / 100.0 - 1.0) * 10000.0,
+            )
             self.assertEqual(trade_row["btc_trade_count"], 2)
             self.assertEqual(trade_row["eth_mid"], 500.0)
             self.assertEqual(tuple(trade_row), micro.OUTPUT_FIELDS)
@@ -118,6 +134,17 @@ class MicrostructureTest(unittest.TestCase):
         aggregator.process(snapshot("BTCUSDT", mid=1000.0))
         aggregator.process(trades("BTCUSDT", mid=1000.0))
         self.assertEqual(aggregator.rows(), [])
+
+    def test_late_trade_cannot_copy_a_future_book_into_its_exchange_second(self):
+        aggregator = micro.MicrostructureAggregator(symbol="SOLUSDT")
+        aggregator.process(snapshot("SOLUSDT", timestamp=999, mid=100.0))
+        aggregator.process(snapshot("SOLUSDT", timestamp=2999, mid=200.0))
+        aggregator.process(trades("SOLUSDT", timestamp=1500, mid=100.0))
+
+        rows = {int(row["timestamp"]): row for row in aggregator.rows()}
+
+        self.assertEqual(rows[1000]["mid"], 100.0)
+        self.assertEqual(rows[2000]["mid"], 200.0)
 
 
 if __name__ == "__main__":

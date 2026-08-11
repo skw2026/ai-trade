@@ -1217,6 +1217,7 @@ REPLAY_VALIDATION_LAST_STATUS="not_run"
 STRATEGY_DIAGNOSE_REPORT_PATH="${RUN_DIR}/strategy_diagnose_report.json"
 ALPHA_MECHANISM_PROBE_REPORT_PATH="${RUN_DIR}/alpha_mechanism_probe_report.json"
 MICROSTRUCTURE_CAPTURE_REPORT_PATH="${RUN_DIR}/microstructure_capture_report.json"
+MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH="${RUN_DIR}/microstructure_capture_upgrade_report.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
 MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/microstructure_alpha_candidate_manifest.json"
 MICROSTRUCTURE_ALPHA_MODEL_PATH="${RUN_DIR}/microstructure_alpha_development.cbm"
@@ -3236,6 +3237,11 @@ run_data_pipeline() {
 run_microstructure_capture_gate() {
   echo "[INFO] microstructure forward capture gate start"
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/upgrade_microstructure_capture.py \
+    --root "${MICROSTRUCTURE_CAPTURE_ROOT}" \
+    --output "${MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH}" \
+    --symbol "${SYMBOL}"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/assess_microstructure_capture.py \
     --root "${MICROSTRUCTURE_CAPTURE_ROOT}" \
     --output "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
@@ -3297,7 +3303,7 @@ payload = json.loads(
     .read_text(encoding="utf-8")
 )
 contract_ok = bool(
-    payload.get("schema_version") == "microstructure_alpha_development_v4"
+    payload.get("schema_version") == "microstructure_alpha_development_v5"
     and payload.get("status") == "PASS"
     and payload.get("fully_verifiable") is True
     and payload.get("research_domain") == "forward_development_only"
@@ -4645,6 +4651,7 @@ write_run_manifest() {
   STRATEGY_DIAGNOSE_REPORT_PATH_VALUE="${STRATEGY_DIAGNOSE_REPORT_PATH}" \
   ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE="${ALPHA_MECHANISM_PROBE_REPORT_PATH}" \
   MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+  MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH_VALUE="${MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH}" \
   MICROSTRUCTURE_CAPTURE_REPORT_PATH_VALUE="${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
@@ -4908,6 +4915,7 @@ artifact_env_names = {
     "strategy_diagnose_report": "STRATEGY_DIAGNOSE_REPORT_PATH_VALUE",
     "alpha_mechanism_probe_report": "ALPHA_MECHANISM_PROBE_REPORT_PATH_VALUE",
     "market_alpha_development_report": "MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
+    "microstructure_capture_upgrade_report": "MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH_VALUE",
     "microstructure_capture_report": "MICROSTRUCTURE_CAPTURE_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_candidate_manifest": "MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
@@ -5200,6 +5208,7 @@ build_summary() {
   "strategy_diagnose_report": "${STRATEGY_DIAGNOSE_REPORT_PATH}",
   "alpha_mechanism_probe_report": "${ALPHA_MECHANISM_PROBE_REPORT_PATH}",
   "market_alpha_development_report": "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}",
+  "microstructure_capture_upgrade_report": "${MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH}",
   "microstructure_capture_report": "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
   "microstructure_alpha_candidate_manifest": "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}",

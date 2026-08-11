@@ -159,6 +159,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_fetch_bybit_trade_history.py)
     add_test(NAME collect_bybit_microstructure_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_bybit_microstructure.py)
+    add_test(NAME upgrade_microstructure_capture_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_upgrade_microstructure_capture.py)
     add_test(NAME microstructure_runtime_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_microstructure_runtime.py)
     add_test(NAME microstructure_demo_policy_test

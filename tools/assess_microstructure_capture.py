@@ -107,6 +107,7 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
     per_symbol_trades = {symbol: 0 for symbol in collector.CAPTURE_SYMBOLS}
     invalid: List[str] = []
     superseded: List[str] = []
+    deterministic_replay_upgraded_segment_count = 0
     segments: List[Dict[str, Any]] = []
     latest_exchange_timestamp = 0
     for report_path in report_paths:
@@ -123,6 +124,18 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
             feature_path = resolve_artifact(
                 root, str(features["path"]), "features", args.symbol
             )
+            replay_upgrade = payload.get("deterministic_raw_replay_upgrade")
+            replay_upgrade_ok = bool(
+                replay_upgrade is None
+                or (
+                    isinstance(replay_upgrade, dict)
+                    and replay_upgrade.get("source_schema_version")
+                    == "bybit_cross_asset_microstructure_v2"
+                    and replay_upgrade.get("target_schema_version")
+                    == collector.SCHEMA_VERSION
+                    and replay_upgrade.get("raw_payload_mutated") is False
+                )
+            )
             contract_ok = bool(
                 payload.get("status") == "PASS"
                 and payload.get("research_domain") == "forward_development_only"
@@ -135,6 +148,7 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
                 and feature_path.is_file()
                 and sha256_file(raw_path) == raw.get("sha256")
                 and sha256_file(feature_path) == features.get("sha256")
+                and replay_upgrade_ok
             )
             if not contract_ok:
                 raise ValueError("contract/checksum mismatch")
@@ -154,6 +168,9 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
                     int(symbol_quality.get("trade_count", 0)),
                 )
             intervals.append((start, end))
+            deterministic_replay_upgraded_segment_count += int(
+                replay_upgrade is not None
+            )
             latest_exchange_timestamp = max(latest_exchange_timestamp, end)
             total_rows += int(features.get("row_count", 0))
             total_messages += int(raw.get("message_count", 0))
@@ -226,6 +243,9 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
         "segment_count": len(segments) + len(invalid),
         "valid_segment_count": len(segments),
         "superseded_segment_count": len(superseded),
+        "deterministic_replay_upgraded_segment_count": (
+            deterministic_replay_upgraded_segment_count
+        ),
         "coverage_ms": coverage_ms,
         "minimum_coverage_ms": args.min_capture_duration_sec * 1000,
         "latest_exchange_timestamp_ms": latest_exchange_timestamp or None,

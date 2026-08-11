@@ -20,6 +20,12 @@ def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
         "timestamp": timestamp,
         "best_bid": mid - 0.005,
         "best_ask": mid + 0.005,
+        "best_bid_size": np.full(row_count, 10.0),
+        "best_ask_size": np.full(row_count, 8.0),
+        "bid_depth_l5": np.full(row_count, 40.0),
+        "ask_depth_l5": np.full(row_count, 35.0),
+        "bid_depth_l20": np.full(row_count, 120.0),
+        "ask_depth_l20": np.full(row_count, 110.0),
         "mid": mid,
         "spread_bps": (0.01 / mid) * 10000.0,
         "microprice": mid,
@@ -28,10 +34,17 @@ def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
         "book_imbalance_l20": np.full(row_count, 0.1),
         "depth_slope": np.full(row_count, 2.0),
         "book_update_count": np.full(row_count, 10.0),
+        "book_flow_imbalance": np.full(row_count, 0.1),
+        "book_flow_quote_volume": np.full(row_count, 1000.0),
+        "book_ofi": np.full(row_count, 0.05),
+        "book_mid_range_bps": np.full(row_count, 0.5),
         "trade_count": np.full(row_count, 3.0),
         "buy_quote_volume": np.full(row_count, 20.0),
         "sell_quote_volume": np.full(row_count, 10.0),
+        "buy_base_volume": np.full(row_count, 0.2),
+        "sell_base_volume": np.full(row_count, 0.1),
         "trade_imbalance": np.full(row_count, 1.0 / 3.0),
+        "trade_vwap_dislocation_bps": np.full(row_count, 0.1),
     }
     for symbol, scale in (("BTCUSDT", 10.0), ("ETHUSDT", 5.0)):
         prefix = lifecycle.collector.context_prefix(symbol)
@@ -41,15 +54,28 @@ def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
                 f"{prefix}_mid": context_mid,
                 f"{prefix}_spread_bps": np.full(row_count, 1.0),
                 f"{prefix}_microprice": context_mid,
+                f"{prefix}_best_bid_size": np.full(row_count, 12.0),
+                f"{prefix}_best_ask_size": np.full(row_count, 11.0),
+                f"{prefix}_bid_depth_l5": np.full(row_count, 50.0),
+                f"{prefix}_ask_depth_l5": np.full(row_count, 45.0),
+                f"{prefix}_bid_depth_l20": np.full(row_count, 150.0),
+                f"{prefix}_ask_depth_l20": np.full(row_count, 140.0),
                 f"{prefix}_book_imbalance_l1": np.full(row_count, 0.2),
                 f"{prefix}_book_imbalance_l5": np.full(row_count, 0.1),
                 f"{prefix}_book_imbalance_l20": np.full(row_count, 0.05),
                 f"{prefix}_depth_slope": np.full(row_count, 2.0),
                 f"{prefix}_book_update_count": np.full(row_count, 8.0),
+                f"{prefix}_book_flow_imbalance": np.full(row_count, 0.08),
+                f"{prefix}_book_flow_quote_volume": np.full(row_count, 2000.0),
+                f"{prefix}_book_ofi": np.full(row_count, 0.04),
+                f"{prefix}_book_mid_range_bps": np.full(row_count, 0.4),
                 f"{prefix}_trade_count": np.full(row_count, 2.0),
                 f"{prefix}_buy_quote_volume": np.full(row_count, 30.0),
                 f"{prefix}_sell_quote_volume": np.full(row_count, 20.0),
+                f"{prefix}_buy_base_volume": np.full(row_count, 0.3),
+                f"{prefix}_sell_base_volume": np.full(row_count, 0.2),
                 f"{prefix}_trade_imbalance": np.full(row_count, 0.2),
+                f"{prefix}_trade_vwap_dislocation_bps": np.full(row_count, 0.05),
             }
         )
     return series
@@ -89,11 +115,13 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     }
     model_contract = {
         "library": "catboost",
-        "loss_function": "RMSE",
-        "model_topology": "independent_single_output_regressor_per_action",
+        "loss_function": "Quantile",
+        "loss_alpha": 0.95,
+        "model_topology": "independent_single_output_quantile_regressor_per_action",
         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
         "frozen_model_scope": "single_consensus_action_model",
         "training_target": "fit_only_independent_winsorized_executable_net_return",
+        "estimation_statistic": "conditional_upper_quantile",
         "target_normalization": "per_action_fit_only_winsorized_zero_mean_unit_variance",
         "inference_score": "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps",
         "policy_selection": "nested_per_action_threshold_then_mode_action_freeze",
@@ -557,6 +585,23 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                                 },
                             }
                         handle.write(json.dumps(message) + "\n")
+                        handle.write(
+                            json.dumps(
+                                {
+                                    "topic": f"publicTrade.{symbol}",
+                                    "data": [
+                                        {
+                                            "T": timestamp,
+                                            "S": "Buy",
+                                            "v": "1",
+                                            "p": str(mid),
+                                            "i": f"{symbol}-{index}",
+                                        }
+                                    ],
+                                }
+                            )
+                            + "\n"
+                        )
                         previous_quotes[symbol] = (bid, ask)
             rows, raw_count = lifecycle.collector.replay_jsonl(
                 raw_path, symbol="SOLUSDT", bucket_ms=1000
@@ -573,8 +618,8 @@ class MicrostructureAlphaLifecycleTest(unittest.TestCase):
                         "raw_message_count": raw_count,
                         "feature_path": str(feature_path),
                         "feature_sha256": lifecycle.sha256_file(feature_path),
-                        "first_timestamp_ms": base_timestamp,
-                        "last_timestamp_ms": base_timestamp + 499_000,
+                        "first_timestamp_ms": int(rows[0]["timestamp"]),
+                        "last_timestamp_ms": int(rows[-1]["timestamp"]),
                     }
                 ]
             }

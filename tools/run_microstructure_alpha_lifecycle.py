@@ -38,7 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
-ALGORITHM_CONTRACT_REVISION = "independent_action_regressors_v6"
+ALGORITHM_CONTRACT_REVISION = "causal_order_flow_quantile_v7"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -315,15 +315,19 @@ def validate_development_candidate(
     model_contract = report.get("model_contract", {})
     if not (
         isinstance(model_contract, dict)
-        and model_contract.get("loss_function") == "RMSE"
+        and model_contract.get("loss_function") == "Quantile"
+        and isinstance(model_contract.get("loss_alpha"), (int, float))
+        and 0.90 <= float(model_contract.get("loss_alpha")) <= 0.99
         and model_contract.get("model_topology")
-        == "independent_single_output_regressor_per_action"
+        == "independent_single_output_quantile_regressor_per_action"
         and model_contract.get("development_model_scope")
         == "one_model_per_fit_learnable_predeclared_action"
         and model_contract.get("frozen_model_scope")
         == "single_consensus_action_model"
         and model_contract.get("training_target")
         == "fit_only_independent_winsorized_executable_net_return"
+        and model_contract.get("estimation_statistic")
+        == "conditional_upper_quantile"
         and model_contract.get("target_normalization")
         == "per_action_fit_only_winsorized_zero_mean_unit_variance"
         and model_contract.get("inference_score")

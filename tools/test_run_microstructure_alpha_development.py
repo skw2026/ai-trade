@@ -27,6 +27,12 @@ def synthetic_series(row_count: int = 400) -> dict[str, np.ndarray]:
         "timestamp": timestamp,
         "best_bid": mid - 0.005,
         "best_ask": mid + 0.005,
+        "best_bid_size": np.full(row_count, 10.0),
+        "best_ask_size": np.full(row_count, 8.0),
+        "bid_depth_l5": np.full(row_count, 40.0),
+        "ask_depth_l5": np.full(row_count, 35.0),
+        "bid_depth_l20": np.full(row_count, 120.0),
+        "ask_depth_l20": np.full(row_count, 110.0),
         "mid": mid,
         "spread_bps": np.full(row_count, 1.0),
         "microprice": mid + np.sin(np.arange(row_count)) * 0.002,
@@ -35,10 +41,17 @@ def synthetic_series(row_count: int = 400) -> dict[str, np.ndarray]:
         "book_imbalance_l20": np.sin(np.arange(row_count) / 17.0),
         "depth_slope": np.full(row_count, 2.0),
         "book_update_count": np.full(row_count, 3.0),
+        "book_flow_imbalance": np.sin(np.arange(row_count) / 8.0),
+        "book_flow_quote_volume": np.full(row_count, 1000.0),
+        "book_ofi": np.sin(np.arange(row_count) / 6.0),
+        "book_mid_range_bps": np.full(row_count, 0.5),
         "trade_count": np.ones(row_count),
         "buy_quote_volume": np.full(row_count, 20.0),
         "sell_quote_volume": np.full(row_count, 10.0),
+        "buy_base_volume": np.full(row_count, 0.2),
+        "sell_base_volume": np.full(row_count, 0.1),
         "trade_imbalance": np.full(row_count, 1.0 / 3.0),
+        "trade_vwap_dislocation_bps": np.full(row_count, 0.1),
     }
     for symbol, scale in (("BTCUSDT", 10.0), ("ETHUSDT", 5.0)):
         prefix = probe.collector.context_prefix(symbol)
@@ -48,21 +61,45 @@ def synthetic_series(row_count: int = 400) -> dict[str, np.ndarray]:
                 f"{prefix}_mid": context_mid,
                 f"{prefix}_spread_bps": np.full(row_count, 0.8 + scale / 100.0),
                 f"{prefix}_microprice": context_mid + np.cos(np.arange(row_count)) * 0.003,
+                f"{prefix}_best_bid_size": np.full(row_count, 12.0),
+                f"{prefix}_best_ask_size": np.full(row_count, 11.0),
+                f"{prefix}_bid_depth_l5": np.full(row_count, 50.0),
+                f"{prefix}_ask_depth_l5": np.full(row_count, 45.0),
+                f"{prefix}_bid_depth_l20": np.full(row_count, 150.0),
+                f"{prefix}_ask_depth_l20": np.full(row_count, 140.0),
                 f"{prefix}_book_imbalance_l1": np.sin(np.arange(row_count) / 5.0),
                 f"{prefix}_book_imbalance_l5": np.sin(np.arange(row_count) / 9.0),
                 f"{prefix}_book_imbalance_l20": np.sin(np.arange(row_count) / 15.0),
                 f"{prefix}_depth_slope": np.full(row_count, 2.5),
                 f"{prefix}_book_update_count": np.full(row_count, 4.0),
+                f"{prefix}_book_flow_imbalance": np.sin(np.arange(row_count) / 10.0),
+                f"{prefix}_book_flow_quote_volume": np.full(row_count, 2000.0),
+                f"{prefix}_book_ofi": np.sin(np.arange(row_count) / 12.0),
+                f"{prefix}_book_mid_range_bps": np.full(row_count, 0.4),
                 f"{prefix}_trade_count": np.full(row_count, 2.0),
                 f"{prefix}_buy_quote_volume": np.full(row_count, 40.0 * scale),
                 f"{prefix}_sell_quote_volume": np.full(row_count, 30.0 * scale),
+                f"{prefix}_buy_base_volume": np.full(row_count, 0.4),
+                f"{prefix}_sell_base_volume": np.full(row_count, 0.3),
                 f"{prefix}_trade_imbalance": np.full(row_count, 1.0 / 7.0),
+                f"{prefix}_trade_vwap_dislocation_bps": np.full(row_count, 0.05),
             }
         )
     return series
 
 
 class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
+    def test_exact_rolling_sum_requires_every_exchange_second(self):
+        values = np.asarray([1.0, 2.0, 4.0, 8.0])
+        timestamps = np.asarray([0, 1000, 3000, 4000], dtype=np.int64)
+
+        result = probe.exact_rolling_sum(values, timestamps, 2)
+
+        self.assertTrue(np.isnan(result[0]))
+        self.assertEqual(result[1], 3.0)
+        self.assertTrue(np.isnan(result[2]))
+        self.assertEqual(result[3], 12.0)
+
     def write_custom_feature_segment(
         self,
         root: pathlib.Path,
@@ -406,6 +443,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             random_strength=0.0,
             random_seed=7,
             early_stopping_rounds=10,
+            quantile_alpha=0.95,
         )
         models = probe.fit_independent_action_models(
             fit_features=features[:1800],
@@ -496,6 +534,27 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertGreater(report["selected"]["stress_net_lcb_bps"], 0.0)
         self.assertIsNone(report["score_threshold_floor_bps"])
 
+    def test_failed_economic_gate_keeps_non_promotional_forward_diagnostic(self):
+        timestamps = np.arange(100, dtype=np.int64) * 1000
+        prediction = np.linspace(0.0, 1.0, 100).reshape(-1, 1)
+        realized = np.full((100, 1), -5.0)
+
+        report = probe.select_nested_threshold(
+            timestamps=timestamps,
+            prediction=prediction,
+            realized_base=realized,
+            actions=[{"direction": "long", "horizon_seconds": 1}],
+            quantiles=[0.5, 0.8],
+            min_trades=8,
+            base_cost_bps=1.0,
+            stress_cost_multiplier=1.25,
+            execution_latency_seconds=1,
+        )
+
+        self.assertIsNone(report["selected"])
+        self.assertIsNotNone(report["diagnostic_selected"])
+        self.assertIn("non_promotional", report["diagnostic_selection_contract"])
+
     def test_nested_calibration_does_not_let_high_baseline_action_hide_alpha(self):
         timestamps = np.arange(100, dtype=np.int64) * 1000
         prediction = np.column_stack(
@@ -539,6 +598,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             embargo_seconds=301,
         )
         for split in splits:
+            self.assertEqual(split.fit_end_ms - split.fit_start_ms, 20000000)
             self.assertLessEqual(split.fit_end_ms + 301000, split.validation_start_ms)
             self.assertLessEqual(split.validation_end_ms + 301000, split.test_start_ms)
         self.assertLessEqual(splits[0].test_end_ms, splits[1].test_start_ms)
@@ -683,6 +743,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
                     "random_strength": 0.0,
                     "random_seed": 1,
                     "early_stopping_rounds": 2,
+                    "quantile_alpha": 0.95,
                 },
             )()
             assessment = {
