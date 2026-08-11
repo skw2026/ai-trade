@@ -43,6 +43,12 @@
 - **THEN** 顶层比较 SHALL 标记 `fully_verifiable=false`
 - **AND** 系统 SHALL 列出缺失架构与 split，不得忽略失败后只比较剩余架构
 
+#### Scenario: 诊断策略在 OOS split 主动不交易
+- **WHEN** nested validation 选定的诊断阈值在某个 OOS split 上产生 0 笔交易
+- **THEN** 系统 SHALL 将该 split 记录为完整的 fail-closed no-position 证据，并以 0 bps policy split return 纳入实际与置换汇总
+- **AND** 系统 SHALL 显式列出 zero-trade split
+- **AND** 只要存在 zero-trade split，该架构的 `signal_proven` SHALL 为 false
+
 ### Requirement: 对照结果不得直接晋级
 系统 SHALL 将目标架构对照严格限制为 non-promotional development evidence。
 

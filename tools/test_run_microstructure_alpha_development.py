@@ -1192,6 +1192,60 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertFalse(report["promotion_eligible"])
         self.assertFalse(report["influences_development_passed"])
 
+    def test_zero_trade_split_is_complete_fail_closed_evidence(self):
+        empty_objective = {
+            "base_cost": {"count": 0, "mean_bps": None},
+            "stress_cost": {"count": 0, "mean_bps": None},
+            "action_counts": {},
+        }
+        empty_controls = [
+            {
+                "trial": trial,
+                "base_cost": {"count": 0, "mean_bps": None},
+                "stress_cost": {"count": 0, "mean_bps": None},
+            }
+            for trial in range(2)
+        ]
+        split_reports = [
+            {
+                "split_id": split_id,
+                "architectures": {
+                    "ranker": {
+                        "status": "evaluated",
+                        "oos_objective": copy.deepcopy(empty_objective),
+                        "oos_prediction_permutation_controls": copy.deepcopy(
+                            empty_controls
+                        ),
+                    }
+                },
+            }
+            for split_id in range(2)
+        ]
+
+        report = probe.aggregate_target_architecture_comparison(
+            split_reports=split_reports,
+            architecture_ids=("ranker",),
+            required_split_count=2,
+            permutation_trials=2,
+            permutation_seed=7,
+            permutation_minimum_excess_lcb_bps=0.0,
+            frozen_contract_failures=[],
+        )
+
+        self.assertTrue(report["fully_verifiable"])
+        self.assertEqual(report["missing_architecture_splits"], [])
+        self.assertEqual(
+            report["architectures"]["ranker"]["zero_trade_split_ids"], [0, 1]
+        )
+        self.assertEqual(
+            report["architectures"]["ranker"]["oos_base_cost_by_split"][
+                "mean_bps"
+            ],
+            0.0,
+        )
+        self.assertFalse(report["architectures"]["ranker"]["signal_proven"])
+        self.assertEqual(report["conclusion"], "NO_TARGET_ARCHITECTURE_SIGNAL_PROVEN")
+
     def test_frozen_comparison_runs_all_architectures_on_exact_partitions(self):
         timestamps = np.arange(1200, dtype=np.int64) * 1000
         features = np.zeros((1200, 242), dtype=np.float64)

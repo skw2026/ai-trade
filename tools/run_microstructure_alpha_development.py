@@ -2342,8 +2342,11 @@ def aggregate_target_architecture_comparison(
         control_base_means: List[List[float]] = [[] for _ in range(trials)]
         control_stress_means: List[List[float]] = [[] for _ in range(trials)]
         complete_split_count = 0
+        zero_trade_split_ids: List[int] = []
         for split_id in range(required):
             reason: str | None = None
+            normalized_control_means: List[Tuple[float, float]] = []
+            zero_trade_split = False
             split_report = report_by_split.get(split_id)
             architecture_report: Mapping[str, Any] = {}
             if split_id in duplicate_split_ids:
@@ -2376,7 +2379,23 @@ def aggregate_target_architecture_comparison(
                 stress.get("mean_bps") if isinstance(stress, Mapping) else None
             )
             if reason is None and (base_mean is None or stress_mean is None):
-                reason = "missing_or_empty_actual_economics"
+                if (
+                    isinstance(base, Mapping)
+                    and isinstance(stress, Mapping)
+                    and base.get("count") == 0
+                    and stress.get("count") == 0
+                    and base_mean is None
+                    and stress_mean is None
+                ):
+                    # A nested-validation threshold that takes no OOS position
+                    # is an observed fail-closed policy result, not missing
+                    # evidence.  Its split return is exactly zero, while the
+                    # explicit zero-trade marker prevents signal promotion.
+                    base_mean = 0.0
+                    stress_mean = 0.0
+                    zero_trade_split = True
+                else:
+                    reason = "missing_actual_economics"
             controls = architecture_report.get(
                 "oos_prediction_permutation_controls", []
             )
@@ -2405,8 +2424,22 @@ def aggregate_target_architecture_comparison(
                         else None
                     )
                     if control_base_mean is None or control_stress_mean is None:
-                        reason = "missing_or_empty_permutation_economics"
-                        break
+                        if (
+                            isinstance(control_base, Mapping)
+                            and isinstance(control_stress, Mapping)
+                            and control_base.get("count") == 0
+                            and control_stress.get("count") == 0
+                            and control_base_mean is None
+                            and control_stress_mean is None
+                        ):
+                            control_base_mean = 0.0
+                            control_stress_mean = 0.0
+                        else:
+                            reason = "missing_permutation_economics"
+                            break
+                    normalized_control_means.append(
+                        (float(control_base_mean), float(control_stress_mean))
+                    )
             if reason is not None:
                 missing.append(
                     {
@@ -2417,6 +2450,8 @@ def aggregate_target_architecture_comparison(
                 )
                 continue
             complete_split_count += 1
+            if zero_trade_split:
+                zero_trade_split_ids.append(split_id)
             base_means.append(float(base_mean))
             stress_means.append(float(stress_mean))
             trade_count += int(base.get("count") or 0)
@@ -2425,13 +2460,11 @@ def aggregate_target_architecture_comparison(
                 for key, raw_count in raw_action_counts.items():
                     count = int(raw_count)
                     action_counts[str(key)] = action_counts.get(str(key), 0) + count
-            for trial, control in enumerate(controls):
-                control_base_means[trial].append(
-                    float(control["base_cost"]["mean_bps"])
-                )
-                control_stress_means[trial].append(
-                    float(control["stress_cost"]["mean_bps"])
-                )
+            for trial, (control_base_mean, control_stress_mean) in enumerate(
+                normalized_control_means
+            ):
+                control_base_means[trial].append(control_base_mean)
+                control_stress_means[trial].append(control_stress_mean)
         base_summary = summarize_edges(base_means)
         stress_summary = summarize_edges(stress_means)
         control_summary = summarize_prediction_permutation_controls(
@@ -2448,6 +2481,7 @@ def aggregate_target_architecture_comparison(
         )
         signal_proven = bool(
             fully_verifiable
+            and not zero_trade_split_ids
             and (base_summary["lcb_bps"] or float("-inf")) > 0.0
             and (stress_summary["lcb_bps"] or float("-inf")) > 0.0
             and control_summary["passed"]
@@ -2458,6 +2492,11 @@ def aggregate_target_architecture_comparison(
             "complete_split_count": complete_split_count,
             "required_split_count": required,
             "trade_count": trade_count,
+            "zero_trade_split_ids": zero_trade_split_ids,
+            "zero_trade_split_contract": (
+                "complete_fail_closed_no_position_policy_return_zero;"
+                "signal_proven_forbidden"
+            ),
             "action_counts": action_counts,
             "oos_base_cost_by_split": base_summary,
             "oos_stress_cost_by_split": stress_summary,

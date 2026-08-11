@@ -61,7 +61,7 @@ The comparison is diagnostic only. It must never alter `development_passed`, `fr
 
 - Test and implement `microstructure_target_architecture_comparison_v1` aggregation across the required split IDs.
 - Mark an architecture fully verifiable only with actual and seven-trial permutation evidence on every split. Mark the top-level comparison incomplete if any architecture/split is missing; never compare only survivors.
-- Emit ordered `missing_architecture_splits` entries with architecture ID, split ID, and reason. Cover training exceptions, missing/empty actual economics, missing trials, out-of-order trials, and incomplete permutation economics.
+- Emit ordered `missing_architecture_splits` entries with architecture ID, split ID, and reason. Cover training exceptions, malformed or absent actual economics, missing trials, out-of-order trials, and malformed permutation economics. A structurally complete zero-trade result is fail-closed evidence rather than missing data: aggregate its no-position split return as 0 bps, list it in `zero_trade_split_ids`, and forbid `signal_proven`.
 - Set `signal_proven=true` only when actual base and stress split LCBs are positive and strictly exceed the permutation-control requirements.
 - Choose a deterministic leader only among proven architectures, ordered by stress LCB, base LCB, then predeclared architecture order.
 - Emit `NO_TARGET_ARCHITECTURE_SIGNAL_PROVEN` when evidence is complete and all four fail; otherwise emit an incomplete or diagnostic-signal conclusion and an independent-forward-validation next step.
