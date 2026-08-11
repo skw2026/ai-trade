@@ -349,6 +349,139 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(report["action_counts"], {"long_2s": 3})
         self.assertAlmostEqual(report["stress_cost"]["mean_bps"], 2.0)
 
+    def test_hindsight_oracle_is_non_promotional_and_enforces_non_overlap(self):
+        timestamps = np.arange(7, dtype=np.int64) * 1000
+        actions = [
+            {"direction": "long", "horizon_seconds": 2},
+            {"direction": "short", "horizon_seconds": 1},
+        ]
+        realized = np.asarray(
+            [
+                [5.0, 2.0],
+                [4.0, 0.0],
+                [0.0, 6.0],
+                [-2.0, 3.0],
+                [10.0, -1.0],
+                [2.0, 4.0],
+                [0.0, 0.0],
+            ]
+        )
+
+        report = probe.evaluate_hindsight_oracle(
+            timestamps=timestamps,
+            realized_base=realized,
+            actions=actions,
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+            execution_latency_seconds=1,
+        )
+
+        self.assertFalse(report["promotion_evidence"])
+        self.assertFalse(report["promotion_eligible"])
+        self.assertEqual(report["selection_scope"], "oos_hindsight_upper_bound")
+        self.assertEqual(report["objective"]["base_cost"]["count"], 3)
+        self.assertEqual(
+            report["objective"]["action_counts"],
+            {"long_2s": 1, "short_1s": 2},
+        )
+        self.assertGreater(report["objective"]["stress_cost"]["lcb_bps"], 0.0)
+
+    def test_learnability_diagnostic_uses_non_promotional_threshold_when_gate_rejects(self):
+        def edge_summary(mean):
+            return {
+                "count": 8,
+                "mean_bps": mean,
+                "stdev_bps": 0.0,
+                "lcb_bps": mean,
+                "positive_ratio": 1.0 if mean > 0.0 else 0.0,
+            }
+
+        split_reports = []
+        for split_id in range(2):
+            split_reports.append(
+                {
+                    "split_id": split_id,
+                    "status": "trained",
+                    "nested_calibration": {
+                        "selected": None,
+                        "diagnostic_selected": {
+                            "action_index": 0,
+                            "threshold_bps": -1.0,
+                        },
+                    },
+                    "hindsight_oracle": {
+                        "promotion_evidence": False,
+                        "objective": {
+                            "base_cost": edge_summary(4.0),
+                            "stress_cost": edge_summary(3.0),
+                            "action_counts": {"long_60s": 8},
+                        },
+                    },
+                    "diagnostic_oos_objective": {
+                        "base_cost": edge_summary(2.0),
+                        "stress_cost": edge_summary(1.0),
+                        "action_counts": {"long_60s": 8},
+                    },
+                    "diagnostic_oos_prediction_permutation_controls": [
+                        {
+                            "trial": 0,
+                            "base_cost": edge_summary(-1.0),
+                            "stress_cost": edge_summary(-2.0),
+                        },
+                        {
+                            "trial": 1,
+                            "base_cost": edge_summary(-2.0),
+                            "stress_cost": edge_summary(-3.0),
+                        },
+                    ],
+                }
+            )
+
+        report = probe.build_learnability_diagnostic(
+            split_reports=split_reports,
+            required_split_count=2,
+            permutation_trials=2,
+            permutation_seed=17,
+            permutation_minimum_excess_lcb_bps=0.0,
+            minimum_oracle_trades=8,
+            minimum_positive_splits_ratio=0.5,
+        )
+
+        self.assertTrue(report["fully_verifiable"])
+        self.assertTrue(report["oracle"]["opportunity_proven"])
+        self.assertTrue(report["diagnostic_policy"]["signal_proven"])
+        self.assertEqual(report["verdict"], "MODEL_SIGNAL_PROVEN")
+        self.assertFalse(report["promotion_evidence"])
+        self.assertFalse(report["promotion_eligible"])
+        self.assertFalse(report["influences_development_passed"])
+
+        weak_signal_reports = copy.deepcopy(split_reports)
+        for split_report in weak_signal_reports:
+            split_report["diagnostic_oos_objective"]["base_cost"] = edge_summary(
+                -0.25
+            )
+            split_report["diagnostic_oos_objective"]["stress_cost"] = edge_summary(
+                -1.25
+            )
+        weak_signal = probe.build_learnability_diagnostic(
+            split_reports=weak_signal_reports,
+            required_split_count=2,
+            permutation_trials=2,
+            permutation_seed=17,
+            permutation_minimum_excess_lcb_bps=0.0,
+            minimum_oracle_trades=8,
+            minimum_positive_splits_ratio=0.5,
+        )
+
+        self.assertTrue(weak_signal["fully_verifiable"])
+        self.assertTrue(weak_signal["oracle"]["opportunity_proven"])
+        self.assertFalse(weak_signal["diagnostic_policy"]["signal_proven"])
+        self.assertEqual(weak_signal["verdict"], "MODEL_SIGNAL_NOT_PROVEN")
+        self.assertEqual(
+            weak_signal["next_experiment"],
+            "compare_frozen_target_architectures_on_identical_oos_splits",
+        )
+
     def test_fit_only_stress_event_targets_are_reconstructed_in_bps(self):
         outcomes = np.asarray(
             [
@@ -938,6 +1071,10 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             self.assertTrue(report["fully_verifiable"])
             self.assertTrue(report["economic_screen"]["development_passed"])
             self.assertTrue(report["negative_control"]["passed"])
+            self.assertTrue(report["learnability_diagnostic"]["fully_verifiable"])
+            self.assertFalse(
+                report["learnability_diagnostic"]["influences_development_passed"]
+            )
             self.assertEqual(len(report["frozen_candidate"]["model_sha256"]), 64)
             self.assertFalse(report["promotion_eligible"])
 

@@ -1520,6 +1520,53 @@ def evaluate_joint_policy(
     }
 
 
+def evaluate_hindsight_oracle(
+    *,
+    timestamps: np.ndarray,
+    realized_base: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    base_cost_bps: float,
+    stress_cost_multiplier: float,
+    execution_latency_seconds: int,
+) -> Dict[str, Any]:
+    """Measure an explicitly non-promotional OOS opportunity upper bound.
+
+    The oracle uses realized outcomes as predictions, selects the best action at
+    each timestamp, and trades only when the realized stress-net edge is
+    strictly positive.  It preserves the production non-overlap rule, but it
+    is hindsight by construction and must never influence candidate selection.
+    """
+    base_cost = float(base_cost_bps)
+    multiplier = float(stress_cost_multiplier)
+    if not math.isfinite(base_cost) or base_cost <= 0.0:
+        raise ValueError("hindsight oracle base cost must be positive")
+    if not math.isfinite(multiplier) or multiplier <= 1.0:
+        raise ValueError("hindsight oracle stress multiplier must exceed one")
+    stress_increment = base_cost * (multiplier - 1.0)
+    strict_threshold = math.nextafter(stress_increment, math.inf)
+    objective = evaluate_joint_policy(
+        timestamps=timestamps,
+        prediction=np.asarray(realized_base, dtype=np.float64),
+        realized_base=np.asarray(realized_base, dtype=np.float64),
+        actions=actions,
+        threshold_bps=strict_threshold,
+        base_cost_bps=base_cost,
+        stress_cost_multiplier=multiplier,
+        execution_latency_seconds=execution_latency_seconds,
+    )
+    objective.pop("base_edges_bps", None)
+    objective.pop("stress_edges_bps", None)
+    return {
+        "method": "non_overlapping_oos_hindsight_joint_action_oracle",
+        "selection_scope": "oos_hindsight_upper_bound",
+        "strict_positive_stress_net_required": True,
+        "minimum_base_net_edge_bps": stress_increment,
+        "promotion_evidence": False,
+        "promotion_eligible": False,
+        "objective": objective,
+    }
+
+
 def evaluate_prediction_permutation_controls(
     *,
     timestamps: np.ndarray,
@@ -1642,6 +1689,198 @@ def summarize_prediction_permutation_controls(
         "candidate_base_split_lcb_bps": candidate_base_split_lcb_bps,
         "candidate_stress_split_lcb_bps": candidate_stress_split_lcb_bps,
         "trial_summaries": trial_summaries,
+    }
+
+
+def build_learnability_diagnostic(
+    *,
+    split_reports: Sequence[Mapping[str, Any]],
+    required_split_count: int,
+    permutation_trials: int,
+    permutation_seed: int,
+    permutation_minimum_excess_lcb_bps: float,
+    minimum_oracle_trades: int,
+    minimum_positive_splits_ratio: float,
+) -> Dict[str, Any]:
+    """Separate opportunity existence from model learnability without gating.
+
+    The oracle asks whether profitable OOS episodes existed at all.  The
+    diagnostic policy then uses the already-declared non-promotional nested
+    threshold and compares its OOS timing against deterministic permutations.
+    Neither result is allowed to alter the economic screen or promotion state.
+    """
+    required = int(required_split_count)
+    trials = int(permutation_trials)
+    if required <= 0 or trials <= 0:
+        raise ValueError("learnability diagnostic split/trial counts must be positive")
+    minimum_trades = int(minimum_oracle_trades)
+    minimum_positive_ratio = float(minimum_positive_splits_ratio)
+    if minimum_trades <= 0:
+        raise ValueError("learnability diagnostic minimum oracle trades must be positive")
+    if not 0.0 <= minimum_positive_ratio <= 1.0:
+        raise ValueError("learnability diagnostic positive split ratio is invalid")
+
+    oracle_base_means: List[float] = []
+    oracle_stress_means: List[float] = []
+    oracle_trade_count = 0
+    oracle_action_counts: Dict[str, int] = {}
+    diagnostic_base_means: List[float] = []
+    diagnostic_stress_means: List[float] = []
+    diagnostic_trade_count = 0
+    diagnostic_action_counts: Dict[str, int] = {}
+    control_base_means: List[List[float]] = [[] for _ in range(trials)]
+    control_stress_means: List[List[float]] = [[] for _ in range(trials)]
+
+    def merge_counts(target: Dict[str, int], source: Any) -> None:
+        if not isinstance(source, Mapping):
+            return
+        for key, raw_value in source.items():
+            value = int(raw_value)
+            if value > 0:
+                target[str(key)] = target.get(str(key), 0) + value
+
+    for item in split_reports:
+        if item.get("status") != "trained":
+            continue
+        oracle = item.get("hindsight_oracle", {})
+        oracle_objective = (
+            oracle.get("objective", {}) if isinstance(oracle, Mapping) else {}
+        )
+        oracle_base = oracle_objective.get("base_cost", {})
+        oracle_stress = oracle_objective.get("stress_cost", {})
+        if isinstance(oracle_base, Mapping) and isinstance(oracle_stress, Mapping):
+            base_mean = oracle_base.get("mean_bps")
+            stress_mean = oracle_stress.get("mean_bps")
+            if base_mean is not None and stress_mean is not None:
+                oracle_base_means.append(float(base_mean))
+                oracle_stress_means.append(float(stress_mean))
+                oracle_trade_count += int(oracle_base.get("count") or 0)
+                merge_counts(oracle_action_counts, oracle_objective.get("action_counts"))
+
+        diagnostic = item.get("diagnostic_oos_objective", {})
+        diagnostic_base = (
+            diagnostic.get("base_cost", {})
+            if isinstance(diagnostic, Mapping)
+            else {}
+        )
+        diagnostic_stress = (
+            diagnostic.get("stress_cost", {})
+            if isinstance(diagnostic, Mapping)
+            else {}
+        )
+        if isinstance(diagnostic_base, Mapping) and isinstance(
+            diagnostic_stress, Mapping
+        ):
+            base_mean = diagnostic_base.get("mean_bps")
+            stress_mean = diagnostic_stress.get("mean_bps")
+            if base_mean is not None and stress_mean is not None:
+                diagnostic_base_means.append(float(base_mean))
+                diagnostic_stress_means.append(float(stress_mean))
+                diagnostic_trade_count += int(diagnostic_base.get("count") or 0)
+                merge_counts(
+                    diagnostic_action_counts, diagnostic.get("action_counts")
+                )
+
+        controls = item.get(
+            "diagnostic_oos_prediction_permutation_controls", []
+        )
+        if not isinstance(controls, list) or len(controls) != trials:
+            continue
+        for trial, control in enumerate(controls):
+            if not isinstance(control, Mapping) or int(control.get("trial", -1)) != trial:
+                continue
+            base = control.get("base_cost", {})
+            stress = control.get("stress_cost", {})
+            if not isinstance(base, Mapping) or not isinstance(stress, Mapping):
+                continue
+            base_mean = base.get("mean_bps")
+            stress_mean = stress.get("mean_bps")
+            if base_mean is not None:
+                control_base_means[trial].append(float(base_mean))
+            if stress_mean is not None:
+                control_stress_means[trial].append(float(stress_mean))
+
+    oracle_base_summary = summarize_edges(oracle_base_means)
+    oracle_stress_summary = summarize_edges(oracle_stress_means)
+    diagnostic_base_summary = summarize_edges(diagnostic_base_means)
+    diagnostic_stress_summary = summarize_edges(diagnostic_stress_means)
+    oracle_positive_split_ratio = (
+        sum(value > 0.0 for value in oracle_stress_means)
+        / len(oracle_stress_means)
+        if oracle_stress_means
+        else 0.0
+    )
+    oracle_fully_verifiable = bool(
+        oracle_base_summary["count"] == required
+        and oracle_stress_summary["count"] == required
+    )
+    oracle_opportunity_proven = bool(
+        oracle_fully_verifiable
+        and oracle_trade_count >= minimum_trades
+        and oracle_positive_split_ratio >= minimum_positive_ratio
+        and (oracle_stress_summary["lcb_bps"] or float("-inf")) > 0.0
+    )
+    signal_control = summarize_prediction_permutation_controls(
+        base_means_by_trial=control_base_means,
+        stress_means_by_trial=control_stress_means,
+        required_split_count=required,
+        candidate_base_split_lcb_bps=diagnostic_base_summary["lcb_bps"],
+        candidate_stress_split_lcb_bps=diagnostic_stress_summary["lcb_bps"],
+        minimum_excess_lcb_bps=float(permutation_minimum_excess_lcb_bps),
+        seed=int(permutation_seed),
+    )
+    diagnostic_fully_verifiable = bool(
+        diagnostic_base_summary["count"] == required
+        and diagnostic_stress_summary["count"] == required
+        and signal_control["fully_verifiable"]
+    )
+    fully_verifiable = oracle_fully_verifiable and diagnostic_fully_verifiable
+    signal_proven = bool(diagnostic_fully_verifiable and signal_control["passed"])
+    if not fully_verifiable:
+        verdict = "INCOMPLETE"
+        next_experiment = "complete_oracle_and_diagnostic_null_evidence"
+    elif not oracle_opportunity_proven:
+        verdict = "ORACLE_OPPORTUNITY_NOT_PROVEN"
+        next_experiment = "collect_additional_non_overlapping_market_regimes"
+    elif signal_proven:
+        verdict = "MODEL_SIGNAL_PROVEN"
+        next_experiment = "review_economic_gate_without_using_hindsight_evidence"
+    else:
+        verdict = "MODEL_SIGNAL_NOT_PROVEN"
+        next_experiment = "compare_frozen_target_architectures_on_identical_oos_splits"
+
+    return {
+        "schema_version": "microstructure_alpha_learnability_v1",
+        "method": "oos_hindsight_oracle_plus_diagnostic_threshold_permutation",
+        "fully_verifiable": fully_verifiable,
+        "promotion_evidence": False,
+        "promotion_eligible": False,
+        "influences_development_passed": False,
+        "required_split_count": required,
+        "oracle": {
+            "method": "non_overlapping_oos_hindsight_joint_action_oracle",
+            "fully_verifiable": oracle_fully_verifiable,
+            "opportunity_proven": oracle_opportunity_proven,
+            "minimum_trade_count": minimum_trades,
+            "minimum_positive_splits_ratio": minimum_positive_ratio,
+            "trade_count": oracle_trade_count,
+            "positive_stress_edge_split_ratio": oracle_positive_split_ratio,
+            "oos_base_cost_by_split": oracle_base_summary,
+            "oos_stress_cost_by_split": oracle_stress_summary,
+            "action_counts": oracle_action_counts,
+        },
+        "diagnostic_policy": {
+            "selection_scope": "nested_validation_non_promotional_diagnostic",
+            "fully_verifiable": diagnostic_fully_verifiable,
+            "signal_proven": signal_proven,
+            "trade_count": diagnostic_trade_count,
+            "oos_base_cost_by_split": diagnostic_base_summary,
+            "oos_stress_cost_by_split": diagnostic_stress_summary,
+            "action_counts": diagnostic_action_counts,
+            "prediction_permutation_control": signal_control,
+        },
+        "verdict": verdict,
+        "next_experiment": next_experiment,
     }
 
 
@@ -2001,6 +2240,14 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
             continue
+        hindsight_oracle = evaluate_hindsight_oracle(
+            timestamps=timestamps[test_indices],
+            realized_base=outcomes[test_indices],
+            actions=actions,
+            base_cost_bps=float(args.additional_round_trip_cost_bps),
+            stress_cost_multiplier=float(args.stress_cost_multiplier),
+            execution_latency_seconds=int(args.execution_latency_seconds),
+        )
         model_fit_indices, model_selection_indices, model_selection_time_contract = (
             build_fit_internal_model_selection_indices(
                 timestamps,
@@ -2032,6 +2279,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "model_selection_rows": len(model_selection_indices),
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
+                    "hindsight_oracle": hindsight_oracle,
                 }
             )
             continue
@@ -2069,6 +2317,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
                     "training_target_transform": target_transform,
+                    "hindsight_oracle": hindsight_oracle,
                 }
             )
             continue
@@ -2097,6 +2346,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
                     "training_target_transform": target_transform,
+                    "hindsight_oracle": hindsight_oracle,
                     "error": str(exc),
                 }
             )
@@ -2174,6 +2424,27 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         )
         diagnostic_objective.pop("base_edges_bps", None)
         diagnostic_objective.pop("stress_edges_bps", None)
+        diagnostic_permutation_controls = evaluate_prediction_permutation_controls(
+            timestamps=timestamps[test_indices],
+            prediction=test_prediction,
+            realized_base=outcomes[test_indices],
+            actions=actions,
+            threshold_bps=(
+                float(diagnostic_selected["threshold_bps"])
+                if isinstance(diagnostic_selected, dict)
+                else float("inf")
+            ),
+            base_cost_bps=float(args.additional_round_trip_cost_bps),
+            stress_cost_multiplier=float(args.stress_cost_multiplier),
+            execution_latency_seconds=int(args.execution_latency_seconds),
+            trials=permutation_trials,
+            seed=permutation_seed + split.split_id * 1_000_003 + 500_009,
+            allowed_action_indices=(
+                [int(diagnostic_selected["action_index"])]
+                if isinstance(diagnostic_selected, dict)
+                else []
+            ),
+        )
         permutation_controls = evaluate_prediction_permutation_controls(
             timestamps=timestamps[test_indices],
             prediction=test_prediction,
@@ -2248,6 +2519,10 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 "oos_objective": objective,
                 "diagnostic_oos_objective": diagnostic_objective,
                 "diagnostic_oos_is_promotion_evidence": False,
+                "diagnostic_oos_prediction_permutation_controls": (
+                    diagnostic_permutation_controls
+                ),
+                "hindsight_oracle": hindsight_oracle,
                 "oos_prediction_permutation_controls": permutation_controls,
             }
         )
@@ -2295,6 +2570,17 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         candidate_stress_split_lcb_bps=stress_split_summary["lcb_bps"],
         minimum_excess_lcb_bps=permutation_minimum_excess_lcb_bps,
         seed=permutation_seed,
+    )
+    learnability_diagnostic = build_learnability_diagnostic(
+        split_reports=split_reports,
+        required_split_count=len(splits),
+        permutation_trials=permutation_trials,
+        permutation_seed=permutation_seed + 500_009,
+        permutation_minimum_excess_lcb_bps=(
+            permutation_minimum_excess_lcb_bps
+        ),
+        minimum_oracle_trades=int(args.min_oos_trades),
+        minimum_positive_splits_ratio=float(args.min_positive_splits_ratio),
     )
     fully_verifiable = bool(
         trained_split_count == len(splits)
@@ -2459,6 +2745,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         },
         "model_contract": model_contract(args),
         "negative_control": permutation_control,
+        "learnability_diagnostic": learnability_diagnostic,
         "economic_screen": {
             "development_passed": development_passed,
             "trained_split_count": trained_split_count,
