@@ -483,4 +483,45 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 
 ## Execution Handoff
 
+## Post-coding CR remediation
+
+三路独立评审发现以下高置信度串联缺口，全部纳入本轮范围，禁止以当前绿灯豁免：
+
+### CR-1: 收紧账本固定 schema、预注册绑定与 durable append
+
+- [x] `decision_experiment_ledger_v1` 严格使用计划中的 record type、`previous_record_hash`、结构化 changed dimension/stop condition/display name；family ID 绑定 information set ID。
+- [x] 配置必须等于冻结 3/8 预算合同并绑定 benchmark；预算漂移失败关闭。
+- [x] `audit-next` 必须绑定一个现存、未 observe 的预注册 experiment，校验 experiment/family/information-set/benchmark/单变量/方向/停止条件；未知 identity 不得 `ALLOW`。
+- [x] 注册必须携带可验证的 earliest-result identity/time，且严格早于结果；省略不可获得正向许可。
+- [x] 完整 audit/budget/append/checkpoint 周期使用独占锁；append/checkpoint 故障可恢复且不得返回与磁盘状态矛盾的结果；补并发与故障注入测试。
+
+### CR-2: 重算 episode 身份并修复合法零交易
+
+- [x] assessor 校验 fill ID 非空唯一、episode 内所有 fill/order lineage 与 candidate/position 连续性、closure identity，并显式输出 `first_fill_id`。
+- [x] uplift 按 `segment_identity_sha256:symbol:first_fill_id` 重算 evaluator episode ID，拒绝跨 segment/fill 伪造；重算/核对 fee、funding、net utility 的可审计分量。
+- [x] 健康 DEPLOY assess 的零交易允许 `assess_exit_code=0` 或真实诊断退出语义，以 terminal settlement、空 episode ledger、无代理 utility 判零；补真实 assessor 形状集成测试。
+
+### CR-3: 统一 multi-cell benchmark 与冻结统计合同
+
+- [x] validation policy 内容身份必须进入 canonical benchmark ID，并被所有后续报告交叉验证。
+- [x] exact block-plan 和 paired runner 支持每个 block 的多个 symbol/entry-regime cells；同一 block 可有多个隔离执行，但 coverage/manifest/Task 5 仍按完整 block 聚合。
+- [x] feature/corpus 使用按 symbol 的冻结映射并校验内容身份，禁止把合法 multi-asset benchmark 收窄为单 symbol/regime。
+- [x] Task 5 消费 paired block 的 `executions[]`，逐 execution 校验 segment/episode identity 后汇总到 benchmark 预声明 cells；不得继续假设每 block 只有一个 segment。
+
+### CR-4: 修复 Full Loop 默认 producer→consumer 链和预注册审计
+
+- [x] paired replay 默认只能绑定真实 Integrator candidate model/report；不兼容的 microstructure sidecar 输入在 preflight 失败关闭并给出明确原因。
+- [x] 在 decisive chain 之前生成/冻结本 run 的 benchmark、exact block inputs 和 corpus，或将 paired step 放到这些 producer 之后；干净 run 不得依赖上次路径/制品。
+- [x] runner 将完整预注册 proposal/experiment 传给 ledger audit；unified report 仅在 `registration_verified=true` 且 experiment ID 非空时接受 `ALLOW_NEXT_EXPERIMENT`。
+
+### CR-5: 校验真实 step ledger
+
+- [x] artifact validator 除合同数组/文件 SHA 外，还校验 `step_status.jsonl` 中六个 decisive step 按固定顺序各执行一次、run/action 一致且 `blocked_by_prior_failure=false`。
+- [x] 删除、重复、乱序或标记 blocked 的任一 decisive step record 均失败关闭。
+
+### CR-6: 回归与二次评审
+
+- [x] 更新受影响文档/CTest；运行所有聚焦测试、Release build 与完整 CTest。
+- [ ] 重新运行 General Strong、OpenSpec、Integration 三路独立评审，所有 ≥75 置信度 NEW finding 清零。
+
 在 `/Users/sk.wang/Projects/c++/ai-trade/.worktrees/feat-decision-evidence-validation` 中按依赖图执行。实现 agent 必须先运行任务指定测试观察失败，再实现，再运行通过；每个 Task 单独提交。全部 Task 完成后运行完整 CTest 和 `keel-multi-agent-cr --post-coding --plan docs/plans/2026-08-11-decision-evidence-validation.md`。
