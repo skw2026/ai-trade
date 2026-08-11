@@ -897,6 +897,24 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(contract["model_selection_start_ms"], 15_000)
         self.assertEqual(contract["embargo_seconds"], 2)
 
+    def test_internal_model_selection_minimum_scales_with_window_duration(self):
+        self.assertEqual(
+            probe.minimum_internal_model_selection_rows(
+                minimum_window_rows=3600,
+                model_selection_window_seconds=3600,
+                train_window_seconds=21600,
+            ),
+            600,
+        )
+        self.assertEqual(
+            probe.minimum_internal_model_selection_rows(
+                minimum_window_rows=600,
+                model_selection_window_seconds=300,
+                train_window_seconds=3600,
+            ),
+            256,
+        )
+
     def test_prediction_permutation_control_rejects_unconditional_drift(self):
         report = probe.summarize_prediction_permutation_controls(
             base_means_by_trial=[[2.0, 2.0] for _ in range(7)],

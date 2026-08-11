@@ -2030,6 +2030,25 @@ def indices_between(timestamps: np.ndarray, start_ms: int, end_ms: int) -> np.nd
     return np.flatnonzero((timestamps >= start_ms) & (timestamps < end_ms))
 
 
+def minimum_internal_model_selection_rows(
+    *,
+    minimum_window_rows: int,
+    model_selection_window_seconds: int,
+    train_window_seconds: int,
+) -> int:
+    minimum_rows = int(minimum_window_rows)
+    selection_seconds = int(model_selection_window_seconds)
+    train_seconds = int(train_window_seconds)
+    if minimum_rows <= 0 or selection_seconds <= 0 or train_seconds <= 0:
+        raise ValueError("internal model-selection minimum inputs must be positive")
+    if selection_seconds >= train_seconds:
+        raise ValueError("internal model-selection window must be smaller than train window")
+    proportional_rows = math.ceil(
+        minimum_rows * selection_seconds / train_seconds
+    )
+    return max(256, proportional_rows)
+
+
 def build_fit_internal_model_selection_indices(
     timestamps: np.ndarray,
     split: TimeSplit,
@@ -2258,7 +2277,11 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 embargo_seconds=embargo_seconds,
             )
         )
-        minimum_model_selection_rows = max(256, minimum // 2)
+        minimum_model_selection_rows = minimum_internal_model_selection_rows(
+            minimum_window_rows=minimum,
+            model_selection_window_seconds=int(args.model_selection_window_seconds),
+            train_window_seconds=int(args.train_window_seconds),
+        )
         if (
             len(model_fit_indices) < minimum
             or len(model_selection_indices) < minimum_model_selection_rows
@@ -2277,6 +2300,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "fit_rows": len(fit_indices),
                     "model_fit_rows": len(model_fit_indices),
                     "model_selection_rows": len(model_selection_indices),
+                    "minimum_model_selection_rows": minimum_model_selection_rows,
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
                     "hindsight_oracle": hindsight_oracle,
@@ -2314,6 +2338,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "fit_rows": len(fit_indices),
                     "model_fit_rows": len(model_fit_indices),
                     "model_selection_rows": len(model_selection_indices),
+                    "minimum_model_selection_rows": minimum_model_selection_rows,
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
                     "training_target_transform": target_transform,
@@ -2343,6 +2368,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                     "fit_rows": len(fit_indices),
                     "model_fit_rows": len(model_fit_indices),
                     "model_selection_rows": len(model_selection_indices),
+                    "minimum_model_selection_rows": minimum_model_selection_rows,
                     "validation_rows": len(validation_indices),
                     "test_rows": len(test_indices),
                     "training_target_transform": target_transform,
@@ -2487,6 +2513,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
                 "fit_rows": len(fit_indices),
                 "model_fit_rows": len(model_fit_indices),
                 "model_selection_rows": len(model_selection_indices),
+                "minimum_model_selection_rows": minimum_model_selection_rows,
                 "validation_rows": len(validation_indices),
                 "test_rows": len(test_indices),
                 "best_iterations_by_action": best_iterations_by_action(
@@ -2734,6 +2761,18 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
             ),
             "fit_internal_model_selection_window_seconds": int(
                 args.model_selection_window_seconds
+            ),
+            "fit_internal_model_selection_minimum_rows": (
+                minimum_internal_model_selection_rows(
+                    minimum_window_rows=int(args.min_window_rows),
+                    model_selection_window_seconds=int(
+                        args.model_selection_window_seconds
+                    ),
+                    train_window_seconds=int(args.train_window_seconds),
+                )
+            ),
+            "fit_internal_model_selection_minimum_rows_contract": (
+                "max_256_ceil_min_window_rows_times_selection_over_train_seconds"
             ),
             "external_nested_validation_used_for_model_fit_or_early_stopping": False,
             "score_threshold_floor_bps": None,
