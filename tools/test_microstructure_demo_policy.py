@@ -119,25 +119,28 @@ class DemoPolicyTest(unittest.TestCase):
             {"direction": "short", "horizon_seconds": 15},
         ]
         target_transform = {
-            "method": "fit_only_active_action_stress_profitability_v2",
-            "profitability_hurdle": "base_net_return_bps_gt_stress_incremental_cost_bps",
+            "method": "fit_only_winsorized_action_net_return_v3",
+            "training_objective": "independent_executable_base_net_return_bps",
             "actions": actions,
             "model_action_indices": [0, 1],
             "model_output_count": 2,
-            "target_normalization": "per_active_action_zero_mean_unit_variance_on_fit_domain_only",
-            "inference_reconstruction": "clipped_fit_probability_times_action_conditional_base_net_means",
+            "target_normalization": "per_action_fit_only_winsorized_zero_mean_unit_variance",
+            "inference_reconstruction": "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps",
             "validation_or_test_statistics_used": False,
             "stress_incremental_cost_bps": 1.0,
+            "winsor_lower_quantile": 0.01,
+            "winsor_upper_quantile": 0.99,
             "action_statistics": [
                 {
                     "action_index": index,
                     "row_count": 300,
-                    "positive_count": 100,
-                    "nonpositive_count": 200,
-                    "positive_rate": 1.0 / 3.0,
-                    "standardization_scale": np.sqrt(2.0 / 9.0),
-                    "positive_mean_base_net_bps": 10.0,
-                    "nonpositive_mean_base_net_bps": -2.0,
+                    "lower_clip_bps": -10.0,
+                    "upper_clip_bps": 10.0,
+                    "winsorized_location_bps": 0.0,
+                    "winsorized_scale_bps": 1.0,
+                    "raw_mean_base_net_bps": 0.0,
+                    "stress_profitable_count": 100,
+                    "stress_profitable_rate": 1.0 / 3.0,
                     "learnable": True,
                 }
                 for index in range(len(actions))
@@ -161,7 +164,7 @@ class DemoPolicyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = pathlib.Path(temp_dir) / "signal.json"
             engine = policy.DemoPolicyEngine(signal_output=output)
-            engine.set_candidate(self.candidate([0.35, 0.10]))
+            engine.set_candidate(self.candidate([3.5, 1.0]))
             payload = None
             for index in range(62):
                 payload = engine.on_row(feature_row(index * 1000, index * 0.001))

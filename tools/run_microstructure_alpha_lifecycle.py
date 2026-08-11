@@ -38,7 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
-ALGORITHM_CONTRACT_REVISION = "cross_asset_causal_context_v4"
+ALGORITHM_CONTRACT_REVISION = "continuous_net_return_target_v5"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -317,11 +317,11 @@ def validate_development_candidate(
         isinstance(model_contract, dict)
         and model_contract.get("loss_function") == "MultiRMSE"
         and model_contract.get("training_target")
-        == "fit_only_independent_active_action_stress_profitability"
+        == "fit_only_independent_winsorized_executable_net_return"
         and model_contract.get("target_normalization")
-        == "per_active_action_zero_mean_unit_variance_on_fit_domain_only"
+        == "per_action_fit_only_winsorized_zero_mean_unit_variance"
         and model_contract.get("inference_score")
-        == "clipped_fit_probability_weighted_action_conditional_base_net_return_bps"
+        == "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps"
         and model_contract.get("policy_selection")
         == "nested_per_action_threshold_then_mode_action_freeze"
         and model_contract.get("economic_acceptance_target")
@@ -371,7 +371,9 @@ def validate_development_candidate(
     if not (
         isinstance(target_transform, dict)
         and target_transform.get("method")
-        == "fit_only_active_action_stress_profitability_v2"
+        == "fit_only_winsorized_action_net_return_v3"
+        and target_transform.get("training_objective")
+        == "independent_executable_base_net_return_bps"
         and target_transform.get("validation_or_test_statistics_used") is False
         and isinstance(action_statistics, list)
         and len(action_statistics) == len(report.get("target_contract", {}).get("actions", []))

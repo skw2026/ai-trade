@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import copy
+import argparse
 import csv
 import hashlib
 import json
@@ -270,7 +271,7 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(report["action_counts"], {"long_2s": 3})
         self.assertAlmostEqual(report["stress_cost"]["mean_bps"], 2.0)
 
-    def test_fit_only_independent_action_targets_are_reconstructed_in_bps(self):
+    def test_fit_only_continuous_action_targets_are_reconstructed_in_bps(self):
         outcomes = np.asarray(
             [
                 [5.0, -1.0],
@@ -290,58 +291,57 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
             stress_cost_multiplier=1.25,
         )
 
-        expected_targets = np.asarray(
-            [
-                [1.0, -1.0 / np.sqrt(3.0)],
-                [1.0, -1.0 / np.sqrt(3.0)],
-                [-1.0, np.sqrt(3.0)],
-                [-1.0, -1.0 / np.sqrt(3.0)],
-            ]
-        )
-        np.testing.assert_allclose(targets, expected_targets)
+        np.testing.assert_allclose(np.mean(targets, axis=0), [0.0, 0.0], atol=1e-12)
+        np.testing.assert_allclose(np.std(targets, axis=0), [1.0, 1.0], atol=1e-12)
         self.assertFalse(transform["validation_or_test_statistics_used"])
         self.assertEqual(transform["stress_incremental_cost_bps"], 1.0)
+        self.assertEqual(transform["winsor_lower_quantile"], 0.01)
+        self.assertEqual(transform["winsor_upper_quantile"], 0.99)
         self.assertEqual(transform["model_action_indices"], [0, 1])
         self.assertEqual(transform["model_output_count"], 2)
         self.assertEqual(
-            [item["positive_count"] for item in transform["action_statistics"]],
+            [
+                item["stress_profitable_count"]
+                for item in transform["action_statistics"]
+            ],
             [2, 1],
         )
 
-        # Zero standardized output is exactly the fit prevalence for each
-        # independent action and uses only fit-domain conditional means.
+        # Zero standardized output is exactly the fit-only winsorized location.
         reconstructed = probe.reconstruct_base_net_scores(
             np.zeros((1, 2), dtype=np.float64), transform
         )
-        np.testing.assert_allclose(reconstructed[0], [2.0, -0.5])
+        expected_locations = [
+            item["winsorized_location_bps"]
+            for item in transform["action_statistics"]
+        ]
+        np.testing.assert_allclose(reconstructed[0], expected_locations)
 
         shifted = outcomes.copy()
         shifted[:, 0] = 1000.0
-        original_mean = transform["action_statistics"][0][
-            "positive_mean_base_net_bps"
+        original_location = transform["action_statistics"][0][
+            "winsorized_location_bps"
         ]
         transformed_validation = probe.transform_joint_policy_targets(
             shifted, transform
         )
         self.assertEqual(
-            transform["action_statistics"][0]["positive_mean_base_net_bps"],
-            original_mean,
+            transform["action_statistics"][0]["winsorized_location_bps"],
+            original_location,
         )
-        np.testing.assert_allclose(
-            transformed_validation,
-            np.column_stack((np.ones(4), expected_targets[:, 1])),
-        )
+        self.assertTrue(np.all(transformed_validation[:, 0] == transformed_validation[0, 0]))
+        np.testing.assert_allclose(transformed_validation[:, 1], targets[:, 1])
 
         tampered = copy.deepcopy(transform)
-        tampered["action_statistics"][1]["standardization_scale"] = 99.0
+        tampered["action_statistics"][1]["stress_profitable_rate"] = 0.99
         with self.assertRaisesRegex(ValueError, "action statistic contract failed"):
             probe.reconstruct_base_net_scores(
                 np.zeros((1, 2), dtype=np.float64), tampered
             )
 
-    def test_quiet_fit_window_has_no_active_model_output(self):
+    def test_constant_fit_window_has_no_active_model_output(self):
         outcomes = np.asarray(
-            [[-8.0], [-7.0], [-6.0], [-5.0], [-4.0]], dtype=np.float64
+            [[-8.0], [-8.0], [-8.0], [-8.0], [-8.0]], dtype=np.float64
         )
         targets, transform = probe.fit_joint_policy_target(
             outcomes,
@@ -374,7 +374,56 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertEqual(scores.shape, (3, 1))
         self.assertTrue(np.all(np.isfinite(scores)))
 
-    def test_independent_targets_preserve_simultaneous_profitable_actions(self):
+    @unittest.skipIf(probe.CatBoostRegressor is None, "catboost is unavailable")
+    def test_real_catboost_learns_continuous_multi_action_scores_in_bps(self):
+        rng = np.random.default_rng(20260811)
+        features = rng.normal(size=(2400, 6))
+        noise = rng.normal(scale=0.25, size=(2400, 2))
+        outcomes = np.column_stack(
+            (
+                4.0 * features[:, 0] + 2.0 * features[:, 2],
+                -3.0 * features[:, 1] + 1.5 * features[:, 3],
+            )
+        ) + noise
+        actions = [
+            {"direction": "long", "horizon_seconds": 15},
+            {"direction": "short", "horizon_seconds": 15},
+        ]
+        fit_targets, transform = probe.fit_joint_policy_target(
+            outcomes[:1800],
+            actions=actions,
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+        )
+        validation_targets = probe.transform_joint_policy_targets(
+            outcomes[1800:], transform
+        )
+        args = argparse.Namespace(
+            iterations=80,
+            depth=4,
+            learning_rate=0.08,
+            l2_leaf_reg=3.0,
+            random_strength=0.0,
+            random_seed=7,
+        )
+        model = probe.build_model(args)
+        model.fit(
+            features[:1800],
+            fit_targets,
+            eval_set=(features[1800:], validation_targets),
+            early_stopping_rounds=10,
+            verbose=False,
+        )
+        scores, raw = probe.predict_base_net_scores(
+            model, features[1800:], transform
+        )
+
+        self.assertEqual(raw.shape, (600, 2))
+        self.assertEqual(scores.shape, (600, 2))
+        self.assertGreater(np.corrcoef(scores[:, 0], outcomes[1800:, 0])[0, 1], 0.8)
+        self.assertGreater(np.corrcoef(scores[:, 1], outcomes[1800:, 1])[0, 1], 0.8)
+
+    def test_independent_continuous_targets_preserve_every_varying_action(self):
         actions = [
             {"direction": "long", "horizon_seconds": 15},
             {"direction": "long", "horizon_seconds": 300},
@@ -398,7 +447,8 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         )
 
         self.assertEqual(transform["model_action_indices"], [0, 1, 2, 3])
-        np.testing.assert_array_equal(targets > 0.0, outcomes > 1.0)
+        np.testing.assert_allclose(np.mean(targets, axis=0), np.zeros(4), atol=1e-12)
+        np.testing.assert_allclose(np.std(targets, axis=0), np.ones(4), atol=1e-12)
         self.assertGreater(np.sum(targets[0] > 0.0), 1)
 
     def test_nested_calibration_uses_ranked_negative_scores_without_weakening_economics(self):

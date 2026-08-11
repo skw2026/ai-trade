@@ -82,7 +82,7 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
             development = write_json(
                 root / "development.json",
                 {
-                    "schema_version": "microstructure_alpha_development_v2",
+                    "schema_version": "microstructure_alpha_development_v3",
                     "status": "PASS",
                     "fully_verifiable": True,
                     "research_domain": "forward_development_only",
@@ -124,9 +124,9 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                     },
                     "model_contract": {
                         "loss_function": "MultiRMSE",
-                        "training_target": "fit_only_independent_active_action_stress_profitability",
-                        "target_normalization": "per_active_action_zero_mean_unit_variance_on_fit_domain_only",
-                        "inference_score": "clipped_fit_probability_weighted_action_conditional_base_net_return_bps",
+                        "training_target": "fit_only_independent_winsorized_executable_net_return",
+                        "target_normalization": "per_action_fit_only_winsorized_zero_mean_unit_variance",
+                        "inference_score": "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps",
                         "policy_selection": "nested_per_action_threshold_then_mode_action_freeze",
                         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
                         "validation_or_test_target_statistics_used_for_fit": False,
