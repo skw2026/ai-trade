@@ -109,6 +109,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_assess_run_log.py)
     add_test(NAME validate_decision_benchmark_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_decision_benchmark.py)
+    add_test(NAME build_decision_benchmark_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_build_decision_benchmark.py)
     add_test(NAME validate_objective_alignment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_objective_alignment.py)
     add_test(NAME run_paired_evolution_replay_test
