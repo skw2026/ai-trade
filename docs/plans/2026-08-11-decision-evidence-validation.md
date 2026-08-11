@@ -199,12 +199,14 @@ Alignment、uplift、ledger audit 子报告都必须携带 `benchmark_id`。统�
 ## 依赖关系
 
 ```text
-Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
-        ├─ Task 3 ────────────────────┤
-        └─ Task 6 ────────────────────┴─ Task 7 ─ Task 8 ─ Task 9 ─ Task 10
+Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
+        ├─ Task 3 ──────────────────────────────┤
+        └─ Task 6 ─ Task 6A ────────────────────┴─ Task 7 ─ Task 8 ─ Task 9 ─ Task 10
 ```
 
 - Task 2、3、6 在 Task 1 后可并行，且不得修改同一文件。
+- Task 2A 在实现期间发现动态 segment 选择不能证明 frozen block identity 后加入；Task 4 只消费它的 exact block-plan 路径。
+- Task 6A 在实现期间发现 ledger audit 缺 benchmark identity 后加入；Task 7 不允许推断该身份。
 - Task 4、5 串行，因为 Task 5 消费 Task 4 的 pair manifest。
 - Task 8、9 串行；步骤名与 artifact 路径必须先由 Task 8 固定。
 
@@ -223,15 +225,15 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `相同 benchmark 可验证`、`benchmark 漂移被阻断`
 
-- [ ] 在 `tools/test_validate_decision_benchmark.py` 先覆盖八组件完整时 canonical ID 稳定、路径改变但 logical identity/内容不变时 ID 不变。
-- [ ] 先覆盖任一组件缺失、文件不存在、声明 SHA256 与实际内容不一致时 `UNVERIFIABLE`，且 drift 按 component/logical name 稳定排序并含 expected/actual。
-- [ ] 先覆盖 evaluation universe 的 block 重叠、block ID 重复、cell 重复和非法时间范围，期望 `identity_status=UNVERIFIABLE`。
-- [ ] 先覆盖每个 block 的实际 replay CSV 内容 SHA256 与冻结 `event_sha256` 一致；缺失或漂移时输出 expected/actual。
-- [ ] 运行 `python3 tools/test_validate_decision_benchmark.py`，确认因模块尚不存在而失败。
-- [ ] 在版本化 JSON 中写入上述固定阈值和 schema；禁止 CLI 覆盖随机种子，种子由 benchmark ID 与通道名派生。
-- [ ] 实现 canonical JSON、SHA256、有限数值、严格 UTC 时间、文件内容身份和八组件校验。
-- [ ] 再运行测试，完整 manifest 输出 `VERIFIED` 与 64 位 ID，漂移输入输出确定性 `UNVERIFIABLE`。
-- [ ] 运行 `python3 -m py_compile tools/decision_evidence_common.py tools/validate_decision_benchmark.py tools/test_validate_decision_benchmark.py`。
+- [x] 在 `tools/test_validate_decision_benchmark.py` 先覆盖八组件完整时 canonical ID 稳定、路径改变但 logical identity/内容不变时 ID 不变。
+- [x] 先覆盖任一组件缺失、文件不存在、声明 SHA256 与实际内容不一致时 `UNVERIFIABLE`，且 drift 按 component/logical name 稳定排序并含 expected/actual。
+- [x] 先覆盖 evaluation universe 的 block 重叠、block ID 重复、cell 重复和非法时间范围，期望 `identity_status=UNVERIFIABLE`。
+- [x] 先覆盖每个 block 的实际 replay CSV 内容 SHA256 与冻结 `event_sha256` 一致；缺失或漂移时输出 expected/actual。
+- [x] 运行 `python3 tools/test_validate_decision_benchmark.py`，确认因模块尚不存在而失败。
+- [x] 在版本化 JSON 中写入上述固定阈值和 schema；禁止 CLI 覆盖随机种子，种子由 benchmark ID 与通道名派生。
+- [x] 实现 canonical JSON、SHA256、有限数值、严格 UTC 时间、文件内容身份和八组件校验。
+- [x] 再运行测试，完整 manifest 输出 `VERIFIED` 与 64 位 ID，漂移输入输出确定性 `UNVERIFIABLE`。
+- [x] 运行 `python3 -m py_compile tools/decision_evidence_common.py tools/validate_decision_benchmark.py tools/test_validate_decision_benchmark.py`。
 
 ### Task 2: 生成 episode 级完整执行证据与 replay 身份
 
@@ -246,16 +248,35 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `代理目标证据不足`、`自进化产生可归因 uplift`、`禁止用代理收益替代完整回放`
 
-- [ ] 在 `tools/test_assess_run_log.py` 先构造包含 candidate lineage、OMS submit、fills、position episode、exit、fee、slippage policy、funding 和 terminal settlement 的闭环日志，断言输出逐 episode 完整证据。
-- [ ] 分别删除每类路径事件，断言 `execution_path_complete=false` 且 `missing_path_evidence` 精确列项；仅 virtual/account PnL/update count 不得形成完整 episode。
-- [ ] 先按固定关联规则测试 `REGIME_CHANGE`、`FILL_APPLIED`、`EXIT_CAPTURE_SAMPLE`、`FUNDING_APPLIED` 和 replay terminal settlement；断言 evaluator episode ID 与 entry regime 确定。
-- [ ] 在 `tools/test_run_replay_validation.py` 先断言每个 run 包含实际 `replay_csv_sha256`、`execution_policy_identity`、`trade_bot_sha256`、`segment_identity_sha256` 和原样透传的 `episode_execution_evidence`。
-- [ ] 先断言 `--force-all-frozen-segments` 禁止 coverage early-stop；aggregate-only assess 不得合成 episode utility。
-- [ ] 运行两份测试并观察新断言失败。
-- [ ] 扩展日志评估器，按 episode 输出完整路径、入场 market regime、symbol、费用、funding、成本后净效用与缺失项。
-- [ ] 扩展 replay runner 的内容身份、共同 policy identity、全 block 选项和 episode ledger 透传；不得改变既有默认路径。
-- [ ] 运行 `python3 tools/test_assess_run_log.py` 与 `python3 tools/test_run_replay_validation.py`。
-- [ ] 运行 `python3 -m py_compile tools/assess_run_log.py tools/run_replay_validation.py tools/test_assess_run_log.py tools/test_run_replay_validation.py`。
+- [x] 在 `tools/test_assess_run_log.py` 先构造包含 candidate lineage、OMS submit、fills、position episode、exit、fee、slippage policy、funding 和 terminal settlement 的闭环日志，断言输出逐 episode 完整证据。
+- [x] 分别删除每类路径事件，断言 `execution_path_complete=false` 且 `missing_path_evidence` 精确列项；仅 virtual/account PnL/update count 不得形成完整 episode。
+- [x] 先按固定关联规则测试 `REGIME_CHANGE`、`FILL_APPLIED`、`EXIT_CAPTURE_SAMPLE`、`FUNDING_APPLIED` 和 replay terminal settlement；断言 evaluator episode ID 与 entry regime 确定。
+- [x] 在 `tools/test_run_replay_validation.py` 先断言每个 run 包含实际 `replay_csv_sha256`、`execution_policy_identity`、`trade_bot_sha256`、`segment_identity_sha256` 和原样透传的 `episode_execution_evidence`。
+- [x] 先断言 `--force-all-frozen-segments` 禁止 coverage early-stop；aggregate-only assess 不得合成 episode utility。
+- [x] 运行两份测试并观察新断言失败。
+- [x] 扩展日志评估器，按 episode 输出完整路径、入场 market regime、symbol、费用、funding、成本后净效用与缺失项。
+- [x] 扩展 replay runner 的内容身份、共同 policy identity、全 block 选项和 episode ledger 透传；不得改变既有默认路径。
+- [x] 运行 `python3 tools/test_assess_run_log.py` 与 `python3 tools/test_run_replay_validation.py`。
+- [x] 运行 `python3 -m py_compile tools/assess_run_log.py tools/run_replay_validation.py tools/test_assess_run_log.py tools/test_run_replay_validation.py`。
+
+### Task 2A: 为 replay 增加冻结 exact block-plan 执行接口
+
+**Depends on:** Task 1、Task 2
+
+**Files:**
+
+- `tools/run_replay_validation.py`
+- `tools/test_run_replay_validation.py`
+
+**Covers Scenario:** `相同 benchmark 可验证`、`自进化产生可归因 uplift`、`禁止用代理收益替代完整回放`
+
+- [x] 先测试 `--exact-block-plan` 只读消费由已验证 benchmark 导出的全部 `block_id/symbol/start_timestamp_ms/end_timestamp_ms/event_sha256/segment_identity_sha256`，不得调用动态 `find_segments`、quantile selection 或覆写 corpus manifest。
+- [x] 先测试 exact 模式逐 block 绑定实际 replay CSV 内容 SHA256 与声明 `event_sha256`，任一缺失、重复、漂移或区间/身份错配均失败关闭且仍输出审计报告。
+- [x] 先测试 exact 模式忽略 coverage 达标条件并执行计划中的每个 block 恰好一次；报告按计划顺序回显 `block_id`、命令、exit code、实际内容身份和 episode evidence。
+- [x] 先测试 exact 模式与 selection/final-holdout 参数互斥，且不读取/写入 selection report、holdout ledger、experiment ledger 或 corpus manifest。
+- [x] 运行测试并观察新增断言失败。
+- [x] 实现只读 exact block-plan 分支，复用单 segment 执行与 Task 2 的身份/episode 证据逻辑；保留现有默认 CLI 行为。
+- [x] 运行 `python3 tools/test_run_replay_validation.py` 与 `python3 -m py_compile tools/run_replay_validation.py tools/test_run_replay_validation.py`。
 
 ### Task 3: 验证四子系统代理目标与可执行净效用对齐
 
@@ -268,20 +289,20 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `代理目标与净效用同向`、`代理目标证据不足`
 
-- [ ] 先测试每个固定 subsystem 在 8+ 唯一候选、5+ block、正 Spearman 且单侧 p-value 通过时为 `ALIGNED`；测试 `lower_is_better` 方向归一化和 average-tie ranks。
-- [ ] 先测试证据完整但负相关/不显著为 `NOT_ALIGNED`。
-- [ ] 先测试净效用、候选、block、方向、benchmark、有限数值或唯一身份任一不完整为 `UNVERIFIABLE`。
-- [ ] 先测试现有报告 adapter：从 Miner/market-alpha/microstructure/online tuner 输入生成规范化审计记录；当前 schema 缺 candidate-level complete utility 时生成明确 missing fields，绝不补值。
-- [ ] 先测试所有 candidate 覆盖完全相同的 benchmark block 集合、interval/event identity 一致且 `independent_oos=true`；候选自行选 block、block 重叠或置换单位不是 candidate aggregate 时必须 `UNVERIFIABLE`。
-- [ ] 先测试 IC/AUC/RMSE/oracle/train score/virtual PnL 被声明成 executable utility 时拒绝。
-- [ ] 运行测试并观察失败。
-- [ ] 实现规范化 adapter、四通道独立校验、Spearman 和确定性单侧置换；小样本可穷举时穷举，否则执行配置中的 10,000 次。
-- [ ] 输出逐候选/逐 block 审计、rho、p-value、门槛、missing fields；单个 subsystem 失败不删除其他结果。
-- [ ] 运行 `python3 tools/test_validate_objective_alignment.py` 与 `python3 -m py_compile tools/validate_objective_alignment.py tools/test_validate_objective_alignment.py`。
+- [x] 先测试每个固定 subsystem 在 8+ 唯一候选、5+ block、正 Spearman 且单侧 p-value 通过时为 `ALIGNED`；测试 `lower_is_better` 方向归一化和 average-tie ranks。
+- [x] 先测试证据完整但负相关/不显著为 `NOT_ALIGNED`。
+- [x] 先测试净效用、候选、block、方向、benchmark、有限数值或唯一身份任一不完整为 `UNVERIFIABLE`。
+- [x] 先测试现有报告 adapter：从 Miner/market-alpha/microstructure/online tuner 输入生成规范化审计记录；当前 schema 缺 candidate-level complete utility 时生成明确 missing fields，绝不补值。
+- [x] 先测试所有 candidate 覆盖完全相同的 benchmark block 集合、interval/event identity 一致且 `independent_oos=true`；候选自行选 block、block 重叠或置换单位不是 candidate aggregate 时必须 `UNVERIFIABLE`。
+- [x] 先测试 IC/AUC/RMSE/oracle/train score/virtual PnL 被声明成 executable utility 时拒绝。
+- [x] 运行测试并观察失败。
+- [x] 实现规范化 adapter、四通道独立校验、Spearman 和确定性单侧置换；小样本可穷举时穷举，否则执行配置中的 10,000 次。
+- [x] 输出逐候选/逐 block 审计、rho、p-value、门槛、missing fields；单个 subsystem 失败不删除其他结果。
+- [x] 运行 `python3 tools/test_validate_objective_alignment.py` 与 `python3 -m py_compile tools/validate_objective_alignment.py tools/test_validate_objective_alignment.py`。
 
 ### Task 4: 从当前 runtime policy 运行 frozen/adaptive 双路完整 replay
 
-**Depends on:** Task 2
+**Depends on:** Task 2A
 
 **Files:**
 
@@ -290,15 +311,16 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `自进化产生可归因 uplift`、`禁止用代理收益替代完整回放`
 
-- [ ] 先测试当前 runtime config 经现有 replay-config derivation 转为共同 replay policy，随后两臂只有 `self_evolution.enabled` 一个差异；生产 S5 的其余自进化参数必须保留。
-- [ ] 先测试两臂和每个 block 都从相同 initial weights 与空 evolution state 启动，任何历史状态加载、初始权重 hash 不同或 block 间状态延续都使 manifest 为 `UNVERIFIABLE`。
-- [ ] 先测试两臂 feature/corpus/symbol/segments/cost/trade_bot 参数完全相同、WAL/state/output 隔离、全部冻结 block 均执行。
-- [ ] 先测试额外 policy 差异或任一路命令失败时仍写 `paired_evolution_replay_v1`，状态 `UNVERIFIABLE`，包含命令、exit code、config/report hash 与 mismatch。
-- [ ] 运行测试并观察失败。
-- [ ] 调用 `derive_candidate_config(runtime_text, model_path, report_path, source_runtime_config_sha256)` 生成共同 replay config；使用 `policy_payload` 递归 diff 两臂，只允许 `self_evolution.enabled`，再实现两路子进程和 manifest 预配对检查。
-- [ ] Manifest 写入 source runtime、共同派生配置、两臂配置、common policy、initial weights/state、trade_bot、candidate model/report 的 SHA256；测试固定键全部存在。
-- [ ] 禁止使用参数更弱的 replay 模板代替 runtime policy，禁止两路各自动态选择 block 或 early-stop。
-- [ ] 运行 `python3 tools/test_run_paired_evolution_replay.py` 与 `python3 -m py_compile tools/run_paired_evolution_replay.py tools/test_run_paired_evolution_replay.py`。
+- [x] 先测试当前 runtime config 经现有 replay-config derivation 转为共同 replay policy，随后两臂只有 `self_evolution.enabled` 一个差异；生产 S5 的其余自进化参数必须保留。
+- [x] 先测试两臂和每个 block 都从相同 initial weights 与空 evolution state 启动，任何历史状态加载、初始权重 hash 不同或 block 间状态延续都使 manifest 为 `UNVERIFIABLE`。
+- [x] 先测试两臂 feature/corpus/symbol/segments/cost/trade_bot 参数完全相同、WAL/state/output 隔离、全部冻结 block 均执行。
+- [x] 先测试额外 policy 差异或任一路命令失败时仍写 `paired_evolution_replay_v1`，状态 `UNVERIFIABLE`，包含命令、exit code、config/report hash 与 mismatch。
+- [x] 运行测试并观察失败。
+- [x] 调用 `derive_candidate_config(runtime_text, model_path, report_path, source_runtime_config_sha256)` 生成共同 replay config；使用 `policy_payload` 递归 diff 两臂，只允许 `self_evolution.enabled`，再实现两路子进程和 manifest 预配对检查。
+- [x] Manifest 写入 source runtime、共同派生配置、两臂配置、common policy、initial weights/state、trade_bot、candidate model/report 的 SHA256；测试固定键全部存在。
+- [x] 禁止使用参数更弱的 replay 模板代替 runtime policy，禁止两路各自动态选择 block 或 early-stop。
+- [x] 两臂必须向 replay runner 传入同一只读 exact block-plan；manifest 审计每个计划 block 恰好在每臂执行一次，禁止进入 selection/quantile/corpus rewrite 路径。
+- [x] 运行 `python3 tools/test_run_paired_evolution_replay.py` 与 `python3 -m py_compile tools/run_paired_evolution_replay.py tools/test_run_paired_evolution_replay.py`。
 
 ### Task 5: 计算 block 配对的自进化增量净效用
 
@@ -311,17 +333,17 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `自进化产生可归因 uplift`、`禁止用代理收益替代完整回放`
 
-- [ ] 先测试两臂同一冻结 block 集合、每臂 episode 全部完整、8+ block 且 block-bootstrap 95% LCB>0 时 `UPLIFT_PROVEN`。
-- [ ] 先测试两臂 episode IDs/数量不同仍可验证：各臂先按 `block+symbol+entry_regime` 聚合，缺交易单元补零，再计算 adaptive-minus-frozen。
-- [ ] 先测试聚合单元严格来自 benchmark evaluation universe 而非实际交易并集；每个 block delta 为预声明 cells 的 utility 总和差。
-- [ ] 先用固定 10,000 个 bootstrap 值断言 LCB 精确取升序零基下标 499、不插值；断言哈希取模抽样序列可重复。
-- [ ] 先测试完整但 LCB<=0 时 `NOT_PROVEN`。
-- [ ] 先测试 benchmark、CSV、segment、trade_bot 或除 evolution 开关外 policy identity 错配、冻结 block 覆盖不足、任一 episode 路径不完整时 `UNVERIFIABLE`。
-- [ ] 先测试 virtual/account PnL/update count 不能代替 episode ledger。
-- [ ] 运行测试并观察失败。
-- [ ] 实现逐臂 episode 审计、预声明 cell、block/asset/regime 聚合与总体 delta；一次 bootstrap 抽中 block 时携带该 block 全部 cells，抽取 N 个 block 后取 mean block delta，种子由 benchmark ID 派生。
-- [ ] 输出 frozen/adaptive episode 清单、聚合单元、block coverage、缺失证据、bootstrap 分布摘要与 LCB。
-- [ ] 运行 `python3 tools/test_validate_evolution_uplift.py` 与 `python3 -m py_compile tools/validate_evolution_uplift.py tools/test_validate_evolution_uplift.py`。
+- [x] 先测试两臂同一冻结 block 集合、每臂 episode 全部完整、8+ block 且 block-bootstrap 95% LCB>0 时 `UPLIFT_PROVEN`。
+- [x] 先测试两臂 episode IDs/数量不同仍可验证：各臂先按 `block+symbol+entry_regime` 聚合，缺交易单元补零，再计算 adaptive-minus-frozen。
+- [x] 先测试聚合单元严格来自 benchmark evaluation universe 而非实际交易并集；每个 block delta 为预声明 cells 的 utility 总和差。
+- [x] 先用固定 10,000 个 bootstrap 值断言 LCB 精确取升序零基下标 499、不插值；断言哈希取模抽样序列可重复。
+- [x] 先测试完整但 LCB<=0 时 `NOT_PROVEN`。
+- [x] 先测试 benchmark、CSV、segment、trade_bot 或除 evolution 开关外 policy identity 错配、冻结 block 覆盖不足、任一 episode 路径不完整时 `UNVERIFIABLE`。
+- [x] 先测试 virtual/account PnL/update count 不能代替 episode ledger。
+- [x] 运行测试并观察失败。
+- [x] 实现逐臂 episode 审计、预声明 cell、block/asset/regime 聚合与总体 delta；一次 bootstrap 抽中 block 时携带该 block 全部 cells，抽取 N 个 block 后取 mean block delta，种子由 benchmark ID 派生。
+- [x] 输出 frozen/adaptive episode 清单、聚合单元、block coverage、缺失证据、bootstrap 分布摘要与 LCB。
+- [x] 运行 `python3 tools/test_validate_evolution_uplift.py` 与 `python3 -m py_compile tools/validate_evolution_uplift.py tools/test_validate_evolution_uplift.py`。
 
 ### Task 6: 实现 append-only hash-chain 实验账本与双层预算
 
@@ -334,20 +356,37 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `单变量实验获得执行许可`、`重复优化被停止`、`事后注册被阻断`
 
-- [ ] 先测试空账本合法 register 后 `ALLOW_NEXT_EXPERIMENT`，输出 family/information-set 剩余预算。
-- [ ] 先测试 register 强制包含 experiment ID、benchmark ID、information-set definition/ID、hypothesis-family definition/ID、唯一 changed dimension、expected direction、stop condition 和 registered_at；任一缺失、ID 重复、benchmark 漂移或维度数不为 1 时阻断。
-- [ ] 单独断言 changed dimensions 多于一个时返回 `STOP_CURRENT_FAMILY` 且账本字节不变；缺字段、ID/hash/time 非法时返回 `BLOCK_INVALID_LEDGER` 且账本字节不变。
-- [ ] 先测试 `FALSIFIED` 与 `INCONCLUSIVE` 消费失败预算、`SUPPORTED` 不消费；追加同 family 第 3 次或同 information set 第 8 次失败结果后立即 `STOP_CURRENT_FAMILY`，后续 register 不追加，改 display name 不重置 identity 预算。
-- [ ] 先测试记录编辑、删除、重排、previous hash 错误均为 `BLOCK_INVALID_LEDGER`。
-- [ ] 先测试 sequence 必须从 1 连续递增，`record_hash` 只排除自身后对完整 record canonical SHA256；任一 preimage 字段改变都断链。
-- [ ] 运行测试并观察失败。
-- [ ] 实现 `register`、`observe`、`audit-next`，按固定 definition canonical SHA256 校验两个稳定 ID；首记录 previous hash 固定为 64 位零，每次 append 前验证完整历史链和严格时间顺序。
-- [ ] 一次实验结果只能消费一次；所有记录包含 canonical `record_hash`。
-- [ ] 运行 `python3 tools/test_experiment_budget_ledger.py` 与 `python3 -m py_compile tools/experiment_budget_ledger.py tools/test_experiment_budget_ledger.py`。
+- [x] 先测试空账本合法 register 后 `ALLOW_NEXT_EXPERIMENT`，输出 family/information-set 剩余预算。
+- [x] 先测试 register 强制包含 experiment ID、benchmark ID、information-set definition/ID、hypothesis-family definition/ID、唯一 changed dimension、expected direction、stop condition 和 registered_at；任一缺失、ID 重复、benchmark 漂移或维度数不为 1 时阻断。
+- [x] 单独断言 changed dimensions 多于一个时返回 `STOP_CURRENT_FAMILY` 且账本字节不变；缺字段、ID/hash/time 非法时返回 `BLOCK_INVALID_LEDGER` 且账本字节不变。
+- [x] 先测试 `FALSIFIED` 与 `INCONCLUSIVE` 消费失败预算、`SUPPORTED` 不消费；追加同 family 第 3 次或同 information set 第 8 次失败结果后立即 `STOP_CURRENT_FAMILY`，后续 register 不追加，改 display name 不重置 identity 预算。
+- [x] 先测试记录编辑、删除、重排、previous hash 错误均为 `BLOCK_INVALID_LEDGER`。
+- [x] 先测试 sequence 必须从 1 连续递增，`record_hash` 只排除自身后对完整 record canonical SHA256；任一 preimage 字段改变都断链。
+- [x] 运行测试并观察失败。
+- [x] 实现 `register`、`observe`、`audit-next`，按固定 definition canonical SHA256 校验两个稳定 ID；首记录 previous hash 固定为 64 位零，每次 append 前验证完整历史链和严格时间顺序。
+- [x] 一次实验结果只能消费一次；所有记录包含 canonical `record_hash`。
+- [x] 运行 `python3 tools/test_experiment_budget_ledger.py` 与 `python3 -m py_compile tools/experiment_budget_ledger.py tools/test_experiment_budget_ledger.py`。
+
+### Task 6A: 让预算审计报告携带已验证 benchmark 身份
+
+**Depends on:** Task 6
+
+**Files:**
+
+- `tools/experiment_budget_ledger.py`
+- `tools/test_experiment_budget_ledger.py`
+
+**Covers Scenario:** `benchmark 漂移被阻断`、`单变量实验获得执行许可`、`事后注册被阻断`
+
+- [x] 先测试 `audit-next` 的 `ALLOW_NEXT_EXPERIMENT` 与 `STOP_CURRENT_FAMILY` 报告携带 proposal 中经账本校验的 `benchmark_id`。
+- [x] 先测试账本已有记录时 proposal benchmark 漂移仍为 `BLOCK_INVALID_LEDGER`，报告携带 expected/actual benchmark ID，不得把 proposal 值伪装成已验证身份。
+- [x] 先测试账本损坏或 proposal 缺少/含非法 benchmark ID 时失败关闭；仅在能由有效账本头或合法 proposal 确定时回显 benchmark 身份。
+- [x] 实现所有 `audit-next` 决策报告的 benchmark identity 透传与错配审计，不改变既有预算消费和 hash-chain 语义。
+- [x] 运行 `python3 tools/test_experiment_budget_ledger.py` 与 `python3 -m py_compile tools/experiment_budget_ledger.py tools/test_experiment_budget_ledger.py`。
 
 ### Task 7: 汇总三项独立证据并输出研究决策
 
-**Depends on:** Task 3、Task 5、Task 6
+**Depends on:** Task 3、Task 5、Task 6A
 
 **Files:**
 
@@ -356,13 +395,13 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `Alpha 路由失败时仍生成决定性证据`、`决定性报告无晋升权限`
 
-- [ ] 先测试全部通过为 `CONTINUE`；完整但 alignment/uplift/预算任一否定为 `CHANGE_INFORMATION_SET`；identity/输入/账本任一不可验证为 `STOP`。
-- [ ] 先测试任一输入缺失或损坏时只将该 section 标为 `UNVERIFIABLE`，其他 section 仍完整保留。
-- [ ] 先测试 alignment、uplift、ledger 三份子报告 benchmark ID 全部等于 verified benchmark 时保持原状态；任一错配时只把该 section 改为 `UNVERIFIABLE` 并输出 expected/actual ID，顶层为 `STOP`。
-- [ ] 先测试 Alpha route FAIL 不产生 `SKIPPED_DUE_TO_PRIOR_FAILURE`，且任何结论的三个 authority 字段恒为 false。
-- [ ] 运行测试并观察失败。
-- [ ] 实现“不可验证优先 STOP、完整否定其次 CHANGE_INFORMATION_SET、全通过才 CONTINUE”的完整决策表和稳定 reason codes；不得读取/修改 registry、activation 或部署状态。
-- [ ] 运行 `python3 tools/test_build_decision_evidence_report.py` 与 `python3 -m py_compile tools/build_decision_evidence_report.py tools/test_build_decision_evidence_report.py`。
+- [x] 先测试全部通过为 `CONTINUE`；完整但 alignment/uplift/预算任一否定为 `CHANGE_INFORMATION_SET`；identity/输入/账本任一不可验证为 `STOP`。
+- [x] 先测试任一输入缺失或损坏时只将该 section 标为 `UNVERIFIABLE`，其他 section 仍完整保留。
+- [x] 先测试 alignment、uplift、ledger 三份子报告 benchmark ID 全部等于 verified benchmark 时保持原状态；任一错配时只把该 section 改为 `UNVERIFIABLE` 并输出 expected/actual ID，顶层为 `STOP`。
+- [x] 先测试 Alpha route FAIL 不产生 `SKIPPED_DUE_TO_PRIOR_FAILURE`，且任何结论的三个 authority 字段恒为 false。
+- [x] 运行测试并观察失败。
+- [x] 实现“不可验证优先 STOP、完整否定其次 CHANGE_INFORMATION_SET、全通过才 CONTINUE”的完整决策表和稳定 reason codes；不得读取/修改 registry、activation 或部署状态。
+- [x] 运行 `python3 tools/test_build_decision_evidence_report.py` 与 `python3 -m py_compile tools/build_decision_evidence_report.py tools/test_build_decision_evidence_report.py`。
 
 ### Task 8: 将三项验证作为独立 observation chain 接入 Full Loop
 
@@ -375,14 +414,14 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `Alpha 路由失败时仍生成决定性证据`、`决定性报告无晋升权限`、`benchmark 漂移被阻断`、`代理目标证据不足`、`禁止用代理收益替代完整回放`、`事后注册被阻断`
 
-- [ ] 先测试 Alpha source route 非零后 benchmark/alignment/paired replay/uplift/ledger/unified 六步仍各执行一次，`blocked_by_prior_failure=false` 且不为 skipped。
-- [ ] 先测试任一决定性步骤失败时其余步骤和 unified builder 仍执行。
-- [ ] 先测试决定性结果为 `CONTINUE` 也不会调用 registry、candidate restart、Demo binding 或 activation transaction。
-- [ ] 运行 transaction 测试并观察失败。
-- [ ] 增加固定 run-dir artifact 路径与输入参数；目标对齐 adapter 即使没有 candidate-level utility 也必须生成 missing-field 报告。
-- [ ] 在研究输入准备后、Alpha route 结果之后无条件运行独立 observation chain；其状态不得污染或重置既有 `RUN_REQUIRED_STEP_STATUS`。
-- [ ] unified builder 始终最后运行，缺子报告也生成失败关闭 section；保留 Alpha failure 的原有退出状态。
-- [ ] 加入 run manifest/summary 参数，运行 `bash -n tools/closed_loop_runner.sh` 与 `python3 tools/test_closed_loop_runner_transaction.py`。
+- [x] 先测试 Alpha source route 非零后 benchmark/alignment/paired replay/uplift/ledger/unified 六步仍各执行一次，`blocked_by_prior_failure=false` 且不为 skipped。
+- [x] 先测试任一决定性步骤失败时其余步骤和 unified builder 仍执行。
+- [x] 先测试决定性结果为 `CONTINUE` 也不会调用 registry、candidate restart、Demo binding 或 activation transaction。
+- [x] 运行 transaction 测试并观察失败。
+- [x] 增加固定 run-dir artifact 路径与输入参数；目标对齐 adapter 即使没有 candidate-level utility 也必须生成 missing-field 报告。
+- [x] 在研究输入准备后、Alpha route 结果之后无条件运行独立 observation chain；其状态不得污染或重置既有 `RUN_REQUIRED_STEP_STATUS`。
+- [x] unified builder 始终最后运行，缺子报告也生成失败关闭 section；保留 Alpha failure 的原有退出状态。
+- [x] 加入 run manifest/summary 参数，运行 `bash -n tools/closed_loop_runner.sh` 与 `python3 tools/test_closed_loop_runner_transaction.py`。
 
 ### Task 9: 固化 Full Loop artifact contract 和总报告语义
 
@@ -398,13 +437,13 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** `Alpha 路由失败时仍生成决定性证据`、`决定性报告无晋升权限`
 
-- [ ] 先测试 Full action 在 Alpha rejection 后仍要求 benchmark/alignment/pair/uplift/budget/unified 六个 artifact，且 route rejection optional list 不得豁免它们。
-- [ ] 先测试缺任一 artifact 时合同失败，所有 artifact 均按 SHA256 校验。
-- [ ] 先测试 closed-loop report 展示 research decision 和三个 false authority，但不得把决定性 PASS 映射成既有 promotion readiness PASS。
-- [ ] 运行相关测试并观察失败。
-- [ ] 升级合同 schema，把六步和六件制品放入 full 基础合同；扩展固定文件映射、validator 和 report CLI/section。
-- [ ] 标记 section 为 `research_decision_only`，不修改 Alpha 评估、成本、显著性、样本和 promotion 函数。
-- [ ] 运行 `python3 tools/test_validate_closed_loop_artifact_contract.py`、`python3 tools/test_build_closed_loop_report.py`、`python3 -m json.tool config/closed_loop_contract.json` 和相关 `py_compile`。
+- [x] 先测试 Full action 在 Alpha rejection 后仍要求 benchmark/alignment/pair/uplift/budget/unified 六个 artifact，且 route rejection optional list 不得豁免它们。
+- [x] 先测试缺任一 artifact 时合同失败，所有 artifact 均按 SHA256 校验。
+- [x] 先测试 closed-loop report 展示 research decision 和三个 false authority，但不得把决定性 PASS 映射成既有 promotion readiness PASS。
+- [x] 运行相关测试并观察失败。
+- [x] 升级合同 schema，把六步和六件制品放入 full 基础合同；扩展固定文件映射、validator 和 report CLI/section。
+- [x] 标记 section 为 `research_decision_only`，不修改 Alpha 评估、成本、显著性、样本和 promotion 函数。
+- [x] 运行 `python3 tools/test_validate_closed_loop_artifact_contract.py`、`python3 tools/test_build_closed_loop_report.py`、`python3 -m json.tool config/closed_loop_contract.json` 和相关 `py_compile`。
 
 ### Task 10: 注册测试、补文档并执行全量验收
 
@@ -417,28 +456,28 @@ Task 1 ─┬─ Task 2 ─ Task 4 ─ Task 5 ─┐
 
 **Covers Scenario:** 全部 11 个 OpenSpec Scenario
 
-- [ ] 在 `CMakeLists.txt` 注册六组新工具测试，并注册现有 `tools/test_run_replay_validation.py`。
-- [ ] 在配置手册记录 benchmark 八组件、candidate evidence、runtime-to-replay 派生、双臂唯一差异、逐臂 episode 完整性、block 聚合/bootstrap、账本命令和 Full Loop 独立步骤。
-- [ ] 记录所有状态与停止含义，明确本变更不改 Alpha/门槛且无 Demo/live 晋升权限。
-- [ ] 运行所有新增和受影响 Python 测试。
-- [ ] 运行 `bash -n tools/closed_loop_runner.sh`、两个 JSON 的 `python3 -m json.tool` 和所有新增 Python 的 `py_compile`。
-- [ ] 运行 `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`。
-- [ ] 运行 `cmake --build build -j4`。
-- [ ] 运行 `ctest --test-dir build --output-on-failure`，要求全部通过。
+- [x] 在 `CMakeLists.txt` 注册六组新工具测试，并注册现有 `tools/test_run_replay_validation.py`。
+- [x] 在配置手册记录 benchmark 八组件、candidate evidence、runtime-to-replay 派生、双臂唯一差异、逐臂 episode 完整性、block 聚合/bootstrap、账本命令和 Full Loop 独立步骤。
+- [x] 记录所有状态与停止含义，明确本变更不改 Alpha/门槛且无 Demo/live 晋升权限。
+- [x] 运行所有新增和受影响 Python 测试。
+- [x] 运行 `bash -n tools/closed_loop_runner.sh`、两个 JSON 的 `python3 -m json.tool` 和所有新增 Python 的 `py_compile`。
+- [x] 运行 `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`。
+- [x] 运行 `cmake --build build -j4`。
+- [x] 运行 `ctest --test-dir build --output-on-failure`，要求全部通过。
 
 ## Scenario 覆盖矩阵
 
 | Scenario | 主要 Task | 集成 Task |
 |---|---|---|
 | 相同 benchmark 可验证 | 1 | 10 |
-| benchmark 漂移被阻断 | 1 | 8、10 |
+| benchmark 漂移被阻断 | 1、2A、6A | 8、10 |
 | 代理目标与净效用同向 | 3 | 7、10 |
 | 代理目标证据不足 | 2、3 | 8、10 |
-| 自进化产生可归因 uplift | 2、4、5 | 7、10 |
-| 禁止用代理收益替代完整回放 | 2、4、5 | 8、10 |
-| 单变量实验获得执行许可 | 6 | 7、10 |
+| 自进化产生可归因 uplift | 2、2A、4、5 | 7、10 |
+| 禁止用代理收益替代完整回放 | 2、2A、4、5 | 8、10 |
+| 单变量实验获得执行许可 | 6、6A | 7、10 |
 | 重复优化被停止 | 6 | 7、10 |
-| 事后注册被阻断 | 6 | 8、10 |
+| 事后注册被阻断 | 6、6A | 8、10 |
 | Alpha 路由失败时仍生成决定性证据 | 7、8、9 | 10 |
 | 决定性报告无晋升权限 | 7、8、9 | 10 |
 
