@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 
 LOCAL_ARTIFACT_FILENAMES = {
@@ -68,6 +69,29 @@ LOCAL_ARTIFACT_FILENAMES = {
     "activation_decision": "activation_decision.json",
 }
 
+DECISIVE_OBSERVATION_STEPS = (
+    "decision_benchmark_validation",
+    "objective_alignment_validation",
+    "paired_evolution_replay",
+    "evolution_uplift_validation",
+    "experiment_budget_audit",
+    "decision_evidence_report",
+)
+
+STEP_RECORD_FIELDS = frozenset(
+    {
+        "recorded_at_utc",
+        "run_id",
+        "action",
+        "step",
+        "kind",
+        "result",
+        "exit_code",
+        "blocked_by_prior_failure",
+        "research_decision_only",
+    }
+)
+
 
 def read_json_object(path: Path) -> Dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -80,25 +104,131 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def read_step_records(path: Path) -> List[Dict[str, Any]]:
+def canonical_step_record(record: Dict[str, Any]) -> str:
+    return json.dumps(record, ensure_ascii=False, sort_keys=True)
+
+
+def valid_step_record_schema(record: Dict[str, Any]) -> bool:
+    if frozenset(record) != STEP_RECORD_FIELDS:
+        return False
+    for name in (
+        "recorded_at_utc",
+        "run_id",
+        "action",
+        "step",
+        "kind",
+        "result",
+    ):
+        if not isinstance(record.get(name), str) or not record[name]:
+            return False
+    try:
+        dt.datetime.strptime(record["recorded_at_utc"], "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    exit_code = record.get("exit_code")
+    if exit_code is not None and (
+        not isinstance(exit_code, int) or isinstance(exit_code, bool)
+    ):
+        return False
+    return bool(
+        isinstance(record.get("blocked_by_prior_failure"), bool)
+        and isinstance(record.get("research_decision_only"), bool)
+    )
+
+
+def audit_step_records(path: Path) -> Tuple[List[Dict[str, Any]], List[str]]:
     if not path.is_file():
-        return []
+        return [], []
     records: List[Dict[str, Any]] = []
+    failures: List[str] = []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    for line in lines:
+    except (OSError, UnicodeError):
+        return [], ["step_status:unreadable"]
+    for line_number, line in enumerate(lines, start=1):
         if not line.strip():
+            failures.append(f"step_status:invalid_json:{line_number}")
             continue
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
-            return []
+            failures.append(f"step_status:invalid_json:{line_number}")
+            continue
         if not isinstance(record, dict):
-            return []
+            failures.append(f"step_status:invalid_record:{line_number}")
+            continue
+        if line != canonical_step_record(record):
+            failures.append(f"step_status:noncanonical:{line_number}")
+        if not valid_step_record_schema(record):
+            failures.append(f"step_status:invalid_record:{line_number}")
+            continue
         records.append(record)
+    return records, failures
+
+
+def read_step_records(path: Path) -> List[Dict[str, Any]]:
+    records, _ = audit_step_records(path)
     return records
+
+
+def validate_step_record_identity(
+    step_records: List[Dict[str, Any]], run_id: str, action: str
+) -> List[str]:
+    failures: List[str] = []
+    for line_number, record in enumerate(step_records, start=1):
+        if record.get("run_id") != run_id:
+            failures.append(f"step_status:run_id:{line_number}")
+        if record.get("action") != action:
+            failures.append(f"step_status:action:{line_number}")
+    return failures
+
+
+def validate_decisive_observations(
+    step_records: List[Dict[str, Any]], run_id: str, action: str
+) -> List[str]:
+    failures: List[str] = []
+    decisive_indices: List[int] = []
+    all_steps_present_once = True
+    for step in DECISIVE_OBSERVATION_STEPS:
+        matches = [
+            (index, record)
+            for index, record in enumerate(step_records)
+            if record.get("step") == step
+        ]
+        if not matches:
+            failures.append(f"step_status:{step}:missing")
+            all_steps_present_once = False
+            continue
+        if len(matches) != 1:
+            failures.append(f"step_status:{step}:duplicate")
+            all_steps_present_once = False
+            continue
+        index, record = matches[0]
+        decisive_indices.append(index)
+        if record.get("run_id") != run_id:
+            failures.append(f"step_status:{step}:run_id")
+        if record.get("action") != action:
+            failures.append(f"step_status:{step}:action")
+        if record.get("kind") != "observation":
+            failures.append(f"step_status:{step}:kind")
+        result = record.get("result")
+        if result not in {"pass", "fail"}:
+            failures.append(f"step_status:{step}:result")
+        exit_code = record.get("exit_code")
+        if (
+            not isinstance(exit_code, int)
+            or isinstance(exit_code, bool)
+            or (result == "pass" and exit_code != 0)
+            or (result == "fail" and exit_code == 0)
+        ):
+            failures.append(f"step_status:{step}:exit_code")
+        if record.get("blocked_by_prior_failure") is not False:
+            failures.append(f"step_status:{step}:blocked_by_prior_failure")
+        if record.get("research_decision_only") is not True:
+            failures.append(f"step_status:{step}:research_decision_only")
+    if all_steps_present_once and decisive_indices != sorted(decisive_indices):
+        failures.append("step_status:decisive_order")
+    return failures
 
 
 def valid_route_rejection(
@@ -185,6 +315,15 @@ def validate_artifact_contract(
         failures.append("manifest:artifacts")
         artifacts = {}
     effective_required_artifacts = list(required_artifacts)
+    effective_required_steps = list(required_steps)
+    step_records, step_record_failures = audit_step_records(
+        artifact_dir / LOCAL_ARTIFACT_FILENAMES["step_status"]
+    )
+    failures.extend(step_record_failures)
+    manifest_run_id = str(manifest.get("run_id") or "")
+    failures.extend(
+        validate_step_record_identity(step_records, manifest_run_id, action)
+    )
     if route_contracts:
         optional_on_rejection = route_rejection_contract.get("optional_artifacts")
         if (
@@ -210,14 +349,11 @@ def validate_artifact_contract(
             and route_payload.get("status") == "PASS"
             and selected_route in route_contracts
         )
-        step_records = read_step_records(
-            artifact_dir / LOCAL_ARTIFACT_FILENAMES["step_status"]
-        )
         route_rejected = valid_route_rejection(
             route_payload,
             step_records,
             route_rejection_contract,
-            str(manifest.get("run_id") or ""),
+            manifest_run_id,
             action,
         )
         if route_passed:
@@ -230,6 +366,7 @@ def validate_artifact_contract(
                 failures.append(f"alpha_source_route:contract:{selected_route}")
             else:
                 effective_required_artifacts.extend(route_artifacts)
+                effective_required_steps.extend(route_steps)
         elif route_rejected:
             optional = set(optional_on_rejection)
             effective_required_artifacts = [
@@ -237,6 +374,18 @@ def validate_artifact_contract(
             ]
         else:
             failures.append("alpha_source_route:invalid")
+
+    if action == "full":
+        for step in DECISIVE_OBSERVATION_STEPS:
+            if step not in effective_required_steps:
+                failures.append(f"step_status:{step}:not_required")
+        failures.extend(
+            validate_decisive_observations(
+                step_records,
+                manifest_run_id,
+                action,
+            )
+        )
 
     for name in effective_required_artifacts:
         if name not in artifacts:

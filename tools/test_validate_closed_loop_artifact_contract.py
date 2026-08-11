@@ -35,9 +35,42 @@ DECISIVE_STEPS_AND_ARTIFACTS = {
     "experiment_budget_audit": "experiment_budget_audit.json",
     "decision_evidence_report": "decision_evidence_report.json",
 }
+DECISIVE_STEPS = tuple(DECISIVE_STEPS_AND_ARTIFACTS)
 
 
 class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
+    @staticmethod
+    def write_step_records(
+        artifact_dir: pathlib.Path,
+        manifest_path: pathlib.Path,
+        manifest: dict,
+        records: list,
+    ) -> None:
+        step_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+            "step_status"
+        ]
+        step_path.write_text(
+            "".join(
+                json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                for record in records
+            ),
+            encoding="utf-8",
+        )
+        manifest["artifacts"]["step_status"]["sha256"] = hashlib.sha256(
+            step_path.read_bytes()
+        ).hexdigest()
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    @staticmethod
+    def read_step_records(artifact_dir: pathlib.Path) -> list:
+        step_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+            "step_status"
+        ]
+        return [
+            json.loads(line)
+            for line in step_path.read_text(encoding="utf-8").splitlines()
+        ]
+
     def build_rejected_full_run(self, artifact_dir: pathlib.Path):
         contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
         action_contract = contract["actions"]["full"]
@@ -46,6 +79,7 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
         run_id = "run-rejected"
         step_records = [
             {
+                "recorded_at_utc": "2026-08-12T00:00:00Z",
                 "run_id": run_id,
                 "action": "full",
                 "step": "alpha_source_route",
@@ -53,13 +87,31 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
                 "result": "fail",
                 "exit_code": 2,
                 "blocked_by_prior_failure": False,
+                "research_decision_only": False,
             }
         ]
+        for index, step in enumerate(DECISIVE_STEPS, start=1):
+            step_records.append(
+                {
+                    "recorded_at_utc": f"2026-08-12T00:00:{index:02d}Z",
+                    "run_id": run_id,
+                    "action": "full",
+                    "step": step,
+                    "kind": "observation",
+                    "result": "fail",
+                    "exit_code": 2,
+                    "blocked_by_prior_failure": False,
+                    "research_decision_only": True,
+                }
+            )
         step_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
             "step_status"
         ]
         step_path.write_text(
-            "\n".join(json.dumps(item) for item in step_records) + "\n",
+            "".join(
+                json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n"
+                for item in step_records
+            ),
             encoding="utf-8",
         )
         route_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
@@ -193,12 +245,166 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             artifact_dir = pathlib.Path(td)
             manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
+            records = self.read_step_records(artifact_dir)
+            records[0]["kind"] = "observation"
+            self.write_step_records(
+                artifact_dir, manifest_path, manifest, records
+            )
+
+            failures = VALIDATOR.validate_artifact_contract(
+                manifest_path, artifact_dir, CONTRACT_PATH
+            )
+
+        self.assertIn("alpha_source_route:invalid", failures)
+
+    def test_each_decisive_step_requires_exactly_one_terminal_record(self):
+        for target in DECISIVE_STEPS:
+            with self.subTest(step=target, mutation="deleted"):
+                with tempfile.TemporaryDirectory() as td:
+                    artifact_dir = pathlib.Path(td)
+                    manifest_path, manifest = self.build_rejected_full_run(
+                        artifact_dir
+                    )
+                    records = [
+                        record
+                        for record in self.read_step_records(artifact_dir)
+                        if record["step"] != target
+                    ]
+                    self.write_step_records(
+                        artifact_dir, manifest_path, manifest, records
+                    )
+
+                    failures = VALIDATOR.validate_artifact_contract(
+                        manifest_path, artifact_dir, CONTRACT_PATH
+                    )
+
+                    self.assertIn(f"step_status:{target}:missing", failures)
+
+        for target in DECISIVE_STEPS:
+            with self.subTest(step=target, mutation="duplicated"):
+                with tempfile.TemporaryDirectory() as td:
+                    artifact_dir = pathlib.Path(td)
+                    manifest_path, manifest = self.build_rejected_full_run(
+                        artifact_dir
+                    )
+                    records = self.read_step_records(artifact_dir)
+                    target_record = next(
+                        record for record in records if record["step"] == target
+                    )
+                    records.append(dict(target_record))
+                    self.write_step_records(
+                        artifact_dir, manifest_path, manifest, records
+                    )
+
+                    failures = VALIDATOR.validate_artifact_contract(
+                        manifest_path, artifact_dir, CONTRACT_PATH
+                    )
+
+                    self.assertIn(
+                        f"step_status:{target}:duplicate", failures
+                    )
+
+    def test_decisive_steps_must_preserve_fixed_execution_order(self):
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
+            records = self.read_step_records(artifact_dir)
+            records[1], records[2] = records[2], records[1]
+            self.write_step_records(
+                artifact_dir, manifest_path, manifest, records
+            )
+
+            failures = VALIDATOR.validate_artifact_contract(
+                manifest_path, artifact_dir, CONTRACT_PATH
+            )
+
+        self.assertIn("step_status:decisive_order", failures)
+
+    def test_decisive_terminal_record_identity_and_flags_are_fail_closed(self):
+        mutations = (
+            ("blocked_by_prior_failure", True, "blocked_by_prior_failure"),
+            ("research_decision_only", False, "research_decision_only"),
+            ("run_id", "wrong-run", "run_id"),
+            ("action", "deploy", "action"),
+            ("kind", "route", "kind"),
+            ("result", "skipped", "result"),
+            ("exit_code", 0, "exit_code"),
+        )
+        target = DECISIVE_STEPS[0]
+        for field, value, reason in mutations:
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as td:
+                    artifact_dir = pathlib.Path(td)
+                    manifest_path, manifest = self.build_rejected_full_run(
+                        artifact_dir
+                    )
+                    records = self.read_step_records(artifact_dir)
+                    records[1][field] = value
+                    self.write_step_records(
+                        artifact_dir, manifest_path, manifest, records
+                    )
+
+                    failures = VALIDATOR.validate_artifact_contract(
+                        manifest_path, artifact_dir, CONTRACT_PATH
+                    )
+
+                    self.assertIn(
+                        f"step_status:{target}:{reason}", failures
+                    )
+
+    def test_step_status_requires_canonical_jsonl_and_valid_record_schema(self):
+        mutations = (
+            ("invalid_json", "invalid_json:2"),
+            ("noncanonical", "noncanonical:2"),
+            ("invalid_schema", "invalid_record:2"),
+        )
+        for mutation, reason in mutations:
+            with self.subTest(mutation=mutation):
+                with tempfile.TemporaryDirectory() as td:
+                    artifact_dir = pathlib.Path(td)
+                    manifest_path, manifest = self.build_rejected_full_run(
+                        artifact_dir
+                    )
+                    step_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                        "step_status"
+                    ]
+                    lines = step_path.read_text(encoding="utf-8").splitlines()
+                    if mutation == "invalid_json":
+                        lines[1] = "{invalid"
+                    elif mutation == "invalid_schema":
+                        record = json.loads(lines[1])
+                        record.pop("research_decision_only")
+                        lines[1] = json.dumps(
+                            record, ensure_ascii=False, sort_keys=True
+                        )
+                    else:
+                        lines[1] = json.dumps(
+                            json.loads(lines[1]),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    step_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                    manifest["artifacts"]["step_status"]["sha256"] = (
+                        hashlib.sha256(step_path.read_bytes()).hexdigest()
+                    )
+                    manifest_path.write_text(
+                        json.dumps(manifest), encoding="utf-8"
+                    )
+
+                    failures = VALIDATOR.validate_artifact_contract(
+                        manifest_path, artifact_dir, CONTRACT_PATH
+                    )
+
+                    self.assertIn(f"step_status:{reason}", failures)
+
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
             step_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
                 "step_status"
             ]
-            record = json.loads(step_path.read_text(encoding="utf-8"))
-            record["kind"] = "observation"
-            step_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+            step_path.write_bytes(b"\xff\n")
             manifest["artifacts"]["step_status"]["sha256"] = hashlib.sha256(
                 step_path.read_bytes()
             ).hexdigest()
@@ -208,7 +414,39 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
                 manifest_path, artifact_dir, CONTRACT_PATH
             )
 
-        self.assertIn("alpha_source_route:invalid", failures)
+        self.assertIn("step_status:unreadable", failures)
+
+    def test_step_status_manifest_path_and_hash_are_verified(self):
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
+            manifest["artifacts"]["step_status"]["path"] = (
+                "/remote/not-step-status.jsonl"
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            failures = VALIDATOR.validate_artifact_contract(
+                manifest_path, artifact_dir, CONTRACT_PATH
+            )
+
+        self.assertIn("step_status:path", failures)
+
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            manifest_path, _ = self.build_rejected_full_run(artifact_dir)
+            step_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "step_status"
+            ]
+            step_path.write_text(
+                step_path.read_text(encoding="utf-8") + "{}\n",
+                encoding="utf-8",
+            )
+
+            failures = VALIDATOR.validate_artifact_contract(
+                manifest_path, artifact_dir, CONTRACT_PATH
+            )
+
+        self.assertIn("step_status:sha256", failures)
 
 
 if __name__ == "__main__":
