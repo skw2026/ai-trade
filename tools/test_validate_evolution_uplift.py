@@ -25,6 +25,20 @@ def load_module():
 
 
 UPLIFT = load_module()
+
+
+def load_assess_module():
+    path = pathlib.Path(__file__).with_name("assess_run_log.py")
+    spec = importlib.util.spec_from_file_location("assess_run_log_for_uplift", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+ASSESS = load_assess_module()
 BENCHMARK_ID = "1" * 64
 TRADE_BOT_SHA256 = "2" * 64
 
@@ -109,9 +123,19 @@ def full_episode(
     close_fill_id = f"{arm}-fill-close-{block_index}-{sequence}"
     open_client_id = f"client-{open_fill_id}"
     close_client_id = f"client-{close_fill_id}"
+    runtime_episode_id = f"runtime-{arm}-{block_index}-{sequence}"
+    lineage = {
+        "decision_id": f"decision-{block_index}-{sequence}",
+        "candidate_id": "candidate-v1",
+        "model_version": "model-v1",
+        "mode": "canary",
+        "position_episode_id": runtime_episode_id,
+    }
     return {
-        "evaluator_episode_id": f"{arm}-episode-{block_index}-{sequence}",
-        "runtime_position_episode_id": f"runtime-{arm}-{block_index}-{sequence}",
+        "evaluator_episode_id": hashlib.sha256(
+            f"{segment_sha256}:{symbol}:{open_fill_id}".encode("ascii")
+        ).hexdigest(),
+        "runtime_position_episode_id": runtime_episode_id,
         "segment_identity_sha256": segment_sha256,
         "symbol": symbol,
         "entry_regime": entry_regime,
@@ -128,6 +152,7 @@ def full_episode(
                 "qty": 1.0,
                 "price": 100.0,
                 "fee": -0.05,
+                "candidate_lineage": copy.deepcopy(lineage),
             },
             {
                 "fill_id": close_fill_id,
@@ -138,21 +163,25 @@ def full_episode(
                 "qty": 1.0,
                 "price": 100.0 + utility + 0.1,
                 "fee": -0.05,
+                "candidate_lineage": copy.deepcopy(lineage),
             },
         ],
-        "candidate_lineage": {
-            "decision_id": f"decision-{block_index}-{sequence}",
-            "candidate_id": "candidate-v1",
-            "model_version": "model-v1",
-            "position_episode_id": f"runtime-{arm}-{block_index}-{sequence}",
-        },
+        "candidate_lineage": lineage,
         "position_episode": {
             "evidence_complete": True,
+            **copy.deepcopy(lineage),
             "symbol": symbol,
+            "realized_net_usd": utility,
+            "funding_paid_usd": 0.0,
             "fill_event_count": 2,
             "unique_order_count": 2,
         },
-        "exit_capture": {"observed": True, "client_order_id": close_client_id},
+        "exit_capture": {
+            "observed": True,
+            "client_order_id": close_client_id,
+            "symbol": symbol,
+            "realized_pnl_usd": utility + 0.1,
+        },
         "execution_policy_identity": copy.deepcopy(policy),
         "terminal_settlement": {
             "done_count": 1,
@@ -160,6 +189,8 @@ def full_episode(
             "realized_net_usd": utility + 0.1,
             "fees_usd": 0.1,
             "funding_paid_usd": 0.0,
+            "position_count": 0,
+            "segment_identity_sha256": segment_sha256,
         },
         "realized_pnl_usd": utility + 0.1,
         "fee_usd": 0.1,
@@ -168,7 +199,83 @@ def full_episode(
         "utility_source": "complete_execution_replay",
         "execution_path_complete": True,
         "missing_path_evidence": [],
+        "identity_mismatches": [],
     }
+
+
+def sync_evidence_terminal(evidence):
+    episodes = evidence["episodes"]
+    terminal = {
+        "done_count": 1,
+        "failed_count": 0,
+        "failed_reasons": [],
+        "realized_net_usd": sum(
+            float(episode["executable_net_utility"]) for episode in episodes
+        ),
+        "fees_usd": sum(float(episode["fee_usd"]) for episode in episodes),
+        "funding_paid_usd": sum(
+            float(episode["funding_paid_usd"]) for episode in episodes
+        ),
+        "position_count": 0,
+        "segment_identity_sha256": evidence["segment_identity_sha256"],
+    }
+    evidence["terminal_settlement"] = terminal
+    for episode in episodes:
+        episode["terminal_settlement"] = copy.deepcopy(terminal)
+
+
+def episode_evidence(episodes, segment_sha256, policy):
+    evidence = {
+        "schema_version": "episode_execution_evidence_v1",
+        "segment_identity_sha256": segment_sha256,
+        "execution_policy_identity": copy.deepcopy(policy),
+        "episode_count": len(episodes),
+        "complete_episode_count": len(episodes),
+        "execution_path_complete": bool(episodes),
+        "aggregate_only_rejected": not episodes,
+        "missing_path_evidence": [] if episodes else ["fills"],
+        "episodes": episodes,
+    }
+    sync_evidence_terminal(evidence)
+    return evidence
+
+
+def real_assessor_episode_evidence(segment_sha256, policy):
+    lines = [
+        "2026-08-11 10:00:00 [INFO] REGIME_CHANGE: symbol=BTCUSDT, regime=UPTREND, bucket=trend",
+        "2026-08-11 10:00:01 [INFO] INTEGRATOR_POLICY_ENQUEUED: decision_id=d-real, candidate_id=c-real, model_version=m-real, mode=canary, position_episode_id=runtime-real, client_order_id=open-real, symbol=BTCUSDT",
+        "2026-08-11 10:00:01 [INFO] BYBIT_SUBMIT: symbol=BTCUSDT, client_order_id=open-real, purpose=0, order_type=Limit, liquidity_preference=maker, reduce_only=false, qty=1.0, price=100.0",
+        "2026-08-11 10:00:02 [INFO] FILL_APPLIED: fill_id=fill-open-real, client_order_id=open-real, symbol=BTCUSDT, side=Buy, qty=1.0, price=100.0, fee=-0.020000, liquidity=maker, order_state_before=accepted, order_state_after=filled, local_qty_before=0.0, local_qty_after=1.0",
+        "2026-08-11 10:00:02 [INFO] INTEGRATOR_POLICY_FILLED: decision_id=d-real, candidate_id=c-real, model_version=m-real, mode=canary, position_episode_id=runtime-real, client_order_id=open-real, fill_id=fill-open-real, symbol=BTCUSDT, qty=1.0, price=100.0, fee=-0.020000, liquidity=maker",
+        "2026-08-11 10:00:03 [INFO] FUNDING_APPLIED: symbol=BTCUSDT, rate_per_interval=0.000100, funding_paid_usd=0.010000, source=market",
+        "2026-08-11 10:00:04 [INFO] BYBIT_SUBMIT: symbol=BTCUSDT, client_order_id=close-real, purpose=3, order_type=Market, liquidity_preference=taker, reduce_only=true, qty=1.0",
+        "2026-08-11 10:00:05 [INFO] FILL_APPLIED: fill_id=fill-close-real, client_order_id=close-real, symbol=BTCUSDT, side=Sell, qty=1.0, price=100.5, fee=-0.030000, liquidity=taker, order_state_before=accepted, order_state_after=filled, local_qty_before=1.0, local_qty_after=0.0",
+        "2026-08-11 10:00:05 [INFO] INTEGRATOR_POLICY_FILLED: decision_id=d-real, candidate_id=c-real, model_version=m-real, mode=canary, position_episode_id=runtime-real, client_order_id=close-real, fill_id=fill-close-real, symbol=BTCUSDT, qty=1.0, price=100.5, fee=-0.030000, liquidity=taker",
+        "2026-08-11 10:00:05 [INFO] EXIT_CAPTURE_SAMPLE: symbol=BTCUSDT, client_order_id=close-real, purpose=reduce, realized_pnl_usd=0.5, realized_net_usd=0.47, fee_bps=3.0, round_trip_cost_bps=13.0, capture_ratio=0.625",
+        "2026-08-11 10:00:05 [INFO] INTEGRATOR_POLICY_EPISODE_CLOSED: position_episode_id=runtime-real, decision_id=d-real, candidate_id=c-real, model_version=m-real, mode=canary, symbol=BTCUSDT, realized_net_usd=0.44, funding_paid_usd=0.01, fill_event_count=2, unique_order_count=2, evidence_complete=true",
+        "2026-08-11 10:00:06 [INFO] REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=0, realized_net_usd=0.44, fees_usd=0.05, funding_paid_usd=0.01",
+    ]
+    report = ASSESS.assess(
+        "\n".join(lines) + "\n",
+        ASSESS.STAGE_RULES["DEPLOY"],
+        min_runtime_status=0,
+        segment_identity_sha256=segment_sha256,
+        execution_policy_identity=policy,
+    )
+    return report["episode_execution_evidence"]
+
+
+def real_zero_trade_assessor_evidence(segment_sha256, policy):
+    report = ASSESS.assess(
+        "2026-08-11 10:00:06 [INFO] REPLAY_TERMINAL_SETTLEMENT_DONE: "
+        "position_count=0, realized_net_usd=0.0, fees_usd=0.0, "
+        "funding_paid_usd=0.0\n",
+        ASSESS.STAGE_RULES["DEPLOY"],
+        min_runtime_status=0,
+        segment_identity_sha256=segment_sha256,
+        execution_policy_identity=policy,
+    )
+    return report["episode_execution_evidence"]
 
 
 def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
@@ -216,17 +323,9 @@ def paired_manifest(benchmark=None, frozen_utility=0.0, adaptive_utility=1.0):
                 segment_sha256=planned["segment_identity_sha256"],
                 policy=arm_policy,
             )
-            evidence = {
-                "schema_version": "episode_execution_evidence_v1",
-                "segment_identity_sha256": planned["segment_identity_sha256"],
-                "execution_policy_identity": copy.deepcopy(arm_policy),
-                "episode_count": 1,
-                "complete_episode_count": 1,
-                "execution_path_complete": True,
-                "aggregate_only_rejected": False,
-                "missing_path_evidence": [],
-                "episodes": [episode],
-            }
+            evidence = episode_evidence(
+                [episode], planned["segment_identity_sha256"], arm_policy
+            )
             blocks.append(
                 {
                     "block_id": planned["block_id"],
@@ -340,6 +439,25 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
         self.assertEqual(len(report["arms"]["adaptive"]["episodes"]), 8)
         self.assertEqual(report["missing_evidence"], [])
 
+    def test_real_task2_assessor_shape_is_consumed_without_mocked_exit_failure(self):
+        benchmark = benchmark_report()
+        paired = paired_manifest(benchmark)
+        block = paired["arms"]["frozen"]["blocks"][0]
+        evidence = real_assessor_episode_evidence(
+            block["segment_identity_sha256"],
+            paired["arms"]["frozen"]["config"]["policy"],
+        )
+        block["episode_execution_evidence"] = evidence
+        block["assess_exit_code"] = 0
+
+        report = self.validate(paired, benchmark)
+
+        self.assertEqual(report["status"], "UPLIFT_PROVEN")
+        self.assertEqual(
+            report["arms"]["frozen"]["episodes"][0]["first_fill_id"],
+            "fill-open-real",
+        )
+
     def test_episode_ids_and_counts_need_not_match_and_planned_empty_cells_are_zero(self):
         cells = [
             {"symbol": "BTCUSDT", "entry_regime": "trend"},
@@ -352,6 +470,8 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
         first = evidence["episodes"][0]
         first["executable_net_utility"] = 0.25
         first["realized_pnl_usd"] = 0.35
+        first["exit_capture"]["realized_pnl_usd"] = 0.35
+        first["position_episode"]["realized_net_usd"] = 0.25
         first["terminal_settlement"]["realized_net_usd"] = 0.35
         first["fills"][1]["price"] = 100.35
         second = full_episode(
@@ -367,13 +487,20 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
         evidence["episodes"].append(second)
         evidence["episode_count"] = 2
         evidence["complete_episode_count"] = 2
+        sync_evidence_terminal(evidence)
         adaptive_episode = paired["arms"]["adaptive"]["blocks"][0][
             "episode_execution_evidence"
         ]["episodes"][0]
         adaptive_episode["executable_net_utility"] = 2.0
         adaptive_episode["realized_pnl_usd"] = 2.1
-        adaptive_episode["terminal_settlement"]["realized_net_usd"] = 2.1
+        adaptive_episode["exit_capture"]["realized_pnl_usd"] = 2.1
+        adaptive_episode["position_episode"]["realized_net_usd"] = 2.0
         adaptive_episode["fills"][1]["price"] = 102.1
+        sync_evidence_terminal(
+            paired["arms"]["adaptive"]["blocks"][0][
+                "episode_execution_evidence"
+            ]
+        )
 
         report = self.validate(paired, benchmark)
 
@@ -414,36 +541,194 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
             any(item["symbol"] == "DOGEUSDT" for item in report["aggregation_cells"])
         )
 
-    def test_zero_trade_assessor_shape_is_valid_zero_and_aggregate_fields_are_ignored(self):
-        benchmark = benchmark_report()
-        paired = paired_manifest(benchmark)
-        block = paired["arms"]["frozen"]["blocks"][0]
-        evidence = block["episode_execution_evidence"]
-        evidence.update(
-            {
-                "episode_count": 0,
-                "complete_episode_count": 0,
-                "execution_path_complete": False,
-                "aggregate_only_rejected": True,
-                "missing_path_evidence": ["fills"],
-                "episodes": [],
-                "account_realized_net_usd": 999999.0,
-                "virtual_pnl": 999999.0,
-                "self_evolution_update_count": 999,
-            }
-        )
-        block["no_trade_zero_utility"] = True
-        block["assess_exit_code"] = 1
-        paired["arms"]["frozen"]["business_gate_status"] = "FAILED"
-        paired["arms"]["frozen"]["exit_code"] = 2
-        paired["arms"]["frozen"]["report"]["status"] = "UNVERIFIABLE"
+    def test_zero_trade_assessor_shape_accepts_healthy_or_diagnostic_exit(self):
+        for assess_exit in (0, 1):
+            with self.subTest(assess_exit=assess_exit):
+                benchmark = benchmark_report()
+                paired = paired_manifest(benchmark)
+                block = paired["arms"]["frozen"]["blocks"][0]
+                block["episode_execution_evidence"] = real_zero_trade_assessor_evidence(
+                    block["segment_identity_sha256"],
+                    paired["arms"]["frozen"]["config"]["policy"],
+                )
+                block["no_trade_zero_utility"] = True
+                block["assess_exit_code"] = assess_exit
+                if assess_exit == 1:
+                    paired["arms"]["frozen"]["business_gate_status"] = "FAILED"
+                    paired["arms"]["frozen"]["exit_code"] = 2
+                    paired["arms"]["frozen"]["report"]["status"] = "UNVERIFIABLE"
 
-        report = self.validate(paired, benchmark)
+                report = self.validate(paired, benchmark)
 
-        self.assertEqual(report["status"], "UPLIFT_PROVEN")
-        first = report["aggregation_cells"][0]
-        self.assertEqual(first["frozen_utility"], 0.0)
-        self.assertEqual(first["frozen_episode_count"], 0)
+                self.assertEqual(report["status"], "UPLIFT_PROVEN")
+                first = report["aggregation_cells"][0]
+                self.assertEqual(first["frozen_utility"], 0.0)
+                self.assertEqual(first["frozen_episode_count"], 0)
+
+    def test_zero_trade_rejects_aggregate_pollution_or_missing_terminal(self):
+        mutations = {
+            "aggregate_pollution": lambda evidence: evidence.update(
+                {
+                    "account_realized_net_usd": 999999.0,
+                    "virtual_pnl": 999999.0,
+                    "self_evolution_update_count": 999,
+                }
+            ),
+            "terminal_missing": lambda evidence: evidence.pop(
+                "terminal_settlement"
+            ),
+            "terminal_nonzero": lambda evidence: evidence[
+                "terminal_settlement"
+            ].update({"realized_net_usd": 1.0}),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                benchmark = benchmark_report()
+                paired = paired_manifest(benchmark)
+                block = paired["arms"]["frozen"]["blocks"][0]
+                evidence = real_zero_trade_assessor_evidence(
+                    block["segment_identity_sha256"],
+                    paired["arms"]["frozen"]["config"]["policy"],
+                )
+                mutate(evidence)
+                block["episode_execution_evidence"] = evidence
+                block["no_trade_zero_utility"] = True
+
+                report = self.validate(paired, benchmark)
+
+                self.assertEqual(report["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(name.split("_")[0] in item for item in report["missing_evidence"]),
+                    report["missing_evidence"],
+                )
+
+    def test_episode_identity_and_economic_component_tampering_is_rejected(self):
+        def wrong_episode_id(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["evaluator_episode_id"] = "f" * 64
+
+        def missing_first_fill(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["first_fill_id"] = ""
+
+        def duplicate_fill(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["fills"][1]["fill_id"] = episode["first_fill_id"]
+            episode["fill_ids"][1] = episode["first_fill_id"]
+
+        def missing_client_order(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["fills"][1]["client_order_id"] = ""
+
+        def missing_order_state(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["fills"][0]["order_state_after"] = "missing"
+
+        def mixed_lineage(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["fills"][1]["candidate_lineage"]["candidate_id"] = "other"
+
+        def closure_mismatch(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["position_episode"]["position_episode_id"] = "other"
+
+        def fee_mismatch(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["fee_usd"] = 0.2
+
+        def funding_nonfinite(paired):
+            episode = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            episode["funding_paid_usd"] = math.nan
+
+        mutations = {
+            "evaluator_episode_id": wrong_episode_id,
+            "first_fill_id": missing_first_fill,
+            "fill_id_unique": duplicate_fill,
+            "client_order_id": missing_client_order,
+            "order_state_after": missing_order_state,
+            "candidate_lineage": mixed_lineage,
+            "position_episode": closure_mismatch,
+            "fee_sum": fee_mismatch,
+            "funding": funding_nonfinite,
+        }
+        for expected, mutate in mutations.items():
+            with self.subTest(expected=expected):
+                benchmark = benchmark_report()
+                paired = paired_manifest(benchmark)
+                mutate(paired)
+
+                report = self.validate(paired, benchmark)
+
+                self.assertEqual(report["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(expected in item for item in report["missing_evidence"]),
+                    report["missing_evidence"],
+                )
+
+    def test_duplicate_evaluator_id_and_cross_segment_fill_reuse_are_rejected(self):
+        mutations = {}
+
+        def duplicate_episode_id(paired):
+            first = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            second = paired["arms"]["frozen"]["blocks"][1][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            second["evaluator_episode_id"] = first["evaluator_episode_id"]
+
+        mutations["episode_id_duplicate"] = duplicate_episode_id
+
+        def cross_segment_first_fill(paired):
+            first = paired["arms"]["frozen"]["blocks"][0][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            second = paired["arms"]["frozen"]["blocks"][1][
+                "episode_execution_evidence"
+            ]["episodes"][0]
+            second["first_fill_id"] = first["first_fill_id"]
+            second["fill_ids"][0] = first["first_fill_id"]
+            second["fills"][0]["fill_id"] = first["first_fill_id"]
+            second["evaluator_episode_id"] = hashlib.sha256(
+                (
+                    f"{second['segment_identity_sha256']}:"
+                    f"{second['symbol']}:{second['first_fill_id']}"
+                ).encode("ascii")
+            ).hexdigest()
+
+        mutations["first_fill_id_cross_segment_reuse"] = cross_segment_first_fill
+
+        for expected, mutate in mutations.items():
+            with self.subTest(expected=expected):
+                benchmark = benchmark_report()
+                paired = paired_manifest(benchmark)
+                mutate(paired)
+
+                report = self.validate(paired, benchmark)
+
+                self.assertEqual(report["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(expected in item for item in report["missing_evidence"]),
+                    report["missing_evidence"],
+                )
 
     def test_bootstrap_hash_draws_repeat_and_lcb_is_exact_sorted_index_499(self):
         expected = int.from_bytes(

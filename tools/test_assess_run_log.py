@@ -56,6 +56,7 @@ class AssessRunLogTest(unittest.TestCase):
                 "2026-08-11 10:00:03 [INFO] FUNDING_APPLIED: symbol=BTCUSDT, rate_per_interval=0.000100, funding_paid_usd=0.010000, source=market",
                 "2026-08-11 10:00:04 [INFO] BYBIT_SUBMIT: symbol=BTCUSDT, client_order_id=close-1, purpose=3, order_type=Market, liquidity_preference=taker, reduce_only=true, qty=1.0",
                 "2026-08-11 10:00:05 [INFO] FILL_APPLIED: fill_id=fill-close-1, client_order_id=close-1, symbol=BTCUSDT, side=Sell, qty=1.0, price=100.5, fee=-0.030000, liquidity=taker, order_state_before=accepted, order_state_after=filled, order_filled_qty_before=0.0, order_filled_qty_after=1.0, local_qty_before=1.0, avg_entry_price_before=100.0, local_qty_after=0.0, oms_net_qty_before=1.0, oms_net_qty_after=0.0, account_already_reflected=false",
+                "2026-08-11 10:00:05 [INFO] INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1, fill_id=fill-close-1, symbol=BTCUSDT, qty=1.0, price=100.5, fee=-0.030000, liquidity=taker",
                 "2026-08-11 10:00:05 [INFO] EXIT_CAPTURE_SAMPLE: symbol=BTCUSDT, client_order_id=close-1, purpose=reduce, entry_direction=1, close_qty=1.0, avg_entry_price=100.0, exit_price=100.5, best_price=100.8, path_mfe_bps=80.0, captured_gross_bps=50.0, captured_net_bps=47.0, fee_bps=3.0, capture_ratio=0.625, low_capture=false, realized_pnl_usd=0.5, realized_net_usd=0.47, round_trip_cost_bps=13.0, holding_ticks=10, protection_state=true",
                 "2026-08-11 10:00:05 [INFO] INTEGRATOR_POLICY_EPISODE_CLOSED: position_episode_id=runtime-episode-1, decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, policy_reason=accepted, symbol=BTCUSDT, realized_net_usd=0.44, funding_paid_usd=0.01, fill_event_count=2, unique_order_count=2, evidence_complete=true, activation_transaction_id=activation-1, evidence_boot_id=boot-1, runtime_config_sha256=" + "a" * 64 + ", trade_bot_sha256=" + "b" * 64 + ", closed_at_utc=2026-08-11T02:00:05Z, recovered_after_restart=false, wal_persisted=true",
                 "2026-08-11 10:00:06 [INFO] REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=0, realized_net_usd=0.440000, fees_usd=0.050000, funding_paid_usd=0.010000",
@@ -85,6 +86,7 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertEqual(evidence["execution_policy_identity"], policy_identity)
         episode = evidence["episodes"][0]
         self.assertEqual(episode["evaluator_episode_id"], expected_id)
+        self.assertEqual(episode["first_fill_id"], "fill-open-1")
         self.assertEqual(episode["runtime_position_episode_id"], "runtime-episode-1")
         self.assertEqual(episode["entry_regime"], "TREND")
         self.assertNotEqual(episode["entry_regime"], "UPTREND")
@@ -97,6 +99,110 @@ class AssessRunLogTest(unittest.TestCase):
         self.assertAlmostEqual(episode["executable_net_utility"], 0.44)
         self.assertTrue(episode["execution_path_complete"])
         self.assertEqual(episode["missing_path_evidence"], [])
+        self.assertEqual(episode["identity_mismatches"], [])
+        self.assertEqual(
+            [fill["candidate_lineage"] for fill in episode["fills"]],
+            [episode["candidate_lineage"], episode["candidate_lineage"]],
+        )
+        self.assertEqual(
+            evidence["terminal_settlement"]["segment_identity_sha256"],
+            segment_identity,
+        )
+
+    def test_episode_fill_and_closure_identities_fail_closed_precisely(self):
+        cases = {
+            "empty_fill_id": (
+                lambda text: text.replace(
+                    "fill_id=fill-close-1, client_order_id=close-1",
+                    "fill_id=, client_order_id=close-1",
+                ),
+                "fills",
+                "fills[1].fill_id=missing",
+            ),
+            "duplicate_fill_id": (
+                lambda text: text.replace("fill-close-1", "fill-open-1"),
+                "fills",
+                "fills[1].fill_id=duplicate:fill-open-1",
+            ),
+            "empty_client_order_id": (
+                lambda text: text.replace(
+                    "fill_id=fill-close-1, client_order_id=close-1",
+                    "fill_id=fill-close-1, client_order_id=",
+                ),
+                "oms_submit",
+                "fills[1].client_order_id=missing",
+            ),
+            "mixed_candidate": (
+                lambda text: text.replace(
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1",
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c2, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1",
+                ),
+                "candidate_lineage",
+                "fills[1].candidate_lineage.candidate_id:mismatch",
+            ),
+            "cross_position": (
+                lambda text: text.replace(
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1",
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-2, client_order_id=close-1",
+                ),
+                "candidate_lineage",
+                "fills[1].candidate_lineage.position_episode_id:mismatch",
+            ),
+            "closure_candidate": (
+                lambda text: text.replace(
+                    "INTEGRATOR_POLICY_EPISODE_CLOSED: position_episode_id=runtime-episode-1, decision_id=d1, candidate_id=c1",
+                    "INTEGRATOR_POLICY_EPISODE_CLOSED: position_episode_id=runtime-episode-1, decision_id=d1, candidate_id=c2",
+                ),
+                "position_episode",
+                "position_episode.candidate_id:mismatch",
+            ),
+            "exit_symbol": (
+                lambda text: text.replace(
+                    "EXIT_CAPTURE_SAMPLE: symbol=BTCUSDT",
+                    "EXIT_CAPTURE_SAMPLE: symbol=ETHUSDT",
+                ),
+                "exit_capture",
+                "exit_capture.symbol:mismatch",
+            ),
+            "terminal_open_position": (
+                lambda text: text.replace(
+                    "REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=0",
+                    "REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=1",
+                ),
+                "terminal_settlement",
+                "terminal_settlement.position_count=0",
+            ),
+        }
+        for name, (mutate, missing_path, mismatch) in cases.items():
+            with self.subTest(name=name):
+                report = ASSESS.assess(
+                    mutate(self._complete_episode_log()),
+                    ASSESS.STAGE_RULES["DEPLOY"],
+                    min_runtime_status=0,
+                    segment_identity_sha256="1" * 64,
+                    execution_policy_identity=self._execution_policy_identity(),
+                )
+                episode = report["episode_execution_evidence"]["episodes"][0]
+                self.assertFalse(episode["execution_path_complete"])
+                self.assertIn(missing_path, episode["missing_path_evidence"])
+                self.assertIn(mismatch, episode["identity_mismatches"])
+
+    def test_evaluator_episode_id_uses_ascii_canonical_identity(self):
+        segment_identity = "1" * 64
+        report = ASSESS.assess(
+            self._complete_episode_log(),
+            ASSESS.STAGE_RULES["DEPLOY"],
+            min_runtime_status=0,
+            segment_identity_sha256=segment_identity,
+            execution_policy_identity=self._execution_policy_identity(),
+        )
+        episode = report["episode_execution_evidence"]["episodes"][0]
+        self.assertEqual(
+            episode["evaluator_episode_id"],
+            hashlib.sha256(
+                f"{segment_identity}:BTCUSDT:fill-open-1".encode("ascii")
+            ).hexdigest(),
+        )
 
     def test_each_missing_episode_path_is_reported_exactly(self):
         base_lines = self._complete_episode_log().splitlines()

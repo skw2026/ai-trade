@@ -976,7 +976,7 @@ def extract_execution_attribution(text: str) -> Dict[str, object]:
 
 
 def extract_replay_terminal_settlement(text: str) -> Dict[str, object]:
-    done_events: List[Dict[str, float]] = []
+    done_events: List[Dict[str, object]] = []
     failed_reasons: List[str] = []
     for line in text.splitlines():
         if "REPLAY_TERMINAL_SETTLEMENT_DONE:" in line:
@@ -985,6 +985,7 @@ def extract_replay_terminal_settlement(text: str) -> Dict[str, object]:
             funding_paid_usd = extract_float_log_field(
                 line, "funding_paid_usd"
             )
+            position_count = extract_float_log_field(line, "position_count")
             if (
                 realized_net_usd is not None
                 and fees_usd is not None
@@ -995,6 +996,12 @@ def extract_replay_terminal_settlement(text: str) -> Dict[str, object]:
                         "realized_net_usd": realized_net_usd,
                         "fees_usd": fees_usd,
                         "funding_paid_usd": funding_paid_usd,
+                        "position_count": (
+                            int(position_count)
+                            if position_count is not None
+                            and float(position_count).is_integer()
+                            else position_count
+                        ),
                     }
                 )
         if "REPLAY_TERMINAL_SETTLEMENT_FAILED:" in line:
@@ -1008,6 +1015,7 @@ def extract_replay_terminal_settlement(text: str) -> Dict[str, object]:
         "realized_net_usd": latest.get("realized_net_usd"),
         "fees_usd": latest.get("fees_usd"),
         "funding_paid_usd": latest.get("funding_paid_usd"),
+        "position_count": latest.get("position_count"),
     }
 
 
@@ -1025,10 +1033,28 @@ EPISODE_EVIDENCE_PATH_ORDER = (
     "terminal_settlement",
     "segment_identity",
 )
+EPISODE_EVIDENCE_EPSILON = 1e-6
+EPISODE_LINEAGE_FIELDS = (
+    "decision_id",
+    "candidate_id",
+    "model_version",
+    "mode",
+    "position_episode_id",
+)
 
 
 def _valid_sha256(value: object) -> bool:
-    return bool(re.fullmatch(r"[0-9a-f]{64}", str(value or "").lower()))
+    return bool(re.fullmatch(r"[0-9a-f]{64}", str(value or "")))
+
+
+def _finite_integer_equals(value: object, expected: int) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+        and float(value).is_integer()
+        and int(value) == expected
+    )
 
 
 def _ordered_missing_evidence(missing: set[str]) -> List[str]:
@@ -1073,8 +1099,9 @@ def extract_episode_execution_evidence(
     )
 
     submitted_order_ids: set[str] = set()
-    lineage_by_order_id: Dict[str, Dict[str, str]] = {}
+    fill_lineage_by_fill_id: Dict[str, Dict[str, str]] = {}
     closures_by_episode_id: Dict[str, Dict[str, object]] = {}
+    closure_events: List[Dict[str, object]] = []
     exit_by_order_id: Dict[str, Dict[str, object]] = {}
 
     for line in lines:
@@ -1082,13 +1109,11 @@ def extract_episode_execution_evidence(
             client_order_id = extract_log_field(line, "client_order_id")
             if client_order_id:
                 submitted_order_ids.add(client_order_id)
-        if (
-            "INTEGRATOR_POLICY_ENQUEUED:" in line
-            or "INTEGRATOR_POLICY_FILLED:" in line
-        ):
+        if "INTEGRATOR_POLICY_FILLED:" in line:
+            fill_id = extract_log_field(line, "fill_id")
             client_order_id = extract_log_field(line, "client_order_id")
-            if client_order_id:
-                lineage_by_order_id[client_order_id] = {
+            if fill_id:
+                fill_lineage_by_fill_id[fill_id] = {
                     key: str(extract_log_field(line, key) or "")
                     for key in (
                         "decision_id",
@@ -1098,10 +1123,19 @@ def extract_episode_execution_evidence(
                         "position_episode_id",
                     )
                 }
+                fill_lineage_by_fill_id[fill_id].update(
+                    {
+                        "fill_id": fill_id,
+                        "client_order_id": str(client_order_id or ""),
+                        "symbol": normalize_counter_key(
+                            extract_log_field(line, "symbol")
+                        ),
+                    }
+                )
         if "INTEGRATOR_POLICY_EPISODE_CLOSED:" in line:
             position_episode_id = extract_log_field(line, "position_episode_id")
             if position_episode_id:
-                closures_by_episode_id[position_episode_id] = {
+                closure = {
                     "position_episode_id": position_episode_id,
                     "decision_id": extract_log_field(line, "decision_id") or "",
                     "candidate_id": extract_log_field(line, "candidate_id") or "",
@@ -1124,6 +1158,8 @@ def extract_episode_execution_evidence(
                         extract_log_field(line, "evidence_complete") == "true"
                     ),
                 }
+                closures_by_episode_id[position_episode_id] = closure
+                closure_events.append(closure)
         if "EXIT_CAPTURE_SAMPLE:" in line:
             client_order_id = extract_log_field(line, "client_order_id")
             if client_order_id:
@@ -1163,12 +1199,15 @@ def extract_episode_execution_evidence(
             episode = open_by_symbol.get(symbol)
             funding_paid = extract_float_log_field(line, "funding_paid_usd")
             if episode is not None and funding_paid is not None:
-                episode["funding_paid_usd"] = rounded(
-                    float(episode.get("funding_paid_usd", 0.0)) + funding_paid
-                )
                 episode["funding_event_count"] = int(
                     episode.get("funding_event_count", 0)
                 ) + 1
+                if math.isfinite(funding_paid):
+                    episode["funding_paid_usd"] = rounded(
+                        float(episode.get("funding_paid_usd", 0.0)) + funding_paid
+                    )
+                else:
+                    episode["funding_invalid"] = True
             continue
 
         if "FILL_APPLIED:" not in line:
@@ -1207,6 +1246,19 @@ def extract_episode_execution_evidence(
             "local_qty_before": local_qty_before,
             "local_qty_after": local_qty_after,
         }
+        fill_lineage_event = fill_lineage_by_fill_id.get(
+            str(fill["fill_id"]), {}
+        )
+        fill["candidate_lineage"] = {
+            key: str(fill_lineage_event.get(key) or "")
+            for key in (
+                "decision_id",
+                "candidate_id",
+                "model_version",
+                "mode",
+                "position_episode_id",
+            )
+        }
         episode_fills = episode.get("fills")
         if isinstance(episode_fills, list):
             episode_fills.append(fill)
@@ -1217,12 +1269,19 @@ def extract_episode_execution_evidence(
 
     raw_episodes.extend(open_by_symbol.values())
     episodes: List[Dict[str, object]] = []
+    terminal_evidence = {
+        **terminal,
+        "segment_identity_sha256": segment_identity_sha256,
+    }
     terminal_complete = (
         int(terminal.get("done_count", 0)) == 1
         and int(terminal.get("failed_count", 0)) == 0
-        and terminal.get("realized_net_usd") is not None
-        and terminal.get("fees_usd") is not None
-        and terminal.get("funding_paid_usd") is not None
+        and _finite_integer_equals(terminal.get("position_count"), 0)
+        and all(
+            isinstance(terminal.get(field), (int, float))
+            and math.isfinite(float(terminal[field]))
+            for field in ("realized_net_usd", "fees_usd", "funding_paid_usd")
+        )
     )
     terminal_funding = terminal.get("funding_paid_usd")
 
@@ -1233,24 +1292,87 @@ def extract_episode_execution_evidence(
         last_fill = fill_rows[-1] if fill_rows else {}
         first_fill_id = str(first_fill.get("fill_id") or "")
         symbol = str(raw_episode.get("symbol") or "")
-        evaluator_episode_id = hashlib.sha256(
-            f"{segment_identity_sha256}:{symbol}:{first_fill_id}".encode("utf-8")
-        ).hexdigest()
-        first_order_id = str(first_fill.get("client_order_id") or "")
-        lineage = lineage_by_order_id.get(first_order_id, {})
+        identity_mismatches: List[str] = []
+        try:
+            evaluator_preimage = (
+                f"{segment_identity_sha256}:{symbol}:{first_fill_id}"
+            ).encode("ascii")
+            evaluator_episode_id = hashlib.sha256(evaluator_preimage).hexdigest()
+        except UnicodeEncodeError:
+            evaluator_episode_id = ""
+            identity_mismatches.append("evaluator_episode_id.preimage=non_ascii")
+        lineage = (
+            dict(first_fill.get("candidate_lineage", {}))
+            if isinstance(first_fill.get("candidate_lineage"), dict)
+            else {}
+        )
         runtime_episode_id = str(lineage.get("position_episode_id") or "")
         closure = closures_by_episode_id.get(runtime_episode_id, {})
+        if not closure:
+            symbol_closures = [
+                item
+                for item in closure_events
+                if normalize_counter_key(str(item.get("symbol") or "")) == symbol
+            ]
+            if len(symbol_closures) == 1:
+                closure = symbol_closures[0]
         close_order_id = str(last_fill.get("client_order_id") or "")
         exit_capture = exit_by_order_id.get(close_order_id, {})
 
         missing: set[str] = set()
         if not lineage or not all(
             lineage.get(key)
-            for key in ("decision_id", "candidate_id", "model_version", "position_episode_id")
+            for key in EPISODE_LINEAGE_FIELDS
         ):
             missing.add("candidate_lineage")
         if not fill_rows or not bool(raw_episode.get("closed")):
             missing.add("fills")
+        seen_fill_ids: set[str] = set()
+        for fill_index, fill in enumerate(fill_rows):
+            fill_id = str(fill.get("fill_id") or "")
+            client_order_id = str(fill.get("client_order_id") or "")
+            if not fill_id:
+                missing.add("fills")
+                identity_mismatches.append(f"fills[{fill_index}].fill_id=missing")
+            elif fill_id in seen_fill_ids:
+                missing.add("fills")
+                identity_mismatches.append(
+                    f"fills[{fill_index}].fill_id=duplicate:{fill_id}"
+                )
+            else:
+                seen_fill_ids.add(fill_id)
+            if not client_order_id:
+                missing.add("oms_submit")
+                identity_mismatches.append(
+                    f"fills[{fill_index}].client_order_id=missing"
+                )
+            fill_lineage = fill.get("candidate_lineage")
+            if not isinstance(fill_lineage, dict) or not all(
+                fill_lineage.get(key) for key in EPISODE_LINEAGE_FIELDS
+            ):
+                missing.add("candidate_lineage")
+                identity_mismatches.append(
+                    f"fills[{fill_index}].candidate_lineage=missing"
+                )
+            elif lineage:
+                for field in EPISODE_LINEAGE_FIELDS:
+                    if fill_lineage.get(field) != lineage.get(field):
+                        missing.add("candidate_lineage")
+                        identity_mismatches.append(
+                            f"fills[{fill_index}].candidate_lineage.{field}:mismatch"
+                        )
+            lineage_event = fill_lineage_by_fill_id.get(fill_id, {})
+            if lineage_event:
+                if lineage_event.get("client_order_id") != client_order_id:
+                    missing.add("candidate_lineage")
+                    identity_mismatches.append(
+                        f"fills[{fill_index}].candidate_lineage.client_order_id:mismatch"
+                    )
+                if lineage_event.get("symbol") != symbol:
+                    missing.add("candidate_lineage")
+                    identity_mismatches.append(
+                        f"fills[{fill_index}].candidate_lineage.symbol:mismatch"
+                    )
         if not str(raw_episode.get("entry_regime") or ""):
             missing.add("entry_regime")
         if fill_rows and not all(
@@ -1268,18 +1390,52 @@ def extract_episode_execution_evidence(
             not closure
             or not bool(closure.get("evidence_complete"))
             or normalize_counter_key(str(closure.get("symbol") or "")) != symbol
-            or int(closure.get("fill_event_count") or -1) != len(fill_rows)
-            or int(closure.get("unique_order_count") or -1)
-            != len(
+            or not _finite_integer_equals(
+                closure.get("fill_event_count"), len(fill_rows)
+            )
+            or not _finite_integer_equals(
+                closure.get("unique_order_count"),
+                len(
                 {
                     str(fill.get("client_order_id") or "")
                     for fill in fill_rows
                 }
+                ),
             )
         ):
             missing.add("position_episode")
-        if not exit_capture:
+        if closure:
+            for field in EPISODE_LINEAGE_FIELDS:
+                if str(closure.get(field) or "") != str(lineage.get(field) or ""):
+                    missing.add("position_episode")
+                    identity_mismatches.append(
+                        f"position_episode.{field}:mismatch"
+                    )
+            if normalize_counter_key(str(closure.get("symbol") or "")) != symbol:
+                identity_mismatches.append("position_episode.symbol:mismatch")
+        else:
+            identity_mismatches.append("position_episode=missing")
+        exit_numeric_fields = (
+            "realized_pnl_usd",
+            "realized_net_usd",
+            "fee_bps",
+            "round_trip_cost_bps",
+        )
+        if not exit_capture or not all(
+            isinstance(exit_capture.get(field), (int, float))
+            and math.isfinite(float(exit_capture[field]))
+            for field in exit_numeric_fields
+        ):
             missing.add("exit_capture")
+        if exit_capture:
+            if str(exit_capture.get("client_order_id") or "") != close_order_id:
+                missing.add("exit_capture")
+                identity_mismatches.append("exit_capture.client_order_id:mismatch")
+            if normalize_counter_key(str(exit_capture.get("symbol") or "")) != symbol:
+                missing.add("exit_capture")
+                identity_mismatches.append("exit_capture.symbol:mismatch")
+        else:
+            identity_mismatches.append("exit_capture=missing")
         fee_values = [fill.get("fee") for fill in fill_rows]
         if not fee_values or any(
             not isinstance(value, (int, float)) or not math.isfinite(float(value))
@@ -1289,15 +1445,22 @@ def extract_episode_execution_evidence(
         if not policy_identity_valid:
             missing.add("slippage_policy")
         if (
+            bool(raw_episode.get("funding_invalid"))
+            or (
             int(raw_episode.get("funding_event_count", 0)) <= 0
             and (
                 not isinstance(terminal_funding, (int, float))
                 or abs(float(terminal_funding)) > 1e-12
             )
+            )
         ):
             missing.add("funding")
+            if bool(raw_episode.get("funding_invalid")):
+                identity_mismatches.append("funding.funding_paid_usd=non_finite")
         if not terminal_complete:
             missing.add("terminal_settlement")
+            if not _finite_integer_equals(terminal.get("position_count"), 0):
+                identity_mismatches.append("terminal_settlement.position_count=0")
         if not _valid_sha256(segment_identity_sha256):
             missing.add("segment_identity")
 
@@ -1330,6 +1493,53 @@ def extract_episode_execution_evidence(
             executable_net_utility = rounded(
                 realized_pnl_usd - fee_usd - funding_paid_usd
             )
+        if closure and executable_net_utility is not None and "funding" not in missing:
+            closure_net = closure.get("realized_net_usd")
+            closure_funding = closure.get("funding_paid_usd")
+            if (
+                not isinstance(closure_net, (int, float))
+                or not math.isfinite(float(closure_net))
+                or not math.isclose(
+                    float(closure_net),
+                    executable_net_utility,
+                    rel_tol=0.0,
+                    abs_tol=EPISODE_EVIDENCE_EPSILON,
+                )
+            ):
+                missing.add("position_episode")
+                identity_mismatches.append(
+                    "position_episode.realized_net_usd:mismatch"
+                )
+            if (
+                not isinstance(closure_funding, (int, float))
+                or not math.isfinite(float(closure_funding))
+                or not math.isclose(
+                    float(closure_funding),
+                    funding_paid_usd,
+                    rel_tol=0.0,
+                    abs_tol=EPISODE_EVIDENCE_EPSILON,
+                )
+            ):
+                missing.add("position_episode")
+                identity_mismatches.append(
+                    "position_episode.funding_paid_usd:mismatch"
+                )
+        if exit_capture and realized_pnl_usd is not None:
+            exit_realized_pnl = exit_capture.get("realized_pnl_usd")
+            if (
+                not isinstance(exit_realized_pnl, (int, float))
+                or not math.isfinite(float(exit_realized_pnl))
+                or not math.isclose(
+                    float(exit_realized_pnl),
+                    realized_pnl_usd,
+                    rel_tol=0.0,
+                    abs_tol=EPISODE_EVIDENCE_EPSILON,
+                )
+            ):
+                missing.add("exit_capture")
+                identity_mismatches.append(
+                    "exit_capture.realized_pnl_usd:mismatch"
+                )
 
         diagnostic_net_utility = executable_net_utility
         if missing:
@@ -1351,7 +1561,7 @@ def extract_episode_execution_evidence(
                 "position_episode": closure,
                 "exit_capture": exit_capture,
                 "execution_policy_identity": policy_identity,
-                "terminal_settlement": terminal,
+                "terminal_settlement": terminal_evidence,
                 "realized_pnl_usd": realized_pnl_usd,
                 "fee_usd": fee_usd,
                 "funding_paid_usd": funding_paid_usd,
@@ -1362,8 +1572,53 @@ def extract_episode_execution_evidence(
                 ),
                 "execution_path_complete": not missing,
                 "missing_path_evidence": _ordered_missing_evidence(missing),
+                "identity_mismatches": list(dict.fromkeys(identity_mismatches)),
             }
         )
+
+    if (
+        terminal_complete
+        and episodes
+        and all(episode.get("execution_path_complete") is True for episode in episodes)
+        and all(
+        isinstance(episode.get(field), (int, float))
+        and math.isfinite(float(episode[field]))
+        for episode in episodes
+        for field in ("diagnostic_net_utility", "fee_usd", "funding_paid_usd")
+        )
+    ):
+        expected_terminal_values = {
+            "realized_net_usd": sum(
+                float(episode["diagnostic_net_utility"]) for episode in episodes
+            ),
+            "fees_usd": sum(float(episode["fee_usd"]) for episode in episodes),
+            "funding_paid_usd": sum(
+                float(episode["funding_paid_usd"]) for episode in episodes
+            ),
+        }
+        terminal_mismatches = [
+            f"terminal_settlement.{field}:mismatch"
+            for field, expected_value in expected_terminal_values.items()
+            if not math.isclose(
+                float(terminal[field]),
+                expected_value,
+                rel_tol=0.0,
+                abs_tol=EPISODE_EVIDENCE_EPSILON,
+            )
+        ]
+        if terminal_mismatches:
+            for episode in episodes:
+                episode["execution_path_complete"] = False
+                episode["utility_source"] = "unverifiable"
+                episode["executable_net_utility"] = None
+                episode["missing_path_evidence"] = _ordered_missing_evidence(
+                    set(episode["missing_path_evidence"]) | {"terminal_settlement"}
+                )
+                episode["identity_mismatches"] = list(
+                    dict.fromkeys(
+                        [*episode["identity_mismatches"], *terminal_mismatches]
+                    )
+                )
 
     top_missing = {
         item
@@ -1380,6 +1635,7 @@ def extract_episode_execution_evidence(
         "schema_version": "episode_execution_evidence_v1",
         "segment_identity_sha256": segment_identity_sha256,
         "execution_policy_identity": policy_identity,
+        "terminal_settlement": terminal_evidence,
         "episode_count": len(episodes),
         "complete_episode_count": complete_count,
         "execution_path_complete": bool(episodes) and complete_count == len(episodes),

@@ -29,6 +29,26 @@ EXPECTED_UPLIFT_POLICY = {
     "bootstrap_trials": 10000,
     "lcb": 0.95,
 }
+EPISODE_EVIDENCE_EPSILON = 1e-6
+EPISODE_LINEAGE_FIELDS = (
+    "decision_id",
+    "candidate_id",
+    "model_version",
+    "mode",
+    "position_episode_id",
+)
+ZERO_TRADE_FORBIDDEN_FIELDS = {
+    "account_pnl",
+    "account_realized_net_usd",
+    "diagnostic_net_utility",
+    "executable_net_utility",
+    "realized_net_usd",
+    "realized_pnl_usd",
+    "self_evolution_update_count",
+    "utility",
+    "virtual_pnl",
+    "virtual_pnl_usd",
+}
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -308,8 +328,25 @@ def _validate_episode(
     symbol = episode.get("symbol")
     entry_regime = episode.get("entry_regime")
     utility = episode.get("executable_net_utility")
-    if not _is_non_empty_string(episode_id):
+    first_fill_id = episode.get("first_fill_id")
+    if not _is_non_empty_string(first_fill_id):
+        missing.append(f"{prefix}.first_fill_id")
+    if not _is_sha256(episode_id):
         missing.append(f"{prefix}.evaluator_episode_id")
+    if (
+        _is_sha256(segment_sha256)
+        and _is_non_empty_string(symbol)
+        and _is_non_empty_string(first_fill_id)
+    ):
+        try:
+            expected_episode_id = hashlib.sha256(
+                f"{segment_sha256}:{symbol}:{first_fill_id}".encode("ascii")
+            ).hexdigest()
+        except UnicodeEncodeError:
+            missing.append(f"{prefix}.evaluator_episode_id.preimage_ascii")
+        else:
+            if episode_id != expected_episode_id:
+                missing.append(f"{prefix}.evaluator_episode_id")
     if episode.get("segment_identity_sha256") != segment_sha256:
         missing.append(f"{prefix}.segment_identity_sha256")
     cell = (str(symbol or ""), str(entry_regime or ""))
@@ -327,6 +364,8 @@ def _validate_episode(
         missing.append(f"{prefix}.executable_net_utility")
     if episode.get("missing_path_evidence") != []:
         missing.append(f"{prefix}.missing_path_evidence=empty")
+    if episode.get("identity_mismatches") != []:
+        missing.append(f"{prefix}.identity_mismatches=empty")
     episode_policy = episode.get("execution_policy_identity")
     if not isinstance(episode_policy, Mapping) or episode_policy.get("sha256") != policy_sha256:
         missing.append(f"{prefix}.execution_policy_identity")
@@ -344,10 +383,24 @@ def _validate_episode(
             missing.append(f"{prefix}.{field}")
     fills = episode.get("fills")
     fill_rows = fills if isinstance(fills, list) else []
+    declared_fill_ids = episode.get("fill_ids")
+    declared_client_order_ids = episode.get("client_order_ids")
+    actual_fill_ids: list[str] = []
+    actual_client_order_ids: list[str] = []
     for fill_index, fill in enumerate(fill_rows):
         if not isinstance(fill, Mapping):
             missing.append(f"{prefix}.fills[{fill_index}]")
             continue
+        fill_id = fill.get("fill_id")
+        client_order_id = fill.get("client_order_id")
+        if not _is_non_empty_string(fill_id):
+            missing.append(f"{prefix}.fills[{fill_index}].fill_id")
+        else:
+            actual_fill_ids.append(str(fill_id))
+        if not _is_non_empty_string(client_order_id):
+            missing.append(f"{prefix}.fills[{fill_index}].client_order_id")
+        else:
+            actual_client_order_ids.append(str(client_order_id))
         for state_field in ("order_state_before", "order_state_after"):
             if str(fill.get(state_field) or "").lower() in {"", "missing"}:
                 missing.append(
@@ -358,20 +411,37 @@ def _validate_episode(
                 missing.append(
                     f"{prefix}.fills[{fill_index}].{numeric_field}"
                 )
+    if len(actual_fill_ids) != len(set(actual_fill_ids)):
+        missing.append(f"{prefix}.fill_id_unique")
+    if fill_rows and first_fill_id != fill_rows[0].get("fill_id"):
+        missing.append(f"{prefix}.first_fill_id")
+    if declared_fill_ids != actual_fill_ids:
+        missing.append(f"{prefix}.fill_ids")
+    if declared_client_order_ids != actual_client_order_ids:
+        missing.append(f"{prefix}.client_order_ids")
     for field in ("realized_pnl_usd", "fee_usd", "funding_paid_usd"):
         if not _is_finite_number(episode.get(field)):
             missing.append(f"{prefix}.{field}")
     lineage = episode.get("candidate_lineage")
     if isinstance(lineage, Mapping) and not all(
         _is_non_empty_string(lineage.get(field))
-        for field in (
-            "decision_id",
-            "candidate_id",
-            "model_version",
-            "position_episode_id",
-        )
+        for field in EPISODE_LINEAGE_FIELDS
     ):
         missing.append(f"{prefix}.candidate_lineage.fields")
+    if isinstance(lineage, Mapping):
+        if episode.get("runtime_position_episode_id") != lineage.get(
+            "position_episode_id"
+        ):
+            missing.append(f"{prefix}.candidate_lineage.position_episode_id")
+        for fill_index, fill in enumerate(fill_rows):
+            fill_lineage = fill.get("candidate_lineage") if isinstance(fill, Mapping) else None
+            if not isinstance(fill_lineage, Mapping) or any(
+                fill_lineage.get(field) != lineage.get(field)
+                for field in EPISODE_LINEAGE_FIELDS
+            ):
+                missing.append(
+                    f"{prefix}.fills[{fill_index}].candidate_lineage"
+                )
     position = episode.get("position_episode")
     client_order_ids = episode.get("client_order_ids")
     client_order_rows = client_order_ids if isinstance(client_order_ids, list) else []
@@ -383,16 +453,66 @@ def _validate_episode(
         != len(set(str(value) for value in client_order_rows))
     ):
         missing.append(f"{prefix}.position_episode.fields")
+    if isinstance(position, Mapping) and isinstance(lineage, Mapping):
+        if any(
+            position.get(field) != lineage.get(field)
+            for field in EPISODE_LINEAGE_FIELDS
+        ):
+            missing.append(f"{prefix}.position_episode.identity")
+    exit_capture = episode.get("exit_capture")
+    if isinstance(exit_capture, Mapping):
+        last_fill = (
+            fill_rows[-1]
+            if fill_rows and isinstance(fill_rows[-1], Mapping)
+            else {}
+        )
+        if (
+            not last_fill
+            or exit_capture.get("client_order_id")
+            != last_fill.get("client_order_id")
+            or exit_capture.get("symbol") != symbol
+        ):
+            missing.append(f"{prefix}.exit_capture.identity")
+        if (
+            _is_finite_number(episode.get("realized_pnl_usd"))
+            and (
+                not _is_finite_number(exit_capture.get("realized_pnl_usd"))
+                or not math.isclose(
+                    float(exit_capture["realized_pnl_usd"]),
+                    float(episode["realized_pnl_usd"]),
+                    rel_tol=0.0,
+                    abs_tol=EPISODE_EVIDENCE_EPSILON,
+                )
+            )
+        ):
+            missing.append(f"{prefix}.exit_capture.realized_pnl_usd")
     terminal = episode.get("terminal_settlement")
     if isinstance(terminal, Mapping) and (
         terminal.get("done_count") != 1
         or terminal.get("failed_count") != 0
+        or terminal.get("position_count") != 0
+        or terminal.get("segment_identity_sha256") != segment_sha256
         or not all(
             _is_finite_number(terminal.get(field))
             for field in ("realized_net_usd", "fees_usd", "funding_paid_usd")
         )
     ):
         missing.append(f"{prefix}.terminal_settlement.fields")
+    if (
+        fill_rows
+        and _is_finite_number(episode.get("fee_usd"))
+        and all(
+            isinstance(fill, Mapping) and _is_finite_number(fill.get("fee"))
+            for fill in fill_rows
+        )
+        and not math.isclose(
+            float(episode["fee_usd"]),
+            sum(abs(float(fill["fee"])) for fill in fill_rows),
+            rel_tol=0.0,
+            abs_tol=EPISODE_EVIDENCE_EPSILON,
+        )
+    ):
+        missing.append(f"{prefix}.fee_sum")
     if all(
         _is_finite_number(episode.get(field))
         for field in (
@@ -407,9 +527,37 @@ def _validate_episode(
         - float(episode["fee_usd"])
         - float(episode["funding_paid_usd"]),
         rel_tol=0.0,
-        abs_tol=1e-9,
+        abs_tol=EPISODE_EVIDENCE_EPSILON,
     ):
         missing.append(f"{prefix}.executable_net_utility_formula")
+    if (
+        isinstance(position, Mapping)
+        and _is_finite_number(utility)
+        and (
+            not _is_finite_number(position.get("realized_net_usd"))
+            or not math.isclose(
+                float(position["realized_net_usd"]),
+                float(utility),
+                rel_tol=0.0,
+                abs_tol=EPISODE_EVIDENCE_EPSILON,
+            )
+        )
+    ):
+        missing.append(f"{prefix}.position_episode.realized_net_usd")
+    if (
+        isinstance(position, Mapping)
+        and _is_finite_number(episode.get("funding_paid_usd"))
+        and (
+            not _is_finite_number(position.get("funding_paid_usd"))
+            or not math.isclose(
+                float(position["funding_paid_usd"]),
+                float(episode["funding_paid_usd"]),
+                rel_tol=0.0,
+                abs_tol=EPISODE_EVIDENCE_EPSILON,
+            )
+        )
+    ):
+        missing.append(f"{prefix}.position_episode.funding_paid_usd")
     if missing:
         return None, _missing(missing)
     normalized = dict(episode)
@@ -539,6 +687,7 @@ def _audit_arm(
         missing.append(f"{prefix}.blocks.coverage")
 
     seen_episode_ids: set[str] = set()
+    first_fill_segments: dict[str, str] = {}
     normalized_episodes: list[dict[str, Any]] = []
     aggregation: dict[tuple[str, str, str], tuple[float, int]] = {}
     zero_trade_blocks: list[str] = []
@@ -605,6 +754,27 @@ def _audit_arm(
                 episodes = []
             episode_count = evidence.get("episode_count")
             complete_count = evidence.get("complete_episode_count")
+            terminal_settlement = evidence.get("terminal_settlement")
+            terminal_complete = (
+                isinstance(terminal_settlement, Mapping)
+                and terminal_settlement.get("done_count") == 1
+                and terminal_settlement.get("failed_count") == 0
+                and terminal_settlement.get("position_count") == 0
+                and terminal_settlement.get("segment_identity_sha256")
+                == segment_sha
+                and all(
+                    _is_finite_number(terminal_settlement.get(field))
+                    for field in (
+                        "realized_net_usd",
+                        "fees_usd",
+                        "funding_paid_usd",
+                    )
+                )
+            )
+            if not terminal_complete:
+                block_missing.append(
+                    f"{block_prefix}.episode_ledger.terminal_settlement"
+                )
             if episodes:
                 if episode_count != len(episodes):
                     block_missing.append(f"{block_prefix}.episode_ledger.episode_count")
@@ -619,6 +789,20 @@ def _audit_arm(
                 if raw_block.get("no_trade_zero_utility") is not False:
                     block_missing.append(f"{block_prefix}.no_trade_zero_utility=false")
                 for episode_index, episode in enumerate(episodes):
+                    raw_episode_id = (
+                        str(episode.get("evaluator_episode_id") or "")
+                        if isinstance(episode, Mapping)
+                        else ""
+                    )
+                    duplicate_episode_id = bool(
+                        raw_episode_id and raw_episode_id in seen_episode_ids
+                    )
+                    if duplicate_episode_id:
+                        block_missing.append(
+                            f"{block_prefix}.episode_id_duplicate:{raw_episode_id}"
+                        )
+                    elif raw_episode_id:
+                        seen_episode_ids.add(raw_episode_id)
                     normalized, episode_missing = _validate_episode(
                         episode,
                         prefix=f"{block_prefix}.episodes[{episode_index}]",
@@ -628,16 +812,80 @@ def _audit_arm(
                         planned_cells=planned_cells,
                     )
                     block_missing.extend(episode_missing)
-                    if normalized is not None:
-                        episode_id = str(normalized["evaluator_episode_id"])
-                        if episode_id in seen_episode_ids:
+                    if normalized is not None and not duplicate_episode_id:
+                        first_fill_id = str(normalized["first_fill_id"])
+                        block_episodes.append(normalized)
+                        previous_segment = first_fill_segments.get(first_fill_id)
+                        if (
+                            previous_segment is not None
+                            and previous_segment != segment_sha
+                        ):
                             block_missing.append(
-                                f"{block_prefix}.episode_id_duplicate:{episode_id}"
+                                f"{block_prefix}.first_fill_id_cross_segment_reuse:"
+                                f"{first_fill_id}"
                             )
                         else:
-                            seen_episode_ids.add(episode_id)
-                            block_episodes.append(normalized)
+                            first_fill_segments[first_fill_id] = str(segment_sha)
+                        if (
+                            isinstance(terminal_settlement, Mapping)
+                            and normalized.get("terminal_settlement")
+                            != terminal_settlement
+                        ):
+                            block_missing.append(
+                                f"{block_prefix}.episodes[{episode_index}]."
+                                "terminal_settlement_identity"
+                            )
+                if terminal_complete and len(block_episodes) == len(episodes):
+                    terminal_expectations = {
+                        "realized_net_usd": sum(
+                            float(episode["executable_net_utility"])
+                            for episode in block_episodes
+                        ),
+                        "fees_usd": sum(
+                            float(episode["fee_usd"])
+                            for episode in block_episodes
+                        ),
+                        "funding_paid_usd": sum(
+                            float(episode["funding_paid_usd"])
+                            for episode in block_episodes
+                        ),
+                    }
+                    for field, expected_value in terminal_expectations.items():
+                        if not math.isclose(
+                            float(terminal_settlement[field]),
+                            expected_value,
+                            rel_tol=0.0,
+                            abs_tol=EPISODE_EVIDENCE_EPSILON,
+                        ):
+                            block_missing.append(
+                                f"{block_prefix}.episode_ledger.terminal_{field}"
+                            )
             else:
+                aggregate_pollution = sorted(
+                    ZERO_TRADE_FORBIDDEN_FIELDS & set(evidence)
+                )
+                if aggregate_pollution:
+                    block_missing.append(
+                        f"{block_prefix}.episode_ledger.aggregate_pollution:"
+                        + ",".join(aggregate_pollution)
+                    )
+                zero_terminal_complete = terminal_complete and all(
+                    math.isclose(
+                        float(terminal_settlement[field]),
+                        0.0,
+                        rel_tol=0.0,
+                        abs_tol=EPISODE_EVIDENCE_EPSILON,
+                    )
+                    for field in (
+                        "realized_net_usd",
+                        "fees_usd",
+                        "funding_paid_usd",
+                    )
+                )
+                if terminal_complete and not zero_terminal_complete:
+                    block_missing.append(
+                        f"{block_prefix}.episode_ledger.terminal_nonzero"
+                    )
                 zero_trade = (
                     episode_count == 0
                     and complete_count == 0
@@ -645,11 +893,11 @@ def _audit_arm(
                     and evidence.get("aggregate_only_rejected") is True
                     and evidence.get("missing_path_evidence") == ["fills"]
                     and raw_block.get("no_trade_zero_utility") is True
+                    and zero_terminal_complete
+                    and not aggregate_pollution
                 )
                 if not zero_trade:
                     block_missing.append(f"{block_prefix}.episode_ledger.zero_trade_contract")
-                elif raw_block.get("assess_exit_code") != 1:
-                    block_missing.append(f"{block_prefix}.zero_trade_assess_exit_code=1")
         for episode in block_episodes:
             key = (
                 block_id,
