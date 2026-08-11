@@ -839,7 +839,7 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
     )
     cross_asset = development.get("cross_asset_feature_contract", {})
     if not (
-        development.get("schema_version") == "microstructure_alpha_development_v5"
+        development.get("schema_version") == "microstructure_alpha_development_v6"
         and development.get("status") == "PASS"
         and development.get("fully_verifiable") is True
         and development.get("research_domain") == "forward_development_only"
@@ -897,23 +897,26 @@ def audit_microstructure_lifecycle(lifecycle: Dict[str, Any]) -> Dict[str, Any]:
         >= 0.60
         and validation.get("oos_windows_non_overlapping") is True
         and isinstance(model_contract, dict)
-        and model_contract.get("loss_function") == "Quantile"
-        and isinstance(model_contract.get("loss_alpha"), (int, float))
-        and 0.90 <= float(model_contract.get("loss_alpha")) <= 0.99
+        and model_contract.get("loss_function") == "Logloss"
+        and model_contract.get("eval_metric") == "PRAUC:type=Classic"
+        and model_contract.get("class_weighting") == "none"
         and model_contract.get("model_topology")
-        == "independent_single_output_quantile_regressor_per_action"
+        == "independent_binary_stress_event_classifier_per_action"
         and model_contract.get("development_model_scope")
         == "one_model_per_fit_learnable_predeclared_action"
         and model_contract.get("frozen_model_scope")
         == "single_consensus_action_model"
         and model_contract.get("training_target")
-        == "fit_only_independent_winsorized_executable_net_return"
+        == "fit_only_stress_cost_profitable_event"
         and model_contract.get("estimation_statistic")
-        == "conditional_upper_quantile"
-        and model_contract.get("target_normalization")
-        == "per_action_fit_only_winsorized_zero_mean_unit_variance"
+        == "stress_profitability_probability"
+        and model_contract.get("target_encoding") == "binary_zero_one"
         and model_contract.get("inference_score")
-        == "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps"
+        == "fit_only_event_conditional_expected_base_net_bps"
+        and isinstance(
+            model_contract.get("minimum_profitable_events_per_action"), int
+        )
+        and int(model_contract.get("minimum_profitable_events_per_action")) >= 16
         and model_contract.get("policy_selection")
         == "nested_per_action_threshold_then_mode_action_freeze"
         and model_contract.get("economic_acceptance_target")

@@ -38,7 +38,7 @@ STATE_SCHEMA_VERSION = "microstructure_alpha_lifecycle_state_v1"
 EVENT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_event_v1"
 CHECKPOINT_SCHEMA_VERSION = "microstructure_alpha_lifecycle_checkpoint_v1"
 CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
-ALGORITHM_CONTRACT_REVISION = "causal_order_flow_quantile_v7"
+ALGORITHM_CONTRACT_REVISION = "causal_order_flow_stress_event_v8"
 TERMINAL_PHASES = {"rejected", "demo_ready"}
 FROZEN_PHASES = {
     "selection_collecting",
@@ -315,23 +315,26 @@ def validate_development_candidate(
     model_contract = report.get("model_contract", {})
     if not (
         isinstance(model_contract, dict)
-        and model_contract.get("loss_function") == "Quantile"
-        and isinstance(model_contract.get("loss_alpha"), (int, float))
-        and 0.90 <= float(model_contract.get("loss_alpha")) <= 0.99
+        and model_contract.get("loss_function") == "Logloss"
+        and model_contract.get("eval_metric") == "PRAUC:type=Classic"
+        and model_contract.get("class_weighting") == "none"
         and model_contract.get("model_topology")
-        == "independent_single_output_quantile_regressor_per_action"
+        == "independent_binary_stress_event_classifier_per_action"
         and model_contract.get("development_model_scope")
         == "one_model_per_fit_learnable_predeclared_action"
         and model_contract.get("frozen_model_scope")
         == "single_consensus_action_model"
         and model_contract.get("training_target")
-        == "fit_only_independent_winsorized_executable_net_return"
+        == "fit_only_stress_cost_profitable_event"
         and model_contract.get("estimation_statistic")
-        == "conditional_upper_quantile"
-        and model_contract.get("target_normalization")
-        == "per_action_fit_only_winsorized_zero_mean_unit_variance"
+        == "stress_profitability_probability"
+        and model_contract.get("target_encoding") == "binary_zero_one"
         and model_contract.get("inference_score")
-        == "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps"
+        == "fit_only_event_conditional_expected_base_net_bps"
+        and isinstance(
+            model_contract.get("minimum_profitable_events_per_action"), int
+        )
+        and int(model_contract.get("minimum_profitable_events_per_action")) >= 16
         and model_contract.get("policy_selection")
         == "nested_per_action_threshold_then_mode_action_freeze"
         and model_contract.get("economic_acceptance_target")
@@ -381,9 +384,9 @@ def validate_development_candidate(
     if not (
         isinstance(target_transform, dict)
         and target_transform.get("method")
-        == "fit_only_winsorized_action_net_return_v4"
+        == "fit_only_stress_profitability_event_v5"
         and target_transform.get("training_objective")
-        == "independent_executable_base_net_return_bps"
+        == "independent_stress_cost_profitable_event"
         and target_transform.get("validation_or_test_statistics_used") is False
         and isinstance(action_statistics, list)
         and len(action_statistics) == len(report.get("target_contract", {}).get("actions", []))
@@ -435,6 +438,9 @@ def validate_development_candidate(
     try:
         policy_action_index = int(frozen.get("policy_action_index"))
         policy_threshold = float(frozen.get("policy_threshold_bps"))
+        policy_probability_threshold = float(
+            frozen.get("policy_event_probability_threshold")
+        )
     except (TypeError, ValueError) as exc:
         raise LifecycleError("frozen development policy contract is invalid") from exc
     if not (
@@ -444,7 +450,8 @@ def validate_development_candidate(
         and frozen.get("action_aggregation")
         == "mode_of_nested_split_selected_actions"
         and frozen.get("threshold_aggregation")
-        == "median_of_nested_split_thresholds_for_frozen_action"
+        == "median_nested_event_probability_then_final_fit_bps_reconstruction"
+        and 0.0 <= policy_probability_threshold <= 1.0
     ):
         raise LifecycleError("frozen development action/threshold contract failed")
     try:
@@ -463,6 +470,12 @@ def validate_development_candidate(
             np.zeros((1, len(model_action_indices)), dtype=np.float64),
             target_transform,
         )
+        reconstructed_policy_threshold = float(
+            development.reconstruct_base_net_scores(
+                np.asarray([[policy_probability_threshold]], dtype=np.float64),
+                target_transform,
+            )[0, policy_action_index]
+        )
     except (TypeError, ValueError) as exc:
         raise LifecycleError("development target transform statistics are invalid") from exc
     if not (
@@ -473,8 +486,16 @@ def validate_development_candidate(
             rel_tol=0.0,
             abs_tol=1e-12,
         )
+        and math.isclose(
+            policy_threshold,
+            reconstructed_policy_threshold,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
     ):
-        raise LifecycleError("development target transform cost scaling mismatch")
+        raise LifecycleError(
+            "development target transform cost scaling/threshold transport mismatch"
+        )
     horizons = [int(item.get("horizon_seconds") or 0) for item in actions if isinstance(item, dict)]
     if len(horizons) != len(actions) or min(horizons) <= 0:
         raise LifecycleError("development action horizons are invalid")
@@ -643,9 +664,9 @@ def expire_obsolete_candidate_contract(
 
 
 def load_frozen_model(path: pathlib.Path) -> Any:
-    if development.CatBoostRegressor is None:
+    if development.CatBoostClassifier is None:
         raise LifecycleError("catboost is required; use ai-trade-research image")
-    model = development.CatBoostRegressor()
+    model = development.CatBoostClassifier()
     model.load_model(str(path))
     return model
 

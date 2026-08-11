@@ -82,8 +82,9 @@ def synthetic_series(row_count: int = 500) -> dict[str, np.ndarray]:
 
 
 class FakeModel:
-    def predict(self, features):
-        return np.full((len(features), 1), 10.0, dtype=np.float64)
+    def predict_proba(self, features):
+        positive = np.full(len(features), 0.99, dtype=np.float64)
+        return np.column_stack((1.0 - positive, positive))
 
 
 def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
@@ -115,18 +116,20 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
     }
     model_contract = {
         "library": "catboost",
-        "loss_function": "Quantile",
-        "loss_alpha": 0.95,
-        "model_topology": "independent_single_output_quantile_regressor_per_action",
+        "loss_function": "Logloss",
+        "eval_metric": "PRAUC:type=Classic",
+        "class_weighting": "none",
+        "model_topology": "independent_binary_stress_event_classifier_per_action",
         "development_model_scope": "one_model_per_fit_learnable_predeclared_action",
         "frozen_model_scope": "single_consensus_action_model",
-        "training_target": "fit_only_independent_winsorized_executable_net_return",
-        "estimation_statistic": "conditional_upper_quantile",
-        "target_normalization": "per_action_fit_only_winsorized_zero_mean_unit_variance",
-        "inference_score": "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps",
+        "training_target": "fit_only_stress_cost_profitable_event",
+        "estimation_statistic": "stress_profitability_probability",
+        "target_encoding": "binary_zero_one",
+        "inference_score": "fit_only_event_conditional_expected_base_net_bps",
         "policy_selection": "nested_per_action_threshold_then_mode_action_freeze",
         "economic_acceptance_target": "untransformed_executable_base_and_stress_net_return",
         "validation_or_test_target_statistics_used_for_fit": False,
+        "minimum_profitable_events_per_action": 16,
     }
     capture_merge_audit = {
         "method": development.CAPTURE_MERGE_CONTRACT["method"],
@@ -144,29 +147,31 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "output_feature_row_count": 500,
     }
     target_transform = {
-        "method": "fit_only_winsorized_action_net_return_v4",
-        "training_objective": "independent_executable_base_net_return_bps",
+        "method": "fit_only_stress_profitability_event_v5",
+        "training_objective": "independent_stress_cost_profitable_event",
         "actions": target_contract["actions"],
         "available_action_indices": [0],
         "model_action_indices": [0],
         "model_output_count": 1,
-        "target_normalization": "per_action_fit_only_winsorized_zero_mean_unit_variance",
-        "inference_reconstruction": "inverse_fit_location_scale_clipped_to_fit_winsor_bounds_bps",
+        "event_definition": "executable_base_net_return_bps_gt_stress_incremental_cost_bps",
+        "minimum_profitable_events_per_action": 16,
+        "minimum_unprofitable_events_per_action": 16,
+        "target_encoding": "binary_zero_one",
+        "inference_reconstruction": "fit_only_event_conditional_expected_base_net_bps",
         "validation_or_test_statistics_used": False,
         "stress_incremental_cost_bps": 0.025,
-        "winsor_lower_quantile": 0.01,
-        "winsor_upper_quantile": 0.99,
         "action_statistics": [
             {
                 "action_index": index,
                 "row_count": 1000,
-                "lower_clip_bps": -1.0,
-                "upper_clip_bps": 1.0 if index == 0 else -1.0,
-                "winsorized_location_bps": 0.0 if index == 0 else -1.0,
-                "winsorized_scale_bps": 1.0 if index == 0 else 0.0,
                 "raw_mean_base_net_bps": 0.0 if index == 0 else -1.0,
+                "raw_minimum_base_net_bps": -1.0,
+                "raw_maximum_base_net_bps": 1.0 if index == 0 else -1.0,
                 "stress_profitable_count": 500 if index == 0 else 0,
+                "stress_unprofitable_count": 500 if index == 0 else 1000,
                 "stress_profitable_rate": 0.5 if index == 0 else 0.0,
+                "stress_profitable_mean_base_net_bps": 1.0 if index == 0 else None,
+                "stress_unprofitable_mean_base_net_bps": -1.0,
                 "learnable": index == 0,
             }
             for index in range(2)
@@ -180,8 +185,9 @@ def make_candidate(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, path
         "policy_action_index": 0,
         "policy_action": target_contract["actions"][0],
         "policy_threshold_bps": 0.1,
+        "policy_event_probability_threshold": 0.55,
         "action_aggregation": "mode_of_nested_split_selected_actions",
-        "threshold_aggregation": "median_of_nested_split_thresholds_for_frozen_action",
+        "threshold_aggregation": "median_nested_event_probability_then_final_fit_bps_reconstruction",
         "target_transform": target_transform,
         "model_contract": model_contract,
     }
@@ -273,6 +279,34 @@ def make_args(root: pathlib.Path, report: pathlib.Path, manifest: pathlib.Path, 
 
 
 class MicrostructureAlphaLifecycleTest(unittest.TestCase):
+    def test_candidate_rejects_probability_and_bps_threshold_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            report_path, manifest_path, model = make_candidate(root)
+            report = json.loads(report_path.read_text())
+            report["frozen_candidate"]["policy_event_probability_threshold"] = 0.5
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+
+            manifest = json.loads(manifest_path.read_text())
+            manifest["identity_contract"]["frozen_candidate"][
+                "policy_event_probability_threshold"
+            ] = 0.5
+            manifest["candidate_id"] = lifecycle.canonical_sha256(
+                manifest["identity_contract"]
+            )
+            manifest["development_report"]["sha256"] = lifecycle.sha256_file(
+                report_path
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                lifecycle.LifecycleError,
+                "threshold transport mismatch",
+            ):
+                lifecycle.validate_development_candidate(
+                    report_path, manifest_path, model
+                )
+
     def test_candidate_identity_must_bind_exact_development_report(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

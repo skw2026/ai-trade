@@ -3303,7 +3303,7 @@ payload = json.loads(
     .read_text(encoding="utf-8")
 )
 contract_ok = bool(
-    payload.get("schema_version") == "microstructure_alpha_development_v5"
+    payload.get("schema_version") == "microstructure_alpha_development_v6"
     and payload.get("status") == "PASS"
     and payload.get("fully_verifiable") is True
     and payload.get("research_domain") == "forward_development_only"
