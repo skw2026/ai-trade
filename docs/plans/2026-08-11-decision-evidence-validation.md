@@ -14,6 +14,7 @@
 ## 固定技术决策
 
 - Benchmark schema 为 `decision_evidence_benchmark_v1`，强制绑定 `data`、`split`、`cost`、`features`、`actions`、`baseline_policy`、`run_config`、`implementation` 八个组件；内容身份不一致即 `UNVERIFIABLE`。
+- 公共 benchmark consumer 对 canonical identity 执行严格 schema 校验：block、cell、execution 必须使用精确字段集合并稳定排序/唯一，execution 与 cell/symbol 全覆盖、事件身份和 `data` SHA 一致；八组件的 logical name 集合必须与冻结 universe 精确匹配，不能只检查组件存在。
 - 统计阈值放在 `config/decision_evidence_validation.json` 并纳入 benchmark：alignment 至少 8 candidates/5 independent blocks、单侧 `alpha=0.05`、10,000 次确定性置换；uplift 至少 8 independent blocks、冻结 block 覆盖率 100%、10,000 次确定性 block bootstrap、95% LCB 严格大于零；family/information-set 失败预算分别为 3/8。
 - Alignment 固定验证 `miner`、`market_alpha`、`microstructure`、`online_tuner`。完整执行净效用缺失时必须明确 `UNVERIFIABLE`；不得用 IC/AUC/RMSE/oracle/virtual PnL 补值。
 - Paired replay 先从当前 runtime config 走现有 replay-config derivation 得到共同 replay policy，再只切换 `self_evolution.enabled`。两臂运行同一 feature/corpus/segment/trade_bot/cost，全量执行冻结 block，不按各自结果 early-stop。
@@ -44,7 +45,7 @@ Manifest 的固定形状为：
     "data": {
       "logical_id": "market-events-test-v1",
       "files": [
-        {"logical_name": "events", "path": "/tmp/decision-evidence-test/events.csv", "sha256": "1111111111111111111111111111111111111111111111111111111111111111"}
+        {"logical_name": "execution:block-01:BTCUSDT", "path": "/tmp/decision-evidence-test/events.csv", "sha256": "2222222222222222222222222222222222222222222222222222222222222222"}
       ]
     }
   },
@@ -57,6 +58,14 @@ Manifest 的固定形状为：
         "event_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
         "cells": [
           {"symbol": "BTCUSDT", "entry_regime": "trend"}
+        ],
+        "executions": [
+          {
+            "execution_id": "block-01:BTCUSDT",
+            "symbol": "BTCUSDT",
+            "planned_entry_regimes": ["trend"],
+            "event_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          }
         ]
       }
     ]
@@ -64,7 +73,9 @@ Manifest 的固定形状为：
 }
 ```
 
-八个 component 均使用相同对象形状。`benchmark_id` 对移除所有 `path`、保留 `logical_id`、`logical_name` 和校验后的 SHA256 所形成的 canonical identity object 求 SHA256，因此搬动相同内容不会改变 ID。Block 必须按时间不重叠，`start_timestamp_ms <= end_timestamp_ms`，block/cell 唯一且稳定排序。
+八个 component 均使用相同对象形状。`benchmark_id` 对移除所有 `path`、保留 `logical_id`、`logical_name` 和校验后的 SHA256 所形成的 canonical identity object 求 SHA256，因此搬动相同内容不会改变 ID。Block 精确包含 `block_id/start_timestamp_ms/end_timestamp_ms/event_sha256/cells/executions`，cell 精确包含 `symbol/entry_regime`，execution 精确包含 `execution_id/symbol/planned_entry_regimes/event_sha256`。所有层级必须唯一、稳定排序且 block 时间不重叠；每个 `execution_id` 固定为 `block_id:symbol`，execution 的 symbol/regime 必须恰好覆盖 cells，block/data 的事件身份必须与 executions 一致。
+
+固定 logical name 合同为：`data=execution:<execution_id>`；`split=replay_validation_report,corpus:<symbol>`；`cost=replay_candidate_config,runtime_config`；`features=feature:<symbol>`；`actions=replay_policy,runtime_policy`；`baseline_policy=candidate_model,candidate_report`；`run_config=decision_evidence_validation,runtime_config`；`implementation=benchmark_builder,paired_evolution_runner,replay_validation_runner,trade_bot`。动态 execution/symbol 集必须与 evaluation universe 完全一致；多出、缺失、重复或 SHA 不一致均失败关闭。公共 consumer 只校验 canonical identity，不通过 identity 中的路径重新取证。
 
 ### Candidate alignment evidence
 
@@ -113,6 +124,10 @@ from tools.config_policy_contract import policy_payload, policy_sha256
 
 CLI 固定接收 `--runtime-config`、`--candidate-model`、`--candidate-report`、`--feature-csv`、`--corpus-manifest`、`--trade-bot`、`--output-dir`、`--benchmark-report`。先调用 `derive_candidate_config` 形成共同 replay policy，再生成 frozen/adaptive 两个文件。对 `policy_payload` 递归比较时只允许路径 `self_evolution.enabled` 不同；共同派生相对 runtime 的 mode/shadow 变化单独记录，不属于两臂差异。
 
+Benchmark builder 在物化 evaluation universe 前，必须将每个 symbol 选中的 feature CSV 解析为 canonical absolute path 并计算实际 SHA256，逐项与 replay report 的 `frozen_corpus_binding.per_symbol.source_feature_csv/source_feature_sha256` 一致；不得用路径不同或内容相同但非生产者冻结来源的替代 feature。replay report 本身是必需的 `split:replay_validation_report` 输入，缺失时不能构建或运行 paired replay。
+
+Paired runner 在启动任一 arm 前，对实际消费输入进行全量集合对账：`data` 必须覆盖所有 `execution:*`，`split` 必须覆盖 `replay_validation_report` 和全部 `corpus:*`，并同时核对 replay report 内容身份；`actions` 必须同时绑定共同派生的 `replay_policy` 与 `runtime_policy`；`implementation` 必须绑定 builder、paired runner、replay validation runner 和 `trade_bot`。其余 cost/features/baseline/run_config 也按上述固定 logical names 精确匹配，`input_binding_audit` 任一缺失、额外或 SHA 漂移都在两臂执行前失败关闭。
+
 两臂及每个 block 都从空 state 目录和 runtime config 的相同 `initial_trend_weight`、`initial_defensive_weight` 开始；禁止加载历史 evolution state，禁止在 block 间延续 adaptive state。Manifest 固定记录 `source_runtime_config_sha256`、共同派生 config hash、两臂 config hash、去除 evolution 开关后的 common policy hash、初始权重 payload/hash、空状态声明、trade_bot hash、candidate model/report hash。任何字段缺失即 `UNVERIFIABLE`。
 
 Episode 证据由现有日志事件按时间和 symbol 关联：`REGIME_CHANGE.bucket`（不是细粒度 `regime` 字段）提供进入持仓前最近的 `entry_regime`；`FILL_APPLIED` 中 `local_qty_before=0` 到非零开始 episode、回到零结束 episode，`fill_id/client_order_id/order_state/fee` 证明 OMS 与 fill 路径；`EXIT_CAPTURE_SAMPLE` 证明退出与成本捕获；持仓期间 `FUNDING_APPLIED` 累加 funding；run 级 replay terminal settlement 完成证明末端平仓。Evaluator episode ID 固定为 `SHA256(segment_identity_sha256 + ":" + symbol + ":" + first_fill_id)`。任一 fill 的 order state 为 `missing`、入场 regime/退出/费用/terminal settlement 缺失时路径不完整。Slippage/fee policy 由已验证的 execution-policy identity 和 config 内容绑定，不要求新增 C++ 日志字段。
@@ -150,9 +165,13 @@ Bootstrap 每次有放回抽取恰好 `N` 个完整 block；抽中一个 block �
 
 Sequence 从 1 开始且逐条恰好加一。`record_hash` 的 preimage 是移除顶层 `record_hash` 后的完整 record，以 `sort_keys=True`、separators 为逗号/冒号、ASCII JSON 编码得到的 bytes；其 SHA256 小写 hex 为 `record_hash`。第 1 条 previous hash 为 64 位零，后续 previous hash 必须等于前一条已验证的 `record_hash`。多于一个 changed dimension 明确返回 `STOP_CURRENT_FAMILY` 且不追加；缺字段、身份/hash/time 非法返回 `BLOCK_INVALID_LEDGER` 且不追加。
 
+预注册 `result_source_path` 必须等于 `pathlib.Path(value).resolve(strict=False)` 的字符串表示，即无 `.`/`..`、别名或相对路径的 canonical absolute path；注册时路径必须不存在且不能复用。observe 只能从该精确路径安全读取注册后生成的只读 canonical result artifact。
+
 ### 三通道 benchmark 一致性与决策优先级
 
 Alignment、uplift、ledger audit 子报告都必须携带 `benchmark_id`。统一报告以 verified benchmark report 的 ID 为 expected，逐 section 比较并输出 `expected_benchmark_id`、`actual_benchmark_id`；只把错配 section 改为 `UNVERIFIABLE`，仍读取其他 section。
+
+统一报告 CLI 必须同时接收真实 ledger 文件和完整 proposal，生成报告时重新只读执行 `audit-next`，并将权威重审的 identity、registration、proposal hash、预算、canonical result path、ledger tail/checkpoint 与输入 ledger audit 逐字段比对。alignment/uplift 也必须通过各自 artifact validator，uplift 必须核对 paired `input_binding_audit`。骨架正向 JSON、预算与 decision/reason 矛盾、任一 child validator 异常或 audit 不一致一律视为 `UNVERIFIABLE` 并顶层 `STOP`，不得沿用 child 自报成功。
 
 决策优先级固定：benchmark 非法、任一 section 缺失/损坏/`UNVERIFIABLE`、ledger `BLOCK_INVALID_LEDGER` 或未知状态 => `STOP`；否则任一 subsystem `NOT_ALIGNED`、uplift `NOT_PROVEN` 或 ledger `STOP_CURRENT_FAMILY` => `CHANGE_INFORMATION_SET`；仅四 subsystem 全部 `ALIGNED`、uplift `UPLIFT_PROVEN`、ledger `ALLOW_NEXT_EXPERIMENT` => `CONTINUE`。Reason codes 按 benchmark、alignment subsystem、uplift、ledger 的固定顺序输出。
 
@@ -223,7 +242,7 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 - `tools/validate_decision_benchmark.py`
 - `tools/test_validate_decision_benchmark.py`
 
-**Covers Scenario:** `相同 benchmark 可验证`、`benchmark 漂移被阻断`
+**Covers Scenario:** `相同 benchmark 可验证`、`benchmark 漂移被阻断`、`每个消费者独立重验 benchmark`
 
 - [x] 在 `tools/test_validate_decision_benchmark.py` 先覆盖八组件完整时 canonical ID 稳定、路径改变但 logical identity/内容不变时 ID 不变。
 - [x] 先覆盖任一组件缺失、文件不存在、声明 SHA256 与实际内容不一致时 `UNVERIFIABLE`，且 drift 按 component/logical name 稳定排序并含 expected/actual。
@@ -309,7 +328,7 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 - `tools/run_paired_evolution_replay.py`
 - `tools/test_run_paired_evolution_replay.py`
 
-**Covers Scenario:** `自进化产生可归因 uplift`、`禁止用代理收益替代完整回放`
+**Covers Scenario:** `实际八组件输入在执行前绑定`、`真实 per-symbol source corpus 形成公共时间块日历`、`自进化产生可归因 uplift`、`禁止用代理收益替代完整回放`
 
 - [x] 先测试当前 runtime config 经现有 replay-config derivation 转为共同 replay policy，随后两臂只有 `self_evolution.enabled` 一个差异；生产 S5 的其余自进化参数必须保留。
 - [x] 先测试两臂和每个 block 都从相同 initial weights 与空 evolution state 启动，任何历史状态加载、初始权重 hash 不同或 block 间状态延续都使 manifest 为 `UNVERIFIABLE`。
@@ -354,7 +373,7 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 - `tools/experiment_budget_ledger.py`
 - `tools/test_experiment_budget_ledger.py`
 
-**Covers Scenario:** `单变量实验获得执行许可`、`重复优化被停止`、`事后注册被阻断`
+**Covers Scenario:** `单变量实验获得执行许可`、`重复优化被停止`、`预注册由服务端时间和未来结果路径约束`、`observe 只从预声明的不可变结果 artifact 取证`、`append 中断仅能恢复到完整 before 或 after 状态`
 
 - [x] 先测试空账本合法 register 后 `ALLOW_NEXT_EXPERIMENT`，输出 family/information-set 剩余预算。
 - [x] 先测试 register 强制包含 experiment ID、benchmark ID、information-set definition/ID、hypothesis-family definition/ID、唯一 changed dimension、expected direction、stop condition 和 registered_at；任一缺失、ID 重复、benchmark 漂移或维度数不为 1 时阻断。
@@ -376,7 +395,7 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 - `tools/experiment_budget_ledger.py`
 - `tools/test_experiment_budget_ledger.py`
 
-**Covers Scenario:** `benchmark 漂移被阻断`、`单变量实验获得执行许可`、`事后注册被阻断`
+**Covers Scenario:** `benchmark 漂移被阻断`、`单变量实验获得执行许可`、`预注册由服务端时间和未来结果路径约束`
 
 - [x] 先测试 `audit-next` 的 `ALLOW_NEXT_EXPERIMENT` 与 `STOP_CURRENT_FAMILY` 报告携带 proposal 中经账本校验的 `benchmark_id`。
 - [x] 先测试账本已有记录时 proposal benchmark 漂移仍为 `BLOCK_INVALID_LEDGER`，报告携带 expected/actual benchmark ID，不得把 proposal 值伪装成已验证身份。
@@ -412,7 +431,7 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 - `tools/closed_loop_runner.sh`
 - `tools/test_closed_loop_runner_transaction.py`
 
-**Covers Scenario:** `Alpha 路由失败时仍生成决定性证据`、`决定性报告无晋升权限`、`benchmark 漂移被阻断`、`代理目标证据不足`、`禁止用代理收益替代完整回放`、`事后注册被阻断`
+**Covers Scenario:** `Alpha 路由失败时仍生成决定性证据`、`Full Loop 只读审计已预注册实验`、`决定性报告无晋升权限`、`benchmark 漂移被阻断`、`代理目标证据不足`、`禁止用代理收益替代完整回放`、`预注册由服务端时间和未来结果路径约束`
 
 - [x] 先测试 Alpha source route 非零后 benchmark/alignment/paired replay/uplift/ledger/unified 六步仍各执行一次，`blocked_by_prior_failure=false` 且不为 skipped。
 - [x] 先测试任一决定性步骤失败时其余步骤和 unified builder 仍执行。
@@ -454,7 +473,7 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 - `CMakeLists.txt`
 - `docs/配置手册.md`
 
-**Covers Scenario:** 全部 11 个 OpenSpec Scenario
+**Covers Scenario:** 全部 17 个 OpenSpec Scenario
 
 - [x] 在 `CMakeLists.txt` 注册六组新工具测试，并注册现有 `tools/test_run_replay_validation.py`。
 - [x] 在配置手册记录 benchmark 八组件、candidate evidence、runtime-to-replay 派生、双臂唯一差异、逐臂 episode 完整性、block 聚合/bootstrap、账本命令和 Full Loop 独立步骤。
@@ -471,14 +490,20 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 |---|---|---|
 | 相同 benchmark 可验证 | 1 | 10 |
 | benchmark 漂移被阻断 | 1、2A、6A | 8、10 |
+| 每个消费者独立重验 benchmark | 1、3、5、6A、7 | 8、9、10 |
 | 代理目标与净效用同向 | 3 | 7、10 |
 | 代理目标证据不足 | 2、3 | 8、10 |
+| 实际八组件输入在执行前绑定 | 1、4 | 5、8、10 |
+| 真实 per-symbol source corpus 形成公共时间块日历 | 1、2A、4 | 5、8、10 |
 | 自进化产生可归因 uplift | 2、2A、4、5 | 7、10 |
 | 禁止用代理收益替代完整回放 | 2、2A、4、5 | 8、10 |
 | 单变量实验获得执行许可 | 6、6A | 7、10 |
 | 重复优化被停止 | 6 | 7、10 |
-| 事后注册被阻断 | 6、6A | 8、10 |
+| 预注册由服务端时间和未来结果路径约束 | 6、6A | 8、10 |
+| observe 只从预声明的不可变结果 artifact 取证 | 6 | 7、10 |
+| append 中断仅能恢复到完整 before 或 after 状态 | 6 | 7、10 |
 | Alpha 路由失败时仍生成决定性证据 | 7、8、9 | 10 |
+| Full Loop 只读审计已预注册实验 | 6A、7、8 | 9、10 |
 | 决定性报告无晋升权限 | 7、8、9 | 10 |
 
 ## Execution Handoff
@@ -527,8 +552,11 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 ### CR-7: 闭合跨产物信任根
 
 - [x] 公共 benchmark consumer 校验重算 `canonical_sha256(canonical_identity)`，并要求完整 validation policy/字节 SHA 与冻结 identity 一致；alignment、uplift、ledger、unified 不得只信自报 `benchmark_id/status`。
+- [x] 公共 consumer 进一步严格验证 block/cell/execution 精确 schema、排序/唯一/覆盖/事件身份和固定八组件 logical name 集；自重哈希的空壳 universe 也必须拒绝。
 - [x] unified builder 对 alignment/uplift/ledger 正向报告执行严格 schema 与派生状态校验；缺候选/block/bootstrap/arm/registration 审计的骨架 JSON 不得 `CONTINUE`。
+- [x] unified builder 使用真实 ledger + 完整 proposal 重新只读执行 `audit-next`，并逐字段核对输入 audit；预算/理由矛盾、canonical result path 非法或任一 child validator 异常均 `STOP`。
 - [x] paired replay 在执行前将实际 runtime、candidate model/report、trade bot、per-symbol feature/corpus 的内容 SHA 逐项绑定 benchmark 八组件；显式 benchmark 也不得替换输入。
+- [x] paired replay 对全部 `data/split/actions/implementation` logical names 做精确集合/SHA 审计，强制包含实际 replay report；builder 同时绑定 replay 冻结的 per-symbol source feature canonical path 与 SHA。
 - [x] runner 从真实 replay report 的 frozen per-symbol corpus binding 生成 builder mapping；benchmark builder 把边界不同但重叠的 per-symbol segments 冻结为确定性、互不重叠的共同 block 日历。
 - [x] ledger 注册时间由持锁 append 生成；结果源在注册时必须不存在并绑定 nonce/path，observe 的不可变结果制品必须携带 nonce 且产生于注册之后。recovery marker 同时记录 before/after checkpoint 与 pending record，覆盖 marker-fsync 后进程终止窗口。
 - [x] 所有 fail-closed 决定性 fallback 显式写 `promotion_authority=false`、`demo_activation_authorized=false`、`live_activation_authorized=false`。
