@@ -15,6 +15,20 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    LEDGER_REGISTRATION_FIELDS = {
+        "experiment_id",
+        "benchmark_id",
+        "validation_policy_sha256",
+        "information_set_definition",
+        "information_set_id",
+        "hypothesis_family_definition",
+        "hypothesis_family_id",
+        "display_name",
+        "changed_dimensions",
+        "expected_direction",
+        "stop_condition",
+        "result_source_path",
+    }
     DECISIVE_TOOLS = [
         "validate_decision_benchmark.py",
         "validate_objective_alignment.py",
@@ -80,11 +94,25 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
             ],
             "expected_direction": "increase",
             "stop_condition": {"metric": "uplift_lcb", "operator": "gt", "value": 0.0},
+            "result_source_path": "/tmp/decision-result-exp-current-run.json",
             "registered_at": "2026-08-12T00:00:00Z",
             "earliest_result_at": "2026-08-12T01:00:00Z",
-            "earliest_result_identity": "not_available",
+            "earliest_result_identity": "legacy-unavailable",
             "result_source_identity": "e" * 64,
         }
+
+    def _write_registered_proposal(self, root, proposal_json):
+        raw = json.loads(proposal_json)
+        proposal = {
+            key: raw.get(key) for key in self.LEDGER_REGISTRATION_FIELDS
+        }
+        proposal["benchmark_id"] = "b" * 64
+        path = root / "inputs" / "ledger.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"registered_proposal": proposal}, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
     def _write_fake_observation_python(self, root):
         fake_bin = root / "bin"
@@ -158,6 +186,11 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                         manifest_path = option("--manifest")
                         paired_root = pathlib.Path(option("--output-dir")) / "paired_inputs"
                         paired_corpus = paired_root / "BTCUSDT" / "corpus.json"
+                        source_corpora = {}
+                        for item in option("--corpus-manifest-by-symbol").split(","):
+                            if "=" in item:
+                                symbol, path = item.split("=", 1)
+                                source_corpora[symbol] = path
                         if verified:
                             write(paired_corpus, {"candidate_set_frozen": True})
                             write(manifest_path, {"schema_version": "decision_evidence_benchmark_v1"})
@@ -171,6 +204,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                                     "corpus_manifest": str(paired_corpus),
                                     "feature_csv_by_symbol": {},
                                     "corpus_manifest_by_symbol": {},
+                                    "source_corpus_manifest_by_symbol": source_corpora,
                                 },
                                 "errors": [] if verified else ["candidate_missing"],
                             },
@@ -220,18 +254,60 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                         },
                     )
                 elif tool == "experiment_budget_ledger.py" and not omit:
+                    benchmark_path = pathlib.Path(option("--benchmark-report"))
+                    request_path = option("--request-json")
+                    ledger_path = pathlib.Path(option("--ledger"))
+                    try:
+                        benchmark = json.loads(
+                            benchmark_path.read_text(encoding="utf-8")
+                        )
+                        request = json.loads(
+                            pathlib.Path(request_path[1:]).read_text(encoding="utf-8")
+                        )
+                        registered = json.loads(
+                            ledger_path.read_text(encoding="utf-8")
+                        )["registered_proposal"]
+                        benchmark_verified = (
+                            benchmark.get("identity_status") == "VERIFIED"
+                            and benchmark.get("benchmark_id") == benchmark_id
+                        )
+                        registration_verified = benchmark_verified and (
+                            request == registered
+                            and request.get("benchmark_id") == benchmark_id
+                        )
+                    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                        benchmark_verified = False
+                        registration_verified = False
+                        request = {}
+                    allowed = benchmark_verified and registration_verified
                     print(
                         json.dumps(
                             {
                                 "schema_version": "experiment_budget_ledger_decision_v1",
-                                "decision": "ALLOW_NEXT_EXPERIMENT",
-                                "benchmark_id": benchmark_id,
-                                "experiment_id": "exp-current-run",
-                                "registration_verified": True,
+                                "decision": (
+                                    "ALLOW_NEXT_EXPERIMENT"
+                                    if allowed
+                                    else "BLOCK_INVALID_LEDGER"
+                                ),
+                                "benchmark_id": (
+                                    benchmark_id if benchmark_verified else None
+                                ),
+                                "expected_benchmark_id": (
+                                    benchmark_id if benchmark_verified else None
+                                ),
+                                "actual_benchmark_id": request.get("benchmark_id"),
+                                "experiment_id": request.get("experiment_id"),
+                                "benchmark_verified": benchmark_verified,
+                                "registration_verified": registration_verified,
+                                "mismatches": [] if allowed else [
+                                    "benchmark or registration identity mismatch"
+                                ],
                             },
                             sort_keys=True,
                         )
                     )
+                    if not allowed:
+                        exit_status = 2
                 elif tool == "build_decision_evidence_report.py" and not omit:
                     write(
                         option("--output"),
@@ -258,6 +334,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
     def _run_decisive_chain(self, root, body, fail_tool="", omit_tool=""):
         fake_bin = self._write_fake_observation_python(root)
         proposal = json.dumps(self._proposal_payload(), sort_keys=True)
+        self._write_registered_proposal(root, proposal)
         script = textwrap.dedent(
             r'''
             set -euo pipefail
@@ -316,6 +393,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
     def _run_auto_training_chain(self, root, route):
         fake_bin = self._write_fake_observation_python(root)
         proposal = json.dumps(self._proposal_payload(), sort_keys=True)
+        self._write_registered_proposal(root, proposal)
         script = textwrap.dedent(
             r'''
             set -euo pipefail
@@ -539,14 +617,48 @@ PY
                 str(root / "inputs" / "policy.json"),
             )
             ledger_args = by_tool["experiment_budget_ledger.py"]["args"]
+            self.assertEqual(ledger_args[0], "audit-next")
+            self.assertNotIn("register", ledger_args)
+            self.assertNotIn("observe", ledger_args)
+            self.assertEqual(
+                ledger_args[ledger_args.index("--benchmark-report") + 1],
+                str(
+                    root
+                    / "reports"
+                    / "decisive-observation-test"
+                    / "decision_benchmark_validation.json"
+                ),
+            )
             proposal_arg = ledger_args[ledger_args.index("--request-json") + 1]
             self.assertTrue(proposal_arg.startswith("@"), proposal_arg)
             prepared_proposal = json.loads(
                 pathlib.Path(proposal_arg[1:]).read_text(encoding="utf-8")
             )
-            expected_proposal = self._proposal_payload()
+            expected_proposal = {
+                key: value
+                for key, value in self._proposal_payload().items()
+                if key
+                not in {
+                    "registered_at",
+                    "earliest_result_at",
+                    "earliest_result_identity",
+                    "result_source_identity",
+                }
+            }
             expected_proposal["benchmark_id"] = "b" * 64
             self.assertEqual(prepared_proposal, expected_proposal)
+            self.assertEqual(
+                set(prepared_proposal),
+                self.LEDGER_REGISTRATION_FIELDS,
+            )
+            audit = json.loads(
+                (run_dir / "experiment_budget_audit.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(audit["decision"], "ALLOW_NEXT_EXPERIMENT")
+            self.assertTrue(audit["benchmark_verified"])
+            self.assertTrue(audit["registration_verified"])
 
             manifest = json.loads(
                 (run_dir / "run_manifest.json").read_text(encoding="utf-8")
@@ -626,6 +738,84 @@ PY
                 )
                 self.assertTrue(
                     all(item["blocked_by_prior_failure"] is False for item in statuses)
+                )
+
+    def test_ledger_benchmark_missing_or_registration_drift_fails_closed(self):
+        cases = {
+            "missing_benchmark": {
+                "body": r'''
+                    RUN_REQUIRED_STEP_STATUS=0
+                    run_decisive_observation_chain
+                    ''',
+                "omit_tool": "validate_decision_benchmark.py",
+                "benchmark_verified": False,
+            },
+            "registration_drift": {
+                "body": r'''
+                    LEDGER_PATH_VALUE="${TMP_ROOT}/inputs/ledger.jsonl" \
+                    python3 - <<'PY'
+import json
+import os
+import pathlib
+
+path = pathlib.Path(os.environ["LEDGER_PATH_VALUE"])
+payload = json.loads(path.read_text(encoding="utf-8"))
+payload["registered_proposal"]["benchmark_id"] = "c" * 64
+path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+PY
+                    RUN_REQUIRED_STEP_STATUS=0
+                    run_decisive_observation_chain
+                    ''',
+                "omit_tool": "",
+                "benchmark_verified": True,
+            },
+        }
+        for name, case in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as td:
+                root = pathlib.Path(td)
+                result = self._run_decisive_chain(
+                    root,
+                    case["body"],
+                    omit_tool=case["omit_tool"],
+                )
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                run_dir = root / "reports" / "decisive-observation-test"
+                audit = json.loads(
+                    (run_dir / "experiment_budget_audit.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(audit["decision"], "BLOCK_INVALID_LEDGER")
+                self.assertEqual(
+                    audit["benchmark_verified"], case["benchmark_verified"]
+                )
+                self.assertFalse(audit["registration_verified"])
+                statuses = [
+                    json.loads(line)
+                    for line in (run_dir / "step_status.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual(
+                    [item["step"] for item in statuses], self.DECISIVE_STEPS
+                )
+                self.assertTrue(
+                    all(
+                        item["blocked_by_prior_failure"] is False
+                        for item in statuses
+                    )
+                )
+                commands = [
+                    json.loads(line)
+                    for line in (root / "observation_commands.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertIn(
+                    "build_decision_evidence_report.py",
+                    [item["tool"] for item in commands],
                 )
 
     def test_continue_decision_never_calls_promotion_or_activation_paths(self):
@@ -830,7 +1020,32 @@ PY
                 paired["args"][paired["args"].index("--candidate-model") + 1],
                 str(run_dir / "integrator_latest.cbm"),
             )
-            self.assertIn(
+            self.assertEqual(
+                paired["args"][paired["args"].index("--corpus-manifest") + 1],
+                str(
+                    run_dir
+                    / "replay_validation"
+                    / "replay_validation_trend_corpus.json"
+                ),
+            )
+            self.assertEqual(
+                paired["args"][
+                    paired["args"].index("--corpus-manifest-by-symbol") + 1
+                ],
+                "BTCUSDT="
+                + str(
+                    (
+                        run_dir
+                        / "replay_validation"
+                        / "replay_validation_trend_corpus.json"
+                    ).resolve()
+                ),
+            )
+            self.assertEqual(
+                paired["args"][paired["args"].index("--validation-config") + 1],
+                str(root / "inputs" / "policy.json"),
+            )
+            self.assertNotIn(
                 str(
                     run_dir
                     / "decision_benchmark_build"

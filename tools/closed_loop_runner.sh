@@ -5837,9 +5837,8 @@ run_paired_evolution_replay_observation() {
   local paired_corpus_mapping="${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
   if [[ "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT}" != "true" ]]; then
     paired_feature_csv="$(decision_benchmark_paired_input feature_csv)"
-    paired_corpus_manifest="$(decision_benchmark_paired_input corpus_manifest)"
     paired_feature_mapping="$(decision_benchmark_paired_input feature_csv_by_symbol)"
-    paired_corpus_mapping="$(decision_benchmark_paired_input corpus_manifest_by_symbol)"
+    paired_corpus_mapping="$(decision_benchmark_paired_input source_corpus_manifest_by_symbol)"
   fi
   local -a paired_args=(
     tools/run_paired_evolution_replay.py
@@ -5851,6 +5850,7 @@ run_paired_evolution_replay_observation() {
     --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}"
     --output-dir "${PAIRED_EVOLUTION_REPLAY_WORK_DIR}"
     --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}"
+    --validation-config "${DECISION_EVIDENCE_CONFIG_PATH}"
   )
   if [[ -n "${paired_feature_mapping}" ]]; then
     paired_args+=(--feature-csv-by-symbol "${paired_feature_mapping}")
@@ -5921,8 +5921,22 @@ if isinstance(benchmark, dict) and benchmark.get("identity_status") == "VERIFIED
     if isinstance(value, str):
         benchmark_id = value
 
-prepared = dict(proposal)
-if "benchmark_id" not in prepared:
+registration_request_fields = (
+    "experiment_id",
+    "benchmark_id",
+    "validation_policy_sha256",
+    "information_set_definition",
+    "information_set_id",
+    "hypothesis_family_definition",
+    "hypothesis_family_id",
+    "display_name",
+    "changed_dimensions",
+    "expected_direction",
+    "stop_condition",
+    "result_source_path",
+)
+prepared = {field: proposal.get(field) for field in registration_request_fields}
+if not isinstance(prepared["benchmark_id"], str) or not prepared["benchmark_id"]:
     prepared["benchmark_id"] = benchmark_id
 
 path = pathlib.Path(os.environ["DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH_VALUE"])
@@ -5952,6 +5966,7 @@ run_experiment_budget_audit() {
     tools/experiment_budget_ledger.py audit-next \
     --ledger "${DECISION_EVIDENCE_LEDGER_PATH}" \
     --config "${DECISION_EVIDENCE_CONFIG_PATH}" \
+    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
     --request-json "@${DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH}" \
     > "${temporary}" || status=$?
   if python3 - "${temporary}" <<'PY'
