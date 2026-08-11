@@ -91,6 +91,22 @@ class RunReplayValidationTest(unittest.TestCase):
         )
 
     @staticmethod
+    def _write_exact_v2_plan(path: pathlib.Path, blocks: list[dict]) -> None:
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "exact_replay_block_plan_v2",
+                    "benchmark_id": "d" * 64,
+                    "target_bucket": "multi",
+                    "blocks": blocks,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
     def _exact_main_argv(
         *,
         plan: pathlib.Path,
@@ -308,6 +324,203 @@ class RunReplayValidationTest(unittest.TestCase):
                     self.assertEqual(report["executed_block_count"], 0)
                     self.assertTrue(report["validation_errors"])
                     self.assertEqual(len(report["blocks"]), len(blocks))
+
+    def test_multi_execution_blocks_are_ordered_isolated_and_fully_covered(self):
+        trade_commands = []
+
+        def fake_trade(command, output_path):
+            trade_commands.append(command)
+            output_path.write_text("runtime\n", encoding="utf-8")
+            return 0
+
+        def fake_assess(command, check=False):
+            self.assertFalse(check)
+            segment_sha = command[
+                command.index("--segment-identity-sha256") + 1
+            ]
+            output = pathlib.Path(command[command.index("--json_out") + 1])
+            output.write_text(
+                json.dumps(
+                    {
+                        "verdict": "PASS",
+                        "episode_execution_evidence": {
+                            "schema_version": "episode_execution_evidence_v1",
+                            "segment_identity_sha256": segment_sha,
+                            "execution_path_complete": True,
+                            "episodes": [{"evaluator_episode_id": segment_sha}],
+                        },
+                        "metrics": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=0)
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            blocks = []
+            for block_number, start in enumerate(
+                (1_700_000_000_000, 1_700_100_000_000), start=1
+            ):
+                block_id = f"block-{block_number:02d}"
+                executions = []
+                for symbol, regimes in (
+                    ("BTCUSDT", ["range", "trend"]),
+                    ("ETHUSDT", ["defensive"]),
+                ):
+                    csv_path = tmp / f"{block_id}-{symbol}.csv"
+                    execution = self._write_exact_replay_csv(
+                        csv_path,
+                        symbol=symbol,
+                        start_timestamp_ms=start,
+                    )
+                    executions.append(
+                        {
+                            "execution_id": f"{block_id}:{symbol}",
+                            "planned_entry_regimes": regimes,
+                            "target_bucket": "trend",
+                            **execution,
+                        }
+                    )
+                blocks.append(
+                    {
+                        "block_id": block_id,
+                        "start_timestamp_ms": start,
+                        "end_timestamp_ms": start + 300_000,
+                        "event_sha256": hashlib.sha256(
+                            f"{block_id}:composite".encode("ascii")
+                        ).hexdigest(),
+                        "cells": [
+                            {"symbol": "BTCUSDT", "entry_regime": "range"},
+                            {"symbol": "BTCUSDT", "entry_regime": "trend"},
+                            {"symbol": "ETHUSDT", "entry_regime": "defensive"},
+                        ],
+                        "executions": executions,
+                    }
+                )
+            plan_path = tmp / "multi-plan.json"
+            self._write_exact_v2_plan(plan_path, blocks)
+            output_dir = tmp / "output"
+            with mock.patch.object(
+                REPLAY, "run_command", side_effect=fake_trade
+            ), mock.patch.object(
+                REPLAY.subprocess, "run", side_effect=fake_assess
+            ), mock.patch.object(
+                sys,
+                "argv",
+                self._exact_main_argv(plan=plan_path, output_dir=output_dir),
+            ):
+                return_code = REPLAY.main()
+            report = json.loads(
+                (output_dir / "replay_validation_report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(return_code, 0)
+        self.assertEqual(report["status"], "VERIFIED")
+        self.assertEqual(report["planned_block_count"], 2)
+        self.assertEqual(report["executed_block_count"], 2)
+        self.assertEqual(report["planned_execution_count"], 4)
+        self.assertEqual(report["executed_execution_count"], 4)
+        self.assertEqual(
+            [block["block_id"] for block in report["blocks"]],
+            ["block-01", "block-02"],
+        )
+        self.assertEqual(
+            [
+                execution["execution_id"]
+                for block in report["blocks"]
+                for execution in block["executions"]
+            ],
+            [
+                "block-01:BTCUSDT",
+                "block-01:ETHUSDT",
+                "block-02:BTCUSDT",
+                "block-02:ETHUSDT",
+            ],
+        )
+        self.assertEqual(len(trade_commands), 4)
+        state_dirs = [
+            execution["state_dir"]
+            for block in report["blocks"]
+            for execution in block["executions"]
+        ]
+        self.assertEqual(len(state_dirs), len(set(state_dirs)))
+        self.assertTrue(
+            all(execution["execution_attempt_count"] == 1 for block in report["blocks"] for execution in block["executions"])
+        )
+
+    def test_multi_execution_preflight_rejects_coverage_regime_and_identity_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            executions = []
+            for symbol, regimes in (
+                ("BTCUSDT", ["trend"]),
+                ("ETHUSDT", ["defensive"]),
+            ):
+                execution = self._write_exact_replay_csv(
+                    tmp / f"{symbol}.csv",
+                    symbol=symbol,
+                    start_timestamp_ms=1_700_000_000_000,
+                )
+                executions.append(
+                    {
+                        "execution_id": f"block-01:{symbol}",
+                        "planned_entry_regimes": regimes,
+                        "target_bucket": "trend",
+                        **execution,
+                    }
+                )
+            base_block = {
+                "block_id": "block-01",
+                "start_timestamp_ms": 1_700_000_000_000,
+                "end_timestamp_ms": 1_700_000_300_000,
+                "event_sha256": "a" * 64,
+                "cells": [
+                    {"symbol": "BTCUSDT", "entry_regime": "trend"},
+                    {"symbol": "ETHUSDT", "entry_regime": "defensive"},
+                ],
+                "executions": executions,
+            }
+            cases = {
+                "duplicate": ({
+                    **base_block,
+                    "executions": [executions[0], dict(executions[0])],
+                }, "duplicate_execution_id"),
+                "missing_coverage": ({
+                    **base_block,
+                    "executions": [executions[0]],
+                }, "cell_coverage_mismatch"),
+                "extra_regime": ({
+                    **base_block,
+                    "executions": [
+                        {**executions[0], "planned_entry_regimes": ["trend", "oracle"]},
+                        executions[1],
+                    ],
+                }, "planned_entry_regimes_mismatch"),
+                "event_drift": ({
+                    **base_block,
+                    "executions": [
+                        {**executions[0], "event_sha256": "0" * 64},
+                        executions[1],
+                    ],
+                }, "event_sha256_mismatch"),
+            }
+            for name, (block, expected_error) in cases.items():
+                with self.subTest(name=name):
+                    plan_path = tmp / f"{name}.json"
+                    self._write_exact_v2_plan(plan_path, [block])
+                    _, audits, prepared, errors = REPLAY.preflight_exact_block_plan(
+                        plan_path,
+                        fallback_target_bucket="trend",
+                    )
+                    self.assertEqual(len(audits), 1)
+                    self.assertEqual(prepared, [])
+                    self.assertTrue(errors)
+                    self.assertTrue(
+                        any(expected_error in error for error in errors), errors
+                    )
 
     def test_exact_block_execution_failure_still_emits_command_and_evidence(self):
         def fake_trade(command, output_path):

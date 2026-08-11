@@ -220,6 +220,125 @@ def _validate_components(
     return drifts, identity
 
 
+def _validation_policy_binding(
+    manifest: dict[str, Any],
+    root: pathlib.Path,
+    *,
+    validation_policy: dict[str, Any] | None,
+    validation_config_sha256: str | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, str | None]:
+    """Bind the validation policy to the frozen run-config component.
+
+    The caller may provide a separately selected config (the CLI case), but it
+    is accepted only when its bytes are the bytes declared by the benchmark's
+    run_config component.  Direct callers load the same declared file.
+    """
+
+    drifts: list[dict[str, Any]] = []
+    components = manifest.get("components")
+    run_config = components.get("run_config") if isinstance(components, dict) else None
+    files = run_config.get("files") if isinstance(run_config, dict) else None
+    bindings = [
+        item
+        for item in files if isinstance(item, dict)
+        and item.get("logical_name") == "decision_evidence_validation"
+    ] if isinstance(files, list) else []
+    if len(bindings) != 1:
+        drifts.append(
+            _drift(
+                "validation_config",
+                "decision_evidence_validation",
+                "run_config_binding",
+                "exactly one run_config file",
+                len(bindings),
+            )
+        )
+        return drifts, None, None
+
+    binding = bindings[0]
+    bound_path = _resolve_path(root, binding.get("path"))
+    bound_sha = _existing_file_sha256(bound_path) if bound_path is not None else None
+    declared_sha = binding.get("sha256")
+    if bound_sha is None or not _is_sha256(declared_sha) or bound_sha != declared_sha:
+        drifts.append(
+            _drift(
+                "validation_config",
+                "decision_evidence_validation",
+                "sha256",
+                declared_sha,
+                bound_sha,
+            )
+        )
+        return drifts, None, None
+
+    try:
+        bound_policy = json.loads(bound_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        drifts.append(
+            _drift(
+                "validation_config",
+                "decision_evidence_validation",
+                "content",
+                "valid JSON object",
+                type(exc).__name__,
+            )
+        )
+        return drifts, None, None
+
+    selected_policy = validation_policy
+    selected_sha = validation_config_sha256
+    if selected_policy is None:
+        selected_policy = bound_policy
+        selected_sha = bound_sha
+    if not isinstance(selected_policy, dict):
+        drifts.append(
+            _drift(
+                "validation_config",
+                "decision_evidence_validation",
+                "content",
+                "JSON object",
+                selected_policy,
+            )
+        )
+        return drifts, None, None
+    if selected_sha != bound_sha:
+        drifts.append(
+            _drift(
+                "validation_config",
+                "decision_evidence_validation",
+                "selected_sha256",
+                bound_sha,
+                selected_sha,
+            )
+        )
+        return drifts, None, None
+    if selected_policy != bound_policy:
+        drifts.append(
+            _drift(
+                "validation_config",
+                "decision_evidence_validation",
+                "selected_policy",
+                bound_policy,
+                selected_policy,
+            )
+        )
+        return drifts, None, None
+    try:
+        canonical_json_bytes(selected_policy)
+    except (TypeError, ValueError) as exc:
+        drifts.append(
+            _drift(
+                "validation_config",
+                "decision_evidence_validation",
+                "canonical_content",
+                "finite canonical JSON",
+                type(exc).__name__,
+            )
+        )
+        return drifts, None, None
+    return drifts, {"sha256": bound_sha, "policy": selected_policy}, bound_sha
+
+
 def _validate_evaluation_universe(
     manifest: dict[str, Any], root: pathlib.Path
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -380,6 +499,170 @@ def _validate_evaluation_universe(
                 )
             )
 
+        regimes_by_symbol: dict[str, list[str]] = {}
+        for cell in cells:
+            regimes_by_symbol.setdefault(cell["symbol"], []).append(
+                cell["entry_regime"]
+            )
+        canonical_executions: list[dict[str, Any]] = []
+        raw_executions = block.get("executions")
+        if raw_executions is None and len(regimes_by_symbol) == 1:
+            symbol = next(iter(regimes_by_symbol))
+            if expected_sha_valid and actual_sha == expected_sha:
+                canonical_executions.append(
+                    {
+                        "execution_id": f"{block_id_value}:{symbol}",
+                        "symbol": symbol,
+                        "planned_entry_regimes": sorted(regimes_by_symbol[symbol]),
+                        "event_sha256": actual_sha,
+                    }
+                )
+        elif not isinstance(raw_executions, list) or not raw_executions:
+            drifts.append(
+                _drift(
+                    "evaluation_universe",
+                    block_id,
+                    "executions",
+                    "one isolated execution per cell symbol",
+                    raw_executions,
+                )
+            )
+        else:
+            seen_execution_ids: set[str] = set()
+            seen_execution_symbols: set[str] = set()
+            for execution_index, execution in enumerate(raw_executions):
+                execution_name = f"{block_id}:#{execution_index}"
+                if not isinstance(execution, dict):
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "executions",
+                            "object",
+                            execution,
+                        )
+                    )
+                    continue
+                symbol = execution.get("symbol")
+                execution_id = execution.get("execution_id")
+                expected_execution_id = (
+                    f"{block_id_value}:{symbol}"
+                    if block_id_valid and _is_non_empty_string(symbol)
+                    else "block_id:symbol"
+                )
+                execution_name = (
+                    execution_id if _is_non_empty_string(execution_id)
+                    else execution_name
+                )
+                if execution_id != expected_execution_id:
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "execution_id",
+                            expected_execution_id,
+                            execution_id,
+                        )
+                    )
+                elif execution_id in seen_execution_ids:
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "execution_id",
+                            "unique",
+                            execution_id,
+                        )
+                    )
+                else:
+                    seen_execution_ids.add(execution_id)
+                if not _is_non_empty_string(symbol):
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "executions",
+                            "non-empty symbol",
+                            symbol,
+                        )
+                    )
+                    continue
+                if symbol in seen_execution_symbols:
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "executions",
+                            "one execution per symbol",
+                            symbol,
+                        )
+                    )
+                else:
+                    seen_execution_symbols.add(symbol)
+                execution_expected_sha = execution.get("event_sha256")
+                execution_path = _resolve_path(root, execution.get("path"))
+                execution_actual_sha = (
+                    _existing_file_sha256(execution_path)
+                    if execution_path is not None
+                    else None
+                )
+                if not _is_sha256(execution_expected_sha):
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "event_sha256",
+                            "64 lowercase hex",
+                            execution_expected_sha,
+                        )
+                    )
+                elif execution_actual_sha != execution_expected_sha:
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "event_sha256",
+                            execution_expected_sha,
+                            execution_actual_sha,
+                        )
+                    )
+                if symbol not in regimes_by_symbol:
+                    drifts.append(
+                        _drift(
+                            "evaluation_universe",
+                            execution_name,
+                            "executions",
+                            sorted(regimes_by_symbol),
+                            symbol,
+                        )
+                    )
+                if (
+                    execution_id == expected_execution_id
+                    and symbol in regimes_by_symbol
+                    and _is_sha256(execution_expected_sha)
+                    and execution_actual_sha == execution_expected_sha
+                ):
+                    canonical_executions.append(
+                        {
+                            "execution_id": execution_id,
+                            "symbol": symbol,
+                            "planned_entry_regimes": sorted(
+                                regimes_by_symbol[symbol]
+                            ),
+                            "event_sha256": execution_actual_sha,
+                        }
+                    )
+            if seen_execution_symbols != set(regimes_by_symbol):
+                drifts.append(
+                    _drift(
+                        "evaluation_universe",
+                        block_id,
+                        "executions",
+                        sorted(regimes_by_symbol),
+                        sorted(seen_execution_symbols),
+                    )
+                )
+
         if (
             block_id_valid
             and valid_time_range
@@ -395,6 +678,10 @@ def _validate_evaluation_universe(
                     "cells": sorted(
                         cells,
                         key=lambda item: (item["symbol"], item["entry_regime"]),
+                    ),
+                    "executions": sorted(
+                        canonical_executions,
+                        key=lambda item: item["execution_id"],
                     ),
                 }
             )
@@ -424,7 +711,13 @@ def _validate_evaluation_universe(
     }
 
 
-def validate_benchmark(manifest: dict, root: pathlib.Path) -> dict:
+def validate_benchmark(
+    manifest: dict,
+    root: pathlib.Path,
+    *,
+    validation_policy: dict[str, Any] | None = None,
+    validation_config_sha256: str | None = None,
+) -> dict:
     """Validate file-backed identities and return a deterministic report."""
 
     root = pathlib.Path(root)
@@ -450,8 +743,15 @@ def validate_benchmark(manifest: dict, root: pathlib.Path) -> dict:
 
     component_drifts, components_identity = _validate_components(manifest, root)
     universe_drifts, universe_identity = _validate_evaluation_universe(manifest, root)
+    policy_drifts, policy_identity, policy_sha256 = _validation_policy_binding(
+        manifest,
+        root,
+        validation_policy=validation_policy,
+        validation_config_sha256=validation_config_sha256,
+    )
     drifts.extend(component_drifts)
     drifts.extend(universe_drifts)
+    drifts.extend(policy_drifts)
     drifts.sort(key=_drift_sort_key)
 
     report: dict[str, Any] = {
@@ -459,11 +759,14 @@ def validate_benchmark(manifest: dict, root: pathlib.Path) -> dict:
         "identity_status": "UNVERIFIABLE" if drifts else "VERIFIED",
         "drifts": drifts,
     }
+    if policy_sha256 is not None:
+        report["validation_config_sha256"] = policy_sha256
     if not drifts:
         identity = {
             "schema_version": BENCHMARK_SCHEMA_VERSION,
             "components": components_identity,
             "evaluation_universe": universe_identity,
+            "validation_policy": policy_identity,
         }
         report["benchmark_id"] = canonical_sha256(identity)
         report["canonical_identity"] = identity

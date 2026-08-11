@@ -29,6 +29,7 @@ def load_module(name: str, filename: str):
 
 
 REPLAY = load_module("paired_test_replay_validation", "run_replay_validation.py")
+COMMON = load_module("paired_test_decision_common", "decision_evidence_common.py")
 PAIR = load_module("run_paired_evolution_replay", "run_paired_evolution_replay.py")
 
 
@@ -179,6 +180,22 @@ universe:
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_symbol_path_mapping_cli_contract_is_deterministic(self):
+        mapping = PAIR.parse_symbol_path_mapping(
+            "ethusdt=/tmp/eth.csv,BTCUSDT=/tmp/btc.csv"
+        )
+        self.assertEqual(
+            mapping,
+            {
+                "BTCUSDT": pathlib.Path("/tmp/btc.csv"),
+                "ETHUSDT": pathlib.Path("/tmp/eth.csv"),
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            PAIR.parse_symbol_path_mapping(
+                "BTCUSDT=/tmp/one.csv,btcusdt=/tmp/two.csv"
+            )
+
     @staticmethod
     def sha256(path: pathlib.Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -212,8 +229,8 @@ universe:
             output_dir.mkdir(parents=True, exist_ok=True)
             policy = PAIR.policy_payload(config_path)
             blocks = []
-            for index, planned in enumerate(plan["blocks"]):
-                state_dir = output_dir / f"exact_block_{index + 1:03d}" / "state"
+
+            def execution_audit(planned, *, block_index, execution_index, state_dir):
                 state_dir.mkdir(parents=True, exist_ok=True)
                 runtime_log = state_dir.parent / "runtime.log"
                 runtime_assess = state_dir.parent / "runtime_assess.json"
@@ -225,11 +242,21 @@ universe:
                     f"--data_path={state_dir}",
                     f"--replay_market_data={planned['replay_csv']}",
                 ]
-                blocks.append(
-                    {
-                        "plan_index": index,
+                return {
+                        "execution_index": execution_index,
                         "block_id": planned["block_id"],
+                        "execution_id": planned.get(
+                            "execution_id", f"{planned['block_id']}:{planned['symbol']}"
+                        ),
                         "symbol": planned["symbol"],
+                        "planned_entry_regimes": planned.get(
+                            "planned_entry_regimes",
+                            [
+                                cell["entry_regime"]
+                                for cell in planned.get("cells", [])
+                                if cell.get("symbol") == planned["symbol"]
+                            ],
+                        ),
                         "expected_event_sha256": planned["event_sha256"],
                         "actual_event_sha256": planned["event_sha256"],
                         "expected_segment_identity_sha256": planned[
@@ -257,7 +284,7 @@ universe:
                             "missing_path_evidence": [],
                             "episodes": [
                                 {
-                                    "evaluator_episode_id": f"episode-{index}",
+                                    "evaluator_episode_id": f"episode-{block_index}-{execution_index}",
                                     "execution_path_complete": True,
                                     "utility_source": "complete_execution_replay",
                                 }
@@ -270,7 +297,56 @@ universe:
                         "trade_bot_sha256": self.sha256(self.trade_bot),
                         "errors": [],
                     }
-                )
+
+            if plan["schema_version"] == "exact_replay_block_plan_v2":
+                for block_index, planned_block in enumerate(plan["blocks"]):
+                    execution_audits = []
+                    for execution_index, planned_execution in enumerate(
+                        planned_block["executions"]
+                    ):
+                        state_dir = (
+                            output_dir
+                            / f"exact_block_{block_index + 1:03d}"
+                            / f"execution_{execution_index + 1:03d}"
+                            / "state"
+                        )
+                        execution_audits.append(
+                            execution_audit(
+                                {"block_id": planned_block["block_id"], **planned_execution},
+                                block_index=block_index,
+                                execution_index=execution_index,
+                                state_dir=state_dir,
+                            )
+                        )
+                    blocks.append(
+                        {
+                            "plan_index": block_index,
+                            "block_id": planned_block["block_id"],
+                            "start_timestamp_ms": planned_block["start_timestamp_ms"],
+                            "end_timestamp_ms": planned_block["end_timestamp_ms"],
+                            "event_sha256": planned_block["event_sha256"],
+                            "cells": planned_block["cells"],
+                            "planned_execution_count": len(execution_audits),
+                            "executed_execution_count": len(execution_audits),
+                            "execution_status": "EXECUTED",
+                            "errors": [],
+                            "executions": execution_audits,
+                        }
+                    )
+            else:
+                for index, planned in enumerate(plan["blocks"]):
+                    state_dir = output_dir / f"exact_block_{index + 1:03d}" / "state"
+                    audit = execution_audit(
+                        planned,
+                        block_index=index,
+                        execution_index=index,
+                        state_dir=state_dir,
+                    )
+                    audit["plan_index"] = index
+                    blocks.append(audit)
+            planned_execution_count = sum(
+                len(block.get("executions", [block])) for block in blocks
+            )
             report = {
                 "schema_version": "exact_replay_block_audit_v1",
                 "mode": "exact_block_plan",
@@ -293,6 +369,8 @@ universe:
                 "trade_bot_sha256": self.sha256(self.trade_bot),
                 "planned_block_count": len(blocks),
                 "executed_block_count": len(blocks),
+                "planned_execution_count": planned_execution_count,
+                "executed_execution_count": planned_execution_count,
                 "validation_errors": [],
                 "blocks": blocks,
                 "runs": blocks,
@@ -626,6 +704,232 @@ universe:
         self.assertFalse((self.output_dir / ".paired_evolution_replay_manifest.tmp").exists())
         self.assertTrue(
             any("benchmark" in item for item in manifest["mismatches"])
+        )
+
+    def test_verified_two_block_two_symbol_benchmark_runs_all_executions(self):
+        eth_feature_csv = self.root / "features-ETHUSDT.csv"
+        with self.feature_csv.open("r", encoding="utf-8", newline="") as source:
+            rows = list(csv.DictReader(source))
+        with eth_feature_csv.open("w", encoding="utf-8", newline="") as target:
+            writer = csv.DictWriter(target, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+        eth_corpus = self.root / "corpus-ETHUSDT.json"
+        eth_corpus.write_text(
+            json.dumps(
+                {
+                    "schema_version": "replay_selection_manifest_v3",
+                    "candidate_set_frozen": True,
+                    "symbol": "ETHUSDT",
+                    "target_bucket": "trend",
+                    "base_interval_ms": 300_000,
+                    "source_feature_csv": str(eth_feature_csv),
+                    "source_feature_sha256": self.sha256(eth_feature_csv),
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        components = {}
+        for component in COMMON.REQUIRED_COMPONENTS:
+            path = self.root / "components" / f"{component}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"component": component}), encoding="utf-8")
+            components[component] = {
+                "logical_id": f"{component}-v1",
+                "files": [
+                    {
+                        "logical_name": f"{component}-contract",
+                        "path": str(path.relative_to(self.root)),
+                        "sha256": self.sha256(path),
+                    }
+                ],
+            }
+        config_path = pathlib.Path(__file__).resolve().parents[1] / "config" / "decision_evidence_validation.json"
+        components["run_config"]["files"].append(
+            {
+                "logical_name": "decision_evidence_validation",
+                "path": str(config_path),
+                "sha256": self.sha256(config_path),
+            }
+        )
+        features = {
+            "BTCUSDT": self.feature_csv,
+            "ETHUSDT": eth_feature_csv,
+        }
+        feature_rows = {
+            symbol: REPLAY.load_feature_rows(path) for symbol, path in features.items()
+        }
+        blocks = []
+        for number, (start_index, end_index) in enumerate(((0, 1), (2, 3)), start=1):
+            block_id = f"multi-block-{number:02d}"
+            composite_path = self.root / "benchmark" / f"{block_id}.events"
+            composite_path.parent.mkdir(parents=True, exist_ok=True)
+            composite_path.write_text(f"{block_id}:composite\n", encoding="ascii")
+            executions = []
+            for symbol in ("BTCUSDT", "ETHUSDT"):
+                rows_for_symbol = feature_rows[symbol]
+                segment = REPLAY.ReplaySegment(
+                    start_index=start_index,
+                    end_index=end_index,
+                    start_timestamp=rows_for_symbol[start_index].timestamp,
+                    end_timestamp=rows_for_symbol[end_index].timestamp,
+                    bars=end_index - start_index + 1,
+                )
+                execution_path = self.root / "benchmark" / f"{block_id}-{symbol}.csv"
+                REPLAY.write_replay_csv(
+                    rows_for_symbol,
+                    segment,
+                    symbol,
+                    execution_path,
+                    300_000,
+                    warmup_context_bars=0,
+                )
+                executions.append(
+                    {
+                        "execution_id": f"{block_id}:{symbol}",
+                        "symbol": symbol,
+                        "path": str(execution_path.relative_to(self.root)),
+                        "event_sha256": self.sha256(execution_path),
+                    }
+                )
+            blocks.append(
+                {
+                    "block_id": block_id,
+                    "path": str(composite_path.relative_to(self.root)),
+                    "start_timestamp_ms": feature_rows["BTCUSDT"][start_index].timestamp,
+                    "end_timestamp_ms": feature_rows["BTCUSDT"][end_index].timestamp,
+                    "event_sha256": self.sha256(composite_path),
+                    "cells": [
+                        {"symbol": "BTCUSDT", "entry_regime": "trend"},
+                        {"symbol": "BTCUSDT", "entry_regime": "range"},
+                        {"symbol": "ETHUSDT", "entry_regime": "defensive"},
+                    ],
+                    "executions": executions,
+                }
+            )
+        benchmark = COMMON.validate_benchmark(
+            {
+                "schema_version": COMMON.BENCHMARK_SCHEMA_VERSION,
+                "components": components,
+                "evaluation_universe": {"blocks": blocks},
+            },
+            self.root,
+        )
+        self.assertEqual(benchmark["identity_status"], "VERIFIED")
+        self.benchmark_report.write_text(json.dumps(benchmark), encoding="utf-8")
+
+        def exact_runner(command, check=False):
+            self.assertFalse(check)
+            command = [str(item) for item in command]
+            config_path = pathlib.Path(
+                command[command.index("--base_config") + 1]
+            )
+            policy = PAIR.policy_payload(config_path)
+
+            def fake_trade(trade_command, output_path):
+                output_path.write_text("runtime evidence\n", encoding="utf-8")
+                return 0
+
+            def fake_assess(assess_command, check=False):
+                self.assertFalse(check)
+                segment_sha = assess_command[
+                    assess_command.index("--segment-identity-sha256") + 1
+                ]
+                output = pathlib.Path(
+                    assess_command[assess_command.index("--json_out") + 1]
+                )
+                output.write_text(
+                    json.dumps(
+                        {
+                            "verdict": "PASS",
+                            "episode_execution_evidence": {
+                                "schema_version": "episode_execution_evidence_v1",
+                                "segment_identity_sha256": segment_sha,
+                                "execution_policy_identity": policy,
+                                "episode_count": 1,
+                                "complete_episode_count": 1,
+                                "execution_path_complete": True,
+                                "aggregate_only_rejected": False,
+                                "missing_path_evidence": [],
+                                "episodes": [
+                                    {
+                                        "evaluator_episode_id": f"episode-{segment_sha}",
+                                        "execution_path_complete": True,
+                                        "utility_source": "complete_execution_replay",
+                                    }
+                                ],
+                            },
+                            "metrics": {},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(
+                REPLAY, "run_command", side_effect=fake_trade
+            ), mock.patch.object(
+                REPLAY.subprocess, "run", side_effect=fake_assess
+            ), mock.patch.object(
+                sys, "argv", [command[1], *command[2:]]
+            ):
+                return mock.Mock(returncode=REPLAY.main())
+
+        manifest = PAIR.run_paired_evolution_replay(
+            runtime_config=self.runtime_config,
+            candidate_model=self.candidate_model,
+            candidate_report=self.candidate_report,
+            feature_csv=self.feature_csv,
+            corpus_manifest=self.corpus_manifest,
+            feature_csv_by_symbol=features,
+            corpus_manifest_by_symbol={
+                "BTCUSDT": self.corpus_manifest,
+                "ETHUSDT": eth_corpus,
+            },
+            trade_bot=self.trade_bot,
+            output_dir=self.output_dir,
+            benchmark_report=self.benchmark_report,
+            process_runner=exact_runner,
+        )
+
+        self.assertEqual(manifest["status"], "VERIFIED", manifest["mismatches"])
+        self.assertEqual(manifest["exact_block_plan"]["schema_version"], "exact_replay_block_plan_v2")
+        self.assertEqual(
+            [len(block["executions"]) for block in manifest["exact_block_plan"]["blocks"]],
+            [2, 2],
+        )
+        for arm in manifest["arms"].values():
+            self.assertEqual(arm["block_execution_counts"], {
+                "multi-block-01": 1,
+                "multi-block-02": 1,
+            })
+            self.assertEqual([len(block["executions"]) for block in arm["blocks"]], [2, 2])
+            self.assertTrue(
+                all(
+                    execution["episode_execution_evidence"]
+                    for block in arm["blocks"]
+                    for execution in block["executions"]
+                )
+            )
+
+        drifted_corpus = json.loads(eth_corpus.read_text(encoding="utf-8"))
+        drifted_corpus["source_feature_sha256"] = "0" * 64
+        eth_corpus.write_text(json.dumps(drifted_corpus), encoding="utf-8")
+        _, source_mismatches = PAIR._materialize_exact_plan(
+            benchmark=benchmark,
+            feature_csv=self.feature_csv,
+            corpus_manifest=self.corpus_manifest,
+            feature_csv_by_symbol=features,
+            corpus_manifest_by_symbol={
+                "BTCUSDT": self.corpus_manifest,
+                "ETHUSDT": eth_corpus,
+            },
+            output_dir=self.root / "drifted-materialization",
+        )
+        self.assertIn(
+            "source.ETHUSDT.source_feature_sha256_mismatch",
+            source_mismatches,
         )
 
 

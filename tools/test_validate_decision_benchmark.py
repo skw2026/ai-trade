@@ -18,9 +18,33 @@ from decision_evidence_common import (  # noqa: E402
     file_sha256,
     validate_benchmark,
 )
+from validate_decision_benchmark import validate_files  # noqa: E402
 
 
 class DecisionBenchmarkValidationTest(unittest.TestCase):
+    @staticmethod
+    def validation_policy():
+        return {
+            "schema_version": "decision_evidence_validation_v1",
+            "alignment": {
+                "min_candidates": 8,
+                "min_independent_blocks": 5,
+                "alpha": 0.05,
+                "permutation_trials": 10000,
+            },
+            "uplift": {
+                "min_independent_blocks": 8,
+                "block_coverage": 1,
+                "bootstrap_trials": 10000,
+                "lcb": 0.95,
+            },
+            "failure_budgets": {"family": 3, "information_set": 8},
+            "seed": {
+                "source": "benchmark_id+channel",
+                "cli_override_allowed": False,
+            },
+        }
+
     def fixtures(self, root: pathlib.Path):
         components = {}
         for component in REQUIRED_COMPONENTS:
@@ -41,6 +65,19 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
                 ],
             }
 
+        policy_path = root / "components" / "decision_evidence_validation.json"
+        policy_path.write_text(
+            json.dumps(self.validation_policy(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        components["run_config"]["files"].append(
+            {
+                "logical_name": "decision_evidence_validation",
+                "path": str(policy_path.relative_to(root)),
+                "sha256": file_sha256(policy_path),
+            }
+        )
+
         blocks = []
         for number in range(2):
             block_id = f"block-{number + 1:02d}"
@@ -48,9 +85,26 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
                 "timestamp_ms,symbol,price\n"
-                f"{1000 + number * 1000},BTCUSDT,{100 + number}\n",
+                f"{1000 + number * 1000},BTCUSDT,{100 + number}\n"
+                f"{1000 + number * 1000},ETHUSDT,{200 + number}\n",
                 encoding="ascii",
             )
+            executions = []
+            for symbol in ("BTCUSDT", "ETHUSDT"):
+                execution_path = root / "replay" / f"{block_id}-{symbol}.csv"
+                execution_path.write_text(
+                    "timestamp_ms,symbol,price\n"
+                    f"{1000 + number * 1000},{symbol},{100 + number}\n",
+                    encoding="ascii",
+                )
+                executions.append(
+                    {
+                        "execution_id": f"{block_id}:{symbol}",
+                        "symbol": symbol,
+                        "path": str(execution_path.relative_to(root)),
+                        "event_sha256": file_sha256(execution_path),
+                    }
+                )
             blocks.append(
                 {
                     "block_id": block_id,
@@ -60,8 +114,10 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
                     "event_sha256": file_sha256(path),
                     "cells": [
                         {"symbol": "BTCUSDT", "entry_regime": "trend"},
+                        {"symbol": "BTCUSDT", "entry_regime": "range"},
                         {"symbol": "ETHUSDT", "entry_regime": "defensive"},
                     ],
+                    "executions": executions,
                 }
             )
 
@@ -105,6 +161,28 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
         self.assertEqual(first["benchmark_id"], second["benchmark_id"])
         self.assertEqual(first["benchmark_id"], third["benchmark_id"])
         self.assertEqual(first["drifts"], [])
+        self.assertEqual(
+            first["validation_config_sha256"],
+            first["canonical_identity"]["validation_policy"]["sha256"],
+        )
+        first_block = first["canonical_identity"]["evaluation_universe"]["blocks"][0]
+        self.assertEqual(
+            first_block["executions"],
+            [
+                {
+                    "execution_id": "block-01:BTCUSDT",
+                    "symbol": "BTCUSDT",
+                    "planned_entry_regimes": ["range", "trend"],
+                    "event_sha256": manifest["evaluation_universe"]["blocks"][0]["executions"][0]["event_sha256"],
+                },
+                {
+                    "execution_id": "block-01:ETHUSDT",
+                    "symbol": "ETHUSDT",
+                    "planned_entry_regimes": ["defensive"],
+                    "event_sha256": manifest["evaluation_universe"]["blocks"][0]["executions"][1]["event_sha256"],
+                },
+            ],
+        )
 
     def test_paths_do_not_participate_in_canonical_identity(self):
         with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
@@ -124,6 +202,12 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
                 moved.parent.mkdir(parents=True, exist_ok=True)
                 old.replace(moved)
                 block["path"] = str(moved.relative_to(second_root))
+                for execution in block["executions"]:
+                    old_execution = second_root / execution["path"]
+                    moved_execution = second_root / "relocated-execution" / old_execution.name
+                    moved_execution.parent.mkdir(parents=True, exist_ok=True)
+                    old_execution.replace(moved_execution)
+                    execution["path"] = str(moved_execution.relative_to(second_root))
 
             first_id = validate_benchmark(first_manifest, first_root)["benchmark_id"]
             second_id = validate_benchmark(second_manifest, second_root)["benchmark_id"]
@@ -221,6 +305,122 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
         self.assertEqual(replay_drifts[1]["expected"], second["event_sha256"])
         self.assertRegex(replay_drifts[1]["actual"], r"^[0-9a-f]{64}$")
 
+    def test_multi_symbol_execution_coverage_and_identity_are_required(self):
+        cases = {}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            base = self.fixtures(root)
+            missing = copy.deepcopy(base)
+            missing["evaluation_universe"]["blocks"][0]["executions"].pop()
+            cases["missing"] = missing
+            duplicate = copy.deepcopy(base)
+            duplicate_execution = copy.deepcopy(
+                duplicate["evaluation_universe"]["blocks"][0]["executions"][0]
+            )
+            duplicate["evaluation_universe"]["blocks"][0]["executions"].append(
+                duplicate_execution
+            )
+            cases["duplicate"] = duplicate
+            drift = copy.deepcopy(base)
+            drift["evaluation_universe"]["blocks"][0]["executions"][0][
+                "event_sha256"
+            ] = "0" * 64
+            cases["drift"] = drift
+            extra = copy.deepcopy(base)
+            extra["evaluation_universe"]["blocks"][0]["executions"][0][
+                "symbol"
+            ] = "SOLUSDT"
+            cases["extra"] = extra
+
+            for name, manifest in cases.items():
+                with self.subTest(name=name):
+                    report = self.assert_unverifiable(manifest, root)
+                    self.assertTrue(
+                        any(
+                            drift["field"] in {
+                                "executions",
+                                "execution_id",
+                                "event_sha256",
+                            }
+                            for drift in report["drifts"]
+                        )
+                    )
+
+    def test_validation_policy_is_bound_to_run_config_and_changes_identity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            manifest = self.fixtures(root)
+            first = validate_benchmark(manifest, root)
+            policy_entry = next(
+                item
+                for item in manifest["components"]["run_config"]["files"]
+                if item["logical_name"] == "decision_evidence_validation"
+            )
+            policy_path = root / policy_entry["path"]
+            changed_policy = self.validation_policy()
+            changed_policy["alignment"]["alpha"] = 0.025
+            policy_path.write_text(
+                json.dumps(changed_policy, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            policy_entry["sha256"] = file_sha256(policy_path)
+            second = validate_benchmark(manifest, root)
+
+            self.assertEqual(first["identity_status"], "VERIFIED")
+            self.assertEqual(second["identity_status"], "VERIFIED")
+            self.assertNotEqual(first["benchmark_id"], second["benchmark_id"])
+            self.assertEqual(
+                second["canonical_identity"]["validation_policy"]["policy"],
+                changed_policy,
+            )
+
+            policy_entry["sha256"] = first["validation_config_sha256"]
+            drifted = self.assert_unverifiable(manifest, root)
+            self.assertTrue(
+                any(
+                    item["component"] == "validation_config"
+                    for item in drifted["drifts"]
+                )
+            )
+
+            manifest["components"]["run_config"]["files"] = [
+                item
+                for item in manifest["components"]["run_config"]["files"]
+                if item["logical_name"] != "decision_evidence_validation"
+            ]
+            missing = self.assert_unverifiable(manifest, root)
+            self.assertTrue(
+                any(
+                    item["component"] == "validation_config"
+                    and item["field"] == "run_config_binding"
+                    for item in missing["drifts"]
+                )
+            )
+
+    def test_cli_selected_policy_drift_is_unverifiable_before_id_reuse(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            manifest = self.fixtures(root)
+            manifest_path = root / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            changed = self.validation_policy()
+            changed["uplift"]["lcb"] = 0.9
+            changed_config = root / "changed-policy.json"
+            changed_config.write_text(json.dumps(changed), encoding="utf-8")
+
+            report = validate_files(manifest_path, root, changed_config)
+
+        self.assertEqual(report["identity_status"], "UNVERIFIABLE")
+        self.assertNotIn("benchmark_id", report)
+        self.assertNotIn("canonical_identity", report)
+        self.assertTrue(
+            any(
+                item["component"] == "validation_config"
+                and item["field"] in {"selected_sha256", "contract"}
+                for item in report["drifts"]
+            )
+        )
+
     def test_config_contract_and_cli_json_report(self):
         repository = pathlib.Path(__file__).resolve().parents[1]
         config_path = repository / "config" / "decision_evidence_validation.json"
@@ -245,6 +445,14 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)
             manifest = self.fixtures(root)
+            policy_entry = next(
+                item
+                for item in manifest["components"]["run_config"]["files"]
+                if item["logical_name"] == "decision_evidence_validation"
+            )
+            bound_config_path = root / policy_entry["path"]
+            bound_config_path.write_bytes(config_path.read_bytes())
+            policy_entry["sha256"] = file_sha256(bound_config_path)
             manifest_path = root / "manifest.json"
             output_path = root / "report.json"
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -265,6 +473,13 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(report["identity_status"], "VERIFIED")
+        self.assertEqual(
+            report["validation_config_sha256"], file_sha256(config_path)
+        )
+        self.assertEqual(
+            report["canonical_identity"]["validation_policy"]["sha256"],
+            file_sha256(config_path),
+        )
         self.assertEqual(json.loads(completed.stdout), report)
 
 

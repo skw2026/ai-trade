@@ -40,6 +40,7 @@ except ModuleNotFoundError:  # pragma: no cover - package import in tests
 SCHEMA_VERSION = "paired_evolution_replay_v1"
 BENCHMARK_REPORT_SCHEMA = "decision_evidence_benchmark_validation_v1"
 EXACT_PLAN_SCHEMA = "exact_replay_block_plan_v1"
+EXACT_PLAN_V2_SCHEMA = "exact_replay_block_plan_v2"
 EXACT_REPORT_SCHEMA = "exact_replay_block_audit_v1"
 MANIFEST_FILENAME = "paired_evolution_replay_manifest.json"
 ALLOWED_POLICY_DIFFERENCE = "self_evolution.enabled"
@@ -182,11 +183,43 @@ def _safe_block_filename(index: int, block_id: str) -> str:
     return f"{index + 1:03d}-{safe}.csv"
 
 
+def _normalized_path_mapping(
+    mapping: dict[str, pathlib.Path] | None,
+) -> dict[str, pathlib.Path]:
+    return {
+        str(symbol).strip().upper(): pathlib.Path(path).expanduser().resolve(
+            strict=False
+        )
+        for symbol, path in (mapping or {}).items()
+        if str(symbol).strip()
+    }
+
+
+def parse_symbol_path_mapping(raw: str) -> dict[str, pathlib.Path]:
+    mapping: dict[str, pathlib.Path] = {}
+    for item in (part.strip() for part in str(raw or "").split(",")):
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(f"symbol path mapping requires SYMBOL=PATH: {item}")
+        symbol, path = item.split("=", 1)
+        normalized_symbol = symbol.strip().upper()
+        normalized_path = path.strip()
+        if not normalized_symbol or not normalized_path:
+            raise ValueError(f"symbol path mapping requires SYMBOL=PATH: {item}")
+        if normalized_symbol in mapping:
+            raise ValueError(f"duplicate symbol path mapping: {normalized_symbol}")
+        mapping[normalized_symbol] = pathlib.Path(normalized_path)
+    return mapping
+
+
 def _materialize_exact_plan(
     *,
     benchmark: dict[str, Any],
     feature_csv: pathlib.Path,
     corpus_manifest: pathlib.Path,
+    feature_csv_by_symbol: dict[str, pathlib.Path] | None = None,
+    corpus_manifest_by_symbol: dict[str, pathlib.Path] | None = None,
     output_dir: pathlib.Path,
 ) -> tuple[dict[str, Any], list[str]]:
     mismatches: list[str] = []
@@ -202,55 +235,142 @@ def _materialize_exact_plan(
             "blocks": [],
         }, ["benchmark.canonical_identity.evaluation_universe.blocks_missing"]
 
-    try:
-        corpus = _read_json_object(corpus_manifest)
-    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
-        return {
-            "schema_version": EXACT_PLAN_SCHEMA,
-            "benchmark_id": str(benchmark_id or ""),
-            "target_bucket": "",
-            "blocks": [],
-        }, [f"corpus_manifest_invalid:{type(exc).__name__}"]
+    block_executions: list[list[dict[str, Any]]] = []
+    all_symbols: set[str] = set()
+    needs_v2 = False
+    for block_index, raw_block in enumerate(raw_blocks):
+        cells = raw_block.get("cells") if isinstance(raw_block, dict) else None
+        cells = cells if isinstance(cells, list) else []
+        regimes_by_symbol: dict[str, list[str]] = {}
+        for cell in cells:
+            if not isinstance(cell, dict):
+                continue
+            symbol = str(cell.get("symbol") or "").strip().upper()
+            regime = str(cell.get("entry_regime") or "").strip().lower()
+            if symbol and regime:
+                regimes_by_symbol.setdefault(symbol, []).append(regime)
+        raw_executions = raw_block.get("executions") if isinstance(raw_block, dict) else None
+        executions: list[dict[str, Any]] = []
+        if isinstance(raw_executions, list) and raw_executions:
+            for raw_execution in raw_executions:
+                if not isinstance(raw_execution, dict):
+                    continue
+                symbol = str(raw_execution.get("symbol") or "").strip().upper()
+                executions.append(
+                    {
+                        "execution_id": str(raw_execution.get("execution_id") or "").strip(),
+                        "symbol": symbol,
+                        "planned_entry_regimes": sorted(regimes_by_symbol.get(symbol, [])),
+                        "event_sha256": raw_execution.get("event_sha256"),
+                    }
+                )
+        elif len(regimes_by_symbol) == 1:
+            symbol = next(iter(regimes_by_symbol))
+            executions.append(
+                {
+                    "execution_id": f"{raw_block.get('block_id')}:{symbol}",
+                    "symbol": symbol,
+                    "planned_entry_regimes": sorted(regimes_by_symbol[symbol]),
+                    "event_sha256": raw_block.get("event_sha256"),
+                }
+            )
+        else:
+            mismatches.append(f"benchmark.block[{block_index}].executions_missing")
+        block_executions.append(executions)
+        all_symbols.update(item["symbol"] for item in executions if item["symbol"])
+        if len(executions) != 1 or any(
+            len(item["planned_entry_regimes"]) != 1 for item in executions
+        ) or (
+            len(executions) == 1
+            and isinstance(raw_block, dict)
+            and executions[0].get("event_sha256") != raw_block.get("event_sha256")
+        ):
+            needs_v2 = True
 
-    target_bucket = str(corpus.get("target_bucket") or "").strip().lower()
-    if target_bucket not in {"trend", "range", "extreme"}:
-        mismatches.append("corpus_manifest.target_bucket_invalid")
-    base_interval_ms = corpus.get("base_interval_ms")
-    if not isinstance(base_interval_ms, int) or base_interval_ms <= 0:
-        mismatches.append("corpus_manifest.base_interval_ms_invalid")
-        base_interval_ms = 300_000
-    corpus_symbol = str(corpus.get("symbol") or "").strip().upper()
-    if not corpus_symbol:
-        mismatches.append("corpus_manifest.symbol_missing")
-    if corpus.get("candidate_set_frozen") is not True:
-        mismatches.append("corpus_manifest.candidate_set_frozen_not_true")
-    declared_feature_sha = str(corpus.get("source_feature_sha256") or "")
-    actual_feature_sha = file_sha256(feature_csv)
-    if declared_feature_sha != actual_feature_sha:
-        mismatches.append("corpus_manifest.source_feature_sha256_mismatch")
-    declared_feature_path = str(corpus.get("source_feature_csv") or "").strip()
-    if not declared_feature_path:
-        mismatches.append("corpus_manifest.source_feature_csv_missing")
-    else:
-        declared_raw = pathlib.Path(declared_feature_path).expanduser()
-        declared = (
-            declared_raw
-            if declared_raw.is_absolute()
-            else corpus_manifest.parent / declared_raw
-        ).resolve(strict=False)
-        if declared != feature_csv.expanduser().resolve(strict=False):
-            mismatches.append("corpus_manifest.source_feature_csv_mismatch")
+    feature_paths = _normalized_path_mapping(feature_csv_by_symbol)
+    corpus_paths = _normalized_path_mapping(corpus_manifest_by_symbol)
+    if len(all_symbols) == 1:
+        only_symbol = next(iter(all_symbols))
+        feature_paths.setdefault(only_symbol, feature_csv.resolve(strict=False))
+        corpus_paths.setdefault(only_symbol, corpus_manifest.resolve(strict=False))
+    elif all_symbols:
+        extra_feature_symbols = sorted(set(feature_paths) - all_symbols)
+        extra_corpus_symbols = sorted(set(corpus_paths) - all_symbols)
+        if extra_feature_symbols:
+            mismatches.append(
+                "feature_csv_by_symbol.extra_symbols:" + ",".join(extra_feature_symbols)
+            )
+        if extra_corpus_symbols:
+            mismatches.append(
+                "corpus_manifest_by_symbol.extra_symbols:" + ",".join(extra_corpus_symbols)
+            )
 
-    try:
-        feature_rows = load_feature_rows(feature_csv)
-    except (OSError, ValueError, UnicodeError) as exc:
-        mismatches.append(f"feature_csv_invalid:{type(exc).__name__}:{exc}")
-        feature_rows = []
-    timestamp_to_index: dict[int, int] = {}
-    for index, row in enumerate(feature_rows):
-        if row.timestamp in timestamp_to_index:
-            mismatches.append(f"feature_csv.duplicate_timestamp:{row.timestamp}")
-        timestamp_to_index[row.timestamp] = index
+    sources: dict[str, dict[str, Any]] = {}
+    for symbol in sorted(all_symbols):
+        symbol_prefix = f"source.{symbol}"
+        symbol_feature = feature_paths.get(symbol)
+        symbol_corpus = corpus_paths.get(symbol)
+        if symbol_feature is None or not symbol_feature.is_file():
+            mismatches.append(f"{symbol_prefix}.feature_csv_missing")
+            continue
+        if symbol_corpus is None or not symbol_corpus.is_file():
+            mismatches.append(f"{symbol_prefix}.corpus_manifest_missing")
+            continue
+        try:
+            corpus = _read_json_object(symbol_corpus)
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            mismatches.append(
+                f"{symbol_prefix}.corpus_manifest_invalid:{type(exc).__name__}"
+            )
+            continue
+        target_bucket = str(corpus.get("target_bucket") or "").strip().lower()
+        if target_bucket not in {"trend", "range", "extreme"}:
+            mismatches.append(f"{symbol_prefix}.target_bucket_invalid")
+        base_interval_ms = corpus.get("base_interval_ms")
+        if not isinstance(base_interval_ms, int) or base_interval_ms <= 0:
+            mismatches.append(f"{symbol_prefix}.base_interval_ms_invalid")
+            continue
+        if str(corpus.get("symbol") or "").strip().upper() != symbol:
+            mismatches.append(f"{symbol_prefix}.corpus_symbol_mismatch")
+        if corpus.get("candidate_set_frozen") is not True:
+            mismatches.append(f"{symbol_prefix}.candidate_set_frozen_not_true")
+        actual_feature_sha = file_sha256(symbol_feature)
+        if corpus.get("source_feature_sha256") != actual_feature_sha:
+            mismatches.append(f"{symbol_prefix}.source_feature_sha256_mismatch")
+        declared_path = str(corpus.get("source_feature_csv") or "").strip()
+        if not declared_path:
+            mismatches.append(f"{symbol_prefix}.source_feature_csv_missing")
+        else:
+            declared_raw = pathlib.Path(declared_path).expanduser()
+            declared = (
+                declared_raw
+                if declared_raw.is_absolute()
+                else symbol_corpus.parent / declared_raw
+            ).resolve(strict=False)
+            if declared != symbol_feature:
+                mismatches.append(f"{symbol_prefix}.source_feature_csv_mismatch")
+        try:
+            rows = load_feature_rows(symbol_feature)
+        except (OSError, ValueError, UnicodeError) as exc:
+            mismatches.append(f"{symbol_prefix}.feature_csv_invalid:{type(exc).__name__}:{exc}")
+            continue
+        timestamp_to_index: dict[int, int] = {}
+        for row_index, row in enumerate(rows):
+            if row.timestamp in timestamp_to_index:
+                mismatches.append(
+                    f"{symbol_prefix}.duplicate_timestamp:{row.timestamp}"
+                )
+            timestamp_to_index[row.timestamp] = row_index
+        sources[symbol] = {
+            "feature_csv": symbol_feature,
+            "feature_sha256": actual_feature_sha,
+            "corpus_manifest": symbol_corpus,
+            "corpus_sha256": file_sha256(symbol_corpus),
+            "target_bucket": target_bucket,
+            "base_interval_ms": base_interval_ms,
+            "rows": rows,
+            "timestamp_to_index": timestamp_to_index,
+        }
 
     materialized_dir = output_dir / "exact_replay_inputs"
     planned_blocks: list[dict[str, Any]] = []
@@ -281,92 +401,125 @@ def _materialize_exact_plan(
         if not isinstance(cells, list) or not cells:
             mismatches.append(f"{prefix}.cells_missing")
             continue
-        symbols = {
-            str(cell.get("symbol") or "").strip().upper()
-            for cell in cells
-            if isinstance(cell, dict)
-        }
-        regimes = {
-            str(cell.get("entry_regime") or "").strip().lower()
-            for cell in cells
-            if isinstance(cell, dict)
-        }
-        if len(symbols) != 1 or "" in symbols:
-            mismatches.append(f"{prefix}.single_symbol_required")
-            continue
-        symbol = next(iter(symbols))
-        if symbol != corpus_symbol:
-            mismatches.append(f"{prefix}.symbol_mismatch:{symbol}")
-            continue
-        if len(regimes) != 1 or target_bucket not in regimes:
-            mismatches.append(f"{prefix}.target_bucket_mismatch")
-            continue
-        if start not in timestamp_to_index or end not in timestamp_to_index:
-            mismatches.append(f"{prefix}.feature_interval_missing")
-            continue
-        start_index = timestamp_to_index[start]
-        end_index = timestamp_to_index[end]
-        if start_index > end_index:
-            mismatches.append(f"{prefix}.feature_interval_reordered")
-            continue
-        timestamps = [row.timestamp for row in feature_rows[start_index : end_index + 1]]
-        if any(
-            current - previous != base_interval_ms
-            for previous, current in zip(timestamps, timestamps[1:])
-        ):
-            mismatches.append(f"{prefix}.feature_interval_not_contiguous")
-            continue
-        segment = ReplaySegment(
-            start_index=start_index,
-            end_index=end_index,
-            start_timestamp=start,
-            end_timestamp=end,
-            bars=end_index - start_index + 1,
-        )
-        replay_csv = materialized_dir / _safe_block_filename(index, block_id)
-        try:
-            write_replay_csv(
-                feature_rows,
-                segment,
-                symbol,
-                replay_csv,
-                base_interval_ms,
-                warmup_context_bars=0,
-            )
-            actual_event_sha = file_sha256(replay_csv)
-        except (OSError, ValueError) as exc:
-            mismatches.append(f"{prefix}.replay_materialization_failed:{type(exc).__name__}")
-            continue
-        if actual_event_sha != event_sha:
-            mismatches.append(
-                f"{prefix}.event_sha256_mismatch:expected={event_sha}:actual={actual_event_sha}"
-            )
-            continue
-        segment_identity = replay_segment_identity(
-            symbol=symbol,
-            target_bucket=target_bucket,
-            base_interval_ms=base_interval_ms,
-            segment=ReplaySegment(
-                start_index=0,
-                end_index=segment.bars - 1,
+        planned_executions: list[dict[str, Any]] = []
+        for execution_index, execution in enumerate(block_executions[index]):
+            execution_prefix = f"{prefix}.execution[{execution_index}]"
+            symbol = execution["symbol"]
+            source = sources.get(symbol)
+            if source is None:
+                mismatches.append(f"{execution_prefix}.source_missing:{symbol}")
+                continue
+            expected_execution_id = f"{block_id}:{symbol}"
+            if execution["execution_id"] != expected_execution_id:
+                mismatches.append(f"{execution_prefix}.execution_id_noncanonical")
+                continue
+            timestamp_to_index = source["timestamp_to_index"]
+            if start not in timestamp_to_index or end not in timestamp_to_index:
+                mismatches.append(f"{execution_prefix}.feature_interval_missing")
+                continue
+            start_index = timestamp_to_index[start]
+            end_index = timestamp_to_index[end]
+            if start_index > end_index:
+                mismatches.append(f"{execution_prefix}.feature_interval_reordered")
+                continue
+            rows = source["rows"]
+            timestamps = [row.timestamp for row in rows[start_index : end_index + 1]]
+            if any(
+                current - previous != source["base_interval_ms"]
+                for previous, current in zip(timestamps, timestamps[1:])
+            ):
+                mismatches.append(f"{execution_prefix}.feature_interval_not_contiguous")
+                continue
+            segment = ReplaySegment(
+                start_index=start_index,
+                end_index=end_index,
                 start_timestamp=start,
                 end_timestamp=end,
-                bars=segment.bars,
-            ),
-            replay_csv_sha256=actual_event_sha,
-        )
-        planned_blocks.append(
-            {
-                "block_id": block_id,
-                "symbol": symbol,
-                "start_timestamp_ms": start,
-                "end_timestamp_ms": end,
-                "event_sha256": actual_event_sha,
-                "segment_identity_sha256": segment_identity["sha256"],
-                "replay_csv": str(replay_csv.resolve()),
-                "cells": cells,
-            }
-        )
+                bars=end_index - start_index + 1,
+            )
+            replay_csv = materialized_dir / _safe_block_filename(
+                index,
+                f"{block_id}-{symbol}",
+            )
+            try:
+                write_replay_csv(
+                    rows,
+                    segment,
+                    symbol,
+                    replay_csv,
+                    source["base_interval_ms"],
+                    warmup_context_bars=0,
+                )
+                actual_event_sha = file_sha256(replay_csv)
+            except (OSError, ValueError) as exc:
+                mismatches.append(
+                    f"{execution_prefix}.replay_materialization_failed:{type(exc).__name__}"
+                )
+                continue
+            if actual_event_sha != execution["event_sha256"]:
+                mismatches.append(
+                    f"{execution_prefix}.event_sha256_mismatch:"
+                    f"expected={execution['event_sha256']}:actual={actual_event_sha}"
+                )
+                continue
+            segment_identity = replay_segment_identity(
+                symbol=symbol,
+                target_bucket=source["target_bucket"],
+                base_interval_ms=source["base_interval_ms"],
+                segment=ReplaySegment(
+                    start_index=0,
+                    end_index=segment.bars - 1,
+                    start_timestamp=start,
+                    end_timestamp=end,
+                    bars=segment.bars,
+                ),
+                replay_csv_sha256=actual_event_sha,
+            )
+            planned_executions.append(
+                {
+                    "execution_id": execution["execution_id"],
+                    "symbol": symbol,
+                    "planned_entry_regimes": execution["planned_entry_regimes"],
+                    "target_bucket": source["target_bucket"],
+                    "start_timestamp_ms": start,
+                    "end_timestamp_ms": end,
+                    "event_sha256": actual_event_sha,
+                    "segment_identity_sha256": segment_identity["sha256"],
+                    "replay_csv": str(replay_csv.resolve()),
+                    "source_feature_sha256": source["feature_sha256"],
+                    "source_corpus_manifest_sha256": source["corpus_sha256"],
+                }
+            )
+        if len(planned_executions) != len(block_executions[index]):
+            mismatches.append(f"{prefix}.execution_coverage_mismatch")
+            continue
+        if needs_v2:
+            planned_blocks.append(
+                {
+                    "block_id": block_id,
+                    "start_timestamp_ms": start,
+                    "end_timestamp_ms": end,
+                    "event_sha256": event_sha,
+                    "cells": cells,
+                    "executions": planned_executions,
+                }
+            )
+        else:
+            only = planned_executions[0]
+            planned_blocks.append(
+                {
+                    "block_id": block_id,
+                    "symbol": only["symbol"],
+                    "start_timestamp_ms": start,
+                    "end_timestamp_ms": end,
+                    "event_sha256": only["event_sha256"],
+                    "segment_identity_sha256": only[
+                        "segment_identity_sha256"
+                    ],
+                    "replay_csv": only["replay_csv"],
+                    "cells": cells,
+                }
+            )
 
     if len(planned_blocks) != len(raw_blocks):
         mismatches.append(
@@ -374,12 +527,20 @@ def _materialize_exact_plan(
             f"expected={len(raw_blocks)}:actual={len(planned_blocks)}"
         )
     return {
-        "schema_version": EXACT_PLAN_SCHEMA,
+        "schema_version": EXACT_PLAN_V2_SCHEMA if needs_v2 else EXACT_PLAN_SCHEMA,
         "benchmark_id": str(benchmark_id or ""),
-        "target_bucket": target_bucket,
+        "target_bucket": (
+            next(iter({source["target_bucket"] for source in sources.values()}))
+            if len({source["target_bucket"] for source in sources.values()}) == 1
+            else "multi"
+        ),
         "blocks": planned_blocks,
-        "source_feature_sha256": actual_feature_sha,
-        "source_corpus_manifest_sha256": file_sha256(corpus_manifest),
+        "source_feature_sha256_by_symbol": {
+            symbol: source["feature_sha256"] for symbol, source in sorted(sources.items())
+        },
+        "source_corpus_manifest_sha256_by_symbol": {
+            symbol: source["corpus_sha256"] for symbol, source in sorted(sources.items())
+        },
     }, list(dict.fromkeys(mismatches))
 
 
@@ -438,6 +599,277 @@ def _new_arm(
         "blocks": [],
         "mismatches": [],
     }
+
+
+def _audit_multi_execution_arm(
+    *,
+    arm: dict[str, Any],
+    report: dict[str, Any],
+    expected_blocks: list[dict[str, Any]],
+    expected_policy: dict[str, Any],
+    trade_bot_sha256: str,
+    initial_weights_sha256: str,
+    initial_state_sha256: str,
+    mismatches: list[str],
+) -> list[str]:
+    prefix = f"arm.{arm['name']}"
+    expected_ids = [str(block.get("block_id") or "") for block in expected_blocks]
+    expected_execution_count = sum(
+        len(block.get("executions", [])) for block in expected_blocks
+    )
+    if report.get("planned_execution_count") != expected_execution_count:
+        mismatches.append(f"{prefix}.planned_execution_count_mismatch")
+    if report.get("executed_execution_count") != expected_execution_count:
+        mismatches.append(f"{prefix}.executed_execution_count_mismatch")
+    raw_blocks = report.get("blocks")
+    if not isinstance(raw_blocks, list):
+        mismatches.append(f"{prefix}.blocks_missing")
+        raw_blocks = []
+    executed_ids = [
+        str(block.get("block_id") or "")
+        for block in raw_blocks
+        if isinstance(block, dict)
+        and block.get("executed_execution_count")
+        == block.get("planned_execution_count")
+    ]
+    counts = collections.Counter(executed_ids)
+    arm["executed_block_ids"] = executed_ids
+    arm["block_execution_counts"] = dict(sorted(counts.items()))
+    if executed_ids != expected_ids:
+        mismatches.append(f"{prefix}.executed_block_ids_mismatch")
+    if any(counts.get(block_id, 0) != 1 for block_id in expected_ids):
+        mismatches.append(f"{prefix}.block_execution_count_not_one")
+
+    business_failed = False
+    arm_root = pathlib.Path(str(arm["output_dir"])).resolve(strict=False)
+    state_dirs: list[str] = []
+    allowed_errors: set[str] = set()
+    summaries: list[dict[str, Any]] = []
+    for block_index, expected_block in enumerate(expected_blocks):
+        block_prefix = f"{prefix}.block[{block_index}]"
+        if block_index >= len(raw_blocks) or not isinstance(raw_blocks[block_index], dict):
+            mismatches.append(f"{block_prefix}.missing")
+            continue
+        raw_block = raw_blocks[block_index]
+        block_id = str(expected_block.get("block_id") or "")
+        for field in (
+            "block_id",
+            "start_timestamp_ms",
+            "end_timestamp_ms",
+            "event_sha256",
+            "cells",
+        ):
+            if raw_block.get(field) != expected_block.get(field):
+                mismatches.append(f"{block_prefix}.{field}_mismatch")
+        if raw_block.get("plan_index") != block_index:
+            mismatches.append(f"{block_prefix}.plan_index_mismatch")
+        expected_executions = expected_block.get("executions")
+        expected_executions = (
+            expected_executions if isinstance(expected_executions, list) else []
+        )
+        raw_executions = raw_block.get("executions")
+        if not isinstance(raw_executions, list):
+            mismatches.append(f"{block_prefix}.executions_missing")
+            raw_executions = []
+        if len(raw_executions) != len(expected_executions):
+            mismatches.append(f"{block_prefix}.executions_coverage_mismatch")
+        if raw_block.get("planned_execution_count") != len(expected_executions):
+            mismatches.append(f"{block_prefix}.planned_execution_count_mismatch")
+        if raw_block.get("executed_execution_count") != len(expected_executions):
+            mismatches.append(f"{block_prefix}.executed_execution_count_mismatch")
+        execution_summaries: list[dict[str, Any]] = []
+        for execution_index, expected in enumerate(expected_executions):
+            execution_prefix = f"{block_prefix}.execution[{execution_index}]"
+            if execution_index >= len(raw_executions) or not isinstance(
+                raw_executions[execution_index], dict
+            ):
+                mismatches.append(f"{execution_prefix}.missing")
+                continue
+            audit = raw_executions[execution_index]
+            for field in (
+                "execution_id",
+                "symbol",
+                "planned_entry_regimes",
+            ):
+                if audit.get(field) != expected.get(field):
+                    mismatches.append(f"{execution_prefix}.{field}_mismatch")
+            for field, report_field in (
+                ("event_sha256", "expected_event_sha256"),
+                ("event_sha256", "actual_event_sha256"),
+                ("segment_identity_sha256", "expected_segment_identity_sha256"),
+                ("segment_identity_sha256", "actual_segment_identity_sha256"),
+            ):
+                if audit.get(report_field) != expected.get(field):
+                    mismatches.append(f"{execution_prefix}.{report_field}_mismatch")
+            if audit.get("execution_attempt_count") != 1:
+                mismatches.append(f"{execution_prefix}.execution_attempt_count_not_one")
+            if audit.get("trade_bot_exit_code") != 0:
+                mismatches.append(f"{execution_prefix}.trade_bot_exit_nonzero")
+            assess_exit = audit.get("assess_exit_code")
+            if assess_exit == 1:
+                business_failed = True
+                allowed_errors.add(
+                    f"block[{block_index}].execution[{execution_index}].assess_exit_nonzero"
+                )
+            elif assess_exit != 0:
+                mismatches.append(f"{execution_prefix}.assess_exit_invalid")
+            expected_status = "FAILED" if assess_exit == 1 else "EXECUTED"
+            if audit.get("execution_status") != expected_status:
+                mismatches.append(f"{execution_prefix}.execution_status_inconsistent")
+            evidence = audit.get("episode_execution_evidence")
+            no_trade_zero_utility = False
+            if not isinstance(evidence, dict):
+                mismatches.append(f"{execution_prefix}.episode_execution_evidence_missing")
+            else:
+                if evidence.get("schema_version") != "episode_execution_evidence_v1":
+                    mismatches.append(f"{execution_prefix}.episode_schema_invalid")
+                if evidence.get("segment_identity_sha256") != expected.get(
+                    "segment_identity_sha256"
+                ):
+                    mismatches.append(f"{execution_prefix}.episode_segment_identity_mismatch")
+                evidence_policy = evidence.get("execution_policy_identity")
+                if not isinstance(evidence_policy, dict) or evidence_policy.get(
+                    "sha256"
+                ) != expected_policy.get("sha256"):
+                    mismatches.append(f"{execution_prefix}.episode_policy_identity_mismatch")
+                episodes = evidence.get("episodes")
+                episodes = episodes if isinstance(episodes, list) else []
+                complete = (
+                    bool(episodes)
+                    and evidence.get("execution_path_complete") is True
+                    and evidence.get("episode_count") == len(episodes)
+                    and evidence.get("complete_episode_count") == len(episodes)
+                    and all(
+                        isinstance(episode, dict)
+                        and episode.get("execution_path_complete") is True
+                        and episode.get("utility_source") == "complete_execution_replay"
+                        for episode in episodes
+                    )
+                )
+                no_trade_zero_utility = (
+                    episodes == []
+                    and evidence.get("episode_count") == 0
+                    and evidence.get("complete_episode_count") == 0
+                    and evidence.get("execution_path_complete") is False
+                    and evidence.get("aggregate_only_rejected") is True
+                    and evidence.get("missing_path_evidence") == ["fills"]
+                )
+                if not (complete or no_trade_zero_utility):
+                    mismatches.append(f"{execution_prefix}.execution_path_incomplete")
+            audit_policy = audit.get("execution_policy_identity")
+            if not isinstance(audit_policy, dict) or audit_policy.get(
+                "sha256"
+            ) != expected_policy.get("sha256"):
+                mismatches.append(f"{execution_prefix}.execution_policy_sha256_mismatch")
+            if audit.get("trade_bot_sha256") != trade_bot_sha256:
+                mismatches.append(f"{execution_prefix}.trade_bot_sha256_mismatch")
+            state_dir = str(audit.get("state_dir") or "")
+            state_path = pathlib.Path(state_dir).resolve(strict=False) if state_dir else None
+            expected_parent = (
+                arm_root
+                / f"exact_block_{block_index + 1:03d}"
+                / f"execution_{execution_index + 1:03d}"
+            )
+            if state_path != expected_parent / "state" or not state_path.is_dir():
+                mismatches.append(f"{execution_prefix}.state_dir_not_isolated")
+            if state_dir:
+                state_dirs.append(str(state_path))
+            runtime_outputs: dict[str, str] = {}
+            for field, filename in (
+                ("runtime_log", "runtime.log"),
+                ("runtime_assess", "runtime_assess.json"),
+            ):
+                output_value = str(audit.get(field) or "")
+                output_path = pathlib.Path(output_value).resolve(strict=False) if output_value else None
+                if output_path != expected_parent / filename or not output_path.is_file():
+                    mismatches.append(f"{execution_prefix}.{field}_not_isolated")
+                runtime_outputs[field] = output_value
+            command = audit.get("command")
+            required_args = {
+                f"--config={arm['config']['path']}",
+                f"--data_path={state_path}" if state_path is not None else "",
+                f"--replay_market_data={expected.get('replay_csv')}",
+            }
+            if not isinstance(command, list) or not required_args.issubset(
+                {str(item) for item in command}
+            ):
+                mismatches.append(f"{execution_prefix}.command_identity_mismatch")
+            historical = audit.get("historical_state_loaded", False)
+            continued = audit.get("continued_from_block_id")
+            if historical is not False:
+                mismatches.append(f"{execution_prefix}.historical_state_loaded")
+            if continued not in (None, ""):
+                mismatches.append(f"{execution_prefix}.continued_from_block")
+            if audit.get("initial_weights_sha256", initial_weights_sha256) != initial_weights_sha256:
+                mismatches.append(f"{execution_prefix}.initial_weights_sha256_mismatch")
+            if audit.get("initial_evolution_state_sha256", initial_state_sha256) != initial_state_sha256:
+                mismatches.append(f"{execution_prefix}.initial_evolution_state_sha256_mismatch")
+            unexpected_errors = [
+                str(error)
+                for error in (audit.get("errors") if isinstance(audit.get("errors"), list) else [])
+                if str(error) != "assess_exit_nonzero"
+            ]
+            if unexpected_errors:
+                mismatches.append(f"{execution_prefix}.execution_errors:" + ",".join(unexpected_errors))
+            execution_summaries.append(
+                {
+                    "execution_id": expected.get("execution_id"),
+                    "symbol": expected.get("symbol"),
+                    "planned_entry_regimes": expected.get("planned_entry_regimes"),
+                    "event_sha256": expected.get("event_sha256"),
+                    "segment_identity_sha256": expected.get("segment_identity_sha256"),
+                    "state_dir": state_dir,
+                    "runtime_log": runtime_outputs["runtime_log"],
+                    "runtime_assess": runtime_outputs["runtime_assess"],
+                    "command": command if isinstance(command, list) else [],
+                    "assess_command": audit.get("assess_command") if isinstance(audit.get("assess_command"), list) else [],
+                    "initial_weights_sha256": initial_weights_sha256,
+                    "initial_evolution_state_sha256": initial_state_sha256,
+                    "historical_state_loaded": bool(historical),
+                    "continued_from_block_id": continued or None,
+                    "trade_bot_exit_code": audit.get("trade_bot_exit_code"),
+                    "assess_exit_code": assess_exit,
+                    "episode_execution_evidence": evidence,
+                    "no_trade_zero_utility": no_trade_zero_utility,
+                }
+            )
+        summaries.append(
+            {
+                "block_id": block_id,
+                "start_timestamp_ms": expected_block.get("start_timestamp_ms"),
+                "end_timestamp_ms": expected_block.get("end_timestamp_ms"),
+                "event_sha256": expected_block.get("event_sha256"),
+                "cells": expected_block.get("cells"),
+                "executions": execution_summaries,
+            }
+        )
+    if len(state_dirs) != len(set(state_dirs)):
+        mismatches.append(f"{prefix}.state_dir_reused_across_executions")
+    validation_errors = report.get("validation_errors")
+    validation_errors = validation_errors if isinstance(validation_errors, list) else []
+    unexpected_report_errors = [
+        str(error) for error in validation_errors if str(error) not in allowed_errors
+    ]
+    if unexpected_report_errors:
+        mismatches.append(f"{prefix}.report_validation_errors:" + ",".join(unexpected_report_errors))
+    verified_transport = (
+        report.get("status") == "VERIFIED"
+        and arm.get("exit_code") == 0
+        and not business_failed
+    )
+    audited_failure = (
+        report.get("status") == "UNVERIFIABLE"
+        and arm.get("exit_code") == 2
+        and business_failed
+        and not unexpected_report_errors
+    )
+    if not (verified_transport or audited_failure):
+        mismatches.append(f"{prefix}.command_or_report_status_invalid")
+    arm["blocks"] = summaries
+    arm["business_gate_status"] = "FAILED" if business_failed else "PASSED"
+    arm["infrastructure_status"] = "VERIFIED" if not mismatches else "UNVERIFIABLE"
+    arm["mismatches"] = list(mismatches)
+    return list(mismatches)
 
 
 def _audit_arm_report(
@@ -520,6 +952,18 @@ def _audit_arm_report(
         mismatches.append(f"{prefix}.planned_block_count_mismatch")
     if report.get("executed_block_count") != len(expected_ids):
         mismatches.append(f"{prefix}.executed_block_count_mismatch")
+
+    if expected_plan.get("schema_version") == EXACT_PLAN_V2_SCHEMA:
+        return _audit_multi_execution_arm(
+            arm=arm,
+            report=report,
+            expected_blocks=expected_blocks,
+            expected_policy=expected_policy,
+            trade_bot_sha256=trade_bot_sha256,
+            initial_weights_sha256=initial_weights_sha256,
+            initial_state_sha256=initial_state_sha256,
+            mismatches=mismatches,
+        )
 
     raw_blocks = report.get("blocks")
     if not isinstance(raw_blocks, list):
@@ -759,6 +1203,8 @@ def run_paired_evolution_replay(
     trade_bot: pathlib.Path,
     output_dir: pathlib.Path,
     benchmark_report: pathlib.Path,
+    feature_csv_by_symbol: dict[str, pathlib.Path] | None = None,
+    corpus_manifest_by_symbol: dict[str, pathlib.Path] | None = None,
     process_runner: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     paths = {
@@ -771,6 +1217,8 @@ def run_paired_evolution_replay(
         "benchmark_report": pathlib.Path(benchmark_report).resolve(strict=False),
         "output_dir": pathlib.Path(output_dir).resolve(strict=False),
     }
+    feature_paths_by_symbol = _normalized_path_mapping(feature_csv_by_symbol)
+    corpus_paths_by_symbol = _normalized_path_mapping(corpus_manifest_by_symbol)
     output_dir = paths["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / MANIFEST_FILENAME
@@ -815,11 +1263,20 @@ def run_paired_evolution_replay(
         },
         "feature_csv": _identity(paths["feature_csv"]),
         "corpus_manifest": _identity(paths["corpus_manifest"]),
+        "feature_csv_by_symbol": {
+            symbol: _identity(path)
+            for symbol, path in sorted(feature_paths_by_symbol.items())
+        },
+        "corpus_manifest_by_symbol": {
+            symbol: _identity(path)
+            for symbol, path in sorted(corpus_paths_by_symbol.items())
+        },
         "trade_bot": _identity(paths["trade_bot"]),
         "candidate_model": _identity(paths["candidate_model"]),
         "candidate_report": _identity(paths["candidate_report"]),
         "benchmark_report": _identity(paths["benchmark_report"]),
         "exact_block_plan": {
+            "schema_version": "",
             "path": str(exact_plan_path),
             "sha256": "",
             "read_only": True,
@@ -859,6 +1316,10 @@ def run_paired_evolution_replay(
         "trade_bot",
         "benchmark_report",
     ):
+        if name == "feature_csv" and feature_paths_by_symbol:
+            continue
+        if name == "corpus_manifest" and corpus_paths_by_symbol:
+            continue
         if not paths[name].is_file():
             mismatches.append(f"input.{name}_missing")
     for name, arm_output in (("frozen", frozen_output), ("adaptive", adaptive_output)):
@@ -984,19 +1445,22 @@ def run_paired_evolution_replay(
     }
     if (
         benchmark
-        and paths["feature_csv"].is_file()
-        and paths["corpus_manifest"].is_file()
+        and (paths["feature_csv"].is_file() or bool(feature_paths_by_symbol))
+        and (paths["corpus_manifest"].is_file() or bool(corpus_paths_by_symbol))
     ):
         try:
             exact_plan, plan_mismatches = _materialize_exact_plan(
                 benchmark=benchmark,
                 feature_csv=paths["feature_csv"],
                 corpus_manifest=paths["corpus_manifest"],
+                feature_csv_by_symbol=feature_paths_by_symbol,
+                corpus_manifest_by_symbol=corpus_paths_by_symbol,
                 output_dir=output_dir,
             )
             mismatches.extend(plan_mismatches)
             _atomic_write_json(exact_plan_path, exact_plan, mode=0o444)
             manifest["exact_block_plan"] = {
+                "schema_version": exact_plan.get("schema_version"),
                 "path": str(exact_plan_path),
                 "sha256": file_sha256(exact_plan_path),
                 "read_only": True,
@@ -1048,21 +1512,24 @@ def run_paired_evolution_replay(
         output_owners: dict[str, str] = {}
         for name in ("frozen", "adaptive"):
             for block in manifest["arms"][name]["blocks"]:
-                state_dir = str(block.get("state_dir") or "")
-                if state_dir and state_dir in state_owners:
-                    manifest["mismatches"].append(
-                        f"state_dir_reused_across_arms:{state_owners[state_dir]}:{name}:{state_dir}"
-                    )
-                elif state_dir:
-                    state_owners[state_dir] = name
-                for output_field in ("runtime_log", "runtime_assess"):
-                    output_path = str(block.get(output_field) or "")
-                    if output_path and output_path in output_owners:
+                executions = block.get("executions")
+                execution_rows = executions if isinstance(executions, list) else [block]
+                for execution in execution_rows:
+                    state_dir = str(execution.get("state_dir") or "")
+                    if state_dir and state_dir in state_owners:
                         manifest["mismatches"].append(
-                            f"{output_field}_reused:{output_owners[output_path]}:{name}:{output_path}"
+                            f"state_dir_reused_across_arms:{state_owners[state_dir]}:{name}:{state_dir}"
                         )
-                    elif output_path:
-                        output_owners[output_path] = name
+                    elif state_dir:
+                        state_owners[state_dir] = name
+                    for output_field in ("runtime_log", "runtime_assess"):
+                        output_path = str(execution.get(output_field) or "")
+                        if output_path and output_path in output_owners:
+                            manifest["mismatches"].append(
+                                f"{output_field}_reused:{output_owners[output_path]}:{name}:{output_path}"
+                            )
+                        elif output_path:
+                            output_owners[output_path] = name
 
     immutable_identities = [
         ("source_runtime_config", manifest["source_runtime_config"]),
@@ -1077,6 +1544,14 @@ def run_paired_evolution_replay(
         ("arm.frozen.config", manifest["arms"]["frozen"]["config"]),
         ("arm.adaptive.config", manifest["arms"]["adaptive"]["config"]),
     ]
+    immutable_identities.extend(
+        (f"feature_csv_by_symbol.{symbol}", identity)
+        for symbol, identity in manifest["feature_csv_by_symbol"].items()
+    )
+    immutable_identities.extend(
+        (f"corpus_manifest_by_symbol.{symbol}", identity)
+        for symbol, identity in manifest["corpus_manifest_by_symbol"].items()
+    )
     for identity_name, identity in immutable_identities:
         expected_sha = str(identity.get("sha256") or "")
         identity_path = pathlib.Path(str(identity.get("path") or ""))
@@ -1092,17 +1567,22 @@ def run_paired_evolution_replay(
     for index, block in enumerate(exact_plan.get("blocks", [])):
         if not isinstance(block, dict):
             continue
-        replay_path = pathlib.Path(str(block.get("replay_csv") or ""))
-        expected_sha = str(block.get("event_sha256") or "")
-        try:
-            actual_sha = file_sha256(replay_path)
-        except OSError:
-            actual_sha = ""
-        if actual_sha != expected_sha:
-            manifest["mismatches"].append(
-                f"exact_block_plan.block[{index}].event_sha256_changed:"
-                f"expected={expected_sha}:actual={actual_sha}"
-            )
+        executions = block.get("executions")
+        replay_entries = executions if isinstance(executions, list) else [block]
+        for execution_index, execution in enumerate(replay_entries):
+            if not isinstance(execution, dict):
+                continue
+            replay_path = pathlib.Path(str(execution.get("replay_csv") or ""))
+            expected_sha = str(execution.get("event_sha256") or "")
+            try:
+                actual_sha = file_sha256(replay_path)
+            except OSError:
+                actual_sha = ""
+            if actual_sha != expected_sha:
+                manifest["mismatches"].append(
+                    f"exact_block_plan.block[{index}].execution[{execution_index}]."
+                    f"event_sha256_changed:expected={expected_sha}:actual={actual_sha}"
+                )
 
     manifest["mismatches"] = list(dict.fromkeys(manifest["mismatches"]))
     manifest["status"] = "VERIFIED" if not manifest["mismatches"] else "UNVERIFIABLE"
@@ -1115,8 +1595,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime-config", required=True)
     parser.add_argument("--candidate-model", required=True)
     parser.add_argument("--candidate-report", required=True)
-    parser.add_argument("--feature-csv", required=True)
-    parser.add_argument("--corpus-manifest", required=True)
+    parser.add_argument("--feature-csv", default="")
+    parser.add_argument("--corpus-manifest", default="")
+    parser.add_argument(
+        "--feature-csv-by-symbol",
+        default="",
+        help="comma-separated SYMBOL=PATH frozen feature mapping",
+    )
+    parser.add_argument(
+        "--corpus-manifest-by-symbol",
+        default="",
+        help="comma-separated SYMBOL=PATH frozen corpus mapping",
+    )
     parser.add_argument("--trade-bot", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--benchmark-report", required=True)
@@ -1131,6 +1621,12 @@ def main() -> int:
         candidate_report=pathlib.Path(args.candidate_report),
         feature_csv=pathlib.Path(args.feature_csv),
         corpus_manifest=pathlib.Path(args.corpus_manifest),
+        feature_csv_by_symbol=parse_symbol_path_mapping(
+            args.feature_csv_by_symbol
+        ),
+        corpus_manifest_by_symbol=parse_symbol_path_mapping(
+            args.corpus_manifest_by_symbol
+        ),
         trade_bot=pathlib.Path(args.trade_bot),
         output_dir=pathlib.Path(args.output_dir),
         benchmark_report=pathlib.Path(args.benchmark_report),

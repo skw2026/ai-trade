@@ -71,7 +71,6 @@ def validate_files(
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         return _invalid_input_report("manifest", "input", str(exc))
 
-    report = validate_benchmark(manifest, root)
     try:
         config = _read_json_object(config_path)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -79,6 +78,16 @@ def validate_files(
         config_actual: Any = str(exc)
     else:
         config_actual = config
+    try:
+        config_sha256 = file_sha256(config_path) if config is not None else None
+    except OSError:
+        config_sha256 = None
+    report = validate_benchmark(
+        manifest,
+        root,
+        validation_policy=config,
+        validation_config_sha256=config_sha256,
+    )
 
     if config != EXPECTED_CONFIG:
         report.pop("benchmark_id", None)
@@ -98,8 +107,6 @@ def validate_files(
                 item["component"], item["logical_name"], item["field"]
             )
         )
-    elif config_path.is_file():
-        report["validation_config_sha256"] = file_sha256(config_path)
     return report
 
 

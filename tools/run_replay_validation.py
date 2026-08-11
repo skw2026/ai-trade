@@ -1274,6 +1274,227 @@ def inspect_exact_replay_csv(
     return inspection, []
 
 
+def _preflight_exact_block_plan_v2(
+    payload: dict[str, Any],
+    *,
+    plan_path: pathlib.Path,
+    plan_metadata: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    audits: list[dict[str, Any]] = []
+    prepared_blocks: list[dict[str, Any]] = []
+    errors: list[str] = []
+    raw_blocks = payload.get("blocks")
+    if not isinstance(raw_blocks, list) or not raw_blocks:
+        return plan_metadata, audits, prepared_blocks, ["exact_block_plan_blocks_missing"]
+
+    seen_blocks: set[str] = set()
+    seen_execution_ids: set[str] = set()
+    for block_index, raw_block in enumerate(raw_blocks):
+        block_audit: dict[str, Any] = {
+            "plan_index": block_index,
+            "block_id": "",
+            "start_timestamp_ms": None,
+            "end_timestamp_ms": None,
+            "event_sha256": "",
+            "cells": [],
+            "planned_execution_count": 0,
+            "executed_execution_count": 0,
+            "execution_status": "NOT_RUN",
+            "errors": [],
+            "executions": [],
+        }
+        audits.append(block_audit)
+        prefix = f"block[{block_index}]"
+        if not isinstance(raw_block, dict):
+            block_audit["errors"].append("block_not_object")
+            errors.append(f"{prefix}.block_not_object")
+            continue
+        block_id = str(raw_block.get("block_id") or "").strip()
+        block_audit["block_id"] = block_id
+        if not block_id:
+            block_audit["errors"].append("block_id_missing")
+        elif block_id in seen_blocks:
+            block_audit["errors"].append("duplicate_block_id")
+        seen_blocks.add(block_id)
+        try:
+            start = int(raw_block.get("start_timestamp_ms"))
+            end = int(raw_block.get("end_timestamp_ms"))
+        except (TypeError, ValueError):
+            start = end = None
+            block_audit["errors"].append("timestamp_invalid")
+        block_audit["start_timestamp_ms"] = start
+        block_audit["end_timestamp_ms"] = end
+        if start is not None and end is not None and start > end:
+            block_audit["errors"].append("timestamp_range_invalid")
+        event_sha = str(raw_block.get("event_sha256") or "")
+        block_audit["event_sha256"] = event_sha
+        if not _is_sha256(event_sha):
+            block_audit["errors"].append("event_sha256_invalid")
+
+        raw_cells = raw_block.get("cells")
+        planned_cells: set[tuple[str, str]] = set()
+        if not isinstance(raw_cells, list) or not raw_cells:
+            block_audit["errors"].append("cells_missing")
+            raw_cells = []
+        for cell_index, raw_cell in enumerate(raw_cells):
+            if not isinstance(raw_cell, dict):
+                block_audit["errors"].append(f"cell[{cell_index}].not_object")
+                continue
+            symbol = str(raw_cell.get("symbol") or "").strip().upper()
+            regime = str(raw_cell.get("entry_regime") or "").strip().lower()
+            cell = (symbol, regime)
+            if not symbol or not regime:
+                block_audit["errors"].append(f"cell[{cell_index}].invalid")
+            elif cell in planned_cells:
+                block_audit["errors"].append(f"cell[{cell_index}].duplicate")
+            else:
+                planned_cells.add(cell)
+        block_audit["cells"] = [
+            {"symbol": symbol, "entry_regime": regime}
+            for symbol, regime in sorted(planned_cells)
+        ]
+
+        raw_executions = raw_block.get("executions")
+        if not isinstance(raw_executions, list) or not raw_executions:
+            block_audit["errors"].append("executions_missing")
+            raw_executions = []
+        block_audit["planned_execution_count"] = len(raw_executions)
+        prepared_executions: list[dict[str, Any]] = []
+        covered_cells: set[tuple[str, str]] = set()
+        covered_symbols: set[str] = set()
+        for execution_index, raw_execution in enumerate(raw_executions):
+            execution_audit: dict[str, Any] = {
+                "execution_index": execution_index,
+                "execution_id": "",
+                "block_id": block_id,
+                "symbol": "",
+                "planned_entry_regimes": [],
+                "start_timestamp_ms": None,
+                "end_timestamp_ms": None,
+                "expected_event_sha256": "",
+                "actual_event_sha256": "",
+                "expected_segment_identity_sha256": "",
+                "actual_segment_identity_sha256": "",
+                "replay_csv": "",
+                "command": [],
+                "assess_command": [],
+                "trade_bot_exit_code": None,
+                "assess_exit_code": None,
+                "episode_execution_evidence": None,
+                "execution_attempt_count": 0,
+                "execution_status": "NOT_RUN",
+                "errors": [],
+            }
+            block_audit["executions"].append(execution_audit)
+            execution_prefix = f"{prefix}.execution[{execution_index}]"
+            if not isinstance(raw_execution, dict):
+                execution_audit["errors"].append("execution_not_object")
+                continue
+            execution_id = str(raw_execution.get("execution_id") or "").strip()
+            symbol = str(raw_execution.get("symbol") or "").strip().upper()
+            expected_execution_id = f"{block_id}:{symbol}"
+            execution_audit["execution_id"] = execution_id
+            execution_audit["symbol"] = symbol
+            if execution_id != expected_execution_id:
+                execution_audit["errors"].append("execution_id_noncanonical")
+            if execution_id in seen_execution_ids:
+                execution_audit["errors"].append("duplicate_execution_id")
+            seen_execution_ids.add(execution_id)
+            if symbol in covered_symbols:
+                execution_audit["errors"].append("duplicate_execution_symbol")
+            covered_symbols.add(symbol)
+            raw_regimes = raw_execution.get("planned_entry_regimes")
+            regimes = (
+                [str(item).strip().lower() for item in raw_regimes]
+                if isinstance(raw_regimes, list)
+                else []
+            )
+            execution_audit["planned_entry_regimes"] = regimes
+            if not regimes or any(not regime for regime in regimes):
+                execution_audit["errors"].append("planned_entry_regimes_invalid")
+            if len(regimes) != len(set(regimes)):
+                execution_audit["errors"].append("planned_entry_regimes_duplicate")
+            expected_regimes = sorted(
+                regime for cell_symbol, regime in planned_cells if cell_symbol == symbol
+            )
+            if sorted(regimes) != expected_regimes:
+                execution_audit["errors"].append("planned_entry_regimes_mismatch")
+            covered_cells.update((symbol, regime) for regime in regimes)
+            try:
+                execution_start = int(raw_execution.get("start_timestamp_ms"))
+                execution_end = int(raw_execution.get("end_timestamp_ms"))
+            except (TypeError, ValueError):
+                execution_start = execution_end = None
+                execution_audit["errors"].append("timestamp_invalid")
+            execution_audit["start_timestamp_ms"] = execution_start
+            execution_audit["end_timestamp_ms"] = execution_end
+            if execution_start != start:
+                execution_audit["errors"].append("start_timestamp_mismatch")
+            if execution_end != end:
+                execution_audit["errors"].append("end_timestamp_mismatch")
+            execution_event_sha = str(raw_execution.get("event_sha256") or "")
+            segment_sha = str(raw_execution.get("segment_identity_sha256") or "")
+            execution_audit["expected_event_sha256"] = execution_event_sha
+            execution_audit["expected_segment_identity_sha256"] = segment_sha
+            if not _is_sha256(execution_event_sha):
+                execution_audit["errors"].append("event_sha256_invalid")
+            if not _is_sha256(segment_sha):
+                execution_audit["errors"].append("segment_identity_sha256_invalid")
+            execution_bucket = str(
+                raw_execution.get("target_bucket") or plan_metadata["target_bucket"]
+            ).strip().lower()
+            if execution_bucket not in {"trend", "range", "extreme"}:
+                execution_audit["errors"].append("target_bucket_invalid")
+            replay_raw = pathlib.Path(str(raw_execution.get("replay_csv") or ""))
+            replay_csv = (
+                replay_raw
+                if replay_raw.is_absolute()
+                else (plan_path.parent / replay_raw).resolve()
+            )
+            execution_audit["replay_csv"] = str(replay_csv)
+            inspection, inspection_errors = inspect_exact_replay_csv(
+                replay_csv,
+                symbol=symbol,
+                target_bucket=execution_bucket,
+            )
+            execution_audit["actual_event_sha256"] = inspection["actual_event_sha256"]
+            execution_audit["actual_segment_identity_sha256"] = inspection[
+                "actual_segment_identity_sha256"
+            ]
+            execution_audit["errors"].extend(inspection_errors)
+            if inspection["actual_event_sha256"] != execution_event_sha:
+                execution_audit["errors"].append("event_sha256_mismatch")
+            if inspection["actual_start_timestamp_ms"] != execution_start:
+                execution_audit["errors"].append("start_timestamp_mismatch")
+            if inspection["actual_end_timestamp_ms"] != execution_end:
+                execution_audit["errors"].append("end_timestamp_mismatch")
+            if inspection["actual_segment_identity_sha256"] != segment_sha:
+                execution_audit["errors"].append("segment_identity_sha256_mismatch")
+            execution_audit["errors"] = list(dict.fromkeys(execution_audit["errors"]))
+            for error in execution_audit["errors"]:
+                errors.append(f"{execution_prefix}.{error}")
+            if not execution_audit["errors"]:
+                prepared_executions.append(
+                    {
+                        "audit": execution_audit,
+                        "replay_csv": replay_csv,
+                        "segment": inspection["segment"],
+                        "segment_identity": inspection["segment_identity"],
+                    }
+                )
+        if covered_cells != planned_cells:
+            block_audit["errors"].append("cell_coverage_mismatch")
+        if covered_symbols != {symbol for symbol, _ in planned_cells}:
+            block_audit["errors"].append("symbol_coverage_mismatch")
+        for error in block_audit["errors"]:
+            errors.append(f"{prefix}.{error}")
+        if not block_audit["errors"] and len(prepared_executions) == len(raw_executions):
+            prepared_blocks.append(
+                {"audit": block_audit, "executions": prepared_executions}
+            )
+    return plan_metadata, audits, prepared_blocks, list(dict.fromkeys(errors))
+
+
 def preflight_exact_block_plan(
     plan_path: pathlib.Path,
     *,
@@ -1302,8 +1523,8 @@ def preflight_exact_block_plan(
         ]
     if not isinstance(payload, dict):
         return plan_metadata, audits, prepared, ["exact_block_plan_not_object"]
-    if payload.get("schema_version") != "exact_replay_block_plan_v1":
-        validation_errors.append("exact_block_plan_schema_version_invalid")
+    schema_version = payload.get("schema_version")
+    plan_metadata["schema_version"] = schema_version
     benchmark_id = str(payload.get("benchmark_id") or "").strip()
     if not _is_sha256(benchmark_id):
         validation_errors.append("exact_block_plan_benchmark_id_invalid")
@@ -1311,6 +1532,21 @@ def preflight_exact_block_plan(
     target_bucket = str(
         payload.get("target_bucket") or fallback_target_bucket
     ).strip().lower()
+    if schema_version == "exact_replay_block_plan_v2":
+        if target_bucket not in {"trend", "range", "extreme", "multi"}:
+            validation_errors.append("exact_block_plan_target_bucket_invalid")
+        plan_metadata["target_bucket"] = target_bucket
+        metadata, v2_audits, v2_prepared, v2_errors = _preflight_exact_block_plan_v2(
+            payload,
+            plan_path=plan_path,
+            plan_metadata=plan_metadata,
+        )
+        return metadata, v2_audits, v2_prepared, [
+            *validation_errors,
+            *v2_errors,
+        ]
+    if schema_version != "exact_replay_block_plan_v1":
+        validation_errors.append("exact_block_plan_schema_version_invalid")
     if target_bucket not in {"trend", "range", "extreme"}:
         validation_errors.append("exact_block_plan_target_bucket_invalid")
     plan_metadata["target_bucket"] = target_bucket
@@ -4665,82 +4901,206 @@ def run_exact_block_plan(
                 f"trade_bot_identity_failed:{type(exc).__name__}"
             )
 
+    is_multi_execution_plan = (
+        plan_metadata.get("schema_version") == "exact_replay_block_plan_v2"
+    )
+    planned_execution_count = (
+        sum(
+            len(block.get("executions", []))
+            for block in audits
+            if isinstance(block, dict)
+        )
+        if is_multi_execution_plan
+        else len(audits)
+    )
+    executed_execution_count = 0
     executed_block_count = 0
     if not validation_errors and len(prepared) == len(audits):
-        for prepared_block in prepared:
-            audit = prepared_block["audit"]
-            segment = prepared_block["segment"]
-            segment_identity = prepared_block["segment_identity"]
-            segment_dir = output_dir / f"exact_block_{int(audit['plan_index']) + 1:03d}"
-            audit["execution_attempt_count"] = 1
-            executed_block_count += 1
-            try:
-                run_payload = execute_replay_csv(
-                    block_id=str(audit["block_id"]),
-                    symbol=str(audit["symbol"]),
-                    segment_index=int(audit["plan_index"]) + 1,
-                    segment_payload={
-                        "block_id": audit["block_id"],
-                        "start_timestamp": segment.start_timestamp,
-                        "end_timestamp": segment.end_timestamp,
-                        "bars": segment.bars,
-                    },
-                    replay_csv=prepared_block["replay_csv"],
-                    segment_identity=segment_identity,
-                    segment_dir=segment_dir,
-                    root=root,
-                    base_config=base_config,
-                    trade_bot=trade_bot,
-                    assess_stage=args.assess_stage,
-                    min_runtime_status=args.min_runtime_status,
-                    execution_policy_identity=execution_policy_identity,
-                    trade_bot_sha256=trade_bot_sha256,
-                    warmup_context_bars=0,
+        if is_multi_execution_plan:
+            for prepared_block in prepared:
+                block_audit = prepared_block["audit"]
+                block_index = int(block_audit["plan_index"])
+                attempted = 0
+                for prepared_execution in prepared_block["executions"]:
+                    audit = prepared_execution["audit"]
+                    execution_index = int(audit["execution_index"])
+                    segment = prepared_execution["segment"]
+                    segment_identity = prepared_execution["segment_identity"]
+                    segment_dir = (
+                        output_dir
+                        / f"exact_block_{block_index + 1:03d}"
+                        / f"execution_{execution_index + 1:03d}"
+                    )
+                    audit["execution_attempt_count"] = 1
+                    attempted += 1
+                    executed_execution_count += 1
+                    try:
+                        run_payload = execute_replay_csv(
+                            block_id=str(audit["block_id"]),
+                            symbol=str(audit["symbol"]),
+                            segment_index=execution_index + 1,
+                            segment_payload={
+                                "block_id": audit["block_id"],
+                                "execution_id": audit["execution_id"],
+                                "planned_entry_regimes": audit[
+                                    "planned_entry_regimes"
+                                ],
+                                "start_timestamp": segment.start_timestamp,
+                                "end_timestamp": segment.end_timestamp,
+                                "bars": segment.bars,
+                            },
+                            replay_csv=prepared_execution["replay_csv"],
+                            segment_identity=segment_identity,
+                            segment_dir=segment_dir,
+                            root=root,
+                            base_config=base_config,
+                            trade_bot=trade_bot,
+                            assess_stage=args.assess_stage,
+                            min_runtime_status=args.min_runtime_status,
+                            execution_policy_identity=execution_policy_identity,
+                            trade_bot_sha256=trade_bot_sha256,
+                            warmup_context_bars=0,
+                        )
+                        audit.update(
+                            {
+                                "command": run_payload["command"],
+                                "assess_command": run_payload["assess_command"],
+                                "trade_bot_exit_code": run_payload[
+                                    "trade_bot_exit_code"
+                                ],
+                                "assess_exit_code": run_payload["assess_exit_code"],
+                                "episode_execution_evidence": run_payload[
+                                    "episode_execution_evidence"
+                                ],
+                                "runtime_log": run_payload["runtime_log"],
+                                "runtime_assess": run_payload["runtime_assess"],
+                                "state_dir": run_payload["state_dir"],
+                                "execution_policy_identity": run_payload[
+                                    "execution_policy_identity"
+                                ],
+                                "trade_bot_sha256": run_payload["trade_bot_sha256"],
+                            }
+                        )
+                        post_sha = hashlib.sha256(
+                            prepared_execution["replay_csv"].read_bytes()
+                        ).hexdigest()
+                        audit["post_execution_event_sha256"] = post_sha
+                        if post_sha != audit["expected_event_sha256"]:
+                            audit["errors"].append(
+                                "event_sha256_changed_during_execution"
+                            )
+                        if int(audit["trade_bot_exit_code"]) != 0:
+                            audit["errors"].append("trade_bot_exit_nonzero")
+                        if int(audit["assess_exit_code"]) != 0:
+                            audit["errors"].append("assess_exit_nonzero")
+                        if not isinstance(
+                            audit["episode_execution_evidence"], dict
+                        ):
+                            audit["errors"].append(
+                                "episode_execution_evidence_missing"
+                            )
+                        audit["execution_status"] = (
+                            "EXECUTED" if not audit["errors"] else "FAILED"
+                        )
+                    except Exception as exc:
+                        audit["errors"].append(
+                            f"execution_failed:{type(exc).__name__}:{exc}"
+                        )
+                        audit["execution_status"] = "FAILED"
+                    for error in audit["errors"]:
+                        validation_errors.append(
+                            f"block[{block_index}].execution[{execution_index}].{error}"
+                        )
+                block_audit["executed_execution_count"] = attempted
+                if attempted == block_audit["planned_execution_count"]:
+                    executed_block_count += 1
+                block_audit["execution_status"] = (
+                    "EXECUTED"
+                    if (
+                        attempted == block_audit["planned_execution_count"]
+                        and all(
+                            execution["execution_status"] == "EXECUTED"
+                            for execution in block_audit["executions"]
+                        )
+                    )
+                    else "FAILED"
                 )
-                audit.update(
-                    {
-                        "command": run_payload["command"],
-                        "assess_command": run_payload["assess_command"],
-                        "trade_bot_exit_code": run_payload[
-                            "trade_bot_exit_code"
-                        ],
-                        "assess_exit_code": run_payload["assess_exit_code"],
-                        "episode_execution_evidence": run_payload[
-                            "episode_execution_evidence"
-                        ],
-                        "runtime_log": run_payload["runtime_log"],
-                        "runtime_assess": run_payload["runtime_assess"],
-                        "state_dir": run_payload["state_dir"],
-                        "execution_policy_identity": run_payload[
-                            "execution_policy_identity"
-                        ],
-                        "trade_bot_sha256": run_payload["trade_bot_sha256"],
-                    }
-                )
-                post_execution_sha256 = hashlib.sha256(
-                    prepared_block["replay_csv"].read_bytes()
-                ).hexdigest()
-                audit["post_execution_event_sha256"] = post_execution_sha256
-                if post_execution_sha256 != audit["expected_event_sha256"]:
-                    audit["errors"].append("event_sha256_changed_during_execution")
-                if int(audit["trade_bot_exit_code"]) != 0:
-                    audit["errors"].append("trade_bot_exit_nonzero")
-                if int(audit["assess_exit_code"]) != 0:
-                    audit["errors"].append("assess_exit_nonzero")
-                if not isinstance(audit["episode_execution_evidence"], dict):
-                    audit["errors"].append("episode_execution_evidence_missing")
-                audit["execution_status"] = (
-                    "EXECUTED" if not audit["errors"] else "FAILED"
-                )
-            except Exception as exc:
-                audit["errors"].append(
-                    f"execution_failed:{type(exc).__name__}:{exc}"
-                )
-                audit["execution_status"] = "FAILED"
-            for error in audit["errors"]:
-                validation_errors.append(
-                    f"block[{audit['plan_index']}].{error}"
-                )
+        else:
+            for prepared_block in prepared:
+                audit = prepared_block["audit"]
+                segment = prepared_block["segment"]
+                segment_identity = prepared_block["segment_identity"]
+                segment_dir = output_dir / f"exact_block_{int(audit['plan_index']) + 1:03d}"
+                audit["execution_attempt_count"] = 1
+                executed_execution_count += 1
+                executed_block_count += 1
+                try:
+                    run_payload = execute_replay_csv(
+                        block_id=str(audit["block_id"]),
+                        symbol=str(audit["symbol"]),
+                        segment_index=int(audit["plan_index"]) + 1,
+                        segment_payload={
+                            "block_id": audit["block_id"],
+                            "start_timestamp": segment.start_timestamp,
+                            "end_timestamp": segment.end_timestamp,
+                            "bars": segment.bars,
+                        },
+                        replay_csv=prepared_block["replay_csv"],
+                        segment_identity=segment_identity,
+                        segment_dir=segment_dir,
+                        root=root,
+                        base_config=base_config,
+                        trade_bot=trade_bot,
+                        assess_stage=args.assess_stage,
+                        min_runtime_status=args.min_runtime_status,
+                        execution_policy_identity=execution_policy_identity,
+                        trade_bot_sha256=trade_bot_sha256,
+                        warmup_context_bars=0,
+                    )
+                    audit.update(
+                        {
+                            "command": run_payload["command"],
+                            "assess_command": run_payload["assess_command"],
+                            "trade_bot_exit_code": run_payload[
+                                "trade_bot_exit_code"
+                            ],
+                            "assess_exit_code": run_payload["assess_exit_code"],
+                            "episode_execution_evidence": run_payload[
+                                "episode_execution_evidence"
+                            ],
+                            "runtime_log": run_payload["runtime_log"],
+                            "runtime_assess": run_payload["runtime_assess"],
+                            "state_dir": run_payload["state_dir"],
+                            "execution_policy_identity": run_payload[
+                                "execution_policy_identity"
+                            ],
+                            "trade_bot_sha256": run_payload["trade_bot_sha256"],
+                        }
+                    )
+                    post_execution_sha256 = hashlib.sha256(
+                        prepared_block["replay_csv"].read_bytes()
+                    ).hexdigest()
+                    audit["post_execution_event_sha256"] = post_execution_sha256
+                    if post_execution_sha256 != audit["expected_event_sha256"]:
+                        audit["errors"].append("event_sha256_changed_during_execution")
+                    if int(audit["trade_bot_exit_code"]) != 0:
+                        audit["errors"].append("trade_bot_exit_nonzero")
+                    if int(audit["assess_exit_code"]) != 0:
+                        audit["errors"].append("assess_exit_nonzero")
+                    if not isinstance(audit["episode_execution_evidence"], dict):
+                        audit["errors"].append("episode_execution_evidence_missing")
+                    audit["execution_status"] = (
+                        "EXECUTED" if not audit["errors"] else "FAILED"
+                    )
+                except Exception as exc:
+                    audit["errors"].append(
+                        f"execution_failed:{type(exc).__name__}:{exc}"
+                    )
+                    audit["execution_status"] = "FAILED"
+                for error in audit["errors"]:
+                    validation_errors.append(
+                        f"block[{audit['plan_index']}].{error}"
+                    )
 
     validation_errors = list(dict.fromkeys(validation_errors))
     status = (
@@ -4770,9 +5130,19 @@ def run_exact_block_plan(
         "trade_bot_sha256": trade_bot_sha256,
         "planned_block_count": len(audits),
         "executed_block_count": executed_block_count,
+        "planned_execution_count": planned_execution_count,
+        "executed_execution_count": executed_execution_count,
         "validation_errors": validation_errors,
         "blocks": audits,
-        "runs": audits,
+        "runs": (
+            [
+                execution
+                for block in audits
+                for execution in block.get("executions", [])
+            ]
+            if is_multi_execution_plan
+            else audits
+        ),
     }
     report_path.write_text(
         json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
