@@ -27,6 +27,167 @@ REPLAY = load_replay_module()
 
 
 class RunReplayValidationTest(unittest.TestCase):
+    def test_summary_passes_episode_evidence_through_without_aggregate_synthesis(self):
+        episode_evidence = {
+            "schema_version": "episode_execution_evidence_v1",
+            "episodes": [{"evaluator_episode_id": "episode-1"}],
+            "execution_path_complete": True,
+        }
+        summary = REPLAY.summarize_assess(
+            {
+                "metrics": {
+                    "account_realized_net_usd": 99.0,
+                    "self_evolution_update_count": 7,
+                },
+                "episode_execution_evidence": episode_evidence,
+            }
+        )
+        self.assertIs(summary["episode_execution_evidence"], episode_evidence)
+
+        aggregate_only = REPLAY.summarize_assess(
+            {
+                "metrics": {
+                    "account_realized_net_usd": 99.0,
+                    "self_evolution_update_count": 7,
+                }
+            }
+        )
+        self.assertIsNone(aggregate_only["episode_execution_evidence"])
+
+    def test_run_identity_and_episode_evidence_are_emitted_for_every_segment(self):
+        rows = [
+            REPLAY.FeatureRow(
+                timestamp=1_700_000_000_000 + idx * 300_000,
+                open=100.0 + idx,
+                high=101.0 + idx,
+                low=99.0 + idx,
+                close=100.5 + idx,
+                volume=10.0,
+                features={name: 0.0 for name in REPLAY.FEATURE_COLUMNS},
+            )
+            for idx in range(4)
+        ]
+        segments = [
+            REPLAY.ReplaySegment(
+                start_index=index,
+                end_index=index + 1,
+                start_timestamp=rows[index].timestamp,
+                end_timestamp=rows[index + 1].timestamp,
+                bars=2,
+            )
+            for index in (0, 2)
+        ]
+        thresholds = REPLAY.RegimeThresholds(0.01, 0.01, 0.02, 0.02)
+        policy_identity = {
+            "schema_version": "execution_policy_v2",
+            "sha256": "a" * 64,
+            "policy": {"execution.slippage_bps": 2.0},
+        }
+        episode_evidence = {
+            "schema_version": "episode_execution_evidence_v1",
+            "episodes": [{"evaluator_episode_id": "episode-1"}],
+            "execution_path_complete": True,
+        }
+        assess_payload = {
+            "verdict": "PASS",
+            "runtime_validation_mode": "EXECUTION_ACTIVE",
+            "execution_status": "PASS",
+            "episode_execution_evidence": episode_evidence,
+            "metrics": {
+                "execution_activity_count": 1,
+                "funnel_fills_runtime_count": 1,
+                "execution_attribution_fill_count": 1,
+                "execution_attribution_quality_fill_count": 1,
+                "execution_attribution_fee_usd": 0.01,
+                "replay_terminal_settlement_done_count": 1,
+                "replay_terminal_settlement_failed_count": 0,
+                "replay_terminal_realized_net_usd": 0.02,
+                "replay_terminal_fee_usd": 0.01,
+                "replay_terminal_funding_paid_usd": 0.0,
+            },
+        }
+        assess_commands = []
+
+        def fake_trade(command, output_path):
+            output_path.write_text("runtime\n", encoding="utf-8")
+            return 0
+
+        def fake_assess(command, check=False):
+            self.assertFalse(check)
+            assess_commands.append(command)
+            output = pathlib.Path(command[command.index("--json_out") + 1])
+            output.write_text(json.dumps(assess_payload), encoding="utf-8")
+            return mock.Mock(returncode=0)
+
+        root = pathlib.Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(
+            REPLAY, "run_command", side_effect=fake_trade
+        ), mock.patch.object(
+            REPLAY.subprocess, "run", side_effect=fake_assess
+        ), mock.patch.object(
+            REPLAY, "has_met_replay_coverage_targets", return_value=True
+        ):
+            runs, selection, _, _, _ = REPLAY.run_replay_for_symbol(
+                symbol="BTCUSDT",
+                output_dir=pathlib.Path(td),
+                rows=rows,
+                thresholds=thresholds,
+                selected_segments=segments,
+                target_bucket="trend",
+                base_interval_ms=300_000,
+                root=root,
+                base_config=root / "config" / "bybit.replay.assess.maker_first.yaml",
+                trade_bot=pathlib.Path(__file__),
+                assess_stage="DEPLOY",
+                min_runtime_status=0,
+                min_execution_active_runs=1,
+                min_execution_pass_runs=1,
+                min_total_fills=1,
+                min_mean_realized_net_per_fill=0.0,
+                min_break_even_fee_multiplier=1.25,
+                warn_mean_filtered_cost_ratio=0.8,
+                force_all_frozen_segments=True,
+                execution_policy_identity=policy_identity,
+                trade_bot_sha256="b" * 64,
+            )
+            self.assertEqual(len(runs), 2)
+            self.assertFalse(selection["stopped_early"])
+            for run, command in zip(runs, assess_commands):
+                replay_path = pathlib.Path(run["replay_csv"])
+                replay_sha = hashlib.sha256(replay_path.read_bytes()).hexdigest()
+                identity_payload = {
+                    "schema_version": "replay_segment_identity_v1",
+                    "symbol": run["symbol"],
+                    "target_bucket": "trend",
+                    "base_interval_ms": 300_000,
+                    "start_timestamp_ms": run["segment"]["start_timestamp"],
+                    "end_timestamp_ms": run["segment"]["end_timestamp"],
+                    "bars": run["segment"]["bars"],
+                    "replay_csv_sha256": replay_sha,
+                }
+                expected_segment_sha = hashlib.sha256(
+                    json.dumps(
+                        identity_payload,
+                        ensure_ascii=True,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                self.assertEqual(run["replay_csv_sha256"], replay_sha)
+                self.assertEqual(
+                    run["segment_identity_sha256"], expected_segment_sha
+                )
+                self.assertEqual(run["execution_policy_identity"], policy_identity)
+                self.assertEqual(run["trade_bot_sha256"], "b" * 64)
+                self.assertEqual(run["episode_execution_evidence"], episode_evidence)
+                self.assertIn("--segment-identity-sha256", command)
+                self.assertIn("--execution-policy-identity-json", command)
+
+    def test_default_replay_still_stops_after_recommended_coverage(self):
+        self.assertTrue(REPLAY.should_stop_after_coverage(True, False))
+        self.assertFalse(REPLAY.should_stop_after_coverage(True, True))
+        self.assertFalse(REPLAY.should_stop_after_coverage(False, False))
+
     @staticmethod
     def _complete_replay_summary(summary):
         fill_count = int(summary.get("funnel_fills_runtime_count") or 0)

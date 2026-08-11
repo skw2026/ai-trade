@@ -1111,6 +1111,42 @@ def create_fresh_replay_state_dir(segment_dir: pathlib.Path) -> pathlib.Path:
     return state_dir
 
 
+def replay_segment_identity(
+    *,
+    symbol: str,
+    target_bucket: str,
+    base_interval_ms: int,
+    segment: ReplaySegment,
+    replay_csv_sha256: str,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "schema_version": "replay_segment_identity_v1",
+        "symbol": symbol,
+        "target_bucket": target_bucket,
+        "base_interval_ms": int(base_interval_ms),
+        "start_timestamp_ms": int(segment.start_timestamp),
+        "end_timestamp_ms": int(segment.end_timestamp),
+        "bars": int(segment.bars),
+        "replay_csv_sha256": replay_csv_sha256,
+    }
+    payload["sha256"] = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return payload
+
+
+def should_stop_after_coverage(
+    recommended_coverage_met: bool,
+    force_all_frozen_segments: bool,
+) -> bool:
+    return bool(recommended_coverage_met) and not force_all_frozen_segments
+
+
 def summarize_assess(assess_payload: dict[str, Any]) -> dict[str, Any]:
     metrics = assess_payload.get("metrics", {})
     execution_attribution = assess_payload.get("execution_attribution", {})
@@ -1136,6 +1172,9 @@ def summarize_assess(assess_payload: dict[str, Any]) -> dict[str, Any]:
         "protection_status": assess_payload.get("protection_status"),
         "execution_status": assess_payload.get("execution_status"),
         "market_context_status": assess_payload.get("market_context_status"),
+        "episode_execution_evidence": assess_payload.get(
+            "episode_execution_evidence"
+        ),
         "execution_activity_count": metrics.get("execution_activity_count"),
         "funnel_fills_runtime_count": metrics.get("funnel_fills_runtime_count"),
         "regime_trend_runtime_count": metrics.get("regime_trend_runtime_count"),
@@ -3999,6 +4038,9 @@ def run_replay_for_symbol(
     min_mean_realized_net_per_fill: float,
     min_break_even_fee_multiplier: float,
     warn_mean_filtered_cost_ratio: float,
+    force_all_frozen_segments: bool = False,
+    execution_policy_identity: dict[str, Any] | None = None,
+    trade_bot_sha256: str = "",
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, Any],
@@ -4014,6 +4056,14 @@ def run_replay_for_symbol(
         min_execution_pass_runs=min_execution_pass_runs,
         min_total_fills=min_total_fills,
     )
+    effective_execution_policy_identity = (
+        execution_policy_identity
+        if isinstance(execution_policy_identity, dict)
+        else policy_payload(base_config)
+    )
+    effective_trade_bot_sha256 = trade_bot_sha256 or hashlib.sha256(
+        trade_bot.read_bytes()
+    ).hexdigest()
 
     for idx, segment in enumerate(selected_segments, start=1):
         segment_dir = output_dir / f"segment_{idx:02d}"
@@ -4028,6 +4078,14 @@ def run_replay_for_symbol(
             symbol,
             replay_csv,
             base_interval_ms,
+        )
+        replay_csv_sha256 = hashlib.sha256(replay_csv.read_bytes()).hexdigest()
+        segment_identity = replay_segment_identity(
+            symbol=symbol,
+            target_bucket=target_bucket,
+            base_interval_ms=base_interval_ms,
+            segment=segment,
+            replay_csv_sha256=replay_csv_sha256,
         )
 
         trade_cmd = [
@@ -4057,6 +4115,15 @@ def run_replay_for_symbol(
             str(max(1, min_runtime_status)),
             "--json_out",
             str(runtime_assess),
+            "--segment-identity-sha256",
+            str(segment_identity["sha256"]),
+            "--execution-policy-identity-json",
+            json.dumps(
+                effective_execution_policy_identity,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
         ]
         assess_exit = subprocess.run(assess_cmd, check=False).returncode
         assess_payload: dict[str, Any] = {}
@@ -4073,6 +4140,11 @@ def run_replay_for_symbol(
                 target_bucket=target_bucket,
             ),
             "replay_csv": str(replay_csv),
+            "replay_csv_sha256": replay_csv_sha256,
+            "segment_identity": segment_identity,
+            "segment_identity_sha256": segment_identity["sha256"],
+            "execution_policy_identity": effective_execution_policy_identity,
+            "trade_bot_sha256": effective_trade_bot_sha256,
             "state_dir": str(state_dir),
             "state_isolation": "fresh_segment_wal",
             "warmup_context_bars": warmup_context_bars,
@@ -4082,6 +4154,9 @@ def run_replay_for_symbol(
             "trade_bot_exit_code": trade_exit,
             "assess_exit_code": int(assess_exit),
             "assess_summary": assess_summary,
+            "episode_execution_evidence": assess_payload.get(
+                "episode_execution_evidence"
+            ),
         }
         run_payload["economics_attribution"] = build_run_economics_attribution(
             run_payload
@@ -4096,7 +4171,7 @@ def run_replay_for_symbol(
             min_mean_realized_net_per_fill=min_mean_realized_net_per_fill,
             warn_mean_filtered_cost_ratio=warn_mean_filtered_cost_ratio,
         )
-        if has_met_replay_coverage_targets(
+        recommended_coverage_met = has_met_replay_coverage_targets(
             aggregate_summary,
             min_execution_active_runs=recommended_thresholds[
                 "min_execution_active_runs"
@@ -4105,6 +4180,10 @@ def run_replay_for_symbol(
                 "min_execution_pass_runs"
             ],
             min_total_fills=recommended_thresholds["min_total_fills"],
+        )
+        if should_stop_after_coverage(
+            recommended_coverage_met,
+            force_all_frozen_segments,
         ):
             stopped_early = True
             stop_reason = "recommended_coverage_targets_met"
@@ -4130,6 +4209,7 @@ def run_replay_for_symbol(
         "segments_ran": len(run_summaries),
         "stopped_early": stopped_early,
         "stop_reason": stop_reason,
+        "force_all_frozen_segments": force_all_frozen_segments,
         "coverage_targets_met": has_met_replay_coverage_targets(
             aggregate_summary,
             min_execution_active_runs=min_execution_active_runs,
@@ -4324,6 +4404,11 @@ def main() -> int:
         "--experiment_id",
         default="",
         help="final holdout 实验 ID；同 ID 仅允许完全相同 payload 幂等重试",
+    )
+    parser.add_argument(
+        "--force-all-frozen-segments",
+        action="store_true",
+        help="运行冻结 manifest 的全部 segment，禁止达到 coverage 后提前停止",
     )
     args = parser.parse_args()
 
@@ -4607,6 +4692,7 @@ def main() -> int:
             warn_mean_filtered_cost_ratio=(
                 args.warn_mean_filtered_cost_ratio
             ),
+            force_all_frozen_segments=args.force_all_frozen_segments,
         )
         selection_candidate_runs.extend(symbol_selection_runs)
         selection_candidate_symbol_reports[symbol] = {
@@ -4892,6 +4978,7 @@ def main() -> int:
             min_mean_realized_net_per_fill=args.min_mean_realized_net_per_fill,
             min_break_even_fee_multiplier=args.min_break_even_fee_multiplier,
             warn_mean_filtered_cost_ratio=args.warn_mean_filtered_cost_ratio,
+            force_all_frozen_segments=args.force_all_frozen_segments,
         )
         symbol_selection = {
             **context["base_selection"],
