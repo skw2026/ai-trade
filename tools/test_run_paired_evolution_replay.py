@@ -7,6 +7,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import pathlib
 import stat
 import sys
@@ -32,6 +33,11 @@ def load_module(name: str, filename: str):
 REPLAY = load_module("paired_test_replay_validation", "run_replay_validation.py")
 COMMON = load_module("paired_test_decision_common", "decision_evidence_common.py")
 PAIR = load_module("run_paired_evolution_replay", "run_paired_evolution_replay.py")
+BUILDER_TESTS = load_module(
+    "paired_test_build_decision_benchmark",
+    "test_build_decision_benchmark.py",
+)
+BUILDER = BUILDER_TESTS.BUILDER
 
 
 class PairedEvolutionReplayTest(unittest.TestCase):
@@ -136,8 +142,8 @@ universe:
         self.benchmark_replay_config.write_text(
             PAIR.derive_candidate_config(
                 self.runtime_config.read_text(encoding="utf-8"),
-                model_path=str(self.candidate_model.resolve()),
-                report_path=str(self.candidate_report.resolve()),
+                model_path=str(self.candidate_model),
+                report_path=str(self.candidate_report),
                 source_runtime_config_sha256=self.sha256(self.runtime_config),
             ),
             encoding="utf-8",
@@ -261,6 +267,118 @@ universe:
             PAIR.parse_symbol_path_mapping(
                 "BTCUSDT=/tmp/one.csv,btcusdt=/tmp/two.csv"
             )
+
+    def test_real_builder_identity_and_relative_candidate_paths_start_both_arms(self):
+        base = self.root / "real-chain"
+        fixture = BUILDER_TESTS.BuildDecisionBenchmarkTest()
+        kwargs = fixture.build_inputs(base)
+        kwargs["runtime_config"].write_text(
+            self.runtime_config.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        relative_model = kwargs["candidate_model"].relative_to(base)
+        relative_report = kwargs["candidate_report"].relative_to(base)
+        relative_runtime = kwargs["runtime_config"].relative_to(base)
+        relative_feature = kwargs["feature_csv"].relative_to(base)
+        relative_corpus = kwargs["corpus_manifest"].relative_to(base)
+        relative_trade_bot = kwargs["trade_bot"].relative_to(base)
+        relative_replay_config = kwargs["replay_config"].relative_to(base)
+        kwargs["replay_config"].write_text(
+            PAIR.derive_candidate_config(
+                kwargs["runtime_config"].read_text(encoding="utf-8"),
+                model_path=str(relative_model),
+                report_path=str(relative_report),
+                source_runtime_config_sha256=self.sha256(kwargs["runtime_config"]),
+            ),
+            encoding="utf-8",
+        )
+
+        previous_cwd = pathlib.Path.cwd()
+        os.chdir(base)
+        try:
+            builder_report = BUILDER.build_decision_benchmark(
+                replay_report=kwargs["replay_report"].relative_to(base),
+                feature_csv=relative_feature,
+                corpus_manifest=relative_corpus,
+                runtime_config=relative_runtime,
+                replay_config=relative_replay_config,
+                candidate_model=relative_model,
+                candidate_report=relative_report,
+                validation_config=kwargs["validation_config"].relative_to(base),
+                trade_bot=relative_trade_bot,
+                output_dir=kwargs["output_dir"].relative_to(base),
+                manifest_path=kwargs["manifest_path"].relative_to(base),
+                build_report_path=kwargs["build_report_path"].relative_to(base),
+            )
+            self.assertEqual(builder_report["status"], "VERIFIED", builder_report)
+            frozen_replay_identity = pathlib.Path(
+                builder_report["paired_inputs"]["replay_validation_report"]
+            )
+            benchmark_report = base / "benchmark-validation.json"
+            benchmark_report.write_text(
+                json.dumps(builder_report["validation"], sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            arm_calls = []
+
+            def record_arm(command, check=False):
+                self.assertFalse(check)
+                arm_calls.append([str(item) for item in command])
+                return mock.Mock(returncode=1)
+
+            manifest = PAIR.run_paired_evolution_replay(
+                runtime_config=relative_runtime,
+                candidate_model=relative_model,
+                candidate_report=relative_report,
+                replay_report=frozen_replay_identity,
+                feature_csv=relative_feature,
+                corpus_manifest=relative_corpus,
+                trade_bot=relative_trade_bot,
+                output_dir=pathlib.Path("paired-run"),
+                benchmark_report=benchmark_report,
+                validation_config=kwargs["validation_config"].relative_to(base),
+                process_runner=record_arm,
+            )
+            self.assertEqual(len(arm_calls), 2, manifest["mismatches"])
+            self.assertTrue(manifest["input_binding_audit"])
+            self.assertTrue(
+                all(
+                    item["status"] == "VERIFIED"
+                    for item in manifest["input_binding_audit"]
+                ),
+                manifest["mismatches"],
+            )
+
+            frozen_replay_identity.write_text(
+                frozen_replay_identity.read_text(encoding="utf-8") + " ",
+                encoding="utf-8",
+            )
+            drift_calls = []
+            drifted = PAIR.run_paired_evolution_replay(
+                runtime_config=relative_runtime,
+                candidate_model=relative_model,
+                candidate_report=relative_report,
+                replay_report=frozen_replay_identity,
+                feature_csv=relative_feature,
+                corpus_manifest=relative_corpus,
+                trade_bot=relative_trade_bot,
+                output_dir=pathlib.Path("paired-drift"),
+                benchmark_report=benchmark_report,
+                validation_config=kwargs["validation_config"].relative_to(base),
+                process_runner=lambda command, check=False: drift_calls.append(command),
+            )
+            self.assertEqual(drift_calls, [])
+            self.assertTrue(
+                any(
+                    "input_binding.split.replay_validation_report.sha256_mismatch"
+                    in item
+                    for item in drifted["mismatches"]
+                ),
+                drifted["mismatches"],
+            )
+        finally:
+            os.chdir(previous_cwd)
 
     @staticmethod
     def sha256(path: pathlib.Path) -> str:

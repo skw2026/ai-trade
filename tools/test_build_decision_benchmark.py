@@ -275,6 +275,24 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
             self.assertTrue(
                 pathlib.Path(report["paired_inputs"]["corpus_manifest"]).is_file()
             )
+            replay_identity_path = pathlib.Path(
+                report["paired_inputs"]["replay_validation_report"]
+            )
+            self.assertTrue(replay_identity_path.is_file())
+            split_files = manifest["components"]["split"]["files"]
+            frozen_replay_identity = next(
+                item
+                for item in split_files
+                if item["logical_name"] == "replay_validation_report"
+            )
+            self.assertEqual(
+                replay_identity_path,
+                pathlib.Path(frozen_replay_identity["path"]),
+            )
+            self.assertEqual(
+                hashlib.sha256(replay_identity_path.read_bytes()).hexdigest(),
+                frozen_replay_identity["sha256"],
+            )
 
     def test_benchmark_identity_is_stable_when_all_inputs_move(self):
         with tempfile.TemporaryDirectory() as td:

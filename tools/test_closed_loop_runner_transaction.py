@@ -186,6 +186,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                         manifest_path = option("--manifest")
                         paired_root = pathlib.Path(option("--output-dir")) / "paired_inputs"
                         paired_corpus = paired_root / "BTCUSDT" / "corpus.json"
+                        paired_replay = paired_root / "replay_validation_identity.json"
                         source_corpora = {}
                         for item in option("--corpus-manifest-by-symbol").split(","):
                             if "=" in item:
@@ -193,6 +194,13 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                                 source_corpora[symbol] = path
                         if verified:
                             write(paired_corpus, {"candidate_set_frozen": True})
+                            write(
+                                paired_replay,
+                                {
+                                    "schema_version": "decision_evidence_replay_split_identity_v1",
+                                    "status": "VERIFIED",
+                                },
+                            )
                             write(manifest_path, {"schema_version": "decision_evidence_benchmark_v1"})
                         write(
                             option("--build-report"),
@@ -200,6 +208,7 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                                 "schema_version": "decision_evidence_benchmark_build_v1",
                                 "status": "VERIFIED" if verified else "UNVERIFIABLE",
                                 "paired_inputs": {
+                                    "replay_validation_report": str(paired_replay.resolve()),
                                     "feature_csv": option("--feature-csv"),
                                     "corpus_manifest": str(paired_corpus),
                                     "feature_csv_by_symbol": {},
@@ -369,6 +378,37 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
             printf 'current-run-model\n' > "${TMP_ROOT}/inputs/candidate.cbm"
             printf '{"model_version":"current-run"}\n' \
               > "${TMP_ROOT}/inputs/candidate.json"
+            mkdir -p "${TMP_ROOT}/benchmark-root/frozen"
+            printf '{"schema_version":"decision_evidence_replay_split_identity_v1","status":"VERIFIED"}\n' \
+              > "${TMP_ROOT}/benchmark-root/frozen/replay-validation-identity.json"
+            BENCHMARK_MANIFEST_VALUE="${TMP_ROOT}/inputs/benchmark.json" \
+            BENCHMARK_ROOT_VALUE="${TMP_ROOT}/benchmark-root" \
+            python3 - <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+
+root = pathlib.Path(os.environ["BENCHMARK_ROOT_VALUE"])
+identity = root / "frozen" / "replay-validation-identity.json"
+manifest = {
+    "schema_version": "decision_evidence_benchmark_v1",
+    "components": {
+        "split": {
+            "logical_id": "split:test",
+            "files": [
+                {
+                    "logical_name": "replay_validation_report",
+                    "path": "frozen/replay-validation-identity.json",
+                    "sha256": hashlib.sha256(identity.read_bytes()).hexdigest(),
+                }
+            ],
+        }
+    },
+}
+path = pathlib.Path(os.environ["BENCHMARK_MANIFEST_VALUE"])
+path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
+PY
             '''
         ) + textwrap.dedent(body)
         return subprocess.run(
@@ -614,11 +654,12 @@ PY
             self.assertEqual(
                 paired_args[paired_args.index("--replay-report") + 1],
                 str(
-                    root
-                    / "reports"
-                    / "decisive-observation-test"
-                    / "replay_validation"
-                    / "replay_validation_report.json"
+                    (
+                        root
+                        / "benchmark-root"
+                        / "frozen"
+                        / "replay-validation-identity.json"
+                    ).resolve()
                 ),
             )
             unified_args = by_tool["build_decision_evidence_report.py"]["args"]
@@ -677,7 +718,6 @@ PY
             self.assertEqual(audit["decision"], "ALLOW_NEXT_EXPERIMENT")
             self.assertTrue(audit["benchmark_verified"])
             self.assertTrue(audit["registration_verified"])
-
             manifest = json.loads(
                 (run_dir / "run_manifest.json").read_text(encoding="utf-8")
             )
@@ -688,6 +728,46 @@ PY
             self.assertEqual(
                 [item["step"] for item in manifest["decision_evidence"]["steps"]],
                 self.DECISIVE_STEPS,
+            )
+
+    def test_explicit_benchmark_missing_frozen_replay_identity_never_falls_back(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_decisive_chain(
+                root,
+                r'''
+                printf '{}\n' > "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}"
+                mkdir -p "$(dirname "${REPLAY_VALIDATION_REPORT_PATH}")"
+                printf '{"status":"pass"}\n' > "${REPLAY_VALIDATION_REPORT_PATH}"
+                RUN_REQUIRED_STEP_STATUS=0
+                run_decisive_observation_chain
+                ''',
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            paired = next(
+                item
+                for item in commands
+                if item["tool"] == "run_paired_evolution_replay.py"
+            )
+            replay_input = paired["args"][
+                paired["args"].index("--replay-report") + 1
+            ]
+            self.assertEqual(replay_input, "")
+            self.assertNotEqual(
+                replay_input,
+                str(
+                    root
+                    / "reports"
+                    / "decisive-observation-test"
+                    / "replay_validation"
+                    / "replay_validation_report.json"
+                ),
             )
 
     def test_each_decisive_failure_keeps_running_unified_and_preserves_status(self):
@@ -1062,6 +1142,17 @@ PY
             self.assertEqual(
                 paired["args"][paired["args"].index("--validation-config") + 1],
                 str(root / "inputs" / "policy.json"),
+            )
+            self.assertEqual(
+                paired["args"][paired["args"].index("--replay-report") + 1],
+                str(
+                    (
+                        run_dir
+                        / "decision_benchmark_build"
+                        / "paired_inputs"
+                        / "replay_validation_identity.json"
+                    ).resolve()
+                ),
             )
             self.assertNotIn(
                 str(

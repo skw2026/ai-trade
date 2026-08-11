@@ -975,6 +975,7 @@ def build_decision_benchmark(
         )
         report["validation"] = validation
         report["paired_inputs"] = {
+            "replay_validation_report": str(replay_split_identity.resolve()),
             "feature_csv": str(features[next(iter(symbols))].resolve())
             if len(symbols) == 1
             else "",

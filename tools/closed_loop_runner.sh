@@ -5730,6 +5730,64 @@ elif isinstance(value, dict):
 PY
 }
 
+decision_benchmark_manifest_input() {
+  local component_name="$1"
+  local logical_name="$2"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    - "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" \
+    "${DECISION_EVIDENCE_BENCHMARK_ROOT}" "${component_name}" "${logical_name}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+try:
+    manifest_path = pathlib.Path(sys.argv[1])
+    root = pathlib.Path(sys.argv[2]).expanduser().resolve(strict=False)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    components = manifest["components"]
+    component = components[sys.argv[3]]
+    files = component["files"]
+    matches = [
+        item
+        for item in files
+        if isinstance(item, dict)
+        and item.get("logical_name") == sys.argv[4]
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"expected exactly one frozen input, found {len(matches)}")
+    item = matches[0]
+    declared = item.get("path")
+    expected_sha = item.get("sha256")
+    if not isinstance(declared, str) or not declared:
+        raise ValueError("frozen input path missing")
+    raw_path = pathlib.Path(declared).expanduser()
+    path = (
+        raw_path if raw_path.is_absolute() else root / raw_path
+    ).resolve(strict=False)
+    if not path.is_file():
+        raise ValueError(f"frozen input file missing: {path}")
+    actual_sha = file_sha256(path)
+    if expected_sha != actual_sha:
+        raise ValueError(
+            f"frozen input sha256 mismatch: expected={expected_sha},actual={actual_sha}"
+        )
+except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+    print(f"[ERROR] benchmark frozen input invalid: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+print(path)
+PY
+}
+
 write_paired_candidate_preflight_failure() {
   local exit_code="$1"
   PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE="${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}" \
@@ -5835,10 +5893,24 @@ run_paired_evolution_replay_observation() {
   local paired_corpus_manifest="${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}"
   local paired_feature_mapping="${DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL}"
   local paired_corpus_mapping="${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
+  local paired_replay_report=""
+  local replay_identity_status=0
   if [[ "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT}" != "true" ]]; then
+    paired_replay_report="$(decision_benchmark_paired_input replay_validation_report)"
     paired_feature_csv="$(decision_benchmark_paired_input feature_csv)"
     paired_feature_mapping="$(decision_benchmark_paired_input feature_csv_by_symbol)"
     paired_corpus_mapping="$(decision_benchmark_paired_input source_corpus_manifest_by_symbol)"
+  else
+    paired_replay_report="$(
+      decision_benchmark_manifest_input split replay_validation_report
+    )" || replay_identity_status=$?
+  fi
+  if [[ -z "${paired_replay_report}" ]]; then
+    replay_identity_status=2
+  fi
+  if (( replay_identity_status != 0 )); then
+    echo "[WARN] frozen replay validation identity unavailable: status=${replay_identity_status}"
+    paired_replay_report=""
   fi
   local -a paired_args=(
     tools/run_paired_evolution_replay.py
@@ -5850,7 +5922,7 @@ run_paired_evolution_replay_observation() {
     --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}"
     --output-dir "${PAIRED_EVOLUTION_REPLAY_WORK_DIR}"
     --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}"
-    --replay-report "${REPLAY_VALIDATION_REPORT_PATH}"
+    --replay-report "${paired_replay_report}"
     --validation-config "${DECISION_EVIDENCE_CONFIG_PATH}"
   )
   if [[ -n "${paired_feature_mapping}" ]]; then

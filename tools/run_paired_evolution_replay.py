@@ -1563,6 +1563,8 @@ def run_paired_evolution_replay(
     corpus_manifest_by_symbol: dict[str, pathlib.Path] | None = None,
     process_runner: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
+    candidate_model_path_text = str(candidate_model)
+    candidate_report_path_text = str(candidate_report)
     paths = {
         "runtime_config": pathlib.Path(runtime_config).resolve(strict=False),
         "candidate_model": pathlib.Path(candidate_model).resolve(strict=False),
@@ -1741,8 +1743,8 @@ def run_paired_evolution_replay(
             manifest["source_runtime_config"]["policy"] = runtime_payload
             common_text = derive_candidate_config(
                 runtime_text,
-                model_path=str(paths["candidate_model"]),
-                report_path=str(paths["candidate_report"]),
+                model_path=candidate_model_path_text,
+                report_path=candidate_report_path_text,
                 source_runtime_config_sha256=runtime_sha,
             )
             _atomic_write_text(common_config_path, common_text)
