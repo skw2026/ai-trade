@@ -1,0 +1,15 @@
+docs/plans/2026-08-11-compare-microstructure-target-architectures.md
+  ai_agent 64
+openspec/changes/compare-microstructure-target-architectures/specs/microstructure-alpha-development/spec.md
+  ai_agent 46-51
+tools/test_run_microstructure_alpha_development.py
+  ai_agent 1195-1248
+tools/run_microstructure_alpha_development.py
+  ai_agent 2345,2348-2349,2382-2398,2427-2442,2453-2454,2463-2467,2484,2495-2499
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "abb801d0dc776e32f03f454e24147a44d526cd84",
+  "prompts": {}
+}
