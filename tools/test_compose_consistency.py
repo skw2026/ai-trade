@@ -1160,6 +1160,16 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("startup_preflight_credentials_missing", script)
         self.assertIn("classify_startup_preflight_failure()", script)
         self.assertIn("bybit_retcode_10010", script)
+        self.assertIn("bybit_retcode_33004", script)
+        self.assertIn('credential_source="legacy_recovery"', script)
+        self.assertIn(
+            'upsert_env "AI_TRADE_BYBIT_DEMO_API_KEY" ""',
+            script,
+        )
+        self.assertIn(
+            "expired dedicated Demo credentials cleared after verified legacy recovery",
+            script,
+        )
         self.assertIn(
             '"startup_preflight_${failure_class}:${credential_source}"',
             script,

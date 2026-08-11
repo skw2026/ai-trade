@@ -1407,6 +1407,7 @@ run_startup_preflight() {
   local effective_api_key=""
   local effective_api_secret=""
   local credential_source="mixed"
+  local legacy_recovery_attempted="false"
   runtime_config="$(read_env_value "AI_TRADE_CONFIG_PATH" "config/bybit.demo.s5.yaml")"
   runtime_exchange="$(read_env_value "AI_TRADE_EXCHANGE" "bybit")"
 
@@ -1447,6 +1448,11 @@ run_startup_preflight() {
       if [[ -n "${preflight_output}" ]]; then
         printf '%s\n' "${preflight_output}"
       fi
+      if [[ "${credential_source}" == "legacy_recovery" ]]; then
+        upsert_env "AI_TRADE_BYBIT_DEMO_API_KEY" ""
+        upsert_env "AI_TRADE_BYBIT_DEMO_API_SECRET" ""
+        echo "[deploy] expired dedicated Demo credentials cleared after verified legacy recovery"
+      fi
       echo "[deploy] startup preflight passed: attempt=${attempt}"
       STARTUP_PREFLIGHT_FAILURE_REASON=""
       return 0
@@ -1460,10 +1466,23 @@ run_startup_preflight() {
     failure_class="$(classify_startup_preflight_failure "${preflight_output}")"
     STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_${failure_class}:${credential_source}"
     echo "[deploy] startup preflight failed: attempt=${attempt}/${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS} status=${preflight_status} class=${failure_class}"
+    if [[ "${failure_class}" == "bybit_retcode_33004" &&
+          "${legacy_recovery_attempted}" == "false" &&
+          -n "${legacy_api_key}" && -n "${legacy_api_secret}" &&
+          ( "${legacy_api_key}" != "${demo_api_key}" ||
+            "${legacy_api_secret}" != "${demo_api_secret}" ) ]]; then
+      legacy_recovery_attempted="true"
+      credential_source="legacy_recovery"
+      export AI_TRADE_BYBIT_DEMO_API_KEY="${legacy_api_key}"
+      export AI_TRADE_BYBIT_DEMO_API_SECRET="${legacy_api_secret}"
+      echo "[deploy] dedicated Demo key expired; testing existing legacy credentials against Demo endpoint"
+      continue
+    fi
     case "${failure_class}" in
       credentials_missing|authentication_failed|\
       bybit_retcode_10003|bybit_retcode_10004|bybit_retcode_10005|\
       bybit_retcode_10007|bybit_retcode_10010|\
+      bybit_retcode_33004|\
       bybit_http_401|bybit_http_403)
         break
         ;;
