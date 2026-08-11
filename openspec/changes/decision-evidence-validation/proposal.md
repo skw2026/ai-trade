@@ -15,9 +15,11 @@
 ## 范围
 
 - 新增冻结 benchmark manifest 及身份校验。
+- 所有下游消费者独立重算 benchmark identity，并绑定完整 validation policy 内容与选定配置文件原始字节哈希。
 - 新增目标对齐、进化 uplift、实验预算三类验证与统一报告。
 - 使用现有 replay 运行完整策略、OMS、成交、持仓与退出路径；禁止用 tick 级虚拟 PnL 替代进化 uplift。
-- 将决定性验证作为独立证据通道接入 Full Loop；Alpha 失败不得导致三类验证被静默跳过。
+- 将决定性验证作为独立证据通道接入 Full Loop；Alpha 失败不得导致三类验证被静默跳过。Full Loop 只读审计事先注册的实验，不自动注册或观察结果。
+- 实验预注册使用锁内服务端时间、唯一 nonce 和事先不存在的绝对结果路径；观察只从注册后生成的不可变 canonical result artifact 取证。
 - 所有结论仅用于研究决策和停止/继续判断，不直接授予 Demo 或实盘晋升资格。
 
 ## 非目标
