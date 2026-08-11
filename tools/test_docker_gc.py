@@ -174,6 +174,35 @@ exit 0
             self.assertIn("skipped", result.stdout)
             self.assertFalse(log_path.exists())
 
+    def test_gc_all_prunes_every_unused_object_without_volumes(self):
+        with tempfile.TemporaryDirectory() as td:
+            temp = pathlib.Path(td)
+            fake_docker, log_path = self._write_fake_docker(temp)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "DOCKER_GC_DOCKER_BIN": str(fake_docker),
+                    "FAKE_DOCKER_LOG": str(log_path),
+                    "DOCKER_GC_ENABLED": "true",
+                    "DOCKER_GC_UNTIL": "all",
+                    "DOCKER_GC_PRUNE_VOLUMES": "false",
+                }
+            )
+            result = subprocess.run(
+                ["bash", str(SCRIPT)],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            calls = log_path.read_text(encoding="utf-8")
+            self.assertIn("container prune -f\n", calls)
+            self.assertIn("image prune -a -f\n", calls)
+            self.assertIn("builder prune -a -f\n", calls)
+            self.assertNotIn("until=all", calls)
+            self.assertNotIn("volume prune", calls)
+
     def test_gc_keep_recent_tags_prunes_old_tags(self):
         with tempfile.TemporaryDirectory() as td:
             temp = pathlib.Path(td)

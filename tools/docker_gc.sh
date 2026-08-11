@@ -21,7 +21,7 @@ Usage:
 Options:
   --enabled <true|false>               Enable docker gc (default: true)
   --dry-run                            Print commands only; no prune
-  --until <duration>                   Age window, e.g. 72h (default: 72h)
+  --until <duration|all>               Age window, or all unused objects (default: 72h)
   --keep-recent-tags <int>             Keep latest N tags per matched repository (default: 0=disabled)
   --keep-repo-matchers <csv>           Repository substring matchers (default: ai-trade,ai-trade-research,ai-trade-web)
   --docker-bin <path>                  Docker binary path (default: docker)
@@ -247,15 +247,27 @@ prune_recent_repo_tags() {
 run_cmd "${DOCKER_BIN}" system df -v
 
 if is_true "${PRUNE_CONTAINERS}"; then
-  run_cmd "${DOCKER_BIN}" container prune -f --filter "until=${UNTIL}"
+  if [[ "${UNTIL}" == "all" ]]; then
+    run_cmd "${DOCKER_BIN}" container prune -f
+  else
+    run_cmd "${DOCKER_BIN}" container prune -f --filter "until=${UNTIL}"
+  fi
 fi
 
 if is_true "${PRUNE_IMAGES}"; then
-  run_cmd "${DOCKER_BIN}" image prune -a -f --filter "until=${UNTIL}"
+  if [[ "${UNTIL}" == "all" ]]; then
+    run_cmd "${DOCKER_BIN}" image prune -a -f
+  else
+    run_cmd "${DOCKER_BIN}" image prune -a -f --filter "until=${UNTIL}"
+  fi
 fi
 
 if is_true "${PRUNE_BUILD_CACHE}"; then
-  run_cmd "${DOCKER_BIN}" builder prune -a -f --filter "until=${UNTIL}"
+  if [[ "${UNTIL}" == "all" ]]; then
+    run_cmd "${DOCKER_BIN}" builder prune -a -f
+  else
+    run_cmd "${DOCKER_BIN}" builder prune -a -f --filter "until=${UNTIL}"
+  fi
 fi
 
 if is_true "${PRUNE_NETWORKS}"; then

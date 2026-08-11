@@ -58,6 +58,7 @@ DEPLOY_TRANSACTION_GUARD_ACTIVE="false"
 DEPLOY_TRANSACTION_COMMITTED="false"
 DEPLOY_ROLLBACK_ATTEMPTED="false"
 STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_failed"
+DEPLOY_DISK_FAILURE_REASON="disk_preflight_failed"
 DEPLOY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_MATERIALIZER="${DEPLOY_SCRIPT_DIR}/materialize_release_compose.py"
 DEPLOY_GATE_VALIDATOR="${DEPLOY_SCRIPT_DIR}/validate_deploy_gate.py"
@@ -423,33 +424,40 @@ docker_storage_available_bytes() {
 }
 
 ensure_deploy_disk_capacity() {
+  DEPLOY_DISK_FAILURE_REASON="disk_preflight_failed"
   if ! is_true "${DEPLOY_DISK_PREFLIGHT_ENABLED}"; then
     echo "[deploy] disk preflight skipped (DEPLOY_DISK_PREFLIGHT_ENABLED=${DEPLOY_DISK_PREFLIGHT_ENABLED})"
     return 0
   fi
   if [[ ! "${DEPLOY_MIN_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
     echo "[deploy] invalid DEPLOY_MIN_FREE_BYTES: ${DEPLOY_MIN_FREE_BYTES}"
+    DEPLOY_DISK_FAILURE_REASON="invalid_min_free_bytes"
     return 1
   fi
   if [[ ! "${DEPLOY_GC_TRIGGER_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
     echo "[deploy] invalid DEPLOY_GC_TRIGGER_FREE_BYTES: ${DEPLOY_GC_TRIGGER_FREE_BYTES}"
+    DEPLOY_DISK_FAILURE_REASON="invalid_gc_trigger_free_bytes"
     return 1
   fi
   if (( DEPLOY_GC_TRIGGER_FREE_BYTES < DEPLOY_MIN_FREE_BYTES )); then
     echo "[deploy] DEPLOY_GC_TRIGGER_FREE_BYTES must be >= DEPLOY_MIN_FREE_BYTES"
+    DEPLOY_DISK_FAILURE_REASON="gc_trigger_below_minimum"
     return 1
   fi
   if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
     echo "[deploy] disk preflight requires an available Docker daemon"
+    DEPLOY_DISK_FAILURE_REASON="docker_daemon_unavailable"
     return 1
   fi
   if ! command -v df >/dev/null 2>&1; then
     echo "[deploy] disk preflight requires df"
+    DEPLOY_DISK_FAILURE_REASON="df_unavailable"
     return 1
   fi
 
   local available_before=""
   if ! available_before="$(docker_storage_available_bytes)"; then
+    DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable"
     return 1
   fi
   echo "[deploy] disk preflight: available_bytes=${available_before} cleanup_trigger_bytes=${DEPLOY_GC_TRIGGER_FREE_BYTES} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
@@ -460,6 +468,7 @@ ensure_deploy_disk_capacity() {
   local gc_script="${COMPOSE_DIR}/tools/docker_gc.sh"
   if [[ ! -f "${gc_script}" ]]; then
     echo "[deploy] disk pressure cleanup script missing: ${gc_script}"
+    DEPLOY_DISK_FAILURE_REASON="docker_gc_script_missing"
     return 1
   fi
   echo "[deploy] disk pressure detected; pruning stopped containers, unused images, and build cache"
@@ -474,16 +483,42 @@ ensure_deploy_disk_capacity() {
     DOCKER_GC_PRUNE_VOLUMES=false \
     /bin/bash "${gc_script}"; then
     echo "[deploy] disk pressure cleanup failed"
+    DEPLOY_DISK_FAILURE_REASON="docker_gc_failed"
     return 1
   fi
 
   local available_after=""
   if ! available_after="$(docker_storage_available_bytes)"; then
+    DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_gc"
     return 1
   fi
   echo "[deploy] disk preflight after cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  if (( available_after < DEPLOY_MIN_FREE_BYTES )) &&
+     [[ "${DEPLOY_DOCKER_GC_UNTIL}" != "all" ]]; then
+    echo "[deploy] disk pressure remains; emergency pruning all unused containers, images, and build cache"
+    if ! DOCKER_GC_ENABLED=true \
+      DOCKER_GC_DRY_RUN=false \
+      DOCKER_GC_UNTIL=all \
+      DOCKER_GC_KEEP_RECENT_TAGS=0 \
+      DOCKER_GC_PRUNE_CONTAINERS=true \
+      DOCKER_GC_PRUNE_IMAGES=true \
+      DOCKER_GC_PRUNE_BUILD_CACHE=true \
+      DOCKER_GC_PRUNE_NETWORKS=false \
+      DOCKER_GC_PRUNE_VOLUMES=false \
+      /bin/bash "${gc_script}"; then
+      echo "[deploy] emergency disk pressure cleanup failed"
+      DEPLOY_DISK_FAILURE_REASON="emergency_docker_gc_failed"
+      return 1
+    fi
+    if ! available_after="$(docker_storage_available_bytes)"; then
+      DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_emergency_gc"
+      return 1
+    fi
+    echo "[deploy] disk preflight after emergency cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  fi
   if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
     echo "[deploy] insufficient Docker disk space after cleanup"
+    DEPLOY_DISK_FAILURE_REASON="insufficient_capacity:${available_after}:${DEPLOY_MIN_FREE_BYTES}"
     return 1
   fi
   return 0
@@ -1534,7 +1569,7 @@ record_deployment_diagnostics \
 if ! ensure_deploy_disk_capacity; then
   echo "[deploy] disk preflight failed before managed service mutation"
   record_deployment_diagnostics \
-    "disk_preflight" "FAIL" "insufficient_capacity" \
+    "disk_preflight" "FAIL" "${DEPLOY_DISK_FAILURE_REASON}" \
     "${required_containers[@]}"
   exit 1
 fi

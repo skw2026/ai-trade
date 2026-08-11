@@ -1402,6 +1402,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('python3 "${DEPLOY_STORAGE_PRUNER}"', script)
         self.assertIn('--previous-release "${PREVIOUS_RELEASE_PATH}"', script)
         self.assertIn("DOCKER_GC_PRUNE_VOLUMES=false", script)
+        self.assertIn("DOCKER_GC_UNTIL=all", script)
+        self.assertIn("emergency pruning all unused containers", script)
         self.assertIn(
             "disk preflight failed before managed service mutation",
             script,
@@ -1509,6 +1511,8 @@ df() {
   local available_kib="${FAKE_FREE_AFTER_KIB}"
   if (( count == 1 )); then
     available_kib="${FAKE_FREE_BEFORE_KIB}"
+  elif (( count >= 3 )); then
+    available_kib="${FAKE_FREE_EMERGENCY_KIB}"
   fi
   printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
   printf 'fake 10000000 1 %s 1%% %s\n' \
@@ -1538,7 +1542,7 @@ set -euo pipefail
   echo "build_cache=${DOCKER_GC_PRUNE_BUILD_CACHE}"
   echo "networks=${DOCKER_GC_PRUNE_NETWORKS}"
   echo "volumes=${DOCKER_GC_PRUNE_VOLUMES}"
-} > "${FAKE_GC_LOG}"
+} >> "${FAKE_GC_LOG}"
 """,
                 encoding="utf-8",
             )
@@ -1554,6 +1558,7 @@ set -euo pipefail
                     "FAKE_MIN_FREE_BYTES": "1073741824",
                     "FAKE_FREE_BEFORE_KIB": "1000000",
                     "FAKE_FREE_AFTER_KIB": "5000000",
+                    "FAKE_FREE_EMERGENCY_KIB": "5000000",
                 }
             )
             result = subprocess.run(
@@ -1589,6 +1594,24 @@ set -euo pipefail
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             base_env["FAKE_FREE_BEFORE_KIB"] = "1000000"
             base_env["FAKE_FREE_AFTER_KIB"] = "1000000"
+            base_env["FAKE_FREE_EMERGENCY_KIB"] = "5000000"
+            result = subprocess.run(
+                ["bash", "-c", harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            self.assertIn("emergency pruning all unused containers", result.stdout)
+            gc_env = gc_log.read_text(encoding="utf-8")
+            self.assertIn("until=1h", gc_env)
+            self.assertIn("until=all", gc_env)
+            self.assertNotIn("volumes=true", gc_env)
+
+            pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            gc_log.unlink()
+            base_env["FAKE_FREE_EMERGENCY_KIB"] = "1000000"
             result = subprocess.run(
                 ["bash", "-c", harness],
                 cwd=ROOT,
