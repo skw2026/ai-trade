@@ -46,6 +46,12 @@ LOCAL_ARTIFACT_FILENAMES = {
         "microstructure_alpha_lifecycle_report.json"
     ),
     "alpha_source_route_report": "alpha_source_route_report.json",
+    "decision_benchmark_validation": "decision_benchmark_validation.json",
+    "objective_alignment_validation": "objective_alignment_validation.json",
+    "paired_evolution_replay": "paired_evolution_replay.json",
+    "evolution_uplift_validation": "evolution_uplift_validation.json",
+    "experiment_budget_audit": "experiment_budget_audit.json",
+    "decision_evidence_report": "decision_evidence_report.json",
     "microstructure_demo_binding_report": (
         "microstructure_demo_binding_report.json"
     ),
@@ -243,6 +249,12 @@ def validate_artifact_contract(
         if filename is None:
             failures.append(f"{name}:unknown_manifest_artifact")
             continue
+        manifest_artifact_path = str(artifact.get("path") or "").strip()
+        if (
+            not manifest_artifact_path
+            or Path(manifest_artifact_path).name != filename
+        ):
+            failures.append(f"{name}:path")
         path = artifact_dir / filename
         if not path.is_file():
             failures.append(f"{name}:missing")

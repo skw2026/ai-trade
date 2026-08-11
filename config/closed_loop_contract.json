@@ -1,5 +1,5 @@
 {
-  "schema_version": "closed_loop_contract_v4",
+  "schema_version": "closed_loop_contract_v5",
   "trust_anchors": {
     "feature_parity_fixture": {
       "schema_version": "feature_parity_fixture_contract_v1",
@@ -129,6 +129,12 @@
         "microstructure_alpha_development",
         "microstructure_alpha_lifecycle",
         "alpha_source_route",
+        "decision_benchmark_validation",
+        "objective_alignment_validation",
+        "paired_evolution_replay",
+        "evolution_uplift_validation",
+        "experiment_budget_audit",
+        "decision_evidence_report",
         "s5_learning_switches",
         "runtime_assess",
         "s5_learning_activity",
@@ -155,7 +161,13 @@
         "microstructure_alpha_development_report",
         "microstructure_alpha_candidate_manifest",
         "microstructure_alpha_lifecycle_report",
-        "alpha_source_route_report"
+        "alpha_source_route_report",
+        "decision_benchmark_validation",
+        "objective_alignment_validation",
+        "paired_evolution_replay",
+        "evolution_uplift_validation",
+        "experiment_budget_audit",
+        "decision_evidence_report"
       ],
       "route_contracts": {
         "legacy_integrator": {

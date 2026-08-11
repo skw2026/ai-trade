@@ -27,6 +27,14 @@ def load_module():
 VALIDATOR = load_module()
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "config" / "closed_loop_contract.json"
+DECISIVE_STEPS_AND_ARTIFACTS = {
+    "decision_benchmark_validation": "decision_benchmark_validation.json",
+    "objective_alignment_validation": "objective_alignment_validation.json",
+    "paired_evolution_replay": "paired_evolution_replay.json",
+    "evolution_uplift_validation": "evolution_uplift_validation.json",
+    "experiment_budget_audit": "experiment_budget_audit.json",
+    "decision_evidence_report": "decision_evidence_report.json",
+}
 
 
 class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
@@ -109,6 +117,64 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             )
 
         self.assertEqual(failures, [])
+
+    def test_full_contract_requires_decisive_observations_after_route_rejection(self):
+        contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+        full = contract["actions"]["full"]
+        optional = set(full["route_rejection_contract"]["optional_artifacts"])
+
+        for name, filename in DECISIVE_STEPS_AND_ARTIFACTS.items():
+            with self.subTest(name=name):
+                self.assertIn(name, full["required_steps"])
+                self.assertIn(name, full["required_artifacts"])
+                self.assertNotIn(name, optional)
+                self.assertEqual(VALIDATOR.LOCAL_ARTIFACT_FILENAMES[name], filename)
+
+    def test_each_decisive_artifact_is_required_and_sha256_verified(self):
+        for name, filename in DECISIVE_STEPS_AND_ARTIFACTS.items():
+            with self.subTest(name=name, failure="missing"):
+                with tempfile.TemporaryDirectory() as td:
+                    artifact_dir = pathlib.Path(td)
+                    manifest_path, manifest = self.build_rejected_full_run(
+                        artifact_dir
+                    )
+                    manifest["artifacts"].pop(name)
+                    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+                    failures = VALIDATOR.validate_artifact_contract(
+                        manifest_path, artifact_dir, CONTRACT_PATH
+                    )
+
+                    self.assertIn(f"{name}:required_not_manifested", failures)
+
+            with self.subTest(name=name, failure="sha256"):
+                with tempfile.TemporaryDirectory() as td:
+                    artifact_dir = pathlib.Path(td)
+                    manifest_path, _ = self.build_rejected_full_run(artifact_dir)
+                    (artifact_dir / filename).write_text(
+                        "tampered", encoding="utf-8"
+                    )
+
+                    failures = VALIDATOR.validate_artifact_contract(
+                        manifest_path, artifact_dir, CONTRACT_PATH
+                    )
+
+                    self.assertIn(f"{name}:sha256", failures)
+
+    def test_manifest_artifact_path_must_match_fixed_filename(self):
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
+            manifest["artifacts"]["decision_evidence_report"]["path"] = (
+                "/remote/not-the-decision-report.json"
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            failures = VALIDATOR.validate_artifact_contract(
+                manifest_path, artifact_dir, CONTRACT_PATH
+            )
+
+        self.assertIn("decision_evidence_report:path", failures)
 
     def test_declared_route_rejection_does_not_hide_upstream_artifact_loss(self):
         with tempfile.TemporaryDirectory() as td:
