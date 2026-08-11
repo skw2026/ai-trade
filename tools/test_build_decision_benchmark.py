@@ -14,6 +14,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 import build_decision_benchmark as BUILDER  # noqa: E402
+import run_replay_validation as REPLAY  # noqa: E402
 
 
 class BuildDecisionBenchmarkTest(unittest.TestCase):
@@ -96,6 +97,41 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
             "model_artifact_status": "published",
         }
 
+    def frozen_binding(
+        self, corpus_by_symbol: dict[str, pathlib.Path]
+    ) -> dict:
+        bound_fields = (
+            "schema_version",
+            "evidence_domain",
+            "candidate_set_frozen",
+            "source_feature_csv",
+            "source_feature_sha256",
+            "target_bucket",
+            "thresholds",
+            "sampling_quantiles",
+        )
+        per_symbol = {}
+        for symbol, path in sorted(corpus_by_symbol.items()):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            per_symbol[symbol] = {
+                "path": str(path),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                **{field: payload.get(field) for field in bound_fields},
+            }
+        binding = {
+            "schema_version": "frozen_replay_corpus_binding_v1",
+            "per_symbol": per_symbol,
+        }
+        binding["binding_sha256"] = hashlib.sha256(
+            json.dumps(
+                binding,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return binding
+
     def build_inputs(self, base: pathlib.Path, multi_symbol: bool = False) -> dict:
         inputs = base / "inputs"
         inputs.mkdir(parents=True)
@@ -127,6 +163,7 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
                 corpus,
                 {
                     "schema_version": "replay_selection_manifest_v3",
+                    "evidence_domain": "selection_validation",
                     "candidate_set_frozen": True,
                     "symbol": symbol,
                     "target_bucket": "trend",
@@ -155,6 +192,7 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
                     }
                 )
         replay_report = inputs / "replay-report.json"
+        frozen_binding = self.frozen_binding(corpus_by_symbol)
         self.write_json(
             replay_report,
             {
@@ -169,6 +207,7 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
                     "model_sha256": model_sha,
                     "integrator_report_sha256": report_sha,
                 },
+                "frozen_corpus_binding": frozen_binding,
                 "runs": runs,
             },
         )
@@ -278,6 +317,173 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
                 set(report["paired_inputs"]["feature_csv_by_symbol"]),
                 {"BTCUSDT", "ETHUSDT"},
             )
+
+    def test_overlapping_per_symbol_boundaries_build_common_atomic_calendar(self):
+        with tempfile.TemporaryDirectory() as td:
+            kwargs = self.build_inputs(pathlib.Path(td), multi_symbol=True)
+            replay = json.loads(kwargs["replay_report"].read_text(encoding="utf-8"))
+            eth_corpus = kwargs["corpus_manifest_by_symbol"]["ETHUSDT"]
+            eth_payload = json.loads(eth_corpus.read_text(encoding="utf-8"))
+            eth_payload["target_bucket"] = "range"
+            self.write_json(eth_corpus, eth_payload)
+            replay["frozen_corpus_binding"] = self.frozen_binding(
+                kwargs["corpus_manifest_by_symbol"]
+            )
+            replay["runs"] = [
+                {
+                    "symbol": "BTCUSDT",
+                    "segment": {
+                        "start_timestamp": 1000,
+                        "end_timestamp": 3000,
+                        "target_bucket": "trend",
+                    },
+                },
+                {
+                    "symbol": "ETHUSDT",
+                    "segment": {
+                        "start_timestamp": 2000,
+                        "end_timestamp": 4000,
+                        "target_bucket": "range",
+                    },
+                },
+            ]
+            self.write_json(kwargs["replay_report"], replay)
+
+            report = BUILDER.build_decision_benchmark(**kwargs)
+
+            self.assertEqual(report["status"], "VERIFIED", report)
+            manifest = json.loads(kwargs["manifest_path"].read_text(encoding="utf-8"))
+            blocks = manifest["evaluation_universe"]["blocks"]
+            self.assertEqual(
+                [
+                    (block["start_timestamp_ms"], block["end_timestamp_ms"])
+                    for block in blocks
+                ],
+                [(1000, 1000), (2000, 3000), (4000, 4000)],
+            )
+            self.assertEqual(
+                [[item["symbol"] for item in block["executions"]] for block in blocks],
+                [["BTCUSDT"], ["BTCUSDT", "ETHUSDT"], ["ETHUSDT"]],
+            )
+            self.assertEqual(
+                [block["cells"] for block in blocks],
+                [
+                    [{"symbol": "BTCUSDT", "entry_regime": "trend"}],
+                    [
+                        {"symbol": "BTCUSDT", "entry_regime": "trend"},
+                        {"symbol": "ETHUSDT", "entry_regime": "range"},
+                    ],
+                    [{"symbol": "ETHUSDT", "entry_regime": "range"}],
+                ],
+            )
+            coverage = manifest["evaluation_universe"]["calendar_coverage"]
+            self.assertEqual(coverage["source_segment_count"], 2)
+            self.assertEqual(coverage["atomic_block_count"], 3)
+            self.assertEqual(coverage["source_segments_fully_materialized"], 2)
+
+    def test_replay_frozen_corpus_binding_path_or_hash_drift_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            kwargs = self.build_inputs(pathlib.Path(td))
+            kwargs["corpus_manifest"].write_text(
+                kwargs["corpus_manifest"].read_text(encoding="utf-8") + " ",
+                encoding="utf-8",
+            )
+
+            report = BUILDER.build_decision_benchmark(**kwargs)
+
+            self.assertEqual(report["status"], "UNVERIFIABLE")
+            self.assertTrue(
+                any("frozen corpus" in error for error in report["errors"]),
+                report,
+            )
+
+    def test_real_replay_corpus_binding_flows_to_builder_single_and_multi(self):
+        for symbols in (["BTCUSDT"], ["BTCUSDT", "ETHUSDT"]):
+            with self.subTest(symbols=symbols), tempfile.TemporaryDirectory() as td:
+                kwargs = self.build_inputs(
+                    pathlib.Path(td), multi_symbol=len(symbols) > 1
+                )
+                replay = json.loads(
+                    kwargs["replay_report"].read_text(encoding="utf-8")
+                )
+                corpus_base = pathlib.Path(td) / "producer" / "frozen-corpus.json"
+                producer_corpora = {}
+                for symbol in symbols:
+                    path = REPLAY.corpus_manifest_for_symbol(
+                        corpus_base,
+                        symbol,
+                        per_symbol=len(symbols) > 1,
+                    )
+                    self.assertIsNotNone(path)
+                    assert path is not None
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    source_feature = kwargs["feature_csv_by_symbol"].get(
+                        symbol, kwargs["feature_csv"]
+                    )
+                    rows = REPLAY.load_feature_rows(source_feature)
+                    REPLAY.write_corpus_manifest(
+                        path,
+                        feature_csv=source_feature,
+                        symbol=symbol,
+                        target_bucket="trend",
+                        base_interval_ms=1000,
+                        thresholds=REPLAY.RegimeThresholds(0.1, 0.1, 0.1, 0.1),
+                        max_segments=2,
+                        min_segment_bars=1,
+                        selected_segments=[
+                            REPLAY.ReplaySegment(0, 1, 1000, 2000, 2)
+                        ],
+                    )
+                    producer_corpora[symbol] = path
+                replay["frozen_corpus_binding"] = REPLAY.build_frozen_corpus_binding(
+                    corpus_base,
+                    symbols=symbols,
+                    per_symbol=len(symbols) > 1,
+                )
+                if len(symbols) > 1:
+                    replay["runs"] = [
+                        {
+                            "symbol": "BTCUSDT",
+                            "segment": {
+                                "start_timestamp": 1000,
+                                "end_timestamp": 3000,
+                                "target_bucket": "trend",
+                            },
+                        },
+                        {
+                            "symbol": "ETHUSDT",
+                            "segment": {
+                                "start_timestamp": 2000,
+                                "end_timestamp": 4000,
+                                "target_bucket": "trend",
+                            },
+                        },
+                    ]
+                self.write_json(kwargs["replay_report"], replay)
+                kwargs["corpus_manifest"] = producer_corpora[symbols[0]]
+                kwargs["corpus_manifest_by_symbol"] = (
+                    producer_corpora if len(symbols) > 1 else {}
+                )
+
+                report = BUILDER.build_decision_benchmark(**kwargs)
+
+                self.assertEqual(report["status"], "VERIFIED", report)
+                split_files = json.loads(
+                    kwargs["manifest_path"].read_text(encoding="utf-8")
+                )["components"]["split"]["files"]
+                self.assertEqual(
+                    {
+                        item["logical_name"]: item["sha256"]
+                        for item in split_files
+                        if item["logical_name"].startswith("corpus:")
+                    },
+                    {
+                        f"corpus:{symbol}": replay["frozen_corpus_binding"][
+                            "per_symbol"
+                        ][symbol]["sha256"]
+                        for symbol in symbols
+                    },
+                )
 
 
 if __name__ == "__main__":

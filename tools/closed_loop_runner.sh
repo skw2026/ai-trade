@@ -5046,6 +5046,8 @@ decision_report = load_json_file(
 payload["decision_evidence"] = {
     "research_decision_only": True,
     "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
     "research_decision": decision_report.get("research_decision", "STOP"),
     "steps": decisive_steps,
     "inputs": {
@@ -5558,6 +5560,8 @@ payload = {
     "exit_code": int(os.environ["EXIT_CODE_VALUE"]),
     "research_decision_only": True,
     "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
     "missing_evidence": ["producer_report"],
 }
 with tempfile.NamedTemporaryFile(
@@ -5584,6 +5588,60 @@ finalize_decisive_artifact() {
   return "${producer_status}"
 }
 
+replay_validation_frozen_corpus_mapping() {
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    - "${REPLAY_VALIDATION_REPORT_PATH}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+report_path = pathlib.Path(sys.argv[1])
+try:
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    binding = report["frozen_corpus_binding"]
+    if binding.get("schema_version") != "frozen_replay_corpus_binding_v1":
+        raise ValueError("invalid binding schema")
+    unsigned = {key: value for key, value in binding.items() if key != "binding_sha256"}
+    binding_sha = hashlib.sha256(
+        json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if binding.get("binding_sha256") != binding_sha:
+        raise ValueError("binding sha256 mismatch")
+    per_symbol = binding["per_symbol"]
+    if not isinstance(per_symbol, dict) or not per_symbol:
+        raise ValueError("per-symbol binding missing")
+    mapping = []
+    for symbol in sorted(per_symbol):
+        item = per_symbol[symbol]
+        if not isinstance(symbol, str) or not symbol or not isinstance(item, dict):
+            raise ValueError("invalid per-symbol binding")
+        path = pathlib.Path(str(item.get("path") or "")).expanduser().resolve()
+        if not path.is_file() or item.get("sha256") != file_sha256(path):
+            raise ValueError(f"corpus path/hash mismatch for {symbol}")
+        mapping.append(f"{symbol}={path}")
+except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+    print(f"[ERROR] frozen replay corpus binding invalid: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+print(",".join(mapping))
+PY
+}
+
 run_decision_benchmark_validation() {
   if [[ "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT}" != "true" ]]; then
     local -a builder_args=(
@@ -5608,10 +5666,21 @@ run_decision_benchmark_validation() {
     if [[ -n "${feature_mapping}" ]]; then
       builder_args+=(--feature-csv-by-symbol "${feature_mapping}")
     fi
-    if [[ -n "${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}" ]]; then
+    local corpus_mapping="${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
+    local frozen_corpus_mapping=""
+    local corpus_binding_status=0
+    frozen_corpus_mapping="$(replay_validation_frozen_corpus_mapping)" \
+      || corpus_binding_status=$?
+    if (( corpus_binding_status != 0 )); then
+      echo "[WARN] replay frozen corpus binding verification failed: status=${corpus_binding_status}"
+      corpus_mapping="__INVALID_FROZEN_CORPUS_BINDING__=/nonexistent"
+    elif [[ -z "${corpus_mapping}" ]]; then
+      corpus_mapping="${frozen_corpus_mapping}"
+    fi
+    if [[ -n "${corpus_mapping}" ]]; then
       builder_args+=(
         --corpus-manifest-by-symbol
-        "${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
+        "${corpus_mapping}"
       )
     fi
     local builder_status=0
@@ -5698,6 +5767,8 @@ payload = {
     "status": "UNVERIFIABLE",
     "research_decision_only": True,
     "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
     "candidate_model": identity(
         os.environ["DECISION_EVIDENCE_CANDIDATE_MODEL_PATH_VALUE"]
     ),
@@ -5904,6 +5975,7 @@ run_decision_evidence_report() {
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/build_decision_evidence_report.py \
     --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
+    --config "${DECISION_EVIDENCE_CONFIG_PATH}" \
     --alignment-report "${OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH}" \
     --uplift-report "${EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH}" \
     --ledger-report "${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}" \

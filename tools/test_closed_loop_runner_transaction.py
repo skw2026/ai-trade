@@ -366,10 +366,50 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
               mkdir -p "$(dirname "${REPLAY_VALIDATION_CORPUS_PATH}")"
               printf 'timestamp,open,high,low,close,volume\n' \
                 > "${RESEARCH_HOLDOUT_FEATURE_PATH}"
-              printf '{"candidate_set_frozen":true}\n' \
+              printf '{"candidate_set_frozen":true,"symbol":"BTCUSDT","target_bucket":"trend","base_interval_ms":300000}\n' \
                 > "${REPLAY_VALIDATION_CORPUS_PATH}"
-              printf '{"runs":[],"status":"fail"}\n' \
-                > "${REPLAY_VALIDATION_REPORT_PATH}"
+              CORPUS_PATH_VALUE="${REPLAY_VALIDATION_CORPUS_PATH}" \
+              REPLAY_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+              python3 - <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+
+corpus = pathlib.Path(os.environ["CORPUS_PATH_VALUE"])
+binding = {
+    "schema_version": "frozen_replay_corpus_binding_v1",
+    "per_symbol": {
+        "BTCUSDT": {
+            "path": str(corpus),
+            "sha256": hashlib.sha256(corpus.read_bytes()).hexdigest(),
+            "schema_version": None,
+            "evidence_domain": None,
+            "candidate_set_frozen": True,
+            "source_feature_csv": None,
+            "source_feature_sha256": None,
+            "target_bucket": "trend",
+            "thresholds": None,
+            "sampling_quantiles": None,
+        }
+    },
+}
+binding["binding_sha256"] = hashlib.sha256(
+    json.dumps(
+        binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+).hexdigest()
+path = pathlib.Path(os.environ["REPLAY_REPORT_PATH_VALUE"])
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(
+    json.dumps(
+        {"runs": [], "status": "fail", "frozen_corpus_binding": binding},
+        sort_keys=True,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
             }
             run_strategy_diagnose() { return 0; }
             run_alpha_mechanism_probe() { return 0; }
@@ -493,6 +533,11 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 paired_args[paired_args.index("--trade-bot") + 1],
                 "/app/trade_bot",
             )
+            unified_args = by_tool["build_decision_evidence_report.py"]["args"]
+            self.assertEqual(
+                unified_args[unified_args.index("--config") + 1],
+                str(root / "inputs" / "policy.json"),
+            )
             ledger_args = by_tool["experiment_budget_ledger.py"]["args"]
             proposal_arg = ledger_args[ledger_args.index("--request-json") + 1]
             self.assertTrue(proposal_arg.startswith("@"), proposal_arg)
@@ -559,6 +604,17 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 run_dir = root / "reports" / "decisive-observation-test"
                 for artifact in self.DECISIVE_ARTIFACTS:
                     self.assertTrue((run_dir / artifact).is_file(), artifact)
+                fallback = json.loads(
+                    (run_dir / self.DECISIVE_ARTIFACTS[
+                        self.DECISIVE_TOOLS.index(failed_tool)
+                    ]).read_text(encoding="utf-8")
+                )
+                if fallback.get("schema_version") == (
+                    "decision_evidence_observation_failure_v1"
+                ):
+                    self.assertFalse(fallback["promotion_authority"])
+                    self.assertFalse(fallback["demo_activation_authorized"])
+                    self.assertFalse(fallback["live_activation_authorized"])
                 statuses = [
                     json.loads(line)
                     for line in (run_dir / "step_status.jsonl")
@@ -646,6 +702,73 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                 ],
             )
 
+    def test_runner_rejects_tampered_replay_corpus_binding(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus.json"
+            corpus.write_text(
+                '{"candidate_set_frozen":true,"symbol":"BTCUSDT"}\n',
+                encoding="utf-8",
+            )
+            unsigned_binding = {
+                "schema_version": "frozen_replay_corpus_binding_v1",
+                "per_symbol": {
+                    "BTCUSDT": {
+                        "path": str(corpus),
+                        "sha256": "0" * 64,
+                    }
+                },
+            }
+            binding = {
+                **unsigned_binding,
+                "binding_sha256": hashlib.sha256(
+                    json.dumps(
+                        unsigned_binding,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+            }
+            replay_report = root / "replay.json"
+            replay_report.write_text(
+                json.dumps({"frozen_corpus_binding": binding}) + "\n",
+                encoding="utf-8",
+            )
+            script = textwrap.dedent(
+                r'''
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                source tools/closed_loop_runner.sh assess \
+                  --output-root "${TMP_ROOT}/reports"
+                REPLAY_VALIDATION_REPORT_PATH="${TMP_ROOT}/replay.json"
+                compose_cmd() {
+                  while (( $# > 0 )); do
+                    if [[ "$1" == "ai-trade-research" ]]; then
+                      shift
+                      python3 "$@"
+                      return $?
+                    fi
+                    shift
+                  done
+                  return 0
+                }
+                if replay_validation_frozen_corpus_mapping; then
+                  exit 99
+                fi
+                '''
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={**os.environ, "TMP_ROOT": str(root)},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("corpus path/hash mismatch", result.stderr)
+
     def test_auto_benchmark_consumes_current_integrator_and_replay_outputs(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
@@ -683,6 +806,19 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
                     run_dir
                     / "replay_validation"
                     / "replay_validation_trend_corpus.json"
+                ),
+            )
+            self.assertEqual(
+                full_builder["args"][
+                    full_builder["args"].index("--corpus-manifest-by-symbol") + 1
+                ],
+                "BTCUSDT="
+                + str(
+                    (
+                        run_dir
+                    / "replay_validation"
+                    / "replay_validation_trend_corpus.json"
+                    ).resolve()
                 ),
             )
             paired = next(
@@ -747,6 +883,9 @@ class ClosedLoopRunnerTransactionTest(unittest.TestCase):
             self.assertEqual(paired["schema_version"], "paired_evolution_replay_v1")
             self.assertEqual(paired["status"], "UNVERIFIABLE")
             self.assertIn("candidate_preflight_failed", paired["mismatches"])
+            self.assertFalse(paired["promotion_authority"])
+            self.assertFalse(paired["demo_activation_authorized"])
+            self.assertFalse(paired["live_activation_authorized"])
             statuses = [
                 json.loads(line)
                 for line in (run_dir / "step_status.jsonl")

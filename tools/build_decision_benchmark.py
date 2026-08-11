@@ -235,17 +235,169 @@ def _resolve_sources(
     return features, corpora
 
 
+def _producer_binding_sha256(binding: dict[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            binding,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _validate_frozen_corpus_binding(
+    replay_report: dict[str, Any], symbols: set[str]
+) -> dict[str, pathlib.Path]:
+    binding = replay_report.get("frozen_corpus_binding")
+    if not isinstance(binding, dict):
+        raise ValueError("replay frozen corpus binding missing")
+    if binding.get("schema_version") != "frozen_replay_corpus_binding_v1":
+        raise ValueError("replay frozen corpus binding schema invalid")
+    declared_binding_sha = binding.get("binding_sha256")
+    unsigned_binding = {
+        key: value for key, value in binding.items() if key != "binding_sha256"
+    }
+    actual_binding_sha = _producer_binding_sha256(unsigned_binding)
+    if declared_binding_sha != actual_binding_sha:
+        raise ValueError("replay frozen corpus binding hash mismatch")
+    raw_per_symbol = binding.get("per_symbol")
+    if not isinstance(raw_per_symbol, dict) or set(raw_per_symbol) != symbols:
+        raise ValueError(
+            "replay frozen corpus binding symbols mismatch: "
+            f"expected={sorted(symbols)},actual="
+            f"{sorted(raw_per_symbol) if isinstance(raw_per_symbol, dict) else []}"
+        )
+    corpus_paths: dict[str, pathlib.Path] = {}
+    bound_fields = (
+        "schema_version",
+        "evidence_domain",
+        "candidate_set_frozen",
+        "source_feature_csv",
+        "source_feature_sha256",
+        "target_bucket",
+        "thresholds",
+        "sampling_quantiles",
+    )
+    for symbol in sorted(symbols):
+        item = raw_per_symbol.get(symbol)
+        if not isinstance(item, dict):
+            raise ValueError(f"replay frozen corpus binding invalid for {symbol}")
+        path_text = item.get("path")
+        expected_sha = item.get("sha256")
+        if not _is_nonempty_string(path_text):
+            raise ValueError(f"replay frozen corpus path missing for {symbol}")
+        path = pathlib.Path(path_text).expanduser().resolve(strict=False)
+        if not path.is_file():
+            raise ValueError(f"replay frozen corpus path missing for {symbol}: {path}")
+        actual_sha = file_sha256(path)
+        if expected_sha != actual_sha:
+            raise ValueError(f"replay frozen corpus hash mismatch for {symbol}")
+        payload = _read_json_object(path)
+        for field in bound_fields:
+            if item.get(field) != payload.get(field):
+                raise ValueError(
+                    f"replay frozen corpus metadata mismatch for {symbol}:{field}"
+                )
+        corpus_paths[symbol] = path
+    return corpus_paths
+
+
+def _write_replay_split_identity(
+    replay_report: dict[str, Any], output_dir: pathlib.Path
+) -> pathlib.Path:
+    raw_binding = replay_report.get("frozen_corpus_binding")
+    raw_per_symbol = (
+        raw_binding.get("per_symbol") if isinstance(raw_binding, dict) else {}
+    )
+    corpus_identity_fields = (
+        "sha256",
+        "schema_version",
+        "evidence_domain",
+        "candidate_set_frozen",
+        "source_feature_sha256",
+        "target_bucket",
+        "thresholds",
+        "sampling_quantiles",
+    )
+    corpus_identities = {
+        symbol: {
+            key: item.get(key)
+            for key in corpus_identity_fields
+        }
+        for symbol, item in sorted(raw_per_symbol.items())
+        if isinstance(symbol, str) and isinstance(item, dict)
+    }
+    raw_runs = replay_report.get("runs")
+    runs = []
+    for run in raw_runs if isinstance(raw_runs, list) else []:
+        if not isinstance(run, dict) or not isinstance(run.get("segment"), dict):
+            continue
+        segment = run["segment"]
+        runs.append(
+            {
+                "symbol": str(run.get("symbol") or "").strip().upper(),
+                "segment": {
+                    "start_timestamp": segment.get("start_timestamp"),
+                    "end_timestamp": segment.get("end_timestamp"),
+                    "target_bucket": segment.get("target_bucket"),
+                },
+            }
+        )
+    candidate = replay_report.get("candidate_identity")
+    candidate_identity = {
+        key: candidate.get(key)
+        for key in (
+            "model_version",
+            "model_sha256",
+            "integrator_report_sha256",
+        )
+        if isinstance(candidate, dict) and key in candidate
+    }
+    identity_path = output_dir / "paired_inputs" / "replay_validation_identity.json"
+    _atomic_write_json(
+        identity_path,
+        {
+            "schema_version": "decision_evidence_replay_split_identity_v1",
+            "status": replay_report.get("status"),
+            "target_bucket": replay_report.get("target_bucket"),
+            "base_interval_ms": replay_report.get("base_interval_ms"),
+            "base_interval_ms_by_symbol": replay_report.get(
+                "base_interval_ms_by_symbol"
+            ),
+            "candidate_identity": candidate_identity,
+            "frozen_corpus_binding": {
+                "schema_version": raw_binding.get("schema_version")
+                if isinstance(raw_binding, dict)
+                else None,
+                "per_symbol": corpus_identities,
+            },
+            "runs": sorted(
+                runs,
+                key=lambda item: (
+                    item["segment"]["start_timestamp"],
+                    item["segment"]["end_timestamp"],
+                    item["symbol"],
+                    str(item["segment"]["target_bucket"]),
+                ),
+            ),
+        },
+    )
+    return identity_path
+
+
 def _build_universe(
     *,
     replay_report: dict[str, Any],
     feature_paths: dict[str, pathlib.Path],
     corpus_paths: dict[str, pathlib.Path],
     output_dir: pathlib.Path,
-) -> tuple[list[dict[str, Any]], dict[str, str]]:
+) -> tuple[list[dict[str, Any]], dict[str, str], dict[str, Any]]:
     raw_runs = replay_report.get("runs")
     if not isinstance(raw_runs, list) or not raw_runs:
         raise ValueError("replay report runs missing")
-    grouped: dict[tuple[int, int], dict[str, dict[str, Any]]] = {}
+    source_segments: list[dict[str, Any]] = []
     target_default = str(replay_report.get("target_bucket") or "").lower()
     for index, run in enumerate(raw_runs):
         if not isinstance(run, dict):
@@ -267,20 +419,48 @@ def _build_universe(
         regime = str(segment.get("target_bucket") or target_default).strip().lower()
         if regime not in VALID_REGIMES:
             raise ValueError(f"replay run[{index}] entry regime invalid")
-        by_symbol = grouped.setdefault((start, end), {})
-        if symbol in by_symbol:
-            raise ValueError(f"duplicate replay run interval for {symbol}")
-        by_symbol[symbol] = {"entry_regime": regime}
+        source_identity = {
+            "symbol": symbol,
+            "start_timestamp_ms": start,
+            "end_timestamp_ms": end,
+            "entry_regime": regime,
+        }
+        source_segments.append(
+            {
+                **source_identity,
+                "source_segment_id": "segment-"
+                + canonical_sha256(source_identity)[:16],
+            }
+        )
 
-    previous_end: int | None = None
-    for start, end in sorted(grouped):
-        if previous_end is not None and start <= previous_end:
-            raise ValueError("replay run intervals overlap")
-        previous_end = end
+    seen_source_ids: set[str] = set()
+    previous_by_symbol: dict[str, dict[str, Any]] = {}
+    for source in sorted(
+        source_segments,
+        key=lambda item: (
+            item["symbol"],
+            item["start_timestamp_ms"],
+            item["end_timestamp_ms"],
+            item["entry_regime"],
+        ),
+    ):
+        source_id = source["source_segment_id"]
+        if source_id in seen_source_ids:
+            raise ValueError(f"duplicate replay run interval for {source['symbol']}")
+        seen_source_ids.add(source_id)
+        previous = previous_by_symbol.get(source["symbol"])
+        if (
+            previous is not None
+            and source["start_timestamp_ms"] <= previous["end_timestamp_ms"]
+        ):
+            raise ValueError(
+                f"replay run intervals overlap within symbol {source['symbol']}"
+            )
+        previous_by_symbol[source["symbol"]] = source
 
     source_rows: dict[str, tuple[list[Any], dict[int, int], int, str]] = {}
     paired_corpora: dict[str, str] = {}
-    for symbol in sorted({symbol for group in grouped.values() for symbol in group}):
+    for symbol in sorted({item["symbol"] for item in source_segments}):
         feature_path = feature_paths[symbol]
         corpus_path = corpus_paths[symbol]
         if not feature_path.is_file():
@@ -325,15 +505,122 @@ def _build_universe(
         )
         paired_corpora[symbol] = str(paired_corpus_path.resolve())
 
+    boundaries: set[int] = set()
+    for source in source_segments:
+        _, timestamp_to_index, base_interval, corpus_target_bucket = source_rows[
+            source["symbol"]
+        ]
+        if source["entry_regime"] != corpus_target_bucket:
+            raise ValueError(
+                f"replay segment/corpus target bucket mismatch for "
+                f"{source['source_segment_id']}"
+            )
+        start = source["start_timestamp_ms"]
+        end = source["end_timestamp_ms"]
+        if start not in timestamp_to_index or end not in timestamp_to_index:
+            raise ValueError(
+                f"feature interval missing for {source['source_segment_id']}:"
+                f"{source['symbol']}"
+            )
+        if timestamp_to_index[start] > timestamp_to_index[end]:
+            raise ValueError(
+                f"feature interval invalid for {source['source_segment_id']}"
+            )
+        timestamps = [
+            row.timestamp
+            for row in source_rows[source["symbol"]][0][
+                timestamp_to_index[start] : timestamp_to_index[end] + 1
+            ]
+        ]
+        if any(
+            current - previous != base_interval
+            for previous, current in zip(timestamps, timestamps[1:])
+        ):
+            raise ValueError(
+                f"feature interval not contiguous for {source['source_segment_id']}"
+            )
+        source["base_interval_ms"] = base_interval
+        boundaries.add(start)
+        boundaries.add(end + base_interval)
+
+    atomic_windows: list[dict[str, Any]] = []
+    sorted_boundaries = sorted(boundaries)
+    for start, next_boundary in zip(sorted_boundaries, sorted_boundaries[1:]):
+        active = [
+            source
+            for source in source_segments
+            if source["start_timestamp_ms"] <= start
+            and source["end_timestamp_ms"] + source["base_interval_ms"]
+            >= next_boundary
+        ]
+        if not active:
+            continue
+        active_by_symbol: dict[str, dict[str, Any]] = {}
+        for source in active:
+            if source["symbol"] in active_by_symbol:
+                raise ValueError(
+                    f"ambiguous active replay segment for {source['symbol']}"
+                )
+            active_by_symbol[source["symbol"]] = source
+        intervals = {source["base_interval_ms"] for source in active}
+        if len(intervals) != 1:
+            raise ValueError(
+                "active per-symbol replay intervals use incompatible bar intervals"
+            )
+        base_interval = next(iter(intervals))
+        if (next_boundary - start) % base_interval != 0:
+            raise ValueError("replay boundary is not aligned to common bar interval")
+        end = next_boundary - base_interval
+        signature = tuple(
+            (
+                source["symbol"],
+                source["entry_regime"],
+                source["source_segment_id"],
+            )
+            for source in sorted(active, key=lambda item: item["symbol"])
+        )
+        if (
+            atomic_windows
+            and atomic_windows[-1]["signature"] == signature
+            and atomic_windows[-1]["end_timestamp_ms"] + base_interval == start
+        ):
+            atomic_windows[-1]["end_timestamp_ms"] = end
+        else:
+            atomic_windows.append(
+                {
+                    "start_timestamp_ms": start,
+                    "end_timestamp_ms": end,
+                    "base_interval_ms": base_interval,
+                    "signature": signature,
+                    "active": sorted(active, key=lambda item: item["symbol"]),
+                }
+            )
+
     blocks: list[dict[str, Any]] = []
-    for start, end in sorted(grouped):
+    source_to_blocks: dict[str, list[str]] = {
+        item["source_segment_id"]: [] for item in source_segments
+    }
+    for window in atomic_windows:
+        start = window["start_timestamp_ms"]
+        end = window["end_timestamp_ms"]
+        active = window["active"]
+        block_cells = [
+            {"symbol": item["symbol"], "entry_regime": item["entry_regime"]}
+            for item in active
+        ]
         block_id = "block-" + canonical_sha256(
-            {"start_timestamp_ms": start, "end_timestamp_ms": end}
+            {
+                "start_timestamp_ms": start,
+                "end_timestamp_ms": end,
+                "cells": block_cells,
+            }
         )[:16]
         executions: list[dict[str, Any]] = []
         cells: list[dict[str, str]] = []
-        for symbol, run in sorted(grouped[(start, end)].items()):
-            rows, timestamp_to_index, base_interval, target_bucket = source_rows[symbol]
+        for run in active:
+            symbol = run["symbol"]
+            regime = run["entry_regime"]
+            rows, timestamp_to_index, base_interval, _ = source_rows[symbol]
             if start not in timestamp_to_index or end not in timestamp_to_index:
                 raise ValueError(f"feature interval missing for {block_id}:{symbol}")
             start_index = timestamp_to_index[start]
@@ -369,12 +656,12 @@ def _build_universe(
             event_sha = file_sha256(execution_path)
             identity = replay_segment_identity(
                 symbol=symbol,
-                target_bucket=target_bucket,
+                target_bucket=regime,
                 base_interval_ms=base_interval,
                 segment=ReplaySegment(0, segment.bars - 1, start, end, segment.bars),
                 replay_csv_sha256=event_sha,
             )
-            regime = run["entry_regime"]
+            source_to_blocks[run["source_segment_id"]].append(block_id)
             executions.append(
                 {
                     "execution_id": f"{block_id}:{symbol}",
@@ -413,9 +700,56 @@ def _build_universe(
                 "event_sha256": file_sha256(block_path),
                 "cells": cells,
                 "executions": executions,
+                "source_segment_ids": sorted(
+                    item["source_segment_id"] for item in active
+                ),
             }
         )
-    return blocks, paired_corpora
+    blocks_by_id = {block["block_id"]: block for block in blocks}
+    coverage_segments = []
+    for source in sorted(
+        source_segments,
+        key=lambda item: (
+            item["start_timestamp_ms"],
+            item["end_timestamp_ms"],
+            item["symbol"],
+            item["entry_regime"],
+        ),
+    ):
+        block_ids = source_to_blocks[source["source_segment_id"]]
+        covered = [blocks_by_id[block_id] for block_id in block_ids]
+        fully_materialized = bool(covered) and (
+            covered[0]["start_timestamp_ms"] == source["start_timestamp_ms"]
+            and covered[-1]["end_timestamp_ms"] == source["end_timestamp_ms"]
+            and all(
+                current["start_timestamp_ms"]
+                == previous["end_timestamp_ms"] + source["base_interval_ms"]
+                for previous, current in zip(covered, covered[1:])
+            )
+        )
+        coverage_segments.append(
+            {
+                "source_segment_id": source["source_segment_id"],
+                "symbol": source["symbol"],
+                "entry_regime": source["entry_regime"],
+                "start_timestamp_ms": source["start_timestamp_ms"],
+                "end_timestamp_ms": source["end_timestamp_ms"],
+                "block_ids": block_ids,
+                "fully_materialized": fully_materialized,
+            }
+        )
+    if any(not item["fully_materialized"] for item in coverage_segments):
+        raise ValueError("common block calendar did not fully materialize source segments")
+    coverage = {
+        "schema_version": "decision_evidence_common_block_calendar_v1",
+        "source_segment_count": len(source_segments),
+        "atomic_block_count": len(blocks),
+        "source_segments_fully_materialized": sum(
+            1 for item in coverage_segments if item["fully_materialized"]
+        ),
+        "source_segments": coverage_segments,
+    }
+    return blocks, paired_corpora, coverage
 
 
 def build_decision_benchmark(
@@ -493,19 +827,32 @@ def build_decision_benchmark(
         symbols.discard("")
         if not symbols:
             raise ValueError("replay report symbols missing")
+        bound_corpora = _validate_frozen_corpus_binding(replay, symbols)
+        selected_corpus_mapping = _normalize_mapping(corpus_manifest_by_symbol)
+        if not selected_corpus_mapping:
+            selected_corpus_mapping = dict(bound_corpora)
         features, corpora = _resolve_sources(
             symbols,
             pathlib.Path(feature_csv),
             pathlib.Path(corpus_manifest),
             _normalize_mapping(feature_csv_by_symbol),
-            _normalize_mapping(corpus_manifest_by_symbol),
+            selected_corpus_mapping,
         )
-        blocks, paired_corpora = _build_universe(
+        for symbol in sorted(symbols):
+            if corpora[symbol] != bound_corpora[symbol]:
+                raise ValueError(
+                    f"replay frozen corpus path mismatch for {symbol}: "
+                    f"expected={bound_corpora[symbol]},actual={corpora[symbol]}"
+                )
+            if file_sha256(corpora[symbol]) != file_sha256(bound_corpora[symbol]):
+                raise ValueError(f"replay frozen corpus hash mismatch for {symbol}")
+        blocks, paired_corpora, calendar_coverage = _build_universe(
             replay_report=replay,
             feature_paths=features,
             corpus_paths=corpora,
             output_dir=output_dir,
         )
+        replay_split_identity = _write_replay_split_identity(replay, output_dir)
         data_files = [
             (f"execution:{item['execution_id']}", pathlib.Path(item["path"]))
             for block in blocks
@@ -515,7 +862,7 @@ def build_decision_benchmark(
             "data": _component("data", data_files),
             "split": _component(
                 "split",
-                [("replay_validation_report", required["replay_report"])]
+                [("replay_validation_report", replay_split_identity)]
                 + [(f"corpus:{symbol}", path) for symbol, path in corpora.items()],
             ),
             "cost": _component(
@@ -569,7 +916,10 @@ def build_decision_benchmark(
         manifest = {
             "schema_version": BENCHMARK_SCHEMA_VERSION,
             "components": components,
-            "evaluation_universe": {"blocks": blocks},
+            "evaluation_universe": {
+                "blocks": blocks,
+                "calendar_coverage": calendar_coverage,
+            },
         }
         _atomic_write_json(manifest_path, manifest)
         validation = validate_files(
@@ -589,6 +939,10 @@ def build_decision_benchmark(
                 symbol: str(path.resolve()) for symbol, path in sorted(features.items())
             },
             "corpus_manifest_by_symbol": dict(sorted(paired_corpora.items())),
+            "source_corpus_manifest_by_symbol": {
+                symbol: str(path.resolve())
+                for symbol, path in sorted(corpora.items())
+            },
         }
         if validation.get("identity_status") != "VERIFIED":
             report["errors"].append("self_validation_failed")
