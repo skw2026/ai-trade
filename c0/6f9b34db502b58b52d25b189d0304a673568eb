@@ -1,0 +1,27 @@
+tools/closed_loop_runner.sh
+  ai_agent 80,3299,3316
+tools/closed_loop_mechanism_audit.py
+  ai_agent 842,898-905,920-925,929,934
+tools/test_run_microstructure_alpha_lifecycle.py
+  ai_agent 116-117,129-130,132,135
+tools/test_closed_loop_mechanism_audit.py
+  ai_agent 85,134-135,137,140,154-155
+tools/test_run_microstructure_alpha_development.py
+  ai_agent 492-493,540-541,716-744,874
+tools/run_microstructure_alpha_lifecycle.py
+  ai_agent 41,313-328,346-351,355,360
+tools/build_closed_loop_report.py
+  ai_agent 960
+tools/test_closed_loop_runner_transaction.py
+  ai_agent 124,160
+tools/run_microstructure_alpha_development.py
+  ai_agent 9-11,40,1716-1745,1768-1769,1773,1776-1778,1781,1783,1792-1795,1830-1831,1833,1837,1925-1958,1960,1966-1968,1984-1986,1988-1989,1998,2000-2001,2012-2014,2016-2017,2134-2136,2138-2139,2369-2372,2491,2530-2533
+tools/test_build_closed_loop_report.py
+  ai_agent 133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "c06f9b34db502b58b52d25b189d0304a673568eb",
+  "prompts": {}
+}
