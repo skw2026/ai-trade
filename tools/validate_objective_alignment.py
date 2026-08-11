@@ -13,6 +13,12 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from decision_evidence_common import (
+    canonical_sha256,
+    file_sha256,
+    validate_verified_benchmark_report,
+)
+
 
 SUBSYSTEMS = ("miner", "market_alpha", "microstructure", "online_tuner")
 EVIDENCE_SCHEMA_VERSION = "candidate_alignment_evidence_v1"
@@ -497,10 +503,19 @@ def validate_alignment(
     evidence: Any,
     benchmark_report: Any,
     config: Any,
+    *,
+    validation_config_sha256: str | None = None,
 ) -> dict[str, Any]:
+    benchmark_verification = validate_verified_benchmark_report(
+        benchmark_report,
+        validation_policy=config,
+        validation_config_sha256=validation_config_sha256,
+    )
     expected_benchmark_id, blocks, benchmark_missing = _benchmark_blocks(
         benchmark_report
     )
+    if benchmark_verification["benchmark_id"] is not None:
+        expected_benchmark_id = benchmark_verification["benchmark_id"]
     thresholds, config_missing = _alignment_policy(config)
     safe_thresholds = thresholds or {
         "min_candidates": None,
@@ -509,7 +524,11 @@ def validate_alignment(
         "permutation_trials": None,
         "rho_required": ">0",
     }
-    top_missing = [*benchmark_missing, *config_missing]
+    top_missing = [
+        *benchmark_verification["errors"],
+        *benchmark_missing,
+        *config_missing,
+    ]
     actual_benchmark_id = evidence.get("benchmark_id") if isinstance(evidence, Mapping) else None
     raw_subsystems = evidence.get("subsystems") if isinstance(evidence, Mapping) else None
     if not isinstance(evidence, Mapping):
@@ -552,9 +571,129 @@ def validate_alignment(
         "expected_benchmark_id": expected_benchmark_id,
         "actual_benchmark_id": actual_benchmark_id,
         "overall_status": overall,
+        "benchmark_verification": benchmark_verification,
         "thresholds": safe_thresholds,
         "missing_fields": top_missing,
         "subsystems": sections,
+    }
+
+
+def validate_alignment_report_artifact(
+    report: Any,
+    benchmark_report: Any,
+    validation_policy: Any,
+    *,
+    validation_config_sha256: str | None,
+) -> dict[str, Any]:
+    """Rebuild an alignment report from its candidate/block audit evidence."""
+
+    errors: list[str] = []
+    benchmark_verification = validate_verified_benchmark_report(
+        benchmark_report,
+        validation_policy=validation_policy,
+        validation_config_sha256=validation_config_sha256,
+    )
+    errors.extend(benchmark_verification["errors"])
+    if not isinstance(report, Mapping):
+        errors.append("alignment_report")
+        return {"verified": False, "status": None, "errors": _missing(errors)}
+    if report.get("schema_version") != REPORT_SCHEMA_VERSION:
+        errors.append(f"alignment.schema_version={REPORT_SCHEMA_VERSION}")
+    if report.get("overall_status") not in {"ALIGNED", "NOT_ALIGNED"}:
+        errors.append("alignment.overall_status=complete_evidence")
+    expected_benchmark_id = benchmark_verification["benchmark_id"]
+    for field in ("benchmark_id", "expected_benchmark_id", "actual_benchmark_id"):
+        if report.get(field) != expected_benchmark_id:
+            errors.append(f"alignment.{field}=frozen_benchmark")
+    raw_subsystems = report.get("subsystems")
+    if not isinstance(raw_subsystems, Mapping) or set(raw_subsystems) != set(SUBSYSTEMS):
+        errors.append("alignment.subsystems=fixed_four")
+        raw_subsystems = {}
+
+    evidence_subsystems: dict[str, dict[str, Any]] = {}
+    for subsystem in SUBSYSTEMS:
+        raw_section = raw_subsystems.get(subsystem)
+        prefix = f"alignment.subsystems.{subsystem}"
+        if not isinstance(raw_section, Mapping):
+            errors.append(prefix)
+            continue
+        candidate_audit = raw_section.get("candidate_audit")
+        permutation = raw_section.get("permutation")
+        if not isinstance(candidate_audit, list) or not candidate_audit:
+            errors.append(f"{prefix}.candidate_audit")
+            continue
+        if not isinstance(permutation, Mapping):
+            errors.append(f"{prefix}.permutation")
+            continue
+        candidates: list[dict[str, Any]] = []
+        for candidate_index, candidate in enumerate(candidate_audit):
+            candidate_prefix = f"{prefix}.candidate_audit[{candidate_index}]"
+            if not isinstance(candidate, Mapping):
+                errors.append(candidate_prefix)
+                continue
+            if candidate.get("missing_fields") != []:
+                errors.append(f"{candidate_prefix}.missing_fields=empty")
+            raw_blocks = candidate.get("blocks")
+            if not isinstance(raw_blocks, list) or not raw_blocks:
+                errors.append(f"{candidate_prefix}.blocks")
+                continue
+            blocks = []
+            for block_index, block in enumerate(raw_blocks):
+                block_prefix = f"{candidate_prefix}.blocks[{block_index}]"
+                if not isinstance(block, Mapping):
+                    errors.append(block_prefix)
+                    continue
+                if block.get("missing_fields") != []:
+                    errors.append(f"{block_prefix}.missing_fields=empty")
+                blocks.append(
+                    {
+                        "block_id": block.get("block_id"),
+                        "start_timestamp_ms": block.get("start_timestamp_ms"),
+                        "end_timestamp_ms": block.get("end_timestamp_ms"),
+                        "event_sha256": block.get("event_sha256"),
+                        "independent_oos": block.get("independent_oos"),
+                        "execution_path_complete": block.get(
+                            "execution_path_complete"
+                        ),
+                        "utility_source": block.get("utility_source"),
+                        "executable_net_utility": block.get(
+                            "executable_net_utility"
+                        ),
+                    }
+                )
+            candidates.append(
+                {
+                    "candidate_id": candidate.get("candidate_id"),
+                    "internal_score": candidate.get("internal_score"),
+                    "score_direction": candidate.get("score_direction"),
+                    "blocks": blocks,
+                }
+            )
+        evidence_subsystems[subsystem] = {
+            "permutation_unit": permutation.get("unit"),
+            "candidates": candidates,
+        }
+
+    if not errors:
+        reconstructed = validate_alignment(
+            {
+                "schema_version": EVIDENCE_SCHEMA_VERSION,
+                "benchmark_id": expected_benchmark_id,
+                "subsystems": evidence_subsystems,
+            },
+            benchmark_report,
+            validation_policy,
+            validation_config_sha256=validation_config_sha256,
+        )
+        try:
+            if canonical_sha256(report) != canonical_sha256(reconstructed):
+                errors.append("alignment.artifact_derived_state_mismatch")
+        except (TypeError, ValueError):
+            errors.append("alignment.artifact_canonical_json")
+    return {
+        "verified": not errors,
+        "status": report.get("overall_status"),
+        "errors": _missing(errors),
     }
 
 
@@ -757,6 +896,10 @@ def main() -> int:
     args = parse_args()
     benchmark = _read_optional(args.benchmark_report)
     policy = _read_optional(args.config)
+    try:
+        policy_sha256 = file_sha256(pathlib.Path(args.config))
+    except OSError:
+        policy_sha256 = None
     if args.evidence:
         evidence_payload = _read_optional(args.evidence)
     else:
@@ -768,7 +911,12 @@ def main() -> int:
             microstructure_report=_read_optional(args.microstructure_report),
             online_tuner_report=_read_optional(args.online_tuner_report),
         )
-    report = validate_alignment(evidence_payload, benchmark, policy)
+    report = validate_alignment(
+        evidence_payload,
+        benchmark,
+        policy,
+        validation_config_sha256=policy_sha256,
+    )
     _write_json(pathlib.Path(args.output), report)
     print(json.dumps(report, ensure_ascii=False, allow_nan=False))
     if report["overall_status"] == "ALIGNED":

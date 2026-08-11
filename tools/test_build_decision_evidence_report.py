@@ -10,61 +10,151 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import lru_cache
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import build_decision_evidence_report as builder  # noqa: E402
 import experiment_budget_ledger as ledger  # noqa: E402
+import test_validate_evolution_uplift as uplift_fixtures  # noqa: E402
+import validate_objective_alignment as alignment_validator  # noqa: E402
 
 
-BENCHMARK_ID = "1" * 64
 SUBSYSTEMS = ("miner", "market_alpha", "microstructure", "online_tuner")
 UNSET = object()
 
 
-def benchmark_report():
+def validation_config():
     return {
-        "schema_version": "decision_evidence_benchmark_validation_v1",
-        "identity_status": "VERIFIED",
-        "benchmark_id": BENCHMARK_ID,
-        "drifts": [],
-    }
-
-
-def alignment_report(statuses=None):
-    statuses = statuses or {name: "ALIGNED" for name in SUBSYSTEMS}
-    if any(status == "UNVERIFIABLE" for status in statuses.values()):
-        overall = "UNVERIFIABLE"
-    elif all(status == "ALIGNED" for status in statuses.values()):
-        overall = "ALIGNED"
-    else:
-        overall = "NOT_ALIGNED"
-    return {
-        "schema_version": "objective_alignment_validation_v1",
-        "benchmark_id": BENCHMARK_ID,
-        "expected_benchmark_id": BENCHMARK_ID,
-        "actual_benchmark_id": BENCHMARK_ID,
-        "overall_status": overall,
-        "subsystems": {
-            name: {
-                "status": statuses[name],
-                "rho": 0.9 if statuses[name] == "ALIGNED" else -0.2,
-                "p_value": 0.001 if statuses[name] == "ALIGNED" else 0.8,
-            }
-            for name in SUBSYSTEMS
+        "schema_version": "decision_evidence_validation_v1",
+        "alignment": {
+            "min_candidates": 8,
+            "min_independent_blocks": 5,
+            "alpha": 0.05,
+            "permutation_trials": 10000,
+        },
+        "uplift": {
+            "min_independent_blocks": 8,
+            "block_coverage": 1,
+            "bootstrap_trials": 10000,
+            "lcb": 0.95,
+        },
+        "failure_budgets": {"family": 3, "information_set": 8},
+        "seed": {
+            "source": "benchmark_id+channel",
+            "cli_override_allowed": False,
         },
     }
 
 
+VALIDATION_CONFIG = validation_config()
+VALIDATION_CONFIG_BYTES = json.dumps(
+    VALIDATION_CONFIG,
+    sort_keys=True,
+    separators=(",", ":"),
+    ensure_ascii=True,
+    allow_nan=False,
+).encode("ascii")
+VALIDATION_CONFIG_SHA256 = hashlib.sha256(VALIDATION_CONFIG_BYTES).hexdigest()
+_BASE_BLOCKS = copy.deepcopy(
+    uplift_fixtures.benchmark_report()["canonical_identity"]
+    ["evaluation_universe"]["blocks"]
+)
+_BENCHMARK_REPORT = uplift_fixtures.benchmark_from_blocks(
+    _BASE_BLOCKS,
+    policy=VALIDATION_CONFIG,
+    policy_sha256=VALIDATION_CONFIG_SHA256,
+)
+BENCHMARK_ID = _BENCHMARK_REPORT["benchmark_id"]
+
+
+def benchmark_report():
+    return copy.deepcopy(_BENCHMARK_REPORT)
+
+
+@lru_cache(maxsize=None)
+def _alignment_report_cached(status_tuple):
+    statuses = dict(zip(SUBSYSTEMS, status_tuple))
+    blocks = benchmark_report()["canonical_identity"]["evaluation_universe"]["blocks"]
+    subsystems = {}
+    for subsystem in SUBSYSTEMS:
+        utilities = (
+            list(range(7, -1, -1))
+            if statuses[subsystem] == "NOT_ALIGNED"
+            else list(range(8))
+        )
+        candidates = []
+        for candidate_index, utility in enumerate(utilities):
+            candidates.append(
+                {
+                    "candidate_id": f"{subsystem}-candidate-{candidate_index:02d}",
+                    "internal_score": float(candidate_index),
+                    "score_direction": "higher_is_better",
+                    "blocks": [
+                        {
+                            "block_id": block["block_id"],
+                            "start_timestamp_ms": block["start_timestamp_ms"],
+                            "end_timestamp_ms": block["end_timestamp_ms"],
+                            "event_sha256": block["event_sha256"],
+                            "independent_oos": True,
+                            "execution_path_complete": True,
+                            "utility_source": "complete_execution_replay",
+                            "executable_net_utility": float(utility) + block_index / 100.0,
+                        }
+                        for block_index, block in enumerate(blocks)
+                    ],
+                }
+            )
+        if statuses[subsystem] == "UNVERIFIABLE":
+            candidates.pop()
+        subsystems[subsystem] = {
+            "permutation_unit": "candidate_aggregate_utility",
+            "candidates": candidates,
+        }
+    return alignment_validator.validate_alignment(
+        {
+            "schema_version": "candidate_alignment_evidence_v1",
+            "benchmark_id": BENCHMARK_ID,
+            "subsystems": subsystems,
+        },
+        benchmark_report(),
+        VALIDATION_CONFIG,
+        validation_config_sha256=VALIDATION_CONFIG_SHA256,
+    )
+
+
+def alignment_report(statuses=None):
+    statuses = statuses or {name: "ALIGNED" for name in SUBSYSTEMS}
+    return copy.deepcopy(
+        _alignment_report_cached(tuple(statuses[name] for name in SUBSYSTEMS))
+    )
+
+
+@lru_cache(maxsize=None)
+def _uplift_report_cached(status):
+    benchmark = benchmark_report()
+    if status == "UPLIFT_PROVEN":
+        paired = uplift_fixtures.paired_manifest(benchmark)
+    elif status == "NOT_PROVEN":
+        paired = uplift_fixtures.paired_manifest(
+            benchmark, frozen_utility=1.0, adaptive_utility=1.0
+        )
+    else:
+        paired = uplift_fixtures.paired_manifest(benchmark)
+        paired["arms"]["adaptive"]["blocks"].pop()
+    report = uplift_fixtures.UPLIFT.validate_evolution_uplift(
+        paired,
+        benchmark,
+        VALIDATION_CONFIG,
+        validation_config_sha256=VALIDATION_CONFIG_SHA256,
+    )
+    if status not in {"UPLIFT_PROVEN", "NOT_PROVEN", "UNVERIFIABLE"}:
+        report["status"] = status
+    return report
+
+
 def uplift_report(status="UPLIFT_PROVEN"):
-    return {
-        "schema_version": "evolution_uplift_validation_v1",
-        "status": status,
-        "benchmark_id": BENCHMARK_ID,
-        "expected_benchmark_id": BENCHMARK_ID,
-        "actual_benchmark_id": BENCHMARK_ID,
-        "bootstrap": {"lower_confidence_bound": 0.2},
-    }
+    return copy.deepcopy(_uplift_report_cached(status))
 
 
 def ledger_report(
@@ -88,11 +178,21 @@ def ledger_report(
         "actual_benchmark_id": BENCHMARK_ID,
         "experiment_id": experiment_id,
         "registration_verified": registration_verified,
+        "benchmark_verified": True,
+        "validation_policy_sha256": VALIDATION_CONFIG_SHA256,
         "hypothesis_family_id": "2" * 64,
         "information_set_id": "3" * 64,
         "remaining_budgets": {"family": 2, "information_set": 7},
         "checkpoint_recovery_required": False,
         "checkpoint_recovered": False,
+        "registration_nonce": "4" * 64,
+        "actual_proposal_sha256": "5" * 64,
+        "registered_proposal_sha256": "5" * 64,
+        "registration_record_hash": "6" * 64,
+        "result_source_path": "/tmp/decision-evidence-result.json",
+        "ledger_record_count": 1,
+        "ledger_tail_record_hash": "7" * 64,
+        "mismatches": [],
         "reasons": [],
     }
 
@@ -121,6 +221,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             uplift_report() if uplift is UNSET else uplift,
             ledger_report() if ledger is UNSET else ledger,
             alpha_route_report() if alpha_route is UNSET else alpha_route,
+            validation_policy=VALIDATION_CONFIG,
+            validation_config_sha256=VALIDATION_CONFIG_SHA256,
         )
 
     def assert_no_authority(self, report):
@@ -143,6 +245,38 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         self.assertTrue(report["ledger"]["registration_verified"])
         self.assertTrue(report["ledger"]["registration_audit"]["verified"])
         self.assert_no_authority(report)
+
+    def test_self_reported_positive_skeletons_and_derived_tampering_cannot_continue(self):
+        skeleton_alignment = {
+            "schema_version": "objective_alignment_validation_v1",
+            "benchmark_id": BENCHMARK_ID,
+            "expected_benchmark_id": BENCHMARK_ID,
+            "actual_benchmark_id": BENCHMARK_ID,
+            "overall_status": "ALIGNED",
+            "subsystems": {
+                name: {"status": "ALIGNED", "rho": 1.0, "p_value": 0.0}
+                for name in SUBSYSTEMS
+            },
+        }
+        skeleton_uplift = {
+            "schema_version": "evolution_uplift_validation_v1",
+            "status": "UPLIFT_PROVEN",
+            "benchmark_id": BENCHMARK_ID,
+            "expected_benchmark_id": BENCHMARK_ID,
+            "actual_benchmark_id": BENCHMARK_ID,
+            "bootstrap": {"lower_confidence_bound": 1.0},
+        }
+        tampered_uplift = uplift_report()
+        tampered_uplift["bootstrap"]["lower_confidence_bound"] = -1.0
+        for name, overrides in (
+            ("alignment_skeleton", {"alignment": skeleton_alignment}),
+            ("uplift_skeleton", {"uplift": skeleton_uplift}),
+            ("uplift_derived_tamper", {"uplift": tampered_uplift}),
+        ):
+            with self.subTest(name=name):
+                report = self.build(**overrides)
+                self.assertEqual(report["research_decision"], "STOP")
+                self.assert_no_authority(report)
 
     def test_forged_allow_without_verified_pending_registration_stops(self):
         cases = []
@@ -179,12 +313,14 @@ class DecisionEvidenceReportTest(unittest.TestCase):
     def test_real_ledger_cli_audit_only_allows_pending_verified_registration(self):
         repository = pathlib.Path(__file__).resolve().parents[1]
         ledger_tool = repository / "tools" / "experiment_budget_ledger.py"
-        frozen_config = repository / "config" / "decision_evidence_validation.json"
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)
             config_path = root / "decision_evidence_validation.json"
-            config_path.write_bytes(frozen_config.read_bytes())
+            config_path.write_bytes(VALIDATION_CONFIG_BYTES)
+            benchmark_path = root / "benchmark.json"
+            benchmark_path.write_text(json.dumps(benchmark_report()), encoding="utf-8")
             ledger_path = root / "experiments.jsonl"
+            result_path = root / "experiment-result.json"
             policy_sha = hashlib.sha256(config_path.read_bytes()).hexdigest()
             information_definition = {
                 "data": "d" * 64,
@@ -218,10 +354,7 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     "operator": "gt",
                     "value": 0.0,
                 },
-                "registered_at": "2026-08-11T00:00:00Z",
-                "earliest_result_at": "2026-08-11T00:00:30Z",
-                "earliest_result_identity": "e" * 64,
-                "result_source_identity": "d" * 64,
+                "result_source_path": str(result_path),
             }
             proposal_path = root / "proposal.json"
             proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
@@ -234,6 +367,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(ledger_path),
                     "--config",
                     str(config_path),
+                    "--benchmark-report",
+                    str(benchmark_path),
                     "--proposal",
                     str(proposal_path),
                 ],
@@ -251,6 +386,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(ledger_path),
                     "--config",
                     str(config_path),
+                    "--benchmark-report",
+                    str(benchmark_path),
                     "--proposal",
                     str(proposal_path),
                 ],
@@ -270,19 +407,22 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             )
             self.assertEqual(continued["ledger"]["report"], audit_report)
 
+            result_identity_payload = {
+                "schema_version": "decision_experiment_result_v1",
+                "experiment_id": proposal["experiment_id"],
+                "registration_nonce": audit_report["registration_nonce"],
+                "outcome": "SUPPORTED",
+                "result": {"stress_lcb": 0.2},
+            }
+            result_artifact = {
+                **result_identity_payload,
+                "result_identity": ledger.canonical_sha256(result_identity_payload),
+            }
+            result_path.write_bytes(ledger.canonical_json_bytes(result_artifact) + b"\n")
+            result_path.chmod(0o444)
             observation_path = root / "observation.json"
             observation_path.write_text(
-                json.dumps(
-                    {
-                        "experiment_id": proposal["experiment_id"],
-                        "outcome": "SUPPORTED",
-                        "observed_at": "2026-08-11T00:01:00Z",
-                        "result_identity": proposal["earliest_result_identity"],
-                        "result_source_identity": proposal[
-                            "result_source_identity"
-                        ],
-                    }
-                ),
+                json.dumps({"experiment_id": proposal["experiment_id"]}),
                 encoding="utf-8",
             )
             observed = subprocess.run(
@@ -294,6 +434,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(ledger_path),
                     "--config",
                     str(config_path),
+                    "--benchmark-report",
+                    str(benchmark_path),
                     "--proposal",
                     str(observation_path),
                 ],
@@ -311,6 +453,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(ledger_path),
                     "--config",
                     str(config_path),
+                    "--benchmark-report",
+                    str(benchmark_path),
                     "--proposal",
                     str(proposal_path),
                 ],
@@ -503,7 +647,11 @@ class DecisionEvidenceReportTest(unittest.TestCase):
             alpha_route_report(),
         )
         before = copy.deepcopy(inputs)
-        builder.build_report(*inputs)
+        builder.build_report(
+            *inputs,
+            validation_policy=VALIDATION_CONFIG,
+            validation_config_sha256=VALIDATION_CONFIG_SHA256,
+        )
         self.assertEqual(inputs, before)
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -514,6 +662,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                 path = root / f"{name}.json"
                 path.write_text(json.dumps(payload), encoding="utf-8")
                 paths[name] = path
+            config_path = root / "decision_evidence_validation.json"
+            config_path.write_bytes(VALIDATION_CONFIG_BYTES)
             output = root / "decision-evidence.json"
             completed = subprocess.run(
                 [
@@ -527,6 +677,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(paths["uplift"]),
                     "--ledger-report",
                     str(paths["ledger"]),
+                    "--config",
+                    str(config_path),
                     "--alpha-route-report",
                     str(paths["alpha"]),
                     "--output",
@@ -555,6 +707,8 @@ class DecisionEvidenceReportTest(unittest.TestCase):
                     str(paths["uplift"]),
                     "--ledger-report",
                     str(paths["ledger"]),
+                    "--config",
+                    str(config_path),
                     "--output",
                     str(output),
                 ],

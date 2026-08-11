@@ -54,6 +54,56 @@ def canonical_sha256(value):
     return hashlib.sha256(encoded).hexdigest()
 
 
+def config_bytes(policy=None):
+    return json.dumps(
+        policy if policy is not None else config(),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("ascii")
+
+
+def config_sha256(policy=None):
+    return hashlib.sha256(config_bytes(policy)).hexdigest()
+
+
+def benchmark_from_blocks(blocks, policy=None, policy_sha256=None):
+    policy = copy.deepcopy(policy if policy is not None else config())
+    policy_sha256 = policy_sha256 or config_sha256(policy)
+    canonical_identity = {
+        "schema_version": "decision_evidence_benchmark_v1",
+        "components": {
+            name: {
+                "logical_id": f"{name}-v1",
+                "files": [{"logical_name": name, "sha256": f"{index + 500:064x}"}],
+            }
+            for index, name in enumerate(
+                (
+                    "data",
+                    "split",
+                    "cost",
+                    "features",
+                    "actions",
+                    "baseline_policy",
+                    "run_config",
+                    "implementation",
+                )
+            )
+        },
+        "evaluation_universe": {"blocks": blocks},
+        "validation_policy": {"sha256": policy_sha256, "policy": policy},
+    }
+    return {
+        "schema_version": "decision_evidence_benchmark_validation_v1",
+        "identity_status": "VERIFIED",
+        "benchmark_id": canonical_sha256(canonical_identity),
+        "validation_config_sha256": policy_sha256,
+        "canonical_identity": canonical_identity,
+        "drifts": [],
+    }
+
+
 def benchmark_report(block_count=8, cells=None):
     cells = cells or [{"symbol": "BTCUSDT", "entry_regime": "trend"}]
     blocks = [
@@ -66,17 +116,7 @@ def benchmark_report(block_count=8, cells=None):
         }
         for index in range(block_count)
     ]
-    return {
-        "schema_version": "decision_evidence_benchmark_validation_v1",
-        "identity_status": "VERIFIED",
-        "benchmark_id": BENCHMARK_ID,
-        "canonical_identity": {
-            "schema_version": "decision_evidence_benchmark_v1",
-            "components": {},
-            "evaluation_universe": {"blocks": blocks},
-        },
-        "drifts": [],
-    }
+    return benchmark_from_blocks(blocks)
 
 
 def config():
@@ -445,17 +485,7 @@ def multi_execution_benchmark_report(block_count=8):
                 ],
             }
         )
-    return {
-        "schema_version": "decision_evidence_benchmark_validation_v1",
-        "identity_status": "VERIFIED",
-        "benchmark_id": BENCHMARK_ID,
-        "canonical_identity": {
-            "schema_version": "decision_evidence_benchmark_v1",
-            "components": {},
-            "evaluation_universe": {"blocks": blocks},
-        },
-        "drifts": [],
-    }
+    return benchmark_from_blocks(blocks)
 
 
 def multi_execution_paired_manifest(benchmark=None, adaptive_utility=1.0):
@@ -616,17 +646,19 @@ def multi_execution_paired_manifest(benchmark=None, adaptive_utility=1.0):
 class EvolutionUpliftValidationTest(unittest.TestCase):
     def validate(self, paired=None, benchmark=None, policy=None):
         benchmark = benchmark or benchmark_report()
+        selected_policy = policy if policy is not None else config()
         return UPLIFT.validate_evolution_uplift(
             paired if paired is not None else paired_manifest(benchmark),
             benchmark,
-            policy if policy is not None else config(),
+            selected_policy,
+            validation_config_sha256=config_sha256(selected_policy),
         )
 
     def test_positive_complete_eight_block_pair_proves_uplift(self):
         report = self.validate()
 
         self.assertEqual(report["status"], "UPLIFT_PROVEN")
-        self.assertEqual(report["benchmark_id"], BENCHMARK_ID)
+        self.assertEqual(report["benchmark_id"], benchmark_report()["benchmark_id"])
         self.assertFalse(report["promotion_authority"])
         self.assertEqual(report["block_coverage"]["expected_block_count"], 8)
         self.assertEqual(report["block_coverage"]["frozen_ratio"], 1.0)
@@ -637,6 +669,93 @@ class EvolutionUpliftValidationTest(unittest.TestCase):
         self.assertEqual(len(report["arms"]["frozen"]["episodes"]), 8)
         self.assertEqual(len(report["arms"]["adaptive"]["episodes"]), 8)
         self.assertEqual(report["missing_evidence"], [])
+
+    def test_benchmark_identity_and_complete_policy_byte_drift_are_fail_closed(self):
+        canonical_tamper = benchmark_report()
+        canonical_tamper["canonical_identity"]["components"]["data"]["logical_id"] = "forged"
+        policy_drift = config()
+        policy_drift["unrelated_policy_field"] = "drift"
+        raw_byte_drift = benchmark_report()
+        raw_byte_drift["validation_config_sha256"] = "e" * 64
+
+        cases = (
+            (canonical_tamper, config(), config_sha256(), "canonical_identity_hash"),
+            (benchmark_report(), policy_drift, config_sha256(policy_drift), "validation_policy_content"),
+            (raw_byte_drift, config(), config_sha256(), "validation_config_sha256"),
+        )
+        for benchmark, policy, policy_sha, expected in cases:
+            with self.subTest(expected=expected):
+                report = UPLIFT.validate_evolution_uplift(
+                    paired_manifest(benchmark),
+                    benchmark,
+                    policy,
+                    validation_config_sha256=policy_sha,
+                )
+                self.assertEqual(report["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(expected in item for item in report["missing_evidence"]),
+                    report["missing_evidence"],
+                )
+
+    def test_exported_artifact_validator_rejects_missing_audits_and_derived_tamper(self):
+        benchmark = benchmark_report()
+        policy = config()
+        report = self.validate(benchmark=benchmark, policy=policy)
+        verified = UPLIFT.validate_evolution_uplift_report_artifact(
+            report,
+            benchmark,
+            policy,
+            validation_config_sha256=config_sha256(policy),
+        )
+        self.assertTrue(verified["verified"], verified["errors"])
+
+        for field, mutate in (
+            ("arms", lambda item: item.pop("arms")),
+            ("blocks", lambda item: item["blocks"].pop()),
+            ("cells", lambda item: item["aggregation_cells"].pop()),
+            ("bootstrap", lambda item: item["bootstrap"].__setitem__("lower_confidence_bound", -1.0)),
+            ("episode_lineage", lambda item: item["arms"]["frozen"]["episodes"][0].__setitem__("first_fill_id", "forged-fill")),
+        ):
+            with self.subTest(field=field):
+                forged = copy.deepcopy(report)
+                mutate(forged)
+                audit = UPLIFT.validate_evolution_uplift_report_artifact(
+                    forged,
+                    benchmark,
+                    policy,
+                    validation_config_sha256=config_sha256(policy),
+                )
+                self.assertFalse(audit["verified"])
+                self.assertTrue(audit["errors"])
+
+    def test_artifact_validator_requires_every_multi_execution_audit(self):
+        benchmark = multi_execution_benchmark_report()
+        policy = config()
+        report = self.validate(
+            multi_execution_paired_manifest(benchmark), benchmark, policy
+        )
+        verified = UPLIFT.validate_evolution_uplift_report_artifact(
+            report,
+            benchmark,
+            policy,
+            validation_config_sha256=config_sha256(policy),
+        )
+        self.assertTrue(verified["verified"], verified["errors"])
+
+        forged = copy.deepcopy(report)
+        forged["arms"]["frozen"]["block_audit"][0]["executions"].pop()
+        forged["arms"]["frozen"]["blocks"][0]["executions"].pop()
+        audit = UPLIFT.validate_evolution_uplift_report_artifact(
+            forged,
+            benchmark,
+            policy,
+            validation_config_sha256=config_sha256(policy),
+        )
+        self.assertFalse(audit["verified"])
+        self.assertTrue(
+            any("executions" in item for item in audit["errors"]),
+            audit["errors"],
+        )
 
     def test_multi_execution_blocks_aggregate_all_symbols_as_one_bootstrap_unit(self):
         benchmark = multi_execution_benchmark_report()

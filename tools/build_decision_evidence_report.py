@@ -12,6 +12,13 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from decision_evidence_common import (
+    file_sha256,
+    validate_verified_benchmark_report,
+)
+from validate_evolution_uplift import validate_evolution_uplift_report_artifact
+from validate_objective_alignment import validate_alignment_report_artifact
+
 
 REPORT_SCHEMA_VERSION = "decision_evidence_report_v1"
 BENCHMARK_SCHEMA_VERSION = "decision_evidence_benchmark_validation_v1"
@@ -75,27 +82,26 @@ def _identity_values(
     return actual, matches
 
 
-def _benchmark_section(report: Any) -> tuple[dict[str, Any], str | None]:
+def _benchmark_section(
+    report: Any,
+    validation_policy: Any,
+    validation_config_sha256: str | None,
+) -> tuple[dict[str, Any], str | None]:
     raw = _copy_report(report)
-    errors: list[str] = []
-    actual_id = report.get("benchmark_id") if isinstance(report, Mapping) else None
-    if not isinstance(report, Mapping):
-        errors.append("benchmark report is not an object")
-    else:
-        if report.get("schema_version") != BENCHMARK_SCHEMA_VERSION:
-            errors.append("benchmark schema is invalid")
-        if report.get("identity_status") != "VERIFIED":
-            errors.append("benchmark identity is not VERIFIED")
-        if not _is_sha256(actual_id):
-            errors.append("benchmark_id is invalid")
-        if report.get("drifts") not in (None, []):
-            errors.append("benchmark drift is present")
+    verification = validate_verified_benchmark_report(
+        report,
+        validation_policy=validation_policy,
+        validation_config_sha256=validation_config_sha256,
+    )
+    errors = list(verification["errors"])
+    actual_id = verification["benchmark_id"]
     verified = not errors
     section = {
         "status": "VERIFIED" if verified else "UNVERIFIABLE",
         "benchmark_id": actual_id if isinstance(actual_id, str) else None,
         "validation_errors": errors,
         "reason_codes": [] if verified else ["BENCHMARK_UNVERIFIABLE"],
+        "verification": verification,
         "report": raw,
     }
     return section, section["benchmark_id"] if verified else None
@@ -131,7 +137,11 @@ def _base_child_section(
 
 
 def _alignment_section(
-    report: Any, expected_benchmark_id: str | None
+    report: Any,
+    expected_benchmark_id: str | None,
+    benchmark_report: Any,
+    validation_policy: Any,
+    validation_config_sha256: str | None,
 ) -> dict[str, Any]:
     section, payload = _base_child_section(report, expected_benchmark_id)
     if payload is None:
@@ -168,17 +178,28 @@ def _alignment_section(
         computed_status = "ALIGNED"
     source_status = payload.get("overall_status")
     section["source_status"] = source_status
+    if section["benchmark_match"] is False:
+        section["status"] = "UNVERIFIABLE"
+        section["reason_codes"] = ["ALIGNMENT_BENCHMARK_MISMATCH"]
+        return section
     if source_status != computed_status:
         section["validation_errors"].append(
             "alignment overall_status is inconsistent with subsystem statuses"
         )
+    artifact_audit = validate_alignment_report_artifact(
+        payload,
+        benchmark_report,
+        validation_policy,
+        validation_config_sha256=validation_config_sha256,
+    )
+    section["artifact_audit"] = artifact_audit
+    section["validation_errors"].extend(artifact_audit["errors"])
     if section["validation_errors"]:
         section["status"] = "UNVERIFIABLE"
-        section["reason_codes"] = ["ALIGNMENT_INPUT_UNVERIFIABLE"]
-        return section
-    if section["benchmark_match"] is False:
-        section["status"] = "UNVERIFIABLE"
-        section["reason_codes"] = ["ALIGNMENT_BENCHMARK_MISMATCH"]
+        section["reason_codes"] = [
+            *reasons,
+            "ALIGNMENT_INPUT_UNVERIFIABLE",
+        ]
         return section
     section["status"] = computed_status
     section["reason_codes"] = reasons
@@ -186,7 +207,11 @@ def _alignment_section(
 
 
 def _uplift_section(
-    report: Any, expected_benchmark_id: str | None
+    report: Any,
+    expected_benchmark_id: str | None,
+    benchmark_report: Any,
+    validation_policy: Any,
+    validation_config_sha256: str | None,
 ) -> dict[str, Any]:
     section, payload = _base_child_section(report, expected_benchmark_id)
     if payload is None:
@@ -196,17 +221,40 @@ def _uplift_section(
         section["validation_errors"].append("uplift schema is invalid")
     source_status = payload.get("status")
     section["source_status"] = source_status
+    if (
+        section["benchmark_match"] is False
+        and payload.get("schema_version") == UPLIFT_SCHEMA_VERSION
+    ):
+        section["status"] = "UNVERIFIABLE"
+        section["reason_codes"] = ["UPLIFT_BENCHMARK_MISMATCH"]
+        return section
+    artifact_audit = validate_evolution_uplift_report_artifact(
+        payload,
+        benchmark_report,
+        validation_policy,
+        validation_config_sha256=validation_config_sha256,
+    )
+    section["artifact_audit"] = artifact_audit
+    section["validation_errors"].extend(artifact_audit["errors"])
     if section["validation_errors"]:
         section["status"] = "UNVERIFIABLE"
-        section["reason_codes"] = ["UPLIFT_INPUT_UNVERIFIABLE"]
+        source_reason = (
+            "UPLIFT_UNVERIFIABLE"
+            if source_status == "UNVERIFIABLE"
+            else (
+                "UPLIFT_UNKNOWN_STATUS"
+                if source_status not in UPLIFT_STATUSES
+                else None
+            )
+        )
+        section["reason_codes"] = [
+            *([source_reason] if source_reason else []),
+            "UPLIFT_INPUT_UNVERIFIABLE",
+        ]
         return section
     if source_status not in UPLIFT_STATUSES:
         section["status"] = "UNVERIFIABLE"
         section["reason_codes"] = ["UPLIFT_UNKNOWN_STATUS"]
-        return section
-    if section["benchmark_match"] is False:
-        section["status"] = "UNVERIFIABLE"
-        section["reason_codes"] = ["UPLIFT_BENCHMARK_MISMATCH"]
         return section
     section["status"] = source_status
     section["reason_codes"] = {
@@ -218,7 +266,9 @@ def _uplift_section(
 
 
 def _ledger_section(
-    report: Any, expected_benchmark_id: str | None
+    report: Any,
+    expected_benchmark_id: str | None,
+    validation_config_sha256: str | None,
 ) -> dict[str, Any]:
     section, payload = _base_child_section(report, expected_benchmark_id)
     experiment_id = payload.get("experiment_id") if payload is not None else None
@@ -249,6 +299,14 @@ def _ledger_section(
         section["validation_errors"].append("ledger report is not audit-next")
     if payload.get("appended") is not False:
         section["validation_errors"].append("audit-next must not append")
+    if payload.get("benchmark_verified") is not True:
+        section["validation_errors"].append("ledger benchmark is not verified")
+    if payload.get("validation_policy_sha256") != validation_config_sha256:
+        section["validation_errors"].append(
+            "ledger validation policy does not match selected config bytes"
+        )
+    if payload.get("mismatches") != []:
+        section["validation_errors"].append("ledger proposal mismatches are present")
     source_status = payload.get("decision")
     section["source_status"] = source_status
     source_reasons = payload.get("reasons")
@@ -282,6 +340,46 @@ def _ledger_section(
         registration_mismatches.append(
             "ALLOW_NEXT_EXPERIMENT carries identity or validation reasons"
         )
+    for field in (
+        "registration_nonce",
+        "actual_proposal_sha256",
+        "registered_proposal_sha256",
+        "registration_record_hash",
+        "ledger_tail_record_hash",
+        "hypothesis_family_id",
+        "information_set_id",
+    ):
+        if not _is_sha256(payload.get(field)):
+            registration_mismatches.append(f"{field} is invalid")
+    if payload.get("actual_proposal_sha256") != payload.get(
+        "registered_proposal_sha256"
+    ):
+        registration_mismatches.append(
+            "audit-next proposal does not match preregistered proposal"
+        )
+    result_source_path = payload.get("result_source_path")
+    if not isinstance(result_source_path, str) or not pathlib.Path(
+        result_source_path
+    ).is_absolute():
+        registration_mismatches.append("result_source_path is invalid")
+    ledger_record_count = payload.get("ledger_record_count")
+    if (
+        not isinstance(ledger_record_count, int)
+        or isinstance(ledger_record_count, bool)
+        or ledger_record_count <= 0
+    ):
+        registration_mismatches.append("ledger_record_count is invalid")
+    remaining_budgets = payload.get("remaining_budgets")
+    if not isinstance(remaining_budgets, Mapping) or set(remaining_budgets) != {
+        "family",
+        "information_set",
+    } or not all(
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        for value in remaining_budgets.values()
+    ):
+        registration_mismatches.append("remaining_budgets are invalid")
+    if payload.get("checkpoint_recovery_required") is not False:
+        registration_mismatches.append("checkpoint recovery is required")
     registration_audit["mismatches"] = registration_mismatches
     registration_audit["verified"] = not registration_mismatches
     if registration_mismatches:
@@ -325,19 +423,44 @@ def build_report(
     uplift_report: Any,
     ledger_report: Any,
     alpha_route_report: Any = None,
+    *,
+    validation_policy: Any,
+    validation_config_sha256: str | None,
 ) -> dict[str, Any]:
     """Build a deterministic decision without mutating source reports or runtime state."""
 
-    benchmark, expected_benchmark_id = _benchmark_section(benchmark_report)
-    alignment = _alignment_section(alignment_report, expected_benchmark_id)
-    uplift = _uplift_section(uplift_report, expected_benchmark_id)
-    ledger = _ledger_section(ledger_report, expected_benchmark_id)
+    benchmark, expected_benchmark_id = _benchmark_section(
+        benchmark_report,
+        validation_policy,
+        validation_config_sha256,
+    )
+    alignment = _alignment_section(
+        alignment_report,
+        expected_benchmark_id,
+        benchmark_report,
+        validation_policy,
+        validation_config_sha256,
+    )
+    uplift = _uplift_section(
+        uplift_report,
+        expected_benchmark_id,
+        benchmark_report,
+        validation_policy,
+        validation_config_sha256,
+    )
+    ledger = _ledger_section(
+        ledger_report,
+        expected_benchmark_id,
+        validation_config_sha256,
+    )
     sections = (benchmark, alignment, uplift, ledger)
     reason_codes = [
         reason
         for section in sections
         for reason in section.get("reason_codes", [])
     ]
+    if benchmark["status"] == "UNVERIFIABLE":
+        reason_codes = list(benchmark["reason_codes"])
     if _has_unverifiable_section(sections):
         decision = "STOP"
     elif (
@@ -413,6 +536,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--alignment-report", required=True)
     parser.add_argument("--uplift-report", required=True)
     parser.add_argument("--ledger-report", required=True)
+    parser.add_argument("--config", required=True)
     parser.add_argument("--alpha-route-report")
     parser.add_argument("--output", required=True)
     return parser.parse_args()
@@ -420,6 +544,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    config_path = pathlib.Path(args.config)
+    validation_policy = _read_report(config_path)
+    try:
+        validation_config_sha256 = file_sha256(config_path)
+    except OSError:
+        validation_config_sha256 = None
     report = build_report(
         _read_report(pathlib.Path(args.benchmark_report)),
         _read_report(pathlib.Path(args.alignment_report)),
@@ -430,6 +560,8 @@ def main() -> int:
             if args.alpha_route_report
             else None
         ),
+        validation_policy=validation_policy,
+        validation_config_sha256=validation_config_sha256,
     )
     _write_json(pathlib.Path(args.output), report)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, allow_nan=False))

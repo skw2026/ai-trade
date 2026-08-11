@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import copy
+import hashlib
 import json
 import math
 import pathlib
@@ -15,10 +16,37 @@ import validate_objective_alignment as alignment  # noqa: E402
 
 
 SUBSYSTEMS = ("miner", "market_alpha", "microstructure", "online_tuner")
-BENCHMARK_ID = "1" * 64
 
 
-def benchmark_report(block_count=5):
+def canonical_sha256(value):
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+    ).hexdigest()
+
+
+def config_bytes(policy=None):
+    return json.dumps(
+        policy if policy is not None else config(),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
+
+
+def config_sha256(policy=None):
+    return hashlib.sha256(config_bytes(policy)).hexdigest()
+
+
+def benchmark_report(block_count=5, policy=None, policy_sha256=None):
+    policy = copy.deepcopy(policy if policy is not None else config())
+    policy_sha256 = policy_sha256 or config_sha256(policy)
     blocks = []
     for index in range(block_count):
         blocks.append(
@@ -30,15 +58,35 @@ def benchmark_report(block_count=5):
                 "cells": [{"symbol": "BTCUSDT", "entry_regime": "trend"}],
             }
         )
+    canonical_identity = {
+        "schema_version": "decision_evidence_benchmark_v1",
+        "components": {
+            name: {
+                "logical_id": f"{name}-v1",
+                "files": [{"logical_name": name, "sha256": f"{index + 100:064x}"}],
+            }
+            for index, name in enumerate(
+                (
+                    "data",
+                    "split",
+                    "cost",
+                    "features",
+                    "actions",
+                    "baseline_policy",
+                    "run_config",
+                    "implementation",
+                )
+            )
+        },
+        "evaluation_universe": {"blocks": blocks},
+        "validation_policy": {"sha256": policy_sha256, "policy": policy},
+    }
     return {
         "schema_version": "decision_evidence_benchmark_validation_v1",
         "identity_status": "VERIFIED",
-        "benchmark_id": BENCHMARK_ID,
-        "canonical_identity": {
-            "schema_version": "decision_evidence_benchmark_v1",
-            "components": {},
-            "evaluation_universe": {"blocks": blocks},
-        },
+        "benchmark_id": canonical_sha256(canonical_identity),
+        "validation_config_sha256": policy_sha256,
+        "canonical_identity": canonical_identity,
         "drifts": [],
     }
 
@@ -88,7 +136,7 @@ def evidence(candidate_payload=None):
     payload = candidate_payload if candidate_payload is not None else candidates()
     return {
         "schema_version": "candidate_alignment_evidence_v1",
-        "benchmark_id": BENCHMARK_ID,
+        "benchmark_id": benchmark_report()["benchmark_id"],
         "subsystems": {
             subsystem: {
                 "permutation_unit": "candidate_aggregate_utility",
@@ -101,10 +149,12 @@ def evidence(candidate_payload=None):
 
 class ObjectiveAlignmentValidationTest(unittest.TestCase):
     def validate(self, payload=None, benchmark=None, policy=None):
+        selected_policy = policy if policy is not None else config()
         return alignment.validate_alignment(
             payload if payload is not None else evidence(),
             benchmark if benchmark is not None else benchmark_report(),
-            policy if policy is not None else config(),
+            selected_policy,
+            validation_config_sha256=config_sha256(selected_policy),
         )
 
     def test_all_fixed_subsystems_align_and_lower_direction_and_ties_are_normalized(self):
@@ -186,7 +236,7 @@ class ObjectiveAlignmentValidationTest(unittest.TestCase):
         self.assertTrue(
             all(section["status"] == "UNVERIFIABLE" for section in report["subsystems"].values())
         )
-        self.assertEqual(report["expected_benchmark_id"], BENCHMARK_ID)
+        self.assertEqual(report["expected_benchmark_id"], benchmark_report()["benchmark_id"])
         self.assertEqual(report["actual_benchmark_id"], "f" * 64)
 
     def test_block_universe_identity_independence_and_permutation_unit_are_fail_closed(self):
@@ -239,6 +289,63 @@ class ObjectiveAlignmentValidationTest(unittest.TestCase):
             all(section["status"] == "UNVERIFIABLE" for section in report["subsystems"].values())
         )
 
+    def test_benchmark_canonical_identity_and_full_policy_bytes_are_fail_closed(self):
+        canonical_tamper = benchmark_report()
+        canonical_tamper["canonical_identity"]["components"]["data"]["logical_id"] = "forged"
+
+        policy_drift = config()
+        policy_drift["unrelated_policy_field"] = "drift"
+        raw_byte_drift = benchmark_report()
+        raw_byte_drift["validation_config_sha256"] = "e" * 64
+
+        cases = (
+            (canonical_tamper, config(), config_sha256(), "canonical_identity_hash"),
+            (benchmark_report(), policy_drift, config_sha256(policy_drift), "validation_policy_content"),
+            (raw_byte_drift, config(), config_sha256(), "validation_config_sha256"),
+        )
+        for benchmark, policy, policy_sha, expected in cases:
+            with self.subTest(expected=expected):
+                report = alignment.validate_alignment(
+                    evidence(),
+                    benchmark,
+                    policy,
+                    validation_config_sha256=policy_sha,
+                )
+                self.assertEqual(report["overall_status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(expected in item for item in report["missing_fields"]),
+                    report["missing_fields"],
+                )
+
+    def test_exported_artifact_validator_rejects_skeleton_and_derived_stat_tamper(self):
+        benchmark = benchmark_report()
+        policy = config()
+        report = self.validate(benchmark=benchmark, policy=policy)
+        verified = alignment.validate_alignment_report_artifact(
+            report,
+            benchmark,
+            policy,
+            validation_config_sha256=config_sha256(policy),
+        )
+        self.assertTrue(verified["verified"], verified["errors"])
+
+        for field, mutate in (
+            ("candidate_audit", lambda item: item["subsystems"]["miner"].pop("candidate_audit")),
+            ("rho", lambda item: item["subsystems"]["miner"].__setitem__("rho", 0.123)),
+            ("permutation", lambda item: item["subsystems"]["miner"]["permutation"].__setitem__("p_value", 0.000001)),
+        ):
+            with self.subTest(field=field):
+                forged = copy.deepcopy(report)
+                mutate(forged)
+                audit = alignment.validate_alignment_report_artifact(
+                    forged,
+                    benchmark,
+                    policy,
+                    validation_config_sha256=config_sha256(policy),
+                )
+                self.assertFalse(audit["verified"])
+                self.assertTrue(audit["errors"])
+
     def test_proxy_metrics_cannot_be_declared_as_executable_utility(self):
         for source in ("ic", "auc", "rmse", "oracle", "train_score", "virtual_pnl"):
             with self.subTest(source=source):
@@ -254,7 +361,7 @@ class ObjectiveAlignmentValidationTest(unittest.TestCase):
 
     def test_current_report_adapter_preserves_proxy_candidates_but_never_invents_utility(self):
         adapted = alignment.adapt_current_reports(
-            benchmark_id=BENCHMARK_ID,
+            benchmark_id=benchmark_report()["benchmark_id"],
             miner_report={
                 "factor_set_version": "f-v1",
                 "factors": [{"expression": "close/ema", "objective_score": 0.4}],
@@ -323,7 +430,7 @@ class ObjectiveAlignmentValidationTest(unittest.TestCase):
 
     def test_small_permutation_space_is_exhaustively_enumerated(self):
         result = alignment._permutation_result(
-            benchmark_id=BENCHMARK_ID,
+            benchmark_id=benchmark_report()["benchmark_id"],
             subsystem="miner",
             candidate_ids=["a", "b", "c"],
             normalized_scores=[1.0, 2.0, 3.0],
@@ -350,8 +457,12 @@ class ObjectiveAlignmentValidationTest(unittest.TestCase):
             }
             for name, payload in payloads.items():
                 path = root / f"{name}.json"
-                path.write_text(json.dumps(payload), encoding="utf-8")
+                encoded = json.dumps(payload).encode("utf-8")
+                path.write_bytes(encoded)
                 paths[name] = path
+            policy_sha = hashlib.sha256(paths["config"].read_bytes()).hexdigest()
+            payloads["benchmark"] = benchmark_report(policy_sha256=policy_sha)
+            paths["benchmark"].write_text(json.dumps(payloads["benchmark"]), encoding="utf-8")
             output = root / "alignment.json"
             completed = subprocess.run(
                 [

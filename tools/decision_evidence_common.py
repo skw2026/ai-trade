@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -69,6 +70,156 @@ def _is_non_empty_string(value: Any) -> bool:
 
 def _is_timestamp_ms(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def validate_verified_benchmark_report(
+    report: Any,
+    *,
+    validation_policy: Any,
+    validation_config_sha256: str | None,
+) -> dict[str, Any]:
+    """Verify a benchmark report and bind it to the selected config bytes.
+
+    A consumer must not treat the report's status or benchmark ID as an
+    authority assertion.  This verifier re-hashes the canonical identity and
+    separately proves that the complete parsed policy and the SHA-256 of the
+    exact selected config bytes are the values frozen into that identity.
+    """
+
+    errors: list[str] = []
+    benchmark_id: str | None = None
+    canonical_identity: dict[str, Any] | None = None
+    expected_policy_sha256: str | None = None
+
+    if not isinstance(report, Mapping):
+        errors.append("benchmark_report")
+    else:
+        if report.get("schema_version") != REPORT_SCHEMA_VERSION:
+            errors.append(f"benchmark.schema_version={REPORT_SCHEMA_VERSION}")
+        if report.get("identity_status") != "VERIFIED":
+            errors.append("benchmark.identity_status=VERIFIED")
+        if report.get("drifts") != []:
+            errors.append("benchmark.drifts=empty")
+        declared_id = report.get("benchmark_id")
+        if _is_sha256(declared_id):
+            benchmark_id = str(declared_id)
+        else:
+            errors.append("benchmark.benchmark_id")
+
+        raw_identity = report.get("canonical_identity")
+        if not isinstance(raw_identity, Mapping):
+            errors.append("benchmark.canonical_identity")
+        else:
+            canonical_identity = dict(raw_identity)
+            if set(canonical_identity) != {
+                "schema_version",
+                "components",
+                "evaluation_universe",
+                "validation_policy",
+            }:
+                errors.append("benchmark.canonical_identity.fields")
+            try:
+                recomputed_id = canonical_sha256(canonical_identity)
+            except (TypeError, ValueError):
+                recomputed_id = None
+                errors.append("benchmark.canonical_identity_canonical_json")
+            if recomputed_id is not None and benchmark_id != recomputed_id:
+                errors.append("benchmark.canonical_identity_hash")
+            if canonical_identity.get("schema_version") != BENCHMARK_SCHEMA_VERSION:
+                errors.append(
+                    f"benchmark.canonical_identity.schema_version={BENCHMARK_SCHEMA_VERSION}"
+                )
+
+            components = canonical_identity.get("components")
+            if not isinstance(components, Mapping):
+                errors.append("benchmark.canonical_identity.components")
+            else:
+                if set(components) != set(REQUIRED_COMPONENTS):
+                    errors.append(
+                        "benchmark.canonical_identity.components=required_eight"
+                    )
+                for component_name in REQUIRED_COMPONENTS:
+                    component = components.get(component_name)
+                    prefix = f"benchmark.canonical_identity.components.{component_name}"
+                    if not isinstance(component, Mapping):
+                        errors.append(prefix)
+                        continue
+                    if set(component) != {"logical_id", "files"}:
+                        errors.append(f"{prefix}.fields")
+                    if not _is_non_empty_string(component.get("logical_id")):
+                        errors.append(f"{prefix}.logical_id")
+                    files = component.get("files")
+                    if not isinstance(files, list) or not files:
+                        errors.append(f"{prefix}.files")
+                        continue
+                    names: set[str] = set()
+                    for index, file_identity in enumerate(files):
+                        file_prefix = f"{prefix}.files[{index}]"
+                        if not isinstance(file_identity, Mapping):
+                            errors.append(file_prefix)
+                            continue
+                        if set(file_identity) != {"logical_name", "sha256"}:
+                            errors.append(f"{file_prefix}.fields")
+                        logical_name = file_identity.get("logical_name")
+                        if not _is_non_empty_string(logical_name):
+                            errors.append(f"{file_prefix}.logical_name")
+                        elif logical_name in names:
+                            errors.append(f"{prefix}.files.logical_name=unique")
+                        else:
+                            names.add(str(logical_name))
+                        if not _is_sha256(file_identity.get("sha256")):
+                            errors.append(f"{file_prefix}.sha256")
+
+            universe = canonical_identity.get("evaluation_universe")
+            if not isinstance(universe, Mapping) or not isinstance(
+                universe.get("blocks"), list
+            ) or not universe.get("blocks"):
+                errors.append(
+                    "benchmark.canonical_identity.evaluation_universe.blocks"
+                )
+
+            policy_binding = canonical_identity.get("validation_policy")
+            if not isinstance(policy_binding, Mapping):
+                errors.append("benchmark.canonical_identity.validation_policy")
+            else:
+                if set(policy_binding) != {"sha256", "policy"}:
+                    errors.append(
+                        "benchmark.canonical_identity.validation_policy.fields"
+                    )
+                raw_expected_sha = policy_binding.get("sha256")
+                if _is_sha256(raw_expected_sha):
+                    expected_policy_sha256 = str(raw_expected_sha)
+                else:
+                    errors.append(
+                        "benchmark.canonical_identity.validation_policy.sha256"
+                    )
+                frozen_policy = policy_binding.get("policy")
+                if not isinstance(frozen_policy, Mapping):
+                    errors.append(
+                        "benchmark.canonical_identity.validation_policy.policy"
+                    )
+                elif not isinstance(validation_policy, Mapping) or dict(
+                    validation_policy
+                ) != dict(frozen_policy):
+                    errors.append("benchmark.validation_policy_content")
+
+        declared_config_sha = report.get("validation_config_sha256")
+        if declared_config_sha != expected_policy_sha256:
+            errors.append("benchmark.validation_config_sha256_vs_identity")
+        if not _is_sha256(validation_config_sha256):
+            errors.append("validation_config_sha256")
+        elif validation_config_sha256 != expected_policy_sha256:
+            errors.append("benchmark.validation_config_sha256_vs_selected_bytes")
+
+    errors = sorted(set(errors))
+    return {
+        "verified": not errors,
+        "benchmark_id": benchmark_id,
+        "canonical_identity": canonical_identity,
+        "expected_validation_config_sha256": expected_policy_sha256,
+        "actual_validation_config_sha256": validation_config_sha256,
+        "errors": errors,
+    }
 
 
 def _resolve_path(root: pathlib.Path, declared_path: Any) -> pathlib.Path | None:
