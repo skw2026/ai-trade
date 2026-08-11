@@ -193,6 +193,25 @@ class DemoPolicyTest(unittest.TestCase):
             model=FakeModel(prediction),
         )
 
+    def test_obsolete_demo_candidate_is_a_healthy_flat_migration_state(self):
+        state = {
+            "algorithm_contract_revision": "obsolete_contract",
+            "phase": "demo_ready",
+            "demo_entry_eligible": True,
+            "live_promotion_eligible": False,
+            "candidate_id": "a" * 64,
+        }
+        with mock.patch.object(
+            policy.lifecycle,
+            "read_event_chain",
+            return_value=[{"state": state}],
+        ), mock.patch.object(
+            policy.lifecycle,
+            "validate_development_candidate",
+        ) as validate:
+            self.assertIsNone(policy.load_demo_candidate(pathlib.Path("registry")))
+        validate.assert_not_called()
+
     def test_policy_uses_frozen_threshold_and_holds_non_overlapping_action(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = pathlib.Path(temp_dir) / "signal.json"

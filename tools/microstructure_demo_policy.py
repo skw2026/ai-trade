@@ -100,6 +100,15 @@ def load_demo_candidate(registry_root: pathlib.Path) -> CandidateBundle | None:
     state = events[-1].get("state")
     if not isinstance(state, dict):
         raise DemoPolicyError("lifecycle event has no state")
+    if (
+        state.get("algorithm_contract_revision")
+        != lifecycle.ALGORITHM_CONTRACT_REVISION
+    ):
+        # A deployment can intentionally invalidate a previously demo-ready
+        # candidate by advancing the learning contract.  That is a safe
+        # no-candidate state, not runtime corruption: stay healthy and flat
+        # while the lifecycle develops a candidate under the new contract.
+        return None
     if state.get("phase") != "demo_ready":
         return None
     if state.get("demo_entry_eligible") is not True:
