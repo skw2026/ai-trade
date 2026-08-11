@@ -526,11 +526,11 @@ Task 1 ─┬─ Task 2 ─ Task 2A ─ Task 4 ─ Task 5 ─┐
 
 ### CR-7: 闭合跨产物信任根
 
-- [ ] 公共 benchmark consumer 校验重算 `canonical_sha256(canonical_identity)`，并要求完整 validation policy/字节 SHA 与冻结 identity 一致；alignment、uplift、ledger、unified 不得只信自报 `benchmark_id/status`。
-- [ ] unified builder 对 alignment/uplift/ledger 正向报告执行严格 schema 与派生状态校验；缺候选/block/bootstrap/arm/registration 审计的骨架 JSON 不得 `CONTINUE`。
-- [ ] paired replay 在执行前将实际 runtime、candidate model/report、trade bot、per-symbol feature/corpus 的内容 SHA 逐项绑定 benchmark 八组件；显式 benchmark 也不得替换输入。
-- [ ] runner 从真实 replay report 的 frozen per-symbol corpus binding 生成 builder mapping；benchmark builder 把边界不同但重叠的 per-symbol segments 冻结为确定性、互不重叠的共同 block 日历。
-- [ ] ledger 注册时间由持锁 append 生成；结果源在注册时必须不存在并绑定 nonce/path，observe 的不可变结果制品必须携带 nonce 且产生于注册之后。recovery marker 同时记录 before/after checkpoint 与 pending record，覆盖 marker-fsync 后进程终止窗口。
-- [ ] 所有 fail-closed 决定性 fallback 显式写 `promotion_authority=false`、`demo_activation_authorized=false`、`live_activation_authorized=false`。
+- [x] 公共 benchmark consumer 校验重算 `canonical_sha256(canonical_identity)`，并要求完整 validation policy/字节 SHA 与冻结 identity 一致；alignment、uplift、ledger、unified 不得只信自报 `benchmark_id/status`。
+- [x] unified builder 对 alignment/uplift/ledger 正向报告执行严格 schema 与派生状态校验；缺候选/block/bootstrap/arm/registration 审计的骨架 JSON 不得 `CONTINUE`。
+- [x] paired replay 在执行前将实际 runtime、candidate model/report、trade bot、per-symbol feature/corpus 的内容 SHA 逐项绑定 benchmark 八组件；显式 benchmark 也不得替换输入。
+- [x] runner 从真实 replay report 的 frozen per-symbol corpus binding 生成 builder mapping；benchmark builder 把边界不同但重叠的 per-symbol segments 冻结为确定性、互不重叠的共同 block 日历。
+- [x] ledger 注册时间由持锁 append 生成；结果源在注册时必须不存在并绑定 nonce/path，observe 的不可变结果制品必须携带 nonce 且产生于注册之后。recovery marker 同时记录 before/after checkpoint 与 pending record，覆盖 marker-fsync 后进程终止窗口。
+- [x] 所有 fail-closed 决定性 fallback 显式写 `promotion_authority=false`、`demo_activation_authorized=false`、`live_activation_authorized=false`。
 
 在 `/Users/sk.wang/Projects/c++/ai-trade/.worktrees/feat-decision-evidence-validation` 中按依赖图执行。实现 agent 必须先运行任务指定测试观察失败，再实现，再运行通过；每个 Task 单独提交。全部 Task 完成后运行完整 CTest 和 `keel-multi-agent-cr --post-coding --plan docs/plans/2026-08-11-decision-evidence-validation.md`。
