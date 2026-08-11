@@ -1158,8 +1158,12 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("startup preflight image pull failed", script)
         self.assertIn("startup_preflight_credentials_missing", script)
-        self.assertIn('failure_class="authentication_failed"', script)
-        self.assertIn('"startup_preflight_${failure_class}"', script)
+        self.assertIn("classify_startup_preflight_failure()", script)
+        self.assertIn("bybit_retcode_10010", script)
+        self.assertIn(
+            '"startup_preflight_${failure_class}:${credential_source}"',
+            script,
+        )
         self.assertIn("DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS", script)
         self.assertIn("credential_source=${credential_source}", script)
         self.assertIn(
@@ -1370,6 +1374,35 @@ class ComposeConsistencyTest(unittest.TestCase):
             script.index('if ! run_startup_preflight; then'),
             script.index('stopping deferred services before gate'),
         )
+
+    def test_deploy_startup_preflight_failure_classifier_is_specific(self):
+        script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        start = script.index("classify_startup_preflight_failure() {")
+        end = script.index("\nrun_startup_preflight() {", start)
+        classifier = script[start:end]
+        cases = {
+            "Bybit retCode 异常: 10010, retMsg=Unmatched IP": "bybit_retcode_10010",
+            "Bybit HTTP 状态异常: 403": "bybit_http_403",
+            "curl_easy_perform 失败: Could not resolve host": "dns_resolution_failed",
+            "curl_easy_perform 失败: SSL certificate problem": "tls_validation_failed",
+            "unknown exchange error": "exchange_connection_failed",
+        }
+        for failure_output, expected in cases.items():
+            with self.subTest(expected=expected):
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        classifier + '\nclassify_startup_preflight_failure "$1"',
+                        "--",
+                        failure_output,
+                    ],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                self.assertEqual(result.stdout.strip(), expected)
 
     def test_deploy_disk_preflight_cleans_pressure_before_service_mutation(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

@@ -1346,6 +1346,44 @@ PY
   return 0
 }
 
+classify_startup_preflight_failure() {
+  local output="$1"
+  if [[ "${output}" =~ Bybit[[:space:]]retCode[[:space:]]异常:[[:space:]](-?[0-9]+) ]]; then
+    printf 'bybit_retcode_%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  if [[ "${output}" =~ Bybit[[:space:]]HTTP[[:space:]]状态异常:[[:space:]]([0-9]+) ]]; then
+    printf 'bybit_http_%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  case "${output}" in
+    *"缺少API密钥"*|*"missing API key"*)
+      printf 'credentials_missing\n'
+      ;;
+    *"API key is invalid"*|*"authentication"*|*"认证失败"*)
+      printf 'authentication_failed\n'
+      ;;
+    *"Could not resolve host"*)
+      printf 'dns_resolution_failed\n'
+      ;;
+    *"Connection timed out"*|*"Timeout was reached"*|*"Operation timed out"*)
+      printf 'transport_timeout\n'
+      ;;
+    *"SSL certificate problem"*|*"certificate verify failed"*)
+      printf 'tls_validation_failed\n'
+      ;;
+    *"Failed to connect"*|*"Connection refused"*)
+      printf 'transport_connect_failed\n'
+      ;;
+    *"timestamp"*|*"recv_window"*|*"时间戳"*)
+      printf 'clock_skew\n'
+      ;;
+    *)
+      printf 'exchange_connection_failed\n'
+      ;;
+  esac
+}
+
 run_startup_preflight() {
   STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_failed"
   if ! is_true "${DEPLOY_STARTUP_PREFLIGHT}"; then
@@ -1419,24 +1457,17 @@ run_startup_preflight() {
       printf '%s\n' "${preflight_output}"
     fi
 
-    failure_class="exchange_connection_failed"
-    case "${preflight_output}" in
-      *"缺少API密钥"*|*"missing API key"*)
-        failure_class="credentials_missing"
-        ;;
-      *"10003"*|*"API key is invalid"*|*"authentication"*|*"认证失败"*)
-        failure_class="authentication_failed"
-        ;;
-      *"timestamp"*|*"recv_window"*|*"时间戳"*)
-        failure_class="clock_skew"
+    failure_class="$(classify_startup_preflight_failure "${preflight_output}")"
+    STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_${failure_class}:${credential_source}"
+    echo "[deploy] startup preflight failed: attempt=${attempt}/${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS} status=${preflight_status} class=${failure_class}"
+    case "${failure_class}" in
+      credentials_missing|authentication_failed|\
+      bybit_retcode_10003|bybit_retcode_10004|bybit_retcode_10005|\
+      bybit_retcode_10007|bybit_retcode_10010|\
+      bybit_http_401|bybit_http_403)
+        break
         ;;
     esac
-    STARTUP_PREFLIGHT_FAILURE_REASON="startup_preflight_${failure_class}"
-    echo "[deploy] startup preflight failed: attempt=${attempt}/${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS} status=${preflight_status} class=${failure_class}"
-    if [[ "${failure_class}" == "credentials_missing" ||
-          "${failure_class}" == "authentication_failed" ]]; then
-      break
-    fi
     if (( attempt < DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS )); then
       sleep "${DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS}"
     fi
