@@ -107,6 +107,20 @@ if(BUILD_TESTING)
   else()
     add_test(NAME assess_run_log_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_assess_run_log.py)
+    add_test(NAME validate_decision_benchmark_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_decision_benchmark.py)
+    add_test(NAME validate_objective_alignment_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_objective_alignment.py)
+    add_test(NAME run_paired_evolution_replay_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_paired_evolution_replay.py)
+    add_test(NAME validate_evolution_uplift_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_evolution_uplift.py)
+    add_test(NAME experiment_budget_ledger_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_experiment_budget_ledger.py)
+    add_test(NAME build_decision_evidence_report_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_build_decision_evidence_report.py)
+    add_test(NAME run_replay_validation_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_replay_validation.py)
     add_test(NAME compose_consistency_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_compose_consistency.py)
     add_test(NAME closed_loop_runner_transaction_test
