@@ -17,6 +17,7 @@ from decision_evidence_common import (  # noqa: E402
     canonical_sha256,
     file_sha256,
     validate_benchmark,
+    validate_verified_benchmark_report,
 )
 from validate_decision_benchmark import validate_files  # noqa: E402
 
@@ -46,52 +47,13 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
         }
 
     def fixtures(self, root: pathlib.Path):
-        components = {}
-        for component in REQUIRED_COMPONENTS:
-            path = root / "components" / f"{component}.json"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps({"component": component}, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            components[component] = {
-                "logical_id": f"{component}-v1",
-                "files": [
-                    {
-                        "logical_name": f"{component}-contract",
-                        "path": str(path.relative_to(root)),
-                        "sha256": file_sha256(path),
-                    }
-                ],
-            }
-
-        policy_path = root / "components" / "decision_evidence_validation.json"
-        policy_path.write_text(
-            json.dumps(self.validation_policy(), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        components["run_config"]["files"].append(
-            {
-                "logical_name": "decision_evidence_validation",
-                "path": str(policy_path.relative_to(root)),
-                "sha256": file_sha256(policy_path),
-            }
-        )
-
         blocks = []
         for number in range(2):
             block_id = f"block-{number + 1:02d}"
-            path = root / "replay" / f"{block_id}.csv"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                "timestamp_ms,symbol,price\n"
-                f"{1000 + number * 1000},BTCUSDT,{100 + number}\n"
-                f"{1000 + number * 1000},ETHUSDT,{200 + number}\n",
-                encoding="ascii",
-            )
             executions = []
             for symbol in ("BTCUSDT", "ETHUSDT"):
                 execution_path = root / "replay" / f"{block_id}-{symbol}.csv"
+                execution_path.parent.mkdir(parents=True, exist_ok=True)
                 execution_path.write_text(
                     "timestamp_ms,symbol,price\n"
                     f"{1000 + number * 1000},{symbol},{100 + number}\n",
@@ -105,6 +67,24 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
                         "event_sha256": file_sha256(execution_path),
                     }
                 )
+            path = root / "replay" / f"{block_id}.json"
+            path.write_bytes(
+                canonical_json_bytes(
+                    {
+                        "schema_version": "decision_evidence_event_bundle_v1",
+                        "block_id": block_id,
+                        "executions": [
+                            {
+                                "execution_id": item["execution_id"],
+                                "symbol": item["symbol"],
+                                "event_sha256": item["event_sha256"],
+                            }
+                            for item in executions
+                        ],
+                    }
+                )
+                + b"\n"
+            )
             blocks.append(
                 {
                     "block_id": block_id,
@@ -121,6 +101,73 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
                 }
             )
 
+        fixed_names = {
+            "split": [
+                "replay_validation_report",
+                "corpus:BTCUSDT",
+                "corpus:ETHUSDT",
+            ],
+            "cost": ["replay_candidate_config", "runtime_config"],
+            "features": ["feature:BTCUSDT", "feature:ETHUSDT"],
+            "actions": ["replay_policy", "runtime_policy"],
+            "baseline_policy": ["candidate_model", "candidate_report"],
+            "run_config": ["decision_evidence_validation", "runtime_config"],
+            "implementation": [
+                "benchmark_builder",
+                "paired_evolution_runner",
+                "replay_validation_runner",
+                "trade_bot",
+            ],
+        }
+        data_files = {
+            f"execution:{execution['execution_id']}": root / execution["path"]
+            for block in blocks
+            for execution in block["executions"]
+        }
+        components = {}
+        for component in REQUIRED_COMPONENTS:
+            logical_names = (
+                sorted(data_files)
+                if component == "data"
+                else fixed_names[component]
+            )
+            files = []
+            for index, logical_name in enumerate(logical_names):
+                safe_name = logical_name.replace(":", "-")
+                path = root / "components" / component / f"{index:02d}-{safe_name}"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if component == "data":
+                    path.write_bytes(data_files[logical_name].read_bytes())
+                elif (
+                    component == "run_config"
+                    and logical_name == "decision_evidence_validation"
+                ):
+                    path.write_text(
+                        json.dumps(self.validation_policy(), indent=2, sort_keys=True)
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    path.write_text(
+                        json.dumps(
+                            {"component": component, "logical_name": logical_name},
+                            sort_keys=True,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                files.append(
+                    {
+                        "logical_name": logical_name,
+                        "path": str(path.relative_to(root)),
+                        "sha256": file_sha256(path),
+                    }
+                )
+            components[component] = {
+                "logical_id": f"{component}-v1",
+                "files": files,
+            }
+
         return {
             "schema_version": "decision_evidence_benchmark_v1",
             "components": components,
@@ -132,6 +179,26 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
         self.assertEqual(report["identity_status"], "UNVERIFIABLE")
         self.assertNotIn("benchmark_id", report)
         return report
+
+    def consumer_verification(self, producer_report, mutate=None):
+        identity = copy.deepcopy(producer_report["canonical_identity"])
+        if mutate is not None:
+            mutate(identity)
+        report = {
+            "schema_version": "decision_evidence_benchmark_validation_v1",
+            "identity_status": "VERIFIED",
+            "drifts": [],
+            "benchmark_id": canonical_sha256(identity),
+            "canonical_identity": identity,
+            "validation_config_sha256": producer_report[
+                "validation_config_sha256"
+            ],
+        }
+        return validate_verified_benchmark_report(
+            report,
+            validation_policy=identity["validation_policy"]["policy"],
+            validation_config_sha256=producer_report["validation_config_sha256"],
+        )
 
     def test_canonical_helpers_and_complete_eight_component_id_are_stable(self):
         self.assertEqual(
@@ -157,6 +224,7 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
             third = validate_benchmark(reordered, root)
 
         self.assertEqual(first["identity_status"], "VERIFIED")
+        self.assertTrue(self.consumer_verification(first)["verified"])
         self.assertRegex(first["benchmark_id"], r"^[0-9a-f]{64}$")
         self.assertEqual(first["benchmark_id"], second["benchmark_id"])
         self.assertEqual(first["benchmark_id"], third["benchmark_id"])
@@ -191,11 +259,12 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
             first_manifest = self.fixtures(first_root)
             second_manifest = self.fixtures(second_root)
             for component in REQUIRED_COMPONENTS:
-                old = second_root / second_manifest["components"][component]["files"][0]["path"]
-                moved = second_root / "relocated" / component / old.name
-                moved.parent.mkdir(parents=True, exist_ok=True)
-                old.replace(moved)
-                second_manifest["components"][component]["files"][0]["path"] = str(moved.relative_to(second_root))
+                for entry in second_manifest["components"][component]["files"]:
+                    old = second_root / entry["path"]
+                    moved = second_root / "relocated" / component / old.name
+                    moved.parent.mkdir(parents=True, exist_ok=True)
+                    old.replace(moved)
+                    entry["path"] = str(moved.relative_to(second_root))
             for block in second_manifest["evaluation_universe"]["blocks"]:
                 old = second_root / block["path"]
                 moved = second_root / "relocated-replay" / old.name
@@ -228,8 +297,8 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
         self.assertEqual(
             [(item["component"], item["logical_name"]) for item in report["drifts"]],
             [
-                ("actions", "actions-contract"),
-                ("data", "data-contract"),
+                ("actions", "replay_policy"),
+                ("data", "execution:block-01:BTCUSDT"),
                 ("features", ""),
             ],
         )
@@ -249,10 +318,130 @@ class DecisionBenchmarkValidationTest(unittest.TestCase):
         self.assertEqual(
             [(item["component"], item["logical_name"], item["field"]) for item in report["drifts"]],
             [
-                ("cost", "cost-contract", "sha256"),
+                ("cost", "replay_candidate_config", "sha256"),
                 ("split", "", "logical_id"),
             ],
         )
+
+    def test_consumer_rejects_self_rehashed_incomplete_contract_and_empty_block(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            producer = validate_benchmark(self.fixtures(root), root)
+
+            empty_block = self.consumer_verification(
+                producer,
+                lambda identity: identity["evaluation_universe"].update(
+                    {"blocks": [{}]}
+                ),
+            )
+
+            incomplete_components = {}
+            for component in REQUIRED_COMPONENTS:
+                def replace_contract(identity, component_name=component):
+                    identity["components"][component_name]["files"] = [
+                        {"logical_name": "placeholder", "sha256": "0" * 64}
+                    ]
+
+                incomplete_components[component] = self.consumer_verification(
+                    producer, replace_contract
+                )
+
+        self.assertFalse(empty_block["verified"], empty_block)
+        self.assertTrue(
+            any("evaluation_universe" in item for item in empty_block["errors"]),
+            empty_block,
+        )
+        for component, result in incomplete_components.items():
+            with self.subTest(component=component):
+                self.assertFalse(result["verified"], result)
+                self.assertTrue(
+                    any(f"components.{component}" in item for item in result["errors"]),
+                    result,
+                )
+
+    def test_consumer_rejects_self_rehashed_universe_relationship_attacks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            producer = validate_benchmark(self.fixtures(root), root)
+
+            def add_cell_field(identity):
+                identity["evaluation_universe"]["blocks"][0]["cells"][0][
+                    "unexpected"
+                ] = True
+
+            def reverse_planned_regimes(identity):
+                identity["evaluation_universe"]["blocks"][0]["executions"][0][
+                    "planned_entry_regimes"
+                ].reverse()
+
+            def reverse_cells(identity):
+                identity["evaluation_universe"]["blocks"][0]["cells"].reverse()
+
+            def duplicate_cell(identity):
+                cells = identity["evaluation_universe"]["blocks"][0]["cells"]
+                cells.append(copy.deepcopy(cells[0]))
+
+            def forge_execution_id(identity):
+                identity["evaluation_universe"]["blocks"][0]["executions"][0][
+                    "execution_id"
+                ] = "forged"
+
+            def invalidate_execution_sha(identity):
+                identity["evaluation_universe"]["blocks"][0]["executions"][0][
+                    "event_sha256"
+                ] = "not-a-sha"
+
+            def invalidate_timestamp_type(identity):
+                identity["evaluation_universe"]["blocks"][0][
+                    "start_timestamp_ms"
+                ] = True
+
+            def add_execution_field(identity):
+                identity["evaluation_universe"]["blocks"][0]["executions"][0][
+                    "unexpected"
+                ] = True
+
+            def remove_execution(identity):
+                identity["evaluation_universe"]["blocks"][0]["executions"].pop()
+
+            def forge_block_event(identity):
+                identity["evaluation_universe"]["blocks"][0][
+                    "event_sha256"
+                ] = "f" * 64
+
+            def overlap_blocks(identity):
+                blocks = identity["evaluation_universe"]["blocks"]
+                blocks[1]["start_timestamp_ms"] = blocks[0]["end_timestamp_ms"]
+
+            def reverse_blocks(identity):
+                identity["evaluation_universe"]["blocks"].reverse()
+
+            def drift_data_execution(identity):
+                identity["components"]["data"]["files"][0]["sha256"] = "e" * 64
+
+            cases = {
+                "cell_fields": add_cell_field,
+                "cell_order": reverse_cells,
+                "cell_unique": duplicate_cell,
+                "execution_fields": add_execution_field,
+                "execution_id": forge_execution_id,
+                "execution_sha": invalidate_execution_sha,
+                "timestamp_type": invalidate_timestamp_type,
+                "planned_regime_order": reverse_planned_regimes,
+                "symbol_coverage": remove_execution,
+                "block_event_identity": forge_block_event,
+                "overlap": overlap_blocks,
+                "block_order": reverse_blocks,
+                "data_execution_identity": drift_data_execution,
+            }
+            results = {
+                name: self.consumer_verification(producer, mutate)
+                for name, mutate in cases.items()
+            }
+
+        for name, result in results.items():
+            with self.subTest(name=name):
+                self.assertFalse(result["verified"], result)
 
     def test_overlapping_block_intervals_are_unverifiable(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -14,6 +14,7 @@ if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
 import build_decision_benchmark as BUILDER  # noqa: E402
+import decision_evidence_common as COMMON  # noqa: E402
 import run_replay_validation as REPLAY  # noqa: E402
 
 
@@ -168,8 +169,10 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
                     "symbol": symbol,
                     "target_bucket": "trend",
                     "base_interval_ms": 1000,
-                    "source_feature_csv": "selection.csv",
-                    "source_feature_sha256": "a" * 64,
+                    "source_feature_csv": feature.name,
+                    "source_feature_sha256": hashlib.sha256(
+                        feature.read_bytes()
+                    ).hexdigest(),
                 },
             )
             feature_by_symbol[symbol] = feature
@@ -236,6 +239,17 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
 
             self.assertEqual(report["status"], "VERIFIED", report)
             self.assertEqual(report["validation"]["identity_status"], "VERIFIED")
+            policy = json.loads(
+                kwargs["validation_config"].read_text(encoding="utf-8")
+            )
+            consumer_verification = COMMON.validate_verified_benchmark_report(
+                report["validation"],
+                validation_policy=policy,
+                validation_config_sha256=COMMON.file_sha256(
+                    kwargs["validation_config"]
+                ),
+            )
+            self.assertTrue(consumer_verification["verified"], consumer_verification)
             manifest = json.loads(
                 kwargs["manifest_path"].read_text(encoding="utf-8")
             )
@@ -396,6 +410,26 @@ class BuildDecisionBenchmarkTest(unittest.TestCase):
                 any("frozen corpus" in error for error in report["errors"]),
                 report,
             )
+
+    def test_selected_feature_must_match_frozen_replay_path_and_hash(self):
+        for drift in ("path", "hash"):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as td:
+                kwargs = self.build_inputs(pathlib.Path(td))
+                if drift == "path":
+                    replacement = pathlib.Path(td) / "replacement" / "BTCUSDT.csv"
+                    replacement.parent.mkdir(parents=True)
+                    replacement.write_bytes(kwargs["feature_csv"].read_bytes())
+                    kwargs["feature_csv"] = replacement
+                else:
+                    self.write_feature(kwargs["feature_csv"], offset=500.0)
+
+                report = BUILDER.build_decision_benchmark(**kwargs)
+
+                self.assertEqual(report["status"], "UNVERIFIABLE", report)
+                self.assertTrue(
+                    any(f"frozen feature {drift} mismatch" in error for error in report["errors"]),
+                    report,
+                )
 
     def test_real_replay_corpus_binding_flows_to_builder_single_and_multi(self):
         for symbols in (["BTCUSDT"], ["BTCUSDT", "ETHUSDT"]):

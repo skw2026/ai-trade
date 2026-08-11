@@ -304,6 +304,47 @@ def _validate_frozen_corpus_binding(
     return corpus_paths
 
 
+def _validate_frozen_feature_binding(
+    replay_report: dict[str, Any],
+    *,
+    feature_paths: dict[str, pathlib.Path],
+    corpus_paths: dict[str, pathlib.Path],
+) -> None:
+    binding = replay_report.get("frozen_corpus_binding")
+    raw_per_symbol = (
+        binding.get("per_symbol") if isinstance(binding, dict) else None
+    )
+    if not isinstance(raw_per_symbol, dict):
+        raise ValueError("replay frozen feature binding missing")
+    for symbol in sorted(feature_paths):
+        item = raw_per_symbol.get(symbol)
+        if not isinstance(item, dict):
+            raise ValueError(f"replay frozen feature binding invalid for {symbol}")
+        declared_text = item.get("source_feature_csv")
+        if not _is_nonempty_string(declared_text):
+            raise ValueError(f"replay frozen feature path missing for {symbol}")
+        declared_raw = pathlib.Path(str(declared_text)).expanduser()
+        declared_path = (
+            declared_raw
+            if declared_raw.is_absolute()
+            else corpus_paths[symbol].parent / declared_raw
+        ).resolve(strict=False)
+        selected_path = feature_paths[symbol].expanduser().resolve(strict=False)
+        if selected_path != declared_path:
+            raise ValueError(
+                f"replay frozen feature path mismatch for {symbol}: "
+                f"expected={declared_path},actual={selected_path}"
+            )
+        if not selected_path.is_file():
+            raise ValueError(f"replay frozen feature path missing for {symbol}")
+        actual_sha = file_sha256(selected_path)
+        if item.get("source_feature_sha256") != actual_sha:
+            raise ValueError(
+                f"replay frozen feature hash mismatch for {symbol}: "
+                f"expected={item.get('source_feature_sha256')},actual={actual_sha}"
+            )
+
+
 def _write_replay_split_identity(
     replay_report: dict[str, Any], output_dir: pathlib.Path
 ) -> pathlib.Path:
@@ -837,6 +878,11 @@ def build_decision_benchmark(
             pathlib.Path(corpus_manifest),
             _normalize_mapping(feature_csv_by_symbol),
             selected_corpus_mapping,
+        )
+        _validate_frozen_feature_binding(
+            replay,
+            feature_paths=features,
+            corpus_paths=corpora,
         )
         for symbol in sorted(symbols):
             if corpora[symbol] != bound_corpora[symbol]:

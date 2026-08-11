@@ -24,6 +24,35 @@ REQUIRED_COMPONENTS = (
 BENCHMARK_SCHEMA_VERSION = "decision_evidence_benchmark_v1"
 REPORT_SCHEMA_VERSION = "decision_evidence_benchmark_validation_v1"
 
+FIXED_COMPONENT_LOGICAL_NAMES = {
+    "cost": {"replay_candidate_config", "runtime_config"},
+    "actions": {"replay_policy", "runtime_policy"},
+    "baseline_policy": {"candidate_model", "candidate_report"},
+    "run_config": {"decision_evidence_validation", "runtime_config"},
+    "implementation": {
+        "benchmark_builder",
+        "paired_evolution_runner",
+        "replay_validation_runner",
+        "trade_bot",
+    },
+}
+
+CANONICAL_BLOCK_FIELDS = {
+    "block_id",
+    "start_timestamp_ms",
+    "end_timestamp_ms",
+    "event_sha256",
+    "cells",
+    "executions",
+}
+CANONICAL_CELL_FIELDS = {"symbol", "entry_regime"}
+CANONICAL_EXECUTION_FIELDS = {
+    "execution_id",
+    "symbol",
+    "planned_entry_regimes",
+    "event_sha256",
+}
+
 
 def canonical_json_bytes(value: object) -> bytes:
     """Return the repository's canonical, ASCII-only JSON representation."""
@@ -70,6 +99,289 @@ def _is_non_empty_string(value: Any) -> bool:
 
 def _is_timestamp_ms(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _canonical_event_bundle_sha256(
+    block_id: str, executions: list[dict[str, str]]
+) -> str:
+    payload = {
+        "schema_version": "decision_evidence_event_bundle_v1",
+        "block_id": block_id,
+        "executions": [
+            {
+                "execution_id": item["execution_id"],
+                "symbol": item["symbol"],
+                "event_sha256": item["event_sha256"],
+            }
+            for item in executions
+        ],
+    }
+    return hashlib.sha256(canonical_json_bytes(payload) + b"\n").hexdigest()
+
+
+def _validate_canonical_evaluation_universe(
+    universe: Any,
+) -> tuple[list[str], set[str], dict[str, str]]:
+    prefix = "benchmark.canonical_identity.evaluation_universe"
+    errors: list[str] = []
+    symbols: set[str] = set()
+    execution_hashes: dict[str, str] = {}
+    if not isinstance(universe, Mapping):
+        return [prefix], symbols, execution_hashes
+    if set(universe) != {"blocks"}:
+        errors.append(f"{prefix}.fields")
+    blocks = universe.get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        errors.append(f"{prefix}.blocks")
+        return errors, symbols, execution_hashes
+
+    seen_block_ids: set[str] = set()
+    sortable_block_ids: list[str] = []
+    intervals: list[tuple[int, int, str]] = []
+    for block_index, block in enumerate(blocks):
+        block_prefix = f"{prefix}.blocks[{block_index}]"
+        if not isinstance(block, Mapping):
+            errors.append(block_prefix)
+            continue
+        if set(block) != CANONICAL_BLOCK_FIELDS:
+            errors.append(f"{block_prefix}.fields")
+
+        block_id = block.get("block_id")
+        if not _is_non_empty_string(block_id):
+            errors.append(f"{block_prefix}.block_id")
+            block_id_text = f"#{block_index}"
+        else:
+            block_id_text = str(block_id)
+            sortable_block_ids.append(block_id_text)
+            if block_id_text in seen_block_ids:
+                errors.append(f"{block_prefix}.block_id=unique")
+            seen_block_ids.add(block_id_text)
+
+        start = block.get("start_timestamp_ms")
+        end = block.get("end_timestamp_ms")
+        if not (_is_timestamp_ms(start) and _is_timestamp_ms(end) and start <= end):
+            errors.append(f"{block_prefix}.time_range")
+        elif _is_non_empty_string(block_id):
+            intervals.append((start, end, block_id_text))
+
+        block_event_sha = block.get("event_sha256")
+        if not _is_sha256(block_event_sha):
+            errors.append(f"{block_prefix}.event_sha256")
+
+        raw_cells = block.get("cells")
+        valid_cells: list[dict[str, str]] = []
+        seen_cells: set[tuple[str, str]] = set()
+        regimes_by_symbol: dict[str, list[str]] = {}
+        if not isinstance(raw_cells, list) or not raw_cells:
+            errors.append(f"{block_prefix}.cells")
+            raw_cells = []
+        for cell_index, cell in enumerate(raw_cells):
+            cell_prefix = f"{block_prefix}.cells[{cell_index}]"
+            if not isinstance(cell, Mapping):
+                errors.append(cell_prefix)
+                continue
+            if set(cell) != CANONICAL_CELL_FIELDS:
+                errors.append(f"{cell_prefix}.fields")
+            symbol = cell.get("symbol")
+            regime = cell.get("entry_regime")
+            if not _is_non_empty_string(symbol):
+                errors.append(f"{cell_prefix}.symbol")
+                continue
+            if not _is_non_empty_string(regime):
+                errors.append(f"{cell_prefix}.entry_regime")
+                continue
+            key = (str(symbol), str(regime))
+            if key in seen_cells:
+                errors.append(f"{block_prefix}.cells=unique")
+                continue
+            seen_cells.add(key)
+            symbols.add(key[0])
+            regimes_by_symbol.setdefault(key[0], []).append(key[1])
+            valid_cells.append({"symbol": key[0], "entry_regime": key[1]})
+        expected_cells = sorted(
+            valid_cells, key=lambda item: (item["symbol"], item["entry_regime"])
+        )
+        if len(valid_cells) == len(raw_cells) and list(raw_cells) != expected_cells:
+            errors.append(f"{block_prefix}.cells=sorted")
+
+        raw_executions = block.get("executions")
+        valid_executions: list[dict[str, str]] = []
+        seen_execution_ids: set[str] = set()
+        seen_execution_symbols: set[str] = set()
+        if not isinstance(raw_executions, list) or not raw_executions:
+            errors.append(f"{block_prefix}.executions")
+            raw_executions = []
+        for execution_index, execution in enumerate(raw_executions):
+            execution_prefix = f"{block_prefix}.executions[{execution_index}]"
+            if not isinstance(execution, Mapping):
+                errors.append(execution_prefix)
+                continue
+            if set(execution) != CANONICAL_EXECUTION_FIELDS:
+                errors.append(f"{execution_prefix}.fields")
+            symbol = execution.get("symbol")
+            execution_id = execution.get("execution_id")
+            event_sha = execution.get("event_sha256")
+            regimes = execution.get("planned_entry_regimes")
+            if not _is_non_empty_string(symbol):
+                errors.append(f"{execution_prefix}.symbol")
+                continue
+            symbol_text = str(symbol)
+            expected_execution_id = f"{block_id_text}:{symbol_text}"
+            if execution_id != expected_execution_id:
+                errors.append(f"{execution_prefix}.execution_id")
+            elif execution_id in seen_execution_ids:
+                errors.append(f"{block_prefix}.executions.execution_id=unique")
+            else:
+                seen_execution_ids.add(str(execution_id))
+            if symbol_text in seen_execution_symbols:
+                errors.append(f"{block_prefix}.executions.symbol=unique")
+            seen_execution_symbols.add(symbol_text)
+            if not _is_sha256(event_sha):
+                errors.append(f"{execution_prefix}.event_sha256")
+            if (
+                not isinstance(regimes, list)
+                or not regimes
+                or any(not _is_non_empty_string(item) for item in regimes)
+            ):
+                errors.append(f"{execution_prefix}.planned_entry_regimes")
+                normalized_regimes: list[str] = []
+            else:
+                normalized_regimes = [str(item) for item in regimes]
+                if normalized_regimes != sorted(set(normalized_regimes)):
+                    errors.append(
+                        f"{execution_prefix}.planned_entry_regimes=sorted_unique"
+                    )
+            expected_regimes = sorted(regimes_by_symbol.get(symbol_text, []))
+            if normalized_regimes != expected_regimes:
+                errors.append(
+                    f"{execution_prefix}.planned_entry_regimes=cell_coverage"
+                )
+            if (
+                execution_id == expected_execution_id
+                and _is_sha256(event_sha)
+                and normalized_regimes == expected_regimes
+                and symbol_text in regimes_by_symbol
+            ):
+                valid_execution = {
+                    "execution_id": str(execution_id),
+                    "symbol": symbol_text,
+                    "event_sha256": str(event_sha),
+                }
+                valid_executions.append(valid_execution)
+                logical_name = f"execution:{execution_id}"
+                if logical_name in execution_hashes:
+                    errors.append(f"{prefix}.execution_id=globally_unique")
+                execution_hashes[logical_name] = str(event_sha)
+
+        if seen_execution_symbols != set(regimes_by_symbol):
+            errors.append(f"{block_prefix}.executions.symbol_coverage")
+        if len(valid_executions) == len(raw_executions):
+            expected_executions = sorted(
+                valid_executions, key=lambda item: item["execution_id"]
+            )
+            raw_execution_ids = [
+                item.get("execution_id")
+                for item in raw_executions
+                if isinstance(item, Mapping)
+            ]
+            if raw_execution_ids != [
+                item["execution_id"] for item in expected_executions
+            ]:
+                errors.append(f"{block_prefix}.executions=sorted")
+            if _is_sha256(block_event_sha) and valid_executions:
+                expected_block_sha = (
+                    valid_executions[0]["event_sha256"]
+                    if len(valid_executions) == 1
+                    else _canonical_event_bundle_sha256(
+                        block_id_text, expected_executions
+                    )
+                )
+                if block_event_sha != expected_block_sha:
+                    errors.append(f"{block_prefix}.event_identity")
+
+    if len(sortable_block_ids) == len(blocks) and sortable_block_ids != sorted(
+        sortable_block_ids
+    ):
+        errors.append(f"{prefix}.blocks=sorted")
+    previous_end: int | None = None
+    for start, end, _ in sorted(intervals):
+        if previous_end is not None and start <= previous_end:
+            errors.append(f"{prefix}.blocks=non_overlapping")
+        previous_end = end if previous_end is None else max(previous_end, end)
+    return errors, symbols, execution_hashes
+
+
+def _validate_canonical_components(
+    components: Any,
+    *,
+    symbols: set[str],
+    execution_hashes: dict[str, str],
+) -> list[str]:
+    prefix = "benchmark.canonical_identity.components"
+    errors: list[str] = []
+    if not isinstance(components, Mapping):
+        return [prefix]
+    if set(components) != set(REQUIRED_COMPONENTS):
+        errors.append(f"{prefix}=required_eight")
+
+    parsed_files: dict[str, dict[str, str]] = {}
+    for component_name in REQUIRED_COMPONENTS:
+        component_prefix = f"{prefix}.{component_name}"
+        component = components.get(component_name)
+        if not isinstance(component, Mapping):
+            errors.append(component_prefix)
+            continue
+        if set(component) != {"logical_id", "files"}:
+            errors.append(f"{component_prefix}.fields")
+        if not _is_non_empty_string(component.get("logical_id")):
+            errors.append(f"{component_prefix}.logical_id")
+        files = component.get("files")
+        if not isinstance(files, list) or not files:
+            errors.append(f"{component_prefix}.files")
+            continue
+        names_in_order: list[str] = []
+        files_by_name: dict[str, str] = {}
+        for index, file_identity in enumerate(files):
+            file_prefix = f"{component_prefix}.files[{index}]"
+            if not isinstance(file_identity, Mapping):
+                errors.append(file_prefix)
+                continue
+            if set(file_identity) != {"logical_name", "sha256"}:
+                errors.append(f"{file_prefix}.fields")
+            logical_name = file_identity.get("logical_name")
+            if not _is_non_empty_string(logical_name):
+                errors.append(f"{file_prefix}.logical_name")
+                continue
+            logical_name_text = str(logical_name)
+            names_in_order.append(logical_name_text)
+            if logical_name_text in files_by_name:
+                errors.append(f"{component_prefix}.files.logical_name=unique")
+            sha256 = file_identity.get("sha256")
+            if not _is_sha256(sha256):
+                errors.append(f"{file_prefix}.sha256")
+            else:
+                files_by_name[logical_name_text] = str(sha256)
+        if len(names_in_order) == len(files) and names_in_order != sorted(
+            names_in_order
+        ):
+            errors.append(f"{component_prefix}.files=sorted")
+        parsed_files[component_name] = files_by_name
+
+    expected_names = {
+        "data": set(execution_hashes),
+        "split": {"replay_validation_report"}
+        | {f"corpus:{symbol}" for symbol in symbols},
+        "features": {f"feature:{symbol}" for symbol in symbols},
+        **FIXED_COMPONENT_LOGICAL_NAMES,
+    }
+    for component_name, names in expected_names.items():
+        actual_names = set(parsed_files.get(component_name, {}))
+        if actual_names != names:
+            errors.append(f"{prefix}.{component_name}.files.logical_names")
+    for logical_name, expected_sha in execution_hashes.items():
+        if parsed_files.get("data", {}).get(logical_name) != expected_sha:
+            errors.append(f"{prefix}.data.{logical_name}.execution_sha256")
+    return errors
 
 
 def validate_verified_benchmark_report(
@@ -130,53 +442,18 @@ def validate_verified_benchmark_report(
                     f"benchmark.canonical_identity.schema_version={BENCHMARK_SCHEMA_VERSION}"
                 )
 
-            components = canonical_identity.get("components")
-            if not isinstance(components, Mapping):
-                errors.append("benchmark.canonical_identity.components")
-            else:
-                if set(components) != set(REQUIRED_COMPONENTS):
-                    errors.append(
-                        "benchmark.canonical_identity.components=required_eight"
-                    )
-                for component_name in REQUIRED_COMPONENTS:
-                    component = components.get(component_name)
-                    prefix = f"benchmark.canonical_identity.components.{component_name}"
-                    if not isinstance(component, Mapping):
-                        errors.append(prefix)
-                        continue
-                    if set(component) != {"logical_id", "files"}:
-                        errors.append(f"{prefix}.fields")
-                    if not _is_non_empty_string(component.get("logical_id")):
-                        errors.append(f"{prefix}.logical_id")
-                    files = component.get("files")
-                    if not isinstance(files, list) or not files:
-                        errors.append(f"{prefix}.files")
-                        continue
-                    names: set[str] = set()
-                    for index, file_identity in enumerate(files):
-                        file_prefix = f"{prefix}.files[{index}]"
-                        if not isinstance(file_identity, Mapping):
-                            errors.append(file_prefix)
-                            continue
-                        if set(file_identity) != {"logical_name", "sha256"}:
-                            errors.append(f"{file_prefix}.fields")
-                        logical_name = file_identity.get("logical_name")
-                        if not _is_non_empty_string(logical_name):
-                            errors.append(f"{file_prefix}.logical_name")
-                        elif logical_name in names:
-                            errors.append(f"{prefix}.files.logical_name=unique")
-                        else:
-                            names.add(str(logical_name))
-                        if not _is_sha256(file_identity.get("sha256")):
-                            errors.append(f"{file_prefix}.sha256")
-
             universe = canonical_identity.get("evaluation_universe")
-            if not isinstance(universe, Mapping) or not isinstance(
-                universe.get("blocks"), list
-            ) or not universe.get("blocks"):
-                errors.append(
-                    "benchmark.canonical_identity.evaluation_universe.blocks"
+            universe_errors, symbols, execution_hashes = (
+                _validate_canonical_evaluation_universe(universe)
+            )
+            errors.extend(universe_errors)
+            errors.extend(
+                _validate_canonical_components(
+                    canonical_identity.get("components"),
+                    symbols=symbols,
+                    execution_hashes=execution_hashes,
                 )
+            )
 
             policy_binding = canonical_identity.get("validation_policy")
             if not isinstance(policy_binding, Mapping):
