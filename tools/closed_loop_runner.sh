@@ -4739,7 +4739,7 @@ if not contract_path.is_file():
 contract = load_json_file(str(contract_path))
 contract_schema = str(contract.get("schema_version") or "").strip()
 contract_actions = contract.get("actions")
-if contract_schema != "closed_loop_contract_v2" or not isinstance(contract_actions, dict):
+if contract_schema != "closed_loop_contract_v3" or not isinstance(contract_actions, dict):
     raise SystemExit(f"invalid closed-loop contract: {contract_path}")
 action = os.environ.get("ACTION_VALUE", "").strip().lower()
 action_contract = contract_actions.get(action)
@@ -4748,6 +4748,7 @@ if not isinstance(action_contract, dict):
 required_artifacts = action_contract.get("required_artifacts")
 required_steps = action_contract.get("required_steps")
 route_contracts = action_contract.get("route_contracts", {})
+route_rejection_contract = action_contract.get("route_rejection_contract", {})
 if (
     not isinstance(required_artifacts, list)
     or not required_artifacts
@@ -4756,8 +4757,26 @@ if (
     or not required_steps
     or not all(isinstance(item, str) and item.strip() for item in required_steps)
     or not isinstance(route_contracts, dict)
+    or not isinstance(route_rejection_contract, dict)
 ):
     raise SystemExit(f"invalid closed-loop action contract: action={action}")
+if route_contracts:
+    optional_on_rejection = route_rejection_contract.get("optional_artifacts")
+    if (
+        route_rejection_contract.get("step") != "alpha_source_route"
+        or not isinstance(optional_on_rejection, list)
+        or not all(
+            isinstance(item, str) and item in required_artifacts
+            for item in optional_on_rejection
+        )
+    ):
+        raise SystemExit(
+            f"invalid closed-loop route rejection contract: action={action}"
+        )
+elif route_rejection_contract:
+    raise SystemExit(
+        f"unexpected closed-loop route rejection contract: action={action}"
+    )
 requested_symbol = os.environ.get("SYMBOL_VALUE", "")
 requested_replay_source_symbol = os.environ.get("REPLAY_SOURCE_SYMBOL_VALUE", "")
 requested_replay_symbol = os.environ.get("REPLAY_SYMBOL_VALUE", "")
@@ -4822,6 +4841,7 @@ payload = {
         "required_artifacts": required_artifacts,
         "required_steps": required_steps,
         "route_contracts": route_contracts,
+        "route_rejection_contract": route_rejection_contract,
         "run_specific_dir": str(out.parent),
         "latest_pointer_must_match_run_id": True,
         "workflow_success_is_not_strategy_success": True,

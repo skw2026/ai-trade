@@ -1,5 +1,5 @@
 {
-  "schema_version": "closed_loop_contract_v2",
+  "schema_version": "closed_loop_contract_v3",
   "trust_anchors": {
     "feature_parity_fixture": {
       "schema_version": "feature_parity_fixture_contract_v1",
@@ -108,6 +108,10 @@
           "required_steps": ["microstructure_demo_binding"],
           "required_artifacts": ["microstructure_demo_binding_report"]
         }
+      },
+      "route_rejection_contract": {
+        "step": "alpha_source_route",
+        "optional_artifacts": []
       }
     },
     "full": {
@@ -183,6 +187,15 @@
           "required_steps": ["microstructure_demo_binding"],
           "required_artifacts": ["microstructure_demo_binding_report"]
         }
+      },
+      "route_rejection_contract": {
+        "step": "alpha_source_route",
+        "optional_artifacts": [
+          "runtime_log",
+          "runtime_assess_report",
+          "trade_ledger_report",
+          "closed_loop_mechanism_report"
+        ]
       }
     },
     "assess": {

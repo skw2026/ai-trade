@@ -64,7 +64,6 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             "run_manifest": {
                 "status": "fail",
                 "fail_reasons": [
-                    "run manifest missing required full artifacts: integrator_report",
                     "closed-loop step failed: market_alpha_development",
                     "closed-loop required step skipped: integrator",
                     "step status ledger missing required steps: replay_validation",
@@ -83,6 +82,25 @@ class BuildClosedLoopReportTest(unittest.TestCase):
         self.assertEqual(artifact["name"], "artifact_contract")
         self.assertEqual(artifact["status"], "PASS_WITH_ACTIONS")
         self.assertEqual(payload["first_blocking_layer"], "mechanism_proof")
+
+    def test_fail_closed_short_circuit_does_not_hide_artifact_loss(self):
+        section = {
+            "status": "fail",
+            "fail_reasons": [
+                "run manifest missing required full artifacts: baseline_report",
+                "closed-loop step failed: alpha_source_route",
+                "closed-loop required step skipped: runtime_assess",
+            ],
+            "warn_reasons": [],
+        }
+
+        contract_view = REPORT.manifest_contract_view(section)
+
+        self.assertEqual(contract_view["status"], "fail")
+        self.assertEqual(
+            contract_view["fail_reasons"],
+            ["run manifest missing required full artifacts: baseline_report"],
+        )
 
     def test_market_alpha_development_requires_positive_real_cost_candidate(self):
         with tempfile.TemporaryDirectory() as td:
@@ -2742,6 +2760,9 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                             ],
                             "required_steps": action_contract["required_steps"],
                             "route_contracts": action_contract["route_contracts"],
+                            "route_rejection_contract": action_contract[
+                                "route_rejection_contract"
+                            ],
                         },
                         "artifacts": artifacts,
                     }
@@ -2758,6 +2779,141 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             "closed-loop observational step not ready: market_alpha_development",
             section["warn_reasons"],
         )
+
+    def test_run_manifest_accepts_declared_fail_closed_route_rejection(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            contract_path = (
+                pathlib.Path(__file__).resolve().parents[1]
+                / "config"
+                / "closed_loop_contract.json"
+            )
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            action_contract = contract["actions"]["full"]
+            rejection_contract = action_contract["route_rejection_contract"]
+            optional_artifacts = set(rejection_contract["optional_artifacts"])
+            route_path = root / "alpha_source_route_report.json"
+            route_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "alpha_source_route_v1",
+                        "status": "FAIL",
+                        "selected_route": None,
+                        "reason": "no_independently_gated_alpha_source_ready",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            step_records = []
+            route_failed = False
+            for step in action_contract["required_steps"]:
+                if step == "alpha_source_route":
+                    route_failed = True
+                    step_records.append(
+                        {
+                            "run_id": "run-rejected",
+                            "action": "full",
+                            "step": step,
+                            "kind": "required",
+                            "result": "fail",
+                            "exit_code": 2,
+                            "blocked_by_prior_failure": False,
+                        }
+                    )
+                elif route_failed:
+                    step_records.append(
+                        {
+                            "run_id": "run-rejected",
+                            "action": "full",
+                            "step": step,
+                            "kind": "required",
+                            "result": "skipped",
+                            "exit_code": None,
+                            "blocked_by_prior_failure": True,
+                        }
+                    )
+                else:
+                    step_records.append(
+                        {
+                            "run_id": "run-rejected",
+                            "action": "full",
+                            "step": step,
+                            "kind": "required",
+                            "result": "pass",
+                            "exit_code": 0,
+                            "blocked_by_prior_failure": False,
+                        }
+                    )
+            step_path = root / "step_status.jsonl"
+            step_path.write_text(
+                "\n".join(json.dumps(item) for item in step_records) + "\n",
+                encoding="utf-8",
+            )
+            artifacts = {}
+            for name in action_contract["required_artifacts"]:
+                if name in optional_artifacts:
+                    continue
+                if name == "step_status":
+                    artifact_path = step_path
+                elif name == "alpha_source_route_report":
+                    artifact_path = route_path
+                else:
+                    artifact_path = root / name
+                    artifact_path.write_text(name, encoding="utf-8")
+                artifacts[name] = {
+                    "path": str(artifact_path),
+                    "sha256": hashlib.sha256(artifact_path.read_bytes()).hexdigest(),
+                }
+            manifest = root / "run_manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "run_id": "run-rejected",
+                        "action": "full",
+                        "git": {"commit": "abc"},
+                        "config_hashes": {},
+                        "replay_validation": {},
+                        "runtime": {
+                            "image_id": "sha256:image",
+                            "image_revision": "abc",
+                        },
+                        "artifact_contract": {
+                            "schema_version": contract["schema_version"],
+                            "contract_sha256": hashlib.sha256(
+                                contract_path.read_bytes()
+                            ).hexdigest(),
+                            "action": "full",
+                            "required_artifacts": action_contract[
+                                "required_artifacts"
+                            ],
+                            "required_steps": action_contract["required_steps"],
+                            "route_contracts": action_contract["route_contracts"],
+                            "route_rejection_contract": rejection_contract,
+                        },
+                        "artifacts": artifacts,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            section = REPORT.assess_run_manifest(manifest, "run-rejected")
+            contract_view = REPORT.manifest_contract_view(section)
+
+        self.assertEqual(
+            section["alpha_route_resolution"], "rejected_fail_closed"
+        )
+        self.assertNotIn(
+            "run manifest alpha source route missing or invalid",
+            section["fail_reasons"],
+        )
+        self.assertFalse(
+            any(
+                reason.startswith("run manifest missing required full artifacts:")
+                for reason in section["fail_reasons"]
+            )
+        )
+        self.assertEqual(contract_view["status"], "pass")
+        self.assertTrue(contract_view["execution_short_circuit_detected"])
 
     def test_run_manifest_validates_step_status_semantics(self):
         with tempfile.TemporaryDirectory() as td:

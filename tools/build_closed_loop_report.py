@@ -1675,6 +1675,47 @@ def inherit_sections(
     return inherited, ""
 
 
+def is_declared_route_rejection(
+    route_payload: Dict[str, Any],
+    step_path: Path,
+    route_rejection_contract: Dict[str, Any],
+    run_id: str,
+    action: str,
+) -> bool:
+    step_name = str(route_rejection_contract.get("step") or "")
+    if not step_path.is_file():
+        return False
+    try:
+        lines = step_path.read_text(encoding="utf-8").splitlines()
+        records = [json.loads(line) for line in lines if line.strip()]
+    except (OSError, json.JSONDecodeError):
+        return False
+    matches = [
+        record
+        for record in records
+        if isinstance(record, dict)
+        and str(record.get("step") or "") == step_name
+    ]
+    if len(matches) != 1:
+        return False
+    route_step = matches[0]
+    exit_code = route_step.get("exit_code")
+    return bool(
+        route_payload.get("schema_version") == "alpha_source_route_v1"
+        and route_payload.get("status") == "FAIL"
+        and not str(route_payload.get("selected_route") or "")
+        and step_name == "alpha_source_route"
+        and str(route_step.get("run_id") or "") == run_id
+        and str(route_step.get("action") or "").strip().lower() == action
+        and route_step.get("kind") == "required"
+        and route_step.get("result") == "fail"
+        and isinstance(exit_code, int)
+        and not isinstance(exit_code, bool)
+        and exit_code != 0
+        and route_step.get("blocked_by_prior_failure") is False
+    )
+
+
 def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
     payload = read_json(path)
     fail_reasons: List[str] = []
@@ -1733,6 +1774,9 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
     )
     expected_required_steps = expected_action_contract.get("required_steps", [])
     expected_route_contracts = expected_action_contract.get("route_contracts", {})
+    expected_route_rejection_contract = expected_action_contract.get(
+        "route_rejection_contract", {}
+    )
     artifact_contract = payload.get("artifact_contract", {})
     if not isinstance(artifact_contract, dict):
         fail_reasons.append("run manifest missing artifact contract")
@@ -1750,9 +1794,15 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
         fail_reasons.append("run manifest required step contract mismatch")
     if artifact_contract.get("route_contracts", {}) != expected_route_contracts:
         fail_reasons.append("run manifest route contract mismatch")
+    if (
+        artifact_contract.get("route_rejection_contract", {})
+        != expected_route_rejection_contract
+    ):
+        fail_reasons.append("run manifest route rejection contract mismatch")
     if not expected_required_artifacts or not expected_required_steps:
         fail_reasons.append(f"closed-loop contract missing action={action}")
     selected_route = ""
+    route_resolution = "not_applicable"
     effective_required_artifacts = list(expected_required_artifacts)
     effective_required_steps = list(expected_required_steps)
     if expected_route_contracts:
@@ -1767,13 +1817,26 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
         except (OSError, json.JSONDecodeError, ValueError):
             route_payload = {}
         selected_route = str(route_payload.get("selected_route") or "")
-        if not (
+        route_passed = bool(
             route_payload.get("schema_version") == "alpha_source_route_v1"
             and route_payload.get("status") == "PASS"
             and selected_route in expected_route_contracts
-        ):
-            fail_reasons.append("run manifest alpha source route missing or invalid")
-        else:
+        )
+        step_artifact = artifacts.get("step_status", {})
+        step_path = (
+            Path(str(step_artifact.get("path", "")))
+            if isinstance(step_artifact, dict)
+            else Path()
+        )
+        route_rejected = is_declared_route_rejection(
+            route_payload,
+            step_path,
+            expected_route_rejection_contract,
+            run_id,
+            action,
+        )
+        if route_passed:
+            route_resolution = "selected"
             selected_contract = expected_route_contracts.get(selected_route, {})
             route_artifacts = selected_contract.get("required_artifacts", [])
             route_steps = selected_contract.get("required_steps", [])
@@ -1788,6 +1851,31 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                 except ValueError:
                     insertion = len(effective_required_steps)
                 effective_required_steps[insertion:insertion] = route_steps
+        elif route_rejected:
+            route_resolution = "rejected_fail_closed"
+            optional_artifacts = expected_route_rejection_contract.get(
+                "optional_artifacts"
+            )
+            if (
+                expected_route_rejection_contract.get("step")
+                != "alpha_source_route"
+                or not isinstance(optional_artifacts, list)
+                or not all(
+                    isinstance(item, str) and item in expected_required_artifacts
+                    for item in optional_artifacts
+                )
+            ):
+                fail_reasons.append("closed-loop route rejection contract invalid")
+            else:
+                optional = set(optional_artifacts)
+                effective_required_artifacts = [
+                    name
+                    for name in effective_required_artifacts
+                    if name not in optional
+                ]
+        else:
+            route_resolution = "invalid"
+            fail_reasons.append("run manifest alpha source route missing or invalid")
     missing = sorted(set(effective_required_artifacts) - set(artifacts))
     if missing:
         fail_reasons.append(
@@ -1909,6 +1997,7 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
         "warn_reasons": warn_reasons,
         "manifest": payload,
         "selected_alpha_route": selected_route or None,
+        "alpha_route_resolution": route_resolution,
         "effective_required_steps": effective_required_steps,
         "effective_required_artifacts": effective_required_artifacts,
     }
@@ -3242,10 +3331,7 @@ def manifest_contract_view(section: Dict[str, Any]) -> Dict[str, Any]:
     for reason in reasons:
         expected_short_circuit = bool(
             declared_execution_failure
-            and (
-                reason.startswith(execution_prefixes)
-                or reason.startswith("run manifest missing required ")
-            )
+            and reason.startswith(execution_prefixes)
         )
         if expected_short_circuit:
             execution_warnings.append(reason)

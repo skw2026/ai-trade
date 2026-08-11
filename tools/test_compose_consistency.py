@@ -15,6 +15,9 @@ PROD_COMPOSE = ROOT / "docker-compose.prod.yml"
 DEPLOY_SCRIPT = ROOT / "deploy" / "ecs-deploy.sh"
 RUNNER_SCRIPT = ROOT / "tools" / "closed_loop_runner.sh"
 REPORT_DOWNLOADER_SCRIPT = ROOT / "tools" / "download_closed_loop_reports.sh"
+ARTIFACT_CONTRACT_VALIDATOR = (
+    ROOT / "tools" / "validate_closed_loop_artifact_contract.py"
+)
 WATCHDOG_SCRIPT = ROOT / "ops" / "watchdog.py"
 RECYCLE_SCRIPT = ROOT / "tools" / "recycle_artifacts.sh"
 DOCKER_GC_SCRIPT = ROOT / "tools" / "docker_gc.sh"
@@ -690,27 +693,32 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_closed_loop_workflow_enforces_versioned_artifact_contract(self):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         downloader = REPORT_DOWNLOADER_SCRIPT.read_text(encoding="utf-8")
+        validator = ARTIFACT_CONTRACT_VALIDATOR.read_text(encoding="utf-8")
         self.assertIn("config/closed_loop_contract.json", downloader)
         self.assertIn(
             'failures.append(f"{name}:required_not_manifested")',
+            validator,
+        )
+        self.assertIn("artifact_contract:sha256", validator)
+        self.assertIn("valid_route_rejection", validator)
+        self.assertIn("route_rejection_contract", validator)
+        self.assertIn(
+            "python3 tools/validate_closed_loop_artifact_contract.py",
             downloader,
         )
-        self.assertIn("artifact_contract:sha256", downloader)
-        self.assertIn("declared_short_circuit = False", downloader)
-        self.assertIn('record.get("blocked_by_prior_failure") is True', downloader)
-        self.assertIn("and not declared_short_circuit", downloader)
+        self.assertNotIn("declared_short_circuit", downloader)
         self.assertIn("closed_loop_artifact_attestation_v1", downloader)
         self.assertIn(
             'fetch_report "${REMOTE_BASE}/artifact_attestation.json"',
             downloader,
         )
         self.assertIn(
-            '"replay_validation_feature_build_report": Path(',
-            downloader,
+            '"replay_validation_feature_build_report":',
+            validator,
         )
         self.assertIn(
-            '"replay_validation_command_log": Path(',
-            downloader,
+            '"replay_validation_command_log":',
+            validator,
         )
         self.assertIn("run: bash tools/download_closed_loop_reports.sh", workflow)
         self.assertNotIn("fetch_report() {", workflow)
@@ -736,7 +744,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "microstructure_alpha_model",
             "microstructure_alpha_lifecycle_report",
         ):
-            self.assertIn(f'"{artifact_name}": Path(', downloader)
+            self.assertIn(f'"{artifact_name}":', validator)
         run_blocks = re.findall(
             r"(?ms)^        run: \|\n((?:(?:^          .*\n)|(?:^\s*$))*)",
             workflow,
