@@ -1,0 +1,11 @@
+tools/closed_loop_runner.sh
+  ai_agent 4749-4752
+tools/test_compose_consistency.py
+  ai_agent 3,627-642
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "2d8ef6823bcf585aa03d9ad1bc884c89e7120d17",
+  "prompts": {}
+}
