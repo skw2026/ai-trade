@@ -23,6 +23,7 @@ import json
 import math
 import pathlib
 import statistics
+import time
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import numpy as np
@@ -31,14 +32,29 @@ import collect_bybit_microstructure as collector
 
 try:
     import catboost
-    from catboost import CatBoostClassifier
+    from catboost import CatBoostClassifier, CatBoostRanker, CatBoostRegressor, Pool
 except ImportError:  # pragma: no cover - exercised by the research image
     catboost = None
     CatBoostClassifier = None
+    CatBoostRanker = None
+    CatBoostRegressor = None
+    Pool = None
 
 
 SCHEMA_VERSION = "microstructure_alpha_development_v8"
 ASSESSMENT_SCHEMA_VERSION = "microstructure_capture_assessment_v1"
+TARGET_ARCHITECTURE_COMPARISON_SCHEMA_VERSION = (
+    "microstructure_target_architecture_comparison_v1"
+)
+TARGET_ARCHITECTURE_IDS = (
+    "binary_stress_event_baseline",
+    "direct_stress_utility_regression",
+    "two_stage_opportunity_action",
+    "joint_action_ranker",
+)
+FROZEN_TARGET_ARCHITECTURE_FEATURE_COUNT = 242
+FROZEN_TARGET_ARCHITECTURE_ACTION_COUNT = 10
+FROZEN_TARGET_ARCHITECTURE_SPLIT_COUNT = 6
 CAUSAL_FEATURE_LAGS_SECONDS = (1, 5, 20, 60, 120, 300)
 REGIME_FEATURE_WINDOWS_SECONDS = (20, 60, 120, 300)
 MAX_CAUSAL_FEATURE_LOOKBACK_SECONDS = max(CAUSAL_FEATURE_LAGS_SECONDS)
@@ -95,6 +111,14 @@ def canonical_sha256(payload: Mapping[str, Any]) -> str:
         payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def integer_index_sha256(values: Sequence[int]) -> str:
+    array = np.asarray(values, dtype="<i8")
+    digest = hashlib.sha256()
+    digest.update(str(array.shape).encode("ascii"))
+    digest.update(array.tobytes(order="C"))
+    return digest.hexdigest()
 
 
 def read_json_object(path: pathlib.Path) -> Dict[str, Any]:
@@ -1038,6 +1062,145 @@ def summarize_event_ranking_by_action(
             for column, action_index in enumerate(action_indices)
         },
     }
+
+
+def frozen_target_architecture_shape_failures(
+    *, feature_count: int, action_count: int, split_count: int
+) -> List[str]:
+    failures: List[str] = []
+    if int(feature_count) != FROZEN_TARGET_ARCHITECTURE_FEATURE_COUNT:
+        failures.append("frozen_feature_count_242_required")
+    if int(action_count) != FROZEN_TARGET_ARCHITECTURE_ACTION_COUNT:
+        failures.append("frozen_action_count_10_required")
+    if int(split_count) != FROZEN_TARGET_ARCHITECTURE_SPLIT_COUNT:
+        failures.append("frozen_split_count_6_required")
+    return failures
+
+
+def build_stress_net_utility_targets(
+    outcomes: np.ndarray,
+    *,
+    base_cost_bps: float,
+    stress_cost_multiplier: float,
+) -> np.ndarray:
+    matrix = np.asarray(outcomes, dtype=np.float64)
+    base_cost = float(base_cost_bps)
+    multiplier = float(stress_cost_multiplier)
+    if matrix.ndim != 2 or not np.all(np.isfinite(matrix)):
+        raise ValueError("stress-net utility outcomes are invalid")
+    if not math.isfinite(base_cost) or base_cost <= 0.0:
+        raise ValueError("stress-net utility base cost must be positive")
+    if not math.isfinite(multiplier) or multiplier <= 1.0:
+        raise ValueError("stress-net utility multiplier must exceed one")
+    return matrix - base_cost * (multiplier - 1.0)
+
+
+def build_two_stage_targets(stress_utilities: np.ndarray) -> Dict[str, Any]:
+    matrix = np.asarray(stress_utilities, dtype=np.float64)
+    if (
+        matrix.ndim != 2
+        or matrix.shape[1] <= 0
+        or not np.all(np.isfinite(matrix))
+    ):
+        raise ValueError("two-stage stress utilities are invalid")
+    opportunity = np.max(matrix, axis=1) > 0.0
+    opportunity_rows = np.flatnonzero(opportunity)
+    # np.argmax deliberately resolves ties using the first predeclared action.
+    best_action = np.argmax(matrix[opportunity_rows], axis=1).astype(np.int64)
+    return {
+        "opportunity": opportunity.astype(np.float64),
+        "opportunity_row_indices": opportunity_rows,
+        "best_action": best_action,
+        "class_indices": sorted(set(int(value) for value in best_action)),
+        "tie_break_contract": "first_predeclared_action",
+        "validation_or_test_statistics_used": False,
+    }
+
+
+def restore_ordered_action_probabilities(
+    probabilities: np.ndarray,
+    *,
+    class_labels: Sequence[int],
+    action_count: int,
+) -> np.ndarray:
+    matrix = np.asarray(probabilities, dtype=np.float64)
+    labels = [int(value) for value in class_labels]
+    count = int(action_count)
+    if (
+        matrix.ndim != 2
+        or matrix.shape[1] != len(labels)
+        or count <= 0
+        or len(set(labels)) != len(labels)
+        or any(value < 0 or value >= count for value in labels)
+        or not np.all(np.isfinite(matrix))
+        or np.any(matrix < -1e-12)
+        or np.any(matrix > 1.0 + 1e-12)
+    ):
+        raise ValueError("conditional action probabilities are invalid")
+    restored = np.zeros((len(matrix), count), dtype=np.float64)
+    for column, action_index in enumerate(labels):
+        restored[:, action_index] = np.clip(matrix[:, column], 0.0, 1.0)
+    return restored
+
+
+def build_joint_ranker_dataset(
+    features: np.ndarray,
+    stress_utilities: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    feature_matrix = np.asarray(features, dtype=np.float64)
+    utility_matrix = np.asarray(stress_utilities, dtype=np.float64)
+    action_count = len(actions)
+    if (
+        feature_matrix.ndim != 2
+        or utility_matrix.ndim != 2
+        or len(feature_matrix) != len(utility_matrix)
+        or utility_matrix.shape[1] != action_count
+        or action_count <= 0
+        or not np.all(np.isfinite(feature_matrix))
+        or not np.all(np.isfinite(utility_matrix))
+    ):
+        raise ValueError("joint ranker dataset shape is invalid")
+    maximum_horizon = max(int(item.get("horizon_seconds") or 0) for item in actions)
+    if maximum_horizon <= 0:
+        raise ValueError("joint ranker action horizon is invalid")
+    descriptors: List[Tuple[float, float]] = []
+    for item in actions:
+        direction = str(item.get("direction") or "")
+        horizon = int(item.get("horizon_seconds") or 0)
+        if direction not in {"long", "short"} or horizon <= 0:
+            raise ValueError("joint ranker action contract is invalid")
+        descriptors.append(
+            (
+                1.0 if direction == "long" else -1.0,
+                math.log1p(horizon) / math.log1p(maximum_horizon),
+            )
+        )
+    repeated = np.repeat(feature_matrix, action_count, axis=0)
+    tiled_descriptors = np.tile(
+        np.asarray(descriptors, dtype=np.float64), (len(feature_matrix), 1)
+    )
+    expanded = np.column_stack((repeated, tiled_descriptors))
+    target = utility_matrix.reshape(-1)
+    group_id = np.repeat(np.arange(len(feature_matrix), dtype=np.int64), action_count)
+    return expanded, target, group_id
+
+
+def reshape_joint_ranker_predictions(
+    predictions: np.ndarray, *, row_count: int, action_count: int
+) -> np.ndarray:
+    values = np.asarray(predictions, dtype=np.float64)
+    rows = int(row_count)
+    actions = int(action_count)
+    if (
+        values.ndim != 1
+        or rows < 0
+        or actions <= 0
+        or len(values) != rows * actions
+        or not np.all(np.isfinite(values))
+    ):
+        raise ValueError("joint ranker prediction shape is invalid")
+    return values.reshape(rows, actions)
 
 
 def fit_joint_policy_target(
@@ -2026,6 +2189,341 @@ def select_nested_threshold(
     }
 
 
+def select_nested_joint_threshold(
+    *,
+    timestamps: np.ndarray,
+    prediction: np.ndarray,
+    realized_base: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    quantiles: Sequence[float],
+    min_trades: int,
+    base_cost_bps: float,
+    stress_cost_multiplier: float,
+    execution_latency_seconds: int,
+    score_units: str,
+    allowed_action_indices: Sequence[int] | None = None,
+) -> Dict[str, Any]:
+    prediction_matrix = np.asarray(prediction, dtype=np.float64)
+    if (
+        prediction_matrix.ndim != 2
+        or prediction_matrix.shape[1] != len(actions)
+    ):
+        raise ValueError("joint diagnostic prediction shape mismatch")
+    allowed = (
+        list(range(len(actions)))
+        if allowed_action_indices is None
+        else [int(value) for value in allowed_action_indices]
+    )
+    if not (
+        allowed
+        and len(set(allowed)) == len(allowed)
+        and all(0 <= value < len(actions) for value in allowed)
+    ):
+        raise ValueError("joint diagnostic allowed actions are invalid")
+    row_maximum = np.max(prediction_matrix[:, allowed], axis=1)
+    finite = row_maximum[np.isfinite(row_maximum)]
+    if len(finite) == 0:
+        return {
+            "selected": None,
+            "diagnostic_selected": None,
+            "candidates": [],
+            "score_units": str(score_units),
+            "reason": "no_finite_predictions",
+        }
+    thresholds = sorted(
+        {float(np.quantile(finite, float(quantile))) for quantile in quantiles}
+    )
+    candidates: List[Dict[str, Any]] = []
+    for threshold in thresholds:
+        objective = evaluate_joint_policy(
+            timestamps=timestamps,
+            prediction=prediction_matrix,
+            realized_base=realized_base,
+            actions=actions,
+            threshold_bps=threshold,
+            base_cost_bps=base_cost_bps,
+            stress_cost_multiplier=stress_cost_multiplier,
+            execution_latency_seconds=execution_latency_seconds,
+            allowed_action_indices=allowed,
+        )
+        base = objective["base_cost"]
+        stress = objective["stress_cost"]
+        viable = bool(
+            base["count"] >= int(min_trades)
+            and (base["lcb_bps"] or float("-inf")) > 0.0
+            and (stress["lcb_bps"] or float("-inf")) > 0.0
+        )
+        candidates.append(
+            {
+                "score_threshold": threshold,
+                "score_units": str(score_units),
+                "trade_count": int(base["count"]),
+                "mean_base_net_bps": base["mean_bps"],
+                "base_net_lcb_bps": base["lcb_bps"],
+                "stress_net_lcb_bps": stress["lcb_bps"],
+                "action_counts": objective["action_counts"],
+                "viable": viable,
+            }
+        )
+    viable_candidates = [item for item in candidates if item["viable"]]
+    diagnostic_candidates = [
+        item
+        for item in candidates
+        if int(item["trade_count"]) >= int(min_trades)
+        and item["base_net_lcb_bps"] is not None
+        and item["stress_net_lcb_bps"] is not None
+    ]
+
+    def candidate_key(item: Mapping[str, Any]) -> Tuple[float, float, float]:
+        return (
+            float(item["stress_net_lcb_bps"]),
+            float(item["base_net_lcb_bps"]),
+            -float(item["score_threshold"]),
+        )
+
+    return {
+        "selected": max(viable_candidates, key=candidate_key)
+        if viable_candidates
+        else None,
+        "diagnostic_selected": max(diagnostic_candidates, key=candidate_key)
+        if diagnostic_candidates
+        else None,
+        "diagnostic_selection_contract": (
+            "best_nested_validation_joint_action_stress_lcb_with_minimum_trades;"
+            "non_promotional_never_used_by_economic_gate"
+        ),
+        "candidates": candidates,
+        "score_units": str(score_units),
+        "score_distribution": summarize_numeric_distribution(finite),
+        "allowed_action_indices": allowed,
+        "reason": (
+            "positive_stress_lcb"
+            if viable_candidates
+            else "no_positive_stress_lcb_threshold"
+        ),
+    }
+
+
+def aggregate_target_architecture_comparison(
+    *,
+    split_reports: Sequence[Mapping[str, Any]],
+    architecture_ids: Sequence[str],
+    required_split_count: int,
+    permutation_trials: int,
+    permutation_seed: int,
+    permutation_minimum_excess_lcb_bps: float,
+    frozen_contract_failures: Sequence[str],
+) -> Dict[str, Any]:
+    ordered_architectures = [str(value) for value in architecture_ids]
+    required = int(required_split_count)
+    trials = int(permutation_trials)
+    if (
+        not ordered_architectures
+        or len(set(ordered_architectures)) != len(ordered_architectures)
+        or required <= 0
+        or trials <= 0
+    ):
+        raise ValueError("target architecture comparison inputs are invalid")
+    report_by_split: Dict[int, Mapping[str, Any]] = {}
+    duplicate_split_ids: set[int] = set()
+    for report in split_reports:
+        split_id = int(report.get("split_id", -1))
+        if split_id in report_by_split:
+            duplicate_split_ids.add(split_id)
+        report_by_split[split_id] = report
+
+    missing: List[Dict[str, Any]] = []
+    architecture_summaries: Dict[str, Dict[str, Any]] = {}
+    for architecture_offset, architecture_id in enumerate(ordered_architectures):
+        base_means: List[float] = []
+        stress_means: List[float] = []
+        trade_count = 0
+        action_counts: Dict[str, int] = {}
+        control_base_means: List[List[float]] = [[] for _ in range(trials)]
+        control_stress_means: List[List[float]] = [[] for _ in range(trials)]
+        complete_split_count = 0
+        for split_id in range(required):
+            reason: str | None = None
+            split_report = report_by_split.get(split_id)
+            architecture_report: Mapping[str, Any] = {}
+            if split_id in duplicate_split_ids:
+                reason = "duplicate_split_report"
+            elif not isinstance(split_report, Mapping):
+                reason = "missing_split_report"
+            else:
+                architectures = split_report.get("architectures", {})
+                if isinstance(architectures, Mapping):
+                    raw_architecture_report = architectures.get(architecture_id)
+                    if isinstance(raw_architecture_report, Mapping):
+                        architecture_report = raw_architecture_report
+                    else:
+                        reason = "missing_architecture_report"
+                else:
+                    reason = "missing_architecture_report"
+            if reason is None and architecture_report.get("status") != "evaluated":
+                status = str(architecture_report.get("status") or "missing_status")
+                detail = str(architecture_report.get("reason") or "")
+                reason = f"{status}:{detail}" if detail else status
+            objective = architecture_report.get("oos_objective", {})
+            base = objective.get("base_cost", {}) if isinstance(objective, Mapping) else {}
+            stress = (
+                objective.get("stress_cost", {})
+                if isinstance(objective, Mapping)
+                else {}
+            )
+            base_mean = base.get("mean_bps") if isinstance(base, Mapping) else None
+            stress_mean = (
+                stress.get("mean_bps") if isinstance(stress, Mapping) else None
+            )
+            if reason is None and (base_mean is None or stress_mean is None):
+                reason = "missing_or_empty_actual_economics"
+            controls = architecture_report.get(
+                "oos_prediction_permutation_controls", []
+            )
+            if reason is None and (
+                not isinstance(controls, list) or len(controls) != trials
+            ):
+                reason = "missing_permutation_trials"
+            if reason is None:
+                for trial, control in enumerate(controls):
+                    if (
+                        not isinstance(control, Mapping)
+                        or int(control.get("trial", -1)) != trial
+                    ):
+                        reason = "invalid_permutation_trial_order"
+                        break
+                    control_base = control.get("base_cost", {})
+                    control_stress = control.get("stress_cost", {})
+                    control_base_mean = (
+                        control_base.get("mean_bps")
+                        if isinstance(control_base, Mapping)
+                        else None
+                    )
+                    control_stress_mean = (
+                        control_stress.get("mean_bps")
+                        if isinstance(control_stress, Mapping)
+                        else None
+                    )
+                    if control_base_mean is None or control_stress_mean is None:
+                        reason = "missing_or_empty_permutation_economics"
+                        break
+            if reason is not None:
+                missing.append(
+                    {
+                        "architecture_id": architecture_id,
+                        "split_id": split_id,
+                        "reason": reason,
+                    }
+                )
+                continue
+            complete_split_count += 1
+            base_means.append(float(base_mean))
+            stress_means.append(float(stress_mean))
+            trade_count += int(base.get("count") or 0)
+            raw_action_counts = objective.get("action_counts", {})
+            if isinstance(raw_action_counts, Mapping):
+                for key, raw_count in raw_action_counts.items():
+                    count = int(raw_count)
+                    action_counts[str(key)] = action_counts.get(str(key), 0) + count
+            for trial, control in enumerate(controls):
+                control_base_means[trial].append(
+                    float(control["base_cost"]["mean_bps"])
+                )
+                control_stress_means[trial].append(
+                    float(control["stress_cost"]["mean_bps"])
+                )
+        base_summary = summarize_edges(base_means)
+        stress_summary = summarize_edges(stress_means)
+        control_summary = summarize_prediction_permutation_controls(
+            base_means_by_trial=control_base_means,
+            stress_means_by_trial=control_stress_means,
+            required_split_count=required,
+            candidate_base_split_lcb_bps=base_summary["lcb_bps"],
+            candidate_stress_split_lcb_bps=stress_summary["lcb_bps"],
+            minimum_excess_lcb_bps=float(permutation_minimum_excess_lcb_bps),
+            seed=int(permutation_seed) + architecture_offset * 10_000_019,
+        )
+        fully_verifiable = bool(
+            complete_split_count == required and control_summary["fully_verifiable"]
+        )
+        signal_proven = bool(
+            fully_verifiable
+            and (base_summary["lcb_bps"] or float("-inf")) > 0.0
+            and (stress_summary["lcb_bps"] or float("-inf")) > 0.0
+            and control_summary["passed"]
+        )
+        architecture_summaries[architecture_id] = {
+            "fully_verifiable": fully_verifiable,
+            "signal_proven": signal_proven,
+            "complete_split_count": complete_split_count,
+            "required_split_count": required,
+            "trade_count": trade_count,
+            "action_counts": action_counts,
+            "oos_base_cost_by_split": base_summary,
+            "oos_stress_cost_by_split": stress_summary,
+            "prediction_permutation_control": control_summary,
+        }
+    contract_failures = [str(value) for value in frozen_contract_failures]
+    fully_verifiable = bool(
+        not contract_failures
+        and not missing
+        and len(report_by_split) == required
+        and all(
+            item["fully_verifiable"] for item in architecture_summaries.values()
+        )
+    )
+    proven = [
+        architecture_id
+        for architecture_id in ordered_architectures
+        if architecture_summaries[architecture_id]["signal_proven"]
+    ]
+    diagnostic_leader_id: str | None = None
+    if fully_verifiable and proven:
+        order = {value: index for index, value in enumerate(ordered_architectures)}
+        diagnostic_leader_id = max(
+            proven,
+            key=lambda value: (
+                float(
+                    architecture_summaries[value]["oos_stress_cost_by_split"][
+                        "lcb_bps"
+                    ]
+                ),
+                float(
+                    architecture_summaries[value]["oos_base_cost_by_split"][
+                        "lcb_bps"
+                    ]
+                ),
+                -order[value],
+            ),
+        )
+    if not fully_verifiable:
+        conclusion = "INCOMPLETE_TARGET_ARCHITECTURE_COMPARISON"
+        next_experiment = "complete_all_frozen_architecture_split_evidence"
+    elif diagnostic_leader_id is None:
+        conclusion = "NO_TARGET_ARCHITECTURE_SIGNAL_PROVEN"
+        next_experiment = "collect_additional_non_overlapping_market_regimes"
+    else:
+        conclusion = "TARGET_ARCHITECTURE_SIGNAL_DIAGNOSTICALLY_PROVEN"
+        next_experiment = "create_immutable_independent_forward_preregistration"
+    return {
+        "schema_version": TARGET_ARCHITECTURE_COMPARISON_SCHEMA_VERSION,
+        "architecture_ids": ordered_architectures,
+        "required_split_count": required,
+        "permutation_trial_count": trials,
+        "fully_verifiable": fully_verifiable,
+        "promotion_evidence": False,
+        "promotion_eligible": False,
+        "influences_development_passed": False,
+        "frozen_contract_failures": contract_failures,
+        "missing_architecture_splits": missing,
+        "architectures": architecture_summaries,
+        "diagnostic_leader_id": diagnostic_leader_id,
+        "diagnostic_leader_is_preregistered": False,
+        "conclusion": conclusion,
+        "next_experiment": next_experiment,
+    }
+
+
 def indices_between(timestamps: np.ndarray, start_ms: int, end_ms: int) -> np.ndarray:
     return np.flatnonzero((timestamps >= start_ms) & (timestamps < end_ms))
 
@@ -2136,6 +2634,413 @@ def fit_independent_action_models(
     return models
 
 
+def build_direct_utility_model(args: argparse.Namespace, action_index: int) -> Any:
+    if CatBoostRegressor is None:
+        raise RuntimeError("catboost regressor is required; use ai-trade-research image")
+    return CatBoostRegressor(
+        loss_function="RMSE",
+        eval_metric="RMSE",
+        iterations=int(args.iterations),
+        depth=int(args.depth),
+        learning_rate=float(args.learning_rate),
+        l2_leaf_reg=float(args.l2_leaf_reg),
+        random_strength=float(args.random_strength),
+        random_seed=int(args.random_seed) + 200_003 + int(action_index) * 1009,
+        allow_writing_files=False,
+        verbose=False,
+    )
+
+
+def build_opportunity_model(args: argparse.Namespace) -> Any:
+    if CatBoostClassifier is None:
+        raise RuntimeError("catboost classifier is required; use ai-trade-research image")
+    return CatBoostClassifier(
+        loss_function="Logloss",
+        eval_metric="Logloss",
+        boost_from_average=True,
+        iterations=int(args.iterations),
+        depth=int(args.depth),
+        learning_rate=float(args.learning_rate),
+        l2_leaf_reg=float(args.l2_leaf_reg),
+        random_strength=float(args.random_strength),
+        random_seed=int(args.random_seed) + 400_009,
+        allow_writing_files=False,
+        verbose=False,
+    )
+
+
+def build_conditional_action_model(
+    args: argparse.Namespace, *, action_count: int
+) -> Any:
+    if CatBoostClassifier is None:
+        raise RuntimeError("catboost classifier is required; use ai-trade-research image")
+    return CatBoostClassifier(
+        loss_function="MultiClass",
+        eval_metric="MultiClass",
+        classes_count=int(action_count),
+        iterations=int(args.iterations),
+        depth=int(args.depth),
+        learning_rate=float(args.learning_rate),
+        l2_leaf_reg=float(args.l2_leaf_reg),
+        random_strength=float(args.random_strength),
+        random_seed=int(args.random_seed) + 600_011,
+        allow_writing_files=False,
+        verbose=False,
+    )
+
+
+def build_joint_action_ranker(args: argparse.Namespace) -> Any:
+    if CatBoostRanker is None:
+        raise RuntimeError("catboost ranker is required; use ai-trade-research image")
+    return CatBoostRanker(
+        loss_function="QueryRMSE",
+        eval_metric="QueryRMSE",
+        iterations=int(args.iterations),
+        depth=int(args.depth),
+        learning_rate=float(args.learning_rate),
+        l2_leaf_reg=float(args.l2_leaf_reg),
+        random_strength=float(args.random_strength),
+        random_seed=int(args.random_seed) + 800_011,
+        allow_writing_files=False,
+        verbose=False,
+    )
+
+
+def model_best_iteration(model: Any) -> int | None:
+    best = model.get_best_iteration()
+    return int(best) + 1 if isinstance(best, int) and best >= 0 else None
+
+
+def fit_direct_utility_models(
+    *,
+    fit_features: np.ndarray,
+    fit_stress_utilities: np.ndarray,
+    model_selection_features: np.ndarray,
+    model_selection_stress_utilities: np.ndarray,
+    args: argparse.Namespace,
+) -> List[Any]:
+    fit_targets = np.asarray(fit_stress_utilities, dtype=np.float64)
+    selection_targets = np.asarray(
+        model_selection_stress_utilities, dtype=np.float64
+    )
+    if (
+        fit_targets.ndim != 2
+        or selection_targets.ndim != 2
+        or fit_targets.shape[1] != selection_targets.shape[1]
+    ):
+        raise ValueError("direct utility regression target shape mismatch")
+    models: List[Any] = []
+    for action_index in range(fit_targets.shape[1]):
+        model = build_direct_utility_model(args, action_index)
+        model.fit(
+            fit_features,
+            fit_targets[:, action_index],
+            eval_set=(
+                model_selection_features,
+                selection_targets[:, action_index],
+            ),
+            early_stopping_rounds=int(args.early_stopping_rounds),
+            verbose=False,
+        )
+        models.append(model)
+    return models
+
+
+def predict_direct_utility_models(
+    models: Sequence[Any], features: np.ndarray
+) -> np.ndarray:
+    columns = [
+        np.asarray(model.predict(features), dtype=np.float64).reshape(-1)
+        for model in models
+    ]
+    if not columns:
+        raise ValueError("direct utility regression has no action models")
+    prediction = np.column_stack(columns)
+    if not np.all(np.isfinite(prediction)):
+        raise ValueError("direct utility regression predictions are invalid")
+    return prediction
+
+
+@dataclasses.dataclass
+class TwoStageArchitectureModel:
+    action_count: int
+    opportunity_model: Any | None
+    opportunity_constant: float | None
+    conditional_action_model: Any | None
+    conditional_action_constant: np.ndarray | None
+    fit_class_indices: List[int]
+
+
+def fit_two_stage_architecture_model(
+    *,
+    fit_features: np.ndarray,
+    fit_stress_utilities: np.ndarray,
+    model_selection_features: np.ndarray,
+    model_selection_stress_utilities: np.ndarray,
+    args: argparse.Namespace,
+) -> TwoStageArchitectureModel:
+    fit_targets = build_two_stage_targets(fit_stress_utilities)
+    selection_targets = build_two_stage_targets(model_selection_stress_utilities)
+    action_count = int(np.asarray(fit_stress_utilities).shape[1])
+    opportunity_labels = np.asarray(fit_targets["opportunity"], dtype=np.float64)
+    unique_opportunity = np.unique(opportunity_labels)
+    opportunity_model: Any | None = None
+    opportunity_constant: float | None = None
+    if len(unique_opportunity) == 1:
+        opportunity_constant = float(unique_opportunity[0])
+    else:
+        opportunity_model = build_opportunity_model(args)
+        opportunity_model.fit(
+            fit_features,
+            opportunity_labels,
+            eval_set=(
+                model_selection_features,
+                np.asarray(selection_targets["opportunity"], dtype=np.float64),
+            ),
+            early_stopping_rounds=int(args.early_stopping_rounds),
+            verbose=False,
+        )
+
+    opportunity_rows = np.asarray(
+        fit_targets["opportunity_row_indices"], dtype=np.int64
+    )
+    best_actions = np.asarray(fit_targets["best_action"], dtype=np.int64)
+    conditional_model: Any | None = None
+    conditional_constant: np.ndarray | None = None
+    unique_actions = np.unique(best_actions)
+    if len(opportunity_rows) == 0:
+        conditional_constant = np.zeros(action_count, dtype=np.float64)
+    elif len(unique_actions) == 1:
+        conditional_constant = np.zeros(action_count, dtype=np.float64)
+        conditional_constant[int(unique_actions[0])] = 1.0
+    else:
+        conditional_model = build_conditional_action_model(
+            args, action_count=action_count
+        )
+        fit_kwargs: Dict[str, Any] = {
+            "early_stopping_rounds": int(args.early_stopping_rounds),
+            "verbose": False,
+        }
+        selection_opportunity_rows = np.asarray(
+            selection_targets["opportunity_row_indices"], dtype=np.int64
+        )
+        if len(selection_opportunity_rows) > 0:
+            fit_kwargs["eval_set"] = (
+                np.asarray(model_selection_features)[selection_opportunity_rows],
+                np.asarray(selection_targets["best_action"], dtype=np.int64),
+            )
+        else:
+            fit_kwargs.pop("early_stopping_rounds", None)
+        conditional_model.fit(
+            np.asarray(fit_features)[opportunity_rows],
+            best_actions,
+            **fit_kwargs,
+        )
+    return TwoStageArchitectureModel(
+        action_count=action_count,
+        opportunity_model=opportunity_model,
+        opportunity_constant=opportunity_constant,
+        conditional_action_model=conditional_model,
+        conditional_action_constant=conditional_constant,
+        fit_class_indices=[int(value) for value in unique_actions],
+    )
+
+
+def predict_binary_positive_probability(model: Any, features: np.ndarray) -> np.ndarray:
+    probabilities = np.asarray(model.predict_proba(features), dtype=np.float64)
+    classes = [int(value) for value in np.asarray(model.classes_).reshape(-1)]
+    if probabilities.ndim != 2 or probabilities.shape[1] != len(classes):
+        raise ValueError("binary opportunity prediction shape mismatch")
+    if 1 not in classes:
+        return np.zeros(len(features), dtype=np.float64)
+    return probabilities[:, classes.index(1)]
+
+
+def predict_two_stage_architecture(
+    model: TwoStageArchitectureModel, features: np.ndarray
+) -> np.ndarray:
+    row_count = len(features)
+    if model.opportunity_model is None:
+        if model.opportunity_constant is None:
+            raise ValueError("two-stage opportunity model is incomplete")
+        opportunity = np.full(row_count, model.opportunity_constant, dtype=np.float64)
+    else:
+        opportunity = predict_binary_positive_probability(
+            model.opportunity_model, features
+        )
+    if model.conditional_action_model is None:
+        if model.conditional_action_constant is None:
+            raise ValueError("two-stage conditional action model is incomplete")
+        conditional = np.tile(model.conditional_action_constant, (row_count, 1))
+    else:
+        raw = np.asarray(
+            model.conditional_action_model.predict_proba(features), dtype=np.float64
+        )
+        class_labels = [
+            int(value)
+            for value in np.asarray(
+                model.conditional_action_model.classes_
+            ).reshape(-1)
+        ]
+        conditional = restore_ordered_action_probabilities(
+            raw,
+            class_labels=class_labels,
+            action_count=model.action_count,
+        )
+    scores = opportunity.reshape(-1, 1) * conditional
+    if scores.shape != (row_count, model.action_count) or not np.all(
+        np.isfinite(scores)
+    ):
+        raise ValueError("two-stage score matrix is invalid")
+    return scores
+
+
+def fit_joint_ranker_model(
+    *,
+    fit_features: np.ndarray,
+    fit_stress_utilities: np.ndarray,
+    model_selection_features: np.ndarray,
+    model_selection_stress_utilities: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    args: argparse.Namespace,
+) -> Any:
+    if Pool is None:
+        raise RuntimeError("catboost pool is required; use ai-trade-research image")
+    fit_expanded, fit_target, fit_group = build_joint_ranker_dataset(
+        fit_features, fit_stress_utilities, actions
+    )
+    selection_expanded, selection_target, selection_group = (
+        build_joint_ranker_dataset(
+            model_selection_features,
+            model_selection_stress_utilities,
+            actions,
+        )
+    )
+    model = build_joint_action_ranker(args)
+    model.fit(
+        Pool(fit_expanded, fit_target, group_id=fit_group),
+        eval_set=Pool(
+            selection_expanded,
+            selection_target,
+            group_id=selection_group,
+        ),
+        early_stopping_rounds=int(args.early_stopping_rounds),
+        verbose=False,
+    )
+    return model
+
+
+def predict_joint_ranker_model(
+    model: Any,
+    *,
+    features: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+) -> np.ndarray:
+    placeholder = np.zeros((len(features), len(actions)), dtype=np.float64)
+    expanded, _, _ = build_joint_ranker_dataset(features, placeholder, actions)
+    return reshape_joint_ranker_predictions(
+        np.asarray(model.predict(expanded), dtype=np.float64),
+        row_count=len(features),
+        action_count=len(actions),
+    )
+
+
+def fit_predict_experimental_architecture(
+    *,
+    architecture_id: str,
+    fit_features: np.ndarray,
+    fit_stress_utilities: np.ndarray,
+    model_selection_features: np.ndarray,
+    model_selection_stress_utilities: np.ndarray,
+    validation_features: np.ndarray,
+    test_features: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    args: argparse.Namespace,
+) -> Dict[str, Any]:
+    architecture = str(architecture_id)
+    if architecture == "direct_stress_utility_regression":
+        models = fit_direct_utility_models(
+            fit_features=fit_features,
+            fit_stress_utilities=fit_stress_utilities,
+            model_selection_features=model_selection_features,
+            model_selection_stress_utilities=model_selection_stress_utilities,
+            args=args,
+        )
+        return {
+            "score_units": "stress_net_utility_bps",
+            "validation_prediction": predict_direct_utility_models(
+                models, validation_features
+            ),
+            "test_prediction": predict_direct_utility_models(models, test_features),
+            "model_diagnostics": {
+                "model_topology": "independent_regressor_per_action",
+                "best_iterations_by_action": {
+                    str(index): model_best_iteration(model)
+                    for index, model in enumerate(models)
+                },
+            },
+        }
+    if architecture == "two_stage_opportunity_action":
+        model = fit_two_stage_architecture_model(
+            fit_features=fit_features,
+            fit_stress_utilities=fit_stress_utilities,
+            model_selection_features=model_selection_features,
+            model_selection_stress_utilities=model_selection_stress_utilities,
+            args=args,
+        )
+        return {
+            "score_units": "probability_product",
+            "validation_prediction": predict_two_stage_architecture(
+                model, validation_features
+            ),
+            "test_prediction": predict_two_stage_architecture(model, test_features),
+            "model_diagnostics": {
+                "model_topology": "opportunity_then_conditional_action",
+                "fit_class_indices": model.fit_class_indices,
+                "opportunity_constant": model.opportunity_constant,
+                "conditional_action_constant": (
+                    model.conditional_action_constant.tolist()
+                    if model.conditional_action_constant is not None
+                    else None
+                ),
+                "opportunity_best_iteration": (
+                    model_best_iteration(model.opportunity_model)
+                    if model.opportunity_model is not None
+                    else None
+                ),
+                "conditional_action_best_iteration": (
+                    model_best_iteration(model.conditional_action_model)
+                    if model.conditional_action_model is not None
+                    else None
+                ),
+            },
+        }
+    if architecture == "joint_action_ranker":
+        model = fit_joint_ranker_model(
+            fit_features=fit_features,
+            fit_stress_utilities=fit_stress_utilities,
+            model_selection_features=model_selection_features,
+            model_selection_stress_utilities=model_selection_stress_utilities,
+            actions=actions,
+            args=args,
+        )
+        return {
+            "score_units": "rank_score",
+            "validation_prediction": predict_joint_ranker_model(
+                model, features=validation_features, actions=actions
+            ),
+            "test_prediction": predict_joint_ranker_model(
+                model, features=test_features, actions=actions
+            ),
+            "model_diagnostics": {
+                "model_topology": "single_grouped_joint_action_ranker",
+                "loss_function": "QueryRMSE",
+                "best_iteration": model_best_iteration(model),
+            },
+        }
+    raise ValueError(f"unsupported experimental architecture: {architecture}")
+
+
 def best_iterations_by_action(
     models: Sequence[Any], transform: Mapping[str, Any]
 ) -> Dict[str, int | None]:
@@ -2190,8 +3095,392 @@ def model_contract(args: argparse.Namespace) -> Dict[str, Any]:
     }
 
 
+def evaluate_target_architecture_split(
+    *,
+    architecture_id: str,
+    split_id: int,
+    score_units: str,
+    validation_timestamps: np.ndarray,
+    validation_prediction: np.ndarray,
+    validation_realized_base: np.ndarray,
+    test_timestamps: np.ndarray,
+    test_prediction: np.ndarray,
+    test_realized_base: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    quantiles: Sequence[float],
+    min_trades: int,
+    base_cost_bps: float,
+    stress_cost_multiplier: float,
+    execution_latency_seconds: int,
+    permutation_trials: int,
+    permutation_seed: int,
+    allowed_action_indices: Sequence[int] | None = None,
+    model_diagnostics: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
+    calibration = select_nested_joint_threshold(
+        timestamps=validation_timestamps,
+        prediction=validation_prediction,
+        realized_base=validation_realized_base,
+        actions=actions,
+        quantiles=quantiles,
+        min_trades=min_trades,
+        base_cost_bps=base_cost_bps,
+        stress_cost_multiplier=stress_cost_multiplier,
+        execution_latency_seconds=execution_latency_seconds,
+        score_units=score_units,
+        allowed_action_indices=allowed_action_indices,
+    )
+    selected = calibration.get("diagnostic_selected")
+    if not isinstance(selected, Mapping):
+        return {
+            "status": "missing_diagnostic_threshold",
+            "reason": str(calibration.get("reason") or "no_nested_candidate"),
+            "architecture_id": str(architecture_id),
+            "score_units": str(score_units),
+            "nested_calibration": calibration,
+            "model_diagnostics": dict(model_diagnostics or {}),
+        }
+    threshold = float(selected["score_threshold"])
+    objective = evaluate_joint_policy(
+        timestamps=test_timestamps,
+        prediction=test_prediction,
+        realized_base=test_realized_base,
+        actions=actions,
+        threshold_bps=threshold,
+        base_cost_bps=base_cost_bps,
+        stress_cost_multiplier=stress_cost_multiplier,
+        execution_latency_seconds=execution_latency_seconds,
+        allowed_action_indices=allowed_action_indices,
+    )
+    objective["score_threshold"] = objective.pop("threshold_bps")
+    objective["score_units"] = str(score_units)
+    objective.pop("base_edges_bps", None)
+    objective.pop("stress_edges_bps", None)
+    architecture_offset = TARGET_ARCHITECTURE_IDS.index(str(architecture_id))
+    controls = evaluate_prediction_permutation_controls(
+        timestamps=test_timestamps,
+        prediction=test_prediction,
+        realized_base=test_realized_base,
+        actions=actions,
+        threshold_bps=threshold,
+        base_cost_bps=base_cost_bps,
+        stress_cost_multiplier=stress_cost_multiplier,
+        execution_latency_seconds=execution_latency_seconds,
+        trials=permutation_trials,
+        seed=(
+            int(permutation_seed)
+            + int(split_id) * 1_000_003
+            + architecture_offset * 10_000_019
+            + 900_001
+        ),
+        allowed_action_indices=allowed_action_indices,
+    )
+    for control in controls:
+        control["score_threshold"] = control.pop("threshold_bps", threshold)
+        control["score_units"] = str(score_units)
+    return {
+        "status": "evaluated",
+        "architecture_id": str(architecture_id),
+        "score_units": str(score_units),
+        "nested_calibration": calibration,
+        "validation_prediction_score_distribution": summarize_numeric_distribution(
+            np.max(np.asarray(validation_prediction), axis=1)
+        ),
+        "test_prediction_score_distribution": summarize_numeric_distribution(
+            np.max(np.asarray(test_prediction), axis=1)
+        ),
+        "model_diagnostics": dict(model_diagnostics or {}),
+        "oos_objective": objective,
+        "oos_prediction_permutation_controls": controls,
+        "promotion_evidence": False,
+        "promotion_eligible": False,
+    }
+
+
+def build_target_architecture_shared_contract(
+    *,
+    source_assessment_sha256: str,
+    feature_names: Sequence[str],
+    actions: Sequence[Mapping[str, Any]],
+    splits: Sequence[TimeSplit],
+    partition_identities: Sequence[Mapping[str, Any]],
+    args: argparse.Namespace,
+) -> Dict[str, Any]:
+    contract = {
+        "source_assessment_sha256": str(source_assessment_sha256),
+        "feature_count": len(feature_names),
+        "ordered_feature_names_sha256": canonical_sha256(
+            {"feature_names": [str(value) for value in feature_names]}
+        ),
+        "causal_feature_contract": CAUSAL_FEATURE_CONTRACT,
+        "actions": [dict(item) for item in actions],
+        "action_count": len(actions),
+        "additional_round_trip_cost_bps": float(
+            args.additional_round_trip_cost_bps
+        ),
+        "stress_cost_multiplier": float(args.stress_cost_multiplier),
+        "execution_latency_seconds": int(args.execution_latency_seconds),
+        "overlapping_episodes_forbidden": True,
+        "split_count": len(splits),
+        "split_time_contracts": [dataclasses.asdict(split) for split in splits],
+        "partition_identities": [dict(item) for item in partition_identities],
+        "model_hyperparameters": {
+            "iterations": int(args.iterations),
+            "depth": int(args.depth),
+            "learning_rate": float(args.learning_rate),
+            "l2_leaf_reg": float(args.l2_leaf_reg),
+            "random_strength": float(args.random_strength),
+            "random_seed": int(args.random_seed),
+            "early_stopping_rounds": int(args.early_stopping_rounds),
+        },
+        "validation_or_test_targets_used_for_fit": False,
+    }
+    return {**contract, "identity_sha256": canonical_sha256(contract)}
+
+
+def run_frozen_target_architecture_comparison(
+    *,
+    timestamps: np.ndarray,
+    features: np.ndarray,
+    feature_names: Sequence[str],
+    outcomes: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    splits: Sequence[TimeSplit],
+    source_assessment_sha256: str,
+    baseline_cache: Mapping[int, Mapping[str, Any]],
+    args: argparse.Namespace,
+) -> Dict[str, Any]:
+    required_split_count = len(splits)
+    permutation_trials = int(getattr(args, "permutation_control_trials", 7))
+    permutation_seed = int(getattr(args, "permutation_control_seed", 20260808))
+    minimum_excess = float(
+        getattr(args, "permutation_control_minimum_excess_lcb_bps", 0.0)
+    )
+    frozen_failures = frozen_target_architecture_shape_failures(
+        feature_count=len(feature_names),
+        action_count=len(actions),
+        split_count=required_split_count,
+    )
+    embargo_seconds = max(int(value) for value in args.horizons_seconds) + int(
+        args.execution_latency_seconds
+    )
+    partitions: List[Dict[str, Any]] = []
+    split_indices: Dict[int, Dict[str, np.ndarray]] = {}
+    for split in splits:
+        model_fit_indices, model_selection_indices, _ = (
+            build_fit_internal_model_selection_indices(
+                timestamps,
+                split,
+                model_selection_window_seconds=int(
+                    args.model_selection_window_seconds
+                ),
+                embargo_seconds=embargo_seconds,
+            )
+        )
+        validation_indices = indices_between(
+            timestamps, split.validation_start_ms, split.validation_end_ms
+        )
+        test_indices = indices_between(
+            timestamps, split.test_start_ms, split.test_end_ms
+        )
+        indices = {
+            "model_fit": model_fit_indices,
+            "model_selection": model_selection_indices,
+            "nested_validation": validation_indices,
+            "oos_test": test_indices,
+        }
+        split_indices[int(split.split_id)] = indices
+        identity = {
+            "split_id": int(split.split_id),
+            "time_contract": dataclasses.asdict(split),
+            "row_counts": {key: int(len(value)) for key, value in indices.items()},
+            "row_index_sha256": {
+                key: integer_index_sha256(value) for key, value in indices.items()
+            },
+        }
+        identity["identity_sha256"] = canonical_sha256(identity)
+        partitions.append(identity)
+    shared_contract = build_target_architecture_shared_contract(
+        source_assessment_sha256=source_assessment_sha256,
+        feature_names=feature_names,
+        actions=actions,
+        splits=splits,
+        partition_identities=partitions,
+        args=args,
+    )
+    if frozen_failures:
+        aggregate = aggregate_target_architecture_comparison(
+            split_reports=[],
+            architecture_ids=TARGET_ARCHITECTURE_IDS,
+            required_split_count=required_split_count,
+            permutation_trials=permutation_trials,
+            permutation_seed=permutation_seed,
+            permutation_minimum_excess_lcb_bps=minimum_excess,
+            frozen_contract_failures=frozen_failures,
+        )
+        return {
+            **aggregate,
+            "shared_contract": shared_contract,
+            "split_reports": [],
+        }
+
+    comparison_split_reports: List[Dict[str, Any]] = []
+    partition_by_split = {
+        int(item["split_id"]): item for item in partitions
+    }
+    base_cost = float(args.additional_round_trip_cost_bps)
+    stress_multiplier = float(args.stress_cost_multiplier)
+    for split in splits:
+        split_id = int(split.split_id)
+        indices = split_indices[split_id]
+        architecture_reports: Dict[str, Dict[str, Any]] = {}
+        baseline = baseline_cache.get(split_id)
+        if isinstance(baseline, Mapping):
+            try:
+                architecture_reports[TARGET_ARCHITECTURE_IDS[0]] = (
+                    evaluate_target_architecture_split(
+                        architecture_id=TARGET_ARCHITECTURE_IDS[0],
+                        split_id=split_id,
+                        score_units="base_net_bps",
+                        validation_timestamps=timestamps[
+                            indices["nested_validation"]
+                        ],
+                        validation_prediction=np.asarray(
+                            baseline["validation_prediction"], dtype=np.float64
+                        ),
+                        validation_realized_base=outcomes[
+                            indices["nested_validation"]
+                        ],
+                        test_timestamps=timestamps[indices["oos_test"]],
+                        test_prediction=np.asarray(
+                            baseline["test_prediction"], dtype=np.float64
+                        ),
+                        test_realized_base=outcomes[indices["oos_test"]],
+                        actions=actions,
+                        quantiles=args.calibration_quantiles,
+                        min_trades=int(args.min_calibration_trades),
+                        base_cost_bps=base_cost,
+                        stress_cost_multiplier=stress_multiplier,
+                        execution_latency_seconds=int(
+                            args.execution_latency_seconds
+                        ),
+                        permutation_trials=permutation_trials,
+                        permutation_seed=permutation_seed,
+                        allowed_action_indices=baseline[
+                            "allowed_action_indices"
+                        ],
+                        model_diagnostics=baseline.get("model_diagnostics", {}),
+                    )
+                )
+            except Exception as exc:  # isolated diagnostic evidence
+                architecture_reports[TARGET_ARCHITECTURE_IDS[0]] = {
+                    "status": "evaluation_error",
+                    "reason": f"{type(exc).__name__}:{exc}",
+                }
+        else:
+            architecture_reports[TARGET_ARCHITECTURE_IDS[0]] = {
+                "status": "missing_baseline_cache",
+                "reason": "promotion_path_split_was_not_trained",
+            }
+
+        fit_utilities = build_stress_net_utility_targets(
+            outcomes[indices["model_fit"]],
+            base_cost_bps=base_cost,
+            stress_cost_multiplier=stress_multiplier,
+        )
+        selection_utilities = build_stress_net_utility_targets(
+            outcomes[indices["model_selection"]],
+            base_cost_bps=base_cost,
+            stress_cost_multiplier=stress_multiplier,
+        )
+        for architecture_id in TARGET_ARCHITECTURE_IDS[1:]:
+            started = time.monotonic()
+            try:
+                predictions = fit_predict_experimental_architecture(
+                    architecture_id=architecture_id,
+                    fit_features=features[indices["model_fit"]],
+                    fit_stress_utilities=fit_utilities,
+                    model_selection_features=features[
+                        indices["model_selection"]
+                    ],
+                    model_selection_stress_utilities=selection_utilities,
+                    validation_features=features[
+                        indices["nested_validation"]
+                    ],
+                    test_features=features[indices["oos_test"]],
+                    actions=actions,
+                    args=args,
+                )
+                diagnostics = dict(predictions.get("model_diagnostics", {}))
+                diagnostics["training_and_inference_seconds"] = (
+                    time.monotonic() - started
+                )
+                architecture_reports[architecture_id] = (
+                    evaluate_target_architecture_split(
+                        architecture_id=architecture_id,
+                        split_id=split_id,
+                        score_units=str(predictions["score_units"]),
+                        validation_timestamps=timestamps[
+                            indices["nested_validation"]
+                        ],
+                        validation_prediction=np.asarray(
+                            predictions["validation_prediction"], dtype=np.float64
+                        ),
+                        validation_realized_base=outcomes[
+                            indices["nested_validation"]
+                        ],
+                        test_timestamps=timestamps[indices["oos_test"]],
+                        test_prediction=np.asarray(
+                            predictions["test_prediction"], dtype=np.float64
+                        ),
+                        test_realized_base=outcomes[indices["oos_test"]],
+                        actions=actions,
+                        quantiles=args.calibration_quantiles,
+                        min_trades=int(args.min_calibration_trades),
+                        base_cost_bps=base_cost,
+                        stress_cost_multiplier=stress_multiplier,
+                        execution_latency_seconds=int(
+                            args.execution_latency_seconds
+                        ),
+                        permutation_trials=permutation_trials,
+                        permutation_seed=permutation_seed,
+                        model_diagnostics=diagnostics,
+                    )
+                )
+            except Exception as exc:  # isolated non-promotional experiment
+                architecture_reports[architecture_id] = {
+                    "status": "training_or_evaluation_error",
+                    "reason": f"{type(exc).__name__}:{exc}",
+                    "elapsed_seconds": time.monotonic() - started,
+                    "promotion_evidence": False,
+                    "promotion_eligible": False,
+                }
+        comparison_split_reports.append(
+            {
+                "split_id": split_id,
+                "shared_partition_identity": partition_by_split[split_id],
+                "architectures": architecture_reports,
+            }
+        )
+    aggregate = aggregate_target_architecture_comparison(
+        split_reports=comparison_split_reports,
+        architecture_ids=TARGET_ARCHITECTURE_IDS,
+        required_split_count=required_split_count,
+        permutation_trials=permutation_trials,
+        permutation_seed=permutation_seed,
+        permutation_minimum_excess_lcb_bps=minimum_excess,
+        frozen_contract_failures=frozen_failures,
+    )
+    return {
+        **aggregate,
+        "shared_contract": shared_contract,
+        "split_reports": comparison_split_reports,
+    }
+
+
 def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
     assessment_path = pathlib.Path(args.capture_assessment).resolve()
+    assessment_sha256 = sha256_file(assessment_path)
     assessment = validate_capture_assessment(assessment_path)
     series = load_capture_rows(assessment)
     capture_merge_audit = validate_capture_merge_audit(
@@ -2239,6 +3528,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
     permutation_stress_means_by_trial: List[List[float]] = [
         [] for _ in range(permutation_trials)
     ]
+    baseline_comparison_cache: Dict[int, Dict[str, Any]] = {}
     failures: List[str] = []
     for split in splits:
         fit_indices = indices_between(timestamps, split.fit_start_ms, split.fit_end_ms)
@@ -2417,6 +3707,21 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         test_prediction, test_raw_prediction = predict_base_net_scores(
             models, features[test_indices], target_transform
         )
+        baseline_comparison_cache[int(split.split_id)] = {
+            "validation_prediction": validation_prediction,
+            "test_prediction": test_prediction,
+            "allowed_action_indices": [
+                int(value) for value in target_transform["model_action_indices"]
+            ],
+            "model_diagnostics": {
+                "model_topology": (
+                    "independent_binary_stress_event_classifier_per_action"
+                ),
+                "best_iterations_by_action": best_iterations_by_action(
+                    models, target_transform
+                ),
+            },
+        }
         objective = evaluate_joint_policy(
             timestamps=timestamps[test_indices],
             prediction=test_prediction,
@@ -2609,6 +3914,17 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         minimum_oracle_trades=int(args.min_oos_trades),
         minimum_positive_splits_ratio=float(args.min_positive_splits_ratio),
     )
+    target_architecture_comparison = run_frozen_target_architecture_comparison(
+        timestamps=timestamps,
+        features=features,
+        feature_names=feature_names,
+        outcomes=outcomes,
+        actions=actions,
+        splits=splits,
+        source_assessment_sha256=assessment_sha256,
+        baseline_cache=baseline_comparison_cache,
+        args=args,
+    )
     fully_verifiable = bool(
         trained_split_count == len(splits)
         and not failures
@@ -2714,7 +4030,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         "promotion_eligible": False,
         "source_assessment": {
             "path": str(assessment_path),
-            "sha256": sha256_file(assessment_path),
+            "sha256": assessment_sha256,
             "coverage_ms": assessment.get("coverage_ms"),
             "segment_count": assessment.get("valid_segment_count"),
             "development_cutoff_ms": assessment.get(
@@ -2785,6 +4101,7 @@ def run_probe(args: argparse.Namespace) -> Dict[str, Any]:
         "model_contract": model_contract(args),
         "negative_control": permutation_control,
         "learnability_diagnostic": learnability_diagnostic,
+        "target_architecture_comparison": target_architecture_comparison,
         "economic_screen": {
             "development_passed": development_passed,
             "trained_split_count": trained_split_count,

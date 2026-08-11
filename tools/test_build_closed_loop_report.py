@@ -153,6 +153,15 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                     "passed": False,
                     "trial_count": 7,
                 },
+                "target_architecture_comparison": {
+                    "schema_version": "microstructure_target_architecture_comparison_v1",
+                    "fully_verifiable": True,
+                    "promotion_evidence": False,
+                    "promotion_eligible": False,
+                    "influences_development_passed": False,
+                    "diagnostic_leader_id": "joint_action_ranker",
+                    "conclusion": "TARGET_ARCHITECTURE_SIGNAL_DIAGNOSTICALLY_PROVEN",
+                },
                 "next_gate": "reject_microstructure_candidate_and_remain_in_development",
             }
             path.write_text(json.dumps(payload), encoding="utf-8")
@@ -161,6 +170,11 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertTrue(
                 any("joint direction/exit" in reason for reason in failed["fail_reasons"])
             )
+            self.assertEqual(
+                failed["target_architecture_comparison"]["diagnostic_leader_id"],
+                "joint_action_ranker",
+            )
+            self.assertFalse(failed["promotion_eligible"])
 
             payload["status"] = "NOT_READY"
             payload["fully_verifiable"] = False

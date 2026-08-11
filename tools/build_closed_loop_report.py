@@ -967,6 +967,11 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
     negative_control = payload.get("negative_control", {})
     if not isinstance(negative_control, dict):
         negative_control = {}
+    target_architecture_comparison = payload.get(
+        "target_architecture_comparison", {}
+    )
+    if not isinstance(target_architecture_comparison, dict):
+        target_architecture_comparison = {}
     negative_control_ok = bool(
         negative_control.get("method")
         == "deterministic_oos_prediction_time_permutation"
@@ -1040,6 +1045,7 @@ def assess_microstructure_alpha_development(path: Path) -> Dict[str, Any]:
         "data": payload.get("data", {}),
         "target_contract": payload.get("target_contract", {}),
         "validation_contract": payload.get("validation_contract", {}),
+        "target_architecture_comparison": target_architecture_comparison,
         "economic_screen": economic_screen,
         "next_gate": payload.get("next_gate"),
     }

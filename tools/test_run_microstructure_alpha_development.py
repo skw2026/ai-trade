@@ -930,6 +930,368 @@ class MicrostructureAlphaDevelopmentTest(unittest.TestCase):
         self.assertFalse(report["passed"])
         self.assertEqual(report["maximum_control_base_split_lcb_bps"], 2.0)
 
+    def test_direct_regression_uses_fit_only_stress_utility(self):
+        outcomes = np.asarray([[5.0, -2.0], [1.0, 8.0]])
+
+        targets = probe.build_stress_net_utility_targets(
+            outcomes,
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+        )
+
+        np.testing.assert_allclose(targets, [[4.0, -3.0], [0.0, 7.0]])
+
+    def test_two_stage_targets_and_class_mapping_are_fit_only(self):
+        utilities = np.asarray(
+            [
+                [-1.0, -2.0, -3.0],
+                [2.0, 2.0, -1.0],
+                [-1.0, 4.0, 3.0],
+            ]
+        )
+
+        targets = probe.build_two_stage_targets(utilities)
+
+        self.assertEqual(targets["opportunity"].tolist(), [0.0, 1.0, 1.0])
+        self.assertEqual(targets["opportunity_row_indices"].tolist(), [1, 2])
+        # The tied best utility on row 1 must use predeclared action order.
+        self.assertEqual(targets["best_action"].tolist(), [0, 1])
+        self.assertEqual(targets["class_indices"], [0, 1])
+
+    def test_two_stage_unseen_classes_restore_ordered_action_matrix(self):
+        restored = probe.restore_ordered_action_probabilities(
+            np.asarray([[0.25, 0.75], [0.6, 0.4]]),
+            class_labels=[3, 1],
+            action_count=5,
+        )
+
+        np.testing.assert_allclose(
+            restored,
+            [
+                [0.0, 0.75, 0.0, 0.25, 0.0],
+                [0.0, 0.4, 0.0, 0.6, 0.0],
+            ],
+        )
+
+    def test_ranker_groups_all_actions_per_timestamp(self):
+        features = np.asarray([[1.0, 2.0], [3.0, 4.0]])
+        utilities = np.asarray([[0.5, -0.5], [1.5, -1.5]])
+        actions = [
+            {"direction": "long", "horizon_seconds": 15},
+            {"direction": "short", "horizon_seconds": 30},
+        ]
+
+        expanded, target, group_id = probe.build_joint_ranker_dataset(
+            features, utilities, actions
+        )
+
+        self.assertEqual(expanded.shape, (4, 4))
+        np.testing.assert_allclose(expanded[:2, :2], [[1.0, 2.0], [1.0, 2.0]])
+        np.testing.assert_allclose(target, [0.5, -0.5, 1.5, -1.5])
+        self.assertEqual(group_id.tolist(), [0, 0, 1, 1])
+        reshaped = probe.reshape_joint_ranker_predictions(
+            np.asarray([0.1, 0.2, 0.3, 0.4]), row_count=2, action_count=2
+        )
+        np.testing.assert_allclose(reshaped, [[0.1, 0.2], [0.3, 0.4]])
+
+    @unittest.skipIf(probe.CatBoostClassifier is None, "catboost is unavailable")
+    def test_real_catboost_target_architecture_adapters_restore_score_matrices(self):
+        rng = np.random.default_rng(17)
+        features = rng.normal(size=(160, 4))
+        actions = [
+            {"direction": "long", "horizon_seconds": 15},
+            {"direction": "short", "horizon_seconds": 15},
+            {"direction": "long", "horizon_seconds": 30},
+        ]
+        utilities = np.column_stack(
+            (
+                features[:, 0] * 3.0 + features[:, 1],
+                -features[:, 0] * 2.0 + features[:, 2],
+                features[:, 3] * 2.5 - 0.25,
+            )
+        )
+        adapter_args = argparse.Namespace(
+            iterations=12,
+            depth=2,
+            learning_rate=0.1,
+            l2_leaf_reg=2.0,
+            random_strength=0.0,
+            random_seed=19,
+            early_stopping_rounds=3,
+        )
+        for architecture_id in probe.TARGET_ARCHITECTURE_IDS[1:]:
+            result = probe.fit_predict_experimental_architecture(
+                architecture_id=architecture_id,
+                fit_features=features[:80],
+                fit_stress_utilities=utilities[:80],
+                model_selection_features=features[80:110],
+                model_selection_stress_utilities=utilities[80:110],
+                validation_features=features[110:135],
+                test_features=features[135:],
+                actions=actions,
+                args=adapter_args,
+            )
+            self.assertEqual(result["validation_prediction"].shape, (25, 3))
+            self.assertEqual(result["test_prediction"].shape, (25, 3))
+            self.assertTrue(np.all(np.isfinite(result["validation_prediction"])))
+            self.assertTrue(np.all(np.isfinite(result["test_prediction"])))
+
+    def test_joint_diagnostic_threshold_preserves_ranked_action_choice(self):
+        timestamps = np.arange(100, dtype=np.int64) * 1000
+        prediction = np.column_stack(
+            (np.linspace(0.0, 1.0, 100), np.linspace(1.0, 0.0, 100))
+        )
+        realized = np.where(prediction > 0.8, 5.0, -5.0)
+
+        report = probe.select_nested_joint_threshold(
+            timestamps=timestamps,
+            prediction=prediction,
+            realized_base=realized,
+            actions=[
+                {"direction": "long", "horizon_seconds": 1},
+                {"direction": "short", "horizon_seconds": 1},
+            ],
+            quantiles=[0.5, 0.8],
+            min_trades=8,
+            base_cost_bps=1.0,
+            stress_cost_multiplier=1.25,
+            execution_latency_seconds=1,
+            score_units="probability_product",
+        )
+
+        self.assertIsNotNone(report["diagnostic_selected"])
+        self.assertEqual(report["score_units"], "probability_product")
+        self.assertGreater(
+            len(report["diagnostic_selected"]["action_counts"]), 1
+        )
+
+    def test_target_architecture_contract_requires_frozen_242_by_10_by_6_domain(self):
+        self.assertEqual(
+            probe.frozen_target_architecture_shape_failures(
+                feature_count=242, action_count=10, split_count=6
+            ),
+            [],
+        )
+        self.assertEqual(
+            probe.frozen_target_architecture_shape_failures(
+                feature_count=241, action_count=9, split_count=5
+            ),
+            [
+                "frozen_feature_count_242_required",
+                "frozen_action_count_10_required",
+                "frozen_split_count_6_required",
+            ],
+        )
+
+    def test_comparison_lists_every_missing_architecture_split(self):
+        architecture_ids = ("baseline", "regression")
+        controls = [
+            {
+                "trial": trial,
+                "base_cost": {"count": 2, "mean_bps": -1.0},
+                "stress_cost": {"count": 2, "mean_bps": -2.0},
+            }
+            for trial in range(2)
+        ]
+        evaluated = {
+            "status": "evaluated",
+            "oos_objective": {
+                "base_cost": {"count": 2, "mean_bps": 5.0},
+                "stress_cost": {"count": 2, "mean_bps": 4.0},
+                "action_counts": {"long_15s": 2},
+            },
+            "oos_prediction_permutation_controls": controls,
+        }
+        split_reports = [
+            {
+                "split_id": 0,
+                "architectures": {
+                    "baseline": copy.deepcopy(evaluated),
+                    "regression": copy.deepcopy(evaluated),
+                },
+            },
+            {
+                "split_id": 1,
+                "architectures": {
+                    "baseline": copy.deepcopy(evaluated),
+                    "regression": {
+                        "status": "training_error",
+                        "reason": "synthetic",
+                    },
+                },
+            },
+        ]
+
+        report = probe.aggregate_target_architecture_comparison(
+            split_reports=split_reports,
+            architecture_ids=architecture_ids,
+            required_split_count=2,
+            permutation_trials=2,
+            permutation_seed=7,
+            permutation_minimum_excess_lcb_bps=0.0,
+            frozen_contract_failures=[],
+        )
+
+        self.assertFalse(report["fully_verifiable"])
+        self.assertEqual(
+            report["missing_architecture_splits"],
+            [
+                {
+                    "architecture_id": "regression",
+                    "split_id": 1,
+                    "reason": "training_error:synthetic",
+                }
+            ],
+        )
+        self.assertIsNone(report["diagnostic_leader_id"])
+
+    def test_signal_requires_positive_actual_lcbs_and_permutation_excess(self):
+        architecture_ids = ("baseline",)
+        split_reports = []
+        for split_id, mean in enumerate((5.0, 6.0, 5.5)):
+            split_reports.append(
+                {
+                    "split_id": split_id,
+                    "architectures": {
+                        "baseline": {
+                            "status": "evaluated",
+                            "oos_objective": {
+                                "base_cost": {"count": 2, "mean_bps": mean},
+                                "stress_cost": {
+                                    "count": 2,
+                                    "mean_bps": mean - 1.0,
+                                },
+                                "action_counts": {"long_15s": 2},
+                            },
+                            "oos_prediction_permutation_controls": [
+                                {
+                                    "trial": trial,
+                                    "base_cost": {"count": 2, "mean_bps": -1.0},
+                                    "stress_cost": {"count": 2, "mean_bps": -2.0},
+                                }
+                                for trial in range(2)
+                            ],
+                        }
+                    },
+                }
+            )
+
+        report = probe.aggregate_target_architecture_comparison(
+            split_reports=split_reports,
+            architecture_ids=architecture_ids,
+            required_split_count=3,
+            permutation_trials=2,
+            permutation_seed=7,
+            permutation_minimum_excess_lcb_bps=0.0,
+            frozen_contract_failures=[],
+        )
+
+        self.assertTrue(report["fully_verifiable"])
+        self.assertTrue(report["architectures"]["baseline"]["signal_proven"])
+        self.assertEqual(report["diagnostic_leader_id"], "baseline")
+        self.assertFalse(report["promotion_eligible"])
+        self.assertFalse(report["influences_development_passed"])
+
+    def test_frozen_comparison_runs_all_architectures_on_exact_partitions(self):
+        timestamps = np.arange(1200, dtype=np.int64) * 1000
+        features = np.zeros((1200, 242), dtype=np.float64)
+        outcomes = np.full((1200, 10), 5.0, dtype=np.float64)
+        actions = [
+            {"direction": direction, "horizon_seconds": horizon}
+            for direction in ("long", "short")
+            for horizon in (1, 2, 3, 4, 5)
+        ]
+        splits = []
+        baseline_cache = {}
+        for split_id in range(6):
+            offset = split_id * 150_000
+            split = probe.TimeSplit(
+                split_id=split_id,
+                fit_start_ms=offset,
+                fit_end_ms=offset + 200_000,
+                validation_start_ms=offset + 202_000,
+                validation_end_ms=offset + 252_000,
+                test_start_ms=offset + 254_000,
+                test_end_ms=offset + 304_000,
+            )
+            splits.append(split)
+            baseline_cache[split_id] = {
+                "validation_prediction": np.ones((50, 10)),
+                "test_prediction": np.ones((50, 10)),
+                "allowed_action_indices": list(range(10)),
+                "model_diagnostics": {},
+            }
+        args = argparse.Namespace(
+            horizons_seconds=[1, 2, 3, 4, 5],
+            execution_latency_seconds=1,
+            model_selection_window_seconds=50,
+            additional_round_trip_cost_bps=1.0,
+            stress_cost_multiplier=1.25,
+            permutation_control_trials=2,
+            permutation_control_seed=11,
+            permutation_control_minimum_excess_lcb_bps=0.0,
+            calibration_quantiles=[0.5, 0.8],
+            min_calibration_trades=5,
+            iterations=5,
+            depth=2,
+            learning_rate=0.1,
+            l2_leaf_reg=1.0,
+            random_strength=0.0,
+            random_seed=13,
+            early_stopping_rounds=2,
+        )
+
+        def fake_experiment(**kwargs):
+            return {
+                "score_units": "synthetic_score",
+                "validation_prediction": np.ones(
+                    (len(kwargs["validation_features"]), 10)
+                ),
+                "test_prediction": np.ones((len(kwargs["test_features"]), 10)),
+                "model_diagnostics": {
+                    "fit_rows": len(kwargs["fit_features"]),
+                    "model_selection_rows": len(
+                        kwargs["model_selection_features"]
+                    ),
+                },
+            }
+
+        with mock.patch.object(
+            probe,
+            "fit_predict_experimental_architecture",
+            side_effect=fake_experiment,
+        ) as fit_experiment:
+            report = probe.run_frozen_target_architecture_comparison(
+                timestamps=timestamps,
+                features=features,
+                feature_names=[f"feature_{index}" for index in range(242)],
+                outcomes=outcomes,
+                actions=actions,
+                splits=splits,
+                source_assessment_sha256="a" * 64,
+                baseline_cache=baseline_cache,
+                args=args,
+            )
+
+        self.assertEqual(fit_experiment.call_count, 18)
+        self.assertTrue(report["fully_verifiable"])
+        self.assertEqual(report["conclusion"], "NO_TARGET_ARCHITECTURE_SIGNAL_PROVEN")
+        self.assertEqual(report["missing_architecture_splits"], [])
+        self.assertEqual(len(report["architectures"]), 4)
+        self.assertEqual(len(report["split_reports"]), 6)
+        self.assertEqual(
+            len(
+                {
+                    item["shared_partition_identity"]["identity_sha256"]
+                    for item in report["split_reports"]
+                }
+            ),
+            6,
+        )
+        self.assertFalse(report["promotion_evidence"])
+        self.assertFalse(report["promotion_eligible"])
+        self.assertFalse(report["influences_development_passed"])
+
     def test_not_ready_capture_still_writes_fail_closed_audit_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = pathlib.Path(temp_dir)

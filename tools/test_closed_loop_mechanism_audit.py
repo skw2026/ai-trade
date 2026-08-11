@@ -127,6 +127,16 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
                         "passed": True,
                         "trial_count": 7,
                     },
+                    "target_architecture_comparison": {
+                        "schema_version": "microstructure_target_architecture_comparison_v1",
+                        "fully_verifiable": True,
+                        "promotion_evidence": False,
+                        "promotion_eligible": False,
+                        "influences_development_passed": False,
+                        "diagnostic_leader_id": "joint_action_ranker",
+                        "diagnostic_leader_is_preregistered": False,
+                        "conclusion": "TARGET_ARCHITECTURE_SIGNAL_DIAGNOSTICALLY_PROVEN",
+                    },
                     "target_contract": {
                         "objective": "joint_direction_and_exit_horizon_executable_net_return",
                         "overlapping_episodes_forbidden": True,
@@ -299,6 +309,9 @@ class ClosedLoopMechanismAuditTest(unittest.TestCase):
 
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["selected_alpha_route"], "microstructure_demo")
+            self.assertNotEqual(
+                report["selected_alpha_route"], "joint_action_ranker"
+            )
             self.assertEqual(report["checks"]["target_consistency"]["status"], "pass")
             self.assertEqual(
                 report["checks"]["alpha_mechanism_probe"]["status"],
