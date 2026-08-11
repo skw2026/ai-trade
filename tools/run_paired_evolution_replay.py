@@ -51,6 +51,16 @@ DEFAULT_VALIDATION_CONFIG = (
     / "config"
     / "decision_evidence_validation.json"
 )
+REQUIRED_COMPONENTS = (
+    "data",
+    "split",
+    "cost",
+    "features",
+    "actions",
+    "baseline_policy",
+    "run_config",
+    "implementation",
+)
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -319,93 +329,233 @@ def _bind_actual_inputs(
     *,
     benchmark: Mapping[str, Any],
     runtime_config: pathlib.Path,
+    common_config: pathlib.Path,
     validation_config: pathlib.Path,
     candidate_model: pathlib.Path,
     candidate_report: pathlib.Path,
+    replay_report: pathlib.Path,
     trade_bot: pathlib.Path,
     feature_csv: pathlib.Path,
     corpus_manifest: pathlib.Path,
     feature_csv_by_symbol: Mapping[str, pathlib.Path],
     corpus_manifest_by_symbol: Mapping[str, pathlib.Path],
+    exact_plan: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     identity = benchmark.get("canonical_identity")
     if not isinstance(identity, Mapping):
         return [], ["input_binding.canonical_identity_missing"]
-    audit: list[dict[str, Any]] = []
     mismatches: list[str] = []
-    fixed_bindings = (
-        ("cost", "runtime_config", "runtime_config", runtime_config),
-        ("actions", "runtime_policy", "runtime_config", runtime_config),
-        ("run_config", "runtime_config", "runtime_config", runtime_config),
-        (
-            "run_config",
-            "decision_evidence_validation",
-            "validation_config",
-            validation_config,
-        ),
-        (
-            "baseline_policy",
-            "candidate_model",
-            "candidate_model",
-            candidate_model,
-        ),
-        (
-            "baseline_policy",
-            "candidate_report",
-            "candidate_report",
-            candidate_report,
-        ),
-        ("implementation", "trade_bot", "trade_bot", trade_bot),
-    )
-    for component, logical_name, input_name, path in fixed_bindings:
-        _audit_component_binding(
-            canonical_identity=identity,
-            component_name=component,
-            logical_name=logical_name,
-            input_name=input_name,
-            actual_path=path,
-            audit=audit,
-            mismatches=mismatches,
-        )
-
     symbols = _benchmark_symbols(benchmark)
-    features = dict(feature_csv_by_symbol)
-    corpora = dict(corpus_manifest_by_symbol)
+    features = {
+        symbol: pathlib.Path(path).resolve(strict=False)
+        for symbol, path in feature_csv_by_symbol.items()
+    }
+    corpora = {
+        symbol: pathlib.Path(path).resolve(strict=False)
+        for symbol, path in corpus_manifest_by_symbol.items()
+    }
     if len(symbols) == 1:
         symbol = next(iter(symbols))
         features.setdefault(symbol, feature_csv.resolve(strict=False))
         corpora.setdefault(symbol, corpus_manifest.resolve(strict=False))
-    extra_features = sorted(set(features) - symbols)
-    extra_corpora = sorted(set(corpora) - symbols)
-    if extra_features:
+
+    data_bindings: dict[str, tuple[str, pathlib.Path | None, str | None]] = {}
+    materialized_execution_ids: list[str] = []
+    raw_plan_blocks = exact_plan.get("blocks")
+    for block_index, block in enumerate(
+        raw_plan_blocks if isinstance(raw_plan_blocks, list) else []
+    ):
+        if not isinstance(block, Mapping):
+            mismatches.append(
+                f"input_binding.data.block[{block_index}].not_object"
+            )
+            continue
+        raw_executions = block.get("executions")
+        executions = raw_executions if isinstance(raw_executions, list) else [block]
+        for execution_index, execution in enumerate(executions):
+            if not isinstance(execution, Mapping):
+                mismatches.append(
+                    "input_binding.data."
+                    f"block[{block_index}].execution[{execution_index}].not_object"
+                )
+                continue
+            block_id = str(block.get("block_id") or "").strip()
+            symbol = str(execution.get("symbol") or "").strip().upper()
+            execution_id = str(execution.get("execution_id") or "").strip()
+            if not execution_id and block_id and symbol:
+                execution_id = f"{block_id}:{symbol}"
+            if not execution_id:
+                mismatches.append(
+                    "input_binding.data."
+                    f"block[{block_index}].execution[{execution_index}].execution_id_missing"
+                )
+                continue
+            materialized_execution_ids.append(execution_id)
+            logical_name = f"execution:{execution_id}"
+            if logical_name in data_bindings:
+                mismatches.append(
+                    f"input_binding.data.{logical_name}.actual_duplicate"
+                )
+                continue
+            replay_csv = str(execution.get("replay_csv") or "").strip()
+            data_bindings[logical_name] = (
+                "materialized_replay_csv",
+                pathlib.Path(replay_csv) if replay_csv else None,
+                symbol or None,
+            )
+
+    universe_execution_ids: list[str] = []
+    universe = identity.get("evaluation_universe")
+    raw_blocks = universe.get("blocks") if isinstance(universe, Mapping) else None
+    for block_index, block in enumerate(raw_blocks if isinstance(raw_blocks, list) else []):
+        raw_executions = block.get("executions") if isinstance(block, Mapping) else None
+        if not isinstance(raw_executions, list) or not raw_executions:
+            mismatches.append(
+                f"input_binding.data.universe.block[{block_index}].executions_missing"
+            )
+            continue
+        for execution_index, execution in enumerate(raw_executions):
+            execution_id = (
+                str(execution.get("execution_id") or "").strip()
+                if isinstance(execution, Mapping)
+                else ""
+            )
+            if not execution_id:
+                mismatches.append(
+                    "input_binding.data.universe."
+                    f"block[{block_index}].execution[{execution_index}].execution_id_missing"
+                )
+                continue
+            universe_execution_ids.append(execution_id)
+    if len(universe_execution_ids) != len(set(universe_execution_ids)):
+        mismatches.append("input_binding.data.universe.execution_ids_duplicate")
+    if collections.Counter(universe_execution_ids) != collections.Counter(
+        materialized_execution_ids
+    ):
         mismatches.append(
-            "input_binding.features.extra_symbols:" + ",".join(extra_features)
+            "input_binding.data.universe_execution_ids_mismatch:"
+            f"expected={','.join(sorted(universe_execution_ids))}:"
+            f"actual={','.join(sorted(materialized_execution_ids))}"
         )
-    if extra_corpora:
-        mismatches.append(
-            "input_binding.split.extra_symbols:" + ",".join(extra_corpora)
+
+    actual_bindings: dict[
+        str, dict[str, tuple[str, pathlib.Path | None, str | None]]
+    ] = {
+        "data": data_bindings,
+        "split": {
+            "replay_validation_report": (
+                "replay_report",
+                replay_report,
+                None,
+            ),
+            **{
+                f"corpus:{symbol}": (
+                    "corpus_manifest_by_symbol",
+                    path,
+                    symbol,
+                )
+                for symbol, path in sorted(corpora.items())
+            },
+        },
+        "cost": {
+            "replay_candidate_config": (
+                "common_derived_config",
+                common_config,
+                None,
+            ),
+            "runtime_config": ("runtime_config", runtime_config, None),
+        },
+        "features": {
+            f"feature:{symbol}": ("feature_csv_by_symbol", path, symbol)
+            for symbol, path in sorted(features.items())
+        },
+        "actions": {
+            "replay_policy": ("common_derived_config", common_config, None),
+            "runtime_policy": ("runtime_config", runtime_config, None),
+        },
+        "baseline_policy": {
+            "candidate_model": ("candidate_model", candidate_model, None),
+            "candidate_report": ("candidate_report", candidate_report, None),
+        },
+        "run_config": {
+            "decision_evidence_validation": (
+                "validation_config",
+                validation_config,
+                None,
+            ),
+            "runtime_config": ("runtime_config", runtime_config, None),
+        },
+        "implementation": {
+            "benchmark_builder": (
+                "benchmark_builder",
+                pathlib.Path(__file__).with_name("build_decision_benchmark.py"),
+                None,
+            ),
+            "paired_evolution_runner": (
+                "paired_evolution_runner",
+                pathlib.Path(__file__),
+                None,
+            ),
+            "replay_validation_runner": (
+                "replay_validation_runner",
+                pathlib.Path(__file__).with_name("run_replay_validation.py"),
+                None,
+            ),
+            "trade_bot": ("trade_bot", trade_bot, None),
+        },
+    }
+
+    audit: list[dict[str, Any]] = []
+    components = identity.get("components")
+    for component_name in REQUIRED_COMPONENTS:
+        component = (
+            components.get(component_name) if isinstance(components, Mapping) else None
         )
-    for symbol in sorted(symbols):
-        _audit_component_binding(
-            canonical_identity=identity,
-            component_name="features",
-            logical_name=f"feature:{symbol}",
-            input_name="feature_csv_by_symbol",
-            actual_path=features.get(symbol),
-            audit=audit,
-            mismatches=mismatches,
-            symbol=symbol,
+        raw_files = component.get("files") if isinstance(component, Mapping) else None
+        expected_names = [
+            str(item.get("logical_name") or "")
+            for item in (raw_files if isinstance(raw_files, list) else [])
+            if isinstance(item, Mapping)
+        ]
+        duplicate_names = sorted(
+            name
+            for name, count in collections.Counter(expected_names).items()
+            if name and count != 1
         )
-        _audit_component_binding(
-            canonical_identity=identity,
-            component_name="split",
-            logical_name=f"corpus:{symbol}",
-            input_name="corpus_manifest_by_symbol",
-            actual_path=corpora.get(symbol),
-            audit=audit,
-            mismatches=mismatches,
-            symbol=symbol,
-        )
+        if duplicate_names:
+            mismatches.append(
+                f"input_binding.{component_name}.duplicate_logical_names:"
+                + ",".join(duplicate_names)
+            )
+        expected_name_set = {name for name in expected_names if name}
+        actual_component = actual_bindings[component_name]
+        actual_name_set = set(actual_component)
+        missing_names = sorted(expected_name_set - actual_name_set)
+        extra_names = sorted(actual_name_set - expected_name_set)
+        if missing_names:
+            mismatches.append(
+                f"input_binding.{component_name}.missing_logical_names:"
+                + ",".join(missing_names)
+            )
+        if extra_names:
+            mismatches.append(
+                f"input_binding.{component_name}.extra_logical_names:"
+                + ",".join(extra_names)
+            )
+        for logical_name in sorted(expected_name_set | actual_name_set):
+            input_name, actual_path, symbol = actual_component.get(
+                logical_name, ("missing_actual_input", None, None)
+            )
+            _audit_component_binding(
+                canonical_identity=identity,
+                component_name=component_name,
+                logical_name=logical_name,
+                input_name=input_name,
+                actual_path=actual_path,
+                audit=audit,
+                mismatches=mismatches,
+                symbol=symbol,
+            )
     return audit, mismatches
 
 
@@ -1402,6 +1552,7 @@ def run_paired_evolution_replay(
     runtime_config: pathlib.Path,
     candidate_model: pathlib.Path,
     candidate_report: pathlib.Path,
+    replay_report: pathlib.Path,
     feature_csv: pathlib.Path,
     corpus_manifest: pathlib.Path,
     trade_bot: pathlib.Path,
@@ -1416,6 +1567,7 @@ def run_paired_evolution_replay(
         "runtime_config": pathlib.Path(runtime_config).resolve(strict=False),
         "candidate_model": pathlib.Path(candidate_model).resolve(strict=False),
         "candidate_report": pathlib.Path(candidate_report).resolve(strict=False),
+        "replay_report": pathlib.Path(replay_report).resolve(strict=False),
         "feature_csv": pathlib.Path(feature_csv).resolve(strict=False),
         "corpus_manifest": pathlib.Path(corpus_manifest).resolve(strict=False),
         "trade_bot": pathlib.Path(trade_bot).resolve(strict=False),
@@ -1482,6 +1634,7 @@ def run_paired_evolution_replay(
         "trade_bot": _identity(paths["trade_bot"]),
         "candidate_model": _identity(paths["candidate_model"]),
         "candidate_report": _identity(paths["candidate_report"]),
+        "replay_report": _identity(paths["replay_report"]),
         "benchmark_report": _identity(paths["benchmark_report"]),
         "validation_config": _identity(paths["validation_config"]),
         "benchmark_verification": {
@@ -1529,6 +1682,7 @@ def run_paired_evolution_replay(
         "runtime_config",
         "candidate_model",
         "candidate_report",
+        "replay_report",
         "feature_csv",
         "corpus_manifest",
         "trade_bot",
@@ -1546,6 +1700,7 @@ def run_paired_evolution_replay(
             mismatches.append(f"arm.{name}.output_dir_preexisting")
 
     benchmark: dict[str, Any] = {}
+    benchmark_verified = False
     if paths["benchmark_report"].is_file():
         try:
             benchmark = _read_json_object(paths["benchmark_report"])
@@ -1572,26 +1727,13 @@ def run_paired_evolution_replay(
                         for error in verification.get("errors", [])
                     )
                 else:
+                    benchmark_verified = True
                     manifest["benchmark_id"] = str(
                         verification.get("benchmark_id") or ""
                     )
-                    binding_audit, binding_mismatches = _bind_actual_inputs(
-                        benchmark=benchmark,
-                        runtime_config=paths["runtime_config"],
-                        validation_config=paths["validation_config"],
-                        candidate_model=paths["candidate_model"],
-                        candidate_report=paths["candidate_report"],
-                        trade_bot=paths["trade_bot"],
-                        feature_csv=paths["feature_csv"],
-                        corpus_manifest=paths["corpus_manifest"],
-                        feature_csv_by_symbol=feature_paths_by_symbol,
-                        corpus_manifest_by_symbol=corpus_paths_by_symbol,
-                    )
-                    manifest["input_binding_audit"] = binding_audit
-                    mismatches.extend(binding_mismatches)
 
     arm_policies: dict[str, dict[str, Any]] = {}
-    if paths["runtime_config"].is_file():
+    if benchmark_verified and paths["runtime_config"].is_file():
         try:
             runtime_text = paths["runtime_config"].read_text(encoding="utf-8")
             runtime_sha = file_sha256(paths["runtime_config"])
@@ -1684,7 +1826,7 @@ def run_paired_evolution_replay(
         "blocks": [],
     }
     if (
-        benchmark
+        benchmark_verified
         and (paths["feature_csv"].is_file() or bool(feature_paths_by_symbol))
         and (paths["corpus_manifest"].is_file() or bool(corpus_paths_by_symbol))
     ):
@@ -1714,6 +1856,25 @@ def run_paired_evolution_replay(
             }
         except (OSError, ValueError, TypeError) as exc:
             mismatches.append(f"exact_block_plan_derivation_failed:{type(exc).__name__}:{exc}")
+
+    if benchmark_verified:
+        binding_audit, binding_mismatches = _bind_actual_inputs(
+            benchmark=benchmark,
+            runtime_config=paths["runtime_config"],
+            common_config=common_config_path,
+            validation_config=paths["validation_config"],
+            candidate_model=paths["candidate_model"],
+            candidate_report=paths["candidate_report"],
+            replay_report=paths["replay_report"],
+            trade_bot=paths["trade_bot"],
+            feature_csv=paths["feature_csv"],
+            corpus_manifest=paths["corpus_manifest"],
+            feature_csv_by_symbol=feature_paths_by_symbol,
+            corpus_manifest_by_symbol=corpus_paths_by_symbol,
+            exact_plan=exact_plan,
+        )
+        manifest["input_binding_audit"] = binding_audit
+        mismatches.extend(binding_mismatches)
 
     manifest["mismatches"] = list(dict.fromkeys(mismatches))
     _atomic_write_json(manifest_path, manifest)
@@ -1778,6 +1939,7 @@ def run_paired_evolution_replay(
         ("trade_bot", manifest["trade_bot"]),
         ("candidate_model", manifest["candidate_model"]),
         ("candidate_report", manifest["candidate_report"]),
+        ("replay_report", manifest["replay_report"]),
         ("benchmark_report", manifest["benchmark_report"]),
         ("validation_config", manifest["validation_config"]),
         ("common_derived_config", manifest["common_derived_config"]),
@@ -1836,6 +1998,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--runtime-config", required=True)
     parser.add_argument("--candidate-model", required=True)
     parser.add_argument("--candidate-report", required=True)
+    parser.add_argument("--replay-report", required=True)
     parser.add_argument("--feature-csv", default="")
     parser.add_argument("--corpus-manifest", default="")
     parser.add_argument(
@@ -1863,6 +2026,7 @@ def main() -> int:
         runtime_config=pathlib.Path(args.runtime_config),
         candidate_model=pathlib.Path(args.candidate_model),
         candidate_report=pathlib.Path(args.candidate_report),
+        replay_report=pathlib.Path(args.replay_report),
         feature_csv=pathlib.Path(args.feature_csv),
         corpus_manifest=pathlib.Path(args.corpus_manifest),
         feature_csv_by_symbol=parse_symbol_path_mapping(

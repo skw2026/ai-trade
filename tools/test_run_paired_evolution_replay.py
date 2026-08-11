@@ -132,9 +132,45 @@ universe:
         self.validation_policy = json.loads(
             self.validation_config.read_text(encoding="utf-8")
         )
+        self.benchmark_replay_config = self.root / "benchmark-replay.yaml"
+        self.benchmark_replay_config.write_text(
+            PAIR.derive_candidate_config(
+                self.runtime_config.read_text(encoding="utf-8"),
+                model_path=str(self.candidate_model.resolve()),
+                report_path=str(self.candidate_report.resolve()),
+                source_runtime_config_sha256=self.sha256(self.runtime_config),
+            ),
+            encoding="utf-8",
+        )
+        self.replay_report = self.root / "replay-validation-identity.json"
+        self.replay_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": "decision_evidence_replay_split_identity_v1",
+                    "status": "VERIFIED",
+                    "target_bucket": "trend",
+                    "base_interval_ms": 300_000,
+                    "base_interval_ms_by_symbol": {"BTCUSDT": 300_000},
+                    "candidate_identity": {
+                        "model_sha256": self.sha256(self.candidate_model),
+                        "integrator_report_sha256": self.sha256(
+                            self.candidate_report
+                        ),
+                    },
+                    "frozen_corpus_binding": {
+                        "schema_version": "replay_frozen_corpus_binding_v1",
+                        "per_symbol": {},
+                    },
+                    "runs": [],
+                },
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
 
         feature_rows = REPLAY.load_feature_rows(self.feature_csv)
         blocks = []
+        self.data_files = []
         expected_dir = self.root / "expected"
         for number, (start_index, end_index) in enumerate(((0, 1), (2, 3)), start=1):
             segment = REPLAY.ReplaySegment(
@@ -153,6 +189,8 @@ universe:
                 300_000,
                 warmup_context_bars=0,
             )
+            execution_id = f"block-{number:02d}:BTCUSDT"
+            self.data_files.append((f"execution:{execution_id}", replay_csv))
             blocks.append(
                 {
                     "block_id": f"block-{number:02d}",
@@ -162,6 +200,14 @@ universe:
                     "cells": [
                         {"symbol": "BTCUSDT", "entry_regime": "trend"}
                     ],
+                    "executions": [
+                        {
+                            "execution_id": execution_id,
+                            "symbol": "BTCUSDT",
+                            "planned_entry_regimes": ["trend"],
+                            "event_sha256": self.sha256(replay_csv),
+                        }
+                    ],
                 }
             )
         canonical_identity = {
@@ -169,6 +215,7 @@ universe:
             "components": self.canonical_components(
                 {"BTCUSDT": self.feature_csv},
                 {"BTCUSDT": self.corpus_manifest},
+                self.data_files,
             ),
             "evaluation_universe": {"blocks": blocks},
             "validation_policy": {
@@ -219,54 +266,70 @@ universe:
     def sha256(path: pathlib.Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
-    def canonical_components(self, features, corpora):
-        def component(logical_id, entries):
+    def canonical_components(self, features, corpora, data_files):
+        def component(name, entries):
+            files = [
+                {"logical_name": logical_name, "sha256": self.sha256(path)}
+                for logical_name, path in sorted(entries)
+            ]
             return {
-                "logical_id": logical_id,
-                "files": [
-                    {"logical_name": name, "sha256": self.sha256(path)}
-                    for name, path in entries
-                ],
+                "logical_id": f"{name}:{PAIR.canonical_sha256(files)}",
+                "files": files,
             }
 
         return {
-            "data": component("data-v1", [("events", self.feature_csv)]),
+            "data": component("data", data_files),
             "split": component(
-                "split-v1",
-                [
+                "split",
+                [("replay_validation_report", self.replay_report)]
+                + [
                     (f"corpus:{symbol}", path)
                     for symbol, path in sorted(corpora.items())
                 ],
             ),
             "cost": component(
-                "cost-v1", [("runtime_config", self.runtime_config)]
+                "cost",
+                [
+                    ("replay_candidate_config", self.benchmark_replay_config),
+                    ("runtime_config", self.runtime_config),
+                ],
             ),
             "features": component(
-                "features-v1",
+                "features",
                 [
                     (f"feature:{symbol}", path)
                     for symbol, path in sorted(features.items())
                 ],
             ),
             "actions": component(
-                "actions-v1", [("runtime_policy", self.runtime_config)]
+                "actions",
+                [
+                    ("replay_policy", self.benchmark_replay_config),
+                    ("runtime_policy", self.runtime_config),
+                ],
             ),
             "baseline_policy": component(
-                "baseline-v1",
+                "baseline_policy",
                 [
                     ("candidate_model", self.candidate_model),
                     ("candidate_report", self.candidate_report),
                 ],
             ),
             "run_config": component(
-                "run-config-v1",
+                "run_config",
                 [
                     ("decision_evidence_validation", self.validation_config),
                     ("runtime_config", self.runtime_config),
                 ],
             ),
             "implementation": component(
-                "implementation-v1", [("trade_bot", self.trade_bot)]
+                "implementation",
+                [
+                    ("benchmark_builder", TOOLS_DIR / "build_decision_benchmark.py"),
+                    ("paired_evolution_runner", pathlib.Path(PAIR.__file__)),
+                    ("replay_validation_runner", TOOLS_DIR / "run_replay_validation.py"),
+                    ("trade_bot", self.trade_bot),
+                ],
             ),
         }
 
@@ -276,6 +339,7 @@ universe:
                 runtime_config=self.runtime_config,
                 candidate_model=self.candidate_model,
                 candidate_report=self.candidate_report,
+                replay_report=self.replay_report,
                 feature_csv=self.feature_csv,
                 corpus_manifest=self.corpus_manifest,
                 trade_bot=self.trade_bot,
@@ -283,6 +347,16 @@ universe:
                 benchmark_report=self.benchmark_report,
                 validation_config=self.validation_config,
             )
+
+    def mutate_benchmark_identity(self, mutation) -> None:
+        benchmark = json.loads(self.benchmark_report.read_text(encoding="utf-8"))
+        mutation(benchmark["canonical_identity"])
+        benchmark["benchmark_id"] = PAIR.canonical_sha256(
+            benchmark["canonical_identity"]
+        )
+        self.benchmark_report.write_text(
+            json.dumps(benchmark, sort_keys=True), encoding="utf-8"
+        )
 
     def fake_runner(self, mutate=None, return_codes=None):
         calls = []
@@ -511,6 +585,35 @@ universe:
             "exact_block_plan",
         }
         self.assertTrue(required_identity_keys.issubset(manifest))
+
+    def test_builder_component_shape_is_fully_bound_before_arms(self):
+        manifest = self.run_pair(self.fake_runner())
+
+        self.assertEqual(manifest["status"], "VERIFIED", manifest["mismatches"])
+        bound = {
+            (row["component"], row["logical_name"])
+            for row in manifest["input_binding_audit"]
+        }
+        expected = {
+            (component, item["logical_name"])
+            for component, payload in json.loads(
+                self.benchmark_report.read_text(encoding="utf-8")
+            )["canonical_identity"]["components"].items()
+            for item in payload["files"]
+        }
+        self.assertEqual(bound, expected)
+        self.assertTrue(
+            all(row["status"] == "VERIFIED" for row in manifest["input_binding_audit"])
+        )
+        self.assertEqual(
+            {
+                row["component"]
+                for row in manifest["input_binding_audit"]
+                if row["logical_name"] == "runtime_config"
+                or row["logical_name"] == "runtime_policy"
+            },
+            {"cost", "actions", "run_config"},
+        )
 
     def test_both_arms_consume_same_exact_plan_and_all_blocks_once(self):
         fake_run = self.fake_runner()
@@ -801,6 +904,7 @@ universe:
             "runtime": self.runtime_config,
             "candidate_model": self.candidate_model,
             "candidate_report": self.candidate_report,
+            "replay_report": self.replay_report,
             "trade_bot": self.trade_bot,
             "feature:BTCUSDT": self.feature_csv,
             "corpus:BTCUSDT": self.corpus_manifest,
@@ -822,6 +926,7 @@ universe:
                         runtime_config=self.runtime_config,
                         candidate_model=self.candidate_model,
                         candidate_report=self.candidate_report,
+                        replay_report=self.replay_report,
                         feature_csv=self.feature_csv,
                         corpus_manifest=self.corpus_manifest,
                         trade_bot=self.trade_bot,
@@ -845,9 +950,6 @@ universe:
                 self.assertTrue(
                     all(PAIR._valid_sha256(row["expected_sha256"]) for row in failed)
                 )
-                self.assertTrue(
-                    all(PAIR._valid_sha256(row["actual_sha256"]) for row in failed)
-                )
 
         drifted_validation = self.root / "decision-validation-drifted.json"
         policy = copy.deepcopy(self.validation_policy)
@@ -858,6 +960,7 @@ universe:
             runtime_config=self.runtime_config,
             candidate_model=self.candidate_model,
             candidate_report=self.candidate_report,
+            replay_report=self.replay_report,
             feature_csv=self.feature_csv,
             corpus_manifest=self.corpus_manifest,
             trade_bot=self.trade_bot,
@@ -869,6 +972,125 @@ universe:
         self.assertEqual(manifest["status"], "UNVERIFIABLE")
         self.assertEqual(calls, [])
         self.assertFalse(manifest["benchmark_verification"]["verified"])
+
+    def test_complete_component_binding_rejects_all_unbound_builder_files(self):
+        original = self.benchmark_report.read_text(encoding="utf-8")
+
+        def file_entry(identity, component, logical_name):
+            return next(
+                item
+                for item in identity["components"][component]["files"]
+                if item["logical_name"] == logical_name
+            )
+
+        cases = {
+            "replay-config": lambda identity: file_entry(
+                identity, "cost", "replay_candidate_config"
+            ).update({"sha256": "0" * 64}),
+            "replay-report": lambda identity: file_entry(
+                identity, "split", "replay_validation_report"
+            ).update({"sha256": "0" * 64}),
+            "data-execution": lambda identity: identity["components"]["data"][
+                "files"
+            ][0].update({"sha256": "0" * 64}),
+            "implementation": lambda identity: file_entry(
+                identity, "implementation", "paired_evolution_runner"
+            ).update({"sha256": "0" * 64}),
+            "missing-logical-name": lambda identity: identity["components"][
+                "implementation"
+            ]["files"].pop(0),
+            "extra-logical-name": lambda identity: identity["components"][
+                "implementation"
+            ]["files"].append(
+                {"logical_name": "unexpected_runner", "sha256": "1" * 64}
+            ),
+        }
+        for name, mutation in cases.items():
+            with self.subTest(name=name):
+                self.benchmark_report.write_text(original, encoding="utf-8")
+                self.mutate_benchmark_identity(mutation)
+                calls = []
+                manifest = PAIR.run_paired_evolution_replay(
+                    runtime_config=self.runtime_config,
+                    candidate_model=self.candidate_model,
+                    candidate_report=self.candidate_report,
+                    replay_report=self.replay_report,
+                    feature_csv=self.feature_csv,
+                    corpus_manifest=self.corpus_manifest,
+                    trade_bot=self.trade_bot,
+                    output_dir=self.root / f"paired-component-{name}",
+                    benchmark_report=self.benchmark_report,
+                    validation_config=self.validation_config,
+                    process_runner=lambda *args, **kwargs: calls.append(
+                        (args, kwargs)
+                    ),
+                )
+                self.assertEqual(calls, [])
+                self.assertEqual(manifest["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any(
+                        mismatch.startswith("input_binding.")
+                        or mismatch.startswith("benchmark_verification:")
+                        for mismatch in manifest["mismatches"]
+                    ),
+                    manifest["mismatches"],
+                )
+        self.benchmark_report.write_text(original, encoding="utf-8")
+
+    def test_feature_and_corpus_symbol_sets_reject_extra_actual_inputs(self):
+        for kind in ("feature", "corpus"):
+            with self.subTest(kind=kind):
+                extra = self.root / f"extra-{kind}"
+                extra.write_bytes(
+                    self.feature_csv.read_bytes()
+                    if kind == "feature"
+                    else self.corpus_manifest.read_bytes()
+                )
+                calls = []
+                manifest = PAIR.run_paired_evolution_replay(
+                    runtime_config=self.runtime_config,
+                    candidate_model=self.candidate_model,
+                    candidate_report=self.candidate_report,
+                    replay_report=self.replay_report,
+                    feature_csv=self.feature_csv,
+                    corpus_manifest=self.corpus_manifest,
+                    feature_csv_by_symbol={"ETHUSDT": extra}
+                    if kind == "feature"
+                    else None,
+                    corpus_manifest_by_symbol={"ETHUSDT": extra}
+                    if kind == "corpus"
+                    else None,
+                    trade_bot=self.trade_bot,
+                    output_dir=self.root / f"paired-extra-{kind}",
+                    benchmark_report=self.benchmark_report,
+                    validation_config=self.validation_config,
+                    process_runner=lambda *args, **kwargs: calls.append(
+                        (args, kwargs)
+                    ),
+                )
+                self.assertEqual(calls, [])
+                self.assertEqual(manifest["status"], "UNVERIFIABLE")
+                self.assertTrue(
+                    any("extra_logical_names" in item for item in manifest["mismatches"]),
+                    manifest["mismatches"],
+                )
+
+    def test_universe_execution_ids_must_match_materialized_data_bindings(self):
+        def mutate(identity):
+            identity["evaluation_universe"]["blocks"][0]["executions"][0][
+                "execution_id"
+            ] = "block-01:ETHUSDT"
+
+        self.mutate_benchmark_identity(mutate)
+        fake_run = self.fake_runner()
+        manifest = self.run_pair(fake_run)
+
+        self.assertEqual(fake_run.calls, [])
+        self.assertEqual(manifest["status"], "UNVERIFIABLE")
+        self.assertTrue(
+            any("execution_id" in item for item in manifest["mismatches"]),
+            manifest["mismatches"],
+        )
 
     def test_verified_two_block_two_symbol_benchmark_runs_all_executions(self):
         eth_feature_csv = self.root / "features-ETHUSDT.csv"
@@ -934,17 +1156,31 @@ universe:
                     {
                         "execution_id": f"{block_id}:{symbol}",
                         "symbol": symbol,
+                        "planned_entry_regimes": ["range", "trend"]
+                        if symbol == "BTCUSDT"
+                        else ["defensive"],
                         "path": str(execution_path.relative_to(self.root)),
                         "event_sha256": self.sha256(execution_path),
                     }
                 )
+            block_event_sha = COMMON._canonical_event_bundle_sha256(
+                block_id,
+                [
+                    {
+                        "execution_id": item["execution_id"],
+                        "symbol": item["symbol"],
+                        "event_sha256": item["event_sha256"],
+                    }
+                    for item in executions
+                ],
+            )
             blocks.append(
                 {
                     "block_id": block_id,
                     "path": str(composite_path.relative_to(self.root)),
                     "start_timestamp_ms": feature_rows["BTCUSDT"][start_index].timestamp,
                     "end_timestamp_ms": feature_rows["BTCUSDT"][end_index].timestamp,
-                    "event_sha256": self.sha256(composite_path),
+                    "event_sha256": block_event_sha,
                     "cells": [
                         {"symbol": "BTCUSDT", "entry_regime": "trend"},
                         {"symbol": "BTCUSDT", "entry_regime": "range"},
@@ -962,9 +1198,19 @@ universe:
                 block["cells"],
                 key=lambda item: (item["symbol"], item["entry_regime"]),
             )
+        multi_data_files = [
+            (
+                f"execution:{execution['execution_id']}",
+                self.root / execution["path"],
+            )
+            for block in blocks
+            for execution in block["executions"]
+        ]
         canonical_identity = {
             "schema_version": COMMON.BENCHMARK_SCHEMA_VERSION,
-            "components": self.canonical_components(features, source_corpora),
+            "components": self.canonical_components(
+                features, source_corpora, multi_data_files
+            ),
             "evaluation_universe": {"blocks": identity_blocks},
             "validation_policy": {
                 "policy": self.validation_policy,
@@ -1042,6 +1288,7 @@ universe:
             runtime_config=self.runtime_config,
             candidate_model=self.candidate_model,
             candidate_report=self.candidate_report,
+            replay_report=self.replay_report,
             feature_csv=self.feature_csv,
             corpus_manifest=self.corpus_manifest,
             feature_csv_by_symbol=features,
