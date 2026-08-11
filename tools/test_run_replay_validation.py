@@ -27,6 +27,459 @@ REPLAY = load_replay_module()
 
 
 class RunReplayValidationTest(unittest.TestCase):
+    @staticmethod
+    def _write_exact_replay_csv(
+        path: pathlib.Path,
+        *,
+        symbol: str,
+        start_timestamp_ms: int,
+    ) -> dict:
+        rows = [
+            {
+                "timestamp": start_timestamp_ms + index * 300_000,
+                "symbol": symbol,
+                "price": 100.0 + index,
+                "volume": 10.0,
+                "interval_ms": 300_000,
+                "funding_rate_per_interval": 0.0,
+                "execution_enabled": 1,
+            }
+            for index in range(2)
+        ]
+        with path.open("w", encoding="utf-8", newline="") as fp:
+            writer = csv.DictWriter(fp, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+        event_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+        segment = REPLAY.ReplaySegment(
+            start_index=0,
+            end_index=1,
+            start_timestamp=rows[0]["timestamp"],
+            end_timestamp=rows[-1]["timestamp"],
+            bars=2,
+        )
+        identity = REPLAY.replay_segment_identity(
+            symbol=symbol,
+            target_bucket="trend",
+            base_interval_ms=300_000,
+            segment=segment,
+            replay_csv_sha256=event_sha256,
+        )
+        return {
+            "symbol": symbol,
+            "start_timestamp_ms": segment.start_timestamp,
+            "end_timestamp_ms": segment.end_timestamp,
+            "event_sha256": event_sha256,
+            "segment_identity_sha256": identity["sha256"],
+            "replay_csv": path.name,
+        }
+
+    @staticmethod
+    def _write_exact_plan(path: pathlib.Path, blocks: list[dict]) -> None:
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "exact_replay_block_plan_v1",
+                    "benchmark_id": "c" * 64,
+                    "target_bucket": "trend",
+                    "blocks": blocks,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _exact_main_argv(
+        *,
+        plan: pathlib.Path,
+        output_dir: pathlib.Path,
+        extra: list[str] | None = None,
+    ) -> list[str]:
+        root = pathlib.Path(__file__).resolve().parent.parent
+        return [
+            "run_replay_validation.py",
+            "--exact-block-plan",
+            str(plan),
+            "--base_config",
+            str(root / "config" / "bybit.replay.assess.maker_first.yaml"),
+            "--trade_bot",
+            str(pathlib.Path(__file__)),
+            "--output_dir",
+            str(output_dir),
+            "--assess_stage",
+            "DEPLOY",
+            "--min_runtime_status",
+            "0",
+            *(extra or []),
+        ]
+
+    def test_exact_block_plan_is_read_only_ordered_and_runs_every_block_once(self):
+        episode_by_segment = {}
+        trade_commands = []
+
+        def fake_trade(command, output_path):
+            trade_commands.append(command)
+            output_path.write_text("runtime\n", encoding="utf-8")
+            return 0
+
+        def fake_assess(command, check=False):
+            self.assertFalse(check)
+            segment_sha = command[
+                command.index("--segment-identity-sha256") + 1
+            ]
+            evidence = {
+                "schema_version": "episode_execution_evidence_v1",
+                "execution_path_complete": True,
+                "episodes": [{"evaluator_episode_id": segment_sha}],
+            }
+            episode_by_segment[segment_sha] = evidence
+            output = pathlib.Path(command[command.index("--json_out") + 1])
+            output.write_text(
+                json.dumps(
+                    {
+                        "verdict": "PASS",
+                        "episode_execution_evidence": evidence,
+                        "metrics": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=0)
+
+        forbidden = (
+            "find_segments",
+            "quantile",
+            "derive_regime_thresholds",
+            "load_feature_rows",
+            "rank_replay_segments",
+            "select_replay_segments",
+            "write_corpus_manifest",
+            "claim_final_holdouts",
+            "has_met_replay_coverage_targets",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            blocks = []
+            for block_id, symbol, start in (
+                ("block-02", "ETHUSDT", 1_700_100_000_000),
+                ("block-01", "BTCUSDT", 1_700_000_000_000),
+            ):
+                csv_path = tmp / f"{block_id}.csv"
+                block = self._write_exact_replay_csv(
+                    csv_path,
+                    symbol=symbol,
+                    start_timestamp_ms=start,
+                )
+                blocks.append({"block_id": block_id, **block})
+            plan_path = tmp / "exact_plan.json"
+            self._write_exact_plan(plan_path, blocks)
+            plan_before = plan_path.read_bytes()
+            csv_before = {
+                block["block_id"]: (tmp / block["replay_csv"]).read_bytes()
+                for block in blocks
+            }
+            output_dir = tmp / "output"
+            patches = [
+                mock.patch.object(
+                    REPLAY,
+                    name,
+                    side_effect=AssertionError(f"exact mode called {name}"),
+                )
+                for name in forbidden
+            ]
+            with mock.patch.object(
+                REPLAY, "run_command", side_effect=fake_trade
+            ), mock.patch.object(
+                REPLAY.subprocess, "run", side_effect=fake_assess
+            ), mock.patch.object(sys, "argv", self._exact_main_argv(
+                plan=plan_path,
+                output_dir=output_dir,
+            )):
+                for patcher in patches:
+                    patcher.start()
+                try:
+                    return_code = REPLAY.main()
+                finally:
+                    for patcher in reversed(patches):
+                        patcher.stop()
+
+            report = json.loads(
+                (output_dir / "replay_validation_report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            plan_after = plan_path.read_bytes()
+            csv_after = {
+                block["block_id"]: (tmp / block["replay_csv"]).read_bytes()
+                for block in blocks
+            }
+
+        self.assertEqual(return_code, 0)
+        self.assertEqual(report["schema_version"], "exact_replay_block_audit_v1")
+        self.assertEqual(report["status"], "VERIFIED")
+        self.assertTrue(report["selection_bypassed"])
+        self.assertTrue(report["exact_block_plan"]["read_only"])
+        self.assertEqual(report["planned_block_count"], 2)
+        self.assertEqual(report["executed_block_count"], 2)
+        self.assertEqual(
+            [item["block_id"] for item in report["blocks"]],
+            ["block-02", "block-01"],
+        )
+        self.assertEqual(len(trade_commands), 2)
+        self.assertEqual(
+            [item["command"] for item in report["blocks"]],
+            trade_commands,
+        )
+        for planned, audit in zip(blocks, report["blocks"]):
+            self.assertEqual(audit["execution_attempt_count"], 1)
+            self.assertEqual(audit["trade_bot_exit_code"], 0)
+            self.assertEqual(audit["assess_exit_code"], 0)
+            self.assertEqual(
+                audit["actual_event_sha256"], planned["event_sha256"]
+            )
+            self.assertEqual(
+                audit["actual_segment_identity_sha256"],
+                planned["segment_identity_sha256"],
+            )
+            self.assertEqual(
+                audit["episode_execution_evidence"],
+                episode_by_segment[planned["segment_identity_sha256"]],
+            )
+        self.assertEqual(plan_before, plan_after)
+        for block in blocks:
+            self.assertEqual(
+                csv_before[block["block_id"]],
+                csv_after[block["block_id"]],
+            )
+
+    def test_exact_block_plan_preflight_failures_still_emit_audit(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            replay_csv = tmp / "block.csv"
+            valid_block = {
+                "block_id": "block-01",
+                **self._write_exact_replay_csv(
+                    replay_csv,
+                    symbol="BTCUSDT",
+                    start_timestamp_ms=1_700_000_000_000,
+                ),
+            }
+            cases = {
+                "missing": [{key: value for key, value in valid_block.items() if key != "symbol"}],
+                "duplicate": [valid_block, dict(valid_block)],
+                "event_drift": [{**valid_block, "event_sha256": "0" * 64}],
+                "interval_mismatch": [
+                    {
+                        **valid_block,
+                        "end_timestamp_ms": valid_block["end_timestamp_ms"] + 1,
+                    }
+                ],
+                "identity_mismatch": [
+                    {**valid_block, "segment_identity_sha256": "f" * 64}
+                ],
+            }
+            for name, blocks in cases.items():
+                with self.subTest(name=name):
+                    plan_path = tmp / f"{name}.json"
+                    self._write_exact_plan(plan_path, blocks)
+                    output_dir = tmp / f"output-{name}"
+                    with mock.patch.object(
+                        REPLAY,
+                        "run_command",
+                        side_effect=AssertionError("invalid plan executed"),
+                    ), mock.patch.object(
+                        sys,
+                        "argv",
+                        self._exact_main_argv(
+                            plan=plan_path,
+                            output_dir=output_dir,
+                        ),
+                    ):
+                        return_code = REPLAY.main()
+                    report = json.loads(
+                        (output_dir / "replay_validation_report.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    self.assertEqual(return_code, 2)
+                    self.assertEqual(report["status"], "UNVERIFIABLE")
+                    self.assertEqual(report["executed_block_count"], 0)
+                    self.assertTrue(report["validation_errors"])
+                    self.assertEqual(len(report["blocks"]), len(blocks))
+
+    def test_exact_block_execution_failure_still_emits_command_and_evidence(self):
+        def fake_trade(command, output_path):
+            output_path.write_text("runtime failed\n", encoding="utf-8")
+            return 9
+
+        def fake_assess(command, check=False):
+            self.assertFalse(check)
+            output = pathlib.Path(command[command.index("--json_out") + 1])
+            output.write_text(
+                json.dumps(
+                    {
+                        "verdict": "FAIL",
+                        "episode_execution_evidence": {
+                            "schema_version": "episode_execution_evidence_v1",
+                            "execution_path_complete": False,
+                            "episodes": [],
+                        },
+                        "metrics": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=1)
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            replay_csv = tmp / "block.csv"
+            block = {
+                "block_id": "block-01",
+                **self._write_exact_replay_csv(
+                    replay_csv,
+                    symbol="BTCUSDT",
+                    start_timestamp_ms=1_700_000_000_000,
+                ),
+            }
+            plan_path = tmp / "plan.json"
+            self._write_exact_plan(plan_path, [block])
+            output_dir = tmp / "output"
+            with mock.patch.object(
+                REPLAY, "run_command", side_effect=fake_trade
+            ), mock.patch.object(
+                REPLAY.subprocess, "run", side_effect=fake_assess
+            ), mock.patch.object(
+                sys,
+                "argv",
+                self._exact_main_argv(
+                    plan=plan_path,
+                    output_dir=output_dir,
+                ),
+            ):
+                return_code = REPLAY.main()
+            report = json.loads(
+                (output_dir / "replay_validation_report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(return_code, 2)
+        self.assertEqual(report["status"], "UNVERIFIABLE")
+        self.assertEqual(report["executed_block_count"], 1)
+        audit = report["blocks"][0]
+        self.assertTrue(audit["command"])
+        self.assertEqual(audit["trade_bot_exit_code"], 9)
+        self.assertEqual(audit["execution_attempt_count"], 1)
+        self.assertEqual(audit["assess_exit_code"], 1)
+        self.assertEqual(
+            audit["episode_execution_evidence"]["schema_version"],
+            "episode_execution_evidence_v1",
+        )
+        self.assertIn("trade_bot_exit_nonzero", audit["errors"])
+        self.assertIn("assess_exit_nonzero", audit["errors"])
+
+    def test_exact_block_plan_rejects_selection_and_holdout_arguments_without_io(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = pathlib.Path(td)
+            replay_csv = tmp / "block.csv"
+            block = {
+                "block_id": "block-01",
+                **self._write_exact_replay_csv(
+                    replay_csv,
+                    symbol="BTCUSDT",
+                    start_timestamp_ms=1_700_000_000_000,
+                ),
+            }
+            plan_path = tmp / "plan.json"
+            self._write_exact_plan(plan_path, [block])
+            output_dir = tmp / "output"
+            forbidden_paths = {
+                "selection": tmp / "selection.json",
+                "selection_feature": tmp / "selection.csv",
+                "selection_feature_map": tmp / "selection-map.csv",
+                "feature_map": tmp / "feature-map.csv",
+                "holdout": tmp / "holdout.jsonl",
+                "corpus": tmp / "corpus.json",
+            }
+            extra = [
+                "--feature_csv_by_symbol",
+                f"BTCUSDT={forbidden_paths['feature_map']}",
+                "--selection_feature_csv",
+                str(forbidden_paths["selection_feature"]),
+                "--selection_feature_csv_by_symbol",
+                f"BTCUSDT={forbidden_paths['selection_feature_map']}",
+                "--prevalidated_selection_report",
+                str(forbidden_paths["selection"]),
+                "--require_candidate_identity",
+                "--holdout_ledger",
+                str(forbidden_paths["holdout"]),
+                "--experiment_id",
+                "experiment-1",
+                "--corpus_manifest",
+                str(forbidden_paths["corpus"]),
+            ]
+            with mock.patch.object(
+                REPLAY,
+                "run_command",
+                side_effect=AssertionError("conflicting exact plan executed"),
+            ), mock.patch.object(
+                REPLAY,
+                "parse_feature_csv_by_symbol",
+                side_effect=AssertionError("exact mode parsed feature mapping"),
+            ), mock.patch.object(
+                REPLAY,
+                "validate_prevalidated_selection_report",
+                side_effect=AssertionError("exact mode read selection report"),
+            ), mock.patch.object(
+                REPLAY,
+                "load_corpus_manifest",
+                side_effect=AssertionError("exact mode read corpus manifest"),
+            ), mock.patch.object(
+                REPLAY,
+                "write_corpus_manifest",
+                side_effect=AssertionError("exact mode wrote corpus manifest"),
+            ), mock.patch.object(
+                REPLAY,
+                "claim_final_holdouts",
+                side_effect=AssertionError("exact mode touched holdout ledger"),
+            ), mock.patch.object(
+                sys,
+                "argv",
+                self._exact_main_argv(
+                    plan=plan_path,
+                    output_dir=output_dir,
+                    extra=extra,
+                ),
+            ):
+                return_code = REPLAY.main()
+            report = json.loads(
+                (output_dir / "replay_validation_report.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            forbidden_path_exists = {
+                name: path.exists() for name, path in forbidden_paths.items()
+            }
+            selection_manifest_exists = (
+                output_dir / "selection_candidate_manifest.json"
+            ).exists()
+            optimization_report_exists = (
+                output_dir / "replay_optimization_report.json"
+            ).exists()
+
+        self.assertEqual(return_code, 2)
+        self.assertEqual(report["status"], "UNVERIFIABLE")
+        self.assertEqual(report["executed_block_count"], 0)
+        self.assertTrue(
+            any("mutually_exclusive" in item for item in report["validation_errors"])
+        )
+        self.assertFalse(any(forbidden_path_exists.values()))
+        self.assertFalse(selection_manifest_exists)
+        self.assertFalse(optimization_report_exists)
+
     def test_summary_passes_episode_evidence_through_without_aggregate_synthesis(self):
         episode_evidence = {
             "schema_version": "episode_execution_evidence_v1",

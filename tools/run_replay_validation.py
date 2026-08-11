@@ -1147,6 +1147,407 @@ def should_stop_after_coverage(
     return bool(recommended_coverage_met) and not force_all_frozen_segments
 
 
+EXACT_BLOCK_REQUIRED_FIELDS = (
+    "block_id",
+    "symbol",
+    "start_timestamp_ms",
+    "end_timestamp_ms",
+    "event_sha256",
+    "segment_identity_sha256",
+    "replay_csv",
+)
+
+
+def _is_sha256(value: object) -> bool:
+    raw = str(value or "")
+    return len(raw) == 64 and all(char in "0123456789abcdef" for char in raw)
+
+
+def inspect_exact_replay_csv(
+    replay_csv: pathlib.Path,
+    *,
+    symbol: str,
+    target_bucket: str,
+) -> tuple[dict[str, Any], list[str]]:
+    inspection: dict[str, Any] = {
+        "replay_csv": str(replay_csv),
+        "actual_event_sha256": "",
+        "actual_segment_identity_sha256": "",
+        "actual_start_timestamp_ms": None,
+        "actual_end_timestamp_ms": None,
+        "actual_base_interval_ms": None,
+        "actual_bars": 0,
+    }
+    errors: list[str] = []
+    if not replay_csv.is_file():
+        return inspection, ["replay_csv_missing"]
+
+    try:
+        inspection["actual_event_sha256"] = hashlib.sha256(
+            replay_csv.read_bytes()
+        ).hexdigest()
+        with replay_csv.open("r", encoding="utf-8", newline="") as fp:
+            reader = csv.DictReader(fp)
+            fieldnames = set(reader.fieldnames or [])
+            required_columns = {"timestamp", "symbol", "interval_ms"}
+            missing_columns = sorted(required_columns - fieldnames)
+            if missing_columns:
+                return inspection, [
+                    "replay_csv_missing_columns:" + ",".join(missing_columns)
+                ]
+            rows = list(reader)
+    except (OSError, csv.Error, UnicodeError) as exc:
+        return inspection, [f"replay_csv_read_failed:{type(exc).__name__}"]
+
+    if not rows:
+        return inspection, ["replay_csv_empty"]
+    normalized_symbol = symbol.strip().upper()
+    timestamps: list[int] = []
+    intervals: list[int] = []
+    active_timestamps: list[int] = []
+    for row_index, row in enumerate(rows):
+        row_symbol = str(row.get("symbol") or "").strip().upper()
+        if row_symbol != normalized_symbol:
+            errors.append(
+                f"row[{row_index}].symbol_mismatch:{row_symbol}!={normalized_symbol}"
+            )
+        try:
+            timestamp = int(str(row.get("timestamp") or ""))
+            interval_ms = int(str(row.get("interval_ms") or ""))
+        except ValueError:
+            errors.append(f"row[{row_index}].timestamp_or_interval_invalid")
+            continue
+        if interval_ms <= 0:
+            errors.append(f"row[{row_index}].interval_nonpositive")
+            continue
+        timestamps.append(timestamp)
+        intervals.append(interval_ms)
+        execution_enabled = str(row.get("execution_enabled", "1")).strip().lower()
+        if execution_enabled not in {"0", "false", "1", "true"}:
+            errors.append(f"row[{row_index}].execution_enabled_invalid")
+            continue
+        if execution_enabled not in {"0", "false"}:
+            active_timestamps.append(timestamp)
+
+    if errors:
+        return inspection, list(dict.fromkeys(errors))
+    if not active_timestamps:
+        return inspection, ["replay_csv_no_execution_enabled_rows"]
+    if len(set(intervals)) != 1:
+        errors.append("replay_csv_interval_not_constant")
+    if any(current <= previous for previous, current in zip(timestamps, timestamps[1:])):
+        errors.append("replay_csv_timestamps_not_strictly_increasing")
+    base_interval_ms = intervals[0]
+    if any(
+        current - previous != base_interval_ms
+        for previous, current in zip(active_timestamps, active_timestamps[1:])
+    ):
+        errors.append("execution_rows_not_contiguous")
+    if errors:
+        return inspection, errors
+
+    segment = ReplaySegment(
+        start_index=0,
+        end_index=len(active_timestamps) - 1,
+        start_timestamp=active_timestamps[0],
+        end_timestamp=active_timestamps[-1],
+        bars=len(active_timestamps),
+    )
+    identity = replay_segment_identity(
+        symbol=normalized_symbol,
+        target_bucket=target_bucket,
+        base_interval_ms=base_interval_ms,
+        segment=segment,
+        replay_csv_sha256=str(inspection["actual_event_sha256"]),
+    )
+    inspection.update(
+        {
+            "actual_segment_identity_sha256": identity["sha256"],
+            "actual_start_timestamp_ms": segment.start_timestamp,
+            "actual_end_timestamp_ms": segment.end_timestamp,
+            "actual_base_interval_ms": base_interval_ms,
+            "actual_bars": segment.bars,
+            "segment_identity": identity,
+            "segment": segment,
+        }
+    )
+    return inspection, []
+
+
+def preflight_exact_block_plan(
+    plan_path: pathlib.Path,
+    *,
+    fallback_target_bucket: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    plan_metadata: dict[str, Any] = {
+        "path": str(plan_path),
+        "sha256": "",
+        "benchmark_id": "",
+        "target_bucket": fallback_target_bucket,
+        "read_only": True,
+    }
+    audits: list[dict[str, Any]] = []
+    prepared: list[dict[str, Any]] = []
+    validation_errors: list[str] = []
+    if not plan_path.is_file():
+        return plan_metadata, audits, prepared, ["exact_block_plan_missing"]
+    try:
+        plan_metadata["sha256"] = hashlib.sha256(
+            plan_path.read_bytes()
+        ).hexdigest()
+        payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return plan_metadata, audits, prepared, [
+            f"exact_block_plan_invalid_json:{type(exc).__name__}"
+        ]
+    if not isinstance(payload, dict):
+        return plan_metadata, audits, prepared, ["exact_block_plan_not_object"]
+    if payload.get("schema_version") != "exact_replay_block_plan_v1":
+        validation_errors.append("exact_block_plan_schema_version_invalid")
+    benchmark_id = str(payload.get("benchmark_id") or "").strip()
+    if not _is_sha256(benchmark_id):
+        validation_errors.append("exact_block_plan_benchmark_id_invalid")
+    plan_metadata["benchmark_id"] = benchmark_id
+    target_bucket = str(
+        payload.get("target_bucket") or fallback_target_bucket
+    ).strip().lower()
+    if target_bucket not in {"trend", "range", "extreme"}:
+        validation_errors.append("exact_block_plan_target_bucket_invalid")
+    plan_metadata["target_bucket"] = target_bucket
+    raw_blocks = payload.get("blocks")
+    if not isinstance(raw_blocks, list) or not raw_blocks:
+        validation_errors.append("exact_block_plan_blocks_missing")
+        return plan_metadata, audits, prepared, validation_errors
+
+    seen_block_ids: set[str] = set()
+    seen_cells: set[tuple[str, int, int]] = set()
+    seen_segment_identities: set[str] = set()
+    for index, raw_block in enumerate(raw_blocks):
+        audit: dict[str, Any] = {
+            "plan_index": index,
+            "block_id": "",
+            "symbol": "",
+            "start_timestamp_ms": None,
+            "end_timestamp_ms": None,
+            "expected_event_sha256": "",
+            "actual_event_sha256": "",
+            "expected_segment_identity_sha256": "",
+            "actual_segment_identity_sha256": "",
+            "replay_csv": "",
+            "command": [],
+            "assess_command": [],
+            "trade_bot_exit_code": None,
+            "assess_exit_code": None,
+            "episode_execution_evidence": None,
+            "execution_attempt_count": 0,
+            "execution_status": "NOT_RUN",
+            "errors": [],
+        }
+        audits.append(audit)
+        if not isinstance(raw_block, dict):
+            audit["errors"].append("block_not_object")
+            validation_errors.append(f"block[{index}].block_not_object")
+            continue
+        missing_fields = [
+            field
+            for field in EXACT_BLOCK_REQUIRED_FIELDS
+            if raw_block.get(field) is None or str(raw_block.get(field)).strip() == ""
+        ]
+        if missing_fields:
+            error = "missing_fields:" + ",".join(missing_fields)
+            audit["errors"].append(error)
+            validation_errors.append(f"block[{index}].{error}")
+            continue
+        block_id = str(raw_block["block_id"]).strip()
+        symbol = str(raw_block["symbol"]).strip().upper()
+        event_sha256 = str(raw_block["event_sha256"]).strip()
+        segment_identity_sha256 = str(
+            raw_block["segment_identity_sha256"]
+        ).strip()
+        audit.update(
+            {
+                "block_id": block_id,
+                "symbol": symbol,
+                "expected_event_sha256": event_sha256,
+                "expected_segment_identity_sha256": segment_identity_sha256,
+            }
+        )
+        try:
+            start_timestamp_ms = int(raw_block["start_timestamp_ms"])
+            end_timestamp_ms = int(raw_block["end_timestamp_ms"])
+        except (TypeError, ValueError):
+            audit["errors"].append("timestamp_invalid")
+            validation_errors.append(f"block[{index}].timestamp_invalid")
+            continue
+        audit["start_timestamp_ms"] = start_timestamp_ms
+        audit["end_timestamp_ms"] = end_timestamp_ms
+        if start_timestamp_ms > end_timestamp_ms:
+            audit["errors"].append("timestamp_range_invalid")
+        if not _is_sha256(event_sha256):
+            audit["errors"].append("event_sha256_invalid")
+        if not _is_sha256(segment_identity_sha256):
+            audit["errors"].append("segment_identity_sha256_invalid")
+        cell = (symbol, start_timestamp_ms, end_timestamp_ms)
+        if block_id in seen_block_ids:
+            audit["errors"].append("duplicate_block_id")
+        if cell in seen_cells:
+            audit["errors"].append("duplicate_block_interval")
+        if segment_identity_sha256 in seen_segment_identities:
+            audit["errors"].append("duplicate_segment_identity")
+        seen_block_ids.add(block_id)
+        seen_cells.add(cell)
+        seen_segment_identities.add(segment_identity_sha256)
+
+        replay_csv_raw = pathlib.Path(str(raw_block["replay_csv"]))
+        replay_csv = (
+            replay_csv_raw
+            if replay_csv_raw.is_absolute()
+            else (plan_path.parent / replay_csv_raw).resolve()
+        )
+        audit["replay_csv"] = str(replay_csv)
+        inspection, inspection_errors = inspect_exact_replay_csv(
+            replay_csv,
+            symbol=symbol,
+            target_bucket=target_bucket,
+        )
+        audit["actual_event_sha256"] = inspection["actual_event_sha256"]
+        audit["actual_segment_identity_sha256"] = inspection[
+            "actual_segment_identity_sha256"
+        ]
+        audit["actual_start_timestamp_ms"] = inspection[
+            "actual_start_timestamp_ms"
+        ]
+        audit["actual_end_timestamp_ms"] = inspection["actual_end_timestamp_ms"]
+        audit["actual_base_interval_ms"] = inspection[
+            "actual_base_interval_ms"
+        ]
+        audit["actual_bars"] = inspection["actual_bars"]
+        audit["errors"].extend(inspection_errors)
+        if inspection["actual_event_sha256"] != event_sha256:
+            audit["errors"].append("event_sha256_mismatch")
+        if inspection["actual_start_timestamp_ms"] != start_timestamp_ms:
+            audit["errors"].append("start_timestamp_mismatch")
+        if inspection["actual_end_timestamp_ms"] != end_timestamp_ms:
+            audit["errors"].append("end_timestamp_mismatch")
+        if (
+            inspection["actual_segment_identity_sha256"]
+            != segment_identity_sha256
+        ):
+            audit["errors"].append("segment_identity_sha256_mismatch")
+        audit["errors"] = list(dict.fromkeys(audit["errors"]))
+        for error in audit["errors"]:
+            validation_errors.append(f"block[{index}].{error}")
+        if not audit["errors"]:
+            prepared.append(
+                {
+                    "audit": audit,
+                    "replay_csv": replay_csv,
+                    "segment": inspection["segment"],
+                    "segment_identity": inspection["segment_identity"],
+                }
+            )
+    return (
+        plan_metadata,
+        audits,
+        prepared,
+        list(dict.fromkeys(validation_errors)),
+    )
+
+
+def execute_replay_csv(
+    *,
+    block_id: str,
+    symbol: str,
+    segment_index: int,
+    segment_payload: dict[str, Any],
+    replay_csv: pathlib.Path,
+    segment_identity: dict[str, Any],
+    segment_dir: pathlib.Path,
+    root: pathlib.Path,
+    base_config: pathlib.Path,
+    trade_bot: pathlib.Path,
+    assess_stage: str,
+    min_runtime_status: int,
+    execution_policy_identity: dict[str, Any],
+    trade_bot_sha256: str,
+    warmup_context_bars: int,
+) -> dict[str, Any]:
+    segment_dir.mkdir(parents=True, exist_ok=True)
+    state_dir = create_fresh_replay_state_dir(segment_dir)
+    runtime_log = segment_dir / "runtime.log"
+    runtime_assess = segment_dir / "runtime_assess.json"
+    replay_csv_sha256 = hashlib.sha256(replay_csv.read_bytes()).hexdigest()
+    if replay_csv_sha256 != segment_identity.get("replay_csv_sha256"):
+        raise RuntimeError("replay csv changed after identity validation")
+    trade_cmd = [
+        str(trade_bot),
+        f"--config={base_config}",
+        "--exchange=bybit",
+        f"--data_path={state_dir}",
+        f"--replay_market_data={replay_csv}",
+        "--replay_timestamp_column=timestamp",
+        "--replay_symbol_column=symbol",
+        "--replay_price_column=price",
+        "--replay_volume_column=volume",
+        "--replay_interval_column=interval_ms",
+        "--replay_funding_rate_column=funding_rate_per_interval",
+        f"--replay_default_interval_ms={segment_identity['base_interval_ms']}",
+    ]
+    trade_exit = run_command(trade_cmd, runtime_log)
+    assess_cmd = [
+        sys.executable,
+        str(root / "tools" / "assess_run_log.py"),
+        "--log",
+        str(runtime_log),
+        "--stage",
+        assess_stage,
+        "--min_runtime_status",
+        str(max(1, min_runtime_status)),
+        "--json_out",
+        str(runtime_assess),
+        "--segment-identity-sha256",
+        str(segment_identity["sha256"]),
+        "--execution-policy-identity-json",
+        json.dumps(
+            execution_policy_identity,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    ]
+    assess_exit = subprocess.run(assess_cmd, check=False).returncode
+    assess_payload: dict[str, Any] = {}
+    if runtime_assess.is_file():
+        assess_payload = json.loads(runtime_assess.read_text(encoding="utf-8"))
+    assess_summary = summarize_assess(assess_payload) if assess_payload else {}
+    return {
+        "block_id": block_id,
+        "symbol": symbol,
+        "segment_index": segment_index,
+        "segment": segment_payload,
+        "replay_csv": str(replay_csv),
+        "replay_csv_sha256": replay_csv_sha256,
+        "segment_identity": segment_identity,
+        "segment_identity_sha256": segment_identity["sha256"],
+        "execution_policy_identity": execution_policy_identity,
+        "trade_bot_sha256": trade_bot_sha256,
+        "state_dir": str(state_dir),
+        "state_isolation": "fresh_segment_wal",
+        "warmup_context_bars": warmup_context_bars,
+        "warmup_context_execution_disabled": True,
+        "runtime_log": str(runtime_log),
+        "runtime_assess": str(runtime_assess),
+        "command": trade_cmd,
+        "assess_command": assess_cmd,
+        "trade_bot_exit_code": trade_exit,
+        "assess_exit_code": int(assess_exit),
+        "assess_summary": assess_summary,
+        "episode_execution_evidence": assess_payload.get(
+            "episode_execution_evidence"
+        ),
+    }
+
+
 def summarize_assess(assess_payload: dict[str, Any]) -> dict[str, Any]:
     metrics = assess_payload.get("metrics", {})
     execution_attribution = assess_payload.get("execution_attribution", {})
@@ -4068,10 +4469,7 @@ def run_replay_for_symbol(
     for idx, segment in enumerate(selected_segments, start=1):
         segment_dir = output_dir / f"segment_{idx:02d}"
         segment_dir.mkdir(parents=True, exist_ok=True)
-        state_dir = create_fresh_replay_state_dir(segment_dir)
         replay_csv = segment_dir / "replay_market.csv"
-        runtime_log = segment_dir / "runtime.log"
-        runtime_assess = segment_dir / "runtime_assess.json"
         warmup_context_bars = write_replay_csv(
             rows,
             segment,
@@ -4087,77 +4485,28 @@ def run_replay_for_symbol(
             segment=segment,
             replay_csv_sha256=replay_csv_sha256,
         )
-
-        trade_cmd = [
-            str(trade_bot),
-            f"--config={base_config}",
-            "--exchange=bybit",
-            f"--data_path={state_dir}",
-            f"--replay_market_data={replay_csv}",
-            "--replay_timestamp_column=timestamp",
-            "--replay_symbol_column=symbol",
-            "--replay_price_column=price",
-            "--replay_volume_column=volume",
-            "--replay_interval_column=interval_ms",
-            "--replay_funding_rate_column=funding_rate_per_interval",
-            f"--replay_default_interval_ms={base_interval_ms}",
-        ]
-        trade_exit = run_command(trade_cmd, runtime_log)
-
-        assess_cmd = [
-            sys.executable,
-            str(root / "tools" / "assess_run_log.py"),
-            "--log",
-            str(runtime_log),
-            "--stage",
-            assess_stage,
-            "--min_runtime_status",
-            str(max(1, min_runtime_status)),
-            "--json_out",
-            str(runtime_assess),
-            "--segment-identity-sha256",
-            str(segment_identity["sha256"]),
-            "--execution-policy-identity-json",
-            json.dumps(
-                effective_execution_policy_identity,
-                ensure_ascii=True,
-                sort_keys=True,
-                separators=(",", ":"),
-            ),
-        ]
-        assess_exit = subprocess.run(assess_cmd, check=False).returncode
-        assess_payload: dict[str, Any] = {}
-        if runtime_assess.is_file():
-            assess_payload = json.loads(runtime_assess.read_text(encoding="utf-8"))
-        assess_summary = summarize_assess(assess_payload) if assess_payload else {}
-        run_payload = {
-            "symbol": symbol,
-            "segment_index": idx,
-            "segment": segment_to_payload(
+        run_payload = execute_replay_csv(
+            block_id="",
+            symbol=symbol,
+            segment_index=idx,
+            segment_payload=segment_to_payload(
                 segment,
                 rows=rows,
                 thresholds=thresholds,
                 target_bucket=target_bucket,
             ),
-            "replay_csv": str(replay_csv),
-            "replay_csv_sha256": replay_csv_sha256,
-            "segment_identity": segment_identity,
-            "segment_identity_sha256": segment_identity["sha256"],
-            "execution_policy_identity": effective_execution_policy_identity,
-            "trade_bot_sha256": effective_trade_bot_sha256,
-            "state_dir": str(state_dir),
-            "state_isolation": "fresh_segment_wal",
-            "warmup_context_bars": warmup_context_bars,
-            "warmup_context_execution_disabled": True,
-            "runtime_log": str(runtime_log),
-            "runtime_assess": str(runtime_assess),
-            "trade_bot_exit_code": trade_exit,
-            "assess_exit_code": int(assess_exit),
-            "assess_summary": assess_summary,
-            "episode_execution_evidence": assess_payload.get(
-                "episode_execution_evidence"
-            ),
-        }
+            replay_csv=replay_csv,
+            segment_identity=segment_identity,
+            segment_dir=segment_dir,
+            root=root,
+            base_config=base_config,
+            trade_bot=trade_bot,
+            assess_stage=assess_stage,
+            min_runtime_status=min_runtime_status,
+            execution_policy_identity=effective_execution_policy_identity,
+            trade_bot_sha256=effective_trade_bot_sha256,
+            warmup_context_bars=warmup_context_bars,
+        )
         run_payload["economics_attribution"] = build_run_economics_attribution(
             run_payload
         )
@@ -4240,6 +4589,197 @@ def run_replay_for_symbol(
         aggregate_validation,
         economics_report,
     )
+
+
+def exact_mode_mutual_exclusion_errors(args: argparse.Namespace) -> list[str]:
+    conflicting = {
+        "feature_csv_by_symbol": args.feature_csv_by_symbol,
+        "selection_feature_csv": args.selection_feature_csv,
+        "selection_feature_csv_by_symbol": args.selection_feature_csv_by_symbol,
+        "corpus_manifest": args.corpus_manifest,
+        "require_candidate_identity": args.require_candidate_identity,
+        "prevalidated_selection_report": args.prevalidated_selection_report,
+        "holdout_ledger": args.holdout_ledger,
+        "experiment_id": args.experiment_id,
+    }
+    return [
+        f"exact_block_plan_mutually_exclusive:{name}"
+        for name, value in conflicting.items()
+        if bool(value)
+    ]
+
+
+def run_exact_block_plan(
+    args: argparse.Namespace,
+    *,
+    root: pathlib.Path,
+    plan_path: pathlib.Path,
+    output_dir: pathlib.Path,
+    base_config: pathlib.Path,
+    trade_bot: pathlib.Path,
+) -> int:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / "replay_validation_report.json"
+    try:
+        plan_metadata, audits, prepared, validation_errors = (
+            preflight_exact_block_plan(
+                plan_path,
+                fallback_target_bucket=args.target_bucket,
+            )
+        )
+    except Exception as exc:
+        plan_metadata = {
+            "path": str(plan_path),
+            "sha256": "",
+            "benchmark_id": "",
+            "target_bucket": args.target_bucket,
+            "read_only": True,
+        }
+        audits = []
+        prepared = []
+        validation_errors = [
+            f"exact_block_plan_preflight_failed:{type(exc).__name__}:{exc}"
+        ]
+    validation_errors = [
+        *exact_mode_mutual_exclusion_errors(args),
+        *validation_errors,
+    ]
+    execution_policy_identity: dict[str, Any] = {}
+    trade_bot_sha256 = ""
+    if not base_config.is_file():
+        validation_errors.append("base_config_missing")
+    else:
+        try:
+            execution_policy_identity = policy_payload(base_config)
+        except (OSError, ValueError) as exc:
+            validation_errors.append(
+                f"execution_policy_identity_invalid:{type(exc).__name__}"
+            )
+    if not trade_bot.is_file():
+        validation_errors.append("trade_bot_missing")
+    else:
+        try:
+            trade_bot_sha256 = hashlib.sha256(trade_bot.read_bytes()).hexdigest()
+        except OSError as exc:
+            validation_errors.append(
+                f"trade_bot_identity_failed:{type(exc).__name__}"
+            )
+
+    executed_block_count = 0
+    if not validation_errors and len(prepared) == len(audits):
+        for prepared_block in prepared:
+            audit = prepared_block["audit"]
+            segment = prepared_block["segment"]
+            segment_identity = prepared_block["segment_identity"]
+            segment_dir = output_dir / f"exact_block_{int(audit['plan_index']) + 1:03d}"
+            audit["execution_attempt_count"] = 1
+            executed_block_count += 1
+            try:
+                run_payload = execute_replay_csv(
+                    block_id=str(audit["block_id"]),
+                    symbol=str(audit["symbol"]),
+                    segment_index=int(audit["plan_index"]) + 1,
+                    segment_payload={
+                        "block_id": audit["block_id"],
+                        "start_timestamp": segment.start_timestamp,
+                        "end_timestamp": segment.end_timestamp,
+                        "bars": segment.bars,
+                    },
+                    replay_csv=prepared_block["replay_csv"],
+                    segment_identity=segment_identity,
+                    segment_dir=segment_dir,
+                    root=root,
+                    base_config=base_config,
+                    trade_bot=trade_bot,
+                    assess_stage=args.assess_stage,
+                    min_runtime_status=args.min_runtime_status,
+                    execution_policy_identity=execution_policy_identity,
+                    trade_bot_sha256=trade_bot_sha256,
+                    warmup_context_bars=0,
+                )
+                audit.update(
+                    {
+                        "command": run_payload["command"],
+                        "assess_command": run_payload["assess_command"],
+                        "trade_bot_exit_code": run_payload[
+                            "trade_bot_exit_code"
+                        ],
+                        "assess_exit_code": run_payload["assess_exit_code"],
+                        "episode_execution_evidence": run_payload[
+                            "episode_execution_evidence"
+                        ],
+                        "runtime_log": run_payload["runtime_log"],
+                        "runtime_assess": run_payload["runtime_assess"],
+                        "state_dir": run_payload["state_dir"],
+                        "execution_policy_identity": run_payload[
+                            "execution_policy_identity"
+                        ],
+                        "trade_bot_sha256": run_payload["trade_bot_sha256"],
+                    }
+                )
+                post_execution_sha256 = hashlib.sha256(
+                    prepared_block["replay_csv"].read_bytes()
+                ).hexdigest()
+                audit["post_execution_event_sha256"] = post_execution_sha256
+                if post_execution_sha256 != audit["expected_event_sha256"]:
+                    audit["errors"].append("event_sha256_changed_during_execution")
+                if int(audit["trade_bot_exit_code"]) != 0:
+                    audit["errors"].append("trade_bot_exit_nonzero")
+                if int(audit["assess_exit_code"]) != 0:
+                    audit["errors"].append("assess_exit_nonzero")
+                if not isinstance(audit["episode_execution_evidence"], dict):
+                    audit["errors"].append("episode_execution_evidence_missing")
+                audit["execution_status"] = (
+                    "EXECUTED" if not audit["errors"] else "FAILED"
+                )
+            except Exception as exc:
+                audit["errors"].append(
+                    f"execution_failed:{type(exc).__name__}:{exc}"
+                )
+                audit["execution_status"] = "FAILED"
+            for error in audit["errors"]:
+                validation_errors.append(
+                    f"block[{audit['plan_index']}].{error}"
+                )
+
+    validation_errors = list(dict.fromkeys(validation_errors))
+    status = (
+        "VERIFIED"
+        if (
+            not validation_errors
+            and bool(audits)
+            and executed_block_count == len(audits)
+            and all(item["execution_status"] == "EXECUTED" for item in audits)
+        )
+        else "UNVERIFIABLE"
+    )
+    report = {
+        "schema_version": "exact_replay_block_audit_v1",
+        "generated_at_utc": now_utc_iso(),
+        "mode": "exact_block_plan",
+        "status": status,
+        "promotion_authority": False,
+        "selection_bypassed": True,
+        "final_holdout_bypassed": True,
+        "coverage_early_stop_disabled": True,
+        "mutation_targets_accessed": [],
+        "exact_block_plan": plan_metadata,
+        "base_config": str(base_config),
+        "execution_policy_identity": execution_policy_identity,
+        "trade_bot": str(trade_bot),
+        "trade_bot_sha256": trade_bot_sha256,
+        "planned_block_count": len(audits),
+        "executed_block_count": executed_block_count,
+        "validation_errors": validation_errors,
+        "blocks": audits,
+        "runs": audits,
+    }
+    report_path.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(str(report_path))
+    return 0 if status == "VERIFIED" else 2
 
 
 def main() -> int:
@@ -4410,9 +4950,27 @@ def main() -> int:
         action="store_true",
         help="运行冻结 manifest 的全部 segment，禁止达到 coverage 后提前停止",
     )
+    parser.add_argument(
+        "--exact-block-plan",
+        default="",
+        help="只读执行 verified benchmark 导出的 exact replay block plan",
+    )
     args = parser.parse_args()
 
     root = pathlib.Path(__file__).resolve().parent.parent
+    output_dir = resolve_path(args.output_dir, root)
+    base_config = resolve_path(args.base_config, root)
+    trade_bot = resolve_path(args.trade_bot, root)
+    if args.exact_block_plan:
+        return run_exact_block_plan(
+            args,
+            root=root,
+            plan_path=resolve_path(args.exact_block_plan, root),
+            output_dir=output_dir,
+            base_config=base_config,
+            trade_bot=trade_bot,
+        )
+
     feature_csv = resolve_path(args.feature_csv, root)
     feature_csv_by_symbol = parse_feature_csv_by_symbol(
         args.feature_csv_by_symbol,
@@ -4427,9 +4985,6 @@ def main() -> int:
         args.selection_feature_csv_by_symbol,
         root,
     )
-    base_config = resolve_path(args.base_config, root)
-    trade_bot = resolve_path(args.trade_bot, root)
-    output_dir = resolve_path(args.output_dir, root)
     holdout_ledger = (
         resolve_path(args.holdout_ledger, root)
         if args.holdout_ledger
