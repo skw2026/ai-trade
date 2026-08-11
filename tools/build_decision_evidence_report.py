@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import pathlib
+import re
 import tempfile
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -23,6 +24,7 @@ UPLIFT_STATUSES = frozenset({"UPLIFT_PROVEN", "NOT_PROVEN", "UNVERIFIABLE"})
 LEDGER_DECISIONS = frozenset(
     {"ALLOW_NEXT_EXPERIMENT", "STOP_CURRENT_FAMILY", "BLOCK_INVALID_LEDGER"}
 )
+EXPERIMENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 
 
 def _is_sha256(value: Any) -> bool:
@@ -30,6 +32,13 @@ def _is_sha256(value: Any) -> bool:
         isinstance(value, str)
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _is_experiment_id(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and EXPERIMENT_ID_RE.fullmatch(value) is not None
     )
 
 
@@ -212,6 +221,25 @@ def _ledger_section(
     report: Any, expected_benchmark_id: str | None
 ) -> dict[str, Any]:
     section, payload = _base_child_section(report, expected_benchmark_id)
+    experiment_id = payload.get("experiment_id") if payload is not None else None
+    registration_verified = (
+        payload.get("registration_verified") if payload is not None else None
+    )
+    section["experiment_id"] = (
+        experiment_id if isinstance(experiment_id, str) else None
+    )
+    section["registration_verified"] = registration_verified
+    registration_audit = {
+        "experiment_id": section["experiment_id"],
+        "experiment_id_valid": _is_experiment_id(experiment_id),
+        "registration_verified": registration_verified,
+        "expected_benchmark_id": expected_benchmark_id,
+        "actual_benchmark_id": section["actual_benchmark_id"],
+        "benchmark_match": section["benchmark_match"],
+        "mismatches": [],
+        "verified": False,
+    }
+    section["registration_audit"] = registration_audit
     if payload is None:
         section["reason_codes"] = ["LEDGER_INPUT_UNVERIFIABLE"]
         return section
@@ -223,6 +251,11 @@ def _ledger_section(
         section["validation_errors"].append("audit-next must not append")
     source_status = payload.get("decision")
     section["source_status"] = source_status
+    source_reasons = payload.get("reasons")
+    if not isinstance(source_reasons, list) or not all(
+        isinstance(reason, str) for reason in source_reasons
+    ):
+        section["validation_errors"].append("ledger reasons are invalid")
     if section["validation_errors"]:
         section["status"] = "UNVERIFIABLE"
         section["reason_codes"] = ["LEDGER_INPUT_UNVERIFIABLE"]
@@ -238,13 +271,38 @@ def _ledger_section(
     if source_status == "BLOCK_INVALID_LEDGER":
         section["status"] = "UNVERIFIABLE"
         section["reason_codes"] = ["LEDGER_BLOCK_INVALID_LEDGER"]
-    else:
-        section["status"] = source_status
-        section["reason_codes"] = (
-            ["LEDGER_STOP_CURRENT_FAMILY"]
-            if source_status == "STOP_CURRENT_FAMILY"
-            else []
+        return section
+
+    registration_mismatches: list[str] = []
+    if registration_verified is not True:
+        registration_mismatches.append("registration_verified is not true")
+    if not _is_experiment_id(experiment_id):
+        registration_mismatches.append("experiment_id is invalid")
+    if source_status == "ALLOW_NEXT_EXPERIMENT" and source_reasons:
+        registration_mismatches.append(
+            "ALLOW_NEXT_EXPERIMENT carries identity or validation reasons"
         )
+    registration_audit["mismatches"] = registration_mismatches
+    registration_audit["verified"] = not registration_mismatches
+    if registration_mismatches:
+        section["validation_errors"].extend(registration_mismatches)
+        section["status"] = "UNVERIFIABLE"
+        reason_codes = []
+        if registration_verified is not True:
+            reason_codes.append("LEDGER_REGISTRATION_UNVERIFIABLE")
+        if not _is_experiment_id(experiment_id):
+            reason_codes.append("LEDGER_EXPERIMENT_ID_INVALID")
+        if source_status == "ALLOW_NEXT_EXPERIMENT" and source_reasons:
+            reason_codes.append("LEDGER_REGISTRATION_IDENTITY_MISMATCH")
+        section["reason_codes"] = reason_codes
+        return section
+
+    section["status"] = source_status
+    section["reason_codes"] = (
+        ["LEDGER_STOP_CURRENT_FAMILY"]
+        if source_status == "STOP_CURRENT_FAMILY"
+        else []
+    )
     return section
 
 
@@ -300,7 +358,7 @@ def build_report(
         reason_codes.append("DECISION_TABLE_UNRECOGNIZED_STATE")
     if decision == "CONTINUE":
         reason_codes = ["DECISIVE_EVIDENCE_ALL_PASSED"]
-    return {
+    result = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "benchmark_id": expected_benchmark_id,
         "research_decision": decision,
@@ -315,6 +373,9 @@ def build_report(
         "ledger": ledger,
         "alpha_route_observation": _alpha_route_observation(alpha_route_report),
     }
+    if decision == "CONTINUE":
+        result["authorized_experiment_id"] = ledger["experiment_id"]
+    return result
 
 
 def _read_report(path: pathlib.Path) -> Any:

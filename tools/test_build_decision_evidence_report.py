@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -13,6 +14,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import build_decision_evidence_report as builder  # noqa: E402
+import experiment_budget_ledger as ledger  # noqa: E402
 
 
 BENCHMARK_ID = "1" * 64
@@ -65,7 +67,17 @@ def uplift_report(status="UPLIFT_PROVEN"):
     }
 
 
-def ledger_report(decision="ALLOW_NEXT_EXPERIMENT"):
+def ledger_report(
+    decision="ALLOW_NEXT_EXPERIMENT",
+    *,
+    registration_verified=None,
+    experiment_id="experiment-001",
+):
+    if registration_verified is None:
+        registration_verified = decision in {
+            "ALLOW_NEXT_EXPERIMENT",
+            "STOP_CURRENT_FAMILY",
+        }
     return {
         "schema_version": "experiment_budget_ledger_decision_v1",
         "operation": "audit-next",
@@ -74,7 +86,13 @@ def ledger_report(decision="ALLOW_NEXT_EXPERIMENT"):
         "benchmark_id": BENCHMARK_ID,
         "expected_benchmark_id": BENCHMARK_ID,
         "actual_benchmark_id": BENCHMARK_ID,
+        "experiment_id": experiment_id,
+        "registration_verified": registration_verified,
+        "hypothesis_family_id": "2" * 64,
+        "information_set_id": "3" * 64,
         "remaining_budgets": {"family": 2, "information_set": 7},
+        "checkpoint_recovery_required": False,
+        "checkpoint_recovered": False,
         "reasons": [],
     }
 
@@ -120,7 +138,197 @@ class DecisionEvidenceReportTest(unittest.TestCase):
         self.assertEqual(report["alignment"]["status"], "ALIGNED")
         self.assertEqual(report["uplift"]["status"], "UPLIFT_PROVEN")
         self.assertEqual(report["ledger"]["status"], "ALLOW_NEXT_EXPERIMENT")
+        self.assertEqual(report["authorized_experiment_id"], "experiment-001")
+        self.assertEqual(report["ledger"]["experiment_id"], "experiment-001")
+        self.assertTrue(report["ledger"]["registration_verified"])
+        self.assertTrue(report["ledger"]["registration_audit"]["verified"])
         self.assert_no_authority(report)
+
+    def test_forged_allow_without_verified_pending_registration_stops(self):
+        cases = []
+        not_verified = ledger_report(registration_verified=False)
+        cases.append(("not_verified", not_verified))
+        missing_verification = ledger_report()
+        missing_verification.pop("registration_verified")
+        cases.append(("missing_verification", missing_verification))
+        for value in (None, "", "bad experiment id"):
+            cases.append(
+                (f"experiment_id={value!r}", ledger_report(experiment_id=value))
+            )
+        mismatch_reason = ledger_report()
+        mismatch_reason["reasons"] = ["audit-next proposal does not match preregistration"]
+        cases.append(("identity_mismatch", mismatch_reason))
+        cases.append(
+            (
+                "unverified_stop_current_family",
+                ledger_report(
+                    "STOP_CURRENT_FAMILY", registration_verified=False
+                ),
+            )
+        )
+
+        for name, forged in cases:
+            with self.subTest(name=name):
+                report = self.build(ledger=forged)
+                self.assertEqual(report["research_decision"], "STOP")
+                self.assertEqual(report["ledger"]["status"], "UNVERIFIABLE")
+                self.assertFalse(report["ledger"]["registration_audit"]["verified"])
+                self.assertEqual(report["ledger"]["report"], forged)
+                self.assert_no_authority(report)
+
+    def test_real_ledger_cli_audit_only_allows_pending_verified_registration(self):
+        repository = pathlib.Path(__file__).resolve().parents[1]
+        ledger_tool = repository / "tools" / "experiment_budget_ledger.py"
+        frozen_config = repository / "config" / "decision_evidence_validation.json"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = pathlib.Path(temp_dir)
+            config_path = root / "decision_evidence_validation.json"
+            config_path.write_bytes(frozen_config.read_bytes())
+            ledger_path = root / "experiments.jsonl"
+            policy_sha = hashlib.sha256(config_path.read_bytes()).hexdigest()
+            information_definition = {
+                "data": "d" * 64,
+                "features": "f" * 64,
+                "actions": "a" * 64,
+            }
+            information_id = ledger.stable_definition_id(
+                information_definition
+            )
+            family_definition = {
+                "mechanism": "lead-lag",
+                "target": "net-utility",
+            }
+            proposal = {
+                "experiment_id": "real-experiment-001",
+                "benchmark_id": BENCHMARK_ID,
+                "validation_policy_sha256": policy_sha,
+                "information_set_definition": information_definition,
+                "information_set_id": information_id,
+                "hypothesis_family_definition": family_definition,
+                "hypothesis_family_id": ledger.stable_family_id(
+                    information_id, family_definition
+                ),
+                "display_name": "real ledger integration",
+                "changed_dimensions": [
+                    {"name": "target", "before": "a", "after": "b"}
+                ],
+                "expected_direction": "increase",
+                "stop_condition": {
+                    "metric": "stress_lcb",
+                    "operator": "gt",
+                    "value": 0.0,
+                },
+                "registered_at": "2026-08-11T00:00:00Z",
+                "earliest_result_at": "2026-08-11T00:00:30Z",
+                "earliest_result_identity": "e" * 64,
+                "result_source_identity": "d" * 64,
+            }
+            proposal_path = root / "proposal.json"
+            proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+            registered = subprocess.run(
+                [
+                    sys.executable,
+                    str(ledger_tool),
+                    "register",
+                    "--ledger",
+                    str(ledger_path),
+                    "--config",
+                    str(config_path),
+                    "--proposal",
+                    str(proposal_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(registered.returncode, 0, registered.stderr)
+            audited = subprocess.run(
+                [
+                    sys.executable,
+                    str(ledger_tool),
+                    "audit-next",
+                    "--ledger",
+                    str(ledger_path),
+                    "--config",
+                    str(config_path),
+                    "--proposal",
+                    str(proposal_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(audited.returncode, 0, audited.stderr)
+            audit_report = json.loads(audited.stdout)
+            self.assertEqual(audit_report["decision"], "ALLOW_NEXT_EXPERIMENT")
+            self.assertTrue(audit_report["registration_verified"])
+            continued = self.build(ledger=audit_report)
+            self.assertEqual(continued["research_decision"], "CONTINUE")
+            self.assertEqual(
+                continued["authorized_experiment_id"],
+                proposal["experiment_id"],
+            )
+            self.assertEqual(continued["ledger"]["report"], audit_report)
+
+            observation_path = root / "observation.json"
+            observation_path.write_text(
+                json.dumps(
+                    {
+                        "experiment_id": proposal["experiment_id"],
+                        "outcome": "SUPPORTED",
+                        "observed_at": "2026-08-11T00:01:00Z",
+                        "result_identity": proposal["earliest_result_identity"],
+                        "result_source_identity": proposal[
+                            "result_source_identity"
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            observed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ledger_tool),
+                    "observe",
+                    "--ledger",
+                    str(ledger_path),
+                    "--config",
+                    str(config_path),
+                    "--proposal",
+                    str(observation_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(observed.returncode, 0, observed.stderr)
+            consumed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ledger_tool),
+                    "audit-next",
+                    "--ledger",
+                    str(ledger_path),
+                    "--config",
+                    str(config_path),
+                    "--proposal",
+                    str(proposal_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(consumed.returncode, 2, consumed.stderr)
+            consumed_report = json.loads(consumed.stdout)
+            self.assertEqual(
+                consumed_report["decision"], "BLOCK_INVALID_LEDGER"
+            )
+            self.assertFalse(consumed_report["registration_verified"])
+            stopped = self.build(ledger=consumed_report)
+
+        self.assertEqual(stopped["research_decision"], "STOP")
+        self.assertEqual(stopped["ledger"]["status"], "UNVERIFIABLE")
+        self.assertEqual(stopped["ledger"]["report"], consumed_report)
 
     def test_complete_negative_evidence_changes_information_set(self):
         cases = []
