@@ -38,6 +38,44 @@ DECISIVE_STEPS_AND_ARTIFACTS = {
 DECISIVE_STEPS = tuple(DECISIVE_STEPS_AND_ARTIFACTS)
 
 
+class DownloadClosedLoopReportsContractTest(unittest.TestCase):
+    def test_downloads_decisive_evidence_and_diagnostics(self):
+        source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
+            encoding="utf-8"
+        )
+        for step, filename in DECISIVE_STEPS_AND_ARTIFACTS.items():
+            self.assertIn(
+                f'fetch_report "${{REMOTE_BASE}}/{filename}" '
+                f'".artifacts/{filename}" "{step}" "json"',
+                source,
+            )
+
+        diagnostics = {
+            "decision_evidence_benchmark.json": (
+                "decision_evidence_benchmark.json",
+                "decision_evidence_benchmark",
+            ),
+            "decision_benchmark_build/build_report.json": (
+                "decision_benchmark_build_report.json",
+                "decision_benchmark_build_report",
+            ),
+            "decision_benchmark_build/candidate_preflight.json": (
+                "decision_candidate_preflight_report.json",
+                "decision_candidate_preflight_report",
+            ),
+            "experiment_budget_proposal.json": (
+                "experiment_budget_proposal.json",
+                "experiment_budget_proposal",
+            ),
+        }
+        for remote, (local, label) in diagnostics.items():
+            self.assertIn(
+                f'fetch_report "${{REMOTE_BASE}}/{remote}" '
+                f'".artifacts/{local}" "{label}" "json"',
+                source,
+            )
+
+
 class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
     @staticmethod
     def write_step_records(
