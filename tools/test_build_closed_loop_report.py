@@ -3668,6 +3668,152 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 2,
             )
 
+    def test_decision_evidence_continue_is_research_only_and_never_promotes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            output = root / "closed_loop_report.json"
+            decision_evidence = root / "decision_evidence_report.json"
+            decision_evidence.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "decision_evidence_report_v1",
+                        "benchmark_id": "a" * 64,
+                        "research_decision": "CONTINUE",
+                        "reason_codes": ["ALL_DECISIVE_EVIDENCE_PROVEN"],
+                        "promotion_authority": False,
+                        "demo_activation_authorized": False,
+                        "live_activation_authorized": False,
+                        "research_decision_only": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            old_argv = sys.argv[:]
+            try:
+                sys.argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--decision_evidence_report",
+                    str(decision_evidence),
+                ]
+                code = REPORT.main()
+            finally:
+                sys.argv = old_argv
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["research_decision"], "CONTINUE")
+        self.assertTrue(payload["research_decision_only"])
+        self.assertFalse(payload["promotion_authority"])
+        self.assertFalse(payload["demo_activation_authorized"])
+        self.assertFalse(payload["live_activation_authorized"])
+        self.assertEqual(payload["promotion_readiness_status"], "NOT_EVALUATED")
+        section = payload["sections"]["decision_evidence"]
+        self.assertEqual(section["status"], "VERIFIED")
+        self.assertEqual(section["research_decision"], "CONTINUE")
+        self.assertEqual(
+            section["reason_codes"], ["ALL_DECISIVE_EVIDENCE_PROVEN"]
+        )
+        self.assertFalse(section["authoritative_for_integrator_promotion"])
+
+    def test_decision_evidence_missing_corrupt_or_manifest_mismatch_fails_closed(self):
+        cases = ("missing", "corrupt", "manifest_mismatch")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as td:
+                root = pathlib.Path(td)
+                output = root / "closed_loop_report.json"
+                decision_evidence = root / "decision_evidence_report.json"
+                if case != "missing":
+                    decision_evidence.write_text(
+                        (
+                            "{broken"
+                            if case == "corrupt"
+                            else json.dumps(
+                                {
+                                    "schema_version": "decision_evidence_report_v1",
+                                    "benchmark_id": "b" * 64,
+                                    "research_decision": "CONTINUE",
+                                    "reason_codes": [],
+                                    "promotion_authority": False,
+                                    "demo_activation_authorized": False,
+                                    "live_activation_authorized": False,
+                                    "research_decision_only": True,
+                                }
+                            )
+                        ),
+                        encoding="utf-8",
+                    )
+                argv = [
+                    "build_closed_loop_report.py",
+                    "--output",
+                    str(output),
+                    "--decision_evidence_report",
+                    str(decision_evidence),
+                ]
+                if case == "manifest_mismatch":
+                    expected_report = root / "expected_decision_evidence.json"
+                    expected_report.write_text(
+                        json.dumps(
+                            {
+                                "schema_version": "decision_evidence_report_v1",
+                                "benchmark_id": "a" * 64,
+                                "research_decision": "STOP",
+                                "reason_codes": ["EXPECTED_STOP"],
+                                "promotion_authority": False,
+                                "demo_activation_authorized": False,
+                                "live_activation_authorized": False,
+                                "research_decision_only": True,
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    manifest = root / "run_manifest.json"
+                    manifest.write_text(
+                        json.dumps(
+                            {
+                                "run_id": "run-decision-evidence",
+                                "action": "full",
+                                "artifacts": {
+                                    "decision_evidence_report": {
+                                        "path": str(expected_report),
+                                        "sha256": hashlib.sha256(
+                                            expected_report.read_bytes()
+                                        ).hexdigest(),
+                                    }
+                                },
+                                "decision_evidence": {
+                                    "research_decision_only": True,
+                                    "promotion_authority": False,
+                                    "research_decision": "STOP",
+                                },
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    argv.extend(["--run_manifest", str(manifest)])
+
+                old_argv = sys.argv[:]
+                try:
+                    sys.argv = argv
+                    REPORT.main()
+                finally:
+                    sys.argv = old_argv
+
+                payload = json.loads(output.read_text(encoding="utf-8"))
+                section = payload["sections"]["decision_evidence"]
+                self.assertEqual(section["status"], "UNVERIFIABLE")
+                self.assertEqual(section["research_decision"], "STOP")
+                self.assertTrue(section["research_decision_only"])
+                self.assertFalse(section["promotion_authority"])
+                self.assertFalse(section["demo_activation_authorized"])
+                self.assertFalse(section["live_activation_authorized"])
+                self.assertEqual(
+                    payload["promotion_readiness_status"], "NOT_EVALUATED"
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

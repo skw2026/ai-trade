@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import hashlib
 import pathlib
 import sys
 import datetime as dt
@@ -26,6 +27,295 @@ ASSESS = load_assess_module()
 
 
 class AssessRunLogTest(unittest.TestCase):
+    @staticmethod
+    def _execution_policy_identity():
+        policy = {"execution.slippage_bps": 2.0}
+        canonical = json.dumps(
+            policy,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return {
+            "schema_version": "execution_policy_v2",
+            "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            "policy": policy,
+        }
+
+    @staticmethod
+    def _complete_episode_log() -> str:
+        return "\n".join(
+            [
+                "2026-08-11 10:00:00 [INFO] REGIME_CHANGE: symbol=BTCUSDT, regime=UPTREND, bucket=TREND, warmup=false, decision_interval_ms=5000, aggregated_events=8, instant_return=0.001000, trend_strength=0.002000, volatility=0.000300",
+                "2026-08-11 10:00:01 [INFO] INTEGRATOR_POLICY_PROPOSED: decision_id=d1, candidate_id=c1, mode=canary, model_version=m1, source=joint_ranker, reason=accepted, symbol=BTCUSDT, confidence=0.8, base_notional=100.0, base_trend_component=100.0, base_defensive_component=0.0, final_notional=100.0",
+                "2026-08-11 10:00:01 [INFO] INTEGRATOR_POLICY_RISK_ACCEPTED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, client_order_id=open-1, symbol=BTCUSDT, purpose=entry, reduce_only=false",
+                "2026-08-11 10:00:01 [INFO] INTEGRATOR_POLICY_ENQUEUED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=open-1, symbol=BTCUSDT",
+                "2026-08-11 10:00:01 [INFO] BYBIT_SUBMIT: symbol=BTCUSDT, client_order_id=open-1, purpose=0, order_type=Limit, liquidity_preference=maker, reduce_only=false, qty=1.0, price=100.0, time_in_force=PostOnly",
+                "2026-08-11 10:00:02 [INFO] FILL_APPLIED: fill_id=fill-open-1, client_order_id=open-1, symbol=BTCUSDT, side=Buy, qty=1.0, price=100.0, fee=-0.020000, liquidity=maker, order_state_before=accepted, order_state_after=filled, order_filled_qty_before=0.0, order_filled_qty_after=1.0, local_qty_before=0.0, avg_entry_price_before=0.0, local_qty_after=1.0, oms_net_qty_before=0.0, oms_net_qty_after=1.0, account_already_reflected=false",
+                "2026-08-11 10:00:02 [INFO] INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=open-1, fill_id=fill-open-1, symbol=BTCUSDT, qty=1.0, price=100.0, fee=-0.020000, liquidity=maker",
+                "2026-08-11 10:00:03 [INFO] FUNDING_APPLIED: symbol=BTCUSDT, rate_per_interval=0.000100, funding_paid_usd=0.010000, source=market",
+                "2026-08-11 10:00:04 [INFO] BYBIT_SUBMIT: symbol=BTCUSDT, client_order_id=close-1, purpose=3, order_type=Market, liquidity_preference=taker, reduce_only=true, qty=1.0",
+                "2026-08-11 10:00:05 [INFO] FILL_APPLIED: fill_id=fill-close-1, client_order_id=close-1, symbol=BTCUSDT, side=Sell, qty=1.0, price=100.5, fee=-0.030000, liquidity=taker, order_state_before=accepted, order_state_after=filled, order_filled_qty_before=0.0, order_filled_qty_after=1.0, local_qty_before=1.0, avg_entry_price_before=100.0, local_qty_after=0.0, oms_net_qty_before=1.0, oms_net_qty_after=0.0, account_already_reflected=false",
+                "2026-08-11 10:00:05 [INFO] INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1, fill_id=fill-close-1, symbol=BTCUSDT, qty=1.0, price=100.5, fee=-0.030000, liquidity=taker",
+                "2026-08-11 10:00:05 [INFO] EXIT_CAPTURE_SAMPLE: symbol=BTCUSDT, client_order_id=close-1, purpose=reduce, entry_direction=1, close_qty=1.0, avg_entry_price=100.0, exit_price=100.5, best_price=100.8, path_mfe_bps=80.0, captured_gross_bps=50.0, captured_net_bps=47.0, fee_bps=3.0, capture_ratio=0.625, low_capture=false, realized_pnl_usd=0.5, realized_net_usd=0.47, round_trip_cost_bps=13.0, holding_ticks=10, protection_state=true",
+                "2026-08-11 10:00:05 [INFO] INTEGRATOR_POLICY_EPISODE_CLOSED: position_episode_id=runtime-episode-1, decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, policy_reason=accepted, symbol=BTCUSDT, realized_net_usd=0.44, funding_paid_usd=0.01, fill_event_count=2, unique_order_count=2, evidence_complete=true, activation_transaction_id=activation-1, evidence_boot_id=boot-1, runtime_config_sha256=" + "a" * 64 + ", trade_bot_sha256=" + "b" * 64 + ", closed_at_utc=2026-08-11T02:00:05Z, recovered_after_restart=false, wal_persisted=true",
+                "2026-08-11 10:00:06 [INFO] REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=0, realized_net_usd=0.440000, fees_usd=0.050000, funding_paid_usd=0.010000",
+            ]
+        ) + "\n"
+
+    def test_emits_complete_episode_execution_evidence(self):
+        segment_identity = "1" * 64
+        policy_identity = self._execution_policy_identity()
+
+        report = ASSESS.assess(
+            self._complete_episode_log(),
+            ASSESS.STAGE_RULES["DEPLOY"],
+            min_runtime_status=0,
+            segment_identity_sha256=segment_identity,
+            execution_policy_identity=policy_identity,
+        )
+
+        evidence = report["episode_execution_evidence"]
+        expected_id = hashlib.sha256(
+            f"{segment_identity}:BTCUSDT:fill-open-1".encode("utf-8")
+        ).hexdigest()
+        self.assertTrue(evidence["execution_path_complete"])
+        self.assertEqual(evidence["missing_path_evidence"], [])
+        self.assertEqual(evidence["complete_episode_count"], 1)
+        self.assertFalse(evidence["aggregate_only_rejected"])
+        self.assertEqual(evidence["execution_policy_identity"], policy_identity)
+        episode = evidence["episodes"][0]
+        self.assertEqual(episode["evaluator_episode_id"], expected_id)
+        self.assertEqual(episode["first_fill_id"], "fill-open-1")
+        self.assertEqual(episode["runtime_position_episode_id"], "runtime-episode-1")
+        self.assertEqual(episode["entry_regime"], "TREND")
+        self.assertNotEqual(episode["entry_regime"], "UPTREND")
+        self.assertEqual(episode["symbol"], "BTCUSDT")
+        self.assertEqual(episode["fill_ids"], ["fill-open-1", "fill-close-1"])
+        self.assertEqual(episode["client_order_ids"], ["open-1", "close-1"])
+        self.assertAlmostEqual(episode["realized_pnl_usd"], 0.5)
+        self.assertAlmostEqual(episode["fee_usd"], 0.05)
+        self.assertAlmostEqual(episode["funding_paid_usd"], 0.01)
+        self.assertAlmostEqual(episode["executable_net_utility"], 0.44)
+        self.assertTrue(episode["execution_path_complete"])
+        self.assertEqual(episode["missing_path_evidence"], [])
+        self.assertEqual(episode["identity_mismatches"], [])
+        self.assertEqual(
+            [fill["candidate_lineage"] for fill in episode["fills"]],
+            [episode["candidate_lineage"], episode["candidate_lineage"]],
+        )
+        self.assertEqual(
+            evidence["terminal_settlement"]["segment_identity_sha256"],
+            segment_identity,
+        )
+
+    def test_episode_fill_and_closure_identities_fail_closed_precisely(self):
+        cases = {
+            "empty_fill_id": (
+                lambda text: text.replace(
+                    "fill_id=fill-close-1, client_order_id=close-1",
+                    "fill_id=, client_order_id=close-1",
+                ),
+                "fills",
+                "fills[1].fill_id=missing",
+            ),
+            "duplicate_fill_id": (
+                lambda text: text.replace("fill-close-1", "fill-open-1"),
+                "fills",
+                "fills[1].fill_id=duplicate:fill-open-1",
+            ),
+            "empty_client_order_id": (
+                lambda text: text.replace(
+                    "fill_id=fill-close-1, client_order_id=close-1",
+                    "fill_id=fill-close-1, client_order_id=",
+                ),
+                "oms_submit",
+                "fills[1].client_order_id=missing",
+            ),
+            "mixed_candidate": (
+                lambda text: text.replace(
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1",
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c2, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1",
+                ),
+                "candidate_lineage",
+                "fills[1].candidate_lineage.candidate_id:mismatch",
+            ),
+            "cross_position": (
+                lambda text: text.replace(
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-1, client_order_id=close-1",
+                    "INTEGRATOR_POLICY_FILLED: decision_id=d1, candidate_id=c1, model_version=m1, mode=canary, position_episode_id=runtime-episode-2, client_order_id=close-1",
+                ),
+                "candidate_lineage",
+                "fills[1].candidate_lineage.position_episode_id:mismatch",
+            ),
+            "closure_candidate": (
+                lambda text: text.replace(
+                    "INTEGRATOR_POLICY_EPISODE_CLOSED: position_episode_id=runtime-episode-1, decision_id=d1, candidate_id=c1",
+                    "INTEGRATOR_POLICY_EPISODE_CLOSED: position_episode_id=runtime-episode-1, decision_id=d1, candidate_id=c2",
+                ),
+                "position_episode",
+                "position_episode.candidate_id:mismatch",
+            ),
+            "exit_symbol": (
+                lambda text: text.replace(
+                    "EXIT_CAPTURE_SAMPLE: symbol=BTCUSDT",
+                    "EXIT_CAPTURE_SAMPLE: symbol=ETHUSDT",
+                ),
+                "exit_capture",
+                "exit_capture.symbol:mismatch",
+            ),
+            "terminal_open_position": (
+                lambda text: text.replace(
+                    "REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=0",
+                    "REPLAY_TERMINAL_SETTLEMENT_DONE: position_count=1",
+                ),
+                "terminal_settlement",
+                "terminal_settlement.position_count=0",
+            ),
+        }
+        for name, (mutate, missing_path, mismatch) in cases.items():
+            with self.subTest(name=name):
+                report = ASSESS.assess(
+                    mutate(self._complete_episode_log()),
+                    ASSESS.STAGE_RULES["DEPLOY"],
+                    min_runtime_status=0,
+                    segment_identity_sha256="1" * 64,
+                    execution_policy_identity=self._execution_policy_identity(),
+                )
+                episode = report["episode_execution_evidence"]["episodes"][0]
+                self.assertFalse(episode["execution_path_complete"])
+                self.assertIn(missing_path, episode["missing_path_evidence"])
+                self.assertIn(mismatch, episode["identity_mismatches"])
+
+    def test_evaluator_episode_id_uses_ascii_canonical_identity(self):
+        segment_identity = "1" * 64
+        report = ASSESS.assess(
+            self._complete_episode_log(),
+            ASSESS.STAGE_RULES["DEPLOY"],
+            min_runtime_status=0,
+            segment_identity_sha256=segment_identity,
+            execution_policy_identity=self._execution_policy_identity(),
+        )
+        episode = report["episode_execution_evidence"]["episodes"][0]
+        self.assertEqual(
+            episode["evaluator_episode_id"],
+            hashlib.sha256(
+                f"{segment_identity}:BTCUSDT:fill-open-1".encode("ascii")
+            ).hexdigest(),
+        )
+
+    def test_each_missing_episode_path_is_reported_exactly(self):
+        base_lines = self._complete_episode_log().splitlines()
+        cases = {
+            "candidate_lineage": (
+                lambda line: "INTEGRATOR_POLICY_" not in line,
+                ["candidate_lineage", "position_episode"],
+            ),
+            "oms_submit": (
+                lambda line: "BYBIT_SUBMIT:" not in line,
+                ["oms_submit"],
+            ),
+            "entry_regime": (
+                lambda line: "REGIME_CHANGE:" not in line,
+                ["entry_regime"],
+            ),
+            "position_episode": (
+                lambda line: "INTEGRATOR_POLICY_EPISODE_CLOSED:" not in line,
+                ["position_episode"],
+            ),
+            "exit_capture": (
+                lambda line: "EXIT_CAPTURE_SAMPLE:" not in line,
+                ["exit_capture"],
+            ),
+            "funding": (
+                lambda line: "FUNDING_APPLIED:" not in line,
+                ["funding"],
+            ),
+            "terminal_settlement": (
+                lambda line: "REPLAY_TERMINAL_SETTLEMENT_DONE:" not in line,
+                ["terminal_settlement"],
+            ),
+        }
+        for name, (keep, expected_missing) in cases.items():
+            with self.subTest(name=name):
+                report = ASSESS.assess(
+                    "\n".join(line for line in base_lines if keep(line)) + "\n",
+                    ASSESS.STAGE_RULES["DEPLOY"],
+                    min_runtime_status=0,
+                    segment_identity_sha256="1" * 64,
+                    execution_policy_identity=self._execution_policy_identity(),
+                )
+                episode = report["episode_execution_evidence"]["episodes"][0]
+                self.assertFalse(episode["execution_path_complete"])
+                self.assertEqual(episode["missing_path_evidence"], expected_missing)
+
+        no_fee = re.sub(r", fee=-?\d+\.\d+", "", self._complete_episode_log())
+        report = ASSESS.assess(
+            no_fee,
+            ASSESS.STAGE_RULES["DEPLOY"],
+            min_runtime_status=0,
+            segment_identity_sha256="1" * 64,
+            execution_policy_identity=self._execution_policy_identity(),
+        )
+        self.assertEqual(
+            report["episode_execution_evidence"]["episodes"][0][
+                "missing_path_evidence"
+            ],
+            ["fees"],
+        )
+
+        report = ASSESS.assess(
+            self._complete_episode_log(),
+            ASSESS.STAGE_RULES["DEPLOY"],
+            min_runtime_status=0,
+            segment_identity_sha256="1" * 64,
+            execution_policy_identity={},
+        )
+        self.assertEqual(
+            report["episode_execution_evidence"]["episodes"][0][
+                "missing_path_evidence"
+            ],
+            ["slippage_policy"],
+        )
+
+        missing_order_state = self._complete_episode_log().replace(
+            "order_state_after=filled", "order_state_after=missing", 1
+        )
+        report = ASSESS.assess(
+            missing_order_state,
+            ASSESS.STAGE_RULES["DEPLOY"],
+            min_runtime_status=0,
+            segment_identity_sha256="1" * 64,
+            execution_policy_identity=self._execution_policy_identity(),
+        )
+        self.assertEqual(
+            report["episode_execution_evidence"]["episodes"][0][
+                "missing_path_evidence"
+            ],
+            ["oms_order_state"],
+        )
+
+    def test_aggregate_only_pnl_and_update_counts_do_not_create_episode_utility(self):
+        text = (
+            "2026-08-11 10:00:00 [INFO] RUNTIME_STATUS: ticks=1, "
+            "account={equity=100000.0, drawdown_pct=0.0, notional=0.0, "
+            "realized_pnl=12.0, fees=1.0, realized_net=11.0}\n"
+            "2026-08-11 10:00:01 [INFO] SELF_EVOLUTION_ACTION: "
+            "pnl_source=virtual, update_count=10, virtual_pnl_usd=20.0\n"
+        )
+        report = ASSESS.assess(
+            text,
+            ASSESS.STAGE_RULES["DEPLOY"],
+            min_runtime_status=0,
+            segment_identity_sha256="1" * 64,
+            execution_policy_identity=self._execution_policy_identity(),
+        )
+        evidence = report["episode_execution_evidence"]
+        self.assertEqual(evidence["episodes"], [])
+        self.assertFalse(evidence["execution_path_complete"])
+        self.assertTrue(evidence["aggregate_only_rejected"])
+        self.assertEqual(evidence["missing_path_evidence"], ["fills"])
+
     def test_report_only_preserves_fail_verdict_but_exits_successfully(self):
         script = pathlib.Path(__file__).with_name("assess_run_log.py")
         with tempfile.TemporaryDirectory() as tmp:

@@ -41,6 +41,8 @@ CANARY_MIN_REPLAY_TOTAL_FILLS = 20
 CANARY_MIN_POSITIVE_FILLED_SEGMENT_RATIO = 0.55
 EXIT_CAPTURE_MIN_SAMPLES = 10
 EXIT_CAPTURE_MIN_MEAN_GROSS_CAPTURE_OF_PATH_MFE = 0.10
+DECISION_EVIDENCE_SCHEMA_VERSION = "decision_evidence_report_v1"
+RESEARCH_DECISIONS = {"CONTINUE", "CHANGE_INFORMATION_SET", "STOP"}
 
 
 def now_utc_iso() -> str:
@@ -49,6 +51,144 @@ def now_utc_iso() -> str:
 
 def read_json(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def is_sha256(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def unverifiable_decision_evidence(
+    errors: List[str], source_path: Path | None = None
+) -> Dict[str, Any]:
+    return {
+        "status": "UNVERIFIABLE",
+        "readiness_status": "NOT_EVALUATED",
+        "research_decision": "STOP",
+        "reason_codes": ["DECISION_EVIDENCE_UNVERIFIABLE"],
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "research_decision_only": True,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "research_decision_only",
+        "source_path": str(source_path) if source_path is not None else None,
+        "validation_errors": errors,
+        "fail_reasons": [],
+        "warn_reasons": [],
+    }
+
+
+def assess_decision_evidence(
+    path: Path | None,
+    run_manifest: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Validate and expose a research-only decision without promotion authority."""
+
+    errors: List[str] = []
+    manifest = run_manifest if isinstance(run_manifest, dict) else {}
+    artifact_entry: Dict[str, Any] | None = None
+    artifacts = manifest.get("artifacts", {})
+    if isinstance(artifacts, dict):
+        candidate = artifacts.get("decision_evidence_report")
+        if isinstance(candidate, dict):
+            artifact_entry = candidate
+
+    if path is None:
+        errors.append("decision evidence report path is missing")
+        return unverifiable_decision_evidence(errors)
+    if not path.is_file():
+        errors.append(f"decision evidence report is missing: {path}")
+        return unverifiable_decision_evidence(errors, path)
+    try:
+        payload = read_json(path)
+    except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        errors.append(f"decision evidence report is unreadable: {type(exc).__name__}")
+        return unverifiable_decision_evidence(errors, path)
+    if not isinstance(payload, dict):
+        errors.append("decision evidence report root is not an object")
+        return unverifiable_decision_evidence(errors, path)
+
+    if payload.get("schema_version") != DECISION_EVIDENCE_SCHEMA_VERSION:
+        errors.append("decision evidence report schema is invalid")
+    benchmark_id = payload.get("benchmark_id")
+    if not is_sha256(benchmark_id):
+        errors.append("decision evidence benchmark_id is invalid")
+    research_decision = payload.get("research_decision")
+    if research_decision not in RESEARCH_DECISIONS:
+        errors.append("decision evidence research_decision is invalid")
+    reason_codes = payload.get("reason_codes")
+    if not (
+        isinstance(reason_codes, list)
+        and all(isinstance(reason, str) and reason for reason in reason_codes)
+    ):
+        errors.append("decision evidence reason_codes are invalid")
+    if payload.get("research_decision_only") is not True:
+        errors.append("decision evidence research_decision_only must be true")
+    for field in (
+        "promotion_authority",
+        "demo_activation_authorized",
+        "live_activation_authorized",
+    ):
+        if payload.get(field) is not False:
+            errors.append(f"decision evidence {field} must be false")
+
+    actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    if artifact_entry is not None:
+        manifest_path_text = str(artifact_entry.get("path") or "").strip()
+        manifest_hash = str(artifact_entry.get("sha256") or "").strip()
+        if not manifest_path_text:
+            errors.append("run manifest decision evidence path is missing")
+        elif Path(manifest_path_text).resolve() != path.resolve():
+            errors.append("run manifest decision evidence path mismatch")
+        if not is_sha256(manifest_hash) or manifest_hash != actual_hash:
+            errors.append("run manifest decision evidence sha256 mismatch")
+    elif str(manifest.get("action") or "").strip().lower() == "full":
+        errors.append("run manifest decision evidence artifact is missing")
+
+    manifest_decision = manifest.get("decision_evidence")
+    if manifest_decision is not None:
+        if not isinstance(manifest_decision, dict):
+            errors.append("run manifest decision evidence summary is invalid")
+        else:
+            for field in (
+                "research_decision",
+                "research_decision_only",
+                "promotion_authority",
+            ):
+                if manifest_decision.get(field) != payload.get(field):
+                    errors.append(
+                        f"run manifest decision evidence {field} mismatch"
+                    )
+
+    if errors:
+        section = unverifiable_decision_evidence(errors, path)
+        section["source_sha256"] = actual_hash
+        section["benchmark_id"] = (
+            benchmark_id if is_sha256(benchmark_id) else None
+        )
+        return section
+    return {
+        "status": "VERIFIED",
+        "readiness_status": "NOT_EVALUATED",
+        "benchmark_id": benchmark_id,
+        "research_decision": research_decision,
+        "reason_codes": list(reason_codes),
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "research_decision_only": True,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "research_decision_only",
+        "source_path": str(path),
+        "source_sha256": actual_hash,
+        "validation_errors": [],
+        "fail_reasons": [],
+        "warn_reasons": [],
+    }
 
 
 def as_float(value: Any) -> float | None:
@@ -1853,7 +1993,12 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
             else:
                 effective_required_artifacts.extend(route_artifacts)
                 try:
-                    insertion = effective_required_steps.index("alpha_source_route") + 1
+                    insertion_anchor = (
+                        "decision_evidence_report"
+                        if "decision_evidence_report" in effective_required_steps
+                        else "alpha_source_route"
+                    )
+                    insertion = effective_required_steps.index(insertion_anchor) + 1
                 except ValueError:
                     insertion = len(effective_required_steps)
                 effective_required_steps[insertion:insertion] = route_steps
@@ -3657,6 +3802,11 @@ def parse_args() -> argparse.Namespace:
         help="closed_loop_mechanism_report.json 路径",
     )
     parser.add_argument(
+        "--decision_evidence_report",
+        default="",
+        help="决定性证据统一研究结论 JSON 路径",
+    )
+    parser.add_argument(
         "--activation_decision",
         default="",
         help="两阶段候选激活裁决 JSON 路径",
@@ -3772,6 +3922,38 @@ def main() -> int:
                 "status": "fail",
                 "fail_reasons": [f"文件不存在: {manifest_path}"],
             }
+
+    decision_evidence_path_text = str(args.decision_evidence_report or "").strip()
+    manifest_artifacts = run_manifest_payload.get("artifacts", {})
+    manifest_decision_artifact = (
+        manifest_artifacts.get("decision_evidence_report")
+        if isinstance(manifest_artifacts, dict)
+        else None
+    )
+    if not decision_evidence_path_text and isinstance(
+        manifest_decision_artifact, dict
+    ):
+        decision_evidence_path_text = str(
+            manifest_decision_artifact.get("path") or ""
+        ).strip()
+    decision_evidence_expected = bool(
+        args.decision_evidence_report
+        or args.run_manifest
+        and (
+            str(run_manifest_payload.get("action") or "").strip().lower()
+            == "full"
+            or manifest_decision_artifact is not None
+            or "decision_evidence" in run_manifest_payload
+            or not run_manifest_payload
+        )
+    )
+    if decision_evidence_expected:
+        sections["decision_evidence"] = assess_decision_evidence(
+            Path(decision_evidence_path_text)
+            if decision_evidence_path_text
+            else None,
+            run_manifest_payload,
+        )
 
     if args.miner_report:
         miner_path = Path(args.miner_report)
@@ -4501,6 +4683,19 @@ def main() -> int:
         "fail_reasons": fail_reasons,
         "warn_reasons": warn_reasons,
     }
+    decision_evidence_section = sections.get("decision_evidence")
+    if isinstance(decision_evidence_section, dict):
+        report.update(
+            {
+                "research_decision": decision_evidence_section.get(
+                    "research_decision", "STOP"
+                ),
+                "research_decision_only": True,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+            }
+        )
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)

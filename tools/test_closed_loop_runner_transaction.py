@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
+import json
+import hashlib
+import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -11,6 +15,1218 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ClosedLoopRunnerTransactionTest(unittest.TestCase):
+    LEDGER_REGISTRATION_FIELDS = {
+        "experiment_id",
+        "benchmark_id",
+        "validation_policy_sha256",
+        "information_set_definition",
+        "information_set_id",
+        "hypothesis_family_definition",
+        "hypothesis_family_id",
+        "display_name",
+        "changed_dimensions",
+        "expected_direction",
+        "stop_condition",
+        "result_source_path",
+    }
+    DECISIVE_TOOLS = [
+        "validate_decision_benchmark.py",
+        "validate_objective_alignment.py",
+        "run_paired_evolution_replay.py",
+        "validate_evolution_uplift.py",
+        "experiment_budget_ledger.py",
+        "build_decision_evidence_report.py",
+    ]
+    DECISIVE_STEPS = [
+        "decision_benchmark_validation",
+        "objective_alignment_validation",
+        "paired_evolution_replay",
+        "evolution_uplift_validation",
+        "experiment_budget_audit",
+        "decision_evidence_report",
+    ]
+    DECISIVE_ARTIFACTS = [
+        "decision_benchmark_validation.json",
+        "objective_alignment_validation.json",
+        "paired_evolution_replay.json",
+        "evolution_uplift_validation.json",
+        "experiment_budget_audit.json",
+        "decision_evidence_report.json",
+    ]
+
+    @staticmethod
+    def _proposal_payload():
+        information_definition = {
+            "actions": "frozen",
+            "data": "current-run",
+            "features": "current-run",
+        }
+        information_id = hashlib.sha256(
+            json.dumps(
+                information_definition,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        ).hexdigest()
+        family_definition = {"mechanism": "self-evolution", "target": "uplift"}
+        family_id = hashlib.sha256(
+            json.dumps(
+                {
+                    "information_set_id": information_id,
+                    "hypothesis_family_definition": family_definition,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii")
+        ).hexdigest()
+        return {
+            "experiment_id": "exp-current-run",
+            "validation_policy_sha256": "d" * 64,
+            "information_set_definition": information_definition,
+            "information_set_id": information_id,
+            "hypothesis_family_definition": family_definition,
+            "hypothesis_family_id": family_id,
+            "display_name": "current run",
+            "changed_dimensions": [
+                {"name": "self_evolution.enabled", "before": False, "after": True}
+            ],
+            "expected_direction": "increase",
+            "stop_condition": {"metric": "uplift_lcb", "operator": "gt", "value": 0.0},
+            "result_source_path": "/tmp/decision-result-exp-current-run.json",
+            "registered_at": "2026-08-12T00:00:00Z",
+            "earliest_result_at": "2026-08-12T01:00:00Z",
+            "earliest_result_identity": "legacy-unavailable",
+            "result_source_identity": "e" * 64,
+        }
+
+    def _write_registered_proposal(self, root, proposal_json):
+        raw = json.loads(proposal_json)
+        proposal = {
+            key: raw.get(key) for key in self.LEDGER_REGISTRATION_FIELDS
+        }
+        proposal["benchmark_id"] = "b" * 64
+        path = root / "inputs" / "ledger.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"registered_proposal": proposal}, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    def _write_fake_observation_python(self, root):
+        fake_bin = root / "bin"
+        fake_bin.mkdir()
+        fake_python = fake_bin / "python3"
+        fake_python.write_text(
+            f"#!{sys.executable}\n"
+            + textwrap.dedent(
+                r'''
+                import json
+                import os
+                import pathlib
+                import sys
+
+                real_python = os.environ["REAL_PYTHON"]
+                known = {
+                    "build_decision_benchmark.py",
+                    "validate_decision_benchmark.py",
+                    "validate_objective_alignment.py",
+                    "run_paired_evolution_replay.py",
+                    "validate_evolution_uplift.py",
+                    "experiment_budget_ledger.py",
+                    "build_decision_evidence_report.py",
+                }
+                tool = pathlib.Path(sys.argv[1]).name if len(sys.argv) > 1 else ""
+                if tool not in known:
+                    os.execv(real_python, [real_python, *sys.argv[1:]])
+
+                args = sys.argv[2:]
+                with pathlib.Path(os.environ["OBSERVATION_LOG"]).open(
+                    "a", encoding="utf-8"
+                ) as handle:
+                    handle.write(
+                        json.dumps({"tool": tool, "args": args}, sort_keys=True)
+                        + "\n"
+                    )
+
+                def option(name):
+                    for index, value in enumerate(args):
+                        if value == name and index + 1 < len(args):
+                            return args[index + 1]
+                        if value.startswith(name + "="):
+                            return value.split("=", 1)[1]
+                    return ""
+
+                def write(path_text, payload):
+                    path = pathlib.Path(path_text)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(
+                        json.dumps(payload, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+
+                benchmark_id = "b" * 64
+                omit = os.environ.get("FAKE_OMIT_ARTIFACT_TOOL") == tool
+                exit_status = 0
+                if tool == "build_decision_benchmark.py" and not omit:
+                    candidate_model = pathlib.Path(option("--candidate-model"))
+                    candidate_report = pathlib.Path(option("--candidate-report"))
+                    verified = candidate_model.is_file() and candidate_report.is_file()
+                    if "--candidate-preflight-only" in args:
+                        write(
+                            option("--build-report"),
+                            {
+                                "schema_version": "integrator_candidate_preflight_v1",
+                                "status": "VERIFIED" if verified else "UNVERIFIABLE",
+                                "errors": [] if verified else ["candidate_missing"],
+                            },
+                        )
+                    else:
+                        manifest_path = option("--manifest")
+                        paired_root = pathlib.Path(option("--output-dir")) / "paired_inputs"
+                        paired_corpus = paired_root / "BTCUSDT" / "corpus.json"
+                        paired_replay = paired_root / "replay_validation_identity.json"
+                        source_corpora = {}
+                        for item in option("--corpus-manifest-by-symbol").split(","):
+                            if "=" in item:
+                                symbol, path = item.split("=", 1)
+                                source_corpora[symbol] = path
+                        if verified:
+                            write(paired_corpus, {"candidate_set_frozen": True})
+                            write(
+                                paired_replay,
+                                {
+                                    "schema_version": "decision_evidence_replay_split_identity_v1",
+                                    "status": "VERIFIED",
+                                },
+                            )
+                            write(manifest_path, {"schema_version": "decision_evidence_benchmark_v1"})
+                        write(
+                            option("--build-report"),
+                            {
+                                "schema_version": "decision_evidence_benchmark_build_v1",
+                                "status": "VERIFIED" if verified else "UNVERIFIABLE",
+                                "paired_inputs": {
+                                    "replay_validation_report": str(paired_replay.resolve()),
+                                    "feature_csv": option("--feature-csv"),
+                                    "corpus_manifest": str(paired_corpus),
+                                    "feature_csv_by_symbol": {},
+                                    "corpus_manifest_by_symbol": {},
+                                    "source_corpus_manifest_by_symbol": source_corpora,
+                                },
+                                "errors": [] if verified else ["candidate_missing"],
+                            },
+                        )
+                    if not verified:
+                        exit_status = 2
+                elif tool == "validate_decision_benchmark.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "decision_evidence_benchmark_validation_v1",
+                            "identity_status": "VERIFIED",
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                elif tool == "validate_objective_alignment.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "objective_alignment_validation_v1",
+                            "overall_status": "UNVERIFIABLE",
+                            "benchmark_id": benchmark_id,
+                            "missing_fields": [
+                                "candidate_level_complete_execution_utility"
+                            ],
+                        },
+                    )
+                elif tool == "run_paired_evolution_replay.py" and not omit:
+                    write(
+                        str(
+                            pathlib.Path(option("--output-dir"))
+                            / "paired_evolution_replay_manifest.json"
+                        ),
+                        {
+                            "schema_version": "paired_evolution_replay_v1",
+                            "status": "UNVERIFIABLE",
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                elif tool == "validate_evolution_uplift.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "evolution_uplift_validation_v1",
+                            "status": "UNVERIFIABLE",
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                elif tool == "experiment_budget_ledger.py" and not omit:
+                    benchmark_path = pathlib.Path(option("--benchmark-report"))
+                    request_path = option("--request-json")
+                    ledger_path = pathlib.Path(option("--ledger"))
+                    try:
+                        benchmark = json.loads(
+                            benchmark_path.read_text(encoding="utf-8")
+                        )
+                        request = json.loads(
+                            pathlib.Path(request_path[1:]).read_text(encoding="utf-8")
+                        )
+                        registered = json.loads(
+                            ledger_path.read_text(encoding="utf-8")
+                        )["registered_proposal"]
+                        benchmark_verified = (
+                            benchmark.get("identity_status") == "VERIFIED"
+                            and benchmark.get("benchmark_id") == benchmark_id
+                        )
+                        registration_verified = benchmark_verified and (
+                            request == registered
+                            and request.get("benchmark_id") == benchmark_id
+                        )
+                    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+                        benchmark_verified = False
+                        registration_verified = False
+                        request = {}
+                    allowed = benchmark_verified and registration_verified
+                    print(
+                        json.dumps(
+                            {
+                                "schema_version": "experiment_budget_ledger_decision_v1",
+                                "decision": (
+                                    "ALLOW_NEXT_EXPERIMENT"
+                                    if allowed
+                                    else "BLOCK_INVALID_LEDGER"
+                                ),
+                                "benchmark_id": (
+                                    benchmark_id if benchmark_verified else None
+                                ),
+                                "expected_benchmark_id": (
+                                    benchmark_id if benchmark_verified else None
+                                ),
+                                "actual_benchmark_id": request.get("benchmark_id"),
+                                "experiment_id": request.get("experiment_id"),
+                                "benchmark_verified": benchmark_verified,
+                                "registration_verified": registration_verified,
+                                "mismatches": [] if allowed else [
+                                    "benchmark or registration identity mismatch"
+                                ],
+                            },
+                            sort_keys=True,
+                        )
+                    )
+                    if not allowed:
+                        exit_status = 2
+                elif tool == "build_decision_evidence_report.py" and not omit:
+                    write(
+                        option("--output"),
+                        {
+                            "schema_version": "decision_evidence_report_v1",
+                            "research_decision": os.environ.get(
+                                "FAKE_RESEARCH_DECISION", "CONTINUE"
+                            ),
+                            "research_decision_only": True,
+                            "promotion_authority": False,
+                            "benchmark_id": benchmark_id,
+                        },
+                    )
+                raise SystemExit(
+                    19 if os.environ.get("FAKE_FAIL_TOOL") == tool else exit_status
+                )
+                '''
+            ),
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+        return fake_bin
+
+    def _run_decisive_chain(self, root, body, fail_tool="", omit_tool=""):
+        fake_bin = self._write_fake_observation_python(root)
+        proposal = json.dumps(self._proposal_payload(), sort_keys=True)
+        self._write_registered_proposal(root, proposal)
+        script = textwrap.dedent(
+            r'''
+            set -euo pipefail
+            export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+            export CLOSED_LOOP_RUN_ID=decisive-observation-test
+            source tools/closed_loop_runner.sh full \
+              --output-root "${TMP_ROOT}/reports" \
+              --decision-evidence-benchmark-manifest "${TMP_ROOT}/inputs/benchmark.json" \
+              --decision-evidence-benchmark-root "${TMP_ROOT}/benchmark-root" \
+              --decision-evidence-config "${TMP_ROOT}/inputs/policy.json" \
+              --decision-evidence-runtime-config "${TMP_ROOT}/inputs/runtime.yaml" \
+              --decision-evidence-candidate-model "${TMP_ROOT}/inputs/candidate.cbm" \
+              --decision-evidence-candidate-report "${TMP_ROOT}/inputs/candidate.json" \
+              --decision-evidence-feature-csv "${TMP_ROOT}/inputs/features.csv" \
+              --decision-evidence-corpus-manifest "${TMP_ROOT}/inputs/corpus.json" \
+              --decision-evidence-trade-bot "/app/trade_bot" \
+              --decision-evidence-ledger "${TMP_ROOT}/inputs/ledger.jsonl" \
+              --decision-evidence-ledger-proposal "${PROPOSAL_JSON}"
+
+            compose_cmd() {
+              while (( $# > 0 )); do
+                if [[ "$1" == "ai-trade-research" ]]; then
+                  shift
+                  python3 "$@"
+                  return $?
+                fi
+                shift
+              done
+              return 0
+            }
+            mkdir -p "${TMP_ROOT}/inputs"
+            printf 'current-run-model\n' > "${TMP_ROOT}/inputs/candidate.cbm"
+            printf '{"model_version":"current-run"}\n' \
+              > "${TMP_ROOT}/inputs/candidate.json"
+            mkdir -p "${TMP_ROOT}/benchmark-root/frozen"
+            printf '{"schema_version":"decision_evidence_replay_split_identity_v1","status":"VERIFIED"}\n' \
+              > "${TMP_ROOT}/benchmark-root/frozen/replay-validation-identity.json"
+            BENCHMARK_MANIFEST_VALUE="${TMP_ROOT}/inputs/benchmark.json" \
+            BENCHMARK_ROOT_VALUE="${TMP_ROOT}/benchmark-root" \
+            python3 - <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+
+root = pathlib.Path(os.environ["BENCHMARK_ROOT_VALUE"])
+identity = root / "frozen" / "replay-validation-identity.json"
+manifest = {
+    "schema_version": "decision_evidence_benchmark_v1",
+    "components": {
+        "split": {
+            "logical_id": "split:test",
+            "files": [
+                {
+                    "logical_name": "replay_validation_report",
+                    "path": "frozen/replay-validation-identity.json",
+                    "sha256": hashlib.sha256(identity.read_bytes()).hexdigest(),
+                }
+            ],
+        }
+    },
+}
+path = pathlib.Path(os.environ["BENCHMARK_MANIFEST_VALUE"])
+path.write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
+PY
+            '''
+        ) + textwrap.dedent(body)
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+                "REAL_PYTHON": sys.executable,
+                "OBSERVATION_LOG": str(root / "observation_commands.jsonl"),
+                "TMP_ROOT": str(root),
+                "PROPOSAL_JSON": proposal,
+                "FAKE_FAIL_TOOL": fail_tool,
+                "FAKE_OMIT_ARTIFACT_TOOL": omit_tool,
+                "FAKE_RESEARCH_DECISION": "CONTINUE",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def _run_auto_training_chain(self, root, route):
+        fake_bin = self._write_fake_observation_python(root)
+        proposal = json.dumps(self._proposal_payload(), sort_keys=True)
+        self._write_registered_proposal(root, proposal)
+        script = textwrap.dedent(
+            r'''
+            set -euo pipefail
+            export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+            export CLOSED_LOOP_RUN_ID=auto-decisive-inputs
+            source tools/closed_loop_runner.sh full \
+              --output-root "${TMP_ROOT}/reports" \
+              --decision-evidence-config "${TMP_ROOT}/inputs/policy.json" \
+              --decision-evidence-runtime-config "${TMP_ROOT}/inputs/runtime.yaml" \
+              --decision-evidence-ledger "${TMP_ROOT}/inputs/ledger.jsonl" \
+              --decision-evidence-ledger-proposal "${PROPOSAL_JSON}"
+
+            compose_cmd() {
+              while (( $# > 0 )); do
+                if [[ "$1" == "ai-trade-research" ]]; then
+                  shift
+                  python3 "$@"
+                  return $?
+                fi
+                shift
+              done
+              return 0
+            }
+            run_freeze_baseline() { return 0; }
+            prepare_training_data() { return 0; }
+            run_research_domain_split() { return 0; }
+            run_feature_parity() { return 0; }
+            run_data_quality() { return 0; }
+            run_miner() { return 0; }
+            run_market_alpha_development_gate() { return 0; }
+            run_microstructure_capture_gate() { return 0; }
+            run_microstructure_alpha_development_gate() { return 0; }
+            run_microstructure_alpha_lifecycle_gate() { return 0; }
+            run_alpha_source_route_gate() {
+              printf '{"selected_route":"%s"}\n' "${ROUTE_VALUE}" \
+                > "${ALPHA_SOURCE_ROUTE_REPORT_PATH}"
+            }
+            run_integrator() {
+              printf 'integrator-model\n' > "${MODEL_OUTPUT_PATH}"
+              printf '{"model_version":"integrator-current-run"}\n' \
+                > "${INTEGRATOR_REPORT_PATH}"
+            }
+            prepare_replay_candidate_config() {
+              printf 'self_evolution: {enabled: false}\n' \
+                > "${REPLAY_CANDIDATE_CONFIG_PATH}"
+            }
+            run_replay_validation() {
+              mkdir -p "$(dirname "${REPLAY_VALIDATION_CORPUS_PATH}")"
+              printf 'timestamp,open,high,low,close,volume\n' \
+                > "${RESEARCH_HOLDOUT_FEATURE_PATH}"
+              printf '{"candidate_set_frozen":true,"symbol":"BTCUSDT","target_bucket":"trend","base_interval_ms":300000}\n' \
+                > "${REPLAY_VALIDATION_CORPUS_PATH}"
+              CORPUS_PATH_VALUE="${REPLAY_VALIDATION_CORPUS_PATH}" \
+              REPLAY_REPORT_PATH_VALUE="${REPLAY_VALIDATION_REPORT_PATH}" \
+              python3 - <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+
+corpus = pathlib.Path(os.environ["CORPUS_PATH_VALUE"])
+binding = {
+    "schema_version": "frozen_replay_corpus_binding_v1",
+    "per_symbol": {
+        "BTCUSDT": {
+            "path": str(corpus),
+            "sha256": hashlib.sha256(corpus.read_bytes()).hexdigest(),
+            "schema_version": None,
+            "evidence_domain": None,
+            "candidate_set_frozen": True,
+            "source_feature_csv": None,
+            "source_feature_sha256": None,
+            "target_bucket": "trend",
+            "thresholds": None,
+            "sampling_quantiles": None,
+        }
+    },
+}
+binding["binding_sha256"] = hashlib.sha256(
+    json.dumps(
+        binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+).hexdigest()
+path = pathlib.Path(os.environ["REPLAY_REPORT_PATH_VALUE"])
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(
+    json.dumps(
+        {"runs": [], "status": "fail", "frozen_corpus_binding": binding},
+        sort_keys=True,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+            }
+            run_strategy_diagnose() { return 0; }
+            run_alpha_mechanism_probe() { return 0; }
+            run_registry() { return 0; }
+            run_microstructure_demo_binding_gate() {
+              touch "${TMP_ROOT}/micro-demo-called"
+            }
+
+            run_training_chain
+            '''
+        )
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ.get('PATH', '')}",
+                "REAL_PYTHON": sys.executable,
+                "OBSERVATION_LOG": str(root / "observation_commands.jsonl"),
+                "TMP_ROOT": str(root),
+                "PROPOSAL_JSON": proposal,
+                "ROUTE_VALUE": route,
+                "FAKE_RESEARCH_DECISION": "CONTINUE",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_alpha_route_failure_still_runs_ordered_decisive_observation_chain(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_decisive_chain(
+                root,
+                r'''
+                run_freeze_baseline() { return 0; }
+                prepare_training_data() { return 0; }
+                run_research_domain_split() { return 0; }
+                run_feature_parity() { return 0; }
+                run_data_quality() { return 0; }
+                run_miner() { return 0; }
+                run_market_alpha_development_gate() { return 0; }
+                run_microstructure_capture_gate() { return 0; }
+                run_microstructure_alpha_development_gate() { return 0; }
+                run_microstructure_alpha_lifecycle_gate() { return 0; }
+                run_alpha_source_route_gate() { return 23; }
+
+                run_training_chain
+                printf '%s\n' "${RUN_REQUIRED_STEP_STATUS}" > "${TMP_ROOT}/required-status"
+                write_run_manifest
+                ''',
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                (root / "required-status").read_text(encoding="utf-8").strip(),
+                "23",
+            )
+
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertEqual(
+                [
+                    item["tool"]
+                    for item in commands
+                    if item["tool"] in self.DECISIVE_TOOLS
+                ],
+                self.DECISIVE_TOOLS,
+            )
+            run_dir = root / "reports" / "decisive-observation-test"
+            for artifact in self.DECISIVE_ARTIFACTS:
+                self.assertTrue((run_dir / artifact).is_file(), artifact)
+
+            statuses = [
+                json.loads(line)
+                for line in (run_dir / "step_status.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            decisive = [
+                item for item in statuses if item["step"] in self.DECISIVE_STEPS
+            ]
+            self.assertEqual(
+                [item["step"] for item in decisive], self.DECISIVE_STEPS
+            )
+            self.assertTrue(
+                all(item["kind"] == "observation" for item in decisive)
+            )
+            self.assertTrue(
+                all(item["blocked_by_prior_failure"] is False for item in decisive)
+            )
+            self.assertTrue(
+                all(item["research_decision_only"] is True for item in decisive)
+            )
+            self.assertNotIn("skipped", {item["result"] for item in decisive})
+            status_steps = [item["step"] for item in statuses]
+            self.assertLess(
+                status_steps.index("integrator"),
+                status_steps.index("decision_benchmark_validation"),
+            )
+            self.assertLess(
+                status_steps.index("replay_validation"),
+                status_steps.index("decision_benchmark_validation"),
+            )
+
+            by_tool = {item["tool"]: item for item in commands}
+            objective_args = by_tool["validate_objective_alignment.py"]["args"]
+            self.assertNotIn("--evidence", objective_args)
+            for option in (
+                "--miner-report",
+                "--market-alpha-report",
+                "--microstructure-report",
+                "--online-tuner-report",
+            ):
+                self.assertIn(option, objective_args)
+            paired_args = by_tool["run_paired_evolution_replay.py"]["args"]
+            self.assertEqual(
+                paired_args[paired_args.index("--trade-bot") + 1],
+                "/app/trade_bot",
+            )
+            self.assertEqual(
+                paired_args[paired_args.index("--replay-report") + 1],
+                str(
+                    (
+                        root
+                        / "benchmark-root"
+                        / "frozen"
+                        / "replay-validation-identity.json"
+                    ).resolve()
+                ),
+            )
+            unified_args = by_tool["build_decision_evidence_report.py"]["args"]
+            self.assertEqual(
+                unified_args[unified_args.index("--config") + 1],
+                str(root / "inputs" / "policy.json"),
+            )
+            ledger_args = by_tool["experiment_budget_ledger.py"]["args"]
+            self.assertEqual(ledger_args[0], "audit-next")
+            self.assertNotIn("register", ledger_args)
+            self.assertNotIn("observe", ledger_args)
+            self.assertEqual(
+                ledger_args[ledger_args.index("--benchmark-report") + 1],
+                str(
+                    root
+                    / "reports"
+                    / "decisive-observation-test"
+                    / "decision_benchmark_validation.json"
+                ),
+            )
+            proposal_arg = ledger_args[ledger_args.index("--request-json") + 1]
+            self.assertTrue(proposal_arg.startswith("@"), proposal_arg)
+            self.assertEqual(
+                unified_args[unified_args.index("--ledger") + 1],
+                ledger_args[ledger_args.index("--ledger") + 1],
+            )
+            self.assertEqual(
+                unified_args[unified_args.index("--ledger-proposal") + 1],
+                proposal_arg[1:],
+            )
+            prepared_proposal = json.loads(
+                pathlib.Path(proposal_arg[1:]).read_text(encoding="utf-8")
+            )
+            expected_proposal = {
+                key: value
+                for key, value in self._proposal_payload().items()
+                if key
+                not in {
+                    "registered_at",
+                    "earliest_result_at",
+                    "earliest_result_identity",
+                    "result_source_identity",
+                }
+            }
+            expected_proposal["benchmark_id"] = "b" * 64
+            self.assertEqual(prepared_proposal, expected_proposal)
+            self.assertEqual(
+                set(prepared_proposal),
+                self.LEDGER_REGISTRATION_FIELDS,
+            )
+            audit = json.loads(
+                (run_dir / "experiment_budget_audit.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(audit["decision"], "ALLOW_NEXT_EXPERIMENT")
+            self.assertTrue(audit["benchmark_verified"])
+            self.assertTrue(audit["registration_verified"])
+            manifest = json.loads(
+                (run_dir / "run_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(
+                manifest["decision_evidence"]["research_decision_only"]
+            )
+            self.assertFalse(manifest["decision_evidence"]["promotion_authority"])
+            self.assertEqual(
+                [item["step"] for item in manifest["decision_evidence"]["steps"]],
+                self.DECISIVE_STEPS,
+            )
+
+    def test_explicit_benchmark_missing_frozen_replay_identity_never_falls_back(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_decisive_chain(
+                root,
+                r'''
+                printf '{}\n' > "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}"
+                mkdir -p "$(dirname "${REPLAY_VALIDATION_REPORT_PATH}")"
+                printf '{"status":"pass"}\n' > "${REPLAY_VALIDATION_REPORT_PATH}"
+                RUN_REQUIRED_STEP_STATUS=0
+                run_decisive_observation_chain
+                ''',
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            paired = next(
+                item
+                for item in commands
+                if item["tool"] == "run_paired_evolution_replay.py"
+            )
+            replay_input = paired["args"][
+                paired["args"].index("--replay-report") + 1
+            ]
+            self.assertEqual(replay_input, "")
+            self.assertNotEqual(
+                replay_input,
+                str(
+                    root
+                    / "reports"
+                    / "decisive-observation-test"
+                    / "replay_validation"
+                    / "replay_validation_report.json"
+                ),
+            )
+
+    def test_each_decisive_failure_keeps_running_unified_and_preserves_status(self):
+        for failed_tool in self.DECISIVE_TOOLS:
+            with self.subTest(failed_tool=failed_tool), tempfile.TemporaryDirectory() as td:
+                root = pathlib.Path(td)
+                result = self._run_decisive_chain(
+                    root,
+                    r'''
+                    RUN_REQUIRED_STEP_STATUS=0
+                    run_decisive_observation_chain
+                    printf '%s\n' "${RUN_REQUIRED_STEP_STATUS}" > "${TMP_ROOT}/required-status"
+                    ''',
+                    fail_tool=failed_tool,
+                    omit_tool=(
+                        failed_tool
+                        if failed_tool == "validate_objective_alignment.py"
+                        else ""
+                    ),
+                )
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                self.assertEqual(
+                    (root / "required-status")
+                    .read_text(encoding="utf-8")
+                    .strip(),
+                    "0",
+                )
+                commands = [
+                    json.loads(line)
+                    for line in (root / "observation_commands.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual(
+                    [
+                        item["tool"]
+                        for item in commands
+                        if item["tool"] in self.DECISIVE_TOOLS
+                    ],
+                    self.DECISIVE_TOOLS,
+                )
+                run_dir = root / "reports" / "decisive-observation-test"
+                for artifact in self.DECISIVE_ARTIFACTS:
+                    self.assertTrue((run_dir / artifact).is_file(), artifact)
+                fallback = json.loads(
+                    (run_dir / self.DECISIVE_ARTIFACTS[
+                        self.DECISIVE_TOOLS.index(failed_tool)
+                    ]).read_text(encoding="utf-8")
+                )
+                if fallback.get("schema_version") == (
+                    "decision_evidence_observation_failure_v1"
+                ):
+                    self.assertFalse(fallback["promotion_authority"])
+                    self.assertFalse(fallback["demo_activation_authorized"])
+                    self.assertFalse(fallback["live_activation_authorized"])
+                statuses = [
+                    json.loads(line)
+                    for line in (run_dir / "step_status.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual(
+                    [item["step"] for item in statuses], self.DECISIVE_STEPS
+                )
+                self.assertTrue(
+                    all(item["blocked_by_prior_failure"] is False for item in statuses)
+                )
+
+    def test_ledger_benchmark_missing_or_registration_drift_fails_closed(self):
+        cases = {
+            "missing_benchmark": {
+                "body": r'''
+                    RUN_REQUIRED_STEP_STATUS=0
+                    run_decisive_observation_chain
+                    ''',
+                "omit_tool": "validate_decision_benchmark.py",
+                "benchmark_verified": False,
+            },
+            "registration_drift": {
+                "body": r'''
+                    LEDGER_PATH_VALUE="${TMP_ROOT}/inputs/ledger.jsonl" \
+                    python3 - <<'PY'
+import json
+import os
+import pathlib
+
+path = pathlib.Path(os.environ["LEDGER_PATH_VALUE"])
+payload = json.loads(path.read_text(encoding="utf-8"))
+payload["registered_proposal"]["benchmark_id"] = "c" * 64
+path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+PY
+                    RUN_REQUIRED_STEP_STATUS=0
+                    run_decisive_observation_chain
+                    ''',
+                "omit_tool": "",
+                "benchmark_verified": True,
+            },
+        }
+        for name, case in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as td:
+                root = pathlib.Path(td)
+                result = self._run_decisive_chain(
+                    root,
+                    case["body"],
+                    omit_tool=case["omit_tool"],
+                )
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                run_dir = root / "reports" / "decisive-observation-test"
+                audit = json.loads(
+                    (run_dir / "experiment_budget_audit.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(audit["decision"], "BLOCK_INVALID_LEDGER")
+                self.assertEqual(
+                    audit["benchmark_verified"], case["benchmark_verified"]
+                )
+                self.assertFalse(audit["registration_verified"])
+                statuses = [
+                    json.loads(line)
+                    for line in (run_dir / "step_status.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertEqual(
+                    [item["step"] for item in statuses], self.DECISIVE_STEPS
+                )
+                self.assertTrue(
+                    all(
+                        item["blocked_by_prior_failure"] is False
+                        for item in statuses
+                    )
+                )
+                commands = [
+                    json.loads(line)
+                    for line in (root / "observation_commands.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                self.assertIn(
+                    "build_decision_evidence_report.py",
+                    [item["tool"] for item in commands],
+                )
+
+    def test_continue_decision_never_calls_promotion_or_activation_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_decisive_chain(
+                root,
+                r'''
+                forbidden() { touch "${TMP_ROOT}/forbidden-promotion-call"; }
+                run_registry() { forbidden; }
+                restart_if_activated() { forbidden; }
+                run_microstructure_demo_binding_gate() { forbidden; }
+                begin_activation_transaction() { forbidden; }
+                RUN_REQUIRED_STEP_STATUS=0
+                run_decisive_observation_chain
+                ''',
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((root / "forbidden-promotion-call").exists())
+            report = json.loads(
+                (
+                    root
+                    / "reports"
+                    / "decisive-observation-test"
+                    / "decision_evidence_report.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(report["research_decision"], "CONTINUE")
+            self.assertTrue(report["research_decision_only"])
+            self.assertFalse(report["promotion_authority"])
+
+    def test_default_decisive_inputs_are_current_run_integrator_and_replay_outputs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            script = textwrap.dedent(
+                r'''
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=current-run-defaults
+                source tools/closed_loop_runner.sh full \
+                  --output-root "${TMP_ROOT}/reports" \
+                  --replay-validation-corpus-path "${TMP_ROOT}/current-corpus.json"
+                printf '%s\n' \
+                  "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" \
+                  "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" \
+                  "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" \
+                  "${DECISION_EVIDENCE_FEATURE_CSV_PATH}" \
+                  "${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}"
+                '''
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "TMP_ROOT": str(root),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            values = result.stdout.splitlines()[-5:]
+            run_dir = root / "reports" / "current-run-defaults"
+            self.assertEqual(
+                values,
+                [
+                    str(run_dir / "decision_evidence_benchmark.json"),
+                    str(run_dir / "integrator_latest.cbm"),
+                    str(run_dir / "integrator_report.json"),
+                    str(run_dir / "research_holdout_feature_5m.csv"),
+                    str(root / "current-corpus.json"),
+                ],
+            )
+
+    def test_runner_rejects_tampered_replay_corpus_binding(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            corpus = root / "corpus.json"
+            corpus.write_text(
+                '{"candidate_set_frozen":true,"symbol":"BTCUSDT"}\n',
+                encoding="utf-8",
+            )
+            unsigned_binding = {
+                "schema_version": "frozen_replay_corpus_binding_v1",
+                "per_symbol": {
+                    "BTCUSDT": {
+                        "path": str(corpus),
+                        "sha256": "0" * 64,
+                    }
+                },
+            }
+            binding = {
+                **unsigned_binding,
+                "binding_sha256": hashlib.sha256(
+                    json.dumps(
+                        unsigned_binding,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+            }
+            replay_report = root / "replay.json"
+            replay_report.write_text(
+                json.dumps({"frozen_corpus_binding": binding}) + "\n",
+                encoding="utf-8",
+            )
+            script = textwrap.dedent(
+                r'''
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                source tools/closed_loop_runner.sh assess \
+                  --output-root "${TMP_ROOT}/reports"
+                REPLAY_VALIDATION_REPORT_PATH="${TMP_ROOT}/replay.json"
+                compose_cmd() {
+                  while (( $# > 0 )); do
+                    if [[ "$1" == "ai-trade-research" ]]; then
+                      shift
+                      python3 "$@"
+                      return $?
+                    fi
+                    shift
+                  done
+                  return 0
+                }
+                if replay_validation_frozen_corpus_mapping; then
+                  exit 99
+                fi
+                '''
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={**os.environ, "TMP_ROOT": str(root)},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("corpus path/hash mismatch", result.stderr)
+
+    def test_auto_benchmark_consumes_current_integrator_and_replay_outputs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_auto_training_chain(root, "legacy_integrator")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            run_dir = root / "reports" / "auto-decisive-inputs"
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            builders = [
+                item
+                for item in commands
+                if item["tool"] == "build_decision_benchmark.py"
+            ]
+            self.assertEqual(len(builders), 2)
+            full_builder = next(
+                item
+                for item in builders
+                if "--candidate-preflight-only" not in item["args"]
+            )
+            self.assertEqual(
+                full_builder["args"][full_builder["args"].index("--candidate-model") + 1],
+                str(run_dir / "integrator_latest.cbm"),
+            )
+            self.assertEqual(
+                full_builder["args"][full_builder["args"].index("--candidate-report") + 1],
+                str(run_dir / "integrator_report.json"),
+            )
+            self.assertEqual(
+                full_builder["args"][full_builder["args"].index("--corpus-manifest") + 1],
+                str(
+                    run_dir
+                    / "replay_validation"
+                    / "replay_validation_trend_corpus.json"
+                ),
+            )
+            self.assertEqual(
+                full_builder["args"][
+                    full_builder["args"].index("--corpus-manifest-by-symbol") + 1
+                ],
+                "BTCUSDT="
+                + str(
+                    (
+                        run_dir
+                    / "replay_validation"
+                    / "replay_validation_trend_corpus.json"
+                    ).resolve()
+                ),
+            )
+            paired = next(
+                item
+                for item in commands
+                if item["tool"] == "run_paired_evolution_replay.py"
+            )
+            self.assertEqual(
+                paired["args"][paired["args"].index("--candidate-model") + 1],
+                str(run_dir / "integrator_latest.cbm"),
+            )
+            self.assertEqual(
+                paired["args"][paired["args"].index("--corpus-manifest") + 1],
+                str(
+                    run_dir
+                    / "replay_validation"
+                    / "replay_validation_trend_corpus.json"
+                ),
+            )
+            self.assertEqual(
+                paired["args"][
+                    paired["args"].index("--corpus-manifest-by-symbol") + 1
+                ],
+                "BTCUSDT="
+                + str(
+                    (
+                        run_dir
+                        / "replay_validation"
+                        / "replay_validation_trend_corpus.json"
+                    ).resolve()
+                ),
+            )
+            self.assertEqual(
+                paired["args"][paired["args"].index("--validation-config") + 1],
+                str(root / "inputs" / "policy.json"),
+            )
+            self.assertEqual(
+                paired["args"][paired["args"].index("--replay-report") + 1],
+                str(
+                    (
+                        run_dir
+                        / "decision_benchmark_build"
+                        / "paired_inputs"
+                        / "replay_validation_identity.json"
+                    ).resolve()
+                ),
+            )
+            self.assertNotIn(
+                str(
+                    run_dir
+                    / "decision_benchmark_build"
+                    / "paired_inputs"
+                    / "BTCUSDT"
+                    / "corpus.json"
+                ),
+                paired["args"],
+            )
+            self.assertTrue((run_dir / "decision_evidence_benchmark.json").is_file())
+            statuses = [
+                json.loads(line)
+                for line in (run_dir / "step_status.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            steps = [item["step"] for item in statuses]
+            self.assertLess(steps.index("integrator"), steps.index(self.DECISIVE_STEPS[0]))
+            self.assertLess(
+                steps.index("replay_validation"), steps.index(self.DECISIVE_STEPS[0])
+            )
+            self.assertLess(
+                steps.index(self.DECISIVE_STEPS[-1]), steps.index("strategy_diagnose")
+            )
+
+    def test_micro_route_never_uses_micro_sidecar_as_integrator_candidate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            result = self._run_auto_training_chain(root, "microstructure_demo")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            run_dir = root / "reports" / "auto-decisive-inputs"
+            commands = [
+                json.loads(line)
+                for line in (root / "observation_commands.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertNotIn(
+                "run_paired_evolution_replay.py",
+                [item["tool"] for item in commands],
+            )
+            for item in commands:
+                if item["tool"] == "build_decision_benchmark.py":
+                    candidate = item["args"][item["args"].index("--candidate-model") + 1]
+                    self.assertEqual(candidate, str(run_dir / "integrator_latest.cbm"))
+                    self.assertNotIn("microstructure", candidate)
+            paired = json.loads(
+                (run_dir / "paired_evolution_replay.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(paired["schema_version"], "paired_evolution_replay_v1")
+            self.assertEqual(paired["status"], "UNVERIFIABLE")
+            self.assertIn("candidate_preflight_failed", paired["mismatches"])
+            self.assertFalse(paired["promotion_authority"])
+            self.assertFalse(paired["demo_activation_authorized"])
+            self.assertFalse(paired["live_activation_authorized"])
+            statuses = [
+                json.loads(line)
+                for line in (run_dir / "step_status.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            steps = [item["step"] for item in statuses]
+            self.assertEqual(
+                [item["step"] for item in statuses if item["step"] in self.DECISIVE_STEPS],
+                self.DECISIVE_STEPS,
+            )
+            self.assertLess(
+                steps.index(self.DECISIVE_STEPS[-1]),
+                steps.index("microstructure_demo_binding"),
+            )
+            self.assertTrue((root / "micro-demo-called").is_file())
+
     def test_runner_rejects_invalid_lock_wait(self):
         result = subprocess.run(
             ["bash", "tools/closed_loop_runner.sh", "assess"],

@@ -195,6 +195,10 @@ REPLAY_VALIDATION_TARGET_BUCKET="${CLOSED_LOOP_REPLAY_VALIDATION_TARGET_BUCKET:-
 REPLAY_VALIDATION_MAX_SEGMENTS="${CLOSED_LOOP_REPLAY_VALIDATION_MAX_SEGMENTS:-16}"
 REPLAY_VALIDATION_MIN_SEGMENT_BARS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_SEGMENT_BARS:-40}"
 REPLAY_VALIDATION_CORPUS_PATH="${CLOSED_LOOP_REPLAY_VALIDATION_CORPUS_PATH:-}"
+REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT=false
+if [[ -n "${REPLAY_VALIDATION_CORPUS_PATH}" ]]; then
+  REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT=true
+fi
 REPLAY_VALIDATION_MIN_RUNTIME_STATUS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_RUNTIME_STATUS:-10}"
 REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS:-3}"
 REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS="${CLOSED_LOOP_REPLAY_VALIDATION_MIN_EXECUTION_PASS_RUNS:-3}"
@@ -228,6 +232,25 @@ REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
 MICROSTRUCTURE_CAPTURE_ROOT="${CLOSED_LOOP_MICROSTRUCTURE_CAPTURE_ROOT:-data/research/microstructure}"
 MICROSTRUCTURE_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MIN_CAPTURE_SECONDS:-86400}"
 MICROSTRUCTURE_MAX_STALE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-1800}"
+DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
+DECISION_EVIDENCE_BENCHMARK_ROOT="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_ROOT:-}"
+DECISION_EVIDENCE_CONFIG_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CONFIG:-config/decision_evidence_validation.json}"
+DECISION_EVIDENCE_ALIGNMENT_EVIDENCE_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_ALIGNMENT_EVIDENCE:-}"
+DECISION_EVIDENCE_ONLINE_TUNER_REPORT_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_ONLINE_TUNER_REPORT:-}"
+DECISION_EVIDENCE_RUNTIME_CONFIG_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_RUNTIME_CONFIG:-}"
+DECISION_EVIDENCE_CANDIDATE_MODEL_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CANDIDATE_MODEL:-}"
+DECISION_EVIDENCE_CANDIDATE_REPORT_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CANDIDATE_REPORT:-}"
+DECISION_EVIDENCE_FEATURE_CSV_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_FEATURE_CSV:-}"
+DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL="${CLOSED_LOOP_DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL:-}"
+DECISION_EVIDENCE_CORPUS_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CORPUS_MANIFEST:-}"
+DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL="${CLOSED_LOOP_DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL:-}"
+DECISION_EVIDENCE_TRADE_BOT_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_TRADE_BOT:-/app/trade_bot}"
+DECISION_EVIDENCE_LEDGER_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_LEDGER:-data/research/experiment_budget_ledger.jsonl}"
+DECISION_EVIDENCE_LEDGER_PROPOSAL="${CLOSED_LOOP_DECISION_EVIDENCE_LEDGER_PROPOSAL:-{}}"
+DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT=false
+if [[ -n "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" ]]; then
+  DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT=true
+fi
 
 usage() {
   cat <<'EOF'
@@ -336,6 +359,23 @@ Options:
                                       strategy diagnose alpha 候选 horizon 列表 (default: 6,12,24)
   --block-registry-on-alpha-fail <true|false>
                                       alpha viability 未证实时跳过模型注册激活 (default: true)
+
+  --decision-evidence-benchmark-manifest <path>
+  --decision-evidence-benchmark-root <dir>
+  --decision-evidence-config <path>
+  --decision-evidence-alignment-evidence <path>
+  --decision-evidence-online-tuner-report <path>
+  --decision-evidence-runtime-config <path>
+  --decision-evidence-candidate-model <path>
+  --decision-evidence-candidate-report <path>
+  --decision-evidence-feature-csv <path>
+  --decision-evidence-feature-csv-by-symbol <SYMBOL=path,...>
+  --decision-evidence-corpus-manifest <path>
+  --decision-evidence-corpus-manifest-by-symbol <SYMBOL=path,...>
+  --decision-evidence-trade-bot <path>
+  --decision-evidence-ledger <path>
+  --decision-evidence-ledger-proposal <json|@path>
+                                      决定性研究证据输入；缺失证据会失败关闭
 
   --gc-enabled <true|false>          启用产物回收 (default: true)
   --gc-keep-run-dirs <int>           保留最近 run 目录数 (default: 120)
@@ -565,7 +605,8 @@ while [[ $# -gt 0 ]]; do
     --replay-validation-min-segment-bars)
       REPLAY_VALIDATION_MIN_SEGMENT_BARS="$2"; shift 2;;
     --replay-validation-corpus-path)
-      REPLAY_VALIDATION_CORPUS_PATH="$2"; shift 2;;
+      REPLAY_VALIDATION_CORPUS_PATH="$2";
+      REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT=true; shift 2;;
     --replay-validation-min-execution-active-runs)
       REPLAY_VALIDATION_MIN_EXECUTION_ACTIVE_RUNS="$2"; shift 2;;
     --replay-validation-min-execution-pass-runs)
@@ -582,6 +623,37 @@ while [[ $# -gt 0 ]]; do
       STRATEGY_DIAGNOSE_TOURNAMENT_HORIZONS="$2"; shift 2;;
     --block-registry-on-alpha-fail)
       BLOCK_REGISTRY_ON_ALPHA_FAIL="$2"; shift 2;;
+    --decision-evidence-benchmark-manifest)
+      DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="$2";
+      DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT=true; shift 2;;
+    --decision-evidence-benchmark-root)
+      DECISION_EVIDENCE_BENCHMARK_ROOT="$2"; shift 2;;
+    --decision-evidence-config)
+      DECISION_EVIDENCE_CONFIG_PATH="$2"; shift 2;;
+    --decision-evidence-alignment-evidence)
+      DECISION_EVIDENCE_ALIGNMENT_EVIDENCE_PATH="$2"; shift 2;;
+    --decision-evidence-online-tuner-report)
+      DECISION_EVIDENCE_ONLINE_TUNER_REPORT_PATH="$2"; shift 2;;
+    --decision-evidence-runtime-config)
+      DECISION_EVIDENCE_RUNTIME_CONFIG_PATH="$2"; shift 2;;
+    --decision-evidence-candidate-model)
+      DECISION_EVIDENCE_CANDIDATE_MODEL_PATH="$2"; shift 2;;
+    --decision-evidence-candidate-report)
+      DECISION_EVIDENCE_CANDIDATE_REPORT_PATH="$2"; shift 2;;
+    --decision-evidence-feature-csv)
+      DECISION_EVIDENCE_FEATURE_CSV_PATH="$2"; shift 2;;
+    --decision-evidence-feature-csv-by-symbol)
+      DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL="$2"; shift 2;;
+    --decision-evidence-corpus-manifest)
+      DECISION_EVIDENCE_CORPUS_MANIFEST_PATH="$2"; shift 2;;
+    --decision-evidence-corpus-manifest-by-symbol)
+      DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL="$2"; shift 2;;
+    --decision-evidence-trade-bot)
+      DECISION_EVIDENCE_TRADE_BOT_PATH="$2"; shift 2;;
+    --decision-evidence-ledger)
+      DECISION_EVIDENCE_LEDGER_PATH="$2"; shift 2;;
+    --decision-evidence-ledger-proposal)
+      DECISION_EVIDENCE_LEDGER_PROPOSAL="$2"; shift 2;;
     --gc-enabled)
       GC_ENABLED="$2"; shift 2;;
     --gc-keep-run-dirs)
@@ -677,10 +749,6 @@ for item in sys.argv[1].replace(";", ",").split(","):
         seen.append(symbol)
 print(",".join(seen))' "${REPLAY_VALIDATION_SYMBOLS}")"
 REPLAY_VALIDATION_SYMBOLS_JSON="$(python3 -c 'import json,sys; print(json.dumps([x.strip().upper() for x in sys.argv[1].replace(";", ",").split(",") if x.strip()]))' "${REPLAY_VALIDATION_SYMBOLS}")"
-if [[ -z "${REPLAY_VALIDATION_CORPUS_PATH}" ]]; then
-  REPLAY_VALIDATION_CORPUS_PATH="data/research/replay_validation_${REPLAY_VALIDATION_TARGET_BUCKET}_corpus.json"
-fi
-
 if [[ "${NEED_HELP}" == "true" ]]; then
   usage
   exit 0
@@ -700,6 +768,9 @@ elif [[ -n "${AI_TRADE_CONFIG_PATH:-}" ]]; then
 else
   RUNTIME_CONFIG_PATH="${DEFAULT_RUNTIME_CONFIG_PATH}"
   RUNTIME_CONFIG_SOURCE="default"
+fi
+if [[ -z "${DECISION_EVIDENCE_RUNTIME_CONFIG_PATH}" ]]; then
+  DECISION_EVIDENCE_RUNTIME_CONFIG_PATH="${RUNTIME_CONFIG_PATH}"
 fi
 export AI_TRADE_CONFIG_PATH="${RUNTIME_CONFIG_PATH}"
 echo "[INFO] closed-loop runtime config resolved: stage=${STAGE} config=${RUNTIME_CONFIG_PATH} source=${RUNTIME_CONFIG_SOURCE}"
@@ -1194,6 +1265,9 @@ if [[ -d "${RUN_DIR}" && -n "$(ls -A "${RUN_DIR}" 2>/dev/null)" ]]; then
   exit 2
 fi
 mkdir -p "${RUN_DIR}" "$(dirname "${CSV_PATH}")"
+if [[ "${REPLAY_VALIDATION_CORPUS_PATH_EXPLICIT}" != "true" ]]; then
+  REPLAY_VALIDATION_CORPUS_PATH="${RUN_DIR}/replay_validation/replay_validation_${REPLAY_VALIDATION_TARGET_BUCKET}_corpus.json"
+fi
 
 DATA_PIPELINE_RUN_DIR="${RUN_DIR}/data_pipeline"
 DATA_PIPELINE_REPORT_PATH="${DATA_PIPELINE_RUN_DIR}/data_pipeline_report.json"
@@ -1229,6 +1303,17 @@ MICROSTRUCTURE_ALPHA_MODEL_PATH="${RUN_DIR}/microstructure_alpha_development.cbm
 MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH="${RUN_DIR}/microstructure_alpha_lifecycle_report.json"
 ALPHA_SOURCE_ROUTE_REPORT_PATH="${RUN_DIR}/alpha_source_route_report.json"
 MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH="${RUN_DIR}/microstructure_demo_binding_report.json"
+DECISION_BENCHMARK_VALIDATION_REPORT_PATH="${RUN_DIR}/decision_benchmark_validation.json"
+DECISION_BENCHMARK_BUILD_DIR="${RUN_DIR}/decision_benchmark_build"
+DECISION_BENCHMARK_BUILD_REPORT_PATH="${DECISION_BENCHMARK_BUILD_DIR}/build_report.json"
+DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH="${DECISION_BENCHMARK_BUILD_DIR}/candidate_preflight.json"
+OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH="${RUN_DIR}/objective_alignment_validation.json"
+PAIRED_EVOLUTION_REPLAY_REPORT_PATH="${RUN_DIR}/paired_evolution_replay.json"
+PAIRED_EVOLUTION_REPLAY_WORK_DIR="${RUN_DIR}/paired_evolution_replay_work"
+EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH="${RUN_DIR}/evolution_uplift_validation.json"
+EXPERIMENT_BUDGET_AUDIT_REPORT_PATH="${RUN_DIR}/experiment_budget_audit.json"
+DECISION_EVIDENCE_REPORT_PATH="${RUN_DIR}/decision_evidence_report.json"
+DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH="${RUN_DIR}/experiment_budget_proposal.json"
 MARKET_ALPHA_DEVELOPMENT_DIR="${RUN_DIR}/market_alpha_development"
 MARKET_ALPHA_DEVELOPMENT_REPORT_PATH="${MARKET_ALPHA_DEVELOPMENT_DIR}/market_alpha_verification_h${PREDICT_HORIZON_BARS}.json"
 ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/alpha_candidate_manifest.json"
@@ -1273,6 +1358,24 @@ SUMMARY_OUTPUT_DIR="${OUTPUT_ROOT}/summary"
 LATEST_DAILY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_daily_summary.json"
 LATEST_WEEKLY_SUMMARY_PATH="${OUTPUT_ROOT}/latest_weekly_summary.json"
 LATEST_DEMO_INCUBATION_REPORT_PATH="${OUTPUT_ROOT}/latest_demo_incubation_report.json"
+if [[ -z "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" ]]; then
+  DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${RUN_DIR}/decision_evidence_benchmark.json"
+fi
+if [[ -z "${DECISION_EVIDENCE_BENCHMARK_ROOT}" ]]; then
+  DECISION_EVIDENCE_BENCHMARK_ROOT="${RUN_DIR}"
+fi
+if [[ -z "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" ]]; then
+  DECISION_EVIDENCE_CANDIDATE_MODEL_PATH="${MODEL_OUTPUT_PATH}"
+fi
+if [[ -z "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" ]]; then
+  DECISION_EVIDENCE_CANDIDATE_REPORT_PATH="${INTEGRATOR_REPORT_PATH}"
+fi
+if [[ -z "${DECISION_EVIDENCE_FEATURE_CSV_PATH}" ]]; then
+  DECISION_EVIDENCE_FEATURE_CSV_PATH="${RESEARCH_HOLDOUT_FEATURE_PATH}"
+fi
+if [[ -z "${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}" ]]; then
+  DECISION_EVIDENCE_CORPUS_MANIFEST_PATH="${REPLAY_VALIDATION_CORPUS_PATH}"
+fi
 : > "${STEP_STATUS_PATH}"
 
 verify_s5_learning_switches() {
@@ -4669,6 +4772,23 @@ write_run_manifest() {
   MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" \
   ALPHA_SOURCE_ROUTE_REPORT_PATH_VALUE="${ALPHA_SOURCE_ROUTE_REPORT_PATH}" \
   MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH_VALUE="${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}" \
+  DECISION_BENCHMARK_VALIDATION_REPORT_PATH_VALUE="${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
+  OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH_VALUE="${OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH}" \
+  PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE="${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}" \
+  EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH_VALUE="${EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH}" \
+  EXPERIMENT_BUDGET_AUDIT_REPORT_PATH_VALUE="${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}" \
+  DECISION_EVIDENCE_REPORT_PATH_VALUE="${DECISION_EVIDENCE_REPORT_PATH}" \
+  DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH_VALUE="${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" \
+  DECISION_EVIDENCE_BENCHMARK_ROOT_VALUE="${DECISION_EVIDENCE_BENCHMARK_ROOT}" \
+  DECISION_EVIDENCE_CONFIG_PATH_VALUE="${DECISION_EVIDENCE_CONFIG_PATH}" \
+  DECISION_EVIDENCE_RUNTIME_CONFIG_PATH_VALUE="${DECISION_EVIDENCE_RUNTIME_CONFIG_PATH}" \
+  DECISION_EVIDENCE_CANDIDATE_MODEL_PATH_VALUE="${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" \
+  DECISION_EVIDENCE_CANDIDATE_REPORT_PATH_VALUE="${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" \
+  DECISION_EVIDENCE_FEATURE_CSV_PATH_VALUE="${DECISION_EVIDENCE_FEATURE_CSV_PATH}" \
+  DECISION_EVIDENCE_CORPUS_MANIFEST_PATH_VALUE="${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}" \
+  DECISION_EVIDENCE_TRADE_BOT_PATH_VALUE="${DECISION_EVIDENCE_TRADE_BOT_PATH}" \
+  DECISION_EVIDENCE_LEDGER_PATH_VALUE="${DECISION_EVIDENCE_LEDGER_PATH}" \
+  DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH_VALUE="${DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH}" \
   ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${ALPHA_CANDIDATE_MANIFEST_PATH}" \
   STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE="${STRATEGY_CANDIDATE_MANIFEST_PATH}" \
   REPLAY_CANDIDATE_CONFIG_PATH_VALUE="${REPLAY_CANDIDATE_CONFIG_PATH}" \
@@ -4850,6 +4970,12 @@ payload = {
         "runtime_config": os.environ.get("RUNTIME_CONFIG_PATH_VALUE", ""),
         "data_config": os.environ.get("DATA_CONFIG_PATH_VALUE", ""),
         "replay_config": os.environ.get("REPLAY_CONFIG_PATH_VALUE", ""),
+        "decision_evidence_benchmark_manifest": os.environ.get(
+            "DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH_VALUE", ""
+        ),
+        "decision_evidence_config": os.environ.get(
+            "DECISION_EVIDENCE_CONFIG_PATH_VALUE", ""
+        ),
     },
     "config_hashes": {},
     "artifacts": {},
@@ -4870,6 +4996,96 @@ payload = {
         "reconciled_from_artifacts": False,
         "warnings": [],
     },
+}
+
+decisive_contract = [
+    (
+        "decision_benchmark_validation",
+        "DECISION_BENCHMARK_VALIDATION_REPORT_PATH_VALUE",
+    ),
+    (
+        "objective_alignment_validation",
+        "OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH_VALUE",
+    ),
+    ("paired_evolution_replay", "PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE"),
+    (
+        "evolution_uplift_validation",
+        "EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH_VALUE",
+    ),
+    ("experiment_budget_audit", "EXPERIMENT_BUDGET_AUDIT_REPORT_PATH_VALUE"),
+    ("decision_evidence_report", "DECISION_EVIDENCE_REPORT_PATH_VALUE"),
+]
+step_records = []
+step_status_path = Path(os.environ.get("STEP_STATUS_PATH_VALUE", ""))
+if step_status_path.is_file():
+    for raw_line in step_status_path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(raw_line)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(record, dict):
+            step_records.append(record)
+decisive_steps = []
+for step_name, path_env in decisive_contract:
+    matching = [item for item in step_records if item.get("step") == step_name]
+    latest = matching[-1] if matching else {}
+    decisive_steps.append(
+        {
+            "step": step_name,
+            "artifact_path": os.environ.get(path_env, ""),
+            "execution_count": len(matching),
+            "result": latest.get("result", "missing"),
+            "exit_code": latest.get("exit_code"),
+            "blocked_by_prior_failure": latest.get("blocked_by_prior_failure", False),
+            "research_decision_only": True,
+        }
+    )
+decision_report = load_json_file(
+    os.environ.get("DECISION_EVIDENCE_REPORT_PATH_VALUE", "")
+)
+payload["decision_evidence"] = {
+    "research_decision_only": True,
+    "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
+    "research_decision": decision_report.get("research_decision", "STOP"),
+    "steps": decisive_steps,
+    "inputs": {
+        "benchmark_manifest": os.environ.get(
+            "DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH_VALUE", ""
+        ),
+        "benchmark_root": os.environ.get(
+            "DECISION_EVIDENCE_BENCHMARK_ROOT_VALUE", ""
+        ),
+        "config": os.environ.get("DECISION_EVIDENCE_CONFIG_PATH_VALUE", ""),
+        "runtime_config": os.environ.get(
+            "DECISION_EVIDENCE_RUNTIME_CONFIG_PATH_VALUE", ""
+        ),
+        "candidate_model": os.environ.get(
+            "DECISION_EVIDENCE_CANDIDATE_MODEL_PATH_VALUE", ""
+        ),
+        "candidate_report": os.environ.get(
+            "DECISION_EVIDENCE_CANDIDATE_REPORT_PATH_VALUE", ""
+        ),
+        "feature_csv": os.environ.get(
+            "DECISION_EVIDENCE_FEATURE_CSV_PATH_VALUE", ""
+        ),
+        "corpus_manifest": os.environ.get(
+            "DECISION_EVIDENCE_CORPUS_MANIFEST_PATH_VALUE", ""
+        ),
+        "trade_bot": os.environ.get(
+            "DECISION_EVIDENCE_TRADE_BOT_PATH_VALUE", ""
+        ),
+        "ledger": os.environ.get("DECISION_EVIDENCE_LEDGER_PATH_VALUE", ""),
+        "ledger_proposal": os.environ.get(
+            "DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH_VALUE", ""
+        ),
+    },
+}
+payload["decision_evidence"]["input_sha256"] = {
+    name: file_hash(path_text)
+    for name, path_text in payload["decision_evidence"]["inputs"].items()
+    if name != "benchmark_root"
 }
 
 runtime_symbol = latest_runtime_symbol(
@@ -4936,6 +5152,12 @@ artifact_env_names = {
     "microstructure_alpha_lifecycle_report": "MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE",
     "alpha_source_route_report": "ALPHA_SOURCE_ROUTE_REPORT_PATH_VALUE",
     "microstructure_demo_binding_report": "MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH_VALUE",
+    "decision_benchmark_validation": "DECISION_BENCHMARK_VALIDATION_REPORT_PATH_VALUE",
+    "objective_alignment_validation": "OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH_VALUE",
+    "paired_evolution_replay": "PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE",
+    "evolution_uplift_validation": "EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH_VALUE",
+    "experiment_budget_audit": "EXPERIMENT_BUDGET_AUDIT_REPORT_PATH_VALUE",
+    "decision_evidence_report": "DECISION_EVIDENCE_REPORT_PATH_VALUE",
     "alpha_candidate_manifest": "ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
     "strategy_candidate_manifest": "STRATEGY_CANDIDATE_MANIFEST_PATH_VALUE",
     "replay_candidate_config": "REPLAY_CANDIDATE_CONFIG_PATH_VALUE",
@@ -5229,6 +5451,12 @@ build_summary() {
   "microstructure_alpha_lifecycle_report": "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}",
   "alpha_source_route_report": "${ALPHA_SOURCE_ROUTE_REPORT_PATH}",
   "microstructure_demo_binding_report": "${MICROSTRUCTURE_DEMO_BINDING_REPORT_PATH}",
+  "decision_benchmark_validation": "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}",
+  "objective_alignment_validation": "${OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH}",
+  "paired_evolution_replay": "${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}",
+  "evolution_uplift_validation": "${EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH}",
+  "experiment_budget_audit": "${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}",
+  "decision_evidence_report": "${DECISION_EVIDENCE_REPORT_PATH}",
   "alpha_candidate_manifest": "${ALPHA_CANDIDATE_MANIFEST_PATH}",
   "strategy_candidate_manifest": "${STRATEGY_CANDIDATE_MANIFEST_PATH}",
   "closed_loop_mechanism_report": "${MECHANISM_AUDIT_REPORT_PATH}",
@@ -5310,6 +5538,543 @@ run_gc() {
   echo "[INFO] recycle done"
 }
 
+write_decisive_fail_closed_artifact() {
+  local step_name="$1"
+  local artifact_path="$2"
+  local exit_code="$3"
+  STEP_NAME_VALUE="${step_name}" \
+  ARTIFACT_PATH_VALUE="${artifact_path}" \
+  EXIT_CODE_VALUE="${exit_code}" \
+  python3 - <<'PY'
+import json
+import os
+import pathlib
+import tempfile
+
+path = pathlib.Path(os.environ["ARTIFACT_PATH_VALUE"])
+path.parent.mkdir(parents=True, exist_ok=True)
+payload = {
+    "schema_version": "decision_evidence_observation_failure_v1",
+    "status": "UNVERIFIABLE",
+    "step": os.environ["STEP_NAME_VALUE"],
+    "exit_code": int(os.environ["EXIT_CODE_VALUE"]),
+    "research_decision_only": True,
+    "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
+    "missing_evidence": ["producer_report"],
+}
+with tempfile.NamedTemporaryFile(
+    mode="w", encoding="utf-8", dir=path.parent, delete=False
+) as handle:
+    temporary = pathlib.Path(handle.name)
+    json.dump(payload, handle, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    handle.write("\n")
+temporary.replace(path)
+PY
+}
+
+finalize_decisive_artifact() {
+  local step_name="$1"
+  local artifact_path="$2"
+  local producer_status="$3"
+  if [[ ! -s "${artifact_path}" ]]; then
+    write_decisive_fail_closed_artifact \
+      "${step_name}" "${artifact_path}" "${producer_status}" || return 2
+    if (( producer_status == 0 )); then
+      producer_status=2
+    fi
+  fi
+  return "${producer_status}"
+}
+
+replay_validation_frozen_corpus_mapping() {
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    - "${REPLAY_VALIDATION_REPORT_PATH}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+report_path = pathlib.Path(sys.argv[1])
+try:
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    binding = report["frozen_corpus_binding"]
+    if binding.get("schema_version") != "frozen_replay_corpus_binding_v1":
+        raise ValueError("invalid binding schema")
+    unsigned = {key: value for key, value in binding.items() if key != "binding_sha256"}
+    binding_sha = hashlib.sha256(
+        json.dumps(
+            unsigned,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if binding.get("binding_sha256") != binding_sha:
+        raise ValueError("binding sha256 mismatch")
+    per_symbol = binding["per_symbol"]
+    if not isinstance(per_symbol, dict) or not per_symbol:
+        raise ValueError("per-symbol binding missing")
+    mapping = []
+    for symbol in sorted(per_symbol):
+        item = per_symbol[symbol]
+        if not isinstance(symbol, str) or not symbol or not isinstance(item, dict):
+            raise ValueError("invalid per-symbol binding")
+        path = pathlib.Path(str(item.get("path") or "")).expanduser().resolve()
+        if not path.is_file() or item.get("sha256") != file_sha256(path):
+            raise ValueError(f"corpus path/hash mismatch for {symbol}")
+        mapping.append(f"{symbol}={path}")
+except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+    print(f"[ERROR] frozen replay corpus binding invalid: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+print(",".join(mapping))
+PY
+}
+
+run_decision_benchmark_validation() {
+  if [[ "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT}" != "true" ]]; then
+    local -a builder_args=(
+      tools/build_decision_benchmark.py
+      --replay-report "${REPLAY_VALIDATION_REPORT_PATH}"
+      --feature-csv "${DECISION_EVIDENCE_FEATURE_CSV_PATH}"
+      --corpus-manifest "${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}"
+      --runtime-config "${DECISION_EVIDENCE_RUNTIME_CONFIG_PATH}"
+      --replay-config "${REPLAY_EFFECTIVE_CONFIG_PATH}"
+      --candidate-model "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}"
+      --candidate-report "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}"
+      --validation-config "${DECISION_EVIDENCE_CONFIG_PATH}"
+      --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}"
+      --output-dir "${DECISION_BENCHMARK_BUILD_DIR}"
+      --manifest "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}"
+      --build-report "${DECISION_BENCHMARK_BUILD_REPORT_PATH}"
+    )
+    local feature_mapping="${DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL}"
+    if [[ -z "${feature_mapping}" ]]; then
+      feature_mapping="${REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL}"
+    fi
+    if [[ -n "${feature_mapping}" ]]; then
+      builder_args+=(--feature-csv-by-symbol "${feature_mapping}")
+    fi
+    local corpus_mapping="${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
+    local frozen_corpus_mapping=""
+    local corpus_binding_status=0
+    frozen_corpus_mapping="$(replay_validation_frozen_corpus_mapping)" \
+      || corpus_binding_status=$?
+    if (( corpus_binding_status != 0 )); then
+      echo "[WARN] replay frozen corpus binding verification failed: status=${corpus_binding_status}"
+      corpus_mapping="__INVALID_FROZEN_CORPUS_BINDING__=/nonexistent"
+    elif [[ -z "${corpus_mapping}" ]]; then
+      corpus_mapping="${frozen_corpus_mapping}"
+    fi
+    if [[ -n "${corpus_mapping}" ]]; then
+      builder_args+=(
+        --corpus-manifest-by-symbol
+        "${corpus_mapping}"
+      )
+    fi
+    local builder_status=0
+    compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+      "${builder_args[@]}" || builder_status=$?
+    if (( builder_status != 0 )); then
+      echo "[WARN] current-run decision benchmark build failed: status=${builder_status}"
+    fi
+  fi
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/validate_decision_benchmark.py \
+    --manifest "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" \
+    --root "${DECISION_EVIDENCE_BENCHMARK_ROOT}" \
+    --config "${DECISION_EVIDENCE_CONFIG_PATH}" \
+    --output "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" || status=$?
+  finalize_decisive_artifact \
+    decision_benchmark_validation \
+    "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" "${status}"
+}
+
+decision_benchmark_paired_input() {
+  local field="$1"
+  DECISION_BENCHMARK_BUILD_REPORT_PATH_VALUE="${DECISION_BENCHMARK_BUILD_REPORT_PATH}" \
+  PAIRED_INPUT_FIELD_VALUE="${field}" \
+  python3 - <<'PY'
+import json
+import os
+import pathlib
+
+try:
+    report = json.loads(
+        pathlib.Path(
+            os.environ["DECISION_BENCHMARK_BUILD_REPORT_PATH_VALUE"]
+        ).read_text(encoding="utf-8")
+    )
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    raise SystemExit(0)
+paired = report.get("paired_inputs") if isinstance(report, dict) else None
+if not isinstance(paired, dict):
+    raise SystemExit(0)
+value = paired.get(os.environ["PAIRED_INPUT_FIELD_VALUE"])
+if isinstance(value, str):
+    print(value)
+elif isinstance(value, dict):
+    print(",".join(f"{key}={value[key]}" for key in sorted(value)))
+PY
+}
+
+decision_benchmark_manifest_input() {
+  local component_name="$1"
+  local logical_name="$2"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    - "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH}" \
+    "${DECISION_EVIDENCE_BENCHMARK_ROOT}" "${component_name}" "${logical_name}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+try:
+    manifest_path = pathlib.Path(sys.argv[1])
+    root = pathlib.Path(sys.argv[2]).expanduser().resolve(strict=False)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    components = manifest["components"]
+    component = components[sys.argv[3]]
+    files = component["files"]
+    matches = [
+        item
+        for item in files
+        if isinstance(item, dict)
+        and item.get("logical_name") == sys.argv[4]
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"expected exactly one frozen input, found {len(matches)}")
+    item = matches[0]
+    declared = item.get("path")
+    expected_sha = item.get("sha256")
+    if not isinstance(declared, str) or not declared:
+        raise ValueError("frozen input path missing")
+    raw_path = pathlib.Path(declared).expanduser()
+    path = (
+        raw_path if raw_path.is_absolute() else root / raw_path
+    ).resolve(strict=False)
+    if not path.is_file():
+        raise ValueError(f"frozen input file missing: {path}")
+    actual_sha = file_sha256(path)
+    if expected_sha != actual_sha:
+        raise ValueError(
+            f"frozen input sha256 mismatch: expected={expected_sha},actual={actual_sha}"
+        )
+except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+    print(f"[ERROR] benchmark frozen input invalid: {exc}", file=sys.stderr)
+    raise SystemExit(2)
+print(path)
+PY
+}
+
+write_paired_candidate_preflight_failure() {
+  local exit_code="$1"
+  PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE="${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}" \
+  DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH_VALUE="${DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH}" \
+  DECISION_EVIDENCE_CANDIDATE_MODEL_PATH_VALUE="${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" \
+  DECISION_EVIDENCE_CANDIDATE_REPORT_PATH_VALUE="${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" \
+  EXIT_CODE_VALUE="${exit_code}" \
+  python3 - <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import tempfile
+
+
+def identity(path_text):
+    path = pathlib.Path(path_text)
+    return {
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest()
+        if path.is_file()
+        else "",
+    }
+
+
+preflight_path = pathlib.Path(
+    os.environ["DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH_VALUE"]
+)
+try:
+    preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    preflight = {"status": "UNVERIFIABLE", "errors": ["preflight_report_invalid"]}
+payload = {
+    "schema_version": "paired_evolution_replay_v1",
+    "status": "UNVERIFIABLE",
+    "research_decision_only": True,
+    "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
+    "candidate_model": identity(
+        os.environ["DECISION_EVIDENCE_CANDIDATE_MODEL_PATH_VALUE"]
+    ),
+    "candidate_report": identity(
+        os.environ["DECISION_EVIDENCE_CANDIDATE_REPORT_PATH_VALUE"]
+    ),
+    "candidate_preflight": preflight,
+    "commands": [],
+    "mismatches": ["candidate_preflight_failed"],
+    "exit_code": int(os.environ["EXIT_CODE_VALUE"]),
+}
+path = pathlib.Path(os.environ["PAIRED_EVOLUTION_REPLAY_REPORT_PATH_VALUE"])
+path.parent.mkdir(parents=True, exist_ok=True)
+with tempfile.NamedTemporaryFile(
+    mode="w", encoding="utf-8", dir=path.parent, delete=False
+) as handle:
+    temporary = pathlib.Path(handle.name)
+    json.dump(payload, handle, ensure_ascii=True, sort_keys=True, allow_nan=False)
+    handle.write("\n")
+temporary.replace(path)
+PY
+}
+
+run_objective_alignment_validation() {
+  local -a args=(
+    tools/validate_objective_alignment.py
+    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}"
+    --config "${DECISION_EVIDENCE_CONFIG_PATH}"
+    --output "${OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH}"
+  )
+  if [[ -n "${DECISION_EVIDENCE_ALIGNMENT_EVIDENCE_PATH}" ]]; then
+    args+=(--evidence "${DECISION_EVIDENCE_ALIGNMENT_EVIDENCE_PATH}")
+  else
+    args+=(
+      --miner-report "${MINER_REPORT_PATH}"
+      --market-alpha-report "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}"
+      --microstructure-report "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}"
+      --online-tuner-report "${DECISION_EVIDENCE_ONLINE_TUNER_REPORT_PATH}"
+    )
+  fi
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    "${args[@]}" || status=$?
+  finalize_decisive_artifact \
+    objective_alignment_validation \
+    "${OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH}" "${status}"
+}
+
+run_paired_evolution_replay_observation() {
+  local preflight_status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/build_decision_benchmark.py \
+    --candidate-preflight-only \
+    --candidate-model "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" \
+    --candidate-report "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" \
+    --build-report "${DECISION_CANDIDATE_PREFLIGHT_REPORT_PATH}" \
+    || preflight_status=$?
+  if (( preflight_status != 0 )); then
+    write_paired_candidate_preflight_failure "${preflight_status}" || return 2
+    return "${preflight_status}"
+  fi
+
+  local paired_feature_csv="${DECISION_EVIDENCE_FEATURE_CSV_PATH}"
+  local paired_corpus_manifest="${DECISION_EVIDENCE_CORPUS_MANIFEST_PATH}"
+  local paired_feature_mapping="${DECISION_EVIDENCE_FEATURE_CSV_BY_SYMBOL}"
+  local paired_corpus_mapping="${DECISION_EVIDENCE_CORPUS_MANIFEST_BY_SYMBOL}"
+  local paired_replay_report=""
+  local replay_identity_status=0
+  if [[ "${DECISION_EVIDENCE_BENCHMARK_MANIFEST_EXPLICIT}" != "true" ]]; then
+    paired_replay_report="$(decision_benchmark_paired_input replay_validation_report)"
+    paired_feature_csv="$(decision_benchmark_paired_input feature_csv)"
+    paired_feature_mapping="$(decision_benchmark_paired_input feature_csv_by_symbol)"
+    paired_corpus_mapping="$(decision_benchmark_paired_input source_corpus_manifest_by_symbol)"
+  else
+    paired_replay_report="$(
+      decision_benchmark_manifest_input split replay_validation_report
+    )" || replay_identity_status=$?
+  fi
+  if [[ -z "${paired_replay_report}" ]]; then
+    replay_identity_status=2
+  fi
+  if (( replay_identity_status != 0 )); then
+    echo "[WARN] frozen replay validation identity unavailable: status=${replay_identity_status}"
+    paired_replay_report=""
+  fi
+  local -a paired_args=(
+    tools/run_paired_evolution_replay.py
+    --runtime-config "${DECISION_EVIDENCE_RUNTIME_CONFIG_PATH}"
+    --candidate-model "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}"
+    --candidate-report "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}"
+    --feature-csv "${paired_feature_csv}"
+    --corpus-manifest "${paired_corpus_manifest}"
+    --trade-bot "${DECISION_EVIDENCE_TRADE_BOT_PATH}"
+    --output-dir "${PAIRED_EVOLUTION_REPLAY_WORK_DIR}"
+    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}"
+    --replay-report "${paired_replay_report}"
+    --validation-config "${DECISION_EVIDENCE_CONFIG_PATH}"
+  )
+  if [[ -n "${paired_feature_mapping}" ]]; then
+    paired_args+=(--feature-csv-by-symbol "${paired_feature_mapping}")
+  fi
+  if [[ -n "${paired_corpus_mapping}" ]]; then
+    paired_args+=(--corpus-manifest-by-symbol "${paired_corpus_mapping}")
+  fi
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    "${paired_args[@]}" || status=$?
+  local source_manifest="${PAIRED_EVOLUTION_REPLAY_WORK_DIR}/paired_evolution_replay_manifest.json"
+  if [[ -s "${source_manifest}" ]]; then
+    local copy_status=0
+    atomic_copy_file "${source_manifest}" "${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}" \
+      || copy_status=$?
+    if (( status == 0 && copy_status != 0 )); then
+      status="${copy_status}"
+    fi
+  fi
+  finalize_decisive_artifact \
+    paired_evolution_replay "${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}" "${status}"
+}
+
+run_evolution_uplift_validation() {
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/validate_evolution_uplift.py \
+    --paired-manifest "${PAIRED_EVOLUTION_REPLAY_REPORT_PATH}" \
+    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
+    --config "${DECISION_EVIDENCE_CONFIG_PATH}" \
+    --output "${EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH}" || status=$?
+  finalize_decisive_artifact \
+    evolution_uplift_validation \
+    "${EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH}" "${status}"
+}
+
+prepare_experiment_budget_proposal() {
+  DECISION_EVIDENCE_LEDGER_PROPOSAL_VALUE="${DECISION_EVIDENCE_LEDGER_PROPOSAL}" \
+  DECISION_BENCHMARK_VALIDATION_REPORT_PATH_VALUE="${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
+  DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH_VALUE="${DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH}" \
+  python3 - <<'PY'
+import json
+import os
+import pathlib
+import tempfile
+
+raw = os.environ.get("DECISION_EVIDENCE_LEDGER_PROPOSAL_VALUE", "")
+try:
+    if raw.startswith("@"):
+        raw = pathlib.Path(raw[1:]).read_text(encoding="utf-8")
+    proposal = json.loads(raw)
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    proposal = {}
+if not isinstance(proposal, dict):
+    proposal = {}
+
+benchmark_id = ""
+try:
+    benchmark = json.loads(
+        pathlib.Path(
+            os.environ["DECISION_BENCHMARK_VALIDATION_REPORT_PATH_VALUE"]
+        ).read_text(encoding="utf-8")
+    )
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    benchmark = {}
+if isinstance(benchmark, dict) and benchmark.get("identity_status") == "VERIFIED":
+    value = benchmark.get("benchmark_id")
+    if isinstance(value, str):
+        benchmark_id = value
+
+registration_request_fields = (
+    "experiment_id",
+    "benchmark_id",
+    "validation_policy_sha256",
+    "information_set_definition",
+    "information_set_id",
+    "hypothesis_family_definition",
+    "hypothesis_family_id",
+    "display_name",
+    "changed_dimensions",
+    "expected_direction",
+    "stop_condition",
+    "result_source_path",
+)
+prepared = {field: proposal.get(field) for field in registration_request_fields}
+if not isinstance(prepared["benchmark_id"], str) or not prepared["benchmark_id"]:
+    prepared["benchmark_id"] = benchmark_id
+
+path = pathlib.Path(os.environ["DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH_VALUE"])
+path.parent.mkdir(parents=True, exist_ok=True)
+with tempfile.NamedTemporaryFile(
+    mode="w", encoding="utf-8", dir=path.parent, delete=False
+) as handle:
+    temporary = pathlib.Path(handle.name)
+    json.dump(
+        prepared,
+        handle,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    handle.write("\n")
+temporary.replace(path)
+PY
+}
+
+run_experiment_budget_audit() {
+  prepare_experiment_budget_proposal
+  local temporary="${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}.tmp.${RUN_ID}.$$"
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/experiment_budget_ledger.py audit-next \
+    --ledger "${DECISION_EVIDENCE_LEDGER_PATH}" \
+    --config "${DECISION_EVIDENCE_CONFIG_PATH}" \
+    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
+    --request-json "@${DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH}" \
+    > "${temporary}" || status=$?
+  if python3 - "${temporary}" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if not isinstance(payload, dict):
+    raise SystemExit(1)
+PY
+  then
+    mv -f "${temporary}" "${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}"
+  fi
+  finalize_decisive_artifact \
+    experiment_budget_audit "${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}" "${status}"
+}
+
+run_decision_evidence_report() {
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/build_decision_evidence_report.py \
+    --benchmark-report "${DECISION_BENCHMARK_VALIDATION_REPORT_PATH}" \
+    --config "${DECISION_EVIDENCE_CONFIG_PATH}" \
+    --alignment-report "${OBJECTIVE_ALIGNMENT_VALIDATION_REPORT_PATH}" \
+    --uplift-report "${EVOLUTION_UPLIFT_VALIDATION_REPORT_PATH}" \
+    --ledger-report "${EXPERIMENT_BUDGET_AUDIT_REPORT_PATH}" \
+    --ledger "${DECISION_EVIDENCE_LEDGER_PATH}" \
+    --ledger-proposal "${DECISION_EVIDENCE_LEDGER_PROPOSAL_PATH}" \
+    --alpha-route-report "${ALPHA_SOURCE_ROUTE_REPORT_PATH}" \
+    --output "${DECISION_EVIDENCE_REPORT_PATH}" || status=$?
+  finalize_decisive_artifact \
+    decision_evidence_report "${DECISION_EVIDENCE_REPORT_PATH}" "${status}"
+}
+
 RUN_REQUIRED_STEP_STATUS=0
 LAST_CAPTURED_STATUS=0
 
@@ -5376,6 +6141,7 @@ record_step_status() {
   local result="$3"
   local exit_code="$4"
   local blocked_by_prior_failure="$5"
+  local research_decision_only="${6:-false}"
   STEP_STATUS_PATH_VALUE="${STEP_STATUS_PATH}" \
   RUN_ID_VALUE="${RUN_ID}" \
   ACTION_VALUE="${ACTION}" \
@@ -5384,6 +6150,7 @@ record_step_status() {
   STEP_RESULT_VALUE="${result}" \
   STEP_EXIT_CODE_VALUE="${exit_code}" \
   STEP_BLOCKED_VALUE="${blocked_by_prior_failure}" \
+  STEP_RESEARCH_ONLY_VALUE="${research_decision_only}" \
   python3 - <<'PY'
 import datetime as dt
 import json
@@ -5403,6 +6170,9 @@ entry = {
     "exit_code": int(exit_code_text) if exit_code_text else None,
     "blocked_by_prior_failure": (
         os.environ.get("STEP_BLOCKED_VALUE", "").strip().lower() == "true"
+    ),
+    "research_decision_only": (
+        os.environ.get("STEP_RESEARCH_ONLY_VALUE", "").strip().lower() == "true"
     ),
 }
 path = Path(os.environ["STEP_STATUS_PATH_VALUE"])
@@ -5500,6 +6270,47 @@ run_observation_step() {
   return 0
 }
 
+run_decisive_observation_step() {
+  local step_name="$1"
+  shift
+  local required_status="${RUN_REQUIRED_STEP_STATUS}"
+  capture_step_status "$@"
+  local status="${LAST_CAPTURED_STATUS}"
+  if (( status != 0 )); then
+    echo "[WARN] decisive observation not proven: ${step_name}, status=${status}"
+    capture_step_status \
+      record_step_status \
+      "${step_name}" "observation" "fail" "${status}" "false" "true"
+  else
+    capture_step_status \
+      record_step_status \
+      "${step_name}" "observation" "pass" "0" "false" "true"
+  fi
+  if (( LAST_CAPTURED_STATUS != 0 )); then
+    echo "[ERROR] decisive observation status write failed: ${step_name}"
+  fi
+  RUN_REQUIRED_STEP_STATUS="${required_status}"
+  return 0
+}
+
+run_decisive_observation_chain() {
+  local required_status="${RUN_REQUIRED_STEP_STATUS}"
+  run_decisive_observation_step \
+    decision_benchmark_validation run_decision_benchmark_validation
+  run_decisive_observation_step \
+    objective_alignment_validation run_objective_alignment_validation
+  run_decisive_observation_step \
+    paired_evolution_replay run_paired_evolution_replay_observation
+  run_decisive_observation_step \
+    evolution_uplift_validation run_evolution_uplift_validation
+  run_decisive_observation_step \
+    experiment_budget_audit run_experiment_budget_audit
+  run_decisive_observation_step \
+    decision_evidence_report run_decision_evidence_report
+  RUN_REQUIRED_STEP_STATUS="${required_status}"
+  return 0
+}
+
 skip_route_step() {
   local step_name="$1"
   echo "[INFO] step not applicable to selected alpha route=${ACTIVE_ALPHA_ROUTE}: ${step_name}"
@@ -5541,6 +6352,7 @@ run_training_chain() {
     skip_route_step integrator
     skip_route_step replay_candidate_config
     skip_route_step replay_validation
+    run_decisive_observation_chain
     skip_route_step strategy_diagnose
     skip_route_step alpha_mechanism_probe
     skip_route_step model_registry
@@ -5550,10 +6362,14 @@ run_training_chain() {
     run_required_step replay_candidate_config prepare_replay_candidate_config
     if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
       run_collecting_step replay_validation run_replay_validation
+    else
+      skip_collecting_step replay_validation
+    fi
+    run_decisive_observation_chain
+    if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
       run_collecting_step strategy_diagnose run_strategy_diagnose
       run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
     else
-      skip_collecting_step replay_validation
       skip_collecting_step strategy_diagnose
       skip_collecting_step alpha_mechanism_probe
     fi
