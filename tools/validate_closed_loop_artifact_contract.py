@@ -39,6 +39,9 @@ LOCAL_ARTIFACT_FILENAMES = {
     "microstructure_alpha_development_report": (
         "microstructure_alpha_development_report.json"
     ),
+    "microstructure_alpha_regime_evidence_audit": (
+        "microstructure_alpha_regime_evidence_audit.json"
+    ),
     "microstructure_alpha_candidate_manifest": (
         "microstructure_alpha_candidate_manifest.json"
     ),

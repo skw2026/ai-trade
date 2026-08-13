@@ -94,6 +94,14 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
                 source,
             )
 
+    def test_maps_regime_evidence_audit_from_manifest_to_downloaded_artifact(self):
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "microstructure_alpha_regime_evidence_audit"
+            ],
+            "microstructure_alpha_regime_evidence_audit.json",
+        )
+
     def test_downloader_always_emits_sanitized_public_failure_summary(self):
         source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
             encoding="utf-8"
