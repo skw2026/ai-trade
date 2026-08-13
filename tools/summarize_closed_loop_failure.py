@@ -70,6 +70,17 @@ UPSTREAM_REPORTS = {
         "microstructure_alpha_development_report.json",
         {"PASS", "FAIL", "NOT_READY"},
     ),
+    "microstructure_regime_evidence": (
+        "microstructure_alpha_regime_evidence_audit.json",
+        {
+            "RECORDED",
+            "DUPLICATE",
+            "SKIPPED_OVERLAP",
+            "COLLECTING",
+            "STAGE_REVIEW_REQUIRED",
+            "UNVERIFIABLE",
+        },
+    ),
     "microstructure_alpha_lifecycle": (
         "microstructure_alpha_lifecycle_report.json",
         {"PASS", "FAIL", "NOT_READY"},
@@ -252,6 +263,44 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             and isinstance(report.get("economic_screen"), Mapping)
             and report["economic_screen"].get("development_passed") is True
             else "REJECTED"
+        )
+    elif name == "microstructure_regime_evidence":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        accepted_count = report.get("accepted_batch_count")
+        independent_hours = report.get("independent_oos_hours")
+        section["accepted_batch_count"] = (
+            accepted_count
+            if isinstance(accepted_count, int)
+            and not isinstance(accepted_count, bool)
+            and accepted_count >= 0
+            else 0
+        )
+        section["independent_oos_hours"] = (
+            independent_hours
+            if isinstance(independent_hours, (int, float))
+            and not isinstance(independent_hours, bool)
+            and math.isfinite(float(independent_hours))
+            and independent_hours >= 0
+            else 0.0
+        )
+        section["research_observation_only"] = (
+            report.get("research_observation_only") is True
+        )
+        section["promotion_authority"] = report.get("promotion_authority") is True
+        section["demo_activation_authorized"] = (
+            report.get("demo_activation_authorized") is True
+        )
+        section["live_activation_authorized"] = (
+            report.get("live_activation_authorized") is True
+        )
+        section["stage_review_required"] = (
+            report.get("stage_review_required") is True
+        )
+        next_action = report.get("next_action")
+        section["next_action"] = (
+            next_action
+            if isinstance(next_action, str) and _SAFE_TOKEN.fullmatch(next_action)
+            else None
         )
     elif name == "microstructure_alpha_lifecycle":
         _append_safe_token(reasons, report.get("not_ready_reason"))

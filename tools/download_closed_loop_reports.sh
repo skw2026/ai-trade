@@ -224,6 +224,7 @@ fetch_report "${REMOTE_BASE}/experiment_budget_proposal.json" ".artifacts/experi
 fetch_report "${REMOTE_BASE}/microstructure_capture_upgrade_report.json" ".artifacts/microstructure_capture_upgrade_report.json" "microstructure_capture_upgrade_report" "json"
 fetch_report "${REMOTE_BASE}/microstructure_capture_report.json" ".artifacts/microstructure_capture_report.json" "microstructure_capture_report" "json"
 fetch_report "${REMOTE_BASE}/microstructure_alpha_development_report.json" ".artifacts/microstructure_alpha_development_report.json" "microstructure_alpha_development_report" "json"
+fetch_report "${REMOTE_BASE}/microstructure_alpha_regime_evidence_audit.json" ".artifacts/microstructure_alpha_regime_evidence_audit.json" "microstructure_alpha_regime_evidence_audit" "json"
 fetch_report "${REMOTE_BASE}/microstructure_alpha_candidate_manifest.json" ".artifacts/microstructure_alpha_candidate_manifest.json" "microstructure_alpha_candidate_manifest" "json"
 fetch_report "${REMOTE_BASE}/microstructure_alpha_lifecycle_report.json" ".artifacts/microstructure_alpha_lifecycle_report.json" "microstructure_alpha_lifecycle_report" "json"
 fetch_report "${REMOTE_BASE}/alpha_source_route_report.json" ".artifacts/alpha_source_route_report.json" "alpha_source_route_report" "json"

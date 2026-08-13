@@ -119,6 +119,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validate_evolution_uplift.py)
     add_test(NAME experiment_budget_ledger_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_experiment_budget_ledger.py)
+    add_test(NAME record_microstructure_regime_evidence_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_record_microstructure_regime_evidence.py)
     add_test(NAME build_decision_evidence_report_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_build_decision_evidence_report.py)
     add_test(NAME run_replay_validation_test

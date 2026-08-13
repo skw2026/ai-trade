@@ -1378,6 +1378,106 @@ PY
                 option_index = args.index(option)
                 self.assertEqual(args[option_index + 1], expected)
 
+    def test_microstructure_development_records_negative_regime_evidence_before_return(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            calls_path = root / "compose_calls.txt"
+            report_path = root / "reports" / "microstructure-evidence-test" / "microstructure_alpha_development_report.json"
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=microstructure-evidence-test
+                source tools/closed_loop_runner.sh full \
+                  --output-root "${REPORTS_ROOT}"
+                compose_cmd() {
+                  printf '%s\n' "$*" >> "${CALLS_PATH}"
+                  case "$*" in
+                    *run_microstructure_alpha_lifecycle.py*prepare*) return 3 ;;
+                    *run_microstructure_alpha_development.py*)
+                      mkdir -p "$(dirname "${REPORT_PATH}")"
+                      printf '{}\n' > "${REPORT_PATH}"
+                      return 2
+                      ;;
+                    *record_microstructure_regime_evidence.py*) return 0 ;;
+                    *) return 3 ;;
+                  esac
+                }
+                run_microstructure_alpha_development_gate || status=$?
+                test "${status:-0}" -eq 2
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "AI_TRADE_DATA_DIR": str(root / "persistent-data"),
+                    "REPORTS_ROOT": str(root / "reports"),
+                    "CALLS_PATH": str(calls_path),
+                    "REPORT_PATH": str(report_path),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            calls = calls_path.read_text(encoding="utf-8")
+            self.assertIn("tools/record_microstructure_regime_evidence.py", calls)
+            self.assertIn(
+                str(root / "persistent-data" / "research" / "microstructure_alpha_regime_evidence.jsonl"),
+                calls,
+            )
+            self.assertIn(
+                str(root / "reports" / "microstructure-evidence-test" / "microstructure_alpha_regime_evidence_audit.json"),
+                calls,
+            )
+
+    def test_microstructure_development_stops_before_training_when_review_required(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            data_root = root / "persistent-data"
+            ledger_path = data_root / "research" / "microstructure_alpha_regime_evidence.jsonl"
+            ledger_path.parent.mkdir(parents=True)
+            ledger_path.write_text("review-required\n", encoding="utf-8")
+            calls_path = root / "compose_calls.txt"
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=microstructure-review-test
+                source tools/closed_loop_runner.sh full \
+                  --output-root "${REPORTS_ROOT}"
+                compose_cmd() {
+                  printf '%s\n' "$*" >> "${CALLS_PATH}"
+                  case "$*" in
+                    *run_microstructure_alpha_lifecycle.py*prepare*) return 3 ;;
+                    *record_microstructure_regime_evidence.py*--inspect-only*) return 3 ;;
+                    *run_microstructure_alpha_development.py*) return 99 ;;
+                    *) return 3 ;;
+                  esac
+                }
+                run_microstructure_alpha_development_gate || status=$?
+                test "${status:-0}" -eq 2
+                ! grep -q run_microstructure_alpha_development.py "${CALLS_PATH}"
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "AI_TRADE_DATA_DIR": str(data_root),
+                    "REPORTS_ROOT": str(root / "reports"),
+                    "CALLS_PATH": str(calls_path),
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("--inspect-only", calls_path.read_text(encoding="utf-8"))
+
     def test_miner_uses_research_container_with_persistent_paths(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

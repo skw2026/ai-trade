@@ -78,6 +78,7 @@ MICROSTRUCTURE_ALPHA_VALIDATION_WINDOW_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALP
 MICROSTRUCTURE_ALPHA_TEST_WINDOW_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_TEST_WINDOW_SECONDS:-14400}"
 MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS:-14400}"
 MICROSTRUCTURE_ALPHA_MODEL_SELECTION_WINDOW_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_MODEL_SELECTION_WINDOW_SECONDS:-3600}"
+MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_LEDGER="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_LEDGER:-${AI_TRADE_DATA_DIR:-./data}/research/microstructure_alpha_regime_evidence.jsonl}"
 MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_LIFECYCLE_ROOT:-${AI_TRADE_DATA_DIR:-./data}/models/microstructure_alpha_lifecycle}"
 MICROSTRUCTURE_ALPHA_SELECTION_DURATION_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_SELECTION_DURATION_SECONDS:-21600}"
 MICROSTRUCTURE_ALPHA_HOLDOUT_DURATION_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_ALPHA_HOLDOUT_DURATION_SECONDS:-21600}"
@@ -1298,6 +1299,7 @@ ALPHA_MECHANISM_PROBE_REPORT_PATH="${RUN_DIR}/alpha_mechanism_probe_report.json"
 MICROSTRUCTURE_CAPTURE_REPORT_PATH="${RUN_DIR}/microstructure_capture_report.json"
 MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH="${RUN_DIR}/microstructure_capture_upgrade_report.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
+MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH="${RUN_DIR}/microstructure_alpha_regime_evidence_audit.json"
 MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/microstructure_alpha_candidate_manifest.json"
 MICROSTRUCTURE_ALPHA_MODEL_PATH="${RUN_DIR}/microstructure_alpha_development.cbm"
 MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH="${RUN_DIR}/microstructure_alpha_lifecycle_report.json"
@@ -3385,6 +3387,23 @@ run_microstructure_alpha_development_gate() {
     return "${prepare_status}"
   fi
   echo "[INFO] cost-aware microstructure joint direction/exit development screen start"
+  if [[ -f "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_LEDGER}" ]]; then
+    local evidence_preflight_status=0
+    compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+      tools/record_microstructure_regime_evidence.py \
+      --ledger "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_LEDGER}" \
+      --audit-output "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}" \
+      --inspect-only \
+      || evidence_preflight_status=$?
+    if (( evidence_preflight_status == 3 )); then
+      echo "[WARN] independent evidence requires stage review before more model iterations"
+      return 2
+    fi
+    if (( evidence_preflight_status != 0 )); then
+      echo "[ERROR] microstructure regime evidence preflight failed: status=${evidence_preflight_status}"
+      return "${evidence_preflight_status}"
+    fi
+  fi
   local probe_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/run_microstructure_alpha_development.py \
@@ -3401,9 +3420,22 @@ run_microstructure_alpha_development_gate() {
     --rolling-step-seconds "${MICROSTRUCTURE_ALPHA_ROLLING_STEP_SECONDS}" \
     --model-selection-window-seconds "${MICROSTRUCTURE_ALPHA_MODEL_SELECTION_WINDOW_SECONDS}" \
     || probe_status=$?
+  local evidence_status=0
+  if [[ -f "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" ]]; then
+    compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+      tools/record_microstructure_regime_evidence.py \
+      --report "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+      --ledger "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_LEDGER}" \
+      --audit-output "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}" \
+      || evidence_status=$?
+  fi
   if (( probe_status != 0 )); then
     echo "[WARN] microstructure development screen is not ready: status=${probe_status}"
     return "${probe_status}"
+  fi
+  if (( evidence_status != 0 )); then
+    echo "[ERROR] microstructure independent regime evidence is unverifiable: status=${evidence_status}"
+    return "${evidence_status}"
   fi
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
     python3 - <<'PY'
@@ -4767,6 +4799,7 @@ write_run_manifest() {
   MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH_VALUE="${MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH}" \
   MICROSTRUCTURE_CAPTURE_REPORT_PATH_VALUE="${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+  MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}" \
   MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
   MICROSTRUCTURE_ALPHA_MODEL_PATH_VALUE="${MICROSTRUCTURE_ALPHA_MODEL_PATH}" \
   MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" \
@@ -5147,6 +5180,7 @@ artifact_env_names = {
     "microstructure_capture_upgrade_report": "MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH_VALUE",
     "microstructure_capture_report": "MICROSTRUCTURE_CAPTURE_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
+    "microstructure_alpha_regime_evidence_audit": "MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH_VALUE",
     "microstructure_alpha_candidate_manifest": "MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
     "microstructure_alpha_model": "MICROSTRUCTURE_ALPHA_MODEL_PATH_VALUE",
     "microstructure_alpha_lifecycle_report": "MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH_VALUE",
@@ -5446,6 +5480,7 @@ build_summary() {
   "microstructure_capture_upgrade_report": "${MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH}",
   "microstructure_capture_report": "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
+  "microstructure_alpha_regime_evidence_audit": "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}",
   "microstructure_alpha_candidate_manifest": "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}",
   "microstructure_alpha_model": "${MICROSTRUCTURE_ALPHA_MODEL_PATH}",
   "microstructure_alpha_lifecycle_report": "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}",

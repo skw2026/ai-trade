@@ -82,6 +82,10 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
                 "experiment_budget_proposal.json",
                 "experiment_budget_proposal",
             ),
+            "microstructure_alpha_regime_evidence_audit.json": (
+                "microstructure_alpha_regime_evidence_audit.json",
+                "microstructure_alpha_regime_evidence_audit",
+            ),
         }
         for remote, (local, label) in diagnostics.items():
             self.assertIn(
@@ -177,6 +181,8 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                     "promotion_authority": False,
                     "demo_activation_authorized": False,
                     "live_activation_authorized": False,
+                    "stage_review_required": False,
+                    "next_action": "collect_next_fully_non_overlapping_oos_regime",
                 },
             }
             for filename, payload in reports.items():
@@ -256,6 +262,20 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                     ],
                     "next_gate": "reject_microstructure_candidate_and_remain_in_development",
                 },
+                "microstructure_alpha_regime_evidence_audit.json": {
+                    "schema_version": "microstructure_regime_evidence_audit_v1",
+                    "status": "SKIPPED_OVERLAP",
+                    "reason_codes": ["oos_regime_overlaps_accepted_evidence"],
+                    "accepted_batch_count": 1,
+                    "independent_oos_hours": 24.0,
+                    "research_observation_only": True,
+                    "promotion_authority": False,
+                    "demo_activation_authorized": False,
+                    "live_activation_authorized": False,
+                    "stage_review_required": False,
+                    "next_action": "collect_next_fully_non_overlapping_oos_regime",
+                    "private_path": "/opt/api_secret=must-not-leak",
+                },
                 "microstructure_alpha_lifecycle_report.json": {
                     "status": "NOT_READY",
                     "fully_verifiable": True,
@@ -330,6 +350,22 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                 "stress_split_lcb_bps": -2.5,
                 "positive_split_ratio": 0.33,
                 "action_consensus_ratio": 0.67,
+            },
+        )
+        self.assertEqual(
+            upstream["microstructure_regime_evidence"],
+            {
+                "artifact": "PRESENT",
+                "status": "SKIPPED_OVERLAP",
+                "reason_codes": ["oos_regime_overlaps_accepted_evidence"],
+                "accepted_batch_count": 1,
+                "independent_oos_hours": 24.0,
+                "research_observation_only": True,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "stage_review_required": False,
+                "next_action": "collect_next_fully_non_overlapping_oos_regime",
             },
         )
         self.assertEqual(
