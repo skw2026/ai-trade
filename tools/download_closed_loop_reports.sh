@@ -2,6 +2,10 @@
 set -euo pipefail
 mkdir -p .artifacts
 umask 077
+emit_public_summary() {
+  python3 tools/summarize_closed_loop_failure.py -d .artifacts -a || true
+}
+trap emit_public_summary EXIT
 printf '%s\n' "${CLOSED_LOOP_ECS_SSH_KEY:?missing CLOSED_LOOP_ECS_SSH_KEY}" > .artifacts/ecs_key
 sed -i 's/\r$//' .artifacts/ecs_key
 chmod 600 .artifacts/ecs_key

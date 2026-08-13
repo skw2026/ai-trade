@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -38,6 +39,21 @@ DECISIVE_STEPS_AND_ARTIFACTS = {
 DECISIVE_STEPS = tuple(DECISIVE_STEPS_AND_ARTIFACTS)
 
 
+def load_public_summary_module():
+    module_path = pathlib.Path(__file__).with_name(
+        "summarize_closed_loop_failure.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "summarize_closed_loop_failure", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"failed to load module: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class DownloadClosedLoopReportsContractTest(unittest.TestCase):
     def test_downloads_decisive_evidence_and_diagnostics(self):
         source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
@@ -49,7 +65,6 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
                 f'".artifacts/{filename}" "{step}" "json"',
                 source,
             )
-
         diagnostics = {
             "decision_evidence_benchmark.json": (
                 "decision_evidence_benchmark.json",
@@ -74,6 +89,129 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
                 f'".artifacts/{local}" "{label}" "json"',
                 source,
             )
+
+    def test_downloader_always_emits_sanitized_public_failure_summary(self):
+        source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertRegex(
+            source,
+            re.compile(
+                r"emit_public_summary\(\) \{\n"
+                r"\s+python3 tools/summarize_closed_loop_failure.py "
+                r"-d \.artifacts -a \|\| true\n"
+                r"\}\n"
+                r"trap emit_public_summary EXIT"
+            ),
+        )
+
+
+class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
+    def test_summary_exposes_only_fixed_statuses_and_sanitized_reason_codes(self):
+        summary_module = load_public_summary_module()
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            (artifact_dir / "closed_loop_download_status.json").write_text(
+                json.dumps(
+                    {
+                        "status": "DONE",
+                        "downloaded_count": 10,
+                        "invalid_count": 1,
+                        "missing": ["runtime_log"],
+                        "invalid": ["artifact_contract"],
+                        "remote_base": "/opt/ai-trade/private/path",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (artifact_dir / "step_status.jsonl").write_text(
+                "".join(
+                    json.dumps(record, sort_keys=True) + "\n"
+                    for record in (
+                        {
+                            "step": "decision_benchmark_validation",
+                            "kind": "observation",
+                            "result": "pass",
+                            "exit_code": 0,
+                            "blocked_by_prior_failure": False,
+                        },
+                        {
+                            "step": "paired_evolution_replay",
+                            "kind": "observation",
+                            "result": "fail",
+                            "exit_code": 2,
+                            "blocked_by_prior_failure": False,
+                            "raw_error": "api_secret=must-not-leak",
+                        },
+                    )
+                ),
+                encoding="utf-8",
+            )
+            reports = {
+                "decision_benchmark_validation.json": {
+                    "identity_status": "VERIFIED",
+                    "drifts": [],
+                },
+                "objective_alignment_validation.json": {
+                    "overall_status": "NOT_ALIGNED",
+                    "missing_fields": ["subsystems.miner.blocks"],
+                },
+                "paired_evolution_replay.json": {
+                    "status": "UNVERIFIABLE",
+                    "mismatches": [
+                        "input.replay_report_sha256_mismatch",
+                        "/opt/private/api_secret=must-not-leak",
+                    ],
+                },
+                "evolution_uplift_validation.json": {
+                    "status": "UNVERIFIABLE",
+                    "missing_evidence": ["paired.arms.adaptive.report"],
+                },
+                "experiment_budget_audit.json": {
+                    "decision": "BLOCK_INVALID_LEDGER",
+                    "reasons": ["registration_missing", "token must-not-leak"],
+                },
+                "decision_evidence_report.json": {
+                    "research_decision": "STOP",
+                    "reason_codes": ["UPLIFT_INPUT_UNVERIFIABLE"],
+                    "promotion_authority": False,
+                    "demo_activation_authorized": False,
+                    "live_activation_authorized": False,
+                },
+            }
+            for filename, payload in reports.items():
+                (artifact_dir / filename).write_text(
+                    json.dumps(payload), encoding="utf-8"
+                )
+
+            summary = summary_module.build_summary(artifact_dir)
+            encoded = json.dumps(summary, sort_keys=True)
+
+        self.assertEqual(summary["download"]["status"], "DONE")
+        self.assertEqual(
+            summary["failed_steps"],
+            [
+                {
+                    "step": "paired_evolution_replay",
+                    "kind": "observation",
+                    "result": "fail",
+                    "exit_code": 2,
+                    "blocked_by_prior_failure": False,
+                }
+            ],
+        )
+        self.assertEqual(
+            summary["decisive"]["paired_evolution_replay"]["reason_codes"],
+            ["input.replay_report_sha256_mismatch"],
+        )
+        self.assertEqual(
+            summary["decisive"]["experiment_budget_audit"]["reason_codes"],
+            ["registration_missing"],
+        )
+        self.assertFalse(summary["authorities"]["demo"])
+        self.assertNotIn("/opt/ai-trade", encoded)
+        self.assertNotIn("api_secret", encoded)
+        self.assertNotIn("must-not-leak", encoded)
 
 
 class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
