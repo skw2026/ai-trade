@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import pathlib
 import re
@@ -60,6 +61,33 @@ _SAFE_STEP = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _STEP_RESULTS = {"pass", "fail", "skipped"}
 _STEP_KINDS = {"required", "diagnostic", "observation", "route"}
 
+UPSTREAM_REPORTS = {
+    "market_alpha_development": (
+        "market_alpha_development_report.json",
+        {"PASS", "FAIL", "NOT_READY"},
+    ),
+    "microstructure_alpha_development": (
+        "microstructure_alpha_development_report.json",
+        {"PASS", "FAIL", "NOT_READY"},
+    ),
+    "microstructure_alpha_lifecycle": (
+        "microstructure_alpha_lifecycle_report.json",
+        {"PASS", "FAIL", "NOT_READY"},
+    ),
+    "alpha_source_route": (
+        "alpha_source_route_report.json",
+        {"PASS", "FAIL", "NOT_READY"},
+    ),
+    "decision_benchmark_build": (
+        "decision_benchmark_build_report.json",
+        {"VERIFIED", "UNVERIFIABLE"},
+    ),
+    "decision_candidate_preflight": (
+        "decision_candidate_preflight_report.json",
+        {"VERIFIED", "UNVERIFIABLE"},
+    ),
+}
+
 
 def _read_json(path: pathlib.Path) -> Mapping[str, Any] | None:
     try:
@@ -81,6 +109,194 @@ def _safe_tokens(values: Any, *, limit: int = 12) -> list[str]:
         if len(result) >= limit:
             break
     return result
+
+
+def _append_safe_token(result: list[str], value: Any, *, limit: int = 12) -> None:
+    if (
+        len(result) < limit
+        and isinstance(value, str)
+        and _SAFE_TOKEN.fullmatch(value)
+        and value not in result
+    ):
+        result.append(value)
+
+
+def _safe_number(value: Any) -> int | float | None:
+    if (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    ):
+        return value
+    return None
+
+
+def _market_alpha_diagnostics(
+    report: Mapping[str, Any],
+) -> tuple[list[str], dict[str, Any]]:
+    reasons: list[str] = []
+    gates = report.get("data_gates")
+    if isinstance(gates, Mapping):
+        for name in (
+            "cross_market_cross_asset_history",
+            "bybit_trade_archive_sample",
+        ):
+            if gates.get(name) != "PASS":
+                _append_safe_token(reasons, f"data_gate.{name}")
+    economic = report.get("economic_screen")
+    if (
+        isinstance(economic, Mapping)
+        and economic.get("development_passed") is not True
+    ):
+        _append_safe_token(reasons, "economic_screen.no_variant_passed")
+    return reasons, {}
+
+
+def _microstructure_alpha_diagnostics(
+    report: Mapping[str, Any],
+) -> tuple[list[str], dict[str, Any]]:
+    reasons = _safe_tokens(report.get("failures"))
+    economic = report.get("economic_screen")
+    if not isinstance(economic, Mapping):
+        return reasons, {}
+
+    trained = _safe_number(economic.get("trained_split_count"))
+    required = _safe_number(economic.get("required_split_count"))
+    if trained is None or required is None or trained < required:
+        _append_safe_token(reasons, "economic_screen.insufficient_trained_splits")
+
+    base_trade = economic.get("oos_base_cost_by_trade")
+    trade_count = (
+        _safe_number(base_trade.get("count"))
+        if isinstance(base_trade, Mapping)
+        else None
+    )
+    minimum_trades = _safe_number(economic.get("minimum_oos_trades"))
+    if trade_count is None or minimum_trades is None or trade_count < minimum_trades:
+        _append_safe_token(reasons, "economic_screen.minimum_oos_trades")
+
+    positive_ratio = _safe_number(economic.get("positive_base_edge_split_ratio"))
+    minimum_ratio = _safe_number(economic.get("minimum_positive_splits_ratio"))
+    if (
+        positive_ratio is None
+        or minimum_ratio is None
+        or positive_ratio < minimum_ratio
+    ):
+        _append_safe_token(reasons, "economic_screen.minimum_positive_splits_ratio")
+
+    consensus = _safe_number(economic.get("action_consensus_ratio"))
+    minimum_consensus = _safe_number(economic.get("minimum_action_consensus_ratio"))
+    if (
+        consensus is None
+        or minimum_consensus is None
+        or consensus < minimum_consensus
+    ):
+        _append_safe_token(reasons, "economic_screen.minimum_action_consensus_ratio")
+
+    base_split = economic.get("oos_base_cost_by_split")
+    stress_split = economic.get("oos_stress_cost_by_split")
+    base_lcb = (
+        _safe_number(base_split.get("lcb_bps"))
+        if isinstance(base_split, Mapping)
+        else None
+    )
+    stress_lcb = (
+        _safe_number(stress_split.get("lcb_bps"))
+        if isinstance(stress_split, Mapping)
+        else None
+    )
+    if base_lcb is None or base_lcb <= 0:
+        _append_safe_token(reasons, "economic_screen.base_split_lcb_not_positive")
+    if stress_lcb is None or stress_lcb <= 0:
+        _append_safe_token(reasons, "economic_screen.stress_split_lcb_not_positive")
+    if economic.get("prediction_permutation_control_passed") is not True:
+        _append_safe_token(reasons, "economic_screen.permutation_control_failed")
+
+    metrics = {
+        "oos_trade_count": trade_count,
+        "base_split_lcb_bps": base_lcb,
+        "stress_split_lcb_bps": stress_lcb,
+        "positive_split_ratio": positive_ratio,
+        "action_consensus_ratio": consensus,
+    }
+    return reasons, {key: value for key, value in metrics.items() if value is not None}
+
+
+def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, Any]:
+    allowed_statuses = UPSTREAM_REPORTS[name][1]
+    status = report.get("status") if report is not None else None
+    section: dict[str, Any] = {
+        "artifact": "PRESENT" if report is not None else "MISSING_OR_INVALID",
+        "status": status if status in allowed_statuses else "UNAVAILABLE",
+        "reason_codes": [],
+    }
+    if report is None:
+        return section
+
+    reasons: list[str] = []
+    metrics: dict[str, Any] = {}
+    if name == "market_alpha_development":
+        reasons, metrics = _market_alpha_diagnostics(report)
+        section["gate_status"] = (
+            "READY"
+            if report.get("fully_verifiable") is True
+            and isinstance(report.get("economic_screen"), Mapping)
+            and report["economic_screen"].get("development_passed") is True
+            else "REJECTED"
+        )
+    elif name == "microstructure_alpha_development":
+        reasons, metrics = _microstructure_alpha_diagnostics(report)
+        section["gate_status"] = (
+            "READY"
+            if report.get("fully_verifiable") is True
+            and isinstance(report.get("economic_screen"), Mapping)
+            and report["economic_screen"].get("development_passed") is True
+            else "REJECTED"
+        )
+    elif name == "microstructure_alpha_lifecycle":
+        _append_safe_token(reasons, report.get("not_ready_reason"))
+        for token in _safe_tokens(report.get("failures")):
+            _append_safe_token(reasons, token)
+        phase = report.get("phase")
+        if isinstance(phase, str) and _SAFE_TOKEN.fullmatch(phase):
+            section["phase"] = phase
+        section["demo_entry_eligible"] = report.get("demo_entry_eligible") is True
+        section["live_promotion_eligible"] = (
+            report.get("live_promotion_eligible") is True
+        )
+    elif name == "alpha_source_route":
+        _append_safe_token(reasons, report.get("reason"))
+        selected_route = report.get("selected_route")
+        section["selected_route"] = (
+            selected_route
+            if selected_route in {"microstructure_demo", "legacy_integrator"}
+            else None
+        )
+        sources = report.get("sources")
+        if isinstance(sources, Mapping):
+            section["source_readiness"] = {
+                source: (
+                    details.get("readiness")
+                    if isinstance(details, Mapping)
+                    and details.get("readiness") in {"READY", "NOT_READY", "REJECTED"}
+                    else "UNAVAILABLE"
+                )
+                for source in ("legacy_integrator", "microstructure_demo")
+                for details in [sources.get(source)]
+            }
+    elif name == "decision_benchmark_build":
+        reasons = _safe_tokens(report.get("errors"))
+        preflight = report.get("candidate_preflight")
+        if isinstance(preflight, Mapping):
+            for token in _safe_tokens(preflight.get("errors")):
+                _append_safe_token(reasons, token)
+    elif name == "decision_candidate_preflight":
+        reasons = _safe_tokens(report.get("errors"))
+
+    section["reason_codes"] = reasons
+    if metrics:
+        section["metrics"] = metrics
+    return section
 
 
 def _drift_tokens(values: Any) -> list[str]:
@@ -172,9 +388,14 @@ def build_summary(artifact_dir: pathlib.Path) -> dict[str, Any]:
             "invalid": _safe_tokens(download.get("invalid")),
         },
         "failed_steps": _failed_steps(artifact_dir / "step_status.jsonl"),
+        "upstream": {},
         "decisive": {},
         "authorities": {"promotion": False, "demo": False, "live": False},
     }
+    for name, (filename, _) in UPSTREAM_REPORTS.items():
+        summary["upstream"][name] = _upstream_section(
+            name, _read_json(artifact_dir / filename)
+        )
     for step, (filename, status_field, allowed_statuses, reason_field) in (
         DECISIVE_REPORTS.items()
     ):
@@ -227,8 +448,24 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         reason
         for step in DECISIVE_REPORTS
         for reason in decisive.get(step, {}).get("reason_codes", [])
-    ) or "none"
-    return f"failed_steps={failed_steps}; decisive={statuses}; reasons={reasons}"
+    )
+    reasons = ",".join(reasons.split(",")[:16]) or "none"
+    upstream = summary.get("upstream", {})
+    upstream_statuses = ",".join(
+        f"{name}="
+        f"{upstream.get(name, {}).get('gate_status', upstream.get(name, {}).get('status', 'UNAVAILABLE'))}"
+        for name in UPSTREAM_REPORTS
+    )
+    upstream_reasons = ",".join(
+        reason
+        for name in UPSTREAM_REPORTS
+        for reason in upstream.get(name, {}).get("reason_codes", [])
+    )
+    upstream_reasons = ",".join(upstream_reasons.split(",")[:20]) or "none"
+    return (
+        f"failed_steps={failed_steps}; upstream={upstream_statuses}; "
+        f"upstream_reasons={upstream_reasons}; decisive={statuses}; reasons={reasons}"
+    )
 
 
 def parse_args() -> argparse.Namespace:

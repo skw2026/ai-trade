@@ -213,6 +213,143 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         self.assertNotIn("api_secret", encoded)
         self.assertNotIn("must-not-leak", encoded)
 
+    def test_summary_exposes_actionable_upstream_alpha_and_candidate_diagnostics(self):
+        summary_module = load_public_summary_module()
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            reports = {
+                "market_alpha_development_report.json": {
+                    "status": "FAIL",
+                    "fully_verifiable": True,
+                    "data_gates": {
+                        "cross_market_cross_asset_history": "PASS",
+                        "bybit_trade_archive_sample": "FAIL",
+                    },
+                    "economic_screen": {
+                        "development_passed": False,
+                        "feature_set_count": 2,
+                        "variant_result_count": 6,
+                    },
+                    "next_gate": "remain_in_development_and_reject_candidate",
+                    "private_error": "/opt/api_secret=must-not-leak",
+                },
+                "microstructure_alpha_development_report.json": {
+                    "status": "FAIL",
+                    "fully_verifiable": True,
+                    "economic_screen": {
+                        "development_passed": False,
+                        "trained_split_count": 6,
+                        "required_split_count": 6,
+                        "oos_base_cost_by_trade": {"count": 17},
+                        "oos_base_cost_by_split": {"lcb_bps": -1.25},
+                        "oos_stress_cost_by_split": {"lcb_bps": -2.5},
+                        "positive_base_edge_split_ratio": 0.33,
+                        "minimum_oos_trades": 24,
+                        "minimum_positive_splits_ratio": 0.5,
+                        "action_consensus_ratio": 0.67,
+                        "minimum_action_consensus_ratio": 0.5,
+                        "prediction_permutation_control_passed": True,
+                    },
+                    "failures": [
+                        "source_capture_incomplete",
+                        "/opt/api_secret=must-not-leak",
+                    ],
+                    "next_gate": "reject_microstructure_candidate_and_remain_in_development",
+                },
+                "microstructure_alpha_lifecycle_report.json": {
+                    "status": "NOT_READY",
+                    "fully_verifiable": True,
+                    "phase": "selection_collecting",
+                    "not_ready_reason": "selection_window_incomplete",
+                    "failures": [],
+                    "demo_entry_eligible": False,
+                    "live_promotion_eligible": False,
+                },
+                "alpha_source_route_report.json": {
+                    "status": "NOT_READY",
+                    "selected_route": None,
+                    "reason": "no_independently_gated_alpha_source_ready",
+                    "sources": {
+                        "legacy_integrator": {"readiness": "REJECTED"},
+                        "microstructure_demo": {"readiness": "NOT_READY"},
+                    },
+                    "live_promotion_eligible": False,
+                },
+                "decision_benchmark_build_report.json": {
+                    "status": "UNVERIFIABLE",
+                    "errors": [
+                        "input.candidate_model_missing",
+                        "/opt/api_secret=must-not-leak",
+                    ],
+                    "candidate_preflight": {
+                        "status": "UNVERIFIABLE",
+                        "errors": ["candidate.model_missing_or_empty"],
+                    },
+                },
+                "decision_candidate_preflight_report.json": {
+                    "status": "UNVERIFIABLE",
+                    "errors": [
+                        "candidate.report.model_version_missing",
+                        "api_secret=must-not-leak",
+                    ],
+                },
+            }
+            for filename, payload in reports.items():
+                (artifact_dir / filename).write_text(
+                    json.dumps(payload), encoding="utf-8"
+                )
+
+            summary = summary_module.build_summary(artifact_dir)
+            annotation = summary_module._annotation(summary)
+            encoded = json.dumps(summary, sort_keys=True)
+
+        upstream = summary["upstream"]
+        self.assertEqual(upstream["market_alpha_development"]["status"], "FAIL")
+        self.assertEqual(
+            upstream["market_alpha_development"]["reason_codes"],
+            [
+                "data_gate.bybit_trade_archive_sample",
+                "economic_screen.no_variant_passed",
+            ],
+        )
+        self.assertEqual(
+            upstream["microstructure_alpha_development"]["reason_codes"],
+            [
+                "source_capture_incomplete",
+                "economic_screen.minimum_oos_trades",
+                "economic_screen.minimum_positive_splits_ratio",
+                "economic_screen.base_split_lcb_not_positive",
+                "economic_screen.stress_split_lcb_not_positive",
+            ],
+        )
+        self.assertEqual(
+            upstream["microstructure_alpha_development"]["metrics"],
+            {
+                "oos_trade_count": 17,
+                "base_split_lcb_bps": -1.25,
+                "stress_split_lcb_bps": -2.5,
+                "positive_split_ratio": 0.33,
+                "action_consensus_ratio": 0.67,
+            },
+        )
+        self.assertEqual(
+            upstream["microstructure_alpha_lifecycle"]["reason_codes"],
+            ["selection_window_incomplete"],
+        )
+        self.assertEqual(
+            upstream["alpha_source_route"]["reason_codes"],
+            ["no_independently_gated_alpha_source_ready"],
+        )
+        self.assertEqual(
+            upstream["decision_candidate_preflight"]["reason_codes"],
+            ["candidate.report.model_version_missing"],
+        )
+        self.assertIn("input.candidate_model_missing", annotation)
+        self.assertIn("economic_screen.minimum_oos_trades", annotation)
+        self.assertNotIn("/opt", encoded)
+        self.assertNotIn("api_secret", encoded)
+        self.assertNotIn("must-not-leak", encoded)
+
 
 class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
     @staticmethod
