@@ -72,6 +72,14 @@ LOCAL_ARTIFACT_FILENAMES = {
     "activation_decision": "activation_decision.json",
 }
 
+# Some producers keep a descriptive, versioned name under their run-specific
+# subdirectory while the downloader intentionally exposes a stable public
+# filename.  Keep the two identities explicit; never infer or accept arbitrary
+# basename drift.
+MANIFEST_ARTIFACT_BASENAMES = {
+    "market_alpha_development_report": "market_alpha_verification_h12.json",
+}
+
 DECISIVE_OBSERVATION_STEPS = (
     "decision_benchmark_validation",
     "objective_alignment_validation",
@@ -402,9 +410,12 @@ def validate_artifact_contract(
             failures.append(f"{name}:unknown_manifest_artifact")
             continue
         manifest_artifact_path = str(artifact.get("path") or "").strip()
+        expected_manifest_basename = MANIFEST_ARTIFACT_BASENAMES.get(
+            name, filename
+        )
         if (
             not manifest_artifact_path
-            or Path(manifest_artifact_path).name != filename
+            or Path(manifest_artifact_path).name != expected_manifest_basename
         ):
             failures.append(f"{name}:path")
         path = artifact_dir / filename

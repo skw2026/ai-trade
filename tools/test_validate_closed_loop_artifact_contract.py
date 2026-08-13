@@ -102,6 +102,20 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
             "microstructure_alpha_regime_evidence_audit.json",
         )
 
+    def test_market_alpha_manifest_and_flattened_download_names_are_explicit(self):
+        self.assertEqual(
+            VALIDATOR.MANIFEST_ARTIFACT_BASENAMES[
+                "market_alpha_development_report"
+            ],
+            "market_alpha_verification_h12.json",
+        )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "market_alpha_development_report"
+            ],
+            "market_alpha_development_report.json",
+        )
+
     def test_downloader_always_emits_sanitized_public_failure_summary(self):
         source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
             encoding="utf-8"
@@ -493,7 +507,10 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             if name not in {"step_status", "alpha_source_route_report"}:
                 path.write_text(name, encoding="utf-8")
             artifacts[name] = {
-                "path": f"/remote/{path.name}",
+                "path": (
+                    "/remote/"
+                    + VALIDATOR.MANIFEST_ARTIFACT_BASENAMES.get(name, path.name)
+                ),
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
         manifest = {
