@@ -88,6 +88,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("scheduler", self.prod_services)
         self.assertIn("ai-trade-research", self.prod_services)
         self.assertIn("market-alpha-collector", self.prod_services)
+        self.assertIn("cross-venue-alpha-collector", self.prod_services)
         self.assertIn("microstructure-demo-policy", self.prod_services)
         self.assertIn("ai-trade-web", self.prod_services)
 
@@ -304,6 +305,22 @@ class ComposeConsistencyTest(unittest.TestCase):
         scheduler = self.prod_services["scheduler"]
         self.assertIn(
             "CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-1800", scheduler
+        )
+
+    def test_cross_venue_collector_is_public_persistent_and_health_checked(self):
+        for services in (self.dev_services, self.prod_services):
+            collector = services["cross-venue-alpha-collector"]
+            self.assertIn("run_binance_microstructure_collector.py", collector)
+            self.assertIn("restart: unless-stopped", collector)
+            self.assertIn("healthcheck", collector)
+            self.assertIn("binance_sol_microstructure", collector)
+            self.assertIn("CROSS_VENUE_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
+            self.assertIn("CROSS_VENUE_SEGMENT_DURATION_SEC:-905", collector)
+            self.assertNotIn("API_KEY", collector)
+            self.assertNotIn("API_SECRET", collector)
+        self.assertIn(
+            "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
+            self.prod_services["cross-venue-alpha-collector"],
         )
 
     def test_microstructure_demo_policy_is_credential_free_and_fail_closed(self):
@@ -979,7 +996,7 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_deploy_defaults_match_prod_container_names(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
-            'DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector microstructure-demo-policy watchdog scheduler ai-trade-web"',
+            'DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector cross-venue-alpha-collector microstructure-demo-policy watchdog scheduler ai-trade-web"',
             script,
         )
         self.assertIn('echo "ai-trade-watchdog"', script)
@@ -995,6 +1012,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertEqual(
             prod_container_names.get("market-alpha-collector"),
             "ai-trade-market-alpha-collector",
+        )
+        self.assertEqual(
+            prod_container_names.get("cross-venue-alpha-collector"),
+            "ai-trade-cross-venue-alpha-collector",
         )
         self.assertEqual(
             prod_container_names.get("microstructure-demo-policy"),

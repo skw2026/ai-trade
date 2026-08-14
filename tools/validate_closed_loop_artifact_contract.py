@@ -36,6 +36,10 @@ LOCAL_ARTIFACT_FILENAMES = {
         "microstructure_capture_upgrade_report.json"
     ),
     "microstructure_capture_report": "microstructure_capture_report.json",
+    "cross_venue_capture_report": "cross_venue_capture_report.json",
+    "cross_venue_information_set_experiment": (
+        "cross_venue_information_set_experiment.json"
+    ),
     "microstructure_alpha_development_report": (
         "microstructure_alpha_development_report.json"
     ),
