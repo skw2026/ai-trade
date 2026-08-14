@@ -364,6 +364,8 @@ class RecordMicrostructureRegimeEvidenceTest(unittest.TestCase):
         self.record(
             development_report(start_ms=1_800_086_400_000, source_marker="c")
         )
+        development_output = self.root / "terminal-development.json"
+        candidate_output = self.root / "terminal-candidate.json"
         completed = subprocess.run(
             [
                 sys.executable,
@@ -372,6 +374,10 @@ class RecordMicrostructureRegimeEvidenceTest(unittest.TestCase):
                 str(self.ledger),
                 "--audit-output",
                 str(self.audit),
+                "--stage-review-development-output",
+                str(development_output),
+                "--stage-review-candidate-output",
+                str(candidate_output),
                 "--inspect-only",
             ],
             cwd=ROOT,
@@ -381,6 +387,55 @@ class RecordMicrostructureRegimeEvidenceTest(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 3)
         self.assertEqual(json.loads(completed.stdout)["status"], "STAGE_REVIEW_REQUIRED")
+        development = json.loads(development_output.read_text(encoding="utf-8"))
+        candidate = json.loads(candidate_output.read_text(encoding="utf-8"))
+        self.assertEqual(development["status"], "NOT_READY")
+        self.assertTrue(development["stage_review_required"])
+        self.assertEqual(
+            development["failures"],
+            ["independent_evidence_exhausted_current_research_path"],
+        )
+        self.assertFalse(development["promotion_eligible"])
+        self.assertEqual(candidate["status"], "rejected")
+        self.assertIsNone(candidate["candidate_id"])
+        self.assertFalse(candidate["promotion_evidence"])
+        self.assertFalse(candidate["promotion_eligible"])
+        self.assertEqual(
+            candidate["development_report"]["sha256"],
+            hashlib.sha256(development_output.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(
+            candidate["identity_contract"]["regime_evidence_audit_sha256"],
+            hashlib.sha256(self.audit.read_bytes()).hexdigest(),
+        )
+
+    def test_inspect_does_not_materialize_terminal_artifacts_before_review(self):
+        self.record(development_report())
+        development_output = self.root / "terminal-development.json"
+        candidate_output = self.root / "terminal-candidate.json"
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "tools" / "record_microstructure_regime_evidence.py"),
+                "--ledger",
+                str(self.ledger),
+                "--audit-output",
+                str(self.audit),
+                "--stage-review-development-output",
+                str(development_output),
+                "--stage-review-candidate-output",
+                str(candidate_output),
+                "--inspect-only",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(json.loads(completed.stdout)["status"], "COLLECTING")
+        self.assertFalse(development_output.exists())
+        self.assertFalse(candidate_output.exists())
 
 
 if __name__ == "__main__":

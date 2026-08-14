@@ -3393,6 +3393,8 @@ run_microstructure_alpha_development_gate() {
       tools/record_microstructure_regime_evidence.py \
       --ledger "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_LEDGER}" \
       --audit-output "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}" \
+      --stage-review-development-output "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
+      --stage-review-candidate-output "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
       --inspect-only \
       || evidence_preflight_status=$?
     if (( evidence_preflight_status == 3 )); then

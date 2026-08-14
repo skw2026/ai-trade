@@ -19,6 +19,7 @@ SCHEMA_VERSION = "microstructure_regime_evidence_ledger_v1"
 AUDIT_SCHEMA_VERSION = "microstructure_regime_evidence_audit_v1"
 REPORT_SCHEMA_VERSION = "microstructure_alpha_development_v8"
 COMPARISON_SCHEMA_VERSION = "microstructure_target_architecture_comparison_v1"
+CANDIDATE_MANIFEST_SCHEMA_VERSION = "microstructure_alpha_candidate_manifest_v1"
 EXPECTED_ARCHITECTURES = (
     "binary_stress_event_baseline",
     "direct_stress_utility_regression",
@@ -691,6 +692,90 @@ def inspect_ledger(*, ledger_path: pathlib.Path, audit_path: pathlib.Path) -> di
         raise
 
 
+def write_stage_review_terminal_artifacts(
+    *,
+    audit_path: pathlib.Path,
+    audit: Mapping[str, Any],
+    development_output: pathlib.Path,
+    candidate_output: pathlib.Path,
+) -> None:
+    """Materialize the verified no-candidate terminal branch.
+
+    The Full Loop artifact contract still requires a development report and a
+    candidate manifest when the independent-evidence preflight stops training.
+    These artifacts describe that fail-closed outcome; they never manufacture
+    a model or candidate identity.
+    """
+
+    expected_reason = "independent_evidence_exhausted_current_research_path"
+    if not (
+        audit.get("schema_version") == AUDIT_SCHEMA_VERSION
+        and audit.get("status") == "STAGE_REVIEW_REQUIRED"
+        and audit.get("reason_codes") == [expected_reason]
+        and audit.get("stage_review_required") is True
+        and isinstance(audit.get("accepted_batch_count"), int)
+        and not isinstance(audit.get("accepted_batch_count"), bool)
+        and int(audit["accepted_batch_count"]) >= 2
+        and require_finite(
+            audit.get("independent_oos_hours"),
+            "stage_review_independent_oos_hours_invalid",
+        )
+        >= 48.0
+        and audit.get("next_action")
+        == "convene_stage_review_before_more_model_iterations"
+        and audit.get("research_observation_only") is True
+        and audit.get("promotion_authority") is False
+        and audit.get("demo_activation_authorized") is False
+        and audit.get("live_activation_authorized") is False
+    ):
+        raise ValueError("stage_review_audit_contract_invalid")
+    if len({audit_path, development_output, candidate_output}) != 3:
+        raise ValueError("stage_review_output_paths_not_distinct")
+
+    audit_reference = {
+        "path": str(audit_path),
+        "sha256": sha256_file(audit_path),
+    }
+    next_gate = str(audit["next_action"])
+    development_report = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "status": "NOT_READY",
+        "fully_verifiable": True,
+        "research_domain": "forward_development_only",
+        "promotion_evidence": False,
+        "promotion_eligible": False,
+        "stage_review_required": True,
+        "terminal_research_status": "STAGE_REVIEW_REQUIRED",
+        "information_set_id": audit.get("information_set_id"),
+        "regime_evidence_audit": audit_reference,
+        "frozen_candidate": None,
+        "failures": [expected_reason],
+        "next_gate": next_gate,
+        "independent_selection_required": True,
+        "untouched_final_holdout_required": True,
+    }
+    atomic_write_json(development_output, development_report)
+    candidate_manifest = {
+        "schema_version": CANDIDATE_MANIFEST_SCHEMA_VERSION,
+        "status": "rejected",
+        "research_domain": "forward_development_only",
+        "promotion_evidence": False,
+        "promotion_eligible": False,
+        "candidate_id": None,
+        "identity_contract": {
+            "stage_review_required": True,
+            "information_set_id": audit.get("information_set_id"),
+            "regime_evidence_audit_sha256": audit_reference["sha256"],
+        },
+        "development_report": {
+            "path": str(development_output),
+            "sha256": sha256_file(development_output),
+        },
+        "next_gate": next_gate,
+    }
+    atomic_write_json(candidate_output, candidate_manifest)
+
+
 def record_evidence(
     *, report_path: pathlib.Path, ledger_path: pathlib.Path, audit_path: pathlib.Path
 ) -> dict[str, Any]:
@@ -773,6 +858,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ledger", required=True)
     parser.add_argument("--audit-output", required=True)
     parser.add_argument("--inspect-only", action="store_true")
+    parser.add_argument("--stage-review-development-output")
+    parser.add_argument("--stage-review-candidate-output")
     return parser.parse_args()
 
 
@@ -780,6 +867,12 @@ def main() -> int:
     args = parse_args()
     audit_path = pathlib.Path(args.audit_output).resolve()
     try:
+        stage_review_outputs = (
+            args.stage_review_development_output,
+            args.stage_review_candidate_output,
+        )
+        if bool(stage_review_outputs[0]) != bool(stage_review_outputs[1]):
+            raise ValueError("stage_review_outputs_must_be_paired")
         if args.inspect_only:
             if args.report:
                 raise ValueError("inspect_only_report_forbidden")
@@ -787,8 +880,21 @@ def main() -> int:
                 ledger_path=pathlib.Path(args.ledger).resolve(),
                 audit_path=audit_path,
             )
+            if audit["stage_review_required"] and stage_review_outputs[0]:
+                write_stage_review_terminal_artifacts(
+                    audit_path=audit_path,
+                    audit=audit,
+                    development_output=pathlib.Path(
+                        stage_review_outputs[0]
+                    ).resolve(),
+                    candidate_output=pathlib.Path(
+                        stage_review_outputs[1]
+                    ).resolve(),
+                )
             exit_code = 3 if audit["stage_review_required"] else 0
         else:
+            if any(stage_review_outputs):
+                raise ValueError("stage_review_outputs_require_inspect_only")
             if not args.report:
                 raise ValueError("report_required")
             audit = record_evidence(

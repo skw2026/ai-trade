@@ -1476,7 +1476,28 @@ PY
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("--inspect-only", calls_path.read_text(encoding="utf-8"))
+            calls = calls_path.read_text(encoding="utf-8")
+            self.assertIn("--inspect-only", calls)
+            self.assertIn("--stage-review-development-output", calls)
+            self.assertIn("--stage-review-candidate-output", calls)
+            self.assertIn(
+                str(
+                    root
+                    / "reports"
+                    / "microstructure-review-test"
+                    / "microstructure_alpha_development_report.json"
+                ),
+                calls,
+            )
+            self.assertIn(
+                str(
+                    root
+                    / "reports"
+                    / "microstructure-review-test"
+                    / "microstructure_alpha_candidate_manifest.json"
+                ),
+                calls,
+            )
 
     def test_miner_uses_research_container_with_persistent_paths(self):
         with tempfile.TemporaryDirectory() as td:
