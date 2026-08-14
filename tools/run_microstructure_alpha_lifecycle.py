@@ -56,6 +56,10 @@ class LifecycleNotReady(RuntimeError):
     """The fixed future domain does not yet contain enough data."""
 
 
+class LifecycleResearchTerminal(RuntimeError):
+    """The frozen research path is exhausted and requires a stage review."""
+
+
 def sha256_file(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -244,6 +248,93 @@ def artifact_ref(path: pathlib.Path) -> Dict[str, Any]:
     return {"path": str(path.resolve()), "sha256": sha256_file(path)}
 
 
+def validate_stage_review_terminal(
+    report: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    report_path: pathlib.Path,
+) -> None:
+    """Verify the evidence-bound no-candidate terminal branch.
+
+    A normal NOT_READY report means that a fixed future domain is still being
+    collected.  STAGE_REVIEW_REQUIRED is different: two independent evidence
+    batches have exhausted the current information set, so routing must stop
+    this research family rather than ask for more of the same data.
+    """
+
+    expected_reason = "independent_evidence_exhausted_current_research_path"
+    expected_next_gate = "convene_stage_review_before_more_model_iterations"
+    information_set_id = str(report.get("information_set_id") or "")
+    audit_ref = report.get("regime_evidence_audit")
+    identity = manifest.get("identity_contract")
+    development_ref = manifest.get("development_report")
+    if not (
+        report.get("fully_verifiable") is True
+        and report.get("research_domain") == "forward_development_only"
+        and report.get("promotion_evidence") is False
+        and report.get("promotion_eligible") is False
+        and report.get("stage_review_required") is True
+        and report.get("terminal_research_status") == "STAGE_REVIEW_REQUIRED"
+        and len(information_set_id) == 64
+        and all(character in "0123456789abcdef" for character in information_set_id)
+        and report.get("frozen_candidate") is None
+        and report.get("failures") == [expected_reason]
+        and report.get("next_gate") == expected_next_gate
+        and report.get("independent_selection_required") is True
+        and report.get("untouched_final_holdout_required") is True
+        and isinstance(audit_ref, dict)
+        and isinstance(identity, dict)
+        and isinstance(development_ref, dict)
+        and manifest.get("status") == "rejected"
+        and manifest.get("research_domain") == "forward_development_only"
+        and manifest.get("promotion_evidence") is False
+        and manifest.get("promotion_eligible") is False
+        and manifest.get("candidate_id") is None
+        and manifest.get("next_gate") == expected_next_gate
+        and identity.get("stage_review_required") is True
+        and identity.get("information_set_id") == information_set_id
+    ):
+        raise LifecycleError("stage review terminal artifact contract failed")
+
+    audit_path_text = str(audit_ref.get("path") or "")
+    audit_sha256 = str(audit_ref.get("sha256") or "")
+    development_path_text = str(development_ref.get("path") or "")
+    if not audit_path_text or not pathlib.Path(audit_path_text).is_absolute():
+        raise LifecycleError("stage review evidence path is not absolute")
+    if not development_path_text or not pathlib.Path(development_path_text).is_absolute():
+        raise LifecycleError("stage review development path is not absolute")
+    audit_path = pathlib.Path(audit_path_text)
+    if not audit_path.is_file() or sha256_file(audit_path) != audit_sha256:
+        raise LifecycleError("stage review evidence checksum mismatch")
+    if pathlib.Path(development_path_text).resolve() != report_path.resolve():
+        raise LifecycleError("stage review development path mismatch")
+    if str(development_ref.get("sha256") or "") != sha256_file(report_path):
+        raise LifecycleError("stage review development checksum mismatch")
+    if identity.get("regime_evidence_audit_sha256") != audit_sha256:
+        raise LifecycleError("stage review candidate evidence checksum mismatch")
+
+    audit = read_json_object(audit_path)
+    if not (
+        audit.get("schema_version") == "microstructure_regime_evidence_audit_v1"
+        and audit.get("status") == "STAGE_REVIEW_REQUIRED"
+        and audit.get("reason_codes") == [expected_reason]
+        and audit.get("stage_review_required") is True
+        and isinstance(audit.get("accepted_batch_count"), int)
+        and not isinstance(audit.get("accepted_batch_count"), bool)
+        and int(audit["accepted_batch_count"]) >= 2
+        and isinstance(audit.get("independent_oos_hours"), (int, float))
+        and not isinstance(audit.get("independent_oos_hours"), bool)
+        and math.isfinite(float(audit["independent_oos_hours"]))
+        and float(audit["independent_oos_hours"]) >= 48.0
+        and audit.get("information_set_id") == information_set_id
+        and audit.get("next_action") == expected_next_gate
+        and audit.get("research_observation_only") is True
+        and audit.get("promotion_authority") is False
+        and audit.get("demo_activation_authorized") is False
+        and audit.get("live_activation_authorized") is False
+    ):
+        raise LifecycleError("stage review evidence contract failed")
+
+
 def validate_development_candidate(
     report_path: pathlib.Path,
     manifest_path: pathlib.Path,
@@ -256,6 +347,14 @@ def validate_development_candidate(
     if manifest.get("schema_version") != CANDIDATE_MANIFEST_SCHEMA_VERSION:
         raise LifecycleError("development candidate manifest schema mismatch")
     if report.get("status") == "NOT_READY":
+        if (
+            report.get("stage_review_required") is True
+            or report.get("terminal_research_status") is not None
+        ):
+            validate_stage_review_terminal(report, manifest, report_path)
+            raise LifecycleResearchTerminal(
+                "independent_evidence_exhausted_current_research_path"
+            )
         if not (
             manifest.get("status") == "rejected"
             and manifest.get("candidate_id") is None
@@ -1199,6 +1298,7 @@ def lifecycle_report(
     status: str,
     failures: Sequence[str],
     not_ready_reason: str | None = None,
+    terminal_research_status: str | None = None,
 ) -> Dict[str, Any]:
     phase = str(state.get("phase") or "unregistered") if state else "unregistered"
     next_gate = {
@@ -1209,6 +1309,8 @@ def lifecycle_report(
         "rejected": "new_development_candidate_with_fresh_future_domains",
         "demo_ready": "demo_incubation_only",
     }.get(phase, "integrity_review_required")
+    if terminal_research_status == "STAGE_REVIEW_REQUIRED":
+        next_gate = "convene_stage_review_before_more_model_iterations"
     return {
         "schema_version": SCHEMA_VERSION,
         "status": status,
@@ -1228,6 +1330,9 @@ def lifecycle_report(
         },
         "state": dict(state) if state else None,
         "not_ready_reason": not_ready_reason,
+        "terminal_research_status": terminal_research_status,
+        "stage_review_required": terminal_research_status
+        == "STAGE_REVIEW_REQUIRED",
         "failures": list(failures),
         "next_gate": next_gate,
         "promotion_evidence": phase == "demo_ready",
@@ -1240,6 +1345,7 @@ def lifecycle_report(
 def advance(args: argparse.Namespace, paths: RegistryPaths) -> Tuple[Dict[str, Any], int]:
     failures: List[str] = []
     not_ready_reason: str | None = None
+    terminal_research_status: str | None = None
     state: Dict[str, Any] | None = None
     events: List[Dict[str, Any]] = []
     with registry_lock(paths.root):
@@ -1363,6 +1469,9 @@ def advance(args: argparse.Namespace, paths: RegistryPaths) -> Tuple[Dict[str, A
                     evidence_report=replay,
                     demo_entry_eligible=replay["status"] == "PASS",
                 )
+        except LifecycleResearchTerminal as exc:
+            terminal_research_status = "STAGE_REVIEW_REQUIRED"
+            failures.append(str(exc))
         except (development.CaptureNotReady, LifecycleNotReady) as exc:
             not_ready_reason = str(exc)
         except (OSError, ValueError, TypeError, json.JSONDecodeError, LifecycleError) as exc:
@@ -1387,6 +1496,7 @@ def advance(args: argparse.Namespace, paths: RegistryPaths) -> Tuple[Dict[str, A
             status=status,
             failures=failures,
             not_ready_reason=not_ready_reason,
+            terminal_research_status=terminal_research_status,
         )
         return report, exit_code
 

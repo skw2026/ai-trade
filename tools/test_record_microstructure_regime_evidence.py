@@ -409,6 +409,78 @@ class RecordMicrostructureRegimeEvidenceTest(unittest.TestCase):
             hashlib.sha256(self.audit.read_bytes()).hexdigest(),
         )
 
+        lifecycle_output = self.root / "terminal-lifecycle.json"
+        lifecycle_completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "tools" / "run_microstructure_alpha_lifecycle.py"),
+                "advance",
+                "--registry-root",
+                str(self.root / "terminal-registry"),
+                "--development-report",
+                str(development_output),
+                "--candidate-manifest",
+                str(candidate_output),
+                "--model",
+                str(self.root / "no-terminal-model.cbm"),
+                "--capture-assessment",
+                str(self.root / "no-terminal-capture.json"),
+                "--output",
+                str(lifecycle_output),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(lifecycle_completed.returncode, 2)
+        lifecycle_report = json.loads(lifecycle_output.read_text(encoding="utf-8"))
+        self.assertEqual(lifecycle_report["status"], "FAIL")
+        self.assertEqual(
+            lifecycle_report["terminal_research_status"],
+            "STAGE_REVIEW_REQUIRED",
+        )
+        self.assertEqual(
+            lifecycle_report["next_gate"],
+            "convene_stage_review_before_more_model_iterations",
+        )
+
+        market_output = self.root / "market-development.json"
+        market_output.write_text(
+            json.dumps(
+                {
+                    "schema_version": "market_alpha_development_verification_v1",
+                    "status": "FAIL",
+                    "fully_verifiable": True,
+                    "economic_screen": {"development_passed": False},
+                    "promotion_evidence": False,
+                    "promotion_eligible": False,
+                }
+            ),
+            encoding="utf-8",
+        )
+        route_output = self.root / "terminal-route.json"
+        route_completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "tools" / "select_alpha_source.py"),
+                "--market-alpha-report",
+                str(market_output),
+                "--microstructure-lifecycle-report",
+                str(lifecycle_output),
+                "--output",
+                str(route_output),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(route_completed.returncode, 2)
+        route = json.loads(route_output.read_text(encoding="utf-8"))
+        self.assertEqual(route["status"], "FAIL")
+        self.assertIsNone(route["selected_route"])
+
     def test_inspect_does_not_materialize_terminal_artifacts_before_review(self):
         self.record(development_report())
         development_output = self.root / "terminal-development.json"

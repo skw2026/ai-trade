@@ -289,6 +289,102 @@ def make_args(root: pathlib.Path, report: pathlib.Path, manifest: pathlib.Path, 
 
 
 class MicrostructureAlphaLifecycleTest(unittest.TestCase):
+    def test_verified_stage_review_is_terminal_not_collecting(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            audit = root / "regime-evidence.json"
+            audit_payload = {
+                "schema_version": "microstructure_regime_evidence_audit_v1",
+                "status": "STAGE_REVIEW_REQUIRED",
+                "reason_codes": [
+                    "independent_evidence_exhausted_current_research_path"
+                ],
+                "stage_review_required": True,
+                "accepted_batch_count": 2,
+                "independent_oos_hours": 48.0,
+                "information_set_id": "a" * 64,
+                "next_action": "convene_stage_review_before_more_model_iterations",
+                "research_observation_only": True,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+            }
+            audit.write_text(json.dumps(audit_payload), encoding="utf-8")
+            report = root / "development.json"
+            report_payload = {
+                "schema_version": development.SCHEMA_VERSION,
+                "status": "NOT_READY",
+                "fully_verifiable": True,
+                "research_domain": "forward_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "stage_review_required": True,
+                "terminal_research_status": "STAGE_REVIEW_REQUIRED",
+                "information_set_id": "a" * 64,
+                "regime_evidence_audit": {
+                    "path": str(audit),
+                    "sha256": lifecycle.sha256_file(audit),
+                },
+                "frozen_candidate": None,
+                "failures": [
+                    "independent_evidence_exhausted_current_research_path"
+                ],
+                "next_gate": "convene_stage_review_before_more_model_iterations",
+                "independent_selection_required": True,
+                "untouched_final_holdout_required": True,
+            }
+            report.write_text(json.dumps(report_payload), encoding="utf-8")
+            manifest = root / "candidate.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": lifecycle.CANDIDATE_MANIFEST_SCHEMA_VERSION,
+                        "status": "rejected",
+                        "research_domain": "forward_development_only",
+                        "promotion_evidence": False,
+                        "promotion_eligible": False,
+                        "candidate_id": None,
+                        "identity_contract": {
+                            "stage_review_required": True,
+                            "information_set_id": "a" * 64,
+                            "regime_evidence_audit_sha256": lifecycle.sha256_file(
+                                audit
+                            ),
+                        },
+                        "development_report": {
+                            "path": str(report),
+                            "sha256": lifecycle.sha256_file(report),
+                        },
+                        "next_gate": "convene_stage_review_before_more_model_iterations",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = make_args(root, report, manifest, root / "missing-model.cbm")
+            paths = lifecycle.RegistryPaths(root / "registry")
+
+            result, exit_code = lifecycle.advance(args, paths)
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(result["status"], "FAIL")
+            self.assertEqual(result["phase"], "unregistered")
+            self.assertEqual(
+                result["terminal_research_status"], "STAGE_REVIEW_REQUIRED"
+            )
+            self.assertTrue(result["stage_review_required"])
+            self.assertEqual(
+                result["next_gate"],
+                "convene_stage_review_before_more_model_iterations",
+            )
+            self.assertIn(
+                "independent_evidence_exhausted_current_research_path",
+                result["failures"],
+            )
+            self.assertFalse(result["promotion_eligible"])
+            self.assertFalse(result["demo_entry_eligible"])
+            self.assertFalse(result["live_promotion_eligible"])
+            self.assertEqual(lifecycle.read_event_chain(paths), [])
+
     def test_candidate_rejects_probability_and_bps_threshold_drift(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
