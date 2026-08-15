@@ -13,6 +13,7 @@ import time
 from typing import Any, Dict, Sequence
 
 import collect_bybit_microstructure as collector
+import prune_microstructure_capture as retention
 
 
 SCHEMA_VERSION = "microstructure_collector_health_v1"
@@ -36,15 +37,11 @@ def utc_segment_id(now: dt.datetime | None = None) -> str:
 def prune_old_segments(root: pathlib.Path, retention_days: int, now_epoch: float) -> None:
     if retention_days <= 0:
         return
-    cutoff = now_epoch - retention_days * 86400
-    root = root.resolve()
-    for directory_name in ("raw", "features", "reports"):
-        directory = (root / directory_name).resolve()
-        if directory.parent != root or not directory.is_dir():
-            continue
-        for path in directory.rglob("*"):
-            if path.is_file() and path.stat().st_mtime < cutoff:
-                path.unlink()
+    retention.prune_capture_root(
+        root,
+        retention_seconds=retention_days * 86400,
+        now_epoch=now_epoch,
+    )
 
 
 def segment_command(

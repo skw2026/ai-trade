@@ -50,6 +50,7 @@ DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT="${DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT:-8}"
 DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"
 DEPLOY_REPORT_MAX_AGE_HOURS="${DEPLOY_REPORT_MAX_AGE_HOURS:-72}"
 DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"
+DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-96}"
 DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1800}"
 DEPLOY_RELEASE_ROOT="${DEPLOY_RELEASE_ROOT:-}"
 DEPLOY_TARGET_RELEASE="${DEPLOY_TARGET_RELEASE:-}"
@@ -346,7 +347,8 @@ cleanup_deploy_host_storage() {
     DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT \
     DEPLOY_REPORT_KEEP_RUN_DIRS \
     DEPLOY_REPORT_MAX_AGE_HOURS \
-    DEPLOY_REPORT_MAX_BYTES
+    DEPLOY_REPORT_MAX_BYTES \
+    DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS
   do
     if [[ ! "${!variable_name}" =~ ^[0-9]+$ ]]; then
       echo "[deploy] invalid ${variable_name}: ${!variable_name}"
@@ -388,6 +390,30 @@ cleanup_deploy_host_storage() {
     fi
   else
     echo "[deploy] report cleanup script missing: ${recycle_script}"
+    return 1
+  fi
+
+  local capture_pruner="${COMPOSE_DIR}/tools/prune_microstructure_capture.py"
+  if [[ ! -f "${capture_pruner}" ]]; then
+    echo "[deploy] research capture cleanup script missing: ${capture_pruner}"
+    return 1
+  fi
+  if (( DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS < 69 )); then
+    echo "[deploy] research capture retention must preserve two frozen 34.2h windows"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/microstructure" \
+      --expected-root-name microstructure \
+      --retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
+    echo "[deploy] Bybit research capture cleanup failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/binance_sol_microstructure" \
+      --expected-root-name binance_sol_microstructure \
+      --retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
+    echo "[deploy] Binance research capture cleanup failed"
     return 1
   fi
 

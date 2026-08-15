@@ -73,6 +73,7 @@ jobs:
           grep -q "collect_bybit_microstructure_test" /tmp/ctest-list.txt
           grep -q "collect_binance_microstructure_test" /tmp/ctest-list.txt
           grep -q "binance_microstructure_runtime_test" /tmp/ctest-list.txt
+          grep -q "prune_microstructure_capture_test" /tmp/ctest-list.txt
           grep -q "cross_venue_information_set_experiment_test" /tmp/ctest-list.txt
           grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt
           grep -q "run_microstructure_alpha_development_test" /tmp/ctest-list.txt

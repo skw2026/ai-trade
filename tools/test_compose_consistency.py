@@ -297,6 +297,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("bootstrap-segment-duration-sec", collector)
             self.assertIn("MARKET_ALPHA_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("MARKET_ALPHA_SEGMENT_DURATION_SEC:-905", collector)
+            self.assertIn("MARKET_ALPHA_RETENTION_DAYS:-4", collector)
             self.assertIn("--max-stale-sec=1800", collector)
         self.assertIn(
             "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
@@ -316,6 +317,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("binance_sol_microstructure", collector)
             self.assertIn("CROSS_VENUE_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("CROSS_VENUE_SEGMENT_DURATION_SEC:-905", collector)
+            self.assertIn("CROSS_VENUE_RETENTION_DAYS:-4", collector)
             self.assertNotIn("API_KEY", collector)
             self.assertNotIn("API_SECRET", collector)
         self.assertIn(
@@ -1519,6 +1521,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_REPORT_KEEP_RUN_DIRS",
             "DEPLOY_REPORT_MAX_AGE_HOURS",
             "DEPLOY_REPORT_MAX_BYTES",
+            "DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS",
             "DEPLOY_LOCK_WAIT_SECONDS",
         ):
             with self.subTest(workflow_variable=variable):
@@ -1533,7 +1536,16 @@ class ComposeConsistencyTest(unittest.TestCase):
             'DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"',
             script,
         )
+        self.assertIn(
+            'DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-96}"',
+            script,
+        )
         self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
+        self.assertIn("tools/prune_microstructure_capture.py", script)
+        self.assertIn(
+            '--retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"',
+            script,
+        )
         self.assertIn('flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9', script)
         self.assertIn(
             'flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9',

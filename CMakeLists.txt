@@ -183,6 +183,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_binance_microstructure.py)
     add_test(NAME binance_microstructure_runtime_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_binance_microstructure_runtime.py)
+    add_test(NAME prune_microstructure_capture_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_prune_microstructure_capture.py)
     add_test(NAME cross_venue_information_set_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_cross_venue_information_set_experiment.py)
     add_test(NAME upgrade_microstructure_capture_test

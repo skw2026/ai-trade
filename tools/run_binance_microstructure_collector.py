@@ -13,6 +13,7 @@ import time
 from typing import Any, Dict, Sequence
 
 import collect_binance_microstructure as collector
+import prune_microstructure_capture as retention
 
 
 SCHEMA_VERSION = "binance_microstructure_collector_health_v1"
@@ -64,14 +65,11 @@ def segment_command(
 
 
 def prune(root: pathlib.Path, retention_days: int) -> None:
-    cutoff = time.time() - retention_days * 86400
-    for directory_name in ("raw", "features", "reports"):
-        directory = root / directory_name
-        if not directory.is_dir():
-            continue
-        for path in directory.rglob("*"):
-            if path.is_file() and path.stat().st_mtime < cutoff:
-                path.unlink()
+    retention.prune_capture_root(
+        root,
+        retention_seconds=retention_days * 86400,
+        now_epoch=time.time(),
+    )
 
 
 def run(args: argparse.Namespace) -> int:
