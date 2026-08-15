@@ -1022,6 +1022,14 @@ class ComposeConsistencyTest(unittest.TestCase):
             "ai-trade-microstructure-demo-policy",
         )
 
+    def test_cd_surfaces_secret_free_deployment_diagnostics(self):
+        workflow = CD_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Summarize Deployment Diagnostics", workflow)
+        self.assertIn("deployment_diagnostics.json", workflow)
+        self.assertIn("title=Deploy diagnostics", workflow)
+        self.assertIn("payload.get('phase')", workflow)
+        self.assertIn("payload.get('reason')", workflow)
+
     def test_cd_uses_immutable_run_bound_release_bundle(self):
         workflow = CD_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("group: production-ecs-cd", workflow)

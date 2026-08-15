@@ -862,6 +862,40 @@ jobs:
             exit 1
           fi
 
+      - name: Summarize Deployment Diagnostics
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(".artifacts/deployment_diagnostics.json")
+          if not path.is_file():
+              print("::warning title=Deploy diagnostics::deployment_diagnostics.json was not downloaded")
+              raise SystemExit(0)
+          try:
+              payload = json.loads(path.read_text(encoding="utf-8"))
+          except (OSError, json.JSONDecodeError) as exc:
+              print(f"::error title=Deploy diagnostics::diagnostics unreadable: {type(exc).__name__}")
+              raise SystemExit(0)
+          containers = []
+          events = payload.get("events")
+          if isinstance(events, list) and events and isinstance(events[-1], dict):
+              for item in events[-1].get("containers") or []:
+                  if not isinstance(item, dict):
+                      continue
+                  containers.append(
+                      f"{item.get('name')}={item.get('state')}/{item.get('health_status')}"
+                  )
+          level = "notice" if payload.get("status") == "PASS" else "error"
+          message = (
+              f"phase={payload.get('phase')}; status={payload.get('status')}; "
+              f"reason={payload.get('reason')}; containers={','.join(containers) or 'none'}"
+          )
+          print(f"::{level} title=Deploy diagnostics::{message}")
+          PY
+
       - name: Upload Deploy Gate Artifacts
         if: always()
         uses: actions/upload-artifact@v4
