@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   packages: write
 
@@ -35,15 +36,89 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: tools/requirements-research.txt
+      - name: Wait for Exact CI Success
+        env:
+          CI_GATE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
 
-      - name: Install Python Test Dependencies
-        run: python -m pip install -r tools/requirements-research.txt
+          repository = os.environ["GITHUB_REPOSITORY"]
+          expected_sha = os.environ["GITHUB_SHA"]
+          token = os.environ["CI_GATE_TOKEN"]
+          api_url = (
+              f"https://api.github.com/repos/{repository}/actions/"
+              f"workflows/ci.yml/runs?head_sha={expected_sha}"
+              "&event=push&branch=main&per_page=20"
+          )
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "ai-trade-cd-ci-gate",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          deadline = time.monotonic() + 900
+          last_state = "not_found"
+          while True:
+              try:
+                  request = urllib.request.Request(api_url, headers=headers)
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      payload = json.load(response)
+                  matching = [
+                      run
+                      for run in payload.get("workflow_runs", [])
+                      if run.get("head_sha") == expected_sha
+                      and run.get("event") == "push"
+                      and run.get("head_branch") == "main"
+                  ]
+                  matching.sort(
+                      key=lambda run: (
+                          str(run.get("created_at") or ""),
+                          int(run.get("run_attempt") or 0),
+                          int(run.get("id") or 0),
+                      ),
+                      reverse=True,
+                  )
+                  if matching:
+                      run = matching[0]
+                      status = str(run.get("status") or "unknown")
+                      conclusion = str(run.get("conclusion") or "pending")
+                      last_state = (
+                          f"run_id={run.get('id')} status={status} "
+                          f"conclusion={conclusion}"
+                      )
+                      if status == "completed":
+                          if run.get("conclusion") == "success":
+                              print(
+                                  "Exact CI gate passed: "
+                                  f"sha={expected_sha} {last_state}"
+                              )
+                              break
+                          raise SystemExit(
+                              "Exact CI gate rejected: "
+                              f"sha={expected_sha} {last_state}"
+                          )
+                  else:
+                      last_state = "no matching main push CI run"
+              except (
+                  json.JSONDecodeError,
+                  OSError,
+                  urllib.error.URLError,
+              ) as exc:
+                  last_state = f"api_error={type(exc).__name__}"
+
+              if time.monotonic() >= deadline:
+                  raise SystemExit(
+                      f"CI gate timed out: sha={expected_sha} {last_state}"
+                  )
+              print(f"Waiting for exact CI success: sha={expected_sha} {last_state}")
+              time.sleep(10)
+          PY
 
       - name: Compute Image Metadata
         id: meta
@@ -60,90 +135,6 @@ jobs:
           echo "research_image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
           echo "web_image_uri=${WEB_IMAGE_URI}" >> "${GITHUB_OUTPUT}"
           echo "web_image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
-
-      - name: Install Build Dependencies
-        run: |
-          set -euo pipefail
-          required_packages=(
-            build-essential cmake ninja-build pkg-config
-            libcurl4-openssl-dev libssl-dev
-          )
-          missing_packages=()
-          for package in "${required_packages[@]}"; do
-            if ! dpkg-query -W -f='${Status}' "${package}" 2>/dev/null \
-              | grep -Fxq 'install ok installed'; then
-              missing_packages+=("${package}")
-            fi
-          done
-          if (( ${#missing_packages[@]} == 0 )); then
-            echo "build dependencies already installed"
-          else
-            for attempt in 1 2 3; do
-              if timeout 180s bash -c '
-                set -euo pipefail
-                apt_options=(
-                  -o Acquire::Retries=3
-                  -o Acquire::ForceIPv4=true
-                  -o Acquire::http::Timeout=30
-                  -o Acquire::https::Timeout=30
-                )
-                sudo apt-get update "${apt_options[@]}"
-                sudo apt-get install -y --no-install-recommends \
-                  "${apt_options[@]}" "$@"
-              ' bash "${missing_packages[@]}"; then
-                break
-              fi
-              if [[ "${attempt}" -eq 3 ]]; then
-                echo "apt dependency install failed after ${attempt} attempts" >&2
-                exit 1
-              fi
-              sleep "$((attempt * 5))"
-            done
-          fi
-
-      - name: Configure
-        run: cmake -S . -B build -G Ninja
-
-      - name: Verify Required Tests Registered
-        run: |
-          set -euo pipefail
-          ctest --test-dir build -N > /tmp/ctest-list.txt
-          grep -q "trade_system_test" /tmp/ctest-list.txt
-          grep -q "assess_run_log_test" /tmp/ctest-list.txt
-          grep -q "compose_consistency_test" /tmp/ctest-list.txt
-          grep -q "materialize_release_compose_test" /tmp/ctest-list.txt
-          grep -q "validate_deploy_gate_test" /tmp/ctest-list.txt
-          grep -q "release_integrity_test" /tmp/ctest-list.txt
-          grep -q "prune_release_storage_test" /tmp/ctest-list.txt
-          grep -q "evaluate_smoke_freshness_test" /tmp/ctest-list.txt
-          grep -q "evaluate_demo_incubation_test" /tmp/ctest-list.txt
-          grep -q "watchdog_utils_test" /tmp/ctest-list.txt
-          grep -q "recycle_artifacts_test" /tmp/ctest-list.txt
-          grep -q "docker_gc_test" /tmp/ctest-list.txt
-          grep -q "validate_reports_test" /tmp/ctest-list.txt
-          grep -q "build_closed_loop_report_test" /tmp/ctest-list.txt
-          grep -q "data_pipeline_tools_test" /tmp/ctest-list.txt
-          grep -q "fetch_market_alpha_history_test" /tmp/ctest-list.txt
-          grep -q "fetch_bybit_trade_history_test" /tmp/ctest-list.txt
-          grep -q "collect_bybit_microstructure_test" /tmp/ctest-list.txt
-          grep -q "collect_binance_microstructure_test" /tmp/ctest-list.txt
-          grep -q "binance_microstructure_runtime_test" /tmp/ctest-list.txt
-          grep -q "prune_microstructure_capture_test" /tmp/ctest-list.txt
-          grep -q "cross_venue_information_set_experiment_test" /tmp/ctest-list.txt
-          grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt
-          grep -q "run_microstructure_alpha_development_test" /tmp/ctest-list.txt
-          grep -q "run_microstructure_alpha_lifecycle_test" /tmp/ctest-list.txt
-          grep -q "run_data_pipeline_test" /tmp/ctest-list.txt
-          grep -q "feature_parity_contract_test" /tmp/ctest-list.txt
-          grep -q "web_report_store_test" /tmp/ctest-list.txt
-          grep -q "web_governance_test" /tmp/ctest-list.txt
-          grep -q "web_static_test" /tmp/ctest-list.txt
-
-      - name: Build
-        run: cmake --build build -j"$(nproc)"
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
 
       - name: Login GHCR
         uses: docker/login-action@v3

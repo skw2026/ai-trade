@@ -139,7 +139,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             if "ctest --test-dir build --output-on-failure" in workflow:
                 ctest_workflows[workflow_path.name] = workflow
 
-        self.assertEqual(set(ctest_workflows), {"ci.yml", "cd.yml"})
+        self.assertEqual(set(ctest_workflows), {"ci.yml"})
         for name, workflow in ctest_workflows.items():
             with self.subTest(workflow=name):
                 self.assertIn("python-version: '3.12'", workflow)
@@ -182,6 +182,21 @@ class ComposeConsistencyTest(unittest.TestCase):
                     "/tmp/ctest-list.txt",
                     workflow,
                 )
+
+    def test_cd_reuses_exact_successful_ci_gate_without_rebuilding_on_host(self):
+        workflow = CD_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("actions: read", workflow)
+        self.assertIn("Wait for Exact CI Success", workflow)
+        self.assertIn("workflows/ci.yml/runs?head_sha=", workflow)
+        self.assertIn('run.get("head_sha") == expected_sha', workflow)
+        self.assertIn('run.get("event") == "push"', workflow)
+        self.assertIn('run.get("head_branch") == "main"', workflow)
+        self.assertIn('run.get("conclusion") == "success"', workflow)
+        self.assertIn("CI gate timed out", workflow)
+        self.assertNotIn("Install Build Dependencies", workflow)
+        self.assertNotIn("Install Python Test Dependencies", workflow)
+        self.assertNotIn("ctest --test-dir build", workflow)
+        self.assertNotIn("cmake --build build", workflow)
 
     def test_smoke_uses_immutable_release_and_run_specific_evidence(self):
         workflow = SMOKE_WORKFLOW.read_text(encoding="utf-8")
