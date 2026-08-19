@@ -64,7 +64,7 @@ class CrossVenueInformationSetExperimentTest(unittest.TestCase):
     def _treatment(*, verified=True, signal=True, stress_lcb=1.0, permutation=True):
         return {
             "aggregate": {
-                "architecture_summaries": {
+                "architectures": {
                     experiment.ARCHITECTURE_ID: {
                         "fully_verifiable": verified,
                         "signal_proven": signal,
@@ -78,6 +78,16 @@ class CrossVenueInformationSetExperimentTest(unittest.TestCase):
                 }
             }
         }
+
+    def test_architecture_summary_uses_current_aggregate_contract(self):
+        treatment = self._treatment(stress_lcb=0.75)
+
+        summary = experiment.architecture_summary(treatment)
+
+        self.assertEqual(
+            summary["oos_stress_cost_by_split"]["lcb_bps"],
+            0.75,
+        )
 
     @staticmethod
     def _paired(*, verified=True, lcb=0.5, permutation=True):

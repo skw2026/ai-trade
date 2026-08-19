@@ -477,7 +477,7 @@ def evaluate_arm(
 
 
 def architecture_summary(arm: Mapping[str, Any]) -> Mapping[str, Any]:
-    return arm["aggregate"]["architecture_summaries"][ARCHITECTURE_ID]
+    return arm["aggregate"]["architectures"][ARCHITECTURE_ID]
 
 
 def build_paired_delta(
