@@ -450,6 +450,41 @@ docker_storage_available_bytes() {
   printf '%s\n' "${available_bytes}"
 }
 
+reclaim_report_storage_for_disk_pressure() {
+  if ! is_true "${DEPLOY_HOST_GC_ENABLED}"; then
+    echo "[deploy] pressure report cleanup skipped (DEPLOY_HOST_GC_ENABLED=${DEPLOY_HOST_GC_ENABLED})"
+    return 0
+  fi
+  local recycle_script="${COMPOSE_DIR}/tools/recycle_artifacts.sh"
+  if [[ ! -f "${recycle_script}" ]]; then
+    echo "[deploy] pressure report cleanup script missing: ${recycle_script}"
+    DEPLOY_DISK_FAILURE_REASON="pressure_report_gc_script_missing"
+    return 1
+  fi
+  local pressure_keep_run_dirs="${DEPLOY_REPORT_KEEP_RUN_DIRS}"
+  if (( pressure_keep_run_dirs > 4 )); then
+    pressure_keep_run_dirs=4
+  fi
+  local pressure_max_run_bytes="${DEPLOY_REPORT_MAX_BYTES}"
+  if (( pressure_max_run_bytes == 0 || pressure_max_run_bytes > 1073741824 )); then
+    pressure_max_run_bytes=1073741824
+  fi
+  local reports_root=""
+  reports_root="$(closed_loop_reports_root)"
+  if ! CLOSED_LOOP_GC_PROTECTED_RUN_IDS="${CLOSED_LOOP_RUN_ID}" \
+    /bin/bash "${recycle_script}" \
+      --reports-root "${reports_root}" \
+      --keep-run-dirs "${pressure_keep_run_dirs}" \
+      --max-age-hours "${DEPLOY_REPORT_MAX_AGE_HOURS}" \
+      --max-run-bytes "${pressure_max_run_bytes}" \
+      --log-file "${reports_root}/cron.log"; then
+    echo "[deploy] pressure report cleanup failed"
+    DEPLOY_DISK_FAILURE_REASON="pressure_report_gc_failed"
+    return 1
+  fi
+  return 0
+}
+
 ensure_deploy_disk_capacity() {
   DEPLOY_DISK_FAILURE_REASON="disk_preflight_failed"
   if ! is_true "${DEPLOY_DISK_PREFLIGHT_ENABLED}"; then
@@ -542,6 +577,17 @@ ensure_deploy_disk_capacity() {
       return 1
     fi
     echo "[deploy] disk preflight after emergency cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  fi
+  if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
+    echo "[deploy] disk pressure remains; reclaiming retained closed-loop reports"
+    if ! reclaim_report_storage_for_disk_pressure; then
+      return 1
+    fi
+    if ! available_after="$(docker_storage_available_bytes)"; then
+      DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_report_gc"
+      return 1
+    fi
+    echo "[deploy] disk preflight after report cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
   fi
   if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
     echo "[deploy] insufficient Docker disk space after cleanup"

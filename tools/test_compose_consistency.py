@@ -1482,6 +1482,13 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("DOCKER_GC_PRUNE_VOLUMES=false", script)
         self.assertIn("DOCKER_GC_UNTIL=all", script)
         self.assertIn("emergency pruning all unused containers", script)
+        self.assertIn("reclaim_report_storage_for_disk_pressure()", script)
+        self.assertIn(
+            "disk pressure remains; reclaiming retained closed-loop reports",
+            script,
+        )
+        self.assertIn('--keep-run-dirs "${pressure_keep_run_dirs}"', script)
+        self.assertIn('--max-run-bytes "${pressure_max_run_bytes}"', script)
         self.assertIn(
             "disk preflight failed before managed service mutation",
             script,
@@ -1571,7 +1578,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             workflow,
         )
 
-        block_start = script.index("docker_storage_available_bytes() {")
+        block_start = script.index("closed_loop_reports_root() {")
         block_end = script.index(
             '\nif ! is_true "${CLOSED_LOOP_RUNNER_LOCK_HELD:-false}"; then',
             block_start,
@@ -1596,6 +1603,13 @@ DEPLOY_GC_TRIGGER_FREE_BYTES="${FAKE_GC_TRIGGER_FREE_BYTES}"
 DEPLOY_MIN_FREE_BYTES="${FAKE_MIN_FREE_BYTES}"
 DEPLOY_DOCKER_GC_UNTIL=1h
 DEPLOY_DOCKER_ROOT="${FAKE_DOCKER_ROOT}"
+DEPLOY_HOST_GC_ENABLED=true
+DEPLOY_REPORT_KEEP_RUN_DIRS=12
+DEPLOY_REPORT_MAX_AGE_HOURS=72
+DEPLOY_REPORT_MAX_BYTES=4294967296
+DEPLOY_RELEASE_ROOT="${FAKE_RELEASE_ROOT}"
+CLOSED_LOOP_OUTPUT_ROOT="${FAKE_REPORTS_ROOT}"
+CLOSED_LOOP_RUN_ID=deploy-test
 
 docker() {
   if [[ "${1:-}" == "info" ]]; then
@@ -1614,8 +1628,10 @@ df() {
   local available_kib="${FAKE_FREE_AFTER_KIB}"
   if (( count == 1 )); then
     available_kib="${FAKE_FREE_BEFORE_KIB}"
-  elif (( count >= 3 )); then
+  elif (( count == 3 )); then
     available_kib="${FAKE_FREE_EMERGENCY_KIB}"
+  elif (( count >= 4 )); then
+    available_kib="${FAKE_FREE_PRESSURE_KIB}"
   fi
   printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
   printf 'fake 10000000 1 %s 1%% %s\n' \
@@ -1630,10 +1646,14 @@ ensure_deploy_disk_capacity
             temp = pathlib.Path(td)
             compose_dir = temp / "release"
             docker_root = temp / "docker-root"
+            release_root = temp / "release-root"
+            reports_root = release_root / "reports"
             tools_dir = compose_dir / "tools"
             tools_dir.mkdir(parents=True)
             docker_root.mkdir()
+            reports_root.mkdir(parents=True)
             gc_log = temp / "gc.env"
+            report_gc_log = temp / "report-gc.args"
             gc_script = tools_dir / "docker_gc.sh"
             gc_script.write_text(
                 """#!/usr/bin/env bash
@@ -1649,19 +1669,31 @@ set -euo pipefail
 """,
                 encoding="utf-8",
             )
+            recycle_script = tools_dir / "recycle_artifacts.sh"
+            recycle_script.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
+""",
+                encoding="utf-8",
+            )
 
             base_env = os.environ.copy()
             base_env.update(
                 {
                     "FAKE_COMPOSE_DIR": str(compose_dir),
                     "FAKE_DOCKER_ROOT": str(docker_root),
+                    "FAKE_RELEASE_ROOT": str(release_root),
+                    "FAKE_REPORTS_ROOT": str(reports_root),
                     "FAKE_DF_COUNT": str(temp / "df.count"),
                     "FAKE_GC_LOG": str(gc_log),
+                    "FAKE_REPORT_GC_LOG": str(report_gc_log),
                     "FAKE_GC_TRIGGER_FREE_BYTES": "4294967296",
                     "FAKE_MIN_FREE_BYTES": "1073741824",
                     "FAKE_FREE_BEFORE_KIB": "1000000",
                     "FAKE_FREE_AFTER_KIB": "5000000",
                     "FAKE_FREE_EMERGENCY_KIB": "5000000",
+                    "FAKE_FREE_PRESSURE_KIB": "5000000",
                 }
             )
             result = subprocess.run(
@@ -1715,6 +1747,27 @@ set -euo pipefail
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             gc_log.unlink()
             base_env["FAKE_FREE_EMERGENCY_KIB"] = "1000000"
+            report_gc_log.unlink(missing_ok=True)
+            result = subprocess.run(
+                ["bash", "-c", harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            self.assertIn(
+                "disk pressure remains; reclaiming retained closed-loop reports",
+                result.stdout,
+            )
+            pressure_args = report_gc_log.read_text(encoding="utf-8")
+            self.assertIn("--keep-run-dirs\n4\n", pressure_args)
+            self.assertIn("--max-run-bytes\n1073741824\n", pressure_args)
+
+            pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            gc_log.unlink()
+            report_gc_log.unlink()
+            base_env["FAKE_FREE_PRESSURE_KIB"] = "1000000"
             result = subprocess.run(
                 ["bash", "-c", harness],
                 cwd=ROOT,
