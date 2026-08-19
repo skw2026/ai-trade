@@ -14,6 +14,8 @@ from typing import Any, Dict
 
 
 SCHEMA_VERSION = "microstructure_capture_retention_v1"
+UPGRADE_SOURCE_SCHEMA_VERSION = "bybit_cross_asset_microstructure_v2"
+UPGRADE_TARGET_SCHEMA_VERSION = "bybit_cross_asset_microstructure_v3"
 
 
 def _safe_regular_file(path: pathlib.Path, parent: pathlib.Path) -> bool:
@@ -32,6 +34,85 @@ def _tree_size(path: pathlib.Path) -> int:
         for item in path.rglob("*")
         if item.is_file() and not item.is_symlink()
     )
+
+
+def _expired_bundle_files(
+    *,
+    report: pathlib.Path,
+    payload: Dict[str, Any],
+    raw_root: pathlib.Path,
+    feature_root: pathlib.Path,
+) -> tuple[pathlib.Path, ...]:
+    symbol_dir = report.parent
+    symbol = symbol_dir.name
+    raw = payload["raw"]
+    features = payload["features"]
+    raw_name = pathlib.Path(str(raw["path"])).name
+    feature_name = pathlib.Path(str(features["path"])).name
+    segment_id = report.stem
+    raw_parent = raw_root / symbol
+    feature_parent = feature_root / symbol
+
+    if payload.get("status") != "PASS":
+        raise ValueError("report status is not PASS")
+
+    upgrade = payload.get("deterministic_raw_replay_upgrade")
+    is_deterministic_upgrade = bool(
+        payload.get("schema_version") == UPGRADE_TARGET_SCHEMA_VERSION
+        and isinstance(upgrade, dict)
+        and upgrade.get("source_schema_version") == UPGRADE_SOURCE_SCHEMA_VERSION
+        and upgrade.get("target_schema_version") == UPGRADE_TARGET_SCHEMA_VERSION
+        and upgrade.get("raw_payload_mutated") is False
+    )
+    if not is_deterministic_upgrade:
+        if raw_name != f"{segment_id}.jsonl.gz":
+            raise ValueError("raw filename does not bind report")
+        if feature_name != f"{segment_id}.csv":
+            raise ValueError("feature filename does not bind report")
+        raw_path = raw_parent / raw_name
+        feature_path = feature_parent / feature_name
+        if not _safe_regular_file(raw_path, raw_parent):
+            raise ValueError("raw artifact is missing or unsafe")
+        if not _safe_regular_file(feature_path, feature_parent):
+            raise ValueError("feature artifact is missing or unsafe")
+        return report, raw_path, feature_path
+
+    upgrade_suffix = f".{UPGRADE_TARGET_SCHEMA_VERSION}"
+    if not segment_id.endswith(upgrade_suffix):
+        raise ValueError("upgrade report filename does not bind target schema")
+    source_segment_id = segment_id[: -len(upgrade_suffix)]
+    if not source_segment_id:
+        raise ValueError("upgrade source segment identity is empty")
+    if raw_name != f"{source_segment_id}.jsonl.gz":
+        raise ValueError("upgrade raw filename does not bind source segment")
+    if feature_name != f"{segment_id}.csv":
+        raise ValueError("upgrade feature filename does not bind report")
+
+    upgraded_feature = feature_parent / feature_name
+    if not _safe_regular_file(upgraded_feature, feature_parent):
+        raise ValueError("upgrade feature artifact is missing or unsafe")
+
+    # The upgraded report intentionally shares the immutable raw artifact with
+    # its v2 source report. Remove the upgraded pair first and let the ordinary
+    # source bundle own that shared raw file. If the source report was already
+    # removed by an older pruner, finish the orphan cleanup using only the
+    # strictly derived source names.
+    source_report = symbol_dir / f"{source_segment_id}.json"
+    if source_report.exists() or source_report.is_symlink():
+        if not _safe_regular_file(source_report, symbol_dir):
+            raise ValueError("upgrade source report is unsafe")
+        return report, upgraded_feature
+
+    originals = [report, upgraded_feature]
+    for candidate, parent in (
+        (raw_parent / raw_name, raw_parent),
+        (feature_parent / f"{source_segment_id}.csv", feature_parent),
+    ):
+        if candidate.exists() or candidate.is_symlink():
+            if not _safe_regular_file(candidate, parent):
+                raise ValueError("orphaned upgrade source artifact is unsafe")
+            originals.append(candidate)
+    return tuple(originals)
 
 
 def prune_capture_root(
@@ -107,23 +188,13 @@ def prune_capture_root(
             continue
         try:
             payload = json.loads(report.read_text(encoding="utf-8"))
-            raw_name = pathlib.Path(str(payload["raw"]["path"])).name
-            feature_name = pathlib.Path(str(payload["features"]["path"])).name
             segment_id = report.stem
-            if payload.get("status") != "PASS":
-                raise ValueError("report status is not PASS")
-            if raw_name != f"{segment_id}.jsonl.gz":
-                raise ValueError("raw filename does not bind report")
-            if feature_name != f"{segment_id}.csv":
-                raise ValueError("feature filename does not bind report")
-            raw_parent = raw_root / symbol_dir.name
-            feature_parent = feature_root / symbol_dir.name
-            raw = raw_parent / raw_name
-            feature = feature_parent / feature_name
-            if not _safe_regular_file(raw, raw_parent):
-                raise ValueError("raw artifact is missing or unsafe")
-            if not _safe_regular_file(feature, feature_parent):
-                raise ValueError("feature artifact is missing or unsafe")
+            originals = _expired_bundle_files(
+                report=report,
+                payload=payload,
+                raw_root=raw_root,
+                feature_root=feature_root,
+            )
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             summary["segments_skipped"].append(
                 {"report": str(report), "reason": str(exc)}
@@ -135,7 +206,6 @@ def prune_capture_root(
             f"{symbol_dir.name}-{segment_id}-{uuid.uuid4().hex}"
         )
         transaction.mkdir(mode=0o700)
-        originals = (report, raw, feature)
         moved: list[tuple[pathlib.Path, pathlib.Path]] = []
         try:
             segment_bytes = sum(item.stat().st_size for item in originals)
