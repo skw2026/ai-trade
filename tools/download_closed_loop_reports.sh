@@ -232,6 +232,7 @@ fetch_report "${REMOTE_BASE}/microstructure_alpha_lifecycle_report.json" ".artif
 fetch_report "${REMOTE_BASE}/alpha_source_route_report.json" ".artifacts/alpha_source_route_report.json" "alpha_source_route_report" "json"
 fetch_report "${REMOTE_BASE}/microstructure_demo_binding_report.json" ".artifacts/microstructure_demo_binding_report.json" "microstructure_demo_binding_report" "json"
 fetch_report "${REMOTE_BASE}/baseline_report.json" ".artifacts/baseline_report.json" "baseline_report" "json"
+fetch_report "${REMOTE_BASE}/data_pipeline/data_pipeline_report.json" ".artifacts/data_pipeline_report.json" "data_pipeline_report" "json"
 fetch_report "${REMOTE_BASE}/data_quality_report.json" ".artifacts/data_quality_report.json" "data_quality_report" "json"
 fetch_report "${REMOTE_BASE}/walkforward_report.json" ".artifacts/walkforward_report.json" "walkforward_report" "json"
 fetch_report "${REMOTE_BASE}/research_domain_split_report.json" ".artifacts/research_domain_split_report.json" "research_domain_split_report" "json"

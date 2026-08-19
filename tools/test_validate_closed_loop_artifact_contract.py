@@ -66,6 +66,10 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
                 source,
             )
         diagnostics = {
+            "data_pipeline/data_pipeline_report.json": (
+                "data_pipeline_report.json",
+                "data_pipeline_report",
+            ),
             "decision_evidence_benchmark.json": (
                 "decision_evidence_benchmark.json",
                 "decision_evidence_benchmark",

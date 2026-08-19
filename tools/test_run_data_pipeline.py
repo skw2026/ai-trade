@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import contextlib
 import importlib.util
+import io
 import json
 import pathlib
 import sys
@@ -24,6 +26,68 @@ PIPELINE = load_module()
 
 
 class RunDataPipelineTest(unittest.TestCase):
+    def test_source_step_retries_transient_failure_and_audits_attempts(self):
+        step = PIPELINE.StepResult(
+            name="archive_download",
+            enabled=True,
+            command=["fetch"],
+            max_attempts=3,
+            retry_backoff_sec=0.0,
+        )
+        completed = [
+            PIPELINE.subprocess.CompletedProcess(
+                ["fetch"], 1, stdout="", stderr="temporary upstream failure"
+            ),
+            PIPELINE.subprocess.CompletedProcess(
+                ["fetch"], 0, stdout="ok", stderr=""
+            ),
+        ]
+
+        with (
+            mock.patch.object(
+                PIPELINE.subprocess, "run", side_effect=completed
+            ) as runner,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            result = PIPELINE.run_command(step, dry_run=False)
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.return_code, 0)
+        self.assertEqual(result.attempt_count, 2)
+        self.assertEqual(len(result.attempts), 2)
+        self.assertIn(
+            "temporary upstream failure", result.attempts[0]["output_tail"]
+        )
+        self.assertEqual(result.attempts[1]["return_code"], 0)
+        self.assertEqual(runner.call_count, 2)
+
+    def test_source_step_exhaustion_preserves_last_bounded_error(self):
+        step = PIPELINE.StepResult(
+            name="incremental_update",
+            enabled=True,
+            command=["fetch"],
+            max_attempts=2,
+            retry_backoff_sec=0.0,
+        )
+        failure = PIPELINE.subprocess.CompletedProcess(
+            ["fetch"], 1, stdout="", stderr="x" * 5000
+        )
+
+        with (
+            mock.patch.object(
+                PIPELINE.subprocess, "run", return_value=failure
+            ),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            result = PIPELINE.run_command(step, dry_run=False)
+
+        self.assertEqual(result.status, "fail")
+        self.assertEqual(result.attempt_count, 2)
+        self.assertEqual(result.error, "return_code=1")
+        self.assertLessEqual(len(result.attempts[-1]["output_tail"]), 4096)
+
     def test_load_yaml_minimal(self):
         with tempfile.TemporaryDirectory() as td:
             config = pathlib.Path(td) / "data_pipeline.yaml"
@@ -97,6 +161,8 @@ class RunDataPipelineTest(unittest.TestCase):
             self.assertIn("tools/fetch_bybit_history.py", archive_cmd)
             self.assertIn("--days", archive_cmd)
             self.assertEqual(archive_cmd[archive_cmd.index("--days") + 1], "30")
+            self.assertEqual(archive_step["max_attempts"], 3)
+            self.assertEqual(archive_step["attempt_count"], 0)
             self.assertEqual(report["contract"]["venue"], "bybit")
             self.assertTrue(report["contract"]["single_venue_verified"])
             planned_count = sum(1 for item in report["steps"] if item["status"] == "planned")

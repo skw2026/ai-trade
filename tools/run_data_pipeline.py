@@ -20,7 +20,8 @@ import pathlib
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 
@@ -35,6 +36,10 @@ class StepResult:
     started_at_utc: str = ""
     finished_at_utc: str = ""
     error: str = ""
+    max_attempts: int = 1
+    retry_backoff_sec: float = 0.0
+    attempt_count: int = 0
+    attempts: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def now_utc_iso() -> str:
@@ -146,17 +151,47 @@ def run_command(step: StepResult, dry_run: bool) -> StepResult:
         step.finished_at_utc = now_utc_iso()
         return step
 
-    completed = subprocess.run(step.command, capture_output=True, text=True)
-    if completed.stdout:
-        print(completed.stdout.rstrip())
-    if completed.stderr:
-        print(completed.stderr.rstrip(), file=sys.stderr)
-    step.return_code = completed.returncode
-    if completed.returncode == 0:
-        step.status = "ok"
-    else:
+    max_attempts = max(1, int(step.max_attempts))
+    step.attempt_count = 0
+    step.attempts = []
+    for attempt_number in range(1, max_attempts + 1):
+        if attempt_number > 1:
+            print(
+                f"[PIPELINE] {step.name}: retry "
+                f"{attempt_number}/{max_attempts}"
+            )
+        attempt_started_at = now_utc_iso()
+        completed = subprocess.run(step.command, capture_output=True, text=True)
+        attempt_finished_at = now_utc_iso()
+        if completed.stdout:
+            print(completed.stdout.rstrip())
+        if completed.stderr:
+            print(completed.stderr.rstrip(), file=sys.stderr)
+        output_parts = []
+        if completed.stdout:
+            output_parts.append("stdout:\n" + completed.stdout.rstrip())
+        if completed.stderr:
+            output_parts.append("stderr:\n" + completed.stderr.rstrip())
+        output_tail = "\n".join(output_parts)[-4096:]
+        step.attempt_count = attempt_number
+        step.attempts.append(
+            {
+                "attempt": attempt_number,
+                "return_code": completed.returncode,
+                "started_at_utc": attempt_started_at,
+                "finished_at_utc": attempt_finished_at,
+                "output_tail": output_tail,
+            }
+        )
+        step.return_code = completed.returncode
+        if completed.returncode == 0:
+            step.status = "ok"
+            step.error = ""
+            break
         step.status = "fail"
         step.error = f"return_code={completed.returncode}"
+        if attempt_number < max_attempts and step.retry_backoff_sec > 0.0:
+            time.sleep(step.retry_backoff_sec * attempt_number)
     step.finished_at_utc = now_utc_iso()
     return step
 
@@ -333,11 +368,27 @@ def parse_args() -> argparse.Namespace:
         help="build data/feature outputs without running walk-forward",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--source-attempts",
+        type=int,
+        default=3,
+        help="bounded attempts for each required network source step",
+    )
+    parser.add_argument(
+        "--source-retry-backoff-sec",
+        type=float,
+        default=1.0,
+        help="linear retry backoff base for required network source steps",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.source_attempts < 1:
+        raise ValueError("source attempts must be positive")
+    if args.source_retry_backoff_sec < 0.0:
+        raise ValueError("source retry backoff must be non-negative")
     config_path = pathlib.Path(args.config)
     config = load_yaml(config_path)
 
@@ -423,7 +474,15 @@ def main() -> int:
         archive_cmd += ["--start-date", start_date.strip()]
     if isinstance(end_date, str) and end_date.strip():
         archive_cmd += ["--end-date", end_date.strip()]
-    steps.append(StepResult(name="archive_download", enabled=archive_enabled, command=archive_cmd))
+    steps.append(
+        StepResult(
+            name="archive_download",
+            enabled=archive_enabled,
+            command=archive_cmd,
+            max_attempts=args.source_attempts,
+            retry_backoff_sec=args.source_retry_backoff_sec,
+        )
+    )
 
     incremental_enabled = as_bool(deep_get(config, ["incremental", "enabled"], True), True)
     steps.append(
@@ -452,6 +511,8 @@ def main() -> int:
                 "--report",
                 str(run_dir / "incremental_report.json"),
             ],
+            max_attempts=args.source_attempts,
+            retry_backoff_sec=args.source_retry_backoff_sec,
         )
     )
 
@@ -478,7 +539,15 @@ def main() -> int:
     ]
     if as_bool(deep_get(config, ["gap_fill", "strict"], False), False):
         gap_cmd.append("--strict")
-    steps.append(StepResult(name="gap_fill", enabled=gap_fill_enabled, command=gap_cmd))
+    steps.append(
+        StepResult(
+            name="gap_fill",
+            enabled=gap_fill_enabled,
+            command=gap_cmd,
+            max_attempts=args.source_attempts,
+            retry_backoff_sec=args.source_retry_backoff_sec,
+        )
+    )
 
     feature_enabled = as_bool(deep_get(config, ["feature_store", "enabled"], True), True)
     feature_cmd = [
@@ -707,6 +776,10 @@ def main() -> int:
                 "started_at_utc": item.started_at_utc,
                 "finished_at_utc": item.finished_at_utc,
                 "error": item.error,
+                "max_attempts": item.max_attempts,
+                "retry_backoff_sec": item.retry_backoff_sec,
+                "attempt_count": item.attempt_count,
+                "attempts": item.attempts,
             }
             for item in steps
         ],
