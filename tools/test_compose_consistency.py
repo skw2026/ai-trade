@@ -152,6 +152,10 @@ class ComposeConsistencyTest(unittest.TestCase):
                     workflow,
                 )
                 self.assertIn(
+                    "timeout 180s bash -c",
+                    workflow,
+                )
+                self.assertIn(
                     'grep -q "feature_parity_contract_test" '
                     "/tmp/ctest-list.txt",
                     workflow,
