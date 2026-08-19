@@ -155,6 +155,8 @@ class ComposeConsistencyTest(unittest.TestCase):
                     "timeout 180s bash -c",
                     workflow,
                 )
+                self.assertIn("dpkg-query -W", workflow)
+                self.assertIn("build dependencies already installed", workflow)
                 self.assertIn(
                     'grep -q "feature_parity_contract_test" '
                     "/tmp/ctest-list.txt",
