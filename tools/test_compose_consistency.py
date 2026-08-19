@@ -1039,7 +1039,11 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_cd_uses_immutable_run_bound_release_bundle(self):
         workflow = CD_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("group: production-ecs-cd", workflow)
-        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn(
+            "cancel-in-progress: ${{ contains(github.event.head_commit.message, '[cancel-stuck-cd]') }}",
+            workflow,
+        )
+        self.assertNotIn("cancel-in-progress: true", workflow)
         self.assertIn(
             "DEPLOY_RELEASE_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}",
             workflow,

@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: production-ecs-cd
-  cancel-in-progress: false
+  cancel-in-progress: ${{ contains(github.event.head_commit.message, '[cancel-stuck-cd]') }}
 
 env:
   REGISTRY: ghcr.io
