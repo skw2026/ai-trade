@@ -40,7 +40,7 @@ DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS="${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS:-3}"
 DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS="${DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS:-10}"
 DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"
 DEPLOY_GC_TRIGGER_FREE_BYTES="${DEPLOY_GC_TRIGGER_FREE_BYTES:-4294967296}"
-DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1073741824}"
+DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1342177280}"
 DEPLOY_POST_PULL_MIN_FREE_BYTES="${DEPLOY_POST_PULL_MIN_FREE_BYTES:-536870912}"
 DEPLOY_TRANSACTION_MIN_FREE_BYTES="${DEPLOY_TRANSACTION_MIN_FREE_BYTES:-134217728}"
 DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"
@@ -462,12 +462,12 @@ reclaim_report_storage_for_disk_pressure() {
     return 1
   fi
   local pressure_keep_run_dirs="${DEPLOY_REPORT_KEEP_RUN_DIRS}"
-  if (( pressure_keep_run_dirs > 2 )); then
-    pressure_keep_run_dirs=2
+  if (( pressure_keep_run_dirs > 1 )); then
+    pressure_keep_run_dirs=1
   fi
   local pressure_max_run_bytes="${DEPLOY_REPORT_MAX_BYTES}"
-  if (( pressure_max_run_bytes == 0 || pressure_max_run_bytes > 536870912 )); then
-    pressure_max_run_bytes=536870912
+  if (( pressure_max_run_bytes == 0 || pressure_max_run_bytes > 268435456 )); then
+    pressure_max_run_bytes=268435456
   fi
   local reports_root=""
   reports_root="$(closed_loop_reports_root)"
