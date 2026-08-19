@@ -462,12 +462,12 @@ reclaim_report_storage_for_disk_pressure() {
     return 1
   fi
   local pressure_keep_run_dirs="${DEPLOY_REPORT_KEEP_RUN_DIRS}"
-  if (( pressure_keep_run_dirs > 4 )); then
-    pressure_keep_run_dirs=4
+  if (( pressure_keep_run_dirs > 2 )); then
+    pressure_keep_run_dirs=2
   fi
   local pressure_max_run_bytes="${DEPLOY_REPORT_MAX_BYTES}"
-  if (( pressure_max_run_bytes == 0 || pressure_max_run_bytes > 1073741824 )); then
-    pressure_max_run_bytes=1073741824
+  if (( pressure_max_run_bytes == 0 || pressure_max_run_bytes > 536870912 )); then
+    pressure_max_run_bytes=536870912
   fi
   local reports_root=""
   reports_root="$(closed_loop_reports_root)"

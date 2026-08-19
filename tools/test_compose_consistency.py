@@ -1786,8 +1786,8 @@ printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
                 result.stdout,
             )
             pressure_args = report_gc_log.read_text(encoding="utf-8")
-            self.assertIn("--keep-run-dirs\n4\n", pressure_args)
-            self.assertIn("--max-run-bytes\n1073741824\n", pressure_args)
+            self.assertIn("--keep-run-dirs\n2\n", pressure_args)
+            self.assertIn("--max-run-bytes\n536870912\n", pressure_args)
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             gc_log.unlink()
