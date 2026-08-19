@@ -40,7 +40,7 @@ DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS="${DEPLOY_STARTUP_PREFLIGHT_ATTEMPTS:-3}"
 DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS="${DEPLOY_STARTUP_PREFLIGHT_RETRY_DELAY_SECONDS:-10}"
 DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"
 DEPLOY_GC_TRIGGER_FREE_BYTES="${DEPLOY_GC_TRIGGER_FREE_BYTES:-4294967296}"
-DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1342177280}"
+DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1207959552}"
 DEPLOY_POST_PULL_MIN_FREE_BYTES="${DEPLOY_POST_PULL_MIN_FREE_BYTES:-536870912}"
 DEPLOY_TRANSACTION_MIN_FREE_BYTES="${DEPLOY_TRANSACTION_MIN_FREE_BYTES:-134217728}"
 DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"
@@ -477,10 +477,64 @@ reclaim_report_storage_for_disk_pressure() {
       --keep-run-dirs "${pressure_keep_run_dirs}" \
       --max-age-hours "${DEPLOY_REPORT_MAX_AGE_HOURS}" \
       --max-run-bytes "${pressure_max_run_bytes}" \
-      --log-file "${reports_root}/cron.log"; then
+      --log-file "${reports_root}/cron.log" \
+      --log-max-bytes 5242880 \
+      --log-keep-bytes 1048576; then
     echo "[deploy] pressure report cleanup failed"
     DEPLOY_DISK_FAILURE_REASON="pressure_report_gc_failed"
     return 1
+  fi
+  return 0
+}
+
+reclaim_host_cache_for_disk_pressure() {
+  if ! is_true "${DEPLOY_HOST_GC_ENABLED}"; then
+    echo "[deploy] pressure host cache cleanup skipped (DEPLOY_HOST_GC_ENABLED=${DEPLOY_HOST_GC_ENABLED})"
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+    echo "[deploy] pressure host cache cleanup skipped: passwordless sudo unavailable"
+    return 0
+  fi
+
+  local docker_root="${DEPLOY_DOCKER_ROOT}"
+  if [[ -z "${docker_root}" ]]; then
+    docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+  fi
+  docker_root="${docker_root%/}"
+  if [[ -n "${docker_root}" ]]; then
+    local container_id=""
+    while IFS= read -r container_id; do
+      [[ -n "${container_id}" ]] || continue
+      local log_path=""
+      log_path="$(
+        docker inspect --format '{{.LogPath}}' "${container_id}" 2>/dev/null || true
+      )"
+      case "${log_path}" in
+        "${docker_root}"/containers/*/*-json.log)
+          ;;
+        *)
+          continue
+          ;;
+      esac
+      local log_dir=""
+      local log_base=""
+      log_dir="$(dirname "${log_path}")"
+      log_base="$(basename "${log_path}")"
+      if ! sudo -n find "${log_dir}" -maxdepth 1 -type f \
+        -name "${log_base}.[0-9]*" -print -delete; then
+        echo "[deploy] warning: failed to remove rotated Docker logs for ${container_id}"
+      fi
+    done < <(docker ps -aq 2>/dev/null || true)
+  fi
+
+  if command -v journalctl >/dev/null 2>&1; then
+    sudo -n journalctl --vacuum-size=67108864 ||
+      echo "[deploy] warning: systemd journal pressure cleanup failed"
+  fi
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo -n apt-get clean ||
+      echo "[deploy] warning: apt cache pressure cleanup failed"
   fi
   return 0
 }
@@ -588,6 +642,15 @@ ensure_deploy_disk_capacity() {
       return 1
     fi
     echo "[deploy] disk preflight after report cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
+  fi
+  if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
+    echo "[deploy] disk pressure remains; reclaiming rotated container and host caches"
+    reclaim_host_cache_for_disk_pressure
+    if ! available_after="$(docker_storage_available_bytes)"; then
+      DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_host_cache_gc"
+      return 1
+    fi
+    echo "[deploy] disk preflight after host cache cleanup: available_bytes=${available_after} minimum_bytes=${DEPLOY_MIN_FREE_BYTES}"
   fi
   if (( available_after < DEPLOY_MIN_FREE_BYTES )); then
     echo "[deploy] insufficient Docker disk space after cleanup"

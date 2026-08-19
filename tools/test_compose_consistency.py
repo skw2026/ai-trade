@@ -1482,11 +1482,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1342177280}"',
+            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1207959552}"',
             script,
         )
         self.assertIn(
-            "DEPLOY_MIN_FREE_BYTES: ${{ vars.DEPLOY_MIN_FREE_BYTES || '1342177280' }}",
+            "DEPLOY_MIN_FREE_BYTES: ${{ vars.DEPLOY_MIN_FREE_BYTES || '1207959552' }}",
             workflow,
         )
         self.assertIn(
@@ -1512,12 +1512,20 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("DOCKER_GC_UNTIL=all", script)
         self.assertIn("emergency pruning all unused containers", script)
         self.assertIn("reclaim_report_storage_for_disk_pressure()", script)
+        self.assertIn("reclaim_host_cache_for_disk_pressure()", script)
         self.assertIn(
             "disk pressure remains; reclaiming retained closed-loop reports",
             script,
         )
+        self.assertIn(
+            "disk pressure remains; reclaiming rotated container and host caches",
+            script,
+        )
         self.assertIn('--keep-run-dirs "${pressure_keep_run_dirs}"', script)
         self.assertIn('--max-run-bytes "${pressure_max_run_bytes}"', script)
+        self.assertIn('--vacuum-size=67108864', script)
+        self.assertIn('apt-get clean', script)
+        self.assertIn('-name "${log_base}.[0-9]*"', script)
         self.assertIn(
             "disk preflight failed before managed service mutation",
             script,
@@ -1644,7 +1652,29 @@ docker() {
   if [[ "${1:-}" == "info" ]]; then
     return 0
   fi
+  if [[ "${1:-}" == "ps" && "${2:-}" == "-aq" ]]; then
+    printf '%064d\n' 1
+    return 0
+  fi
+  if [[ "${1:-}" == "inspect" ]]; then
+    printf '%s/containers/%064d/%064d-json.log\n' \
+      "${FAKE_DOCKER_ROOT}" 1 1
+    return 0
+  fi
   return 1
+}
+
+journalctl() { return 0; }
+apt-get() { return 0; }
+sudo() {
+  if [[ "${1:-}" == "-n" && "${2:-}" == "true" ]]; then
+    return 0
+  fi
+  if [[ "${1:-}" == "-n" ]]; then
+    shift
+  fi
+  printf '%s\n' "$*" >> "${FAKE_HOST_GC_LOG}"
+  return 0
 }
 
 df() {
@@ -1717,6 +1747,7 @@ printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
                     "FAKE_DF_COUNT": str(temp / "df.count"),
                     "FAKE_GC_LOG": str(gc_log),
                     "FAKE_REPORT_GC_LOG": str(report_gc_log),
+                    "FAKE_HOST_GC_LOG": str(temp / "host-gc.args"),
                     "FAKE_GC_TRIGGER_FREE_BYTES": "4294967296",
                     "FAKE_MIN_FREE_BYTES": "1073741824",
                     "FAKE_FREE_BEFORE_KIB": "1000000",
@@ -1792,6 +1823,8 @@ printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
             pressure_args = report_gc_log.read_text(encoding="utf-8")
             self.assertIn("--keep-run-dirs\n1\n", pressure_args)
             self.assertIn("--max-run-bytes\n268435456\n", pressure_args)
+            self.assertIn("--log-max-bytes\n5242880\n", pressure_args)
+            self.assertIn("--log-keep-bytes\n1048576\n", pressure_args)
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             gc_log.unlink()
@@ -1809,6 +1842,12 @@ printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
                 "insufficient Docker disk space after cleanup",
                 result.stdout,
             )
+            host_gc_args = pathlib.Path(base_env["FAKE_HOST_GC_LOG"]).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("find ", host_gc_args)
+            self.assertIn("journalctl --vacuum-size=67108864", host_gc_args)
+            self.assertIn("apt-get clean", host_gc_args)
 
             base_env["FAKE_GC_TRIGGER_FREE_BYTES"] = "2147483648"
             base_env["FAKE_MIN_FREE_BYTES"] = "4294967296"
