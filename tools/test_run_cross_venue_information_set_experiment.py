@@ -129,6 +129,46 @@ class CrossVenueInformationSetExperimentTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "costs"):
                 experiment.validate_policy(path)
 
+    def test_internal_model_selection_uses_window_scaled_minimum_rows(self):
+        audit = experiment.validate_split_row_coverage(
+            split_id=0,
+            model_fit=np.arange(11_606),
+            model_selection=np.arange(1_958),
+            validation=np.arange(8_697),
+            test=np.arange(8_913),
+            split_policy=self.policy["splits"],
+        )
+
+        self.assertEqual(audit["minimum_rows"]["model_fit"], 3600)
+        self.assertEqual(audit["minimum_rows"]["model_selection"], 600)
+        self.assertEqual(audit["actual_rows"]["model_selection"], 1958)
+
+        with self.assertRaisesRegex(
+            experiment.ExperimentNotReady,
+            "model_selection=599<600",
+        ):
+            experiment.validate_split_row_coverage(
+                split_id=0,
+                model_fit=np.arange(11_606),
+                model_selection=np.arange(599),
+                validation=np.arange(8_697),
+                test=np.arange(8_913),
+                split_policy=self.policy["splits"],
+            )
+
+        with self.assertRaisesRegex(
+            experiment.ExperimentNotReady,
+            "model_fit=3599<3600",
+        ):
+            experiment.validate_split_row_coverage(
+                split_id=0,
+                model_fit=np.arange(3_599),
+                model_selection=np.arange(1_958),
+                validation=np.arange(8_697),
+                test=np.arange(8_913),
+                split_policy=self.policy["splits"],
+            )
+
     def test_unlisted_hyperparameter_drift_is_rejected_by_frozen_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             path = pathlib.Path(temp) / "policy.json"

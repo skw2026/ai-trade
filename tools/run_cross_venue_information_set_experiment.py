@@ -314,6 +314,47 @@ def _mean_or_zero(summary: Mapping[str, Any]) -> float | None:
     return 0.0 if int(summary.get("count") or 0) == 0 else None
 
 
+def validate_split_row_coverage(
+    *,
+    split_id: int,
+    model_fit: Sequence[Any],
+    model_selection: Sequence[Any],
+    validation: Sequence[Any],
+    test: Sequence[Any],
+    split_policy: Mapping[str, Any],
+) -> Dict[str, Dict[str, int]]:
+    minimum = int(split_policy["minimum_window_rows"])
+    model_selection_minimum = development.minimum_internal_model_selection_rows(
+        minimum_window_rows=minimum,
+        model_selection_window_seconds=int(
+            split_policy["model_selection_window_seconds"]
+        ),
+        train_window_seconds=int(split_policy["train_window_seconds"]),
+    )
+    actual_rows = {
+        "model_fit": len(model_fit),
+        "model_selection": len(model_selection),
+        "validation": len(validation),
+        "test": len(test),
+    }
+    minimum_rows = {
+        "model_fit": minimum,
+        "model_selection": model_selection_minimum,
+        "validation": minimum,
+        "test": minimum,
+    }
+    failures = [
+        f"{window}={actual_rows[window]}<{minimum_rows[window]}"
+        for window in actual_rows
+        if actual_rows[window] < minimum_rows[window]
+    ]
+    if failures:
+        raise ExperimentNotReady(
+            f"split {split_id} has insufficient common rows: " + ",".join(failures)
+        )
+    return {"actual_rows": actual_rows, "minimum_rows": minimum_rows}
+
+
 def evaluate_arm(
     *,
     arm_id: str,
@@ -349,11 +390,14 @@ def evaluate_arm(
             test = development.indices_between(
                 timestamps, split.test_start_ms, split.test_end_ms
             )
-            minimum = int(split_policy["minimum_window_rows"])
-            if min(len(model_fit), len(model_selection), len(validation), len(test)) < minimum:
-                raise ExperimentNotReady(
-                    f"split {split.split_id} has insufficient common rows"
-                )
+            row_coverage = validate_split_row_coverage(
+                split_id=int(split.split_id),
+                model_fit=model_fit,
+                model_selection=model_selection,
+                validation=validation,
+                test=test,
+                split_policy=split_policy,
+            )
             fit_utility = development.build_stress_net_utility_targets(
                 outcomes[model_fit],
                 base_cost_bps=float(costs["additional_round_trip_cost_bps"]),
@@ -396,6 +440,7 @@ def evaluate_arm(
                 model_diagnostics={
                     **dict(predictions.get("model_diagnostics", {})),
                     "fit_internal_selection_contract": selection_contract,
+                    "split_row_coverage": row_coverage,
                 },
             )
         except ExperimentNotReady:
