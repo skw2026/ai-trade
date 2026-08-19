@@ -1465,6 +1465,10 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
+            'DEPLOY_TRANSACTION_MIN_FREE_BYTES="${DEPLOY_TRANSACTION_MIN_FREE_BYTES:-134217728}"',
+            script,
+        )
+        self.assertIn(
             'DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"',
             script,
         )
@@ -1491,6 +1495,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("ensure_deploy_post_pull_capacity()", script)
+        self.assertIn("cleanup_post_commit_docker_storage()", script)
         call_index = script.index("if ! ensure_deploy_disk_capacity; then")
         host_cleanup_index = script.index("if ! cleanup_deploy_host_storage; then")
         prefetch_index = script.index(
@@ -1508,12 +1513,22 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertLess(post_pull_index, guard_index)
         self.assertLess(call_index, guard_index)
         self.assertLess(call_index, startup_index)
+        commit_index = script.index('DEPLOY_TRANSACTION_COMMITTED="true"')
+        post_commit_cleanup_index = script.index(
+            "if ! cleanup_post_commit_docker_storage; then"
+        )
+        deployment_pass_index = script.index(
+            '"deployment" "PASS" "deployment_committed"'
+        )
+        self.assertLess(commit_index, post_commit_cleanup_index)
+        self.assertLess(post_commit_cleanup_index, deployment_pass_index)
 
         for variable in (
             "DEPLOY_DISK_PREFLIGHT_ENABLED",
             "DEPLOY_GC_TRIGGER_FREE_BYTES",
             "DEPLOY_MIN_FREE_BYTES",
             "DEPLOY_POST_PULL_MIN_FREE_BYTES",
+            "DEPLOY_TRANSACTION_MIN_FREE_BYTES",
             "DEPLOY_DOCKER_GC_UNTIL",
             "DEPLOY_HOST_GC_ENABLED",
             "DEPLOY_RELEASE_KEEP_COUNT",

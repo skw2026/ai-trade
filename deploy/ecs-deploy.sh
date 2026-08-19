@@ -42,6 +42,7 @@ DEPLOY_DISK_PREFLIGHT_ENABLED="${DEPLOY_DISK_PREFLIGHT_ENABLED:-true}"
 DEPLOY_GC_TRIGGER_FREE_BYTES="${DEPLOY_GC_TRIGGER_FREE_BYTES:-4294967296}"
 DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1073741824}"
 DEPLOY_POST_PULL_MIN_FREE_BYTES="${DEPLOY_POST_PULL_MIN_FREE_BYTES:-536870912}"
+DEPLOY_TRANSACTION_MIN_FREE_BYTES="${DEPLOY_TRANSACTION_MIN_FREE_BYTES:-134217728}"
 DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"
 DEPLOY_DOCKER_ROOT="${DEPLOY_DOCKER_ROOT:-}"
 DEPLOY_HOST_GC_ENABLED="${DEPLOY_HOST_GC_ENABLED:-true}"
@@ -554,17 +555,61 @@ ensure_deploy_post_pull_capacity() {
   if ! is_true "${DEPLOY_DISK_PREFLIGHT_ENABLED}"; then
     return 0
   fi
-  if [[ ! "${DEPLOY_POST_PULL_MIN_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "[deploy] invalid DEPLOY_POST_PULL_MIN_FREE_BYTES: ${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+  if [[ ! "${DEPLOY_TRANSACTION_MIN_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[deploy] invalid DEPLOY_TRANSACTION_MIN_FREE_BYTES: ${DEPLOY_TRANSACTION_MIN_FREE_BYTES}"
+    DEPLOY_DISK_FAILURE_REASON="invalid_transaction_min_free_bytes"
     return 1
   fi
   local available_after_pull=""
   if ! available_after_pull="$(docker_storage_available_bytes)"; then
+    DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_pull"
     return 1
   fi
-  echo "[deploy] disk headroom after target image pull: available_bytes=${available_after_pull} minimum_bytes=${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
-  if (( available_after_pull < DEPLOY_POST_PULL_MIN_FREE_BYTES )); then
-    echo "[deploy] insufficient Docker disk headroom after target image pull"
+  echo "[deploy] disk headroom after target image pull: available_bytes=${available_after_pull} transaction_minimum_bytes=${DEPLOY_TRANSACTION_MIN_FREE_BYTES} post_commit_target_bytes=${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+  if (( available_after_pull < DEPLOY_TRANSACTION_MIN_FREE_BYTES )); then
+    echo "[deploy] insufficient Docker disk headroom for deployment transaction"
+    DEPLOY_DISK_FAILURE_REASON="insufficient_post_pull_capacity:${available_after_pull}:${DEPLOY_TRANSACTION_MIN_FREE_BYTES}"
+    return 1
+  fi
+  return 0
+}
+
+cleanup_post_commit_docker_storage() {
+  if ! is_true "${DEPLOY_DISK_PREFLIGHT_ENABLED}"; then
+    return 0
+  fi
+  if [[ ! "${DEPLOY_POST_PULL_MIN_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[deploy] invalid DEPLOY_POST_PULL_MIN_FREE_BYTES: ${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+    DEPLOY_DISK_FAILURE_REASON="invalid_post_commit_min_free_bytes"
+    return 1
+  fi
+  local gc_script="${COMPOSE_DIR}/tools/docker_gc.sh"
+  if [[ ! -f "${gc_script}" ]]; then
+    DEPLOY_DISK_FAILURE_REASON="post_commit_docker_gc_script_missing"
+    return 1
+  fi
+  echo "[deploy] deployment committed; pruning superseded images and build cache"
+  if ! DOCKER_GC_ENABLED=true \
+    DOCKER_GC_DRY_RUN=false \
+    DOCKER_GC_UNTIL=all \
+    DOCKER_GC_KEEP_RECENT_TAGS=0 \
+    DOCKER_GC_PRUNE_CONTAINERS=true \
+    DOCKER_GC_PRUNE_IMAGES=true \
+    DOCKER_GC_PRUNE_BUILD_CACHE=true \
+    DOCKER_GC_PRUNE_NETWORKS=false \
+    DOCKER_GC_PRUNE_VOLUMES=false \
+    /bin/bash "${gc_script}"; then
+    DEPLOY_DISK_FAILURE_REASON="post_commit_docker_gc_failed"
+    return 1
+  fi
+  local available_after_commit=""
+  if ! available_after_commit="$(docker_storage_available_bytes)"; then
+    DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_commit"
+    return 1
+  fi
+  echo "[deploy] disk headroom after post-commit cleanup: available_bytes=${available_after_commit} minimum_bytes=${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+  if (( available_after_commit < DEPLOY_POST_PULL_MIN_FREE_BYTES )); then
+    DEPLOY_DISK_FAILURE_REASON="insufficient_post_commit_capacity:${available_after_commit}:${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
     return 1
   fi
   return 0
@@ -1675,7 +1720,7 @@ fi
 if ! ensure_deploy_post_pull_capacity; then
   echo "[deploy] disk headroom check failed after target image pull; previous services left unchanged"
   record_deployment_diagnostics \
-    "post_pull_capacity" "FAIL" "insufficient_capacity" \
+    "post_pull_capacity" "FAIL" "${DEPLOY_DISK_FAILURE_REASON}" \
     "${required_containers[@]}"
   exit 1
 fi
@@ -1766,6 +1811,13 @@ if wait_for_services_ready \
       exit 1
     fi
     DEPLOY_TRANSACTION_COMMITTED="true"
+    if ! cleanup_post_commit_docker_storage; then
+      record_deployment_diagnostics \
+        "post_commit_storage" "FAIL" "${DEPLOY_DISK_FAILURE_REASON}" \
+        "${required_containers[@]}"
+      echo "[deploy] deployment committed but post-commit storage recovery failed"
+      exit 1
+    fi
     record_deployment_diagnostics \
       "deployment" "PASS" "deployment_committed" \
       "${required_containers[@]}"
