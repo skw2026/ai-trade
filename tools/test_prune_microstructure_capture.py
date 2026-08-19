@@ -180,7 +180,7 @@ class CaptureRetentionTest(unittest.TestCase):
             root = pathlib.Path(temp) / "binance_sol_microstructure"
             report = retention.prune_capture_root(
                 root,
-                retention_seconds=96 * 3600,
+                retention_seconds=72 * 3600,
                 now_epoch=1000,
                 expected_root_name="binance_sol_microstructure",
             )

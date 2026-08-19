@@ -232,7 +232,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--expected-root-name", required=True)
-    parser.add_argument("--retention-hours", type=int, default=96)
+    parser.add_argument("--retention-hours", type=int, default=72)
     parser.add_argument("--now-epoch", type=float)
     return parser.parse_args()
 

@@ -208,7 +208,7 @@ def parse_args() -> argparse.Namespace:
     run_parser.add_argument(
         "--bootstrap-segment-duration-sec", type=float, default=65.0
     )
-    run_parser.add_argument("--retention-days", type=int, default=120)
+    run_parser.add_argument("--retention-days", type=int, default=3)
     run_parser.add_argument("--max-backoff-sec", type=int, default=60)
     run_parser.add_argument("--max-segments", type=int, default=0)
     run_parser.add_argument(

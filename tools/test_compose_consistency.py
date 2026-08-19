@@ -297,7 +297,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("bootstrap-segment-duration-sec", collector)
             self.assertIn("MARKET_ALPHA_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("MARKET_ALPHA_SEGMENT_DURATION_SEC:-905", collector)
-            self.assertIn("MARKET_ALPHA_RETENTION_DAYS:-4", collector)
+            self.assertIn("MARKET_ALPHA_RETENTION_DAYS:-3", collector)
             self.assertIn("--max-stale-sec=1800", collector)
         self.assertIn(
             "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
@@ -317,7 +317,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("binance_sol_microstructure", collector)
             self.assertIn("CROSS_VENUE_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("CROSS_VENUE_SEGMENT_DURATION_SEC:-905", collector)
-            self.assertIn("CROSS_VENUE_RETENTION_DAYS:-4", collector)
+            self.assertIn("CROSS_VENUE_RETENTION_DAYS:-3", collector)
             self.assertNotIn("API_KEY", collector)
             self.assertNotIn("API_SECRET", collector)
         self.assertIn(
@@ -1537,8 +1537,12 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-96}"',
+            'DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-72}"',
             script,
+        )
+        self.assertIn(
+            "DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS || '72' }}",
+            workflow,
         )
         self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
         self.assertIn("tools/prune_microstructure_capture.py", script)

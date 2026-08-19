@@ -61,7 +61,7 @@ services:
       # Persist completed evidence often enough that normal CD churn cannot
       # repeatedly discard an hour-long in-progress capture.
       - "--segment-duration-sec=${MARKET_ALPHA_SEGMENT_DURATION_SEC:-905}"
-      - "--retention-days=${MARKET_ALPHA_RETENTION_DAYS:-4}"
+      - "--retention-days=${MARKET_ALPHA_RETENTION_DAYS:-3}"
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
@@ -88,7 +88,7 @@ services:
       - "--root=/app/data/research/binance_sol_microstructure"
       - "--bootstrap-segment-duration-sec=${CROSS_VENUE_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
       - "--segment-duration-sec=${CROSS_VENUE_SEGMENT_DURATION_SEC:-905}"
-      - "--retention-days=${CROSS_VENUE_RETENTION_DAYS:-4}"
+      - "--retention-days=${CROSS_VENUE_RETENTION_DAYS:-3}"
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:

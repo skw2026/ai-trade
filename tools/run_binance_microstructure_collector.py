@@ -193,7 +193,7 @@ def parse_args() -> argparse.Namespace:
     runner.add_argument("--root", required=True)
     runner.add_argument("--segment-duration-sec", type=float, default=905.0)
     runner.add_argument("--bootstrap-segment-duration-sec", type=float, default=65.0)
-    runner.add_argument("--retention-days", type=int, default=120)
+    runner.add_argument("--retention-days", type=int, default=3)
     runner.add_argument("--max-backoff-sec", type=int, default=60)
     runner.add_argument("--max-segments", type=int, default=0)
     runner.add_argument("--public-url", default=collector.PUBLIC_URL)
