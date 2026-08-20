@@ -126,11 +126,11 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(passed["status"], "pass")
             self.assertEqual(passed["readiness_status"], "PASS")
 
-    def test_cross_venue_information_set_decision_is_visible_but_non_promotional(self):
+    def test_liquidation_information_set_decision_is_visible_but_non_promotional(self):
         with tempfile.TemporaryDirectory() as td:
-            path = pathlib.Path(td) / "cross_venue.json"
+            path = pathlib.Path(td) / "liquidation.json"
             payload = {
-                "schema_version": "cross_venue_information_set_experiment_v1",
+                "schema_version": "liquidation_information_set_experiment_v1",
                 "status": "COMPLETE",
                 "fully_verifiable": True,
                 "research_domain": "forward_development_only",
@@ -169,7 +169,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             }
             path.write_text(json.dumps(payload), encoding="utf-8")
 
-            section = REPORT.assess_cross_venue_information_set_experiment(path)
+            section = REPORT.assess_liquidation_information_set_experiment(path)
 
             self.assertEqual(section["status"], "pass")
             self.assertEqual(section["readiness_status"], "PASS_WITH_ACTIONS")
@@ -185,7 +185,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
 
             payload["promotion_authority"] = True
             path.write_text(json.dumps(payload), encoding="utf-8")
-            rejected = REPORT.assess_cross_venue_information_set_experiment(path)
+            rejected = REPORT.assess_liquidation_information_set_experiment(path)
             self.assertEqual(rejected["status"], "fail")
             self.assertIn("authority contract", rejected["fail_reasons"][0])
 

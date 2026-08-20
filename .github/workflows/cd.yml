@@ -569,11 +569,11 @@ jobs:
               "${RELEASE_TMP}/tools/run_microstructure_collector.py" \
               "${RELEASE_TMP}/tools/assess_microstructure_capture.py" \
               "${RELEASE_TMP}/tools/prune_microstructure_capture.py" \
-              "${RELEASE_TMP}/config/cross_venue_information_set_experiment.json" \
-              "${RELEASE_TMP}/tools/collect_binance_microstructure.py" \
-              "${RELEASE_TMP}/tools/run_binance_microstructure_collector.py" \
-              "${RELEASE_TMP}/tools/assess_binance_microstructure_capture.py" \
-              "${RELEASE_TMP}/tools/run_cross_venue_information_set_experiment.py" \
+              "${RELEASE_TMP}/config/liquidation_information_set_experiment.json" \
+              "${RELEASE_TMP}/tools/collect_bybit_liquidations.py" \
+              "${RELEASE_TMP}/tools/run_liquidation_collector.py" \
+              "${RELEASE_TMP}/tools/assess_liquidation_capture.py" \
+              "${RELEASE_TMP}/tools/run_liquidation_information_set_experiment.py" \
               "${RELEASE_TMP}/tools/run_market_alpha_development.py" \
               "${RELEASE_TMP}/tools/run_microstructure_alpha_development.py" \
               "${RELEASE_TMP}/tools/run_microstructure_alpha_lifecycle.py" \

@@ -233,10 +233,12 @@ REPLAY_VALIDATION_FEATURE_CSV_BY_SYMBOL=""
 MICROSTRUCTURE_CAPTURE_ROOT="${CLOSED_LOOP_MICROSTRUCTURE_CAPTURE_ROOT:-data/research/microstructure}"
 MICROSTRUCTURE_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MIN_CAPTURE_SECONDS:-86400}"
 MICROSTRUCTURE_MAX_STALE_SECONDS="${CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-1800}"
-CROSS_VENUE_CAPTURE_ROOT="${CLOSED_LOOP_CROSS_VENUE_CAPTURE_ROOT:-data/research/binance_sol_microstructure}"
-CROSS_VENUE_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_CROSS_VENUE_MIN_CAPTURE_SECONDS:-86400}"
-CROSS_VENUE_MAX_STALE_SECONDS="${CLOSED_LOOP_CROSS_VENUE_MAX_STALE_SECONDS:-1800}"
-CROSS_VENUE_EXPERIMENT_CONFIG="${CLOSED_LOOP_CROSS_VENUE_EXPERIMENT_CONFIG:-config/cross_venue_information_set_experiment.json}"
+LIQUIDATION_CAPTURE_ROOT="${CLOSED_LOOP_LIQUIDATION_CAPTURE_ROOT:-data/research/bybit_sol_liquidations}"
+# The unchanged six-split calendar spans about 34.2 hours.  Use a 35-hour
+# connected-coverage gate so "ready" cannot precede the frozen split calendar.
+LIQUIDATION_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_LIQUIDATION_MIN_CAPTURE_SECONDS:-126000}"
+LIQUIDATION_MAX_STALE_SECONDS="${CLOSED_LOOP_LIQUIDATION_MAX_STALE_SECONDS:-1800}"
+LIQUIDATION_EXPERIMENT_CONFIG="${CLOSED_LOOP_LIQUIDATION_EXPERIMENT_CONFIG:-config/liquidation_information_set_experiment.json}"
 DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
 DECISION_EVIDENCE_BENCHMARK_ROOT="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_ROOT:-}"
 DECISION_EVIDENCE_CONFIG_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CONFIG:-config/decision_evidence_validation.json}"
@@ -1302,8 +1304,8 @@ STRATEGY_DIAGNOSE_REPORT_PATH="${RUN_DIR}/strategy_diagnose_report.json"
 ALPHA_MECHANISM_PROBE_REPORT_PATH="${RUN_DIR}/alpha_mechanism_probe_report.json"
 MICROSTRUCTURE_CAPTURE_REPORT_PATH="${RUN_DIR}/microstructure_capture_report.json"
 MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH="${RUN_DIR}/microstructure_capture_upgrade_report.json"
-CROSS_VENUE_CAPTURE_REPORT_PATH="${RUN_DIR}/cross_venue_capture_report.json"
-CROSS_VENUE_EXPERIMENT_REPORT_PATH="${RUN_DIR}/cross_venue_information_set_experiment.json"
+LIQUIDATION_CAPTURE_REPORT_PATH="${RUN_DIR}/liquidation_capture_report.json"
+LIQUIDATION_EXPERIMENT_REPORT_PATH="${RUN_DIR}/liquidation_information_set_experiment.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
 MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH="${RUN_DIR}/microstructure_alpha_regime_evidence_audit.json"
 MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/microstructure_alpha_candidate_manifest.json"
@@ -3367,26 +3369,26 @@ run_microstructure_capture_gate() {
   echo "[INFO] microstructure forward capture gate done"
 }
 
-run_cross_venue_information_set_experiment() {
-  echo "[INFO] cross-venue information-set experiment start"
+run_liquidation_information_set_experiment() {
+  echo "[INFO] liquidation information-set experiment start"
   local assessment_status=0
   local experiment_status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
-    tools/assess_binance_microstructure_capture.py \
-    --root "${CROSS_VENUE_CAPTURE_ROOT}" \
-    --output "${CROSS_VENUE_CAPTURE_REPORT_PATH}" \
-    --min-capture-duration-sec "${CROSS_VENUE_MIN_CAPTURE_SECONDS}" \
-    --max-stale-sec "${CROSS_VENUE_MAX_STALE_SECONDS}" \
+    tools/assess_liquidation_capture.py \
+    --root "${LIQUIDATION_CAPTURE_ROOT}" \
+    --output "${LIQUIDATION_CAPTURE_REPORT_PATH}" \
+    --min-capture-duration-sec "${LIQUIDATION_MIN_CAPTURE_SECONDS}" \
+    --max-stale-sec "${LIQUIDATION_MAX_STALE_SECONDS}" \
     || assessment_status=$?
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
-    tools/run_cross_venue_information_set_experiment.py \
+    tools/run_liquidation_information_set_experiment.py \
     --control-assessment "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
-    --treatment-assessment "${CROSS_VENUE_CAPTURE_REPORT_PATH}" \
-    --config "${CROSS_VENUE_EXPERIMENT_CONFIG}" \
-    --output "${CROSS_VENUE_EXPERIMENT_REPORT_PATH}" \
+    --treatment-assessment "${LIQUIDATION_CAPTURE_REPORT_PATH}" \
+    --config "${LIQUIDATION_EXPERIMENT_CONFIG}" \
+    --output "${LIQUIDATION_EXPERIMENT_REPORT_PATH}" \
     --research-domain development \
     || experiment_status=$?
-  echo "[INFO] cross-venue experiment status: assessment=${assessment_status}, experiment=${experiment_status}"
+  echo "[INFO] liquidation experiment status: assessment=${assessment_status}, experiment=${experiment_status}"
   return "${experiment_status}"
 }
 
@@ -4784,6 +4786,7 @@ write_run_manifest() {
   RUNTIME_CONFIG_PATH_VALUE="${RUNTIME_CONFIG_PATH}" \
   RUNTIME_CONFIG_SOURCE_VALUE="${RUNTIME_CONFIG_SOURCE}" \
   DATA_CONFIG_PATH_VALUE="${DATA_CONFIG_PATH}" \
+  LIQUIDATION_EXPERIMENT_CONFIG_VALUE="${LIQUIDATION_EXPERIMENT_CONFIG}" \
   REPLAY_CONFIG_PATH_VALUE="${REPLAY_EFFECTIVE_CONFIG_PATH}" \
   REPLAY_SOURCE_SYMBOL_VALUE="${REPLAY_VALIDATION_SOURCE_SYMBOL}" \
   REPLAY_SYMBOL_VALUE="${REPLAY_VALIDATION_SYMBOL}" \
@@ -4829,8 +4832,8 @@ write_run_manifest() {
   MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" \
   MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH_VALUE="${MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH}" \
   MICROSTRUCTURE_CAPTURE_REPORT_PATH_VALUE="${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
-  CROSS_VENUE_CAPTURE_REPORT_PATH_VALUE="${CROSS_VENUE_CAPTURE_REPORT_PATH}" \
-  CROSS_VENUE_EXPERIMENT_REPORT_PATH_VALUE="${CROSS_VENUE_EXPERIMENT_REPORT_PATH}" \
+  LIQUIDATION_CAPTURE_REPORT_PATH_VALUE="${LIQUIDATION_CAPTURE_REPORT_PATH}" \
+  LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE="${LIQUIDATION_EXPERIMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}" \
   MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
@@ -5036,6 +5039,9 @@ payload = {
         "runtime_config": os.environ.get("RUNTIME_CONFIG_PATH_VALUE", ""),
         "data_config": os.environ.get("DATA_CONFIG_PATH_VALUE", ""),
         "replay_config": os.environ.get("REPLAY_CONFIG_PATH_VALUE", ""),
+        "liquidation_information_set_experiment": os.environ.get(
+            "LIQUIDATION_EXPERIMENT_CONFIG_VALUE", ""
+        ),
         "decision_evidence_benchmark_manifest": os.environ.get(
             "DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH_VALUE", ""
         ),
@@ -5212,8 +5218,8 @@ artifact_env_names = {
     "market_alpha_development_report": "MARKET_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
     "microstructure_capture_upgrade_report": "MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH_VALUE",
     "microstructure_capture_report": "MICROSTRUCTURE_CAPTURE_REPORT_PATH_VALUE",
-    "cross_venue_capture_report": "CROSS_VENUE_CAPTURE_REPORT_PATH_VALUE",
-    "cross_venue_information_set_experiment": "CROSS_VENUE_EXPERIMENT_REPORT_PATH_VALUE",
+    "liquidation_capture_report": "LIQUIDATION_CAPTURE_REPORT_PATH_VALUE",
+    "liquidation_information_set_experiment": "LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_regime_evidence_audit": "MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH_VALUE",
     "microstructure_alpha_candidate_manifest": "MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
@@ -5412,8 +5418,8 @@ build_summary() {
   if [[ -f "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--market_alpha_development_report "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}")
   fi
-  if [[ -f "${CROSS_VENUE_EXPERIMENT_REPORT_PATH}" ]]; then
-    SUMMARY_ARGS+=(--cross_venue_information_set_experiment_report "${CROSS_VENUE_EXPERIMENT_REPORT_PATH}")
+  if [[ -f "${LIQUIDATION_EXPERIMENT_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--liquidation_information_set_experiment_report "${LIQUIDATION_EXPERIMENT_REPORT_PATH}")
   fi
   if [[ -f "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--microstructure_capture_report "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}")
@@ -5517,8 +5523,8 @@ build_summary() {
   "market_alpha_development_report": "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}",
   "microstructure_capture_upgrade_report": "${MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH}",
   "microstructure_capture_report": "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}",
-  "cross_venue_capture_report": "${CROSS_VENUE_CAPTURE_REPORT_PATH}",
-  "cross_venue_information_set_experiment": "${CROSS_VENUE_EXPERIMENT_REPORT_PATH}",
+  "liquidation_capture_report": "${LIQUIDATION_CAPTURE_REPORT_PATH}",
+  "liquidation_information_set_experiment": "${LIQUIDATION_EXPERIMENT_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
   "microstructure_alpha_regime_evidence_audit": "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}",
   "microstructure_alpha_candidate_manifest": "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}",
@@ -6412,7 +6418,7 @@ run_training_chain() {
     # never an accidental AND.
     run_observation_step market_alpha_development run_market_alpha_development_gate
     run_observation_step microstructure_forward_data run_microstructure_capture_gate
-    run_observation_step cross_venue_information_set_experiment run_cross_venue_information_set_experiment
+    run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
     run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
     run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
     run_required_step alpha_source_route run_alpha_source_route_gate
@@ -6589,7 +6595,7 @@ run_main() {
       run_required_step feature_parity run_feature_parity
       run_required_step data_quality run_data_quality
       run_required_step microstructure_forward_data run_microstructure_capture_gate
-      run_observation_step cross_venue_information_set_experiment run_cross_venue_information_set_experiment
+      run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
       run_collecting_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
       if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
@@ -6615,7 +6621,7 @@ run_main() {
     assess)
       run_observation_step market_alpha_development run_market_alpha_development_gate
       run_observation_step microstructure_forward_data run_microstructure_capture_gate
-      run_observation_step cross_venue_information_set_experiment run_cross_venue_information_set_experiment
+      run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
       run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
       run_observation_step alpha_source_route run_alpha_source_route_gate

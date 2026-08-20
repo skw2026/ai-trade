@@ -329,16 +329,16 @@ class ComposeConsistencyTest(unittest.TestCase):
             "CLOSED_LOOP_MICROSTRUCTURE_MAX_STALE_SECONDS:-1800", scheduler
         )
 
-    def test_cross_venue_collector_is_public_persistent_and_health_checked(self):
+    def test_liquidation_collector_is_public_persistent_and_health_checked(self):
         for services in (self.dev_services, self.prod_services):
             collector = services["cross-venue-alpha-collector"]
-            self.assertIn("run_binance_microstructure_collector.py", collector)
+            self.assertIn("run_liquidation_collector.py", collector)
             self.assertIn("restart: unless-stopped", collector)
             self.assertIn("healthcheck", collector)
-            self.assertIn("binance_sol_microstructure", collector)
-            self.assertIn("CROSS_VENUE_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
-            self.assertIn("CROSS_VENUE_SEGMENT_DURATION_SEC:-905", collector)
-            self.assertIn("CROSS_VENUE_RETENTION_DAYS:-3", collector)
+            self.assertIn("bybit_sol_liquidations", collector)
+            self.assertIn("LIQUIDATION_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
+            self.assertIn("LIQUIDATION_SEGMENT_DURATION_SEC:-905", collector)
+            self.assertIn("LIQUIDATION_RETENTION_DAYS:-3", collector)
             self.assertNotIn("API_KEY", collector)
             self.assertNotIn("API_SECRET", collector)
         self.assertIn(

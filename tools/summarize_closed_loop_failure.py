@@ -66,8 +66,8 @@ UPSTREAM_REPORTS = {
         "market_alpha_development_report.json",
         {"PASS", "FAIL", "NOT_READY"},
     ),
-    "cross_venue_information_set_experiment": (
-        "cross_venue_information_set_experiment.json",
+    "liquidation_information_set_experiment": (
+        "liquidation_information_set_experiment.json",
         {"COMPLETE", "NOT_READY", "INVALID_INPUT"},
     ),
     "microstructure_alpha_development": (
@@ -259,7 +259,7 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             and report["economic_screen"].get("development_passed") is True
             else "REJECTED"
         )
-    elif name == "cross_venue_information_set_experiment":
+    elif name == "liquidation_information_set_experiment":
         reasons = _safe_tokens(report.get("reason_codes"))
         allowed_decisions = {
             "STOP_CURRENT_RESEARCH_FAMILY",
@@ -269,7 +269,7 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         research_decision = report.get("research_decision")
         contract_ok = (
             report.get("schema_version")
-            == "cross_venue_information_set_experiment_v1"
+            == "liquidation_information_set_experiment_v1"
             and report.get("status") == "COMPLETE"
             and report.get("fully_verifiable") is True
             and report.get("research_domain") == "forward_development_only"
@@ -618,7 +618,7 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     )
     upstream_reasons = ",".join(upstream_reasons.split(",")[:20]) or "none"
     information_set_decision = (
-        upstream.get("cross_venue_information_set_experiment", {}).get(
+        upstream.get("liquidation_information_set_experiment", {}).get(
             "research_decision", "UNAVAILABLE"
         )
         or "UNAVAILABLE"

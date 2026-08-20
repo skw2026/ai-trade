@@ -135,13 +135,13 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
             ),
         )
 
-    def test_closed_loop_summary_receives_cross_venue_experiment(self):
+    def test_closed_loop_summary_receives_liquidation_experiment(self):
         source = (ROOT / "tools" / "closed_loop_runner.sh").read_text(
             encoding="utf-8"
         )
         self.assertIn(
-            'SUMMARY_ARGS+=(--cross_venue_information_set_experiment_report '
-            '"${CROSS_VENUE_EXPERIMENT_REPORT_PATH}")',
+            'SUMMARY_ARGS+=(--liquidation_information_set_experiment_report '
+            '"${LIQUIDATION_EXPERIMENT_REPORT_PATH}")',
             source,
         )
 
@@ -331,8 +331,8 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                     },
                     "live_promotion_eligible": False,
                 },
-                "cross_venue_information_set_experiment.json": {
-                    "schema_version": "cross_venue_information_set_experiment_v1",
+                "liquidation_information_set_experiment.json": {
+                    "schema_version": "liquidation_information_set_experiment_v1",
                     "status": "COMPLETE",
                     "fully_verifiable": True,
                     "research_domain": "forward_development_only",
@@ -452,7 +452,7 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
             ["no_independently_gated_alpha_source_ready"],
         )
         self.assertEqual(
-            upstream["cross_venue_information_set_experiment"],
+            upstream["liquidation_information_set_experiment"],
             {
                 "artifact": "PRESENT",
                 "status": "COMPLETE",

@@ -411,10 +411,20 @@ cleanup_deploy_host_storage() {
     return 1
   fi
   if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_sol_liquidations" \
+      --expected-root-name bybit_sol_liquidations \
+      --retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
+    echo "[deploy] Bybit liquidation research capture cleanup failed"
+    return 1
+  fi
+  # The service slot previously captured Binance L2/trades.  Keep pruning that
+  # rejected, now read-only source during the transition so it cannot become
+  # unbounded orphaned storage.
+  if ! python3 "${capture_pruner}" \
       --root "${DEPLOY_RELEASE_ROOT}/data/research/binance_sol_microstructure" \
       --expected-root-name binance_sol_microstructure \
       --retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
-    echo "[deploy] Binance research capture cleanup failed"
+    echo "[deploy] legacy Binance research capture cleanup failed"
     return 1
   fi
 

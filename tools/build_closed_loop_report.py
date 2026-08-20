@@ -1423,8 +1423,10 @@ def assess_market_alpha_development(path: Path) -> Dict[str, Any]:
     }
 
 
-def assess_cross_venue_information_set_experiment(path: Path) -> Dict[str, Any]:
-    """Expose the frozen information-set experiment as research-only evidence."""
+def assess_information_set_experiment(
+    path: Path, *, schema_version: str, label: str
+) -> Dict[str, Any]:
+    """Expose a frozen information-set experiment as research-only evidence."""
 
     payload = read_json(path)
     fail_reasons: List[str] = []
@@ -1433,18 +1435,18 @@ def assess_cross_venue_information_set_experiment(path: Path) -> Dict[str, Any]:
         "STOP_INFORMATION_SOURCE",
         "CONTINUE_TO_SECOND_INDEPENDENT_24H",
     }
-    if payload.get("schema_version") != "cross_venue_information_set_experiment_v1":
-        fail_reasons.append("cross-venue information-set report schema mismatch")
+    if payload.get("schema_version") != schema_version:
+        fail_reasons.append(f"{label} information-set report schema mismatch")
     if payload.get("status") != "COMPLETE":
-        fail_reasons.append("cross-venue information-set experiment is not complete")
+        fail_reasons.append(f"{label} information-set experiment is not complete")
     if payload.get("fully_verifiable") is not True:
-        fail_reasons.append("cross-venue information-set evidence is incomplete")
+        fail_reasons.append(f"{label} information-set evidence is incomplete")
     if not (
         payload.get("research_domain") == "forward_development_only"
         and payload.get("promotion_evidence") is False
         and payload.get("promotion_eligible") is False
     ):
-        fail_reasons.append("cross-venue research-domain isolation contract failed")
+        fail_reasons.append(f"{label} research-domain isolation contract failed")
     if not all(
         payload.get(field) is False
         for field in (
@@ -1453,18 +1455,18 @@ def assess_cross_venue_information_set_experiment(path: Path) -> Dict[str, Any]:
             "live_activation_authorized",
         )
     ):
-        fail_reasons.append("cross-venue authority contract failed")
+        fail_reasons.append(f"{label} authority contract failed")
 
     research_decision = payload.get("research_decision")
     if research_decision not in allowed_decisions:
-        fail_reasons.append("cross-venue research decision is invalid")
+        fail_reasons.append(f"{label} research decision is invalid")
         research_decision = None
     reason_codes = payload.get("reason_codes")
     if not (
         isinstance(reason_codes, list)
         and all(isinstance(item, str) and item.strip() for item in reason_codes)
     ):
-        fail_reasons.append("cross-venue reason codes are invalid")
+        fail_reasons.append(f"{label} reason codes are invalid")
         reason_codes = []
 
     common_domain = payload.get("common_domain", {})
@@ -1528,7 +1530,7 @@ def assess_cross_venue_information_set_experiment(path: Path) -> Dict[str, Any]:
         "warn_reasons": (
             []
             if fail_reasons
-            else [f"cross-venue research decision: {research_decision}"]
+            else [f"{label} research decision: {research_decision}"]
         ),
         "research_decision": research_decision,
         "reason_codes": list(reason_codes),
@@ -1540,6 +1542,23 @@ def assess_cross_venue_information_set_experiment(path: Path) -> Dict[str, Any]:
         "authoritative_for_integrator_promotion": False,
         "evidence_role": "information_set_stage_review",
     }
+
+
+def assess_cross_venue_information_set_experiment(path: Path) -> Dict[str, Any]:
+    """Backward-compatible reader for historical cross-venue reports."""
+    return assess_information_set_experiment(
+        path,
+        schema_version="cross_venue_information_set_experiment_v1",
+        label="cross-venue",
+    )
+
+
+def assess_liquidation_information_set_experiment(path: Path) -> Dict[str, Any]:
+    return assess_information_set_experiment(
+        path,
+        schema_version="liquidation_information_set_experiment_v1",
+        label="liquidation",
+    )
 
 
 def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
@@ -3921,6 +3940,11 @@ def parse_args() -> argparse.Namespace:
         help="冻结的跨 venue 信息集 A/B 实验报告路径",
     )
     parser.add_argument(
+        "--liquidation_information_set_experiment_report",
+        default="",
+        help="冻结的 Bybit SOL 全量强平信息集 A/B 实验报告路径",
+    )
+    parser.add_argument(
         "--closed_loop_mechanism_report",
         default="",
         help="closed_loop_mechanism_report.json 路径",
@@ -4331,6 +4355,20 @@ def main() -> int:
             )
         else:
             sections["cross_venue_information_set_experiment"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {experiment_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "information_set_stage_review",
+            }
+    if args.liquidation_information_set_experiment_report:
+        experiment_path = Path(args.liquidation_information_set_experiment_report)
+        if experiment_path.is_file():
+            sections["liquidation_information_set_experiment"] = (
+                assess_liquidation_information_set_experiment(experiment_path)
+            )
+        else:
+            sections["liquidation_information_set_experiment"] = {
                 "status": "fail",
                 "readiness_status": "FAIL",
                 "fail_reasons": [f"文件不存在: {experiment_path}"],

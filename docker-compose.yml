@@ -73,21 +73,23 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  # Keep the deployment slot/container identity stable while replacing the
+  # rejected Binance source with the frozen Bybit liquidation sidecar.
   cross-venue-alpha-collector:
     image: ai-trade-research:latest
     container_name: ai-trade-cross-venue-alpha-collector
     restart: unless-stopped
     working_dir: /app
-    entrypoint: ["python3", "/app/tools/run_binance_microstructure_collector.py", "run"]
+    entrypoint: ["python3", "/app/tools/run_liquidation_collector.py", "run"]
     command:
-      - "--root=/app/data/research/binance_sol_microstructure"
-      - "--bootstrap-segment-duration-sec=${CROSS_VENUE_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
-      - "--segment-duration-sec=${CROSS_VENUE_SEGMENT_DURATION_SEC:-905}"
-      - "--retention-days=${CROSS_VENUE_RETENTION_DAYS:-3}"
+      - "--root=/app/data/research/bybit_sol_liquidations"
+      - "--bootstrap-segment-duration-sec=${LIQUIDATION_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
+      - "--segment-duration-sec=${LIQUIDATION_SEGMENT_DURATION_SEC:-905}"
+      - "--retention-days=${LIQUIDATION_RETENTION_DAYS:-3}"
     volumes:
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "python3", "/app/tools/run_binance_microstructure_collector.py", "healthcheck", "--root=/app/data/research/binance_sol_microstructure", "--max-stale-sec=1800"]
+      test: ["CMD", "python3", "/app/tools/run_liquidation_collector.py", "healthcheck", "--root=/app/data/research/bybit_sol_liquidations", "--max-stale-sec=1800"]
       interval: 60s
       timeout: 10s
       retries: 3

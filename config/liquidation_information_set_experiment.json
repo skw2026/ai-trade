@@ -1,0 +1,66 @@
+{
+  "schema_version": "liquidation_information_set_experiment_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "bybit_control_vs_bybit_sol_all_liquidation_v1",
+  "control_information_set": "bybit_sol_btc_eth_l50_public_trades_v3",
+  "treatment_information_set": "control_plus_bybit_sol_all_liquidation_v1",
+  "single_variable_change": "add_bybit_sol_all_liquidation_features",
+  "liquidation_alignment": {
+    "lag_seconds": 1,
+    "method": "complete_connected_previous_second_bucket",
+    "rolling_windows_seconds": [1, 5, 20, 60],
+    "time_since_cap_seconds": 60,
+    "future_fill_permitted": false,
+    "backfill_permitted": false
+  },
+  "architecture_id": "direct_stress_utility_regression",
+  "actions": {
+    "directions": ["long", "short"],
+    "horizons_seconds": [15, 30, 60, 120, 300],
+    "execution_latency_seconds": 1
+  },
+  "costs": {
+    "additional_round_trip_cost_bps": 11.0,
+    "stress_cost_multiplier": 1.25
+  },
+  "splits": {
+    "count": 6,
+    "train_window_seconds": 21600,
+    "validation_window_seconds": 14400,
+    "test_window_seconds": 14400,
+    "rolling_step_seconds": 14400,
+    "model_selection_window_seconds": 3600,
+    "minimum_window_rows": 3600
+  },
+  "calibration": {
+    "quantiles": [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98],
+    "minimum_trades": 8
+  },
+  "model": {
+    "iterations": 200,
+    "depth": 4,
+    "learning_rate": 0.035,
+    "l2_leaf_reg": 30.0,
+    "random_strength": 2.0,
+    "random_seed": 20260806,
+    "early_stopping_rounds": 20
+  },
+  "negative_control": {
+    "permutation_trials": 7,
+    "permutation_seed": 20260808,
+    "minimum_excess_lcb_bps": 0.0
+  },
+  "decision_gates": {
+    "minimum_oos_trades": 30,
+    "minimum_positive_split_ratio": 0.6,
+    "minimum_oracle_stress_lcb_bps": 0.0,
+    "minimum_treatment_stress_lcb_bps": 0.0,
+    "minimum_paired_delta_stress_lcb_bps": 0.0
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

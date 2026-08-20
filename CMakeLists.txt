@@ -187,6 +187,12 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_prune_microstructure_capture.py)
     add_test(NAME cross_venue_information_set_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_cross_venue_information_set_experiment.py)
+    add_test(NAME collect_bybit_liquidations_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_bybit_liquidations.py)
+    add_test(NAME liquidation_capture_runtime_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_liquidation_capture_runtime.py)
+    add_test(NAME liquidation_information_set_experiment_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_liquidation_information_set_experiment.py)
     add_test(NAME upgrade_microstructure_capture_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_upgrade_microstructure_capture.py)
     add_test(NAME microstructure_runtime_test
