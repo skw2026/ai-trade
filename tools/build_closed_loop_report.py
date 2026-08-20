@@ -1423,6 +1423,125 @@ def assess_market_alpha_development(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_cross_venue_information_set_experiment(path: Path) -> Dict[str, Any]:
+    """Expose the frozen information-set experiment as research-only evidence."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "STOP_CURRENT_RESEARCH_FAMILY",
+        "STOP_INFORMATION_SOURCE",
+        "CONTINUE_TO_SECOND_INDEPENDENT_24H",
+    }
+    if payload.get("schema_version") != "cross_venue_information_set_experiment_v1":
+        fail_reasons.append("cross-venue information-set report schema mismatch")
+    if payload.get("status") != "COMPLETE":
+        fail_reasons.append("cross-venue information-set experiment is not complete")
+    if payload.get("fully_verifiable") is not True:
+        fail_reasons.append("cross-venue information-set evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "forward_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+    ):
+        fail_reasons.append("cross-venue research-domain isolation contract failed")
+    if not all(
+        payload.get(field) is False
+        for field in (
+            "promotion_authority",
+            "demo_activation_authorized",
+            "live_activation_authorized",
+        )
+    ):
+        fail_reasons.append("cross-venue authority contract failed")
+
+    research_decision = payload.get("research_decision")
+    if research_decision not in allowed_decisions:
+        fail_reasons.append("cross-venue research decision is invalid")
+        research_decision = None
+    reason_codes = payload.get("reason_codes")
+    if not (
+        isinstance(reason_codes, list)
+        and all(isinstance(item, str) and item.strip() for item in reason_codes)
+    ):
+        fail_reasons.append("cross-venue reason codes are invalid")
+        reason_codes = []
+
+    common_domain = payload.get("common_domain", {})
+    hindsight = payload.get("hindsight_oracle", {})
+    arms = payload.get("arms", {})
+    treatment = arms.get("treatment", {}) if isinstance(arms, dict) else {}
+    aggregate = treatment.get("aggregate", {}) if isinstance(treatment, dict) else {}
+    architectures = (
+        aggregate.get("architectures", {}) if isinstance(aggregate, dict) else {}
+    )
+    direct = (
+        architectures.get("direct_stress_utility_regression", {})
+        if isinstance(architectures, dict)
+        else {}
+    )
+    paired = payload.get("paired_treatment_minus_control", {})
+
+    def metric(mapping: Any, field: str) -> int | float | None:
+        if not isinstance(mapping, dict):
+            return None
+        value = mapping.get(field)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+        ):
+            return value
+        return None
+
+    metrics = {
+        "common_row_count": metric(common_domain, "row_count"),
+        "oracle_stress_lcb_bps": metric(
+            hindsight.get("stress_cost_by_split", {})
+            if isinstance(hindsight, dict)
+            else {},
+            "lcb_bps",
+        ),
+        "treatment_trade_count": metric(direct, "trade_count"),
+        "treatment_stress_lcb_bps": metric(
+            direct.get("oos_stress_cost_by_split", {})
+            if isinstance(direct, dict)
+            else {},
+            "lcb_bps",
+        ),
+        "paired_delta_stress_lcb_bps": metric(
+            paired.get("stress_cost_delta_by_split", {})
+            if isinstance(paired, dict)
+            else {},
+            "lcb_bps",
+        ),
+    }
+    permutation = paired.get("permutation_null", {}) if isinstance(paired, dict) else {}
+    if isinstance(permutation, dict) and isinstance(permutation.get("passed"), bool):
+        metrics["paired_permutation_passed"] = permutation["passed"]
+    metrics = {key: value for key, value in metrics.items() if value is not None}
+
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": (
+            []
+            if fail_reasons
+            else [f"cross-venue research decision: {research_decision}"]
+        ),
+        "research_decision": research_decision,
+        "reason_codes": list(reason_codes),
+        "metrics": metrics,
+        "research_observation_only": True,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "information_set_stage_review",
+    }
+
+
 def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     status_raw = str(payload.get("status", "")).strip().lower()
@@ -3797,6 +3916,11 @@ def parse_args() -> argparse.Namespace:
         help="跨市场/跨资产 development-only 经济筛选报告路径",
     )
     parser.add_argument(
+        "--cross_venue_information_set_experiment_report",
+        default="",
+        help="冻结的跨 venue 信息集 A/B 实验报告路径",
+    )
+    parser.add_argument(
         "--closed_loop_mechanism_report",
         default="",
         help="closed_loop_mechanism_report.json 路径",
@@ -4198,6 +4322,20 @@ def main() -> int:
                 "status": "fail",
                 "readiness_status": "FAIL",
                 "fail_reasons": [f"文件不存在: {market_alpha_path}"],
+            }
+    if args.cross_venue_information_set_experiment_report:
+        experiment_path = Path(args.cross_venue_information_set_experiment_report)
+        if experiment_path.is_file():
+            sections["cross_venue_information_set_experiment"] = (
+                assess_cross_venue_information_set_experiment(experiment_path)
+            )
+        else:
+            sections["cross_venue_information_set_experiment"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {experiment_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "information_set_stage_review",
             }
     if args.closed_loop_mechanism_report:
         mechanism_path = Path(args.closed_loop_mechanism_report)

@@ -5412,6 +5412,9 @@ build_summary() {
   if [[ -f "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--market_alpha_development_report "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}")
   fi
+  if [[ -f "${CROSS_VENUE_EXPERIMENT_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--cross_venue_information_set_experiment_report "${CROSS_VENUE_EXPERIMENT_REPORT_PATH}")
+  fi
   if [[ -f "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--microstructure_capture_report "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}")
   fi

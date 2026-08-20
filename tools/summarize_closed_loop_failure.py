@@ -66,6 +66,10 @@ UPSTREAM_REPORTS = {
         "market_alpha_development_report.json",
         {"PASS", "FAIL", "NOT_READY"},
     ),
+    "cross_venue_information_set_experiment": (
+        "cross_venue_information_set_experiment.json",
+        {"COMPLETE", "NOT_READY", "INVALID_INPUT"},
+    ),
     "microstructure_alpha_development": (
         "microstructure_alpha_development_report.json",
         {"PASS", "FAIL", "NOT_READY"},
@@ -255,6 +259,108 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             and report["economic_screen"].get("development_passed") is True
             else "REJECTED"
         )
+    elif name == "cross_venue_information_set_experiment":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        allowed_decisions = {
+            "STOP_CURRENT_RESEARCH_FAMILY",
+            "STOP_INFORMATION_SOURCE",
+            "CONTINUE_TO_SECOND_INDEPENDENT_24H",
+        }
+        research_decision = report.get("research_decision")
+        contract_ok = (
+            report.get("schema_version")
+            == "cross_venue_information_set_experiment_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("fully_verifiable") is True
+            and report.get("research_domain") == "forward_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and research_decision in allowed_decisions
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = (
+            research_decision if research_decision in allowed_decisions else None
+        )
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+
+        common = report.get("common_domain")
+        hindsight = report.get("hindsight_oracle")
+        arms = report.get("arms")
+        treatment = arms.get("treatment") if isinstance(arms, Mapping) else None
+        aggregate = (
+            treatment.get("aggregate") if isinstance(treatment, Mapping) else None
+        )
+        architectures = (
+            aggregate.get("architectures")
+            if isinstance(aggregate, Mapping)
+            else None
+        )
+        direct = (
+            architectures.get("direct_stress_utility_regression")
+            if isinstance(architectures, Mapping)
+            else None
+        )
+        paired = report.get("paired_treatment_minus_control")
+        oracle_stress = (
+            hindsight.get("stress_cost_by_split")
+            if isinstance(hindsight, Mapping)
+            else None
+        )
+        treatment_stress = (
+            direct.get("oos_stress_cost_by_split")
+            if isinstance(direct, Mapping)
+            else None
+        )
+        paired_stress = (
+            paired.get("stress_cost_delta_by_split")
+            if isinstance(paired, Mapping)
+            else None
+        )
+        permutation = (
+            paired.get("permutation_null") if isinstance(paired, Mapping) else None
+        )
+        metrics = {
+            "common_row_count": (
+                _safe_number(common.get("row_count"))
+                if isinstance(common, Mapping)
+                else None
+            ),
+            "oracle_stress_lcb_bps": (
+                _safe_number(oracle_stress.get("lcb_bps"))
+                if isinstance(oracle_stress, Mapping)
+                else None
+            ),
+            "treatment_trade_count": (
+                _safe_number(direct.get("trade_count"))
+                if isinstance(direct, Mapping)
+                else None
+            ),
+            "treatment_stress_lcb_bps": (
+                _safe_number(treatment_stress.get("lcb_bps"))
+                if isinstance(treatment_stress, Mapping)
+                else None
+            ),
+            "paired_delta_stress_lcb_bps": (
+                _safe_number(paired_stress.get("lcb_bps"))
+                if isinstance(paired_stress, Mapping)
+                else None
+            ),
+            "paired_permutation_passed": (
+                permutation.get("passed")
+                if isinstance(permutation, Mapping)
+                and isinstance(permutation.get("passed"), bool)
+                else None
+            ),
+        }
+        section["metrics"] = {
+            key: value for key, value in metrics.items() if value is not None
+        }
     elif name == "microstructure_alpha_development":
         reasons, metrics = _microstructure_alpha_diagnostics(report)
         section["gate_status"] = (
@@ -511,8 +617,15 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         for reason in upstream.get(name, {}).get("reason_codes", [])
     )
     upstream_reasons = ",".join(upstream_reasons.split(",")[:20]) or "none"
+    information_set_decision = (
+        upstream.get("cross_venue_information_set_experiment", {}).get(
+            "research_decision", "UNAVAILABLE"
+        )
+        or "UNAVAILABLE"
+    )
     return (
         f"failed_steps={failed_steps}; upstream={upstream_statuses}; "
+        f"information_set_decision={information_set_decision}; "
         f"upstream_reasons={upstream_reasons}; decisive={statuses}; reasons={reasons}"
     )
 

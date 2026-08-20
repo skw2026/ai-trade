@@ -135,6 +135,16 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
             ),
         )
 
+    def test_closed_loop_summary_receives_cross_venue_experiment(self):
+        source = (ROOT / "tools" / "closed_loop_runner.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'SUMMARY_ARGS+=(--cross_venue_information_set_experiment_report '
+            '"${CROSS_VENUE_EXPERIMENT_REPORT_PATH}")',
+            source,
+        )
+
 
 class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
     def test_summary_exposes_only_fixed_statuses_and_sanitized_reason_codes(self):
@@ -321,6 +331,45 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                     },
                     "live_promotion_eligible": False,
                 },
+                "cross_venue_information_set_experiment.json": {
+                    "schema_version": "cross_venue_information_set_experiment_v1",
+                    "status": "COMPLETE",
+                    "fully_verifiable": True,
+                    "research_domain": "forward_development_only",
+                    "promotion_evidence": False,
+                    "promotion_eligible": False,
+                    "promotion_authority": False,
+                    "demo_activation_authorized": False,
+                    "live_activation_authorized": False,
+                    "research_decision": "STOP_INFORMATION_SOURCE",
+                    "reason_codes": [
+                        "paired_treatment_minus_control_lcb_not_positive",
+                        "/opt/api_secret=must-not-leak",
+                    ],
+                    "common_domain": {"row_count": 123456},
+                    "hindsight_oracle": {
+                        "opportunity_proven": True,
+                        "stress_cost_by_split": {"lcb_bps": 1.25},
+                    },
+                    "arms": {
+                        "treatment": {
+                            "aggregate": {
+                                "architectures": {
+                                    "direct_stress_utility_regression": {
+                                        "trade_count": 41,
+                                        "oos_stress_cost_by_split": {
+                                            "lcb_bps": -0.75
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "paired_treatment_minus_control": {
+                        "stress_cost_delta_by_split": {"lcb_bps": -0.5},
+                        "permutation_null": {"passed": False},
+                    },
+                },
                 "decision_benchmark_build_report.json": {
                     "status": "UNVERIFIABLE",
                     "errors": [
@@ -403,9 +452,35 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
             ["no_independently_gated_alpha_source_ready"],
         )
         self.assertEqual(
+            upstream["cross_venue_information_set_experiment"],
+            {
+                "artifact": "PRESENT",
+                "status": "COMPLETE",
+                "reason_codes": [
+                    "paired_treatment_minus_control_lcb_not_positive"
+                ],
+                "gate_status": "COMPLETE",
+                "research_decision": "STOP_INFORMATION_SOURCE",
+                "research_observation_only": True,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "metrics": {
+                    "common_row_count": 123456,
+                    "oracle_stress_lcb_bps": 1.25,
+                    "treatment_trade_count": 41,
+                    "treatment_stress_lcb_bps": -0.75,
+                    "paired_delta_stress_lcb_bps": -0.5,
+                    "paired_permutation_passed": False,
+                },
+            },
+        )
+        self.assertEqual(
             upstream["decision_candidate_preflight"]["reason_codes"],
             ["candidate.report.model_version_missing"],
         )
+        self.assertIn("STOP_INFORMATION_SOURCE", annotation)
+        self.assertIn("paired_treatment_minus_control_lcb_not_positive", annotation)
         self.assertIn("input.candidate_model_missing", annotation)
         self.assertIn("economic_screen.minimum_oos_trades", annotation)
         self.assertNotIn("/opt", encoded)
