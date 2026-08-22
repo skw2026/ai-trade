@@ -131,6 +131,12 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
             ],
             "maker_execution_learnability_experiment.json",
         )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "maker_subsecond_information_experiment"
+            ],
+            "maker_subsecond_information_experiment.json",
+        )
 
     def test_downloader_always_emits_sanitized_public_failure_summary(self):
         source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
@@ -164,6 +170,11 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         self.assertIn(
             'SUMMARY_ARGS+=(--maker_execution_learnability_experiment_report '
             '"${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}")',
+            source,
+        )
+        self.assertIn(
+            'SUMMARY_ARGS+=(--maker_subsecond_information_experiment_report '
+            '"${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}")',
             source,
         )
 
@@ -459,6 +470,82 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
             "maker_learnability_leader=two_stage_opportunity_action", annotation
         )
         self.assertIn("two_stage_stress_lcb_bps:1.25", annotation)
+
+    def test_summary_exposes_subsecond_information_increment(self):
+        summary_module = load_public_summary_module()
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            architectures = {
+                "one_second_decomposed_baseline": {
+                    "trade_count": 40,
+                    "oos_base_cost_by_split": {"lcb_bps": -2.0},
+                    "oos_stress_cost_by_split": {"lcb_bps": -3.0},
+                    "prediction_permutation_control": {"passed": False},
+                },
+                "subsecond_queue_decomposed_treatment": {
+                    "trade_count": 55,
+                    "oos_base_cost_by_split": {"lcb_bps": 2.0},
+                    "oos_stress_cost_by_split": {"lcb_bps": 1.0},
+                    "prediction_permutation_control": {"passed": True},
+                },
+            }
+            (
+                artifact_dir / "maker_subsecond_information_experiment.json"
+            ).write_text(
+                json.dumps(
+                    {
+                        "schema_version": "maker_subsecond_information_experiment_v1",
+                        "status": "COMPLETE",
+                        "fully_verifiable": True,
+                        "research_domain": "forward_development_only",
+                        "promotion_evidence": False,
+                        "promotion_eligible": False,
+                        "promotion_authority": False,
+                        "demo_activation_authorized": False,
+                        "live_activation_authorized": False,
+                        "independent_forward_validation_required": True,
+                        "research_decision": (
+                            "CONTINUE_TO_INDEPENDENT_SUBSECOND_MAKER_FORWARD_VALIDATION"
+                        ),
+                        "reason_codes": ["subsecond_information_gate_passed"],
+                        "data": {
+                            "subsecond_aligned_eligible_row_count": 110000,
+                            "subsecond_aligned_row_ratio": 0.92,
+                        },
+                        "architecture_comparison": {
+                            "architectures": architectures
+                        },
+                        "incremental_information_diagnostics": {
+                            "treatment_positive_stress_split_ratio": 1.0,
+                            "positive_profitability_roc_auc_gain_split_ratio": 1.0,
+                            "treatment_fill_roc_auc_by_split": {"mean_bps": 0.7},
+                            "treatment_profitability_roc_auc_by_split": {
+                                "mean_bps": 0.6
+                            },
+                            "profitability_roc_auc_gain_by_split": {
+                                "mean_bps": 0.03
+                            },
+                            "stress_mean_improvement_by_split": {
+                                "mean_bps": 3.0
+                            },
+                            "decision_gate_passed": True,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            summary = summary_module.build_summary(artifact_dir)
+            annotation = summary_module._annotation(summary)
+        section = summary["upstream"]["maker_subsecond_information_experiment"]
+        self.assertEqual(section["gate_status"], "COMPLETE")
+        self.assertEqual(section["metrics"]["treatment_stress_lcb_bps"], 1.0)
+        self.assertEqual(section["metrics"]["profitability_auc_gain"], 0.03)
+        self.assertIn(
+            "maker_subsecond_decision="
+            "CONTINUE_TO_INDEPENDENT_SUBSECOND_MAKER_FORWARD_VALIDATION",
+            annotation,
+        )
+        self.assertIn("treatment_stress_lcb_bps:1.0", annotation)
 
     def test_summary_exposes_actionable_upstream_alpha_and_candidate_diagnostics(self):
         summary_module = load_public_summary_module()

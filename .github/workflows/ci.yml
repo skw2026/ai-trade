@@ -98,6 +98,7 @@ jobs:
           grep -q "liquidation_information_set_experiment_test" /tmp/ctest-list.txt
           grep -q "maker_execution_opportunity_experiment_test" /tmp/ctest-list.txt
           grep -q "maker_execution_learnability_experiment_test" /tmp/ctest-list.txt
+          grep -q "maker_subsecond_information_experiment_test" /tmp/ctest-list.txt
           grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt
           grep -q "run_microstructure_alpha_development_test" /tmp/ctest-list.txt
           grep -q "run_microstructure_alpha_lifecycle_test" /tmp/ctest-list.txt

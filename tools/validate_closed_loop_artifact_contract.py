@@ -46,6 +46,9 @@ LOCAL_ARTIFACT_FILENAMES = {
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),
+    "maker_subsecond_information_experiment": (
+        "maker_subsecond_information_experiment.json"
+    ),
     "microstructure_alpha_development_report": (
         "microstructure_alpha_development_report.json"
     ),

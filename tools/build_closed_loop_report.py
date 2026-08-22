@@ -1751,6 +1751,136 @@ def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]
     }
 
 
+def assess_maker_subsecond_information_experiment(path: Path) -> Dict[str, Any]:
+    """Expose the raw-replay information increment without activation authority."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "CONTINUE_TO_INDEPENDENT_SUBSECOND_MAKER_FORWARD_VALIDATION",
+        "STOP_MAKER_INFORMATION_SET",
+        "STOP_SUBSECOND_EXPERIMENT_UPSTREAM_NOT_PROVEN",
+    }
+    if payload.get("schema_version") != "maker_subsecond_information_experiment_v1":
+        fail_reasons.append("maker subsecond report schema mismatch")
+    if payload.get("status") != "COMPLETE" or payload.get("fully_verifiable") is not True:
+        fail_reasons.append("maker subsecond evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "forward_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+        and payload.get("independent_forward_validation_required") in {True, False}
+    ):
+        fail_reasons.append("maker subsecond isolation contract failed")
+    decision = payload.get("research_decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("maker subsecond research decision is invalid")
+        decision = None
+    reasons = payload.get("reason_codes")
+    if not (
+        isinstance(reasons, list)
+        and all(isinstance(item, str) and item.strip() for item in reasons)
+    ):
+        fail_reasons.append("maker subsecond reason codes are invalid")
+        reasons = []
+
+    def metric(mapping: Any, field: str) -> int | float | bool | None:
+        if not isinstance(mapping, dict):
+            return None
+        value = mapping.get(field)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and math.isfinite(float(value)):
+            return value
+        return None
+
+    comparison = payload.get("architecture_comparison", {})
+    architectures = (
+        comparison.get("architectures", {})
+        if isinstance(comparison, dict)
+        else {}
+    )
+    variants: Dict[str, Any] = {}
+    if isinstance(architectures, dict):
+        for variant_id in (
+            "one_second_decomposed_baseline",
+            "subsecond_queue_decomposed_treatment",
+        ):
+            item = architectures.get(variant_id)
+            if not isinstance(item, dict):
+                continue
+            base = item.get("oos_base_cost_by_split", {})
+            stress = item.get("oos_stress_cost_by_split", {})
+            control = item.get("prediction_permutation_control", {})
+            variants[variant_id] = {
+                "trade_count": metric(item, "trade_count"),
+                "base_lcb_bps": metric(base, "lcb_bps"),
+                "stress_lcb_bps": metric(stress, "lcb_bps"),
+                "permutation_passed": metric(control, "passed"),
+            }
+    diagnostics = payload.get("incremental_information_diagnostics", {})
+    fill_auc = (
+        diagnostics.get("treatment_fill_roc_auc_by_split", {})
+        if isinstance(diagnostics, dict)
+        else {}
+    )
+    profitability_auc = (
+        diagnostics.get("treatment_profitability_roc_auc_by_split", {})
+        if isinstance(diagnostics, dict)
+        else {}
+    )
+    profitability_gain = (
+        diagnostics.get("profitability_roc_auc_gain_by_split", {})
+        if isinstance(diagnostics, dict)
+        else {}
+    )
+    stress_gain = (
+        diagnostics.get("stress_mean_improvement_by_split", {})
+        if isinstance(diagnostics, dict)
+        else {}
+    )
+    data = payload.get("data", {})
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": (
+            [] if fail_reasons else [f"maker subsecond decision: {decision}"]
+        ),
+        "research_decision": decision,
+        "reason_codes": list(reasons),
+        "metrics": {
+            "aligned_row_count": metric(data, "subsecond_aligned_eligible_row_count"),
+            "aligned_row_ratio": metric(data, "subsecond_aligned_row_ratio"),
+            "treatment_positive_stress_split_ratio": metric(
+                diagnostics, "treatment_positive_stress_split_ratio"
+            ),
+            "treatment_fill_roc_auc": metric(fill_auc, "mean_bps"),
+            "treatment_profitability_roc_auc": metric(
+                profitability_auc, "mean_bps"
+            ),
+            "profitability_roc_auc_gain": metric(
+                profitability_gain, "mean_bps"
+            ),
+            "stress_mean_improvement_bps": metric(stress_gain, "mean_bps"),
+            "stress_lcb_improvement_bps": metric(
+                diagnostics, "stress_lcb_improvement_bps"
+            ),
+            "decision_gate_passed": metric(diagnostics, "decision_gate_passed"),
+            "variants": variants,
+        },
+        "research_observation_only": True,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "subsecond_information_increment_stage_review",
+    }
+
+
 def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     status_raw = str(payload.get("status", "")).strip().lower()
@@ -4145,6 +4275,11 @@ def parse_args() -> argparse.Namespace:
         help="保守 maker-entry 三架构可学习性实验报告路径",
     )
     parser.add_argument(
+        "--maker_subsecond_information_experiment_report",
+        default="",
+        help="原始订单簿 250ms 信息增量实验报告路径",
+    )
+    parser.add_argument(
         "--closed_loop_mechanism_report",
         default="",
         help="closed_loop_mechanism_report.json 路径",
@@ -4602,6 +4737,20 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {experiment_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "execution_learnability_stage_review",
+            }
+    if args.maker_subsecond_information_experiment_report:
+        experiment_path = Path(args.maker_subsecond_information_experiment_report)
+        if experiment_path.is_file():
+            sections["maker_subsecond_information_experiment"] = (
+                assess_maker_subsecond_information_experiment(experiment_path)
+            )
+        else:
+            sections["maker_subsecond_information_experiment"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {experiment_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "subsecond_information_increment_stage_review",
             }
     if args.closed_loop_mechanism_report:
         mechanism_path = Path(args.closed_loop_mechanism_report)

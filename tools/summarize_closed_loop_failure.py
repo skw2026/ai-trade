@@ -78,6 +78,10 @@ UPSTREAM_REPORTS = {
         "maker_execution_learnability_experiment.json",
         {"COMPLETE", "NOT_READY"},
     ),
+    "maker_subsecond_information_experiment": (
+        "maker_subsecond_information_experiment.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "microstructure_alpha_development": (
         "microstructure_alpha_development_report.json",
         {"PASS", "FAIL", "NOT_READY"},
@@ -715,6 +719,149 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         section["metrics"] = {
             key: value for key, value in metrics.items() if value is not None
         }
+    elif name == "maker_subsecond_information_experiment":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        decision = report.get("research_decision")
+        allowed_decisions = {
+            "CONTINUE_TO_INDEPENDENT_SUBSECOND_MAKER_FORWARD_VALIDATION",
+            "STOP_MAKER_INFORMATION_SET",
+            "STOP_SUBSECOND_EXPERIMENT_UPSTREAM_NOT_PROVEN",
+        }
+        contract_ok = (
+            report.get("schema_version")
+            == "maker_subsecond_information_experiment_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("fully_verifiable") is True
+            and report.get("research_domain") == "forward_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and decision in allowed_decisions
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = (
+            decision if decision in allowed_decisions else None
+        )
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        data = report.get("data")
+        comparison = report.get("architecture_comparison")
+        architectures = (
+            comparison.get("architectures")
+            if isinstance(comparison, Mapping)
+            else None
+        )
+        diagnostics = report.get("incremental_information_diagnostics")
+        metrics = {
+            "aligned_row_count": (
+                _safe_number(data.get("subsecond_aligned_eligible_row_count"))
+                if isinstance(data, Mapping)
+                else None
+            ),
+            "aligned_row_ratio": (
+                _safe_number(data.get("subsecond_aligned_row_ratio"))
+                if isinstance(data, Mapping)
+                else None
+            ),
+            "positive_stress_split_ratio": (
+                _safe_number(
+                    diagnostics.get("treatment_positive_stress_split_ratio")
+                )
+                if isinstance(diagnostics, Mapping)
+                else None
+            ),
+            "positive_profitability_auc_gain_split_ratio": (
+                _safe_number(
+                    diagnostics.get(
+                        "positive_profitability_roc_auc_gain_split_ratio"
+                    )
+                )
+                if isinstance(diagnostics, Mapping)
+                else None
+            ),
+            "decision_gate_passed": (
+                diagnostics.get("decision_gate_passed")
+                if isinstance(diagnostics, Mapping)
+                and isinstance(diagnostics.get("decision_gate_passed"), bool)
+                else None
+            ),
+            "stress_lcb_improvement_bps": (
+                _safe_number(diagnostics.get("stress_lcb_improvement_bps"))
+                if isinstance(diagnostics, Mapping)
+                else None
+            ),
+        }
+        for key, report_key in (
+            ("fill_roc_auc", "treatment_fill_roc_auc_by_split"),
+            (
+                "profitability_roc_auc",
+                "treatment_profitability_roc_auc_by_split",
+            ),
+            ("profitability_auc_gain", "profitability_roc_auc_gain_by_split"),
+            ("stress_mean_improvement_bps", "stress_mean_improvement_by_split"),
+        ):
+            summary = (
+                diagnostics.get(report_key)
+                if isinstance(diagnostics, Mapping)
+                else None
+            )
+            metrics[key] = (
+                _safe_number(summary.get("mean_bps"))
+                if isinstance(summary, Mapping)
+                else None
+            )
+        for variant_id, prefix in (
+            ("one_second_decomposed_baseline", "baseline"),
+            ("subsecond_queue_decomposed_treatment", "treatment"),
+        ):
+            architecture = (
+                architectures.get(variant_id)
+                if isinstance(architectures, Mapping)
+                else None
+            )
+            base = (
+                architecture.get("oos_base_cost_by_split")
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            stress = (
+                architecture.get("oos_stress_cost_by_split")
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            control = (
+                architecture.get("prediction_permutation_control")
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_trade_count"] = (
+                _safe_number(architecture.get("trade_count"))
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_base_lcb_bps"] = (
+                _safe_number(base.get("lcb_bps"))
+                if isinstance(base, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_stress_lcb_bps"] = (
+                _safe_number(stress.get("lcb_bps"))
+                if isinstance(stress, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_permutation_passed"] = (
+                control.get("passed")
+                if isinstance(control, Mapping)
+                and isinstance(control.get("passed"), bool)
+                else None
+            )
+        section["metrics"] = {
+            key: value for key, value in metrics.items() if value is not None
+        }
     elif name == "microstructure_alpha_development":
         reasons, metrics = _microstructure_alpha_diagnostics(report)
         section["gate_status"] = (
@@ -1090,6 +1237,46 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     maker_learnability_progress = (
         ",".join(maker_learnability_progress_parts) or "UNAVAILABLE"
     )
+    maker_subsecond = upstream.get("maker_subsecond_information_experiment", {})
+    maker_subsecond_decision = (
+        maker_subsecond.get("research_decision", "UNAVAILABLE") or "UNAVAILABLE"
+    )
+    maker_subsecond_progress_parts: list[str] = []
+    maker_subsecond_metrics = maker_subsecond.get("metrics")
+    if isinstance(maker_subsecond_metrics, Mapping):
+        for key in (
+            "aligned_row_count",
+            "aligned_row_ratio",
+            "baseline_trade_count",
+            "baseline_base_lcb_bps",
+            "baseline_stress_lcb_bps",
+            "treatment_trade_count",
+            "treatment_base_lcb_bps",
+            "treatment_stress_lcb_bps",
+            "positive_stress_split_ratio",
+            "fill_roc_auc",
+            "profitability_roc_auc",
+            "profitability_auc_gain",
+            "positive_profitability_auc_gain_split_ratio",
+            "stress_mean_improvement_bps",
+            "stress_lcb_improvement_bps",
+        ):
+            value = _safe_number(maker_subsecond_metrics.get(key))
+            if value is not None:
+                maker_subsecond_progress_parts.append(f"{key}:{value}")
+        for key in (
+            "baseline_permutation_passed",
+            "treatment_permutation_passed",
+            "decision_gate_passed",
+        ):
+            value = maker_subsecond_metrics.get(key)
+            if isinstance(value, bool):
+                maker_subsecond_progress_parts.append(
+                    f"{key}:{str(value).lower()}"
+                )
+    maker_subsecond_progress = (
+        ",".join(maker_subsecond_progress_parts) or "UNAVAILABLE"
+    )
     return (
         f"failed_steps={failed_steps}; upstream={upstream_statuses}; "
         f"information_set_decision={information_set_decision}; "
@@ -1099,6 +1286,8 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         f"maker_learnability_decision={maker_learnability_decision}; "
         f"maker_learnability_leader={maker_learnability_leader}; "
         f"maker_learnability_progress={maker_learnability_progress}; "
+        f"maker_subsecond_decision={maker_subsecond_decision}; "
+        f"maker_subsecond_progress={maker_subsecond_progress}; "
         f"upstream_reasons={upstream_reasons}; decisive={statuses}; reasons={reasons}"
     )
 

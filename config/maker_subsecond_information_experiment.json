@@ -1,0 +1,91 @@
+{
+  "schema_version": "maker_subsecond_information_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "bybit_sol_subsecond_maker_information_increment_v1",
+  "single_variable_change": "append_checksum_bound_250ms_queue_dynamics_from_existing_raw_capture",
+  "upstream": {
+    "required_learnability_decision": "STOP_MAKER_LEARNABILITY_FAMILY",
+    "required_learnability_policy_identity_sha256": "a8ce70efd90185a650d8980a2de8d02c7e20d1e2bea4233b5512e18bb1a7a109",
+    "required_capture_schema_version": "bybit_cross_asset_microstructure_v3"
+  },
+  "features": {
+    "baseline_causal_contract_revision": "order_flow_cross_asset_regime_v1",
+    "expected_baseline_feature_count": 242,
+    "subsecond_bucket_ms": 250,
+    "required_quarters_per_second": 4,
+    "subsecond_feature_contract_revision": "raw_queue_path_250ms_v1",
+    "expected_subsecond_feature_count": 51,
+    "minimum_aligned_row_ratio": 0.8,
+    "fill_proxy_used_as_model_feature": false,
+    "future_values_permitted": false
+  },
+  "architecture": {
+    "id": "fill_probability_times_conditional_positive_stress_utility",
+    "comparison_variants": [
+      "one_second_decomposed_baseline",
+      "subsecond_queue_decomposed_treatment"
+    ],
+    "fill_model_target": "conservative_full_fill_within_timeout",
+    "toxicity_model_target": "positive_stress_net_utility_conditional_on_fill",
+    "action_features": ["direction_sign", "log2_horizon_ratio"],
+    "score": "fill_probability_times_conditional_positive_probability"
+  },
+  "execution": {
+    "placement_latency_seconds": 1,
+    "fill_timeout_seconds": 5,
+    "queue_depth_multiplier": 1.25,
+    "maker_entry_fee_bps": 2.75,
+    "taker_exit_fee_bps": 5.5,
+    "exit_slippage_bps": 1.0,
+    "stress_cost_multiplier": 1.25,
+    "horizons_seconds": [15, 30, 60, 120, 300],
+    "one_outstanding_order_or_position": true
+  },
+  "splits": {
+    "count": 6,
+    "train_window_seconds": 21600,
+    "validation_window_seconds": 14400,
+    "test_window_seconds": 14400,
+    "rolling_step_seconds": 14400,
+    "model_selection_window_seconds": 3600,
+    "minimum_window_rows": 3600
+  },
+  "calibration": {
+    "threshold_quantiles": [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98],
+    "minimum_validation_trades": 8
+  },
+  "model": {
+    "iterations": 160,
+    "depth": 4,
+    "learning_rate": 0.035,
+    "l2_leaf_reg": 30.0,
+    "random_strength": 2.0,
+    "random_seed": 20260822,
+    "early_stopping_rounds": 20,
+    "conditional_positive_class_weighting": "balanced"
+  },
+  "negative_control": {
+    "permutation_trials": 7,
+    "permutation_seed": 20260823,
+    "minimum_excess_lcb_bps": 0.0,
+    "treatment_control": "permute_only_subsecond_rows_at_oos_inference"
+  },
+  "decision_gates": {
+    "minimum_oos_trades": 30,
+    "minimum_positive_stress_split_ratio": 0.6,
+    "minimum_base_lcb_bps": 0.0,
+    "minimum_stress_lcb_bps": 0.0,
+    "minimum_stress_lcb_improvement_bps": 0.0,
+    "minimum_treatment_fill_roc_auc": 0.6,
+    "minimum_treatment_profitability_roc_auc": 0.55,
+    "minimum_profitability_roc_auc_gain": 0.01,
+    "minimum_positive_profitability_auc_gain_split_ratio": 0.6,
+    "subsecond_permutation_control_required": true
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

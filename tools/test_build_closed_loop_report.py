@@ -291,6 +291,62 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(rejected["status"], "fail")
             self.assertIn("isolation contract", rejected["fail_reasons"][0])
 
+    def test_maker_subsecond_increment_is_visible_but_non_promotional(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "maker_subsecond.json"
+            payload = {
+                "schema_version": "maker_subsecond_information_experiment_v1",
+                "status": "COMPLETE",
+                "fully_verifiable": True,
+                "research_domain": "forward_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "independent_forward_validation_required": False,
+                "research_decision": "STOP_MAKER_INFORMATION_SET",
+                "reason_codes": ["profitability_auc_gain_failed"],
+                "data": {
+                    "subsecond_aligned_eligible_row_count": 110000,
+                    "subsecond_aligned_row_ratio": 0.92,
+                },
+                "architecture_comparison": {
+                    "architectures": {
+                        "subsecond_queue_decomposed_treatment": {
+                            "trade_count": 44,
+                            "oos_base_cost_by_split": {"lcb_bps": -1.0},
+                            "oos_stress_cost_by_split": {"lcb_bps": -2.0},
+                            "prediction_permutation_control": {"passed": False},
+                        }
+                    }
+                },
+                "incremental_information_diagnostics": {
+                    "treatment_positive_stress_split_ratio": 0.0,
+                    "treatment_fill_roc_auc_by_split": {"mean_bps": 0.7},
+                    "treatment_profitability_roc_auc_by_split": {
+                        "mean_bps": 0.51
+                    },
+                    "profitability_roc_auc_gain_by_split": {"mean_bps": 0.005},
+                    "stress_mean_improvement_by_split": {"mean_bps": 1.5},
+                    "decision_gate_passed": False,
+                },
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            section = REPORT.assess_maker_subsecond_information_experiment(path)
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["research_decision"], "STOP_MAKER_INFORMATION_SET")
+            self.assertEqual(section["metrics"]["aligned_row_ratio"], 0.92)
+            self.assertEqual(
+                section["metrics"]["treatment_profitability_roc_auc"], 0.51
+            )
+            self.assertFalse(section["authoritative_for_integrator_promotion"])
+            payload["demo_activation_authorized"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_maker_subsecond_information_experiment(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertIn("isolation contract", rejected["fail_reasons"][0])
+
     def test_microstructure_alpha_requires_stressed_cost_development_pass(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "microstructure_alpha.json"

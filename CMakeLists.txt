@@ -197,6 +197,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_maker_execution_opportunity_experiment.py)
     add_test(NAME maker_execution_learnability_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_maker_execution_learnability_experiment.py)
+    add_test(NAME maker_subsecond_information_experiment_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_maker_subsecond_information_experiment.py)
     add_test(NAME upgrade_microstructure_capture_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_upgrade_microstructure_capture.py)
     add_test(NAME microstructure_runtime_test
