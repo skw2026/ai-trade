@@ -302,29 +302,69 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         common = report.get("common_domain")
         hindsight = report.get("hindsight_oracle")
         arms = report.get("arms")
+        control = arms.get("control") if isinstance(arms, Mapping) else None
         treatment = arms.get("treatment") if isinstance(arms, Mapping) else None
-        aggregate = (
-            treatment.get("aggregate") if isinstance(treatment, Mapping) else None
-        )
-        architectures = (
-            aggregate.get("architectures")
-            if isinstance(aggregate, Mapping)
-            else None
-        )
-        direct = (
-            architectures.get("direct_stress_utility_regression")
-            if isinstance(architectures, Mapping)
-            else None
-        )
+
+        def direct_architecture(arm: Any) -> Mapping[str, Any] | None:
+            aggregate = arm.get("aggregate") if isinstance(arm, Mapping) else None
+            architectures = (
+                aggregate.get("architectures")
+                if isinstance(aggregate, Mapping)
+                else None
+            )
+            direct = (
+                architectures.get("direct_stress_utility_regression")
+                if isinstance(architectures, Mapping)
+                else None
+            )
+            return direct if isinstance(direct, Mapping) else None
+
+        control_direct = direct_architecture(control)
+        treatment_direct = direct_architecture(treatment)
         paired = report.get("paired_treatment_minus_control")
+        oracle_base = (
+            hindsight.get("base_cost_by_split")
+            if isinstance(hindsight, Mapping)
+            else None
+        )
         oracle_stress = (
             hindsight.get("stress_cost_by_split")
             if isinstance(hindsight, Mapping)
             else None
         )
+        control_base = (
+            control_direct.get("oos_base_cost_by_split")
+            if isinstance(control_direct, Mapping)
+            else None
+        )
+        control_stress = (
+            control_direct.get("oos_stress_cost_by_split")
+            if isinstance(control_direct, Mapping)
+            else None
+        )
+        control_permutation = (
+            control_direct.get("prediction_permutation_control")
+            if isinstance(control_direct, Mapping)
+            else None
+        )
+        treatment_base = (
+            treatment_direct.get("oos_base_cost_by_split")
+            if isinstance(treatment_direct, Mapping)
+            else None
+        )
         treatment_stress = (
-            direct.get("oos_stress_cost_by_split")
-            if isinstance(direct, Mapping)
+            treatment_direct.get("oos_stress_cost_by_split")
+            if isinstance(treatment_direct, Mapping)
+            else None
+        )
+        treatment_permutation = (
+            treatment_direct.get("prediction_permutation_control")
+            if isinstance(treatment_direct, Mapping)
+            else None
+        )
+        paired_base = (
+            paired.get("base_cost_delta_by_split")
+            if isinstance(paired, Mapping)
             else None
         )
         paired_stress = (
@@ -341,19 +381,81 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
                 if isinstance(common, Mapping)
                 else None
             ),
+            "oracle_trade_count": (
+                _safe_number(hindsight.get("trade_count"))
+                if isinstance(hindsight, Mapping)
+                else None
+            ),
+            "oracle_positive_split_ratio": (
+                _safe_number(hindsight.get("positive_stress_split_ratio"))
+                if isinstance(hindsight, Mapping)
+                else None
+            ),
+            "oracle_base_lcb_bps": (
+                _safe_number(oracle_base.get("lcb_bps"))
+                if isinstance(oracle_base, Mapping)
+                else None
+            ),
             "oracle_stress_lcb_bps": (
                 _safe_number(oracle_stress.get("lcb_bps"))
                 if isinstance(oracle_stress, Mapping)
                 else None
             ),
+            "control_trade_count": (
+                _safe_number(control_direct.get("trade_count"))
+                if isinstance(control_direct, Mapping)
+                else None
+            ),
+            "control_positive_split_ratio": (
+                _safe_number(control_stress.get("positive_ratio"))
+                if isinstance(control_stress, Mapping)
+                else None
+            ),
+            "control_base_lcb_bps": (
+                _safe_number(control_base.get("lcb_bps"))
+                if isinstance(control_base, Mapping)
+                else None
+            ),
+            "control_stress_lcb_bps": (
+                _safe_number(control_stress.get("lcb_bps"))
+                if isinstance(control_stress, Mapping)
+                else None
+            ),
+            "control_permutation_passed": (
+                control_permutation.get("passed")
+                if isinstance(control_permutation, Mapping)
+                and isinstance(control_permutation.get("passed"), bool)
+                else None
+            ),
             "treatment_trade_count": (
-                _safe_number(direct.get("trade_count"))
-                if isinstance(direct, Mapping)
+                _safe_number(treatment_direct.get("trade_count"))
+                if isinstance(treatment_direct, Mapping)
+                else None
+            ),
+            "treatment_positive_split_ratio": (
+                _safe_number(treatment_stress.get("positive_ratio"))
+                if isinstance(treatment_stress, Mapping)
+                else None
+            ),
+            "treatment_base_lcb_bps": (
+                _safe_number(treatment_base.get("lcb_bps"))
+                if isinstance(treatment_base, Mapping)
                 else None
             ),
             "treatment_stress_lcb_bps": (
                 _safe_number(treatment_stress.get("lcb_bps"))
                 if isinstance(treatment_stress, Mapping)
+                else None
+            ),
+            "treatment_permutation_passed": (
+                treatment_permutation.get("passed")
+                if isinstance(treatment_permutation, Mapping)
+                and isinstance(treatment_permutation.get("passed"), bool)
+                else None
+            ),
+            "paired_delta_base_lcb_bps": (
+                _safe_number(paired_base.get("lcb_bps"))
+                if isinstance(paired_base, Mapping)
                 else None
             ),
             "paired_delta_stress_lcb_bps": (
@@ -689,10 +791,33 @@ def _annotation(summary: Mapping[str, Any]) -> str:
             "liquidation_valid_segment_count",
             "liquidation_invalid_segment_count",
             "minimum_common_span_seconds",
+            "common_row_count",
+            "oracle_trade_count",
+            "oracle_positive_split_ratio",
+            "oracle_base_lcb_bps",
+            "oracle_stress_lcb_bps",
+            "control_trade_count",
+            "control_positive_split_ratio",
+            "control_base_lcb_bps",
+            "control_stress_lcb_bps",
+            "treatment_trade_count",
+            "treatment_positive_split_ratio",
+            "treatment_base_lcb_bps",
+            "treatment_stress_lcb_bps",
+            "paired_delta_base_lcb_bps",
+            "paired_delta_stress_lcb_bps",
         ):
             value = _safe_number(information_metrics.get(key))
             if value is not None:
                 progress_parts.append(f"{key}:{value}")
+        for key in (
+            "control_permutation_passed",
+            "treatment_permutation_passed",
+            "paired_permutation_passed",
+        ):
+            value = information_metrics.get(key)
+            if isinstance(value, bool):
+                progress_parts.append(f"{key}:{str(value).lower()}")
     information_set_progress = ",".join(progress_parts) or "UNAVAILABLE"
     return (
         f"failed_steps={failed_steps}; upstream={upstream_statuses}; "

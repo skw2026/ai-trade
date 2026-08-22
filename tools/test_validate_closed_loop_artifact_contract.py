@@ -407,16 +407,45 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                     "common_domain": {"row_count": 123456},
                     "hindsight_oracle": {
                         "opportunity_proven": True,
+                        "trade_count": 72,
+                        "positive_stress_split_ratio": 0.5,
+                        "base_cost_by_split": {"lcb_bps": 4.0},
                         "stress_cost_by_split": {"lcb_bps": 1.25},
                     },
                     "arms": {
+                        "control": {
+                            "aggregate": {
+                                "architectures": {
+                                    "direct_stress_utility_regression": {
+                                        "trade_count": 37,
+                                        "oos_base_cost_by_split": {
+                                            "lcb_bps": -0.25
+                                        },
+                                        "oos_stress_cost_by_split": {
+                                            "lcb_bps": -1.0,
+                                            "positive_ratio": 0.33,
+                                        },
+                                        "prediction_permutation_control": {
+                                            "passed": False
+                                        },
+                                    }
+                                }
+                            }
+                        },
                         "treatment": {
                             "aggregate": {
                                 "architectures": {
                                     "direct_stress_utility_regression": {
                                         "trade_count": 41,
+                                        "oos_base_cost_by_split": {
+                                            "lcb_bps": 0.1
+                                        },
                                         "oos_stress_cost_by_split": {
-                                            "lcb_bps": -0.75
+                                            "lcb_bps": -0.75,
+                                            "positive_ratio": 0.5,
+                                        },
+                                        "prediction_permutation_control": {
+                                            "passed": True
                                         },
                                     }
                                 }
@@ -424,6 +453,7 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                         }
                     },
                     "paired_treatment_minus_control": {
+                        "base_cost_delta_by_split": {"lcb_bps": -0.1},
                         "stress_cost_delta_by_split": {"lcb_bps": -0.5},
                         "permutation_null": {"passed": False},
                     },
@@ -525,9 +555,21 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                 "live_activation_authorized": False,
                 "metrics": {
                     "common_row_count": 123456,
+                    "oracle_trade_count": 72,
+                    "oracle_positive_split_ratio": 0.5,
+                    "oracle_base_lcb_bps": 4.0,
                     "oracle_stress_lcb_bps": 1.25,
+                    "control_trade_count": 37,
+                    "control_positive_split_ratio": 0.33,
+                    "control_base_lcb_bps": -0.25,
+                    "control_stress_lcb_bps": -1.0,
+                    "control_permutation_passed": False,
                     "treatment_trade_count": 41,
+                    "treatment_positive_split_ratio": 0.5,
+                    "treatment_base_lcb_bps": 0.1,
                     "treatment_stress_lcb_bps": -0.75,
+                    "treatment_permutation_passed": True,
+                    "paired_delta_base_lcb_bps": -0.1,
                     "paired_delta_stress_lcb_bps": -0.5,
                     "paired_permutation_passed": False,
                 },
@@ -539,6 +581,10 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         )
         self.assertIn("STOP_INFORMATION_SOURCE", annotation)
         self.assertIn("paired_treatment_minus_control_lcb_not_positive", annotation)
+        self.assertIn("oracle_stress_lcb_bps:1.25", annotation)
+        self.assertIn("control_permutation_passed:false", annotation)
+        self.assertIn("treatment_permutation_passed:true", annotation)
+        self.assertIn("paired_permutation_passed:false", annotation)
         self.assertIn("input.candidate_model_missing", annotation)
         self.assertIn("economic_screen.minimum_oos_trades", annotation)
         self.assertNotIn("/opt", encoded)
