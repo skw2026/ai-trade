@@ -1482,11 +1482,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1207959552}"',
+            'DEPLOY_MIN_FREE_BYTES="${DEPLOY_MIN_FREE_BYTES:-1073741824}"',
             script,
         )
         self.assertIn(
-            "DEPLOY_MIN_FREE_BYTES: ${{ vars.DEPLOY_MIN_FREE_BYTES || '1207959552' }}",
+            "DEPLOY_MIN_FREE_BYTES: ${{ vars.DEPLOY_MIN_FREE_BYTES || '1073741824' }}",
             workflow,
         )
         self.assertIn(
