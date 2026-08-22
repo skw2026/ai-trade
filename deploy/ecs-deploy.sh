@@ -417,13 +417,15 @@ cleanup_deploy_host_storage() {
     echo "[deploy] Bybit liquidation research capture cleanup failed"
     return 1
   fi
-  # The service slot previously captured Binance L2/trades.  Keep pruning that
-  # rejected, now read-only source during the transition so it cannot become
-  # unbounded orphaned storage.
+  # The service slot previously captured Binance L2/trades.  That information
+  # source is rejected, no process writes this root, and no current experiment
+  # consumes it.  Do not reserve the active-source 69h/72h evidence budget for
+  # this orphan: retain only a one-hour safety margin before removing complete,
+  # checksum-bound bundles through the same fail-closed pruner.
   if ! python3 "${capture_pruner}" \
       --root "${DEPLOY_RELEASE_ROOT}/data/research/binance_sol_microstructure" \
       --expected-root-name binance_sol_microstructure \
-      --retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
+      --retention-hours 1; then
     echo "[deploy] legacy Binance research capture cleanup failed"
     return 1
   fi

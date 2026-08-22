@@ -1609,6 +1609,13 @@ class ComposeConsistencyTest(unittest.TestCase):
             '--retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"',
             script,
         )
+        legacy_start = script.index(
+            '--root "${DEPLOY_RELEASE_ROOT}/data/research/binance_sol_microstructure"'
+        )
+        legacy_block = script[legacy_start : legacy_start + 400]
+        self.assertIn("--expected-root-name binance_sol_microstructure", legacy_block)
+        self.assertIn("--retention-hours 1", legacy_block)
+        self.assertNotIn("DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS", legacy_block)
         self.assertIn('flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9', script)
         self.assertIn(
             'flock -w "${DEPLOY_LOCK_WAIT_SECONDS}" 9',
