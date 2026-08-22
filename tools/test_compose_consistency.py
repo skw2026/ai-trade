@@ -106,27 +106,40 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertNotIn("dockerfile: Dockerfile.research", dev_research)
 
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-        build_stage, research_stage = dockerfile.split(
-            "FROM runtime AS research", maxsplit=1
+        build_stage, research_dependency_stage = dockerfile.split(
+            "FROM runtime-base AS research-dependencies", maxsplit=1
         )
+        research_dependency_stage, _ = research_dependency_stage.split(
+            "FROM runtime-base AS runtime", maxsplit=1
+        )
+        research_stage = dockerfile.split(
+            "FROM research-dependencies AS research", maxsplit=1
+        )[1]
         self.assertIn("python3-numpy", build_stage)
         self.assertIn(
-            "-r /app/tools/requirements-research.txt",
-            research_stage,
+            "-r /tmp/requirements-research.txt",
+            research_dependency_stage,
         )
-        self.assertIn("--no-compile", research_stage)
-        self.assertIn("-name tests", research_stage)
-        self.assertIn("import catboost, numpy", research_stage)
-        self.assertIn("websockets.__version__", research_stage)
+        self.assertIn("--no-compile", research_dependency_stage)
+        self.assertIn("-name tests", research_dependency_stage)
+        self.assertIn("import catboost, numpy", research_dependency_stage)
+        self.assertIn("websockets.__version__", research_dependency_stage)
+        self.assertNotIn("pip3 install", research_stage)
+        self.assertIn("COPY --from=build /workspace/tools /app/tools", research_stage)
         self.assertNotIn(
             "pip3 install --no-cache-dir --break-system-packages numpy catboost",
-            research_stage,
+            research_dependency_stage,
         )
 
         cd_workflow = (ROOT / ".github" / "workflows" / "cd.yml").read_text(encoding="utf-8")
         self.assertIn("Build and Push Research Image", cd_workflow)
         self.assertIn("file: Dockerfile", cd_workflow)
         self.assertIn("target: research", cd_workflow)
+        self.assertIn(
+            "cache-from: type=registry,ref=${{ steps.meta.outputs.research_image_uri }}:latest",
+            cd_workflow,
+        )
+        self.assertGreaterEqual(cd_workflow.count("cache-to: type=inline"), 2)
         self.assertNotIn("file: Dockerfile.research", cd_workflow)
 
         prod_research = self.prod_services["ai-trade-research"]
@@ -1145,7 +1158,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("grep -q '^\\./data/$'", workflow)
         self.assertIn("cleanup_release_unpack()", workflow)
         self.assertIn('rm -rf "${INCOMING_DIR}" || true', workflow)
-        self.assertIn("warning: failed to clean incoming release", workflow)
+        self.assertIn("warning: failed to clean consumed incoming release", workflow)
         self.assertIn("immutable release collision", workflow)
         self.assertNotIn(
             'find "${DEPLOY_ROOT}" -maxdepth 5 -type f -name deploy_bundle.tgz',
@@ -1494,8 +1507,12 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DEPLOY_TRANSACTION_MIN_FREE_BYTES="${DEPLOY_TRANSACTION_MIN_FREE_BYTES:-134217728}"',
+            'DEPLOY_TRANSACTION_MIN_FREE_BYTES="${DEPLOY_TRANSACTION_MIN_FREE_BYTES:-33554432}"',
             script,
+        )
+        self.assertIn(
+            "DEPLOY_TRANSACTION_MIN_FREE_BYTES: ${{ vars.DEPLOY_TRANSACTION_MIN_FREE_BYTES || '33554432' }}",
+            workflow,
         )
         self.assertIn(
             'DEPLOY_DOCKER_GC_UNTIL="${DEPLOY_DOCKER_GC_UNTIL:-1h}"',
@@ -1530,6 +1547,13 @@ class ComposeConsistencyTest(unittest.TestCase):
             "disk preflight failed before managed service mutation",
             script,
         )
+        consumed_cleanup = workflow.index(
+            'rm -rf "${INCOMING_DIR}"', workflow.index("seal_release_tree")
+        )
+        deploy_call = workflow.index(
+            '"${RELEASE_DIR}/deploy/ecs-deploy.sh"', consumed_cleanup
+        )
+        self.assertLess(consumed_cleanup, deploy_call)
         self.assertIn(
             "prefetching all target service images before managed service mutation",
             script,

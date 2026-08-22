@@ -67,10 +67,7 @@ RUN cmake -S . -B build -G Ninja -DAI_TRADE_USE_BEAST_WEBSOCKET=ON -DAI_TRADE_EN
     cmake --build build -j"$(nproc)" && \
     ctest --test-dir build --output-on-failure
 
-FROM ubuntu:24.04 AS runtime
-
-ARG BUILD_REVISION
-LABEL org.opencontainers.image.revision="${BUILD_REVISION}"
+FROM ubuntu:24.04 AS runtime-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -91,20 +88,16 @@ WORKDIR /app
 COPY --from=build /usr/local/lib/libcatboostmodel.so /usr/local/lib/
 RUN ldconfig
 
-COPY --from=build /workspace/build/trade_bot /app/trade_bot
-COPY --from=build /workspace/config /app/config
-# [新增] 将运维和工具脚本打包进镜像，确保 CD 部署后直接可用
-COPY --from=build /workspace/ops /app/ops
-COPY --from=build /workspace/tools /app/tools
-
 RUN mkdir -p /app/data
 
-# [新增] Research 阶段：基于运行时镜像，额外安装训练所需的 Python 库
-# 这确保了 ai-trade-research 服务能运行 integrator_train.py
-FROM runtime AS research
+# Keep large research dependencies below mutable application payload layers.
+# Registry inline cache then preserves this ancestry across source-only builds.
+FROM runtime-base AS research-dependencies
+COPY --from=build /workspace/tools/requirements-research.txt /tmp/requirements-research.txt
 RUN /usr/local/bin/apt-install python3-pip
 RUN pip3 install --no-cache-dir --no-compile --break-system-packages \
-      -r /app/tools/requirements-research.txt && \
+      -r /tmp/requirements-research.txt && \
+    rm -f /tmp/requirements-research.txt && \
     find /usr/local/lib/python3.12/dist-packages \
       -type d \( -name __pycache__ -o -name test -o -name tests \) \
       -prune -print0 \
@@ -112,6 +105,28 @@ RUN pip3 install --no-cache-dir --no-compile --break-system-packages \
     find /usr/local/lib/python3.12/dist-packages \
       -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete && \
     python3 -c 'import catboost, numpy, websockets; print(catboost.__version__, numpy.__version__, websockets.__version__)'
+
+FROM runtime-base AS runtime
+
+ARG BUILD_REVISION
+LABEL org.opencontainers.image.revision="${BUILD_REVISION}"
+
+COPY --from=build /workspace/build/trade_bot /app/trade_bot
+COPY --from=build /workspace/config /app/config
+# [新增] 将运维和工具脚本打包进镜像，确保 CD 部署后直接可用
+COPY --from=build /workspace/ops /app/ops
+COPY --from=build /workspace/tools /app/tools
+
+FROM research-dependencies AS research
+
+ARG BUILD_REVISION
+LABEL org.opencontainers.image.revision="${BUILD_REVISION}"
+
+COPY --from=build /workspace/build/trade_bot /app/trade_bot
+COPY --from=build /workspace/config /app/config
+COPY --from=build /workspace/ops /app/ops
+COPY --from=build /workspace/tools /app/tools
+
 ENTRYPOINT ["python3", "/app/tools/integrator_train.py"]
 CMD ["--help"]
 

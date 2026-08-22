@@ -155,6 +155,8 @@ jobs:
           push: true
           build-args: |
             BUILD_REVISION=${{ github.sha }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.image_uri }}:latest
+          cache-to: type=inline
           tags: |
             ${{ steps.meta.outputs.image_uri }}:${{ steps.meta.outputs.image_tag }}
             ${{ steps.meta.outputs.image_uri }}:latest
@@ -169,6 +171,8 @@ jobs:
           push: true
           build-args: |
             BUILD_REVISION=${{ github.sha }}
+          cache-from: type=registry,ref=${{ steps.meta.outputs.research_image_uri }}:latest
+          cache-to: type=inline
           tags: |
             ${{ steps.meta.outputs.research_image_uri }}:${{ steps.meta.outputs.research_image_tag }}
             ${{ steps.meta.outputs.research_image_uri }}:latest
@@ -373,7 +377,7 @@ jobs:
           DEPLOY_GC_TRIGGER_FREE_BYTES: ${{ vars.DEPLOY_GC_TRIGGER_FREE_BYTES || '4294967296' }}
           DEPLOY_MIN_FREE_BYTES: ${{ vars.DEPLOY_MIN_FREE_BYTES || '1073741824' }}
           DEPLOY_POST_PULL_MIN_FREE_BYTES: ${{ vars.DEPLOY_POST_PULL_MIN_FREE_BYTES || '536870912' }}
-          DEPLOY_TRANSACTION_MIN_FREE_BYTES: ${{ vars.DEPLOY_TRANSACTION_MIN_FREE_BYTES || '134217728' }}
+          DEPLOY_TRANSACTION_MIN_FREE_BYTES: ${{ vars.DEPLOY_TRANSACTION_MIN_FREE_BYTES || '33554432' }}
           DEPLOY_DOCKER_GC_UNTIL: ${{ vars.DEPLOY_DOCKER_GC_UNTIL || '1h' }}
           DEPLOY_HOST_GC_ENABLED: ${{ vars.DEPLOY_HOST_GC_ENABLED || 'true' }}
           DEPLOY_RELEASE_KEEP_COUNT: ${{ vars.DEPLOY_RELEASE_KEEP_COUNT || '2' }}
@@ -654,11 +658,11 @@ jobs:
               seal_release_tree "${RELEASE_DIR}"
             fi
 
+            rm -rf "${INCOMING_DIR}" ||
+              echo "[deploy] warning: failed to clean consumed incoming release ${INCOMING_DIR}"
             echo "[deploy] closed-loop gate config: enforce=${CLOSED_LOOP_ENFORCE} action=${CLOSED_LOOP_ACTION} stage=${CLOSED_LOOP_STAGE} since=${CLOSED_LOOP_SINCE} strict=${CLOSED_LOOP_STRICT_PASS} min_runtime_status=${CLOSED_LOOP_MIN_RUNTIME_STATUS} run_id=${CLOSED_LOOP_RUN_ID}"
             echo "[deploy] deploy services: ${DEPLOY_SERVICES}, gate defer services: ${GATE_DEFER_SERVICES}"
             "${RELEASE_DIR}/deploy/ecs-deploy.sh" "${RELEASE_DIR}/docker-compose.prod.yml" "${DEPLOY_ENV_FILE}"
-            rm -rf "${INCOMING_DIR}" ||
-              echo "[deploy] warning: failed to clean incoming release ${INCOMING_DIR}"
 
       - name: Download Deploy Gate Reports
         if: always()
