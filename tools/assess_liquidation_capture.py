@@ -17,6 +17,42 @@ import run_liquidation_collector as supervisor
 
 SCHEMA_VERSION = "liquidation_capture_assessment_v1"
 
+_VALUE_ERROR_REASON_CODES = (
+    ("artifact path escapes capture root", "artifact_path_contract"),
+    ("contract/checksum mismatch", "contract_or_checksum_mismatch"),
+    ("feature columns/order mismatch", "feature_schema_mismatch"),
+    ("feature timestamps are not increasing", "feature_timestamp_order"),
+    ("invalid sparse liquidation row", "feature_value_contract"),
+    ("feature row count mismatch", "feature_row_count_mismatch"),
+    ("raw message count mismatch", "raw_message_count_mismatch"),
+    ("raw replay row count mismatch", "raw_replay_row_count_mismatch"),
+    ("raw replay feature mismatch", "raw_replay_feature_mismatch"),
+    ("event count mismatch", "event_count_mismatch"),
+    ("liquidation quality audit mismatch", "quality_audit_mismatch"),
+    ("empty sparse bounds mismatch", "empty_sparse_bounds_mismatch"),
+    ("feature bounds mismatch", "feature_bounds_mismatch"),
+)
+
+
+def invalid_segment_reason_code(exc: BaseException) -> str:
+    if isinstance(exc, FileNotFoundError):
+        return "artifact_missing"
+    if isinstance(exc, PermissionError):
+        return "artifact_permission"
+    if isinstance(exc, json.JSONDecodeError):
+        return "report_json_invalid"
+    if isinstance(exc, KeyError):
+        return "report_field_missing"
+    if isinstance(exc, TypeError):
+        return "report_type_invalid"
+    message = str(exc)
+    for expected, reason_code in _VALUE_ERROR_REASON_CODES:
+        if expected in message:
+            return reason_code
+    if isinstance(exc, OSError):
+        return "artifact_io_error"
+    return "unknown_contract_mismatch"
+
 
 def sha256_file(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
@@ -118,6 +154,7 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
     intervals: List[Tuple[int, int]] = []
     segments: List[Dict[str, Any]] = []
     invalid: List[str] = []
+    invalid_reason_counts: Dict[str, int] = {}
     total_rows = total_messages = total_events = 0
     latest_completed = 0
     for report_path in report_paths:
@@ -190,6 +227,8 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
             )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             invalid.append(f"{report_path.name}:{exc}")
+            reason_code = invalid_segment_reason_code(exc)
+            invalid_reason_counts[reason_code] = invalid_reason_counts.get(reason_code, 0) + 1
     merged = merge_intervals(intervals)
     coverage_ms = sum(end - start for start, end in merged)
     freshness = now_ms - latest_completed if latest_completed else None
@@ -215,6 +254,10 @@ def assess(args: argparse.Namespace) -> Dict[str, Any]:
         "latest_capture_completed_epoch_ms": latest_completed or None, "freshness_age_ms": freshness,
         "feature_row_count": total_rows, "raw_message_count": total_messages,
         "liquidation_event_count": total_events, "segments": segments,
+        "report_file_count": len(report_paths),
+        "valid_segment_count": len(segments),
+        "invalid_segment_count": len(invalid),
+        "invalid_segment_reason_counts": dict(sorted(invalid_reason_counts.items())),
         "invalid_segments": invalid, "failures": failures,
         "next_action": "run_frozen_liquidation_information_set_experiment" if not failures else "continue_liquidation_capture",
     }

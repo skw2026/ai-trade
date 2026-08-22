@@ -31,6 +31,28 @@ _CAPTURE_FAILURE_CODES = {
     "minimum_forward_capture_duration",
     "capture_freshness",
 }
+_INVALID_SEGMENT_REASON_CODES = {
+    "artifact_path_contract",
+    "contract_or_checksum_mismatch",
+    "feature_schema_mismatch",
+    "feature_timestamp_order",
+    "feature_value_contract",
+    "feature_row_count_mismatch",
+    "raw_message_count_mismatch",
+    "raw_replay_row_count_mismatch",
+    "raw_replay_feature_mismatch",
+    "event_count_mismatch",
+    "quality_audit_mismatch",
+    "empty_sparse_bounds_mismatch",
+    "feature_bounds_mismatch",
+    "artifact_missing",
+    "artifact_permission",
+    "report_json_invalid",
+    "report_field_missing",
+    "report_type_invalid",
+    "artifact_io_error",
+    "unknown_contract_mismatch",
+}
 
 
 def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
@@ -366,6 +388,9 @@ def _capture_readiness(path: pathlib.Path) -> Dict[str, Any]:
         "freshness_age_ms",
         "feature_row_count",
         "liquidation_event_count",
+        "report_file_count",
+        "valid_segment_count",
+        "invalid_segment_count",
     ):
         value = payload.get(field)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
@@ -384,6 +409,13 @@ def _capture_readiness(path: pathlib.Path) -> Dict[str, Any]:
             value
             for value in failures
             if isinstance(value, str) and value in _CAPTURE_FAILURE_CODES
+        ]
+    invalid_reasons = payload.get("invalid_segment_reason_counts")
+    if isinstance(invalid_reasons, Mapping):
+        result["invalid_segment_reason_codes"] = [
+            value
+            for value in invalid_reasons
+            if isinstance(value, str) and value in _INVALID_SEGMENT_REASON_CODES
         ]
     return result
 
@@ -412,6 +444,10 @@ def not_ready_report(
     for value in liquidation_readiness.get("failure_codes", []):
         if value not in reason_codes:
             reason_codes.append(value)
+    for value in liquidation_readiness.get("invalid_segment_reason_codes", []):
+        reason_code = f"invalid_segment.{value}"
+        if reason_code not in reason_codes:
+            reason_codes.append(reason_code)
     return {
         "schema_version": SCHEMA_VERSION, "status": status, "fully_verifiable": False,
         "research_domain": "forward_development_only", "promotion_evidence": False,

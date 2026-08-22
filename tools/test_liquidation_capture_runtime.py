@@ -88,6 +88,13 @@ class LiquidationCaptureRuntimeTest(unittest.TestCase):
 
         self.assertEqual(report["status"], "NOT_READY")
         self.assertIn("invalid_segment_contract", report["failures"])
+        self.assertEqual(report["report_file_count"], 1)
+        self.assertEqual(report["valid_segment_count"], 0)
+        self.assertEqual(report["invalid_segment_count"], 1)
+        self.assertEqual(
+            report["invalid_segment_reason_counts"],
+            {"contract_or_checksum_mismatch": 1},
+        )
 
     def test_self_consistent_feature_rewrite_is_rejected_by_raw_replay(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -135,6 +142,10 @@ class LiquidationCaptureRuntimeTest(unittest.TestCase):
         self.assertEqual(report["status"], "NOT_READY")
         self.assertTrue(
             any("raw replay row count mismatch" in item for item in report["invalid_segments"])
+        )
+        self.assertEqual(
+            report["invalid_segment_reason_counts"],
+            {"raw_replay_row_count_mismatch": 1},
         )
 
     def test_connection_gaps_are_not_reported_as_zero_event_coverage(self):

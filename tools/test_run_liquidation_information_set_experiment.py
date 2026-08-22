@@ -126,7 +126,14 @@ class LiquidationInformationSetExperimentTest(unittest.TestCase):
                         "freshness_age_ms": 12_000,
                         "feature_row_count": 7,
                         "liquidation_event_count": 11,
+                        "report_file_count": 140,
+                        "valid_segment_count": 0,
+                        "invalid_segment_count": 140,
                         "collector_health": {"status": "PASS"},
+                        "invalid_segment_reason_counts": {
+                            "contract_or_checksum_mismatch": 140,
+                            "/opt/private/api_secret=must-not-leak": 1,
+                        },
                         "failures": [
                             "minimum_forward_capture_duration",
                             "/opt/private/api_secret=must-not-leak",
@@ -152,11 +159,15 @@ class LiquidationInformationSetExperimentTest(unittest.TestCase):
             [
                 "liquidation_capture_not_ready",
                 "minimum_forward_capture_duration",
+                "invalid_segment.contract_or_checksum_mismatch",
             ],
         )
         progress = report["capture_readiness"]["liquidation"]
         self.assertEqual(progress["missing_coverage_ms"], 6_000_000)
         self.assertAlmostEqual(progress["coverage_ratio"], 120 / 126)
+        self.assertEqual(progress["report_file_count"], 140)
+        self.assertEqual(progress["valid_segment_count"], 0)
+        self.assertEqual(progress["invalid_segment_count"], 140)
         self.assertNotIn("api_secret", json.dumps(report))
 
 

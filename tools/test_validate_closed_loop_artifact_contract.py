@@ -286,6 +286,9 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                                 "missing_coverage_ms": 6_000_000,
                                 "coverage_ratio": 120 / 126,
                                 "freshness_age_ms": 12_000,
+                                "report_file_count": 140,
+                                "valid_segment_count": 0,
+                                "invalid_segment_count": 140,
                             },
                         },
                         "minimum_common_span_seconds_for_frozen_splits": 123_062,
@@ -304,6 +307,9 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         self.assertEqual(
             section["metrics"]["liquidation_missing_coverage_seconds"], 6_000
         )
+        self.assertEqual(section["metrics"]["liquidation_report_file_count"], 140)
+        self.assertEqual(section["metrics"]["liquidation_valid_segment_count"], 0)
+        self.assertEqual(section["metrics"]["liquidation_invalid_segment_count"], 140)
         self.assertIn("information_set_progress=stage:liquidation_capture", annotation)
         self.assertIn("liquidation_capture_not_ready", annotation)
 

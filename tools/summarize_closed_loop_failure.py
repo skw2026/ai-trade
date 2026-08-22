@@ -395,6 +395,9 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
                 ("freshness_age_ms", "liquidation_freshness_seconds", 1000.0),
                 ("feature_row_count", "liquidation_feature_row_count", 1.0),
                 ("liquidation_event_count", "liquidation_event_count", 1.0),
+                ("report_file_count", "liquidation_report_file_count", 1.0),
+                ("valid_segment_count", "liquidation_valid_segment_count", 1.0),
+                ("invalid_segment_count", "liquidation_invalid_segment_count", 1.0),
             ):
                 value = _safe_number(liquidation_progress.get(source))
                 if value is not None:
@@ -682,6 +685,9 @@ def _annotation(summary: Mapping[str, Any]) -> str:
             "liquidation_missing_coverage_seconds",
             "liquidation_coverage_ratio",
             "liquidation_freshness_seconds",
+            "liquidation_report_file_count",
+            "liquidation_valid_segment_count",
+            "liquidation_invalid_segment_count",
             "minimum_common_span_seconds",
         ):
             value = _safe_number(information_metrics.get(key))
