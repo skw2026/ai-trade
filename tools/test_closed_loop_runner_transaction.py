@@ -1621,6 +1621,148 @@ PY
                 result.stdout,
             )
 
+    def test_operational_assess_skips_research_observation_chain(self):
+        observation_steps = [
+            "market_alpha_development",
+            "microstructure_forward_data",
+            "maker_execution_opportunity_experiment",
+            "maker_execution_learnability_experiment",
+            "maker_subsecond_information_experiment",
+            "liquidation_information_set_experiment",
+            "microstructure_alpha_development",
+            "microstructure_alpha_lifecycle",
+            "alpha_source_route",
+        ]
+        stubs = {
+            "run_market_alpha_development_gate": observation_steps[0],
+            "run_microstructure_capture_gate": observation_steps[1],
+            "run_maker_execution_opportunity_experiment": observation_steps[2],
+            "run_maker_execution_learnability_experiment": observation_steps[3],
+            "run_maker_subsecond_information_experiment": observation_steps[4],
+            "run_liquidation_information_set_experiment": observation_steps[5],
+            "run_microstructure_alpha_development_gate": observation_steps[6],
+            "run_microstructure_alpha_lifecycle_gate": observation_steps[7],
+            "run_alpha_source_route_gate": observation_steps[8],
+        }
+        for stage in ("DEPLOY", "SMOKE"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as td:
+                stub_body = "\n".join(
+                    f'{function_name}() {{ printf "%s\\n" "{step_name}" '
+                    f'>> "${{TMP_ROOT}}/called"; }}'
+                    for function_name, step_name in stubs.items()
+                )
+                script = textwrap.dedent(
+                    f"""
+                    set -euo pipefail
+                    export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                    export CLOSED_LOOP_RUN_ID=operational-assess-test
+                    source tools/closed_loop_runner.sh assess \\
+                      --stage {stage} \\
+                      --output-root "${{TMP_ROOT}}/reports"
+                    {stub_body}
+                    run_microstructure_demo_binding_gate() {{
+                      printf '%s\\n' microstructure_demo_binding >> "${{TMP_ROOT}}/called"
+                    }}
+                    run_assess_observation_chain
+                    """
+                )
+                result = subprocess.run(
+                    ["bash", "-c", script],
+                    cwd=ROOT,
+                    env={
+                        **os.environ,
+                        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                        "TMP_ROOT": td,
+                    },
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                self.assertFalse(pathlib.Path(td, "called").exists())
+                status_path = pathlib.Path(
+                    td,
+                    "reports",
+                    "operational-assess-test",
+                    "step_status.jsonl",
+                )
+                statuses = [
+                    json.loads(line)
+                    for line in status_path.read_text(encoding="utf-8").splitlines()
+                ]
+                self.assertEqual(
+                    [item["step"] for item in statuses],
+                    [*observation_steps, "microstructure_demo_binding"],
+                )
+                self.assertTrue(
+                    all(item["result"] == "skipped" for item in statuses)
+                )
+                self.assertTrue(
+                    all(
+                        item["kind"] == "observation"
+                        for item in statuses[:-1]
+                    )
+                )
+                self.assertEqual(statuses[-1]["kind"], "route")
+
+    def test_research_assess_keeps_research_observation_chain(self):
+        with tempfile.TemporaryDirectory() as td:
+            script = textwrap.dedent(
+                r"""
+                set -euo pipefail
+                export CLOSED_LOOP_RUNNER_LIBRARY_MODE=true
+                export CLOSED_LOOP_RUN_ID=research-assess-test
+                source tools/closed_loop_runner.sh assess \
+                  --stage S3 \
+                  --output-root "${TMP_ROOT}/reports"
+                record_call() { printf '%s\n' "$1" >> "${TMP_ROOT}/called"; }
+                run_market_alpha_development_gate() { record_call market_alpha_development; }
+                run_microstructure_capture_gate() { record_call microstructure_forward_data; }
+                run_maker_execution_opportunity_experiment() { record_call maker_execution_opportunity_experiment; }
+                run_maker_execution_learnability_experiment() { record_call maker_execution_learnability_experiment; }
+                run_maker_subsecond_information_experiment() { record_call maker_subsecond_information_experiment; }
+                run_liquidation_information_set_experiment() { record_call liquidation_information_set_experiment; }
+                run_microstructure_alpha_development_gate() { record_call microstructure_alpha_development; }
+                run_microstructure_alpha_lifecycle_gate() { record_call microstructure_alpha_lifecycle; }
+                run_alpha_source_route_gate() {
+                  record_call alpha_source_route
+                  printf '{"selected_route":"legacy_integrator"}\n' \
+                    > "${ALPHA_SOURCE_ROUTE_REPORT_PATH}"
+                }
+                run_microstructure_demo_binding_gate() { record_call microstructure_demo_binding; }
+                run_assess_observation_chain
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                    "TMP_ROOT": td,
+                },
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                pathlib.Path(td, "called").read_text(encoding="utf-8").splitlines(),
+                [
+                    "market_alpha_development",
+                    "microstructure_forward_data",
+                    "maker_execution_opportunity_experiment",
+                    "maker_execution_learnability_experiment",
+                    "maker_subsecond_information_experiment",
+                    "liquidation_information_set_experiment",
+                    "microstructure_alpha_development",
+                    "microstructure_alpha_lifecycle",
+                    "alpha_source_route",
+                ],
+            )
+
     def test_deadline_wrapper_preserves_action_and_all_arguments(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

@@ -6422,6 +6422,19 @@ run_observation_step() {
   return 0
 }
 
+skip_observation_step() {
+  local step_name="$1"
+  local reason="${2:-not applicable}"
+  echo "[INFO] observational step skipped: ${step_name}, reason=${reason}"
+  capture_step_status \
+    record_step_status "${step_name}" "observation" "skipped" "" "false"
+  if (( LAST_CAPTURED_STATUS != 0 )); then
+    echo "[ERROR] observational step status write failed: ${step_name}"
+    RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
+  fi
+  return 0
+}
+
 run_decisive_observation_step() {
   local step_name="$1"
   shift
@@ -6541,6 +6554,39 @@ run_runtime_chain() {
   run_required_step runtime_assess run_assess
   run_required_step s5_learning_activity verify_s5_learning_activity
   run_required_step mechanism_audit run_mechanism_audit
+  return 0
+}
+
+run_assess_observation_chain() {
+  if [[ "${STAGE}" == "DEPLOY" || "${STAGE}" == "SMOKE" ]]; then
+    local skip_reason="operational stage ${STAGE} uses runtime evidence only"
+    skip_observation_step market_alpha_development "${skip_reason}"
+    skip_observation_step microstructure_forward_data "${skip_reason}"
+    skip_observation_step maker_execution_opportunity_experiment "${skip_reason}"
+    skip_observation_step maker_execution_learnability_experiment "${skip_reason}"
+    skip_observation_step maker_subsecond_information_experiment "${skip_reason}"
+    skip_observation_step liquidation_information_set_experiment "${skip_reason}"
+    skip_observation_step microstructure_alpha_development "${skip_reason}"
+    skip_observation_step microstructure_alpha_lifecycle "${skip_reason}"
+    skip_observation_step alpha_source_route "${skip_reason}"
+    skip_route_step microstructure_demo_binding
+    return 0
+  fi
+
+  run_observation_step market_alpha_development run_market_alpha_development_gate
+  run_observation_step microstructure_forward_data run_microstructure_capture_gate
+  run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+  run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
+  run_observation_step maker_subsecond_information_experiment run_maker_subsecond_information_experiment
+  run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
+  run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
+  run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
+  run_observation_step alpha_source_route run_alpha_source_route_gate
+  if [[ "${ACTIVE_ALPHA_ROUTE}" == "microstructure_demo" ]]; then
+    run_observation_step microstructure_demo_binding run_microstructure_demo_binding_gate
+  else
+    skip_route_step microstructure_demo_binding
+  fi
   return 0
 }
 
@@ -6696,20 +6742,7 @@ run_main() {
       echo "[INFO] train completed without production activation or restart"
       ;;
     assess)
-      run_observation_step market_alpha_development run_market_alpha_development_gate
-      run_observation_step microstructure_forward_data run_microstructure_capture_gate
-      run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
-      run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
-      run_observation_step maker_subsecond_information_experiment run_maker_subsecond_information_experiment
-      run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
-      run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
-      run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
-      run_observation_step alpha_source_route run_alpha_source_route_gate
-      if [[ "${ACTIVE_ALPHA_ROUTE}" == "microstructure_demo" ]]; then
-        run_observation_step microstructure_demo_binding run_microstructure_demo_binding_gate
-      else
-        skip_route_step microstructure_demo_binding
-      fi
+      run_assess_observation_chain
       local assess_activation_status=""
       assess_activation_status="$(activation_transaction_status)"
       case "${assess_activation_status}" in

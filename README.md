@@ -270,6 +270,7 @@ GitHub Variables（可选，用于覆盖 CD 强闭环默认值）：
 - `CI`：PR 和非 main 分支 push 自动触发
 - `CD`：push 到 `main` 或手动 `workflow_dispatch` 触发
 - `Closed Loop Smoke`：CD 成功后自动触发，或手动触发；用于 5-15 分钟部署冒烟，不替代 4h/12h/24h S5 验收；报告写入 `/opt/ai-trade/data/reports/closed_loop_smoke`
+- `Closed Loop`：自动发布链中仅在 `Closed Loop Smoke` 成功后触发 Full；顺序固定为 `CD -> Smoke -> Full`，避免两个远端任务争抢同一事务锁
 - `Closed Loop Smoke` artifact 额外包含 `deploy_freshness.json`，用于核对当前 `ai-trade` 容器镜像 tag、启动时间、`boot_id/startup_utc` 是否与本次部署一致
 
 发布结果：

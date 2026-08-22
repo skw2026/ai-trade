@@ -415,9 +415,9 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("SCHEDULER_ACTION: ${SCHEDULER_ACTION:-assess}", scheduler)
         self.assertIn("SCHEDULER_INTERVAL_SECONDS: ${SCHEDULER_INTERVAL_SECONDS:-86400}", scheduler)
-        self.assertIn("SCHEDULER_INITIAL_DELAY_SECONDS: ${SCHEDULER_INITIAL_DELAY_SECONDS:-1800}", scheduler)
+        self.assertIn("SCHEDULER_INITIAL_DELAY_SECONDS: ${SCHEDULER_INITIAL_DELAY_SECONDS:-7200}", scheduler)
         self.assertIn(
-            'SCHEDULER_INITIAL_DELAY_VALUE="$${SCHEDULER_INITIAL_DELAY_SECONDS:-1800}"',
+            'SCHEDULER_INITIAL_DELAY_VALUE="$${SCHEDULER_INITIAL_DELAY_SECONDS:-7200}"',
             scheduler,
         )
         self.assertIn("Initial deployment-lock delay", scheduler)
@@ -864,7 +864,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             "github.event_name == 'workflow_dispatch' && inputs.replay_source_symbol || 'SOLUSDT'",
             workflow,
         )
-        self.assertIn('workflows: ["CD"]', workflow)
+        self.assertIn('workflows: ["Closed Loop Smoke"]', workflow)
+        self.assertNotIn('workflows: ["CD"]', workflow)
         self.assertIn("github.event.workflow_run.head_sha", workflow)
         self.assertIn(
             "github.event.workflow_run.head_sha == github.sha",

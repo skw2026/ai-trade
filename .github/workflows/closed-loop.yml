@@ -45,7 +45,11 @@ on:
   schedule:
     - cron: "15 */6 * * *" # 每6小时一次
   workflow_run:
-    workflows: ["CD"]
+    # Release validation is ordered deliberately: CD -> Smoke -> Full.  Starting
+    # Smoke and Full from the same CD completion makes both SSH jobs race for
+    # the persistent ECS transaction lock and turns a healthy release into a
+    # long, nondeterministic wait.
+    workflows: ["Closed Loop Smoke"]
     types: [completed]
     branches: [main]
 
@@ -53,10 +57,9 @@ permissions:
   contents: read
 
 concurrency:
-  # GitHub keeps only one pending run per concurrency group.  A scheduled Full
-  # must not replace the post-CD Smoke while another Full is active.  Full and
-  # Smoke therefore use separate Actions queues; the persistent ECS
-  # closed_loop_runner lock remains the cross-workflow serialization boundary.
+  # GitHub keeps only one pending run per concurrency group. Scheduled and
+  # post-Smoke Full runs share this queue; the persistent ECS runner lock still
+  # serializes them with the resident scheduler and any manual operation.
   group: ai-trade-remote-closed-loop-full
   cancel-in-progress: false
 
