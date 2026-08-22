@@ -76,11 +76,18 @@ def merge_intervals(intervals: Iterable[Tuple[int, int]]) -> List[Tuple[int, int
 
 def resolve_artifact(root: pathlib.Path, recorded: str, kind: str) -> pathlib.Path:
     path = pathlib.Path(recorded)
-    expected = (root / kind / collector.SYMBOL / path.name).resolve()
-    candidate = path.resolve() if path.is_absolute() else expected
-    if candidate != expected:
+    relative = pathlib.Path(kind) / collector.SYMBOL / path.name
+    expected = (root / relative).resolve()
+    if path.is_absolute():
+        # Legacy reports bind the collector's /app/data mount. Assessment sees
+        # the same host data through /opt/ai-trade. Accept only the immutable
+        # capture-root suffix and always read from the supplied root.
+        legacy_suffix = pathlib.Path("data") / "research" / root.name / relative
+        if tuple(path.parts[-len(legacy_suffix.parts) :]) != legacy_suffix.parts:
+            raise ValueError("artifact path escapes capture root")
+    elif path != relative:
         raise ValueError("artifact path escapes capture root")
-    return candidate
+    return expected
 
 
 def assess_health(root: pathlib.Path, now_ms: int, max_stale_ms: int) -> Dict[str, Any]:

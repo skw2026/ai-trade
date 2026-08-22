@@ -23,6 +23,7 @@ from typing import Any, Dict, Mapping, Sequence, TextIO, Tuple
 
 
 SCHEMA_VERSION = "bybit_sol_all_liquidation_v1"
+ARTIFACT_PATH_CONTRACT = "capture_root_relative_v1"
 SYMBOL = "SOLUSDT"
 TOPIC = f"allLiquidation.{SYMBOL}"
 PUBLIC_URL = "wss://stream.bybit.com/v5/public/linear"
@@ -179,7 +180,8 @@ async def capture_live(*, public_url: str, duration_sec: float, raw_output: path
 
 
 def build_capture_report(
-    *, raw_path: pathlib.Path, feature_path: pathlib.Path, rows: Sequence[Mapping[str, Any]],
+    *, capture_root: pathlib.Path, raw_path: pathlib.Path, feature_path: pathlib.Path,
+    rows: Sequence[Mapping[str, Any]],
     raw_count: int, capture_started_epoch_ms: int, capture_completed_epoch_ms: int,
     public_url: str,
 ) -> Dict[str, Any]:
@@ -187,8 +189,17 @@ def build_capture_report(
         raise ValueError("invalid connected capture interval")
     long_count = sum(int(row["long_liquidation_count"]) for row in rows)
     short_count = sum(int(row["short_liquidation_count"]) for row in rows)
+    root = capture_root.resolve()
+    recorded_paths: Dict[str, str] = {}
+    for kind, artifact in (("raw", raw_path), ("features", feature_path)):
+        resolved = artifact.resolve()
+        expected_parent = (root / kind / SYMBOL).resolve()
+        if resolved.parent != expected_parent:
+            raise ValueError("artifact path escapes capture root")
+        recorded_paths[kind] = resolved.relative_to(root).as_posix()
     return {
         "schema_version": SCHEMA_VERSION,
+        "artifact_path_contract": ARTIFACT_PATH_CONTRACT,
         "status": "PASS",
         "research_domain": "forward_development_only",
         "promotion_evidence": False,
@@ -206,9 +217,9 @@ def build_capture_report(
             "duration_ms": int(capture_completed_epoch_ms - capture_started_epoch_ms),
             "connection_continuous": True,
         },
-        "raw": {"path": str(raw_path), "sha256": sha256_file(raw_path), "message_count": int(raw_count)},
+        "raw": {"path": recorded_paths["raw"], "sha256": sha256_file(raw_path), "message_count": int(raw_count)},
         "features": {
-            "path": str(feature_path), "sha256": sha256_file(feature_path), "row_count": len(rows),
+            "path": recorded_paths["features"], "sha256": sha256_file(feature_path), "row_count": len(rows),
             "first_timestamp": int(rows[0]["timestamp"]) if rows else None,
             "last_timestamp": int(rows[-1]["timestamp"]) if rows else None,
         },
@@ -228,6 +239,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--raw", required=True)
     parser.add_argument("--features", required=True)
     parser.add_argument("--report", required=True)
+    parser.add_argument("--capture-root", required=True)
     parser.add_argument("--duration-sec", type=float, default=30.0)
     parser.add_argument("--public-url", default=PUBLIC_URL)
     parser.add_argument("--capture-started-epoch-ms", type=int, default=0)
@@ -250,7 +262,8 @@ def main() -> int:
     feature_path = pathlib.Path(args.features)
     write_feature_csv(feature_path, rows)
     report = build_capture_report(
-        raw_path=raw_path, feature_path=feature_path, rows=rows, raw_count=count,
+        capture_root=pathlib.Path(args.capture_root), raw_path=raw_path,
+        feature_path=feature_path, rows=rows, raw_count=count,
         capture_started_epoch_ms=started, capture_completed_epoch_ms=completed,
         public_url=args.public_url,
     )

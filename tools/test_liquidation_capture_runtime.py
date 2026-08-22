@@ -26,6 +26,7 @@ class LiquidationCaptureRuntimeTest(unittest.TestCase):
             pass
         collector.write_feature_csv(features, [])
         report = collector.build_capture_report(
+            capture_root=root,
             raw_path=raw,
             feature_path=features,
             rows=[],
@@ -49,6 +50,60 @@ class LiquidationCaptureRuntimeTest(unittest.TestCase):
             encoding="utf-8",
         )
         return root
+
+    def test_legacy_container_mount_paths_are_rebound_to_capture_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            start = 1_000_000
+            end = start + 86_400_000
+            root = self._root(temp, start=start, end=end)
+            report_path = root / "reports" / collector.SYMBOL / "s.json"
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            payload.pop("artifact_path_contract")
+            payload["raw"]["path"] = (
+                f"/app/data/research/{root.name}/raw/{collector.SYMBOL}/s.jsonl.gz"
+            )
+            payload["features"]["path"] = (
+                f"/app/data/research/{root.name}/features/{collector.SYMBOL}/s.csv"
+            )
+            report_path.write_text(json.dumps(payload), encoding="utf-8")
+            report = assessor.assess(
+                argparse.Namespace(
+                    root=str(root),
+                    min_capture_duration_sec=86_400,
+                    max_stale_sec=1_800,
+                    now_epoch_ms=end + 1_000,
+                )
+            )
+
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["valid_segment_count"], 1)
+
+    def test_unrelated_absolute_artifact_path_remains_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            start = 1_000_000
+            end = start + 86_400_000
+            root = self._root(temp, start=start, end=end)
+            report_path = root / "reports" / collector.SYMBOL / "s.json"
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            payload["raw"]["path"] = (
+                f"/untrusted/research/other_capture/raw/{collector.SYMBOL}/s.jsonl.gz"
+            )
+            report_path.write_text(json.dumps(payload), encoding="utf-8")
+            report = assessor.assess(
+                argparse.Namespace(
+                    root=str(root),
+                    min_capture_duration_sec=86_400,
+                    max_stale_sec=1_800,
+                    now_epoch_ms=end + 1_000,
+                )
+            )
+
+        self.assertEqual(report["status"], "NOT_READY")
+        self.assertEqual(report["valid_segment_count"], 0)
+        self.assertEqual(
+            report["invalid_segment_reason_counts"],
+            {"artifact_path_contract": 1},
+        )
 
     def test_sparse_zero_event_capture_passes_coverage_and_health(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -40,6 +40,7 @@ def segment_command(*, root: pathlib.Path, duration_sec: float, public_url: str)
             sys.executable,
             str(pathlib.Path(__file__).resolve().parent / "collect_bybit_liquidations.py"),
             "live", "--raw", str(raw), "--features", str(features), "--report", str(report),
+            "--capture-root", str(root),
             "--duration-sec", str(duration_sec), "--public-url", public_url,
             "--research-domain", "development",
         ],

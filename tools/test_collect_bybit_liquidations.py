@@ -41,14 +41,17 @@ class BybitLiquidationCollectorTest(unittest.TestCase):
 
     def test_empty_connected_segment_is_valid_sparse_evidence(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = pathlib.Path(temp)
-            raw = root / "raw.jsonl.gz"
-            features = root / "features.csv"
+            root = pathlib.Path(temp) / "bybit_sol_liquidations"
+            raw = root / "raw" / collector.SYMBOL / "segment.jsonl.gz"
+            features = root / "features" / collector.SYMBOL / "segment.csv"
+            raw.parent.mkdir(parents=True)
+            features.parent.mkdir(parents=True)
             with gzip.open(raw, "wt", encoding="utf-8"):
                 pass
             rows, count = collector.replay_jsonl(raw)
             collector.write_feature_csv(features, rows)
             report = collector.build_capture_report(
+                capture_root=root,
                 raw_path=raw,
                 feature_path=features,
                 rows=rows,
@@ -62,6 +65,15 @@ class BybitLiquidationCollectorTest(unittest.TestCase):
         self.assertEqual(report["status"], "PASS")
         self.assertEqual(report["coverage"]["duration_ms"], 60_000)
         self.assertEqual(report["quality"]["liquidation_event_count"], 0)
+        self.assertEqual(
+            report["artifact_path_contract"], collector.ARTIFACT_PATH_CONTRACT
+        )
+        self.assertEqual(
+            report["raw"]["path"], f"raw/{collector.SYMBOL}/segment.jsonl.gz"
+        )
+        self.assertEqual(
+            report["features"]["path"], f"features/{collector.SYMBOL}/segment.csv"
+        )
         self.assertFalse(report["promotion_evidence"])
         self.assertFalse(report["live_activation_authorized"])
 
