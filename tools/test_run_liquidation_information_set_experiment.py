@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import json
 import pathlib
 import tempfile
@@ -100,6 +101,63 @@ class LiquidationInformationSetExperimentTest(unittest.TestCase):
         self.assertTrue(np.all(matrix[0, :28] == 0.0))
         self.assertTrue(np.all(matrix[0, 28:] == 60.0))
         self.assertEqual(audit["aligned_row_count"], 1)
+
+    def test_not_ready_report_exposes_sanitized_capture_progress(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            control = root / "control.json"
+            treatment = root / "treatment.json"
+            control.write_text(
+                json.dumps(
+                    {
+                        "status": "PASS",
+                        "coverage_ms": 172_800_000,
+                        "minimum_coverage_ms": 86_400_000,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            treatment.write_text(
+                json.dumps(
+                    {
+                        "status": "NOT_READY",
+                        "coverage_ms": 120_000_000,
+                        "minimum_coverage_ms": 126_000_000,
+                        "freshness_age_ms": 12_000,
+                        "feature_row_count": 7,
+                        "liquidation_event_count": 11,
+                        "collector_health": {"status": "PASS"},
+                        "failures": [
+                            "minimum_forward_capture_duration",
+                            "/opt/private/api_secret=must-not-leak",
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            report = experiment.not_ready_report(
+                argparse.Namespace(
+                    config=str(self.config),
+                    control_assessment=str(control),
+                    treatment_assessment=str(treatment),
+                ),
+                "liquidation_capture_not_ready",
+                not_ready_stage="liquidation_capture",
+            )
+
+        self.assertEqual(report["status"], "NOT_READY")
+        self.assertEqual(report["not_ready_stage"], "liquidation_capture")
+        self.assertEqual(
+            report["reason_codes"],
+            [
+                "liquidation_capture_not_ready",
+                "minimum_forward_capture_duration",
+            ],
+        )
+        progress = report["capture_readiness"]["liquidation"]
+        self.assertEqual(progress["missing_coverage_ms"], 6_000_000)
+        self.assertAlmostEqual(progress["coverage_ratio"], 120 / 126)
+        self.assertNotIn("api_secret", json.dumps(report))
 
 
 if __name__ == "__main__":

@@ -25,6 +25,13 @@ ARCHITECTURE_ID = common.ARCHITECTURE_ID
 FROZEN_POLICY_IDENTITY_SHA256 = "5d9f97e44a27d7e2cbb5f2d2946b7fa5996c6d5cc893346aa797a939dacd4930"
 ExperimentNotReady = common.ExperimentNotReady
 
+_CAPTURE_FAILURE_CODES = {
+    "invalid_segment_contract",
+    "collector_health",
+    "minimum_forward_capture_duration",
+    "capture_freshness",
+}
+
 
 def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
     policy = common.read_json(path)
@@ -344,7 +351,50 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     }
 
 
-def not_ready_report(args: argparse.Namespace, reason: str, status: str = "NOT_READY") -> Dict[str, Any]:
+def _capture_readiness(path: pathlib.Path) -> Dict[str, Any]:
+    try:
+        payload = common.read_json(path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"artifact_status": "MISSING_OR_INVALID"}
+    result: Dict[str, Any] = {"artifact_status": "PRESENT"}
+    status = payload.get("status")
+    if status in {"PASS", "FAIL", "NOT_READY"}:
+        result["status"] = status
+    for field in (
+        "coverage_ms",
+        "minimum_coverage_ms",
+        "freshness_age_ms",
+        "feature_row_count",
+        "liquidation_event_count",
+    ):
+        value = payload.get(field)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+            result[field] = value
+    coverage = result.get("coverage_ms")
+    minimum = result.get("minimum_coverage_ms")
+    if isinstance(coverage, (int, float)) and isinstance(minimum, (int, float)) and minimum > 0:
+        result["missing_coverage_ms"] = max(0, minimum - coverage)
+        result["coverage_ratio"] = max(0.0, min(float(coverage) / float(minimum), 1.0))
+    health = payload.get("collector_health")
+    if isinstance(health, Mapping) and health.get("status") in {"PASS", "FAIL"}:
+        result["collector_health_status"] = health["status"]
+    failures = payload.get("failures")
+    if isinstance(failures, list):
+        result["failure_codes"] = [
+            value
+            for value in failures
+            if isinstance(value, str) and value in _CAPTURE_FAILURE_CODES
+        ]
+    return result
+
+
+def not_ready_report(
+    args: argparse.Namespace,
+    reason_code: str,
+    *,
+    not_ready_stage: str,
+    status: str = "NOT_READY",
+) -> Dict[str, Any]:
     config = pathlib.Path(args.config).resolve()
     try:
         policy = common.read_json(config) if config.is_file() else {}
@@ -356,12 +406,23 @@ def not_ready_report(args: argparse.Namespace, reason: str, status: str = "NOT_R
                 + int(splits.get("test_window_seconds", 14400)) + int(splits.get("validation_window_seconds", 14400))
                 + int(splits.get("train_window_seconds", 21600)) + 2 * embargo
                 + int(alignment.get("time_since_cap_seconds", 60)))
+    control_readiness = _capture_readiness(pathlib.Path(args.control_assessment).resolve())
+    liquidation_readiness = _capture_readiness(pathlib.Path(args.treatment_assessment).resolve())
+    reason_codes = [reason_code]
+    for value in liquidation_readiness.get("failure_codes", []):
+        if value not in reason_codes:
+            reason_codes.append(value)
     return {
         "schema_version": SCHEMA_VERSION, "status": status, "fully_verifiable": False,
         "research_domain": "forward_development_only", "promotion_evidence": False,
         "promotion_eligible": False, "promotion_authority": False,
         "demo_activation_authorized": False, "live_activation_authorized": False,
-        "research_decision": "NOT_READY", "reason_codes": [reason],
+        "research_decision": "NOT_READY", "reason_codes": reason_codes,
+        "not_ready_stage": not_ready_stage,
+        "capture_readiness": {
+            "control": control_readiness,
+            "liquidation": liquidation_readiness,
+        },
         "minimum_common_span_seconds_for_frozen_splits": required,
         "next_action": "continue_liquidation_capture",
         "experiment_policy": {"path": str(config), "sha256": common.sha256_file(config) if config.is_file() else None},
@@ -382,10 +443,31 @@ def main() -> int:
     args = parse_args()
     try:
         report = run_experiment(args)
-    except (development.CaptureNotReady, ExperimentNotReady) as exc:
-        report = not_ready_report(args, str(exc))
-    except Exception as exc:
-        report = not_ready_report(args, f"{type(exc).__name__}:{exc}", status="INVALID_INPUT")
+    except development.CaptureNotReady:
+        report = not_ready_report(
+            args,
+            "control_capture_not_ready",
+            not_ready_stage="control_capture",
+        )
+    except ExperimentNotReady as exc:
+        message = str(exc)
+        if message == "liquidation capture has not passed readiness":
+            reason_code = "liquidation_capture_not_ready"
+            stage = "liquidation_capture"
+        elif message == "insufficient common causal rows" or message.startswith("split "):
+            reason_code = "insufficient_common_causal_rows"
+            stage = "common_causal_domain"
+        else:
+            reason_code = "experiment_input_not_ready"
+            stage = "experiment_input"
+        report = not_ready_report(args, reason_code, not_ready_stage=stage)
+    except Exception:
+        report = not_ready_report(
+            args,
+            "invalid_input",
+            not_ready_stage="invalid_input",
+            status="INVALID_INPUT",
+        )
     common.atomic_write_json(pathlib.Path(args.output), report)
     print(json.dumps(report, ensure_ascii=False, allow_nan=False))
     return 0 if report.get("status") == "COMPLETE" else 2

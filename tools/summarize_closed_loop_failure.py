@@ -289,6 +289,16 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         section["demo_activation_authorized"] = False
         section["live_activation_authorized"] = False
 
+        not_ready_stage = report.get("not_ready_stage")
+        if not_ready_stage in {
+            "control_capture",
+            "liquidation_capture",
+            "common_causal_domain",
+            "experiment_input",
+            "invalid_input",
+        }:
+            section["not_ready_stage"] = not_ready_stage
+
         common = report.get("common_domain")
         hindsight = report.get("hindsight_oracle")
         arms = report.get("arms")
@@ -358,6 +368,42 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
                 else None
             ),
         }
+        capture_readiness = report.get("capture_readiness")
+        control_progress = (
+            capture_readiness.get("control")
+            if isinstance(capture_readiness, Mapping)
+            else None
+        )
+        liquidation_progress = (
+            capture_readiness.get("liquidation")
+            if isinstance(capture_readiness, Mapping)
+            else None
+        )
+        if isinstance(control_progress, Mapping):
+            control_status = control_progress.get("status")
+            if control_status in {"PASS", "FAIL", "NOT_READY"}:
+                section["control_capture_status"] = control_status
+        if isinstance(liquidation_progress, Mapping):
+            liquidation_status = liquidation_progress.get("status")
+            if liquidation_status in {"PASS", "FAIL", "NOT_READY"}:
+                section["liquidation_capture_status"] = liquidation_status
+            for source, target, divisor in (
+                ("coverage_ms", "liquidation_coverage_seconds", 1000.0),
+                ("minimum_coverage_ms", "liquidation_minimum_coverage_seconds", 1000.0),
+                ("missing_coverage_ms", "liquidation_missing_coverage_seconds", 1000.0),
+                ("coverage_ratio", "liquidation_coverage_ratio", 1.0),
+                ("freshness_age_ms", "liquidation_freshness_seconds", 1000.0),
+                ("feature_row_count", "liquidation_feature_row_count", 1.0),
+                ("liquidation_event_count", "liquidation_event_count", 1.0),
+            ):
+                value = _safe_number(liquidation_progress.get(source))
+                if value is not None:
+                    metrics[target] = value / divisor
+        required_span = _safe_number(
+            report.get("minimum_common_span_seconds_for_frozen_splits")
+        )
+        if required_span is not None:
+            metrics["minimum_common_span_seconds"] = required_span
         section["metrics"] = {
             key: value for key, value in metrics.items() if value is not None
         }
@@ -623,9 +669,29 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         )
         or "UNAVAILABLE"
     )
+    information_set = upstream.get("liquidation_information_set_experiment", {})
+    progress_parts: list[str] = []
+    stage = information_set.get("not_ready_stage")
+    if isinstance(stage, str) and _SAFE_TOKEN.fullmatch(stage):
+        progress_parts.append(f"stage:{stage}")
+    information_metrics = information_set.get("metrics")
+    if isinstance(information_metrics, Mapping):
+        for key in (
+            "liquidation_coverage_seconds",
+            "liquidation_minimum_coverage_seconds",
+            "liquidation_missing_coverage_seconds",
+            "liquidation_coverage_ratio",
+            "liquidation_freshness_seconds",
+            "minimum_common_span_seconds",
+        ):
+            value = _safe_number(information_metrics.get(key))
+            if value is not None:
+                progress_parts.append(f"{key}:{value}")
+    information_set_progress = ",".join(progress_parts) or "UNAVAILABLE"
     return (
         f"failed_steps={failed_steps}; upstream={upstream_statuses}; "
         f"information_set_decision={information_set_decision}; "
+        f"information_set_progress={information_set_progress}; "
         f"upstream_reasons={upstream_reasons}; decisive={statuses}; reasons={reasons}"
     )
 

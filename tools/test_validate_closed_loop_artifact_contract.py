@@ -255,6 +255,58 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         self.assertNotIn("api_secret", encoded)
         self.assertNotIn("must-not-leak", encoded)
 
+    def test_summary_exposes_liquidation_not_ready_stage_and_progress(self):
+        summary_module = load_public_summary_module()
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            (artifact_dir / "liquidation_information_set_experiment.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "liquidation_information_set_experiment_v1",
+                        "status": "NOT_READY",
+                        "fully_verifiable": False,
+                        "research_domain": "forward_development_only",
+                        "promotion_evidence": False,
+                        "promotion_eligible": False,
+                        "promotion_authority": False,
+                        "demo_activation_authorized": False,
+                        "live_activation_authorized": False,
+                        "research_decision": "NOT_READY",
+                        "reason_codes": [
+                            "liquidation_capture_not_ready",
+                            "minimum_forward_capture_duration",
+                        ],
+                        "not_ready_stage": "liquidation_capture",
+                        "capture_readiness": {
+                            "control": {"status": "PASS"},
+                            "liquidation": {
+                                "status": "NOT_READY",
+                                "coverage_ms": 120_000_000,
+                                "minimum_coverage_ms": 126_000_000,
+                                "missing_coverage_ms": 6_000_000,
+                                "coverage_ratio": 120 / 126,
+                                "freshness_age_ms": 12_000,
+                            },
+                        },
+                        "minimum_common_span_seconds_for_frozen_splits": 123_062,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            summary = summary_module.build_summary(artifact_dir)
+            annotation = summary_module._annotation(summary)
+
+        section = summary["upstream"]["liquidation_information_set_experiment"]
+        self.assertEqual(section["not_ready_stage"], "liquidation_capture")
+        self.assertEqual(section["control_capture_status"], "PASS")
+        self.assertEqual(section["liquidation_capture_status"], "NOT_READY")
+        self.assertEqual(section["metrics"]["liquidation_coverage_seconds"], 120_000)
+        self.assertEqual(
+            section["metrics"]["liquidation_missing_coverage_seconds"], 6_000
+        )
+        self.assertIn("information_set_progress=stage:liquidation_capture", annotation)
+        self.assertIn("liquidation_capture_not_ready", annotation)
+
     def test_summary_exposes_actionable_upstream_alpha_and_candidate_diagnostics(self):
         summary_module = load_public_summary_module()
         with tempfile.TemporaryDirectory() as td:
