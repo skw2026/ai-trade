@@ -1,0 +1,76 @@
+{
+  "schema_version": "maker_execution_learnability_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "bybit_sol_conservative_maker_learnability_v1",
+  "upstream": {
+    "required_opportunity_decision": "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
+    "required_opportunity_policy_identity_sha256": "583feeed9fc4ce9810ca824546bb551b02723e3544f1020d621f0800731cac6a"
+  },
+  "features": {
+    "causal_contract_revision": "order_flow_cross_asset_regime_v1",
+    "expected_feature_count": 242,
+    "fill_proxy_used_as_model_feature": false,
+    "future_values_permitted": false
+  },
+  "architectures": [
+    "direct_stress_utility_regression",
+    "two_stage_opportunity_action",
+    "joint_action_ranker"
+  ],
+  "target": {
+    "unfilled_order_utility_bps": 0.0,
+    "filled_order_target": "realized_base_net_bps_minus_stress_cost_increment",
+    "architecture_selection_scope": "development_diagnostic_only"
+  },
+  "execution": {
+    "placement_latency_seconds": 1,
+    "fill_timeout_seconds": 5,
+    "queue_depth_multiplier": 1.25,
+    "maker_entry_fee_bps": 2.75,
+    "taker_exit_fee_bps": 5.5,
+    "exit_slippage_bps": 1.0,
+    "stress_cost_multiplier": 1.25,
+    "horizons_seconds": [15, 30, 60, 120, 300],
+    "one_outstanding_order_or_position": true
+  },
+  "splits": {
+    "count": 6,
+    "train_window_seconds": 21600,
+    "validation_window_seconds": 14400,
+    "test_window_seconds": 14400,
+    "rolling_step_seconds": 14400,
+    "model_selection_window_seconds": 3600,
+    "minimum_window_rows": 3600
+  },
+  "calibration": {
+    "threshold_quantiles": [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98],
+    "minimum_validation_trades": 8
+  },
+  "model": {
+    "iterations": 200,
+    "depth": 4,
+    "learning_rate": 0.035,
+    "l2_leaf_reg": 30.0,
+    "random_strength": 2.0,
+    "random_seed": 20260806,
+    "early_stopping_rounds": 20
+  },
+  "negative_control": {
+    "permutation_trials": 7,
+    "permutation_seed": 20260808,
+    "minimum_excess_lcb_bps": 0.0
+  },
+  "decision_gates": {
+    "minimum_oos_trades": 30,
+    "minimum_positive_stress_split_ratio": 0.6,
+    "minimum_base_lcb_bps": 0.0,
+    "minimum_stress_lcb_bps": 0.0,
+    "prediction_permutation_control_required": true
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

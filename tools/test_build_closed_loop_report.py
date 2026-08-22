@@ -237,6 +237,60 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(rejected["status"], "fail")
             self.assertIn("isolation contract", rejected["fail_reasons"][0])
 
+    def test_maker_learnability_architectures_are_visible_but_non_promotional(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "maker_learnability.json"
+            payload = {
+                "schema_version": "maker_execution_learnability_experiment_v1",
+                "status": "COMPLETE",
+                "fully_verifiable": True,
+                "research_domain": "forward_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "diagnostic_leader_is_preregistered": False,
+                "research_decision": (
+                    "CONTINUE_TO_INDEPENDENT_MAKER_FORWARD_VALIDATION"
+                ),
+                "diagnostic_leader_id": "two_stage_opportunity_action",
+                "reason_codes": ["maker_learnability_gate_passed"],
+                "data": {"eligible_row_count": 120000},
+                "architecture_comparison": {
+                    "architectures": {
+                        "two_stage_opportunity_action": {
+                            "trade_count": 45,
+                            "positive_stress_split_ratio": 1.0,
+                            "oos_base_cost_by_split": {"lcb_bps": 2.5},
+                            "oos_stress_cost_by_split": {"lcb_bps": 1.0},
+                            "prediction_permutation_control": {"passed": True},
+                            "maker_decision_gate_passed": True,
+                        }
+                    }
+                },
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            section = REPORT.assess_maker_execution_learnability_experiment(path)
+
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(
+                section["diagnostic_leader_id"], "two_stage_opportunity_action"
+            )
+            architecture = section["metrics"]["architectures"][
+                "two_stage_opportunity_action"
+            ]
+            self.assertEqual(architecture["stress_lcb_bps"], 1.0)
+            self.assertTrue(architecture["maker_gate_passed"])
+            self.assertFalse(section["authoritative_for_integrator_promotion"])
+
+            payload["diagnostic_leader_is_preregistered"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_maker_execution_learnability_experiment(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertIn("isolation contract", rejected["fail_reasons"][0])
+
     def test_microstructure_alpha_requires_stressed_cost_development_pass(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "microstructure_alpha.json"

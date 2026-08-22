@@ -1644,6 +1644,113 @@ def assess_maker_execution_opportunity_experiment(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]:
+    """Expose maker model learnability while preserving the promotion firewall."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "CONTINUE_TO_INDEPENDENT_MAKER_FORWARD_VALIDATION",
+        "STOP_MAKER_LEARNABILITY_FAMILY",
+        "STOP_MAKER_LEARNABILITY_UPSTREAM_NOT_PROVEN",
+    }
+    if payload.get("schema_version") != "maker_execution_learnability_experiment_v1":
+        fail_reasons.append("maker learnability report schema mismatch")
+    if payload.get("status") != "COMPLETE" or payload.get("fully_verifiable") is not True:
+        fail_reasons.append("maker learnability evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "forward_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+        and payload.get("diagnostic_leader_is_preregistered") is False
+    ):
+        fail_reasons.append("maker learnability isolation contract failed")
+    decision = payload.get("research_decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("maker learnability research decision is invalid")
+        decision = None
+    leader = payload.get("diagnostic_leader_id")
+    if leader is not None and leader not in {
+        "direct_stress_utility_regression",
+        "two_stage_opportunity_action",
+        "joint_action_ranker",
+    }:
+        fail_reasons.append("maker learnability leader is invalid")
+        leader = None
+    reasons = payload.get("reason_codes")
+    if not (
+        isinstance(reasons, list)
+        and all(isinstance(item, str) and item.strip() for item in reasons)
+    ):
+        fail_reasons.append("maker learnability reason codes are invalid")
+        reasons = []
+
+    def metric(mapping: Any, field: str) -> int | float | bool | None:
+        if not isinstance(mapping, dict):
+            return None
+        value = mapping.get(field)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and math.isfinite(float(value)):
+            return value
+        return None
+
+    comparison = payload.get("architecture_comparison", {})
+    raw_architectures = (
+        comparison.get("architectures", {})
+        if isinstance(comparison, dict)
+        else {}
+    )
+    architectures: Dict[str, Any] = {}
+    if isinstance(raw_architectures, dict):
+        for architecture_id in (
+            "direct_stress_utility_regression",
+            "two_stage_opportunity_action",
+            "joint_action_ranker",
+        ):
+            item = raw_architectures.get(architecture_id)
+            if not isinstance(item, dict):
+                continue
+            base = item.get("oos_base_cost_by_split", {})
+            stress = item.get("oos_stress_cost_by_split", {})
+            control = item.get("prediction_permutation_control", {})
+            architectures[architecture_id] = {
+                "trade_count": metric(item, "trade_count"),
+                "positive_stress_split_ratio": metric(
+                    item, "positive_stress_split_ratio"
+                ),
+                "base_lcb_bps": metric(base, "lcb_bps"),
+                "stress_lcb_bps": metric(stress, "lcb_bps"),
+                "permutation_passed": metric(control, "passed"),
+                "maker_gate_passed": metric(item, "maker_decision_gate_passed"),
+            }
+    data = payload.get("data", {})
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": (
+            [] if fail_reasons else [f"maker learnability decision: {decision}"]
+        ),
+        "research_decision": decision,
+        "diagnostic_leader_id": leader,
+        "reason_codes": list(reasons),
+        "metrics": {
+            "eligible_row_count": metric(data, "eligible_row_count"),
+            "architectures": architectures,
+        },
+        "research_observation_only": True,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "execution_learnability_stage_review",
+    }
+
+
 def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     status_raw = str(payload.get("status", "")).strip().lower()
@@ -4033,6 +4140,11 @@ def parse_args() -> argparse.Namespace:
         help="保守队列成交 maker-entry oracle 实验报告路径",
     )
     parser.add_argument(
+        "--maker_execution_learnability_experiment_report",
+        default="",
+        help="保守 maker-entry 三架构可学习性实验报告路径",
+    )
+    parser.add_argument(
         "--closed_loop_mechanism_report",
         default="",
         help="closed_loop_mechanism_report.json 路径",
@@ -4476,6 +4588,20 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {experiment_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "execution_opportunity_stage_review",
+            }
+    if args.maker_execution_learnability_experiment_report:
+        experiment_path = Path(args.maker_execution_learnability_experiment_report)
+        if experiment_path.is_file():
+            sections["maker_execution_learnability_experiment"] = (
+                assess_maker_execution_learnability_experiment(experiment_path)
+            )
+        else:
+            sections["maker_execution_learnability_experiment"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {experiment_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "execution_learnability_stage_review",
             }
     if args.closed_loop_mechanism_report:
         mechanism_path = Path(args.closed_loop_mechanism_report)

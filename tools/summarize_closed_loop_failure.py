@@ -74,6 +74,10 @@ UPSTREAM_REPORTS = {
         "maker_execution_opportunity_experiment.json",
         {"COMPLETE", "NOT_READY"},
     ),
+    "maker_execution_learnability_experiment": (
+        "maker_execution_learnability_experiment.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "microstructure_alpha_development": (
         "microstructure_alpha_development_report.json",
         {"PASS", "FAIL", "NOT_READY"},
@@ -597,6 +601,120 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         section["metrics"] = {
             key: value for key, value in metrics.items() if value is not None
         }
+    elif name == "maker_execution_learnability_experiment":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        decision = report.get("research_decision")
+        allowed_decisions = {
+            "CONTINUE_TO_INDEPENDENT_MAKER_FORWARD_VALIDATION",
+            "STOP_MAKER_LEARNABILITY_FAMILY",
+            "STOP_MAKER_LEARNABILITY_UPSTREAM_NOT_PROVEN",
+        }
+        leader = report.get("diagnostic_leader_id")
+        allowed_leaders = {
+            "direct_stress_utility_regression",
+            "two_stage_opportunity_action",
+            "joint_action_ranker",
+        }
+        contract_ok = (
+            report.get("schema_version")
+            == "maker_execution_learnability_experiment_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("fully_verifiable") is True
+            and report.get("research_domain") == "forward_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and report.get("diagnostic_leader_is_preregistered") is False
+            and decision in allowed_decisions
+            and (leader is None or leader in allowed_leaders)
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = (
+            decision if decision in allowed_decisions else None
+        )
+        section["diagnostic_leader_id"] = (
+            leader if leader in allowed_leaders else None
+        )
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        data = report.get("data")
+        comparison = report.get("architecture_comparison")
+        architectures = (
+            comparison.get("architectures")
+            if isinstance(comparison, Mapping)
+            else None
+        )
+        metrics = {
+            "eligible_row_count": (
+                _safe_number(data.get("eligible_row_count"))
+                if isinstance(data, Mapping)
+                else None
+            )
+        }
+        for architecture_id, prefix in (
+            ("direct_stress_utility_regression", "direct"),
+            ("two_stage_opportunity_action", "two_stage"),
+            ("joint_action_ranker", "joint"),
+        ):
+            architecture = (
+                architectures.get(architecture_id)
+                if isinstance(architectures, Mapping)
+                else None
+            )
+            base = (
+                architecture.get("oos_base_cost_by_split")
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            stress = (
+                architecture.get("oos_stress_cost_by_split")
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            control = (
+                architecture.get("prediction_permutation_control")
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_trade_count"] = (
+                _safe_number(architecture.get("trade_count"))
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_positive_split_ratio"] = (
+                _safe_number(architecture.get("positive_stress_split_ratio"))
+                if isinstance(architecture, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_base_lcb_bps"] = (
+                _safe_number(base.get("lcb_bps"))
+                if isinstance(base, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_stress_lcb_bps"] = (
+                _safe_number(stress.get("lcb_bps"))
+                if isinstance(stress, Mapping)
+                else None
+            )
+            metrics[f"{prefix}_permutation_passed"] = (
+                control.get("passed")
+                if isinstance(control, Mapping)
+                and isinstance(control.get("passed"), bool)
+                else None
+            )
+            metrics[f"{prefix}_maker_gate_passed"] = (
+                architecture.get("maker_decision_gate_passed")
+                if isinstance(architecture, Mapping)
+                and isinstance(architecture.get("maker_decision_gate_passed"), bool)
+                else None
+            )
+        section["metrics"] = {
+            key: value for key, value in metrics.items() if value is not None
+        }
     elif name == "microstructure_alpha_development":
         reasons, metrics = _microstructure_alpha_diagnostics(report)
         section["gate_status"] = (
@@ -924,12 +1042,63 @@ def _annotation(summary: Mapping[str, Any]) -> str:
             if value is not None:
                 maker_progress_parts.append(f"{key}:{value}")
     maker_opportunity_progress = ",".join(maker_progress_parts) or "UNAVAILABLE"
+    maker_learnability = upstream.get(
+        "maker_execution_learnability_experiment", {}
+    )
+    maker_learnability_decision = (
+        maker_learnability.get("research_decision", "UNAVAILABLE")
+        or "UNAVAILABLE"
+    )
+    maker_learnability_leader = (
+        maker_learnability.get("diagnostic_leader_id", "UNAVAILABLE")
+        or "none"
+    )
+    maker_learnability_progress_parts: list[str] = []
+    maker_learnability_metrics = maker_learnability.get("metrics")
+    if isinstance(maker_learnability_metrics, Mapping):
+        for key in (
+            "eligible_row_count",
+            "direct_trade_count",
+            "direct_positive_split_ratio",
+            "direct_base_lcb_bps",
+            "direct_stress_lcb_bps",
+            "two_stage_trade_count",
+            "two_stage_positive_split_ratio",
+            "two_stage_base_lcb_bps",
+            "two_stage_stress_lcb_bps",
+            "joint_trade_count",
+            "joint_positive_split_ratio",
+            "joint_base_lcb_bps",
+            "joint_stress_lcb_bps",
+        ):
+            value = _safe_number(maker_learnability_metrics.get(key))
+            if value is not None:
+                maker_learnability_progress_parts.append(f"{key}:{value}")
+        for key in (
+            "direct_permutation_passed",
+            "direct_maker_gate_passed",
+            "two_stage_permutation_passed",
+            "two_stage_maker_gate_passed",
+            "joint_permutation_passed",
+            "joint_maker_gate_passed",
+        ):
+            value = maker_learnability_metrics.get(key)
+            if isinstance(value, bool):
+                maker_learnability_progress_parts.append(
+                    f"{key}:{str(value).lower()}"
+                )
+    maker_learnability_progress = (
+        ",".join(maker_learnability_progress_parts) or "UNAVAILABLE"
+    )
     return (
         f"failed_steps={failed_steps}; upstream={upstream_statuses}; "
         f"information_set_decision={information_set_decision}; "
         f"information_set_progress={information_set_progress}; "
         f"maker_opportunity_decision={maker_opportunity_decision}; "
         f"maker_opportunity_progress={maker_opportunity_progress}; "
+        f"maker_learnability_decision={maker_learnability_decision}; "
+        f"maker_learnability_leader={maker_learnability_leader}; "
+        f"maker_learnability_progress={maker_learnability_progress}; "
         f"upstream_reasons={upstream_reasons}; decisive={statuses}; reasons={reasons}"
     )
 

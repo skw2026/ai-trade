@@ -240,6 +240,7 @@ LIQUIDATION_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_LIQUIDATION_MIN_CAPTURE_SECONDS:-
 LIQUIDATION_MAX_STALE_SECONDS="${CLOSED_LOOP_LIQUIDATION_MAX_STALE_SECONDS:-1800}"
 LIQUIDATION_EXPERIMENT_CONFIG="${CLOSED_LOOP_LIQUIDATION_EXPERIMENT_CONFIG:-config/liquidation_information_set_experiment.json}"
 MAKER_OPPORTUNITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_OPPORTUNITY_EXPERIMENT_CONFIG:-config/maker_execution_opportunity_experiment.json}"
+MAKER_LEARNABILITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_LEARNABILITY_EXPERIMENT_CONFIG:-config/maker_execution_learnability_experiment.json}"
 DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
 DECISION_EVIDENCE_BENCHMARK_ROOT="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_ROOT:-}"
 DECISION_EVIDENCE_CONFIG_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_CONFIG:-config/decision_evidence_validation.json}"
@@ -1308,6 +1309,7 @@ MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH="${RUN_DIR}/microstructure_capture_up
 LIQUIDATION_CAPTURE_REPORT_PATH="${RUN_DIR}/liquidation_capture_report.json"
 LIQUIDATION_EXPERIMENT_REPORT_PATH="${RUN_DIR}/liquidation_information_set_experiment.json"
 MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_opportunity_experiment.json"
+MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_learnability_experiment.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
 MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH="${RUN_DIR}/microstructure_alpha_regime_evidence_audit.json"
 MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH="${RUN_DIR}/microstructure_alpha_candidate_manifest.json"
@@ -3405,6 +3407,18 @@ run_maker_execution_opportunity_experiment() {
   echo "[INFO] conservative maker execution opportunity experiment done"
 }
 
+run_maker_execution_learnability_experiment() {
+  echo "[INFO] conservative maker execution learnability experiment start"
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_maker_execution_learnability_experiment.py \
+    --control-assessment "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
+    --opportunity-report "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" \
+    --config "${MAKER_LEARNABILITY_EXPERIMENT_CONFIG}" \
+    --output "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" \
+    --research-domain development
+  echo "[INFO] conservative maker execution learnability experiment done"
+}
+
 run_microstructure_alpha_development_gate() {
   if ! is_true "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_ENABLED}"; then
     echo "[ERROR] microstructure development economic screen is required by the closed-loop contract"
@@ -4801,6 +4815,7 @@ write_run_manifest() {
   DATA_CONFIG_PATH_VALUE="${DATA_CONFIG_PATH}" \
   LIQUIDATION_EXPERIMENT_CONFIG_VALUE="${LIQUIDATION_EXPERIMENT_CONFIG}" \
   MAKER_OPPORTUNITY_EXPERIMENT_CONFIG_VALUE="${MAKER_OPPORTUNITY_EXPERIMENT_CONFIG}" \
+  MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_CONFIG}" \
   REPLAY_CONFIG_PATH_VALUE="${REPLAY_EFFECTIVE_CONFIG_PATH}" \
   REPLAY_SOURCE_SYMBOL_VALUE="${REPLAY_VALIDATION_SOURCE_SYMBOL}" \
   REPLAY_SYMBOL_VALUE="${REPLAY_VALIDATION_SYMBOL}" \
@@ -4849,6 +4864,7 @@ write_run_manifest() {
   LIQUIDATION_CAPTURE_REPORT_PATH_VALUE="${LIQUIDATION_CAPTURE_REPORT_PATH}" \
   LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE="${LIQUIDATION_EXPERIMENT_REPORT_PATH}" \
   MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" \
+  MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}" \
   MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE="${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}" \
@@ -5060,6 +5076,9 @@ payload = {
         "maker_execution_opportunity_experiment": os.environ.get(
             "MAKER_OPPORTUNITY_EXPERIMENT_CONFIG_VALUE", ""
         ),
+        "maker_execution_learnability_experiment": os.environ.get(
+            "MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE", ""
+        ),
         "decision_evidence_benchmark_manifest": os.environ.get(
             "DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH_VALUE", ""
         ),
@@ -5239,6 +5258,7 @@ artifact_env_names = {
     "liquidation_capture_report": "LIQUIDATION_CAPTURE_REPORT_PATH_VALUE",
     "liquidation_information_set_experiment": "LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_execution_opportunity_experiment": "MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH_VALUE",
+    "maker_execution_learnability_experiment": "MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_regime_evidence_audit": "MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH_VALUE",
     "microstructure_alpha_candidate_manifest": "MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH_VALUE",
@@ -5443,6 +5463,9 @@ build_summary() {
   if [[ -f "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--maker_execution_opportunity_experiment_report "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}")
   fi
+  if [[ -f "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--maker_execution_learnability_experiment_report "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}")
+  fi
   if [[ -f "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--microstructure_capture_report "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}")
   fi
@@ -5548,6 +5571,7 @@ build_summary() {
   "liquidation_capture_report": "${LIQUIDATION_CAPTURE_REPORT_PATH}",
   "liquidation_information_set_experiment": "${LIQUIDATION_EXPERIMENT_REPORT_PATH}",
   "maker_execution_opportunity_experiment": "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}",
+  "maker_execution_learnability_experiment": "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
   "microstructure_alpha_regime_evidence_audit": "${MICROSTRUCTURE_ALPHA_REGIME_EVIDENCE_AUDIT_PATH}",
   "microstructure_alpha_candidate_manifest": "${MICROSTRUCTURE_ALPHA_CANDIDATE_MANIFEST_PATH}",
@@ -6442,6 +6466,7 @@ run_training_chain() {
     run_observation_step market_alpha_development run_market_alpha_development_gate
     run_observation_step microstructure_forward_data run_microstructure_capture_gate
     run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+    run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
     run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
     run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
     run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
@@ -6620,6 +6645,7 @@ run_main() {
       run_required_step data_quality run_data_quality
       run_required_step microstructure_forward_data run_microstructure_capture_gate
       run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+      run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
       run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
       run_collecting_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
@@ -6647,6 +6673,7 @@ run_main() {
       run_observation_step market_alpha_development run_market_alpha_development_gate
       run_observation_step microstructure_forward_data run_microstructure_capture_gate
       run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+      run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
       run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
       run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate

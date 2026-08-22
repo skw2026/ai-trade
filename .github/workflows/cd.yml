@@ -580,6 +580,8 @@ jobs:
               "${RELEASE_TMP}/tools/run_liquidation_information_set_experiment.py" \
               "${RELEASE_TMP}/config/maker_execution_opportunity_experiment.json" \
               "${RELEASE_TMP}/tools/run_maker_execution_opportunity_experiment.py" \
+              "${RELEASE_TMP}/config/maker_execution_learnability_experiment.json" \
+              "${RELEASE_TMP}/tools/run_maker_execution_learnability_experiment.py" \
               "${RELEASE_TMP}/tools/run_market_alpha_development.py" \
               "${RELEASE_TMP}/tools/run_microstructure_alpha_development.py" \
               "${RELEASE_TMP}/tools/run_microstructure_alpha_lifecycle.py" \
