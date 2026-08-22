@@ -121,8 +121,15 @@ class ComposeConsistencyTest(unittest.TestCase):
             research_dependency_stage,
         )
         self.assertIn("--no-compile", research_dependency_stage)
+        self.assertIn("--no-deps", research_dependency_stage)
+        self.assertIn("python3-pip binutils", research_dependency_stage)
+        self.assertIn("strip --strip-unneeded", research_dependency_stage)
+        self.assertIn(
+            "apt-get purge -y --auto-remove python3-pip binutils",
+            research_dependency_stage,
+        )
         self.assertIn("-name tests", research_dependency_stage)
-        self.assertIn("import catboost, numpy", research_dependency_stage)
+        self.assertIn("import catboost, numpy, pandas, scipy", research_dependency_stage)
         self.assertIn("websockets.__version__", research_dependency_stage)
         self.assertNotIn("pip3 install", research_stage)
         self.assertIn("COPY --from=build /workspace/tools /app/tools", research_stage)
@@ -130,6 +137,20 @@ class ComposeConsistencyTest(unittest.TestCase):
             "pip3 install --no-cache-dir --break-system-packages numpy catboost",
             research_dependency_stage,
         )
+
+        requirements = (
+            ROOT / "tools" / "requirements-research.txt"
+        ).read_text(encoding="utf-8")
+        for dependency in (
+            "numpy==1.26.4",
+            "scipy==1.17.1",
+            "pandas==3.0.5",
+            "python-dateutil==2.9.0.post0",
+            "six==1.17.0",
+            "catboost==1.2.8",
+            "websockets==15.0.1",
+        ):
+            self.assertIn(dependency, requirements)
 
         cd_workflow = (ROOT / ".github" / "workflows" / "cd.yml").read_text(encoding="utf-8")
         self.assertIn("Build and Push Research Image", cd_workflow)

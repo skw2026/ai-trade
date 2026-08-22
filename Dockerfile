@@ -94,17 +94,22 @@ RUN mkdir -p /app/data
 # Registry inline cache then preserves this ancestry across source-only builds.
 FROM runtime-base AS research-dependencies
 COPY --from=build /workspace/tools/requirements-research.txt /tmp/requirements-research.txt
-RUN /usr/local/bin/apt-install python3-pip
-RUN pip3 install --no-cache-dir --no-compile --break-system-packages \
+RUN /usr/local/bin/apt-install python3-pip binutils && \
+    pip3 install --no-cache-dir --no-compile --no-deps --break-system-packages \
       -r /tmp/requirements-research.txt && \
+    strip --strip-unneeded \
+      /usr/local/lib/python3.12/dist-packages/catboost/_catboost.so && \
+    apt-get purge -y --auto-remove python3-pip binutils && \
+    apt-get clean && \
     rm -f /tmp/requirements-research.txt && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* && \
     find /usr/local/lib/python3.12/dist-packages \
       -type d \( -name __pycache__ -o -name test -o -name tests \) \
       -prune -print0 \
       | xargs -0 -r rm -rf && \
     find /usr/local/lib/python3.12/dist-packages \
       -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete && \
-    python3 -c 'import catboost, numpy, websockets; print(catboost.__version__, numpy.__version__, websockets.__version__)'
+    python3 -c 'import catboost, numpy, pandas, scipy, websockets; print(catboost.__version__, numpy.__version__, pandas.__version__, scipy.__version__, websockets.__version__)'
 
 FROM runtime-base AS runtime
 
