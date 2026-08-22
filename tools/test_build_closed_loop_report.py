@@ -189,6 +189,54 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(rejected["status"], "fail")
             self.assertIn("authority contract", rejected["fail_reasons"][0])
 
+    def test_maker_opportunity_decision_is_visible_but_non_promotional(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "maker_opportunity.json"
+            payload = {
+                "schema_version": "maker_execution_opportunity_experiment_v1",
+                "status": "COMPLETE",
+                "fully_verifiable": True,
+                "research_domain": "forward_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "research_decision": "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
+                "reason_codes": ["maker_oracle_all_first_window_gates_passed"],
+                "common_domain": {"row_count": 123456},
+                "fill_audit": {
+                    "filled_decision_count": 321,
+                    "filled_action_count": 1234,
+                },
+                "hindsight_oracle": {
+                    "trade_count": 55,
+                    "positive_stress_split_ratio": 1.0,
+                    "base_cost_by_split": {"lcb_bps": 1.5},
+                    "stress_cost_by_split": {"lcb_bps": 0.25},
+                },
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            section = REPORT.assess_maker_execution_opportunity_experiment(path)
+
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["readiness_status"], "PASS_WITH_ACTIONS")
+            self.assertEqual(
+                section["research_decision"],
+                "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
+            )
+            self.assertEqual(section["metrics"]["filled_decision_count"], 321)
+            self.assertEqual(section["metrics"]["oracle_stress_lcb_bps"], 0.25)
+            self.assertFalse(section["authoritative_for_integrator_promotion"])
+            self.assertFalse(section["demo_activation_authorized"])
+
+            payload["live_activation_authorized"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_maker_execution_opportunity_experiment(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertIn("isolation contract", rejected["fail_reasons"][0])
+
     def test_microstructure_alpha_requires_stressed_cost_development_pass(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "microstructure_alpha.json"

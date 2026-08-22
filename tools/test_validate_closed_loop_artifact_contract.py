@@ -119,6 +119,12 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
             ],
             "market_alpha_development_report.json",
         )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "maker_execution_opportunity_experiment"
+            ],
+            "maker_execution_opportunity_experiment.json",
+        )
 
     def test_downloader_always_emits_sanitized_public_failure_summary(self):
         source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
@@ -142,6 +148,11 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         self.assertIn(
             'SUMMARY_ARGS+=(--liquidation_information_set_experiment_report '
             '"${LIQUIDATION_EXPERIMENT_REPORT_PATH}")',
+            source,
+        )
+        self.assertIn(
+            'SUMMARY_ARGS+=(--maker_execution_opportunity_experiment_report '
+            '"${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}")',
             source,
         )
 
@@ -312,6 +323,60 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         self.assertEqual(section["metrics"]["liquidation_invalid_segment_count"], 140)
         self.assertIn("information_set_progress=stage:liquidation_capture", annotation)
         self.assertIn("liquidation_capture_not_ready", annotation)
+
+    def test_summary_exposes_maker_opportunity_decision_and_economics(self):
+        summary_module = load_public_summary_module()
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            (artifact_dir / "maker_execution_opportunity_experiment.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "maker_execution_opportunity_experiment_v1",
+                        "status": "COMPLETE",
+                        "fully_verifiable": True,
+                        "research_domain": "forward_development_only",
+                        "promotion_evidence": False,
+                        "promotion_eligible": False,
+                        "promotion_authority": False,
+                        "demo_activation_authorized": False,
+                        "live_activation_authorized": False,
+                        "research_decision": (
+                            "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT"
+                        ),
+                        "reason_codes": [
+                            "maker_oracle_all_first_window_gates_passed"
+                        ],
+                        "common_domain": {"row_count": 123456},
+                        "fill_audit": {
+                            "filled_decision_count": 321,
+                            "filled_action_count": 1234,
+                        },
+                        "hindsight_oracle": {
+                            "trade_count": 55,
+                            "positive_stress_split_ratio": 1.0,
+                            "base_cost_by_split": {"lcb_bps": 1.5},
+                            "stress_cost_by_split": {"lcb_bps": 0.25},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            summary = summary_module.build_summary(artifact_dir)
+            annotation = summary_module._annotation(summary)
+
+        section = summary["upstream"]["maker_execution_opportunity_experiment"]
+        self.assertEqual(section["gate_status"], "COMPLETE")
+        self.assertEqual(
+            section["research_decision"],
+            "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
+        )
+        self.assertEqual(section["metrics"]["filled_action_count"], 1234)
+        self.assertEqual(section["metrics"]["oracle_stress_lcb_bps"], 0.25)
+        self.assertIn(
+            "maker_opportunity_decision=CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
+            annotation,
+        )
+        self.assertIn("oracle_stress_lcb_bps:0.25", annotation)
 
     def test_summary_exposes_actionable_upstream_alpha_and_candidate_diagnostics(self):
         summary_module = load_public_summary_module()

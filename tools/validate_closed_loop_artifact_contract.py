@@ -40,6 +40,9 @@ LOCAL_ARTIFACT_FILENAMES = {
     "liquidation_information_set_experiment": (
         "liquidation_information_set_experiment.json"
     ),
+    "maker_execution_opportunity_experiment": (
+        "maker_execution_opportunity_experiment.json"
+    ),
     "microstructure_alpha_development_report": (
         "microstructure_alpha_development_report.json"
     ),

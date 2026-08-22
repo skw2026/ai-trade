@@ -70,6 +70,10 @@ UPSTREAM_REPORTS = {
         "liquidation_information_set_experiment.json",
         {"COMPLETE", "NOT_READY", "INVALID_INPUT"},
     ),
+    "maker_execution_opportunity_experiment": (
+        "maker_execution_opportunity_experiment.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "microstructure_alpha_development": (
         "microstructure_alpha_development_report.json",
         {"PASS", "FAIL", "NOT_READY"},
@@ -512,6 +516,87 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         section["metrics"] = {
             key: value for key, value in metrics.items() if value is not None
         }
+    elif name == "maker_execution_opportunity_experiment":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        decision = report.get("research_decision")
+        allowed_decisions = {
+            "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
+            "STOP_MAKER_EXECUTION_FAMILY",
+        }
+        contract_ok = (
+            report.get("schema_version")
+            == "maker_execution_opportunity_experiment_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("fully_verifiable") is True
+            and report.get("research_domain") == "forward_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and decision in allowed_decisions
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = (
+            decision if decision in allowed_decisions else None
+        )
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        common = report.get("common_domain")
+        fill = report.get("fill_audit")
+        oracle = report.get("hindsight_oracle")
+        base = (
+            oracle.get("base_cost_by_split")
+            if isinstance(oracle, Mapping)
+            else None
+        )
+        stress = (
+            oracle.get("stress_cost_by_split")
+            if isinstance(oracle, Mapping)
+            else None
+        )
+        metrics = {
+            "common_row_count": (
+                _safe_number(common.get("row_count"))
+                if isinstance(common, Mapping)
+                else None
+            ),
+            "filled_decision_count": (
+                _safe_number(fill.get("filled_decision_count"))
+                if isinstance(fill, Mapping)
+                else None
+            ),
+            "filled_action_count": (
+                _safe_number(fill.get("filled_action_count"))
+                if isinstance(fill, Mapping)
+                else None
+            ),
+            "oracle_trade_count": (
+                _safe_number(oracle.get("trade_count"))
+                if isinstance(oracle, Mapping)
+                else None
+            ),
+            "oracle_positive_split_ratio": (
+                _safe_number(oracle.get("positive_stress_split_ratio"))
+                if isinstance(oracle, Mapping)
+                else None
+            ),
+            "oracle_base_lcb_bps": (
+                _safe_number(base.get("lcb_bps"))
+                if isinstance(base, Mapping)
+                else None
+            ),
+            "oracle_stress_lcb_bps": (
+                _safe_number(stress.get("lcb_bps"))
+                if isinstance(stress, Mapping)
+                else None
+            ),
+        }
+        section["metrics"] = {
+            key: value for key, value in metrics.items() if value is not None
+        }
     elif name == "microstructure_alpha_development":
         reasons, metrics = _microstructure_alpha_diagnostics(report)
         section["gate_status"] = (
@@ -819,10 +904,32 @@ def _annotation(summary: Mapping[str, Any]) -> str:
             if isinstance(value, bool):
                 progress_parts.append(f"{key}:{str(value).lower()}")
     information_set_progress = ",".join(progress_parts) or "UNAVAILABLE"
+    maker_opportunity = upstream.get("maker_execution_opportunity_experiment", {})
+    maker_opportunity_decision = (
+        maker_opportunity.get("research_decision", "UNAVAILABLE") or "UNAVAILABLE"
+    )
+    maker_progress_parts: list[str] = []
+    maker_metrics = maker_opportunity.get("metrics")
+    if isinstance(maker_metrics, Mapping):
+        for key in (
+            "common_row_count",
+            "filled_decision_count",
+            "filled_action_count",
+            "oracle_trade_count",
+            "oracle_positive_split_ratio",
+            "oracle_base_lcb_bps",
+            "oracle_stress_lcb_bps",
+        ):
+            value = _safe_number(maker_metrics.get(key))
+            if value is not None:
+                maker_progress_parts.append(f"{key}:{value}")
+    maker_opportunity_progress = ",".join(maker_progress_parts) or "UNAVAILABLE"
     return (
         f"failed_steps={failed_steps}; upstream={upstream_statuses}; "
         f"information_set_decision={information_set_decision}; "
         f"information_set_progress={information_set_progress}; "
+        f"maker_opportunity_decision={maker_opportunity_decision}; "
+        f"maker_opportunity_progress={maker_opportunity_progress}; "
         f"upstream_reasons={upstream_reasons}; decisive={statuses}; reasons={reasons}"
     )
 

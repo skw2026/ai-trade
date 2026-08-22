@@ -1561,6 +1561,89 @@ def assess_liquidation_information_set_experiment(path: Path) -> Dict[str, Any]:
     )
 
 
+def assess_maker_execution_opportunity_experiment(path: Path) -> Dict[str, Any]:
+    """Expose the fill-aware maker oracle without granting activation authority."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
+        "STOP_MAKER_EXECUTION_FAMILY",
+    }
+    if payload.get("schema_version") != "maker_execution_opportunity_experiment_v1":
+        fail_reasons.append("maker opportunity report schema mismatch")
+    if payload.get("status") != "COMPLETE" or payload.get("fully_verifiable") is not True:
+        fail_reasons.append("maker opportunity evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "forward_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+    ):
+        fail_reasons.append("maker opportunity isolation contract failed")
+    decision = payload.get("research_decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("maker opportunity research decision is invalid")
+        decision = None
+    reasons = payload.get("reason_codes")
+    if not (
+        isinstance(reasons, list)
+        and all(isinstance(item, str) and item.strip() for item in reasons)
+    ):
+        fail_reasons.append("maker opportunity reason codes are invalid")
+        reasons = []
+
+    def metric(mapping: Any, field: str) -> int | float | None:
+        if not isinstance(mapping, dict):
+            return None
+        value = mapping.get(field)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+        ):
+            return value
+        return None
+
+    common = payload.get("common_domain", {})
+    fill = payload.get("fill_audit", {})
+    oracle = payload.get("hindsight_oracle", {})
+    base = oracle.get("base_cost_by_split", {}) if isinstance(oracle, dict) else {}
+    stress = (
+        oracle.get("stress_cost_by_split", {}) if isinstance(oracle, dict) else {}
+    )
+    metrics = {
+        "common_row_count": metric(common, "row_count"),
+        "filled_decision_count": metric(fill, "filled_decision_count"),
+        "filled_action_count": metric(fill, "filled_action_count"),
+        "oracle_trade_count": metric(oracle, "trade_count"),
+        "oracle_positive_split_ratio": metric(
+            oracle, "positive_stress_split_ratio"
+        ),
+        "oracle_base_lcb_bps": metric(base, "lcb_bps"),
+        "oracle_stress_lcb_bps": metric(stress, "lcb_bps"),
+    }
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": (
+            [] if fail_reasons else [f"maker opportunity decision: {decision}"]
+        ),
+        "research_decision": decision,
+        "reason_codes": list(reasons),
+        "metrics": {key: value for key, value in metrics.items() if value is not None},
+        "research_observation_only": True,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "execution_opportunity_stage_review",
+    }
+
+
 def assess_closed_loop_mechanism(path: Path) -> Dict[str, Any]:
     payload = read_json(path)
     status_raw = str(payload.get("status", "")).strip().lower()
@@ -3945,6 +4028,11 @@ def parse_args() -> argparse.Namespace:
         help="冻结的 Bybit SOL 全量强平信息集 A/B 实验报告路径",
     )
     parser.add_argument(
+        "--maker_execution_opportunity_experiment_report",
+        default="",
+        help="保守队列成交 maker-entry oracle 实验报告路径",
+    )
+    parser.add_argument(
         "--closed_loop_mechanism_report",
         default="",
         help="closed_loop_mechanism_report.json 路径",
@@ -4374,6 +4462,20 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {experiment_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "information_set_stage_review",
+            }
+    if args.maker_execution_opportunity_experiment_report:
+        experiment_path = Path(args.maker_execution_opportunity_experiment_report)
+        if experiment_path.is_file():
+            sections["maker_execution_opportunity_experiment"] = (
+                assess_maker_execution_opportunity_experiment(experiment_path)
+            )
+        else:
+            sections["maker_execution_opportunity_experiment"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {experiment_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "execution_opportunity_stage_review",
             }
     if args.closed_loop_mechanism_report:
         mechanism_path = Path(args.closed_loop_mechanism_report)
