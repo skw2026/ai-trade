@@ -1503,7 +1503,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn("ensure_deploy_disk_capacity()", script)
         self.assertIn("cleanup_deploy_host_storage()", script)
-        self.assertIn('DEPLOY_RELEASE_KEEP_COUNT="${DEPLOY_RELEASE_KEEP_COUNT:-3}"', script)
+        self.assertIn('DEPLOY_RELEASE_KEEP_COUNT="${DEPLOY_RELEASE_KEEP_COUNT:-2}"', script)
         self.assertIn('DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"', script)
         self.assertIn('CLOSED_LOOP_GC_PROTECTED_RUN_IDS="${CLOSED_LOOP_RUN_ID}"', script)
         self.assertIn('python3 "${DEPLOY_STORAGE_PRUNER}"', script)
@@ -1596,11 +1596,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
-            'DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-72}"',
+            'DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-69}"',
             script,
         )
         self.assertIn(
-            "DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS || '72' }}",
+            "DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS || '69' }}",
             workflow,
         )
         self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
