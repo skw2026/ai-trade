@@ -415,14 +415,18 @@ def validate_upstream_report(
 ) -> Tuple[Dict[str, Any], List[development.TimeSplit]]:
     report = common.read_json(path)
     failures: List[str] = []
+    terminal_decisions = {
+        learnability.DECISION_CONTINUE,
+        learnability.DECISION_STOP,
+        learnability.DECISION_UPSTREAM_STOP,
+    }
     if not (
         report.get("schema_version") == learnability.SCHEMA_VERSION
         and report.get("status") == "COMPLETE"
         and report.get("fully_verifiable") is True
         and report.get("promotion_evidence") is False
         and report.get("promotion_eligible") is False
-        and report.get("research_decision")
-        == policy["upstream"]["required_learnability_decision"]
+        and report.get("research_decision") in terminal_decisions
     ):
         failures.append("status")
     if any(report.get(key) is not False for key in _false_authorities()):
@@ -441,39 +445,42 @@ def validate_upstream_report(
         == common.sha256_file(assessment_path)
     ):
         failures.append("assessment_identity")
-    raw_splits = report.get("split_reports")
     splits: List[development.TimeSplit] = []
-    if not isinstance(raw_splits, list) or len(raw_splits) != int(
-        policy["splits"]["count"]
-    ):
-        failures.append("splits")
-    else:
-        try:
-            for expected_id, item in enumerate(raw_splits):
-                partition = item["shared_partition_identity"]
-                contract = partition["time_contract"]
-                split = development.TimeSplit(**contract)
-                if split.split_id != expected_id:
-                    raise ValueError("split id")
-                splits.append(split)
-            split_policy = policy["splits"]
-            for split in splits:
-                if not (
-                    split.fit_end_ms - split.fit_start_ms
-                    == int(split_policy["train_window_seconds"]) * 1000
-                    and split.validation_end_ms - split.validation_start_ms
-                    == int(split_policy["validation_window_seconds"]) * 1000
-                    and split.test_end_ms - split.test_start_ms
-                    == int(split_policy["test_window_seconds"]) * 1000
-                ):
-                    raise ValueError("split duration")
-            for previous, current in zip(splits, splits[1:]):
-                if current.test_start_ms - previous.test_start_ms != int(
-                    split_policy["rolling_step_seconds"]
-                ) * 1000:
-                    raise ValueError("rolling step")
-        except (KeyError, TypeError, ValueError):
-            failures.append("split_contract")
+    if report.get("research_decision") == policy["upstream"][
+        "required_learnability_decision"
+    ]:
+        raw_splits = report.get("split_reports")
+        if not isinstance(raw_splits, list) or len(raw_splits) != int(
+            policy["splits"]["count"]
+        ):
+            failures.append("splits")
+        else:
+            try:
+                for expected_id, item in enumerate(raw_splits):
+                    partition = item["shared_partition_identity"]
+                    contract = partition["time_contract"]
+                    split = development.TimeSplit(**contract)
+                    if split.split_id != expected_id:
+                        raise ValueError("split id")
+                    splits.append(split)
+                split_policy = policy["splits"]
+                for split in splits:
+                    if not (
+                        split.fit_end_ms - split.fit_start_ms
+                        == int(split_policy["train_window_seconds"]) * 1000
+                        and split.validation_end_ms - split.validation_start_ms
+                        == int(split_policy["validation_window_seconds"]) * 1000
+                        and split.test_end_ms - split.test_start_ms
+                        == int(split_policy["test_window_seconds"]) * 1000
+                    ):
+                        raise ValueError("split duration")
+                for previous, current in zip(splits, splits[1:]):
+                    if current.test_start_ms - previous.test_start_ms != int(
+                        split_policy["rolling_step_seconds"]
+                    ) * 1000:
+                        raise ValueError("rolling step")
+            except (KeyError, TypeError, ValueError):
+                failures.append("split_contract")
     if failures:
         raise ValueError(
             "maker learnability upstream contract mismatch: " + ",".join(failures)

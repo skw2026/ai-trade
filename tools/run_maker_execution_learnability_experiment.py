@@ -776,6 +776,23 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             "promotion_evidence": False,
             "promotion_eligible": False,
             **_false_authorities(),
+            "experiment_id": policy["experiment_id"],
+            "experiment_policy": {
+                "path": str(config_path),
+                "sha256": common.sha256_file(config_path),
+                "identity_sha256": common.canonical_sha256(policy),
+            },
+            "input": {
+                "control_assessment_path": str(assessment_path),
+                "control_assessment_sha256": common.sha256_file(
+                    assessment_path
+                ),
+                "opportunity_report_path": str(opportunity_path),
+                "opportunity_report_sha256": common.sha256_file(
+                    opportunity_path
+                ),
+                "opportunity_decision": upstream["research_decision"],
+            },
             "research_decision": DECISION_UPSTREAM_STOP,
             "diagnostic_leader_id": None,
             "diagnostic_leader_is_preregistered": False,

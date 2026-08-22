@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 import tempfile
@@ -119,6 +120,92 @@ class MakerSubsecondInformationExperimentTest(unittest.TestCase):
             assessment["segments"][0]["raw_sha256"] = "0" * 64
             with self.assertRaisesRegex(ValueError, "checksum mismatch"):
                 experiment.load_subsecond_features(assessment, bucket_ms=250)
+
+    def test_verified_upstream_stop_does_not_require_model_splits(self) -> None:
+        policy = experiment.validate_policy(
+            ROOT / "config" / "maker_subsecond_information_experiment.json"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            assessment_path = root / "assessment.json"
+            assessment_path.write_text("{}\n", encoding="utf-8")
+            report_path = root / "learnability.json"
+            report = {
+                "schema_version": experiment.learnability.SCHEMA_VERSION,
+                "status": "COMPLETE",
+                "fully_verifiable": True,
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "research_decision": (
+                    experiment.learnability.DECISION_UPSTREAM_STOP
+                ),
+                "experiment_policy": {
+                    "identity_sha256": policy["upstream"][
+                        "required_learnability_policy_identity_sha256"
+                    ]
+                },
+                "input": {
+                    "control_assessment_sha256": (
+                        experiment.common.sha256_file(assessment_path)
+                    )
+                },
+            }
+            report_path.write_text(
+                json.dumps(report) + "\n", encoding="utf-8"
+            )
+            validated, splits = experiment.validate_upstream_report(
+                report_path,
+                assessment_path=assessment_path,
+                policy=policy,
+            )
+            self.assertEqual(
+                validated["research_decision"],
+                experiment.learnability.DECISION_UPSTREAM_STOP,
+            )
+            self.assertEqual(splits, [])
+
+    def test_required_learnability_decision_still_requires_splits(self) -> None:
+        policy = experiment.validate_policy(
+            ROOT / "config" / "maker_subsecond_information_experiment.json"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            assessment_path = root / "assessment.json"
+            assessment_path.write_text("{}\n", encoding="utf-8")
+            report_path = root / "learnability.json"
+            report = {
+                "schema_version": experiment.learnability.SCHEMA_VERSION,
+                "status": "COMPLETE",
+                "fully_verifiable": True,
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "research_decision": experiment.learnability.DECISION_STOP,
+                "experiment_policy": {
+                    "identity_sha256": policy["upstream"][
+                        "required_learnability_policy_identity_sha256"
+                    ]
+                },
+                "input": {
+                    "control_assessment_sha256": (
+                        experiment.common.sha256_file(assessment_path)
+                    )
+                },
+            }
+            report_path.write_text(
+                json.dumps(report) + "\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "splits"):
+                experiment.validate_upstream_report(
+                    report_path,
+                    assessment_path=assessment_path,
+                    policy=policy,
+                )
 
     def test_decomposed_training_rows_keep_fill_outcomes_out_of_features(self) -> None:
         actions = [
