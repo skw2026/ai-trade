@@ -202,7 +202,7 @@ jobs:
   deploy-ecs:
     needs: build-test-push
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     if: ${{ needs.build-test-push.outputs.deploy_enabled == 'true' }}
     env:
       DEPLOY_RELEASE_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
@@ -386,14 +386,18 @@ jobs:
           DEPLOY_REPORT_MAX_AGE_HOURS: ${{ vars.DEPLOY_REPORT_MAX_AGE_HOURS || '72' }}
           DEPLOY_REPORT_MAX_BYTES: ${{ vars.DEPLOY_REPORT_MAX_BYTES || '4294967296' }}
           DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS || '69' }}
-          DEPLOY_LOCK_WAIT_SECONDS: ${{ vars.DEPLOY_LOCK_WAIT_SECONDS || '1800' }}
+          # The resident scheduler may legally hold the transaction lock for
+          # CLOSED_LOOP_RUNNER_MAX_SECONDS=4800.  Keep the deploy wait above
+          # that bound so a healthy self-learning cycle cannot manufacture a
+          # deterministic CD failure.
+          DEPLOY_LOCK_WAIT_SECONDS: ${{ vars.DEPLOY_LOCK_WAIT_SECONDS || '5400' }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          command_timeout: 45m
+          command_timeout: 150m
           envs: AI_TRADE_IMAGE,AI_TRADE_RESEARCH_IMAGE,AI_TRADE_WEB_IMAGE,DEPLOY_RELEASE_ID,DEPLOY_GIT_SHA,DEPLOY_WORKFLOW_RUN_ID,DEPLOY_WORKFLOW_RUN_ATTEMPT,DEPLOY_BUNDLE_SHA256,DEPLOY_RELEASE_ROOT,DEPLOY_TARGET_RELEASE,DEPLOY_CURRENT_LINK,GHCR_USER,GHCR_TOKEN,DEPLOY_ENV_FILE,CLOSED_LOOP_ENFORCE,CLOSED_LOOP_ACTION,CLOSED_LOOP_STAGE,CLOSED_LOOP_SINCE,CLOSED_LOOP_MIN_RUNTIME_STATUS,CLOSED_LOOP_OUTPUT_ROOT,CLOSED_LOOP_STRICT_PASS,CLOSED_LOOP_RUN_ID,DEPLOY_SERVICES,GATE_DEFER_SERVICES,DEPLOY_DISK_PREFLIGHT_ENABLED,DEPLOY_GC_TRIGGER_FREE_BYTES,DEPLOY_MIN_FREE_BYTES,DEPLOY_POST_PULL_MIN_FREE_BYTES,DEPLOY_TRANSACTION_MIN_FREE_BYTES,DEPLOY_DOCKER_GC_UNTIL,DEPLOY_HOST_GC_ENABLED,DEPLOY_RELEASE_KEEP_COUNT,DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT,DEPLOY_REPORT_KEEP_RUN_DIRS,DEPLOY_REPORT_MAX_AGE_HOURS,DEPLOY_REPORT_MAX_BYTES,DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS,DEPLOY_LOCK_WAIT_SECONDS
           script: |
             set -euo pipefail

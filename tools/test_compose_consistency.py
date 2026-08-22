@@ -1185,8 +1185,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             'find "${DEPLOY_ROOT}" -maxdepth 5 -type f -name deploy_bundle.tgz',
             workflow,
         )
-        self.assertIn("command_timeout: 45m", workflow)
-        self.assertIn("timeout-minutes: 60", workflow)
+        self.assertIn("command_timeout: 150m", workflow)
+        self.assertIn("timeout-minutes: 180", workflow)
 
     def test_deploy_rollback_restores_complete_release_or_stops_services(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
@@ -1633,8 +1633,12 @@ class ComposeConsistencyTest(unittest.TestCase):
                 self.assertIn(variable, workflow.split("envs:", 1)[1].splitlines()[0])
 
         self.assertIn(
-            'DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-1800}"',
+            'DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-5400}"',
             script,
+        )
+        self.assertIn(
+            "DEPLOY_LOCK_WAIT_SECONDS: ${{ vars.DEPLOY_LOCK_WAIT_SECONDS || '5400' }}",
+            workflow,
         )
         self.assertIn(
             'DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"',
