@@ -1,11 +1,11 @@
 {
-  "schema_version": "maker_execution_learnability_policy_v3",
+  "schema_version": "maker_execution_learnability_policy_v4",
   "research_domain": "development_only",
   "promotion_evidence": false,
-  "experiment_id": "bybit_sol_maker_exit_sequential_hurdle_tail_action_value_v3",
+  "experiment_id": "bybit_sol_first_passage_sequential_hurdle_tail_action_value_v4",
   "upstream": {
     "required_opportunity_decision": "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
-    "required_opportunity_policy_identity_sha256": "33dc188b1dcc7dbd692b32a4f7dbb721fa9d65fbff9011cf425af9d5dfaaad2c"
+    "required_opportunity_policy_identity_sha256": "caa33add359cc79f725cfeb3c25016c41b5c2070fdce4098575834c52409039f"
   },
   "features": {
     "causal_contract_revision": "order_flow_cross_asset_regime_v1",
@@ -20,7 +20,7 @@
     "conditional_utility_quantile": 0.25,
     "opportunity_cost_source": "fit_only_sequential_oracle_stress_bps_per_second",
     "unfilled_occupancy": "placement_latency_plus_fill_timeout",
-    "filled_occupancy": "placement_latency_plus_mean_fill_latency_plus_horizon",
+    "filled_occupancy": "placement_latency_plus_mean_fill_latency_plus_first_passage_horizon",
     "explicit_no_order_action": true,
     "minimum_action_value_bps": 0.0,
     "architecture_selection_scope": "single_preregistered_development_family"
@@ -41,12 +41,12 @@
     "exit_slippage_bps": 1.0,
     "stress_cost_multiplier": 1.25,
     "horizons_seconds": [15, 30, 60, 120, 300],
-    "exit_execution": "maker_timeout_taker_fallback",
+    "exit_execution": "passive_take_profit_horizon_taker_fallback",
     "exit_placement_latency_seconds": 1,
-    "exit_timeout_seconds": 12,
-    "exit_post_only_timeout_seconds": 6,
-    "exit_reprice_max_attempts": 1,
-    "exit_reprice_bps": 0.15,
+    "take_profit_bps": 10.0,
+    "take_profit_selection_basis": "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment",
+    "exit_timeout_source": "action_horizon_seconds",
+    "exit_reprice_max_attempts": 0,
     "one_outstanding_order_or_position": true
   },
   "splits": {

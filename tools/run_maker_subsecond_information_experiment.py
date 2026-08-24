@@ -28,9 +28,9 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_subsecond_information_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_subsecond_information_policy_v2"
+POLICY_SCHEMA_VERSION = "maker_subsecond_information_policy_v3"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "8f3f1a5b9758a28ba4398290710f8e5c506659b38864ba162c351226af169751"
+    "16bff7a8e5b9e01a05d1f5732b4f2a62f1a81ec3f555bd6989e2032369c5ee32"
 )
 VARIANT_IDS = (
     "one_second_decomposed_baseline",
@@ -152,12 +152,14 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and float(execution.get("exit_slippage_bps", 0.0)) == 1.0
         and float(execution.get("stress_cost_multiplier", 0.0)) == 1.25
         and execution.get("horizons_seconds") == [15, 30, 60, 120, 300]
-        and execution.get("exit_execution") == "maker_timeout_taker_fallback"
+        and execution.get("exit_execution")
+        == "passive_take_profit_horizon_taker_fallback"
         and execution.get("exit_placement_latency_seconds") == 1
-        and execution.get("exit_timeout_seconds") == 12
-        and execution.get("exit_post_only_timeout_seconds") == 6
-        and execution.get("exit_reprice_max_attempts") == 1
-        and float(execution.get("exit_reprice_bps", -1.0)) == 0.15
+        and float(execution.get("take_profit_bps", 0.0)) == 10.0
+        and execution.get("take_profit_selection_basis")
+        == "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment"
+        and execution.get("exit_timeout_source") == "action_horizon_seconds"
+        and execution.get("exit_reprice_max_attempts") == 0
         and execution.get("one_outstanding_order_or_position") is True
     ):
         failures.append("execution")
@@ -1244,24 +1246,22 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         exit_placement_latency_seconds=int(
             execution["exit_placement_latency_seconds"]
         ),
-        exit_timeout_seconds=int(execution["exit_timeout_seconds"]),
+        exit_timeout_seconds=int(execution.get("exit_timeout_seconds", 0)),
         exit_post_only_timeout_seconds=int(
-            execution["exit_post_only_timeout_seconds"]
+            execution.get("exit_post_only_timeout_seconds", 0)
         ),
         exit_reprice_max_attempts=int(
             execution["exit_reprice_max_attempts"]
         ),
-        exit_reprice_bps=float(execution["exit_reprice_bps"]),
+        exit_reprice_bps=float(execution.get("exit_reprice_bps", 0.0)),
+        take_profit_bps=float(execution["take_profit_bps"]),
     )
     observable = learnability.build_observable_decision_mask(
         raw_timestamps,
         placement_latency_seconds=int(execution["placement_latency_seconds"]),
         fill_timeout_seconds=int(execution["fill_timeout_seconds"]),
         horizons_seconds=execution["horizons_seconds"],
-        exit_settlement_tail_seconds=(
-            int(execution["exit_placement_latency_seconds"])
-            + int(execution["exit_timeout_seconds"])
-        ),
+        exit_settlement_tail_seconds=0,
     )
     baseline_eligible = observable & np.all(np.isfinite(baseline_features), axis=1)
     aligned = alignment >= 0

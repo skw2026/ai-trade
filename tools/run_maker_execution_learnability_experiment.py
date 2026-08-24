@@ -25,9 +25,9 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_execution_learnability_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_execution_learnability_policy_v3"
+POLICY_SCHEMA_VERSION = "maker_execution_learnability_policy_v4"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "2d7c87446e295381d047ea45cdbdd5ac09be90223d2a870826bf692649dd4677"
+    "211635bc7722bc059c5c3d2b1973738ff4304f5f679f0821e443e1ed41d3e483"
 )
 ARCHITECTURE_IDS = (
     "sequential_hurdle_tail_action_value",
@@ -92,7 +92,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and target.get("unfilled_occupancy")
         == "placement_latency_plus_fill_timeout"
         and target.get("filled_occupancy")
-        == "placement_latency_plus_mean_fill_latency_plus_horizon"
+        == "placement_latency_plus_mean_fill_latency_plus_first_passage_horizon"
         and target.get("explicit_no_order_action") is True
         and float(target.get("minimum_action_value_bps", -1.0)) == 0.0
         and target.get("architecture_selection_scope")
@@ -118,12 +118,14 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and float(execution.get("exit_slippage_bps", 0.0)) == 1.0
         and float(execution.get("stress_cost_multiplier", 0.0)) == 1.25
         and execution.get("horizons_seconds") == [15, 30, 60, 120, 300]
-        and execution.get("exit_execution") == "maker_timeout_taker_fallback"
+        and execution.get("exit_execution")
+        == "passive_take_profit_horizon_taker_fallback"
         and execution.get("exit_placement_latency_seconds") == 1
-        and execution.get("exit_timeout_seconds") == 12
-        and execution.get("exit_post_only_timeout_seconds") == 6
-        and execution.get("exit_reprice_max_attempts") == 1
-        and float(execution.get("exit_reprice_bps", -1.0)) == 0.15
+        and float(execution.get("take_profit_bps", 0.0)) == 10.0
+        and execution.get("take_profit_selection_basis")
+        == "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment"
+        and execution.get("exit_timeout_source") == "action_horizon_seconds"
+        and execution.get("exit_reprice_max_attempts") == 0
         and execution.get("one_outstanding_order_or_position") is True
     ):
         failures.append("execution")
@@ -1161,24 +1163,22 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         exit_placement_latency_seconds=int(
             execution["exit_placement_latency_seconds"]
         ),
-        exit_timeout_seconds=int(execution["exit_timeout_seconds"]),
+        exit_timeout_seconds=int(execution.get("exit_timeout_seconds", 0)),
         exit_post_only_timeout_seconds=int(
-            execution["exit_post_only_timeout_seconds"]
+            execution.get("exit_post_only_timeout_seconds", 0)
         ),
         exit_reprice_max_attempts=int(
             execution["exit_reprice_max_attempts"]
         ),
-        exit_reprice_bps=float(execution["exit_reprice_bps"]),
+        exit_reprice_bps=float(execution.get("exit_reprice_bps", 0.0)),
+        take_profit_bps=float(execution["take_profit_bps"]),
     )
     observable = build_observable_decision_mask(
         raw_timestamps,
         placement_latency_seconds=int(execution["placement_latency_seconds"]),
         fill_timeout_seconds=int(execution["fill_timeout_seconds"]),
         horizons_seconds=execution["horizons_seconds"],
-        exit_settlement_tail_seconds=(
-            int(execution["exit_placement_latency_seconds"])
-            + int(execution["exit_timeout_seconds"])
-        ),
+        exit_settlement_tail_seconds=0,
     )
     eligible = observable & np.all(np.isfinite(features), axis=1)
     timestamps = raw_timestamps[eligible]

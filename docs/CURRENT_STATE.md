@@ -9,7 +9,8 @@
 - 发布验证已经收敛为 `CI -> CD -> Smoke`；发布成功后不自动运行 Full。
 - 当前没有通过独立 forward 验证的 Alpha 候选，不具备 Demo 激活或 live 权限。
 - 旧 maker 三架构与 250ms 增量实验已经完成否定性诊断，不再进入默认研究链。
-- 新 maker 研究只允许一个预注册算法族：`sequential_hurdle_tail_action_value`。
+- 固定持有期方向性 maker payoff 已由 v2/v3 连续否定并关闭；禁止继续调该研究族的模型、阈值、特征或成本。
+- 下一项只允许先验证 v4 first-passage 被动止盈 payoff；其无模型机会门通过前，不得进入 `sequential_hurdle_tail_action_value`。
 - 自进化保持 shadow/evidence-only；没有正收益 frozen candidate 前不得影响 Demo 动作。
 
 ## 工作流边界
@@ -21,7 +22,7 @@
 
 ## Maker 冻结机会审计
 
-首次 `research` 会创建持久化 `maker_opportunity_frozen_audit.json`：
+v2 基线使用持久化 `maker_opportunity_frozen_audit.json`；后续 payoff 实验必须精确继承其中的 absolute primary/boundary split，并创建各自独立的 audit manifest：
 
 - 固定捕获数据字段哈希和绝对 UTC split；后续数据增长不能移动历史 split。
 - 检查 0/-1h/-2h/-3h 边界敏感性，边界结果只作稳定性诊断。
@@ -29,7 +30,9 @@
 - forward 未完整前结论只能是 `WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW`。
 - 历史价格、订单簿、逐笔聚合或 split 身份发生漂移时 fail-closed。
 
-只有 frozen primary、边界稳定性和独立 forward 同时过门，才允许训练新算法。
+v3 在相同 split 上仅产生 54 笔合格 hindsight 交易，边界通过率为 0，已明确 STOP。它没有 forward 等待资格，也没有 Demo/live 权限。
+
+只有新 payoff 的 frozen primary、边界稳定性和独立 forward 同时过门，才允许训练新算法。
 
 ## 唯一新算法族
 
@@ -41,7 +44,7 @@
 - 未成交 timeout、成交等待和持仓期限的显式占用成本；
 - `0 bps` 的显式 `NO_ORDER` 动作。
 
-研究执行价格与 S5 运行时 maker 合同对齐为 `0.3 bps` 被动偏移、`0.01` 价格 tick 的买单向下/卖单向上量化、6 秒 post-only timeout、最多一次 `0.15 bps` 重挂；排队量使用同侧 L5 累计深度而不是仅用最优档，禁止 taker fallback。
+maker 入场合同固定为 `0.3 bps` 被动偏移、`0.01` 价格 tick 的买单向下/卖单向上量化、6 秒 post-only timeout、最多一次 `0.15 bps` 重挂；排队量使用同侧 L5 累计深度而不是仅用最优档。v4 只改变退出 payoff：成交后挂 10 bps 被动止盈，期限内未成交时按 taker 成本退出。
 
 ## 晋级权限
 

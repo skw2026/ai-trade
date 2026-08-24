@@ -25,14 +25,14 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_execution_opportunity_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_execution_opportunity_policy_v2"
+POLICY_SCHEMA_VERSION = "maker_execution_opportunity_policy_v3"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "33dc188b1dcc7dbd692b32a4f7dbb721fa9d65fbff9011cf425af9d5dfaaad2c"
+    "caa33add359cc79f725cfeb3c25016c41b5c2070fdce4098575834c52409039f"
 )
 DECISION_CONTINUE = "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT"
 DECISION_STOP = "STOP_MAKER_EXECUTION_FAMILY"
 DECISION_WAIT = "WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW"
-AUDIT_MANIFEST_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v2"
+AUDIT_MANIFEST_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v3"
 BASELINE_AUDIT_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v1"
 BASELINE_POLICY_IDENTITY_SHA256 = (
     "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
@@ -51,7 +51,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         policy.get("research_domain") == "development_only"
         and policy.get("promotion_evidence") is False
         and policy.get("single_variable_change")
-        == "replace_immediate_taker_exit_with_maker_timeout_taker_fallback"
+        == "replace_clock_time_exit_with_immediate_passive_take_profit_horizon_taker_fallback"
     ):
         failures.append("research_domain")
     if policy.get("split_calendar") != {
@@ -59,7 +59,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         "baseline_manifest_schema_version": BASELINE_AUDIT_SCHEMA_VERSION,
         "baseline_experiment_id": BASELINE_EXPERIMENT_ID,
         "baseline_policy_identity_sha256": BASELINE_POLICY_IDENTITY_SHA256,
-        "new_forward_window_starts_after_v3_manifest_freeze": True,
+        "new_forward_window_starts_after_v4_manifest_freeze": True,
     }:
         failures.append("split_calendar")
     actions = policy.get("actions")
@@ -74,12 +74,14 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and actions.get("post_only_timeout_seconds") == 6
         and actions.get("reprice_max_attempts") == 1
         and float(actions.get("reprice_bps", -1.0)) == 0.15
-        and actions.get("exit_execution") == "maker_timeout_taker_fallback"
+        and actions.get("exit_execution")
+        == "passive_take_profit_horizon_taker_fallback"
         and actions.get("exit_placement_latency_seconds") == 1
-        and actions.get("exit_timeout_seconds") == 12
-        and actions.get("exit_post_only_timeout_seconds") == 6
-        and actions.get("exit_reprice_max_attempts") == 1
-        and float(actions.get("exit_reprice_bps", -1.0)) == 0.15
+        and float(actions.get("take_profit_bps", 0.0)) == 10.0
+        and actions.get("take_profit_selection_basis")
+        == "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment"
+        and actions.get("exit_timeout_source") == "action_horizon_seconds"
+        and actions.get("exit_reprice_max_attempts") == 0
     ):
         failures.append("actions")
     fill_proxy = policy.get("fill_proxy")
@@ -216,6 +218,20 @@ def _series_domain_identity(
     return payload
 
 
+def _maximum_outcome_tail_seconds(policy: Mapping[str, Any]) -> int:
+    """Return the maximum causal observation tail after a decision row."""
+
+    actions = policy["actions"]
+    entry_tail = int(actions["placement_latency_seconds"]) + int(
+        actions["fill_timeout_seconds"]
+    )
+    holding_tail = max(int(value) for value in actions["horizons_seconds"])
+    if actions.get("exit_execution") == "maker_timeout_taker_fallback":
+        holding_tail += int(actions.get("exit_placement_latency_seconds", 0))
+        holding_tail += int(actions.get("exit_timeout_seconds", 0))
+    return entry_tail + holding_tail
+
+
 def create_frozen_audit_manifest(
     *,
     series: Mapping[str, np.ndarray],
@@ -226,13 +242,7 @@ def create_frozen_audit_manifest(
     actions = policy["actions"]
     split_policy = policy["splits"]
     stability = policy["stability_audit"]
-    embargo = (
-        int(actions["placement_latency_seconds"])
-        + int(actions["fill_timeout_seconds"])
-        + max(int(value) for value in actions["horizons_seconds"])
-        + int(actions.get("exit_placement_latency_seconds", 0))
-        + int(actions.get("exit_timeout_seconds", 0))
-    )
+    embargo = _maximum_outcome_tail_seconds(policy)
     offsets = [int(value) for value in stability["boundary_offsets_seconds"]]
     if baseline_manifest is None:
         primary = development.build_time_splits(
@@ -268,7 +278,7 @@ def create_frozen_audit_manifest(
         else primary_end_ms
     )
     if baseline_manifest is not None and int(timestamps[-1]) < frozen_end_ms - 1000:
-        raise ValueError("maker v3 inherited split outcome tail is not fully observed")
+        raise ValueError("maker v4 inherited split outcome tail is not fully observed")
     forward_start_ms = (
         int(timestamps[-1]) + 1000
         if baseline_manifest is not None
@@ -473,6 +483,7 @@ def build_maker_action_returns(
     exit_post_only_timeout_seconds: int = 0,
     exit_reprice_max_attempts: int = 0,
     exit_reprice_bps: float = 0.0,
+    take_profit_bps: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, Any]], Dict[str, Any]]:
     """Build base-net outcomes only for conservatively inferred full fills."""
 
@@ -553,6 +564,10 @@ def build_maker_action_returns(
     exit_attempts = int(exit_reprice_max_attempts)
     exit_reprice_ratio = float(exit_reprice_bps) / 10000.0
     maker_exit_mode = exit_execution == "maker_timeout_taker_fallback"
+    take_profit_mode = (
+        exit_execution == "passive_take_profit_horizon_taker_fallback"
+    )
+    take_profit_ratio = float(take_profit_bps) / 10000.0
     if (
         latency <= 0
         or timeout <= 0
@@ -564,7 +579,12 @@ def build_maker_action_returns(
         or reprice_ratio < 0.0
         or attempt_timeout <= 0
         or attempt_timeout * (attempts + 1) != timeout
-        or exit_execution not in {"immediate_taker", "maker_timeout_taker_fallback"}
+        or exit_execution
+        not in {
+            "immediate_taker",
+            "maker_timeout_taker_fallback",
+            "passive_take_profit_horizon_taker_fallback",
+        }
         or maker_entry_fee < 0.0
         or maker_exit_fee < 0.0
         or taker_exit_fee < 0.0
@@ -574,6 +594,7 @@ def build_maker_action_returns(
         or exit_attempt_timeout < 0
         or exit_attempts < 0
         or exit_reprice_ratio < 0.0
+        or take_profit_ratio < 0.0
     ):
         raise ValueError("maker opportunity execution contract is invalid")
     if maker_exit_mode and not (
@@ -588,8 +609,26 @@ def build_maker_action_returns(
         <= 1.0e-9
     ):
         raise ValueError("maker exit fallback contract is invalid")
+    if take_profit_mode and not (
+        exit_latency > 0
+        and take_profit_ratio > 0.0
+        and exit_timeout == 0
+        and exit_attempt_timeout == 0
+        and exit_attempts == 0
+        and exit_reprice_ratio == 0.0
+        and abs(
+            base_cost_bps
+            - (maker_entry_fee + taker_exit_fee + exit_slippage)
+        )
+        <= 1.0e-9
+    ):
+        raise ValueError("passive take-profit exit contract is invalid")
     horizons = [int(value) for value in horizons_seconds]
-    if not horizons or any(value <= 0 for value in horizons):
+    if (
+        not horizons
+        or any(value <= 0 for value in horizons)
+        or (take_profit_mode and any(value <= exit_latency for value in horizons))
+    ):
         raise ValueError("maker opportunity horizons are invalid")
 
     actions = [
@@ -597,13 +636,9 @@ def build_maker_action_returns(
             "direction": direction,
             "horizon_seconds": horizon,
             **(
-                {
-                    "settlement_seconds": (
-                        horizon + exit_latency + exit_timeout
-                    )
-                }
+                {"settlement_seconds": horizon + exit_latency + exit_timeout}
                 if maker_exit_mode
-                else {}
+                else ({"settlement_seconds": horizon} if take_profit_mode else {})
             ),
         }
         for direction in ("long", "short")
@@ -615,6 +650,7 @@ def build_maker_action_returns(
     decision_fill_directions = 0
     maker_exit_action_count = 0
     taker_fallback_action_count = 0
+    post_only_marketable_fallback_count = 0
 
     for row_index, decision_timestamp in enumerate(timestamps):
         direction_fills: Dict[str, Tuple[int, float]] = {}
@@ -683,7 +719,7 @@ def build_maker_action_returns(
             exit_decision_timestamp = (
                 fill_timestamp + int(action["horizon_seconds"]) * 1000
             )
-            if not maker_exit_mode:
+            if not maker_exit_mode and not take_profit_mode:
                 exit_index = positions.get(exit_decision_timestamp)
                 if exit_index is None:
                     continue
@@ -696,6 +732,91 @@ def build_maker_action_returns(
                         fill_price / float(best_ask[exit_index]) - 1.0
                     ) * 10000.0
                 outcomes[row_index, action_index] = gross_bps - cost
+                fill_timestamps[row_index, action_index] = fill_timestamp
+                continue
+
+            if take_profit_mode:
+                horizon = int(action["horizon_seconds"])
+                placement_timestamp = fill_timestamp + exit_latency * 1000
+                fallback_timestamp = fill_timestamp + horizon * 1000
+                placement_index = positions.get(placement_timestamp)
+                fallback_index = positions.get(fallback_timestamp)
+                if placement_index is None or fallback_index is None:
+                    continue
+                if action["direction"] == "long":
+                    raw_target = fill_price * (1.0 + take_profit_ratio)
+                    posted_price = (
+                        math.ceil((raw_target - 1.0e-12) / tick_size) * tick_size
+                        if tick_size > 0.0
+                        else raw_target
+                    )
+                    marketable = float(best_bid[placement_index]) >= posted_price
+                    queue_size = float(ask_depth_l5[placement_index])
+                else:
+                    raw_target = fill_price * (1.0 - take_profit_ratio)
+                    posted_price = (
+                        math.floor((raw_target + 1.0e-12) / tick_size) * tick_size
+                        if tick_size > 0.0
+                        else raw_target
+                    )
+                    marketable = float(best_ask[placement_index]) <= posted_price
+                    queue_size = float(bid_depth_l5[placement_index])
+
+                exit_fill: Tuple[int, float] | None = None
+                if not marketable:
+                    queue_quote = posted_price * queue_size * queue_multiplier
+                    cumulative_opposite_quote = 0.0
+                    resting_seconds = horizon - exit_latency
+                    # The horizon timestamp belongs to the deterministic taker
+                    # fallback.  Passive credit is therefore limited to rows
+                    # strictly before that timestamp.
+                    for exit_offset in range(1, resting_seconds):
+                        probe_timestamp = placement_timestamp + exit_offset * 1000
+                        probe_index = positions.get(probe_timestamp)
+                        if probe_index is None:
+                            break
+                        if action["direction"] == "long":
+                            cumulative_opposite_quote += float(
+                                buy_quote_volume[probe_index]
+                            )
+                            traded_through = (
+                                float(best_ask[probe_index]) > posted_price
+                            )
+                        else:
+                            cumulative_opposite_quote += float(
+                                sell_quote_volume[probe_index]
+                            )
+                            traded_through = (
+                                float(best_bid[probe_index]) < posted_price
+                            )
+                        if (
+                            traded_through
+                            and cumulative_opposite_quote >= queue_quote
+                        ):
+                            exit_fill = (probe_index, posted_price)
+                            break
+
+                if exit_fill is not None:
+                    exit_index, exit_price = exit_fill
+                    action_cost = maker_entry_fee + maker_exit_fee
+                    maker_exit_action_count += 1
+                else:
+                    exit_index = (
+                        placement_index if marketable else fallback_index
+                    )
+                    exit_price = (
+                        float(best_bid[exit_index])
+                        if action["direction"] == "long"
+                        else float(best_ask[exit_index])
+                    )
+                    action_cost = maker_entry_fee + taker_exit_fee + exit_slippage
+                    taker_fallback_action_count += 1
+                    post_only_marketable_fallback_count += int(marketable)
+                if action["direction"] == "long":
+                    gross_bps = (exit_price / fill_price - 1.0) * 10000.0
+                else:
+                    gross_bps = (fill_price / exit_price - 1.0) * 10000.0
+                outcomes[row_index, action_index] = gross_bps - action_cost
                 fill_timestamps[row_index, action_index] = fill_timestamp
                 continue
 
@@ -812,9 +933,15 @@ def build_maker_action_returns(
         "exit_post_only_timeout_seconds": exit_attempt_timeout,
         "exit_reprice_max_attempts": exit_attempts,
         "exit_reprice_bps": float(exit_reprice_bps),
+        "take_profit_bps": float(take_profit_bps),
         "maker_exit_action_count": int(maker_exit_action_count),
         "taker_fallback_action_count": int(taker_fallback_action_count),
-        "stress_increment_uses_maximum_fallback_cost": bool(maker_exit_mode),
+        "post_only_marketable_fallback_count": int(
+            post_only_marketable_fallback_count
+        ),
+        "stress_increment_uses_maximum_fallback_cost": bool(
+            maker_exit_mode or take_profit_mode
+        ),
     }
 
 
@@ -1119,14 +1246,15 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         exit_placement_latency_seconds=int(
             actions_policy["exit_placement_latency_seconds"]
         ),
-        exit_timeout_seconds=int(actions_policy["exit_timeout_seconds"]),
+        exit_timeout_seconds=int(actions_policy.get("exit_timeout_seconds", 0)),
         exit_post_only_timeout_seconds=int(
-            actions_policy["exit_post_only_timeout_seconds"]
+            actions_policy.get("exit_post_only_timeout_seconds", 0)
         ),
         exit_reprice_max_attempts=int(
             actions_policy["exit_reprice_max_attempts"]
         ),
-        exit_reprice_bps=float(actions_policy["exit_reprice_bps"]),
+        exit_reprice_bps=float(actions_policy.get("exit_reprice_bps", 0.0)),
+        take_profit_bps=float(actions_policy["take_profit_bps"]),
     )
     audit_manifest_path = pathlib.Path(args.audit_manifest).resolve()
     baseline_audit_manifest_path = pathlib.Path(
@@ -1198,7 +1326,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         "reason_codes": reasons,
         "next_action": {
             DECISION_CONTINUE: "preregister_fill_aware_maker_learnability_experiment",
-            DECISION_STOP: "close_maker_execution_family_and_change_horizon_or_payoff",
+            DECISION_STOP: "close_single_sided_passive_take_profit_family_and_change_economic_mechanism",
             DECISION_WAIT: "collect_unseen_24h_forward_window_without_changing_contract",
         }[decision],
     }
