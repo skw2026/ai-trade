@@ -308,6 +308,7 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                     "result": "fail",
                     "exit_code": 2,
                     "blocked_by_prior_failure": False,
+                    "research_decision_only": False,
                 }
             ],
         )
@@ -323,6 +324,55 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         self.assertNotIn("/opt/ai-trade", encoded)
         self.assertNotIn("api_secret", encoded)
         self.assertNotIn("must-not-leak", encoded)
+
+    def test_public_annotation_distinguishes_business_rejection_from_failure(self):
+        summary_module = load_public_summary_module()
+        business_summary = {
+            "download": {"status": "DONE", "invalid_count": 0},
+            "failed_steps": [
+                {
+                    "step": "market_alpha_development",
+                    "research_decision_only": True,
+                }
+            ],
+            "runner_errors": [
+                "[ERROR] development market-alpha screen found no positive-cost candidate"
+            ],
+        }
+        technical_summary = {
+            "download": {"status": "DONE", "invalid_count": 0},
+            "failed_steps": [
+                {"step": "data_quality", "research_decision_only": False}
+            ],
+            "runner_errors": [],
+        }
+
+        self.assertEqual(
+            summary_module._annotation_level(business_summary), "warning"
+        )
+        self.assertEqual(
+            summary_module._annotation_level(technical_summary), "error"
+        )
+        self.assertEqual(
+            summary_module._annotation_level(
+                {
+                    "download": {"status": "DONE", "invalid_count": 1},
+                    "failed_steps": [],
+                    "runner_errors": [],
+                }
+            ),
+            "error",
+        )
+        self.assertEqual(
+            summary_module._annotation_level(
+                {
+                    "download": {"status": "DONE", "invalid_count": 0},
+                    "failed_steps": [],
+                    "runner_errors": [],
+                }
+            ),
+            "notice",
+        )
 
     def test_summary_exposes_liquidation_not_ready_stage_and_progress(self):
         summary_module = load_public_summary_module()

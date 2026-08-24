@@ -1083,6 +1083,7 @@ def _failed_steps(path: pathlib.Path) -> list[dict[str, Any]]:
         result_value = record.get("result")
         exit_code = record.get("exit_code")
         blocked = record.get("blocked_by_prior_failure")
+        research_decision_only = record.get("research_decision_only", False)
         if (
             not isinstance(step, str)
             or not _SAFE_STEP.fullmatch(step)
@@ -1091,6 +1092,7 @@ def _failed_steps(path: pathlib.Path) -> list[dict[str, Any]]:
             or isinstance(exit_code, bool)
             or not isinstance(exit_code, int)
             or not isinstance(blocked, bool)
+            or not isinstance(research_decision_only, bool)
         ):
             continue
         result.append(
@@ -1100,6 +1102,7 @@ def _failed_steps(path: pathlib.Path) -> list[dict[str, Any]]:
                 "result": result_value,
                 "exit_code": exit_code,
                 "blocked_by_prior_failure": blocked,
+                "research_decision_only": research_decision_only,
             }
         )
     return result[:32]
@@ -1113,7 +1116,7 @@ def build_summary(artifact_dir: pathlib.Path) -> dict[str, Any]:
     downloaded_count = download.get("downloaded_count")
     invalid_count = download.get("invalid_count")
     summary: dict[str, Any] = {
-        "schema_version": "closed_loop_public_failure_summary_v1",
+        "schema_version": "closed_loop_public_failure_summary_v2",
         "download": {
             "status": download_status,
             "downloaded_count": (
@@ -1388,6 +1391,34 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     )
 
 
+def _annotation_level(summary: Mapping[str, Any]) -> str:
+    """Keep business rejection separate from broken execution or evidence."""
+    download = summary.get("download")
+    download_status = (
+        download.get("status") if isinstance(download, Mapping) else None
+    )
+    invalid_count = (
+        download.get("invalid_count") if isinstance(download, Mapping) else None
+    )
+    technical_failed_steps = [
+        item
+        for item in summary.get("failed_steps", [])
+        if isinstance(item, Mapping)
+        and item.get("research_decision_only") is not True
+    ]
+    if (
+        download_status not in {"DONE", "SKIPPED_OVERLAP"}
+        or not isinstance(invalid_count, int)
+        or isinstance(invalid_count, bool)
+        or invalid_count > 0
+        or technical_failed_steps
+    ):
+        return "error"
+    if summary.get("failed_steps") or summary.get("runner_errors"):
+        return "warning"
+    return "notice"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-d", "--artifact-dir", required=True)
@@ -1407,11 +1438,7 @@ def main() -> int:
             handle.write("## Closed Loop evidence summary\n\n")
             handle.write(f"```json\n{rendered}\n```\n")
     if args.emit_annotation:
-        level = (
-            "error"
-            if summary["failed_steps"] or summary["runner_errors"]
-            else "notice"
-        )
+        level = _annotation_level(summary)
         print(f"::{level} title=Closed Loop evidence summary::{_annotation(summary)}")
     else:
         print(rendered)
