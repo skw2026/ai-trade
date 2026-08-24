@@ -43,3 +43,11 @@
 - primary 或 boundary 任一失败，立即 `STOP_CROSS_ASSET_RESIDUAL_FAMILY`，不等待 24 小时、不训练模型。
 - 两者都通过时，才从 manifest 冻结后的未观察数据建立连续 24 小时 forward，拆为 6 个 4 小时 block；合同冻结后不得改权重网格、期限、成本或门禁。
 - target-only 与一小时错位 hedge 作为诊断负对照，不参与参数选择，也不能给出晋级权限。
+
+## 不可变结果
+
+Research `#1096` 在 commit `a818592`、tag `research/20260824-a818592` 上技术成功。artifact `9528081892` 为 23.6 MB，SHA256 为 `2d37baaba30c12c87c26435ba9a7f65682585ac5a300bd1d52cee48091bf7187`。
+
+残差 primary 仅产生 15 笔交易，正 stress split 比例为 `0.8333`，base/stress LCB 为 `3.1272/-0.4643 bps`，boundary pass ratio 为 0；最终决策为 `STOP_CROSS_ASSET_RESIDUAL_FAMILY`。因为 primary 的交易数与 stress LCB、以及 boundary 稳定性同时失败，本研究族不等待 24 小时 forward，也不进入模型、Demo 或 live。
+
+该结果说明短周期三腿 taker 成本不是可由方向模型弥补的问题：即使允许事后选择方向与期限，无模型上界仍失败。下一阶段必须改变持有期和收益来源，转为按真实 funding settlement 与基差收敛计价的低换手现货–永续 carry；不得把残差 v1 改名后继续调参。
