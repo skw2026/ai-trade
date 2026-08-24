@@ -1491,6 +1491,7 @@ PY
             "market_alpha_development",
             "microstructure_forward_data",
             "maker_execution_opportunity_experiment",
+            "cross_asset_residual_opportunity_experiment",
             "maker_execution_learnability_experiment",
             "liquidation_information_set_experiment",
             "microstructure_alpha_development",
@@ -1501,11 +1502,12 @@ PY
             "run_market_alpha_development_gate": observation_steps[0],
             "run_microstructure_capture_gate": observation_steps[1],
             "run_maker_execution_opportunity_experiment": observation_steps[2],
-            "run_maker_execution_learnability_experiment": observation_steps[3],
-            "run_liquidation_information_set_experiment": observation_steps[4],
-            "run_microstructure_alpha_development_gate": observation_steps[5],
-            "run_microstructure_alpha_lifecycle_gate": observation_steps[6],
-            "run_alpha_source_route_gate": observation_steps[7],
+            "run_cross_asset_residual_opportunity_experiment": observation_steps[3],
+            "run_maker_execution_learnability_experiment": observation_steps[4],
+            "run_liquidation_information_set_experiment": observation_steps[5],
+            "run_microstructure_alpha_development_gate": observation_steps[6],
+            "run_microstructure_alpha_lifecycle_gate": observation_steps[7],
+            "run_alpha_source_route_gate": observation_steps[8],
         }
         for stage in ("DEPLOY", "SMOKE"):
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as td:
@@ -1584,6 +1586,7 @@ PY
                 run_market_alpha_development_gate() { record_call market_alpha_development; }
                 run_microstructure_capture_gate() { record_call microstructure_forward_data; }
                 run_maker_execution_opportunity_experiment() { record_call maker_execution_opportunity_experiment; }
+                run_cross_asset_residual_opportunity_experiment() { record_call cross_asset_residual_opportunity_experiment; }
                 run_maker_execution_learnability_experiment() { record_call maker_execution_learnability_experiment; }
                 run_liquidation_information_set_experiment() { record_call liquidation_information_set_experiment; }
                 run_microstructure_alpha_development_gate() { record_call microstructure_alpha_development; }
@@ -1616,6 +1619,7 @@ PY
                     "market_alpha_development",
                     "microstructure_forward_data",
                     "maker_execution_opportunity_experiment",
+                    "cross_asset_residual_opportunity_experiment",
                     "maker_execution_learnability_experiment",
                     "liquidation_information_set_experiment",
                     "microstructure_alpha_development",

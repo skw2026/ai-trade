@@ -244,6 +244,8 @@ LIQUIDATION_EXPERIMENT_CONFIG="${CLOSED_LOOP_LIQUIDATION_EXPERIMENT_CONFIG:-conf
 MAKER_OPPORTUNITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_OPPORTUNITY_EXPERIMENT_CONFIG:-config/maker_execution_opportunity_experiment.json}"
 MAKER_OPPORTUNITY_BASELINE_AUDIT_MANIFEST="${CLOSED_LOOP_MAKER_OPPORTUNITY_BASELINE_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/maker_opportunity_frozen_audit.json}"
 MAKER_OPPORTUNITY_AUDIT_MANIFEST="${CLOSED_LOOP_MAKER_OPPORTUNITY_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/maker_opportunity_frozen_audit_v5.json}"
+CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG="${CLOSED_LOOP_CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG:-config/cross_asset_residual_opportunity_experiment.json}"
+CROSS_ASSET_RESIDUAL_AUDIT_MANIFEST="${CLOSED_LOOP_CROSS_ASSET_RESIDUAL_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/cross_asset_residual_frozen_audit_v1.json}"
 MAKER_LEARNABILITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_LEARNABILITY_EXPERIMENT_CONFIG:-config/maker_execution_learnability_experiment.json}"
 MAKER_SUBSECOND_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_SUBSECOND_EXPERIMENT_CONFIG:-config/maker_subsecond_information_experiment.json}"
 DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
@@ -1315,6 +1317,8 @@ LIQUIDATION_CAPTURE_REPORT_PATH="${RUN_DIR}/liquidation_capture_report.json"
 LIQUIDATION_EXPERIMENT_REPORT_PATH="${RUN_DIR}/liquidation_information_set_experiment.json"
 MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_opportunity_experiment.json"
 MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH="${RUN_DIR}/maker_opportunity_frozen_audit.json"
+CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH="${RUN_DIR}/cross_asset_residual_opportunity_experiment.json"
+CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH="${RUN_DIR}/cross_asset_residual_frozen_audit.json"
 MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_learnability_experiment.json"
 MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_subsecond_information_experiment.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
@@ -3448,6 +3452,51 @@ PY
   return "${status}"
 }
 
+run_cross_asset_residual_opportunity_experiment() {
+  echo "[INFO] dollar-neutral cross-asset residual opportunity experiment start"
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_cross_asset_residual_opportunity_experiment.py \
+    --control-assessment "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
+    --config "${CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG}" \
+    --parent-audit-manifest "${MAKER_OPPORTUNITY_BASELINE_AUDIT_MANIFEST}" \
+    --audit-manifest "${CROSS_ASSET_RESIDUAL_AUDIT_MANIFEST}" \
+    --output "${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}" \
+    --research-domain development || status=$?
+  if [[ -s "${CROSS_ASSET_RESIDUAL_AUDIT_MANIFEST}" ]]; then
+    cp -f -- "${CROSS_ASSET_RESIDUAL_AUDIT_MANIFEST}" \
+      "${CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH}"
+  elif [[ -s "${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}" ]]; then
+    CROSS_ASSET_RESIDUAL_REPORT_PATH_VALUE="${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}" \
+    CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH_VALUE="${CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH}" \
+    python3 - <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+
+report_path = Path(os.environ["CROSS_ASSET_RESIDUAL_REPORT_PATH_VALUE"])
+report = json.loads(report_path.read_text(encoding="utf-8"))
+payload = {
+    "schema_version": "cross_asset_residual_frozen_audit_unavailable_v1",
+    "state": "NOT_FROZEN",
+    "research_decision": str(report.get("research_decision") or "NOT_READY"),
+    "reason_codes": list(report.get("reason_codes") or ["audit_not_created"]),
+    "opportunity_report_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
+    "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
+}
+Path(os.environ["CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH_VALUE"]).write_text(
+    json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  fi
+  echo "[INFO] dollar-neutral cross-asset residual opportunity experiment done"
+  return "${status}"
+}
+
 run_maker_execution_learnability_experiment() {
   echo "[INFO] conservative maker execution learnability experiment start"
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
@@ -4868,6 +4917,7 @@ write_run_manifest() {
   DATA_CONFIG_PATH_VALUE="${DATA_CONFIG_PATH}" \
   LIQUIDATION_EXPERIMENT_CONFIG_VALUE="${LIQUIDATION_EXPERIMENT_CONFIG}" \
   MAKER_OPPORTUNITY_EXPERIMENT_CONFIG_VALUE="${MAKER_OPPORTUNITY_EXPERIMENT_CONFIG}" \
+  CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG_VALUE="${CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG}" \
   MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_CONFIG}" \
   MAKER_SUBSECOND_EXPERIMENT_CONFIG_VALUE="${MAKER_SUBSECOND_EXPERIMENT_CONFIG}" \
   REPLAY_CONFIG_PATH_VALUE="${REPLAY_EFFECTIVE_CONFIG_PATH}" \
@@ -4919,6 +4969,8 @@ write_run_manifest() {
   LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE="${LIQUIDATION_EXPERIMENT_REPORT_PATH}" \
   MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" \
   MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH_VALUE="${MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH}" \
+  CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH_VALUE="${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}" \
+  CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH_VALUE="${CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH}" \
   MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" \
   MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
@@ -5132,6 +5184,9 @@ payload = {
         "maker_execution_opportunity_experiment": os.environ.get(
             "MAKER_OPPORTUNITY_EXPERIMENT_CONFIG_VALUE", ""
         ),
+        "cross_asset_residual_opportunity_experiment": os.environ.get(
+            "CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG_VALUE", ""
+        ),
         "maker_execution_learnability_experiment": os.environ.get(
             "MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE", ""
         ),
@@ -5318,6 +5373,8 @@ artifact_env_names = {
     "liquidation_information_set_experiment": "LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_execution_opportunity_experiment": "MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_opportunity_frozen_audit": "MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH_VALUE",
+    "cross_asset_residual_opportunity_experiment": "CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH_VALUE",
+    "cross_asset_residual_frozen_audit": "CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH_VALUE",
     "maker_execution_learnability_experiment": "MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_subsecond_information_experiment": "MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
@@ -5524,6 +5581,9 @@ build_summary() {
   if [[ -f "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--maker_execution_opportunity_experiment_report "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}")
   fi
+  if [[ -f "${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--cross_asset_residual_opportunity_experiment_report "${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}")
+  fi
   if [[ -f "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--maker_execution_learnability_experiment_report "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}")
   fi
@@ -5637,6 +5697,8 @@ build_summary() {
   "liquidation_information_set_experiment": "${LIQUIDATION_EXPERIMENT_REPORT_PATH}",
   "maker_execution_opportunity_experiment": "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}",
   "maker_opportunity_frozen_audit": "${MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH}",
+  "cross_asset_residual_opportunity_experiment": "${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}",
+  "cross_asset_residual_frozen_audit": "${CROSS_ASSET_RESIDUAL_AUDIT_SNAPSHOT_PATH}",
   "maker_execution_learnability_experiment": "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}",
   "maker_subsecond_information_experiment": "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
@@ -6459,6 +6521,7 @@ observation_report_path() {
   case "$1" in
     market_alpha_development) printf '%s\n' "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" ;;
     maker_execution_opportunity_experiment) printf '%s\n' "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" ;;
+    cross_asset_residual_opportunity_experiment) printf '%s\n' "${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}" ;;
     maker_execution_learnability_experiment) printf '%s\n' "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ;;
     maker_subsecond_information_experiment) printf '%s\n' "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" ;;
     liquidation_information_set_experiment) printf '%s\n' "${LIQUIDATION_EXPERIMENT_REPORT_PATH}" ;;
@@ -6639,6 +6702,7 @@ run_training_chain() {
     run_observation_step market_alpha_development run_market_alpha_development_gate
     run_observation_step microstructure_forward_data run_microstructure_capture_gate
     run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+    run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
     run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
     run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
     run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -6696,6 +6760,7 @@ run_research_discovery_chain() {
     skip_observation_step market_alpha_development "${reason}"
     skip_observation_step microstructure_forward_data "${reason}"
     skip_observation_step maker_execution_opportunity_experiment "${reason}"
+    skip_observation_step cross_asset_residual_opportunity_experiment "${reason}"
     skip_observation_step maker_execution_learnability_experiment "${reason}"
     skip_observation_step liquidation_information_set_experiment "${reason}"
     skip_observation_step microstructure_alpha_development "${reason}"
@@ -6709,6 +6774,7 @@ run_research_discovery_chain() {
   run_observation_step market_alpha_development run_market_alpha_development_gate
   run_observation_step microstructure_forward_data run_microstructure_capture_gate
   run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+  run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
   run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
   run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
   run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -6732,6 +6798,7 @@ run_assess_observation_chain() {
     skip_observation_step market_alpha_development "${skip_reason}"
     skip_observation_step microstructure_forward_data "${skip_reason}"
     skip_observation_step maker_execution_opportunity_experiment "${skip_reason}"
+    skip_observation_step cross_asset_residual_opportunity_experiment "${skip_reason}"
     skip_observation_step maker_execution_learnability_experiment "${skip_reason}"
     skip_observation_step liquidation_information_set_experiment "${skip_reason}"
     skip_observation_step microstructure_alpha_development "${skip_reason}"
@@ -6744,6 +6811,7 @@ run_assess_observation_chain() {
   run_observation_step market_alpha_development run_market_alpha_development_gate
   run_observation_step microstructure_forward_data run_microstructure_capture_gate
   run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+  run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
   run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
   run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
   run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -6890,6 +6958,7 @@ run_main() {
       run_required_step data_quality run_data_quality
       run_required_step microstructure_forward_data run_microstructure_capture_gate
       run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+      run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
       run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
       run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate

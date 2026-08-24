@@ -195,6 +195,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_liquidation_information_set_experiment.py)
     add_test(NAME maker_execution_opportunity_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_maker_execution_opportunity_experiment.py)
+    add_test(NAME cross_asset_residual_opportunity_experiment_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_cross_asset_residual_opportunity_experiment.py)
     add_test(NAME maker_execution_learnability_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_maker_execution_learnability_experiment.py)
     add_test(NAME maker_subsecond_information_experiment_test

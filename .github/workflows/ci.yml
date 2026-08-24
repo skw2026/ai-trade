@@ -97,6 +97,7 @@ jobs:
           grep -q "liquidation_capture_runtime_test" /tmp/ctest-list.txt
           grep -q "liquidation_information_set_experiment_test" /tmp/ctest-list.txt
           grep -q "maker_execution_opportunity_experiment_test" /tmp/ctest-list.txt
+          grep -q "cross_asset_residual_opportunity_experiment_test" /tmp/ctest-list.txt
           grep -q "maker_execution_learnability_experiment_test" /tmp/ctest-list.txt
           grep -q "maker_subsecond_information_experiment_test" /tmp/ctest-list.txt
           grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt

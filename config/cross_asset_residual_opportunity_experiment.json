@@ -1,0 +1,80 @@
+{
+  "schema_version": "cross_asset_residual_opportunity_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "bybit_sol_btc_eth_dollar_neutral_residual_opportunity_v1",
+  "source_information_set": "bybit_sol_btc_eth_l50_public_trades_v3",
+  "mechanism": {
+    "target_symbol": "SOLUSDT",
+    "hedge_symbols": ["BTCUSDT", "ETHUSDT"],
+    "target_notional": 1.0,
+    "hedge_total_notional": 1.0,
+    "position_contract": "long_or_short_target_against_opposite_convex_hedge_basket",
+    "hedge_weight_method": "fit_only_minimum_one_second_mid_log_return_residual_variance_grid_v1",
+    "btc_weight_minimum": 0.0,
+    "btc_weight_maximum": 1.0,
+    "btc_weight_step": 0.05,
+    "minimum_fit_return_count": 1000,
+    "weight_tie_break": "smallest_btc_weight",
+    "test_or_boundary_outcomes_used_for_weight_selection": false
+  },
+  "execution": {
+    "directions": ["long_residual", "short_residual"],
+    "horizons_seconds": [15, 30, 60, 120, 300],
+    "entry_latency_seconds": 1,
+    "entry_execution": "simultaneous_taker_bid_ask_all_legs",
+    "exit_execution": "simultaneous_taker_bid_ask_all_legs",
+    "context_quote_reconstruction": "mid_plus_minus_half_reported_spread_v1",
+    "one_outstanding_portfolio": true,
+    "occupancy_release": "realized_exit_timestamp"
+  },
+  "costs": {
+    "taker_fee_bps_per_fill": 5.5,
+    "slippage_bps_per_fill": 1.0,
+    "spread_source": "implicit_in_observed_or_reconstructed_bid_ask",
+    "base_cost_gross_notional_multiplier": 2.0,
+    "stress_cost_multiplier": 1.25
+  },
+  "split_calendar": {
+    "source": "inherit_exact_absolute_maker_v2_primary_and_boundary_splits",
+    "parent_manifest_schema_version": "maker_opportunity_frozen_audit_v1",
+    "parent_experiment_id": "bybit_sol_frozen_maker_opportunity_audit_v2",
+    "parent_policy_identity_sha256": "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
+  },
+  "splits": {
+    "count": 6,
+    "train_window_seconds": 21600,
+    "validation_window_seconds": 14400,
+    "test_window_seconds": 14400,
+    "rolling_step_seconds": 14400
+  },
+  "stability_audit": {
+    "manifest_schema_version": "cross_asset_residual_frozen_audit_v1",
+    "boundary_offsets_seconds": [0, -3600, -7200, -10800],
+    "minimum_boundary_pass_ratio": 0.75,
+    "independent_forward_window_seconds": 86400,
+    "forward_block_seconds": 14400,
+    "minimum_forward_blocks": 6,
+    "minimum_forward_row_ratio": 0.95,
+    "minimum_forward_trades": 100,
+    "minimum_positive_forward_block_ratio": 0.6,
+    "minimum_forward_stress_lcb_bps": 0.0,
+    "require_exact_frozen_domain": true,
+    "require_parent_target_domain_identity": true
+  },
+  "decision_gates": {
+    "minimum_oos_trades": 100,
+    "minimum_positive_split_ratio": 0.6,
+    "minimum_oracle_stress_lcb_bps": 0.0
+  },
+  "diagnostic_controls": {
+    "target_only_all_taker": true,
+    "hedge_time_shift_seconds": -3600,
+    "controls_can_authorize_continuation": false
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

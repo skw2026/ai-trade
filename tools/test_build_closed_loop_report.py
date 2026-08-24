@@ -237,6 +237,71 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(rejected["status"], "fail")
             self.assertIn("isolation contract", rejected["fail_reasons"][0])
 
+    def test_cross_asset_residual_decision_is_visible_but_non_promotional(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "cross_asset_residual.json"
+            payload = {
+                "schema_version": "cross_asset_residual_opportunity_experiment_v1",
+                "status": "COMPLETE",
+                "fully_verifiable": False,
+                "research_domain": "forward_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "research_decision": (
+                    "WAIT_FOR_INDEPENDENT_CROSS_ASSET_RESIDUAL_FORWARD_WINDOW"
+                ),
+                "reason_codes": [
+                    "independent_24h_residual_forward_window_incomplete"
+                ],
+                "input": {"parent_target_domain_identity_verified": True},
+                "common_domain": {"row_count": 234567},
+                "execution_contract": {
+                    "base_explicit_cost_bps": 26.0,
+                    "stress_explicit_cost_bps": 32.5,
+                },
+                "hindsight_oracle": {
+                    "trade_count": 123,
+                    "positive_stress_split_ratio": 1.0,
+                    "base_cost_by_split": {"lcb_bps": 2.0},
+                    "stress_cost_by_split": {"lcb_bps": 0.5},
+                },
+                "stability_audit": {
+                    "boundary_sensitivity": {"pass_ratio": 0.75},
+                    "independent_forward": {
+                        "row_ratio": 0.4,
+                        "observation_complete": False,
+                    },
+                },
+                "diagnostic_controls": {
+                    "target_only_all_taker": {"trade_count": 99},
+                    "time_shifted_hedge": {"trade_count": 88},
+                },
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            section = REPORT.assess_cross_asset_residual_opportunity_experiment(path)
+
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["readiness_status"], "PASS_WITH_ACTIONS")
+            self.assertEqual(
+                section["research_decision"],
+                "WAIT_FOR_INDEPENDENT_CROSS_ASSET_RESIDUAL_FORWARD_WINDOW",
+            )
+            self.assertEqual(section["metrics"]["oracle_trade_count"], 123)
+            self.assertEqual(section["metrics"]["oracle_stress_lcb_bps"], 0.5)
+            self.assertEqual(section["metrics"]["base_explicit_cost_bps"], 26.0)
+            self.assertFalse(section["authoritative_for_integrator_promotion"])
+            self.assertFalse(section["demo_activation_authorized"])
+
+            payload["input"]["parent_target_domain_identity_verified"] = False
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_cross_asset_residual_opportunity_experiment(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertIn("parent identity", rejected["fail_reasons"][0])
+
     def test_maker_learnability_architectures_are_visible_but_non_promotional(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "maker_learnability.json"

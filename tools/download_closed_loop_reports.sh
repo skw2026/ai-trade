@@ -228,6 +228,8 @@ fetch_report "${REMOTE_BASE}/liquidation_capture_report.json" ".artifacts/liquid
 fetch_report "${REMOTE_BASE}/liquidation_information_set_experiment.json" ".artifacts/liquidation_information_set_experiment.json" "liquidation_information_set_experiment" "json"
 fetch_report "${REMOTE_BASE}/maker_execution_opportunity_experiment.json" ".artifacts/maker_execution_opportunity_experiment.json" "maker_execution_opportunity_experiment" "json"
 fetch_report "${REMOTE_BASE}/maker_opportunity_frozen_audit.json" ".artifacts/maker_opportunity_frozen_audit.json" "maker_opportunity_frozen_audit" "json"
+fetch_report "${REMOTE_BASE}/cross_asset_residual_opportunity_experiment.json" ".artifacts/cross_asset_residual_opportunity_experiment.json" "cross_asset_residual_opportunity_experiment" "json"
+fetch_report "${REMOTE_BASE}/cross_asset_residual_frozen_audit.json" ".artifacts/cross_asset_residual_frozen_audit.json" "cross_asset_residual_frozen_audit" "json"
 fetch_report "${REMOTE_BASE}/maker_execution_learnability_experiment.json" ".artifacts/maker_execution_learnability_experiment.json" "maker_execution_learnability_experiment" "json"
 fetch_report "${REMOTE_BASE}/maker_subsecond_information_experiment.json" ".artifacts/maker_subsecond_information_experiment.json" "maker_subsecond_information_experiment" "json"
 fetch_report "${REMOTE_BASE}/microstructure_alpha_development_report.json" ".artifacts/microstructure_alpha_development_report.json" "microstructure_alpha_development_report" "json"

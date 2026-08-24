@@ -44,6 +44,12 @@ LOCAL_ARTIFACT_FILENAMES = {
         "maker_execution_opportunity_experiment.json"
     ),
     "maker_opportunity_frozen_audit": "maker_opportunity_frozen_audit.json",
+    "cross_asset_residual_opportunity_experiment": (
+        "cross_asset_residual_opportunity_experiment.json"
+    ),
+    "cross_asset_residual_frozen_audit": (
+        "cross_asset_residual_frozen_audit.json"
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),

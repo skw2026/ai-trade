@@ -92,6 +92,10 @@ UPSTREAM_REPORTS = {
         "maker_execution_opportunity_experiment.json",
         {"COMPLETE", "NOT_READY"},
     ),
+    "cross_asset_residual_opportunity_experiment": (
+        "cross_asset_residual_opportunity_experiment.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json",
         {"COMPLETE", "NOT_READY"},
@@ -675,6 +679,123 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             "oracle_stress_lcb_bps": (
                 _safe_number(stress.get("lcb_bps"))
                 if isinstance(stress, Mapping)
+                else None
+            ),
+            "boundary_pass_ratio": (
+                _safe_number(boundary.get("pass_ratio"))
+                if isinstance(boundary, Mapping)
+                else None
+            ),
+            "forward_row_ratio": (
+                _safe_number(forward.get("row_ratio"))
+                if isinstance(forward, Mapping)
+                else None
+            ),
+            "forward_observation_complete": (
+                forward.get("observation_complete")
+                if isinstance(forward, Mapping)
+                and isinstance(forward.get("observation_complete"), bool)
+                else None
+            ),
+        }
+        section["metrics"] = {
+            key: value for key, value in metrics.items() if value is not None
+        }
+    elif name == "cross_asset_residual_opportunity_experiment":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        decision = report.get("research_decision")
+        allowed_decisions = {
+            "CONTINUE_TO_CROSS_ASSET_RESIDUAL_LEARNABILITY_EXPERIMENT",
+            "STOP_CROSS_ASSET_RESIDUAL_FAMILY",
+            "WAIT_FOR_INDEPENDENT_CROSS_ASSET_RESIDUAL_FORWARD_WINDOW",
+        }
+        source = report.get("input")
+        contract_ok = (
+            report.get("schema_version")
+            == "cross_asset_residual_opportunity_experiment_v1"
+            and report.get("status") == "COMPLETE"
+            and isinstance(report.get("fully_verifiable"), bool)
+            and report.get("research_domain") == "forward_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and isinstance(source, Mapping)
+            and source.get("parent_target_domain_identity_verified") is True
+            and decision in allowed_decisions
+            and (
+                decision
+                != "CONTINUE_TO_CROSS_ASSET_RESIDUAL_LEARNABILITY_EXPERIMENT"
+                or report.get("fully_verifiable") is True
+            )
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = (
+            decision if decision in allowed_decisions else None
+        )
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        common = report.get("common_domain")
+        oracle = report.get("hindsight_oracle")
+        base = (
+            oracle.get("base_cost_by_split")
+            if isinstance(oracle, Mapping)
+            else None
+        )
+        stress = (
+            oracle.get("stress_cost_by_split")
+            if isinstance(oracle, Mapping)
+            else None
+        )
+        stability = report.get("stability_audit")
+        boundary = (
+            stability.get("boundary_sensitivity")
+            if isinstance(stability, Mapping)
+            else None
+        )
+        forward = (
+            stability.get("independent_forward")
+            if isinstance(stability, Mapping)
+            else None
+        )
+        execution = report.get("execution_contract")
+        metrics = {
+            "common_row_count": (
+                _safe_number(common.get("row_count"))
+                if isinstance(common, Mapping)
+                else None
+            ),
+            "oracle_trade_count": (
+                _safe_number(oracle.get("trade_count"))
+                if isinstance(oracle, Mapping)
+                else None
+            ),
+            "oracle_positive_split_ratio": (
+                _safe_number(oracle.get("positive_stress_split_ratio"))
+                if isinstance(oracle, Mapping)
+                else None
+            ),
+            "oracle_base_lcb_bps": (
+                _safe_number(base.get("lcb_bps"))
+                if isinstance(base, Mapping)
+                else None
+            ),
+            "oracle_stress_lcb_bps": (
+                _safe_number(stress.get("lcb_bps"))
+                if isinstance(stress, Mapping)
+                else None
+            ),
+            "base_explicit_cost_bps": (
+                _safe_number(execution.get("base_explicit_cost_bps"))
+                if isinstance(execution, Mapping)
+                else None
+            ),
+            "stress_explicit_cost_bps": (
+                _safe_number(execution.get("stress_explicit_cost_bps"))
+                if isinstance(execution, Mapping)
                 else None
             ),
             "boundary_pass_ratio": (
@@ -1298,6 +1419,39 @@ def _annotation(summary: Mapping[str, Any]) -> str:
                 + str(forward_complete).lower()
             )
     maker_opportunity_progress = ",".join(maker_progress_parts) or "UNAVAILABLE"
+    residual_opportunity = upstream.get(
+        "cross_asset_residual_opportunity_experiment", {}
+    )
+    residual_opportunity_decision = (
+        residual_opportunity.get("research_decision", "UNAVAILABLE")
+        or "UNAVAILABLE"
+    )
+    residual_progress_parts: list[str] = []
+    residual_metrics = residual_opportunity.get("metrics")
+    if isinstance(residual_metrics, Mapping):
+        for key in (
+            "common_row_count",
+            "oracle_trade_count",
+            "oracle_positive_split_ratio",
+            "oracle_base_lcb_bps",
+            "oracle_stress_lcb_bps",
+            "base_explicit_cost_bps",
+            "stress_explicit_cost_bps",
+            "boundary_pass_ratio",
+            "forward_row_ratio",
+        ):
+            value = _safe_number(residual_metrics.get(key))
+            if value is not None:
+                residual_progress_parts.append(f"{key}:{value}")
+        forward_complete = residual_metrics.get("forward_observation_complete")
+        if isinstance(forward_complete, bool):
+            residual_progress_parts.append(
+                "forward_observation_complete:"
+                + str(forward_complete).lower()
+            )
+    residual_opportunity_progress = (
+        ",".join(residual_progress_parts) or "UNAVAILABLE"
+    )
     maker_learnability = upstream.get(
         "maker_execution_learnability_experiment", {}
     )
@@ -1382,6 +1536,8 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         f"information_set_progress={information_set_progress}; "
         f"maker_opportunity_decision={maker_opportunity_decision}; "
         f"maker_opportunity_progress={maker_opportunity_progress}; "
+        f"residual_opportunity_decision={residual_opportunity_decision}; "
+        f"residual_opportunity_progress={residual_opportunity_progress}; "
         f"maker_learnability_decision={maker_learnability_decision}; "
         f"maker_learnability_leader={maker_learnability_leader}; "
         f"maker_learnability_progress={maker_learnability_progress}; "

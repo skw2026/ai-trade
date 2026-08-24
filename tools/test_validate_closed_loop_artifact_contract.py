@@ -133,6 +133,18 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         )
         self.assertEqual(
             VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "cross_asset_residual_opportunity_experiment"
+            ],
+            "cross_asset_residual_opportunity_experiment.json",
+        )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "cross_asset_residual_frozen_audit"
+            ],
+            "cross_asset_residual_frozen_audit.json",
+        )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
                 "maker_subsecond_information_experiment"
             ],
             "maker_subsecond_information_experiment.json",
@@ -171,6 +183,11 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         self.assertIn(
             'SUMMARY_ARGS+=(--maker_execution_opportunity_experiment_report '
             '"${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}")',
+            source,
+        )
+        self.assertIn(
+            'SUMMARY_ARGS+=(--cross_asset_residual_opportunity_experiment_report '
+            '"${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}")',
             source,
         )
         self.assertIn(
@@ -495,6 +512,81 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         )
         self.assertIn("oracle_stress_lcb_bps:0.25", annotation)
         self.assertIn("forward_row_ratio:0.5", annotation)
+        self.assertIn("forward_observation_complete:false", annotation)
+
+    def test_summary_exposes_cross_asset_residual_decision_and_economics(self):
+        summary_module = load_public_summary_module()
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            (
+                artifact_dir
+                / "cross_asset_residual_opportunity_experiment.json"
+            ).write_text(
+                json.dumps(
+                    {
+                        "schema_version": (
+                            "cross_asset_residual_opportunity_experiment_v1"
+                        ),
+                        "status": "COMPLETE",
+                        "fully_verifiable": False,
+                        "research_domain": "forward_development_only",
+                        "promotion_evidence": False,
+                        "promotion_eligible": False,
+                        "promotion_authority": False,
+                        "demo_activation_authorized": False,
+                        "live_activation_authorized": False,
+                        "research_decision": (
+                            "WAIT_FOR_INDEPENDENT_CROSS_ASSET_RESIDUAL_FORWARD_WINDOW"
+                        ),
+                        "reason_codes": [
+                            "independent_24h_residual_forward_window_incomplete"
+                        ],
+                        "input": {
+                            "parent_target_domain_identity_verified": True
+                        },
+                        "common_domain": {"row_count": 234567},
+                        "execution_contract": {
+                            "base_explicit_cost_bps": 26.0,
+                            "stress_explicit_cost_bps": 32.5,
+                        },
+                        "hindsight_oracle": {
+                            "trade_count": 123,
+                            "positive_stress_split_ratio": 1.0,
+                            "base_cost_by_split": {"lcb_bps": 2.0},
+                            "stress_cost_by_split": {"lcb_bps": 0.5},
+                        },
+                        "stability_audit": {
+                            "boundary_sensitivity": {"pass_ratio": 0.75},
+                            "independent_forward": {
+                                "row_ratio": 0.4,
+                                "observation_complete": False,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            summary = summary_module.build_summary(artifact_dir)
+            annotation = summary_module._annotation(summary)
+
+        section = summary["upstream"][
+            "cross_asset_residual_opportunity_experiment"
+        ]
+        self.assertEqual(section["gate_status"], "COMPLETE")
+        self.assertEqual(
+            section["research_decision"],
+            "WAIT_FOR_INDEPENDENT_CROSS_ASSET_RESIDUAL_FORWARD_WINDOW",
+        )
+        self.assertEqual(section["metrics"]["oracle_trade_count"], 123)
+        self.assertEqual(section["metrics"]["oracle_stress_lcb_bps"], 0.5)
+        self.assertEqual(section["metrics"]["base_explicit_cost_bps"], 26.0)
+        self.assertIn(
+            "residual_opportunity_decision="
+            "WAIT_FOR_INDEPENDENT_CROSS_ASSET_RESIDUAL_FORWARD_WINDOW",
+            annotation,
+        )
+        self.assertIn("oracle_stress_lcb_bps:0.5", annotation)
+        self.assertIn("forward_row_ratio:0.4", annotation)
         self.assertIn("forward_observation_complete:false", annotation)
 
     def test_summary_exposes_maker_learnability_architecture_economics(self):

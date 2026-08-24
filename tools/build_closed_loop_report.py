@@ -1670,6 +1670,132 @@ def assess_maker_execution_opportunity_experiment(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_cross_asset_residual_opportunity_experiment(path: Path) -> Dict[str, Any]:
+    """Expose the residual upper bound while preserving the promotion firewall."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "CONTINUE_TO_CROSS_ASSET_RESIDUAL_LEARNABILITY_EXPERIMENT",
+        "STOP_CROSS_ASSET_RESIDUAL_FAMILY",
+        "WAIT_FOR_INDEPENDENT_CROSS_ASSET_RESIDUAL_FORWARD_WINDOW",
+    }
+    if payload.get("schema_version") != "cross_asset_residual_opportunity_experiment_v1":
+        fail_reasons.append("cross-asset residual report schema mismatch")
+    if payload.get("status") != "COMPLETE" or not isinstance(
+        payload.get("fully_verifiable"), bool
+    ):
+        fail_reasons.append("cross-asset residual evidence is incomplete")
+    source = payload.get("input")
+    if not (
+        isinstance(source, dict)
+        and source.get("parent_target_domain_identity_verified") is True
+    ):
+        fail_reasons.append("cross-asset residual parent identity is not verified")
+    if not (
+        payload.get("research_domain") == "forward_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+    ):
+        fail_reasons.append("cross-asset residual isolation contract failed")
+    decision = payload.get("research_decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("cross-asset residual decision is invalid")
+        decision = None
+    elif (
+        decision == "CONTINUE_TO_CROSS_ASSET_RESIDUAL_LEARNABILITY_EXPERIMENT"
+        and payload.get("fully_verifiable") is not True
+    ):
+        fail_reasons.append("cross-asset residual continuation is not fully verifiable")
+    reasons = payload.get("reason_codes")
+    if not (
+        isinstance(reasons, list)
+        and all(isinstance(item, str) and item.strip() for item in reasons)
+    ):
+        fail_reasons.append("cross-asset residual reason codes are invalid")
+        reasons = []
+
+    def metric(mapping: Any, field: str) -> int | float | None:
+        if not isinstance(mapping, dict):
+            return None
+        value = mapping.get(field)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+        ):
+            return value
+        return None
+
+    common = payload.get("common_domain", {})
+    oracle = payload.get("hindsight_oracle", {})
+    base = oracle.get("base_cost_by_split", {}) if isinstance(oracle, dict) else {}
+    stress = oracle.get("stress_cost_by_split", {}) if isinstance(oracle, dict) else {}
+    stability = payload.get("stability_audit", {})
+    boundary = (
+        stability.get("boundary_sensitivity", {})
+        if isinstance(stability, dict)
+        else {}
+    )
+    forward = (
+        stability.get("independent_forward", {})
+        if isinstance(stability, dict)
+        else {}
+    )
+    execution = payload.get("execution_contract", {})
+    controls = payload.get("diagnostic_controls", {})
+    target_control = (
+        controls.get("target_only_all_taker", {})
+        if isinstance(controls, dict)
+        else {}
+    )
+    shifted_control = (
+        controls.get("time_shifted_hedge", {})
+        if isinstance(controls, dict)
+        else {}
+    )
+    metrics = {
+        "common_row_count": metric(common, "row_count"),
+        "oracle_trade_count": metric(oracle, "trade_count"),
+        "oracle_positive_split_ratio": metric(
+            oracle, "positive_stress_split_ratio"
+        ),
+        "oracle_base_lcb_bps": metric(base, "lcb_bps"),
+        "oracle_stress_lcb_bps": metric(stress, "lcb_bps"),
+        "base_explicit_cost_bps": metric(execution, "base_explicit_cost_bps"),
+        "stress_explicit_cost_bps": metric(execution, "stress_explicit_cost_bps"),
+        "boundary_pass_ratio": metric(boundary, "pass_ratio"),
+        "forward_row_ratio": metric(forward, "row_ratio"),
+        "forward_observation_complete": (
+            forward.get("observation_complete")
+            if isinstance(forward.get("observation_complete"), bool)
+            else None
+        ),
+        "target_only_control_trade_count": metric(target_control, "trade_count"),
+        "shifted_hedge_control_trade_count": metric(shifted_control, "trade_count"),
+    }
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": (
+            [] if fail_reasons else [f"cross-asset residual decision: {decision}"]
+        ),
+        "research_decision": decision,
+        "reason_codes": list(reasons),
+        "metrics": {key: value for key, value in metrics.items() if value is not None},
+        "research_observation_only": True,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "cross_asset_residual_opportunity_stage_review",
+    }
+
+
 def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]:
     """Expose maker model learnability while preserving the promotion firewall."""
 
@@ -4321,6 +4447,11 @@ def parse_args() -> argparse.Namespace:
         help="保守队列成交 maker-entry oracle 实验报告路径",
     )
     parser.add_argument(
+        "--cross_asset_residual_opportunity_experiment_report",
+        default="",
+        help="SOL/BTC/ETH 美元中性残差机会审计报告路径",
+    )
+    parser.add_argument(
         "--maker_execution_learnability_experiment_report",
         default="",
         help="保守 maker-entry 三架构可学习性实验报告路径",
@@ -4774,6 +4905,22 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {experiment_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "execution_opportunity_stage_review",
+            }
+    if args.cross_asset_residual_opportunity_experiment_report:
+        experiment_path = Path(
+            args.cross_asset_residual_opportunity_experiment_report
+        )
+        if experiment_path.is_file():
+            sections["cross_asset_residual_opportunity_experiment"] = (
+                assess_cross_asset_residual_opportunity_experiment(experiment_path)
+            )
+        else:
+            sections["cross_asset_residual_opportunity_experiment"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {experiment_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "cross_asset_residual_opportunity_stage_review",
             }
     if args.maker_execution_learnability_experiment_report:
         experiment_path = Path(args.maker_execution_learnability_experiment_report)
