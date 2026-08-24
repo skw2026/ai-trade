@@ -876,6 +876,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertNotIn('workflows: ["Closed Loop Smoke"]', workflow)
         self.assertNotIn('workflows: ["CD"]', workflow)
         self.assertNotIn("github.event.workflow_run.head_sha", workflow)
+        self.assertIn('      - "research/**"', workflow)
+        self.assertNotIn("    branches:", workflow.split("  workflow_dispatch:", 1)[0])
         self.assertIn(
             "github.event.workflow_run.head_sha == github.sha",
             smoke_workflow,

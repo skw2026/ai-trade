@@ -1,6 +1,11 @@
 name: Closed Loop Research
 
 on:
+  push:
+    # Git-over-SSH operators can start one immutable research epoch without
+    # granting GitHub API credentials.  Branch pushes remain release-only.
+    tags:
+      - "research/**"
   workflow_dispatch:
     inputs:
       action:
