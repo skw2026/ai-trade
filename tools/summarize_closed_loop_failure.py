@@ -62,6 +62,13 @@ _STEP_RESULTS = {"pass", "fail", "skipped"}
 _STEP_KINDS = {"required", "diagnostic", "observation", "route"}
 _RUNNER_ERROR_MARKERS = (
     "[ERROR]",
+    "error",
+    "failed",
+    "exception",
+    "traceback",
+    "cannot",
+    "unbound variable",
+    "syntax error",
     "identity mismatch",
     "missing report:",
     "command not found",
@@ -141,7 +148,7 @@ def _runner_error_lines(path: pathlib.Path) -> list[str]:
     secret_pattern = re.compile(
         r"(?i)(api[_-]?key|authorization|password|secret|token)(\s*[:=]\s*)(\S+)"
     )
-    for raw_line in raw_lines:
+    for raw_line in reversed(raw_lines):
         lowered = raw_line.lower()
         if not any(marker.lower() in lowered for marker in _RUNNER_ERROR_MARKERS):
             continue
@@ -153,7 +160,7 @@ def _runner_error_lines(path: pathlib.Path) -> list[str]:
             result.append(line)
         if len(result) >= 8:
             break
-    return result
+    return list(reversed(result))
 
 
 def _safe_tokens(values: Any, *, limit: int = 12) -> list[str]:

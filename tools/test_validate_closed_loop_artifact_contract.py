@@ -195,6 +195,7 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                     (
                         "ordinary progress api_key=must-not-leak",
                         "[ERROR] identity mismatch token=must-not-leak",
+                        "ValueError: invalid manifest",
                         "missing report: /opt/ai-trade/run/report.json",
                     )
                 ),
@@ -205,8 +206,9 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
             annotation = summary_module._annotation(summary)
             encoded = json.dumps(summary, sort_keys=True)
 
-        self.assertEqual(len(summary["runner_errors"]), 2)
+        self.assertEqual(len(summary["runner_errors"]), 3)
         self.assertIn("identity mismatch", annotation)
+        self.assertIn("ValueError", annotation)
         self.assertIn("<redacted>", encoded)
         self.assertNotIn("must-not-leak", encoded)
         self.assertNotIn("ordinary progress", encoded)
