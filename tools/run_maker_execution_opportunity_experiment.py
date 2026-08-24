@@ -788,10 +788,6 @@ def evaluate_stability_audit(
 
 
 def decide_stability(audit: Mapping[str, Any]) -> Tuple[str, List[str]]:
-    if audit.get("state") != "COMPLETE":
-        return DECISION_WAIT, ["independent_24h_forward_window_incomplete"]
-    if audit.get("stable_opportunity_proven") is True:
-        return DECISION_CONTINUE, ["frozen_boundary_and_forward_opportunity_gates_passed"]
     reasons: List[str] = []
     primary = audit.get("primary_oracle", {})
     boundary = audit.get("boundary_sensitivity", {})
@@ -800,6 +796,16 @@ def decide_stability(audit: Mapping[str, Any]) -> Tuple[str, List[str]]:
         reasons.append("frozen_primary_opportunity_failed")
     if not isinstance(boundary, Mapping) or boundary.get("passed") is not True:
         reasons.append("boundary_sensitivity_failed")
+    # The primary and shifted-boundary domains are immutable after the audit
+    # manifest is frozen.  Waiting for unseen forward rows cannot repair either
+    # failure, so close the family immediately instead of spending 24 hours on
+    # a candidate that is already ineligible.
+    if reasons:
+        return DECISION_STOP, reasons
+    if audit.get("state") != "COMPLETE":
+        return DECISION_WAIT, ["independent_24h_forward_window_incomplete"]
+    if audit.get("stable_opportunity_proven") is True:
+        return DECISION_CONTINUE, ["frozen_boundary_and_forward_opportunity_gates_passed"]
     if not isinstance(forward, Mapping) or forward.get("passed") is not True:
         reasons.append("independent_forward_opportunity_failed")
     return DECISION_STOP, reasons or ["stable_maker_opportunity_not_proven"]

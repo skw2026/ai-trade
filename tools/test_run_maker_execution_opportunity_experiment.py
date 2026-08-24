@@ -281,7 +281,13 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
                 )
 
     def test_stability_decision_waits_then_fails_closed_or_continues(self):
-        waiting = {"state": "AWAITING_FORWARD", "stable_opportunity_proven": False}
+        waiting = {
+            "state": "AWAITING_FORWARD",
+            "stable_opportunity_proven": False,
+            "primary_oracle": {"opportunity_proven": True},
+            "boundary_sensitivity": {"passed": True},
+            "independent_forward": {"passed": False},
+        }
         self.assertEqual(
             experiment.decide_stability(waiting),
             (
@@ -300,11 +306,37 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         self.assertEqual(decision, experiment.DECISION_STOP)
         self.assertEqual(
             reasons,
-            ["boundary_sensitivity_failed", "independent_forward_opportunity_failed"],
+            ["boundary_sensitivity_failed"],
         )
-        passed = {"state": "COMPLETE", "stable_opportunity_proven": True}
+        passed = {
+            "state": "COMPLETE",
+            "stable_opportunity_proven": True,
+            "primary_oracle": {"opportunity_proven": True},
+            "boundary_sensitivity": {"passed": True},
+            "independent_forward": {"passed": True},
+        }
         self.assertEqual(
             experiment.decide_stability(passed)[0], experiment.DECISION_CONTINUE
+        )
+
+    def test_stability_decision_stops_before_forward_when_frozen_gates_failed(self):
+        audit = {
+            "state": "AWAITING_FORWARD",
+            "stable_opportunity_proven": False,
+            "primary_oracle": {"opportunity_proven": False},
+            "boundary_sensitivity": {"passed": False},
+            "independent_forward": {"passed": False},
+        }
+
+        self.assertEqual(
+            experiment.decide_stability(audit),
+            (
+                experiment.DECISION_STOP,
+                [
+                    "frozen_primary_opportunity_failed",
+                    "boundary_sensitivity_failed",
+                ],
+            ),
         )
 
 
