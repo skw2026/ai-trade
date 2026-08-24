@@ -375,7 +375,9 @@ jobs:
           GATE_DEFER_SERVICES: ${{ vars.GATE_DEFER_SERVICES || 'watchdog scheduler ai-trade-web' }}
           DEPLOY_DISK_PREFLIGHT_ENABLED: ${{ vars.DEPLOY_DISK_PREFLIGHT_ENABLED || 'true' }}
           DEPLOY_GC_TRIGGER_FREE_BYTES: ${{ vars.DEPLOY_GC_TRIGGER_FREE_BYTES || '4294967296' }}
-          DEPLOY_MIN_FREE_BYTES: ${{ vars.DEPLOY_MIN_FREE_BYTES || '805306368' }}
+          # 640 MiB: 128 MiB above the post-pull target; the transaction guard
+          # still aborts before service mutation if the actual pull is unsafe.
+          DEPLOY_MIN_FREE_BYTES: ${{ vars.DEPLOY_MIN_FREE_BYTES || '671088640' }}
           DEPLOY_POST_PULL_MIN_FREE_BYTES: ${{ vars.DEPLOY_POST_PULL_MIN_FREE_BYTES || '536870912' }}
           DEPLOY_TRANSACTION_MIN_FREE_BYTES: ${{ vars.DEPLOY_TRANSACTION_MIN_FREE_BYTES || '33554432' }}
           DEPLOY_DOCKER_GC_UNTIL: ${{ vars.DEPLOY_DOCKER_GC_UNTIL || '1h' }}
