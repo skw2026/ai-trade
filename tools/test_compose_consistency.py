@@ -1654,6 +1654,26 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn("ensure_deploy_post_pull_capacity()", script)
+        self.assertIn(
+            "post-pull disk pressure detected; reclaiming reports and host caches before managed service mutation",
+            script,
+        )
+        post_pull_function = script[
+            script.index("ensure_deploy_post_pull_capacity() {") :
+            script.index("cleanup_post_commit_docker_storage() {")
+        ]
+        self.assertLess(
+            post_pull_function.index("reclaim_report_storage_for_disk_pressure"),
+            post_pull_function.index("reclaim_host_cache_for_disk_pressure"),
+        )
+        self.assertLess(
+            post_pull_function.index("reclaim_host_cache_for_disk_pressure"),
+            post_pull_function.index("insufficient Docker disk headroom for deployment transaction"),
+        )
+        self.assertIn(
+            "docker_storage_unavailable_after_post_pull_gc",
+            post_pull_function,
+        )
         self.assertIn("cleanup_post_commit_docker_storage()", script)
         call_index = script.index("if ! ensure_deploy_disk_capacity; then")
         host_cleanup_index = script.index("if ! cleanup_deploy_host_storage; then")
@@ -1974,6 +1994,46 @@ printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
             self.assertIn("find ", host_gc_args)
             self.assertIn("journalctl --vacuum-size=67108864", host_gc_args)
             self.assertIn("apt-get clean", host_gc_args)
+
+            post_pull_harness = harness.replace(
+                "ensure_deploy_disk_capacity\n",
+                """DEPLOY_TRANSACTION_MIN_FREE_BYTES=33554432
+DEPLOY_POST_PULL_MIN_FREE_BYTES=536870912
+ensure_deploy_post_pull_capacity
+""",
+            )
+            pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            report_gc_log.unlink(missing_ok=True)
+            pathlib.Path(base_env["FAKE_HOST_GC_LOG"]).unlink(missing_ok=True)
+            base_env["FAKE_FREE_BEFORE_KIB"] = "15792"
+            base_env["FAKE_FREE_AFTER_KIB"] = "40000"
+            result = subprocess.run(
+                ["bash", "-c", post_pull_harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            self.assertIn("post-pull disk pressure detected", result.stdout)
+            self.assertIn("disk headroom after post-pull cleanup", result.stdout)
+            self.assertTrue(report_gc_log.exists())
+            self.assertTrue(pathlib.Path(base_env["FAKE_HOST_GC_LOG"]).exists())
+
+            pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            base_env["FAKE_FREE_AFTER_KIB"] = "20000"
+            result = subprocess.run(
+                ["bash", "-c", post_pull_harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "insufficient Docker disk headroom for deployment transaction",
+                result.stdout,
+            )
 
             base_env["FAKE_GC_TRIGGER_FREE_BYTES"] = "2147483648"
             base_env["FAKE_MIN_FREE_BYTES"] = "4294967296"

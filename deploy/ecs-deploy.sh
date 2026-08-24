@@ -685,12 +685,32 @@ ensure_deploy_post_pull_capacity() {
     DEPLOY_DISK_FAILURE_REASON="invalid_transaction_min_free_bytes"
     return 1
   fi
+  if [[ ! "${DEPLOY_POST_PULL_MIN_FREE_BYTES}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[deploy] invalid DEPLOY_POST_PULL_MIN_FREE_BYTES: ${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+    DEPLOY_DISK_FAILURE_REASON="invalid_post_commit_min_free_bytes"
+    return 1
+  fi
   local available_after_pull=""
   if ! available_after_pull="$(docker_storage_available_bytes)"; then
     DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_pull"
     return 1
   fi
   echo "[deploy] disk headroom after target image pull: available_bytes=${available_after_pull} transaction_minimum_bytes=${DEPLOY_TRANSACTION_MIN_FREE_BYTES} post_commit_target_bytes=${DEPLOY_POST_PULL_MIN_FREE_BYTES}"
+  if (( available_after_pull < DEPLOY_POST_PULL_MIN_FREE_BYTES )); then
+    # Target images are present but no managed service has changed yet.  This is
+    # the last safe point to reclaim bounded host artifacts without weakening
+    # the transaction floor or making rollback depend on a partial deployment.
+    echo "[deploy] post-pull disk pressure detected; reclaiming reports and host caches before managed service mutation"
+    if ! reclaim_report_storage_for_disk_pressure; then
+      return 1
+    fi
+    reclaim_host_cache_for_disk_pressure
+    if ! available_after_pull="$(docker_storage_available_bytes)"; then
+      DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_post_pull_gc"
+      return 1
+    fi
+    echo "[deploy] disk headroom after post-pull cleanup: available_bytes=${available_after_pull} transaction_minimum_bytes=${DEPLOY_TRANSACTION_MIN_FREE_BYTES}"
+  fi
   if (( available_after_pull < DEPLOY_TRANSACTION_MIN_FREE_BYTES )); then
     echo "[deploy] insufficient Docker disk headroom for deployment transaction"
     DEPLOY_DISK_FAILURE_REASON="insufficient_post_pull_capacity:${available_after_pull}:${DEPLOY_TRANSACTION_MIN_FREE_BYTES}"
