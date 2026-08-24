@@ -876,6 +876,19 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
 
 
 class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
+    def test_route_rejection_contract_exists_only_for_routed_actions(self):
+        contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+        for action, action_contract in contract["actions"].items():
+            route_contracts = action_contract.get("route_contracts", {})
+            rejection_contract = action_contract.get(
+                "route_rejection_contract", {}
+            )
+            self.assertEqual(
+                bool(route_contracts),
+                bool(rejection_contract),
+                f"action={action}",
+            )
+
     @staticmethod
     def write_step_records(
         artifact_dir: pathlib.Path,

@@ -47,11 +47,7 @@
         "microstructure_alpha_candidate_manifest",
         "microstructure_alpha_lifecycle_report",
         "alpha_source_route_report"
-      ],
-      "route_rejection_contract": {
-        "step": "alpha_source_route",
-        "optional_artifacts": []
-      }
+      ]
     },
     "data": {
       "required_steps": [
