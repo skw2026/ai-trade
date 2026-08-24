@@ -207,11 +207,13 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
             encoded = json.dumps(summary, sort_keys=True)
 
         self.assertEqual(len(summary["runner_errors"]), 3)
+        self.assertEqual(len(summary["runner_tail"]), 4)
         self.assertIn("identity mismatch", annotation)
         self.assertIn("ValueError", annotation)
         self.assertIn("<redacted>", encoded)
         self.assertNotIn("must-not-leak", encoded)
-        self.assertNotIn("ordinary progress", encoded)
+        self.assertNotIn("ordinary progress", "\n".join(summary["runner_errors"]))
+        self.assertIn("ordinary progress", "\n".join(summary["runner_tail"]))
         self.assertNotIn("/opt/ai-trade", encoded)
 
     def test_summary_exposes_only_fixed_statuses_and_sanitized_reason_codes(self):

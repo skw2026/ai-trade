@@ -75,6 +75,9 @@ _RUNNER_ERROR_MARKERS = (
     "permission denied",
     "no such file or directory",
 )
+_RUNNER_SECRET_PATTERN = re.compile(
+    r"(?i)(api[_-]?key|authorization|password|secret|token)(\s*[:=]\s*)(\S+)"
+)
 
 UPSTREAM_REPORTS = {
     "market_alpha_development": (
@@ -139,23 +142,41 @@ def _read_json(path: pathlib.Path) -> Mapping[str, Any] | None:
     return value if isinstance(value, Mapping) else None
 
 
-def _runner_error_lines(path: pathlib.Path) -> list[str]:
+def _sanitize_runner_line(raw_line: str) -> str:
+    line = _RUNNER_SECRET_PATTERN.sub(r"\1\2<redacted>", raw_line)
+    line = re.sub(r"https?://\S+", "<url>", line, flags=re.IGNORECASE)
+    line = re.sub(r"(?<![A-Za-z0-9])/(?:[^\s|]+)", "<path>", line)
+    line = re.sub(r"\b[0-9a-f]{32,}\b", "<digest>", line, flags=re.IGNORECASE)
+    line = re.sub(r"\b[A-Za-z0-9_+/=-]{48,}\b", "<opaque>", line)
+    line = re.sub(r"[\x00-\x1f\x7f]+", " ", line).replace("::", ":")
+    return " ".join(line.split())[:320]
+
+
+def _runner_log_lines(path: pathlib.Path) -> list[str]:
     try:
-        raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return []
+
+
+def _runner_error_lines(path: pathlib.Path) -> list[str]:
     result: list[str] = []
-    secret_pattern = re.compile(
-        r"(?i)(api[_-]?key|authorization|password|secret|token)(\s*[:=]\s*)(\S+)"
-    )
-    for raw_line in reversed(raw_lines):
+    for raw_line in reversed(_runner_log_lines(path)):
         lowered = raw_line.lower()
         if not any(marker.lower() in lowered for marker in _RUNNER_ERROR_MARKERS):
             continue
-        line = secret_pattern.sub(r"\1\2<redacted>", raw_line)
-        line = re.sub(r"(?<![A-Za-z0-9])/(?:[^\s|]+)", "<path>", line)
-        line = re.sub(r"[\x00-\x1f\x7f]+", " ", line).replace("::", ":")
-        line = " ".join(line.split())[:320]
+        line = _sanitize_runner_line(raw_line)
+        if line and line not in result:
+            result.append(line)
+        if len(result) >= 8:
+            break
+    return list(reversed(result))
+
+
+def _runner_tail_lines(path: pathlib.Path) -> list[str]:
+    result: list[str] = []
+    for raw_line in reversed(_runner_log_lines(path)):
+        line = _sanitize_runner_line(raw_line)
         if line and line not in result:
             result.append(line)
         if len(result) >= 8:
@@ -1112,6 +1133,9 @@ def build_summary(artifact_dir: pathlib.Path) -> dict[str, Any]:
         "runner_errors": _runner_error_lines(
             artifact_dir / "closed_loop_runner_command.log"
         ),
+        "runner_tail": _runner_tail_lines(
+            artifact_dir / "closed_loop_runner_command.log"
+        ),
         "upstream": {},
         "decisive": {},
         "authorities": {"promotion": False, "demo": False, "live": False},
@@ -1165,6 +1189,9 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     ) or "none"
     runner_errors = " | ".join(
         str(item) for item in summary.get("runner_errors", [])[:4]
+    ) or "none"
+    runner_tail = " | ".join(
+        str(item) for item in summary.get("runner_tail", [])[-6:]
     ) or "none"
     decisive = summary.get("decisive", {})
     statuses = ",".join(
@@ -1346,6 +1373,7 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     )
     return (
         f"failed_steps={failed_steps}; runner_errors={runner_errors}; "
+        f"runner_tail={runner_tail}; "
         f"upstream={upstream_statuses}; "
         f"information_set_decision={information_set_decision}; "
         f"information_set_progress={information_set_progress}; "
