@@ -293,21 +293,18 @@ jobs:
               exit 1
             fi
             RUNNER_COMMAND_LOG="${DEPLOY_ROOT}/data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_runner_command.log"
-            mkdir -p "${RUNNER_COMMAND_LOG%/*}"
             runner_status=0
-            set +e
             (
               cd "${RELEASE_DIR}"
-              tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
+              tools/capture_closed_loop_command.sh "${RUNNER_COMMAND_LOG}" \
+                tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
                 --compose-file "${RELEASE_DIR}/docker-compose.prod.yml" \
                 --env-file "${DEPLOY_ROOT}/.env.runtime" \
                 --output-root "${DEPLOY_ROOT}/data/reports/closed_loop" \
                 --stage "${CLOSED_LOOP_STAGE}" \
                 --since "${CLOSED_LOOP_SINCE}" \
                 --symbol "${RUNNER_SYMBOL}"
-            ) 2>&1 | tee "${RUNNER_COMMAND_LOG}"
-            runner_status="${PIPESTATUS[0]}"
-            set -e
+            ) || runner_status=$?
             if (( runner_status != 0 )); then
               echo "[ERROR] runner_status=${runner_status}" \
                 | tee -a "${RUNNER_COMMAND_LOG}"

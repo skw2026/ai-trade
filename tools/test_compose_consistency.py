@@ -17,6 +17,7 @@ DEPLOY_SCRIPT = ROOT / "deploy" / "ecs-deploy.sh"
 DEPLOY_DIAGNOSTICS_WRITER = ROOT / "deploy" / "write_deployment_diagnostics.py"
 RUNNER_SCRIPT = ROOT / "tools" / "closed_loop_runner.sh"
 REPORT_DOWNLOADER_SCRIPT = ROOT / "tools" / "download_closed_loop_reports.sh"
+COMMAND_CAPTURE_SCRIPT = ROOT / "tools" / "capture_closed_loop_command.sh"
 ARTIFACT_CONTRACT_VALIDATOR = (
     ROOT / "tools" / "validate_closed_loop_artifact_contract.py"
 )
@@ -907,7 +908,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             'RUNNER_COMMAND_LOG="${DEPLOY_ROOT}/data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_runner_command.log"',
             workflow,
         )
-        self.assertIn('runner_status="${PIPESTATUS[0]}"', workflow)
+        self.assertIn(
+            'tools/capture_closed_loop_command.sh "${RUNNER_COMMAND_LOG}"',
+            workflow,
+        )
+        self.assertIn(") || runner_status=$?", workflow)
         self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "3600"', smoke_workflow)
         self.assertIn(
             "github.event_name == 'workflow_dispatch' && inputs.action || 'research'",
@@ -974,6 +979,27 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('cd "${RELEASE_DIR}"', workflow)
         self.assertIn("timeout-minutes: 120", workflow)
         self.assertIn("command_timeout: 90m", workflow)
+
+    def test_closed_loop_command_capture_does_not_precreate_run_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            output_path = pathlib.Path(td) / "new-run" / "command.log"
+            result = subprocess.run(
+                [
+                    str(COMMAND_CAPTURE_SCRIPT),
+                    str(output_path),
+                    "bash",
+                    "-c",
+                    'test ! -e "$1"; echo "[ERROR] preserved"; exit 7',
+                    "capture-test",
+                    str(output_path.parent),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 7, result.stderr)
+            self.assertEqual(output_path.read_text(encoding="utf-8"), "[ERROR] preserved\n")
 
     def test_smoke_workflow_is_short_health_gate_not_long_s5_gate(self):
         workflow = SMOKE_WORKFLOW.read_text(encoding="utf-8")
