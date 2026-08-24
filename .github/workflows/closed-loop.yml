@@ -2,8 +2,6 @@ name: Closed Loop Research
 
 on:
   push:
-    # Git-over-SSH operators can start one immutable research epoch without
-    # granting GitHub API credentials.  Branch pushes remain release-only.
     tags:
       - "research/**"
   workflow_dispatch:
@@ -49,10 +47,7 @@ on:
         default: "0"
         type: string
   schedule:
-    # Discovery is deliberately independent from release validation.  A main
-    # deployment stops after CD -> Smoke; expensive alpha work runs once per
-    # immutable evidence epoch or by explicit dispatch.
-    - cron: "15 18 * * *" # 每24小时一次
+    - cron: "15 18 * * *"
 
 permissions:
   contents: read
@@ -108,13 +103,10 @@ jobs:
           CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION: ${{ github.event_name == 'schedule' && 'false' || 'true' }}
           CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS: ${{ github.event_name == 'workflow_dispatch' && inputs.replay_feature_days || '0' }}
           CLOSED_LOOP_LOCK_BUSY_POLICY: ${{ github.event_name == 'schedule' && 'skip' || 'fail' }}
-          # The remote scheduler may already be finishing an assess cycle.
-          # Wait long enough for that transaction instead of manufacturing a
-          # lock-only Full failure with an empty evidence directory.
           CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"
           CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
           CLOSED_LOOP_GIT_COMMIT: ${{ github.sha }}
-          CLOSED_LOOP_GIT_BRANCH: ${{ github.ref_name }}
+          CLOSED_LOOP_GIT_BRANCH: ${{ github.ref_type == 'tag' && 'main' || github.ref_name }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
@@ -153,6 +145,7 @@ jobs:
             WORKFLOW_ASSESS_REFRESH_REPLAY_VALIDATION="${CLOSED_LOOP_ASSESS_REFRESH_REPLAY_VALIDATION:-}"
             WORKFLOW_REPLAY_VALIDATION_FEATURE_DAYS="${CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS:-}"
             WORKFLOW_LOCK_BUSY_POLICY="${CLOSED_LOOP_LOCK_BUSY_POLICY:-fail}"
+            WORKFLOW_RUNNER_LOCK_WAIT_SECONDS="${CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS:-900}"
             WORKFLOW_CLOSED_LOOP_RUN_ID="${CLOSED_LOOP_RUN_ID:-}"
             WORKFLOW_CLOSED_LOOP_GIT_COMMIT="${CLOSED_LOOP_GIT_COMMIT:-}"
             WORKFLOW_CLOSED_LOOP_GIT_BRANCH="${CLOSED_LOOP_GIT_BRANCH:-}"
@@ -289,6 +282,7 @@ jobs:
             if [[ -n "${WORKFLOW_REPLAY_VALIDATION_FEATURE_DAYS}" ]]; then
               export CLOSED_LOOP_REPLAY_VALIDATION_FEATURE_DAYS="${WORKFLOW_REPLAY_VALIDATION_FEATURE_DAYS}"
             fi
+            export CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS="${WORKFLOW_RUNNER_LOCK_WAIT_SECONDS}"
             RUNNER_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"
             RUNNER_SYMBOL_UPPER="$(printf '%s' "${RUNNER_SYMBOL}" | tr '[:lower:]' '[:upper:]')"
             if [[ -z "${RUNNER_SYMBOL}" || "${RUNNER_SYMBOL_UPPER}" == "AUTO" ]]; then
@@ -298,7 +292,10 @@ jobs:
               echo "closed-loop runner is not executable" >&2
               exit 1
             fi
+            RUNNER_COMMAND_LOG="${DEPLOY_ROOT}/data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_runner_command.log"
+            mkdir -p "${RUNNER_COMMAND_LOG%/*}"
             runner_status=0
+            set +e
             (
               cd "${RELEASE_DIR}"
               tools/closed_loop_runner.sh "${CLOSED_LOOP_ACTION}" \
@@ -308,8 +305,12 @@ jobs:
                 --stage "${CLOSED_LOOP_STAGE}" \
                 --since "${CLOSED_LOOP_SINCE}" \
                 --symbol "${RUNNER_SYMBOL}"
-            ) || runner_status=$?
+            ) 2>&1 | tee "${RUNNER_COMMAND_LOG}"
+            runner_status="${PIPESTATUS[0]}"
+            set -e
             if (( runner_status != 0 )); then
+              echo "[ERROR] runner_status=${runner_status}" \
+                | tee -a "${RUNNER_COMMAND_LOG}"
               if (( runner_status == 5 )) &&
                  [[ "${WORKFLOW_LOCK_BUSY_POLICY}" == "skip" ]]; then
                 SKIP_RECEIPT="${DEPLOY_ROOT}/data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/overlap_skip.json"
@@ -386,6 +387,7 @@ jobs:
             .artifacts/*.yaml
             .artifacts/*.cbm
             .artifacts/*.csv
+            .artifacts/closed_loop_runner_command.log
             .artifacts/runtime.log
             .artifacts/replay_validation_command.log
           include-hidden-files: true

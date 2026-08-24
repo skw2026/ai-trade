@@ -203,6 +203,7 @@ PY
 fi
 rm -f "${OVERLAP_SKIP_TMP}"
 
+fetch_report "${REMOTE_BASE}/closed_loop_runner_command.log" ".artifacts/closed_loop_runner_command.log" "closed_loop_runner_command_log" "text"
 fetch_report "${REMOTE_BASE}/closed_loop_report.json" ".artifacts/closed_loop_report.json" "closed_loop_report" "json"
 fetch_report "${REMOTE_BASE}/runtime_assess.json" ".artifacts/runtime_assess.json" "runtime_assess" "json"
 fetch_report "${REMOTE_BASE}/runtime.log" ".artifacts/runtime.log" "runtime_log" "text"

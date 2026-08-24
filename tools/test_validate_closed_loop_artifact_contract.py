@@ -142,6 +142,12 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         source = (ROOT / "tools" / "download_closed_loop_reports.sh").read_text(
             encoding="utf-8"
         )
+        self.assertIn(
+            'fetch_report "${REMOTE_BASE}/closed_loop_runner_command.log" '
+            '".artifacts/closed_loop_runner_command.log" '
+            '"closed_loop_runner_command_log" "text"',
+            source,
+        )
         self.assertRegex(
             source,
             re.compile(
@@ -180,6 +186,32 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
 
 
 class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
+    def test_summary_exposes_sanitized_runner_errors(self):
+        summary_module = load_public_summary_module()
+        with tempfile.TemporaryDirectory() as td:
+            artifact_dir = pathlib.Path(td)
+            (artifact_dir / "closed_loop_runner_command.log").write_text(
+                "\n".join(
+                    (
+                        "ordinary progress api_key=must-not-leak",
+                        "[ERROR] identity mismatch token=must-not-leak",
+                        "missing report: /opt/ai-trade/run/report.json",
+                    )
+                ),
+                encoding="utf-8",
+            )
+
+            summary = summary_module.build_summary(artifact_dir)
+            annotation = summary_module._annotation(summary)
+            encoded = json.dumps(summary, sort_keys=True)
+
+        self.assertEqual(len(summary["runner_errors"]), 2)
+        self.assertIn("identity mismatch", annotation)
+        self.assertIn("<redacted>", encoded)
+        self.assertNotIn("must-not-leak", encoded)
+        self.assertNotIn("ordinary progress", encoded)
+        self.assertNotIn("/opt/ai-trade", encoded)
+
     def test_summary_exposes_only_fixed_statuses_and_sanitized_reason_codes(self):
         summary_module = load_public_summary_module()
         with tempfile.TemporaryDirectory() as td:

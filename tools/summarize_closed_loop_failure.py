@@ -60,6 +60,14 @@ _SAFE_TOKEN = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,127}$")
 _SAFE_STEP = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _STEP_RESULTS = {"pass", "fail", "skipped"}
 _STEP_KINDS = {"required", "diagnostic", "observation", "route"}
+_RUNNER_ERROR_MARKERS = (
+    "[ERROR]",
+    "identity mismatch",
+    "missing report:",
+    "command not found",
+    "permission denied",
+    "no such file or directory",
+)
 
 UPSTREAM_REPORTS = {
     "market_alpha_development": (
@@ -122,6 +130,30 @@ def _read_json(path: pathlib.Path) -> Mapping[str, Any] | None:
     except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError):
         return None
     return value if isinstance(value, Mapping) else None
+
+
+def _runner_error_lines(path: pathlib.Path) -> list[str]:
+    try:
+        raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    result: list[str] = []
+    secret_pattern = re.compile(
+        r"(?i)(api[_-]?key|authorization|password|secret|token)(\s*[:=]\s*)(\S+)"
+    )
+    for raw_line in raw_lines:
+        lowered = raw_line.lower()
+        if not any(marker.lower() in lowered for marker in _RUNNER_ERROR_MARKERS):
+            continue
+        line = secret_pattern.sub(r"\1\2<redacted>", raw_line)
+        line = re.sub(r"(?<![A-Za-z0-9])/(?:[^\s|]+)", "<path>", line)
+        line = re.sub(r"[\x00-\x1f\x7f]+", " ", line).replace("::", ":")
+        line = " ".join(line.split())[:320]
+        if line and line not in result:
+            result.append(line)
+        if len(result) >= 8:
+            break
+    return result
 
 
 def _safe_tokens(values: Any, *, limit: int = 12) -> list[str]:
@@ -1070,6 +1102,9 @@ def build_summary(artifact_dir: pathlib.Path) -> dict[str, Any]:
             "invalid": _safe_tokens(download.get("invalid")),
         },
         "failed_steps": _failed_steps(artifact_dir / "step_status.jsonl"),
+        "runner_errors": _runner_error_lines(
+            artifact_dir / "closed_loop_runner_command.log"
+        ),
         "upstream": {},
         "decisive": {},
         "authorities": {"promotion": False, "demo": False, "live": False},
@@ -1120,6 +1155,9 @@ def _write_json(path: pathlib.Path, payload: Mapping[str, Any]) -> None:
 def _annotation(summary: Mapping[str, Any]) -> str:
     failed_steps = ",".join(
         str(item["step"]) for item in summary.get("failed_steps", [])
+    ) or "none"
+    runner_errors = " | ".join(
+        str(item) for item in summary.get("runner_errors", [])[:4]
     ) or "none"
     decisive = summary.get("decisive", {})
     statuses = ",".join(
@@ -1300,7 +1338,8 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         ",".join(maker_subsecond_progress_parts) or "UNAVAILABLE"
     )
     return (
-        f"failed_steps={failed_steps}; upstream={upstream_statuses}; "
+        f"failed_steps={failed_steps}; runner_errors={runner_errors}; "
+        f"upstream={upstream_statuses}; "
         f"information_set_decision={information_set_decision}; "
         f"information_set_progress={information_set_progress}; "
         f"maker_opportunity_decision={maker_opportunity_decision}; "
@@ -1333,7 +1372,11 @@ def main() -> int:
             handle.write("## Closed Loop evidence summary\n\n")
             handle.write(f"```json\n{rendered}\n```\n")
     if args.emit_annotation:
-        level = "error" if summary["failed_steps"] else "notice"
+        level = (
+            "error"
+            if summary["failed_steps"] or summary["runner_errors"]
+            else "notice"
+        )
         print(f"::{level} title=Closed Loop evidence summary::{_annotation(summary)}")
     else:
         print(rendered)

@@ -891,6 +891,23 @@ class ComposeConsistencyTest(unittest.TestCase):
             "group: ai-trade-remote-closed-loop\n", smoke_workflow
         )
         self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"', workflow)
+        self.assertIn(
+            "WORKFLOW_RUNNER_LOCK_WAIT_SECONDS=\"${CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS:-900}\"",
+            workflow,
+        )
+        self.assertIn(
+            "export CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS=\"${WORKFLOW_RUNNER_LOCK_WAIT_SECONDS}\"",
+            workflow,
+        )
+        self.assertIn(
+            "github.ref_type == 'tag' && 'main' || github.ref_name",
+            workflow,
+        )
+        self.assertIn(
+            'RUNNER_COMMAND_LOG="${DEPLOY_ROOT}/data/reports/closed_loop/${CLOSED_LOOP_RUN_ID}/closed_loop_runner_command.log"',
+            workflow,
+        )
+        self.assertIn('runner_status="${PIPESTATUS[0]}"', workflow)
         self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "3600"', smoke_workflow)
         self.assertIn(
             "github.event_name == 'workflow_dispatch' && inputs.action || 'research'",
