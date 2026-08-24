@@ -2,6 +2,8 @@
 
 日期：2026-08-24（Asia/Shanghai）
 
+后续说明：v4 已完成并形成保守 STOP 下界；复核发现其退出占用仍按最大 horizon 释放。关闭该机制前只允许执行 [v4 结果与 exact-settlement 校正](2026-08-24-maker-v4-result.md) 中定义的 v5 正确性实验。
+
 ## 结论
 
 关闭固定持有期方向性 maker payoff 研究族。不得继续调整该研究族的模型、阈值、特征或成本假设，也不得等待新的 24 小时 forward 数据来修复已经失败的冻结 primary/boundary 门禁。

@@ -1,16 +1,16 @@
 {
-  "schema_version": "maker_execution_opportunity_policy_v3",
+  "schema_version": "maker_execution_opportunity_policy_v4",
   "research_domain": "development_only",
   "promotion_evidence": false,
-  "experiment_id": "bybit_sol_first_passage_take_profit_opportunity_audit_v4",
+  "experiment_id": "bybit_sol_exact_settlement_take_profit_opportunity_audit_v5",
   "source_information_set": "bybit_sol_btc_eth_l50_public_trades_v3",
-  "single_variable_change": "replace_clock_time_exit_with_immediate_passive_take_profit_horizon_taker_fallback",
+  "single_variable_change": "replace_maximum_horizon_occupancy_with_realized_exit_settlement_timestamp",
   "split_calendar": {
     "source": "inherit_exact_absolute_primary_and_boundary_splits",
     "baseline_manifest_schema_version": "maker_opportunity_frozen_audit_v1",
     "baseline_experiment_id": "bybit_sol_frozen_maker_opportunity_audit_v2",
     "baseline_policy_identity_sha256": "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac",
-    "new_forward_window_starts_after_v4_manifest_freeze": true
+    "new_forward_window_starts_after_v5_manifest_freeze": true
   },
   "actions": {
     "directions": ["long", "short"],
@@ -27,7 +27,8 @@
     "take_profit_bps": 10.0,
     "take_profit_selection_basis": "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment",
     "exit_timeout_source": "action_horizon_seconds",
-    "exit_reprice_max_attempts": 0
+    "exit_reprice_max_attempts": 0,
+    "occupancy_release": "realized_exit_settlement_timestamp"
   },
   "fill_proxy": {
     "method": "opposite_aggressor_quote_volume_and_top_of_book_trade_through_v1",
@@ -54,7 +55,7 @@
     "rolling_step_seconds": 14400
   },
   "stability_audit": {
-    "manifest_schema_version": "maker_opportunity_frozen_audit_v3",
+    "manifest_schema_version": "maker_opportunity_frozen_audit_v4",
     "boundary_offsets_seconds": [0, -3600, -7200, -10800],
     "minimum_boundary_pass_ratio": 0.75,
     "independent_forward_window_seconds": 86400,

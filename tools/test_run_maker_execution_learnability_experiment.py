@@ -64,15 +64,18 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
         )
         np.testing.assert_allclose(utilities, [[0.0, 4.0], [-3.0, 0.0]])
 
-    def test_policy_occupies_until_timeout_or_actual_fill_plus_horizon(self):
+    def test_policy_occupies_until_timeout_or_realized_settlement(self):
         timestamps = np.arange(15, dtype=np.int64) * 1000
         scores = np.ones((15, 1), dtype=np.float64)
         outcomes = np.full((15, 1), np.nan, dtype=np.float64)
         fills = np.full((15, 1), -1, dtype=np.int64)
+        settlements = np.full((15, 1), -1, dtype=np.int64)
         outcomes[6, 0] = 5.0
         fills[6, 0] = 8000
-        outcomes[10, 0] = 7.0
-        fills[10, 0] = 12000
+        settlements[6, 0] = 9000
+        outcomes[9, 0] = 7.0
+        fills[9, 0] = 11000
+        settlements[9, 0] = 12000
         actions = [{"direction": "long", "horizon_seconds": 2}]
 
         report = experiment.evaluate_maker_policy(
@@ -80,6 +83,7 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
             prediction=scores,
             realized_base=outcomes,
             fill_timestamps=fills,
+            settlement_timestamps=settlements,
             actions=actions,
             score_threshold=0.5,
             base_cost_bps=4.0,
@@ -99,14 +103,17 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
         scores = np.arange(20, dtype=np.float64).reshape(-1, 1)
         outcomes = np.full((20, 1), np.nan, dtype=np.float64)
         fills = np.full((20, 1), -1, dtype=np.int64)
+        settlements = np.full((20, 1), -1, dtype=np.int64)
         for index in (7, 16):
             outcomes[index, 0] = 6.0
             fills[index, 0] = timestamps[index] + 2000
+            settlements[index, 0] = fills[index, 0] + 1000
         report = experiment.select_nested_maker_threshold(
             timestamps=timestamps,
             prediction=scores,
             realized_base=outcomes,
             fill_timestamps=fills,
+            settlement_timestamps=settlements,
             actions=[{"direction": "long", "horizon_seconds": 1}],
             quantiles=[0.0, 0.5],
             minimum_trades=1,
@@ -249,11 +256,13 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
         selection_fills = np.tile(
             (selection_timestamps + 2000).reshape(-1, 1), (1, 2)
         )
+        fit_settlements = fit_fills + 5000
         result = experiment.fit_predict_sequential_hurdle_tail_architecture(
             fit_features=fit_features,
             fit_timestamps=fit_timestamps,
             fit_stress_utilities=utilities(fit_features),
             fit_fill_timestamps=fit_fills,
+            fit_settlement_timestamps=fit_settlements,
             model_selection_features=selection_features,
             model_selection_stress_utilities=utilities(selection_features),
             model_selection_fill_timestamps=selection_fills,
@@ -277,6 +286,7 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
                     utility_model=None,
                     utility_constant=4.0,
                     mean_fill_latency_seconds=2.0,
+                    mean_position_lifetime_seconds=15.0,
                 )
             ],
             opportunity_cost_bps_per_second=0.12,

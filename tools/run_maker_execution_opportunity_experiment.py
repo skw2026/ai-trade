@@ -5,7 +5,8 @@ This experiment deliberately runs before any model fitting.  It asks whether the
 existing forward microstructure capture contains stable net opportunity when a
 passive entry is credited only after both visible queue consumption and a strict
 top-of-book trade-through.  The proxy is diagnostic and cannot authorize demo
-or live trading.
+or live trading.  Non-overlap releases only at each realized exit settlement
+timestamp, never at a label-derived or assumed earlier time.
 """
 
 from __future__ import annotations
@@ -25,14 +26,14 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_execution_opportunity_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_execution_opportunity_policy_v3"
+POLICY_SCHEMA_VERSION = "maker_execution_opportunity_policy_v4"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "caa33add359cc79f725cfeb3c25016c41b5c2070fdce4098575834c52409039f"
+    "6b4972e60f9ec2c0356ac648bbad2f61c764982a4d923a935cd3253d814a83be"
 )
 DECISION_CONTINUE = "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT"
 DECISION_STOP = "STOP_MAKER_EXECUTION_FAMILY"
 DECISION_WAIT = "WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW"
-AUDIT_MANIFEST_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v3"
+AUDIT_MANIFEST_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v4"
 BASELINE_AUDIT_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v1"
 BASELINE_POLICY_IDENTITY_SHA256 = (
     "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
@@ -51,7 +52,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         policy.get("research_domain") == "development_only"
         and policy.get("promotion_evidence") is False
         and policy.get("single_variable_change")
-        == "replace_clock_time_exit_with_immediate_passive_take_profit_horizon_taker_fallback"
+        == "replace_maximum_horizon_occupancy_with_realized_exit_settlement_timestamp"
     ):
         failures.append("research_domain")
     if policy.get("split_calendar") != {
@@ -59,7 +60,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         "baseline_manifest_schema_version": BASELINE_AUDIT_SCHEMA_VERSION,
         "baseline_experiment_id": BASELINE_EXPERIMENT_ID,
         "baseline_policy_identity_sha256": BASELINE_POLICY_IDENTITY_SHA256,
-        "new_forward_window_starts_after_v4_manifest_freeze": True,
+        "new_forward_window_starts_after_v5_manifest_freeze": True,
     }:
         failures.append("split_calendar")
     actions = policy.get("actions")
@@ -82,6 +83,8 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         == "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment"
         and actions.get("exit_timeout_source") == "action_horizon_seconds"
         and actions.get("exit_reprice_max_attempts") == 0
+        and actions.get("occupancy_release")
+        == "realized_exit_settlement_timestamp"
     ):
         failures.append("actions")
     fill_proxy = policy.get("fill_proxy")
@@ -278,7 +281,7 @@ def create_frozen_audit_manifest(
         else primary_end_ms
     )
     if baseline_manifest is not None and int(timestamps[-1]) < frozen_end_ms - 1000:
-        raise ValueError("maker v4 inherited split outcome tail is not fully observed")
+        raise ValueError("maker v5 inherited split outcome tail is not fully observed")
     forward_start_ms = (
         int(timestamps[-1]) + 1000
         if baseline_manifest is not None
@@ -484,7 +487,13 @@ def build_maker_action_returns(
     exit_reprice_max_attempts: int = 0,
     exit_reprice_bps: float = 0.0,
     take_profit_bps: float = 0.0,
-) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, Any]], Dict[str, Any]]:
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    List[Dict[str, Any]],
+    Dict[str, Any],
+]:
     """Build base-net outcomes only for conservatively inferred full fills."""
 
     timestamps = np.asarray(series["timestamp"], dtype=np.int64)
@@ -646,6 +655,7 @@ def build_maker_action_returns(
     ]
     outcomes = np.full((len(timestamps), len(actions)), np.nan, dtype=np.float64)
     fill_timestamps = np.full(outcomes.shape, -1, dtype=np.int64)
+    settlement_timestamps = np.full(outcomes.shape, -1, dtype=np.int64)
     positions = {int(timestamp): index for index, timestamp in enumerate(timestamps)}
     decision_fill_directions = 0
     maker_exit_action_count = 0
@@ -733,6 +743,9 @@ def build_maker_action_returns(
                     ) * 10000.0
                 outcomes[row_index, action_index] = gross_bps - cost
                 fill_timestamps[row_index, action_index] = fill_timestamp
+                settlement_timestamps[row_index, action_index] = int(
+                    timestamps[exit_index]
+                )
                 continue
 
             if take_profit_mode:
@@ -818,6 +831,9 @@ def build_maker_action_returns(
                     gross_bps = (fill_price / exit_price - 1.0) * 10000.0
                 outcomes[row_index, action_index] = gross_bps - action_cost
                 fill_timestamps[row_index, action_index] = fill_timestamp
+                settlement_timestamps[row_index, action_index] = int(
+                    timestamps[exit_index]
+                )
                 continue
 
             exit_fill: Tuple[int, float] | None = None
@@ -906,12 +922,19 @@ def build_maker_action_returns(
                 gross_bps = (fill_price / exit_price - 1.0) * 10000.0
             outcomes[row_index, action_index] = gross_bps - action_cost
             fill_timestamps[row_index, action_index] = fill_timestamp
+            settlement_timestamps[row_index, action_index] = int(
+                timestamps[exit_index]
+            )
 
     finite = np.isfinite(outcomes)
-    return outcomes, fill_timestamps, actions, {
+    return outcomes, fill_timestamps, settlement_timestamps, actions, {
         "decision_row_count": int(len(timestamps)),
         "filled_decision_count": int(np.sum(np.any(finite, axis=1))),
         "filled_action_count": int(np.sum(finite)),
+        "settled_action_count": int(np.sum(settlement_timestamps >= 0)),
+        "settlement_timestamp_sha256": common.array_sha256(
+            settlement_timestamps
+        ),
         "filled_direction_count": int(decision_fill_directions),
         "fill_proxy_method": (
             "opposite_aggressor_quote_volume_and_top_of_book_trade_through_v1"
@@ -942,6 +965,7 @@ def build_maker_action_returns(
         "stress_increment_uses_maximum_fallback_cost": bool(
             maker_exit_mode or take_profit_mode
         ),
+        "occupancy_release": "realized_exit_settlement_timestamp",
     }
 
 
@@ -950,11 +974,20 @@ def evaluate_fill_aware_oracle(
     timestamps: np.ndarray,
     outcomes: np.ndarray,
     fill_timestamps: np.ndarray,
+    settlement_timestamps: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     indices: np.ndarray,
     base_cost_bps: float,
     stress_cost_multiplier: float,
 ) -> Dict[str, Any]:
+    outcome_matrix = np.asarray(outcomes, dtype=np.float64)
+    fill_matrix = np.asarray(fill_timestamps, dtype=np.int64)
+    settlement_matrix = np.asarray(settlement_timestamps, dtype=np.int64)
+    if not (
+        outcome_matrix.shape == fill_matrix.shape == settlement_matrix.shape
+        and outcome_matrix.shape == (len(timestamps), len(actions))
+    ):
+        raise ValueError("maker oracle outcome timestamps are not aligned")
     stress_increment = float(base_cost_bps) * (
         float(stress_cost_multiplier) - 1.0
     )
@@ -962,36 +995,54 @@ def evaluate_fill_aware_oracle(
     stress_edges: List[float] = []
     action_counts: Dict[str, int] = {}
     fill_latency_seconds: List[float] = []
+    position_lifetime_seconds: List[float] = []
     next_allowed_ms = -1
     for raw_index in np.asarray(indices, dtype=np.int64):
         row_index = int(raw_index)
         decision_timestamp = int(timestamps[row_index])
         if decision_timestamp < next_allowed_ms:
             continue
-        row = np.asarray(outcomes[row_index], dtype=np.float64)
+        row = outcome_matrix[row_index]
         allowed = np.flatnonzero(np.isfinite(row) & ((row - stress_increment) > 0.0))
         if not len(allowed):
             continue
         action_index = int(allowed[int(np.argmax(row[allowed]))])
-        fill_timestamp = int(fill_timestamps[row_index, action_index])
+        fill_timestamp = int(fill_matrix[row_index, action_index])
+        settlement_timestamp = int(
+            settlement_matrix[row_index, action_index]
+        )
         if fill_timestamp <= decision_timestamp:
             raise ValueError("maker oracle fill timestamp is invalid")
         action = actions[action_index]
         horizon = int(action["horizon_seconds"])
+        maximum_settlement_timestamp = fill_timestamp + int(
+            action.get("settlement_seconds", horizon)
+        ) * 1000
+        if not (
+            fill_timestamp < settlement_timestamp <= maximum_settlement_timestamp
+        ):
+            raise ValueError("maker oracle settlement timestamp is invalid")
         base_edge = float(row[action_index])
         base_edges.append(base_edge)
         stress_edges.append(base_edge - stress_increment)
         key = f"{action['direction']}_{horizon}s"
         action_counts[key] = action_counts.get(key, 0) + 1
         fill_latency_seconds.append((fill_timestamp - decision_timestamp) / 1000.0)
-        settlement_seconds = int(action.get("settlement_seconds", horizon))
-        next_allowed_ms = fill_timestamp + settlement_seconds * 1000
+        position_lifetime_seconds.append(
+            (settlement_timestamp - fill_timestamp) / 1000.0
+        )
+        next_allowed_ms = settlement_timestamp
     return {
         "base_cost": development.summarize_edges(base_edges),
         "stress_cost": development.summarize_edges(stress_edges),
         "action_counts": action_counts,
         "mean_fill_latency_seconds": (
             float(np.mean(fill_latency_seconds)) if fill_latency_seconds else None
+        ),
+        "mean_position_lifetime_seconds": (
+            float(np.mean(position_lifetime_seconds))
+            if position_lifetime_seconds
+            else None
         ),
     }
 
@@ -1001,6 +1052,7 @@ def build_oracle(
     timestamps: np.ndarray,
     outcomes: np.ndarray,
     fill_timestamps: np.ndarray,
+    settlement_timestamps: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     splits: Sequence[development.TimeSplit],
     policy: Mapping[str, Any],
@@ -1021,6 +1073,7 @@ def build_oracle(
             timestamps=timestamps,
             outcomes=outcomes,
             fill_timestamps=fill_timestamps,
+            settlement_timestamps=settlement_timestamps,
             actions=actions,
             indices=indices,
             base_cost_bps=base_cost,
@@ -1085,6 +1138,7 @@ def evaluate_stability_audit(
     timestamps: np.ndarray,
     outcomes: np.ndarray,
     fill_timestamps: np.ndarray,
+    settlement_timestamps: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     policy: Mapping[str, Any],
 ) -> Dict[str, Any]:
@@ -1092,6 +1146,7 @@ def evaluate_stability_audit(
         timestamps=timestamps,
         outcomes=outcomes,
         fill_timestamps=fill_timestamps,
+        settlement_timestamps=settlement_timestamps,
         actions=actions,
         splits=_splits_from_manifest(manifest["primary_splits"]),
         policy=policy,
@@ -1102,6 +1157,7 @@ def evaluate_stability_audit(
             timestamps=timestamps,
             outcomes=outcomes,
             fill_timestamps=fill_timestamps,
+            settlement_timestamps=settlement_timestamps,
             actions=actions,
             splits=_splits_from_manifest(manifest["boundary_splits"][str(int(offset))]),
             policy=policy,
@@ -1142,6 +1198,7 @@ def evaluate_stability_audit(
             timestamps=timestamps,
             outcomes=outcomes,
             fill_timestamps=fill_timestamps,
+            settlement_timestamps=settlement_timestamps,
             actions=actions,
             splits=_forward_splits(manifest),
             policy=policy,
@@ -1224,7 +1281,13 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     actions_policy = policy["actions"]
     fill_policy = policy["fill_proxy"]
     base_cost = _total_base_cost_bps(policy)
-    outcomes, fill_timestamps, actions, fill_audit = build_maker_action_returns(
+    (
+        outcomes,
+        fill_timestamps,
+        settlement_timestamps,
+        actions,
+        fill_audit,
+    ) = build_maker_action_returns(
         series,
         horizons_seconds=actions_policy["horizons_seconds"],
         placement_latency_seconds=int(actions_policy["placement_latency_seconds"]),
@@ -1272,6 +1335,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         timestamps=timestamps,
         outcomes=outcomes,
         fill_timestamps=fill_timestamps,
+        settlement_timestamps=settlement_timestamps,
         actions=actions,
         policy=policy,
     )

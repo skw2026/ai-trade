@@ -3,7 +3,7 @@
 
 The experiment is development-only.  Future queue consumption and trade-through
 are labels/outcomes, never features.  A signal occupies the strategy until its
-order times out or until the inferred fill plus holding horizon has elapsed.
+order times out or until the inferred exit has actually settled.
 Passing this screen can only preregister an independent forward validation.
 """
 
@@ -25,9 +25,9 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_execution_learnability_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_execution_learnability_policy_v4"
+POLICY_SCHEMA_VERSION = "maker_execution_learnability_policy_v5"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "211635bc7722bc059c5c3d2b1973738ff4304f5f679f0821e443e1ed41d3e483"
+    "b9acdd712dfdb314e356e99f2270c826d9f3b19831e638e33551209c3529eb86"
 )
 ARCHITECTURE_IDS = (
     "sequential_hurdle_tail_action_value",
@@ -92,7 +92,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and target.get("unfilled_occupancy")
         == "placement_latency_plus_fill_timeout"
         and target.get("filled_occupancy")
-        == "placement_latency_plus_mean_fill_latency_plus_first_passage_horizon"
+        == "placement_latency_plus_mean_fill_latency_plus_mean_realized_position_lifetime"
         and target.get("explicit_no_order_action") is True
         and float(target.get("minimum_action_value_bps", -1.0)) == 0.0
         and target.get("architecture_selection_scope")
@@ -126,6 +126,8 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         == "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment"
         and execution.get("exit_timeout_source") == "action_horizon_seconds"
         and execution.get("exit_reprice_max_attempts") == 0
+        and execution.get("occupancy_release")
+        == "realized_exit_settlement_timestamp"
         and execution.get("one_outstanding_order_or_position") is True
     ):
         failures.append("execution")
@@ -338,6 +340,7 @@ def evaluate_maker_policy(
     prediction: np.ndarray,
     realized_base: np.ndarray,
     fill_timestamps: np.ndarray,
+    settlement_timestamps: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     score_threshold: float,
     base_cost_bps: float,
@@ -349,10 +352,11 @@ def evaluate_maker_policy(
     scores = np.asarray(prediction, dtype=np.float64)
     outcomes = np.asarray(realized_base, dtype=np.float64)
     fills = np.asarray(fill_timestamps, dtype=np.int64)
+    settlements = np.asarray(settlement_timestamps, dtype=np.int64)
     ts = np.asarray(timestamps, dtype=np.int64)
     action_count = len(actions)
     if not (
-        scores.shape == outcomes.shape == fills.shape
+        scores.shape == outcomes.shape == fills.shape == settlements.shape
         and scores.shape == (len(ts), action_count)
     ):
         raise ValueError("maker policy evaluation arrays are not aligned")
@@ -377,6 +381,7 @@ def evaluate_maker_policy(
     base_edges: List[float] = []
     stress_edges: List[float] = []
     fill_latencies: List[float] = []
+    position_lifetimes: List[float] = []
     action_counts: Dict[str, int] = {}
     order_count = 0
     unfilled_order_count = 0
@@ -399,9 +404,10 @@ def evaluate_maker_policy(
         ) * 1000
         realized = float(outcomes[row_index, action_index])
         fill_timestamp = int(fills[row_index, action_index])
+        settlement_timestamp = int(settlements[row_index, action_index])
         if not math.isfinite(realized):
-            if fill_timestamp != -1:
-                raise ValueError("unfilled maker action has a fill timestamp")
+            if fill_timestamp != -1 or settlement_timestamp != -1:
+                raise ValueError("unfilled maker action has outcome timestamps")
             unfilled_order_count += 1
             next_allowed_ms = timeout_timestamp
             continue
@@ -409,13 +415,22 @@ def evaluate_maker_policy(
             raise ValueError("filled maker action timestamp is outside timeout")
         action = actions[action_index]
         horizon = int(action["horizon_seconds"])
+        maximum_settlement_timestamp = fill_timestamp + int(
+            action.get("settlement_seconds", horizon)
+        ) * 1000
+        if not (
+            fill_timestamp < settlement_timestamp <= maximum_settlement_timestamp
+        ):
+            raise ValueError("filled maker action settlement is invalid")
         key = f"{action['direction']}_{horizon}s"
         action_counts[key] = action_counts.get(key, 0) + 1
         base_edges.append(realized)
         stress_edges.append(realized - stress_increment)
         fill_latencies.append((fill_timestamp - decision_timestamp) / 1000.0)
-        settlement_seconds = int(action.get("settlement_seconds", horizon))
-        next_allowed_ms = fill_timestamp + settlement_seconds * 1000
+        position_lifetimes.append(
+            (settlement_timestamp - fill_timestamp) / 1000.0
+        )
+        next_allowed_ms = settlement_timestamp
     return {
         "score_threshold": threshold,
         "base_cost": development.summarize_edges(base_edges),
@@ -428,6 +443,9 @@ def evaluate_maker_policy(
         "mean_fill_latency_seconds": (
             float(np.mean(fill_latencies)) if fill_latencies else None
         ),
+        "mean_position_lifetime_seconds": (
+            float(np.mean(position_lifetimes)) if position_lifetimes else None
+        ),
         "base_edges_bps": base_edges,
         "stress_edges_bps": stress_edges,
     }
@@ -439,6 +457,7 @@ def select_nested_maker_threshold(
     prediction: np.ndarray,
     realized_base: np.ndarray,
     fill_timestamps: np.ndarray,
+    settlement_timestamps: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     quantiles: Sequence[float],
     minimum_trades: int,
@@ -477,6 +496,7 @@ def select_nested_maker_threshold(
             prediction=scores,
             realized_base=realized_base,
             fill_timestamps=fill_timestamps,
+            settlement_timestamps=settlement_timestamps,
             actions=actions,
             score_threshold=threshold,
             base_cost_bps=base_cost_bps,
@@ -542,6 +562,7 @@ def evaluate_maker_permutation_controls(
     prediction: np.ndarray,
     realized_base: np.ndarray,
     fill_timestamps: np.ndarray,
+    settlement_timestamps: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     score_threshold: float,
     base_cost_bps: float,
@@ -560,6 +581,7 @@ def evaluate_maker_permutation_controls(
             prediction=np.asarray(prediction)[permutation],
             realized_base=realized_base,
             fill_timestamps=fill_timestamps,
+            settlement_timestamps=settlement_timestamps,
             actions=actions,
             score_threshold=score_threshold,
             base_cost_bps=base_cost_bps,
@@ -581,6 +603,7 @@ class HurdleTailActionModel:
     utility_model: Any | None
     utility_constant: float
     mean_fill_latency_seconds: float
+    mean_position_lifetime_seconds: float
 
 
 @dataclasses.dataclass
@@ -597,14 +620,19 @@ def estimate_fit_only_sequential_opportunity_rate(
     timestamps: np.ndarray,
     stress_utilities: np.ndarray,
     fill_timestamps: np.ndarray,
+    settlement_timestamps: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
 ) -> float:
     ts = np.asarray(timestamps, dtype=np.int64)
     utilities = np.asarray(stress_utilities, dtype=np.float64)
     fills = np.asarray(fill_timestamps, dtype=np.int64)
+    settlements = np.asarray(settlement_timestamps, dtype=np.int64)
     if not (
         len(ts) >= 2
-        and utilities.shape == fills.shape == (len(ts), len(actions))
+        and utilities.shape
+        == fills.shape
+        == settlements.shape
+        == (len(ts), len(actions))
     ):
         raise ValueError("sequential opportunity-rate inputs are invalid")
     next_allowed_ms = -1
@@ -621,9 +649,10 @@ def estimate_fit_only_sequential_opportunity_rate(
             continue
         action_index = int(allowed[int(np.argmax(utilities[row_index, allowed]))])
         total_stress_bps += float(utilities[row_index, action_index])
-        next_allowed_ms = int(fills[row_index, action_index]) + int(
-            actions[action_index]["horizon_seconds"]
-        ) * 1000
+        settlement_timestamp = int(settlements[row_index, action_index])
+        if settlement_timestamp <= int(fills[row_index, action_index]):
+            raise ValueError("fit-only sequential settlement is invalid")
+        next_allowed_ms = settlement_timestamp
     elapsed_seconds = (int(ts[-1]) - int(ts[0])) / 1000.0
     return total_stress_bps / elapsed_seconds if elapsed_seconds > 0.0 else 0.0
 
@@ -653,6 +682,7 @@ def fit_sequential_hurdle_tail_model(
     fit_timestamps: np.ndarray,
     fit_stress_utilities: np.ndarray,
     fit_fill_timestamps: np.ndarray,
+    fit_settlement_timestamps: np.ndarray,
     model_selection_features: np.ndarray,
     model_selection_stress_utilities: np.ndarray,
     model_selection_fill_timestamps: np.ndarray,
@@ -665,11 +695,13 @@ def fit_sequential_hurdle_tail_model(
         model_selection_stress_utilities, dtype=np.float64
     )
     fit_fills = np.asarray(fit_fill_timestamps, dtype=np.int64)
+    fit_settlements = np.asarray(fit_settlement_timestamps, dtype=np.int64)
     selection_fills = np.asarray(model_selection_fill_timestamps, dtype=np.int64)
     opportunity_rate = estimate_fit_only_sequential_opportunity_rate(
         timestamps=fit_timestamps,
         stress_utilities=fit_utilities,
         fill_timestamps=fit_fills,
+        settlement_timestamps=fit_settlements,
         actions=actions,
     )
     quantile = float(policy["target"]["conditional_utility_quantile"])
@@ -742,6 +774,23 @@ def fit_sequential_hurdle_tail_model(
         mean_fill_latency = float(np.mean(fill_latency)) if len(fill_latency) else float(
             policy["execution"]["fill_timeout_seconds"]
         )
+        position_lifetime = (
+            fit_settlements[filled_fit, action_index]
+            - fit_fills[filled_fit, action_index]
+        ) / 1000.0
+        if len(position_lifetime) and (
+            np.any(position_lifetime <= 0.0)
+            or np.any(
+                position_lifetime
+                > int(actions[action_index]["horizon_seconds"])
+            )
+        ):
+            raise ValueError("fit-only maker position lifetime is invalid")
+        mean_position_lifetime = (
+            float(np.mean(position_lifetime))
+            if len(position_lifetime)
+            else float(actions[action_index]["horizon_seconds"])
+        )
         action_models.append(
             HurdleTailActionModel(
                 fill_model=fill_model,
@@ -749,6 +798,7 @@ def fit_sequential_hurdle_tail_model(
                 utility_model=utility_model,
                 utility_constant=utility_constant,
                 mean_fill_latency_seconds=mean_fill_latency,
+                mean_position_lifetime_seconds=mean_position_lifetime,
             )
         )
     return SequentialHurdleTailModel(
@@ -787,7 +837,7 @@ def predict_sequential_hurdle_tail_action_value(
         filled_seconds = (
             model.placement_latency_seconds
             + action_model.mean_fill_latency_seconds
-            + int(action["horizon_seconds"])
+            + action_model.mean_position_lifetime_seconds
         )
         unfilled_seconds = model.placement_latency_seconds + model.fill_timeout_seconds
         expected_occupancy_seconds = (
@@ -812,6 +862,7 @@ def fit_predict_sequential_hurdle_tail_architecture(
     fit_timestamps: np.ndarray,
     fit_stress_utilities: np.ndarray,
     fit_fill_timestamps: np.ndarray,
+    fit_settlement_timestamps: np.ndarray,
     model_selection_features: np.ndarray,
     model_selection_stress_utilities: np.ndarray,
     model_selection_fill_timestamps: np.ndarray,
@@ -825,6 +876,7 @@ def fit_predict_sequential_hurdle_tail_architecture(
         fit_timestamps=fit_timestamps,
         fit_stress_utilities=fit_stress_utilities,
         fit_fill_timestamps=fit_fill_timestamps,
+        fit_settlement_timestamps=fit_settlement_timestamps,
         model_selection_features=model_selection_features,
         model_selection_stress_utilities=model_selection_stress_utilities,
         model_selection_fill_timestamps=model_selection_fill_timestamps,
@@ -845,6 +897,10 @@ def fit_predict_sequential_hurdle_tail_architecture(
             "opportunity_cost_bps_per_second": model.opportunity_cost_bps_per_second,
             "mean_post_placement_fill_wait_seconds_by_action": {
                 str(index): item.mean_fill_latency_seconds
+                for index, item in enumerate(model.action_models)
+            },
+            "mean_realized_position_lifetime_seconds_by_action": {
+                str(index): item.mean_position_lifetime_seconds
                 for index, item in enumerate(model.action_models)
             },
             "fill_constants_by_action": {
@@ -871,6 +927,7 @@ def evaluate_architecture_split(
     fit_timestamps: np.ndarray,
     fit_utilities: np.ndarray,
     fit_fills: np.ndarray,
+    fit_settlements: np.ndarray,
     selection_features: np.ndarray,
     selection_utilities: np.ndarray,
     selection_fills: np.ndarray,
@@ -878,10 +935,12 @@ def evaluate_architecture_split(
     validation_timestamps: np.ndarray,
     validation_outcomes: np.ndarray,
     validation_fills: np.ndarray,
+    validation_settlements: np.ndarray,
     test_features: np.ndarray,
     test_timestamps: np.ndarray,
     test_outcomes: np.ndarray,
     test_fills: np.ndarray,
+    test_settlements: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     policy: Mapping[str, Any],
 ) -> Dict[str, Any]:
@@ -893,6 +952,7 @@ def evaluate_architecture_split(
         fit_timestamps=fit_timestamps,
         fit_stress_utilities=fit_utilities,
         fit_fill_timestamps=fit_fills,
+        fit_settlement_timestamps=fit_settlements,
         model_selection_features=selection_features,
         model_selection_stress_utilities=selection_utilities,
         model_selection_fill_timestamps=selection_fills,
@@ -909,6 +969,7 @@ def evaluate_architecture_split(
         prediction=np.asarray(predictions["validation_prediction"], dtype=np.float64),
         realized_base=validation_outcomes,
         fill_timestamps=validation_fills,
+        settlement_timestamps=validation_settlements,
         actions=actions,
         quantiles=calibration_policy["threshold_quantiles"],
         minimum_trades=int(calibration_policy["minimum_validation_trades"]),
@@ -938,6 +999,7 @@ def evaluate_architecture_split(
         prediction=test_prediction,
         realized_base=test_outcomes,
         fill_timestamps=test_fills,
+        settlement_timestamps=test_settlements,
         actions=actions,
         score_threshold=threshold,
         base_cost_bps=base_cost,
@@ -954,6 +1016,7 @@ def evaluate_architecture_split(
         prediction=test_prediction,
         realized_base=test_outcomes,
         fill_timestamps=test_fills,
+        settlement_timestamps=test_settlements,
         actions=actions,
         score_threshold=threshold,
         base_cost_bps=base_cost,
@@ -1143,7 +1206,13 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     if len(feature_names) != int(policy["features"]["expected_feature_count"]):
         raise ValueError("maker learnability feature count drift")
     base_cost = total_base_cost_bps(policy)
-    outcomes, fill_timestamps, actions, fill_audit = maker.build_maker_action_returns(
+    (
+        outcomes,
+        fill_timestamps,
+        settlement_timestamps,
+        actions,
+        fill_audit,
+    ) = maker.build_maker_action_returns(
         series,
         horizons_seconds=execution["horizons_seconds"],
         placement_latency_seconds=int(execution["placement_latency_seconds"]),
@@ -1185,11 +1254,14 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     features = features[eligible]
     outcomes = outcomes[eligible]
     fill_timestamps = fill_timestamps[eligible]
+    settlement_timestamps = settlement_timestamps[eligible]
     if len(timestamps) < 60000:
         raise development.CaptureNotReady("maker learnability eligible rows < 60000")
     finite_outcomes = np.isfinite(outcomes)
     if not np.array_equal(finite_outcomes, fill_timestamps >= 0):
         raise ValueError("maker filled outcome identity is invalid")
+    if not np.array_equal(finite_outcomes, settlement_timestamps >= 0):
+        raise ValueError("maker settlement outcome identity is invalid")
     utilities = build_stress_utility_targets(
         outcomes,
         base_cost_bps=base_cost,
@@ -1261,6 +1333,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
                             fit_timestamps=timestamps[model_fit],
                             fit_utilities=utilities[model_fit],
                             fit_fills=fill_timestamps[model_fit],
+                            fit_settlements=settlement_timestamps[model_fit],
                             selection_features=features[model_selection],
                             selection_utilities=utilities[model_selection],
                             selection_fills=fill_timestamps[model_selection],
@@ -1268,10 +1341,12 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
                             validation_timestamps=timestamps[validation],
                             validation_outcomes=outcomes[validation],
                             validation_fills=fill_timestamps[validation],
+                            validation_settlements=settlement_timestamps[validation],
                             test_features=features[test],
                             test_timestamps=timestamps[test],
                             test_outcomes=outcomes[test],
                             test_fills=fill_timestamps[test],
+                            test_settlements=settlement_timestamps[test],
                             actions=actions,
                             policy=policy,
                         )

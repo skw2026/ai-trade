@@ -1,12 +1,12 @@
 {
-  "schema_version": "maker_subsecond_information_policy_v3",
+  "schema_version": "maker_subsecond_information_policy_v4",
   "research_domain": "development_only",
   "promotion_evidence": false,
-  "experiment_id": "bybit_sol_first_passage_subsecond_information_increment_v3",
+  "experiment_id": "bybit_sol_exact_settlement_subsecond_information_increment_v4",
   "single_variable_change": "append_checksum_bound_250ms_queue_dynamics_from_existing_raw_capture",
   "upstream": {
     "required_learnability_decision": "STOP_MAKER_LEARNABILITY_FAMILY",
-    "required_learnability_policy_identity_sha256": "211635bc7722bc059c5c3d2b1973738ff4304f5f679f0821e443e1ed41d3e483",
+    "required_learnability_policy_identity_sha256": "b9acdd712dfdb314e356e99f2270c826d9f3b19831e638e33551209c3529eb86",
     "required_capture_schema_version": "bybit_cross_asset_microstructure_v3"
   },
   "features": {
@@ -53,6 +53,7 @@
     "take_profit_selection_basis": "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment",
     "exit_timeout_source": "action_horizon_seconds",
     "exit_reprice_max_attempts": 0,
+    "occupancy_release": "realized_exit_settlement_timestamp",
     "one_outstanding_order_or_position": true
   },
   "splits": {

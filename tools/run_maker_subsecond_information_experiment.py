@@ -28,9 +28,9 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_subsecond_information_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_subsecond_information_policy_v3"
+POLICY_SCHEMA_VERSION = "maker_subsecond_information_policy_v4"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "16bff7a8e5b9e01a05d1f5732b4f2a62f1a81ec3f555bd6989e2032369c5ee32"
+    "8a756d3d8855317e19d3dd25157b6ab12b02c56bbfe8318403af8382b54fa5dd"
 )
 VARIANT_IDS = (
     "one_second_decomposed_baseline",
@@ -160,6 +160,8 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         == "smallest_predeclared_round_10bps_above_maker_round_trip_plus_maximum_fallback_stress_increment"
         and execution.get("exit_timeout_source") == "action_horizon_seconds"
         and execution.get("exit_reprice_max_attempts") == 0
+        and execution.get("occupancy_release")
+        == "realized_exit_settlement_timestamp"
         and execution.get("one_outstanding_order_or_position") is True
     ):
         failures.append("execution")
@@ -805,6 +807,7 @@ def evaluate_treatment_feature_permutation_controls(
     timestamps: np.ndarray,
     outcomes: np.ndarray,
     fills: np.ndarray,
+    settlements: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     threshold: float,
     policy: Mapping[str, Any],
@@ -827,6 +830,7 @@ def evaluate_treatment_feature_permutation_controls(
             prediction=prediction,
             realized_base=outcomes,
             fill_timestamps=fills,
+            settlement_timestamps=settlements,
             actions=actions,
             score_threshold=threshold,
             base_cost_bps=learnability.total_base_cost_bps(policy),
@@ -861,12 +865,14 @@ def evaluate_variant_split(
     validation_outcomes: np.ndarray,
     validation_utilities: np.ndarray,
     validation_fills: np.ndarray,
+    validation_settlements: np.ndarray,
     test_baseline: np.ndarray,
     test_subsecond: np.ndarray,
     test_timestamps: np.ndarray,
     test_outcomes: np.ndarray,
     test_utilities: np.ndarray,
     test_fills: np.ndarray,
+    test_settlements: np.ndarray,
     actions: Sequence[Mapping[str, Any]],
     policy: Mapping[str, Any],
 ) -> Dict[str, Any]:
@@ -909,6 +915,7 @@ def evaluate_variant_split(
         prediction=validation_prediction["score"],
         realized_base=validation_outcomes,
         fill_timestamps=validation_fills,
+        settlement_timestamps=validation_settlements,
         actions=actions,
         quantiles=calibration_policy["threshold_quantiles"],
         minimum_trades=int(calibration_policy["minimum_validation_trades"]),
@@ -935,6 +942,7 @@ def evaluate_variant_split(
         prediction=test_prediction["score"],
         realized_base=test_outcomes,
         fill_timestamps=test_fills,
+        settlement_timestamps=test_settlements,
         actions=actions,
         score_threshold=threshold,
         base_cost_bps=base_cost,
@@ -952,6 +960,7 @@ def evaluate_variant_split(
             timestamps=test_timestamps,
             outcomes=test_outcomes,
             fills=test_fills,
+            settlements=test_settlements,
             actions=actions,
             threshold=threshold,
             policy=policy,
@@ -964,6 +973,7 @@ def evaluate_variant_split(
             prediction=test_prediction["score"],
             realized_base=test_outcomes,
             fill_timestamps=test_fills,
+            settlement_timestamps=test_settlements,
             actions=actions,
             score_threshold=threshold,
             base_cost_bps=base_cost,
@@ -1226,7 +1236,13 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     )
     execution = policy["execution"]
     base_cost = learnability.total_base_cost_bps(policy)
-    outcomes, fill_timestamps, actions, fill_audit = maker.build_maker_action_returns(
+    (
+        outcomes,
+        fill_timestamps,
+        settlement_timestamps,
+        actions,
+        fill_audit,
+    ) = maker.build_maker_action_returns(
         series,
         horizons_seconds=execution["horizons_seconds"],
         placement_latency_seconds=int(execution["placement_latency_seconds"]),
@@ -1281,6 +1297,7 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     subsecond_features = subsecond_matrix[alignment[eligible]]
     outcomes = outcomes[eligible]
     fill_timestamps = fill_timestamps[eligible]
+    settlement_timestamps = settlement_timestamps[eligible]
     if len(timestamps) < 60000:
         raise development.CaptureNotReady("subsecond eligible rows < 60000")
     utilities = learnability.build_stress_utility_targets(
@@ -1364,12 +1381,14 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
                         validation_outcomes=outcomes[validation],
                         validation_utilities=utilities[validation],
                         validation_fills=fill_timestamps[validation],
+                        validation_settlements=settlement_timestamps[validation],
                         test_baseline=baseline_features[test],
                         test_subsecond=subsecond_features[test],
                         test_timestamps=timestamps[test],
                         test_outcomes=outcomes[test],
                         test_utilities=utilities[test],
                         test_fills=fill_timestamps[test],
+                        test_settlements=settlement_timestamps[test],
                         actions=actions,
                         policy=policy,
                     )

@@ -48,13 +48,17 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         self.assertFalse(policy["authorities"]["demo_activation_authorized"])
         self.assertEqual(
             policy["single_variable_change"],
-            "replace_clock_time_exit_with_immediate_passive_take_profit_horizon_taker_fallback",
+            "replace_maximum_horizon_occupancy_with_realized_exit_settlement_timestamp",
         )
         self.assertEqual(
             policy["actions"]["exit_execution"],
             "passive_take_profit_horizon_taker_fallback",
         )
         self.assertEqual(policy["actions"]["take_profit_bps"], 10.0)
+        self.assertEqual(
+            policy["actions"]["occupancy_release"],
+            "realized_exit_settlement_timestamp",
+        )
         self.assertEqual(policy["costs"]["maker_exit_fee_bps"], 2.75)
 
     def test_long_fill_requires_queue_consumption_and_strict_trade_through(self):
@@ -65,7 +69,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["best_bid"][4] = 101.0
         series["best_ask"][4] = 101.2
 
-        outcomes, fills, actions, audit = experiment.build_maker_action_returns(
+        outcomes, fills, _, actions, audit = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -85,7 +89,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series = self.series()
         series["sell_quote_volume"][2] = 124.99
         series["best_bid"][2] = 99.9
-        outcomes, _, _, _ = experiment.build_maker_action_returns(
+        outcomes, _, _, _, _ = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -97,7 +101,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
 
         series["sell_quote_volume"][2] = 1000.0
         series["best_bid"][2] = 100.0
-        outcomes, _, _, _ = experiment.build_maker_action_returns(
+        outcomes, _, _, _, _ = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -114,7 +118,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["best_ask"][4] = 99.2
         series["best_bid"][4] = 99.0
 
-        outcomes, fills, actions, _ = experiment.build_maker_action_returns(
+        outcomes, fills, _, actions, _ = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -138,7 +142,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["best_bid"][4] = 99.0
         series["best_bid"][6] = 101.0
         series["best_ask"][6] = 101.2
-        outcomes, fills, _, audit = experiment.build_maker_action_returns(
+        outcomes, fills, _, _, audit = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -168,7 +172,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["bid_depth_l5"][:] = 4.0
         series["sell_quote_volume"][2] = 300.0
         series["best_bid"][2] = 99.0
-        outcomes, fills, _, _ = experiment.build_maker_action_returns(
+        outcomes, fills, _, _, _ = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -188,7 +192,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["buy_quote_volume"][6] = 126.0
         series["best_ask"][6] = 100.3
 
-        outcomes, fills, actions, audit = experiment.build_maker_action_returns(
+        outcomes, fills, _, actions, audit = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -221,7 +225,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["best_bid"][7] = 101.0
         series["best_ask"][7] = 101.2
 
-        outcomes, _, _, audit = experiment.build_maker_action_returns(
+        outcomes, _, _, _, audit = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[2],
             placement_latency_seconds=1,
@@ -253,7 +257,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["buy_quote_volume"][5] = 126.0
         series["best_ask"][5] = 100.2
 
-        outcomes, fills, actions, audit = experiment.build_maker_action_returns(
+        outcomes, fills, settlements, actions, audit = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[10],
             placement_latency_seconds=1,
@@ -271,10 +275,16 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         )
 
         self.assertEqual(fills[0, 0], 2000)
+        self.assertEqual(settlements[0, 0], 5000)
         self.assertEqual(actions[0]["settlement_seconds"], 10)
         self.assertAlmostEqual(outcomes[0, 0], 4.5)
         self.assertGreaterEqual(audit["maker_exit_action_count"], 1)
         self.assertEqual(audit["post_only_marketable_fallback_count"], 0)
+        self.assertEqual(audit["settled_action_count"], audit["filled_action_count"])
+        self.assertEqual(
+            audit["occupancy_release"],
+            "realized_exit_settlement_timestamp",
+        )
 
     def test_first_passage_take_profit_timeout_uses_horizon_taker_fallback(self):
         series = self.series(24)
@@ -283,7 +293,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["best_bid"][12] = 100.4
         series["best_ask"][12] = 100.6
 
-        outcomes, _, _, audit = experiment.build_maker_action_returns(
+        outcomes, _, settlements, _, audit = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[10],
             placement_latency_seconds=1,
@@ -301,6 +311,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         )
 
         self.assertAlmostEqual(outcomes[0, 0], 30.75)
+        self.assertEqual(settlements[0, 0], 12000)
         self.assertGreaterEqual(audit["taker_fallback_action_count"], 1)
 
     def test_marketable_take_profit_is_charged_as_immediate_taker_fallback(self):
@@ -310,7 +321,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         series["best_bid"][3] = 100.2
         series["best_ask"][3] = 100.4
 
-        outcomes, _, _, audit = experiment.build_maker_action_returns(
+        outcomes, _, settlements, _, audit = experiment.build_maker_action_returns(
             series,
             horizons_seconds=[10],
             placement_latency_seconds=1,
@@ -328,18 +339,23 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         )
 
         self.assertAlmostEqual(outcomes[0, 0], 10.75)
+        self.assertEqual(settlements[0, 0], 3000)
         self.assertGreaterEqual(audit["post_only_marketable_fallback_count"], 1)
 
     def test_oracle_selects_only_positive_stress_filled_actions_and_nonoverlaps(self):
         timestamps = np.arange(6, dtype=np.int64) * 1000
         outcomes = np.full((6, 2), np.nan, dtype=np.float64)
         fills = np.full((6, 2), -1, dtype=np.int64)
+        settlements = np.full((6, 2), -1, dtype=np.int64)
         outcomes[0] = [5.0, 2.0]
         fills[0] = [1000, 1000]
+        settlements[0] = [3000, 2000]
         outcomes[1, 0] = 20.0  # skipped because the first 2s action is still open
         fills[1, 0] = 2000
+        settlements[1, 0] = 4000
         outcomes[4, 1] = 6.0
         fills[4, 1] = 5000
+        settlements[4, 1] = 6000
         actions = [
             {"direction": "long", "horizon_seconds": 2},
             {"direction": "short", "horizon_seconds": 1},
@@ -349,6 +365,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
             timestamps=timestamps,
             outcomes=outcomes,
             fill_timestamps=fills,
+            settlement_timestamps=settlements,
             actions=actions,
             indices=np.arange(6, dtype=np.int64),
             base_cost_bps=4.0,
@@ -358,6 +375,38 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         self.assertEqual(report["base_cost"]["count"], 2)
         self.assertEqual(report["action_counts"], {"long_2s": 1, "short_1s": 1})
         self.assertAlmostEqual(report["stress_cost"]["mean_bps"], 4.5)
+
+    def test_oracle_releases_occupancy_at_realized_settlement_not_max_horizon(self):
+        timestamps = np.arange(8, dtype=np.int64) * 1000
+        outcomes = np.full((8, 1), np.nan, dtype=np.float64)
+        fills = np.full((8, 1), -1, dtype=np.int64)
+        settlements = np.full((8, 1), -1, dtype=np.int64)
+        outcomes[0, 0] = 5.0
+        fills[0, 0] = 1000
+        settlements[0, 0] = 2000
+        outcomes[2, 0] = 6.0
+        fills[2, 0] = 3000
+        settlements[2, 0] = 4000
+
+        report = experiment.evaluate_fill_aware_oracle(
+            timestamps=timestamps,
+            outcomes=outcomes,
+            fill_timestamps=fills,
+            settlement_timestamps=settlements,
+            actions=[
+                {
+                    "direction": "long",
+                    "horizon_seconds": 5,
+                    "settlement_seconds": 5,
+                }
+            ],
+            indices=np.arange(8, dtype=np.int64),
+            base_cost_bps=4.0,
+            stress_cost_multiplier=1.25,
+        )
+
+        self.assertEqual(report["base_cost"]["count"], 2)
+        self.assertEqual(report["mean_position_lifetime_seconds"], 1.0)
 
     def test_decision_continues_only_after_all_oracle_gates(self):
         policy = {
@@ -441,7 +490,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
                     path, series=drifted, policy=policy
                 )
 
-    def test_v4_inherits_v2_absolute_splits_and_starts_new_unseen_forward(self):
+    def test_v5_inherits_v2_absolute_splits_and_starts_new_unseen_forward(self):
         policy = experiment.validate_policy(
             TOOLS_DIR.parent / "config" / "maker_execution_opportunity_experiment.json"
         )
@@ -464,7 +513,7 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             baseline_path = root / "v2.json"
-            audit_path = root / "v4.json"
+            audit_path = root / "v5.json"
             experiment.common.atomic_write_json(baseline_path, baseline)
             manifest, created = experiment.load_or_create_frozen_audit_manifest(
                 audit_path,

@@ -10,7 +10,7 @@
 - 当前没有通过独立 forward 验证的 Alpha 候选，不具备 Demo 激活或 live 权限。
 - 旧 maker 三架构与 250ms 增量实验已经完成否定性诊断，不再进入默认研究链。
 - 固定持有期方向性 maker payoff 已由 v2/v3 连续否定并关闭；禁止继续调该研究族的模型、阈值、特征或成本。
-- 下一项只允许先验证 v4 first-passage 被动止盈 payoff；其无模型机会门通过前，不得进入 `sequential_hurdle_tail_action_value`。
+- v4 first-passage 被动止盈把有效交易从 54 提升到 74，但仍未过 100 笔和 boundary 门；当前只允许做 v5 exact-settlement 正确性校正，其无模型机会门通过前不得进入 `sequential_hurdle_tail_action_value`。
 - 自进化保持 shadow/evidence-only；没有正收益 frozen candidate 前不得影响 Demo 动作。
 
 ## 工作流边界
@@ -30,7 +30,7 @@ v2 基线使用持久化 `maker_opportunity_frozen_audit.json`；后续 payoff �
 - forward 未完整前结论只能是 `WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW`。
 - 历史价格、订单簿、逐笔聚合或 split 身份发生漂移时 fail-closed。
 
-v3 在相同 split 上仅产生 54 笔合格 hindsight 交易，边界通过率为 0，已明确 STOP。它没有 forward 等待资格，也没有 Demo/live 权限。
+v3 在相同 split 上产生 54 笔合格 hindsight 交易；v4 为 74 笔且 base/stress LCB 为正，但两者边界通过率均为 0，均已明确 STOP。它们没有 forward 等待资格，也没有 Demo/live 权限。
 
 只有新 payoff 的 frozen primary、边界稳定性和独立 forward 同时过门，才允许训练新算法。
 
@@ -44,7 +44,7 @@ v3 在相同 split 上仅产生 54 笔合格 hindsight 交易，边界通过率�
 - 未成交 timeout、成交等待和持仓期限的显式占用成本；
 - `0 bps` 的显式 `NO_ORDER` 动作。
 
-maker 入场合同固定为 `0.3 bps` 被动偏移、`0.01` 价格 tick 的买单向下/卖单向上量化、6 秒 post-only timeout、最多一次 `0.15 bps` 重挂；排队量使用同侧 L5 累计深度而不是仅用最优档。v4 只改变退出 payoff：成交后挂 10 bps 被动止盈，期限内未成交时按 taker 成本退出。
+maker 入场合同固定为 `0.3 bps` 被动偏移、`0.01` 价格 tick 的买单向下/卖单向上量化、6 秒 post-only timeout、最多一次 `0.15 bps` 重挂；排队量使用同侧 L5 累计深度而不是仅用最优档。退出成交后挂 10 bps 被动止盈，期限内未成交时按 taker 成本退出；v5 只把占用释放时间从最大 horizon 校正为真实 exit settlement timestamp。
 
 ## 晋级权限
 
