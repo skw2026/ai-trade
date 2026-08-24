@@ -75,6 +75,11 @@ execution:
   strategy_reduce_min_net_bps: 0.0
   strategy_reduce_max_adverse_bps: 0.0
   strategy_reduce_guard_max_hold_ticks: 0
+  # 策略性 maker 减仓的退出生命周期；研究通过前保持关闭。
+  strategy_reduce_post_only_timeout_ticks: 0
+  strategy_reduce_reprice_max_attempts: 0
+  strategy_reduce_reprice_bps: 0.0
+  strategy_reduce_taker_fallback_enabled: false
   candidate_probe_enabled: false
   candidate_probe_min_trend_ratio: 0.0
   candidate_probe_strong_min_trend_ratio: 0.0

@@ -361,6 +361,10 @@ struct AppConfig {
   double execution_strategy_reduce_min_net_bps{0.0};
   double execution_strategy_reduce_max_adverse_bps{0.0};
   int execution_strategy_reduce_guard_max_hold_ticks{0};
+  int execution_strategy_reduce_post_only_timeout_ticks{0};
+  int execution_strategy_reduce_reprice_max_attempts{0};
+  double execution_strategy_reduce_reprice_bps{0.0};
+  bool execution_strategy_reduce_taker_fallback_enabled{false};
   bool execution_quality_guard_enabled{false};
   int execution_quality_guard_min_fills{12};
   int execution_quality_guard_bad_streak_to_trigger{2};

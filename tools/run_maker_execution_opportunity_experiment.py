@@ -25,14 +25,19 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_execution_opportunity_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_execution_opportunity_policy_v1"
+POLICY_SCHEMA_VERSION = "maker_execution_opportunity_policy_v2"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
+    "33dc188b1dcc7dbd692b32a4f7dbb721fa9d65fbff9011cf425af9d5dfaaad2c"
 )
 DECISION_CONTINUE = "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT"
 DECISION_STOP = "STOP_MAKER_EXECUTION_FAMILY"
 DECISION_WAIT = "WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW"
-AUDIT_MANIFEST_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v1"
+AUDIT_MANIFEST_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v2"
+BASELINE_AUDIT_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v1"
+BASELINE_POLICY_IDENTITY_SHA256 = (
+    "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
+)
+BASELINE_EXPERIMENT_ID = "bybit_sol_frozen_maker_opportunity_audit_v2"
 
 
 def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
@@ -45,8 +50,18 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
     if not (
         policy.get("research_domain") == "development_only"
         and policy.get("promotion_evidence") is False
+        and policy.get("single_variable_change")
+        == "replace_immediate_taker_exit_with_maker_timeout_taker_fallback"
     ):
         failures.append("research_domain")
+    if policy.get("split_calendar") != {
+        "source": "inherit_exact_absolute_primary_and_boundary_splits",
+        "baseline_manifest_schema_version": BASELINE_AUDIT_SCHEMA_VERSION,
+        "baseline_experiment_id": BASELINE_EXPERIMENT_ID,
+        "baseline_policy_identity_sha256": BASELINE_POLICY_IDENTITY_SHA256,
+        "new_forward_window_starts_after_v3_manifest_freeze": True,
+    }:
+        failures.append("split_calendar")
     actions = policy.get("actions")
     if not (
         isinstance(actions, Mapping)
@@ -59,6 +74,12 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and actions.get("post_only_timeout_seconds") == 6
         and actions.get("reprice_max_attempts") == 1
         and float(actions.get("reprice_bps", -1.0)) == 0.15
+        and actions.get("exit_execution") == "maker_timeout_taker_fallback"
+        and actions.get("exit_placement_latency_seconds") == 1
+        and actions.get("exit_timeout_seconds") == 12
+        and actions.get("exit_post_only_timeout_seconds") == 6
+        and actions.get("exit_reprice_max_attempts") == 1
+        and float(actions.get("exit_reprice_bps", -1.0)) == 0.15
     ):
         failures.append("actions")
     fill_proxy = policy.get("fill_proxy")
@@ -81,6 +102,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
     if not (
         isinstance(costs, Mapping)
         and float(costs.get("maker_entry_fee_bps", 0.0)) == 2.75
+        and float(costs.get("maker_exit_fee_bps", 0.0)) == 2.75
         and float(costs.get("taker_exit_fee_bps", 0.0)) == 5.5
         and float(costs.get("exit_slippage_bps", 0.0)) == 1.0
         and float(costs.get("stress_cost_multiplier", 0.0)) == 1.25
@@ -198,6 +220,7 @@ def create_frozen_audit_manifest(
     *,
     series: Mapping[str, np.ndarray],
     policy: Mapping[str, Any],
+    baseline_manifest: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     timestamps = np.asarray(series["timestamp"], dtype=np.int64)
     actions = policy["actions"]
@@ -207,26 +230,50 @@ def create_frozen_audit_manifest(
         int(actions["placement_latency_seconds"])
         + int(actions["fill_timeout_seconds"])
         + max(int(value) for value in actions["horizons_seconds"])
-    )
-    primary = development.build_time_splits(
-        timestamps,
-        n_splits=int(split_policy["count"]),
-        train_window_seconds=int(split_policy["train_window_seconds"]),
-        validation_window_seconds=int(split_policy["validation_window_seconds"]),
-        test_window_seconds=int(split_policy["test_window_seconds"]),
-        rolling_step_seconds=int(split_policy["rolling_step_seconds"]),
-        embargo_seconds=embargo,
+        + int(actions.get("exit_placement_latency_seconds", 0))
+        + int(actions.get("exit_timeout_seconds", 0))
     )
     offsets = [int(value) for value in stability["boundary_offsets_seconds"]]
-    shifted = {
-        str(offset): [_shift_split(split, offset) for split in primary]
-        for offset in offsets
-    }
+    if baseline_manifest is None:
+        primary = development.build_time_splits(
+            timestamps,
+            n_splits=int(split_policy["count"]),
+            train_window_seconds=int(split_policy["train_window_seconds"]),
+            validation_window_seconds=int(split_policy["validation_window_seconds"]),
+            test_window_seconds=int(split_policy["test_window_seconds"]),
+            rolling_step_seconds=int(split_policy["rolling_step_seconds"]),
+            embargo_seconds=embargo,
+        )
+        shifted = {
+            str(offset): [_shift_split(split, offset) for split in primary]
+            for offset in offsets
+        }
+        baseline_identity = None
+    else:
+        primary = _splits_from_manifest(baseline_manifest["primary_splits"])
+        shifted = {
+            str(offset): _splits_from_manifest(
+                baseline_manifest["boundary_splits"][str(offset)]
+            )
+            for offset in offsets
+        }
+        baseline_identity = str(baseline_manifest["identity_sha256"])
     frozen_start_ms = min(
         split.fit_start_ms for splits in shifted.values() for split in splits
     )
-    frozen_end_ms = max(split.test_end_ms for split in primary)
-    forward_start_ms = frozen_end_ms
+    primary_end_ms = max(split.test_end_ms for split in primary)
+    frozen_end_ms = (
+        primary_end_ms + embargo * 1000
+        if baseline_manifest is not None
+        else primary_end_ms
+    )
+    if baseline_manifest is not None and int(timestamps[-1]) < frozen_end_ms - 1000:
+        raise ValueError("maker v3 inherited split outcome tail is not fully observed")
+    forward_start_ms = (
+        int(timestamps[-1]) + 1000
+        if baseline_manifest is not None
+        else primary_end_ms
+    )
     forward_end_ms = forward_start_ms + int(
         stability["independent_forward_window_seconds"]
     ) * 1000
@@ -238,6 +285,12 @@ def create_frozen_audit_manifest(
         .replace("+00:00", "Z"),
         "policy_identity_sha256": FROZEN_POLICY_IDENTITY_SHA256,
         "experiment_id": policy["experiment_id"],
+        "split_calendar_source": (
+            "baseline_v2_absolute_splits"
+            if baseline_manifest is not None
+            else "initial_freeze"
+        ),
+        "baseline_audit_identity_sha256": baseline_identity,
         "frozen_domain": _series_domain_identity(
             series, start_ms=frozen_start_ms, end_ms=frozen_end_ms
         ),
@@ -260,19 +313,78 @@ def create_frozen_audit_manifest(
     return manifest
 
 
+def load_baseline_audit_manifest(
+    path: pathlib.Path, *, policy: Mapping[str, Any]
+) -> Dict[str, Any]:
+    manifest = common.read_json(path)
+    unsigned = {key: value for key, value in manifest.items() if key != "identity_sha256"}
+    offsets = [
+        str(int(value))
+        for value in policy["stability_audit"]["boundary_offsets_seconds"]
+    ]
+    primary = manifest.get("primary_splits")
+    boundary = manifest.get("boundary_splits")
+    if not (
+        manifest.get("schema_version") == BASELINE_AUDIT_SCHEMA_VERSION
+        and manifest.get("policy_identity_sha256")
+        == BASELINE_POLICY_IDENTITY_SHA256
+        and manifest.get("experiment_id") == BASELINE_EXPERIMENT_ID
+        and manifest.get("identity_sha256") == common.canonical_sha256(unsigned)
+        and isinstance(primary, list)
+        and len(primary) == int(policy["splits"]["count"])
+        and isinstance(boundary, Mapping)
+        and list(boundary) == offsets
+    ):
+        raise ValueError("baseline maker opportunity audit manifest mismatch")
+    parsed_primary = _splits_from_manifest(primary)
+    for offset in offsets:
+        expected = [
+            dataclasses.asdict(_shift_split(split, int(offset)))
+            for split in parsed_primary
+        ]
+        if list(boundary[offset]) != expected:
+            raise ValueError("baseline maker opportunity split calendar drift")
+    return manifest
+
+
 def load_or_create_frozen_audit_manifest(
     path: pathlib.Path,
     *,
     series: Mapping[str, np.ndarray],
     policy: Mapping[str, Any],
+    baseline_manifest_path: pathlib.Path | None = None,
 ) -> Tuple[Dict[str, Any], bool]:
     created = False
     if not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
-        manifest = create_frozen_audit_manifest(series=series, policy=policy)
+        baseline_manifest = (
+            load_baseline_audit_manifest(baseline_manifest_path, policy=policy)
+            if baseline_manifest_path is not None
+            else None
+        )
+        manifest = create_frozen_audit_manifest(
+            series=series,
+            policy=policy,
+            baseline_manifest=baseline_manifest,
+        )
         common.atomic_write_json(path, manifest)
         created = True
     manifest = common.read_json(path)
+    if baseline_manifest_path is not None:
+        baseline_manifest = load_baseline_audit_manifest(
+            baseline_manifest_path, policy=policy
+        )
+        if not (
+            manifest.get("split_calendar_source")
+            == "baseline_v2_absolute_splits"
+            and manifest.get("baseline_audit_identity_sha256")
+            == baseline_manifest.get("identity_sha256")
+            and manifest.get("primary_splits")
+            == baseline_manifest.get("primary_splits")
+            and manifest.get("boundary_splits")
+            == baseline_manifest.get("boundary_splits")
+        ):
+            raise ValueError("maker opportunity baseline split inheritance mismatch")
     unsigned = {key: value for key, value in manifest.items() if key != "identity_sha256"}
     if not (
         manifest.get("schema_version") == AUDIT_MANIFEST_SCHEMA_VERSION
@@ -351,6 +463,16 @@ def build_maker_action_returns(
     post_only_timeout_seconds: int | None = None,
     reprice_max_attempts: int = 0,
     reprice_bps: float = 0.0,
+    exit_execution: str = "immediate_taker",
+    maker_entry_fee_bps: float | None = None,
+    maker_exit_fee_bps: float = 0.0,
+    taker_exit_fee_bps: float = 0.0,
+    exit_slippage_bps: float = 0.0,
+    exit_placement_latency_seconds: int = 0,
+    exit_timeout_seconds: int = 0,
+    exit_post_only_timeout_seconds: int = 0,
+    exit_reprice_max_attempts: int = 0,
+    exit_reprice_bps: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, Any]], Dict[str, Any]]:
     """Build base-net outcomes only for conservatively inferred full fills."""
 
@@ -417,6 +539,20 @@ def build_maker_action_returns(
     attempts = int(reprice_max_attempts)
     reprice_ratio = float(reprice_bps) / 10000.0
     attempt_timeout = int(post_only_timeout_seconds or timeout)
+    maker_entry_fee = (
+        float(maker_entry_fee_bps)
+        if maker_entry_fee_bps is not None
+        else float(base_cost_bps)
+    )
+    maker_exit_fee = float(maker_exit_fee_bps)
+    taker_exit_fee = float(taker_exit_fee_bps)
+    exit_slippage = float(exit_slippage_bps)
+    exit_latency = int(exit_placement_latency_seconds)
+    exit_timeout = int(exit_timeout_seconds)
+    exit_attempt_timeout = int(exit_post_only_timeout_seconds)
+    exit_attempts = int(exit_reprice_max_attempts)
+    exit_reprice_ratio = float(exit_reprice_bps) / 10000.0
+    maker_exit_mode = exit_execution == "maker_timeout_taker_fallback"
     if (
         latency <= 0
         or timeout <= 0
@@ -428,14 +564,48 @@ def build_maker_action_returns(
         or reprice_ratio < 0.0
         or attempt_timeout <= 0
         or attempt_timeout * (attempts + 1) != timeout
+        or exit_execution not in {"immediate_taker", "maker_timeout_taker_fallback"}
+        or maker_entry_fee < 0.0
+        or maker_exit_fee < 0.0
+        or taker_exit_fee < 0.0
+        or exit_slippage < 0.0
+        or exit_latency < 0
+        or exit_timeout < 0
+        or exit_attempt_timeout < 0
+        or exit_attempts < 0
+        or exit_reprice_ratio < 0.0
     ):
         raise ValueError("maker opportunity execution contract is invalid")
+    if maker_exit_mode and not (
+        exit_latency > 0
+        and exit_timeout > 0
+        and exit_attempt_timeout > 0
+        and exit_attempt_timeout * (exit_attempts + 1) == exit_timeout
+        and abs(
+            base_cost_bps
+            - (maker_entry_fee + taker_exit_fee + exit_slippage)
+        )
+        <= 1.0e-9
+    ):
+        raise ValueError("maker exit fallback contract is invalid")
     horizons = [int(value) for value in horizons_seconds]
     if not horizons or any(value <= 0 for value in horizons):
         raise ValueError("maker opportunity horizons are invalid")
 
     actions = [
-        {"direction": direction, "horizon_seconds": horizon}
+        {
+            "direction": direction,
+            "horizon_seconds": horizon,
+            **(
+                {
+                    "settlement_seconds": (
+                        horizon + exit_latency + exit_timeout
+                    )
+                }
+                if maker_exit_mode
+                else {}
+            ),
+        }
         for direction in ("long", "short")
         for horizon in horizons
     ]
@@ -443,6 +613,8 @@ def build_maker_action_returns(
     fill_timestamps = np.full(outcomes.shape, -1, dtype=np.int64)
     positions = {int(timestamp): index for index, timestamp in enumerate(timestamps)}
     decision_fill_directions = 0
+    maker_exit_action_count = 0
+    taker_fallback_action_count = 0
 
     for row_index, decision_timestamp in enumerate(timestamps):
         direction_fills: Dict[str, Tuple[int, float]] = {}
@@ -508,16 +680,110 @@ def build_maker_action_returns(
                 continue
             fill_index, fill_price = fill
             fill_timestamp = int(timestamps[fill_index])
-            exit_index = positions.get(
+            exit_decision_timestamp = (
                 fill_timestamp + int(action["horizon_seconds"]) * 1000
             )
-            if exit_index is None:
+            if not maker_exit_mode:
+                exit_index = positions.get(exit_decision_timestamp)
+                if exit_index is None:
+                    continue
+                if action["direction"] == "long":
+                    gross_bps = (
+                        float(best_bid[exit_index]) / fill_price - 1.0
+                    ) * 10000.0
+                else:
+                    gross_bps = (
+                        fill_price / float(best_ask[exit_index]) - 1.0
+                    ) * 10000.0
+                outcomes[row_index, action_index] = gross_bps - cost
+                fill_timestamps[row_index, action_index] = fill_timestamp
                 continue
-            if action["direction"] == "long":
-                gross_bps = (float(best_bid[exit_index]) / fill_price - 1.0) * 10000.0
+
+            exit_fill: Tuple[int, float] | None = None
+            for exit_attempt in range(exit_attempts + 1):
+                placement_timestamp = (
+                    exit_decision_timestamp
+                    + exit_latency * 1000
+                    + exit_attempt * exit_attempt_timeout * 1000
+                )
+                placement_index = positions.get(placement_timestamp)
+                if placement_index is None:
+                    break
+                if action["direction"] == "long":
+                    reference_price = float(best_ask[placement_index]) * (
+                        1.0 - exit_reprice_ratio * exit_attempt
+                    )
+                    raw_posted_price = reference_price * (1.0 + offset_ratio)
+                    posted_price = (
+                        math.ceil((raw_posted_price - 1.0e-12) / tick_size)
+                        * tick_size
+                        if tick_size > 0.0
+                        else raw_posted_price
+                    )
+                    queue_size = float(ask_depth_l5[placement_index])
+                else:
+                    reference_price = float(best_bid[placement_index]) * (
+                        1.0 + exit_reprice_ratio * exit_attempt
+                    )
+                    raw_posted_price = reference_price * (1.0 - offset_ratio)
+                    posted_price = (
+                        math.floor((raw_posted_price + 1.0e-12) / tick_size)
+                        * tick_size
+                        if tick_size > 0.0
+                        else raw_posted_price
+                    )
+                    queue_size = float(bid_depth_l5[placement_index])
+                queue_quote = posted_price * queue_size * queue_multiplier
+                cumulative_opposite_quote = 0.0
+                for exit_offset in range(1, exit_attempt_timeout + 1):
+                    probe_timestamp = placement_timestamp + exit_offset * 1000
+                    probe_index = positions.get(probe_timestamp)
+                    if probe_index is None:
+                        break
+                    if action["direction"] == "long":
+                        cumulative_opposite_quote += float(
+                            buy_quote_volume[probe_index]
+                        )
+                        traded_through = (
+                            float(best_ask[probe_index]) > posted_price
+                        )
+                    else:
+                        cumulative_opposite_quote += float(
+                            sell_quote_volume[probe_index]
+                        )
+                        traded_through = (
+                            float(best_bid[probe_index]) < posted_price
+                        )
+                    if traded_through and cumulative_opposite_quote >= queue_quote:
+                        exit_fill = (probe_index, posted_price)
+                        break
+                if exit_fill is not None:
+                    break
+
+            if exit_fill is not None:
+                exit_index, exit_price = exit_fill
+                action_cost = maker_entry_fee + maker_exit_fee
+                maker_exit_action_count += 1
             else:
-                gross_bps = (fill_price / float(best_ask[exit_index]) - 1.0) * 10000.0
-            outcomes[row_index, action_index] = gross_bps - cost
+                fallback_timestamp = (
+                    exit_decision_timestamp
+                    + (exit_latency + exit_timeout) * 1000
+                )
+                exit_index = positions.get(fallback_timestamp)
+                if exit_index is None:
+                    continue
+                exit_price = (
+                    float(best_bid[exit_index])
+                    if action["direction"] == "long"
+                    else float(best_ask[exit_index])
+                )
+                action_cost = maker_entry_fee + taker_exit_fee + exit_slippage
+                taker_fallback_action_count += 1
+            if action["direction"] == "long":
+                gross_bps = (exit_price / fill_price - 1.0) * 10000.0
+            else:
+                gross_bps = (fill_price / exit_price - 1.0) * 10000.0
+            outcomes[row_index, action_index] = gross_bps - action_cost
             fill_timestamps[row_index, action_index] = fill_timestamp
 
     finite = np.isfinite(outcomes)
@@ -540,6 +806,15 @@ def build_maker_action_returns(
         "post_only_timeout_seconds": attempt_timeout,
         "reprice_max_attempts": attempts,
         "reprice_bps": float(reprice_bps),
+        "exit_execution": exit_execution,
+        "exit_placement_latency_seconds": exit_latency,
+        "exit_timeout_seconds": exit_timeout,
+        "exit_post_only_timeout_seconds": exit_attempt_timeout,
+        "exit_reprice_max_attempts": exit_attempts,
+        "exit_reprice_bps": float(exit_reprice_bps),
+        "maker_exit_action_count": int(maker_exit_action_count),
+        "taker_fallback_action_count": int(taker_fallback_action_count),
+        "stress_increment_uses_maximum_fallback_cost": bool(maker_exit_mode),
     }
 
 
@@ -582,7 +857,8 @@ def evaluate_fill_aware_oracle(
         key = f"{action['direction']}_{horizon}s"
         action_counts[key] = action_counts.get(key, 0) + 1
         fill_latency_seconds.append((fill_timestamp - decision_timestamp) / 1000.0)
-        next_allowed_ms = fill_timestamp + horizon * 1000
+        settlement_seconds = int(action.get("settlement_seconds", horizon))
+        next_allowed_ms = fill_timestamp + settlement_seconds * 1000
     return {
         "base_cost": development.summarize_edges(base_edges),
         "stress_cost": development.summarize_edges(stress_edges),
@@ -835,10 +1111,32 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         ),
         reprice_max_attempts=int(actions_policy["reprice_max_attempts"]),
         reprice_bps=float(actions_policy["reprice_bps"]),
+        exit_execution=str(actions_policy["exit_execution"]),
+        maker_entry_fee_bps=float(policy["costs"]["maker_entry_fee_bps"]),
+        maker_exit_fee_bps=float(policy["costs"]["maker_exit_fee_bps"]),
+        taker_exit_fee_bps=float(policy["costs"]["taker_exit_fee_bps"]),
+        exit_slippage_bps=float(policy["costs"]["exit_slippage_bps"]),
+        exit_placement_latency_seconds=int(
+            actions_policy["exit_placement_latency_seconds"]
+        ),
+        exit_timeout_seconds=int(actions_policy["exit_timeout_seconds"]),
+        exit_post_only_timeout_seconds=int(
+            actions_policy["exit_post_only_timeout_seconds"]
+        ),
+        exit_reprice_max_attempts=int(
+            actions_policy["exit_reprice_max_attempts"]
+        ),
+        exit_reprice_bps=float(actions_policy["exit_reprice_bps"]),
     )
     audit_manifest_path = pathlib.Path(args.audit_manifest).resolve()
+    baseline_audit_manifest_path = pathlib.Path(
+        args.baseline_audit_manifest
+    ).resolve()
     audit_manifest, manifest_created = load_or_create_frozen_audit_manifest(
-        audit_manifest_path, series=series, policy=policy
+        audit_manifest_path,
+        series=series,
+        policy=policy,
+        baseline_manifest_path=baseline_audit_manifest_path,
     )
     stability_audit = evaluate_stability_audit(
         manifest=audit_manifest,
@@ -870,6 +1168,10 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         "input": {
             "control_assessment_path": str(assessment_path),
             "control_assessment_sha256": common.sha256_file(assessment_path),
+            "baseline_audit_manifest_path": str(baseline_audit_manifest_path),
+            "baseline_audit_manifest_sha256": common.sha256_file(
+                baseline_audit_manifest_path
+            ),
             "frozen_audit_manifest_path": str(audit_manifest_path),
             "frozen_audit_manifest_sha256": common.sha256_file(audit_manifest_path),
             "frozen_audit_manifest_identity_sha256": audit_manifest[
@@ -924,6 +1226,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--control-assessment", required=True)
     parser.add_argument("--config", required=True)
+    parser.add_argument("--baseline-audit-manifest", required=True)
     parser.add_argument("--audit-manifest", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument(

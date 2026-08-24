@@ -3100,6 +3100,82 @@ int main() {
   }
 
   {
+    const auto temp_dir = std::filesystem::temp_directory_path() /
+                          "ai_trade_test_strategy_reduce_fallback";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+    ai_trade::AppConfig config;
+    config.data_path = temp_dir.string();
+    config.exchange = "mock";
+    config.mode = "replay";
+    config.primary_symbol = "SOLUSDT";
+    config.protection.enabled = false;
+    config.execution_maker_entry_enabled = true;
+    config.execution_strategy_reduce_post_only_timeout_ticks = 2;
+    config.execution_strategy_reduce_reprice_max_attempts = 0;
+    config.execution_strategy_reduce_taker_fallback_enabled = true;
+
+    ai_trade::BotApplication app(config);
+    if (!app.Initialize()) {
+      std::cerr << "策略性 reduce fallback 测试初始化失败\n";
+      return 1;
+    }
+    ai_trade::FillEvent entry_fill{
+        .fill_id = "strategy-reduce-entry-fill",
+        .client_order_id = "strategy-reduce-entry",
+        .symbol = "SOLUSDT",
+        .direction = 1,
+        .qty = 1.0,
+        .price = 100.0,
+    };
+    app.system_.OnFill(entry_fill);
+    const ai_trade::MarketEvent event{
+        5000, "SOLUSDT", 100.0, 100.0, 1000.0, 5000};
+    app.system_.OnMarketSnapshot(event);
+    ai_trade::OrderIntent original;
+    original.client_order_id = "strategy-reduce-maker-old";
+    original.symbol = "SOLUSDT";
+    original.purpose = ai_trade::OrderPurpose::kReduce;
+    original.liquidity_preference = ai_trade::LiquidityPreference::kMaker;
+    original.reduce_only = true;
+    original.direction = -1;
+    original.qty = 1.0;
+    original.price = 100.0;
+    app.active_strategy_reduce_by_symbol_["SOLUSDT"] =
+        ai_trade::BotApplication::StrategyReduceOrderState{
+            .lineage_intent = original,
+            .client_order_id = original.client_order_id,
+            .remaining_qty = 1.0,
+            .reference_price = 100.0,
+            .created_tick = 0,
+            .attempts = 0,
+            .cancel_confirmed = true,
+            .replacement_pending = true,
+            .replacement_taker = true,
+        };
+    app.market_tick_count_ = 3;
+    app.ManageStrategyReduceLifecycle(event);
+    const auto state_it =
+        app.active_strategy_reduce_by_symbol_.find("SOLUSDT");
+    if (state_it == app.active_strategy_reduce_by_symbol_.end() ||
+        state_it->second.client_order_id == original.client_order_id) {
+      std::cerr << "策略性 maker reduce 超时后应生成新的 taker fallback\n";
+      return 1;
+    }
+    const auto* replacement = app.oms_.Find(state_it->second.client_order_id);
+    if (replacement == nullptr || !replacement->intent.reduce_only ||
+        replacement->intent.purpose != ai_trade::OrderPurpose::kReduce ||
+        replacement->intent.liquidity_preference !=
+            ai_trade::LiquidityPreference::kTaker ||
+        app.funnel_window_.strategy_reduce_taker_fallbacks != 1) {
+      std::cerr << "策略性 reduce fallback 必须保持 reduce-only 并显式走 taker\n";
+      return 1;
+    }
+    app.Shutdown();
+    std::filesystem::remove_all(temp_dir, ec);
+  }
+
+  {
     ai_trade::AppConfig config;
     config.exchange = "mock";
     config.primary_symbol = "SOLUSDT";
@@ -4838,6 +4914,10 @@ int main() {
         << "  strategy_reduce_min_net_bps: 0.7\n"
         << "  strategy_reduce_max_adverse_bps: 19.0\n"
         << "  strategy_reduce_guard_max_hold_ticks: 240\n"
+        << "  strategy_reduce_post_only_timeout_ticks: 6\n"
+        << "  strategy_reduce_reprice_max_attempts: 1\n"
+        << "  strategy_reduce_reprice_bps: 0.15\n"
+        << "  strategy_reduce_taker_fallback_enabled: true\n"
         << "  candidate_probe_enabled: true\n"
         << "  candidate_probe_min_trend_ratio: 0.82\n"
         << "  candidate_probe_strong_min_trend_ratio: 1.05\n"
@@ -5023,6 +5103,10 @@ int main() {
         !NearlyEqual(config.execution_strategy_reduce_min_net_bps, 0.7) ||
         !NearlyEqual(config.execution_strategy_reduce_max_adverse_bps, 19.0) ||
         config.execution_strategy_reduce_guard_max_hold_ticks != 240 ||
+        config.execution_strategy_reduce_post_only_timeout_ticks != 6 ||
+        config.execution_strategy_reduce_reprice_max_attempts != 1 ||
+        !NearlyEqual(config.execution_strategy_reduce_reprice_bps, 0.15) ||
+        config.execution_strategy_reduce_taker_fallback_enabled != true ||
         config.execution_candidate_probe_enabled != true ||
         !NearlyEqual(config.execution_candidate_probe_min_trend_ratio, 0.82) ||
         !NearlyEqual(config.execution_candidate_probe_strong_min_trend_ratio,

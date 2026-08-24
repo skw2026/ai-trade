@@ -178,6 +178,11 @@ class BotApplication {
   /// 撤单 ACK 后推进探针状态机。
   void OnCandidateProbeCancelResult(const std::string& client_order_id,
                                     bool success);
+  /// 维护策略性 maker 减仓：超时撤单、重挂，并在预算耗尽后用 taker 收敛。
+  void ManageStrategyReduceLifecycle(const MarketEvent& event);
+  /// 远端确认撤单终态后推进策略性 maker 减仓状态机。
+  void OnStrategyReduceCancelResult(const std::string& client_order_id,
+                                    bool success);
   /// 主链 reduce-only 只能针对真实持仓，不能针对未成交的在途开仓。
   bool NormalizeReduceIntentToActualPosition(MarketDecision* decision,
                                              const MarketEvent& event);
@@ -384,6 +389,13 @@ class BotApplication {
     std::uint64_t intents_throttled_symbol_quality_quarantine{0};
     std::uint64_t strategy_reduce_cost_guard_blocked{0};
     std::uint64_t strategy_reduce_cost_guard_bypassed{0};
+    std::uint64_t strategy_reduce_pending_timeouts{0};
+    std::uint64_t strategy_reduce_cancel_submitted{0};
+    std::uint64_t strategy_reduce_cancel_ok{0};
+    std::uint64_t strategy_reduce_cancel_failed{0};
+    std::uint64_t strategy_reduce_reprices{0};
+    std::uint64_t strategy_reduce_taker_fallbacks{0};
+    std::uint64_t strategy_reduce_lifecycle_aborted{0};
     std::uint64_t reduce_without_position_blocked{0};
     std::uint64_t reduce_qty_capped_to_position{0};
     std::uint64_t intents_throttled{0};
@@ -611,6 +623,22 @@ class BotApplication {
   };
   std::unordered_map<std::string, CandidateProbeOrderState>
       active_candidate_probe_by_symbol_;
+  struct StrategyReduceOrderState {
+    OrderIntent lineage_intent;
+    std::string client_order_id;
+    double remaining_qty{0.0};
+    double reference_price{0.0};
+    int created_tick{0};
+    int attempts{0};
+    bool taker_fallback_used{false};
+    bool cancel_requested{false};
+    bool cancel_confirmed{false};
+    bool replacement_pending{false};
+    bool replacement_taker{false};
+    int next_attempts{0};
+  };
+  std::unordered_map<std::string, StrategyReduceOrderState>
+      active_strategy_reduce_by_symbol_;
   std::unordered_map<std::string, int>
       candidate_isolation_grace_until_tick_by_symbol_;
   std::unordered_map<std::string, int>

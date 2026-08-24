@@ -28,9 +28,9 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_subsecond_information_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_subsecond_information_policy_v1"
+POLICY_SCHEMA_VERSION = "maker_subsecond_information_policy_v2"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "721a9f5b322ac6618e25bb89739b0fbe981a6ad60d04b0706a9df6807616df37"
+    "8f3f1a5b9758a28ba4398290710f8e5c506659b38864ba162c351226af169751"
 )
 VARIANT_IDS = (
     "one_second_decomposed_baseline",
@@ -147,10 +147,17 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and execution.get("resting_queue_depth_source")
         == "same_side_l5_cumulative_base_depth_at_placement"
         and float(execution.get("maker_entry_fee_bps", 0.0)) == 2.75
+        and float(execution.get("maker_exit_fee_bps", 0.0)) == 2.75
         and float(execution.get("taker_exit_fee_bps", 0.0)) == 5.5
         and float(execution.get("exit_slippage_bps", 0.0)) == 1.0
         and float(execution.get("stress_cost_multiplier", 0.0)) == 1.25
         and execution.get("horizons_seconds") == [15, 30, 60, 120, 300]
+        and execution.get("exit_execution") == "maker_timeout_taker_fallback"
+        and execution.get("exit_placement_latency_seconds") == 1
+        and execution.get("exit_timeout_seconds") == 12
+        and execution.get("exit_post_only_timeout_seconds") == 6
+        and execution.get("exit_reprice_max_attempts") == 1
+        and float(execution.get("exit_reprice_bps", -1.0)) == 0.15
         and execution.get("one_outstanding_order_or_position") is True
     ):
         failures.append("execution")
@@ -1229,12 +1236,32 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         post_only_timeout_seconds=int(execution["post_only_timeout_seconds"]),
         reprice_max_attempts=int(execution["reprice_max_attempts"]),
         reprice_bps=float(execution["reprice_bps"]),
+        exit_execution=str(execution["exit_execution"]),
+        maker_entry_fee_bps=float(execution["maker_entry_fee_bps"]),
+        maker_exit_fee_bps=float(execution["maker_exit_fee_bps"]),
+        taker_exit_fee_bps=float(execution["taker_exit_fee_bps"]),
+        exit_slippage_bps=float(execution["exit_slippage_bps"]),
+        exit_placement_latency_seconds=int(
+            execution["exit_placement_latency_seconds"]
+        ),
+        exit_timeout_seconds=int(execution["exit_timeout_seconds"]),
+        exit_post_only_timeout_seconds=int(
+            execution["exit_post_only_timeout_seconds"]
+        ),
+        exit_reprice_max_attempts=int(
+            execution["exit_reprice_max_attempts"]
+        ),
+        exit_reprice_bps=float(execution["exit_reprice_bps"]),
     )
     observable = learnability.build_observable_decision_mask(
         raw_timestamps,
         placement_latency_seconds=int(execution["placement_latency_seconds"]),
         fill_timeout_seconds=int(execution["fill_timeout_seconds"]),
         horizons_seconds=execution["horizons_seconds"],
+        exit_settlement_tail_seconds=(
+            int(execution["exit_placement_latency_seconds"])
+            + int(execution["exit_timeout_seconds"])
+        ),
     )
     baseline_eligible = observable & np.all(np.isfinite(baseline_features), axis=1)
     aligned = alignment >= 0

@@ -1,11 +1,11 @@
 {
-  "schema_version": "maker_execution_learnability_policy_v2",
+  "schema_version": "maker_execution_learnability_policy_v3",
   "research_domain": "development_only",
   "promotion_evidence": false,
-  "experiment_id": "bybit_sol_sequential_hurdle_tail_action_value_v2",
+  "experiment_id": "bybit_sol_maker_exit_sequential_hurdle_tail_action_value_v3",
   "upstream": {
     "required_opportunity_decision": "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
-    "required_opportunity_policy_identity_sha256": "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
+    "required_opportunity_policy_identity_sha256": "33dc188b1dcc7dbd692b32a4f7dbb721fa9d65fbff9011cf425af9d5dfaaad2c"
   },
   "features": {
     "causal_contract_revision": "order_flow_cross_asset_regime_v1",
@@ -36,10 +36,17 @@
     "queue_depth_multiplier": 1.25,
     "resting_queue_depth_source": "same_side_l5_cumulative_base_depth_at_placement",
     "maker_entry_fee_bps": 2.75,
+    "maker_exit_fee_bps": 2.75,
     "taker_exit_fee_bps": 5.5,
     "exit_slippage_bps": 1.0,
     "stress_cost_multiplier": 1.25,
     "horizons_seconds": [15, 30, 60, 120, 300],
+    "exit_execution": "maker_timeout_taker_fallback",
+    "exit_placement_latency_seconds": 1,
+    "exit_timeout_seconds": 12,
+    "exit_post_only_timeout_seconds": 6,
+    "exit_reprice_max_attempts": 1,
+    "exit_reprice_bps": 0.15,
     "one_outstanding_order_or_position": true
   },
   "splits": {

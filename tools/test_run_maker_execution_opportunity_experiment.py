@@ -46,6 +46,15 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
             "same_side_l5_cumulative_base_depth_at_placement",
         )
         self.assertFalse(policy["authorities"]["demo_activation_authorized"])
+        self.assertEqual(
+            policy["single_variable_change"],
+            "replace_immediate_taker_exit_with_maker_timeout_taker_fallback",
+        )
+        self.assertEqual(
+            policy["actions"]["exit_execution"],
+            "maker_timeout_taker_fallback",
+        )
+        self.assertEqual(policy["costs"]["maker_exit_fee_bps"], 2.75)
 
     def test_long_fill_requires_queue_consumption_and_strict_trade_through(self):
         series = self.series()
@@ -169,6 +178,71 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         self.assertEqual(fills[0, 0], -1)
         self.assertTrue(np.isnan(outcomes[0, 0]))
 
+    def test_maker_exit_fill_uses_exit_queue_and_lower_round_trip_cost(self):
+        series = self.series(12)
+        series["sell_quote_volume"][2] = 125.0
+        series["best_bid"][2] = 99.9
+        # Entry fills at t=2. Horizon=2s, exit placement is t=5 and the
+        # passive sell fills at t=6 only after ask trade-through + queue volume.
+        series["buy_quote_volume"][6] = 126.0
+        series["best_ask"][6] = 100.3
+
+        outcomes, fills, actions, audit = experiment.build_maker_action_returns(
+            series,
+            horizons_seconds=[2],
+            placement_latency_seconds=1,
+            fill_timeout_seconds=2,
+            queue_depth_multiplier=1.25,
+            base_cost_bps=9.25,
+            exit_execution="maker_timeout_taker_fallback",
+            maker_entry_fee_bps=2.75,
+            maker_exit_fee_bps=2.75,
+            taker_exit_fee_bps=5.5,
+            exit_slippage_bps=1.0,
+            exit_placement_latency_seconds=1,
+            exit_timeout_seconds=2,
+            exit_post_only_timeout_seconds=1,
+            exit_reprice_max_attempts=1,
+            exit_reprice_bps=0.0,
+        )
+
+        self.assertEqual(fills[0, 0], 2000)
+        self.assertEqual(actions[0]["settlement_seconds"], 5)
+        expected = (100.2 / 100.0 - 1.0) * 10000.0 - 5.5
+        self.assertAlmostEqual(outcomes[0, 0], expected)
+        self.assertGreaterEqual(audit["maker_exit_action_count"], 1)
+        self.assertTrue(audit["stress_increment_uses_maximum_fallback_cost"])
+
+    def test_unfilled_maker_exit_falls_back_to_taker_after_timeout(self):
+        series = self.series(12)
+        series["sell_quote_volume"][2] = 125.0
+        series["best_bid"][2] = 99.9
+        series["best_bid"][7] = 101.0
+        series["best_ask"][7] = 101.2
+
+        outcomes, _, _, audit = experiment.build_maker_action_returns(
+            series,
+            horizons_seconds=[2],
+            placement_latency_seconds=1,
+            fill_timeout_seconds=2,
+            queue_depth_multiplier=1.25,
+            base_cost_bps=9.25,
+            exit_execution="maker_timeout_taker_fallback",
+            maker_entry_fee_bps=2.75,
+            maker_exit_fee_bps=2.75,
+            taker_exit_fee_bps=5.5,
+            exit_slippage_bps=1.0,
+            exit_placement_latency_seconds=1,
+            exit_timeout_seconds=2,
+            exit_post_only_timeout_seconds=1,
+            exit_reprice_max_attempts=1,
+            exit_reprice_bps=0.0,
+        )
+
+        expected = (101.0 / 100.0 - 1.0) * 10000.0 - 9.25
+        self.assertAlmostEqual(outcomes[0, 0], expected)
+        self.assertGreaterEqual(audit["taker_fallback_action_count"], 1)
+
     def test_oracle_selects_only_positive_stress_filled_actions_and_nonoverlaps(self):
         timestamps = np.arange(6, dtype=np.int64) * 1000
         outcomes = np.full((6, 2), np.nan, dtype=np.float64)
@@ -279,6 +353,53 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
                 experiment.load_or_create_frozen_audit_manifest(
                     path, series=drifted, policy=policy
                 )
+
+    def test_v3_inherits_v2_absolute_splits_and_starts_new_unseen_forward(self):
+        policy = experiment.validate_policy(
+            TOOLS_DIR.parent / "config" / "maker_execution_opportunity_experiment.json"
+        )
+        series = self.series(140_000)
+        baseline_series = self.series(130_000)
+        seed = experiment.create_frozen_audit_manifest(
+            series=baseline_series, policy=policy
+        )
+        baseline = {
+            "schema_version": experiment.BASELINE_AUDIT_SCHEMA_VERSION,
+            "created_at_utc": "2026-08-23T00:00:00Z",
+            "policy_identity_sha256": experiment.BASELINE_POLICY_IDENTITY_SHA256,
+            "experiment_id": experiment.BASELINE_EXPERIMENT_ID,
+            "frozen_domain": seed["frozen_domain"],
+            "primary_splits": seed["primary_splits"],
+            "boundary_splits": seed["boundary_splits"],
+            "independent_forward": seed["independent_forward"],
+        }
+        baseline["identity_sha256"] = experiment.common.canonical_sha256(baseline)
+        with tempfile.TemporaryDirectory() as td:
+            root = pathlib.Path(td)
+            baseline_path = root / "v2.json"
+            audit_path = root / "v3.json"
+            experiment.common.atomic_write_json(baseline_path, baseline)
+            manifest, created = experiment.load_or_create_frozen_audit_manifest(
+                audit_path,
+                series=series,
+                policy=policy,
+                baseline_manifest_path=baseline_path,
+            )
+
+        self.assertTrue(created)
+        self.assertEqual(manifest["primary_splits"], baseline["primary_splits"])
+        self.assertEqual(manifest["boundary_splits"], baseline["boundary_splits"])
+        self.assertEqual(
+            manifest["baseline_audit_identity_sha256"],
+            baseline["identity_sha256"],
+        )
+        self.assertEqual(
+            manifest["independent_forward"]["start_ms"],
+            int(series["timestamp"][-1]) + 1000,
+        )
+        self.assertFalse(
+            manifest["independent_forward"]["observed_before_freeze"]
+        )
 
     def test_stability_decision_waits_then_fails_closed_or_continues(self):
         waiting = {

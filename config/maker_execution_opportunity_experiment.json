@@ -1,10 +1,17 @@
 {
-  "schema_version": "maker_execution_opportunity_policy_v1",
+  "schema_version": "maker_execution_opportunity_policy_v2",
   "research_domain": "development_only",
   "promotion_evidence": false,
-  "experiment_id": "bybit_sol_frozen_maker_opportunity_audit_v2",
+  "experiment_id": "bybit_sol_maker_exit_fallback_opportunity_audit_v3",
   "source_information_set": "bybit_sol_btc_eth_l50_public_trades_v3",
-  "single_variable_change": "freeze_absolute_splits_and_require_unseen_24h_forward_opportunity",
+  "single_variable_change": "replace_immediate_taker_exit_with_maker_timeout_taker_fallback",
+  "split_calendar": {
+    "source": "inherit_exact_absolute_primary_and_boundary_splits",
+    "baseline_manifest_schema_version": "maker_opportunity_frozen_audit_v1",
+    "baseline_experiment_id": "bybit_sol_frozen_maker_opportunity_audit_v2",
+    "baseline_policy_identity_sha256": "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac",
+    "new_forward_window_starts_after_v3_manifest_freeze": true
+  },
   "actions": {
     "directions": ["long", "short"],
     "horizons_seconds": [15, 30, 60, 120, 300],
@@ -14,7 +21,13 @@
     "price_tick_size": 0.01,
     "post_only_timeout_seconds": 6,
     "reprice_max_attempts": 1,
-    "reprice_bps": 0.15
+    "reprice_bps": 0.15,
+    "exit_execution": "maker_timeout_taker_fallback",
+    "exit_placement_latency_seconds": 1,
+    "exit_timeout_seconds": 12,
+    "exit_post_only_timeout_seconds": 6,
+    "exit_reprice_max_attempts": 1,
+    "exit_reprice_bps": 0.15
   },
   "fill_proxy": {
     "method": "opposite_aggressor_quote_volume_and_top_of_book_trade_through_v1",
@@ -28,6 +41,7 @@
   },
   "costs": {
     "maker_entry_fee_bps": 2.75,
+    "maker_exit_fee_bps": 2.75,
     "taker_exit_fee_bps": 5.5,
     "exit_slippage_bps": 1.0,
     "stress_cost_multiplier": 1.25
@@ -40,7 +54,7 @@
     "rolling_step_seconds": 14400
   },
   "stability_audit": {
-    "manifest_schema_version": "maker_opportunity_frozen_audit_v1",
+    "manifest_schema_version": "maker_opportunity_frozen_audit_v2",
     "boundary_offsets_seconds": [0, -3600, -7200, -10800],
     "minimum_boundary_pass_ratio": 0.75,
     "independent_forward_window_seconds": 86400,

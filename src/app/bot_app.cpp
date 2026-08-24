@@ -2112,6 +2112,243 @@ void BotApplication::OnCandidateProbeCancelResult(
   }
 }
 
+void BotApplication::OnStrategyReduceCancelResult(
+    const std::string& client_order_id,
+    bool success) {
+  if (client_order_id.empty()) {
+    return;
+  }
+  for (auto& [symbol, state] : active_strategy_reduce_by_symbol_) {
+    if (state.client_order_id != client_order_id) {
+      continue;
+    }
+    if (success) {
+      ++funnel_window_.strategy_reduce_cancel_ok;
+      state.cancel_requested = false;
+      state.cancel_confirmed = true;
+      LogInfo("STRATEGY_REDUCE_CANCEL_OK: symbol=" + symbol +
+              ", client_order_id=" + client_order_id +
+              ", replacement_pending=" +
+              std::string(state.replacement_pending ? "true" : "false") +
+              ", replacement_taker=" +
+              std::string(state.replacement_taker ? "true" : "false"));
+    } else {
+      ++funnel_window_.strategy_reduce_cancel_failed;
+      state.cancel_requested = false;
+      state.cancel_confirmed = false;
+      state.replacement_pending = false;
+      state.created_tick = market_tick_count_;
+      LogInfo("STRATEGY_REDUCE_CANCEL_FAILED: symbol=" + symbol +
+              ", client_order_id=" + client_order_id +
+              ", retry_after_tick=" + std::to_string(state.created_tick));
+    }
+    return;
+  }
+}
+
+void BotApplication::ManageStrategyReduceLifecycle(const MarketEvent& event) {
+  const int timeout_ticks =
+      std::max(0, config_.execution_strategy_reduce_post_only_timeout_ticks);
+  if (timeout_ticks <= 0 || event.symbol.empty()) {
+    return;
+  }
+  auto it = active_strategy_reduce_by_symbol_.find(event.symbol);
+  if (it == active_strategy_reduce_by_symbol_.end()) {
+    return;
+  }
+
+  auto& state = it->second;
+  const double actual_position_qty =
+      system_.account().position_qty(event.symbol);
+  const int actual_direction = SignOf(actual_position_qty);
+  if (state.remaining_qty <= kNotionalEpsilon || actual_direction == 0) {
+    active_strategy_reduce_by_symbol_.erase(it);
+    return;
+  }
+  if (state.lineage_intent.direction == 0 ||
+      actual_direction == state.lineage_intent.direction) {
+    ++funnel_window_.strategy_reduce_lifecycle_aborted;
+    LogInfo("STRATEGY_REDUCE_LIFECYCLE_ABORTED: symbol=" + event.symbol +
+            ", client_order_id=" + state.client_order_id +
+            ", reason=position_direction_changed" +
+            ", actual_position_qty=" + std::to_string(actual_position_qty));
+    active_strategy_reduce_by_symbol_.erase(it);
+    return;
+  }
+
+  const OrderRecord* record = oms_.Find(state.client_order_id);
+  const bool terminal =
+      record == nullptr || OrderManager::IsTerminalState(record->state);
+  if (terminal && !state.cancel_confirmed) {
+    const int max_reprice_attempts =
+        std::max(0, config_.execution_strategy_reduce_reprice_max_attempts);
+    const bool can_reprice = state.attempts < max_reprice_attempts;
+    const bool can_taker_fallback =
+        config_.execution_strategy_reduce_taker_fallback_enabled &&
+        !state.taker_fallback_used;
+    state.cancel_requested = false;
+    state.cancel_confirmed = true;
+    state.replacement_pending = can_reprice || can_taker_fallback;
+    state.replacement_taker = !can_reprice && can_taker_fallback;
+    state.next_attempts = can_reprice ? state.attempts + 1 : state.attempts;
+  }
+
+  if (state.cancel_confirmed) {
+    if (!state.replacement_pending) {
+      active_strategy_reduce_by_symbol_.erase(it);
+      return;
+    }
+    if (adapter_ == nullptr || executor_ == nullptr || !adapter_->TradeOk()) {
+      return;
+    }
+
+    double reference_price = event.price > 0.0 ? event.price : event.mark_price;
+    if (!std::isfinite(reference_price) || reference_price <= 0.0) {
+      reference_price = state.reference_price;
+    }
+    if (!std::isfinite(reference_price) || reference_price <= 0.0) {
+      ++funnel_window_.strategy_reduce_lifecycle_aborted;
+      LogInfo("STRATEGY_REDUCE_LIFECYCLE_ABORTED: symbol=" + event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", reason=invalid_replacement_price");
+      active_strategy_reduce_by_symbol_.erase(it);
+      return;
+    }
+    if (!state.replacement_taker && state.next_attempts > 0) {
+      const double reprice_ratio =
+          std::max(0.0, config_.execution_strategy_reduce_reprice_bps) /
+          10000.0;
+      const double aggressiveness =
+          reprice_ratio * static_cast<double>(state.next_attempts);
+      reference_price *= state.lineage_intent.direction > 0
+                             ? (1.0 + aggressiveness)
+                             : (1.0 - aggressiveness);
+    }
+
+    const double replacement_qty =
+        std::min(state.remaining_qty, std::fabs(actual_position_qty));
+    RiskAdjustedPosition flat_target{
+        .symbol = event.symbol,
+        .adjusted_notional_usd = 0.0,
+        .reduce_only = false,
+        .risk_mode = system_.risk_mode(),
+    };
+    auto replacement = execution_.BuildIntent(
+        flat_target, actual_position_qty * reference_price, reference_price);
+    if (!replacement.has_value() || replacement_qty <= kNotionalEpsilon) {
+      ++funnel_window_.strategy_reduce_lifecycle_aborted;
+      LogInfo("STRATEGY_REDUCE_LIFECYCLE_ABORTED: symbol=" + event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", reason=replacement_build_failed");
+      active_strategy_reduce_by_symbol_.erase(it);
+      return;
+    }
+    replacement->purpose = OrderPurpose::kReduce;
+    replacement->reduce_only = true;
+    replacement->liquidity_preference =
+        state.replacement_taker ? LiquidityPreference::kTaker
+                                : LiquidityPreference::kMaker;
+    replacement->direction = state.lineage_intent.direction;
+    replacement->qty = replacement_qty;
+    replacement->price = reference_price;
+    replacement->parent_order_id = state.lineage_intent.parent_order_id;
+    replacement->decision_id = state.lineage_intent.decision_id;
+    replacement->candidate_id = state.lineage_intent.candidate_id;
+    replacement->model_version = state.lineage_intent.model_version;
+    replacement->integrator_mode = state.lineage_intent.integrator_mode;
+    replacement->position_episode_id =
+        state.lineage_intent.position_episode_id;
+    replacement->integrator_policy_reason =
+        state.lineage_intent.integrator_policy_reason;
+
+    std::string guard_reason;
+    if (ViolatesExchangePretradeGuard(adapter_.get(), &*replacement, event,
+                                      &guard_reason)) {
+      ++funnel_window_.strategy_reduce_lifecycle_aborted;
+      LogInfo("STRATEGY_REDUCE_LIFECYCLE_ABORTED: symbol=" + event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", replacement_client_order_id=" +
+              replacement->client_order_id + ", reason=" + guard_reason);
+      active_strategy_reduce_by_symbol_.erase(it);
+      return;
+    }
+
+    const std::string replacement_id = replacement->client_order_id;
+    const bool replacement_taker = state.replacement_taker;
+    const int replacement_attempts = state.next_attempts;
+    if (!EnqueueIntent(*replacement)) {
+      ++funnel_window_.strategy_reduce_lifecycle_aborted;
+      LogInfo("STRATEGY_REDUCE_LIFECYCLE_ABORTED: symbol=" + event.symbol +
+              ", client_order_id=" + state.client_order_id +
+              ", replacement_client_order_id=" + replacement_id +
+              ", reason=replacement_enqueue_failed");
+      active_strategy_reduce_by_symbol_.erase(event.symbol);
+      return;
+    }
+    state.lineage_intent = *replacement;
+    state.client_order_id = replacement_id;
+    state.remaining_qty = replacement_qty;
+    state.reference_price = reference_price;
+    state.created_tick = market_tick_count_;
+    state.attempts = replacement_attempts;
+    state.taker_fallback_used =
+        state.taker_fallback_used || replacement_taker;
+    state.cancel_requested = false;
+    state.cancel_confirmed = false;
+    state.replacement_pending = false;
+    state.replacement_taker = false;
+    state.next_attempts = replacement_attempts;
+    if (replacement_taker) {
+      ++funnel_window_.strategy_reduce_taker_fallbacks;
+      LogInfo("STRATEGY_REDUCE_TAKER_FALLBACK: symbol=" + event.symbol +
+              ", client_order_id=" + replacement_id +
+              ", qty=" + std::to_string(replacement_qty) +
+              ", attempts=" + std::to_string(replacement_attempts));
+    } else {
+      ++funnel_window_.strategy_reduce_reprices;
+      LogInfo("STRATEGY_REDUCE_REPRICE: symbol=" + event.symbol +
+              ", client_order_id=" + replacement_id +
+              ", qty=" + std::to_string(replacement_qty) +
+              ", attempts=" + std::to_string(replacement_attempts) +
+              ", reprice_bps=" +
+              std::to_string(config_.execution_strategy_reduce_reprice_bps));
+    }
+    return;
+  }
+
+  if (state.cancel_requested || terminal ||
+      market_tick_count_ - state.created_tick < timeout_ticks) {
+    return;
+  }
+
+  const int max_reprice_attempts =
+      std::max(0, config_.execution_strategy_reduce_reprice_max_attempts);
+  const bool can_reprice = state.attempts < max_reprice_attempts;
+  const bool can_taker_fallback =
+      config_.execution_strategy_reduce_taker_fallback_enabled &&
+      !state.taker_fallback_used;
+  ++funnel_window_.strategy_reduce_pending_timeouts;
+  state.cancel_requested = true;
+  state.cancel_confirmed = false;
+  state.replacement_pending = can_reprice || can_taker_fallback;
+  state.replacement_taker = !can_reprice && can_taker_fallback;
+  state.next_attempts = can_reprice ? state.attempts + 1 : state.attempts;
+  oms_.MarkCancelPending(state.client_order_id);
+  pending_net_order_enqueued_ms_[state.client_order_id] = CurrentTimestampMs();
+  executor_->Cancel(state.client_order_id);
+  ++funnel_window_.strategy_reduce_cancel_submitted;
+  LogInfo("STRATEGY_REDUCE_PENDING_TIMEOUT: symbol=" + event.symbol +
+          ", client_order_id=" + state.client_order_id +
+          ", age_ticks=" +
+          std::to_string(market_tick_count_ - state.created_tick) +
+          ", timeout_ticks=" + std::to_string(timeout_ticks) +
+          ", attempts=" + std::to_string(state.attempts) +
+          ", replacement_pending=" +
+          std::string(state.replacement_pending ? "true" : "false") +
+          ", replacement_taker=" +
+          std::string(state.replacement_taker ? "true" : "false"));
+}
+
 void BotApplication::ManageCandidateProbeLifecycle(const MarketEvent& event) {
   if (!config_.execution_candidate_probe_enabled || event.symbol.empty() ||
       executor_ == nullptr) {
@@ -3222,6 +3459,17 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
       delta.strategy_reduce_cost_guard_blocked;
   total->strategy_reduce_cost_guard_bypassed +=
       delta.strategy_reduce_cost_guard_bypassed;
+  total->strategy_reduce_pending_timeouts +=
+      delta.strategy_reduce_pending_timeouts;
+  total->strategy_reduce_cancel_submitted +=
+      delta.strategy_reduce_cancel_submitted;
+  total->strategy_reduce_cancel_ok += delta.strategy_reduce_cancel_ok;
+  total->strategy_reduce_cancel_failed += delta.strategy_reduce_cancel_failed;
+  total->strategy_reduce_reprices += delta.strategy_reduce_reprices;
+  total->strategy_reduce_taker_fallbacks +=
+      delta.strategy_reduce_taker_fallbacks;
+  total->strategy_reduce_lifecycle_aborted +=
+      delta.strategy_reduce_lifecycle_aborted;
   total->reduce_without_position_blocked +=
       delta.reduce_without_position_blocked;
   total->reduce_qty_capped_to_position +=
@@ -4608,6 +4856,7 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   }
   UpdateProfitProtection(event);
   ManageCandidateProbeLifecycle(event);
+  ManageStrategyReduceLifecycle(event);
   RefreshProtectionReduceOnlyRelease("market_tick_flat_idle");
 
   // 对账硬停机时直接停止策略决策；Gate 停机仅阻断下单，不阻断观测统计。
@@ -5415,6 +5664,31 @@ bool BotApplication::EnqueueIntent(
   }
   executor_->Submit(attributed_intent);
   ++funnel_window_.intents_enqueued;
+  if (config_.execution_strategy_reduce_post_only_timeout_ticks > 0 &&
+      attributed_intent.purpose == OrderPurpose::kReduce &&
+      attributed_intent.reduce_only &&
+      attributed_intent.liquidity_preference == LiquidityPreference::kMaker &&
+      active_strategy_reduce_by_symbol_.find(attributed_intent.symbol) ==
+          active_strategy_reduce_by_symbol_.end()) {
+    const double reference_price =
+        attributed_intent.price > 0.0
+            ? attributed_intent.price
+            : latest_mark_price_by_symbol_[attributed_intent.symbol];
+    active_strategy_reduce_by_symbol_[attributed_intent.symbol] =
+        StrategyReduceOrderState{
+            .lineage_intent = attributed_intent,
+            .client_order_id = attributed_intent.client_order_id,
+            .remaining_qty = attributed_intent.qty,
+            .reference_price = reference_price,
+            .created_tick = market_tick_count_,
+        };
+    LogInfo("STRATEGY_REDUCE_LIFECYCLE_ENQUEUED: symbol=" +
+            attributed_intent.symbol + ", client_order_id=" +
+            attributed_intent.client_order_id + ", qty=" +
+            std::to_string(attributed_intent.qty) + ", timeout_ticks=" +
+            std::to_string(
+                config_.execution_strategy_reduce_post_only_timeout_ticks));
+  }
   if (!attributed_intent.candidate_id.empty()) {
     const IntegratorCandidateLineage persisted_lineage{
         .decision_id = attributed_intent.decision_id,
@@ -5531,6 +5805,8 @@ void BotApplication::ProcessAsyncResults() {
           oms_.MarkCancelled(res.client_order_id);
           pending_net_order_enqueued_ms_.erase(res.client_order_id);
           integrator_lineage_by_intent_id_.erase(res.client_order_id);
+          OnCandidateProbeCancelResult(res.client_order_id, true);
+          OnStrategyReduceCancelResult(res.client_order_id, true);
         }
       } else {
         oms_.MarkCancelFailed(res.client_order_id);
@@ -5546,6 +5822,7 @@ void BotApplication::ProcessAsyncResults() {
           replay_terminal_settlement_failed_ = true;
         }
         OnCandidateProbeCancelResult(res.client_order_id, false);
+        OnStrategyReduceCancelResult(res.client_order_id, false);
       }
       continue;
     }
@@ -5778,6 +6055,16 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
     if (std::fabs(local_qty_after) > kNotionalEpsilon) {
       candidate_probe_position_entry_tick_by_symbol_[fill.symbol] =
           market_tick_count_;
+    }
+  }
+  if (auto reduce_it = active_strategy_reduce_by_symbol_.find(fill.symbol);
+      reduce_it != active_strategy_reduce_by_symbol_.end() &&
+      reduce_it->second.client_order_id == fill.client_order_id) {
+    reduce_it->second.remaining_qty =
+        std::max(0.0, reduce_it->second.remaining_qty - std::fabs(fill.qty));
+    if (reduce_it->second.remaining_qty <= kNotionalEpsilon ||
+        std::fabs(local_qty_after) <= kNotionalEpsilon) {
+      active_strategy_reduce_by_symbol_.erase(reduce_it);
     }
   }
   if (std::fabs(local_qty_after) <= kNotionalEpsilon) {
@@ -6864,6 +7151,7 @@ void BotApplication::RunReconcile() {
         pending_net_order_enqueued_ms_.erase(client_order_id);
         integrator_lineage_by_intent_id_.erase(client_order_id);
         OnCandidateProbeCancelResult(client_order_id, true);
+        OnStrategyReduceCancelResult(client_order_id, true);
         ++stale_net_orders;
         ++remote_missing_net_orders;
         LogInfo("OMS_CANCEL_FINALIZED: client_order_id=" + client_order_id +
@@ -6908,6 +7196,7 @@ void BotApplication::RunReconcile() {
       pending_net_order_enqueued_ms_.erase(client_order_id);
       integrator_lineage_by_intent_id_.erase(client_order_id);
       OnCandidateProbeCancelResult(client_order_id, true);
+      OnStrategyReduceCancelResult(client_order_id, true);
       LogInfo("OMS_REMOTE_MISSING_FINALIZED: client_order_id=" +
               client_order_id + ", stale_ms=" +
               std::to_string(stale_ms));
@@ -7714,6 +8003,20 @@ void BotApplication::LogStatus() {
           std::to_string(funnel_window.strategy_reduce_cost_guard_blocked) +
           ", strategy_reduce_cost_guard_bypassed=" +
           std::to_string(funnel_window.strategy_reduce_cost_guard_bypassed) +
+          ", strategy_reduce_pending_timeouts=" +
+          std::to_string(funnel_window.strategy_reduce_pending_timeouts) +
+          ", strategy_reduce_cancel_submitted=" +
+          std::to_string(funnel_window.strategy_reduce_cancel_submitted) +
+          ", strategy_reduce_cancel_ok=" +
+          std::to_string(funnel_window.strategy_reduce_cancel_ok) +
+          ", strategy_reduce_cancel_failed=" +
+          std::to_string(funnel_window.strategy_reduce_cancel_failed) +
+          ", strategy_reduce_reprices=" +
+          std::to_string(funnel_window.strategy_reduce_reprices) +
+          ", strategy_reduce_taker_fallbacks=" +
+          std::to_string(funnel_window.strategy_reduce_taker_fallbacks) +
+          ", strategy_reduce_lifecycle_aborted=" +
+          std::to_string(funnel_window.strategy_reduce_lifecycle_aborted) +
           ", reduce_without_position_blocked=" +
           std::to_string(funnel_window.reduce_without_position_blocked) +
           ", reduce_qty_capped_to_position=" +
