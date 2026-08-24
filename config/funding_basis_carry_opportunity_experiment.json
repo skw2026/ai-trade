@@ -1,0 +1,74 @@
+{
+  "schema_version": "funding_basis_carry_opportunity_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "bybit_sol_spot_perpetual_funding_basis_carry_opportunity_v1",
+  "data_contract": {
+    "provider": "bybit",
+    "symbol": "SOLUSDT",
+    "spot_category": "spot",
+    "perpetual_category": "linear",
+    "interval_minutes": 5,
+    "lookback_days": 140,
+    "price_source": "synchronized_closed_trade_klines",
+    "funding_source": "actual_funding_history_settlement_events",
+    "funding_notional_price_source": "linear_mark_price_kline_open_at_settlement",
+    "funding_alignment": "exact_settlement_timestamp_once_only",
+    "missing_bar_policy": "exact_inner_join_no_fill"
+  },
+  "mechanism": {
+    "position": "long_spot_short_linear_perpetual",
+    "reverse_carry_allowed": false,
+    "borrowing_assumed": false,
+    "spot_entry_notional": 1.0,
+    "perpetual_base_quantity": "match_spot_base_quantity",
+    "funding_cashflow": "short_receives_positive_rate_on_perpetual_mark_notional",
+    "funding_event_interval": "entry_timestamp_exclusive_exit_timestamp_inclusive"
+  },
+  "execution": {
+    "horizons_hours": [24, 72, 168],
+    "entry_latency_bars": 1,
+    "one_outstanding_position": true,
+    "price_proxy": "next_bar_open_plus_minus_frozen_half_spread",
+    "spot_half_spread_bps": 2.0,
+    "perpetual_half_spread_bps": 0.5,
+    "spot_taker_fee_bps_per_fill": 10.0,
+    "perpetual_taker_fee_bps_per_fill": 5.5,
+    "spot_slippage_bps_per_fill": 1.5,
+    "perpetual_slippage_bps_per_fill": 1.0,
+    "stress_execution_cost_multiplier": 1.25,
+    "historical_proxy_can_authorize_demo": false
+  },
+  "capital_cost": {
+    "gross_capital_multiplier": 2.0,
+    "base_annual_rate": 0.05,
+    "stress_annual_rate": 0.075,
+    "day_count": 365.0
+  },
+  "splits": {
+    "count": 6,
+    "train_window_days": 30,
+    "validation_window_days": 7,
+    "test_window_days": 14,
+    "rolling_step_days": 14,
+    "embargo_days": 1
+  },
+  "stability_audit": {
+    "manifest_schema_version": "funding_basis_carry_frozen_audit_v1",
+    "boundary_offsets_days": [0, -1, -2, -3],
+    "minimum_boundary_pass_ratio": 0.75,
+    "require_exact_frozen_domain": true
+  },
+  "decision_gates": {
+    "minimum_oos_trades": 12,
+    "minimum_positive_split_ratio": 0.6,
+    "minimum_oracle_stress_lcb_bps": 0.0,
+    "minimum_funding_events": 30
+  },
+  "authorities": {
+    "historical_continuation_target": "raw_spot_perpetual_bbo_forward_capture",
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

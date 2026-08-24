@@ -1796,6 +1796,105 @@ def assess_cross_asset_residual_opportunity_experiment(path: Path) -> Dict[str, 
     }
 
 
+def assess_funding_basis_carry_opportunity_experiment(path: Path) -> Dict[str, Any]:
+    """Expose the carry upper bound without treating trade klines as BBO."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "CONTINUE_TO_RAW_BBO_FORWARD_CARRY_VALIDATION",
+        "STOP_FUNDING_BASIS_CARRY_FAMILY",
+    }
+    if payload.get("schema_version") != "funding_basis_carry_opportunity_experiment_v1":
+        fail_reasons.append("funding/basis carry report schema mismatch")
+    if payload.get("status") != "COMPLETE" or payload.get("fully_verifiable") is not True:
+        fail_reasons.append("funding/basis carry evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "historical_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+    ):
+        fail_reasons.append("funding/basis carry isolation contract failed")
+    execution = payload.get("execution_contract")
+    if not (
+        isinstance(execution, dict)
+        and execution.get("historical_price_is_executable_bbo") is False
+        and execution.get("historical_proxy_can_authorize_demo") is False
+    ):
+        fail_reasons.append("funding/basis carry proxy firewall failed")
+    decision = payload.get("research_decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("funding/basis carry decision is invalid")
+        decision = None
+    reasons = payload.get("reason_codes")
+    if not (
+        isinstance(reasons, list)
+        and all(isinstance(item, str) and item.strip() for item in reasons)
+    ):
+        fail_reasons.append("funding/basis carry reason codes are invalid")
+        reasons = []
+
+    def metric(mapping: Any, field: str) -> int | float | None:
+        if not isinstance(mapping, dict):
+            return None
+        value = mapping.get(field)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+        ):
+            return value
+        return None
+
+    common_domain = payload.get("common_domain", {})
+    oracle = payload.get("hindsight_oracle", {})
+    base = oracle.get("base_cost_by_split", {}) if isinstance(oracle, dict) else {}
+    stress = oracle.get("stress_cost_by_split", {}) if isinstance(oracle, dict) else {}
+    maximum_candidate = (
+        oracle.get("maximum_candidate", {}) if isinstance(oracle, dict) else {}
+    )
+    stability = payload.get("stability_audit", {})
+    boundary = (
+        stability.get("boundary_sensitivity", {})
+        if isinstance(stability, dict)
+        else {}
+    )
+    metrics = {
+        "common_row_count": metric(common_domain, "row_count"),
+        "source_funding_event_count": metric(common_domain, "funding_event_count"),
+        "oracle_trade_count": metric(oracle, "trade_count"),
+        "oracle_funding_event_count": metric(oracle, "funding_event_count"),
+        "oracle_positive_split_ratio": metric(oracle, "positive_stress_split_ratio"),
+        "oracle_base_lcb_bps": metric(base, "lcb_bps"),
+        "oracle_stress_lcb_bps": metric(stress, "lcb_bps"),
+        "maximum_candidate_gross_bps": metric(maximum_candidate, "gross_bps"),
+        "maximum_candidate_stress_bps": metric(maximum_candidate, "stress_bps"),
+        "maximum_candidate_funding_bps": metric(maximum_candidate, "funding_bps"),
+        "boundary_pass_ratio": metric(boundary, "pass_ratio"),
+    }
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": (
+            [] if fail_reasons else [f"funding/basis carry decision: {decision}"]
+        ),
+        "research_decision": decision,
+        "reason_codes": list(reasons),
+        "metrics": {key: value for key, value in metrics.items() if value is not None},
+        "research_observation_only": True,
+        "historical_price_is_executable_bbo": False,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "funding_basis_carry_opportunity_stage_review",
+    }
+
+
 def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]:
     """Expose maker model learnability while preserving the promotion firewall."""
 
@@ -4452,6 +4551,11 @@ def parse_args() -> argparse.Namespace:
         help="SOL/BTC/ETH 美元中性残差机会审计报告路径",
     )
     parser.add_argument(
+        "--funding_basis_carry_opportunity_experiment_report",
+        default="",
+        help="同场 spot/perpetual 资金费率与基差 carry 机会审计报告路径",
+    )
+    parser.add_argument(
         "--maker_execution_learnability_experiment_report",
         default="",
         help="保守 maker-entry 三架构可学习性实验报告路径",
@@ -4921,6 +5025,22 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {experiment_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "cross_asset_residual_opportunity_stage_review",
+            }
+    if args.funding_basis_carry_opportunity_experiment_report:
+        experiment_path = Path(
+            args.funding_basis_carry_opportunity_experiment_report
+        )
+        if experiment_path.is_file():
+            sections["funding_basis_carry_opportunity_experiment"] = (
+                assess_funding_basis_carry_opportunity_experiment(experiment_path)
+            )
+        else:
+            sections["funding_basis_carry_opportunity_experiment"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {experiment_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "funding_basis_carry_opportunity_stage_review",
             }
     if args.maker_execution_learnability_experiment_report:
         experiment_path = Path(args.maker_execution_learnability_experiment_report)

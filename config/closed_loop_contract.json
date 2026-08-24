@@ -1,5 +1,5 @@
 {
-  "schema_version": "closed_loop_contract_v8",
+  "schema_version": "closed_loop_contract_v9",
   "trust_anchors": {
     "feature_parity_fixture": {
       "schema_version": "feature_parity_fixture_contract_v1",
@@ -22,6 +22,7 @@
         "microstructure_forward_data",
         "maker_execution_opportunity_experiment",
         "cross_asset_residual_opportunity_experiment",
+        "funding_basis_carry_opportunity_experiment",
         "maker_execution_learnability_experiment",
         "liquidation_information_set_experiment",
         "microstructure_alpha_development",
@@ -46,6 +47,10 @@
         "maker_opportunity_frozen_audit",
         "cross_asset_residual_opportunity_experiment",
         "cross_asset_residual_frozen_audit",
+        "funding_basis_carry_history",
+        "funding_basis_carry_data_report",
+        "funding_basis_carry_opportunity_experiment",
+        "funding_basis_carry_frozen_audit",
         "maker_execution_learnability_experiment",
         "liquidation_information_set_experiment",
         "microstructure_alpha_development_report",

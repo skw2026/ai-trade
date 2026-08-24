@@ -50,6 +50,14 @@ LOCAL_ARTIFACT_FILENAMES = {
     "cross_asset_residual_frozen_audit": (
         "cross_asset_residual_frozen_audit.json"
     ),
+    "funding_basis_carry_history": "funding_basis_carry_history.csv",
+    "funding_basis_carry_data_report": "funding_basis_carry_data_report.json",
+    "funding_basis_carry_opportunity_experiment": (
+        "funding_basis_carry_opportunity_experiment.json"
+    ),
+    "funding_basis_carry_frozen_audit": (
+        "funding_basis_carry_frozen_audit.json"
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),

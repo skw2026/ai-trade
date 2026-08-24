@@ -145,6 +145,18 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         )
         self.assertEqual(
             VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "funding_basis_carry_opportunity_experiment"
+            ],
+            "funding_basis_carry_opportunity_experiment.json",
+        )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "funding_basis_carry_frozen_audit"
+            ],
+            "funding_basis_carry_frozen_audit.json",
+        )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
                 "maker_subsecond_information_experiment"
             ],
             "maker_subsecond_information_experiment.json",
@@ -188,6 +200,11 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         self.assertIn(
             'SUMMARY_ARGS+=(--cross_asset_residual_opportunity_experiment_report '
             '"${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}")',
+            source,
+        )
+        self.assertIn(
+            'SUMMARY_ARGS+=(--funding_basis_carry_opportunity_experiment_report '
+            '"${FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH}")',
             source,
         )
         self.assertIn(

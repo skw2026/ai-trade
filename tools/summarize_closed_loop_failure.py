@@ -96,6 +96,10 @@ UPSTREAM_REPORTS = {
         "cross_asset_residual_opportunity_experiment.json",
         {"COMPLETE", "NOT_READY"},
     ),
+    "funding_basis_carry_opportunity_experiment": (
+        "funding_basis_carry_opportunity_experiment.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json",
         {"COMPLETE", "NOT_READY"},
@@ -818,6 +822,101 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         section["metrics"] = {
             key: value for key, value in metrics.items() if value is not None
         }
+    elif name == "funding_basis_carry_opportunity_experiment":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        decision = report.get("research_decision")
+        allowed_decisions = {
+            "CONTINUE_TO_RAW_BBO_FORWARD_CARRY_VALIDATION",
+            "STOP_FUNDING_BASIS_CARRY_FAMILY",
+        }
+        execution = report.get("execution_contract")
+        contract_ok = (
+            report.get("schema_version")
+            == "funding_basis_carry_opportunity_experiment_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("fully_verifiable") is True
+            and report.get("research_domain") == "historical_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and isinstance(execution, Mapping)
+            and execution.get("historical_price_is_executable_bbo") is False
+            and execution.get("historical_proxy_can_authorize_demo") is False
+            and decision in allowed_decisions
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = (
+            decision if decision in allowed_decisions else None
+        )
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        common_domain = report.get("common_domain")
+        oracle = report.get("hindsight_oracle")
+        base = oracle.get("base_cost_by_split") if isinstance(oracle, Mapping) else None
+        stress = oracle.get("stress_cost_by_split") if isinstance(oracle, Mapping) else None
+        maximum_candidate = (
+            oracle.get("maximum_candidate") if isinstance(oracle, Mapping) else None
+        )
+        stability = report.get("stability_audit")
+        boundary = (
+            stability.get("boundary_sensitivity")
+            if isinstance(stability, Mapping)
+            else None
+        )
+        metrics = {
+            "common_row_count": _safe_number(common_domain.get("row_count"))
+            if isinstance(common_domain, Mapping)
+            else None,
+            "source_funding_event_count": _safe_number(
+                common_domain.get("funding_event_count")
+            )
+            if isinstance(common_domain, Mapping)
+            else None,
+            "oracle_trade_count": _safe_number(oracle.get("trade_count"))
+            if isinstance(oracle, Mapping)
+            else None,
+            "oracle_funding_event_count": _safe_number(
+                oracle.get("funding_event_count")
+            )
+            if isinstance(oracle, Mapping)
+            else None,
+            "oracle_positive_split_ratio": _safe_number(
+                oracle.get("positive_stress_split_ratio")
+            )
+            if isinstance(oracle, Mapping)
+            else None,
+            "oracle_base_lcb_bps": _safe_number(base.get("lcb_bps"))
+            if isinstance(base, Mapping)
+            else None,
+            "oracle_stress_lcb_bps": _safe_number(stress.get("lcb_bps"))
+            if isinstance(stress, Mapping)
+            else None,
+            "maximum_candidate_gross_bps": _safe_number(
+                maximum_candidate.get("gross_bps")
+            )
+            if isinstance(maximum_candidate, Mapping)
+            else None,
+            "maximum_candidate_stress_bps": _safe_number(
+                maximum_candidate.get("stress_bps")
+            )
+            if isinstance(maximum_candidate, Mapping)
+            else None,
+            "maximum_candidate_funding_bps": _safe_number(
+                maximum_candidate.get("funding_bps")
+            )
+            if isinstance(maximum_candidate, Mapping)
+            else None,
+            "boundary_pass_ratio": _safe_number(boundary.get("pass_ratio"))
+            if isinstance(boundary, Mapping)
+            else None,
+        }
+        section["metrics"] = {
+            key: value for key, value in metrics.items() if value is not None
+        }
     elif name == "maker_execution_learnability_experiment":
         reasons = _safe_tokens(report.get("reason_codes"))
         decision = report.get("research_decision")
@@ -1406,6 +1505,9 @@ def _annotation(summary: Mapping[str, Any]) -> str:
             "oracle_positive_split_ratio",
             "oracle_base_lcb_bps",
             "oracle_stress_lcb_bps",
+            "maximum_candidate_gross_bps",
+            "maximum_candidate_stress_bps",
+            "maximum_candidate_funding_bps",
             "boundary_pass_ratio",
             "forward_row_ratio",
         ):
@@ -1452,6 +1554,29 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     residual_opportunity_progress = (
         ",".join(residual_progress_parts) or "UNAVAILABLE"
     )
+    carry_opportunity = upstream.get(
+        "funding_basis_carry_opportunity_experiment", {}
+    )
+    carry_opportunity_decision = (
+        carry_opportunity.get("research_decision", "UNAVAILABLE") or "UNAVAILABLE"
+    )
+    carry_progress_parts: list[str] = []
+    carry_metrics = carry_opportunity.get("metrics")
+    if isinstance(carry_metrics, Mapping):
+        for key in (
+            "common_row_count",
+            "source_funding_event_count",
+            "oracle_trade_count",
+            "oracle_funding_event_count",
+            "oracle_positive_split_ratio",
+            "oracle_base_lcb_bps",
+            "oracle_stress_lcb_bps",
+            "boundary_pass_ratio",
+        ):
+            value = _safe_number(carry_metrics.get(key))
+            if value is not None:
+                carry_progress_parts.append(f"{key}:{value}")
+    carry_opportunity_progress = ",".join(carry_progress_parts) or "UNAVAILABLE"
     maker_learnability = upstream.get(
         "maker_execution_learnability_experiment", {}
     )
@@ -1538,6 +1663,8 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         f"maker_opportunity_progress={maker_opportunity_progress}; "
         f"residual_opportunity_decision={residual_opportunity_decision}; "
         f"residual_opportunity_progress={residual_opportunity_progress}; "
+        f"carry_opportunity_decision={carry_opportunity_decision}; "
+        f"carry_opportunity_progress={carry_opportunity_progress}; "
         f"maker_learnability_decision={maker_learnability_decision}; "
         f"maker_learnability_leader={maker_learnability_leader}; "
         f"maker_learnability_progress={maker_learnability_progress}; "
