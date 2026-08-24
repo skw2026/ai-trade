@@ -1,5 +1,5 @@
 {
-  "schema_version": "closed_loop_contract_v6",
+  "schema_version": "closed_loop_contract_v7",
   "trust_anchors": {
     "feature_parity_fixture": {
       "schema_version": "feature_parity_fixture_contract_v1",
@@ -17,6 +17,7 @@
         "research_domain_split",
         "feature_parity",
         "data_quality",
+        "miner",
         "market_alpha_development",
         "microstructure_forward_data",
         "maker_execution_opportunity_experiment",
@@ -36,6 +37,7 @@
         "feature_parity_report",
         "research_selection_feature_store",
         "research_holdout_feature_store",
+        "miner_report",
         "market_alpha_development_report",
         "microstructure_capture_upgrade_report",
         "microstructure_capture_report",

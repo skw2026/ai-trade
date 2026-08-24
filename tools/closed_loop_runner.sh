@@ -6688,6 +6688,7 @@ run_research_discovery_chain() {
   run_required_step research_domain_split run_research_domain_split
   run_required_step feature_parity run_feature_parity
   run_required_step data_quality run_data_quality
+  run_required_step miner run_miner
   if (( RUN_REQUIRED_STEP_STATUS != 0 )); then
     local reason="research prerequisite failed"
     skip_observation_step market_alpha_development "${reason}"

@@ -723,6 +723,24 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('"required_artifacts": required_artifacts', script)
         self.assertIn('"required_steps": required_steps', script)
         self.assertIn("run_research_discovery_chain() {", script)
+        research_chain = script[
+            script.index("run_research_discovery_chain() {") :
+            script.index("\n}", script.index("run_research_discovery_chain() {"))
+        ]
+        self.assertLess(
+            research_chain.index("run_required_step data_quality run_data_quality"),
+            research_chain.index("run_required_step miner run_miner"),
+        )
+        self.assertLess(
+            research_chain.index("run_required_step miner run_miner"),
+            research_chain.index(
+                "run_observation_step market_alpha_development "
+                "run_market_alpha_development_gate"
+            ),
+        )
+        research_contract = contract["actions"]["research"]
+        self.assertIn("miner", research_contract["required_steps"])
+        self.assertIn("miner_report", research_contract["required_artifacts"])
         self.assertIn(
             "research discovery completed without registration, activation, or restart",
             script,
