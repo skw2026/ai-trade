@@ -1569,10 +1569,13 @@ def assess_maker_execution_opportunity_experiment(path: Path) -> Dict[str, Any]:
     allowed_decisions = {
         "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
         "STOP_MAKER_EXECUTION_FAMILY",
+        "WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW",
     }
     if payload.get("schema_version") != "maker_execution_opportunity_experiment_v1":
         fail_reasons.append("maker opportunity report schema mismatch")
-    if payload.get("status") != "COMPLETE" or payload.get("fully_verifiable") is not True:
+    if payload.get("status") != "COMPLETE" or not isinstance(
+        payload.get("fully_verifiable"), bool
+    ):
         fail_reasons.append("maker opportunity evidence is incomplete")
     if not (
         payload.get("research_domain") == "forward_development_only"
@@ -1587,6 +1590,11 @@ def assess_maker_execution_opportunity_experiment(path: Path) -> Dict[str, Any]:
     if decision not in allowed_decisions:
         fail_reasons.append("maker opportunity research decision is invalid")
         decision = None
+    elif (
+        decision == "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT"
+        and payload.get("fully_verifiable") is not True
+    ):
+        fail_reasons.append("maker opportunity continuation is not fully verifiable")
     reasons = payload.get("reason_codes")
     if not (
         isinstance(reasons, list)
@@ -1614,6 +1622,17 @@ def assess_maker_execution_opportunity_experiment(path: Path) -> Dict[str, Any]:
     stress = (
         oracle.get("stress_cost_by_split", {}) if isinstance(oracle, dict) else {}
     )
+    stability = payload.get("stability_audit", {})
+    boundary = (
+        stability.get("boundary_sensitivity", {})
+        if isinstance(stability, dict)
+        else {}
+    )
+    forward = (
+        stability.get("independent_forward", {})
+        if isinstance(stability, dict)
+        else {}
+    )
     metrics = {
         "common_row_count": metric(common, "row_count"),
         "filled_decision_count": metric(fill, "filled_decision_count"),
@@ -1624,6 +1643,13 @@ def assess_maker_execution_opportunity_experiment(path: Path) -> Dict[str, Any]:
         ),
         "oracle_base_lcb_bps": metric(base, "lcb_bps"),
         "oracle_stress_lcb_bps": metric(stress, "lcb_bps"),
+        "boundary_pass_ratio": metric(boundary, "pass_ratio"),
+        "forward_row_ratio": metric(forward, "row_ratio"),
+        "forward_observation_complete": (
+            forward.get("observation_complete")
+            if isinstance(forward.get("observation_complete"), bool)
+            else None
+        ),
     }
     return {
         "status": "fail" if fail_reasons else "pass",
@@ -1673,11 +1699,7 @@ def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]
         fail_reasons.append("maker learnability research decision is invalid")
         decision = None
     leader = payload.get("diagnostic_leader_id")
-    if leader is not None and leader not in {
-        "direct_stress_utility_regression",
-        "two_stage_opportunity_action",
-        "joint_action_ranker",
-    }:
+    if leader is not None and leader != "sequential_hurdle_tail_action_value":
         fail_reasons.append("maker learnability leader is invalid")
         leader = None
     reasons = payload.get("reason_codes")
@@ -1706,11 +1728,7 @@ def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]
     )
     architectures: Dict[str, Any] = {}
     if isinstance(raw_architectures, dict):
-        for architecture_id in (
-            "direct_stress_utility_regression",
-            "two_stage_opportunity_action",
-            "joint_action_ranker",
-        ):
+        for architecture_id in ("sequential_hurdle_tail_action_value",):
             item = raw_architectures.get(architecture_id)
             if not isinstance(item, dict):
                 continue
@@ -2554,7 +2572,8 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                 fail_reasons.append(f"step status action mismatch: {step}")
             if kind not in {"required", "diagnostic", "observation", "route"}:
                 fail_reasons.append(f"step status invalid kind: {step}={kind}")
-            if result not in {"pass", "fail", "skipped"}:
+            business_results = {"rejected", "waiting", "not_ready"}
+            if result not in {"pass", "fail", "skipped", *business_results}:
                 fail_reasons.append(f"step status invalid result: {step}={result}")
             elif result == "pass" and exit_code != 0:
                 fail_reasons.append(f"step status pass has non-zero exit code: {step}")
@@ -2569,11 +2588,43 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                     )
                 else:
                     fail_reasons.append(f"closed-loop step failed: {step}")
+            elif result in business_results:
+                if (
+                    kind != "observation"
+                    or record.get("research_decision_only") is not True
+                    or not isinstance(exit_code, int)
+                    or isinstance(exit_code, bool)
+                    or exit_code < 0
+                ):
+                    fail_reasons.append(
+                        f"observational business result contract invalid: {step}"
+                    )
+                else:
+                    warn_reasons.append(
+                        f"closed-loop observational business result: {step}={result}"
+                    )
             elif result == "skipped":
                 if kind == "route":
                     if blocked is not False or exit_code is not None:
                         fail_reasons.append(
                             f"route-inapplicable step skip contract invalid: {step}"
+                        )
+                elif kind == "observation":
+                    if (
+                        blocked is not False
+                        or exit_code is not None
+                        or record.get("research_decision_only") is not True
+                    ):
+                        fail_reasons.append(
+                            f"observational step skip contract invalid: {step}"
+                        )
+                    elif step in effective_required_steps:
+                        fail_reasons.append(
+                            f"closed-loop required observation skipped: {step}"
+                        )
+                    else:
+                        warn_reasons.append(
+                            f"closed-loop observational step skipped: {step}"
                         )
                 else:
                     if blocked is not True or exit_code is not None:
@@ -2581,7 +2632,7 @@ def assess_run_manifest(path: Path, expected_run_id: str) -> Dict[str, Any]:
                             f"step status skipped lacks prior-failure contract: {step}"
                         )
                     fail_reasons.append(f"closed-loop required step skipped: {step}")
-            if result in {"pass", "fail"} and blocked is not False:
+            if result in {"pass", "fail", *business_results} and blocked is not False:
                 fail_reasons.append(
                     f"step status blocked flag invalid for {result}: {step}"
                 )

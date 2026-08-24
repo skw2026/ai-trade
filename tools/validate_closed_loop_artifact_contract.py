@@ -43,6 +43,7 @@ LOCAL_ARTIFACT_FILENAMES = {
     "maker_execution_opportunity_experiment": (
         "maker_execution_opportunity_experiment.json"
     ),
+    "maker_opportunity_frozen_audit": "maker_opportunity_frozen_audit.json",
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),
@@ -113,6 +114,7 @@ STEP_RECORD_FIELDS = frozenset(
         "exit_code",
         "blocked_by_prior_failure",
         "research_decision_only",
+        "duration_ms",
     }
 )
 
@@ -154,9 +156,13 @@ def valid_step_record_schema(record: Dict[str, Any]) -> bool:
         not isinstance(exit_code, int) or isinstance(exit_code, bool)
     ):
         return False
+    duration_ms = record.get("duration_ms")
     return bool(
         isinstance(record.get("blocked_by_prior_failure"), bool)
         and isinstance(record.get("research_decision_only"), bool)
+        and isinstance(duration_ms, int)
+        and not isinstance(duration_ms, bool)
+        and duration_ms >= 0
     )
 
 
@@ -207,6 +213,55 @@ def validate_step_record_identity(
     return failures
 
 
+def validate_step_result_contract(record: Dict[str, Any]) -> List[str]:
+    """Validate technical outcomes separately from research business outcomes."""
+    failures: List[str] = []
+    step = str(record.get("step") or "")
+    kind = record.get("kind")
+    result = record.get("result")
+    exit_code = record.get("exit_code")
+    blocked = record.get("blocked_by_prior_failure")
+    business_results = {"rejected", "waiting", "not_ready"}
+    if kind not in {"required", "diagnostic", "observation", "route"}:
+        return [f"step_status:{step}:kind"]
+    if result not in {"pass", "fail", "skipped", *business_results}:
+        return [f"step_status:{step}:result"]
+    if result == "pass":
+        if exit_code != 0 or blocked is not False:
+            failures.append(f"step_status:{step}:pass_contract")
+    elif result == "fail":
+        if (
+            not isinstance(exit_code, int)
+            or isinstance(exit_code, bool)
+            or exit_code == 0
+            or blocked is not False
+        ):
+            failures.append(f"step_status:{step}:fail_contract")
+    elif result in business_results:
+        if (
+            kind != "observation"
+            or record.get("research_decision_only") is not True
+            or not isinstance(exit_code, int)
+            or isinstance(exit_code, bool)
+            or exit_code < 0
+            or blocked is not False
+        ):
+            failures.append(f"step_status:{step}:business_result_contract")
+    elif kind == "route":
+        if exit_code is not None or blocked is not False:
+            failures.append(f"step_status:{step}:route_skip_contract")
+    elif kind == "observation":
+        if (
+            exit_code is not None
+            or blocked is not False
+            or record.get("research_decision_only") is not True
+        ):
+            failures.append(f"step_status:{step}:observation_skip_contract")
+    elif exit_code is not None or blocked is not True:
+        failures.append(f"step_status:{step}:skip_contract")
+    return failures
+
+
 def validate_decisive_observations(
     step_records: List[Dict[str, Any]], run_id: str, action: str
 ) -> List[str]:
@@ -236,7 +291,7 @@ def validate_decisive_observations(
         if record.get("kind") != "observation":
             failures.append(f"step_status:{step}:kind")
         result = record.get("result")
-        if result not in {"pass", "fail"}:
+        if result not in {"pass", "fail", "rejected", "waiting", "not_ready"}:
             failures.append(f"step_status:{step}:result")
         exit_code = record.get("exit_code")
         if (
@@ -244,6 +299,7 @@ def validate_decisive_observations(
             or isinstance(exit_code, bool)
             or (result == "pass" and exit_code != 0)
             or (result == "fail" and exit_code == 0)
+            or (result in {"rejected", "waiting", "not_ready"} and exit_code < 0)
         ):
             failures.append(f"step_status:{step}:exit_code")
         if record.get("blocked_by_prior_failure") is not False:
@@ -348,6 +404,8 @@ def validate_artifact_contract(
     failures.extend(
         validate_step_record_identity(step_records, manifest_run_id, action)
     )
+    for record in step_records:
+        failures.extend(validate_step_result_contract(record))
     if route_contracts:
         optional_on_rejection = route_rejection_contract.get("optional_artifacts")
         if (
@@ -390,7 +448,13 @@ def validate_artifact_contract(
                 failures.append(f"alpha_source_route:contract:{selected_route}")
             else:
                 effective_required_artifacts.extend(route_artifacts)
-                effective_required_steps.extend(route_steps)
+                try:
+                    insertion = effective_required_steps.index(
+                        "alpha_source_route"
+                    ) + 1
+                except ValueError:
+                    insertion = len(effective_required_steps)
+                effective_required_steps[insertion:insertion] = route_steps
         elif route_rejected:
             optional = set(optional_on_rejection)
             effective_required_artifacts = [
@@ -399,10 +463,9 @@ def validate_artifact_contract(
         else:
             failures.append("alpha_source_route:invalid")
 
-    if action == "full":
-        for step in DECISIVE_OBSERVATION_STEPS:
-            if step not in effective_required_steps:
-                failures.append(f"step_status:{step}:not_required")
+    if action == "full" and all(
+        step in effective_required_steps for step in DECISIVE_OBSERVATION_STEPS
+    ):
         failures.extend(
             validate_decisive_observations(
                 step_records,
@@ -410,6 +473,30 @@ def validate_artifact_contract(
                 action,
             )
         )
+
+    step_names = [str(record.get("step") or "") for record in step_records]
+    for step in sorted(set(step_names)):
+        if step and step_names.count(step) != 1:
+            failures.append(f"step_status:{step}:duplicate")
+    missing_steps = [
+        step for step in effective_required_steps if step not in step_names
+    ]
+    for step in missing_steps:
+        failures.append(f"step_status:{step}:missing")
+    for record in step_records:
+        if (
+            record.get("step") in effective_required_steps
+            and record.get("result") == "skipped"
+            and record.get("kind") == "observation"
+        ):
+            failures.append(f"step_status:{record['step']}:required_skipped")
+    required_positions = [
+        step_names.index(step)
+        for step in effective_required_steps
+        if step in step_names
+    ]
+    if required_positions != sorted(required_positions):
+        failures.append("step_status:required_order")
 
     for name in effective_required_artifacts:
         if name not in artifacts:

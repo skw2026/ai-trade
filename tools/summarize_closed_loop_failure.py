@@ -530,12 +530,13 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         allowed_decisions = {
             "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
             "STOP_MAKER_EXECUTION_FAMILY",
+            "WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW",
         }
         contract_ok = (
             report.get("schema_version")
             == "maker_execution_opportunity_experiment_v1"
             and report.get("status") == "COMPLETE"
-            and report.get("fully_verifiable") is True
+            and isinstance(report.get("fully_verifiable"), bool)
             and report.get("research_domain") == "forward_development_only"
             and report.get("promotion_evidence") is False
             and report.get("promotion_eligible") is False
@@ -543,6 +544,10 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             and report.get("demo_activation_authorized") is False
             and report.get("live_activation_authorized") is False
             and decision in allowed_decisions
+            and (
+                decision != "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT"
+                or report.get("fully_verifiable") is True
+            )
         )
         section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
         section["research_decision"] = (
@@ -563,6 +568,17 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         stress = (
             oracle.get("stress_cost_by_split")
             if isinstance(oracle, Mapping)
+            else None
+        )
+        stability = report.get("stability_audit")
+        boundary = (
+            stability.get("boundary_sensitivity")
+            if isinstance(stability, Mapping)
+            else None
+        )
+        forward = (
+            stability.get("independent_forward")
+            if isinstance(stability, Mapping)
             else None
         )
         metrics = {
@@ -601,6 +617,22 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
                 if isinstance(stress, Mapping)
                 else None
             ),
+            "boundary_pass_ratio": (
+                _safe_number(boundary.get("pass_ratio"))
+                if isinstance(boundary, Mapping)
+                else None
+            ),
+            "forward_row_ratio": (
+                _safe_number(forward.get("row_ratio"))
+                if isinstance(forward, Mapping)
+                else None
+            ),
+            "forward_observation_complete": (
+                forward.get("observation_complete")
+                if isinstance(forward, Mapping)
+                and isinstance(forward.get("observation_complete"), bool)
+                else None
+            ),
         }
         section["metrics"] = {
             key: value for key, value in metrics.items() if value is not None
@@ -614,11 +646,7 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             "STOP_MAKER_LEARNABILITY_UPSTREAM_NOT_PROVEN",
         }
         leader = report.get("diagnostic_leader_id")
-        allowed_leaders = {
-            "direct_stress_utility_regression",
-            "two_stage_opportunity_action",
-            "joint_action_ranker",
-        }
+        allowed_leaders = {"sequential_hurdle_tail_action_value"}
         contract_ok = (
             report.get("schema_version")
             == "maker_execution_learnability_experiment_v1"
@@ -660,9 +688,7 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             )
         }
         for architecture_id, prefix in (
-            ("direct_stress_utility_regression", "direct"),
-            ("two_stage_opportunity_action", "two_stage"),
-            ("joint_action_ranker", "joint"),
+            ("sequential_hurdle_tail_action_value", "hurdle_tail"),
         ):
             architecture = (
                 architectures.get(architecture_id)
@@ -1184,10 +1210,18 @@ def _annotation(summary: Mapping[str, Any]) -> str:
             "oracle_positive_split_ratio",
             "oracle_base_lcb_bps",
             "oracle_stress_lcb_bps",
+            "boundary_pass_ratio",
+            "forward_row_ratio",
         ):
             value = _safe_number(maker_metrics.get(key))
             if value is not None:
                 maker_progress_parts.append(f"{key}:{value}")
+        forward_complete = maker_metrics.get("forward_observation_complete")
+        if isinstance(forward_complete, bool):
+            maker_progress_parts.append(
+                "forward_observation_complete:"
+                + str(forward_complete).lower()
+            )
     maker_opportunity_progress = ",".join(maker_progress_parts) or "UNAVAILABLE"
     maker_learnability = upstream.get(
         "maker_execution_learnability_experiment", {}
@@ -1205,29 +1239,17 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     if isinstance(maker_learnability_metrics, Mapping):
         for key in (
             "eligible_row_count",
-            "direct_trade_count",
-            "direct_positive_split_ratio",
-            "direct_base_lcb_bps",
-            "direct_stress_lcb_bps",
-            "two_stage_trade_count",
-            "two_stage_positive_split_ratio",
-            "two_stage_base_lcb_bps",
-            "two_stage_stress_lcb_bps",
-            "joint_trade_count",
-            "joint_positive_split_ratio",
-            "joint_base_lcb_bps",
-            "joint_stress_lcb_bps",
+            "hurdle_tail_trade_count",
+            "hurdle_tail_positive_split_ratio",
+            "hurdle_tail_base_lcb_bps",
+            "hurdle_tail_stress_lcb_bps",
         ):
             value = _safe_number(maker_learnability_metrics.get(key))
             if value is not None:
                 maker_learnability_progress_parts.append(f"{key}:{value}")
         for key in (
-            "direct_permutation_passed",
-            "direct_maker_gate_passed",
-            "two_stage_permutation_passed",
-            "two_stage_maker_gate_passed",
-            "joint_permutation_passed",
-            "joint_maker_gate_passed",
+            "hurdle_tail_permutation_passed",
+            "hurdle_tail_maker_gate_passed",
         ):
             value = maker_learnability_metrics.get(key)
             if isinstance(value, bool):

@@ -1,11 +1,11 @@
 {
-  "schema_version": "maker_execution_learnability_policy_v1",
+  "schema_version": "maker_execution_learnability_policy_v2",
   "research_domain": "development_only",
   "promotion_evidence": false,
-  "experiment_id": "bybit_sol_conservative_maker_learnability_v1",
+  "experiment_id": "bybit_sol_sequential_hurdle_tail_action_value_v2",
   "upstream": {
     "required_opportunity_decision": "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
-    "required_opportunity_policy_identity_sha256": "583feeed9fc4ce9810ca824546bb551b02723e3544f1020d621f0800731cac6a"
+    "required_opportunity_policy_identity_sha256": "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
   },
   "features": {
     "causal_contract_revision": "order_flow_cross_asset_regime_v1",
@@ -13,20 +13,28 @@
     "fill_proxy_used_as_model_feature": false,
     "future_values_permitted": false
   },
-  "architectures": [
-    "direct_stress_utility_regression",
-    "two_stage_opportunity_action",
-    "joint_action_ranker"
-  ],
+  "architectures": ["sequential_hurdle_tail_action_value"],
   "target": {
-    "unfilled_order_utility_bps": 0.0,
-    "filled_order_target": "realized_base_net_bps_minus_stress_cost_increment",
-    "architecture_selection_scope": "development_diagnostic_only"
+    "fill_component": "causal_probability_of_conservative_full_fill",
+    "filled_component": "conditional_lower_quantile_stress_net_utility",
+    "conditional_utility_quantile": 0.25,
+    "opportunity_cost_source": "fit_only_sequential_oracle_stress_bps_per_second",
+    "unfilled_occupancy": "placement_latency_plus_fill_timeout",
+    "filled_occupancy": "placement_latency_plus_mean_fill_latency_plus_horizon",
+    "explicit_no_order_action": true,
+    "minimum_action_value_bps": 0.0,
+    "architecture_selection_scope": "single_preregistered_development_family"
   },
   "execution": {
     "placement_latency_seconds": 1,
-    "fill_timeout_seconds": 5,
+    "fill_timeout_seconds": 12,
+    "maker_price_offset_bps": 0.3,
+    "price_tick_size": 0.01,
+    "post_only_timeout_seconds": 6,
+    "reprice_max_attempts": 1,
+    "reprice_bps": 0.15,
     "queue_depth_multiplier": 1.25,
+    "resting_queue_depth_source": "same_side_l5_cumulative_base_depth_at_placement",
     "maker_entry_fee_bps": 2.75,
     "taker_exit_fee_bps": 5.5,
     "exit_slippage_bps": 1.0,
@@ -45,7 +53,7 @@
   },
   "calibration": {
     "threshold_quantiles": [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98],
-    "minimum_validation_trades": 8
+    "minimum_validation_trades": 20
   },
   "model": {
     "iterations": 200,
@@ -62,7 +70,7 @@
     "minimum_excess_lcb_bps": 0.0
   },
   "decision_gates": {
-    "minimum_oos_trades": 30,
+    "minimum_oos_trades": 100,
     "minimum_positive_stress_split_ratio": 0.6,
     "minimum_base_lcb_bps": 0.0,
     "minimum_stress_lcb_bps": 0.0,

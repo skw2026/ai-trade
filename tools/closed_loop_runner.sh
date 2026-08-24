@@ -3,12 +3,14 @@ set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
 # 说明：
-# 1) train  : 数据加速(可开关) + R0/R1/R2 + 模型注册 + 汇总报告
-# 2) assess : 导出运行日志并做 DEPLOY/SMOKE/S3/S5 自动验收 + 汇总报告
-# 3) full   : train + assess
-# 4) data   : 归档下载 + 增量更新 + 缺口回补 + 特征构建 + walk-forward 回测
+# 1) research: 冻结研究数据 + 独立 Alpha 发现实验；不注册、不激活、不重启
+# 2) train   : 数据加速(可开关) + R0/R1/R2 + 模型注册 + 汇总报告
+# 3) assess  : 导出运行日志并做 DEPLOY/SMOKE/S3/S5 自动验收 + 汇总报告
+# 4) full    : train + assess（仅用于已有候选的资格验收）
+# 5) data    : 归档下载 + 增量更新 + 缺口回补 + 特征构建 + walk-forward 回测
 #
 # 示例：
+#   tools/closed_loop_runner.sh research
 #   tools/closed_loop_runner.sh train
 #   tools/closed_loop_runner.sh assess --stage SMOKE --since 15m
 #   tools/closed_loop_runner.sh assess --stage S5 --since 4h
@@ -27,8 +29,8 @@ if [[ "${ACTION}" == "help" ]]; then
   NEED_HELP="true"
 else
   NEED_HELP="false"
-  if [[ "${ACTION}" != "train" && "${ACTION}" != "assess" && "${ACTION}" != "full" && "${ACTION}" != "data" ]]; then
-    echo "[ERROR] 首个参数必须是 train|assess|full|data"
+  if [[ "${ACTION}" != "research" && "${ACTION}" != "train" && "${ACTION}" != "assess" && "${ACTION}" != "full" && "${ACTION}" != "data" ]]; then
+    echo "[ERROR] 首个参数必须是 research|train|assess|full|data"
     exit 2
   fi
 fi
@@ -240,6 +242,7 @@ LIQUIDATION_MIN_CAPTURE_SECONDS="${CLOSED_LOOP_LIQUIDATION_MIN_CAPTURE_SECONDS:-
 LIQUIDATION_MAX_STALE_SECONDS="${CLOSED_LOOP_LIQUIDATION_MAX_STALE_SECONDS:-1800}"
 LIQUIDATION_EXPERIMENT_CONFIG="${CLOSED_LOOP_LIQUIDATION_EXPERIMENT_CONFIG:-config/liquidation_information_set_experiment.json}"
 MAKER_OPPORTUNITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_OPPORTUNITY_EXPERIMENT_CONFIG:-config/maker_execution_opportunity_experiment.json}"
+MAKER_OPPORTUNITY_AUDIT_MANIFEST="${CLOSED_LOOP_MAKER_OPPORTUNITY_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/maker_opportunity_frozen_audit.json}"
 MAKER_LEARNABILITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_LEARNABILITY_EXPERIMENT_CONFIG:-config/maker_execution_learnability_experiment.json}"
 MAKER_SUBSECOND_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_SUBSECOND_EXPERIMENT_CONFIG:-config/maker_subsecond_information_experiment.json}"
 DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
@@ -265,7 +268,7 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
-  tools/closed_loop_runner.sh <train|assess|full|data> [options]
+  tools/closed_loop_runner.sh <research|train|assess|full|data> [options]
 
 Options:
   --compose-file <path>              docker compose 文件 (default: docker-compose.yml)
@@ -1310,6 +1313,7 @@ MICROSTRUCTURE_CAPTURE_UPGRADE_REPORT_PATH="${RUN_DIR}/microstructure_capture_up
 LIQUIDATION_CAPTURE_REPORT_PATH="${RUN_DIR}/liquidation_capture_report.json"
 LIQUIDATION_EXPERIMENT_REPORT_PATH="${RUN_DIR}/liquidation_information_set_experiment.json"
 MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_opportunity_experiment.json"
+MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH="${RUN_DIR}/maker_opportunity_frozen_audit.json"
 MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_learnability_experiment.json"
 MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_subsecond_information_experiment.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
@@ -3400,13 +3404,46 @@ run_liquidation_information_set_experiment() {
 
 run_maker_execution_opportunity_experiment() {
   echo "[INFO] conservative maker execution opportunity experiment start"
+  local status=0
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
     tools/run_maker_execution_opportunity_experiment.py \
     --control-assessment "${MICROSTRUCTURE_CAPTURE_REPORT_PATH}" \
     --config "${MAKER_OPPORTUNITY_EXPERIMENT_CONFIG}" \
+    --audit-manifest "${MAKER_OPPORTUNITY_AUDIT_MANIFEST}" \
     --output "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" \
-    --research-domain development
+    --research-domain development || status=$?
+  if [[ -s "${MAKER_OPPORTUNITY_AUDIT_MANIFEST}" ]]; then
+    cp -f -- "${MAKER_OPPORTUNITY_AUDIT_MANIFEST}" \
+      "${MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH}"
+  elif [[ -s "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" ]]; then
+    MAKER_OPPORTUNITY_REPORT_PATH_VALUE="${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" \
+    MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH_VALUE="${MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH}" \
+    python3 - <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+
+report_path = Path(os.environ["MAKER_OPPORTUNITY_REPORT_PATH_VALUE"])
+report = json.loads(report_path.read_text(encoding="utf-8"))
+payload = {
+    "schema_version": "maker_opportunity_frozen_audit_unavailable_v1",
+    "state": "NOT_FROZEN",
+    "research_decision": str(report.get("research_decision") or "NOT_READY"),
+    "reason_codes": list(report.get("reason_codes") or ["audit_not_created"]),
+    "opportunity_report_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
+    "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
+}
+Path(os.environ["MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH_VALUE"]).write_text(
+    json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  fi
   echo "[INFO] conservative maker execution opportunity experiment done"
+  return "${status}"
 }
 
 run_maker_execution_learnability_experiment() {
@@ -4879,6 +4916,7 @@ write_run_manifest() {
   LIQUIDATION_CAPTURE_REPORT_PATH_VALUE="${LIQUIDATION_CAPTURE_REPORT_PATH}" \
   LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE="${LIQUIDATION_EXPERIMENT_REPORT_PATH}" \
   MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" \
+  MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH_VALUE="${MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH}" \
   MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" \
   MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
@@ -5277,6 +5315,7 @@ artifact_env_names = {
     "liquidation_capture_report": "LIQUIDATION_CAPTURE_REPORT_PATH_VALUE",
     "liquidation_information_set_experiment": "LIQUIDATION_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_execution_opportunity_experiment": "MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH_VALUE",
+    "maker_opportunity_frozen_audit": "MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH_VALUE",
     "maker_execution_learnability_experiment": "MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_subsecond_information_experiment": "MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
@@ -5435,7 +5474,7 @@ build_summary() {
     --trend_validation_min_bars="${TREND_VALIDATION_MIN_BARS}"
     --trend_validation_min_trades="${TREND_VALIDATION_MIN_TRADES}"
   )
-  if [[ "${ACTION}" == "assess" ]]; then
+  if [[ "${ACTION}" == "assess" || "${ACTION}" == "research" ]]; then
     SUMMARY_ARGS+=(--report-only)
   fi
   if is_true "${WALKFORWARD_FOCUS_BUCKET_PRIMARY}"; then
@@ -5526,7 +5565,8 @@ build_summary() {
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research "${SUMMARY_ARGS[@]}" \
     || summary_status=$?
   local incubation_status=0
-  if (( summary_status == 0 )); then
+  if (( summary_status == 0 )) &&
+     [[ "${ACTION}" == "assess" || "${ACTION}" == "full" ]]; then
     evaluate_demo_incubation || incubation_status=$?
   fi
   if (( incubation_status != 0 )); then
@@ -5594,6 +5634,7 @@ build_summary() {
   "liquidation_capture_report": "${LIQUIDATION_CAPTURE_REPORT_PATH}",
   "liquidation_information_set_experiment": "${LIQUIDATION_EXPERIMENT_REPORT_PATH}",
   "maker_execution_opportunity_experiment": "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}",
+  "maker_opportunity_frozen_audit": "${MAKER_OPPORTUNITY_AUDIT_SNAPSHOT_PATH}",
   "maker_execution_learnability_experiment": "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}",
   "maker_subsecond_information_experiment": "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
@@ -6229,8 +6270,12 @@ run_decision_evidence_report() {
 
 RUN_REQUIRED_STEP_STATUS=0
 LAST_CAPTURED_STATUS=0
+LAST_CAPTURED_DURATION_MS=0
 
 capture_step_status() {
+  local started_ns
+  local finished_ns
+  started_ns="$(python3 -c 'import time; print(time.time_ns())')"
   set +e
   (
     set -euo pipefail
@@ -6238,6 +6283,8 @@ capture_step_status() {
   )
   LAST_CAPTURED_STATUS=$?
   set -e
+  finished_ns="$(python3 -c 'import time; print(time.time_ns())')"
+  LAST_CAPTURED_DURATION_MS=$(( (finished_ns - started_ns) / 1000000 ))
 }
 
 refresh_step_outputs() {
@@ -6294,6 +6341,7 @@ record_step_status() {
   local exit_code="$4"
   local blocked_by_prior_failure="$5"
   local research_decision_only="${6:-false}"
+  local duration_ms="${7:-0}"
   STEP_STATUS_PATH_VALUE="${STEP_STATUS_PATH}" \
   RUN_ID_VALUE="${RUN_ID}" \
   ACTION_VALUE="${ACTION}" \
@@ -6303,6 +6351,7 @@ record_step_status() {
   STEP_EXIT_CODE_VALUE="${exit_code}" \
   STEP_BLOCKED_VALUE="${blocked_by_prior_failure}" \
   STEP_RESEARCH_ONLY_VALUE="${research_decision_only}" \
+  STEP_DURATION_MS_VALUE="${duration_ms}" \
   python3 - <<'PY'
 import datetime as dt
 import json
@@ -6326,6 +6375,7 @@ entry = {
     "research_decision_only": (
         os.environ.get("STEP_RESEARCH_ONLY_VALUE", "").strip().lower() == "true"
     ),
+    "duration_ms": int(os.environ.get("STEP_DURATION_MS_VALUE", "0")),
 }
 path = Path(os.environ["STEP_STATUS_PATH_VALUE"])
 with path.open("a", encoding="utf-8") as fh:
@@ -6339,7 +6389,7 @@ run_required_step() {
   if (( RUN_REQUIRED_STEP_STATUS != 0 )); then
     echo "[INFO] required step skipped after prior failure: ${step_name}"
     capture_step_status \
-      record_step_status "${step_name}" "required" "skipped" "" "true"
+      record_step_status "${step_name}" "required" "skipped" "" "true" "false" "0"
     if (( LAST_CAPTURED_STATUS != 0 )); then
       echo "[ERROR] step status write failed: ${step_name}"
       RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
@@ -6348,15 +6398,16 @@ run_required_step() {
   fi
   capture_step_status "$@"
   local status="${LAST_CAPTURED_STATUS}"
+  local duration_ms="${LAST_CAPTURED_DURATION_MS}"
   if (( status != 0 )); then
     RUN_REQUIRED_STEP_STATUS="${status}"
     echo "[ERROR] required step failed: ${step_name}, status=${status}"
     capture_step_status \
-      record_step_status "${step_name}" "required" "fail" "${status}" "false"
+      record_step_status "${step_name}" "required" "fail" "${status}" "false" "false" "${duration_ms}"
   else
     refresh_step_outputs "${step_name}"
     capture_step_status \
-      record_step_status "${step_name}" "required" "pass" "0" "false"
+      record_step_status "${step_name}" "required" "pass" "0" "false" "false" "${duration_ms}"
   fi
   if (( LAST_CAPTURED_STATUS != 0 )); then
     echo "[ERROR] step status write failed: ${step_name}"
@@ -6370,17 +6421,18 @@ run_collecting_step() {
   shift
   capture_step_status "$@"
   local status="${LAST_CAPTURED_STATUS}"
+  local duration_ms="${LAST_CAPTURED_DURATION_MS}"
   if (( status != 0 )); then
     if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
       RUN_REQUIRED_STEP_STATUS="${status}"
     fi
     echo "[ERROR] required diagnostic step failed: ${step_name}, status=${status}"
     capture_step_status \
-      record_step_status "${step_name}" "diagnostic" "fail" "${status}" "false"
+      record_step_status "${step_name}" "diagnostic" "fail" "${status}" "false" "false" "${duration_ms}"
   else
     refresh_step_outputs "${step_name}"
     capture_step_status \
-      record_step_status "${step_name}" "diagnostic" "pass" "0" "false"
+      record_step_status "${step_name}" "diagnostic" "pass" "0" "false" "false" "${duration_ms}"
   fi
   if (( LAST_CAPTURED_STATUS != 0 )); then
     echo "[ERROR] step status write failed: ${step_name}"
@@ -6393,7 +6445,7 @@ skip_collecting_step() {
   local step_name="$1"
   echo "[INFO] required diagnostic step skipped after prior failure: ${step_name}"
   capture_step_status \
-    record_step_status "${step_name}" "diagnostic" "skipped" "" "true"
+    record_step_status "${step_name}" "diagnostic" "skipped" "" "true" "false" "0"
   if (( LAST_CAPTURED_STATUS != 0 )); then
     echo "[ERROR] diagnostic step status write failed: ${step_name}"
     RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
@@ -6401,20 +6453,76 @@ skip_collecting_step() {
   return 0
 }
 
+observation_report_path() {
+  case "$1" in
+    market_alpha_development) printf '%s\n' "${MARKET_ALPHA_DEVELOPMENT_REPORT_PATH}" ;;
+    maker_execution_opportunity_experiment) printf '%s\n' "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" ;;
+    maker_execution_learnability_experiment) printf '%s\n' "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ;;
+    maker_subsecond_information_experiment) printf '%s\n' "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" ;;
+    liquidation_information_set_experiment) printf '%s\n' "${LIQUIDATION_EXPERIMENT_REPORT_PATH}" ;;
+    microstructure_alpha_development) printf '%s\n' "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" ;;
+    microstructure_alpha_lifecycle) printf '%s\n' "${MICROSTRUCTURE_ALPHA_LIFECYCLE_REPORT_PATH}" ;;
+    alpha_source_route) printf '%s\n' "${ALPHA_SOURCE_ROUTE_REPORT_PATH}" ;;
+    decision_evidence_report) printf '%s\n' "${DECISION_EVIDENCE_REPORT_PATH}" ;;
+    *) printf '\n' ;;
+  esac
+}
+
+classify_observation_result() {
+  local step_name="$1"
+  local producer_status="$2"
+  local report_path
+  report_path="$(observation_report_path "${step_name}")"
+  OBSERVATION_REPORT_PATH_VALUE="${report_path}" \
+  OBSERVATION_PRODUCER_STATUS_VALUE="${producer_status}" \
+  python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+status = int(os.environ["OBSERVATION_PRODUCER_STATUS_VALUE"])
+path = Path(os.environ.get("OBSERVATION_REPORT_PATH_VALUE", ""))
+payload = None
+if path.is_file():
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = None
+if isinstance(payload, dict):
+    decision = str(payload.get("research_decision") or "").upper()
+    if decision.startswith(("STOP", "REJECT")) or decision == "CHANGE_INFORMATION_SET":
+        print("rejected")
+        raise SystemExit(0)
+    if decision.startswith("WAIT"):
+        print("waiting")
+        raise SystemExit(0)
+    if decision == "NOT_READY":
+        print("not_ready")
+        raise SystemExit(0)
+print("pass" if status == 0 else "fail")
+PY
+}
+
 run_observation_step() {
   local step_name="$1"
   shift
   capture_step_status "$@"
   local status="${LAST_CAPTURED_STATUS}"
-  if (( status != 0 )); then
+  local duration_ms="${LAST_CAPTURED_DURATION_MS}"
+  local result
+  result="$(classify_observation_result "${step_name}" "${status}")"
+  if [[ "${result}" == "fail" ]]; then
     echo "[WARN] observational step not ready: ${step_name}, status=${status}"
-    capture_step_status \
-      record_step_status "${step_name}" "observation" "fail" "${status}" "false"
   else
-    refresh_step_outputs "${step_name}"
-    capture_step_status \
-      record_step_status "${step_name}" "observation" "pass" "0" "false"
+    if (( status == 0 )); then
+      refresh_step_outputs "${step_name}"
+    fi
+    if [[ "${result}" != "pass" ]]; then
+      echo "[INFO] observational business result: ${step_name}, result=${result}"
+    fi
   fi
+  capture_step_status \
+    record_step_status "${step_name}" "observation" "${result}" "${status}" "false" "true" "${duration_ms}"
   if (( LAST_CAPTURED_STATUS != 0 )); then
     echo "[ERROR] observational step status write failed: ${step_name}"
     RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
@@ -6427,7 +6535,7 @@ skip_observation_step() {
   local reason="${2:-not applicable}"
   echo "[INFO] observational step skipped: ${step_name}, reason=${reason}"
   capture_step_status \
-    record_step_status "${step_name}" "observation" "skipped" "" "false"
+    record_step_status "${step_name}" "observation" "skipped" "" "false" "true" "0"
   if (( LAST_CAPTURED_STATUS != 0 )); then
     echo "[ERROR] observational step status write failed: ${step_name}"
     RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
@@ -6441,16 +6549,15 @@ run_decisive_observation_step() {
   local required_status="${RUN_REQUIRED_STEP_STATUS}"
   capture_step_status "$@"
   local status="${LAST_CAPTURED_STATUS}"
-  if (( status != 0 )); then
+  local duration_ms="${LAST_CAPTURED_DURATION_MS}"
+  local result
+  result="$(classify_observation_result "${step_name}" "${status}")"
+  if [[ "${result}" == "fail" ]]; then
     echo "[WARN] decisive observation not proven: ${step_name}, status=${status}"
-    capture_step_status \
-      record_step_status \
-      "${step_name}" "observation" "fail" "${status}" "false" "true"
-  else
-    capture_step_status \
-      record_step_status \
-      "${step_name}" "observation" "pass" "0" "false" "true"
   fi
+  capture_step_status \
+    record_step_status \
+    "${step_name}" "observation" "${result}" "${status}" "false" "true" "${duration_ms}"
   if (( LAST_CAPTURED_STATUS != 0 )); then
     echo "[ERROR] decisive observation status write failed: ${step_name}"
   fi
@@ -6476,11 +6583,38 @@ run_decisive_observation_chain() {
   return 0
 }
 
+decision_evidence_candidate_available() {
+  if [[ "${ACTIVE_ALPHA_ROUTE}" != "legacy_integrator" ]]; then
+    return 1
+  fi
+  [[ -s "${DECISION_EVIDENCE_CANDIDATE_MODEL_PATH}" &&
+     -s "${DECISION_EVIDENCE_CANDIDATE_REPORT_PATH}" &&
+     -s "${REPLAY_VALIDATION_REPORT_PATH}" ]]
+}
+
+run_route_aware_decisive_observation_chain() {
+  if decision_evidence_candidate_available; then
+    run_decisive_observation_chain
+    return 0
+  fi
+  echo "[INFO] decision evidence not applicable: route=${ACTIVE_ALPHA_ROUTE:-none}, candidate unavailable"
+  for step_name in \
+    decision_benchmark_validation \
+    objective_alignment_validation \
+    paired_evolution_replay \
+    evolution_uplift_validation \
+    experiment_budget_audit \
+    decision_evidence_report; do
+    skip_route_step "${step_name}"
+  done
+  return 0
+}
+
 skip_route_step() {
   local step_name="$1"
   echo "[INFO] step not applicable to selected alpha route=${ACTIVE_ALPHA_ROUTE}: ${step_name}"
   capture_step_status \
-    record_step_status "${step_name}" "route" "skipped" "" "false"
+    record_step_status "${step_name}" "route" "skipped" "" "false" "false" "0"
   if (( LAST_CAPTURED_STATUS != 0 )); then
     echo "[ERROR] route step status write failed: ${step_name}"
     RUN_REQUIRED_STEP_STATUS="${LAST_CAPTURED_STATUS}"
@@ -6504,7 +6638,6 @@ run_training_chain() {
     run_observation_step microstructure_forward_data run_microstructure_capture_gate
     run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
     run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
-    run_observation_step maker_subsecond_information_experiment run_maker_subsecond_information_experiment
     run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
     run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
     run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
@@ -6521,7 +6654,7 @@ run_training_chain() {
     skip_route_step integrator
     skip_route_step replay_candidate_config
     skip_route_step replay_validation
-    run_decisive_observation_chain
+    run_route_aware_decisive_observation_chain
     skip_route_step strategy_diagnose
     skip_route_step alpha_mechanism_probe
     skip_route_step model_registry
@@ -6534,7 +6667,7 @@ run_training_chain() {
     else
       skip_collecting_step replay_validation
     fi
-    run_decisive_observation_chain
+    run_route_aware_decisive_observation_chain
     if (( RUN_REQUIRED_STEP_STATUS == 0 )); then
       run_collecting_step strategy_diagnose run_strategy_diagnose
       run_collecting_step alpha_mechanism_probe run_alpha_mechanism_probe
@@ -6545,6 +6678,39 @@ run_training_chain() {
     run_required_step model_registry run_registry
     skip_route_step microstructure_demo_binding
   fi
+  return 0
+}
+
+run_research_discovery_chain() {
+  RUN_REQUIRED_STEP_STATUS=0
+  run_required_step baseline_freeze run_freeze_baseline
+  run_required_step training_data prepare_training_data
+  run_required_step research_domain_split run_research_domain_split
+  run_required_step feature_parity run_feature_parity
+  run_required_step data_quality run_data_quality
+  if (( RUN_REQUIRED_STEP_STATUS != 0 )); then
+    local reason="research prerequisite failed"
+    skip_observation_step market_alpha_development "${reason}"
+    skip_observation_step microstructure_forward_data "${reason}"
+    skip_observation_step maker_execution_opportunity_experiment "${reason}"
+    skip_observation_step maker_execution_learnability_experiment "${reason}"
+    skip_observation_step liquidation_information_set_experiment "${reason}"
+    skip_observation_step microstructure_alpha_development "${reason}"
+    skip_observation_step microstructure_alpha_lifecycle "${reason}"
+    skip_observation_step alpha_source_route "${reason}"
+    return 0
+  fi
+
+  # Discovery outcomes are observations. STOP/WAIT is a complete business
+  # result and must not be confused with a broken release or artifact contract.
+  run_observation_step market_alpha_development run_market_alpha_development_gate
+  run_observation_step microstructure_forward_data run_microstructure_capture_gate
+  run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
+  run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
+  run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
+  run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
+  run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
+  run_observation_step alpha_source_route run_alpha_source_route_gate
   return 0
 }
 
@@ -6564,7 +6730,6 @@ run_assess_observation_chain() {
     skip_observation_step microstructure_forward_data "${skip_reason}"
     skip_observation_step maker_execution_opportunity_experiment "${skip_reason}"
     skip_observation_step maker_execution_learnability_experiment "${skip_reason}"
-    skip_observation_step maker_subsecond_information_experiment "${skip_reason}"
     skip_observation_step liquidation_information_set_experiment "${skip_reason}"
     skip_observation_step microstructure_alpha_development "${skip_reason}"
     skip_observation_step microstructure_alpha_lifecycle "${skip_reason}"
@@ -6577,7 +6742,6 @@ run_assess_observation_chain() {
   run_observation_step microstructure_forward_data run_microstructure_capture_gate
   run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
   run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
-  run_observation_step maker_subsecond_information_experiment run_maker_subsecond_information_experiment
   run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
   run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
   run_observation_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate
@@ -6708,6 +6872,13 @@ run_main() {
   local restart_status=0
   local activation_resolution_status=0
   case "${ACTION}" in
+    research)
+      run_research_discovery_chain
+      step_status="${RUN_REQUIRED_STEP_STATUS}"
+      capture_step_status build_summary
+      summary_status="${LAST_CAPTURED_STATUS}"
+      echo "[INFO] research discovery completed without registration, activation, or restart"
+      ;;
     data)
       RUN_REQUIRED_STEP_STATUS=0
       run_required_step data_pipeline run_data_pipeline
@@ -6717,7 +6888,6 @@ run_main() {
       run_required_step microstructure_forward_data run_microstructure_capture_gate
       run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
       run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
-      run_observation_step maker_subsecond_information_experiment run_maker_subsecond_information_experiment
       run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
       run_collecting_step microstructure_alpha_lifecycle run_microstructure_alpha_lifecycle_gate

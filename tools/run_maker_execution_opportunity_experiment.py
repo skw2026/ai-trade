@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import datetime as dt
 import json
 import math
 import pathlib
@@ -26,10 +27,12 @@ import run_microstructure_alpha_development as development
 SCHEMA_VERSION = "maker_execution_opportunity_experiment_v1"
 POLICY_SCHEMA_VERSION = "maker_execution_opportunity_policy_v1"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "583feeed9fc4ce9810ca824546bb551b02723e3544f1020d621f0800731cac6a"
+    "dc36fcb7344341f602b6a649bad88c831ec6c3e234b34f0cee43cca9d42ecbac"
 )
 DECISION_CONTINUE = "CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT"
 DECISION_STOP = "STOP_MAKER_EXECUTION_FAMILY"
+DECISION_WAIT = "WAIT_FOR_INDEPENDENT_MAKER_FORWARD_WINDOW"
+AUDIT_MANIFEST_SCHEMA_VERSION = "maker_opportunity_frozen_audit_v1"
 
 
 def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
@@ -50,7 +53,12 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and actions.get("directions") == ["long", "short"]
         and actions.get("horizons_seconds") == [15, 30, 60, 120, 300]
         and actions.get("placement_latency_seconds") == 1
-        and actions.get("fill_timeout_seconds") == 5
+        and actions.get("fill_timeout_seconds") == 12
+        and float(actions.get("maker_price_offset_bps", -1.0)) == 0.3
+        and float(actions.get("price_tick_size", 0.0)) == 0.01
+        and actions.get("post_only_timeout_seconds") == 6
+        and actions.get("reprice_max_attempts") == 1
+        and float(actions.get("reprice_bps", -1.0)) == 0.15
     ):
         failures.append("actions")
     fill_proxy = policy.get("fill_proxy")
@@ -59,6 +67,8 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and fill_proxy.get("method")
         == "opposite_aggressor_quote_volume_and_top_of_book_trade_through_v1"
         and float(fill_proxy.get("queue_depth_multiplier", 0.0)) == 1.25
+        and fill_proxy.get("resting_queue_depth_source")
+        == "same_side_l5_cumulative_base_depth_at_placement"
         and fill_proxy.get("strict_trade_through_required") is True
         and fill_proxy.get("same_second_fill_permitted") is False
         and fill_proxy.get("partial_fill_permitted") is False
@@ -86,10 +96,30 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         and splits.get("rolling_step_seconds") == 14400
     ):
         failures.append("splits")
+    stability = policy.get("stability_audit")
+    if not (
+        isinstance(stability, Mapping)
+        and stability.get("manifest_schema_version")
+        == AUDIT_MANIFEST_SCHEMA_VERSION
+        and stability.get("boundary_offsets_seconds")
+        == [0, -3600, -7200, -10800]
+        and float(stability.get("minimum_boundary_pass_ratio", -1.0)) == 0.75
+        and stability.get("independent_forward_window_seconds") == 86400
+        and stability.get("forward_block_seconds") == 14400
+        and stability.get("minimum_forward_blocks") == 6
+        and float(stability.get("minimum_forward_row_ratio", -1.0)) == 0.95
+        and stability.get("minimum_forward_trades") == 100
+        and float(stability.get("minimum_positive_forward_block_ratio", -1.0))
+        == 0.6
+        and float(stability.get("minimum_forward_stress_lcb_bps", -1.0))
+        == 0.0
+        and stability.get("require_exact_frozen_domain") is True
+    ):
+        failures.append("stability_audit")
     gates = policy.get("decision_gates")
     if not (
         isinstance(gates, Mapping)
-        and gates.get("minimum_oos_trades") == 30
+        and gates.get("minimum_oos_trades") == 100
         and float(gates.get("minimum_positive_split_ratio", -1.0)) == 0.6
         and float(gates.get("minimum_oracle_stress_lcb_bps", -1.0)) == 0.0
     ):
@@ -119,6 +149,195 @@ def _total_base_cost_bps(policy: Mapping[str, Any]) -> float:
     )
 
 
+def _shift_split(split: development.TimeSplit, offset_seconds: int) -> development.TimeSplit:
+    offset_ms = int(offset_seconds) * 1000
+    values = dataclasses.asdict(split)
+    return development.TimeSplit(
+        **{
+            key: int(value) + (0 if key == "split_id" else offset_ms)
+            for key, value in values.items()
+        }
+    )
+
+
+def _series_domain_identity(
+    series: Mapping[str, np.ndarray], *, start_ms: int, end_ms: int
+) -> Dict[str, Any]:
+    timestamps = np.asarray(series["timestamp"], dtype=np.int64)
+    mask = (timestamps >= int(start_ms)) & (timestamps < int(end_ms))
+    indices = np.flatnonzero(mask)
+    if not len(indices):
+        raise ValueError("frozen maker audit domain is empty")
+    fields = (
+        "timestamp",
+        "best_bid",
+        "best_ask",
+        "best_bid_size",
+        "best_ask_size",
+        "bid_depth_l5",
+        "ask_depth_l5",
+        "buy_quote_volume",
+        "sell_quote_volume",
+    )
+    field_hashes = {
+        name: common.array_sha256(np.asarray(series[name])[indices]) for name in fields
+    }
+    payload = {
+        "start_ms": int(start_ms),
+        "end_ms": int(end_ms),
+        "row_count": int(len(indices)),
+        "first_timestamp_ms": int(timestamps[indices[0]]),
+        "last_timestamp_ms": int(timestamps[indices[-1]]),
+        "field_sha256": field_hashes,
+    }
+    payload["identity_sha256"] = common.canonical_sha256(payload)
+    return payload
+
+
+def create_frozen_audit_manifest(
+    *,
+    series: Mapping[str, np.ndarray],
+    policy: Mapping[str, Any],
+) -> Dict[str, Any]:
+    timestamps = np.asarray(series["timestamp"], dtype=np.int64)
+    actions = policy["actions"]
+    split_policy = policy["splits"]
+    stability = policy["stability_audit"]
+    embargo = (
+        int(actions["placement_latency_seconds"])
+        + int(actions["fill_timeout_seconds"])
+        + max(int(value) for value in actions["horizons_seconds"])
+    )
+    primary = development.build_time_splits(
+        timestamps,
+        n_splits=int(split_policy["count"]),
+        train_window_seconds=int(split_policy["train_window_seconds"]),
+        validation_window_seconds=int(split_policy["validation_window_seconds"]),
+        test_window_seconds=int(split_policy["test_window_seconds"]),
+        rolling_step_seconds=int(split_policy["rolling_step_seconds"]),
+        embargo_seconds=embargo,
+    )
+    offsets = [int(value) for value in stability["boundary_offsets_seconds"]]
+    shifted = {
+        str(offset): [_shift_split(split, offset) for split in primary]
+        for offset in offsets
+    }
+    frozen_start_ms = min(
+        split.fit_start_ms for splits in shifted.values() for split in splits
+    )
+    frozen_end_ms = max(split.test_end_ms for split in primary)
+    forward_start_ms = frozen_end_ms
+    forward_end_ms = forward_start_ms + int(
+        stability["independent_forward_window_seconds"]
+    ) * 1000
+    observation_tail_seconds = embargo
+    manifest: Dict[str, Any] = {
+        "schema_version": AUDIT_MANIFEST_SCHEMA_VERSION,
+        "created_at_utc": dt.datetime.now(dt.timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "policy_identity_sha256": FROZEN_POLICY_IDENTITY_SHA256,
+        "experiment_id": policy["experiment_id"],
+        "frozen_domain": _series_domain_identity(
+            series, start_ms=frozen_start_ms, end_ms=frozen_end_ms
+        ),
+        "primary_splits": [dataclasses.asdict(split) for split in primary],
+        "boundary_splits": {
+            key: [dataclasses.asdict(split) for split in splits]
+            for key, splits in shifted.items()
+        },
+        "independent_forward": {
+            "start_ms": forward_start_ms,
+            "end_ms": forward_end_ms,
+            "observation_end_ms": forward_end_ms
+            + observation_tail_seconds * 1000,
+            "block_seconds": int(stability["forward_block_seconds"]),
+            "block_count": int(stability["minimum_forward_blocks"]),
+            "observed_before_freeze": False,
+        },
+    }
+    manifest["identity_sha256"] = common.canonical_sha256(manifest)
+    return manifest
+
+
+def load_or_create_frozen_audit_manifest(
+    path: pathlib.Path,
+    *,
+    series: Mapping[str, np.ndarray],
+    policy: Mapping[str, Any],
+) -> Tuple[Dict[str, Any], bool]:
+    created = False
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        manifest = create_frozen_audit_manifest(series=series, policy=policy)
+        common.atomic_write_json(path, manifest)
+        created = True
+    manifest = common.read_json(path)
+    unsigned = {key: value for key, value in manifest.items() if key != "identity_sha256"}
+    if not (
+        manifest.get("schema_version") == AUDIT_MANIFEST_SCHEMA_VERSION
+        and manifest.get("policy_identity_sha256") == FROZEN_POLICY_IDENTITY_SHA256
+        and manifest.get("experiment_id") == policy["experiment_id"]
+        and manifest.get("identity_sha256") == common.canonical_sha256(unsigned)
+    ):
+        raise ValueError("frozen maker opportunity audit manifest identity mismatch")
+    primary = manifest.get("primary_splits")
+    boundary = manifest.get("boundary_splits")
+    if not (
+        isinstance(primary, list)
+        and len(primary) == int(policy["splits"]["count"])
+        and isinstance(boundary, Mapping)
+        and list(boundary) == [
+            str(int(value)) for value in policy["stability_audit"]["boundary_offsets_seconds"]
+        ]
+    ):
+        raise ValueError("frozen maker opportunity audit split manifest mismatch")
+    frozen = manifest.get("frozen_domain")
+    if not isinstance(frozen, Mapping):
+        raise ValueError("frozen maker opportunity audit domain missing")
+    actual = _series_domain_identity(
+        series,
+        start_ms=int(frozen["start_ms"]),
+        end_ms=int(frozen["end_ms"]),
+    )
+    if actual != frozen:
+        raise ValueError("frozen maker opportunity audit domain drift")
+    return manifest, created
+
+
+def _splits_from_manifest(values: Sequence[Mapping[str, Any]]) -> List[development.TimeSplit]:
+    return [
+        development.TimeSplit(
+            split_id=int(value["split_id"]),
+            fit_start_ms=int(value["fit_start_ms"]),
+            fit_end_ms=int(value["fit_end_ms"]),
+            validation_start_ms=int(value["validation_start_ms"]),
+            validation_end_ms=int(value["validation_end_ms"]),
+            test_start_ms=int(value["test_start_ms"]),
+            test_end_ms=int(value["test_end_ms"]),
+        )
+        for value in values
+    ]
+
+
+def _forward_splits(manifest: Mapping[str, Any]) -> List[development.TimeSplit]:
+    forward = manifest["independent_forward"]
+    start_ms = int(forward["start_ms"])
+    block_ms = int(forward["block_seconds"]) * 1000
+    return [
+        development.TimeSplit(
+            split_id=index,
+            fit_start_ms=start_ms,
+            fit_end_ms=start_ms,
+            validation_start_ms=start_ms,
+            validation_end_ms=start_ms,
+            test_start_ms=start_ms + index * block_ms,
+            test_end_ms=start_ms + (index + 1) * block_ms,
+        )
+        for index in range(int(forward["block_count"]))
+    ]
+
+
 def build_maker_action_returns(
     series: Mapping[str, np.ndarray],
     *,
@@ -127,6 +346,11 @@ def build_maker_action_returns(
     fill_timeout_seconds: int,
     queue_depth_multiplier: float,
     base_cost_bps: float,
+    maker_price_offset_bps: float = 0.0,
+    price_tick_size: float = 0.0,
+    post_only_timeout_seconds: int | None = None,
+    reprice_max_attempts: int = 0,
+    reprice_bps: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray, List[Dict[str, Any]], Dict[str, Any]]:
     """Build base-net outcomes only for conservatively inferred full fills."""
 
@@ -135,6 +359,12 @@ def build_maker_action_returns(
     best_ask = np.asarray(series["best_ask"], dtype=np.float64)
     best_bid_size = np.asarray(series["best_bid_size"], dtype=np.float64)
     best_ask_size = np.asarray(series["best_ask_size"], dtype=np.float64)
+    bid_depth_l5 = np.asarray(
+        series.get("bid_depth_l5", best_bid_size), dtype=np.float64
+    )
+    ask_depth_l5 = np.asarray(
+        series.get("ask_depth_l5", best_ask_size), dtype=np.float64
+    )
     buy_quote_volume = np.asarray(series["buy_quote_volume"], dtype=np.float64)
     sell_quote_volume = np.asarray(series["sell_quote_volume"], dtype=np.float64)
     lengths = {
@@ -145,6 +375,8 @@ def build_maker_action_returns(
             best_ask,
             best_bid_size,
             best_ask_size,
+            bid_depth_l5,
+            ask_depth_l5,
             buy_quote_volume,
             sell_quote_volume,
         )
@@ -157,6 +389,8 @@ def build_maker_action_returns(
             best_ask,
             best_bid_size,
             best_ask_size,
+            bid_depth_l5,
+            ask_depth_l5,
             buy_quote_volume,
             sell_quote_volume,
         )
@@ -168,6 +402,8 @@ def build_maker_action_returns(
         and np.all(best_ask >= best_bid)
         and np.all(best_bid_size > 0.0)
         and np.all(best_ask_size > 0.0)
+        and np.all(bid_depth_l5 >= best_bid_size)
+        and np.all(ask_depth_l5 >= best_ask_size)
         and np.all(buy_quote_volume >= 0.0)
         and np.all(sell_quote_volume >= 0.0)
     ):
@@ -176,7 +412,23 @@ def build_maker_action_returns(
     timeout = int(fill_timeout_seconds)
     queue_multiplier = float(queue_depth_multiplier)
     cost = float(base_cost_bps)
-    if latency <= 0 or timeout <= 0 or queue_multiplier < 1.0 or cost <= 0.0:
+    offset_ratio = float(maker_price_offset_bps) / 10000.0
+    tick_size = float(price_tick_size)
+    attempts = int(reprice_max_attempts)
+    reprice_ratio = float(reprice_bps) / 10000.0
+    attempt_timeout = int(post_only_timeout_seconds or timeout)
+    if (
+        latency <= 0
+        or timeout <= 0
+        or queue_multiplier < 1.0
+        or cost <= 0.0
+        or offset_ratio < 0.0
+        or tick_size < 0.0
+        or attempts < 0
+        or reprice_ratio < 0.0
+        or attempt_timeout <= 0
+        or attempt_timeout * (attempts + 1) != timeout
+    ):
         raise ValueError("maker opportunity execution contract is invalid")
     horizons = [int(value) for value in horizons_seconds]
     if not horizons or any(value <= 0 for value in horizons):
@@ -193,41 +445,61 @@ def build_maker_action_returns(
     decision_fill_directions = 0
 
     for row_index, decision_timestamp in enumerate(timestamps):
-        placement_timestamp = int(decision_timestamp) + latency * 1000
-        placement_index = positions.get(placement_timestamp)
-        if placement_index is None:
-            continue
         direction_fills: Dict[str, Tuple[int, float]] = {}
         for direction in ("long", "short"):
-            if direction == "long":
-                posted_price = float(best_bid[placement_index])
-                queue_quote = (
-                    posted_price
-                    * float(best_bid_size[placement_index])
-                    * queue_multiplier
+            for attempt in range(attempts + 1):
+                placement_timestamp = (
+                    int(decision_timestamp)
+                    + latency * 1000
+                    + attempt * attempt_timeout * 1000
                 )
-            else:
-                posted_price = float(best_ask[placement_index])
-                queue_quote = (
-                    posted_price
-                    * float(best_ask_size[placement_index])
-                    * queue_multiplier
-                )
-            cumulative_opposite_quote = 0.0
-            for offset in range(1, timeout + 1):
-                probe_timestamp = placement_timestamp + offset * 1000
-                probe_index = positions.get(probe_timestamp)
-                if probe_index is None:
+                placement_index = positions.get(placement_timestamp)
+                if placement_index is None:
                     break
                 if direction == "long":
-                    cumulative_opposite_quote += float(sell_quote_volume[probe_index])
-                    traded_through = float(best_bid[probe_index]) < posted_price
+                    reference_price = float(best_bid[placement_index]) * (
+                        1.0 + reprice_ratio * attempt
+                    )
+                    raw_posted_price = reference_price * (1.0 - offset_ratio)
+                    posted_price = (
+                        math.floor((raw_posted_price + 1.0e-12) / tick_size)
+                        * tick_size
+                        if tick_size > 0.0
+                        else raw_posted_price
+                    )
+                    queue_size = float(bid_depth_l5[placement_index])
                 else:
-                    cumulative_opposite_quote += float(buy_quote_volume[probe_index])
-                    traded_through = float(best_ask[probe_index]) > posted_price
-                if traded_through and cumulative_opposite_quote >= queue_quote:
-                    direction_fills[direction] = (probe_index, posted_price)
-                    decision_fill_directions += 1
+                    reference_price = float(best_ask[placement_index]) * (
+                        1.0 - reprice_ratio * attempt
+                    )
+                    raw_posted_price = reference_price * (1.0 + offset_ratio)
+                    posted_price = (
+                        math.ceil((raw_posted_price - 1.0e-12) / tick_size)
+                        * tick_size
+                        if tick_size > 0.0
+                        else raw_posted_price
+                    )
+                    queue_size = float(ask_depth_l5[placement_index])
+                queue_quote = posted_price * queue_size * queue_multiplier
+                cumulative_opposite_quote = 0.0
+                for offset in range(1, attempt_timeout + 1):
+                    probe_timestamp = placement_timestamp + offset * 1000
+                    probe_index = positions.get(probe_timestamp)
+                    if probe_index is None:
+                        break
+                    if direction == "long":
+                        cumulative_opposite_quote += float(
+                            sell_quote_volume[probe_index]
+                        )
+                        traded_through = float(best_bid[probe_index]) < posted_price
+                    else:
+                        cumulative_opposite_quote += float(buy_quote_volume[probe_index])
+                        traded_through = float(best_ask[probe_index]) > posted_price
+                    if traded_through and cumulative_opposite_quote >= queue_quote:
+                        direction_fills[direction] = (probe_index, posted_price)
+                        decision_fill_directions += 1
+                        break
+                if direction in direction_fills:
                     break
 
         for action_index, action in enumerate(actions):
@@ -259,6 +531,15 @@ def build_maker_action_returns(
         ),
         "same_second_fill_permitted": False,
         "partial_fill_permitted": False,
+        "maker_price_offset_bps": float(maker_price_offset_bps),
+        "price_tick_size": tick_size,
+        "price_quantization": "passive_floor_buy_ceil_sell",
+        "resting_queue_depth_source": (
+            "same_side_l5_cumulative_base_depth_at_placement"
+        ),
+        "post_only_timeout_seconds": attempt_timeout,
+        "reprice_max_attempts": attempts,
+        "reprice_bps": float(reprice_bps),
     }
 
 
@@ -394,6 +675,136 @@ def decide(oracle: Mapping[str, Any], policy: Mapping[str, Any]) -> Tuple[str, L
     return DECISION_STOP, reasons or ["maker_oracle_not_proven"]
 
 
+def evaluate_stability_audit(
+    *,
+    manifest: Mapping[str, Any],
+    manifest_created: bool,
+    timestamps: np.ndarray,
+    outcomes: np.ndarray,
+    fill_timestamps: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    policy: Mapping[str, Any],
+) -> Dict[str, Any]:
+    primary = build_oracle(
+        timestamps=timestamps,
+        outcomes=outcomes,
+        fill_timestamps=fill_timestamps,
+        actions=actions,
+        splits=_splits_from_manifest(manifest["primary_splits"]),
+        policy=policy,
+    )
+    boundary_reports: List[Dict[str, Any]] = []
+    for offset in policy["stability_audit"]["boundary_offsets_seconds"]:
+        oracle = build_oracle(
+            timestamps=timestamps,
+            outcomes=outcomes,
+            fill_timestamps=fill_timestamps,
+            actions=actions,
+            splits=_splits_from_manifest(manifest["boundary_splits"][str(int(offset))]),
+            policy=policy,
+        )
+        boundary_reports.append(
+            {
+                "offset_seconds": int(offset),
+                "opportunity_proven": bool(oracle["opportunity_proven"]),
+                "trade_count": int(oracle["trade_count"]),
+                "positive_stress_split_ratio": float(
+                    oracle["positive_stress_split_ratio"]
+                ),
+                "stress_cost_by_split": oracle["stress_cost_by_split"],
+            }
+        )
+    boundary_pass_ratio = sum(
+        item["opportunity_proven"] for item in boundary_reports
+    ) / len(boundary_reports)
+
+    stability = policy["stability_audit"]
+    forward_contract = manifest["independent_forward"]
+    forward_start = int(forward_contract["start_ms"])
+    forward_end = int(forward_contract["end_ms"])
+    forward_observation_end = int(forward_contract["observation_end_ms"])
+    forward_indices = development.indices_between(
+        timestamps, forward_start, forward_end
+    )
+    expected_rows = int(stability["independent_forward_window_seconds"])
+    row_ratio = len(forward_indices) / expected_rows if expected_rows else 0.0
+    observation_complete = bool(
+        int(timestamps[-1]) >= forward_observation_end
+        and row_ratio >= float(stability["minimum_forward_row_ratio"])
+    )
+    forward_oracle: Dict[str, Any] | None = None
+    forward_proven = False
+    if observation_complete:
+        forward_oracle = build_oracle(
+            timestamps=timestamps,
+            outcomes=outcomes,
+            fill_timestamps=fill_timestamps,
+            actions=actions,
+            splits=_forward_splits(manifest),
+            policy=policy,
+        )
+        stress_lcb = forward_oracle["stress_cost_by_split"].get("lcb_bps")
+        forward_proven = bool(
+            int(forward_oracle["trade_count"])
+            >= int(stability["minimum_forward_trades"])
+            and float(forward_oracle["positive_stress_split_ratio"])
+            >= float(stability["minimum_positive_forward_block_ratio"])
+            and stress_lcb is not None
+            and float(stress_lcb)
+            > float(stability["minimum_forward_stress_lcb_bps"])
+        )
+    boundary_proven = boundary_pass_ratio >= float(
+        stability["minimum_boundary_pass_ratio"]
+    )
+    stable = bool(
+        observation_complete
+        and primary["opportunity_proven"]
+        and boundary_proven
+        and forward_proven
+    )
+    return {
+        "manifest_created_this_run": bool(manifest_created),
+        "manifest_identity_sha256": manifest["identity_sha256"],
+        "state": "COMPLETE" if observation_complete else "AWAITING_FORWARD",
+        "primary_oracle": primary,
+        "boundary_sensitivity": {
+            "reports": boundary_reports,
+            "pass_ratio": boundary_pass_ratio,
+            "minimum_pass_ratio": float(stability["minimum_boundary_pass_ratio"]),
+            "passed": boundary_proven,
+            "diagnostic_only": True,
+        },
+        "independent_forward": {
+            **dict(forward_contract),
+            "observed_row_count": int(len(forward_indices)),
+            "expected_row_count": expected_rows,
+            "row_ratio": row_ratio,
+            "observation_complete": observation_complete,
+            "oracle": forward_oracle,
+            "passed": forward_proven,
+        },
+        "stable_opportunity_proven": stable,
+    }
+
+
+def decide_stability(audit: Mapping[str, Any]) -> Tuple[str, List[str]]:
+    if audit.get("state") != "COMPLETE":
+        return DECISION_WAIT, ["independent_24h_forward_window_incomplete"]
+    if audit.get("stable_opportunity_proven") is True:
+        return DECISION_CONTINUE, ["frozen_boundary_and_forward_opportunity_gates_passed"]
+    reasons: List[str] = []
+    primary = audit.get("primary_oracle", {})
+    boundary = audit.get("boundary_sensitivity", {})
+    forward = audit.get("independent_forward", {})
+    if not isinstance(primary, Mapping) or primary.get("opportunity_proven") is not True:
+        reasons.append("frozen_primary_opportunity_failed")
+    if not isinstance(boundary, Mapping) or boundary.get("passed") is not True:
+        reasons.append("boundary_sensitivity_failed")
+    if not isinstance(forward, Mapping) or forward.get("passed") is not True:
+        reasons.append("independent_forward_opportunity_failed")
+    return DECISION_STOP, reasons or ["stable_maker_opportunity_not_proven"]
+
+
 def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
     config_path = pathlib.Path(args.config).resolve()
     assessment_path = pathlib.Path(args.control_assessment).resolve()
@@ -411,35 +822,33 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         fill_timeout_seconds=int(actions_policy["fill_timeout_seconds"]),
         queue_depth_multiplier=float(fill_policy["queue_depth_multiplier"]),
         base_cost_bps=base_cost,
+        maker_price_offset_bps=float(actions_policy["maker_price_offset_bps"]),
+        price_tick_size=float(actions_policy["price_tick_size"]),
+        post_only_timeout_seconds=int(
+            actions_policy["post_only_timeout_seconds"]
+        ),
+        reprice_max_attempts=int(actions_policy["reprice_max_attempts"]),
+        reprice_bps=float(actions_policy["reprice_bps"]),
     )
-    embargo = (
-        int(actions_policy["placement_latency_seconds"])
-        + int(actions_policy["fill_timeout_seconds"])
-        + max(int(value) for value in actions_policy["horizons_seconds"])
+    audit_manifest_path = pathlib.Path(args.audit_manifest).resolve()
+    audit_manifest, manifest_created = load_or_create_frozen_audit_manifest(
+        audit_manifest_path, series=series, policy=policy
     )
-    split_policy = policy["splits"]
-    splits = development.build_time_splits(
-        timestamps,
-        n_splits=int(split_policy["count"]),
-        train_window_seconds=int(split_policy["train_window_seconds"]),
-        validation_window_seconds=int(split_policy["validation_window_seconds"]),
-        test_window_seconds=int(split_policy["test_window_seconds"]),
-        rolling_step_seconds=int(split_policy["rolling_step_seconds"]),
-        embargo_seconds=embargo,
-    )
-    oracle = build_oracle(
+    stability_audit = evaluate_stability_audit(
+        manifest=audit_manifest,
+        manifest_created=manifest_created,
         timestamps=timestamps,
         outcomes=outcomes,
         fill_timestamps=fill_timestamps,
         actions=actions,
-        splits=splits,
         policy=policy,
     )
-    decision, reasons = decide(oracle, policy)
+    oracle = stability_audit["primary_oracle"]
+    decision, reasons = decide_stability(stability_audit)
     return {
         "schema_version": SCHEMA_VERSION,
         "status": "COMPLETE",
-        "fully_verifiable": True,
+        "fully_verifiable": stability_audit["state"] == "COMPLETE",
         "research_domain": "forward_development_only",
         "promotion_evidence": False,
         "promotion_eligible": False,
@@ -455,6 +864,11 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         "input": {
             "control_assessment_path": str(assessment_path),
             "control_assessment_sha256": common.sha256_file(assessment_path),
+            "frozen_audit_manifest_path": str(audit_manifest_path),
+            "frozen_audit_manifest_sha256": common.sha256_file(audit_manifest_path),
+            "frozen_audit_manifest_identity_sha256": audit_manifest[
+                "identity_sha256"
+            ],
         },
         "execution_contract": {
             "base_cost_bps": base_cost,
@@ -467,15 +881,17 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             "first_timestamp_ms": int(timestamps[0]),
             "last_timestamp_ms": int(timestamps[-1]),
             "timestamp_sha256": common.array_sha256(timestamps),
-            "splits": [dataclasses.asdict(split) for split in splits],
+            "splits": list(audit_manifest["primary_splits"]),
         },
         "fill_audit": fill_audit,
         "hindsight_oracle": oracle,
+        "stability_audit": stability_audit,
         "research_decision": decision,
         "reason_codes": reasons,
         "next_action": {
             DECISION_CONTINUE: "preregister_fill_aware_maker_learnability_experiment",
             DECISION_STOP: "close_maker_execution_family_and_change_horizon_or_payoff",
+            DECISION_WAIT: "collect_unseen_24h_forward_window_without_changing_contract",
         }[decision],
     }
 
@@ -502,6 +918,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--control-assessment", required=True)
     parser.add_argument("--config", required=True)
+    parser.add_argument("--audit-manifest", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument(
         "--research-domain", default="development", choices=("development",)

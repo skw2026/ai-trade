@@ -254,12 +254,12 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 "research_decision": (
                     "CONTINUE_TO_INDEPENDENT_MAKER_FORWARD_VALIDATION"
                 ),
-                "diagnostic_leader_id": "two_stage_opportunity_action",
+                "diagnostic_leader_id": "sequential_hurdle_tail_action_value",
                 "reason_codes": ["maker_learnability_gate_passed"],
                 "data": {"eligible_row_count": 120000},
                 "architecture_comparison": {
                     "architectures": {
-                        "two_stage_opportunity_action": {
+                        "sequential_hurdle_tail_action_value": {
                             "trade_count": 45,
                             "positive_stress_split_ratio": 1.0,
                             "oos_base_cost_by_split": {"lcb_bps": 2.5},
@@ -276,10 +276,11 @@ class BuildClosedLoopReportTest(unittest.TestCase):
 
             self.assertEqual(section["status"], "pass")
             self.assertEqual(
-                section["diagnostic_leader_id"], "two_stage_opportunity_action"
+                section["diagnostic_leader_id"],
+                "sequential_hurdle_tail_action_value",
             )
             architecture = section["metrics"]["architectures"][
-                "two_stage_opportunity_action"
+                "sequential_hurdle_tail_action_value"
             ]
             self.assertEqual(architecture["stress_lcb_bps"], 1.0)
             self.assertTrue(architecture["maker_gate_passed"])
@@ -2944,9 +2945,10 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                         "action": "train",
                         "step": step,
                         "kind": "observation" if observation_failure else "required",
-                        "result": "fail" if observation_failure else "pass",
+                        "result": "rejected" if observation_failure else "pass",
                         "exit_code": 2 if observation_failure else 0,
                         "blocked_by_prior_failure": False,
+                        "research_decision_only": observation_failure,
                     }
                 )
             step_status = root / "step_status"
@@ -3011,7 +3013,8 @@ class BuildClosedLoopReportTest(unittest.TestCase):
         self.assertEqual(section["selected_alpha_route"], "microstructure_demo")
         self.assertIn("microstructure_demo_binding", section["effective_required_steps"])
         self.assertIn(
-            "closed-loop observational step not ready: market_alpha_development",
+            "closed-loop observational business result: "
+            "market_alpha_development=rejected",
             section["warn_reasons"],
         )
 
@@ -3174,9 +3177,10 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                         "action": "assess",
                         "step": "microstructure_forward_data",
                         "kind": "observation",
-                        "result": "fail",
-                        "exit_code": 2,
+                        "result": "skipped",
+                        "exit_code": None,
                         "blocked_by_prior_failure": False,
+                        "research_decision_only": True,
                     }
                 )
                 + "\n"
@@ -3248,7 +3252,7 @@ class BuildClosedLoopReportTest(unittest.TestCase):
 
         self.assertEqual(section["status"], "pass")
         self.assertIn(
-            "closed-loop observational step not ready: microstructure_forward_data",
+            "closed-loop observational step skipped: microstructure_forward_data",
             section["warn_reasons"],
         )
 

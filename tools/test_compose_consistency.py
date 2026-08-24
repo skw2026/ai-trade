@@ -352,7 +352,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("bootstrap-segment-duration-sec", collector)
             self.assertIn("MARKET_ALPHA_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("MARKET_ALPHA_SEGMENT_DURATION_SEC:-905", collector)
-            self.assertIn("MARKET_ALPHA_RETENTION_DAYS:-3", collector)
+            self.assertIn("MARKET_ALPHA_RETENTION_DAYS:-5", collector)
             self.assertIn("--max-stale-sec=1800", collector)
         self.assertIn(
             "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
@@ -671,6 +671,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("CLOSED_LOOP_INTEGRATOR_EXECUTION_LATENCY_BARS", script)
         self.assertIn('STEP_STATUS_PATH="${RUN_DIR}/step_status.jsonl"', script)
         self.assertIn("record_step_status()", script)
+        self.assertIn('"duration_ms": int(', script)
         self.assertIn('"step_status": "STEP_STATUS_PATH_VALUE"', script)
         self.assertIn(
             "replay validation is required by the closed-loop contract",
@@ -720,6 +721,13 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn('"required_artifacts": required_artifacts', script)
         self.assertIn('"required_steps": required_steps', script)
+        self.assertIn("run_research_discovery_chain() {", script)
+        self.assertIn(
+            "research discovery completed without registration, activation, or restart",
+            script,
+        )
+        self.assertIn("run_route_aware_decisive_observation_chain() {", script)
+        self.assertIn('print("rejected")', script)
 
         training_chain = script[
             script.index("run_training_chain() {") :
@@ -864,18 +872,15 @@ class ComposeConsistencyTest(unittest.TestCase):
             "github.event_name == 'workflow_dispatch' && inputs.replay_source_symbol || 'SOLUSDT'",
             workflow,
         )
-        self.assertIn('workflows: ["Closed Loop Smoke"]', workflow)
+        self.assertNotIn("workflow_run:", workflow)
+        self.assertNotIn('workflows: ["Closed Loop Smoke"]', workflow)
         self.assertNotIn('workflows: ["CD"]', workflow)
-        self.assertIn("github.event.workflow_run.head_sha", workflow)
-        self.assertIn(
-            "github.event.workflow_run.head_sha == github.sha",
-            workflow,
-        )
+        self.assertNotIn("github.event.workflow_run.head_sha", workflow)
         self.assertIn(
             "github.event.workflow_run.head_sha == github.sha",
             smoke_workflow,
         )
-        self.assertIn("group: ai-trade-remote-closed-loop-full", workflow)
+        self.assertIn("group: ai-trade-remote-closed-loop-research", workflow)
         self.assertIn("group: ai-trade-remote-closed-loop-smoke", smoke_workflow)
         self.assertNotIn(
             "group: ai-trade-remote-closed-loop\n", workflow
@@ -886,7 +891,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"', workflow)
         self.assertIn('CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "3600"', smoke_workflow)
         self.assertIn(
-            "github.event_name == 'workflow_run' && 'full'", workflow
+            "github.event_name == 'workflow_dispatch' && inputs.action || 'research'",
+            workflow,
         )
         self.assertIn('RUNNER_SYMBOL="${CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL:-SOLUSDT}"', workflow)
         self.assertIn('RUNNER_SYMBOL="${CLOSED_LOOP_SYMBOL:-SOLUSDT}"', workflow)

@@ -379,6 +379,13 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                             "base_cost_by_split": {"lcb_bps": 1.5},
                             "stress_cost_by_split": {"lcb_bps": 0.25},
                         },
+                        "stability_audit": {
+                            "boundary_sensitivity": {"pass_ratio": 0.75},
+                            "independent_forward": {
+                                "row_ratio": 0.5,
+                                "observation_complete": False,
+                            },
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -394,11 +401,15 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         )
         self.assertEqual(section["metrics"]["filled_action_count"], 1234)
         self.assertEqual(section["metrics"]["oracle_stress_lcb_bps"], 0.25)
+        self.assertEqual(section["metrics"]["boundary_pass_ratio"], 0.75)
+        self.assertFalse(section["metrics"]["forward_observation_complete"])
         self.assertIn(
             "maker_opportunity_decision=CONTINUE_TO_MAKER_LEARNABILITY_EXPERIMENT",
             annotation,
         )
         self.assertIn("oracle_stress_lcb_bps:0.25", annotation)
+        self.assertIn("forward_row_ratio:0.5", annotation)
+        self.assertIn("forward_observation_complete:false", annotation)
 
     def test_summary_exposes_maker_learnability_architecture_economics(self):
         summary_module = load_public_summary_module()
@@ -406,9 +417,7 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
             artifact_dir = pathlib.Path(td)
             architectures = {}
             for architecture_id, passed, stress_lcb in (
-                ("direct_stress_utility_regression", False, -1.0),
-                ("two_stage_opportunity_action", True, 1.25),
-                ("joint_action_ranker", False, -0.5),
+                ("sequential_hurdle_tail_action_value", True, 1.25),
             ):
                 architectures[architecture_id] = {
                     "fully_verifiable": True,
@@ -439,7 +448,9 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
                         "research_decision": (
                             "CONTINUE_TO_INDEPENDENT_MAKER_FORWARD_VALIDATION"
                         ),
-                        "diagnostic_leader_id": "two_stage_opportunity_action",
+                        "diagnostic_leader_id": (
+                            "sequential_hurdle_tail_action_value"
+                        ),
                         "reason_codes": ["maker_learnability_gate_passed"],
                         "data": {"eligible_row_count": 120000},
                         "architecture_comparison": {
@@ -457,19 +468,21 @@ class PublicClosedLoopFailureSummaryTest(unittest.TestCase):
         ]
         self.assertEqual(section["gate_status"], "COMPLETE")
         self.assertEqual(
-            section["diagnostic_leader_id"], "two_stage_opportunity_action"
+            section["diagnostic_leader_id"],
+            "sequential_hurdle_tail_action_value",
         )
-        self.assertEqual(section["metrics"]["two_stage_stress_lcb_bps"], 1.25)
-        self.assertTrue(section["metrics"]["two_stage_maker_gate_passed"])
+        self.assertEqual(section["metrics"]["hurdle_tail_stress_lcb_bps"], 1.25)
+        self.assertTrue(section["metrics"]["hurdle_tail_maker_gate_passed"])
         self.assertIn(
             "maker_learnability_decision="
             "CONTINUE_TO_INDEPENDENT_MAKER_FORWARD_VALIDATION",
             annotation,
         )
         self.assertIn(
-            "maker_learnability_leader=two_stage_opportunity_action", annotation
+            "maker_learnability_leader=sequential_hurdle_tail_action_value",
+            annotation,
         )
-        self.assertIn("two_stage_stress_lcb_bps:1.25", annotation)
+        self.assertIn("hurdle_tail_stress_lcb_bps:1.25", annotation)
 
     def test_summary_exposes_subsecond_information_increment(self):
         summary_module = load_public_summary_module()
@@ -865,33 +878,42 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
         rejection_contract = action_contract["route_rejection_contract"]
         optional = set(rejection_contract["optional_artifacts"])
         run_id = "run-rejected"
-        step_records = [
-            {
-                "recorded_at_utc": "2026-08-12T00:00:00Z",
+        step_records = []
+        for index, step in enumerate(action_contract["required_steps"]):
+            after_rejection = bool(step_records) and any(
+                record["step"] == "alpha_source_route" for record in step_records
+            )
+            record = {
+                "recorded_at_utc": f"2026-08-12T00:00:{index:02d}Z",
                 "run_id": run_id,
                 "action": "full",
-                "step": "alpha_source_route",
+                "step": step,
                 "kind": "required",
-                "result": "fail",
-                "exit_code": 2,
-                "blocked_by_prior_failure": False,
+                "result": "skipped" if after_rejection else "pass",
+                "exit_code": None if after_rejection else 0,
+                "blocked_by_prior_failure": after_rejection,
                 "research_decision_only": False,
+                "duration_ms": 0 if after_rejection else 1,
             }
-        ]
-        for index, step in enumerate(DECISIVE_STEPS, start=1):
-            step_records.append(
-                {
-                    "recorded_at_utc": f"2026-08-12T00:00:{index:02d}Z",
-                    "run_id": run_id,
-                    "action": "full",
-                    "step": step,
-                    "kind": "observation",
-                    "result": "fail",
-                    "exit_code": 2,
-                    "blocked_by_prior_failure": False,
-                    "research_decision_only": True,
-                }
-            )
+            if step == "alpha_source_route":
+                record.update(result="fail", exit_code=2, duration_ms=1)
+            step_records.append(record)
+            if step == "alpha_source_route":
+                for decisive_step in DECISIVE_STEPS:
+                    step_records.append(
+                        {
+                            "recorded_at_utc": "2026-08-12T00:01:00Z",
+                            "run_id": run_id,
+                            "action": "full",
+                            "step": decisive_step,
+                            "kind": "route",
+                            "result": "skipped",
+                            "exit_code": None,
+                            "blocked_by_prior_failure": False,
+                            "research_decision_only": False,
+                            "duration_ms": 0,
+                        }
+                    )
         step_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
             "step_status"
         ]
@@ -950,6 +972,90 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         return manifest_path, manifest
 
+    def build_legacy_full_run(self, artifact_dir: pathlib.Path):
+        manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
+        contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+        action_contract = contract["actions"]["full"]
+        route_contract = action_contract["route_contracts"]["legacy_integrator"]
+        route_path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+            "alpha_source_route_report"
+        ]
+        route_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "alpha_source_route_v1",
+                    "status": "PASS",
+                    "selected_route": "legacy_integrator",
+                }
+            ),
+            encoding="utf-8",
+        )
+        records_by_step = {
+            record["step"]: record
+            for record in self.read_step_records(artifact_dir)
+        }
+        effective_steps = list(action_contract["required_steps"])
+        insertion = effective_steps.index("alpha_source_route") + 1
+        effective_steps[insertion:insertion] = route_contract["required_steps"]
+        records = []
+        for index, step in enumerate(effective_steps):
+            record = records_by_step.get(
+                step,
+                {
+                    "recorded_at_utc": f"2026-08-12T01:00:{index:02d}Z",
+                    "run_id": "run-rejected",
+                    "action": "full",
+                    "step": step,
+                    "kind": "required",
+                    "result": "pass",
+                    "exit_code": 0,
+                    "blocked_by_prior_failure": False,
+                    "research_decision_only": False,
+                    "duration_ms": 1,
+                },
+            )
+            if step in DECISIVE_STEPS:
+                record.update(
+                    kind="observation",
+                    result="fail",
+                    exit_code=2,
+                    blocked_by_prior_failure=False,
+                    research_decision_only=True,
+                    duration_ms=1,
+                )
+            else:
+                record.update(
+                    kind="required",
+                    result="pass",
+                    exit_code=0,
+                    blocked_by_prior_failure=False,
+                    research_decision_only=False,
+                    duration_ms=1,
+                )
+            records.append(record)
+        self.write_step_records(artifact_dir, manifest_path, manifest, records)
+        required = list(
+            dict.fromkeys(
+                action_contract["required_artifacts"]
+                + route_contract["required_artifacts"]
+            )
+        )
+        for name in required:
+            path = artifact_dir / VALIDATOR.LOCAL_ARTIFACT_FILENAMES[name]
+            if name == "step_status":
+                pass
+            elif name == "alpha_source_route_report":
+                pass
+            else:
+                path.write_text(name, encoding="utf-8")
+            manifest["artifacts"][name] = {
+                "path": "/remote/"
+                + VALIDATOR.MANIFEST_ARTIFACT_BASENAMES.get(name, path.name),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        return manifest_path, manifest
+
     def test_declared_route_rejection_allows_only_contractual_downstream_gaps(self):
         with tempfile.TemporaryDirectory() as td:
             artifact_dir = pathlib.Path(td)
@@ -961,15 +1067,18 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
 
         self.assertEqual(failures, [])
 
-    def test_full_contract_requires_decisive_observations_after_route_rejection(self):
+    def test_full_contract_requires_decisive_observations_only_for_legacy_candidate(self):
         contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
         full = contract["actions"]["full"]
         optional = set(full["route_rejection_contract"]["optional_artifacts"])
+        legacy = full["route_contracts"]["legacy_integrator"]
 
         for name, filename in DECISIVE_STEPS_AND_ARTIFACTS.items():
             with self.subTest(name=name):
-                self.assertIn(name, full["required_steps"])
-                self.assertIn(name, full["required_artifacts"])
+                self.assertNotIn(name, full["required_steps"])
+                self.assertNotIn(name, full["required_artifacts"])
+                self.assertIn(name, legacy["required_steps"])
+                self.assertIn(name, legacy["required_artifacts"])
                 self.assertNotIn(name, optional)
                 self.assertEqual(VALIDATOR.LOCAL_ARTIFACT_FILENAMES[name], filename)
 
@@ -978,7 +1087,7 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             with self.subTest(name=name, failure="missing"):
                 with tempfile.TemporaryDirectory() as td:
                     artifact_dir = pathlib.Path(td)
-                    manifest_path, manifest = self.build_rejected_full_run(
+                    manifest_path, manifest = self.build_legacy_full_run(
                         artifact_dir
                     )
                     manifest["artifacts"].pop(name)
@@ -993,7 +1102,7 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             with self.subTest(name=name, failure="sha256"):
                 with tempfile.TemporaryDirectory() as td:
                     artifact_dir = pathlib.Path(td)
-                    manifest_path, _ = self.build_rejected_full_run(artifact_dir)
+                    manifest_path, _ = self.build_legacy_full_run(artifact_dir)
                     (artifact_dir / filename).write_text(
                         "tampered", encoding="utf-8"
                     )
@@ -1007,7 +1116,7 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
     def test_manifest_artifact_path_must_match_fixed_filename(self):
         with tempfile.TemporaryDirectory() as td:
             artifact_dir = pathlib.Path(td)
-            manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
+            manifest_path, manifest = self.build_legacy_full_run(artifact_dir)
             manifest["artifacts"]["decision_evidence_report"]["path"] = (
                 "/remote/not-the-decision-report.json"
             )
@@ -1037,7 +1146,11 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             artifact_dir = pathlib.Path(td)
             manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
             records = self.read_step_records(artifact_dir)
-            records[0]["kind"] = "observation"
+            next(
+                record
+                for record in records
+                if record["step"] == "alpha_source_route"
+            )["kind"] = "observation"
             self.write_step_records(
                 artifact_dir, manifest_path, manifest, records
             )
@@ -1053,7 +1166,7 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             with self.subTest(step=target, mutation="deleted"):
                 with tempfile.TemporaryDirectory() as td:
                     artifact_dir = pathlib.Path(td)
-                    manifest_path, manifest = self.build_rejected_full_run(
+                    manifest_path, manifest = self.build_legacy_full_run(
                         artifact_dir
                     )
                     records = [
@@ -1075,7 +1188,7 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             with self.subTest(step=target, mutation="duplicated"):
                 with tempfile.TemporaryDirectory() as td:
                     artifact_dir = pathlib.Path(td)
-                    manifest_path, manifest = self.build_rejected_full_run(
+                    manifest_path, manifest = self.build_legacy_full_run(
                         artifact_dir
                     )
                     records = self.read_step_records(artifact_dir)
@@ -1098,9 +1211,19 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
     def test_decisive_steps_must_preserve_fixed_execution_order(self):
         with tempfile.TemporaryDirectory() as td:
             artifact_dir = pathlib.Path(td)
-            manifest_path, manifest = self.build_rejected_full_run(artifact_dir)
+            manifest_path, manifest = self.build_legacy_full_run(artifact_dir)
             records = self.read_step_records(artifact_dir)
-            records[1], records[2] = records[2], records[1]
+            first = next(
+                index
+                for index, record in enumerate(records)
+                if record["step"] == DECISIVE_STEPS[0]
+            )
+            second = next(
+                index
+                for index, record in enumerate(records)
+                if record["step"] == DECISIVE_STEPS[1]
+            )
+            records[first], records[second] = records[second], records[first]
             self.write_step_records(
                 artifact_dir, manifest_path, manifest, records
             )
@@ -1126,11 +1249,13 @@ class ValidateClosedLoopArtifactContractTest(unittest.TestCase):
             with self.subTest(field=field):
                 with tempfile.TemporaryDirectory() as td:
                     artifact_dir = pathlib.Path(td)
-                    manifest_path, manifest = self.build_rejected_full_run(
+                    manifest_path, manifest = self.build_legacy_full_run(
                         artifact_dir
                     )
                     records = self.read_step_records(artifact_dir)
-                    records[1][field] = value
+                    next(
+                        record for record in records if record["step"] == target
+                    )[field] = value
                     self.write_step_records(
                         artifact_dir, manifest_path, manifest, records
                     )

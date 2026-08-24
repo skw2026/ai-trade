@@ -1,14 +1,15 @@
-name: Closed Loop
+name: Closed Loop Research
 
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: "闭环动作（assess/full/train/data）"
+        description: "证据动作（research/assess/full/train/data）"
         required: true
-        default: "assess"
+        default: "research"
         type: choice
         options:
+          - research
           - assess
           - full
           - train
@@ -43,39 +44,27 @@ on:
         default: "0"
         type: string
   schedule:
-    - cron: "15 */6 * * *" # 每6小时一次
-  workflow_run:
-    # Release validation is ordered deliberately: CD -> Smoke -> Full.  Starting
-    # Smoke and Full from the same CD completion makes both SSH jobs race for
-    # the persistent ECS transaction lock and turns a healthy release into a
-    # long, nondeterministic wait.
-    workflows: ["Closed Loop Smoke"]
-    types: [completed]
-    branches: [main]
+    # Discovery is deliberately independent from release validation.  A main
+    # deployment stops after CD -> Smoke; expensive alpha work runs once per
+    # immutable evidence epoch or by explicit dispatch.
+    - cron: "15 18 * * *" # 每24小时一次
 
 permissions:
   contents: read
 
 concurrency:
-  # GitHub keeps only one pending run per concurrency group. Scheduled and
-  # post-Smoke Full runs share this queue; the persistent ECS runner lock still
-  # serializes them with the resident scheduler and any manual operation.
-  group: ai-trade-remote-closed-loop-full
+  group: ai-trade-remote-closed-loop-research
   cancel-in-progress: false
 
 jobs:
   run-closed-loop:
-    if: >-
-      ${{ github.event_name != 'workflow_run' ||
-          (github.event.workflow_run.conclusion == 'success' &&
-           github.event.workflow_run.head_sha == github.sha) }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - name: Checkout contract source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 1
 
       - name: Check deploy secrets
@@ -88,9 +77,9 @@ jobs:
       - name: Run Closed Loop on ECS
         uses: appleboy/ssh-action@v1.2.0
         env:
-          CLOSED_LOOP_ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || (github.event_name == 'workflow_run' && 'full' || 'assess') }}
+          CLOSED_LOOP_ACTION: ${{ github.event_name == 'workflow_dispatch' && inputs.action || 'research' }}
           CLOSED_LOOP_STAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.stage || 'S5' }}
-          CLOSED_LOOP_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || (github.event_name == 'schedule' && '7h' || '4h') }}
+          CLOSED_LOOP_SINCE: ${{ github.event_name == 'workflow_dispatch' && inputs.since || '25h' }}
           CLOSED_LOOP_REPLAY_VALIDATION_SYMBOLS: ${{ github.event_name == 'workflow_dispatch' && inputs.replay_symbols || 'SOLUSDT' }}
           CLOSED_LOOP_REPLAY_VALIDATION_SOURCE_SYMBOL: ${{ github.event_name == 'workflow_dispatch' && inputs.replay_source_symbol || 'SOLUSDT' }}
           CLOSED_LOOP_REPLAY_VALIDATION_CONFIG: "config/bybit.replay.assess.maker_first.yaml"
@@ -119,8 +108,8 @@ jobs:
           # lock-only Full failure with an empty evidence directory.
           CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"
           CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
-          CLOSED_LOOP_GIT_COMMIT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-          CLOSED_LOOP_GIT_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
+          CLOSED_LOOP_GIT_COMMIT: ${{ github.sha }}
+          CLOSED_LOOP_GIT_BRANCH: ${{ github.ref_name }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
@@ -378,7 +367,7 @@ jobs:
           CLOSED_LOOP_ECS_HOST_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT }}
           CLOSED_LOOP_ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
           CLOSED_LOOP_EXPECTED_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
-          CLOSED_LOOP_EXPECTED_GIT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          CLOSED_LOOP_EXPECTED_GIT_SHA: ${{ github.sha }}
         run: bash tools/download_closed_loop_reports.sh
 
       - name: Upload Closed Loop Artifacts

@@ -99,7 +99,7 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
         scores = np.arange(20, dtype=np.float64).reshape(-1, 1)
         outcomes = np.full((20, 1), np.nan, dtype=np.float64)
         fills = np.full((20, 1), -1, dtype=np.int64)
-        for index in range(0, 18, 3):
+        for index in (7, 16):
             outcomes[index, 0] = 6.0
             fills[index, 0] = timestamps[index] + 2000
         report = experiment.select_nested_maker_threshold(
@@ -109,7 +109,7 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
             fill_timestamps=fills,
             actions=[{"direction": "long", "horizon_seconds": 1}],
             quantiles=[0.0, 0.5],
-            minimum_trades=2,
+            minimum_trades=1,
             base_cost_bps=4.0,
             stress_cost_multiplier=1.25,
             placement_latency_seconds=1,
@@ -184,10 +184,10 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
     def test_decision_selects_only_architecture_passing_economics_and_control(self):
         summaries = {}
         for architecture_id in experiment.ARCHITECTURE_IDS:
-            passed = architecture_id == "two_stage_opportunity_action"
+            passed = architecture_id == "sequential_hurdle_tail_action_value"
             summaries[architecture_id] = {
                 "fully_verifiable": True,
-                "trade_count": 60,
+                "trade_count": 120,
                 "oos_base_cost_by_split": {"lcb_bps": 2.0 if passed else -1.0},
                 "oos_stress_cost_by_split": {"lcb_bps": 1.0 if passed else -2.0},
                 "prediction_permutation_control": {"passed": passed},
@@ -197,7 +197,7 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
         for split_id in range(6):
             architectures = {}
             for architecture_id in experiment.ARCHITECTURE_IDS:
-                passed = architecture_id == "two_stage_opportunity_action"
+                passed = architecture_id == "sequential_hurdle_tail_action_value"
                 architectures[architecture_id] = {
                     "oos_objective": {
                         "stress_cost": {"count": 10, "mean_bps": 1.0 if passed else -1.0}
@@ -209,7 +209,7 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
             comparison, split_reports=split_reports, policy=self.policy
         )
         self.assertEqual(decision, experiment.DECISION_CONTINUE)
-        self.assertEqual(leader, "two_stage_opportunity_action")
+        self.assertEqual(leader, "sequential_hurdle_tail_action_value")
         self.assertEqual(reasons, ["maker_learnability_gate_passed"])
         self.assertFalse(comparison["maker_diagnostic_leader_is_preregistered"])
 
@@ -217,7 +217,7 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
         experiment.development.catboost is None,
         "catboost is available in CI and the research image",
     )
-    def test_all_three_architectures_fit_with_the_frozen_interface(self):
+    def test_sequential_hurdle_tail_architecture_fits_with_frozen_interface(self):
         rng = np.random.default_rng(20260822)
         fit_features = rng.normal(size=(120, 8))
         selection_features = rng.normal(size=(40, 8))
@@ -241,21 +241,54 @@ class MakerExecutionLearnabilityExperimentTest(unittest.TestCase):
             {"direction": "long", "horizon_seconds": 15},
             {"direction": "short", "horizon_seconds": 15},
         ]
-        for architecture_id in experiment.ARCHITECTURE_IDS:
-            result = experiment.development.fit_predict_experimental_architecture(
-                architecture_id=architecture_id,
-                fit_features=fit_features,
-                fit_stress_utilities=utilities(fit_features),
-                model_selection_features=selection_features,
-                model_selection_stress_utilities=utilities(selection_features),
-                validation_features=validation_features,
-                test_features=test_features,
-                actions=actions,
-                args=experiment._model_args(policy),
-            )
-            self.assertEqual(result["validation_prediction"].shape, (20, 2))
-            self.assertEqual(result["test_prediction"].shape, (20, 2))
-            self.assertTrue(np.all(np.isfinite(result["test_prediction"])))
+        fit_timestamps = np.arange(len(fit_features), dtype=np.int64) * 1000
+        selection_timestamps = (
+            np.arange(len(selection_features), dtype=np.int64) * 1000
+        )
+        fit_fills = np.tile((fit_timestamps + 2000).reshape(-1, 1), (1, 2))
+        selection_fills = np.tile(
+            (selection_timestamps + 2000).reshape(-1, 1), (1, 2)
+        )
+        result = experiment.fit_predict_sequential_hurdle_tail_architecture(
+            fit_features=fit_features,
+            fit_timestamps=fit_timestamps,
+            fit_stress_utilities=utilities(fit_features),
+            fit_fill_timestamps=fit_fills,
+            model_selection_features=selection_features,
+            model_selection_stress_utilities=utilities(selection_features),
+            model_selection_fill_timestamps=selection_fills,
+            validation_features=validation_features,
+            test_features=test_features,
+            actions=actions,
+            policy=policy,
+        )
+        self.assertEqual(result["validation_prediction"].shape, (20, 2))
+        self.assertEqual(result["test_prediction"].shape, (20, 2))
+        self.assertTrue(np.all(np.isfinite(result["test_prediction"])))
+
+    def test_hurdle_action_value_prices_unfilled_occupancy_and_no_order(self):
+        action = {"direction": "long", "horizon_seconds": 15}
+        model = experiment.SequentialHurdleTailModel(
+            actions=[action],
+            action_models=[
+                experiment.HurdleTailActionModel(
+                    fill_model=None,
+                    fill_constant=0.25,
+                    utility_model=None,
+                    utility_constant=4.0,
+                    mean_fill_latency_seconds=2.0,
+                )
+            ],
+            opportunity_cost_bps_per_second=0.12,
+            placement_latency_seconds=1,
+            fill_timeout_seconds=5,
+        )
+        prediction = experiment.predict_sequential_hurdle_tail_action_value(
+            model, np.zeros((3, 2), dtype=np.float64)
+        )
+        expected_occupancy = 0.25 * 18.0 + 0.75 * 6.0
+        self.assertAlmostEqual(prediction[0, 0], 0.25 * 4.0 - 0.12 * expected_occupancy)
+        self.assertLess(prediction[0, 0], 0.0)
 
 
 if __name__ == "__main__":

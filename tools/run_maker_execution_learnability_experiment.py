@@ -25,14 +25,12 @@ import run_microstructure_alpha_development as development
 
 
 SCHEMA_VERSION = "maker_execution_learnability_experiment_v1"
-POLICY_SCHEMA_VERSION = "maker_execution_learnability_policy_v1"
+POLICY_SCHEMA_VERSION = "maker_execution_learnability_policy_v2"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "a8ce70efd90185a650d8980a2de8d02c7e20d1e2bea4233b5512e18bb1a7a109"
+    "21c3db7a7efdfe0f91f4cb2a68489b268276b10439f6970615cc5c1fbce65c9b"
 )
 ARCHITECTURE_IDS = (
-    "direct_stress_utility_regression",
-    "two_stage_opportunity_action",
-    "joint_action_ranker",
+    "sequential_hurdle_tail_action_value",
 )
 DECISION_CONTINUE = "CONTINUE_TO_INDEPENDENT_MAKER_FORWARD_VALIDATION"
 DECISION_STOP = "STOP_MAKER_LEARNABILITY_FAMILY"
@@ -84,19 +82,36 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
     target = policy.get("target")
     if not (
         isinstance(target, Mapping)
-        and float(target.get("unfilled_order_utility_bps", float("nan"))) == 0.0
-        and target.get("filled_order_target")
-        == "realized_base_net_bps_minus_stress_cost_increment"
+        and target.get("fill_component")
+        == "causal_probability_of_conservative_full_fill"
+        and target.get("filled_component")
+        == "conditional_lower_quantile_stress_net_utility"
+        and float(target.get("conditional_utility_quantile", 0.0)) == 0.25
+        and target.get("opportunity_cost_source")
+        == "fit_only_sequential_oracle_stress_bps_per_second"
+        and target.get("unfilled_occupancy")
+        == "placement_latency_plus_fill_timeout"
+        and target.get("filled_occupancy")
+        == "placement_latency_plus_mean_fill_latency_plus_horizon"
+        and target.get("explicit_no_order_action") is True
+        and float(target.get("minimum_action_value_bps", -1.0)) == 0.0
         and target.get("architecture_selection_scope")
-        == "development_diagnostic_only"
+        == "single_preregistered_development_family"
     ):
         failures.append("target")
     execution = policy.get("execution")
     if not (
         isinstance(execution, Mapping)
         and execution.get("placement_latency_seconds") == 1
-        and execution.get("fill_timeout_seconds") == 5
+        and execution.get("fill_timeout_seconds") == 12
+        and float(execution.get("maker_price_offset_bps", -1.0)) == 0.3
+        and float(execution.get("price_tick_size", 0.0)) == 0.01
+        and execution.get("post_only_timeout_seconds") == 6
+        and execution.get("reprice_max_attempts") == 1
+        and float(execution.get("reprice_bps", -1.0)) == 0.15
         and float(execution.get("queue_depth_multiplier", 0.0)) == 1.25
+        and execution.get("resting_queue_depth_source")
+        == "same_side_l5_cumulative_base_depth_at_placement"
         and float(execution.get("maker_entry_fee_bps", 0.0)) == 2.75
         and float(execution.get("taker_exit_fee_bps", 0.0)) == 5.5
         and float(execution.get("exit_slippage_bps", 0.0)) == 1.0
@@ -122,7 +137,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
         isinstance(calibration, Mapping)
         and calibration.get("threshold_quantiles")
         == [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98]
-        and calibration.get("minimum_validation_trades") == 8
+        and calibration.get("minimum_validation_trades") == 20
     ):
         failures.append("calibration")
     model = policy.get("model")
@@ -148,7 +163,7 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
     gates = policy.get("decision_gates")
     if not (
         isinstance(gates, Mapping)
-        and gates.get("minimum_oos_trades") == 30
+        and gates.get("minimum_oos_trades") == 100
         and float(gates.get("minimum_positive_stress_split_ratio", -1.0)) == 0.6
         and float(gates.get("minimum_base_lcb_bps", -1.0)) == 0.0
         and float(gates.get("minimum_stress_lcb_bps", -1.0)) == 0.0
@@ -188,7 +203,7 @@ def validate_upstream_report(
     if not (
         report.get("schema_version") == maker.SCHEMA_VERSION
         and report.get("status") == "COMPLETE"
-        and report.get("fully_verifiable") is True
+        and isinstance(report.get("fully_verifiable"), bool)
         and report.get("promotion_evidence") is False
         and report.get("promotion_eligible") is False
     ):
@@ -233,6 +248,15 @@ def validate_upstream_report(
         raise ValueError(
             "maker opportunity report contract mismatch: " + ",".join(failures)
         )
+    decision = report.get("research_decision")
+    if decision not in {
+        maker.DECISION_CONTINUE,
+        maker.DECISION_STOP,
+        maker.DECISION_WAIT,
+    }:
+        raise ValueError("maker opportunity report decision mismatch")
+    if decision == maker.DECISION_CONTINUE and report.get("fully_verifiable") is not True:
+        raise ValueError("maker opportunity continuation is not fully verifiable")
     return report
 
 
@@ -348,7 +372,9 @@ def evaluate_maker_policy(
         if not np.all(np.isfinite(row_scores[allowed_array])):
             continue
         action_index = allowed[int(np.argmax(row_scores[allowed_array]))]
-        if float(row_scores[action_index]) < threshold:
+        # The threshold is the explicit NO_ORDER action value.  Equality stays
+        # flat so a zero-valued action cannot create occupancy without edge.
+        if float(row_scores[action_index]) <= threshold:
             continue
         order_count += 1
         timeout_timestamp = decision_timestamp + (
@@ -403,6 +429,7 @@ def select_nested_maker_threshold(
     placement_latency_seconds: int,
     fill_timeout_seconds: int,
     score_units: str,
+    minimum_score_bps: float = float("-inf"),
 ) -> Dict[str, Any]:
     scores = np.asarray(prediction, dtype=np.float64)
     if scores.ndim != 2 or scores.shape[1] != len(actions):
@@ -417,8 +444,13 @@ def select_nested_maker_threshold(
             "score_units": str(score_units),
             "reason": "no_finite_predictions",
         }
+    floor = float(minimum_score_bps)
     thresholds = sorted(
-        {float(np.quantile(finite, float(quantile))) for quantile in quantiles}
+        {
+            max(floor, float(np.quantile(finite, float(quantile))))
+            for quantile in quantiles
+        }
+        | ({floor} if math.isfinite(floor) else set())
     )
     candidates: List[Dict[str, Any]] = []
     for threshold in thresholds:
@@ -524,6 +556,291 @@ def evaluate_maker_permutation_controls(
     return controls
 
 
+@dataclasses.dataclass
+class HurdleTailActionModel:
+    fill_model: Any | None
+    fill_constant: float | None
+    utility_model: Any | None
+    utility_constant: float
+    mean_fill_latency_seconds: float
+
+
+@dataclasses.dataclass
+class SequentialHurdleTailModel:
+    actions: List[Mapping[str, Any]]
+    action_models: List[HurdleTailActionModel]
+    opportunity_cost_bps_per_second: float
+    placement_latency_seconds: int
+    fill_timeout_seconds: int
+
+
+def estimate_fit_only_sequential_opportunity_rate(
+    *,
+    timestamps: np.ndarray,
+    stress_utilities: np.ndarray,
+    fill_timestamps: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+) -> float:
+    ts = np.asarray(timestamps, dtype=np.int64)
+    utilities = np.asarray(stress_utilities, dtype=np.float64)
+    fills = np.asarray(fill_timestamps, dtype=np.int64)
+    if not (
+        len(ts) >= 2
+        and utilities.shape == fills.shape == (len(ts), len(actions))
+    ):
+        raise ValueError("sequential opportunity-rate inputs are invalid")
+    next_allowed_ms = -1
+    total_stress_bps = 0.0
+    for row_index, decision_timestamp in enumerate(ts):
+        if int(decision_timestamp) < next_allowed_ms:
+            continue
+        allowed = np.flatnonzero(
+            (fills[row_index] > int(decision_timestamp))
+            & np.isfinite(utilities[row_index])
+            & (utilities[row_index] > 0.0)
+        )
+        if not len(allowed):
+            continue
+        action_index = int(allowed[int(np.argmax(utilities[row_index, allowed]))])
+        total_stress_bps += float(utilities[row_index, action_index])
+        next_allowed_ms = int(fills[row_index, action_index]) + int(
+            actions[action_index]["horizon_seconds"]
+        ) * 1000
+    elapsed_seconds = (int(ts[-1]) - int(ts[0])) / 1000.0
+    return total_stress_bps / elapsed_seconds if elapsed_seconds > 0.0 else 0.0
+
+
+def _build_conditional_quantile_model(
+    args: argparse.Namespace, *, action_index: int, quantile: float
+) -> Any:
+    if development.CatBoostRegressor is None:
+        raise RuntimeError("catboost regressor is required; use ai-trade-research image")
+    return development.CatBoostRegressor(
+        loss_function=f"Quantile:alpha={float(quantile)}",
+        eval_metric=f"Quantile:alpha={float(quantile)}",
+        iterations=int(args.iterations),
+        depth=int(args.depth),
+        learning_rate=float(args.learning_rate),
+        l2_leaf_reg=float(args.l2_leaf_reg),
+        random_strength=float(args.random_strength),
+        random_seed=int(args.random_seed) + 1_200_007 + int(action_index) * 1009,
+        allow_writing_files=False,
+        verbose=False,
+    )
+
+
+def fit_sequential_hurdle_tail_model(
+    *,
+    fit_features: np.ndarray,
+    fit_timestamps: np.ndarray,
+    fit_stress_utilities: np.ndarray,
+    fit_fill_timestamps: np.ndarray,
+    model_selection_features: np.ndarray,
+    model_selection_stress_utilities: np.ndarray,
+    model_selection_fill_timestamps: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    policy: Mapping[str, Any],
+) -> SequentialHurdleTailModel:
+    args = _model_args(policy)
+    fit_utilities = np.asarray(fit_stress_utilities, dtype=np.float64)
+    selection_utilities = np.asarray(
+        model_selection_stress_utilities, dtype=np.float64
+    )
+    fit_fills = np.asarray(fit_fill_timestamps, dtype=np.int64)
+    selection_fills = np.asarray(model_selection_fill_timestamps, dtype=np.int64)
+    opportunity_rate = estimate_fit_only_sequential_opportunity_rate(
+        timestamps=fit_timestamps,
+        stress_utilities=fit_utilities,
+        fill_timestamps=fit_fills,
+        actions=actions,
+    )
+    quantile = float(policy["target"]["conditional_utility_quantile"])
+    action_models: List[HurdleTailActionModel] = []
+    for action_index in range(len(actions)):
+        fit_labels = (fit_fills[:, action_index] >= 0).astype(np.int64)
+        selection_labels = (selection_fills[:, action_index] >= 0).astype(np.int64)
+        unique = np.unique(fit_labels)
+        fill_model: Any | None = None
+        fill_constant: float | None = None
+        if len(unique) == 1:
+            fill_constant = float(unique[0])
+        else:
+            action_args = argparse.Namespace(**vars(args))
+            action_args.random_seed = int(args.random_seed) + action_index * 1009
+            fill_model = development.build_opportunity_model(action_args)
+            fit_kwargs: Dict[str, Any] = {
+                "early_stopping_rounds": int(args.early_stopping_rounds),
+                "verbose": False,
+            }
+            if len(selection_labels):
+                fit_kwargs["eval_set"] = (
+                    model_selection_features,
+                    selection_labels,
+                )
+            else:
+                fit_kwargs.pop("early_stopping_rounds", None)
+            fill_model.fit(fit_features, fit_labels, **fit_kwargs)
+
+        filled_fit = np.flatnonzero(fit_labels == 1)
+        filled_selection = np.flatnonzero(selection_labels == 1)
+        utility_model: Any | None = None
+        if len(filled_fit):
+            utility_constant = float(
+                np.quantile(fit_utilities[filled_fit, action_index], quantile)
+            )
+        else:
+            utility_constant = -1.0e6
+        if len(filled_fit) >= 100:
+            utility_model = _build_conditional_quantile_model(
+                args, action_index=action_index, quantile=quantile
+            )
+            fit_kwargs = {"verbose": False}
+            if len(filled_selection) >= 20:
+                fit_kwargs.update(
+                    eval_set=(
+                        model_selection_features[filled_selection],
+                        selection_utilities[filled_selection, action_index],
+                    ),
+                    early_stopping_rounds=int(args.early_stopping_rounds),
+                )
+            utility_model.fit(
+                fit_features[filled_fit],
+                fit_utilities[filled_fit, action_index],
+                **fit_kwargs,
+            )
+        # Fill timestamps are measured from the decision instant and already
+        # include placement latency.  Store only the queue/reprice wait here;
+        # prediction adds placement exactly once when pricing occupancy.
+        placement_latency = int(policy["execution"]["placement_latency_seconds"])
+        fill_latency = np.maximum(
+            0.0,
+            (
+                fit_fills[filled_fit, action_index]
+                - np.asarray(fit_timestamps)[filled_fit]
+            )
+            / 1000.0
+            - placement_latency,
+        )
+        mean_fill_latency = float(np.mean(fill_latency)) if len(fill_latency) else float(
+            policy["execution"]["fill_timeout_seconds"]
+        )
+        action_models.append(
+            HurdleTailActionModel(
+                fill_model=fill_model,
+                fill_constant=fill_constant,
+                utility_model=utility_model,
+                utility_constant=utility_constant,
+                mean_fill_latency_seconds=mean_fill_latency,
+            )
+        )
+    return SequentialHurdleTailModel(
+        actions=list(actions),
+        action_models=action_models,
+        opportunity_cost_bps_per_second=max(0.0, float(opportunity_rate)),
+        placement_latency_seconds=int(policy["execution"]["placement_latency_seconds"]),
+        fill_timeout_seconds=int(policy["execution"]["fill_timeout_seconds"]),
+    )
+
+
+def predict_sequential_hurdle_tail_action_value(
+    model: SequentialHurdleTailModel, features: np.ndarray
+) -> np.ndarray:
+    feature_matrix = np.asarray(features, dtype=np.float64)
+    columns: List[np.ndarray] = []
+    for action, action_model in zip(model.actions, model.action_models):
+        if action_model.fill_model is None:
+            if action_model.fill_constant is None:
+                raise ValueError("hurdle fill component is incomplete")
+            fill_probability = np.full(
+                len(feature_matrix), action_model.fill_constant, dtype=np.float64
+            )
+        else:
+            fill_probability = development.predict_binary_positive_probability(
+                action_model.fill_model, feature_matrix
+            )
+        conditional_utility = (
+            np.asarray(action_model.utility_model.predict(feature_matrix), dtype=np.float64)
+            .reshape(-1)
+            if action_model.utility_model is not None
+            else np.full(
+                len(feature_matrix), action_model.utility_constant, dtype=np.float64
+            )
+        )
+        filled_seconds = (
+            model.placement_latency_seconds
+            + action_model.mean_fill_latency_seconds
+            + int(action["horizon_seconds"])
+        )
+        unfilled_seconds = model.placement_latency_seconds + model.fill_timeout_seconds
+        expected_occupancy_seconds = (
+            fill_probability * filled_seconds
+            + (1.0 - fill_probability) * unfilled_seconds
+        )
+        columns.append(
+            fill_probability * conditional_utility
+            - model.opportunity_cost_bps_per_second * expected_occupancy_seconds
+        )
+    prediction = np.column_stack(columns)
+    if prediction.shape != (len(feature_matrix), len(model.actions)) or not np.all(
+        np.isfinite(prediction)
+    ):
+        raise ValueError("sequential hurdle tail predictions are invalid")
+    return prediction
+
+
+def fit_predict_sequential_hurdle_tail_architecture(
+    *,
+    fit_features: np.ndarray,
+    fit_timestamps: np.ndarray,
+    fit_stress_utilities: np.ndarray,
+    fit_fill_timestamps: np.ndarray,
+    model_selection_features: np.ndarray,
+    model_selection_stress_utilities: np.ndarray,
+    model_selection_fill_timestamps: np.ndarray,
+    validation_features: np.ndarray,
+    test_features: np.ndarray,
+    actions: Sequence[Mapping[str, Any]],
+    policy: Mapping[str, Any],
+) -> Dict[str, Any]:
+    model = fit_sequential_hurdle_tail_model(
+        fit_features=fit_features,
+        fit_timestamps=fit_timestamps,
+        fit_stress_utilities=fit_stress_utilities,
+        fit_fill_timestamps=fit_fill_timestamps,
+        model_selection_features=model_selection_features,
+        model_selection_stress_utilities=model_selection_stress_utilities,
+        model_selection_fill_timestamps=model_selection_fill_timestamps,
+        actions=actions,
+        policy=policy,
+    )
+    return {
+        "score_units": "sequential_lower_tail_action_value_bps",
+        "validation_prediction": predict_sequential_hurdle_tail_action_value(
+            model, validation_features
+        ),
+        "test_prediction": predict_sequential_hurdle_tail_action_value(
+            model, test_features
+        ),
+        "model_diagnostics": {
+            "model_topology": "fill_hurdle_times_conditional_q25_utility_minus_occupancy",
+            "explicit_no_order_action": True,
+            "opportunity_cost_bps_per_second": model.opportunity_cost_bps_per_second,
+            "mean_post_placement_fill_wait_seconds_by_action": {
+                str(index): item.mean_fill_latency_seconds
+                for index, item in enumerate(model.action_models)
+            },
+            "fill_constants_by_action": {
+                str(index): item.fill_constant
+                for index, item in enumerate(model.action_models)
+            },
+            "conditional_utility_constants_by_action": {
+                str(index): item.utility_constant
+                for index, item in enumerate(model.action_models)
+            },
+        },
+    }
+
+
 def _model_args(policy: Mapping[str, Any]) -> argparse.Namespace:
     return argparse.Namespace(**dict(policy["model"]))
 
@@ -533,9 +850,12 @@ def evaluate_architecture_split(
     architecture_id: str,
     split_id: int,
     fit_features: np.ndarray,
+    fit_timestamps: np.ndarray,
     fit_utilities: np.ndarray,
+    fit_fills: np.ndarray,
     selection_features: np.ndarray,
     selection_utilities: np.ndarray,
+    selection_fills: np.ndarray,
     validation_features: np.ndarray,
     validation_timestamps: np.ndarray,
     validation_outcomes: np.ndarray,
@@ -548,16 +868,20 @@ def evaluate_architecture_split(
     policy: Mapping[str, Any],
 ) -> Dict[str, Any]:
     started = time.monotonic()
-    predictions = development.fit_predict_experimental_architecture(
-        architecture_id=architecture_id,
+    if architecture_id != "sequential_hurdle_tail_action_value":
+        raise ValueError(f"unsupported maker architecture: {architecture_id}")
+    predictions = fit_predict_sequential_hurdle_tail_architecture(
         fit_features=fit_features,
+        fit_timestamps=fit_timestamps,
         fit_stress_utilities=fit_utilities,
+        fit_fill_timestamps=fit_fills,
         model_selection_features=selection_features,
         model_selection_stress_utilities=selection_utilities,
+        model_selection_fill_timestamps=selection_fills,
         validation_features=validation_features,
         test_features=test_features,
         actions=actions,
-        args=_model_args(policy),
+        policy=policy,
     )
     execution = policy["execution"]
     calibration_policy = policy["calibration"]
@@ -575,6 +899,7 @@ def evaluate_architecture_split(
         placement_latency_seconds=int(execution["placement_latency_seconds"]),
         fill_timeout_seconds=int(execution["fill_timeout_seconds"]),
         score_units=str(predictions["score_units"]),
+        minimum_score_bps=float(policy["target"]["minimum_action_value_bps"]),
     )
     selected = calibration.get("diagnostic_selected")
     diagnostics = dict(predictions.get("model_diagnostics", {}))
@@ -729,26 +1054,21 @@ def _upstream_splits(
     timestamps: np.ndarray,
     policy: Mapping[str, Any],
 ) -> List[development.TimeSplit]:
-    execution = policy["execution"]
-    split_policy = policy["splits"]
-    embargo = (
-        int(execution["placement_latency_seconds"])
-        + int(execution["fill_timeout_seconds"])
-        + max(int(value) for value in execution["horizons_seconds"])
-    )
-    regenerated = development.build_time_splits(
-        timestamps,
-        n_splits=int(split_policy["count"]),
-        train_window_seconds=int(split_policy["train_window_seconds"]),
-        validation_window_seconds=int(split_policy["validation_window_seconds"]),
-        test_window_seconds=int(split_policy["test_window_seconds"]),
-        rolling_step_seconds=int(split_policy["rolling_step_seconds"]),
-        embargo_seconds=embargo,
-    )
     upstream = report["common_domain"]["splits"]
-    if upstream != [dataclasses.asdict(item) for item in regenerated]:
-        raise ValueError("maker learnability split contract drifted from opportunity")
-    return regenerated
+    if not (
+        isinstance(upstream, list)
+        and len(upstream) == int(policy["splits"]["count"])
+    ):
+        raise ValueError("maker learnability frozen split contract is incomplete")
+    frozen = maker._splits_from_manifest(upstream)
+    first_timestamp = int(np.min(timestamps))
+    last_timestamp = int(np.max(timestamps))
+    if any(
+        split.fit_start_ms < first_timestamp or split.test_end_ms > last_timestamp + 1000
+        for split in frozen
+    ):
+        raise ValueError("maker learnability frozen split rows are unavailable")
+    return frozen
 
 
 def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
@@ -812,6 +1132,11 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         fill_timeout_seconds=int(execution["fill_timeout_seconds"]),
         queue_depth_multiplier=float(execution["queue_depth_multiplier"]),
         base_cost_bps=base_cost,
+        maker_price_offset_bps=float(execution["maker_price_offset_bps"]),
+        price_tick_size=float(execution["price_tick_size"]),
+        post_only_timeout_seconds=int(execution["post_only_timeout_seconds"]),
+        reprice_max_attempts=int(execution["reprice_max_attempts"]),
+        reprice_bps=float(execution["reprice_bps"]),
     )
     observable = build_observable_decision_mask(
         raw_timestamps,
@@ -897,9 +1222,12 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
                             architecture_id=architecture_id,
                             split_id=int(split.split_id),
                             fit_features=features[model_fit],
+                            fit_timestamps=timestamps[model_fit],
                             fit_utilities=utilities[model_fit],
+                            fit_fills=fill_timestamps[model_fit],
                             selection_features=features[model_selection],
                             selection_utilities=utilities[model_selection],
+                            selection_fills=fill_timestamps[model_selection],
                             validation_features=features[validation],
                             validation_timestamps=timestamps[validation],
                             validation_outcomes=outcomes[validation],
@@ -996,9 +1324,13 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
             "base_cost_bps": base_cost,
             "stress_cost_increment_bps": base_cost
             * (float(execution["stress_cost_multiplier"]) - 1.0),
-            "unfilled_order_utility_bps": 0.0,
+            "unfilled_training_label_bps": 0.0,
+            "unfilled_action_value": "negative_fit_only_opportunity_cost",
             "unfilled_signal_occupancy": "placement_plus_fill_timeout",
             "filled_signal_occupancy": "actual_fill_timestamp_plus_horizon",
+            "explicit_no_order_action_value_bps": float(
+                policy["target"]["minimum_action_value_bps"]
+            ),
         },
         "fill_audit": fill_audit,
         "architecture_comparison": comparison,

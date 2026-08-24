@@ -58,7 +58,8 @@ services:
       # Persist completed evidence often enough that normal CD churn cannot
       # repeatedly discard an hour-long in-progress capture.
       - "--segment-duration-sec=${MARKET_ALPHA_SEGMENT_DURATION_SEC:-905}"
-      - "--retention-days=${MARKET_ALPHA_RETENTION_DAYS:-3}"
+      # Frozen development (~34h) + unseen forward (24h) + scheduling margin.
+      - "--retention-days=${MARKET_ALPHA_RETENTION_DAYS:-5}"
     volumes:
       - ./data:/app/data
     healthcheck:

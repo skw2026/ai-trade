@@ -30,7 +30,7 @@ import run_microstructure_alpha_development as development
 SCHEMA_VERSION = "maker_subsecond_information_experiment_v1"
 POLICY_SCHEMA_VERSION = "maker_subsecond_information_policy_v1"
 FROZEN_POLICY_IDENTITY_SHA256 = (
-    "ab09595e712d35bce87a5599a55ebd5ff680183de05dbb13b6415422166ed219"
+    "721a9f5b322ac6618e25bb89739b0fbe981a6ad60d04b0706a9df6807616df37"
 )
 VARIANT_IDS = (
     "one_second_decomposed_baseline",
@@ -137,8 +137,15 @@ def validate_policy(path: pathlib.Path) -> Dict[str, Any]:
     if not (
         isinstance(execution, Mapping)
         and execution.get("placement_latency_seconds") == 1
-        and execution.get("fill_timeout_seconds") == 5
+        and execution.get("fill_timeout_seconds") == 12
+        and float(execution.get("maker_price_offset_bps", -1.0)) == 0.3
+        and float(execution.get("price_tick_size", 0.0)) == 0.01
+        and execution.get("post_only_timeout_seconds") == 6
+        and execution.get("reprice_max_attempts") == 1
+        and float(execution.get("reprice_bps", -1.0)) == 0.15
         and float(execution.get("queue_depth_multiplier", 0.0)) == 1.25
+        and execution.get("resting_queue_depth_source")
+        == "same_side_l5_cumulative_base_depth_at_placement"
         and float(execution.get("maker_entry_fee_bps", 0.0)) == 2.75
         and float(execution.get("taker_exit_fee_bps", 0.0)) == 5.5
         and float(execution.get("exit_slippage_bps", 0.0)) == 1.0
@@ -1217,6 +1224,11 @@ def run_experiment(args: argparse.Namespace) -> Dict[str, Any]:
         fill_timeout_seconds=int(execution["fill_timeout_seconds"]),
         queue_depth_multiplier=float(execution["queue_depth_multiplier"]),
         base_cost_bps=base_cost,
+        maker_price_offset_bps=float(execution["maker_price_offset_bps"]),
+        price_tick_size=float(execution["price_tick_size"]),
+        post_only_timeout_seconds=int(execution["post_only_timeout_seconds"]),
+        reprice_max_attempts=int(execution["reprice_max_attempts"]),
+        reprice_bps=float(execution["reprice_bps"]),
     )
     observable = learnability.build_observable_decision_mask(
         raw_timestamps,

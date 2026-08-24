@@ -557,7 +557,7 @@ PY
             check=False,
         )
 
-    def test_alpha_route_failure_still_runs_ordered_decisive_observation_chain(self):
+    def test_alpha_route_failure_skips_candidate_decision_evidence(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)
             result = self._run_decisive_chain(
@@ -586,23 +586,9 @@ PY
                 "23",
             )
 
-            commands = [
-                json.loads(line)
-                for line in (root / "observation_commands.jsonl")
-                .read_text(encoding="utf-8")
-                .splitlines()
-            ]
-            self.assertEqual(
-                [
-                    item["tool"]
-                    for item in commands
-                    if item["tool"] in self.DECISIVE_TOOLS
-                ],
-                self.DECISIVE_TOOLS,
-            )
             run_dir = root / "reports" / "decisive-observation-test"
             for artifact in self.DECISIVE_ARTIFACTS:
-                self.assertTrue((run_dir / artifact).is_file(), artifact)
+                self.assertFalse((run_dir / artifact).is_file(), artifact)
 
             statuses = [
                 json.loads(line)
@@ -616,119 +602,15 @@ PY
             self.assertEqual(
                 [item["step"] for item in decisive], self.DECISIVE_STEPS
             )
-            self.assertTrue(
-                all(item["kind"] == "observation" for item in decisive)
-            )
+            self.assertTrue(all(item["kind"] == "route" for item in decisive))
             self.assertTrue(
                 all(item["blocked_by_prior_failure"] is False for item in decisive)
             )
             self.assertTrue(
-                all(item["research_decision_only"] is True for item in decisive)
+                all(item["research_decision_only"] is False for item in decisive)
             )
-            self.assertNotIn("skipped", {item["result"] for item in decisive})
-            status_steps = [item["step"] for item in statuses]
-            self.assertLess(
-                status_steps.index("integrator"),
-                status_steps.index("decision_benchmark_validation"),
-            )
-            self.assertLess(
-                status_steps.index("replay_validation"),
-                status_steps.index("decision_benchmark_validation"),
-            )
-
-            by_tool = {item["tool"]: item for item in commands}
-            objective_args = by_tool["validate_objective_alignment.py"]["args"]
-            self.assertNotIn("--evidence", objective_args)
-            for option in (
-                "--miner-report",
-                "--market-alpha-report",
-                "--microstructure-report",
-                "--online-tuner-report",
-            ):
-                self.assertIn(option, objective_args)
-            paired_args = by_tool["run_paired_evolution_replay.py"]["args"]
-            self.assertEqual(
-                paired_args[paired_args.index("--trade-bot") + 1],
-                "/app/trade_bot",
-            )
-            self.assertEqual(
-                paired_args[paired_args.index("--replay-report") + 1],
-                str(
-                    (
-                        root
-                        / "benchmark-root"
-                        / "frozen"
-                        / "replay-validation-identity.json"
-                    ).resolve()
-                ),
-            )
-            unified_args = by_tool["build_decision_evidence_report.py"]["args"]
-            self.assertEqual(
-                unified_args[unified_args.index("--config") + 1],
-                str(root / "inputs" / "policy.json"),
-            )
-            ledger_args = by_tool["experiment_budget_ledger.py"]["args"]
-            self.assertEqual(ledger_args[0], "audit-next")
-            self.assertNotIn("register", ledger_args)
-            self.assertNotIn("observe", ledger_args)
-            self.assertEqual(
-                ledger_args[ledger_args.index("--benchmark-report") + 1],
-                str(
-                    root
-                    / "reports"
-                    / "decisive-observation-test"
-                    / "decision_benchmark_validation.json"
-                ),
-            )
-            proposal_arg = ledger_args[ledger_args.index("--request-json") + 1]
-            self.assertTrue(proposal_arg.startswith("@"), proposal_arg)
-            self.assertEqual(
-                unified_args[unified_args.index("--ledger") + 1],
-                ledger_args[ledger_args.index("--ledger") + 1],
-            )
-            self.assertEqual(
-                unified_args[unified_args.index("--ledger-proposal") + 1],
-                proposal_arg[1:],
-            )
-            prepared_proposal = json.loads(
-                pathlib.Path(proposal_arg[1:]).read_text(encoding="utf-8")
-            )
-            expected_proposal = {
-                key: value
-                for key, value in self._proposal_payload().items()
-                if key
-                not in {
-                    "registered_at",
-                    "earliest_result_at",
-                    "earliest_result_identity",
-                    "result_source_identity",
-                }
-            }
-            expected_proposal["benchmark_id"] = "b" * 64
-            self.assertEqual(prepared_proposal, expected_proposal)
-            self.assertEqual(
-                set(prepared_proposal),
-                self.LEDGER_REGISTRATION_FIELDS,
-            )
-            audit = json.loads(
-                (run_dir / "experiment_budget_audit.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(audit["decision"], "ALLOW_NEXT_EXPERIMENT")
-            self.assertTrue(audit["benchmark_verified"])
-            self.assertTrue(audit["registration_verified"])
-            manifest = json.loads(
-                (run_dir / "run_manifest.json").read_text(encoding="utf-8")
-            )
-            self.assertTrue(
-                manifest["decision_evidence"]["research_decision_only"]
-            )
-            self.assertFalse(manifest["decision_evidence"]["promotion_authority"])
-            self.assertEqual(
-                [item["step"] for item in manifest["decision_evidence"]["steps"]],
-                self.DECISIVE_STEPS,
-            )
+            self.assertEqual({item["result"] for item in decisive}, {"skipped"})
+            self.assertTrue(all(item["duration_ms"] == 0 for item in decisive))
 
     def test_explicit_benchmark_missing_frozen_replay_identity_never_falls_back(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1186,30 +1068,8 @@ PY
             result = self._run_auto_training_chain(root, "microstructure_demo")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             run_dir = root / "reports" / "auto-decisive-inputs"
-            commands = [
-                json.loads(line)
-                for line in (root / "observation_commands.jsonl")
-                .read_text(encoding="utf-8")
-                .splitlines()
-            ]
-            self.assertNotIn(
-                "run_paired_evolution_replay.py",
-                [item["tool"] for item in commands],
-            )
-            for item in commands:
-                if item["tool"] == "build_decision_benchmark.py":
-                    candidate = item["args"][item["args"].index("--candidate-model") + 1]
-                    self.assertEqual(candidate, str(run_dir / "integrator_latest.cbm"))
-                    self.assertNotIn("microstructure", candidate)
-            paired = json.loads(
-                (run_dir / "paired_evolution_replay.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(paired["schema_version"], "paired_evolution_replay_v1")
-            self.assertEqual(paired["status"], "UNVERIFIABLE")
-            self.assertIn("candidate_preflight_failed", paired["mismatches"])
-            self.assertFalse(paired["promotion_authority"])
-            self.assertFalse(paired["demo_activation_authorized"])
-            self.assertFalse(paired["live_activation_authorized"])
+            self.assertFalse((root / "observation_commands.jsonl").exists())
+            self.assertFalse((run_dir / "paired_evolution_replay.json").exists())
             statuses = [
                 json.loads(line)
                 for line in (run_dir / "step_status.jsonl")
@@ -1221,6 +1081,11 @@ PY
                 [item["step"] for item in statuses if item["step"] in self.DECISIVE_STEPS],
                 self.DECISIVE_STEPS,
             )
+            decisive = [
+                item for item in statuses if item["step"] in self.DECISIVE_STEPS
+            ]
+            self.assertTrue(all(item["kind"] == "route" for item in decisive))
+            self.assertEqual({item["result"] for item in decisive}, {"skipped"})
             self.assertLess(
                 steps.index(self.DECISIVE_STEPS[-1]),
                 steps.index("microstructure_demo_binding"),
@@ -1627,7 +1492,6 @@ PY
             "microstructure_forward_data",
             "maker_execution_opportunity_experiment",
             "maker_execution_learnability_experiment",
-            "maker_subsecond_information_experiment",
             "liquidation_information_set_experiment",
             "microstructure_alpha_development",
             "microstructure_alpha_lifecycle",
@@ -1638,11 +1502,10 @@ PY
             "run_microstructure_capture_gate": observation_steps[1],
             "run_maker_execution_opportunity_experiment": observation_steps[2],
             "run_maker_execution_learnability_experiment": observation_steps[3],
-            "run_maker_subsecond_information_experiment": observation_steps[4],
-            "run_liquidation_information_set_experiment": observation_steps[5],
-            "run_microstructure_alpha_development_gate": observation_steps[6],
-            "run_microstructure_alpha_lifecycle_gate": observation_steps[7],
-            "run_alpha_source_route_gate": observation_steps[8],
+            "run_liquidation_information_set_experiment": observation_steps[4],
+            "run_microstructure_alpha_development_gate": observation_steps[5],
+            "run_microstructure_alpha_lifecycle_gate": observation_steps[6],
+            "run_alpha_source_route_gate": observation_steps[7],
         }
         for stage in ("DEPLOY", "SMOKE"):
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as td:
@@ -1722,7 +1585,6 @@ PY
                 run_microstructure_capture_gate() { record_call microstructure_forward_data; }
                 run_maker_execution_opportunity_experiment() { record_call maker_execution_opportunity_experiment; }
                 run_maker_execution_learnability_experiment() { record_call maker_execution_learnability_experiment; }
-                run_maker_subsecond_information_experiment() { record_call maker_subsecond_information_experiment; }
                 run_liquidation_information_set_experiment() { record_call liquidation_information_set_experiment; }
                 run_microstructure_alpha_development_gate() { record_call microstructure_alpha_development; }
                 run_microstructure_alpha_lifecycle_gate() { record_call microstructure_alpha_lifecycle; }
@@ -1755,7 +1617,6 @@ PY
                     "microstructure_forward_data",
                     "maker_execution_opportunity_experiment",
                     "maker_execution_learnability_experiment",
-                    "maker_subsecond_information_experiment",
                     "liquidation_information_set_experiment",
                     "microstructure_alpha_development",
                     "microstructure_alpha_lifecycle",

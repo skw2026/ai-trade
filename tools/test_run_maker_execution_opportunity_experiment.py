@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -25,6 +26,8 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
             "best_ask": np.full(row_count, 100.2, dtype=np.float64),
             "best_bid_size": np.ones(row_count, dtype=np.float64),
             "best_ask_size": np.ones(row_count, dtype=np.float64),
+            "bid_depth_l5": np.ones(row_count, dtype=np.float64),
+            "ask_depth_l5": np.ones(row_count, dtype=np.float64),
             "buy_quote_volume": np.zeros(row_count, dtype=np.float64),
             "sell_quote_volume": np.zeros(row_count, dtype=np.float64),
         }
@@ -38,6 +41,10 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         self.assertEqual(policy["splits"]["count"], 6)
         self.assertFalse(policy["fill_proxy"]["same_second_fill_permitted"])
         self.assertFalse(policy["fill_proxy"]["fill_proxy_used_as_model_feature"])
+        self.assertEqual(
+            policy["fill_proxy"]["resting_queue_depth_source"],
+            "same_side_l5_cumulative_base_depth_at_placement",
+        )
         self.assertFalse(policy["authorities"]["demo_activation_authorized"])
 
     def test_long_fill_requires_queue_consumption_and_strict_trade_through(self):
@@ -111,6 +118,57 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
         expected = (100.2 / 99.2 - 1.0) * 10000.0 - 9.25
         self.assertAlmostEqual(outcomes[0, 1], expected)
 
+    def test_runtime_aligned_offset_and_single_reprice_change_posted_price(self):
+        series = self.series(12)
+        # Initial passive attempt does not fill. The replacement is submitted
+        # after 2s, moves 0.15bps toward touch, then applies the 0.30bps maker
+        # offset exactly like the runtime adapter.
+        series["sell_quote_volume"][4] = 1000.0
+        series["bid_depth_l5"][:] = 2.0
+        series["best_bid"][4] = 99.0
+        series["best_bid"][6] = 101.0
+        series["best_ask"][6] = 101.2
+        outcomes, fills, _, audit = experiment.build_maker_action_returns(
+            series,
+            horizons_seconds=[2],
+            placement_latency_seconds=1,
+            fill_timeout_seconds=4,
+            queue_depth_multiplier=1.25,
+            base_cost_bps=9.25,
+            maker_price_offset_bps=0.3,
+            price_tick_size=0.01,
+            post_only_timeout_seconds=2,
+            reprice_max_attempts=1,
+            reprice_bps=0.15,
+        )
+        expected_posted = 99.99
+        self.assertEqual(fills[0, 0], 4000)
+        expected_edge = (101.0 / expected_posted - 1.0) * 10000.0 - 9.25
+        self.assertAlmostEqual(outcomes[0, 0], expected_edge)
+        self.assertEqual(audit["reprice_max_attempts"], 1)
+        self.assertEqual(audit["maker_price_offset_bps"], 0.3)
+        self.assertEqual(audit["price_tick_size"], 0.01)
+        self.assertEqual(
+            audit["resting_queue_depth_source"],
+            "same_side_l5_cumulative_base_depth_at_placement",
+        )
+
+    def test_l5_resting_depth_is_used_instead_of_top_size(self):
+        series = self.series(8)
+        series["bid_depth_l5"][:] = 4.0
+        series["sell_quote_volume"][2] = 300.0
+        series["best_bid"][2] = 99.0
+        outcomes, fills, _, _ = experiment.build_maker_action_returns(
+            series,
+            horizons_seconds=[2],
+            placement_latency_seconds=1,
+            fill_timeout_seconds=2,
+            queue_depth_multiplier=1.25,
+            base_cost_bps=9.25,
+        )
+        self.assertEqual(fills[0, 0], -1)
+        self.assertTrue(np.isnan(outcomes[0, 0]))
+
     def test_oracle_selects_only_positive_stress_filled_actions_and_nonoverlaps(self):
         timestamps = np.arange(6, dtype=np.int64) * 1000
         outcomes = np.full((6, 2), np.nan, dtype=np.float64)
@@ -175,6 +233,78 @@ class MakerExecutionOpportunityExperimentTest(unittest.TestCase):
                 "maker_oracle_positive_split_ratio_below_minimum",
                 "maker_oracle_stress_lcb_not_positive",
             ],
+        )
+
+    def test_frozen_audit_manifest_keeps_absolute_splits_as_capture_advances(self):
+        policy = experiment.validate_policy(
+            TOOLS_DIR.parent / "config" / "maker_execution_opportunity_experiment.json"
+        )
+        series = self.series(140_000)
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "audit.json"
+            manifest, created = experiment.load_or_create_frozen_audit_manifest(
+                path, series=series, policy=policy
+            )
+            self.assertTrue(created)
+            frozen_splits = manifest["primary_splits"]
+            extension = self.series(120)
+            extension["timestamp"] += int(series["timestamp"][-1]) + 1000
+            advanced = {
+                name: np.concatenate((values, extension[name]))
+                for name, values in series.items()
+            }
+            loaded, created_again = experiment.load_or_create_frozen_audit_manifest(
+                path, series=advanced, policy=policy
+            )
+            self.assertFalse(created_again)
+            self.assertEqual(loaded["primary_splits"], frozen_splits)
+            self.assertEqual(
+                loaded["independent_forward"]["start_ms"],
+                frozen_splits[-1]["test_end_ms"],
+            )
+
+    def test_frozen_audit_manifest_rejects_historical_price_drift(self):
+        policy = experiment.validate_policy(
+            TOOLS_DIR.parent / "config" / "maker_execution_opportunity_experiment.json"
+        )
+        series = self.series(140_000)
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "audit.json"
+            experiment.load_or_create_frozen_audit_manifest(
+                path, series=series, policy=policy
+            )
+            drifted = {name: values.copy() for name, values in series.items()}
+            drifted["best_bid"][-100] += 0.01
+            with self.assertRaisesRegex(ValueError, "domain drift"):
+                experiment.load_or_create_frozen_audit_manifest(
+                    path, series=drifted, policy=policy
+                )
+
+    def test_stability_decision_waits_then_fails_closed_or_continues(self):
+        waiting = {"state": "AWAITING_FORWARD", "stable_opportunity_proven": False}
+        self.assertEqual(
+            experiment.decide_stability(waiting),
+            (
+                experiment.DECISION_WAIT,
+                ["independent_24h_forward_window_incomplete"],
+            ),
+        )
+        failed = {
+            "state": "COMPLETE",
+            "stable_opportunity_proven": False,
+            "primary_oracle": {"opportunity_proven": True},
+            "boundary_sensitivity": {"passed": False},
+            "independent_forward": {"passed": False},
+        }
+        decision, reasons = experiment.decide_stability(failed)
+        self.assertEqual(decision, experiment.DECISION_STOP)
+        self.assertEqual(
+            reasons,
+            ["boundary_sensitivity_failed", "independent_forward_opportunity_failed"],
+        )
+        passed = {"state": "COMPLETE", "stable_opportunity_proven": True}
+        self.assertEqual(
+            experiment.decide_stability(passed)[0], experiment.DECISION_CONTINUE
         )
 
 

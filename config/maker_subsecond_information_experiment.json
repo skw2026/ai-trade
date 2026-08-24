@@ -6,7 +6,7 @@
   "single_variable_change": "append_checksum_bound_250ms_queue_dynamics_from_existing_raw_capture",
   "upstream": {
     "required_learnability_decision": "STOP_MAKER_LEARNABILITY_FAMILY",
-    "required_learnability_policy_identity_sha256": "a8ce70efd90185a650d8980a2de8d02c7e20d1e2bea4233b5512e18bb1a7a109",
+    "required_learnability_policy_identity_sha256": "21c3db7a7efdfe0f91f4cb2a68489b268276b10439f6970615cc5c1fbce65c9b",
     "required_capture_schema_version": "bybit_cross_asset_microstructure_v3"
   },
   "features": {
@@ -33,8 +33,14 @@
   },
   "execution": {
     "placement_latency_seconds": 1,
-    "fill_timeout_seconds": 5,
+    "fill_timeout_seconds": 12,
+    "maker_price_offset_bps": 0.3,
+    "price_tick_size": 0.01,
+    "post_only_timeout_seconds": 6,
+    "reprice_max_attempts": 1,
+    "reprice_bps": 0.15,
     "queue_depth_multiplier": 1.25,
+    "resting_queue_depth_source": "same_side_l5_cumulative_base_depth_at_placement",
     "maker_entry_fee_bps": 2.75,
     "taker_exit_fee_bps": 5.5,
     "exit_slippage_bps": 1.0,
