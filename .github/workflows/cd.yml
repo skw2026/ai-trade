@@ -591,6 +591,9 @@ jobs:
               "${RELEASE_TMP}/config/funding_basis_carry_opportunity_experiment.json" \
               "${RELEASE_TMP}/tools/fetch_bybit_carry_history.py" \
               "${RELEASE_TMP}/tools/run_funding_basis_carry_opportunity_experiment.py" \
+              "${RELEASE_TMP}/config/cross_venue_funding_differential_opportunity_experiment.json" \
+              "${RELEASE_TMP}/tools/fetch_cross_venue_funding_history.py" \
+              "${RELEASE_TMP}/tools/run_cross_venue_funding_differential_experiment.py" \
               "${RELEASE_TMP}/config/maker_execution_learnability_experiment.json" \
               "${RELEASE_TMP}/tools/run_maker_execution_learnability_experiment.py" \
               "${RELEASE_TMP}/config/maker_subsecond_information_experiment.json" \

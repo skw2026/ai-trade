@@ -58,6 +58,14 @@ LOCAL_ARTIFACT_FILENAMES = {
     "funding_basis_carry_frozen_audit": (
         "funding_basis_carry_frozen_audit.json"
     ),
+    "cross_venue_funding_history": "cross_venue_funding_history.csv",
+    "cross_venue_funding_data_report": "cross_venue_funding_data_report.json",
+    "cross_venue_funding_differential_experiment": (
+        "cross_venue_funding_differential_experiment.json"
+    ),
+    "cross_venue_funding_differential_frozen_audit": (
+        "cross_venue_funding_differential_frozen_audit.json"
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),

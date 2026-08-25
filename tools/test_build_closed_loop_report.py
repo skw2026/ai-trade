@@ -346,6 +346,63 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(rejected["status"], "fail")
             self.assertIn("proxy firewall", rejected["fail_reasons"][0])
 
+    def test_cross_venue_funding_can_only_continue_to_raw_bbo(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "cross_venue_funding.json"
+            payload = {
+                "schema_version": "cross_venue_funding_differential_experiment_v1",
+                "status": "COMPLETE",
+                "fully_verifiable": True,
+                "research_domain": "historical_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "research_decision": "STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY",
+                "reason_codes": ["historical_cross_venue_funding_upper_bound_failed"],
+                "execution_contract": {
+                    "historical_price_is_executable_bbo": False,
+                    "historical_proxy_can_authorize_demo": False,
+                },
+                "common_domain": {
+                    "row_count": 36288,
+                    "funding_event_count_by_venue": {
+                        "bybit": 378,
+                        "binance": 378,
+                    },
+                },
+                "hindsight_oracle": {
+                    "trade_count": 0,
+                    "positive_stress_split_ratio": 0.0,
+                    "base_cost_by_split": {"lcb_bps": 0.0},
+                    "stress_cost_by_split": {"lcb_bps": 0.0},
+                    "maximum_candidate": {
+                        "gross_bps": 9.1,
+                        "basis_bps": 5.4,
+                        "funding_bps": 3.7,
+                        "execution_cost_bps": 27.9,
+                        "stress_bps": -29.8,
+                    },
+                },
+                "stability_audit": {
+                    "boundary_sensitivity": {"pass_ratio": 0.0}
+                },
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            section = REPORT.assess_cross_venue_funding_differential_experiment(path)
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["metrics"]["binance_source_funding_event_count"], 378)
+            self.assertEqual(section["metrics"]["maximum_candidate_stress_bps"], -29.8)
+            self.assertFalse(section["historical_price_is_executable_bbo"])
+            self.assertFalse(section["demo_activation_authorized"])
+
+            payload["execution_contract"]["historical_price_is_executable_bbo"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_cross_venue_funding_differential_experiment(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertIn("proxy firewall", rejected["fail_reasons"][0])
+
     def test_maker_learnability_architectures_are_visible_but_non_promotional(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "maker_learnability.json"

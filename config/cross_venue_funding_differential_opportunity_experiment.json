@@ -1,0 +1,79 @@
+{
+  "schema_version": "cross_venue_funding_differential_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "bybit_binance_sol_perpetual_funding_differential_opportunity_v1",
+  "data_contract": {
+    "symbol": "SOLUSDT",
+    "venues": ["bybit", "binance"],
+    "contract_type": "linear_perpetual",
+    "interval_minutes": 5,
+    "lookback_days": 140,
+    "price_source": "synchronized_closed_trade_klines",
+    "funding_source": "actual_venue_funding_settlement_history",
+    "bybit_funding_notional_price_source": "linear_mark_price_kline_open_at_settlement",
+    "binance_funding_notional_price_source": "funding_history_associated_mark_price",
+    "funding_alignment": "exact_venue_settlement_timestamp_once_only",
+    "missing_bar_policy": "four_series_exact_inner_join_no_fill",
+    "parent_split_source": "funding_basis_carry_frozen_audit_v1"
+  },
+  "mechanism": {
+    "directions": [
+      "long_bybit_short_binance",
+      "long_binance_short_bybit"
+    ],
+    "reference_entry_notional": 1.0,
+    "base_quantity": "reference_notional_divided_by_mean_entry_mid",
+    "matched_base_quantity_across_venues": true,
+    "independent_margin_coverage_required": true,
+    "instant_cross_venue_transfer_assumed": false,
+    "shared_margin_assumed": false,
+    "funding_cashflow": "long_pays_positive_rate_short_receives_positive_rate",
+    "funding_event_interval": "entry_timestamp_exclusive_exit_timestamp_inclusive"
+  },
+  "execution": {
+    "horizons_hours": [24, 72, 168],
+    "entry_latency_bars": 1,
+    "one_outstanding_position": true,
+    "price_proxy": "next_bar_open_plus_minus_frozen_venue_half_spread",
+    "bybit_half_spread_bps": 0.5,
+    "binance_half_spread_bps": 0.5,
+    "bybit_taker_fee_bps_per_fill": 5.5,
+    "binance_taker_fee_bps_per_fill": 5.5,
+    "bybit_slippage_bps_per_fill": 1.0,
+    "binance_slippage_bps_per_fill": 1.0,
+    "intervenue_leg_risk_bps_per_round_trip": 2.0,
+    "stress_execution_cost_multiplier": 1.25,
+    "account_vip_discount_assumed": false,
+    "historical_proxy_can_authorize_demo": false
+  },
+  "capital_cost": {
+    "gross_capital_multiplier": 2.0,
+    "base_annual_rate": 0.05,
+    "stress_annual_rate": 0.075,
+    "day_count": 365.0
+  },
+  "splits": {
+    "count": 6,
+    "inherit_parent_absolute_splits": true,
+    "allow_rolling_recut": false
+  },
+  "stability_audit": {
+    "manifest_schema_version": "cross_venue_funding_differential_frozen_audit_v1",
+    "boundary_offsets_days": [0, -1, -2, -3],
+    "minimum_boundary_pass_ratio": 0.75,
+    "require_exact_frozen_domain": true
+  },
+  "decision_gates": {
+    "minimum_oos_trades": 12,
+    "minimum_positive_split_ratio": 0.6,
+    "minimum_oracle_stress_lcb_bps": 0.0,
+    "minimum_funding_events_per_venue": 30
+  },
+  "authorities": {
+    "historical_continuation_target": "raw_cross_venue_perpetual_bbo_forward_capture",
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

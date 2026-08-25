@@ -248,6 +248,8 @@ CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG="${CLOSED_LOOP_CROSS_ASSET_RESIDUAL_EXPER
 CROSS_ASSET_RESIDUAL_AUDIT_MANIFEST="${CLOSED_LOOP_CROSS_ASSET_RESIDUAL_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/cross_asset_residual_frozen_audit_v1.json}"
 FUNDING_BASIS_CARRY_EXPERIMENT_CONFIG="${CLOSED_LOOP_FUNDING_BASIS_CARRY_EXPERIMENT_CONFIG:-config/funding_basis_carry_opportunity_experiment.json}"
 FUNDING_BASIS_CARRY_AUDIT_MANIFEST="${CLOSED_LOOP_FUNDING_BASIS_CARRY_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/funding_basis_carry_frozen_audit_v1.json}"
+CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG="${CLOSED_LOOP_CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG:-config/cross_venue_funding_differential_opportunity_experiment.json}"
+CROSS_VENUE_FUNDING_AUDIT_MANIFEST="${CLOSED_LOOP_CROSS_VENUE_FUNDING_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/cross_venue_funding_differential_frozen_audit_v1.json}"
 MAKER_LEARNABILITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_LEARNABILITY_EXPERIMENT_CONFIG:-config/maker_execution_learnability_experiment.json}"
 MAKER_SUBSECOND_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_SUBSECOND_EXPERIMENT_CONFIG:-config/maker_subsecond_information_experiment.json}"
 DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
@@ -1325,6 +1327,10 @@ FUNDING_BASIS_CARRY_HISTORY_PATH="${RUN_DIR}/funding_basis_carry_history.csv"
 FUNDING_BASIS_CARRY_DATA_REPORT_PATH="${RUN_DIR}/funding_basis_carry_data_report.json"
 FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/funding_basis_carry_opportunity_experiment.json"
 FUNDING_BASIS_CARRY_AUDIT_SNAPSHOT_PATH="${RUN_DIR}/funding_basis_carry_frozen_audit.json"
+CROSS_VENUE_FUNDING_HISTORY_PATH="${RUN_DIR}/cross_venue_funding_history.csv"
+CROSS_VENUE_FUNDING_DATA_REPORT_PATH="${RUN_DIR}/cross_venue_funding_data_report.json"
+CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH="${RUN_DIR}/cross_venue_funding_differential_experiment.json"
+CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH="${RUN_DIR}/cross_venue_funding_differential_frozen_audit.json"
 MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_learnability_experiment.json"
 MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_subsecond_information_experiment.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
@@ -3556,6 +3562,58 @@ PY
   return "${status}"
 }
 
+run_cross_venue_funding_differential_experiment() {
+  echo "[INFO] cross-venue perpetual funding-differential opportunity experiment start"
+  local status=0
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/fetch_cross_venue_funding_history.py \
+    --parent-audit-manifest "${FUNDING_BASIS_CARRY_AUDIT_SNAPSHOT_PATH}" \
+    --output "${CROSS_VENUE_FUNDING_HISTORY_PATH}" \
+    --report "${CROSS_VENUE_FUNDING_DATA_REPORT_PATH}" \
+    --symbol SOLUSDT || status=$?
+  compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
+    tools/run_cross_venue_funding_differential_experiment.py \
+    --history-csv "${CROSS_VENUE_FUNDING_HISTORY_PATH}" \
+    --data-report "${CROSS_VENUE_FUNDING_DATA_REPORT_PATH}" \
+    --parent-audit-manifest "${FUNDING_BASIS_CARRY_AUDIT_SNAPSHOT_PATH}" \
+    --config "${CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG}" \
+    --audit-manifest "${CROSS_VENUE_FUNDING_AUDIT_MANIFEST}" \
+    --output "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" \
+    --research-domain development || status=$?
+  if [[ -s "${CROSS_VENUE_FUNDING_AUDIT_MANIFEST}" ]]; then
+    cp -f -- "${CROSS_VENUE_FUNDING_AUDIT_MANIFEST}" \
+      "${CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH}"
+  elif [[ -s "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" ]]; then
+    CROSS_VENUE_FUNDING_REPORT_PATH_VALUE="${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" \
+    CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH_VALUE="${CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH}" \
+    python3 - <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+
+report_path = Path(os.environ["CROSS_VENUE_FUNDING_REPORT_PATH_VALUE"])
+report = json.loads(report_path.read_text(encoding="utf-8"))
+payload = {
+    "schema_version": "cross_venue_funding_differential_frozen_audit_unavailable_v1",
+    "state": "NOT_FROZEN",
+    "research_decision": str(report.get("research_decision") or "NOT_READY"),
+    "reason_codes": list(report.get("reason_codes") or ["audit_not_created"]),
+    "opportunity_report_sha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
+    "promotion_authority": False,
+    "demo_activation_authorized": False,
+    "live_activation_authorized": False,
+}
+Path(os.environ["CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH_VALUE"]).write_text(
+    json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+PY
+  fi
+  echo "[INFO] cross-venue perpetual funding-differential opportunity experiment done"
+  return "${status}"
+}
+
 run_maker_execution_learnability_experiment() {
   echo "[INFO] conservative maker execution learnability experiment start"
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
@@ -4978,6 +5036,7 @@ write_run_manifest() {
   MAKER_OPPORTUNITY_EXPERIMENT_CONFIG_VALUE="${MAKER_OPPORTUNITY_EXPERIMENT_CONFIG}" \
   CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG_VALUE="${CROSS_ASSET_RESIDUAL_EXPERIMENT_CONFIG}" \
   FUNDING_BASIS_CARRY_EXPERIMENT_CONFIG_VALUE="${FUNDING_BASIS_CARRY_EXPERIMENT_CONFIG}" \
+  CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG_VALUE="${CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG}" \
   MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_CONFIG}" \
   MAKER_SUBSECOND_EXPERIMENT_CONFIG_VALUE="${MAKER_SUBSECOND_EXPERIMENT_CONFIG}" \
   REPLAY_CONFIG_PATH_VALUE="${REPLAY_EFFECTIVE_CONFIG_PATH}" \
@@ -5035,6 +5094,10 @@ write_run_manifest() {
   FUNDING_BASIS_CARRY_DATA_REPORT_PATH_VALUE="${FUNDING_BASIS_CARRY_DATA_REPORT_PATH}" \
   FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH_VALUE="${FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH}" \
   FUNDING_BASIS_CARRY_AUDIT_SNAPSHOT_PATH_VALUE="${FUNDING_BASIS_CARRY_AUDIT_SNAPSHOT_PATH}" \
+  CROSS_VENUE_FUNDING_HISTORY_PATH_VALUE="${CROSS_VENUE_FUNDING_HISTORY_PATH}" \
+  CROSS_VENUE_FUNDING_DATA_REPORT_PATH_VALUE="${CROSS_VENUE_FUNDING_DATA_REPORT_PATH}" \
+  CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH_VALUE="${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" \
+  CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH_VALUE="${CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH}" \
   MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" \
   MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
@@ -5254,6 +5317,9 @@ payload = {
         "funding_basis_carry_opportunity_experiment": os.environ.get(
             "FUNDING_BASIS_CARRY_EXPERIMENT_CONFIG_VALUE", ""
         ),
+        "cross_venue_funding_differential_experiment": os.environ.get(
+            "CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG_VALUE", ""
+        ),
         "maker_execution_learnability_experiment": os.environ.get(
             "MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE", ""
         ),
@@ -5446,6 +5512,10 @@ artifact_env_names = {
     "funding_basis_carry_data_report": "FUNDING_BASIS_CARRY_DATA_REPORT_PATH_VALUE",
     "funding_basis_carry_opportunity_experiment": "FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH_VALUE",
     "funding_basis_carry_frozen_audit": "FUNDING_BASIS_CARRY_AUDIT_SNAPSHOT_PATH_VALUE",
+    "cross_venue_funding_history": "CROSS_VENUE_FUNDING_HISTORY_PATH_VALUE",
+    "cross_venue_funding_data_report": "CROSS_VENUE_FUNDING_DATA_REPORT_PATH_VALUE",
+    "cross_venue_funding_differential_experiment": "CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH_VALUE",
+    "cross_venue_funding_differential_frozen_audit": "CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH_VALUE",
     "maker_execution_learnability_experiment": "MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_subsecond_information_experiment": "MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
@@ -5658,6 +5728,9 @@ build_summary() {
   if [[ -f "${FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--funding_basis_carry_opportunity_experiment_report "${FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH}")
   fi
+  if [[ -f "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--cross_venue_funding_differential_experiment_report "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}")
+  fi
   if [[ -f "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--maker_execution_learnability_experiment_report "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}")
   fi
@@ -5777,6 +5850,10 @@ build_summary() {
   "funding_basis_carry_data_report": "${FUNDING_BASIS_CARRY_DATA_REPORT_PATH}",
   "funding_basis_carry_opportunity_experiment": "${FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH}",
   "funding_basis_carry_frozen_audit": "${FUNDING_BASIS_CARRY_AUDIT_SNAPSHOT_PATH}",
+  "cross_venue_funding_history": "${CROSS_VENUE_FUNDING_HISTORY_PATH}",
+  "cross_venue_funding_data_report": "${CROSS_VENUE_FUNDING_DATA_REPORT_PATH}",
+  "cross_venue_funding_differential_experiment": "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}",
+  "cross_venue_funding_differential_frozen_audit": "${CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH}",
   "maker_execution_learnability_experiment": "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}",
   "maker_subsecond_information_experiment": "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
@@ -6601,6 +6678,7 @@ observation_report_path() {
     maker_execution_opportunity_experiment) printf '%s\n' "${MAKER_OPPORTUNITY_EXPERIMENT_REPORT_PATH}" ;;
     cross_asset_residual_opportunity_experiment) printf '%s\n' "${CROSS_ASSET_RESIDUAL_EXPERIMENT_REPORT_PATH}" ;;
     funding_basis_carry_opportunity_experiment) printf '%s\n' "${FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH}" ;;
+    cross_venue_funding_differential_experiment) printf '%s\n' "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" ;;
     maker_execution_learnability_experiment) printf '%s\n' "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ;;
     maker_subsecond_information_experiment) printf '%s\n' "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" ;;
     liquidation_information_set_experiment) printf '%s\n' "${LIQUIDATION_EXPERIMENT_REPORT_PATH}" ;;
@@ -6783,6 +6861,7 @@ run_training_chain() {
     run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
     run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
     run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
+    run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
     run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
     run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
     run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -6842,6 +6921,7 @@ run_research_discovery_chain() {
     skip_observation_step maker_execution_opportunity_experiment "${reason}"
     skip_observation_step cross_asset_residual_opportunity_experiment "${reason}"
     skip_observation_step funding_basis_carry_opportunity_experiment "${reason}"
+    skip_observation_step cross_venue_funding_differential_experiment "${reason}"
     skip_observation_step maker_execution_learnability_experiment "${reason}"
     skip_observation_step liquidation_information_set_experiment "${reason}"
     skip_observation_step microstructure_alpha_development "${reason}"
@@ -6857,6 +6937,7 @@ run_research_discovery_chain() {
   run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
   run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
   run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
+  run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
   run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
   run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
   run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -6882,6 +6963,7 @@ run_assess_observation_chain() {
     skip_observation_step maker_execution_opportunity_experiment "${skip_reason}"
     skip_observation_step cross_asset_residual_opportunity_experiment "${skip_reason}"
     skip_observation_step funding_basis_carry_opportunity_experiment "${skip_reason}"
+    skip_observation_step cross_venue_funding_differential_experiment "${skip_reason}"
     skip_observation_step maker_execution_learnability_experiment "${skip_reason}"
     skip_observation_step liquidation_information_set_experiment "${skip_reason}"
     skip_observation_step microstructure_alpha_development "${skip_reason}"
@@ -6896,6 +6978,7 @@ run_assess_observation_chain() {
   run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
   run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
   run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
+  run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
   run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
   run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
   run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -7044,6 +7127,7 @@ run_main() {
       run_observation_step maker_execution_opportunity_experiment run_maker_execution_opportunity_experiment
       run_observation_step cross_asset_residual_opportunity_experiment run_cross_asset_residual_opportunity_experiment
       run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
+      run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
       run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
       run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate
