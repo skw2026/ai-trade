@@ -75,6 +75,26 @@ class CaptureRetentionTest(unittest.TestCase):
             os.utime(path, (mtime, mtime))
         return raw, source_feature, source_report, upgraded_feature, upgraded_report
 
+    def write_option_vrp_xz_segment(
+        self, root: pathlib.Path, segment_id: str, *, mtime: float
+    ) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+        raw = root / "raw" / "BTC" / f"{segment_id}.jsonl.xz"
+        features = root / "features" / "BTC" / f"{segment_id}.csv"
+        report = root / "reports" / "BTC" / f"{segment_id}.json"
+        for path in (raw, features, report):
+            path.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_bytes(b"xz")
+        features.write_bytes(b"features")
+        report.write_text(json.dumps({
+            "schema_version": "bybit_btc_option_vrp_capture_v2",
+            "raw_codec": "xz_lzma_preset1", "status": "PASS",
+            "raw": {"path": f"raw/BTC/{raw.name}"},
+            "features": {"path": f"features/BTC/{features.name}"},
+        }), encoding="utf-8")
+        for path in (raw, features, report):
+            os.utime(path, (mtime, mtime))
+        return raw, features, report
+
     def test_removes_only_complete_expired_bundle(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp) / "microstructure"
@@ -97,6 +117,18 @@ class CaptureRetentionTest(unittest.TestCase):
             self.assertTrue(all(path.exists() for path in fresh))
             self.assertTrue(all(path.exists() for path in invalid))
             self.assertEqual(len(report["segments_skipped"]), 1)
+
+    def test_removes_expired_option_vrp_xz_bundle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp) / "bybit_btc_option_vrp_v2"
+            segment = self.write_option_vrp_xz_segment(root, "old", mtime=100)
+            report = retention.prune_capture_root(
+                root, retention_seconds=500, now_epoch=1000,
+                expected_root_name="bybit_btc_option_vrp_v2",
+            )
+            self.assertEqual(report["segments_removed"], 1)
+            self.assertEqual(report["segments_skipped"], [])
+            self.assertTrue(all(not path.exists() for path in segment))
 
     def test_rejects_root_name_drift_without_deleting(self):
         with tempfile.TemporaryDirectory() as temp:

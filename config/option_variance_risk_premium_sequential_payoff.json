@@ -1,0 +1,138 @@
+{
+  "schema_version": "option_variance_risk_premium_sequential_payoff_policy_v1",
+  "experiment_id": "btc_bybit_usdt_option_vrp_sequential_payoff_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "capture_contract": {
+    "capture_schema_version": "bybit_btc_option_vrp_capture_v2",
+    "snapshot_schema_version": "bybit_btc_option_vrp_snapshot_v2",
+    "capture_root_name": "bybit_btc_option_vrp_v2",
+    "raw_codec": "xz_lzma_preset1",
+    "scope_identity_sha256": "a5372ca0bd7d2829c11028bfcfead6d16fba08ef8e91101801789ccb98198177",
+    "venue": "bybit",
+    "category": "option",
+    "base_coin": "BTC",
+    "quote_coin": "USDT",
+    "settle_coin": "USDT",
+    "hedge_category": "linear",
+    "hedge_symbol": "BTCUSDT",
+    "minimum_dte_days": 0.5,
+    "maximum_dte_days": 10.0,
+    "maximum_absolute_moneyness": 0.1,
+    "poll_interval_seconds": 60,
+    "minimum_retention_hours": 960,
+    "minimum_pressure_retention_hours": 864
+  },
+  "instrument_contract": {
+    "option_quantity_unit": "BTC",
+    "hedge_quantity_unit": "BTC",
+    "premium_currency": "USDT",
+    "payoff_currency": "USDT",
+    "call_payoff_formula": "quantity_btc*max(delivery_price_usdt-strike_usdt,0)",
+    "put_payoff_formula": "quantity_btc*max(strike_usdt-delivery_price_usdt,0)",
+    "option_trade_fee_formula": "quantity_btc*min(index_price_usdt*option_taker_fee_rate,option_price_usdt*option_fee_cap_fraction)",
+    "delivery_fee_formula": "quantity_btc*min(delivery_price_usdt*delivery_fee_rate,intrinsic_value_usdt*delivery_fee_cap_fraction)",
+    "delivery_fee_daily_option_exception": "not_applicable_because_all_entry_checkpoints_are_at_least_6.75_days",
+    "delta_convention": "option_delta_btc_per_one_btc_contract",
+    "hedge_target_formula": "-signed_option_quantity_btc*(call_delta+put_delta)",
+    "official_contract_urls": [
+      "https://bybit-exchange.github.io/docs/v5/market/delivery-price",
+      "https://www.bybit.com/en/help-center/article/Trading-Fee-Structure",
+      "https://www.bybit.com/en/help-center/article/?id=000001544&language=en_US",
+      "https://www.bybit.com/en/help-center/article/P-L-Calculations-Options"
+    ]
+  },
+  "actions": [
+    {
+      "action_id": "no_trade",
+      "role": "required_control",
+      "position_side": "flat",
+      "quantity_btc_per_leg": 0.0
+    },
+    {
+      "action_id": "short_atm_straddle_7d",
+      "role": "primary_vrp_candidate",
+      "position_side": "short",
+      "target_entry_dte_days": 7.0,
+      "quantity_btc_per_leg": 0.01
+    },
+    {
+      "action_id": "long_atm_straddle_7d",
+      "role": "diagnostic_control",
+      "position_side": "long",
+      "target_entry_dte_days": 7.0,
+      "quantity_btc_per_leg": 0.01
+    }
+  ],
+  "entry_contract": {
+    "checkpoint_rule": "first_complete_snapshot_at_or_below_target_after_observed_above_target",
+    "maximum_crossing_gap_seconds": 180,
+    "strike_rule": "minimum_absolute_strike_to_index_moneyness_then_lower_strike",
+    "minimum_bid_size_btc": 0.01,
+    "minimum_ask_size_btc": 0.01,
+    "long_entry_price": "ask",
+    "short_entry_price": "bid",
+    "boundary_entry_dte_days": [6.75, 7.25]
+  },
+  "hedge_contract": {
+    "rebalance_interval_seconds": 3600,
+    "first_rebalance_at_entry": true,
+    "minimum_trade_quantity_btc": 0.001,
+    "quantity_step_btc": 0.001,
+    "rounding_rule": "nearest_quantity_step_half_away_from_zero",
+    "last_option_delta_dte_days": 0.5,
+    "maximum_snapshot_gap_seconds": 180,
+    "maximum_hedge_book_age_seconds": 120,
+    "buy_price": "ask",
+    "sell_price": "bid",
+    "close_residual_hedge_at_last_snapshot_before_delivery": true
+  },
+  "cost_contract": {
+    "option_taker_fee_rate": 0.0003,
+    "option_fee_cap_fraction": 0.125,
+    "linear_taker_fee_rate": 0.00055,
+    "delivery_fee_rate": 0.00015,
+    "delivery_fee_cap_fraction_of_intrinsic": 0.125,
+    "base_option_slippage_ticks": 0.0,
+    "stress_option_slippage_ticks": 1.0,
+    "base_hedge_slippage_bps": 0.0,
+    "stress_hedge_slippage_bps": 1.0,
+    "capital_normalizer": "entry_index_price_usdt*quantity_btc_per_leg",
+    "fee_rebate_assumed": false
+  },
+  "statistics_contract": {
+    "cluster_unit": "delivery_time_epoch_ms",
+    "primary_action_id": "short_atm_straddle_7d",
+    "confidence_side": "one_sided",
+    "confidence_level": 0.95,
+    "bootstrap_iterations": 4000,
+    "bootstrap_seed": 20260826,
+    "minimum_positive_expiry_ratio": 0.6,
+    "minimum_stress_lcb_bps": 0.0,
+    "minimum_boundary_stress_lcb_bps": 0.0,
+    "minimum_worst_expiry_bps": -150.0,
+    "futility_rule": "stop_when_primary_stress_optimistic_ucb_bps_lte_zero_at_review",
+    "early_pass_allowed": false
+  },
+  "sequential_reviews": [
+    {"day": 8, "minimum_checksum_bound_seconds": 691200, "minimum_successful_polls": 1000, "minimum_completed_expiries": 6},
+    {"day": 14, "minimum_checksum_bound_seconds": 1209600, "minimum_successful_polls": 1800, "minimum_completed_expiries": 10},
+    {"day": 21, "minimum_checksum_bound_seconds": 1814400, "minimum_successful_polls": 2700, "minimum_completed_expiries": 14},
+    {"day": 28, "minimum_checksum_bound_seconds": 2419200, "minimum_successful_polls": 3600, "minimum_completed_expiries": 18},
+    {"day": 35, "minimum_checksum_bound_seconds": 3024000, "minimum_successful_polls": 4500, "minimum_completed_expiries": 22}
+  ],
+  "decision_contract": {
+    "pending_decision": "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+    "invalid_decision": "INVALID_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+    "futility_decision": "STOP_OPTION_VRP_GROSS_OR_STRESS_EDGE_ABSENT",
+    "execution_stop_decision": "STOP_OPTION_VRP_EXECUTION_COST_DOMINATES",
+    "tail_stop_decision": "STOP_OPTION_VRP_TAIL_UNSTABLE",
+    "continue_decision": "CONTINUE_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+    "final_pass_decision": "PASS_FOR_OPTION_VRP_MODEL_COMPARISON_ONLY"
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

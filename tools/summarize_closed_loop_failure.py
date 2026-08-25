@@ -112,6 +112,10 @@ UPSTREAM_REPORTS = {
         "option_variance_risk_premium_feasibility.json",
         {"COMPLETE", "NOT_READY"},
     ),
+    "option_variance_risk_premium_sequential_payoff": (
+        "option_variance_risk_premium_sequential_payoff.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json",
         {"COMPLETE", "NOT_READY"},
@@ -1130,6 +1134,50 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
                     if value is not None:
                         metrics[key] = value
         section["metrics"] = metrics
+    elif name == "option_variance_risk_premium_sequential_payoff":
+        decision = report.get("decision")
+        allowed_decisions = {
+            "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+            "INVALID_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+            "STOP_OPTION_VRP_GROSS_OR_STRESS_EDGE_ABSENT",
+            "STOP_OPTION_VRP_EXECUTION_COST_DOMINATES",
+            "STOP_OPTION_VRP_TAIL_UNSTABLE",
+            "CONTINUE_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+            "PASS_FOR_OPTION_VRP_MODEL_COMPARISON_ONLY",
+        }
+        replay = report.get("capture_replay")
+        primary = report.get("primary_summary")
+        contract_ok = (
+            report.get("schema_version") == "option_variance_risk_premium_sequential_payoff_audit_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("research_domain") == "forward_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and decision in allowed_decisions
+            and isinstance(replay, Mapping)
+            and isinstance(primary, Mapping)
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = decision if decision in allowed_decisions else None
+        section["reason_code"] = report.get("reason_code")
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        metrics = {}
+        for source, keys in (
+            (replay, ("checksum_bound_seconds", "successful_poll_count", "eligible_snapshot_count", "invalid_segment_count")),
+            (primary, ("completed_expiry_count", "gross_mean_bps", "base_mean_bps", "stress_mean_bps", "stress_lcb_bps", "stress_ucb_bps")),
+        ):
+            if isinstance(source, Mapping):
+                for key in keys:
+                    value = _safe_number(source.get(key))
+                    if value is not None:
+                        metrics[key] = value
+        section["metrics"] = metrics
     elif name == "maker_execution_learnability_experiment":
         reasons = _safe_tokens(report.get("reason_codes"))
         decision = report.get("research_decision")
@@ -1854,6 +1902,26 @@ def _annotation(summary: Mapping[str, Any]) -> str:
             if value is not None:
                 option_vrp_progress_parts.append(f"{key}:{value}")
     option_vrp_progress = ",".join(option_vrp_progress_parts) or "UNAVAILABLE"
+    option_vrp_payoff = upstream.get(
+        "option_variance_risk_premium_sequential_payoff", {}
+    )
+    option_vrp_payoff_decision = (
+        option_vrp_payoff.get("research_decision", "UNAVAILABLE") or "UNAVAILABLE"
+    )
+    option_vrp_payoff_progress_parts: list[str] = []
+    option_vrp_payoff_metrics = option_vrp_payoff.get("metrics")
+    if isinstance(option_vrp_payoff_metrics, Mapping):
+        for key in (
+            "checksum_bound_seconds", "successful_poll_count",
+            "eligible_snapshot_count", "completed_expiry_count",
+            "stress_mean_bps", "stress_lcb_bps", "stress_ucb_bps",
+        ):
+            value = _safe_number(option_vrp_payoff_metrics.get(key))
+            if value is not None:
+                option_vrp_payoff_progress_parts.append(f"{key}:{value}")
+    option_vrp_payoff_progress = (
+        ",".join(option_vrp_payoff_progress_parts) or "UNAVAILABLE"
+    )
     maker_learnability = upstream.get(
         "maker_execution_learnability_experiment", {}
     )
@@ -1948,6 +2016,8 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         f"account_economics_progress={account_economics_progress}; "
         f"option_vrp_decision={option_vrp_decision}; "
         f"option_vrp_progress={option_vrp_progress}; "
+        f"option_vrp_payoff_decision={option_vrp_payoff_decision}; "
+        f"option_vrp_payoff_progress={option_vrp_payoff_progress}; "
         f"maker_learnability_decision={maker_learnability_decision}; "
         f"maker_learnability_leader={maker_learnability_leader}; "
         f"maker_learnability_progress={maker_learnability_progress}; "

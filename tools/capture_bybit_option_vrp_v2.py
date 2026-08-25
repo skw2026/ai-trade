@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
+import lzma
 import pathlib
 import time
 from typing import Any, Callable, Dict, Mapping, Sequence
@@ -22,6 +22,7 @@ QUOTE_COIN = "USDT"
 SETTLE_COIN = "USDT"
 HEDGE_SYMBOL = legacy.HEDGE_SYMBOL
 CAPTURE_ROOT_NAME = "bybit_btc_option_vrp_v2"
+RAW_CODEC = "xz_lzma_preset1"
 OUTPUT_FIELDS = legacy.OUTPUT_FIELDS
 SCOPE_CONTRACT = {
     "venue": "bybit",
@@ -191,7 +192,9 @@ def capture_live(
     seen_exec_ids: set[str] = set()
     started_epoch_ms = int(time.time() * 1000)
     deadline = time.monotonic() + duration_sec
-    with gzip.open(raw_output, "wt", encoding="utf-8") as handle:
+    if raw_output.suffix != ".xz":
+        raise ValueError("v2 raw output must use the frozen XZ codec")
+    with lzma.open(raw_output, "wt", encoding="utf-8", preset=1) as handle:
         while True:
             now_ms = int(time.time() * 1000)
             tickers = result_list(fetcher("/v5/market/tickers", {"category": "option", "baseCoin": BASE_COIN}, base_url=base_url))
@@ -270,6 +273,7 @@ def build_report(
         "scope_contract": dict(SCOPE_CONTRACT),
         "scope_identity_sha256": SCOPE_IDENTITY_SHA256,
         "capture_root_name": CAPTURE_ROOT_NAME,
+        "raw_codec": RAW_CODEC,
     })
     report["selection_contract"].update({
         "scope_identity_sha256": SCOPE_IDENTITY_SHA256,

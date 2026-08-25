@@ -546,6 +546,55 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(rejected["status"], "fail")
             self.assertTrue(any("no-profit-claim" in reason for reason in rejected["fail_reasons"]))
 
+    def test_option_vrp_sequential_wait_is_complete_and_cannot_pass_early(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "option_vrp_sequential.json"
+            input_manifest = {
+                "policy_canonical_sha256": "e1902110278fb2c72ec091a73f2cdb38ba394dfbc4741864ca85b9c3d08a17ee",
+                "manifest_canonical_sha256": "446625e67754f1fd07e149e4ff5bd1623677138aef028e40ce0d35b8a0284a9d",
+                "ordered_capture_inputs": [],
+            }
+            payload = {
+                "schema_version": "option_variance_risk_premium_sequential_payoff_audit_v1",
+                "status": "COMPLETE", "research_domain": "forward_development_only",
+                "promotion_evidence": False, "promotion_eligible": False,
+                "promotion_authority": False, "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "policy": {
+                    "canonical_sha256": "e1902110278fb2c72ec091a73f2cdb38ba394dfbc4741864ca85b9c3d08a17ee",
+                    "identity_verified": True,
+                },
+                "observation_manifest": {
+                    "canonical_sha256": "446625e67754f1fd07e149e4ff5bd1623677138aef028e40ce0d35b8a0284a9d",
+                    "identity_verified": True, "observation_start_epoch_ms": 1787686200000,
+                    "promotion_authority": False, "demo_activation_authorized": False,
+                    "live_activation_authorized": False,
+                },
+                "input_manifest": input_manifest,
+                "input_manifest_canonical_sha256": hashlib.sha256(json.dumps(
+                    input_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")).hexdigest(),
+                "capture_replay": {
+                    "checksum_bound_seconds": 0, "successful_poll_count": 0,
+                    "eligible_snapshot_count": 0, "valid_segment_count": 0,
+                    "invalid_segment_count": 0,
+                },
+                "primary_summary": {"completed_expiry_count": 0},
+                "episode_invalid_count": 0,
+                "decision": "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+                "reason_code": "INCONCLUSIVE", "review_day": None,
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            section = REPORT.assess_option_variance_risk_premium_sequential_payoff(path)
+            self.assertEqual(section["status"], "pass")
+            self.assertFalse(section["demo_activation_authorized"])
+            payload["decision"] = "PASS_FOR_OPTION_VRP_MODEL_COMPARISON_ONLY"
+            payload["review_day"] = 8
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_option_variance_risk_premium_sequential_payoff(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertTrue(any("before Day 35" in reason for reason in rejected["fail_reasons"]))
+
     def test_maker_learnability_architectures_are_visible_but_non_promotional(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "maker_learnability.json"

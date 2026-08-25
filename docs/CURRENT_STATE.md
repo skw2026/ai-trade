@@ -18,6 +18,8 @@
 - BTC 期权波动率风险溢价无模型可行性 v1 已在不可变 Research `#1101` 上完成：738 个活动合约、720 个双边合约，目标 DTE/moneyness 范围内有 197 个双边合约，P90 点差为 `8.6095%`，市场门槛全部通过。公开历史数据无法重建已到期期权的可执行 BBO，因此禁止伪造历史回测，正式决策为 `WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE`。
 - 2026-08-26 复核发现，v1 collector 的 delivery 请求未显式传 `settleCoin`；Bybit 会默认查询 USDC，而当前活动 BTC 期权为 `BTC/USDT/USDT`。因此 CD `#343` 后的旧 root 及其 65.632 秒覆盖仍是有效的市场/采集可行性证据，但不得用于正式 payoff、交割或 35 天顺序结论。
 - option VRP 正迁移到隔离的 v2 schema/root：只接受 `BTC/USDT/USDT` 合约，保存完整数量/费率单位，并将 delivery 按 `symbol + deliveryTime + settleCoin` 绑定。v2 原始采集部署成功仅表示数据具备 payoff 资格；正式 observation start 必须晚于顺序 payoff 合同 manifest 冻结时间，不能沿用旧 root 或开发期覆盖。
+- 顺序 payoff v1 已冻结：policy identity 为 `e1902110278fb2c72ec091a73f2cdb38ba394dfbc4741864ca85b9c3d08a17ee`，manifest identity 为 `446625e67754f1fd07e149e4ff5bd1623677138aef028e40ce0d35b8a0284a9d`，正式 observation start 为 `2026-08-25T19:30:00Z`（Asia/Shanghai `2026-08-26 03:30:00`）。Day 8/14/21/28 只允许提前 STOP，Day 35 才允许 `PASS_FOR_OPTION_VRP_MODEL_COMPARISON_ONLY`。
+- 冻结前公开 XZ one-shot 已验证：204 个 scoped 双边合约、USDT delivery query PASS、单 poll raw 约 70 KiB；本地全量构建与 69/69 CTest 通过。该 one-shot 早于 observation start，只是工程证据，不计入正式覆盖或收益。
 - 发布与研究证据链已技术收敛，但可盈利经济机制尚未收敛。下一阶段按 `docs/plans/2026-08-26-option-vrp-sequential-payoff.md` 完成合同、payoff/hedge 审计、顺序门禁和 Closed Loop 接入；工程完成后才进入不可压缩的前向时间验证。期间不训练模型，也不得申请 Demo/live 权限。
 - 自进化保持 shadow/evidence-only；没有正收益 frozen candidate 前不得影响 Demo 动作。
 
@@ -86,7 +88,7 @@ maker first-passage、跨资产残差、单场 spot-perp carry 和跨场 perp-pe
 
 新的研究项必须先提供可审计的实际账户 fee/rebate、场所和资本合同，并在无模型 stress break-even 下显示足够安全边际；机制还必须与四个已关闭族有实质不同。只有结构上限通过后，才允许预注册原始数据 forward、目标架构比较和 Demo incubation。输入不足时保持暂停 Alpha 参数搜索，而不是继续优化负经济目标。
 
-期权 v1 已完成当前 BBO、成交、IV/Greeks、到期/行权和市场可采集性审计。Bybit 不提供可回溯的历史期权可执行盘口，所以当前只允许 checksum-bound 前向采集；正常保留 240 小时，部署压力保留不得低于 193 小时。旧 v1 root 不再具有正式收益证据资格；v2 使用独立 root，并显式绑定 USDT 结算、合约数量单位、交割时间和交割价。
+期权 v1 已完成当前 BBO、成交、IV/Greeks、到期/行权和市场可采集性审计。Bybit 不提供可回溯的历史期权可执行盘口，所以当前只允许 checksum-bound 前向采集。旧 v1 root 继续按正常 240 小时、部署压力不低于 193 小时保留，但不再具有正式收益证据资格；v2 使用独立 root、无损 XZ raw codec，显式绑定 USDT 结算、合约数量单位、交割时间和交割价，正常保留 960 小时，部署压力下也不得低于 864 小时，从而保证 Day 35 及其审查余量仍可从原始 segment 全量重算。
 
 顺序 payoff 合同冻结后，Day 8 首个门槛至少要求 691,200 秒有效覆盖、1,000 次轮询、预注册数量的有交割价完成到期日和 0 个坏校验和。审计只使用真实 option bid/ask 入场、真实 BTCUSDT bid/ask 因果 delta hedge、冻结费率、交割费和压力成本。Day 8/14/21/28 只允许提前 STOP，不允许提前 PASS；最早在 Day 35 全部门禁通过后才可进入独立模型比较，仍不构成 Demo 权限。
 

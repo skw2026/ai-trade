@@ -83,7 +83,8 @@ Day 35 stress LCB、expiry 稳定性、边界和完整性全部通过
 3. delivery evidence 按 `symbol + deliveryTime + settleCoin` 绑定；call/put 同 strike 的 delivery price 必须一致。
 4. v2 使用新 schema 和新 root，避免旧 v1 segment 与新语义混合后伪造连续覆盖；v1 auditor 继续只读原 root。
 5. collector health 写入 capture schema、scope identity 和最后成功 delivery query 状态。
-6. 新 root 首个有效 segment 证明数据具备正式 payoff 资格；顺序证据的 observation start 仍必须晚于 Task 1 合同 manifest 的冻结时间。旧 root 仅保留为 feasibility 证据。
+6. v2 raw 使用 checksum-bound 无损 XZ，正常保留 960 小时，部署压力下不得低于 864 小时；不得在 Day 35 审查及其余量前删除正式 observation segment。
+7. 新 root 首个有效 segment 证明数据具备正式 payoff 资格；顺序证据的 observation start 仍必须晚于 Task 1 合同 manifest 的冻结时间。旧 root 仅保留为 feasibility 证据。
 
 **验收：** 错误/缺失 settle coin、默认 USDC response、delivery timestamp 漂移、qtyStep 不匹配和跨币种 symbol 全部失败关闭；公开 one-shot 必须返回 USDT scope 并生成有效 checksum report。
 

@@ -16,6 +16,8 @@ from typing import Any, Dict
 SCHEMA_VERSION = "microstructure_capture_retention_v1"
 UPGRADE_SOURCE_SCHEMA_VERSION = "bybit_cross_asset_microstructure_v2"
 UPGRADE_TARGET_SCHEMA_VERSION = "bybit_cross_asset_microstructure_v3"
+OPTION_VRP_XZ_SCHEMA_VERSION = "bybit_btc_option_vrp_capture_v2"
+OPTION_VRP_XZ_CODEC = "xz_lzma_preset1"
 
 
 def _safe_regular_file(path: pathlib.Path, parent: pathlib.Path) -> bool:
@@ -65,7 +67,12 @@ def _expired_bundle_files(
         and upgrade.get("raw_payload_mutated") is False
     )
     if not is_deterministic_upgrade:
-        if raw_name != f"{segment_id}.jsonl.gz":
+        is_option_vrp_xz = bool(
+            payload.get("schema_version") == OPTION_VRP_XZ_SCHEMA_VERSION
+            and payload.get("raw_codec") == OPTION_VRP_XZ_CODEC
+        )
+        expected_raw_name = f"{segment_id}.jsonl.xz" if is_option_vrp_xz else f"{segment_id}.jsonl.gz"
+        if raw_name != expected_raw_name:
             raise ValueError("raw filename does not bind report")
         if feature_name != f"{segment_id}.csv":
             raise ValueError("feature filename does not bind report")

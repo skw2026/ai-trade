@@ -104,6 +104,7 @@ jobs:
           grep -q "option_vrp_capture_test" /tmp/ctest-list.txt
           grep -q "option_vrp_capture_v2_test" /tmp/ctest-list.txt
           grep -q "option_vrp_feasibility_audit_test" /tmp/ctest-list.txt
+          grep -q "option_vrp_sequential_payoff_audit_test" /tmp/ctest-list.txt
           grep -q "maker_execution_learnability_experiment_test" /tmp/ctest-list.txt
           grep -q "maker_subsecond_information_experiment_test" /tmp/ctest-list.txt
           grep -q "run_market_alpha_development_test" /tmp/ctest-list.txt

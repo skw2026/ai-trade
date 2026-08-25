@@ -389,10 +389,11 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("restart: unless-stopped", collector)
             self.assertIn("healthcheck", collector)
             self.assertIn("bybit_btc_option_vrp_v2", collector)
+            self.assertIn("OPTION_VRP_V2_RETENTION_HOURS:-960", collector)
             self.assertIn("OPTION_VRP_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("OPTION_VRP_SEGMENT_DURATION_SEC:-905", collector)
             self.assertIn("OPTION_VRP_POLL_INTERVAL_SEC:-60", collector)
-            self.assertIn("OPTION_VRP_RETENTION_HOURS:-240", collector)
+            self.assertNotIn("OPTION_VRP_RETENTION_HOURS:-240", collector)
             self.assertNotIn("API_KEY", collector)
             self.assertNotIn("API_SECRET", collector)
         self.assertIn(
@@ -776,6 +777,14 @@ class ComposeConsistencyTest(unittest.TestCase):
             "option_variance_risk_premium_feasibility",
             research_contract["required_artifacts"],
         )
+        self.assertIn(
+            "option_variance_risk_premium_sequential_payoff",
+            research_contract["required_steps"],
+        )
+        self.assertIn(
+            "option_variance_risk_premium_sequential_payoff",
+            research_contract["required_artifacts"],
+        )
         self.assertLess(
             research_chain.index(
                 "run_observation_step cross_venue_funding_differential_experiment"
@@ -787,6 +796,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertLess(
             research_chain.index("run_observation_step account_structural_economics_audit"),
             research_chain.index("run_observation_step option_variance_risk_premium_feasibility"),
+        )
+        self.assertLess(
+            research_chain.index("run_observation_step option_variance_risk_premium_feasibility"),
+            research_chain.index("run_observation_step option_variance_risk_premium_sequential_payoff"),
         )
         self.assertIn(
             "research discovery completed without registration, activation, or restart",
@@ -914,6 +927,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "microstructure_alpha_lifecycle_report",
             "account_structural_economics_audit",
             "option_variance_risk_premium_feasibility",
+            "option_variance_risk_premium_sequential_payoff",
         ):
             self.assertIn(f'"{artifact_name}":', validator)
         run_blocks = re.findall(
@@ -1781,6 +1795,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS",
             "DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS",
             "DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS",
+            "DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS",
+            "DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS",
             "DEPLOY_LOCK_WAIT_SECONDS",
         ):
             with self.subTest(workflow_variable=variable):
@@ -1817,6 +1833,14 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             "DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS || '193' }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS || '960' }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS || '864' }}",
             workflow,
         )
         self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
@@ -2137,7 +2161,8 @@ ensure_deploy_post_pull_capacity
             self.assertIn("--expected-root-name\nbybit_btc_option_vrp\n", capture_args)
             self.assertIn("--expected-root-name\nbybit_btc_option_vrp_v2\n", capture_args)
             self.assertEqual(capture_args.count("--retention-hours\n35\n"), 2)
-            self.assertEqual(capture_args.count("--retention-hours\n193\n"), 2)
+            self.assertEqual(capture_args.count("--retention-hours\n193\n"), 1)
+            self.assertEqual(capture_args.count("--retention-hours\n864\n"), 1)
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             base_env["FAKE_FREE_AFTER_KIB"] = "20000"

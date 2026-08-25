@@ -72,6 +72,9 @@ LOCAL_ARTIFACT_FILENAMES = {
     "option_variance_risk_premium_feasibility": (
         "option_variance_risk_premium_feasibility.json"
     ),
+    "option_variance_risk_premium_sequential_payoff": (
+        "option_variance_risk_premium_sequential_payoff.json"
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),

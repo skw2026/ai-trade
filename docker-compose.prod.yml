@@ -119,7 +119,7 @@ services:
       - "--bootstrap-segment-duration-sec=${OPTION_VRP_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
       - "--segment-duration-sec=${OPTION_VRP_SEGMENT_DURATION_SEC:-905}"
       - "--poll-interval-sec=${OPTION_VRP_POLL_INTERVAL_SEC:-60}"
-      - "--retention-hours=${OPTION_VRP_RETENTION_HOURS:-240}"
+      - "--retention-hours=${OPTION_VRP_V2_RETENTION_HOURS:-960}"
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:

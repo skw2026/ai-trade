@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import gzip
 import json
+import lzma
 import pathlib
 import sys
 import tempfile
@@ -151,7 +151,7 @@ class OptionVrpCaptureV2Test(unittest.TestCase):
             return {"retCode": 0, "result": {"list": rows}}
 
         with tempfile.TemporaryDirectory() as temporary:
-            raw = pathlib.Path(temporary) / "segment.jsonl.gz"
+            raw = pathlib.Path(temporary) / "segment.jsonl.xz"
             rows, _, _, deliveries = capture.capture_live(
                 raw_output=raw,
                 duration_sec=0.0,
@@ -164,7 +164,7 @@ class OptionVrpCaptureV2Test(unittest.TestCase):
             )
             self.assertEqual(len(rows), 1)
             self.assertEqual(deliveries, [self.expiry])
-            with gzip.open(raw, "rt", encoding="utf-8") as handle:
+            with lzma.open(raw, "rt", encoding="utf-8") as handle:
                 payload = json.loads(handle.readline())
             self.assertEqual(payload["scope_identity_sha256"], capture.SCOPE_IDENTITY_SHA256)
         delivery_calls = [params for path, params, _ in calls if path.endswith("delivery-price")]
@@ -182,6 +182,7 @@ class OptionVrpCaptureV2Test(unittest.TestCase):
             )
             command, report = runner.segment_command(args, root=root, duration_sec=65.0)
             self.assertTrue(any(str(part).endswith("capture_bybit_option_vrp_v2.py") for part in command))
+            self.assertTrue(any(str(part).endswith(".jsonl.xz") for part in command))
             self.assertEqual(report.parent, root / "reports" / capture.BASE_COIN)
             root.mkdir(parents=True)
             (root / "collector_health.json").write_text(json.dumps({
@@ -189,6 +190,7 @@ class OptionVrpCaptureV2Test(unittest.TestCase):
                 "capture_schema_version": capture.SCHEMA_VERSION,
                 "snapshot_schema_version": capture.SNAPSHOT_SCHEMA_VERSION,
                 "scope_identity_sha256": capture.SCOPE_IDENTITY_SHA256,
+                "raw_codec": capture.RAW_CODEC,
                 "base_coin": capture.BASE_COIN,
                 "settle_coin": capture.SETTLE_COIN,
                 "delivery_query_status": "PASS",

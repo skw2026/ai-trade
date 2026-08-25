@@ -32,7 +32,7 @@ def utc_segment_id() -> str:
 
 def segment_command(args: argparse.Namespace, *, root: pathlib.Path, duration_sec: float) -> tuple[Sequence[str], pathlib.Path]:
     segment_id = utc_segment_id()
-    raw = root / "raw" / collector.BASE_COIN / f"{segment_id}.jsonl.gz"
+    raw = root / "raw" / collector.BASE_COIN / f"{segment_id}.jsonl.xz"
     features = root / "features" / collector.BASE_COIN / f"{segment_id}.csv"
     report = root / "reports" / collector.BASE_COIN / f"{segment_id}.json"
     return ([
@@ -60,6 +60,7 @@ def run(args: argparse.Namespace) -> int:
             "capture_schema_version": collector.SCHEMA_VERSION,
             "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
             "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+            "raw_codec": collector.RAW_CODEC,
             "delivery_query_status": "PENDING", "segment_started_epoch_ms": started,
             "consecutive_failures": failures,
         })
@@ -77,6 +78,7 @@ def run(args: argparse.Namespace) -> int:
                 "capture_schema_version": collector.SCHEMA_VERSION,
                 "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
                 "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+                "raw_codec": collector.RAW_CODEC,
                 "report": str(relative),
                 "report_payload": report, "completed_epoch_ms": completed_at,
             })
@@ -86,6 +88,7 @@ def run(args: argparse.Namespace) -> int:
                 "capture_schema_version": collector.SCHEMA_VERSION,
                 "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
                 "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+                "raw_codec": collector.RAW_CODEC,
                 "delivery_query_status": report.get("quality", {}).get("delivery_query_status"),
                 "segment_started_epoch_ms": started,
                 "last_success_epoch_ms": completed_at, "consecutive_failures": 0, "latest_report": str(relative),
@@ -100,6 +103,7 @@ def run(args: argparse.Namespace) -> int:
                 "capture_schema_version": collector.SCHEMA_VERSION,
                 "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
                 "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+                "raw_codec": collector.RAW_CODEC,
                 "delivery_query_status": "FAIL", "segment_started_epoch_ms": started,
                 "last_failure_epoch_ms": int(time.time() * 1000), "consecutive_failures": failures, "error": str(exc),
             })
@@ -119,6 +123,7 @@ def healthcheck(args: argparse.Namespace) -> int:
             and payload.get("capture_schema_version") == collector.SCHEMA_VERSION
             and payload.get("snapshot_schema_version") == collector.SNAPSHOT_SCHEMA_VERSION
             and payload.get("scope_identity_sha256") == collector.SCOPE_IDENTITY_SHA256
+            and payload.get("raw_codec") == collector.RAW_CODEC
             and payload.get("base_coin") == collector.BASE_COIN
             and payload.get("settle_coin") == collector.SETTLE_COIN
             and payload.get("delivery_query_status") in {"PENDING", "PASS"}

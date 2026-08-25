@@ -209,6 +209,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_capture_bybit_option_vrp_v2.py)
     add_test(NAME option_vrp_feasibility_audit_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_variance_risk_premium_feasibility.py)
+    add_test(NAME option_vrp_sequential_payoff_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_vrp_sequential_payoff.py)
     add_test(NAME maker_execution_learnability_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_maker_execution_learnability_experiment.py)
     add_test(NAME maker_subsecond_information_experiment_test

@@ -2288,6 +2288,112 @@ def assess_option_variance_risk_premium_feasibility(path: Path) -> Dict[str, Any
     }
 
 
+def assess_option_variance_risk_premium_sequential_payoff(path: Path) -> Dict[str, Any]:
+    """Expose frozen option payoff progress without converting it into activation evidence."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+        "INVALID_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+        "STOP_OPTION_VRP_GROSS_OR_STRESS_EDGE_ABSENT",
+        "STOP_OPTION_VRP_EXECUTION_COST_DOMINATES",
+        "STOP_OPTION_VRP_TAIL_UNSTABLE",
+        "CONTINUE_OPTION_VRP_SEQUENTIAL_EVIDENCE",
+        "PASS_FOR_OPTION_VRP_MODEL_COMPARISON_ONLY",
+    }
+    if payload.get("schema_version") != "option_variance_risk_premium_sequential_payoff_audit_v1":
+        fail_reasons.append("option VRP sequential payoff report schema mismatch")
+    if payload.get("status") != "COMPLETE":
+        fail_reasons.append("option VRP sequential payoff evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "forward_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+    ):
+        fail_reasons.append("option VRP sequential payoff isolation contract failed")
+    policy = payload.get("policy")
+    if not (
+        isinstance(policy, dict)
+        and policy.get("identity_verified") is True
+        and policy.get("canonical_sha256") == "e1902110278fb2c72ec091a73f2cdb38ba394dfbc4741864ca85b9c3d08a17ee"
+    ):
+        fail_reasons.append("option VRP sequential policy identity failed")
+    manifest = payload.get("observation_manifest")
+    if not (
+        isinstance(manifest, dict)
+        and manifest.get("identity_verified") is True
+        and manifest.get("canonical_sha256") == "446625e67754f1fd07e149e4ff5bd1623677138aef028e40ce0d35b8a0284a9d"
+        and isinstance(manifest.get("observation_start_epoch_ms"), int)
+        and manifest["observation_start_epoch_ms"] > 0
+        and manifest.get("promotion_authority") is False
+        and manifest.get("demo_activation_authorized") is False
+        and manifest.get("live_activation_authorized") is False
+    ):
+        fail_reasons.append("option VRP sequential observation manifest failed")
+    input_manifest = payload.get("input_manifest")
+    if not isinstance(input_manifest, dict) or hashlib.sha256(
+        json.dumps(input_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest() != payload.get("input_manifest_canonical_sha256"):
+        fail_reasons.append("option VRP sequential input hash chain failed")
+    replay = payload.get("capture_replay")
+    if not isinstance(replay, dict):
+        fail_reasons.append("option VRP sequential capture replay is missing")
+        replay = {}
+    decision = payload.get("decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("option VRP sequential decision is invalid")
+        decision = None
+    invalid_count = replay.get("invalid_segment_count")
+    episode_invalid_count = payload.get("episode_invalid_count")
+    if decision == "INVALID_OPTION_VRP_SEQUENTIAL_EVIDENCE" and not (
+        (isinstance(invalid_count, int) and invalid_count > 0)
+        or (isinstance(episode_invalid_count, int) and episode_invalid_count > 0)
+    ):
+        fail_reasons.append("option VRP INVALID decision lacks invalid segment or episode evidence")
+    if decision != "INVALID_OPTION_VRP_SEQUENTIAL_EVIDENCE" and (
+        (isinstance(invalid_count, int) and invalid_count > 0)
+        or (isinstance(episode_invalid_count, int) and episode_invalid_count > 0)
+    ):
+        fail_reasons.append("option VRP invalid evidence was not fail-closed")
+    review_day = payload.get("review_day")
+    if decision == "PASS_FOR_OPTION_VRP_MODEL_COMPARISON_ONLY" and review_day != 35:
+        fail_reasons.append("option VRP sequential PASS occurred before Day 35")
+    primary = payload.get("primary_summary")
+    metrics: Dict[str, Any] = {}
+    if isinstance(replay, dict):
+        for key in ("checksum_bound_seconds", "successful_poll_count", "eligible_snapshot_count", "valid_segment_count", "invalid_segment_count"):
+            value = replay.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                metrics[key] = value
+    if isinstance(primary, dict):
+        for key in ("completed_expiry_count", "gross_mean_bps", "base_mean_bps", "stress_mean_bps", "stress_lcb_bps", "stress_ucb_bps", "positive_expiry_ratio", "worst_expiry_bps"):
+            value = primary.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                metrics[key] = value
+    if isinstance(episode_invalid_count, int):
+        metrics["episode_invalid_count"] = episode_invalid_count
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [] if fail_reasons else [f"option VRP sequential payoff decision: {decision}"],
+        "research_decision": decision,
+        "reason_code": payload.get("reason_code"),
+        "review_day": review_day,
+        "metrics": metrics,
+        "research_observation_only": True,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "option_variance_risk_premium_sequential_payoff_stage_review",
+    }
+
+
 def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]:
     """Expose maker model learnability while preserving the promotion firewall."""
 
@@ -4964,6 +5070,11 @@ def parse_args() -> argparse.Namespace:
         help="期权波动率风险溢价无模型可行性与前向采集门禁报告路径",
     )
     parser.add_argument(
+        "--option_variance_risk_premium_sequential_payoff_report",
+        default="",
+        help="期权波动率风险溢价顺序全成本 payoff 审计报告路径",
+    )
+    parser.add_argument(
         "--maker_execution_learnability_experiment_report",
         default="",
         help="保守 maker-entry 三架构可学习性实验报告路径",
@@ -5493,6 +5604,20 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {audit_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "option_variance_risk_premium_feasibility_stage_review",
+            }
+    if args.option_variance_risk_premium_sequential_payoff_report:
+        audit_path = Path(args.option_variance_risk_premium_sequential_payoff_report)
+        if audit_path.is_file():
+            sections["option_variance_risk_premium_sequential_payoff"] = (
+                assess_option_variance_risk_premium_sequential_payoff(audit_path)
+            )
+        else:
+            sections["option_variance_risk_premium_sequential_payoff"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {audit_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "option_variance_risk_premium_sequential_payoff_stage_review",
             }
     if args.maker_execution_learnability_experiment_report:
         experiment_path = Path(args.maker_execution_learnability_experiment_report)

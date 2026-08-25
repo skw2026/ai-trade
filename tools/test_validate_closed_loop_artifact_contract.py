@@ -181,6 +181,12 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         )
         self.assertEqual(
             VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "option_variance_risk_premium_sequential_payoff"
+            ],
+            "option_variance_risk_premium_sequential_payoff.json",
+        )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
                 "maker_subsecond_information_experiment"
             ],
             "maker_subsecond_information_experiment.json",
@@ -244,6 +250,11 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         self.assertIn(
             'SUMMARY_ARGS+=(--option_variance_risk_premium_feasibility_report '
             '"${OPTION_VRP_FEASIBILITY_REPORT_PATH}")',
+            source,
+        )
+        self.assertIn(
+            'SUMMARY_ARGS+=(--option_variance_risk_premium_sequential_payoff_report '
+            '"${OPTION_VRP_SEQUENTIAL_REPORT_PATH}")',
             source,
         )
         self.assertIn(

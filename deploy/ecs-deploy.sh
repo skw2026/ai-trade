@@ -55,12 +55,14 @@ DEPLOY_REPORT_MAX_AGE_HOURS="${DEPLOY_REPORT_MAX_AGE_HOURS:-72}"
 DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"
 DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-69}"
 DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS:-240}"
+DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-960}"
 # Only used when post-pull free space is below the deployment transaction
 # floor.  Preserve one complete frozen 34.2h window while releasing the older
 # retry window so a digest-pinned deployment can finish without touching the
 # currently running services or Docker volumes.
 DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS:-35}"
 DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS:-193}"
+DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-864}"
 # The production scheduler's bounded Closed Loop run may hold this lock for
 # up to 4800 seconds.  A standalone deploy must wait beyond that contract.
 DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-5400}"
@@ -355,6 +357,7 @@ cleanup_deploy_host_storage() {
   fi
   local variable_name=""
   DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS:-240}"
+  DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-960}"
   for variable_name in \
     DEPLOY_RELEASE_KEEP_COUNT \
     DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT \
@@ -362,7 +365,8 @@ cleanup_deploy_host_storage() {
     DEPLOY_REPORT_MAX_AGE_HOURS \
     DEPLOY_REPORT_MAX_BYTES \
     DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS \
-    DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS
+    DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS \
+    DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS
   do
     if [[ ! "${!variable_name}" =~ ^[0-9]+$ ]]; then
       echo "[deploy] invalid ${variable_name}: ${!variable_name}"
@@ -420,6 +424,10 @@ cleanup_deploy_host_storage() {
     echo "[deploy] option VRP capture retention must preserve the frozen 10-day evidence budget"
     return 1
   fi
+  if (( DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS < 960 )); then
+    echo "[deploy] option VRP v2 retention must preserve the frozen 35-day evidence plus five-day safety budget"
+    return 1
+  fi
   if ! python3 "${capture_pruner}" \
       --root "${DEPLOY_RELEASE_ROOT}/data/research/microstructure" \
       --expected-root-name microstructure \
@@ -444,7 +452,7 @@ cleanup_deploy_host_storage() {
   if ! python3 "${capture_pruner}" \
       --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp_v2" \
       --expected-root-name bybit_btc_option_vrp_v2 \
-      --retention-hours "${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
+      --retention-hours "${DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS}"; then
     echo "[deploy] Bybit option VRP v2 research capture cleanup failed"
     return 1
   fi
@@ -536,6 +544,7 @@ reclaim_research_capture_for_transaction() {
     return 0
   fi
   DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS:-193}"
+  DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-864}"
   if [[ ! "${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS}" =~ ^[0-9]+$ ]] ||
      (( DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS < 35 )); then
     echo "[deploy] emergency research capture retention must preserve one frozen 34.2h window"
@@ -546,6 +555,12 @@ reclaim_research_capture_for_transaction() {
      (( DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS < 193 )); then
     echo "[deploy] emergency option VRP capture retention must preserve the initial 8-day gate"
     DEPLOY_DISK_FAILURE_REASON="invalid_pressure_option_vrp_capture_retention"
+    return 1
+  fi
+  if [[ ! "${DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS}" =~ ^[0-9]+$ ]] ||
+     (( DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS < 864 )); then
+    echo "[deploy] emergency option VRP v2 retention must preserve the frozen 35-day evidence plus review margin"
+    DEPLOY_DISK_FAILURE_REASON="invalid_pressure_option_vrp_v2_capture_retention"
     return 1
   fi
   local capture_pruner="${COMPOSE_DIR}/tools/prune_microstructure_capture.py"
@@ -579,7 +594,7 @@ reclaim_research_capture_for_transaction() {
   if ! python3 "${capture_pruner}" \
       --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp_v2" \
       --expected-root-name bybit_btc_option_vrp_v2 \
-      --retention-hours "${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
+      --retention-hours "${DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS}"; then
     DEPLOY_DISK_FAILURE_REASON="pressure_option_vrp_v2_capture_gc_failed"
     return 1
   fi
