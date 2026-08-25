@@ -12,7 +12,8 @@
 - 固定持有期方向性 maker payoff 已由 v2/v3 连续否定并关闭；禁止继续调该研究族的模型、阈值、特征或成本。
 - v4/v5 first-passage 被动止盈分别产生 74/79 笔有效交易；两者 stress LCB 为正但均未过 100 笔且 boundary pass ratio 为 0。单边 maker first-passage 机制已经最终关闭，不得继续调模型、止盈、期限、成本或占用规则。
 - SOL 对 BTC/ETH 的美元中性残差 v1 已在不可变 Research `#1096` 上明确 STOP：仅 15 笔，stress LCB 为 `-0.4643 bps`，boundary pass ratio 为 0。不得继续调该残差族的权重网格、期限、阈值、模型或成本。
-- 下一阶段只允许先做现货–永续资金费率/基差 carry 的数据可验证性与无模型全成本审计；通过前不得训练新模型，也不得申请 Demo/live 权限。
+- Bybit SOL 现货–永续资金费率/基差 carry v1 已在不可变 Research `#1098` 上明确 STOP：40,321 个同步 5 分钟样本和 420 个真实 funding settlement 下，6 个 OOS split 均无全成本后正候选，boundary pass ratio 为 0。不得继续调该 carry 族的期限、成本、方向或模型。
+- 下一阶段只允许先做同一资产的跨交易所永续–永续 funding differential/basis 数据可验证性与无模型全成本审计；通过前不得训练新模型，也不得申请 Demo/live 权限。
 - 自进化保持 shadow/evidence-only；没有正收益 frozen candidate 前不得影响 Demo 动作。
 
 ## 工作流边界
@@ -56,15 +57,21 @@ v5 已证明该 payoff 的机会密度和边界稳定性不足，因此 `sequent
 
 Research `#1096` 在 base/stress 显式成本 `26.0/32.5 bps` 下只有 15 笔 hindsight 交易；正 stress split 比例为 `0.8333`，base/stress LCB 为 `3.1272/-0.4643 bps`，boundary pass ratio 为 0。primary 与 boundary 同时失败，最终决策为 `STOP_CROSS_ASSET_RESIDUAL_FAMILY`；没有 forward、模型、Demo 或 live 权限。
 
+## 已关闭的单市场资金费率/基差 carry
+
+v1 使用 Bybit SOLUSDT spot、linear perpetual 与 mark-price 5 分钟历史，funding 只按真实 settlement timestamp、`entry exclusive / exit inclusive` 计入一次。动作仅为有资金覆盖的 long-spot/short-perp，期限固定为 24/72/168 小时，并计入两腿往返 taker fee、half-spread、slippage、两倍 gross capital 和 1.25 倍执行压力成本。
+
+Research `#1098` 的 6 个 frozen OOS split 中没有任何 stress-net 为正的非重叠候选，最终决策为 `STOP_FUNDING_BASIS_CARRY_FAMILY`。本地同合同诊断的最佳单候选在 funding 与基差合计仅约 `3.998 bps` 时，需要承担约 `34.800 bps` 的执行成本，base/stress 净值约为 `-33.542/-43.611 bps`；差距不是模型筛选可以弥补的。该族不等待 raw BBO forward，不进入模型、Demo 或 live。
+
 ## 下一经济机制
 
-下一项只做低换手现货–永续 carry 的可验证性审计，避免再次用 15–300 秒高换手收益承担多腿全 taker 成本。第一阶段必须构建同一时间轴上的实际 funding settlement、永续与现货可执行 bid/ask、基差、手续费、滑点、资金占用和现货借贷边界；实时 indicative funding 不能替代历史结算流水。
+下一项只验证 SOLUSDT 跨交易所 linear perpetual funding differential/basis。动作域允许在两个场所中做多实际 funding 较低的一腿、做空实际 funding 较高的一腿，但必须两边都有独立保证金覆盖；不得假设即时跨场所划转、共享保证金或无成本再平衡。
 
-初始动作域只允许“买现货、空永续”的有资金覆盖 cash-and-carry；反向 carry 在没有可审计借币成本和可借数量前禁用。先运行无模型全成本上界，只有跨多个 funding 周期的 frozen OOS、边界和独立 forward 均过门，才允许讨论预测模型。
+第一阶段只构建两场所真实 funding settlement、mark notional、同步价格、费用/滑点、保证金资金占用和腿间执行风险的精确时间轴，并运行无模型全成本 hindsight upper bound。primary split 尽可能精确继承 carry v1 的 6 个绝对 split；共享覆盖不足时必须 fail-closed，禁止滚动重切。只有 primary、边界和随后未观察 raw BBO forward 同时过门，才允许讨论机会识别、方向/期限或联合动作排序模型。
 
 ## 晋级权限
 
-当前所有 maker 与残差报告仍为 `development_only`，且：
+当前所有 maker、残差与 carry 报告仍为 `development_only`，且：
 
 - `promotion_authority=false`
 - `demo_activation_authorized=false`
