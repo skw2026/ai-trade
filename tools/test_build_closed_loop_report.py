@@ -403,6 +403,71 @@ class BuildClosedLoopReportTest(unittest.TestCase):
             self.assertEqual(rejected["status"], "fail")
             self.assertIn("proxy firewall", rejected["fail_reasons"][0])
 
+    def test_account_fee_tier_stop_is_complete_non_promotional_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "account_structural_economics.json"
+            payload = {
+                "schema_version": "account_structural_economics_audit_v1",
+                "status": "COMPLETE",
+                "fully_verifiable_zero_fee_upper_bound": True,
+                "account_cost_verification_status": "UNAVAILABLE",
+                "research_domain": "account_cost_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "privacy_contract": {
+                    "read_only_requests_only": True,
+                    "api_key_recorded": False,
+                    "api_secret_recorded": False,
+                    "account_uid_recorded": False,
+                    "exact_balance_recorded": False,
+                },
+                "account_observations": {
+                    "bybit": {"status": "NOT_READY"},
+                    "binance": {"status": "NOT_READY"},
+                },
+                "zero_fee_upper_bound": {
+                    "upstream_gross_bps": 9.1442,
+                    "upstream_execution_cost_bps": 27.9059,
+                    "inferred_base_capital_cost_bps": 2.7397,
+                    "inferred_stress_capital_cost_bps": 4.1096,
+                    "zero_fee_non_fee_execution_cost_bps": 5.9855,
+                    "zero_fee_base_net_bps": 0.4189,
+                    "zero_fee_stress_net_bps": -2.4473,
+                    "minimum_stress_net_bps": 0.0,
+                    "passes": False,
+                    "all_account_trading_fees_assumed_zero": True,
+                    "four_taker_fills_round_trip": True,
+                    "fee_rebates_capped_at_gross_trading_fees": True,
+                    "external_liquidity_subsidies_in_scope": False,
+                    "maker_fill_assumed": False,
+                    "historical_price_is_executable_bbo": False,
+                },
+                "structural_decision": (
+                    "STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING"
+                ),
+                "reason_codes": ["zero_fee_stress_upper_bound_non_positive"],
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            section = REPORT.assess_account_structural_economics_audit(path)
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["readiness_status"], "PASS_WITH_ACTIONS")
+            self.assertAlmostEqual(
+                section["metrics"]["zero_fee_stress_net_bps"], -2.4473
+            )
+            self.assertFalse(section["promotion_authority"])
+            self.assertFalse(section["demo_activation_authorized"])
+
+            payload["account_observations"]["bybit"]["available_balance"] = 999.0
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_account_structural_economics_audit(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertTrue(
+                any("private fields" in reason for reason in rejected["fail_reasons"])
+            )
+
     def test_maker_learnability_architectures_are_visible_but_non_promotional(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "maker_learnability.json"

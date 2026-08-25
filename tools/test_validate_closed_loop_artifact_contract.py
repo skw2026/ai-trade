@@ -169,6 +169,12 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         )
         self.assertEqual(
             VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
+                "account_structural_economics_audit"
+            ],
+            "account_structural_economics_audit.json",
+        )
+        self.assertEqual(
+            VALIDATOR.LOCAL_ARTIFACT_FILENAMES[
                 "maker_subsecond_information_experiment"
             ],
             "maker_subsecond_information_experiment.json",
@@ -222,6 +228,11 @@ class DownloadClosedLoopReportsContractTest(unittest.TestCase):
         self.assertIn(
             'SUMMARY_ARGS+=(--cross_venue_funding_differential_experiment_report '
             '"${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}")',
+            source,
+        )
+        self.assertIn(
+            'SUMMARY_ARGS+=(--account_structural_economics_audit_report '
+            '"${ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH}")',
             source,
         )
         self.assertIn(

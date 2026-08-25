@@ -66,6 +66,9 @@ LOCAL_ARTIFACT_FILENAMES = {
     "cross_venue_funding_differential_frozen_audit": (
         "cross_venue_funding_differential_frozen_audit.json"
     ),
+    "account_structural_economics_audit": (
+        "account_structural_economics_audit.json"
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),

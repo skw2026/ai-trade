@@ -1,0 +1,65 @@
+{
+  "schema_version": "account_structural_economics_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "sol_cross_venue_account_cost_rescue_audit_v1",
+  "input_contract": {
+    "upstream_schema_version": "cross_venue_funding_differential_experiment_v1",
+    "required_upstream_decision": "STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY",
+    "symbol": "SOLUSDT",
+    "reference_notional_usd_per_venue": 380.0,
+    "minimum_available_balance_multiplier": 1.25
+  },
+  "private_account_contract": {
+    "read_only_requests_only": true,
+    "record_api_key": false,
+    "record_account_uid": false,
+    "record_exact_balance": false,
+    "bybit": {
+      "environment": "demo",
+      "base_url": "https://api-demo.bybit.com",
+      "fee_endpoint": "/v5/account/fee-rate",
+      "balance_endpoint": "/v5/account/wallet-balance",
+      "api_key_env": "AI_TRADE_BYBIT_DEMO_API_KEY",
+      "api_secret_env": "AI_TRADE_BYBIT_DEMO_API_SECRET",
+      "fallback_api_key_env": "AI_TRADE_API_KEY",
+      "fallback_api_secret_env": "AI_TRADE_API_SECRET"
+    },
+    "binance": {
+      "environment": "demo",
+      "base_url": "https://demo-fapi.binance.com",
+      "fee_endpoint": "/fapi/v1/commissionRate",
+      "balance_endpoint": "/fapi/v3/account",
+      "time_endpoint": "/fapi/v1/time",
+      "api_key_env": "AI_TRADE_BINANCE_DEMO_API_KEY",
+      "api_secret_env": "AI_TRADE_BINANCE_DEMO_API_SECRET"
+    }
+  },
+  "zero_fee_upper_bound": {
+    "upstream_bybit_taker_fee_bps_per_fill": 5.5,
+    "upstream_binance_taker_fee_bps_per_fill": 5.5,
+    "upstream_bybit_slippage_bps_per_fill": 1.0,
+    "upstream_binance_slippage_bps_per_fill": 1.0,
+    "bybit_round_trip_slippage_bps": 2.0,
+    "binance_round_trip_slippage_bps": 2.0,
+    "intervenue_round_trip_leg_risk_bps": 2.0,
+    "half_spread_already_in_upstream_gross": true,
+    "execution_style": "four_taker_fills_round_trip",
+    "minimum_net_taker_fee_bps_per_fill_after_rebate": 0.0,
+    "fee_rebates_capped_at_gross_trading_fees": true,
+    "external_liquidity_subsidies_in_scope": false,
+    "stress_execution_cost_multiplier": 1.25,
+    "minimum_stress_net_bps": 0.0
+  },
+  "decision_contract": {
+    "continue_decision": "ALLOW_DISTINCT_STRUCTURAL_EDGE_INTAKE",
+    "wait_decision": "WAIT_FOR_COMPLETE_ACCOUNT_COST_VERIFICATION",
+    "stop_decision": "STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING",
+    "account_verification_required_to_continue": true
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

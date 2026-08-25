@@ -104,6 +104,10 @@ UPSTREAM_REPORTS = {
         "cross_venue_funding_differential_experiment.json",
         {"COMPLETE", "NOT_READY"},
     ),
+    "account_structural_economics_audit": (
+        "account_structural_economics_audit.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json",
         {"COMPLETE", "NOT_READY"},
@@ -1013,6 +1017,64 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
         section["metrics"] = {
             key: value for key, value in metrics.items() if value is not None
         }
+    elif name == "account_structural_economics_audit":
+        reasons = _safe_tokens(report.get("reason_codes"))
+        decision = report.get("structural_decision")
+        allowed_decisions = {
+            "ALLOW_DISTINCT_STRUCTURAL_EDGE_INTAKE",
+            "WAIT_FOR_COMPLETE_ACCOUNT_COST_VERIFICATION",
+            "STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING",
+        }
+        zero = report.get("zero_fee_upper_bound")
+        privacy = report.get("privacy_contract")
+        contract_ok = (
+            report.get("schema_version") == "account_structural_economics_audit_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("fully_verifiable_zero_fee_upper_bound") is True
+            and report.get("research_domain") == "account_cost_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and isinstance(privacy, Mapping)
+            and privacy.get("read_only_requests_only") is True
+            and privacy.get("api_key_recorded") is False
+            and privacy.get("api_secret_recorded") is False
+            and privacy.get("account_uid_recorded") is False
+            and privacy.get("exact_balance_recorded") is False
+            and isinstance(zero, Mapping)
+            and zero.get("all_account_trading_fees_assumed_zero") is True
+            and zero.get("four_taker_fills_round_trip") is True
+            and zero.get("fee_rebates_capped_at_gross_trading_fees") is True
+            and zero.get("external_liquidity_subsidies_in_scope") is False
+            and zero.get("historical_price_is_executable_bbo") is False
+            and isinstance(zero.get("passes"), bool)
+            and decision in allowed_decisions
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["structural_decision"] = (
+            decision if decision in allowed_decisions else None
+        )
+        section["account_cost_verification_status"] = report.get(
+            "account_cost_verification_status"
+        )
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        section["metrics"] = {
+            key: value
+            for key in (
+                "upstream_gross_bps",
+                "upstream_execution_cost_bps",
+                "inferred_stress_capital_cost_bps",
+                "zero_fee_non_fee_execution_cost_bps",
+                "zero_fee_base_net_bps",
+                "zero_fee_stress_net_bps",
+            )
+            if (value := _safe_number(zero.get(key))) is not None
+        } if isinstance(zero, Mapping) else {}
     elif name == "maker_execution_learnability_experiment":
         reasons = _safe_tokens(report.get("reason_codes"))
         decision = report.get("research_decision")
@@ -1701,6 +1763,27 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     cross_venue_funding_progress = (
         ",".join(cross_venue_funding_progress_parts) or "UNAVAILABLE"
     )
+    account_economics = upstream.get("account_structural_economics_audit", {})
+    account_economics_decision = (
+        account_economics.get("structural_decision", "UNAVAILABLE") or "UNAVAILABLE"
+    )
+    account_economics_progress_parts: list[str] = []
+    account_economics_metrics = account_economics.get("metrics")
+    if isinstance(account_economics_metrics, Mapping):
+        for key in (
+            "upstream_gross_bps",
+            "upstream_execution_cost_bps",
+            "inferred_stress_capital_cost_bps",
+            "zero_fee_non_fee_execution_cost_bps",
+            "zero_fee_base_net_bps",
+            "zero_fee_stress_net_bps",
+        ):
+            value = _safe_number(account_economics_metrics.get(key))
+            if value is not None:
+                account_economics_progress_parts.append(f"{key}:{value}")
+    account_economics_progress = (
+        ",".join(account_economics_progress_parts) or "UNAVAILABLE"
+    )
     maker_learnability = upstream.get(
         "maker_execution_learnability_experiment", {}
     )
@@ -1791,6 +1874,8 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         f"carry_opportunity_progress={carry_opportunity_progress}; "
         f"cross_venue_funding_decision={cross_venue_funding_decision}; "
         f"cross_venue_funding_progress={cross_venue_funding_progress}; "
+        f"account_economics_decision={account_economics_decision}; "
+        f"account_economics_progress={account_economics_progress}; "
         f"maker_learnability_decision={maker_learnability_decision}; "
         f"maker_learnability_leader={maker_learnability_leader}; "
         f"maker_learnability_progress={maker_learnability_progress}; "

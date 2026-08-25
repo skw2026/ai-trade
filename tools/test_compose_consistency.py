@@ -742,6 +742,22 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("miner", research_contract["required_steps"])
         self.assertIn("miner_report", research_contract["required_artifacts"])
         self.assertIn(
+            "account_structural_economics_audit",
+            research_contract["required_steps"],
+        )
+        self.assertIn(
+            "account_structural_economics_audit",
+            research_contract["required_artifacts"],
+        )
+        self.assertLess(
+            research_chain.index(
+                "run_observation_step cross_venue_funding_differential_experiment"
+            ),
+            research_chain.index(
+                "run_observation_step account_structural_economics_audit"
+            ),
+        )
+        self.assertIn(
             "research discovery completed without registration, activation, or restart",
             script,
         )
@@ -865,6 +881,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "microstructure_alpha_candidate_manifest",
             "microstructure_alpha_model",
             "microstructure_alpha_lifecycle_report",
+            "account_structural_economics_audit",
         ):
             self.assertIn(f'"{artifact_name}":', validator)
         run_blocks = re.findall(

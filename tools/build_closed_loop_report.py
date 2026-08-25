@@ -1999,6 +1999,153 @@ def assess_cross_venue_funding_differential_experiment(path: Path) -> Dict[str, 
     }
 
 
+def assess_account_structural_economics_audit(path: Path) -> Dict[str, Any]:
+    """Expose the account-cost rescue bound without granting trading authority."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "ALLOW_DISTINCT_STRUCTURAL_EDGE_INTAKE",
+        "WAIT_FOR_COMPLETE_ACCOUNT_COST_VERIFICATION",
+        "STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING",
+    }
+    if payload.get("schema_version") != "account_structural_economics_audit_v1":
+        fail_reasons.append("account structural economics report schema mismatch")
+    if not (
+        payload.get("status") == "COMPLETE"
+        and payload.get("fully_verifiable_zero_fee_upper_bound") is True
+    ):
+        fail_reasons.append("account structural economics evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "account_cost_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+    ):
+        fail_reasons.append("account structural economics isolation contract failed")
+    privacy = payload.get("privacy_contract")
+    if not (
+        isinstance(privacy, dict)
+        and privacy.get("read_only_requests_only") is True
+        and privacy.get("api_key_recorded") is False
+        and privacy.get("api_secret_recorded") is False
+        and privacy.get("account_uid_recorded") is False
+        and privacy.get("exact_balance_recorded") is False
+    ):
+        fail_reasons.append("account structural economics privacy contract failed")
+    account_status = payload.get("account_cost_verification_status")
+    if account_status not in {"COMPLETE", "PARTIAL", "UNAVAILABLE"}:
+        fail_reasons.append("account cost verification status is invalid")
+        account_status = None
+    accounts = payload.get("account_observations")
+    if not isinstance(accounts, dict) or set(accounts) != {"bybit", "binance"}:
+        fail_reasons.append("account observations are incomplete")
+        accounts = {}
+    forbidden_account_fields = {
+        "api_key",
+        "api_secret",
+        "account_uid",
+        "uid",
+        "available_balance",
+        "exact_balance",
+    }
+    if any(
+        isinstance(account, dict)
+        and forbidden_account_fields.intersection(account)
+        for account in accounts.values()
+    ):
+        fail_reasons.append("account observations contain private fields")
+    zero = payload.get("zero_fee_upper_bound")
+
+    def metric(mapping: Any, field: str) -> int | float | None:
+        if not isinstance(mapping, dict):
+            return None
+        value = mapping.get(field)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+        ):
+            return value
+        return None
+
+    required_zero_metrics = {
+        field: metric(zero, field)
+        for field in (
+            "upstream_gross_bps",
+            "upstream_execution_cost_bps",
+            "inferred_base_capital_cost_bps",
+            "inferred_stress_capital_cost_bps",
+            "zero_fee_non_fee_execution_cost_bps",
+            "zero_fee_base_net_bps",
+            "zero_fee_stress_net_bps",
+            "minimum_stress_net_bps",
+        )
+    }
+    if not (
+        isinstance(zero, dict)
+        and all(value is not None for value in required_zero_metrics.values())
+        and isinstance(zero.get("passes"), bool)
+        and zero.get("all_account_trading_fees_assumed_zero") is True
+        and zero.get("four_taker_fills_round_trip") is True
+        and zero.get("fee_rebates_capped_at_gross_trading_fees") is True
+        and zero.get("external_liquidity_subsidies_in_scope") is False
+        and zero.get("maker_fill_assumed") is False
+        and zero.get("historical_price_is_executable_bbo") is False
+    ):
+        fail_reasons.append("zero-fee upper-bound contract failed")
+    decision = payload.get("structural_decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("account structural economics decision is invalid")
+        decision = None
+    elif isinstance(zero, dict):
+        passes = zero.get("passes")
+        if decision == "STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING":
+            if passes is not False:
+                fail_reasons.append("account fee-tier STOP is inconsistent with bound")
+        elif decision == "WAIT_FOR_COMPLETE_ACCOUNT_COST_VERIFICATION":
+            if passes is not True or account_status == "COMPLETE":
+                fail_reasons.append("account cost WAIT is inconsistent with evidence")
+        elif passes is not True or account_status != "COMPLETE":
+            fail_reasons.append("distinct structural intake is not fully verified")
+    reasons = payload.get("reason_codes")
+    if not (
+        isinstance(reasons, list)
+        and reasons
+        and all(isinstance(item, str) and item.strip() for item in reasons)
+    ):
+        fail_reasons.append("account structural economics reason codes are invalid")
+        reasons = []
+    verified_count = sum(
+        isinstance(account, dict) and account.get("status") == "VERIFIED"
+        for account in accounts.values()
+    )
+    metrics = {
+        **required_zero_metrics,
+        "verified_account_count": verified_count,
+    }
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": (
+            [] if fail_reasons else [f"account structural decision: {decision}"]
+        ),
+        "structural_decision": decision,
+        "account_cost_verification_status": account_status,
+        "reason_codes": list(reasons),
+        "metrics": {key: value for key, value in metrics.items() if value is not None},
+        "research_observation_only": True,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "account_structural_economics_stage_review",
+    }
+
+
 def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]:
     """Expose maker model learnability while preserving the promotion firewall."""
 
@@ -4665,6 +4812,11 @@ def parse_args() -> argparse.Namespace:
         help="跨场 perpetual 资金费率差与基差机会审计报告路径",
     )
     parser.add_argument(
+        "--account_structural_economics_audit_report",
+        default="",
+        help="账户费率、资金约束及零费率压力上界审计报告路径",
+    )
+    parser.add_argument(
         "--maker_execution_learnability_experiment_report",
         default="",
         help="保守 maker-entry 三架构可学习性实验报告路径",
@@ -5166,6 +5318,20 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {experiment_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "cross_venue_funding_differential_stage_review",
+            }
+    if args.account_structural_economics_audit_report:
+        audit_path = Path(args.account_structural_economics_audit_report)
+        if audit_path.is_file():
+            sections["account_structural_economics_audit"] = (
+                assess_account_structural_economics_audit(audit_path)
+            )
+        else:
+            sections["account_structural_economics_audit"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {audit_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "account_structural_economics_stage_review",
             }
     if args.maker_execution_learnability_experiment_report:
         experiment_path = Path(args.maker_execution_learnability_experiment_report)

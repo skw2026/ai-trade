@@ -201,6 +201,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_funding_basis_carry_opportunity_experiment.py)
     add_test(NAME cross_venue_funding_differential_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_cross_venue_funding_differential_experiment.py)
+    add_test(NAME account_structural_economics_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_account_structural_economics.py)
     add_test(NAME maker_execution_learnability_experiment_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_maker_execution_learnability_experiment.py)
     add_test(NAME maker_subsecond_information_experiment_test
