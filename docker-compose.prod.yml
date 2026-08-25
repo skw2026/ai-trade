@@ -115,7 +115,7 @@ services:
     working_dir: /app
     entrypoint: ["python3", "/app/tools/run_option_vrp_collector.py", "run"]
     command:
-      - "--root=/app/data/research/bybit_btc_option_vrp"
+      - "--root=/app/data/research/bybit_btc_option_vrp_v2"
       - "--bootstrap-segment-duration-sec=${OPTION_VRP_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
       - "--segment-duration-sec=${OPTION_VRP_SEGMENT_DURATION_SEC:-905}"
       - "--poll-interval-sec=${OPTION_VRP_POLL_INTERVAL_SEC:-60}"
@@ -125,7 +125,7 @@ services:
     volumes:
       - ${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data
     healthcheck:
-      test: ["CMD", "python3", "/app/tools/run_option_vrp_collector.py", "healthcheck", "--root=/app/data/research/bybit_btc_option_vrp", "--max-stale-sec=1800"]
+      test: ["CMD", "python3", "/app/tools/run_option_vrp_collector.py", "healthcheck", "--root=/app/data/research/bybit_btc_option_vrp_v2", "--max-stale-sec=1800"]
       interval: 60s
       timeout: 10s
       retries: 3

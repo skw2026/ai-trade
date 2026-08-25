@@ -388,7 +388,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             self.assertIn("run_option_vrp_collector.py", collector)
             self.assertIn("restart: unless-stopped", collector)
             self.assertIn("healthcheck", collector)
-            self.assertIn("bybit_btc_option_vrp", collector)
+            self.assertIn("bybit_btc_option_vrp_v2", collector)
             self.assertIn("OPTION_VRP_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("OPTION_VRP_SEGMENT_DURATION_SEC:-905", collector)
             self.assertIn("OPTION_VRP_POLL_INTERVAL_SEC:-60", collector)
@@ -2135,8 +2135,9 @@ ensure_deploy_post_pull_capacity
             self.assertIn("--expected-root-name\nmicrostructure\n", capture_args)
             self.assertIn("--expected-root-name\nbybit_sol_liquidations\n", capture_args)
             self.assertIn("--expected-root-name\nbybit_btc_option_vrp\n", capture_args)
+            self.assertIn("--expected-root-name\nbybit_btc_option_vrp_v2\n", capture_args)
             self.assertEqual(capture_args.count("--retention-hours\n35\n"), 2)
-            self.assertEqual(capture_args.count("--retention-hours\n193\n"), 1)
+            self.assertEqual(capture_args.count("--retention-hours\n193\n"), 2)
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             base_env["FAKE_FREE_AFTER_KIB"] = "20000"

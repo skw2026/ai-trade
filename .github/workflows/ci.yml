@@ -102,6 +102,7 @@ jobs:
           grep -q "cross_venue_funding_differential_experiment_test" /tmp/ctest-list.txt
           grep -q "account_structural_economics_audit_test" /tmp/ctest-list.txt
           grep -q "option_vrp_capture_test" /tmp/ctest-list.txt
+          grep -q "option_vrp_capture_v2_test" /tmp/ctest-list.txt
           grep -q "option_vrp_feasibility_audit_test" /tmp/ctest-list.txt
           grep -q "maker_execution_learnability_experiment_test" /tmp/ctest-list.txt
           grep -q "maker_subsecond_information_experiment_test" /tmp/ctest-list.txt

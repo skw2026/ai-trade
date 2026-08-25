@@ -12,11 +12,11 @@ import sys
 import time
 from typing import Any, Dict, Sequence
 
-import capture_bybit_option_vrp as collector
+import capture_bybit_option_vrp_v2 as collector
 import prune_microstructure_capture as retention
 
 
-SCHEMA_VERSION = "option_vrp_collector_health_v1"
+SCHEMA_VERSION = "option_vrp_collector_health_v2"
 
 
 def atomic_write_json(path: pathlib.Path, payload: Dict[str, Any]) -> None:
@@ -36,7 +36,7 @@ def segment_command(args: argparse.Namespace, *, root: pathlib.Path, duration_se
     features = root / "features" / collector.BASE_COIN / f"{segment_id}.csv"
     report = root / "reports" / collector.BASE_COIN / f"{segment_id}.json"
     return ([
-        sys.executable, str(pathlib.Path(__file__).resolve().parent / "capture_bybit_option_vrp.py"),
+        sys.executable, str(pathlib.Path(__file__).resolve().parent / "capture_bybit_option_vrp_v2.py"),
         "--raw", str(raw), "--features", str(features), "--report", str(report),
         "--capture-root", str(root), "--duration-sec", str(duration_sec),
         "--poll-interval-sec", str(args.poll_interval_sec), "--base-url", args.base_url,
@@ -56,7 +56,11 @@ def run(args: argparse.Namespace) -> int:
         started = int(time.time() * 1000)
         atomic_write_json(health, {
             "schema_version": SCHEMA_VERSION, "state": "capturing", "base_coin": collector.BASE_COIN,
-            "capture_schema_version": collector.SCHEMA_VERSION, "segment_started_epoch_ms": started,
+            "settle_coin": collector.SETTLE_COIN,
+            "capture_schema_version": collector.SCHEMA_VERSION,
+            "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
+            "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+            "delivery_query_status": "PENDING", "segment_started_epoch_ms": started,
             "consecutive_failures": failures,
         })
         try:
@@ -68,13 +72,22 @@ def run(args: argparse.Namespace) -> int:
             failures = 0
             relative = report_path.relative_to(root)
             atomic_write_json(latest, {
-                "schema_version": "option_vrp_latest_segment_v1", "base_coin": collector.BASE_COIN,
-                "capture_schema_version": collector.SCHEMA_VERSION, "report": str(relative),
+                "schema_version": "option_vrp_latest_segment_v2", "base_coin": collector.BASE_COIN,
+                "settle_coin": collector.SETTLE_COIN,
+                "capture_schema_version": collector.SCHEMA_VERSION,
+                "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
+                "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+                "report": str(relative),
                 "report_payload": report, "completed_epoch_ms": completed_at,
             })
             atomic_write_json(health, {
                 "schema_version": SCHEMA_VERSION, "state": "healthy", "base_coin": collector.BASE_COIN,
-                "capture_schema_version": collector.SCHEMA_VERSION, "segment_started_epoch_ms": started,
+                "settle_coin": collector.SETTLE_COIN,
+                "capture_schema_version": collector.SCHEMA_VERSION,
+                "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
+                "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+                "delivery_query_status": report.get("quality", {}).get("delivery_query_status"),
+                "segment_started_epoch_ms": started,
                 "last_success_epoch_ms": completed_at, "consecutive_failures": 0, "latest_report": str(relative),
             })
             retention.prune_capture_root(root, retention_seconds=args.retention_hours * 3600, expected_root_name=root.name)
@@ -83,7 +96,11 @@ def run(args: argparse.Namespace) -> int:
             failures += 1
             atomic_write_json(health, {
                 "schema_version": SCHEMA_VERSION, "state": "degraded", "base_coin": collector.BASE_COIN,
-                "capture_schema_version": collector.SCHEMA_VERSION, "segment_started_epoch_ms": started,
+                "settle_coin": collector.SETTLE_COIN,
+                "capture_schema_version": collector.SCHEMA_VERSION,
+                "snapshot_schema_version": collector.SNAPSHOT_SCHEMA_VERSION,
+                "scope_identity_sha256": collector.SCOPE_IDENTITY_SHA256,
+                "delivery_query_status": "FAIL", "segment_started_epoch_ms": started,
                 "last_failure_epoch_ms": int(time.time() * 1000), "consecutive_failures": failures, "error": str(exc),
             })
             if args.max_segments <= 0:
@@ -100,7 +117,11 @@ def healthcheck(args: argparse.Namespace) -> int:
         valid = bool(
             payload.get("schema_version") == SCHEMA_VERSION
             and payload.get("capture_schema_version") == collector.SCHEMA_VERSION
+            and payload.get("snapshot_schema_version") == collector.SNAPSHOT_SCHEMA_VERSION
+            and payload.get("scope_identity_sha256") == collector.SCOPE_IDENTITY_SHA256
             and payload.get("base_coin") == collector.BASE_COIN
+            and payload.get("settle_coin") == collector.SETTLE_COIN
+            and payload.get("delivery_query_status") in {"PENDING", "PASS"}
             and payload.get("state") in {"capturing", "healthy"}
             and 0 <= age_ms <= args.max_stale_sec * 1000
         )

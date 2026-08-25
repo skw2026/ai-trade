@@ -438,7 +438,14 @@ cleanup_deploy_host_storage() {
       --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp" \
       --expected-root-name bybit_btc_option_vrp \
       --retention-hours "${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
-    echo "[deploy] Bybit option VRP research capture cleanup failed"
+    echo "[deploy] legacy Bybit option VRP research capture cleanup failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp_v2" \
+      --expected-root-name bybit_btc_option_vrp_v2 \
+      --retention-hours "${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
+    echo "[deploy] Bybit option VRP v2 research capture cleanup failed"
     return 1
   fi
   # The service slot previously captured Binance L2/trades.  That information
@@ -566,7 +573,14 @@ reclaim_research_capture_for_transaction() {
       --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp" \
       --expected-root-name bybit_btc_option_vrp \
       --retention-hours "${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
-    DEPLOY_DISK_FAILURE_REASON="pressure_option_vrp_capture_gc_failed"
+    DEPLOY_DISK_FAILURE_REASON="pressure_legacy_option_vrp_capture_gc_failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp_v2" \
+      --expected-root-name bybit_btc_option_vrp_v2 \
+      --retention-hours "${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
+    DEPLOY_DISK_FAILURE_REASON="pressure_option_vrp_v2_capture_gc_failed"
     return 1
   fi
   return 0

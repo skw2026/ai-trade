@@ -5,15 +5,12 @@ import json
 import pathlib
 import sys
 import tempfile
-import time
 import unittest
-from argparse import Namespace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import audit_option_variance_risk_premium_feasibility as audit
 import capture_bybit_option_vrp as capture
-import run_option_vrp_collector as runner
 
 
 class OptionVrpCaptureTest(unittest.TestCase):
@@ -93,29 +90,6 @@ class OptionVrpCaptureTest(unittest.TestCase):
             invalid = audit.audit_capture_root(root, now_epoch_ms=self.now)
             self.assertEqual(invalid["invalid_segment_count"], 1)
             self.assertEqual(invalid["checksum_bound_seconds"], 0.0)
-
-    def test_runner_command_and_health_bind_capture_contract(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = pathlib.Path(temporary) / "bybit_btc_option_vrp"
-            args = Namespace(
-                poll_interval_sec=60.0, base_url=capture.BASE_URL,
-                minimum_dte_days=0.5, maximum_dte_days=10.0,
-                maximum_absolute_moneyness=0.1,
-            )
-            command, report = runner.segment_command(args, root=root, duration_sec=65.0)
-            self.assertIn("--poll-interval-sec", command)
-            self.assertIn("60.0", command)
-            self.assertEqual(report.parent, root / "reports" / "BTC")
-            root.mkdir(parents=True)
-            (root / "collector_health.json").write_text(json.dumps({
-                "schema_version": runner.SCHEMA_VERSION,
-                "capture_schema_version": capture.SCHEMA_VERSION,
-                "base_coin": capture.BASE_COIN,
-                "state": "healthy",
-                "last_success_epoch_ms": int(time.time() * 1000),
-            }), encoding="utf-8")
-            self.assertEqual(runner.healthcheck(Namespace(root=str(root), max_stale_sec=1800)), 0)
-
 
 if __name__ == "__main__":
     unittest.main()

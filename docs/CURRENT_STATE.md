@@ -1,6 +1,6 @@
 # 当前项目状态
 
-更新时间：2026-08-25（Asia/Shanghai）
+更新时间：2026-08-26（Asia/Shanghai）
 
 本文件是项目阶段、权限和下一动作的人工维护基线。历史计划与实验报告保留为证据，但不得覆盖这里的当前结论。
 
@@ -16,8 +16,9 @@
 - Bybit–Binance SOL 永续–永续 funding differential/basis v1 已在不可变 Research `#1099` 上明确 STOP：36,288 个同步样本、两场各 378 个真实 funding settlement 下，6 个 OOS split 均无全成本后正候选。最佳 hindsight 候选 gross 仅 `9.1442 bps`，base/stress 净值为 `-21.5014/-29.8478 bps`。不得继续调该族的场所方向、期限、阈值、成本或模型，也不等待 raw BBO forward。
 - 账户结构经济性 v1 已在不可变 Research `#1100` 上明确 STOP：即使同时把 Bybit/Binance 四次 taker 成交的交易费全部降为 0，非费用执行成本仍为 `5.9855 bps`，base 净值仅 `+0.4189 bps`，stress 净值为 `-2.4473 bps`。普通 VIP 折扣或不超过已交交易费的返佣不可能翻转该结论；该族不再需要完整账户费率观测。
 - BTC 期权波动率风险溢价无模型可行性 v1 已在不可变 Research `#1101` 上完成：738 个活动合约、720 个双边合约，目标 DTE/moneyness 范围内有 197 个双边合约，P90 点差为 `8.6095%`，市场门槛全部通过。公开历史数据无法重建已到期期权的可执行 BBO，因此禁止伪造历史回测，正式决策为 `WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE`。
-- 新的公开只读 `option-vrp-collector` 已在 CD `#343` 上部署并健康运行；Research 首次读到 1 个有效 segment、65.632 秒 checksum-bound 覆盖、3 次成功轮询和 0 个坏 segment。首个可审计门槛为 8 天、至少 1,000 次轮询和 6 个带交割价的完成到期日。
-- 发布与研究证据链已技术收敛，但可盈利经济机制尚未收敛。下一阶段只积累期权前向原始证据并准备冻结 payoff 审计；门槛完成前不训练模型，也不得申请 Demo/live 权限。
+- 2026-08-26 复核发现，v1 collector 的 delivery 请求未显式传 `settleCoin`；Bybit 会默认查询 USDC，而当前活动 BTC 期权为 `BTC/USDT/USDT`。因此 CD `#343` 后的旧 root 及其 65.632 秒覆盖仍是有效的市场/采集可行性证据，但不得用于正式 payoff、交割或 35 天顺序结论。
+- option VRP 正迁移到隔离的 v2 schema/root：只接受 `BTC/USDT/USDT` 合约，保存完整数量/费率单位，并将 delivery 按 `symbol + deliveryTime + settleCoin` 绑定。v2 原始采集部署成功仅表示数据具备 payoff 资格；正式 observation start 必须晚于顺序 payoff 合同 manifest 冻结时间，不能沿用旧 root 或开发期覆盖。
+- 发布与研究证据链已技术收敛，但可盈利经济机制尚未收敛。下一阶段按 `docs/plans/2026-08-26-option-vrp-sequential-payoff.md` 完成合同、payoff/hedge 审计、顺序门禁和 Closed Loop 接入；工程完成后才进入不可压缩的前向时间验证。期间不训练模型，也不得申请 Demo/live 权限。
 - 自进化保持 shadow/evidence-only；没有正收益 frozen candidate 前不得影响 Demo 动作。
 
 ## 工作流边界
@@ -85,9 +86,9 @@ maker first-passage、跨资产残差、单场 spot-perp carry 和跨场 perp-pe
 
 新的研究项必须先提供可审计的实际账户 fee/rebate、场所和资本合同，并在无模型 stress break-even 下显示足够安全边际；机制还必须与四个已关闭族有实质不同。只有结构上限通过后，才允许预注册原始数据 forward、目标架构比较和 Demo incubation。输入不足时保持暂停 Alpha 参数搜索，而不是继续优化负经济目标。
 
-期权 v1 已完成当前 BBO、成交、IV/Greeks、到期/行权和全成本合同审计。Bybit 不提供可回溯的历史期权可执行盘口，所以当前只允许 checksum-bound 前向采集；正常保留 240 小时，部署压力保留不得低于 193 小时。
+期权 v1 已完成当前 BBO、成交、IV/Greeks、到期/行权和市场可采集性审计。Bybit 不提供可回溯的历史期权可执行盘口，所以当前只允许 checksum-bound 前向采集；正常保留 240 小时，部署压力保留不得低于 193 小时。旧 v1 root 不再具有正式收益证据资格；v2 使用独立 root，并显式绑定 USDT 结算、合约数量单位、交割时间和交割价。
 
-首个门槛是至少 691,200 秒有效覆盖、1,000 次轮询、6 个有交割价的完成到期日和 0 个坏校验和。达到后只运行无模型全成本 payoff 审计：真实 option bid/ask 入场、真实 BTCUSDT bid/ask delta hedge、VIP0 fee、交割费和压力成本。首批通过只允许延长至至少 35 天独立 forward，不构成 Demo 权限；失败则直接关闭该机制，不训练模型。
+顺序 payoff 合同冻结后，Day 8 首个门槛至少要求 691,200 秒有效覆盖、1,000 次轮询、预注册数量的有交割价完成到期日和 0 个坏校验和。审计只使用真实 option bid/ask 入场、真实 BTCUSDT bid/ask 因果 delta hedge、冻结费率、交割费和压力成本。Day 8/14/21/28 只允许提前 STOP，不允许提前 PASS；最早在 Day 35 全部门禁通过后才可进入独立模型比较，仍不构成 Demo 权限。
 
 ## 晋级权限
 

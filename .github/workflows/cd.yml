@@ -589,6 +589,7 @@ jobs:
               "${RELEASE_TMP}/tools/run_liquidation_information_set_experiment.py" \
               "${RELEASE_TMP}/config/option_variance_risk_premium_feasibility.json" \
               "${RELEASE_TMP}/tools/capture_bybit_option_vrp.py" \
+              "${RELEASE_TMP}/tools/capture_bybit_option_vrp_v2.py" \
               "${RELEASE_TMP}/tools/run_option_vrp_collector.py" \
               "${RELEASE_TMP}/tools/audit_option_variance_risk_premium_feasibility.py" \
               "${RELEASE_TMP}/config/maker_execution_opportunity_experiment.json" \

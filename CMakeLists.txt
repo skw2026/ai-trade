@@ -205,6 +205,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_account_structural_economics.py)
     add_test(NAME option_vrp_capture_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_capture_bybit_option_vrp.py)
+    add_test(NAME option_vrp_capture_v2_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_capture_bybit_option_vrp_v2.py)
     add_test(NAME option_vrp_feasibility_audit_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_variance_risk_premium_feasibility.py)
     add_test(NAME maker_execution_learnability_experiment_test
