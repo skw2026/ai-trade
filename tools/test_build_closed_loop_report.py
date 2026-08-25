@@ -468,6 +468,84 @@ class BuildClosedLoopReportTest(unittest.TestCase):
                 any("private fields" in reason for reason in rejected["fail_reasons"])
             )
 
+    def test_option_vrp_wait_is_complete_non_promotional_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "option_vrp.json"
+            identity = "a" * 64
+            payload = {
+                "schema_version": "option_variance_risk_premium_feasibility_v1",
+                "status": "COMPLETE",
+                "research_domain": "live_snapshot_development_only",
+                "promotion_evidence": False,
+                "promotion_eligible": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+                "policy": {
+                    "schema_version": "option_variance_risk_premium_feasibility_policy_v1",
+                    "canonical_sha256": identity,
+                    "frozen_identity_sha256": identity,
+                    "identity_verified": True,
+                },
+                "verification_boundary": {
+                    "fully_verifiable_live_snapshot": True,
+                    "fully_verifiable_historical_payoff": False,
+                    "historical_capabilities": {
+                        "historical_executable_option_bbo": False,
+                        "expired_option_mark_kline": False,
+                    },
+                },
+                "live_market_snapshot": {
+                    "source_responses": {"tickers": {"retCode": 0}},
+                    "source_response_sha256": {
+                        "tickers": hashlib.sha256(
+                            json.dumps(
+                                {"retCode": 0},
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ).encode("utf-8")
+                        ).hexdigest()
+                    },
+                    "source_response_count": 1,
+                    "active_contract_count": 738,
+                    "two_sided_contract_count": 714,
+                    "scoped_two_sided_contract_count": 198,
+                    "scoped_volume_contract_count": 180,
+                    "recent_trade_count": 1000,
+                    "scoped_spread_ratio_p90": 0.089,
+                    "historical_volatility_30d": 0.378,
+                    "atm_mark_iv_median": 0.484,
+                },
+                "market_gate": {"status": "PASS", "checks": {"liquidity": True}},
+                "forward_capture": {
+                    "checksum_bound_seconds": 0,
+                    "successful_poll_count": 0,
+                    "completed_expiries_with_delivery": 0,
+                },
+                "forward_capture_gate": {"status": "WAIT", "checks": {"coverage": False}},
+                "economics": {
+                    "observed_iv_hv_is_profit_evidence": False,
+                    "realized_delta_hedged_episode_count": 0,
+                    "stress_net_utility_lcb": None,
+                    "profitability_verified": False,
+                },
+                "decision": "WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE",
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            section = REPORT.assess_option_variance_risk_premium_feasibility(path)
+            self.assertEqual(section["status"], "pass")
+            self.assertEqual(section["research_decision"], "WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE")
+            self.assertEqual(section["metrics"]["scoped_two_sided_contract_count"], 198)
+            self.assertFalse(section["historical_payoff_verified"])
+            self.assertFalse(section["demo_activation_authorized"])
+
+            payload["economics"]["profitability_verified"] = True
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            rejected = REPORT.assess_option_variance_risk_premium_feasibility(path)
+            self.assertEqual(rejected["status"], "fail")
+            self.assertTrue(any("no-profit-claim" in reason for reason in rejected["fail_reasons"]))
+
     def test_maker_learnability_architectures_are_visible_but_non_promotional(self):
         with tempfile.TemporaryDirectory() as td:
             path = pathlib.Path(td) / "maker_learnability.json"

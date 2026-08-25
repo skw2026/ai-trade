@@ -2146,6 +2146,148 @@ def assess_account_structural_economics_audit(path: Path) -> Dict[str, Any]:
     }
 
 
+def assess_option_variance_risk_premium_feasibility(path: Path) -> Dict[str, Any]:
+    """Expose the no-model option VRP feasibility gate without trading authority."""
+
+    payload = read_json(path)
+    fail_reasons: List[str] = []
+    allowed_decisions = {
+        "WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE",
+        "READY_FOR_FROZEN_OPTION_PAYOFF_AUDIT",
+        "STOP_OPTION_VRP_MARKET_FEASIBILITY",
+    }
+    if payload.get("schema_version") != "option_variance_risk_premium_feasibility_v1":
+        fail_reasons.append("option VRP feasibility report schema mismatch")
+    if payload.get("status") != "COMPLETE":
+        fail_reasons.append("option VRP feasibility evidence is incomplete")
+    if not (
+        payload.get("research_domain") == "live_snapshot_development_only"
+        and payload.get("promotion_evidence") is False
+        and payload.get("promotion_eligible") is False
+        and payload.get("promotion_authority") is False
+        and payload.get("demo_activation_authorized") is False
+        and payload.get("live_activation_authorized") is False
+    ):
+        fail_reasons.append("option VRP feasibility isolation contract failed")
+    policy = payload.get("policy")
+    if not (
+        isinstance(policy, dict)
+        and policy.get("schema_version")
+        == "option_variance_risk_premium_feasibility_policy_v1"
+        and policy.get("identity_verified") is True
+        and policy.get("canonical_sha256") == policy.get("frozen_identity_sha256")
+    ):
+        fail_reasons.append("option VRP frozen policy identity failed")
+    boundary = payload.get("verification_boundary")
+    if not (
+        isinstance(boundary, dict)
+        and boundary.get("fully_verifiable_live_snapshot") is True
+        and boundary.get("fully_verifiable_historical_payoff") is False
+        and isinstance(boundary.get("historical_capabilities"), dict)
+        and boundary["historical_capabilities"].get("historical_executable_option_bbo") is False
+        and boundary["historical_capabilities"].get("expired_option_mark_kline") is False
+    ):
+        fail_reasons.append("option VRP historical capability boundary failed")
+    market = payload.get("market_gate")
+    capture_gate = payload.get("forward_capture_gate")
+    if not (
+        isinstance(market, dict)
+        and market.get("status") in {"PASS", "FAIL"}
+        and isinstance(market.get("checks"), dict)
+        and all(isinstance(value, bool) for value in market["checks"].values())
+    ):
+        fail_reasons.append("option VRP market gate contract failed")
+    if not (
+        isinstance(capture_gate, dict)
+        and capture_gate.get("status") in {"PASS", "WAIT"}
+        and isinstance(capture_gate.get("checks"), dict)
+        and all(isinstance(value, bool) for value in capture_gate["checks"].values())
+    ):
+        fail_reasons.append("option VRP capture gate contract failed")
+    economics = payload.get("economics")
+    if not (
+        isinstance(economics, dict)
+        and economics.get("observed_iv_hv_is_profit_evidence") is False
+        and economics.get("realized_delta_hedged_episode_count") == 0
+        and economics.get("stress_net_utility_lcb") is None
+        and economics.get("profitability_verified") is False
+    ):
+        fail_reasons.append("option VRP no-profit-claim contract failed")
+    decision = payload.get("decision")
+    if decision not in allowed_decisions:
+        fail_reasons.append("option VRP feasibility decision is invalid")
+        decision = None
+    elif isinstance(market, dict) and isinstance(capture_gate, dict):
+        if decision == "STOP_OPTION_VRP_MARKET_FEASIBILITY" and market.get("status") != "FAIL":
+            fail_reasons.append("option VRP STOP is inconsistent with market gate")
+        if decision == "WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE" and not (
+            market.get("status") == "PASS" and capture_gate.get("status") == "WAIT"
+        ):
+            fail_reasons.append("option VRP WAIT is inconsistent with evidence")
+        if decision == "READY_FOR_FROZEN_OPTION_PAYOFF_AUDIT" and not (
+            market.get("status") == "PASS" and capture_gate.get("status") == "PASS"
+        ):
+            fail_reasons.append("option VRP READY is inconsistent with evidence")
+    live = payload.get("live_market_snapshot")
+    forward = payload.get("forward_capture")
+    if isinstance(live, dict):
+        source_responses = live.get("source_responses")
+        source_hashes = live.get("source_response_sha256")
+        source_count = live.get("source_response_count")
+        source_evidence_valid = bool(
+            isinstance(source_responses, dict)
+            and isinstance(source_hashes, dict)
+            and source_responses
+            and set(source_responses) == set(source_hashes)
+            and source_count == len(source_responses)
+            and all(
+                hashlib.sha256(
+                    json.dumps(
+                        value,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                == source_hashes.get(name)
+                for name, value in source_responses.items()
+            )
+        )
+        if not source_evidence_valid:
+            fail_reasons.append("option VRP live source evidence hash contract failed")
+    metrics: Dict[str, Any] = {}
+    if isinstance(live, dict):
+        for key in (
+            "active_contract_count", "two_sided_contract_count",
+            "scoped_two_sided_contract_count", "scoped_volume_contract_count",
+            "recent_trade_count", "scoped_spread_ratio_median",
+            "scoped_spread_ratio_p90", "historical_volatility_30d", "atm_mark_iv_median",
+        ):
+            value = live.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                metrics[key] = value
+    if isinstance(forward, dict):
+        for key in ("checksum_bound_seconds", "successful_poll_count", "completed_expiries_with_delivery"):
+            value = forward.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                metrics[key] = value
+    return {
+        "status": "fail" if fail_reasons else "pass",
+        "readiness_status": "FAIL" if fail_reasons else "PASS_WITH_ACTIONS",
+        "fail_reasons": fail_reasons,
+        "warn_reasons": [] if fail_reasons else [f"option VRP feasibility decision: {decision}"],
+        "research_decision": decision,
+        "metrics": metrics,
+        "research_observation_only": True,
+        "historical_payoff_verified": False,
+        "promotion_authority": False,
+        "demo_activation_authorized": False,
+        "live_activation_authorized": False,
+        "authoritative_for_integrator_promotion": False,
+        "evidence_role": "option_variance_risk_premium_feasibility_stage_review",
+    }
+
+
 def assess_maker_execution_learnability_experiment(path: Path) -> Dict[str, Any]:
     """Expose maker model learnability while preserving the promotion firewall."""
 
@@ -4817,6 +4959,11 @@ def parse_args() -> argparse.Namespace:
         help="账户费率、资金约束及零费率压力上界审计报告路径",
     )
     parser.add_argument(
+        "--option_variance_risk_premium_feasibility_report",
+        default="",
+        help="期权波动率风险溢价无模型可行性与前向采集门禁报告路径",
+    )
+    parser.add_argument(
         "--maker_execution_learnability_experiment_report",
         default="",
         help="保守 maker-entry 三架构可学习性实验报告路径",
@@ -5332,6 +5479,20 @@ def main() -> int:
                 "fail_reasons": [f"文件不存在: {audit_path}"],
                 "authoritative_for_integrator_promotion": False,
                 "evidence_role": "account_structural_economics_stage_review",
+            }
+    if args.option_variance_risk_premium_feasibility_report:
+        audit_path = Path(args.option_variance_risk_premium_feasibility_report)
+        if audit_path.is_file():
+            sections["option_variance_risk_premium_feasibility"] = (
+                assess_option_variance_risk_premium_feasibility(audit_path)
+            )
+        else:
+            sections["option_variance_risk_premium_feasibility"] = {
+                "status": "fail",
+                "readiness_status": "FAIL",
+                "fail_reasons": [f"文件不存在: {audit_path}"],
+                "authoritative_for_integrator_promotion": False,
+                "evidence_role": "option_variance_risk_premium_feasibility_stage_review",
             }
     if args.maker_execution_learnability_experiment_report:
         experiment_path = Path(args.maker_execution_learnability_experiment_report)

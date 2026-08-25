@@ -90,6 +90,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("ai-trade-research", self.prod_services)
         self.assertIn("market-alpha-collector", self.prod_services)
         self.assertIn("cross-venue-alpha-collector", self.prod_services)
+        self.assertIn("option-vrp-collector", self.prod_services)
         self.assertIn("microstructure-demo-policy", self.prod_services)
         self.assertIn("ai-trade-web", self.prod_services)
 
@@ -379,6 +380,24 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn(
             "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
             self.prod_services["cross-venue-alpha-collector"],
+        )
+
+    def test_option_vrp_collector_is_public_persistent_and_health_checked(self):
+        for services in (self.dev_services, self.prod_services):
+            collector = services["option-vrp-collector"]
+            self.assertIn("run_option_vrp_collector.py", collector)
+            self.assertIn("restart: unless-stopped", collector)
+            self.assertIn("healthcheck", collector)
+            self.assertIn("bybit_btc_option_vrp", collector)
+            self.assertIn("OPTION_VRP_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
+            self.assertIn("OPTION_VRP_SEGMENT_DURATION_SEC:-905", collector)
+            self.assertIn("OPTION_VRP_POLL_INTERVAL_SEC:-60", collector)
+            self.assertIn("OPTION_VRP_RETENTION_HOURS:-240", collector)
+            self.assertNotIn("API_KEY", collector)
+            self.assertNotIn("API_SECRET", collector)
+        self.assertIn(
+            "${AI_TRADE_DATA_DIR:-/opt/ai-trade/data}:/app/data",
+            self.prod_services["option-vrp-collector"],
         )
 
     def test_microstructure_demo_policy_is_credential_free_and_fail_closed(self):
@@ -749,6 +768,14 @@ class ComposeConsistencyTest(unittest.TestCase):
             "account_structural_economics_audit",
             research_contract["required_artifacts"],
         )
+        self.assertIn(
+            "option_variance_risk_premium_feasibility",
+            research_contract["required_steps"],
+        )
+        self.assertIn(
+            "option_variance_risk_premium_feasibility",
+            research_contract["required_artifacts"],
+        )
         self.assertLess(
             research_chain.index(
                 "run_observation_step cross_venue_funding_differential_experiment"
@@ -756,6 +783,10 @@ class ComposeConsistencyTest(unittest.TestCase):
             research_chain.index(
                 "run_observation_step account_structural_economics_audit"
             ),
+        )
+        self.assertLess(
+            research_chain.index("run_observation_step account_structural_economics_audit"),
+            research_chain.index("run_observation_step option_variance_risk_premium_feasibility"),
         )
         self.assertIn(
             "research discovery completed without registration, activation, or restart",
@@ -882,6 +913,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "microstructure_alpha_model",
             "microstructure_alpha_lifecycle_report",
             "account_structural_economics_audit",
+            "option_variance_risk_premium_feasibility",
         ):
             self.assertIn(f'"{artifact_name}":', validator)
         run_blocks = re.findall(
@@ -1140,7 +1172,7 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_deploy_defaults_match_prod_container_names(self):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn(
-            'DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector cross-venue-alpha-collector microstructure-demo-policy watchdog scheduler ai-trade-web"',
+            'DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector cross-venue-alpha-collector option-vrp-collector microstructure-demo-policy watchdog scheduler ai-trade-web"',
             script,
         )
         self.assertIn('echo "ai-trade-watchdog"', script)
@@ -1160,6 +1192,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertEqual(
             prod_container_names.get("cross-venue-alpha-collector"),
             "ai-trade-cross-venue-alpha-collector",
+        )
+        self.assertEqual(
+            prod_container_names.get("option-vrp-collector"),
+            "ai-trade-option-vrp-collector",
         )
         self.assertEqual(
             prod_container_names.get("microstructure-demo-policy"),
@@ -1743,6 +1779,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_REPORT_MAX_BYTES",
             "DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS",
             "DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS",
+            "DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS",
+            "DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS",
             "DEPLOY_LOCK_WAIT_SECONDS",
         ):
             with self.subTest(workflow_variable=variable):
@@ -1771,6 +1809,14 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             "DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS || '35' }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS || '240' }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS || '193' }}",
             workflow,
         )
         self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
@@ -2088,7 +2134,9 @@ ensure_deploy_post_pull_capacity
             capture_args = capture_gc_log.read_text(encoding="utf-8")
             self.assertIn("--expected-root-name\nmicrostructure\n", capture_args)
             self.assertIn("--expected-root-name\nbybit_sol_liquidations\n", capture_args)
+            self.assertIn("--expected-root-name\nbybit_btc_option_vrp\n", capture_args)
             self.assertEqual(capture_args.count("--retention-hours\n35\n"), 2)
+            self.assertEqual(capture_args.count("--retention-hours\n193\n"), 1)
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             base_env["FAKE_FREE_AFTER_KIB"] = "20000"

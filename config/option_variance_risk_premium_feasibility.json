@@ -1,0 +1,65 @@
+{
+  "schema_version": "option_variance_risk_premium_feasibility_policy_v1",
+  "research_domain": "development_only",
+  "promotion_evidence": false,
+  "experiment_id": "btc_bybit_option_variance_risk_premium_feasibility_v1",
+  "market_scope": {
+    "venue": "bybit",
+    "category": "option",
+    "base_coin": "BTC",
+    "settle_coin": "USDT",
+    "hedge_symbol": "BTCUSDT",
+    "minimum_dte_days": 0.5,
+    "maximum_dte_days": 10.0,
+    "maximum_absolute_moneyness": 0.1,
+    "poll_interval_seconds": 60
+  },
+  "liquidity_gate": {
+    "minimum_active_contracts": 100,
+    "minimum_two_sided_contracts": 100,
+    "minimum_scoped_two_sided_contracts": 30,
+    "minimum_scoped_contracts_with_volume": 20,
+    "maximum_scoped_spread_ratio_p90": 0.15,
+    "minimum_recent_trade_count": 100
+  },
+  "cost_contract": {
+    "vip0_taker_fee_rate": 0.0003,
+    "vip0_maker_fee_rate": 0.0002,
+    "option_fee_cap_fraction_of_option_price": 0.125,
+    "delivery_fee_rate": 0.00015,
+    "entry_style": "cross_spread_taker_upper_bound",
+    "delta_hedge_style": "cross_spread_taker_upper_bound",
+    "fee_rebate_assumed": false,
+    "slippage_beyond_observed_bbo_assumed": false
+  },
+  "forward_capture_gate": {
+    "minimum_checksum_bound_seconds": 691200,
+    "minimum_completed_expiries_with_delivery": 6,
+    "minimum_successful_polls": 1000,
+    "minimum_retention_hours": 240,
+    "minimum_pressure_retention_hours": 193,
+    "capture_root_name": "bybit_btc_option_vrp"
+  },
+  "historical_capability_contract": {
+    "current_option_bbo": true,
+    "current_option_trades": true,
+    "current_option_greeks": true,
+    "current_historical_volatility": true,
+    "active_option_mark_kline": true,
+    "expired_option_mark_kline": false,
+    "historical_executable_option_bbo": false,
+    "historical_option_iv_surface": false,
+    "public_archived_option_trade_or_orderbook": false
+  },
+  "decision_contract": {
+    "ready_decision": "READY_FOR_FROZEN_OPTION_PAYOFF_AUDIT",
+    "wait_decision": "WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE",
+    "stop_decision": "STOP_OPTION_VRP_MARKET_FEASIBILITY",
+    "next_action": "start_checksum_bound_option_chain_bbo_and_hedge_forward_capture"
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

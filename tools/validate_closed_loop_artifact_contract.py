@@ -69,6 +69,9 @@ LOCAL_ARTIFACT_FILENAMES = {
     "account_structural_economics_audit": (
         "account_structural_economics_audit.json"
     ),
+    "option_variance_risk_premium_feasibility": (
+        "option_variance_risk_premium_feasibility.json"
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json"
     ),

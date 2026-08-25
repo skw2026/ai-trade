@@ -20,7 +20,7 @@ ENV_FILE="${2:-/opt/ai-trade/.env.runtime}"
 SERVICE_NAME="${SERVICE_NAME:-}"
 DEPLOY_SERVICES_RAW="${DEPLOY_SERVICES:-${SERVICE_NAME}}"
 if [[ -z "${DEPLOY_SERVICES_RAW// }" ]]; then
-  DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector cross-venue-alpha-collector microstructure-demo-policy watchdog scheduler ai-trade-web"
+  DEPLOY_SERVICES_RAW="ai-trade market-alpha-collector cross-venue-alpha-collector option-vrp-collector microstructure-demo-policy watchdog scheduler ai-trade-web"
 fi
 REQUIRED_CONTAINERS_RAW="${REQUIRED_CONTAINERS:-}"
 CONTAINER_NAME="${CONTAINER_NAME:-ai-trade}"
@@ -54,11 +54,13 @@ DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"
 DEPLOY_REPORT_MAX_AGE_HOURS="${DEPLOY_REPORT_MAX_AGE_HOURS:-72}"
 DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"
 DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-69}"
+DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS:-240}"
 # Only used when post-pull free space is below the deployment transaction
 # floor.  Preserve one complete frozen 34.2h window while releasing the older
 # retry window so a digest-pinned deployment can finish without touching the
 # currently running services or Docker volumes.
 DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS:-35}"
+DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS:-193}"
 # The production scheduler's bounded Closed Loop run may hold this lock for
 # up to 4800 seconds.  A standalone deploy must wait beyond that contract.
 DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-5400}"
@@ -352,13 +354,15 @@ cleanup_deploy_host_storage() {
     return 0
   fi
   local variable_name=""
+  DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS:-240}"
   for variable_name in \
     DEPLOY_RELEASE_KEEP_COUNT \
     DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT \
     DEPLOY_REPORT_KEEP_RUN_DIRS \
     DEPLOY_REPORT_MAX_AGE_HOURS \
     DEPLOY_REPORT_MAX_BYTES \
-    DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS
+    DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS \
+    DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS
   do
     if [[ ! "${!variable_name}" =~ ^[0-9]+$ ]]; then
       echo "[deploy] invalid ${variable_name}: ${!variable_name}"
@@ -412,6 +416,10 @@ cleanup_deploy_host_storage() {
     echo "[deploy] research capture retention must preserve two frozen 34.2h windows"
     return 1
   fi
+  if (( DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS < 240 )); then
+    echo "[deploy] option VRP capture retention must preserve the frozen 10-day evidence budget"
+    return 1
+  fi
   if ! python3 "${capture_pruner}" \
       --root "${DEPLOY_RELEASE_ROOT}/data/research/microstructure" \
       --expected-root-name microstructure \
@@ -424,6 +432,13 @@ cleanup_deploy_host_storage() {
       --expected-root-name bybit_sol_liquidations \
       --retention-hours "${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
     echo "[deploy] Bybit liquidation research capture cleanup failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp" \
+      --expected-root-name bybit_btc_option_vrp \
+      --retention-hours "${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
+    echo "[deploy] Bybit option VRP research capture cleanup failed"
     return 1
   fi
   # The service slot previously captured Binance L2/trades.  That information
@@ -513,10 +528,17 @@ reclaim_research_capture_for_transaction() {
     echo "[deploy] emergency research capture cleanup skipped (DEPLOY_HOST_GC_ENABLED=${DEPLOY_HOST_GC_ENABLED})"
     return 0
   fi
+  DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS:-193}"
   if [[ ! "${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS}" =~ ^[0-9]+$ ]] ||
      (( DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS < 35 )); then
     echo "[deploy] emergency research capture retention must preserve one frozen 34.2h window"
     DEPLOY_DISK_FAILURE_REASON="invalid_pressure_research_capture_retention"
+    return 1
+  fi
+  if [[ ! "${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS}" =~ ^[0-9]+$ ]] ||
+     (( DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS < 193 )); then
+    echo "[deploy] emergency option VRP capture retention must preserve the initial 8-day gate"
+    DEPLOY_DISK_FAILURE_REASON="invalid_pressure_option_vrp_capture_retention"
     return 1
   fi
   local capture_pruner="${COMPOSE_DIR}/tools/prune_microstructure_capture.py"
@@ -538,6 +560,13 @@ reclaim_research_capture_for_transaction() {
       --expected-root-name bybit_sol_liquidations \
       --retention-hours "${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
     DEPLOY_DISK_FAILURE_REASON="pressure_liquidation_capture_gc_failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_vrp" \
+      --expected-root-name bybit_btc_option_vrp \
+      --retention-hours "${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS}"; then
+    DEPLOY_DISK_FAILURE_REASON="pressure_option_vrp_capture_gc_failed"
     return 1
   fi
   return 0
@@ -860,6 +889,9 @@ service_to_container_name() {
       ;;
     cross-venue-alpha-collector)
       echo "ai-trade-cross-venue-alpha-collector"
+      ;;
+    option-vrp-collector)
+      echo "ai-trade-option-vrp-collector"
       ;;
     microstructure-demo-policy)
       echo "ai-trade-microstructure-demo-policy"

@@ -1,5 +1,5 @@
 {
-  "schema_version": "closed_loop_contract_v11",
+  "schema_version": "closed_loop_contract_v12",
   "trust_anchors": {
     "feature_parity_fixture": {
       "schema_version": "feature_parity_fixture_contract_v1",
@@ -25,6 +25,7 @@
         "funding_basis_carry_opportunity_experiment",
         "cross_venue_funding_differential_experiment",
         "account_structural_economics_audit",
+        "option_variance_risk_premium_feasibility",
         "maker_execution_learnability_experiment",
         "liquidation_information_set_experiment",
         "microstructure_alpha_development",
@@ -58,6 +59,7 @@
         "cross_venue_funding_differential_experiment",
         "cross_venue_funding_differential_frozen_audit",
         "account_structural_economics_audit",
+        "option_variance_risk_premium_feasibility",
         "maker_execution_learnability_experiment",
         "liquidation_information_set_experiment",
         "microstructure_alpha_development_report",

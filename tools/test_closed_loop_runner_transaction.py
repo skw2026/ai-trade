@@ -1495,6 +1495,7 @@ PY
             "funding_basis_carry_opportunity_experiment",
             "cross_venue_funding_differential_experiment",
             "account_structural_economics_audit",
+            "option_variance_risk_premium_feasibility",
             "maker_execution_learnability_experiment",
             "liquidation_information_set_experiment",
             "microstructure_alpha_development",
@@ -1509,11 +1510,12 @@ PY
             "run_funding_basis_carry_opportunity_experiment": observation_steps[4],
             "run_cross_venue_funding_differential_experiment": observation_steps[5],
             "run_account_structural_economics_audit": observation_steps[6],
-            "run_maker_execution_learnability_experiment": observation_steps[7],
-            "run_liquidation_information_set_experiment": observation_steps[8],
-            "run_microstructure_alpha_development_gate": observation_steps[9],
-            "run_microstructure_alpha_lifecycle_gate": observation_steps[10],
-            "run_alpha_source_route_gate": observation_steps[11],
+            "run_option_variance_risk_premium_feasibility": observation_steps[7],
+            "run_maker_execution_learnability_experiment": observation_steps[8],
+            "run_liquidation_information_set_experiment": observation_steps[9],
+            "run_microstructure_alpha_development_gate": observation_steps[10],
+            "run_microstructure_alpha_lifecycle_gate": observation_steps[11],
+            "run_alpha_source_route_gate": observation_steps[12],
         }
         for stage in ("DEPLOY", "SMOKE"):
             with self.subTest(stage=stage), tempfile.TemporaryDirectory() as td:
@@ -1596,6 +1598,7 @@ PY
                 run_funding_basis_carry_opportunity_experiment() { record_call funding_basis_carry_opportunity_experiment; }
                 run_cross_venue_funding_differential_experiment() { record_call cross_venue_funding_differential_experiment; }
                 run_account_structural_economics_audit() { record_call account_structural_economics_audit; }
+                run_option_variance_risk_premium_feasibility() { record_call option_variance_risk_premium_feasibility; }
                 run_maker_execution_learnability_experiment() { record_call maker_execution_learnability_experiment; }
                 run_liquidation_information_set_experiment() { record_call liquidation_information_set_experiment; }
                 run_microstructure_alpha_development_gate() { record_call microstructure_alpha_development; }
@@ -1632,6 +1635,7 @@ PY
                     "funding_basis_carry_opportunity_experiment",
                     "cross_venue_funding_differential_experiment",
                     "account_structural_economics_audit",
+                    "option_variance_risk_premium_feasibility",
                     "maker_execution_learnability_experiment",
                     "liquidation_information_set_experiment",
                     "microstructure_alpha_development",

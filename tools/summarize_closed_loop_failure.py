@@ -108,6 +108,10 @@ UPSTREAM_REPORTS = {
         "account_structural_economics_audit.json",
         {"COMPLETE", "NOT_READY"},
     ),
+    "option_variance_risk_premium_feasibility": (
+        "option_variance_risk_premium_feasibility.json",
+        {"COMPLETE", "NOT_READY"},
+    ),
     "maker_execution_learnability_experiment": (
         "maker_execution_learnability_experiment.json",
         {"COMPLETE", "NOT_READY"},
@@ -1075,6 +1079,57 @@ def _upstream_section(name: str, report: Mapping[str, Any] | None) -> dict[str, 
             )
             if (value := _safe_number(zero.get(key))) is not None
         } if isinstance(zero, Mapping) else {}
+    elif name == "option_variance_risk_premium_feasibility":
+        decision = report.get("decision")
+        allowed_decisions = {
+            "WAIT_FOR_OPTION_VRP_FORWARD_CAPTURE",
+            "READY_FOR_FROZEN_OPTION_PAYOFF_AUDIT",
+            "STOP_OPTION_VRP_MARKET_FEASIBILITY",
+        }
+        market = report.get("market_gate")
+        capture_gate = report.get("forward_capture_gate")
+        boundary = report.get("verification_boundary")
+        economics = report.get("economics")
+        contract_ok = (
+            report.get("schema_version")
+            == "option_variance_risk_premium_feasibility_v1"
+            and report.get("status") == "COMPLETE"
+            and report.get("research_domain") == "live_snapshot_development_only"
+            and report.get("promotion_evidence") is False
+            and report.get("promotion_eligible") is False
+            and report.get("promotion_authority") is False
+            and report.get("demo_activation_authorized") is False
+            and report.get("live_activation_authorized") is False
+            and isinstance(boundary, Mapping)
+            and boundary.get("fully_verifiable_historical_payoff") is False
+            and isinstance(economics, Mapping)
+            and economics.get("observed_iv_hv_is_profit_evidence") is False
+            and economics.get("profitability_verified") is False
+            and isinstance(market, Mapping)
+            and market.get("status") in {"PASS", "FAIL"}
+            and isinstance(capture_gate, Mapping)
+            and capture_gate.get("status") in {"PASS", "WAIT"}
+            and decision in allowed_decisions
+        )
+        section["gate_status"] = "COMPLETE" if contract_ok else "NOT_READY"
+        section["research_decision"] = decision if decision in allowed_decisions else None
+        section["research_observation_only"] = True
+        section["promotion_authority"] = False
+        section["demo_activation_authorized"] = False
+        section["live_activation_authorized"] = False
+        live = report.get("live_market_snapshot")
+        forward = report.get("forward_capture")
+        metrics = {}
+        for source, keys in (
+            (live, ("active_contract_count", "two_sided_contract_count", "scoped_two_sided_contract_count", "scoped_volume_contract_count", "recent_trade_count", "scoped_spread_ratio_p90", "historical_volatility_30d", "atm_mark_iv_median")),
+            (forward, ("checksum_bound_seconds", "successful_poll_count", "completed_expiries_with_delivery")),
+        ):
+            if isinstance(source, Mapping):
+                for key in keys:
+                    value = _safe_number(source.get(key))
+                    if value is not None:
+                        metrics[key] = value
+        section["metrics"] = metrics
     elif name == "maker_execution_learnability_experiment":
         reasons = _safe_tokens(report.get("reason_codes"))
         decision = report.get("research_decision")
@@ -1784,6 +1839,21 @@ def _annotation(summary: Mapping[str, Any]) -> str:
     account_economics_progress = (
         ",".join(account_economics_progress_parts) or "UNAVAILABLE"
     )
+    option_vrp = upstream.get("option_variance_risk_premium_feasibility", {})
+    option_vrp_decision = option_vrp.get("research_decision", "UNAVAILABLE") or "UNAVAILABLE"
+    option_vrp_progress_parts: list[str] = []
+    option_vrp_metrics = option_vrp.get("metrics")
+    if isinstance(option_vrp_metrics, Mapping):
+        for key in (
+            "scoped_two_sided_contract_count", "scoped_spread_ratio_p90",
+            "historical_volatility_30d", "atm_mark_iv_median",
+            "checksum_bound_seconds", "successful_poll_count",
+            "completed_expiries_with_delivery",
+        ):
+            value = _safe_number(option_vrp_metrics.get(key))
+            if value is not None:
+                option_vrp_progress_parts.append(f"{key}:{value}")
+    option_vrp_progress = ",".join(option_vrp_progress_parts) or "UNAVAILABLE"
     maker_learnability = upstream.get(
         "maker_execution_learnability_experiment", {}
     )
@@ -1876,6 +1946,8 @@ def _annotation(summary: Mapping[str, Any]) -> str:
         f"cross_venue_funding_progress={cross_venue_funding_progress}; "
         f"account_economics_decision={account_economics_decision}; "
         f"account_economics_progress={account_economics_progress}; "
+        f"option_vrp_decision={option_vrp_decision}; "
+        f"option_vrp_progress={option_vrp_progress}; "
         f"maker_learnability_decision={maker_learnability_decision}; "
         f"maker_learnability_leader={maker_learnability_leader}; "
         f"maker_learnability_progress={maker_learnability_progress}; "

@@ -251,6 +251,8 @@ FUNDING_BASIS_CARRY_AUDIT_MANIFEST="${CLOSED_LOOP_FUNDING_BASIS_CARRY_AUDIT_MANI
 CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG="${CLOSED_LOOP_CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG:-config/cross_venue_funding_differential_opportunity_experiment.json}"
 CROSS_VENUE_FUNDING_AUDIT_MANIFEST="${CLOSED_LOOP_CROSS_VENUE_FUNDING_AUDIT_MANIFEST:-${AI_TRADE_DATA_DIR:-./data}/research/cross_venue_funding_differential_frozen_audit_v1.json}"
 ACCOUNT_STRUCTURAL_ECONOMICS_CONFIG="${CLOSED_LOOP_ACCOUNT_STRUCTURAL_ECONOMICS_CONFIG:-config/account_structural_economics_audit.json}"
+OPTION_VRP_FEASIBILITY_CONFIG="${CLOSED_LOOP_OPTION_VRP_FEASIBILITY_CONFIG:-config/option_variance_risk_premium_feasibility.json}"
+OPTION_VRP_CAPTURE_ROOT="${CLOSED_LOOP_OPTION_VRP_CAPTURE_ROOT:-${AI_TRADE_DATA_DIR:-./data}/research/bybit_btc_option_vrp}"
 MAKER_LEARNABILITY_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_LEARNABILITY_EXPERIMENT_CONFIG:-config/maker_execution_learnability_experiment.json}"
 MAKER_SUBSECOND_EXPERIMENT_CONFIG="${CLOSED_LOOP_MAKER_SUBSECOND_EXPERIMENT_CONFIG:-config/maker_subsecond_information_experiment.json}"
 DECISION_EVIDENCE_BENCHMARK_MANIFEST_PATH="${CLOSED_LOOP_DECISION_EVIDENCE_BENCHMARK_MANIFEST:-}"
@@ -1333,6 +1335,7 @@ CROSS_VENUE_FUNDING_DATA_REPORT_PATH="${RUN_DIR}/cross_venue_funding_data_report
 CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH="${RUN_DIR}/cross_venue_funding_differential_experiment.json"
 CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH="${RUN_DIR}/cross_venue_funding_differential_frozen_audit.json"
 ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH="${RUN_DIR}/account_structural_economics_audit.json"
+OPTION_VRP_FEASIBILITY_REPORT_PATH="${RUN_DIR}/option_variance_risk_premium_feasibility.json"
 MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_execution_learnability_experiment.json"
 MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH="${RUN_DIR}/maker_subsecond_information_experiment.json"
 MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH="${RUN_DIR}/microstructure_alpha_development_report.json"
@@ -3627,6 +3630,14 @@ run_account_structural_economics_audit() {
     --private-mode auto
 }
 
+run_option_variance_risk_premium_feasibility() {
+  echo "[INFO] public option variance-risk-premium feasibility audit start"
+  python3 tools/audit_option_variance_risk_premium_feasibility.py \
+    --config "${OPTION_VRP_FEASIBILITY_CONFIG}" \
+    --capture-root "${OPTION_VRP_CAPTURE_ROOT}" \
+    --output "${OPTION_VRP_FEASIBILITY_REPORT_PATH}"
+}
+
 run_maker_execution_learnability_experiment() {
   echo "[INFO] conservative maker execution learnability experiment start"
   compose_cmd --profile research run --rm --entrypoint python3 ai-trade-research \
@@ -5051,6 +5062,7 @@ write_run_manifest() {
   FUNDING_BASIS_CARRY_EXPERIMENT_CONFIG_VALUE="${FUNDING_BASIS_CARRY_EXPERIMENT_CONFIG}" \
   CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG_VALUE="${CROSS_VENUE_FUNDING_EXPERIMENT_CONFIG}" \
   ACCOUNT_STRUCTURAL_ECONOMICS_CONFIG_VALUE="${ACCOUNT_STRUCTURAL_ECONOMICS_CONFIG}" \
+  OPTION_VRP_FEASIBILITY_CONFIG_VALUE="${OPTION_VRP_FEASIBILITY_CONFIG}" \
   MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_CONFIG}" \
   MAKER_SUBSECOND_EXPERIMENT_CONFIG_VALUE="${MAKER_SUBSECOND_EXPERIMENT_CONFIG}" \
   REPLAY_CONFIG_PATH_VALUE="${REPLAY_EFFECTIVE_CONFIG_PATH}" \
@@ -5113,6 +5125,7 @@ write_run_manifest() {
   CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH_VALUE="${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" \
   CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH_VALUE="${CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH}" \
   ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH_VALUE="${ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH}" \
+  OPTION_VRP_FEASIBILITY_REPORT_PATH_VALUE="${OPTION_VRP_FEASIBILITY_REPORT_PATH}" \
   MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" \
   MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE="${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" \
   MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE="${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}" \
@@ -5338,6 +5351,9 @@ payload = {
         "account_structural_economics_audit": os.environ.get(
             "ACCOUNT_STRUCTURAL_ECONOMICS_CONFIG_VALUE", ""
         ),
+        "option_variance_risk_premium_feasibility": os.environ.get(
+            "OPTION_VRP_FEASIBILITY_CONFIG_VALUE", ""
+        ),
         "maker_execution_learnability_experiment": os.environ.get(
             "MAKER_LEARNABILITY_EXPERIMENT_CONFIG_VALUE", ""
         ),
@@ -5535,6 +5551,7 @@ artifact_env_names = {
     "cross_venue_funding_differential_experiment": "CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH_VALUE",
     "cross_venue_funding_differential_frozen_audit": "CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH_VALUE",
     "account_structural_economics_audit": "ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH_VALUE",
+    "option_variance_risk_premium_feasibility": "OPTION_VRP_FEASIBILITY_REPORT_PATH_VALUE",
     "maker_execution_learnability_experiment": "MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH_VALUE",
     "maker_subsecond_information_experiment": "MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH_VALUE",
     "microstructure_alpha_development_report": "MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH_VALUE",
@@ -5753,6 +5770,9 @@ build_summary() {
   if [[ -f "${ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--account_structural_economics_audit_report "${ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH}")
   fi
+  if [[ -f "${OPTION_VRP_FEASIBILITY_REPORT_PATH}" ]]; then
+    SUMMARY_ARGS+=(--option_variance_risk_premium_feasibility_report "${OPTION_VRP_FEASIBILITY_REPORT_PATH}")
+  fi
   if [[ -f "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ]]; then
     SUMMARY_ARGS+=(--maker_execution_learnability_experiment_report "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}")
   fi
@@ -5877,6 +5897,7 @@ build_summary() {
   "cross_venue_funding_differential_experiment": "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}",
   "cross_venue_funding_differential_frozen_audit": "${CROSS_VENUE_FUNDING_AUDIT_SNAPSHOT_PATH}",
   "account_structural_economics_audit": "${ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH}",
+  "option_variance_risk_premium_feasibility": "${OPTION_VRP_FEASIBILITY_REPORT_PATH}",
   "maker_execution_learnability_experiment": "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}",
   "maker_subsecond_information_experiment": "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}",
   "microstructure_alpha_development_report": "${MICROSTRUCTURE_ALPHA_DEVELOPMENT_REPORT_PATH}",
@@ -6703,6 +6724,7 @@ observation_report_path() {
     funding_basis_carry_opportunity_experiment) printf '%s\n' "${FUNDING_BASIS_CARRY_EXPERIMENT_REPORT_PATH}" ;;
     cross_venue_funding_differential_experiment) printf '%s\n' "${CROSS_VENUE_FUNDING_EXPERIMENT_REPORT_PATH}" ;;
     account_structural_economics_audit) printf '%s\n' "${ACCOUNT_STRUCTURAL_ECONOMICS_REPORT_PATH}" ;;
+    option_variance_risk_premium_feasibility) printf '%s\n' "${OPTION_VRP_FEASIBILITY_REPORT_PATH}" ;;
     maker_execution_learnability_experiment) printf '%s\n' "${MAKER_LEARNABILITY_EXPERIMENT_REPORT_PATH}" ;;
     maker_subsecond_information_experiment) printf '%s\n' "${MAKER_SUBSECOND_EXPERIMENT_REPORT_PATH}" ;;
     liquidation_information_set_experiment) printf '%s\n' "${LIQUIDATION_EXPERIMENT_REPORT_PATH}" ;;
@@ -6887,6 +6909,7 @@ run_training_chain() {
     run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
     run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
     run_observation_step account_structural_economics_audit run_account_structural_economics_audit
+    run_observation_step option_variance_risk_premium_feasibility run_option_variance_risk_premium_feasibility
     run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
     run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
     run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -6948,6 +6971,7 @@ run_research_discovery_chain() {
     skip_observation_step funding_basis_carry_opportunity_experiment "${reason}"
     skip_observation_step cross_venue_funding_differential_experiment "${reason}"
     skip_observation_step account_structural_economics_audit "${reason}"
+    skip_observation_step option_variance_risk_premium_feasibility "${reason}"
     skip_observation_step maker_execution_learnability_experiment "${reason}"
     skip_observation_step liquidation_information_set_experiment "${reason}"
     skip_observation_step microstructure_alpha_development "${reason}"
@@ -6965,6 +6989,7 @@ run_research_discovery_chain() {
   run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
   run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
   run_observation_step account_structural_economics_audit run_account_structural_economics_audit
+  run_observation_step option_variance_risk_premium_feasibility run_option_variance_risk_premium_feasibility
   run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
   run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
   run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -6992,6 +7017,7 @@ run_assess_observation_chain() {
     skip_observation_step funding_basis_carry_opportunity_experiment "${skip_reason}"
     skip_observation_step cross_venue_funding_differential_experiment "${skip_reason}"
     skip_observation_step account_structural_economics_audit "${skip_reason}"
+    skip_observation_step option_variance_risk_premium_feasibility "${skip_reason}"
     skip_observation_step maker_execution_learnability_experiment "${skip_reason}"
     skip_observation_step liquidation_information_set_experiment "${skip_reason}"
     skip_observation_step microstructure_alpha_development "${skip_reason}"
@@ -7008,6 +7034,7 @@ run_assess_observation_chain() {
   run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
   run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
   run_observation_step account_structural_economics_audit run_account_structural_economics_audit
+  run_observation_step option_variance_risk_premium_feasibility run_option_variance_risk_premium_feasibility
   run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
   run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
   run_observation_step microstructure_alpha_development run_microstructure_alpha_development_gate
@@ -7158,6 +7185,7 @@ run_main() {
       run_observation_step funding_basis_carry_opportunity_experiment run_funding_basis_carry_opportunity_experiment
       run_observation_step cross_venue_funding_differential_experiment run_cross_venue_funding_differential_experiment
       run_observation_step account_structural_economics_audit run_account_structural_economics_audit
+      run_observation_step option_variance_risk_premium_feasibility run_option_variance_risk_premium_feasibility
       run_observation_step maker_execution_learnability_experiment run_maker_execution_learnability_experiment
       run_observation_step liquidation_information_set_experiment run_liquidation_information_set_experiment
       run_collecting_step microstructure_alpha_development run_microstructure_alpha_development_gate

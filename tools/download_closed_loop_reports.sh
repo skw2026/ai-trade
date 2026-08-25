@@ -239,6 +239,7 @@ fetch_report "${REMOTE_BASE}/cross_venue_funding_data_report.json" ".artifacts/c
 fetch_report "${REMOTE_BASE}/cross_venue_funding_differential_experiment.json" ".artifacts/cross_venue_funding_differential_experiment.json" "cross_venue_funding_differential_experiment" "json"
 fetch_report "${REMOTE_BASE}/cross_venue_funding_differential_frozen_audit.json" ".artifacts/cross_venue_funding_differential_frozen_audit.json" "cross_venue_funding_differential_frozen_audit" "json"
 fetch_report "${REMOTE_BASE}/account_structural_economics_audit.json" ".artifacts/account_structural_economics_audit.json" "account_structural_economics_audit" "json"
+fetch_report "${REMOTE_BASE}/option_variance_risk_premium_feasibility.json" ".artifacts/option_variance_risk_premium_feasibility.json" "option_variance_risk_premium_feasibility" "json"
 fetch_report "${REMOTE_BASE}/maker_execution_learnability_experiment.json" ".artifacts/maker_execution_learnability_experiment.json" "maker_execution_learnability_experiment" "json"
 fetch_report "${REMOTE_BASE}/maker_subsecond_information_experiment.json" ".artifacts/maker_subsecond_information_experiment.json" "maker_subsecond_information_experiment" "json"
 fetch_report "${REMOTE_BASE}/microstructure_alpha_development_report.json" ".artifacts/microstructure_alpha_development_report.json" "microstructure_alpha_development_report" "json"
