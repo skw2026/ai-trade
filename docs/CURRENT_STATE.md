@@ -13,7 +13,8 @@
 - v4/v5 first-passage 被动止盈分别产生 74/79 笔有效交易；两者 stress LCB 为正但均未过 100 笔且 boundary pass ratio 为 0。单边 maker first-passage 机制已经最终关闭，不得继续调模型、止盈、期限、成本或占用规则。
 - SOL 对 BTC/ETH 的美元中性残差 v1 已在不可变 Research `#1096` 上明确 STOP：仅 15 笔，stress LCB 为 `-0.4643 bps`，boundary pass ratio 为 0。不得继续调该残差族的权重网格、期限、阈值、模型或成本。
 - Bybit SOL 现货–永续资金费率/基差 carry v1 已在不可变 Research `#1098` 上明确 STOP：40,321 个同步 5 分钟样本和 420 个真实 funding settlement 下，6 个 OOS split 均无全成本后正候选，boundary pass ratio 为 0。不得继续调该 carry 族的期限、成本、方向或模型。
-- 下一阶段只允许先做同一资产的跨交易所永续–永续 funding differential/basis 数据可验证性与无模型全成本审计；通过前不得训练新模型，也不得申请 Demo/live 权限。
+- Bybit–Binance SOL 永续–永续 funding differential/basis v1 已在不可变 Research `#1099` 上明确 STOP：36,288 个同步样本、两场各 378 个真实 funding settlement 下，6 个 OOS split 均无全成本后正候选。最佳 hindsight 候选 gross 仅 `9.1442 bps`，base/stress 净值为 `-21.5014/-29.8478 bps`。不得继续调该族的场所方向、期限、阈值、成本或模型，也不等待 raw BBO forward。
+- 发布与研究证据链已技术收敛，但可盈利经济机制尚未收敛。下一阶段先做结构优势来源审查；在实际账户成本和无模型 stress break-even 被证明前，不再启动新的模型或参数实验，也不得申请 Demo/live 权限。
 - 自进化保持 shadow/evidence-only；没有正收益 frozen candidate 前不得影响 Demo 动作。
 
 ## 工作流边界
@@ -63,15 +64,21 @@ v1 使用 Bybit SOLUSDT spot、linear perpetual 与 mark-price 5 分钟历史，
 
 Research `#1098` 的 6 个 frozen OOS split 中没有任何 stress-net 为正的非重叠候选，最终决策为 `STOP_FUNDING_BASIS_CARRY_FAMILY`。本地同合同诊断的最佳单候选在 funding 与基差合计仅约 `3.998 bps` 时，需要承担约 `34.800 bps` 的执行成本，base/stress 净值约为 `-33.542/-43.611 bps`；差距不是模型筛选可以弥补的。该族不等待 raw BBO forward，不进入模型、Demo 或 live。
 
-## 下一经济机制
+## 已关闭的跨场永续资金费率差
 
-下一项只验证 SOLUSDT 跨交易所 linear perpetual funding differential/basis。动作域允许在两个场所中做多实际 funding 较低的一腿、做空实际 funding 较高的一腿，但必须两边都有独立保证金覆盖；不得假设即时跨场所划转、共享保证金或无成本再平衡。
+v1 使用 Bybit 与 Binance SOLUSDT linear perpetual 的同步 trade/mark 5 分钟历史与各自真实 funding settlement，精确继承 carry v1 的 6 个 absolute OOS split 和 `0/-1/-2/-3` 天边界。两场使用相同 base quantity 和独立保证金，计入四次 taker fee、half-spread、slippage、跨场腿风险、两倍 gross capital 和 1.25 倍压力执行成本。
 
-第一阶段只构建两场所真实 funding settlement、mark notional、同步价格、费用/滑点、保证金资金占用和腿间执行风险的精确时间轴，并运行无模型全成本 hindsight upper bound。primary split 尽可能精确继承 carry v1 的 6 个绝对 split；共享覆盖不足时必须 fail-closed，禁止滚动重切。只有 primary、边界和随后未观察 raw BBO forward 同时过门，才允许讨论机会识别、方向/期限或联合动作排序模型。
+Research `#1099` 中 Bybit/Binance 各有 378 个真实 funding event，但 primary oracle trade count 为 0，最终决策为 `STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY`。最佳 24 小时 hindsight 候选的 basis/funding 合计只有 `9.1442 bps`，显式 execution cost 为 `27.9059 bps`，base/stress 为 `-21.5014/-29.8478 bps`。该族的历史上限和边界同时失败，不进入 raw BBO forward、模型、Demo 或 live。
+
+## 下一阶段：结构优势来源审查
+
+maker first-passage、跨资产残差、单场 spot-perp carry 和跨场 perp-perp carry 均已被冻结 OOS/边界证据关闭。下一轮不得通过换币种、换期限、放宽阈值或更换模型架构继续搜索这些机制。
+
+新的研究项必须先提供可审计的实际账户 fee/rebate、场所和资本合同，并在无模型 stress break-even 下显示足够安全边际；机制还必须与四个已关闭族有实质不同。只有结构上限通过后，才允许预注册原始数据 forward、目标架构比较和 Demo incubation。输入不足时保持暂停 Alpha 参数搜索，而不是继续优化负经济目标。
 
 ## 晋级权限
 
-当前所有 maker、残差与 carry 报告仍为 `development_only`，且：
+当前所有 maker、残差、单场 carry 与跨场 funding 报告仍为 `development_only`，且：
 
 - `promotion_authority=false`
 - `demo_activation_authorized=false`
