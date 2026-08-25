@@ -54,6 +54,11 @@ DEPLOY_REPORT_KEEP_RUN_DIRS="${DEPLOY_REPORT_KEEP_RUN_DIRS:-12}"
 DEPLOY_REPORT_MAX_AGE_HOURS="${DEPLOY_REPORT_MAX_AGE_HOURS:-72}"
 DEPLOY_REPORT_MAX_BYTES="${DEPLOY_REPORT_MAX_BYTES:-4294967296}"
 DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS:-69}"
+# Only used when post-pull free space is below the deployment transaction
+# floor.  Preserve one complete frozen 34.2h window while releasing the older
+# retry window so a digest-pinned deployment can finish without touching the
+# currently running services or Docker volumes.
+DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS:-35}"
 # The production scheduler's bounded Closed Loop run may hold this lock for
 # up to 4800 seconds.  A standalone deploy must wait beyond that contract.
 DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-5400}"
@@ -503,6 +508,41 @@ reclaim_report_storage_for_disk_pressure() {
   return 0
 }
 
+reclaim_research_capture_for_transaction() {
+  if ! is_true "${DEPLOY_HOST_GC_ENABLED}"; then
+    echo "[deploy] emergency research capture cleanup skipped (DEPLOY_HOST_GC_ENABLED=${DEPLOY_HOST_GC_ENABLED})"
+    return 0
+  fi
+  if [[ ! "${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS}" =~ ^[0-9]+$ ]] ||
+     (( DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS < 35 )); then
+    echo "[deploy] emergency research capture retention must preserve one frozen 34.2h window"
+    DEPLOY_DISK_FAILURE_REASON="invalid_pressure_research_capture_retention"
+    return 1
+  fi
+  local capture_pruner="${COMPOSE_DIR}/tools/prune_microstructure_capture.py"
+  if [[ ! -f "${capture_pruner}" ]]; then
+    echo "[deploy] emergency research capture cleanup script missing: ${capture_pruner}"
+    DEPLOY_DISK_FAILURE_REASON="pressure_research_capture_pruner_missing"
+    return 1
+  fi
+  echo "[deploy] transaction floor at risk; retaining one complete frozen research window"
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/microstructure" \
+      --expected-root-name microstructure \
+      --retention-hours "${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
+    DEPLOY_DISK_FAILURE_REASON="pressure_microstructure_capture_gc_failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_sol_liquidations" \
+      --expected-root-name bybit_sol_liquidations \
+      --retention-hours "${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS}"; then
+    DEPLOY_DISK_FAILURE_REASON="pressure_liquidation_capture_gc_failed"
+    return 1
+  fi
+  return 0
+}
+
 reclaim_host_cache_for_disk_pressure() {
   if ! is_true "${DEPLOY_HOST_GC_ENABLED}"; then
     echo "[deploy] pressure host cache cleanup skipped (DEPLOY_HOST_GC_ENABLED=${DEPLOY_HOST_GC_ENABLED})"
@@ -710,6 +750,18 @@ ensure_deploy_post_pull_capacity() {
       return 1
     fi
     echo "[deploy] disk headroom after post-pull cleanup: available_bytes=${available_after_pull} transaction_minimum_bytes=${DEPLOY_TRANSACTION_MIN_FREE_BYTES}"
+  fi
+  if (( available_after_pull < DEPLOY_TRANSACTION_MIN_FREE_BYTES )); then
+    # Complete capture bundles are the only remaining bounded, recoverable
+    # host data.  Keep one full frozen window and never prune Docker volumes.
+    if ! reclaim_research_capture_for_transaction; then
+      return 1
+    fi
+    if ! available_after_pull="$(docker_storage_available_bytes)"; then
+      DEPLOY_DISK_FAILURE_REASON="docker_storage_unavailable_after_pressure_capture_gc"
+      return 1
+    fi
+    echo "[deploy] disk headroom after emergency research capture cleanup: available_bytes=${available_after_pull} transaction_minimum_bytes=${DEPLOY_TRANSACTION_MIN_FREE_BYTES}"
   fi
   if (( available_after_pull < DEPLOY_TRANSACTION_MIN_FREE_BYTES )); then
     echo "[deploy] insufficient Docker disk headroom for deployment transaction"

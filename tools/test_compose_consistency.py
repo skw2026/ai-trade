@@ -1619,6 +1619,10 @@ class ComposeConsistencyTest(unittest.TestCase):
             script,
         )
         self.assertIn(
+            'DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS:-35}"',
+            script,
+        )
+        self.assertIn(
             "DEPLOY_TRANSACTION_MIN_FREE_BYTES: ${{ vars.DEPLOY_TRANSACTION_MIN_FREE_BYTES || '33554432' }}",
             workflow,
         )
@@ -1637,6 +1641,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertIn("DOCKER_GC_UNTIL=all", script)
         self.assertIn("emergency pruning all unused containers", script)
         self.assertIn("reclaim_report_storage_for_disk_pressure()", script)
+        self.assertIn("reclaim_research_capture_for_transaction()", script)
         self.assertIn("reclaim_host_cache_for_disk_pressure()", script)
         self.assertIn(
             "disk pressure remains; reclaiming retained closed-loop reports",
@@ -1685,6 +1690,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertLess(
             post_pull_function.index("reclaim_host_cache_for_disk_pressure"),
+            post_pull_function.index("reclaim_research_capture_for_transaction"),
+        )
+        self.assertLess(
+            post_pull_function.index("reclaim_research_capture_for_transaction"),
             post_pull_function.index("insufficient Docker disk headroom for deployment transaction"),
         )
         self.assertIn(
@@ -1733,6 +1742,7 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_REPORT_MAX_AGE_HOURS",
             "DEPLOY_REPORT_MAX_BYTES",
             "DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS",
+            "DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS",
             "DEPLOY_LOCK_WAIT_SECONDS",
         ):
             with self.subTest(workflow_variable=variable):
@@ -1757,6 +1767,10 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             "DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS || '69' }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS || '35' }}",
             workflow,
         )
         self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
@@ -1807,6 +1821,7 @@ DEPLOY_HOST_GC_ENABLED=true
 DEPLOY_REPORT_KEEP_RUN_DIRS=12
 DEPLOY_REPORT_MAX_AGE_HOURS=72
 DEPLOY_REPORT_MAX_BYTES=4294967296
+DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS=35
 DEPLOY_RELEASE_ROOT="${FAKE_RELEASE_ROOT}"
 CLOSED_LOOP_OUTPUT_ROOT="${FAKE_REPORTS_ROOT}"
 CLOSED_LOOP_RUN_ID=deploy-test
@@ -1876,6 +1891,7 @@ ensure_deploy_disk_capacity
             reports_root.mkdir(parents=True)
             gc_log = temp / "gc.env"
             report_gc_log = temp / "report-gc.args"
+            capture_gc_log = temp / "capture-gc.args"
             gc_script = tools_dir / "docker_gc.sh"
             gc_script.write_text(
                 """#!/usr/bin/env bash
@@ -1899,6 +1915,18 @@ printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
 """,
                 encoding="utf-8",
             )
+            capture_pruner = tools_dir / "prune_microstructure_capture.py"
+            capture_pruner.write_text(
+                """#!/usr/bin/env python3
+import os
+import pathlib
+import sys
+path = pathlib.Path(os.environ["FAKE_CAPTURE_GC_LOG"])
+with path.open("a", encoding="utf-8") as handle:
+    handle.write("\\n".join(sys.argv[1:]) + "\\n--\\n")
+""",
+                encoding="utf-8",
+            )
 
             base_env = os.environ.copy()
             base_env.update(
@@ -1910,6 +1938,7 @@ printf '%s\\n' "$@" > "${FAKE_REPORT_GC_LOG}"
                     "FAKE_DF_COUNT": str(temp / "df.count"),
                     "FAKE_GC_LOG": str(gc_log),
                     "FAKE_REPORT_GC_LOG": str(report_gc_log),
+                    "FAKE_CAPTURE_GC_LOG": str(capture_gc_log),
                     "FAKE_HOST_GC_LOG": str(temp / "host-gc.args"),
                     "FAKE_GC_TRIGGER_FREE_BYTES": "4294967296",
                     "FAKE_MIN_FREE_BYTES": "1073741824",
@@ -2038,7 +2067,32 @@ ensure_deploy_post_pull_capacity
             self.assertTrue(pathlib.Path(base_env["FAKE_HOST_GC_LOG"]).exists())
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            capture_gc_log.unlink(missing_ok=True)
             base_env["FAKE_FREE_AFTER_KIB"] = "20000"
+            base_env["FAKE_FREE_EMERGENCY_KIB"] = "40000"
+            result = subprocess.run(
+                ["bash", "-c", post_pull_harness],
+                cwd=ROOT,
+                env=base_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            self.assertIn(
+                "retaining one complete frozen research window", result.stdout
+            )
+            self.assertIn(
+                "disk headroom after emergency research capture cleanup",
+                result.stdout,
+            )
+            capture_args = capture_gc_log.read_text(encoding="utf-8")
+            self.assertIn("--expected-root-name\nmicrostructure\n", capture_args)
+            self.assertIn("--expected-root-name\nbybit_sol_liquidations\n", capture_args)
+            self.assertEqual(capture_args.count("--retention-hours\n35\n"), 2)
+
+            pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
+            base_env["FAKE_FREE_AFTER_KIB"] = "20000"
+            base_env["FAKE_FREE_EMERGENCY_KIB"] = "20000"
             result = subprocess.run(
                 ["bash", "-c", post_pull_harness],
                 cwd=ROOT,
