@@ -189,6 +189,33 @@ jobs:
             fi
           }
 
+          reclaim_bucket() {
+            python3 - "${1:-}" <<'PY'
+          import re
+          import sys
+
+          raw = sys.argv[1].strip().split(" ", 1)[0]
+          match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([KMGTP]?B)", raw, re.I)
+          if not match:
+              print("UNKNOWN")
+              raise SystemExit(0)
+          value = float(match.group(1))
+          unit = match.group(2).upper()
+          factors = {"B": 1, "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4, "PB": 1000**5}
+          size = value * factors[unit]
+          if size == 0:
+              print("NONE")
+          elif size < 1024**3:
+              print("LT_1_GIB")
+          elif size < 5 * 1024**3:
+              print("1_TO_5_GIB")
+          elif size < 10 * 1024**3:
+              print("5_TO_10_GIB")
+          else:
+              print("GE_10_GIB")
+          PY
+          }
+
           deploy_root="/opt/ai-trade"
           docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
           available_kb="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {print $4}')"
@@ -212,11 +239,7 @@ jobs:
             while IFS='|' read -r object_type size reclaimable; do
               safe_type="$(printf '%s' "${object_type}" | tr '[:lower:] ' '[:upper:]_')"
               if [[ -n "${safe_type}" ]]; then
-                case "${reclaimable}" in
-                  0B*|0\ *) reclaim_state="NONE" ;;
-                  *) reclaim_state="PRESENT" ;;
-                esac
-                echo "DOCKER_${safe_type}_RECLAIMABLE=${reclaim_state}"
+                echo "DOCKER_${safe_type}_RECLAIM_BUCKET=$(reclaim_bucket "${reclaimable}")"
               fi
             done <<< "${docker_df}"
           else
@@ -254,7 +277,14 @@ jobs:
 
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
-            echo "::notice title=ECS storage audit::check=${check}; result=${result}"
+            case "${check}" in
+              OPTION_COLLECTOR_*)
+                echo "::warning title=ECS storage audit::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::notice title=ECS storage audit::check=${check}; result=${result}"
+                ;;
+            esac
           done < storage_checks
 
       - name: Validate remote closed-loop prerequisites
