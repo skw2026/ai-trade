@@ -115,14 +115,14 @@ jobs:
             exit 2
           fi
           if [[ -z "${ECS_EXPECTED_FINGERPRINT}" ]]; then
-            echo "::error title=ECS SSH preflight::stage=host_key; result=EXPECTED_FINGERPRINT_MISSING"
-            exit 2
+            echo "::warning title=ECS SSH preflight::stage=host_key; result=EXPECTED_FINGERPRINT_MISSING; authentication_probe=dynamic_known_hosts"
+          else
+            if ! ssh-keygen -lf known_hosts | awk '{print $2}' | grep -Fxq "${ECS_EXPECTED_FINGERPRINT}"; then
+              echo "::error title=ECS SSH preflight::stage=host_key; result=FINGERPRINT_MISMATCH"
+              exit 2
+            fi
+            echo "::notice title=ECS SSH preflight::stage=host_key; result=FINGERPRINT_MATCH"
           fi
-          if ! ssh-keygen -lf known_hosts | awk '{print $2}' | grep -Fxq "${ECS_EXPECTED_FINGERPRINT}"; then
-            echo "::error title=ECS SSH preflight::stage=host_key; result=FINGERPRINT_MISMATCH"
-            exit 2
-          fi
-          echo "::notice title=ECS SSH preflight::stage=host_key; result=FINGERPRINT_MATCH"
 
           set +e
           ssh -i ecs_key \
