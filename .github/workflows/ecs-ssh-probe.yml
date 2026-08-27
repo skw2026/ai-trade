@@ -153,3 +153,140 @@ jobs:
           fi
           echo "::error title=ECS SSH preflight::stage=authentication; result=${result}"
           exit 2
+
+      - name: Validate remote closed-loop prerequisites
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > remote_checks <<'REMOTE'
+          set -u
+          expected_sha="$1"
+          deploy_root="/opt/ai-trade"
+          release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
+
+          if [[ -n "${release_dir}" &&
+                "${release_dir}" == "${deploy_root}/releases/"* &&
+                -f "${release_dir}/release_manifest.json" &&
+                -f "${release_dir}/.release-content.sha256" ]]; then
+            echo "RELEASE_CURRENT=PASS"
+          else
+            echo "RELEASE_CURRENT=FAIL"
+          fi
+
+          release_sha=""
+          if [[ -f "${release_dir}/release_manifest.json" ]]; then
+            release_sha="$(python3 - "${release_dir}/release_manifest.json" 2>/dev/null <<'PY' || true
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if payload.get("schema_version") != "ai_trade_release_manifest_v1":
+              raise SystemExit(2)
+          print(str(payload.get("git_sha") or ""))
+          PY
+            )"
+          fi
+          if [[ "${release_sha}" == "${expected_sha}" &&
+                "${release_dir}" == "${deploy_root}/releases/${expected_sha}" ]]; then
+            echo "RELEASE_IDENTITY=PASS"
+          else
+            echo "RELEASE_IDENTITY=FAIL"
+          fi
+
+          if [[ -n "${release_dir}" ]] &&
+             (cd "${release_dir}" && sha256sum -c .release-content.sha256 >/dev/null 2>&1); then
+            echo "RELEASE_CONTENT=PASS"
+          else
+            echo "RELEASE_CONTENT=FAIL"
+          fi
+
+          runtime_sha="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' ai-trade 2>/dev/null || true)"
+          if [[ "${runtime_sha}" == "${expected_sha}" ]]; then
+            echo "RUNTIME_IDENTITY=PASS"
+          else
+            echo "RUNTIME_IDENTITY=FAIL"
+          fi
+
+          if [[ -f "${deploy_root}/.env.runtime" ]] &&
+             (set -a; source "${deploy_root}/.env.runtime") >/dev/null 2>&1; then
+            echo "ENV_RUNTIME=PASS"
+          else
+            echo "ENV_RUNTIME=FAIL"
+          fi
+
+          if [[ -x "${release_dir}/tools/closed_loop_runner.sh" ]] &&
+             bash -n "${release_dir}/tools/closed_loop_runner.sh" >/dev/null 2>&1; then
+            echo "RUNNER=PASS"
+          else
+            echo "RUNNER=FAIL"
+          fi
+
+          lock_path="${deploy_root}/data/models/closed_loop_runner.lock"
+          if [[ ! -e "${lock_path}" ]]; then
+            echo "RUNNER_LOCK=AVAILABLE"
+          elif exec 9<"${lock_path}" 2>/dev/null && flock -n 9; then
+            echo "RUNNER_LOCK=AVAILABLE"
+            flock -u 9 || true
+          else
+            echo "RUNNER_LOCK=HELD"
+          fi
+
+          if [[ -d "${deploy_root}/data/reports/closed_loop" &&
+                -w "${deploy_root}/data/reports/closed_loop" ]]; then
+            echo "REPORT_ROOT=PASS"
+          else
+            echo "REPORT_ROOT=FAIL"
+          fi
+
+          collector_state="$(docker inspect --format '{{.State.Status}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+          collector_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+          if [[ "${collector_state}" == "running" && "${collector_health}" == "healthy" ]]; then
+            echo "OPTION_COLLECTOR=PASS"
+          else
+            echo "OPTION_COLLECTOR=FAIL"
+          fi
+
+          if [[ -d "${deploy_root}/data/research/bybit_btc_option_vrp_v2" ]]; then
+            echo "OPTION_CAPTURE_ROOT=PASS"
+          else
+            echo "OPTION_CAPTURE_ROOT=FAIL"
+          fi
+
+          available_kb="$(df -Pk "${deploy_root}/data" 2>/dev/null | awk 'NR==2 {print $4}')"
+          if [[ "${available_kb}" =~ ^[0-9]+$ ]] && (( available_kb >= 5242880 )); then
+            echo "DATA_DISK=PASS"
+          else
+            echo "DATA_DISK=FAIL"
+          fi
+          REMOTE
+
+          failures=0
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${result}" in
+              PASS|AVAILABLE)
+                echo "::notice title=ECS closed-loop prerequisite::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::error title=ECS closed-loop prerequisite::check=${check}; result=${result}"
+                failures=$((failures + 1))
+                ;;
+            esac
+          done < remote_checks
+          if (( failures > 0 )); then
+            exit 2
+          fi
