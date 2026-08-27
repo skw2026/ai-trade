@@ -5,6 +5,7 @@ on:
     tags:
       - "infra/ecs-ssh-probe/**"
       - "infra/ecs-storage-audit/**"
+      - "infra/ecs-storage-recovery/**"
 
 permissions:
   contents: read
@@ -12,7 +13,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Validate configured SSH boundary
         env:
@@ -154,6 +155,114 @@ jobs:
           fi
           echo "::error title=ECS SSH preflight::stage=authentication; result=${result}"
           exit 2
+
+      - name: Recover bounded image storage and option collector
+        if: startsWith(github.ref_name, 'infra/ecs-storage-recovery/')
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > recovery_checks <<'REMOTE'
+          set -u
+          expected_sha="$1"
+          deploy_root="/opt/ai-trade"
+          release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
+          if [[ "${release_dir}" != "${deploy_root}/releases/${expected_sha}" ]]; then
+            echo "RECOVERY_RELEASE=FAIL"
+            exit 2
+          fi
+          echo "RECOVERY_RELEASE=PASS"
+
+          evidence_root="${deploy_root}/data/research/bybit_btc_option_vrp_v2"
+          if [[ ! -d "${evidence_root}" || ! -w "${evidence_root}" ]]; then
+            echo "OPTION_EVIDENCE_ROOT=FAIL"
+            exit 2
+          fi
+          echo "OPTION_EVIDENCE_ROOT=PASS"
+
+          docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+          available_before="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {printf "%.0f", $4 * 1024}')"
+          if [[ ! "${available_before}" =~ ^[0-9]+$ ]]; then
+            echo "DISK_MEASUREMENT=FAIL"
+            exit 2
+          fi
+
+          if ! docker image prune -f --filter until=24h >/dev/null 2>&1; then
+            echo "DANGLING_IMAGE_GC=FAIL"
+            exit 2
+          fi
+          echo "DANGLING_IMAGE_GC=PASS"
+
+          available_after="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {printf "%.0f", $4 * 1024}')"
+          if [[ ! "${available_after}" =~ ^[0-9]+$ ]]; then
+            echo "DISK_MEASUREMENT=FAIL"
+            exit 2
+          fi
+          if (( available_after > available_before )); then
+            echo "DISK_RECLAIM=PASS"
+          else
+            echo "DISK_RECLAIM=NO_CHANGE"
+          fi
+          if (( available_after < 5368709120 )); then
+            echo "DATA_DISK=FAIL"
+            exit 2
+          fi
+          echo "DATA_DISK=PASS"
+
+          if ! docker start ai-trade-option-vrp-collector >/dev/null 2>&1; then
+            echo "OPTION_COLLECTOR_START=FAIL"
+            exit 2
+          fi
+          echo "OPTION_COLLECTOR_START=PASS"
+
+          collector_ready=false
+          for _ in $(seq 1 24); do
+            collector_state="$(docker inspect --format '{{.State.Status}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+            collector_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+            if [[ "${collector_state}" == "running" && "${collector_health}" == "healthy" ]]; then
+              collector_ready=true
+              break
+            fi
+            sleep 10
+          done
+          if [[ "${collector_ready}" != "true" ]]; then
+            echo "OPTION_COLLECTOR_HEALTH=FAIL"
+            exit 2
+          fi
+          echo "OPTION_COLLECTOR_HEALTH=PASS"
+          REMOTE
+
+          failures=0
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${result}" in
+              PASS)
+                echo "::notice title=ECS bounded recovery::check=${check}; result=${result}"
+                ;;
+              NO_CHANGE)
+                echo "::warning title=ECS bounded recovery::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::error title=ECS bounded recovery::check=${check}; result=${result}"
+                failures=$((failures + 1))
+                ;;
+            esac
+          done < recovery_checks
+          if (( failures > 0 )); then
+            exit 2
+          fi
 
       - name: Classify remote storage pressure
         if: startsWith(github.ref_name, 'infra/ecs-storage-audit/')
