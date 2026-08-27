@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "infra/ecs-ssh-probe/**"
+      - "infra/ecs-storage-audit/**"
 
 permissions:
   contents: read
@@ -153,6 +154,108 @@ jobs:
           fi
           echo "::error title=ECS SSH preflight::stage=authentication; result=${result}"
           exit 2
+
+      - name: Classify remote storage pressure
+        if: startsWith(github.ref_name, 'infra/ecs-storage-audit/')
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s" > storage_checks <<'REMOTE'
+          set -u
+          bucket_kb() {
+            local value="${1:-}"
+            if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
+              printf 'UNKNOWN\n'
+            elif (( value < 1048576 )); then
+              printf 'LT_1_GIB\n'
+            elif (( value < 5242880 )); then
+              printf '1_TO_5_GIB\n'
+            elif (( value < 10485760 )); then
+              printf '5_TO_10_GIB\n'
+            else
+              printf 'GE_10_GIB\n'
+            fi
+          }
+
+          deploy_root="/opt/ai-trade"
+          docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+          available_kb="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {print $4}')"
+          echo "DISK_FREE_BUCKET=$(bucket_kb "${available_kb}")"
+
+          for entry in \
+            "RESEARCH:${deploy_root}/data/research" \
+            "REPORTS:${deploy_root}/data/reports" \
+            "RELEASES:${deploy_root}/releases" \
+            "INCOMING:${deploy_root}/incoming" \
+            "RUNTIME_COMPOSE:${deploy_root}/data/deploy-runtime-compose"
+          do
+            label="${entry%%:*}"
+            path="${entry#*:}"
+            size_kb="$(timeout 30 du -sk "${path}" 2>/dev/null | awk '{print $1}' || true)"
+            echo "${label}_BUCKET=$(bucket_kb "${size_kb}")"
+          done
+
+          docker_df="$(docker system df --format '{{.Type}}|{{.Size}}|{{.Reclaimable}}' 2>/dev/null || true)"
+          if [[ -n "${docker_df}" ]]; then
+            while IFS='|' read -r object_type size reclaimable; do
+              safe_type="$(printf '%s' "${object_type}" | tr '[:lower:] ' '[:upper:]_')"
+              if [[ -n "${safe_type}" ]]; then
+                case "${reclaimable}" in
+                  0B*|0\ *) reclaim_state="NONE" ;;
+                  *) reclaim_state="PRESENT" ;;
+                esac
+                echo "DOCKER_${safe_type}_RECLAIMABLE=${reclaim_state}"
+              fi
+            done <<< "${docker_df}"
+          else
+            echo "DOCKER_DF=UNAVAILABLE"
+          fi
+
+          collector_state="$(docker inspect --format '{{.State.Status}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+          collector_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+          case "${collector_state}" in
+            running|exited|created|restarting|paused|dead) ;;
+            *) collector_state="missing_or_unknown" ;;
+          esac
+          case "${collector_health}" in
+            healthy|unhealthy|starting|'') ;;
+            *) collector_health="unknown" ;;
+          esac
+          echo "OPTION_COLLECTOR_STATE=${collector_state}"
+          echo "OPTION_COLLECTOR_HEALTH=${collector_health:-none}"
+
+          collector_logs="$(docker logs --tail 120 ai-trade-option-vrp-collector 2>&1 || true)"
+          if grep -Fqi 'no space left on device' <<< "${collector_logs}"; then
+            echo "OPTION_COLLECTOR_EXIT_CLASS=NO_SPACE"
+          elif grep -Eqi 'out of memory|oom|killed' <<< "${collector_logs}"; then
+            echo "OPTION_COLLECTOR_EXIT_CLASS=MEMORY_PRESSURE"
+          elif grep -Eqi 'rate.?limit|too many requests|http[^0-9]*429' <<< "${collector_logs}"; then
+            echo "OPTION_COLLECTOR_EXIT_CLASS=RATE_LIMIT"
+          elif grep -Eqi 'permission denied|read-only file system' <<< "${collector_logs}"; then
+            echo "OPTION_COLLECTOR_EXIT_CLASS=FILESYSTEM_PERMISSION"
+          elif [[ -n "${collector_logs}" ]]; then
+            echo "OPTION_COLLECTOR_EXIT_CLASS=OTHER"
+          else
+            echo "OPTION_COLLECTOR_EXIT_CLASS=NO_LOGS"
+          fi
+          REMOTE
+
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            echo "::notice title=ECS storage audit::check=${check}; result=${result}"
+          done < storage_checks
 
       - name: Validate remote closed-loop prerequisites
         env:
