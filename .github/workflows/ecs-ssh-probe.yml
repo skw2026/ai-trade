@@ -1,0 +1,155 @@
+name: ECS SSH Probe
+
+on:
+  push:
+    tags:
+      - "infra/ecs-ssh-probe/**"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate configured SSH boundary
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ECS_HOST}"
+          test -n "${ECS_USER}"
+          test -n "${ECS_SSH_KEY}"
+          export ECS_EXPECTED_FINGERPRINT="${ECS_HOST_FINGERPRINT_SECRET:-${ECS_HOST_FINGERPRINT_VAR:-}}"
+          python3 - <<'PY'
+          import errno
+          import os
+          import socket
+          import sys
+
+          host = os.environ["ECS_HOST"]
+          try:
+              port = int(os.environ.get("ECS_PORT", "22"))
+          except ValueError:
+              print("::error title=ECS SSH preflight::stage=config; result=INVALID_PORT")
+              raise SystemExit(2)
+
+          try:
+              infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+          except socket.gaierror as exc:
+              print(
+                  "::error title=ECS SSH preflight::"
+                  f"stage=dns; result=RESOLUTION_FAILED; code={exc.errno}"
+              )
+              raise SystemExit(2)
+
+          addresses = []
+          for family, socktype, proto, _, sockaddr in infos:
+              key = (family, socktype, proto, sockaddr)
+              if key not in addresses:
+                  addresses.append(key)
+          print(
+              "::notice title=ECS SSH preflight::"
+              f"stage=dns; result=RESOLVED; address_count={len(addresses)}"
+          )
+
+          failures = []
+          for family, socktype, proto, sockaddr in addresses:
+              sock = socket.socket(family, socktype, proto)
+              sock.settimeout(8.0)
+              try:
+                  sock.connect(sockaddr)
+                  try:
+                      banner = sock.recv(255)
+                  except socket.timeout:
+                      banner = b""
+                      failures.append("SSH_BANNER_TIMEOUT")
+                      continue
+                  if banner.startswith(b"SSH-"):
+                      print(
+                          "::notice title=ECS SSH preflight::"
+                          "stage=tcp_banner; result=SSH_BANNER_OK"
+                      )
+                      raise SystemExit(0)
+                  failures.append("SSH_BANNER_EOF" if not banner else "NON_SSH_BANNER")
+              except socket.timeout:
+                  failures.append("TCP_TIMEOUT")
+              except ConnectionRefusedError:
+                  failures.append("TCP_REFUSED")
+              except OSError as exc:
+                  safe_errno = exc.errno if exc.errno is not None else errno.EIO
+                  failures.append(f"OS_ERROR_{safe_errno}")
+              finally:
+                  sock.close()
+
+          result = ",".join(sorted(set(failures))) or "TCP_UNREACHABLE"
+          print(
+              "::error title=ECS SSH preflight::"
+              f"stage=tcp_banner; result={result}"
+          )
+          raise SystemExit(2)
+          PY
+
+          umask 077
+          printf '%s\n' "${ECS_SSH_KEY}" > ecs_key
+          sed -i 's/\r$//' ecs_key
+          if ! ssh-keygen -y -f ecs_key >/dev/null 2>&1; then
+            echo "::error title=ECS SSH preflight::stage=private_key; result=INVALID"
+            exit 2
+          fi
+          echo "::notice title=ECS SSH preflight::stage=private_key; result=VALID"
+
+          if ! ssh-keyscan -T 10 -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > known_hosts 2>/dev/null; then
+            echo "::error title=ECS SSH preflight::stage=host_key; result=KEYSCAN_FAILED"
+            exit 2
+          fi
+          if [[ ! -s known_hosts ]]; then
+            echo "::error title=ECS SSH preflight::stage=host_key; result=KEYSCAN_EMPTY"
+            exit 2
+          fi
+          if [[ -z "${ECS_EXPECTED_FINGERPRINT}" ]]; then
+            echo "::error title=ECS SSH preflight::stage=host_key; result=EXPECTED_FINGERPRINT_MISSING"
+            exit 2
+          fi
+          if ! ssh-keygen -lf known_hosts | awk '{print $2}' | grep -Fxq "${ECS_EXPECTED_FINGERPRINT}"; then
+            echo "::error title=ECS SSH preflight::stage=host_key; result=FINGERPRINT_MISMATCH"
+            exit 2
+          fi
+          echo "::notice title=ECS SSH preflight::stage=host_key; result=FINGERPRINT_MATCH"
+
+          set +e
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "printf ECS_SSH_PROBE_OK" > ssh_stdout 2> ssh_stderr
+          ssh_status=$?
+          set -e
+          if [[ ${ssh_status} -eq 0 ]] && grep -Fqx 'ECS_SSH_PROBE_OK' ssh_stdout; then
+            echo "::notice title=ECS SSH preflight::stage=authentication; result=READ_ONLY_COMMAND_OK"
+            exit 0
+          fi
+          if grep -Fqi 'Permission denied' ssh_stderr; then
+            result="AUTH_REJECTED"
+          elif grep -Fqi 'REMOTE HOST IDENTIFICATION HAS CHANGED' ssh_stderr; then
+            result="HOST_IDENTIFICATION_CHANGED"
+          elif grep -Fqi 'Connection refused' ssh_stderr; then
+            result="TCP_REFUSED"
+          elif grep -Fqi 'Connection timed out' ssh_stderr; then
+            result="TCP_TIMEOUT"
+          else
+            result="SSH_COMMAND_FAILED_${ssh_status}"
+          fi
+          echo "::error title=ECS SSH preflight::stage=authentication; result=${result}"
+          exit 2
