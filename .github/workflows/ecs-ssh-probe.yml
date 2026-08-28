@@ -301,6 +301,23 @@ jobs:
             fi
           }
 
+          capacity_bucket_kb() {
+            local value="${1:-}"
+            if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
+              printf 'UNKNOWN\n'
+            elif (( value < 10485760 )); then
+              printf 'LT_10_GIB\n'
+            elif (( value < 20971520 )); then
+              printf '10_TO_20_GIB\n'
+            elif (( value < 52428800 )); then
+              printf '20_TO_50_GIB\n'
+            elif (( value < 104857600 )); then
+              printf '50_TO_100_GIB\n'
+            else
+              printf 'GE_100_GIB\n'
+            fi
+          }
+
           reclaim_bucket() {
             python3 - "${1:-}" <<'PY'
           import re
@@ -331,7 +348,9 @@ jobs:
           deploy_root="/opt/ai-trade"
           docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
           available_kb="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {print $4}')"
+          total_kb="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {print $2}')"
           echo "DISK_FREE_BUCKET=$(bucket_kb "${available_kb}")"
+          echo "DISK_TOTAL_BUCKET=$(capacity_bucket_kb "${total_kb}")"
 
           for entry in \
             "RESEARCH:${deploy_root}/data/research" \
@@ -345,6 +364,65 @@ jobs:
             size_kb="$(timeout 30 du -sk "${path}" 2>/dev/null | awk '{print $1}' || true)"
             echo "${label}_BUCKET=$(bucket_kb "${size_kb}")"
           done
+
+          for entry in \
+            "OPTION_V2:${deploy_root}/data/research/bybit_btc_option_vrp_v2" \
+            "MICROSTRUCTURE:${deploy_root}/data/research/microstructure" \
+            "LIQUIDATIONS:${deploy_root}/data/research/bybit_sol_liquidations"
+          do
+            label="${entry%%:*}"
+            path="${entry#*:}"
+            size_kb="$(timeout 30 du -sk "${path}" 2>/dev/null | awk '{print $1}' || true)"
+            echo "${label}_BUCKET=$(bucket_kb "${size_kb}")"
+          done
+
+          host_log_kb="$(sudo -n timeout 30 du -sk /var/log 2>/dev/null | awk '{print $1}' || true)"
+          echo "HOST_LOG_BUCKET=$(bucket_kb "${host_log_kb}")"
+
+          python3 - <<'PY'
+          import datetime as dt
+          import json
+          import subprocess
+
+          def output(*args):
+              return subprocess.run(args, text=True, capture_output=True, check=False).stdout.strip()
+
+          def bucket(size):
+              if size <= 0:
+                  return "NONE"
+              if size < 1024**3:
+                  return "LT_1_GIB"
+              if size < 5 * 1024**3:
+                  return "1_TO_5_GIB"
+              if size < 10 * 1024**3:
+                  return "5_TO_10_GIB"
+              return "GE_10_GIB"
+
+          image_ids = set(filter(None, output("docker", "image", "ls", "-q", "--no-trunc").splitlines()))
+          container_ids = list(filter(None, output("docker", "ps", "-aq").splitlines()))
+          used_ids = set()
+          if container_ids:
+              used_ids.update(filter(None, output("docker", "inspect", "--format", "{{.Image}}", *container_ids).splitlines()))
+          now = dt.datetime.now(dt.timezone.utc)
+          recent_count = old_count = recent_size = old_size = 0
+          for image_id in sorted(image_ids - used_ids):
+              raw = output("docker", "image", "inspect", "--format", "{{json .}}", image_id)
+              if not raw:
+                  continue
+              payload = json.loads(raw)
+              created = dt.datetime.fromisoformat(str(payload["Created"]).replace("Z", "+00:00"))
+              size = int(payload.get("Size") or 0)
+              if (now - created).total_seconds() >= 86400:
+                  old_count += 1
+                  old_size += size
+              else:
+                  recent_count += 1
+                  recent_size += size
+          print(f"UNUSED_IMAGE_OLD_24H_COUNT={old_count}")
+          print(f"UNUSED_IMAGE_RECENT_24H_COUNT={recent_count}")
+          print(f"UNUSED_IMAGE_OLD_ESTIMATED_BUCKET={bucket(old_size)}")
+          print(f"UNUSED_IMAGE_RECENT_ESTIMATED_BUCKET={bucket(recent_size)}")
+          PY
 
           docker_df="$(docker system df --format '{{.Type}}|{{.Size}}|{{.Reclaimable}}' 2>/dev/null || true)"
           if [[ -n "${docker_df}" ]]; then
@@ -390,7 +468,7 @@ jobs:
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
             case "${check}" in
-              OPTION_COLLECTOR_*)
+              OPTION_COLLECTOR_*|DISK_TOTAL_*|OPTION_V2_*|MICROSTRUCTURE_*|LIQUIDATIONS_*|HOST_LOG_*|UNUSED_IMAGE_*)
                 echo "::warning title=ECS storage audit::check=${check}; result=${result}"
                 ;;
               *)
