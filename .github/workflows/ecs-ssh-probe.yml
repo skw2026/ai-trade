@@ -379,6 +379,33 @@ jobs:
           host_log_kb="$(sudo -n timeout 30 du -sk /var/log 2>/dev/null | awk '{print $1}' || true)"
           echo "HOST_LOG_BUCKET=$(bucket_kb "${host_log_kb}")"
 
+          mount_source="$(findmnt -n -o SOURCE -T "${docker_root}" 2>/dev/null || true)"
+          mount_fstype="$(findmnt -n -o FSTYPE -T "${docker_root}" 2>/dev/null || true)"
+          filesystem_bytes="$(df -B1 --output=size "${docker_root}" 2>/dev/null | awk 'NR==2 {print $1}')"
+          device_bytes="$(sudo -n blockdev --getsize64 "${mount_source}" 2>/dev/null || true)"
+          parent_name="$(lsblk -n -o PKNAME "${mount_source}" 2>/dev/null | head -1 || true)"
+          parent_bytes=""
+          if [[ -n "${parent_name}" ]]; then
+            parent_bytes="$(sudo -n blockdev --getsize64 "/dev/${parent_name}" 2>/dev/null || true)"
+          fi
+          case "${mount_fstype}" in
+            ext2|ext3|ext4) mount_fstype_class="EXT" ;;
+            xfs) mount_fstype_class="XFS" ;;
+            *) mount_fstype_class="OTHER" ;;
+          esac
+          echo "BLOCK_FILESYSTEM_CLASS=${mount_fstype_class}"
+          if [[ "${filesystem_bytes}" =~ ^[0-9]+$ && "${device_bytes}" =~ ^[0-9]+$ ]] &&
+             (( device_bytes - filesystem_bytes >= 1073741824 )); then
+            echo "BLOCK_EXPANSION_HEADROOM=FILESYSTEM_GROW_AVAILABLE"
+          elif [[ "${device_bytes}" =~ ^[0-9]+$ && "${parent_bytes}" =~ ^[0-9]+$ ]] &&
+               (( parent_bytes - device_bytes >= 1073741824 )); then
+            echo "BLOCK_EXPANSION_HEADROOM=PARTITION_GROW_AVAILABLE"
+          elif [[ "${filesystem_bytes}" =~ ^[0-9]+$ && "${device_bytes}" =~ ^[0-9]+$ ]]; then
+            echo "BLOCK_EXPANSION_HEADROOM=NONE"
+          else
+            echo "BLOCK_EXPANSION_HEADROOM=UNKNOWN"
+          fi
+
           python3 - <<'PY'
           import datetime as dt
           import json
@@ -469,7 +496,7 @@ jobs:
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
             case "${check}" in
-              OPTION_COLLECTOR_*|DISK_TOTAL_*|OPTION_V2_*|MICROSTRUCTURE_*|LIQUIDATIONS_*|HOST_LOG_*|UNUSED_IMAGE_*|DOCKER_*_ALLOCATED_*)
+              OPTION_COLLECTOR_*|DISK_TOTAL_*|OPTION_V2_*|MICROSTRUCTURE_*|LIQUIDATIONS_*|HOST_LOG_*|UNUSED_IMAGE_*|DOCKER_*_ALLOCATED_*|BLOCK_*)
                 echo "::warning title=ECS storage audit::check=${check}; result=${result}"
                 ;;
               *)
