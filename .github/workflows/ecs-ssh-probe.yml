@@ -429,6 +429,7 @@ jobs:
             while IFS='|' read -r object_type size reclaimable; do
               safe_type="$(printf '%s' "${object_type}" | tr '[:lower:] ' '[:upper:]_')"
               if [[ -n "${safe_type}" ]]; then
+                echo "DOCKER_${safe_type}_ALLOCATED_BUCKET=$(reclaim_bucket "${size}")"
                 echo "DOCKER_${safe_type}_RECLAIM_BUCKET=$(reclaim_bucket "${reclaimable}")"
               fi
             done <<< "${docker_df}"
@@ -468,7 +469,7 @@ jobs:
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
             case "${check}" in
-              OPTION_COLLECTOR_*|DISK_TOTAL_*|OPTION_V2_*|MICROSTRUCTURE_*|LIQUIDATIONS_*|HOST_LOG_*|UNUSED_IMAGE_*)
+              OPTION_COLLECTOR_*|DISK_TOTAL_*|OPTION_V2_*|MICROSTRUCTURE_*|LIQUIDATIONS_*|HOST_LOG_*|UNUSED_IMAGE_*|DOCKER_*_ALLOCATED_*)
                 echo "::warning title=ECS storage audit::check=${check}; result=${result}"
                 ;;
               *)
