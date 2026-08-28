@@ -166,6 +166,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          set +e
           ssh -i ecs_key \
             -p "${ECS_PORT}" \
             -o BatchMode=yes \
@@ -199,11 +200,11 @@ jobs:
             exit 2
           fi
 
-          if ! docker image prune -f --filter until=24h >/dev/null 2>&1; then
-            echo "DANGLING_IMAGE_GC=FAIL"
+          if ! docker image prune -a -f --filter until=24h >/dev/null 2>&1; then
+            echo "UNUSED_IMAGE_GC=FAIL"
             exit 2
           fi
-          echo "DANGLING_IMAGE_GC=PASS"
+          echo "UNUSED_IMAGE_GC=PASS"
 
           available_after="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {printf "%.0f", $4 * 1024}')"
           if [[ ! "${available_after}" =~ ^[0-9]+$ ]]; then
@@ -243,6 +244,8 @@ jobs:
           fi
           echo "OPTION_COLLECTOR_HEALTH=PASS"
           REMOTE
+          recovery_status=$?
+          set -e
 
           failures=0
           while IFS='=' read -r check result; do
@@ -260,7 +263,7 @@ jobs:
                 ;;
             esac
           done < recovery_checks
-          if (( failures > 0 )); then
+          if (( failures > 0 || recovery_status != 0 )); then
             exit 2
           fi
 
