@@ -7,6 +7,7 @@ on:
       - "infra/ecs-storage-audit/**"
       - "infra/ecs-storage-recovery/**"
       - "infra/ecs-volume-grow/**"
+      - "infra/ecs-collector-recovery/**"
 
 permissions:
   contents: read
@@ -292,6 +293,105 @@ jobs:
             esac
           done < volume_grow_checks
           if (( failures > 0 || volume_grow_status != 0 )); then
+            exit 2
+          fi
+
+      - name: Recreate option collector from frozen release
+        if: startsWith(github.ref_name, 'infra/ecs-collector-recovery/')
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > collector_recovery_checks <<'REMOTE'
+          set -u
+          expected_sha="$1"
+          deploy_root="/opt/ai-trade"
+          release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
+          env_file="${deploy_root}/.env.runtime"
+          evidence_root="${deploy_root}/data/research/bybit_btc_option_vrp_v2"
+          if [[ "${release_dir}" != "${deploy_root}/releases/${expected_sha}" ||
+                ! -f "${release_dir}/docker-compose.prod.yml" ||
+                ! -f "${env_file}" ]]; then
+            echo "COLLECTOR_RELEASE=FAIL"
+            exit 2
+          fi
+          echo "COLLECTOR_RELEASE=PASS"
+
+          if [[ ! -d "${evidence_root}" || ! -w "${evidence_root}" ]]; then
+            echo "OPTION_EVIDENCE_ROOT=FAIL"
+            exit 2
+          fi
+          echo "OPTION_EVIDENCE_ROOT=PASS"
+
+          available_bytes="$(df -Pk "${deploy_root}/data" 2>/dev/null | awk 'NR==2 {printf "%.0f", $4 * 1024}')"
+          if [[ ! "${available_bytes}" =~ ^[0-9]+$ || "${available_bytes}" -lt 5368709120 ]]; then
+            echo "DATA_DISK=FAIL"
+            exit 2
+          fi
+          echo "DATA_DISK=PASS"
+
+          recovery_started_epoch="$(date +%s)"
+          if ! (set -a; source "${env_file}"; set +a; \
+            docker compose \
+              --project-name ai-trade \
+              --env-file "${env_file}" \
+              -f "${release_dir}/docker-compose.prod.yml" \
+              up -d --no-deps --force-recreate option-vrp-collector >/dev/null 2>&1); then
+            echo "OPTION_COLLECTOR_RECREATE=FAIL"
+            exit 2
+          fi
+          echo "OPTION_COLLECTOR_RECREATE=PASS"
+
+          collector_ready=false
+          latest_segment="${evidence_root}/latest_segment.json"
+          for _ in $(seq 1 36); do
+            collector_state="$(docker inspect --format '{{.State.Status}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+            collector_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+            latest_epoch="$(stat -c %Y "${latest_segment}" 2>/dev/null || true)"
+            if [[ "${collector_state}" == "running" && "${collector_health}" == "healthy" &&
+                  "${latest_epoch}" =~ ^[0-9]+$ && "${latest_epoch}" -ge "${recovery_started_epoch}" ]]; then
+              collector_ready=true
+              break
+            fi
+            sleep 10
+          done
+          if [[ "${collector_ready}" != "true" ]]; then
+            echo "OPTION_COLLECTOR_NEW_SEGMENT=FAIL"
+            exit 2
+          fi
+          echo "OPTION_COLLECTOR_HEALTH=PASS"
+          echo "OPTION_COLLECTOR_NEW_SEGMENT=PASS"
+          REMOTE
+          collector_recovery_status=$?
+          set -e
+
+          failures=0
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${result}" in
+              PASS)
+                echo "::notice title=ECS collector recovery::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::error title=ECS collector recovery::check=${check}; result=${result}"
+                failures=$((failures + 1))
+                ;;
+            esac
+          done < collector_recovery_checks
+          if (( failures > 0 || collector_recovery_status != 0 )); then
             exit 2
           fi
 
