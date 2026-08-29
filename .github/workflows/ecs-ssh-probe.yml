@@ -447,45 +447,42 @@ jobs:
           gap_seconds = max(0.0, span_seconds - checksum_seconds)
           coverage_ratio = checksum_seconds / span_seconds if span_seconds > 0.0 else 0.0
 
-          fields = {
-              "REPORT_CONTRACT": "PASS",
-              "STATUS": payload.get("status"),
-              "DECISION": payload.get("decision"),
-              "REASON_CODE": payload.get("reason_code"),
-              "REVIEW_DAY": payload.get("review_day") if payload.get("review_day") is not None else "NONE",
-              "NEXT_ACTION": payload.get("next_action"),
-              "VALID_SEGMENT_COUNT": int(replay.get("valid_segment_count") or 0),
-              "INVALID_SEGMENT_COUNT": int(replay.get("invalid_segment_count") or 0),
-              "ELIGIBLE_SNAPSHOT_COUNT": int(replay.get("eligible_snapshot_count") or 0),
-              "SUCCESSFUL_POLL_COUNT": int(replay.get("successful_poll_count") or 0),
-              "CHECKSUM_BOUND_SECONDS": round(checksum_seconds, 3),
-              "ELIGIBLE_SPAN_SECONDS": round(span_seconds, 3),
-              "OBSERVED_GAP_SECONDS": round(gap_seconds, 3),
-              "ELIGIBLE_COVERAGE_RATIO": round(coverage_ratio, 6),
-              "ORDERED_INPUT_COUNT": len(replay.get("ordered_inputs") or []),
-              "DELIVERY_EVIDENCE_COUNT": int(payload.get("delivery_evidence_count") or 0),
-              "EPISODE_INVALID_COUNT": int(payload.get("episode_invalid_count") or 0),
-              "COMPLETED_EXPIRY_COUNT": int(summary.get("completed_expiry_count") or 0),
-              "PENDING_OR_MISSED_COUNT": int(summary.get("pending_or_missed_count") or 0),
-          }
-          for key, value in fields.items():
-              if isinstance(value, float) and not math.isfinite(value):
+          invalid_segments = int(replay.get("invalid_segment_count") or 0)
+          invalid_episodes = int(payload.get("episode_invalid_count") or 0)
+          if invalid_segments != 0 or invalid_episodes != 0:
+              raise SystemExit(2)
+          for value in (checksum_seconds, span_seconds, gap_seconds, coverage_ratio):
+              if not math.isfinite(value):
                   raise SystemExit(2)
-              print(f"{key}={value}")
+          review_day = payload.get("review_day") if payload.get("review_day") is not None else "NONE"
+          print(
+              "CONTRACT=report:PASS;status:{};decision:{};reason:{};review_day:{};next_action:{}".format(
+                  payload.get("status"), payload.get("decision"), payload.get("reason_code"),
+                  review_day, payload.get("next_action"),
+              )
+          )
+          print(
+              "CAPTURE=valid_segments:{};invalid_segments:{};eligible_snapshots:{};polls:{};"
+              "checksum_seconds:{:.3f};span_seconds:{:.3f};gap_seconds:{:.3f};coverage_ratio:{:.6f};inputs:{}".format(
+                  int(replay.get("valid_segment_count") or 0), invalid_segments,
+                  int(replay.get("eligible_snapshot_count") or 0),
+                  int(replay.get("successful_poll_count") or 0), checksum_seconds,
+                  span_seconds, gap_seconds, coverage_ratio, len(replay.get("ordered_inputs") or []),
+              )
+          )
+          print(
+              "EPISODES=delivery_evidence:{};invalid_episodes:{};completed_expiries:{};pending_or_missed:{}".format(
+                  int(payload.get("delivery_evidence_count") or 0), invalid_episodes,
+                  int(summary.get("completed_expiry_count") or 0),
+                  int(summary.get("pending_or_missed_count") or 0),
+              )
+          )
           PY
 
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
             case "${check}" in
-              INVALID_SEGMENT_COUNT|EPISODE_INVALID_COUNT)
-                if [[ "${result}" == "0" ]]; then
-                  echo "::notice title=Frozen option VRP evidence::check=${check}; result=${result}"
-                else
-                  echo "::error title=Frozen option VRP evidence::check=${check}; result=${result}"
-                  exit 2
-                fi
-                ;;
-              OBSERVED_GAP_SECONDS|ELIGIBLE_COVERAGE_RATIO)
+              CAPTURE)
                 echo "::warning title=Frozen option VRP evidence::check=${check}; result=${result}"
                 ;;
               *)
