@@ -8,6 +8,7 @@ on:
       - "infra/ecs-storage-recovery/**"
       - "infra/ecs-volume-grow/**"
       - "infra/ecs-collector-recovery/**"
+      - "infra/ecs-research-audit/**"
 
 permissions:
   contents: read
@@ -394,6 +395,104 @@ jobs:
           if (( failures > 0 || collector_recovery_status != 0 )); then
             exit 2
           fi
+
+      - name: Summarize recovered frozen research evidence
+        if: startsWith(github.ref_name, 'infra/ecs-research-audit/')
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          RESEARCH_RUN_ID: gha-33243036238-1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "python3 - '${RESEARCH_RUN_ID}'" > research_evidence_checks <<'PY'
+          import json
+          import math
+          import pathlib
+          import sys
+
+          run_id = sys.argv[1]
+          if not run_id.startswith("gha-") or not run_id.replace("-", "").isalnum():
+              raise SystemExit(2)
+          report = pathlib.Path("/opt/ai-trade/data/reports/closed_loop") / run_id / "option_variance_risk_premium_sequential_payoff.json"
+          payload = json.loads(report.read_text(encoding="utf-8"))
+          if payload.get("schema_version") != "option_variance_risk_premium_sequential_payoff_audit_v1":
+              raise SystemExit(2)
+          if payload.get("status") != "COMPLETE":
+              raise SystemExit(2)
+          for field in (
+              "promotion_evidence", "promotion_eligible", "promotion_authority",
+              "demo_activation_authorized", "live_activation_authorized",
+          ):
+              if payload.get(field) is not False:
+                  raise SystemExit(2)
+
+          replay = payload.get("capture_replay") or {}
+          summary = payload.get("primary_summary") or {}
+          first_ms = replay.get("first_eligible_epoch_ms")
+          last_ms = replay.get("last_eligible_epoch_ms")
+          checksum_seconds = float(replay.get("checksum_bound_seconds") or 0.0)
+          span_seconds = 0.0
+          if isinstance(first_ms, int) and isinstance(last_ms, int) and last_ms >= first_ms:
+              span_seconds = (last_ms - first_ms) / 1000.0
+          gap_seconds = max(0.0, span_seconds - checksum_seconds)
+          coverage_ratio = checksum_seconds / span_seconds if span_seconds > 0.0 else 0.0
+
+          fields = {
+              "REPORT_CONTRACT": "PASS",
+              "STATUS": payload.get("status"),
+              "DECISION": payload.get("decision"),
+              "REASON_CODE": payload.get("reason_code"),
+              "REVIEW_DAY": payload.get("review_day") if payload.get("review_day") is not None else "NONE",
+              "NEXT_ACTION": payload.get("next_action"),
+              "VALID_SEGMENT_COUNT": int(replay.get("valid_segment_count") or 0),
+              "INVALID_SEGMENT_COUNT": int(replay.get("invalid_segment_count") or 0),
+              "ELIGIBLE_SNAPSHOT_COUNT": int(replay.get("eligible_snapshot_count") or 0),
+              "SUCCESSFUL_POLL_COUNT": int(replay.get("successful_poll_count") or 0),
+              "CHECKSUM_BOUND_SECONDS": round(checksum_seconds, 3),
+              "ELIGIBLE_SPAN_SECONDS": round(span_seconds, 3),
+              "OBSERVED_GAP_SECONDS": round(gap_seconds, 3),
+              "ELIGIBLE_COVERAGE_RATIO": round(coverage_ratio, 6),
+              "ORDERED_INPUT_COUNT": len(replay.get("ordered_inputs") or []),
+              "DELIVERY_EVIDENCE_COUNT": int(payload.get("delivery_evidence_count") or 0),
+              "EPISODE_INVALID_COUNT": int(payload.get("episode_invalid_count") or 0),
+              "COMPLETED_EXPIRY_COUNT": int(summary.get("completed_expiry_count") or 0),
+              "PENDING_OR_MISSED_COUNT": int(summary.get("pending_or_missed_count") or 0),
+          }
+          for key, value in fields.items():
+              if isinstance(value, float) and not math.isfinite(value):
+                  raise SystemExit(2)
+              print(f"{key}={value}")
+          PY
+
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${check}" in
+              INVALID_SEGMENT_COUNT|EPISODE_INVALID_COUNT)
+                if [[ "${result}" == "0" ]]; then
+                  echo "::notice title=Frozen option VRP evidence::check=${check}; result=${result}"
+                else
+                  echo "::error title=Frozen option VRP evidence::check=${check}; result=${result}"
+                  exit 2
+                fi
+                ;;
+              OBSERVED_GAP_SECONDS|ELIGIBLE_COVERAGE_RATIO)
+                echo "::warning title=Frozen option VRP evidence::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::notice title=Frozen option VRP evidence::check=${check}; result=${result}"
+                ;;
+            esac
+          done < research_evidence_checks
 
       - name: Recover bounded image storage and option collector
         if: startsWith(github.ref_name, 'infra/ecs-storage-recovery/')
