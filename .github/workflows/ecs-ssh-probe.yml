@@ -6,6 +6,7 @@ on:
       - "infra/ecs-ssh-probe/**"
       - "infra/ecs-storage-audit/**"
       - "infra/ecs-storage-recovery/**"
+      - "infra/ecs-volume-grow/**"
 
 permissions:
   contents: read
@@ -155,6 +156,142 @@ jobs:
           fi
           echo "::error title=ECS SSH preflight::stage=authentication; result=${result}"
           exit 2
+
+      - name: Grow ECS partition and EXT filesystem
+        if: startsWith(github.ref_name, 'infra/ecs-volume-grow/')
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > volume_grow_checks <<'REMOTE'
+          set -u
+          expected_sha="$1"
+          deploy_root="/opt/ai-trade"
+          release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
+          if [[ "${release_dir}" != "${deploy_root}/releases/${expected_sha}" ]]; then
+            echo "VOLUME_GROW_RELEASE=FAIL"
+            exit 2
+          fi
+          echo "VOLUME_GROW_RELEASE=PASS"
+
+          docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+          mount_source="$(findmnt -n -o SOURCE -T "${docker_root}" 2>/dev/null || true)"
+          mount_fstype="$(findmnt -n -o FSTYPE -T "${docker_root}" 2>/dev/null || true)"
+          parent_name="$(lsblk -n -o PKNAME "${mount_source}" 2>/dev/null | head -1 || true)"
+          partition_number="$(lsblk -n -o PARTN "${mount_source}" 2>/dev/null | head -1 || true)"
+          parent_device="/dev/${parent_name}"
+          case "${mount_fstype}" in
+            ext2|ext3|ext4) ;;
+            *) echo "BLOCK_TARGET_VALIDATION=FAIL"; exit 2 ;;
+          esac
+          if [[ "${mount_source}" != /dev/* || -z "${parent_name}" ||
+                ! "${partition_number}" =~ ^[1-9][0-9]*$ ||
+                ! -b "${mount_source}" || ! -b "${parent_device}" ]]; then
+            echo "BLOCK_TARGET_VALIDATION=FAIL"
+            exit 2
+          fi
+          echo "BLOCK_TARGET_VALIDATION=PASS"
+
+          filesystem_before="$(df -B1 --output=size "${docker_root}" 2>/dev/null | awk 'NR==2 {print $1}')"
+          parent_bytes="$(sudo -n blockdev --getsize64 "${parent_device}" 2>/dev/null || true)"
+          partition_bytes="$(sudo -n blockdev --getsize64 "${mount_source}" 2>/dev/null || true)"
+          if [[ ! "${filesystem_before}" =~ ^[0-9]+$ ||
+                ! "${parent_bytes}" =~ ^[0-9]+$ ||
+                ! "${partition_bytes}" =~ ^[0-9]+$ ||
+                "${parent_bytes}" -le "${partition_bytes}" ]]; then
+            echo "BLOCK_GROW_HEADROOM=FAIL"
+            exit 2
+          fi
+          echo "BLOCK_GROW_HEADROOM=PASS"
+
+          if ! command -v growpart >/dev/null 2>&1 ||
+             ! command -v resize2fs >/dev/null 2>&1 ||
+             ! sudo -n true >/dev/null 2>&1; then
+            echo "BLOCK_GROW_TOOLS=FAIL"
+            exit 2
+          fi
+          echo "BLOCK_GROW_TOOLS=PASS"
+
+          if ! sudo -n growpart "${parent_device}" "${partition_number}" >/dev/null 2>&1; then
+            echo "PARTITION_GROW=FAIL"
+            exit 2
+          fi
+          echo "PARTITION_GROW=PASS"
+
+          if command -v partprobe >/dev/null 2>&1; then
+            sudo -n partprobe "${parent_device}" >/dev/null 2>&1 || true
+          fi
+          if ! sudo -n resize2fs "${mount_source}" >/dev/null 2>&1; then
+            echo "FILESYSTEM_GROW=FAIL"
+            exit 2
+          fi
+          echo "FILESYSTEM_GROW=PASS"
+
+          filesystem_after="$(df -B1 --output=size "${docker_root}" 2>/dev/null | awk 'NR==2 {print $1}')"
+          available_after="$(df -Pk "${docker_root}" 2>/dev/null | awk 'NR==2 {printf "%.0f", $4 * 1024}')"
+          if [[ ! "${filesystem_after}" =~ ^[0-9]+$ ||
+                ! "${available_after}" =~ ^[0-9]+$ ||
+                "${filesystem_after}" -le "${filesystem_before}" ||
+                "${available_after}" -lt 5368709120 ]]; then
+            echo "FILESYSTEM_CAPACITY=FAIL"
+            exit 2
+          fi
+          echo "FILESYSTEM_CAPACITY=PASS"
+
+          if ! docker start ai-trade-option-vrp-collector >/dev/null 2>&1; then
+            echo "OPTION_COLLECTOR_START=FAIL"
+            exit 2
+          fi
+          echo "OPTION_COLLECTOR_START=PASS"
+
+          collector_ready=false
+          for _ in $(seq 1 24); do
+            collector_state="$(docker inspect --format '{{.State.Status}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+            collector_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+            if [[ "${collector_state}" == "running" && "${collector_health}" == "healthy" ]]; then
+              collector_ready=true
+              break
+            fi
+            sleep 10
+          done
+          if [[ "${collector_ready}" != "true" ]]; then
+            echo "OPTION_COLLECTOR_HEALTH=FAIL"
+            exit 2
+          fi
+          echo "OPTION_COLLECTOR_HEALTH=PASS"
+          REMOTE
+          volume_grow_status=$?
+          set -e
+
+          failures=0
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${result}" in
+              PASS)
+                echo "::notice title=ECS volume growth::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::error title=ECS volume growth::check=${check}; result=${result}"
+                failures=$((failures + 1))
+                ;;
+            esac
+          done < volume_grow_checks
+          if (( failures > 0 || volume_grow_status != 0 )); then
+            exit 2
+          fi
 
       - name: Recover bounded image storage and option collector
         if: startsWith(github.ref_name, 'infra/ecs-storage-recovery/')
