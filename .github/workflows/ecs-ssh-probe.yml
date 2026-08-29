@@ -188,10 +188,12 @@ jobs:
           echo "VOLUME_GROW_RELEASE=PASS"
 
           docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-          mount_source="$(findmnt -n -o SOURCE -T "${docker_root}" 2>/dev/null || true)"
+          mount_source_raw="$(findmnt -n -o SOURCE -T "${docker_root}" 2>/dev/null || true)"
+          mount_source="$(readlink -f "${mount_source_raw}" 2>/dev/null || true)"
           mount_fstype="$(findmnt -n -o FSTYPE -T "${docker_root}" 2>/dev/null || true)"
           parent_name="$(lsblk -n -o PKNAME "${mount_source}" 2>/dev/null | head -1 || true)"
-          partition_number="$(lsblk -n -o PARTN "${mount_source}" 2>/dev/null | head -1 || true)"
+          device_name="$(basename "${mount_source}" 2>/dev/null || true)"
+          partition_number="$(cat "/sys/class/block/${device_name}/partition" 2>/dev/null || true)"
           parent_device="/dev/${parent_name}"
           case "${mount_fstype}" in
             ext2|ext3|ext4) ;;
