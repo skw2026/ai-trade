@@ -9,6 +9,7 @@ on:
       - "infra/ecs-volume-grow/**"
       - "infra/ecs-collector-recovery/**"
       - "infra/ecs-research-audit/**"
+      - "infra/ecs-option-live-audit/**"
 
 permissions:
   contents: read
@@ -601,6 +602,117 @@ jobs:
           if (( failures > 0 || recovery_status != 0 )); then
             exit 2
           fi
+
+      - name: Audit current frozen option evidence
+        if: startsWith(github.ref_name, 'infra/ecs-option-live-audit/')
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > live_option_checks <<'REMOTE'
+          set -euo pipefail
+          expected_sha="$1"
+          deploy_root="/opt/ai-trade"
+          release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
+          if [[ "${release_dir}" != "${deploy_root}/releases/${expected_sha}" ]]; then
+            echo "LIVE_AUDIT_RELEASE=FAIL"
+            exit 2
+          fi
+
+          temporary_report="$(mktemp /tmp/ai-trade-option-live-audit.XXXXXX)"
+          trap 'rm -f "${temporary_report}"' EXIT
+          (
+            cd "${release_dir}"
+            python3 tools/audit_option_vrp_sequential_payoff.py \
+              --config config/option_variance_risk_premium_sequential_payoff.json \
+              --manifest config/option_variance_risk_premium_sequential_payoff_manifest.json \
+              --capture-root "${deploy_root}/data/research/bybit_btc_option_vrp_v2" \
+              --output "${temporary_report}"
+          )
+          python3 - "${temporary_report}" <<'PY'
+          import json
+          import math
+          import pathlib
+          import sys
+
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if payload.get("schema_version") != "option_variance_risk_premium_sequential_payoff_audit_v1":
+              raise SystemExit(2)
+          if payload.get("status") != "COMPLETE":
+              raise SystemExit(2)
+          for field in (
+              "promotion_evidence", "promotion_eligible", "promotion_authority",
+              "demo_activation_authorized", "live_activation_authorized",
+          ):
+              if payload.get(field) is not False:
+                  raise SystemExit(2)
+
+          replay = payload.get("capture_replay") or {}
+          summary = payload.get("primary_summary") or {}
+          invalid_segments = int(replay.get("invalid_segment_count") or 0)
+          invalid_episodes = int(payload.get("episode_invalid_count") or 0)
+          if invalid_segments != 0 or invalid_episodes != 0:
+              raise SystemExit(2)
+          first_ms = replay.get("first_eligible_epoch_ms")
+          last_ms = replay.get("last_eligible_epoch_ms")
+          checksum_seconds = float(replay.get("checksum_bound_seconds") or 0.0)
+          span_seconds = 0.0
+          if isinstance(first_ms, int) and isinstance(last_ms, int) and last_ms >= first_ms:
+              span_seconds = (last_ms - first_ms) / 1000.0
+          gap_seconds = max(0.0, span_seconds - checksum_seconds)
+          coverage_ratio = checksum_seconds / span_seconds if span_seconds > 0.0 else 0.0
+          for value in (checksum_seconds, span_seconds, gap_seconds, coverage_ratio):
+              if not math.isfinite(value):
+                  raise SystemExit(2)
+          review_day = payload.get("review_day") if payload.get("review_day") is not None else "NONE"
+          print(
+              "CONTRACT=report:PASS;status:{};decision:{};reason:{};review_day:{};next_action:{}".format(
+                  payload.get("status"), payload.get("decision"), payload.get("reason_code"),
+                  review_day, payload.get("next_action"),
+              )
+          )
+          print(
+              "CAPTURE=valid_segments:{};invalid_segments:{};eligible_snapshots:{};polls:{};"
+              "checksum_seconds:{:.3f};span_seconds:{:.3f};gap_seconds:{:.3f};coverage_ratio:{:.6f};inputs:{}".format(
+                  int(replay.get("valid_segment_count") or 0), invalid_segments,
+                  int(replay.get("eligible_snapshot_count") or 0),
+                  int(replay.get("successful_poll_count") or 0), checksum_seconds,
+                  span_seconds, gap_seconds, coverage_ratio, len(replay.get("ordered_inputs") or []),
+              )
+          )
+          print(
+              "EPISODES=delivery_evidence:{};invalid_episodes:{};completed_expiries:{};pending_or_missed:{}".format(
+                  int(payload.get("delivery_evidence_count") or 0), invalid_episodes,
+                  int(summary.get("completed_expiry_count") or 0),
+                  int(summary.get("pending_or_missed_count") or 0),
+              )
+          )
+          PY
+          REMOTE
+
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${check}" in
+              CAPTURE)
+                echo "::warning title=Live frozen option VRP evidence::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::notice title=Live frozen option VRP evidence::check=${check}; result=${result}"
+                ;;
+            esac
+          done < live_option_checks
 
       - name: Classify remote storage pressure
         if: startsWith(github.ref_name, 'infra/ecs-storage-audit/')
