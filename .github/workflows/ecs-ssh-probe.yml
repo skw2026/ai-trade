@@ -953,6 +953,7 @@ jobs:
                 }
               }
               END {
+                printf "WAL_DAMAGE_SUMMARY=I%d_T%d_C%d_E%d_R%d_U%d_UT%d_UC%d_UE%d\n", invalid + 0, trading + 0, checkpoint + 0, episode + 0, rebase + 0, unknown + 0, embedded_trading + 0, embedded_checkpoint + 0, embedded_episode + 0
                 print "WAL_STRUCTURAL_INVALID_COUNT=" invalid + 0
                 print "WAL_STRUCTURAL_TRADING_INVALID_COUNT=" trading + 0
                 print "WAL_STRUCTURAL_CHECKPOINT_INVALID_COUNT=" checkpoint + 0
@@ -962,7 +963,6 @@ jobs:
                 print "WAL_UNKNOWN_EMBEDDED_TRADING_COUNT=" embedded_trading + 0
                 print "WAL_UNKNOWN_EMBEDDED_CHECKPOINT_COUNT=" embedded_checkpoint + 0
                 print "WAL_UNKNOWN_EMBEDDED_EPISODE_COUNT=" embedded_episode + 0
-                printf "WAL_DAMAGE_SUMMARY=I%d_T%d_C%d_E%d_R%d_U%d_UT%d_UC%d_UE%d\n", invalid + 0, trading + 0, checkpoint + 0, episode + 0, rebase + 0, unknown + 0, embedded_trading + 0, embedded_checkpoint + 0, embedded_episode + 0
               }
             ' "${wal_path}" 2>/dev/null
           else
