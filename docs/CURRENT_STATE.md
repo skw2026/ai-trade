@@ -21,6 +21,7 @@
 - 顺序 payoff 7D v1 已按设计不可达关闭并保留：截至 2026-09-01 有 426 个有效 segment、384,386.410 秒 checksum 覆盖和 360 条 delivery evidence，但 10 个主动作 expiry 全部为 `missed_entry`。短到期日不会形成 7D crossing，周到期节奏也无法在 Day 35 内提供 22 个独立 expiry；该结论不是盈利或亏损判断，不得修改 v1 合同补救。
 - 独立 1D v2 已冻结：policy identity 为 `6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b`，manifest identity 为 `13b62a179c2e3131762918063bfecfb1a2f9c853693144d0dc2a8428b2f58aeb`；主动作 `short_atm_straddle_1d`，边界 0.75D/1.25D，保留原 Day 8/14/21/28/35 覆盖与 expiry 门禁；每日一个 expiry 的保守节奏可在 Day 8 前形成 6 个独立样本。daily option 的交易所 delivery fee 豁免不计入收益，审计仍统一收取标准 delivery fee；option taker fee cap 使用当前官方 7%。新 observation start 为 `2026-09-01T06:00:00Z`（Asia/Shanghai `2026-09-01 14:00:00`），此前所有 raw 只作工程证据。
 - 冻结前公开 XZ one-shot 已验证：204 个 scoped 双边合约、USDT delivery query PASS、单 poll raw 约 70 KiB；本地全量构建与 69/69 CTest 通过。该 one-shot 早于 observation start，只是工程证据，不计入正式覆盖或收益。
+- 1D v2 首次发布前检查发现原 CD `--check-startup` 将交易所连通性与在线 WAL 完整启动耦合，并把 WAL 错误误报为 exchange failure。隔离审计确认 Bybit 主站/Demo 公共连接正常，WAL 仅有 2 条非交易 checkpoint 损坏（0 条 INTENT/FILL/episode/rebase 损坏）。修复采用独立只读 `--check-exchange`、checkpoint-only 严格恢复、WAL 读写锁及失败回滚；不截断线上 WAL，也不改变 v2 合同或 observation start。根因与边界见 `docs/reviews/2026-09-01-wal-deploy-preflight-roundtable.md`。
 - 发布与研究证据链已技术收敛，但可盈利经济机制尚未收敛。下一阶段按 `docs/plans/2026-08-26-option-vrp-sequential-payoff.md` 完成合同、payoff/hedge 审计、顺序门禁和 Closed Loop 接入；工程完成后才进入不可压缩的前向时间验证。期间不训练模型，也不得申请 Demo/live 权限。
 - 自进化保持 shadow/evidence-only；没有正收益 frozen candidate 前不得影响 Demo 动作。
 

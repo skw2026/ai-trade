@@ -56,7 +56,16 @@ class BotApplication {
    * 用于部署前验证目标镜像、配置和交易所密钥是否可用。
    * @return int 退出码 (0 表示启动检查通过, 非 0 表示失败)
    */
- int CheckStartup();
+  int CheckStartup();
+
+  /**
+   * @brief 只读验证交易所连接、账户模式及私有查询端点。
+   *
+   * 不加载或写入 WAL，不执行订单恢复，也不进入主循环。部署在旧服务
+   * 仍运行时使用该检查，避免预检与在线执行共享可变恢复状态。
+   * @return int 退出码 (0 表示交易所预检通过, 非 0 表示失败)
+   */
+  int CheckExchange();
 
  private:
   struct IntegratorCandidateEpisode;

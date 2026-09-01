@@ -189,6 +189,8 @@ Closed Loop 必须：
 
 ## Task 7：提交、部署与首次诊断
 
+> 2026-09-01 发布前复盘：原 `--check-startup` 会访问在线 WAL 和完整恢复路径，已证明不适合作为旧服务仍运行时的交易所预检。Task 7 的 CD 门禁改用只读 `--check-exchange`；现网 WAL 的 2 条损坏均为 checkpoint-only，0 条执行记录损坏，按 `docs/reviews/2026-09-01-wal-deploy-preflight-roundtable.md` 的 fail-closed 合同恢复。该基础设施修复不重置或修改 1D v2 的冻结研究合同。
+
 1. 显式暂存本计划范围文件，保留用户未提交的 `.gitignore` 修改。
 2. 提交并 push `main`，要求同一 SHA 的 CI、CD 和 Closed Loop Smoke 全部成功。
 3. 核验 `option-vrp-collector` 健康且持久化根未因部署清空。

@@ -1710,6 +1710,21 @@ classify_startup_preflight_failure() {
     *"timestamp"*|*"recv_window"*|*"时间戳"*)
       printf 'clock_skew\n'
       ;;
+    *"EXCHANGE_CHECK_FAILED: stage=account_mode"*)
+      printf 'account_mode_failed\n'
+      ;;
+    *"EXCHANGE_CHECK_FAILED: stage=positions"*)
+      printf 'positions_query_failed\n'
+      ;;
+    *"EXCHANGE_CHECK_FAILED: stage=open_orders"*)
+      printf 'open_orders_query_failed\n'
+      ;;
+    *"EXCHANGE_CHECK_FAILED: stage=account_balance"*)
+      printf 'account_balance_query_failed\n'
+      ;;
+    *"EXCHANGE_CHECK_FAILED: stage=trade_channel"*)
+      printf 'trade_channel_failed\n'
+      ;;
     *)
       printf 'exchange_connection_failed\n'
       ;;
@@ -1775,7 +1790,7 @@ run_startup_preflight() {
       "${compose_cmd[@]}" run --rm --no-deps ai-trade \
         --config="${runtime_config}" \
         --exchange="${runtime_exchange}" \
-        --check-startup 2>&1
+        --check-exchange 2>&1
     )"; then
       if [[ -n "${preflight_output}" ]]; then
         printf '%s\n' "${preflight_output}"

@@ -3701,6 +3701,51 @@ int BotApplication::CheckStartup() {
   return 0;
 }
 
+int BotApplication::CheckExchange() {
+  LogInfo("EXCHANGE_CHECK_START: boot_id=" + boot_id_ +
+          ", startup_utc=" + startup_utc_ +
+          ", primary_symbol=" + config_.primary_symbol);
+  adapter_ = CreateAdapter(config_);
+  if (!adapter_ || !adapter_->Connect()) {
+    LogError("EXCHANGE_CHECK_FAILED: stage=connect");
+    adapter_.reset();
+    return 1;
+  }
+  if (!ValidateAccountSnapshot(config_, adapter_.get())) {
+    LogError("EXCHANGE_CHECK_FAILED: stage=account_mode");
+    adapter_.reset();
+    return 1;
+  }
+
+  std::vector<RemotePositionSnapshot> positions;
+  if (!adapter_->GetRemotePositions(&positions)) {
+    LogError("EXCHANGE_CHECK_FAILED: stage=positions");
+    adapter_.reset();
+    return 1;
+  }
+  std::vector<RemoteOpenOrderSnapshot> open_orders;
+  if (!adapter_->GetRemoteOpenOrders(&open_orders)) {
+    LogError("EXCHANGE_CHECK_FAILED: stage=open_orders");
+    adapter_.reset();
+    return 1;
+  }
+  RemoteAccountBalanceSnapshot balance;
+  if (!adapter_->GetRemoteAccountBalance(&balance)) {
+    LogError("EXCHANGE_CHECK_FAILED: stage=account_balance");
+    adapter_.reset();
+    return 1;
+  }
+  if (!adapter_->TradeOk()) {
+    LogError("EXCHANGE_CHECK_FAILED: stage=trade_channel");
+    adapter_.reset();
+    return 1;
+  }
+
+  adapter_.reset();
+  LogInfo("EXCHANGE_CHECK_PASSED");
+  return 0;
+}
+
 /**
  * @brief 系统初始化
  *
@@ -3721,6 +3766,7 @@ bool BotApplication::Initialize() {
     LogInfo("replay 模式：跳过历史 WAL 恢复");
   } else {
     std::vector<FillEvent> historical_fills;
+    WalLoadRecoveryStats wal_recovery_stats;
     if (!wal_.LoadState(&intent_ids_,
                         &fill_ids_,
                         &historical_fills,
@@ -3728,9 +3774,17 @@ bool BotApplication::Initialize() {
                         &persisted_intent_by_id_,
                         &persisted_closed_episode_ids_,
                         &persisted_episode_closures_,
-                        &latest_account_equity_checkpoint_)) {
+                        &latest_account_equity_checkpoint_,
+                        &wal_recovery_stats)) {
       LogError("WAL 加载失败: " + wal_error);
       return false;
+    }
+    if (wal_recovery_stats.skipped_nontrading_checkpoint_records > 0) {
+      LogInfo(
+          "WAL_NONTRADING_CHECKPOINT_RECOVERY: skipped_records=" +
+          std::to_string(
+              wal_recovery_stats.skipped_nontrading_checkpoint_records) +
+          ", execution_records_skipped=0");
     }
     for (const auto& [episode_id, closure] :
          persisted_episode_closures_) {

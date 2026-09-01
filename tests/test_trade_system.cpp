@@ -7117,6 +7117,110 @@ int main() {
   }
 
   {
+    const std::filesystem::path wal_path =
+        std::filesystem::temp_directory_path() /
+        "ai_trade_test_nontrading_wal_recovery.wal";
+    std::error_code ec;
+    std::filesystem::remove(wal_path, ec);
+
+    ai_trade::WalStore wal(wal_path.string());
+    std::string error;
+    if (!wal.Initialize(&error)) {
+      std::cerr << "非交易 WAL 恢复测试初始化失败: " << error << "\n";
+      return 1;
+    }
+    ai_trade::OrderIntent intent;
+    intent.client_order_id = "wal-recovery-intent";
+    intent.symbol = "BTCUSDT";
+    intent.purpose = ai_trade::OrderPurpose::kEntry;
+    intent.direction = 1;
+    intent.qty = 0.1;
+    intent.price = 100.0;
+    if (!wal.AppendIntent(intent, &error)) {
+      std::cerr << "非交易 WAL 恢复测试 intent 写入失败: " << error << "\n";
+      return 1;
+    }
+    {
+      std::ofstream out(wal_path, std::ios::app);
+      out << "ACCOUNT_EQUITY_CHECKPOINT1\tboot-a\t2026-09-01T00:00:00Z"
+             "\tstartup\t1\t100\t1\t100\t1\t0\t1\t0\textra-a\textra-b\n";
+      out << "partialACCOUNT_EQUITY_CHECKPOINT1\tcheckpoint-fragment\n";
+    }
+
+    std::unordered_set<std::string> intent_ids;
+    std::unordered_set<std::string> fill_ids;
+    std::vector<ai_trade::FillEvent> fills;
+    ai_trade::WalLoadRecoveryStats recovery_stats;
+    if (!wal.LoadState(&intent_ids,
+                       &fill_ids,
+                       &fills,
+                       &error,
+                       nullptr,
+                       nullptr,
+                       nullptr,
+                       nullptr,
+                       &recovery_stats)) {
+      std::cerr << "纯权益检查点损坏应可安全恢复: " << error << "\n";
+      return 1;
+    }
+    if (intent_ids.count(intent.client_order_id) != 1U ||
+        recovery_stats.skipped_nontrading_checkpoint_records != 2U) {
+      std::cerr << "纯权益检查点恢复计数或交易意图保留不符合预期\n";
+      return 1;
+    }
+
+    {
+      std::ofstream out(wal_path, std::ios::app);
+      out << "FILL3\ttruncated-trading-record\n";
+    }
+    recovery_stats = {};
+    if (wal.LoadState(&intent_ids,
+                      &fill_ids,
+                      &fills,
+                      &error,
+                      nullptr,
+                      nullptr,
+                      nullptr,
+                      nullptr,
+                      &recovery_stats) ||
+        error.find("FILL3 WAL 字段数异常") == std::string::npos) {
+      std::cerr << "损坏交易 WAL 记录必须保持 fail-closed\n";
+      return 1;
+    }
+
+    {
+      std::ofstream out(wal_path, std::ios::trunc);
+      out << "UNKNOWN_EVENT\tACCOUNT_EQUITY_CHECKPOINT1\n";
+    }
+    recovery_stats = {};
+    if (wal.LoadState(&intent_ids,
+                      &fill_ids,
+                      &fills,
+                      &error,
+                      nullptr,
+                      nullptr,
+                      nullptr,
+                      nullptr,
+                      &recovery_stats) ||
+        error.find("未知 WAL 事件类型") == std::string::npos) {
+      std::cerr << "非首字段 checkpoint 标记不得放宽未知 WAL 事件\n";
+      return 1;
+    }
+    std::filesystem::remove(wal_path, ec);
+  }
+
+  {
+    ai_trade::AppConfig config;
+    config.exchange = "mock";
+    config.mode = "paper";
+    ai_trade::BotApplication app(config);
+    if (app.CheckExchange() != 0) {
+      std::cerr << "只读交易所预检不应依赖 WAL 或完整启动恢复\n";
+      return 1;
+    }
+  }
+
+  {
     ai_trade::RiskEngine risk(/*max_abs_notional_usd=*/500.0);
     const ai_trade::TargetPosition target{"BTCUSDT", 500.0};
 

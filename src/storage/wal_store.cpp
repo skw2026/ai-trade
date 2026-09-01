@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <fstream>
 #include <sstream>
+#include <sys/file.h>
 #include <unistd.h>
 #include <vector>
 
@@ -21,6 +22,66 @@ std::string EncodeWalText(const std::string& value) {
 
 std::string DecodeWalText(const std::string& value) {
   return value == "-" ? "" : value;
+}
+
+class ScopedFileLock {
+ public:
+  explicit ScopedFileLock(int fd) : fd_(fd) {}
+  ScopedFileLock(const ScopedFileLock&) = delete;
+  ScopedFileLock& operator=(const ScopedFileLock&) = delete;
+
+  ~ScopedFileLock() { Close(); }
+
+  bool Lock(int operation) {
+    while (::flock(fd_, operation) != 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return false;
+    }
+    locked_ = true;
+    return true;
+  }
+
+  int fd() const { return fd_; }
+
+  int Close() {
+    if (fd_ < 0) {
+      return 0;
+    }
+    if (locked_) {
+      (void)::flock(fd_, LOCK_UN);
+      locked_ = false;
+    }
+    const int status = ::close(fd_);
+    fd_ = -1;
+    return status;
+  }
+
+ private:
+  int fd_{-1};
+  bool locked_{false};
+};
+
+bool IsRecoverableCheckpointOnlyCorruption(const std::string& line) {
+  constexpr const char* kCheckpointRecordToken =
+      "ACCOUNT_EQUITY_CHECKPOINT1";
+  const std::size_t first_field_end = line.find('\t');
+  const std::string first_field = line.substr(0, first_field_end);
+  if (first_field.find(kCheckpointRecordToken) == std::string::npos) {
+    return false;
+  }
+  // A failed append may leave a checkpoint prefix that is later joined to
+  // another checkpoint.  Such observational evidence can be discarded, but
+  // never recover through a line that might contain execution state.
+  constexpr const char* kExecutionRecordTokens[] = {
+      "INTENT", "FILL", "POSITION_REBASE_FLAT", "EPISODE_CLOSED"};
+  for (const char* token : kExecutionRecordTokens) {
+    if (line.find(token) != std::string::npos) {
+      return false;
+    }
+  }
+  return true;
 }
 
 std::string SerializeIntent(const OrderIntent& order) {
@@ -579,35 +640,64 @@ bool WalStore::AppendLine(const std::string& line, std::string* out_error) const
     return false;
   }
 
+  ScopedFileLock file_lock(fd);
+  if (!file_lock.Lock(LOCK_EX)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "WAL 文件锁获取失败: " + std::string(std::strerror(errno));
+    }
+    return false;
+  }
+  const off_t original_size = ::lseek(file_lock.fd(), 0, SEEK_END);
+  if (original_size < 0) {
+    if (out_error != nullptr) {
+      *out_error =
+          "WAL 长度读取失败: " + std::string(std::strerror(errno));
+    }
+    return false;
+  }
+
+  const auto rollback_partial_append = [&]() {
+    const bool truncated = ::ftruncate(file_lock.fd(), original_size) == 0;
+    const bool synced = truncated && ::fsync(file_lock.fd()) == 0;
+    return truncated && synced;
+  };
+
   const std::string payload = line + '\n';
   std::size_t written = 0;
   while (written < payload.size()) {
     const ssize_t count =
-        ::write(fd, payload.data() + written, payload.size() - written);
+        ::write(file_lock.fd(),
+                payload.data() + written,
+                payload.size() - written);
     if (count < 0 && errno == EINTR) {
       continue;
     }
     if (count <= 0) {
       const int write_errno = errno;
-      ::close(fd);
+      const bool rollback_ok = rollback_partial_append();
       if (out_error != nullptr) {
         *out_error = "WAL 写入失败: " +
-                     std::string(std::strerror(write_errno));
+                     std::string(std::strerror(write_errno)) +
+                     (rollback_ok ? "; partial_append_rolled_back"
+                                  : "; partial_append_rollback_failed");
       }
       return false;
     }
     written += static_cast<std::size_t>(count);
   }
-  if (::fsync(fd) != 0) {
+  if (::fsync(file_lock.fd()) != 0) {
     const int sync_errno = errno;
-    ::close(fd);
+    const bool rollback_ok = rollback_partial_append();
     if (out_error != nullptr) {
       *out_error =
-          "WAL fsync 失败: " + std::string(std::strerror(sync_errno));
+          "WAL fsync 失败: " + std::string(std::strerror(sync_errno)) +
+          (rollback_ok ? "; partial_append_rolled_back"
+                       : "; partial_append_rollback_failed");
     }
     return false;
   }
-  if (::close(fd) != 0) {
+  if (file_lock.Close() != 0) {
     if (out_error != nullptr) {
       *out_error =
           "WAL 关闭失败: " + std::string(std::strerror(errno));
@@ -701,7 +791,8 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
                              CandidateEpisodeClosureRecord>*
                              out_episode_closures,
                          std::optional<AccountEquityCheckpointRecord>*
-                             out_latest_account_checkpoint) const {
+                             out_latest_account_checkpoint,
+                         WalLoadRecoveryStats* out_recovery_stats) const {
   if (out_intent_ids == nullptr || out_fill_ids == nullptr ||
       out_fills == nullptr) {
     if (out_error != nullptr) {
@@ -725,11 +816,36 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
   if (out_latest_account_checkpoint != nullptr) {
     out_latest_account_checkpoint->reset();
   }
+  if (out_recovery_stats != nullptr) {
+    *out_recovery_stats = WalLoadRecoveryStats{};
+  }
 
+  const int lock_fd = ::open(file_path_.c_str(), O_RDONLY);
+  if (lock_fd < 0) {
+    if (errno == ENOENT) {
+      // 文件不存在视为“无历史”，由 Initialize 负责创建。
+      return true;
+    }
+    if (out_error != nullptr) {
+      *out_error =
+          "WAL 打开失败: " + file_path_ + ": " + std::strerror(errno);
+    }
+    return false;
+  }
+  ScopedFileLock file_lock(lock_fd);
+  if (!file_lock.Lock(LOCK_SH)) {
+    if (out_error != nullptr) {
+      *out_error =
+          "WAL 文件锁获取失败: " + std::string(std::strerror(errno));
+    }
+    return false;
+  }
   std::ifstream in(file_path_);
   if (!in.is_open()) {
-    // 文件不存在或无法打开视为“无历史”，由 Initialize 负责创建。
-    return true;
+    if (out_error != nullptr) {
+      *out_error = "WAL 读取流打开失败: " + file_path_;
+    }
+    return false;
   }
 
   std::string line;
@@ -826,6 +942,12 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
       AccountEquityCheckpointRecord checkpoint;
       std::string parse_error;
       if (!ParseAccountEquityCheckpointV1(fields, &checkpoint, &parse_error)) {
+        if (IsRecoverableCheckpointOnlyCorruption(line)) {
+          if (out_recovery_stats != nullptr) {
+            ++out_recovery_stats->skipped_nontrading_checkpoint_records;
+          }
+          continue;
+        }
         if (out_error != nullptr) {
           *out_error = "WAL 行解析失败（line=" +
                        std::to_string(line_no) + "）: " + parse_error;
@@ -911,6 +1033,12 @@ bool WalStore::LoadState(std::unordered_set<std::string>* out_intent_ids,
       continue;
     }
 
+    if (IsRecoverableCheckpointOnlyCorruption(line)) {
+      if (out_recovery_stats != nullptr) {
+        ++out_recovery_stats->skipped_nontrading_checkpoint_records;
+      }
+      continue;
+    }
     if (out_error != nullptr) {
       *out_error = "未知 WAL 事件类型（line=" + std::to_string(line_no) + ")";
     }

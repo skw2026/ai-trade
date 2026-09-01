@@ -51,6 +51,7 @@ struct RuntimeOptions {
   std::string feature_parity_output_path{
       "./data/reports/feature_parity_report.json"};
   bool check_startup{false};
+  bool check_exchange{false};
 };
 
 bool ParseNonNegativeInt(const std::string& raw, int* out_value) {
@@ -125,6 +126,7 @@ void ParseOptionalIntArg(const std::string& raw_value,
  * - `--remote_risk_refresh_interval_ticks=...` / `--remote_risk_refresh_interval_ticks ...`
  * - `--run_forever`
  * - `--check_startup` / `--check-startup`
+ * - `--check_exchange` / `--check-exchange`
  * - `--run_miner --miner_csv=... [--miner_output=...] [--miner_top_k=...]`
  *               [--miner_generations=...] [--miner_population=...]
  *               [--miner_elite=...]
@@ -252,6 +254,10 @@ RuntimeOptions ParseOptions(int argc, char** argv) {
     }
     if (arg == "--check_startup" || arg == "--check-startup") {
       options.check_startup = true;
+      continue;
+    }
+    if (arg == "--check_exchange" || arg == "--check-exchange") {
+      options.check_exchange = true;
       continue;
     }
     if (arg == "--run_miner" || arg == "--run-miner") {
@@ -754,6 +760,9 @@ int main(int argc, char** argv) {
       FormatSymbolList(config.universe.candidate_symbols) + "]}");
 
   ai_trade::BotApplication app(config);
+  if (options.check_exchange) {
+    return app.CheckExchange();
+  }
   if (options.check_startup) {
     return app.CheckStartup();
   }

@@ -1629,7 +1629,8 @@ class ComposeConsistencyTest(unittest.TestCase):
         script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
         self.assertIn('DEPLOY_STARTUP_PREFLIGHT="${DEPLOY_STARTUP_PREFLIGHT:-true}"', script)
         self.assertIn('run_startup_preflight()', script)
-        self.assertIn('--check-startup', script)
+        self.assertIn('--check-exchange', script)
+        self.assertNotIn('--check-startup 2>&1', script)
         self.assertLess(
             script.index('if ! run_startup_preflight; then'),
             script.index('stopping deferred services before gate'),
@@ -1645,6 +1646,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             "Bybit HTTP 状态异常: 403": "bybit_http_403",
             "curl_easy_perform 失败: Could not resolve host": "dns_resolution_failed",
             "curl_easy_perform 失败: SSL certificate problem": "tls_validation_failed",
+            "EXCHANGE_CHECK_FAILED: stage=open_orders": "open_orders_query_failed",
+            "EXCHANGE_CHECK_FAILED: stage=account_balance": "account_balance_query_failed",
             "unknown exchange error": "exchange_connection_failed",
         }
         for failure_output, expected in cases.items():

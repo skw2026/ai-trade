@@ -45,6 +45,12 @@ struct AccountEquityCheckpointRecord {
   std::uint64_t persisted_fill_count{0};
 };
 
+struct WalLoadRecoveryStats {
+  /// Only malformed account-equity checkpoint evidence may be skipped.
+  /// Trading, episode, and position-rebase records remain fail-closed.
+  std::uint64_t skipped_nontrading_checkpoint_records{0};
+};
+
 /**
  * @brief 本地 WAL（Write-Ahead Log）
  *
@@ -91,7 +97,8 @@ class WalStore {
                  std::unordered_map<std::string, CandidateEpisodeClosureRecord>*
                      out_episode_closures = nullptr,
                  std::optional<AccountEquityCheckpointRecord>*
-                     out_latest_account_checkpoint = nullptr) const;
+                     out_latest_account_checkpoint = nullptr,
+                 WalLoadRecoveryStats* out_recovery_stats = nullptr) const;
 
  private:
   /// 追加单行文本到 WAL 文件（append + fsync）。
