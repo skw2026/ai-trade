@@ -21,8 +21,8 @@ jobs:
           ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
           ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
           ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
-          EXPECTED_RELEASE_SHA: 1480127b36b49fcdc5ac4f141261514084090794
-          EXPECTED_RESEARCH_RUN_ID: gha-33462453693-1
+          EXPECTED_RELEASE_SHA: cd0cd90475c70d52d12f98ead3f4f76f9fdb3f69
+          EXPECTED_RESEARCH_RUN_ID: gha-33465713761-1
         shell: bash
         run: |
           set -euo pipefail
@@ -114,7 +114,8 @@ jobs:
           rm -f "${temporary_log}"
 
           option_report="${deploy_root}/data/reports/closed_loop/${expected_research_run_id}/option_variance_risk_premium_sequential_payoff.json"
-          python3 - "${option_report}" <<'PY'
+          summary_report="${deploy_root}/data/reports/closed_loop/${expected_research_run_id}/closed_loop_report.json"
+          python3 - "${option_report}" "${summary_report}" <<'PY'
           import json
           import pathlib
           import sys
@@ -127,6 +128,7 @@ jobs:
               "OPTION_V2_ZERO_COMPLETED_EXPIRIES": False,
               "OPTION_V2_DECISION_WAIT": False,
               "OPTION_V2_NONPROMOTIONAL": False,
+              "OPTION_V2_SUMMARY_ROUTED": False,
           }
           try:
               report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -180,6 +182,29 @@ jobs:
                       "demo_activation_authorized",
                       "live_activation_authorized",
                   )
+              )
+              summary_report = json.loads(
+                  pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+              )
+              summary = summary_report.get("sections", {}).get(
+                  "option_variance_risk_premium_sequential_payoff", {}
+              )
+              metrics = summary.get("metrics", {})
+              checks["OPTION_V2_SUMMARY_ROUTED"] = (
+                  summary.get("status") == "pass"
+                  and summary.get("readiness_status") == "PASS_WITH_ACTIONS"
+                  and summary.get("fail_reasons") == []
+                  and summary.get("research_decision")
+                  == "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE"
+                  and summary.get("reason_code") == "INCONCLUSIVE"
+                  and summary.get("review_day") is None
+                  and metrics.get("eligible_snapshot_count") == 0
+                  and metrics.get("completed_expiry_count") == 0
+                  and metrics.get("invalid_segment_count") == 0
+                  and metrics.get("episode_invalid_count") == 0
+                  and summary.get("demo_activation_authorized") is False
+                  and summary.get("live_activation_authorized") is False
+                  and summary.get("authoritative_for_integrator_promotion") is False
               )
           except (OSError, ValueError, TypeError):
               pass
@@ -239,3 +264,7 @@ jobs:
       - name: Verify option v2 non-promotional state
         if: always()
         run: grep -Fxq 'OPTION_V2_NONPROMOTIONAL=PASS' release_checks
+
+      - name: Verify option v2 summary routing
+        if: always()
+        run: grep -Fxq 'OPTION_V2_SUMMARY_ROUTED=PASS' release_checks
