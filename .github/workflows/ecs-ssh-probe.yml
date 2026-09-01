@@ -767,23 +767,13 @@ jobs:
             echo "PUBLIC_DEMO=FAIL"
           fi
 
-          set -a
-          source "${env_file}"
-          set +a
-          set +e
-          runtime_config="${AI_TRADE_CONFIG_PATH:-config/bybit.demo.s5.yaml}"
-          runtime_exchange="${AI_TRADE_EXCHANGE:-bybit}"
           preflight_output="${temporary_dir}/preflight.log"
-          docker compose \
-            --project-name ai-trade \
-            --env-file "${env_file}" \
-            -f "${release_dir}/docker-compose.prod.yml" \
-            run --rm --no-deps ai-trade \
-            --config="${runtime_config}" \
-            --exchange="${runtime_exchange}" \
+          timeout 90 docker exec ai-trade \
+            /app/trade_bot \
+            --config=config/bybit.demo.s5.yaml \
+            --exchange=bybit \
             --check-startup >"${preflight_output}" 2>&1
           preflight_status=$?
-          set -e
           if (( preflight_status == 0 )); then
             echo "PREFLIGHT=PASS"
             echo "PREFLIGHT_CLASS=PASS"
