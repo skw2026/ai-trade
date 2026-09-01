@@ -1,0 +1,136 @@
+name: ECS Release Audit
+
+on:
+  push:
+    tags:
+      - "infra/ecs-release-audit/**"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Audit deployed release
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
+          EXPECTED_RELEASE_SHA: 1480127b36b49fcdc5ac4f141261514084090794
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ECS_HOST}"
+          test -n "${ECS_USER}"
+          test -n "${ECS_SSH_KEY}"
+          umask 077
+          printf '%s\n' "${ECS_SSH_KEY}" > ecs_key
+          sed -i 's/\r$//' ecs_key
+          ssh-keygen -y -f ecs_key >/dev/null
+          ssh-keyscan -T 10 -p "${ECS_PORT}" -t ed25519,ecdsa,rsa \
+            "${ECS_HOST}" > known_hosts 2>/dev/null
+          test -s known_hosts
+          expected_fingerprint="${ECS_HOST_FINGERPRINT_SECRET:-${ECS_HOST_FINGERPRINT_VAR:-}}"
+          if [[ -n "${expected_fingerprint}" ]]; then
+            ssh-keygen -lf known_hosts | awk '{print $2}' | \
+              grep -Fxq "${expected_fingerprint}"
+          else
+            echo "::warning title=ECS release audit::check=HOST_FINGERPRINT; result=EXPECTED_MISSING"
+          fi
+
+          set +e
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > release_checks <<'REMOTE'
+          set +e
+          expected_sha="$1"
+          deploy_root="/opt/ai-trade"
+          release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
+          if [[ "${release_dir}" == "${deploy_root}/releases/${expected_sha}" ]]; then
+            echo "RELEASE=PASS"
+          else
+            echo "RELEASE=FAIL"
+          fi
+
+          runtime_revision="$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' ai-trade 2>/dev/null || true)"
+          if [[ "${runtime_revision}" == "${expected_sha}" ]]; then
+            echo "RUNTIME_REVISION=PASS"
+          else
+            echo "RUNTIME_REVISION=FAIL"
+          fi
+
+          collector_state="$(docker inspect -f '{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' ai-trade-option-vrp-collector 2>/dev/null || true)"
+          if [[ "${collector_state}" == "running/healthy" ]]; then
+            echo "OPTION_COLLECTOR=PASS"
+          else
+            echo "OPTION_COLLECTOR=FAIL"
+          fi
+
+          if [[ -f "${release_dir}/config/option_variance_risk_premium_sequential_payoff_v2.json" &&
+                -f "${release_dir}/config/option_variance_risk_premium_sequential_payoff_manifest_v2.json" ]]; then
+            echo "OPTION_V2_CONTRACT=PASS"
+          else
+            echo "OPTION_V2_CONTRACT=FAIL"
+          fi
+
+          runtime_log="$(docker logs --since 30m ai-trade 2>&1 || true)"
+          if grep -Fq 'WAL_NONTRADING_CHECKPOINT_RECOVERY: skipped_records=2, execution_records_skipped=0' <<<"${runtime_log}"; then
+            echo "WAL_RECOVERY=PASS"
+          else
+            echo "WAL_RECOVERY=FAIL"
+          fi
+          if grep -Fq 'WAL 加载失败' <<<"${runtime_log}"; then
+            echo "WAL_LOAD_FAILURE=PRESENT"
+          else
+            echo "WAL_LOAD_FAILURE=ABSENT"
+          fi
+
+          temporary_log="$(mktemp /tmp/ai-trade-exchange-check.XXXXXX)"
+          timeout 90 docker exec ai-trade \
+            /app/trade_bot \
+            --config=config/bybit.demo.s5.yaml \
+            --exchange=bybit \
+            --check-exchange >"${temporary_log}" 2>&1
+          exchange_status=$?
+          if (( exchange_status == 0 )) &&
+             grep -Fq 'EXCHANGE_CHECK_PASSED' "${temporary_log}"; then
+            echo "EXCHANGE_CHECK=PASS"
+          else
+            echo "EXCHANGE_CHECK=FAIL"
+          fi
+          rm -f "${temporary_log}"
+          exit 0
+          REMOTE
+          remote_status=$?
+          set -e
+          if (( remote_status != 0 )); then
+            echo "REMOTE_COMMAND=FAIL_${remote_status}" >> release_checks
+          fi
+
+          failures=0
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${result}" in
+              PASS|ABSENT)
+                echo "::notice title=ECS release audit::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::error title=ECS release audit::check=${check}; result=${result}"
+                failures=$((failures + 1))
+                ;;
+            esac
+          done < release_checks
+          if (( failures > 0 || remote_status != 0 )); then
+            exit 2
+          fi
