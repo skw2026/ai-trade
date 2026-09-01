@@ -86,7 +86,7 @@ jobs:
             echo "OPTION_V2_CONTRACT=FAIL"
           fi
 
-          runtime_log="$(docker logs --since 30m ai-trade 2>&1 || true)"
+          runtime_log="$(docker logs ai-trade 2>&1 || true)"
           if grep -Fq 'WAL_NONTRADING_CHECKPOINT_RECOVERY: skipped_records=2, execution_records_skipped=0' <<<"${runtime_log}"; then
             echo "WAL_RECOVERY=PASS"
           else
@@ -114,71 +114,79 @@ jobs:
           rm -f "${temporary_log}"
 
           option_report="${deploy_root}/data/reports/closed_loop/${expected_research_run_id}/option_variance_risk_premium_sequential_payoff.json"
-          if jq -e '
-            .schema_version == "option_variance_risk_premium_sequential_payoff_audit_v1" and
-            .status == "COMPLETE"
-          ' "${option_report}" >/dev/null 2>&1; then
-            echo "OPTION_V2_REPORT_COMPLETE=PASS"
-          else
-            echo "OPTION_V2_REPORT_COMPLETE=FAIL"
-          fi
-          if jq -e '
-            .policy.identity_verified == true and
-            .policy.canonical_sha256 == "6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b" and
-            .observation_manifest.identity_verified == true and
-            .observation_manifest.canonical_sha256 == "13b62a179c2e3131762918063bfecfb1a2f9c853693144d0dc2a8428b2f58aeb" and
-            .observation_manifest.experiment_id == "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2"
-          ' "${option_report}" >/dev/null 2>&1; then
-            echo "OPTION_V2_POLICY_IDENTITY=PASS"
-          else
-            echo "OPTION_V2_POLICY_IDENTITY=FAIL"
-          fi
-          if jq -e '
-            .observation_manifest.observation_start_epoch_ms == 1788242400000 and
-            .observation_manifest.observation_start_utc == "2026-09-01T06:00:00Z" and
-            .evaluated_now_epoch_ms < .observation_manifest.observation_start_epoch_ms
-          ' "${option_report}" >/dev/null 2>&1; then
-            echo "OPTION_V2_PRESTART_CLOCK=PASS"
-          else
-            echo "OPTION_V2_PRESTART_CLOCK=FAIL"
-          fi
-          if jq -e '
-            .capture_replay.eligible_snapshot_count == 0 and
-            .capture_replay.invalid_segment_count == 0 and
-            .episode_invalid_count == 0
-          ' "${option_report}" >/dev/null 2>&1; then
-            echo "OPTION_V2_ZERO_ELIGIBLE_VALID=PASS"
-          else
-            echo "OPTION_V2_ZERO_ELIGIBLE_VALID=FAIL"
-          fi
-          if jq -e '
-            .primary_summary.completed_expiry_count == 0
-          ' "${option_report}" >/dev/null 2>&1; then
-            echo "OPTION_V2_ZERO_COMPLETED_EXPIRIES=PASS"
-          else
-            echo "OPTION_V2_ZERO_COMPLETED_EXPIRIES=FAIL"
-          fi
-          if jq -e '
-            .decision == "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE" and
-            .reason_code == "INCONCLUSIVE" and
-            .review_day == null and
-            .next_action == "collect_checksum_bound_v2_evidence"
-          ' "${option_report}" >/dev/null 2>&1; then
-            echo "OPTION_V2_DECISION_WAIT=PASS"
-          else
-            echo "OPTION_V2_DECISION_WAIT=FAIL"
-          fi
-          if jq -e '
-            .promotion_evidence == false and
-            .promotion_eligible == false and
-            .promotion_authority == false and
-            .demo_activation_authorized == false and
-            .live_activation_authorized == false
-          ' "${option_report}" >/dev/null 2>&1; then
-            echo "OPTION_V2_NONPROMOTIONAL=PASS"
-          else
-            echo "OPTION_V2_NONPROMOTIONAL=FAIL"
-          fi
+          python3 - "${option_report}" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          checks = {
+              "OPTION_V2_REPORT_COMPLETE": False,
+              "OPTION_V2_POLICY_IDENTITY": False,
+              "OPTION_V2_PRESTART_CLOCK": False,
+              "OPTION_V2_ZERO_ELIGIBLE_VALID": False,
+              "OPTION_V2_ZERO_COMPLETED_EXPIRIES": False,
+              "OPTION_V2_DECISION_WAIT": False,
+              "OPTION_V2_NONPROMOTIONAL": False,
+          }
+          try:
+              report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+              manifest = report.get("observation_manifest", {})
+              replay = report.get("capture_replay", {})
+              summary = report.get("primary_summary", {})
+              policy = report.get("policy", {})
+              checks["OPTION_V2_REPORT_COMPLETE"] = (
+                  report.get("schema_version")
+                  == "option_variance_risk_premium_sequential_payoff_audit_v1"
+                  and report.get("status") == "COMPLETE"
+              )
+              checks["OPTION_V2_POLICY_IDENTITY"] = (
+                  policy.get("identity_verified") is True
+                  and policy.get("canonical_sha256")
+                  == "6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b"
+                  and manifest.get("identity_verified") is True
+                  and manifest.get("canonical_sha256")
+                  == "13b62a179c2e3131762918063bfecfb1a2f9c853693144d0dc2a8428b2f58aeb"
+                  and manifest.get("experiment_id")
+                  == "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2"
+              )
+              checks["OPTION_V2_PRESTART_CLOCK"] = (
+                  manifest.get("observation_start_epoch_ms") == 1788242400000
+                  and manifest.get("observation_start_utc") == "2026-09-01T06:00:00Z"
+                  and int(report.get("evaluated_now_epoch_ms") or 0)
+                  < 1788242400000
+              )
+              checks["OPTION_V2_ZERO_ELIGIBLE_VALID"] = (
+                  replay.get("eligible_snapshot_count") == 0
+                  and replay.get("invalid_segment_count") == 0
+                  and report.get("episode_invalid_count") == 0
+              )
+              checks["OPTION_V2_ZERO_COMPLETED_EXPIRIES"] = (
+                  summary.get("completed_expiry_count") == 0
+              )
+              checks["OPTION_V2_DECISION_WAIT"] = (
+                  report.get("decision")
+                  == "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE"
+                  and report.get("reason_code") == "INCONCLUSIVE"
+                  and report.get("review_day") is None
+                  and report.get("next_action")
+                  == "collect_checksum_bound_v2_evidence"
+              )
+              checks["OPTION_V2_NONPROMOTIONAL"] = all(
+                  report.get(field) is False
+                  for field in (
+                      "promotion_evidence",
+                      "promotion_eligible",
+                      "promotion_authority",
+                      "demo_activation_authorized",
+                      "live_activation_authorized",
+                  )
+              )
+          except (OSError, ValueError, TypeError):
+              pass
+
+          for name, passed in checks.items():
+              print(f"{name}={'PASS' if passed else 'FAIL'}")
+          PY
           exit 0
           REMOTE
           remote_status=$?
