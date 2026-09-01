@@ -862,6 +862,27 @@ jobs:
             wal_error_line="$(sed -nE 's/.*line=([0-9]+).*/\1/p' "${preflight_output}" | head -1)"
             if [[ "${wal_line_count}" =~ ^[0-9]+$ &&
                   "${wal_error_line}" =~ ^[0-9]+$ ]]; then
+              wal_error_record_type="$(awk -F '\t' -v target="${wal_error_line}" '
+                NR == target { print $1; exit }
+              ' "${wal_path}" 2>/dev/null)"
+              case "${wal_error_record_type}" in
+                INTENT|INTENT2|FILL|FILL2|FILL3|POSITION_REBASE_FLAT|\
+                ACCOUNT_EQUITY_CHECKPOINT1|EPISODE_CLOSED|EPISODE_CLOSED2|\
+                EPISODE_CLOSED3|EPISODE_CLOSED4)
+                  echo "WAL_ERROR_RECORD_TYPE=${wal_error_record_type}"
+                  ;;
+                *)
+                  echo "WAL_ERROR_RECORD_TYPE=UNKNOWN"
+                  ;;
+              esac
+              wal_error_field_count="$(awk -F '\t' -v target="${wal_error_line}" '
+                NR == target { print NF; exit }
+              ' "${wal_path}" 2>/dev/null)"
+              if [[ "${wal_error_field_count}" =~ ^[0-9]+$ ]]; then
+                echo "WAL_ERROR_FIELD_COUNT=${wal_error_field_count}"
+              else
+                echo "WAL_ERROR_FIELD_COUNT=UNKNOWN"
+              fi
               if (( wal_error_line == wal_line_count )); then
                 echo "WAL_ERROR_POSITION=LAST"
               elif (( wal_error_line < wal_line_count )); then
@@ -870,6 +891,8 @@ jobs:
                 echo "WAL_ERROR_POSITION=BEYOND_CURRENT_END"
               fi
             else
+              echo "WAL_ERROR_RECORD_TYPE=UNKNOWN"
+              echo "WAL_ERROR_FIELD_COUNT=UNKNOWN"
               echo "WAL_ERROR_POSITION=UNKNOWN"
             fi
             last_byte="$(tail -c 1 "${wal_path}" 2>/dev/null | od -An -t u1 | tr -d ' ')"
@@ -879,6 +902,7 @@ jobs:
               echo "WAL_NEWLINE_TERMINATED=FAIL"
             fi
             unknown_types="$(awk -F '\t' '
+              $0 == "" { next }
               $1 != "INTENT" && $1 != "INTENT2" &&
               $1 != "FILL" && $1 != "FILL2" && $1 != "FILL3" &&
               $1 != "POSITION_REBASE_FLAT" &&
@@ -894,6 +918,8 @@ jobs:
             fi
           else
             echo "WAL_FILE=ABSENT"
+            echo "WAL_ERROR_RECORD_TYPE=UNKNOWN"
+            echo "WAL_ERROR_FIELD_COUNT=UNKNOWN"
             echo "WAL_ERROR_POSITION=UNKNOWN"
             echo "WAL_NEWLINE_TERMINATED=UNKNOWN"
             echo "WAL_RECORD_TYPES=UNKNOWN"
