@@ -15,29 +15,18 @@ import time
 from typing import Any, Dict, Iterable, Mapping, Sequence
 
 import capture_bybit_option_vrp_v2 as capture
+from option_vrp_sequential_contracts import (
+    FROZEN_CONTRACTS,
+    FROZEN_MANIFEST_IDENTITY_SHA256,
+    FROZEN_MANIFEST_IDENTITY_SHA256_V2,
+    FROZEN_POLICY_IDENTITY_SHA256,
+    FROZEN_POLICY_IDENTITY_SHA256_V2,
+)
 
 
 SCHEMA_VERSION = "option_variance_risk_premium_sequential_payoff_audit_v1"
 POLICY_SCHEMA_VERSION = "option_variance_risk_premium_sequential_payoff_policy_v1"
 MANIFEST_SCHEMA_VERSION = "option_variance_risk_premium_sequential_payoff_manifest_v1"
-FROZEN_POLICY_IDENTITY_SHA256 = "e1902110278fb2c72ec091a73f2cdb38ba394dfbc4741864ca85b9c3d08a17ee"
-FROZEN_MANIFEST_IDENTITY_SHA256 = "446625e67754f1fd07e149e4ff5bd1623677138aef028e40ce0d35b8a0284a9d"
-FROZEN_POLICY_IDENTITY_SHA256_V2 = "6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b"
-FROZEN_MANIFEST_IDENTITY_SHA256_V2 = "13b62a179c2e3131762918063bfecfb1a2f9c853693144d0dc2a8428b2f58aeb"
-FROZEN_CONTRACTS = {
-    FROZEN_POLICY_IDENTITY_SHA256: {
-        "manifest_sha256": FROZEN_MANIFEST_IDENTITY_SHA256,
-        "experiment_id": "btc_bybit_usdt_option_vrp_sequential_payoff_v1",
-        "policy_path": "config/option_variance_risk_premium_sequential_payoff.json",
-        "action_ids": ["no_trade", "short_atm_straddle_7d", "long_atm_straddle_7d"],
-    },
-    FROZEN_POLICY_IDENTITY_SHA256_V2: {
-        "manifest_sha256": FROZEN_MANIFEST_IDENTITY_SHA256_V2,
-        "experiment_id": "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2",
-        "policy_path": "config/option_variance_risk_premium_sequential_payoff_v2.json",
-        "action_ids": ["no_trade", "short_atm_straddle_1d", "long_atm_straddle_1d"],
-    },
-}
 
 
 def read_json(path: pathlib.Path) -> Dict[str, Any]:

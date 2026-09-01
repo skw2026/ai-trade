@@ -16,6 +16,15 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+try:
+    from option_vrp_sequential_contracts import (
+        FROZEN_IDENTITIES_BY_EXPERIMENT as OPTION_VRP_SEQUENTIAL_FROZEN_IDENTITIES,
+    )
+except ModuleNotFoundError:  # pragma: no cover - package import in unit tests
+    from tools.option_vrp_sequential_contracts import (
+        FROZEN_IDENTITIES_BY_EXPERIMENT as OPTION_VRP_SEQUENTIAL_FROZEN_IDENTITIES,
+    )
+
 INHERITABLE_SECTION_NAMES = [
     "miner",
     "baseline",
@@ -2316,28 +2325,50 @@ def assess_option_variance_risk_premium_sequential_payoff(path: Path) -> Dict[st
     ):
         fail_reasons.append("option VRP sequential payoff isolation contract failed")
     policy = payload.get("policy")
+    manifest = payload.get("observation_manifest")
+    experiment_id = (
+        manifest.get("experiment_id") if isinstance(manifest, dict) else None
+    )
+    frozen_identity = OPTION_VRP_SEQUENTIAL_FROZEN_IDENTITIES.get(experiment_id)
+    if frozen_identity is None:
+        fail_reasons.append("option VRP sequential experiment identity failed")
     if not (
         isinstance(policy, dict)
         and policy.get("identity_verified") is True
-        and policy.get("canonical_sha256") == "e1902110278fb2c72ec091a73f2cdb38ba394dfbc4741864ca85b9c3d08a17ee"
+        and frozen_identity is not None
+        and policy.get("canonical_sha256") == frozen_identity["policy_sha256"]
     ):
         fail_reasons.append("option VRP sequential policy identity failed")
-    manifest = payload.get("observation_manifest")
     if not (
         isinstance(manifest, dict)
         and manifest.get("identity_verified") is True
-        and manifest.get("canonical_sha256") == "446625e67754f1fd07e149e4ff5bd1623677138aef028e40ce0d35b8a0284a9d"
-        and isinstance(manifest.get("observation_start_epoch_ms"), int)
-        and manifest["observation_start_epoch_ms"] > 0
+        and frozen_identity is not None
+        and manifest.get("canonical_sha256") == frozen_identity["manifest_sha256"]
+        and manifest.get("observation_start_epoch_ms")
+        == frozen_identity["observation_start_epoch_ms"]
         and manifest.get("promotion_authority") is False
         and manifest.get("demo_activation_authorized") is False
         and manifest.get("live_activation_authorized") is False
     ):
         fail_reasons.append("option VRP sequential observation manifest failed")
     input_manifest = payload.get("input_manifest")
-    if not isinstance(input_manifest, dict) or hashlib.sha256(
-        json.dumps(input_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest() != payload.get("input_manifest_canonical_sha256"):
+    if not (
+        isinstance(input_manifest, dict)
+        and hashlib.sha256(
+            json.dumps(
+                input_manifest,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        == payload.get("input_manifest_canonical_sha256")
+        and frozen_identity is not None
+        and input_manifest.get("policy_canonical_sha256")
+        == frozen_identity["policy_sha256"]
+        and input_manifest.get("manifest_canonical_sha256")
+        == frozen_identity["manifest_sha256"]
+    ):
         fail_reasons.append("option VRP sequential input hash chain failed")
     replay = payload.get("capture_replay")
     if not isinstance(replay, dict):

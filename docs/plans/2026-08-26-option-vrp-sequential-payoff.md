@@ -191,6 +191,8 @@ Closed Loop 必须：
 
 > 2026-09-01 发布前复盘：原 `--check-startup` 会访问在线 WAL 和完整恢复路径，已证明不适合作为旧服务仍运行时的交易所预检。Task 7 的 CD 门禁改用只读 `--check-exchange`；现网 WAL 的 2 条损坏均为 checkpoint-only，0 条执行记录损坏，按 `docs/reviews/2026-09-01-wal-deploy-preflight-roundtable.md` 的 fail-closed 合同恢复。该基础设施修复不重置或修改 1D v2 的冻结研究合同。
 
+> 2026-09-01 预启动阶段检查：不可变 Research 已产生完整 1D v2 报告，冻结身份、`2026-09-01T06:00:00Z` observation start、0 条合格快照、0 个完成 expiry、`WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE` 和全部非晋级权限均逐项通过。检查同时发现汇总层仍硬编码 7D v1 identity；修复将 v1/v2 冻结身份集中为单一注册表，并要求 summary 按 `experiment_id` 校验 policy、manifest、observation start 与 input hash chain，拒绝跨版本拼接。该修复只纠正证据路由，不改变 observation start、样本、成本或决策阈值。
+
 1. 显式暂存本计划范围文件，保留用户未提交的 `.gitignore` 修改。
 2. 提交并 push `main`，要求同一 SHA 的 CI、CD 和 Closed Loop Smoke 全部成功。
 3. 核验 `option-vrp-collector` 健康且持久化根未因部署清空。
