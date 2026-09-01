@@ -614,9 +614,7 @@ jobs:
           EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
         shell: bash
         run: |
-          set -u
-          echo "::notice title=ECS exchange preflight audit::check=DIAGNOSTIC; result=START"
-          set +e
+          set -euo pipefail
           ssh -i ecs_key \
             -p "${ECS_PORT}" \
             -o BatchMode=yes \
@@ -727,7 +725,9 @@ jobs:
           EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
+          echo "::notice title=ECS exchange preflight audit::check=DIAGNOSTIC; result=START"
+          set +e
           ssh -i ecs_key \
             -p "${ECS_PORT}" \
             -o BatchMode=yes \
