@@ -916,6 +916,54 @@ jobs:
             else
               echo "WAL_RECORD_TYPES=FAIL"
             fi
+            awk -F '\t' '
+              function expected_fields(type) {
+                if (type == "INTENT") return -8
+                if (type == "INTENT2") return 16
+                if (type == "FILL" || type == "FILL2") return 8
+                if (type == "FILL3") return 9
+                if (type == "POSITION_REBASE_FLAT") return 3
+                if (type == "ACCOUNT_EQUITY_CHECKPOINT1") return 12
+                if (type == "EPISODE_CLOSED") return 2
+                if (type == "EPISODE_CLOSED2") return 11
+                if (type == "EPISODE_CLOSED3") return 16
+                if (type == "EPISODE_CLOSED4") return 18
+                return 0
+              }
+              $0 == "" { next }
+              {
+                expected = expected_fields($1)
+                valid = expected == -8 ? (NF == 8 || NF == 9) : (expected > 0 && NF == expected)
+                if (valid) next
+                invalid++
+                if ($1 == "INTENT" || $1 == "INTENT2" ||
+                    $1 == "FILL" || $1 == "FILL2" || $1 == "FILL3") {
+                  trading++
+                } else if ($1 == "ACCOUNT_EQUITY_CHECKPOINT1") {
+                  checkpoint++
+                } else if ($1 ~ /^EPISODE_CLOSED/) {
+                  episode++
+                } else if ($1 == "POSITION_REBASE_FLAT") {
+                  rebase++
+                } else {
+                  unknown++
+                  if ($0 ~ /INTENT|FILL/) embedded_trading++
+                  if ($0 ~ /ACCOUNT_EQUITY_CHECKPOINT1/) embedded_checkpoint++
+                  if ($0 ~ /EPISODE_CLOSED/) embedded_episode++
+                }
+              }
+              END {
+                print "WAL_STRUCTURAL_INVALID_COUNT=" invalid + 0
+                print "WAL_STRUCTURAL_TRADING_INVALID_COUNT=" trading + 0
+                print "WAL_STRUCTURAL_CHECKPOINT_INVALID_COUNT=" checkpoint + 0
+                print "WAL_STRUCTURAL_EPISODE_INVALID_COUNT=" episode + 0
+                print "WAL_STRUCTURAL_REBASE_INVALID_COUNT=" rebase + 0
+                print "WAL_STRUCTURAL_UNKNOWN_COUNT=" unknown + 0
+                print "WAL_UNKNOWN_EMBEDDED_TRADING_COUNT=" embedded_trading + 0
+                print "WAL_UNKNOWN_EMBEDDED_CHECKPOINT_COUNT=" embedded_checkpoint + 0
+                print "WAL_UNKNOWN_EMBEDDED_EPISODE_COUNT=" embedded_episode + 0
+              }
+            ' "${wal_path}" 2>/dev/null
           else
             echo "WAL_FILE=ABSENT"
             echo "WAL_ERROR_RECORD_TYPE=UNKNOWN"
@@ -923,6 +971,7 @@ jobs:
             echo "WAL_ERROR_POSITION=UNKNOWN"
             echo "WAL_NEWLINE_TERMINATED=UNKNOWN"
             echo "WAL_RECORD_TYPES=UNKNOWN"
+            echo "WAL_STRUCTURAL_INVALID_COUNT=UNKNOWN"
           fi
           echo "PREFLIGHT_EXIT_STATUS=${preflight_status}"
           exit 0
