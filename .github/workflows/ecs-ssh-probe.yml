@@ -408,6 +408,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          set +e
           ssh -i ecs_key \
             -p "${ECS_PORT}" \
             -o BatchMode=yes \
@@ -734,7 +735,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             "${ECS_USER}@${ECS_HOST}" \
             "bash -s -- '${EXPECTED_RELEASE_SHA}'" > exchange_preflight_checks <<'REMOTE'
-          set -u
+          set +e
           expected_sha="$1"
           deploy_root="/opt/ai-trade"
           release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
@@ -830,7 +831,13 @@ jobs:
           else
             echo "POSITIONS_MARKER=ABSENT"
           fi
+          exit 0
           REMOTE
+          remote_status=$?
+          set -e
+          if (( remote_status != 0 )); then
+            echo "REMOTE_COMMAND=FAIL_${remote_status}" >> exchange_preflight_checks
+          fi
 
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
