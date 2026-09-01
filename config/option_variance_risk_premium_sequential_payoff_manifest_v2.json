@@ -1,0 +1,18 @@
+{
+  "schema_version": "option_variance_risk_premium_sequential_payoff_manifest_v1",
+  "experiment_id": "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2",
+  "policy_path": "config/option_variance_risk_premium_sequential_payoff_v2.json",
+  "policy_canonical_sha256": "6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b",
+  "capture_scope_identity_sha256": "a5372ca0bd7d2829c11028bfcfead6d16fba08ef8e91101801789ccb98198177",
+  "observation_start_epoch_ms": 1788242400000,
+  "observation_start_utc": "2026-09-01T06:00:00Z",
+  "freeze_rule": "only checksum-valid v2 XZ snapshots at or after observation_start are eligible",
+  "pre_freeze_data_role": "engineering_entry_calendar_diagnosis_and_market_feasibility_only",
+  "supersedes_experiment_id": "btc_bybit_usdt_option_vrp_sequential_payoff_v1",
+  "supersession_reason": "frozen_7d_checkpoint_cannot_reach_daily_expiry_sample_schedule",
+  "clock_restart_rule": "schema_policy_scope_or_payoff_defect_requires_new_experiment_and_observation_start",
+  "research_domain": "development_only",
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}

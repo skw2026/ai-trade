@@ -2,6 +2,8 @@
 
 日期：2026-08-26（Asia/Shanghai）
 
+> 2026-09-01 阶段复盘：冻结 7D v1 在 384,386.410 秒有效覆盖后仍产生 10/10 `missed_entry`。Bybit 的短到期挂牌日历不会形成预注册 7D crossing，周到期节奏也无法在 Day 35 内提供 22 个独立 expiry。v1 已按设计不可达关闭，旧合同和证据保持不可变；后续由独立的 1D v2 合同与新 observation start 承接。完整决定见 `docs/reviews/2026-09-01-option-vrp-entry-calendar-roundtable.md`。
+
 ## 目标与边界
 
 在不改变既有 `option_variance_risk_premium_feasibility_policy_v1`、不读取账户凭据、不发单的前提下，把 BTC 期权 VRP 从“市场可采集”推进到“可按到期日连续判死、满 35 天才能判成功”的无模型全成本证据。

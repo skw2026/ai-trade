@@ -221,6 +221,7 @@ class ComposeConsistencyTest(unittest.TestCase):
 
     def test_cd_reuses_exact_successful_ci_gate_without_rebuilding_on_host(self):
         workflow = CD_WORKFLOW.read_text(encoding="utf-8")
+        runner = RUNNER_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("actions: read", workflow)
         self.assertIn("Wait for Exact CI Success", workflow)
         self.assertIn("workflows/ci.yml/runs?head_sha=", workflow)
@@ -233,6 +234,28 @@ class ComposeConsistencyTest(unittest.TestCase):
         self.assertNotIn("Install Python Test Dependencies", workflow)
         self.assertNotIn("ctest --test-dir build", workflow)
         self.assertNotIn("cmake --build build", workflow)
+        self.assertIn(
+            "config/option_variance_risk_premium_sequential_payoff_v2.json",
+            workflow,
+        )
+        self.assertIn(
+            "config/option_variance_risk_premium_sequential_payoff_manifest_v2.json",
+            workflow,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_OPTION_VRP_SEQUENTIAL_CONFIG:-config/option_variance_risk_premium_sequential_payoff_v2.json",
+            runner,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_OPTION_VRP_SEQUENTIAL_MANIFEST:-config/option_variance_risk_premium_sequential_payoff_manifest_v2.json",
+            runner,
+        )
+        self.assertTrue(
+            (ROOT / "config" / "option_variance_risk_premium_sequential_payoff.json").is_file()
+        )
+        self.assertTrue(
+            (ROOT / "config" / "option_variance_risk_premium_sequential_payoff_manifest.json").is_file()
+        )
 
     def test_smoke_uses_immutable_release_and_run_specific_evidence(self):
         workflow = SMOKE_WORKFLOW.read_text(encoding="utf-8")

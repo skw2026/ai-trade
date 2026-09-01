@@ -22,6 +22,22 @@ POLICY_SCHEMA_VERSION = "option_variance_risk_premium_sequential_payoff_policy_v
 MANIFEST_SCHEMA_VERSION = "option_variance_risk_premium_sequential_payoff_manifest_v1"
 FROZEN_POLICY_IDENTITY_SHA256 = "e1902110278fb2c72ec091a73f2cdb38ba394dfbc4741864ca85b9c3d08a17ee"
 FROZEN_MANIFEST_IDENTITY_SHA256 = "446625e67754f1fd07e149e4ff5bd1623677138aef028e40ce0d35b8a0284a9d"
+FROZEN_POLICY_IDENTITY_SHA256_V2 = "6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b"
+FROZEN_MANIFEST_IDENTITY_SHA256_V2 = "13b62a179c2e3131762918063bfecfb1a2f9c853693144d0dc2a8428b2f58aeb"
+FROZEN_CONTRACTS = {
+    FROZEN_POLICY_IDENTITY_SHA256: {
+        "manifest_sha256": FROZEN_MANIFEST_IDENTITY_SHA256,
+        "experiment_id": "btc_bybit_usdt_option_vrp_sequential_payoff_v1",
+        "policy_path": "config/option_variance_risk_premium_sequential_payoff.json",
+        "action_ids": ["no_trade", "short_atm_straddle_7d", "long_atm_straddle_7d"],
+    },
+    FROZEN_POLICY_IDENTITY_SHA256_V2: {
+        "manifest_sha256": FROZEN_MANIFEST_IDENTITY_SHA256_V2,
+        "experiment_id": "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2",
+        "policy_path": "config/option_variance_risk_premium_sequential_payoff_v2.json",
+        "action_ids": ["no_trade", "short_atm_straddle_1d", "long_atm_straddle_1d"],
+    },
+}
 
 
 def read_json(path: pathlib.Path) -> Dict[str, Any]:
@@ -63,12 +79,19 @@ def load_frozen_contract(
         raise ValueError("option VRP sequential policy schema mismatch")
     if manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
         raise ValueError("option VRP sequential manifest schema mismatch")
-    if policy_identity != FROZEN_POLICY_IDENTITY_SHA256:
+    frozen = FROZEN_CONTRACTS.get(policy_identity)
+    if frozen is None:
         raise ValueError(f"option VRP sequential policy identity mismatch: {policy_identity}")
-    if manifest_identity != FROZEN_MANIFEST_IDENTITY_SHA256:
+    if manifest_identity != frozen["manifest_sha256"]:
         raise ValueError(f"option VRP sequential manifest identity mismatch: {manifest_identity}")
     if manifest.get("policy_canonical_sha256") != policy_identity:
         raise ValueError("manifest policy identity mismatch")
+    if (
+        policy.get("experiment_id") != frozen["experiment_id"]
+        or manifest.get("experiment_id") != frozen["experiment_id"]
+        or manifest.get("policy_path") != frozen["policy_path"]
+    ):
+        raise ValueError("frozen experiment identity or policy path mismatch")
     scope = policy.get("capture_contract", {})
     if manifest.get("capture_scope_identity_sha256") != scope.get("scope_identity_sha256"):
         raise ValueError("manifest capture scope mismatch")
@@ -84,10 +107,24 @@ def load_frozen_contract(
     )):
         raise ValueError("option VRP sequential manifest cannot grant activation authority")
     actions = policy.get("actions")
-    if not isinstance(actions, list) or [row.get("action_id") for row in actions] != [
-        "no_trade", "short_atm_straddle_7d", "long_atm_straddle_7d"
-    ]:
+    if not isinstance(actions, list) or [row.get("action_id") for row in actions] != frozen["action_ids"]:
         raise ValueError("frozen action order mismatch")
+    entry_contract = policy.get("entry_contract", {})
+    cadence = entry_contract.get("expected_expiry_cluster_cadence_days")
+    if cadence is not None:
+        boundaries = entry_contract.get("boundary_entry_dte_days")
+        reviews = policy.get("sequential_reviews")
+        if (
+            not isinstance(boundaries, list)
+            or not boundaries
+            or not isinstance(reviews, list)
+            or not reviews
+            or float(cadence) <= 0.0
+            or max(float(value) for value in boundaries)
+            + int(reviews[0]["minimum_completed_expiries"]) * float(cadence)
+            > int(reviews[0]["day"])
+        ):
+            raise ValueError("first sequential review is infeasible for the frozen expiry cadence")
     return policy, manifest
 
 
@@ -454,6 +491,7 @@ def build_episode(
     crossing_gap = int(policy["entry_contract"]["maximum_crossing_gap_seconds"]) * 1000
     prior: tuple[int, Mapping[str, Any]] | None = None
     entry: Mapping[str, Any] | None = None
+    crossed_target = False
     for snapshot in snapshots:
         timestamp = int(snapshot["timestamp_epoch_ms"])
         if timestamp >= delivery_time:
@@ -465,11 +503,13 @@ def build_episode(
         if dte > target_dte:
             prior = (timestamp, snapshot)
             continue
+        crossed_target = True
         if prior is not None and timestamp - prior[0] <= crossing_gap:
             entry = snapshot
         break
     if entry is None:
-        return {"action_id": action_id, "delivery_time_epoch_ms": delivery_time, "target_dte_days": target_dte, "state": "missed_entry"}
+        state = "missed_entry" if crossed_target else "awaiting_entry_window"
+        return {"action_id": action_id, "delivery_time_epoch_ms": delivery_time, "target_dte_days": target_dte, "state": state}
     pairs = _option_pairs(entry, delivery_time)
     entry_index_values = [
         _number(row.get("indexPrice"), field="option.indexPrice", positive=True)

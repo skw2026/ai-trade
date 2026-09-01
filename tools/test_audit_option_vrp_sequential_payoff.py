@@ -14,8 +14,10 @@ import capture_bybit_option_vrp_v2 as capture
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-POLICY_PATH = ROOT / "config" / "option_variance_risk_premium_sequential_payoff.json"
-MANIFEST_PATH = ROOT / "config" / "option_variance_risk_premium_sequential_payoff_manifest.json"
+LEGACY_POLICY_PATH = ROOT / "config" / "option_variance_risk_premium_sequential_payoff.json"
+LEGACY_MANIFEST_PATH = ROOT / "config" / "option_variance_risk_premium_sequential_payoff_manifest.json"
+POLICY_PATH = ROOT / "config" / "option_variance_risk_premium_sequential_payoff_v2.json"
+MANIFEST_PATH = ROOT / "config" / "option_variance_risk_premium_sequential_payoff_manifest_v2.json"
 
 
 class OptionVrpSequentialPayoffTest(unittest.TestCase):
@@ -90,12 +92,38 @@ class OptionVrpSequentialPayoffTest(unittest.TestCase):
         return raw, report
 
     def test_frozen_contract_identity_and_permissions(self):
-        self.assertEqual(capture.canonical_sha256(self.policy), audit.FROZEN_POLICY_IDENTITY_SHA256)
-        self.assertEqual(capture.canonical_sha256(self.manifest), audit.FROZEN_MANIFEST_IDENTITY_SHA256)
+        self.assertEqual(capture.canonical_sha256(self.policy), audit.FROZEN_POLICY_IDENTITY_SHA256_V2)
+        self.assertEqual(capture.canonical_sha256(self.manifest), audit.FROZEN_MANIFEST_IDENTITY_SHA256_V2)
         self.assertFalse(any(self.policy["authorities"].values()))
+        legacy_policy, legacy_manifest = audit.load_frozen_contract(
+            LEGACY_POLICY_PATH, LEGACY_MANIFEST_PATH
+        )
+        self.assertEqual(
+            capture.canonical_sha256(legacy_policy), audit.FROZEN_POLICY_IDENTITY_SHA256
+        )
+        self.assertEqual(
+            capture.canonical_sha256(legacy_manifest), audit.FROZEN_MANIFEST_IDENTITY_SHA256
+        )
         mutated = json.loads(json.dumps(self.policy))
         mutated["actions"][1]["quantity_btc_per_leg"] = 0.02
-        self.assertNotEqual(capture.canonical_sha256(mutated), audit.FROZEN_POLICY_IDENTITY_SHA256)
+        self.assertNotEqual(capture.canonical_sha256(mutated), audit.FROZEN_POLICY_IDENTITY_SHA256_V2)
+
+    def test_active_entry_calendar_can_reach_first_review(self):
+        action = self.policy["actions"][1]
+        entry = self.policy["entry_contract"]
+        first_review = self.policy["sequential_reviews"][0]
+        self.assertEqual(action["target_entry_dte_days"], 1.0)
+        self.assertEqual(entry["boundary_entry_dte_days"], [0.75, 1.25])
+        self.assertLessEqual(
+            max(entry["boundary_entry_dte_days"])
+            + first_review["minimum_completed_expiries"]
+            * entry["expected_expiry_cluster_cadence_days"],
+            first_review["day"],
+        )
+        self.assertEqual(
+            self.policy["cost_contract"]["daily_option_delivery_fee_treatment"],
+            "conservative_standard_rate_not_exchange_exemption",
+        )
 
     def test_option_payoff_fee_cap_and_delivery_fee(self):
         call = audit.option_leg_economics(
@@ -154,8 +182,8 @@ class OptionVrpSequentialPayoffTest(unittest.TestCase):
 
     def test_episode_uses_causal_crossing_delivery_and_final_hedge(self):
         start = int(self.manifest["observation_start_epoch_ms"]) + 1000
-        expiry = start + 8 * 86400000
-        entry = expiry - 7 * 86400000
+        expiry = start + 2 * 86400000
+        entry = expiry - 86400000
         snapshots = [
             self.snapshot(entry - 60000, expiry),
             self.snapshot(entry, expiry),
@@ -177,6 +205,25 @@ class OptionVrpSequentialPayoffTest(unittest.TestCase):
             action=self.policy["actions"][1], delivery_time=expiry,
         )
         self.assertEqual(pending["state"], "pending_delivery")
+
+    def test_episode_distinguishes_future_window_from_missed_crossing(self):
+        start = int(self.manifest["observation_start_epoch_ms"]) + 1000
+        expiry = start + 2 * 86400000
+        awaiting = audit.build_episode(
+            snapshots=[self.snapshot(start, expiry)], delivery_evidence={}, policy=self.policy,
+            action=self.policy["actions"][1], delivery_time=expiry,
+        )
+        self.assertEqual(awaiting["state"], "awaiting_entry_window")
+        crossing = expiry - 86400000
+        missed = audit.build_episode(
+            snapshots=[
+                self.snapshot(crossing - 300000, expiry),
+                self.snapshot(crossing, expiry),
+            ],
+            delivery_evidence={}, policy=self.policy,
+            action=self.policy["actions"][1], delivery_time=expiry,
+        )
+        self.assertEqual(missed["state"], "missed_entry")
 
     def test_sequential_gate_never_passes_early_and_can_stop_early(self):
         base_capture = {"invalid_segment_count": 0, "checksum_bound_seconds": 691200, "successful_poll_count": 1000}
@@ -206,13 +253,13 @@ class OptionVrpSequentialPayoffTest(unittest.TestCase):
         now = int(self.manifest["observation_start_epoch_ms"]) + 35 * 86400000
         result = audit.sequential_decision(
             now_epoch_ms=now, manifest=self.manifest, capture_summary=capture_summary,
-            primary_summary=passed, boundary_summaries={"6.75": passed, "7.25": passed}, policy=self.policy,
+            primary_summary=passed, boundary_summaries={"0.75": passed, "1.25": passed}, policy=self.policy,
         )
         self.assertEqual(result["decision"], self.policy["decision_contract"]["final_pass_decision"])
         unstable = dict(passed, worst_expiry_bps=-151)
         result = audit.sequential_decision(
             now_epoch_ms=now, manifest=self.manifest, capture_summary=capture_summary,
-            primary_summary=unstable, boundary_summaries={"6.75": passed, "7.25": passed}, policy=self.policy,
+            primary_summary=unstable, boundary_summaries={"0.75": passed, "1.25": passed}, policy=self.policy,
         )
         self.assertEqual(result["reason_code"], "TAIL_UNSTABLE")
 

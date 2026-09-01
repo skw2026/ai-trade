@@ -596,6 +596,8 @@ jobs:
               "${RELEASE_TMP}/tools/audit_option_variance_risk_premium_feasibility.py" \
               "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff.json" \
               "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff_manifest.json" \
+              "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff_v2.json" \
+              "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff_manifest_v2.json" \
               "${RELEASE_TMP}/tools/audit_option_vrp_sequential_payoff.py" \
               "${RELEASE_TMP}/config/maker_execution_opportunity_experiment.json" \
               "${RELEASE_TMP}/tools/run_maker_execution_opportunity_experiment.py" \
