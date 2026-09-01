@@ -642,6 +642,8 @@ jobs:
               --output "${temporary_report}"
           )
           python3 - "${temporary_report}" <<'PY'
+          import collections
+          import datetime as dt
           import json
           import math
           import pathlib
@@ -697,6 +699,54 @@ jobs:
                   int(payload.get("delivery_evidence_count") or 0), invalid_episodes,
                   int(summary.get("completed_expiry_count") or 0),
                   int(summary.get("pending_or_missed_count") or 0),
+              )
+          )
+          primary = (payload.get("episodes") or {}).get("short_atm_straddle_7d") or []
+          evaluated_ms = int(payload.get("evaluated_now_epoch_ms") or 0)
+          target_ms = 7 * 86400000
+          phase_states = collections.Counter()
+          pending_delivery_times = []
+          future_entry_times = []
+          for row in primary:
+              state = str(row.get("state") or "unknown")
+              delivery_ms = int(row.get("delivery_time_epoch_ms") or 0)
+              if state == "missed_entry" and delivery_ms > evaluated_ms + target_ms:
+                  phase_states["awaiting_entry_window"] += 1
+                  future_entry_times.append(delivery_ms - target_ms)
+              else:
+                  phase_states[state] += 1
+              if state == "pending_delivery":
+                  pending_delivery_times.append(delivery_ms)
+
+          def utc_text(epoch_ms):
+              if not epoch_ms:
+                  return "NONE"
+              return dt.datetime.fromtimestamp(epoch_ms / 1000, tz=dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+          state_text = ",".join(
+              "{}:{}".format(key, phase_states[key]) for key in sorted(phase_states)
+          ) or "NONE"
+          print(
+              "PRIMARY_STATES=states:{};next_pending_delivery_utc:{};next_entry_window_utc:{}".format(
+                  state_text,
+                  utc_text(min(pending_delivery_times) if pending_delivery_times else 0),
+                  utc_text(min(future_entry_times) if future_entry_times else 0),
+              )
+          )
+
+          def metric_text(name):
+              value = summary.get(name)
+              if value is None:
+                  return "NONE"
+              return "{:.6f}".format(float(value))
+
+          print(
+              "ECONOMICS=gross_mean_bps:{};base_mean_bps:{};stress_mean_bps:{};"
+              "stress_lcb_bps:{};stress_ucb_bps:{};positive_expiry_ratio:{};worst_expiry_bps:{}".format(
+                  metric_text("gross_mean_bps"), metric_text("base_mean_bps"),
+                  metric_text("stress_mean_bps"), metric_text("stress_lcb_bps"),
+                  metric_text("stress_ucb_bps"), metric_text("positive_expiry_ratio"),
+                  metric_text("worst_expiry_bps"),
               )
           )
           PY
