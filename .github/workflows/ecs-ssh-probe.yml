@@ -10,6 +10,7 @@ on:
       - "infra/ecs-collector-recovery/**"
       - "infra/ecs-research-audit/**"
       - "infra/ecs-option-live-audit/**"
+      - "infra/ecs-exchange-preflight-audit/**"
 
 permissions:
   contents: read
@@ -713,6 +714,135 @@ jobs:
                 ;;
             esac
           done < live_option_checks
+
+      - name: Audit ECS exchange startup preflight
+        if: startsWith(github.ref_name, 'infra/ecs-exchange-preflight-audit/')
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_PORT: ${{ secrets.ECS_PORT || '22' }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          EXPECTED_RELEASE_SHA: f852ef03516d209e5164ca00b861b8d6f1b583c9
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ecs_key \
+            -p "${ECS_PORT}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=1 \
+            -o UserKnownHostsFile=known_hosts \
+            -o StrictHostKeyChecking=yes \
+            "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > exchange_preflight_checks <<'REMOTE'
+          set -u
+          expected_sha="$1"
+          deploy_root="/opt/ai-trade"
+          release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
+          env_file="${deploy_root}/.env.runtime"
+          if [[ "${release_dir}" == "${deploy_root}/releases/${expected_sha}" &&
+                -f "${release_dir}/docker-compose.prod.yml" && -f "${env_file}" ]]; then
+            echo "RELEASE=PASS"
+          else
+            echo "RELEASE=FAIL"
+            exit 0
+          fi
+
+          temporary_dir="$(mktemp -d /tmp/ai-trade-exchange-preflight.XXXXXX)"
+          trap 'rm -rf "${temporary_dir}"' EXIT
+          public_probe() {
+            local label="$1"
+            local endpoint="$2"
+            local output_path="${temporary_dir}/${label}.json"
+            if ! curl -fsS --connect-timeout 10 --max-time 20 \
+              "${endpoint}/v5/market/time" -o "${output_path}" 2>/dev/null; then
+              echo "${label}=TRANSPORT_FAIL"
+              return
+            fi
+            if python3 - "${output_path}" <<'PY' >/dev/null 2>&1
+          import json
+          import pathlib
+          import sys
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          raise SystemExit(0 if payload.get("retCode") == 0 else 1)
+          PY
+            then
+              echo "${label}=PASS"
+            else
+              echo "${label}=SEMANTIC_FAIL"
+            fi
+          }
+          public_probe "PUBLIC_MAIN" "https://api.bybit.com"
+          public_probe "PUBLIC_DEMO" "https://api-demo.bybit.com"
+
+          set -a
+          source "${env_file}"
+          set +a
+          runtime_config="${AI_TRADE_CONFIG_PATH:-config/bybit.demo.s5.yaml}"
+          runtime_exchange="${AI_TRADE_EXCHANGE:-bybit}"
+          preflight_output="${temporary_dir}/preflight.log"
+          set +e
+          docker compose \
+            --project-name ai-trade \
+            --env-file "${env_file}" \
+            -f "${release_dir}/docker-compose.prod.yml" \
+            run --rm --no-deps ai-trade \
+            --config="${runtime_config}" \
+            --exchange="${runtime_exchange}" \
+            --check-startup >"${preflight_output}" 2>&1
+          preflight_status=$?
+          set -e
+          if (( preflight_status == 0 )); then
+            echo "PREFLIGHT=PASS"
+            echo "PREFLIGHT_CLASS=PASS"
+          else
+            echo "PREFLIGHT=FAIL"
+            if grep -Eq 'Bybit retCode 异常: -?[0-9]+' "${preflight_output}"; then
+              code="$(sed -nE 's/.*Bybit retCode 异常: (-?[0-9]+).*/\1/p' "${preflight_output}" | head -1)"
+              echo "PREFLIGHT_CLASS=BYBIT_RETCODE_${code:-UNKNOWN}"
+            elif grep -Eq 'Bybit HTTP 状态异常: [0-9]+' "${preflight_output}"; then
+              code="$(sed -nE 's/.*Bybit HTTP 状态异常: ([0-9]+).*/\1/p' "${preflight_output}" | head -1)"
+              echo "PREFLIGHT_CLASS=BYBIT_HTTP_${code:-UNKNOWN}"
+            elif grep -Fq '缺少API密钥' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=CREDENTIALS_MISSING"
+            elif grep -Eq 'Could not resolve host|Name or service not known' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=DNS_RESOLUTION_FAILED"
+            elif grep -Eq 'Connection timed out|Timeout was reached|Operation timed out' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=TRANSPORT_TIMEOUT"
+            elif grep -Eq 'Failed to connect|Connection refused' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=TRANSPORT_CONNECT_FAILED"
+            elif grep -Eq 'SSL certificate problem|certificate verify failed' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=TLS_VALIDATION_FAILED"
+            elif grep -Fq 'Bybit 账户信息读取失败' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=ACCOUNT_INFO_FAILED_UNCLASSIFIED"
+            elif grep -Fq '交易所连接失败' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=EXCHANGE_CONNECT_FAILED_UNCLASSIFIED"
+            else
+              echo "PREFLIGHT_CLASS=APPLICATION_STARTUP_FAILED_UNCLASSIFIED"
+            fi
+          fi
+          if grep -Fq 'Bybit 账户信息读取失败' "${preflight_output}"; then
+            echo "ACCOUNT_INFO_MARKER=PRESENT"
+          else
+            echo "ACCOUNT_INFO_MARKER=ABSENT"
+          fi
+          if grep -Fq 'Bybit 持仓信息读取失败' "${preflight_output}"; then
+            echo "POSITIONS_MARKER=PRESENT"
+          else
+            echo "POSITIONS_MARKER=ABSENT"
+          fi
+          REMOTE
+
+          while IFS='=' read -r check result; do
+            [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${result}" in
+              PASS|ABSENT)
+                echo "::notice title=ECS exchange preflight audit::check=${check}; result=${result}"
+                ;;
+              *)
+                echo "::warning title=ECS exchange preflight audit::check=${check}; result=${result}"
+                ;;
+            esac
+          done < exchange_preflight_checks
 
       - name: Classify remote storage pressure
         if: startsWith(github.ref_name, 'infra/ecs-storage-audit/')
