@@ -784,7 +784,21 @@ jobs:
             elif grep -Fq 'WAL 初始化失败' "${preflight_output}"; then
               echo "PREFLIGHT_CLASS=WAL_INIT"
             elif grep -Fq 'WAL 加载失败' "${preflight_output}"; then
-              echo "PREFLIGHT_CLASS=WAL_LOAD"
+              if grep -Fq '未知 WAL 事件类型' "${preflight_output}"; then
+                echo "PREFLIGHT_CLASS=WAL_LOAD_UNKNOWN_EVENT"
+              elif grep -Fq '字段数异常' "${preflight_output}"; then
+                echo "PREFLIGHT_CLASS=WAL_LOAD_FIELD_COUNT"
+              elif grep -Fq '字段解析失败' "${preflight_output}"; then
+                echo "PREFLIGHT_CLASS=WAL_LOAD_FIELD_PARSE"
+              elif grep -Fq '必填字段异常' "${preflight_output}"; then
+                echo "PREFLIGHT_CLASS=WAL_LOAD_REQUIRED_FIELD"
+              elif grep -Fq 'POSITION_REBASE_FLAT 字段异常' "${preflight_output}"; then
+                echo "PREFLIGHT_CLASS=WAL_LOAD_POSITION_REBASE"
+              elif grep -Fq 'EPISODE_CLOSED 字段异常' "${preflight_output}"; then
+                echo "PREFLIGHT_CLASS=WAL_LOAD_EPISODE_CLOSED"
+              else
+                echo "PREFLIGHT_CLASS=WAL_LOAD_OTHER"
+              fi
             elif grep -Fq '账户模式校验失败' "${preflight_output}"; then
               echo "PREFLIGHT_CLASS=ACCOUNT_MODE"
             elif grep -Fq '无法同步远端持仓' "${preflight_output}"; then
@@ -840,6 +854,49 @@ jobs:
             echo "REMOTE_POSITION_MARKER=PRESENT"
           else
             echo "REMOTE_POSITION_MARKER=ABSENT"
+          fi
+          wal_path="${deploy_root}/data/demo_s5/trade.wal"
+          if [[ -f "${wal_path}" ]]; then
+            echo "WAL_FILE=PRESENT"
+            wal_line_count="$(awk 'END {print NR + 0}' "${wal_path}" 2>/dev/null)"
+            wal_error_line="$(sed -nE 's/.*line=([0-9]+).*/\1/p' "${preflight_output}" | head -1)"
+            if [[ "${wal_line_count}" =~ ^[0-9]+$ &&
+                  "${wal_error_line}" =~ ^[0-9]+$ ]]; then
+              if (( wal_error_line == wal_line_count )); then
+                echo "WAL_ERROR_POSITION=LAST"
+              elif (( wal_error_line < wal_line_count )); then
+                echo "WAL_ERROR_POSITION=INTERIOR"
+              else
+                echo "WAL_ERROR_POSITION=BEYOND_CURRENT_END"
+              fi
+            else
+              echo "WAL_ERROR_POSITION=UNKNOWN"
+            fi
+            last_byte="$(tail -c 1 "${wal_path}" 2>/dev/null | od -An -t u1 | tr -d ' ')"
+            if [[ -z "${last_byte}" || "${last_byte}" == "10" ]]; then
+              echo "WAL_NEWLINE_TERMINATED=PASS"
+            else
+              echo "WAL_NEWLINE_TERMINATED=FAIL"
+            fi
+            unknown_types="$(awk -F '\t' '
+              $1 != "INTENT" && $1 != "INTENT2" &&
+              $1 != "FILL" && $1 != "FILL2" && $1 != "FILL3" &&
+              $1 != "POSITION_REBASE_FLAT" &&
+              $1 != "ACCOUNT_EQUITY_CHECKPOINT1" &&
+              $1 != "EPISODE_CLOSED" && $1 != "EPISODE_CLOSED2" &&
+              $1 != "EPISODE_CLOSED3" && $1 != "EPISODE_CLOSED4" { count++ }
+              END { print count + 0 }
+            ' "${wal_path}" 2>/dev/null)"
+            if [[ "${unknown_types}" == "0" ]]; then
+              echo "WAL_RECORD_TYPES=PASS"
+            else
+              echo "WAL_RECORD_TYPES=FAIL"
+            fi
+          else
+            echo "WAL_FILE=ABSENT"
+            echo "WAL_ERROR_POSITION=UNKNOWN"
+            echo "WAL_NEWLINE_TERMINATED=UNKNOWN"
+            echo "WAL_RECORD_TYPES=UNKNOWN"
           fi
           echo "PREFLIGHT_EXIT_STATUS=${preflight_status}"
           exit 0
