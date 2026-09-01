@@ -949,11 +949,12 @@ jobs:
                   unknown++
                   if ($0 ~ /INTENT|FILL/) embedded_trading++
                   if ($0 ~ /ACCOUNT_EQUITY_CHECKPOINT1/) embedded_checkpoint++
+                  if ($1 ~ /ACCOUNT_EQUITY_CHECKPOINT1/) prefix_checkpoint++
                   if ($0 ~ /EPISODE_CLOSED/) embedded_episode++
                 }
               }
               END {
-                printf "WAL_DAMAGE_SUMMARY=I%d_T%d_C%d_E%d_R%d_U%d_UT%d_UC%d_UE%d\n", invalid + 0, trading + 0, checkpoint + 0, episode + 0, rebase + 0, unknown + 0, embedded_trading + 0, embedded_checkpoint + 0, embedded_episode + 0
+                printf "WAL_DAMAGE_SUMMARY=I%d_T%d_C%d_E%d_R%d_U%d_UT%d_UC%d_UP%d_UE%d\n", invalid + 0, trading + 0, checkpoint + 0, episode + 0, rebase + 0, unknown + 0, embedded_trading + 0, embedded_checkpoint + 0, prefix_checkpoint + 0, embedded_episode + 0
                 print "WAL_STRUCTURAL_INVALID_COUNT=" invalid + 0
                 print "WAL_STRUCTURAL_TRADING_INVALID_COUNT=" trading + 0
                 print "WAL_STRUCTURAL_CHECKPOINT_INVALID_COUNT=" checkpoint + 0
