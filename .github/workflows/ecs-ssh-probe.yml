@@ -779,7 +779,27 @@ jobs:
             echo "PREFLIGHT_CLASS=PASS"
           else
             echo "PREFLIGHT=FAIL"
-            if grep -Eq 'Bybit retCode|retCode' "${preflight_output}"; then
+            if grep -Fq '配置加载失败' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=CONFIG_LOAD"
+            elif grep -Fq 'WAL 初始化失败' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=WAL_INIT"
+            elif grep -Fq 'WAL 加载失败' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=WAL_LOAD"
+            elif grep -Fq '账户模式校验失败' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=ACCOUNT_MODE"
+            elif grep -Fq '无法同步远端持仓' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=REMOTE_POSITION_SYNC"
+            elif grep -Fq 'ACCOUNT_EQUITY_CHECKPOINT_FAILED' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=ACCOUNT_CHECKPOINT"
+            elif grep -Fq 'STARTUP_ORDER_RECOVERY_FAILED' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=STARTUP_ORDER_RECOVERY"
+            elif grep -Eq 'STARTUP_PROTECTION_(RECOVERY_FAILED|SNAPSHOT_MISMATCH)' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=STARTUP_PROTECTION_RECOVERY"
+            elif grep -Fq 'INTEGRATOR_STARTUP_BLOCKED' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=INTEGRATOR_STARTUP"
+            elif grep -Eq '自进化.*失败|SELF_EVOLUTION_.*FAILED' "${preflight_output}"; then
+              echo "PREFLIGHT_CLASS=SELF_EVOLUTION"
+            elif grep -Eq 'Bybit retCode|retCode' "${preflight_output}"; then
               echo "PREFLIGHT_CLASS=BYBIT_RETCODE"
             elif grep -Eq 'Bybit HTTP|HTTP status|HTTP 状态' "${preflight_output}"; then
               echo "PREFLIGHT_CLASS=BYBIT_HTTP"
@@ -811,6 +831,17 @@ jobs:
           else
             echo "POSITIONS_MARKER=ABSENT"
           fi
+          if grep -Fq '适配器已连接' "${preflight_output}"; then
+            echo "ADAPTER_CONNECTED_MARKER=PRESENT"
+          else
+            echo "ADAPTER_CONNECTED_MARKER=ABSENT"
+          fi
+          if grep -Fq '远端持仓同步完成' "${preflight_output}"; then
+            echo "REMOTE_POSITION_MARKER=PRESENT"
+          else
+            echo "REMOTE_POSITION_MARKER=ABSENT"
+          fi
+          echo "PREFLIGHT_EXIT_STATUS=${preflight_status}"
           exit 0
           REMOTE
           remote_status=$?
