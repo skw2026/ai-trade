@@ -22,6 +22,7 @@ jobs:
           ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
           ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
           EXPECTED_RELEASE_SHA: 1480127b36b49fcdc5ac4f141261514084090794
+          EXPECTED_RESEARCH_RUN_ID: gha-33462453693-1
         shell: bash
         run: |
           set -euo pipefail
@@ -52,9 +53,10 @@ jobs:
             -o UserKnownHostsFile=known_hosts \
             -o StrictHostKeyChecking=yes \
             "${ECS_USER}@${ECS_HOST}" \
-            "bash -s -- '${EXPECTED_RELEASE_SHA}'" > release_checks <<'REMOTE'
+            "bash -s -- '${EXPECTED_RELEASE_SHA}' '${EXPECTED_RESEARCH_RUN_ID}'" > release_checks <<'REMOTE'
           set +e
           expected_sha="$1"
+          expected_research_run_id="$2"
           deploy_root="/opt/ai-trade"
           release_dir="$(readlink -f "${deploy_root}/current" 2>/dev/null || true)"
           if [[ "${release_dir}" == "${deploy_root}/releases/${expected_sha}" ]]; then
@@ -110,6 +112,73 @@ jobs:
             echo "EXCHANGE_CHECK=FAIL"
           fi
           rm -f "${temporary_log}"
+
+          option_report="${deploy_root}/data/reports/closed_loop/${expected_research_run_id}/option_variance_risk_premium_sequential_payoff.json"
+          if jq -e '
+            .schema_version == "option_variance_risk_premium_sequential_payoff_audit_v1" and
+            .status == "COMPLETE"
+          ' "${option_report}" >/dev/null 2>&1; then
+            echo "OPTION_V2_REPORT_COMPLETE=PASS"
+          else
+            echo "OPTION_V2_REPORT_COMPLETE=FAIL"
+          fi
+          if jq -e '
+            .policy.identity_verified == true and
+            .policy.canonical_sha256 == "6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b" and
+            .observation_manifest.identity_verified == true and
+            .observation_manifest.canonical_sha256 == "13b62a179c2e3131762918063bfecfb1a2f9c853693144d0dc2a8428b2f58aeb" and
+            .observation_manifest.experiment_id == "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2"
+          ' "${option_report}" >/dev/null 2>&1; then
+            echo "OPTION_V2_POLICY_IDENTITY=PASS"
+          else
+            echo "OPTION_V2_POLICY_IDENTITY=FAIL"
+          fi
+          if jq -e '
+            .observation_manifest.observation_start_epoch_ms == 1788242400000 and
+            .observation_manifest.observation_start_utc == "2026-09-01T06:00:00Z" and
+            .evaluated_now_epoch_ms < .observation_manifest.observation_start_epoch_ms
+          ' "${option_report}" >/dev/null 2>&1; then
+            echo "OPTION_V2_PRESTART_CLOCK=PASS"
+          else
+            echo "OPTION_V2_PRESTART_CLOCK=FAIL"
+          fi
+          if jq -e '
+            .capture_replay.eligible_snapshot_count == 0 and
+            .capture_replay.invalid_segment_count == 0 and
+            .episode_invalid_count == 0
+          ' "${option_report}" >/dev/null 2>&1; then
+            echo "OPTION_V2_ZERO_ELIGIBLE_VALID=PASS"
+          else
+            echo "OPTION_V2_ZERO_ELIGIBLE_VALID=FAIL"
+          fi
+          if jq -e '
+            .primary_summary.completed_expiry_count == 0
+          ' "${option_report}" >/dev/null 2>&1; then
+            echo "OPTION_V2_ZERO_COMPLETED_EXPIRIES=PASS"
+          else
+            echo "OPTION_V2_ZERO_COMPLETED_EXPIRIES=FAIL"
+          fi
+          if jq -e '
+            .decision == "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE" and
+            .reason_code == "INCONCLUSIVE" and
+            .review_day == null and
+            .next_action == "collect_checksum_bound_v2_evidence"
+          ' "${option_report}" >/dev/null 2>&1; then
+            echo "OPTION_V2_DECISION_WAIT=PASS"
+          else
+            echo "OPTION_V2_DECISION_WAIT=FAIL"
+          fi
+          if jq -e '
+            .promotion_evidence == false and
+            .promotion_eligible == false and
+            .promotion_authority == false and
+            .demo_activation_authorized == false and
+            .live_activation_authorized == false
+          ' "${option_report}" >/dev/null 2>&1; then
+            echo "OPTION_V2_NONPROMOTIONAL=PASS"
+          else
+            echo "OPTION_V2_NONPROMOTIONAL=FAIL"
+          fi
           exit 0
           REMOTE
           remote_status=$?
@@ -134,3 +203,31 @@ jobs:
           if (( failures > 0 || remote_status != 0 )); then
             exit 2
           fi
+
+      - name: Verify option v2 report complete
+        if: always()
+        run: grep -Fxq 'OPTION_V2_REPORT_COMPLETE=PASS' release_checks
+
+      - name: Verify option v2 frozen identity
+        if: always()
+        run: grep -Fxq 'OPTION_V2_POLICY_IDENTITY=PASS' release_checks
+
+      - name: Verify option v2 prestart clock
+        if: always()
+        run: grep -Fxq 'OPTION_V2_PRESTART_CLOCK=PASS' release_checks
+
+      - name: Verify option v2 zero eligible valid evidence
+        if: always()
+        run: grep -Fxq 'OPTION_V2_ZERO_ELIGIBLE_VALID=PASS' release_checks
+
+      - name: Verify option v2 zero completed expiries
+        if: always()
+        run: grep -Fxq 'OPTION_V2_ZERO_COMPLETED_EXPIRIES=PASS' release_checks
+
+      - name: Verify option v2 WAIT decision
+        if: always()
+        run: grep -Fxq 'OPTION_V2_DECISION_WAIT=PASS' release_checks
+
+      - name: Verify option v2 non-promotional state
+        if: always()
+        run: grep -Fxq 'OPTION_V2_NONPROMOTIONAL=PASS' release_checks
