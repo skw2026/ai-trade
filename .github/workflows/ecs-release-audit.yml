@@ -22,7 +22,7 @@ jobs:
           ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
           ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
           EXPECTED_RELEASE_SHA: cd0cd90475c70d52d12f98ead3f4f76f9fdb3f69
-          EXPECTED_RESEARCH_RUN_ID: gha-33465713761-1
+          EXPECTED_RESEARCH_RUN_ID: gha-33558625227-1
         shell: bash
         run: |
           set -euo pipefail
@@ -123,8 +123,9 @@ jobs:
           checks = {
               "OPTION_V2_REPORT_COMPLETE": False,
               "OPTION_V2_POLICY_IDENTITY": False,
-              "OPTION_V2_PRESTART_CLOCK": False,
-              "OPTION_V2_ZERO_ELIGIBLE_VALID": False,
+              "OPTION_V2_POSTSTART_CLOCK": False,
+              "OPTION_V2_ELIGIBLE_VALID": False,
+              "OPTION_V2_PENDING_ENTRY": False,
               "OPTION_V2_ZERO_COMPLETED_EXPIRIES": False,
               "OPTION_V2_DECISION_WAIT": False,
               "OPTION_V2_NONPROMOTIONAL": False,
@@ -134,7 +135,7 @@ jobs:
               report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
               manifest = report.get("observation_manifest", {})
               replay = report.get("capture_replay", {})
-              summary = report.get("primary_summary", {})
+              primary_summary = report.get("primary_summary", {})
               policy = report.get("policy", {})
               checks["OPTION_V2_REPORT_COMPLETE"] = (
                   report.get("schema_version")
@@ -151,19 +152,40 @@ jobs:
                   and manifest.get("experiment_id")
                   == "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2"
               )
-              checks["OPTION_V2_PRESTART_CLOCK"] = (
+              evaluated_now = int(report.get("evaluated_now_epoch_ms") or 0)
+              checks["OPTION_V2_POSTSTART_CLOCK"] = (
                   manifest.get("observation_start_epoch_ms") == 1788242400000
                   and manifest.get("observation_start_utc") == "2026-09-01T06:00:00Z"
-                  and int(report.get("evaluated_now_epoch_ms") or 0)
-                  < 1788242400000
+                  and evaluated_now >= 1788242400000
               )
-              checks["OPTION_V2_ZERO_ELIGIBLE_VALID"] = (
-                  replay.get("eligible_snapshot_count") == 0
+              eligible = int(replay.get("eligible_snapshot_count") or 0)
+              successful_polls = int(replay.get("successful_poll_count") or 0)
+              first_eligible = int(replay.get("first_eligible_epoch_ms") or 0)
+              last_eligible = int(replay.get("last_eligible_epoch_ms") or 0)
+              checks["OPTION_V2_ELIGIBLE_VALID"] = (
+                  replay.get("root_present") is True
+                  and int(replay.get("valid_segment_count") or 0) > 0
                   and replay.get("invalid_segment_count") == 0
+                  and eligible > 0
+                  and successful_polls == eligible
+                  and float(replay.get("checksum_bound_seconds") or 0.0) > 0.0
+                  and first_eligible >= 1788242400000
+                  and first_eligible <= last_eligible <= evaluated_now
                   and report.get("episode_invalid_count") == 0
               )
+              primary_episodes = report.get("episodes", {}).get(
+                  "short_atm_straddle_1d", []
+              )
+              pending_entries = sum(
+                  row.get("state") == "pending_delivery"
+                  and int(row.get("entry_timestamp_epoch_ms") or 0)
+                  >= 1788242400000
+                  for row in primary_episodes
+                  if isinstance(row, dict)
+              )
+              checks["OPTION_V2_PENDING_ENTRY"] = pending_entries > 0
               checks["OPTION_V2_ZERO_COMPLETED_EXPIRIES"] = (
-                  summary.get("completed_expiry_count") == 0
+                  primary_summary.get("completed_expiry_count") == 0
               )
               checks["OPTION_V2_DECISION_WAIT"] = (
                   report.get("decision")
@@ -186,27 +208,35 @@ jobs:
               summary_report = json.loads(
                   pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
               )
-              summary = summary_report.get("sections", {}).get(
+              closed_loop_section = summary_report.get("sections", {}).get(
                   "option_variance_risk_premium_sequential_payoff", {}
               )
-              metrics = summary.get("metrics", {})
+              metrics = closed_loop_section.get("metrics", {})
               checks["OPTION_V2_SUMMARY_ROUTED"] = (
-                  summary.get("status") == "pass"
-                  and summary.get("readiness_status") == "PASS_WITH_ACTIONS"
-                  and summary.get("fail_reasons") == []
-                  and summary.get("research_decision")
+                  closed_loop_section.get("status") == "pass"
+                  and closed_loop_section.get("readiness_status") == "PASS_WITH_ACTIONS"
+                  and closed_loop_section.get("fail_reasons") == []
+                  and closed_loop_section.get("research_decision")
                   == "WAIT_FOR_OPTION_VRP_SEQUENTIAL_EVIDENCE"
-                  and summary.get("reason_code") == "INCONCLUSIVE"
-                  and summary.get("review_day") is None
-                  and metrics.get("eligible_snapshot_count") == 0
+                  and closed_loop_section.get("reason_code") == "INCONCLUSIVE"
+                  and closed_loop_section.get("review_day") is None
+                  and int(metrics.get("eligible_snapshot_count") or 0) == eligible
+                  and eligible > 0
                   and metrics.get("completed_expiry_count") == 0
                   and metrics.get("invalid_segment_count") == 0
                   and metrics.get("episode_invalid_count") == 0
-                  and summary.get("demo_activation_authorized") is False
-                  and summary.get("live_activation_authorized") is False
-                  and summary.get("authoritative_for_integrator_promotion") is False
+                  and closed_loop_section.get("demo_activation_authorized") is False
+                  and closed_loop_section.get("live_activation_authorized") is False
+                  and closed_loop_section.get("authoritative_for_integrator_promotion") is False
               )
-          except (OSError, ValueError, TypeError):
+              print("METRIC_ELIGIBLE_SNAPSHOTS=" + str(eligible))
+              print("METRIC_SUCCESSFUL_POLLS=" + str(successful_polls))
+              print("METRIC_CHECKSUM_BOUND_SECONDS=" + str(replay.get("checksum_bound_seconds")))
+              print("METRIC_VALID_SEGMENTS=" + str(replay.get("valid_segment_count")))
+              print("METRIC_PENDING_ENTRIES=" + str(pending_entries))
+              print("METRIC_COMPLETED_EXPIRIES=" + str(primary_summary.get("completed_expiry_count")))
+              print("METRIC_DECISION=" + str(report.get("decision")))
+          except (OSError, ValueError, TypeError, KeyError):
               pass
 
           for name, passed in checks.items():
@@ -223,6 +253,12 @@ jobs:
           failures=0
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
+            case "${check}" in
+              METRIC_*)
+                echo "::notice title=ECS release audit metric::${check}=${result}"
+                continue
+                ;;
+            esac
             case "${result}" in
               PASS|ABSENT)
                 echo "::notice title=ECS release audit::check=${check}; result=${result}"
@@ -245,13 +281,17 @@ jobs:
         if: always()
         run: grep -Fxq 'OPTION_V2_POLICY_IDENTITY=PASS' release_checks
 
-      - name: Verify option v2 prestart clock
+      - name: Verify option v2 poststart clock
         if: always()
-        run: grep -Fxq 'OPTION_V2_PRESTART_CLOCK=PASS' release_checks
+        run: grep -Fxq 'OPTION_V2_POSTSTART_CLOCK=PASS' release_checks
 
-      - name: Verify option v2 zero eligible valid evidence
+      - name: Verify option v2 eligible valid evidence
         if: always()
-        run: grep -Fxq 'OPTION_V2_ZERO_ELIGIBLE_VALID=PASS' release_checks
+        run: grep -Fxq 'OPTION_V2_ELIGIBLE_VALID=PASS' release_checks
+
+      - name: Verify option v2 pending entry
+        if: always()
+        run: grep -Fxq 'OPTION_V2_PENDING_ENTRY=PASS' release_checks
 
       - name: Verify option v2 zero completed expiries
         if: always()
