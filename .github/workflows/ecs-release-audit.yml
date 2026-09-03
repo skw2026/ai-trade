@@ -22,7 +22,7 @@ jobs:
           ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
           ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
           EXPECTED_RELEASE_SHA: cd0cd90475c70d52d12f98ead3f4f76f9fdb3f69
-          EXPECTED_RESEARCH_RUN_ID: gha-33682711687-1
+          EXPECTED_RESEARCH_RUN_ID: gha-33732734520-1
         shell: bash
         run: |
           set -euo pipefail
@@ -192,7 +192,7 @@ jobs:
                   primary_summary.get("completed_expiry_count") or 0
               )
               checks["OPTION_V2_SETTLED_EPISODE"] = (
-                  completed_count >= 1
+                  completed_count >= 2
                   and len(completed) == completed_count
                   and all(
                       int(row.get("entry_timestamp_epoch_ms") or 0)
@@ -274,14 +274,13 @@ jobs:
                   and eligible > 0
                   and int(metrics.get("completed_expiry_count") or 0)
                       == completed_count
-                  and completed_count >= 1
+                  and completed_count >= 2
                   and metrics.get("invalid_segment_count") == 0
                   and metrics.get("episode_invalid_count") == 0
                   and closed_loop_section.get("demo_activation_authorized") is False
                   and closed_loop_section.get("live_activation_authorized") is False
                   and closed_loop_section.get("authoritative_for_integrator_promotion") is False
               )
-              first_complete = completed[0] if completed else {}
               economics = {
                   "eligible_snapshots": eligible,
                   "successful_polls": successful_polls,
@@ -290,18 +289,31 @@ jobs:
                   "pending_entries": pending_entries,
                   "completed_expiries": completed_count,
                   "decision": report.get("decision"),
-                  "delivery_time_epoch_ms": first_complete.get("delivery_time_epoch_ms"),
-                  "entry_timestamp_epoch_ms": first_complete.get("entry_timestamp_epoch_ms"),
-                  "strike": first_complete.get("strike"),
-                  "delivery_price": first_complete.get("delivery_price"),
-                  "gross_pnl_usdt": first_complete.get("gross_pnl_usdt"),
-                  "base_net_pnl_usdt": first_complete.get("base_net_pnl_usdt"),
-                  "stress_net_pnl_usdt": first_complete.get("stress_net_pnl_usdt"),
-                  "gross_bps": first_complete.get("gross_bps"),
-                  "base_net_bps": first_complete.get("base_net_bps"),
-                  "stress_net_bps": first_complete.get("stress_net_bps"),
-                  "identity_residual_usdt": first_complete.get("identity_residual_usdt"),
-                  "residual_hedge_quantity_btc": first_complete.get("residual_hedge_quantity_btc"),
+                  "summary": {
+                      key: primary_summary.get(key)
+                      for key in (
+                          "gross_mean_bps", "base_mean_bps", "stress_mean_bps",
+                          "stress_lcb_bps", "stress_ucb_bps",
+                          "positive_expiry_ratio", "worst_expiry_bps",
+                      )
+                  },
+                  "episodes": [
+                      {
+                          key: row.get(key)
+                          for key in (
+                              "delivery_time_epoch_ms", "entry_timestamp_epoch_ms",
+                              "strike", "delivery_price", "gross_pnl_usdt",
+                              "option_spread_cost_usdt", "option_fee_usdt",
+                              "delivery_fee_usdt", "hedge_gross_pnl_usdt",
+                              "hedge_spread_cost_usdt", "hedge_fee_usdt",
+                              "stress_increment_usdt", "base_net_pnl_usdt",
+                              "stress_net_pnl_usdt", "gross_bps", "base_net_bps",
+                              "stress_net_bps", "identity_residual_usdt",
+                              "residual_hedge_quantity_btc",
+                          )
+                      }
+                      for row in completed
+                  ],
               }
               print("METRIC_OPTION_V2=" + json.dumps(
                   economics, sort_keys=True, separators=(",", ":")
