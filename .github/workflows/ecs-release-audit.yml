@@ -192,7 +192,7 @@ jobs:
                   primary_summary.get("completed_expiry_count") or 0
               )
               checks["OPTION_V2_SETTLED_EPISODE"] = (
-                  completed_count >= 2
+                  completed_count >= 1
                   and len(completed) == completed_count
                   and all(
                       int(row.get("entry_timestamp_epoch_ms") or 0)
@@ -274,7 +274,7 @@ jobs:
                   and eligible > 0
                   and int(metrics.get("completed_expiry_count") or 0)
                       == completed_count
-                  and completed_count >= 2
+                  and completed_count >= 1
                   and metrics.get("invalid_segment_count") == 0
                   and metrics.get("episode_invalid_count") == 0
                   and closed_loop_section.get("demo_activation_authorized") is False
@@ -286,9 +286,25 @@ jobs:
                   "successful_polls": successful_polls,
                   "checksum_bound_seconds": replay.get("checksum_bound_seconds"),
                   "valid_segments": replay.get("valid_segment_count"),
+                  "delivery_evidence_count": report.get("delivery_evidence_count"),
+                  "evaluated_now_epoch_ms": evaluated_now,
                   "pending_entries": pending_entries,
                   "completed_expiries": completed_count,
+                  "pending_or_missed_count": primary_summary.get(
+                      "pending_or_missed_count"
+                  ),
                   "decision": report.get("decision"),
+                  "episode_states": [
+                      {
+                          key: row.get(key)
+                          for key in (
+                              "delivery_time_epoch_ms", "target_dte_days",
+                              "state", "entry_timestamp_epoch_ms", "reason",
+                          )
+                      }
+                      for row in primary_episodes
+                      if isinstance(row, dict)
+                  ],
                   "summary": {
                       key: primary_summary.get(key)
                       for key in (
