@@ -22,7 +22,7 @@ jobs:
           ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
           ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
           EXPECTED_RELEASE_SHA: cd0cd90475c70d52d12f98ead3f4f76f9fdb3f69
-          EXPECTED_RESEARCH_RUN_ID: gha-33577165434-1
+          EXPECTED_RESEARCH_RUN_ID: gha-33682711687-1
         shell: bash
         run: |
           set -euo pipefail
@@ -117,6 +117,7 @@ jobs:
           summary_report="${deploy_root}/data/reports/closed_loop/${expected_research_run_id}/closed_loop_report.json"
           python3 - "${option_report}" "${summary_report}" <<'PY'
           import json
+          import math
           import pathlib
           import sys
 
@@ -125,8 +126,8 @@ jobs:
               "OPTION_V2_POLICY_IDENTITY": False,
               "OPTION_V2_POSTSTART_CLOCK": False,
               "OPTION_V2_ELIGIBLE_VALID": False,
-              "OPTION_V2_PENDING_ENTRY": False,
-              "OPTION_V2_ZERO_COMPLETED_EXPIRIES": False,
+              "OPTION_V2_SETTLED_EPISODE": False,
+              "OPTION_V2_PAYOFF_IDENTITY": False,
               "OPTION_V2_DECISION_WAIT": False,
               "OPTION_V2_NONPROMOTIONAL": False,
               "OPTION_V2_SUMMARY_ROUTED": False,
@@ -183,9 +184,58 @@ jobs:
                   for row in primary_episodes
                   if isinstance(row, dict)
               )
-              checks["OPTION_V2_PENDING_ENTRY"] = pending_entries > 0
-              checks["OPTION_V2_ZERO_COMPLETED_EXPIRIES"] = (
-                  primary_summary.get("completed_expiry_count") == 0
+              completed = [
+                  row for row in primary_episodes
+                  if isinstance(row, dict) and row.get("state") == "complete"
+              ]
+              completed_count = int(
+                  primary_summary.get("completed_expiry_count") or 0
+              )
+              checks["OPTION_V2_SETTLED_EPISODE"] = (
+                  completed_count >= 1
+                  and len(completed) == completed_count
+                  and all(
+                      int(row.get("entry_timestamp_epoch_ms") or 0)
+                      >= 1788242400000
+                      and int(row.get("delivery_time_epoch_ms") or 0)
+                      <= evaluated_now
+                      and float(row.get("delivery_price") or 0.0) > 0.0
+                      and float(row.get("capital_normalizer_usdt") or 0.0) > 0.0
+                      and len(row.get("symbols") or []) == 2
+                      and len(row.get("hedge_ledger") or []) > 0
+                      for row in completed
+                  )
+              )
+              finite_fields = (
+                  "gross_pnl_usdt", "option_spread_cost_usdt",
+                  "option_fee_usdt", "delivery_fee_usdt",
+                  "hedge_spread_cost_usdt", "hedge_fee_usdt",
+                  "stress_increment_usdt", "base_net_pnl_usdt",
+                  "stress_net_pnl_usdt", "gross_bps", "base_net_bps",
+                  "stress_net_bps",
+              )
+              checks["OPTION_V2_PAYOFF_IDENTITY"] = bool(completed) and all(
+                  all(
+                      isinstance(row.get(field), (int, float))
+                      and not isinstance(row.get(field), bool)
+                      and math.isfinite(float(row[field]))
+                      for field in finite_fields
+                  )
+                  and abs(float(row.get("identity_residual_usdt") or 0.0)) <= 1e-9
+                  and abs(float(row.get("residual_hedge_quantity_btc") or 0.0)) <= 1e-12
+                  and float(row["stress_net_pnl_usdt"])
+                      <= float(row["base_net_pnl_usdt"]) + 1e-12
+                  and float(row["base_net_pnl_usdt"])
+                      <= float(row["gross_pnl_usdt"]) + 1e-12
+                  and all(
+                      float(row[field]) >= 0.0
+                      for field in (
+                          "option_spread_cost_usdt", "option_fee_usdt",
+                          "delivery_fee_usdt", "hedge_spread_cost_usdt",
+                          "hedge_fee_usdt", "stress_increment_usdt",
+                      )
+                  )
+                  for row in completed
               )
               checks["OPTION_V2_DECISION_WAIT"] = (
                   report.get("decision")
@@ -222,20 +272,40 @@ jobs:
                   and closed_loop_section.get("review_day") is None
                   and int(metrics.get("eligible_snapshot_count") or 0) == eligible
                   and eligible > 0
-                  and metrics.get("completed_expiry_count") == 0
+                  and int(metrics.get("completed_expiry_count") or 0)
+                      == completed_count
+                  and completed_count >= 1
                   and metrics.get("invalid_segment_count") == 0
                   and metrics.get("episode_invalid_count") == 0
                   and closed_loop_section.get("demo_activation_authorized") is False
                   and closed_loop_section.get("live_activation_authorized") is False
                   and closed_loop_section.get("authoritative_for_integrator_promotion") is False
               )
-              print("METRIC_ELIGIBLE_SNAPSHOTS=" + str(eligible))
-              print("METRIC_SUCCESSFUL_POLLS=" + str(successful_polls))
-              print("METRIC_CHECKSUM_BOUND_SECONDS=" + str(replay.get("checksum_bound_seconds")))
-              print("METRIC_VALID_SEGMENTS=" + str(replay.get("valid_segment_count")))
-              print("METRIC_PENDING_ENTRIES=" + str(pending_entries))
-              print("METRIC_COMPLETED_EXPIRIES=" + str(primary_summary.get("completed_expiry_count")))
-              print("METRIC_DECISION=" + str(report.get("decision")))
+              first_complete = completed[0] if completed else {}
+              economics = {
+                  "eligible_snapshots": eligible,
+                  "successful_polls": successful_polls,
+                  "checksum_bound_seconds": replay.get("checksum_bound_seconds"),
+                  "valid_segments": replay.get("valid_segment_count"),
+                  "pending_entries": pending_entries,
+                  "completed_expiries": completed_count,
+                  "decision": report.get("decision"),
+                  "delivery_time_epoch_ms": first_complete.get("delivery_time_epoch_ms"),
+                  "entry_timestamp_epoch_ms": first_complete.get("entry_timestamp_epoch_ms"),
+                  "strike": first_complete.get("strike"),
+                  "delivery_price": first_complete.get("delivery_price"),
+                  "gross_pnl_usdt": first_complete.get("gross_pnl_usdt"),
+                  "base_net_pnl_usdt": first_complete.get("base_net_pnl_usdt"),
+                  "stress_net_pnl_usdt": first_complete.get("stress_net_pnl_usdt"),
+                  "gross_bps": first_complete.get("gross_bps"),
+                  "base_net_bps": first_complete.get("base_net_bps"),
+                  "stress_net_bps": first_complete.get("stress_net_bps"),
+                  "identity_residual_usdt": first_complete.get("identity_residual_usdt"),
+                  "residual_hedge_quantity_btc": first_complete.get("residual_hedge_quantity_btc"),
+              }
+              print("METRIC_OPTION_V2=" + json.dumps(
+                  economics, sort_keys=True, separators=(",", ":")
+              ))
           except (OSError, ValueError, TypeError, KeyError):
               pass
 
@@ -289,13 +359,13 @@ jobs:
         if: always()
         run: grep -Fxq 'OPTION_V2_ELIGIBLE_VALID=PASS' release_checks
 
-      - name: Verify option v2 pending entry
+      - name: Verify option v2 settled episode
         if: always()
-        run: grep -Fxq 'OPTION_V2_PENDING_ENTRY=PASS' release_checks
+        run: grep -Fxq 'OPTION_V2_SETTLED_EPISODE=PASS' release_checks
 
-      - name: Verify option v2 zero completed expiries
+      - name: Verify option v2 payoff identity
         if: always()
-        run: grep -Fxq 'OPTION_V2_ZERO_COMPLETED_EXPIRIES=PASS' release_checks
+        run: grep -Fxq 'OPTION_V2_PAYOFF_IDENTITY=PASS' release_checks
 
       - name: Verify option v2 WAIT decision
         if: always()
