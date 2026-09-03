@@ -152,7 +152,7 @@ class OptionVrpCaptureV2Test(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             raw = pathlib.Path(temporary) / "segment.jsonl.xz"
-            rows, _, _, deliveries = capture.capture_live(
+            rows, _, _, deliveries, termination_reason = capture.capture_live(
                 raw_output=raw,
                 duration_sec=0.0,
                 poll_interval_sec=60.0,
@@ -164,11 +164,100 @@ class OptionVrpCaptureV2Test(unittest.TestCase):
             )
             self.assertEqual(len(rows), 1)
             self.assertEqual(deliveries, [self.expiry])
+            self.assertEqual(termination_reason, "duration_complete")
             with lzma.open(raw, "rt", encoding="utf-8") as handle:
                 payload = json.loads(handle.readline())
             self.assertEqual(payload["scope_identity_sha256"], capture.SCOPE_IDENTITY_SHA256)
         delivery_calls = [params for path, params, _ in calls if path.endswith("delivery-price")]
         self.assertEqual(delivery_calls, [{"category": "option", "baseCoin": "BTC", "settleCoin": "USDT", "limit": 200}])
+
+    def test_capture_preserves_valid_prefix_after_transient_poll_failure(self):
+        calls = 0
+
+        def fetcher(path, params, *, base_url):
+            nonlocal calls
+            calls += 1
+            if calls == 9:
+                raise RuntimeError("transient public API failure")
+            if path.endswith("instruments-info"):
+                rows = self.instruments
+            elif path.endswith("recent-trade"):
+                rows = []
+            elif path.endswith("historical-volatility"):
+                rows = [{"value": "0.4"}]
+            elif path.endswith("delivery-price"):
+                rows = self.delivery_rows()
+            elif path.endswith("orderbook"):
+                return {"retCode": 0, "result": {"b": [["99990", "1"]], "a": [["100010", "1"]], "ts": self.now}}
+            elif params.get("category") == "linear":
+                rows = [{"bid1Price": "99990", "ask1Price": "100010"}]
+            else:
+                rows = self.tickers
+            return {"retCode": 0, "result": {"list": rows}}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / capture.CAPTURE_ROOT_NAME
+            raw = root / "raw" / capture.BASE_COIN / "segment.jsonl.xz"
+            features = root / "features" / capture.BASE_COIN / "segment.csv"
+            rows, started, completed, deliveries, termination_reason = capture.capture_live(
+                raw_output=raw,
+                duration_sec=1.0,
+                poll_interval_sec=0.001,
+                base_url="https://example.invalid",
+                minimum_dte_days=0.5,
+                maximum_dte_days=10.0,
+                maximum_absolute_moneyness=0.1,
+                fetcher=fetcher,
+            )
+            self.assertEqual(len(rows), 1)
+            self.assertGreater(started, 0)
+            self.assertEqual(completed, started)
+            self.assertEqual(deliveries, [self.expiry])
+            self.assertEqual(termination_reason, "transient_request_failure")
+            with lzma.open(raw, "rt", encoding="utf-8") as handle:
+                self.assertEqual(len(handle.readlines()), 1)
+            capture.legacy._write_feature_csv(features, rows)
+            report = capture.build_report(
+                capture_root=root,
+                raw_path=raw,
+                feature_path=features,
+                feature_rows=rows,
+                started_epoch_ms=started,
+                completed_epoch_ms=completed,
+                delivery_times=deliveries,
+                base_url="https://example.invalid",
+                poll_interval_sec=0.001,
+                minimum_dte_days=0.5,
+                maximum_dte_days=10.0,
+                maximum_absolute_moneyness=0.1,
+                capture_termination_reason=termination_reason,
+            )
+            self.assertEqual(
+                report["quality"]["capture_termination_reason"],
+                "transient_request_failure",
+            )
+            self.assertTrue(report["quality"]["partial_segment_preserved"])
+            self.assertEqual(report["coverage"]["duration_ms"], 0)
+
+    def test_capture_does_not_mask_transient_failure_before_first_snapshot(self):
+        def fetcher(path, params, *, base_url):
+            if path.endswith("instruments-info"):
+                return {"retCode": 0, "result": {"list": self.instruments}}
+            raise RuntimeError("transient public API failure")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            raw = pathlib.Path(temporary) / "segment.jsonl.xz"
+            with self.assertRaisesRegex(RuntimeError, "transient public API failure"):
+                capture.capture_live(
+                    raw_output=raw,
+                    duration_sec=1.0,
+                    poll_interval_sec=0.001,
+                    base_url="https://example.invalid",
+                    minimum_dte_days=0.5,
+                    maximum_dte_days=10.0,
+                    maximum_absolute_moneyness=0.1,
+                    fetcher=fetcher,
+                )
 
     def test_runner_command_and_health_bind_v2_scope(self):
         with tempfile.TemporaryDirectory() as temporary:

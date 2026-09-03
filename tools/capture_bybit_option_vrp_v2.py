@@ -177,7 +177,7 @@ def capture_live(
     maximum_dte_days: float,
     maximum_absolute_moneyness: float,
     fetcher: Callable[..., Dict[str, Any]] = fetch_json,
-) -> tuple[list[Dict[str, Any]], int, int, list[int]]:
+) -> tuple[list[Dict[str, Any]], int, int, list[int], str]:
     instruments_payload = fetcher(
         "/v5/market/instruments-info",
         {"category": "option", "baseCoin": BASE_COIN, "limit": 1000},
@@ -190,49 +190,59 @@ def capture_live(
     features: list[Dict[str, Any]] = []
     delivery_times: set[int] = set()
     seen_exec_ids: set[str] = set()
-    started_epoch_ms = int(time.time() * 1000)
+    started_epoch_ms = 0
+    completed_epoch_ms = 0
+    termination_reason = "duration_complete"
     deadline = time.monotonic() + duration_sec
     if raw_output.suffix != ".xz":
         raise ValueError("v2 raw output must use the frozen XZ codec")
     with lzma.open(raw_output, "wt", encoding="utf-8", preset=1) as handle:
         while True:
             now_ms = int(time.time() * 1000)
-            tickers = result_list(fetcher("/v5/market/tickers", {"category": "option", "baseCoin": BASE_COIN}, base_url=base_url))
-            trades = result_list(fetcher("/v5/market/recent-trade", {"category": "option", "baseCoin": BASE_COIN, "limit": 1000}, base_url=base_url))
-            hedge_ticker = result_list(fetcher("/v5/market/tickers", {"category": "linear", "symbol": HEDGE_SYMBOL}, base_url=base_url))
-            hedge_orderbook = fetcher("/v5/market/orderbook", {"category": "linear", "symbol": HEDGE_SYMBOL, "limit": 1}, base_url=base_url)
-            hv7 = result_list(fetcher("/v5/market/historical-volatility", {"category": "option", "baseCoin": BASE_COIN, "quoteCoin": QUOTE_COIN, "period": 7}, base_url=base_url))
-            hv30 = result_list(fetcher("/v5/market/historical-volatility", {"category": "option", "baseCoin": BASE_COIN, "quoteCoin": QUOTE_COIN, "period": 30}, base_url=base_url))
-            delivery = result_list(fetcher(
-                "/v5/market/delivery-price",
-                {"category": "option", "baseCoin": BASE_COIN, "settleCoin": SETTLE_COIN, "limit": 200},
-                base_url=base_url,
-            ))
-            snapshot, feature = normalize_snapshot(
-                now_epoch_ms=now_ms,
-                instruments=instruments,
-                tickers=tickers,
-                trades=trades,
-                hedge_ticker=hedge_ticker,
-                hedge_orderbook=hedge_orderbook,
-                hv7=hv7,
-                hv30=hv30,
-                delivery=delivery,
-                seen_exec_ids=seen_exec_ids,
-                minimum_dte_days=minimum_dte_days,
-                maximum_dte_days=maximum_dte_days,
-                maximum_absolute_moneyness=maximum_absolute_moneyness,
-            )
+            try:
+                tickers = result_list(fetcher("/v5/market/tickers", {"category": "option", "baseCoin": BASE_COIN}, base_url=base_url))
+                trades = result_list(fetcher("/v5/market/recent-trade", {"category": "option", "baseCoin": BASE_COIN, "limit": 1000}, base_url=base_url))
+                hedge_ticker = result_list(fetcher("/v5/market/tickers", {"category": "linear", "symbol": HEDGE_SYMBOL}, base_url=base_url))
+                hedge_orderbook = fetcher("/v5/market/orderbook", {"category": "linear", "symbol": HEDGE_SYMBOL, "limit": 1}, base_url=base_url)
+                hv7 = result_list(fetcher("/v5/market/historical-volatility", {"category": "option", "baseCoin": BASE_COIN, "quoteCoin": QUOTE_COIN, "period": 7}, base_url=base_url))
+                hv30 = result_list(fetcher("/v5/market/historical-volatility", {"category": "option", "baseCoin": BASE_COIN, "quoteCoin": QUOTE_COIN, "period": 30}, base_url=base_url))
+                delivery = result_list(fetcher(
+                    "/v5/market/delivery-price",
+                    {"category": "option", "baseCoin": BASE_COIN, "settleCoin": SETTLE_COIN, "limit": 200},
+                    base_url=base_url,
+                ))
+                snapshot, feature = normalize_snapshot(
+                    now_epoch_ms=now_ms,
+                    instruments=instruments,
+                    tickers=tickers,
+                    trades=trades,
+                    hedge_ticker=hedge_ticker,
+                    hedge_orderbook=hedge_orderbook,
+                    hv7=hv7,
+                    hv30=hv30,
+                    delivery=delivery,
+                    seen_exec_ids=seen_exec_ids,
+                    minimum_dte_days=minimum_dte_days,
+                    maximum_dte_days=maximum_dte_days,
+                    maximum_absolute_moneyness=maximum_absolute_moneyness,
+                )
+            except RuntimeError:
+                if not features:
+                    raise
+                termination_reason = "transient_request_failure"
+                break
             handle.write(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n")
             handle.flush()
             features.append(feature)
+            if started_epoch_ms == 0:
+                started_epoch_ms = now_ms
+            completed_epoch_ms = now_ms
             delivery_times.update(int(value) for value in snapshot["delivery_times"])
             remaining = deadline - time.monotonic()
             if remaining <= 0.0:
                 break
             time.sleep(min(poll_interval_sec, remaining))
-    completed_epoch_ms = int(time.time() * 1000)
-    return features, started_epoch_ms, completed_epoch_ms, sorted(delivery_times)
+    return features, started_epoch_ms, completed_epoch_ms, sorted(delivery_times), termination_reason
 
 
 def build_report(
@@ -249,7 +259,13 @@ def build_report(
     minimum_dte_days: float,
     maximum_dte_days: float,
     maximum_absolute_moneyness: float,
+    capture_termination_reason: str,
 ) -> Dict[str, Any]:
+    if capture_termination_reason not in {
+        "duration_complete",
+        "transient_request_failure",
+    }:
+        raise ValueError("capture termination reason is invalid")
     root = capture_root.resolve()
     if root.name != CAPTURE_ROOT_NAME:
         raise ValueError(f"v2 capture root must end with {CAPTURE_ROOT_NAME}")
@@ -282,6 +298,8 @@ def build_report(
     report["quality"].update({
         "delivery_query_status": "PASS",
         "delivery_identity_contract": "symbol_delivery_time_settle_coin_v2",
+        "capture_termination_reason": capture_termination_reason,
+        "partial_segment_preserved": capture_termination_reason != "duration_complete",
     })
     report["next_gate"] = "frozen_option_vrp_sequential_payoff_contract"
     return report
@@ -310,7 +328,7 @@ def main() -> int:
         raise ValueError("minimum DTE must be below maximum DTE")
     root = pathlib.Path(args.capture_root)
     raw_path, feature_path = pathlib.Path(args.raw), pathlib.Path(args.features)
-    rows, started, completed, deliveries = capture_live(
+    rows, started, completed, deliveries, termination_reason = capture_live(
         raw_output=raw_path,
         duration_sec=args.duration_sec,
         poll_interval_sec=args.poll_interval_sec,
@@ -333,8 +351,15 @@ def main() -> int:
         minimum_dte_days=args.minimum_dte_days,
         maximum_dte_days=args.maximum_dte_days,
         maximum_absolute_moneyness=args.maximum_absolute_moneyness,
+        capture_termination_reason=termination_reason,
     )
     atomic_write_json(pathlib.Path(args.report), report)
+    if termination_reason != "duration_complete":
+        print(
+            "[WARN] preserved checksum-valid option VRP segment prefix after "
+            "a transient public API failure",
+            file=sys.stderr,
+        )
     return 0
 
 
