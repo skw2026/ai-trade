@@ -21,7 +21,7 @@ jobs:
           ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
           ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
           ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
-          EXPECTED_RELEASE_SHA: cd0cd90475c70d52d12f98ead3f4f76f9fdb3f69
+          EXPECTED_RELEASE_SHA: 7d68bd79303d92d4949628ace4722a945536c343
           EXPECTED_RESEARCH_RUN_ID: gha-33732734520-1
         shell: bash
         run: |
