@@ -22,7 +22,7 @@ jobs:
           ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
           ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
           EXPECTED_RELEASE_SHA: 7d68bd79303d92d4949628ace4722a945536c343
-          EXPECTED_RESEARCH_RUN_ID: gha-33860759832-1
+          EXPECTED_RESEARCH_RUN_ID: gha-33917688878-1
         shell: bash
         run: |
           set -euo pipefail
@@ -112,6 +112,61 @@ jobs:
             echo "EXCHANGE_CHECK=FAIL"
           fi
           rm -f "${temporary_log}"
+
+          python3 - <<'PY_LIVE'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import time
+
+          live_checks = {
+              "CURRENT_OPTION_SEGMENT_FRESH": False,
+              "CURRENT_OPTION_RETENTION": False,
+              "DATA_DISK_MINIMUM_HEADROOM": False,
+          }
+          root = pathlib.Path("/opt/ai-trade/data/research/bybit_btc_option_vrp_v2")
+          try:
+              latest = json.loads((root / "latest_segment.json").read_text())
+              age_ms = int(time.time() * 1000) - int(latest["completed_epoch_ms"])
+              payload = latest["report_payload"]
+              live_checks["CURRENT_OPTION_SEGMENT_FRESH"] = (
+                  latest.get("schema_version") == "option_vrp_latest_segment_v2"
+                  and 0 <= age_ms <= 1800000
+                  and payload.get("status") == "PASS"
+                  and latest.get("capture_schema_version") == "bybit_btc_option_vrp_capture_v2"
+                  and latest.get("scope_identity_sha256")
+                      == "a5372ca0bd7d2829c11028bfcfead6d16fba08ef8e91101801789ccb98198177"
+              )
+          except (OSError, ValueError, TypeError, KeyError):
+              pass
+          try:
+              command = json.loads(subprocess.check_output([
+                  "docker", "inspect", "-f", "{{json .Config.Cmd}}",
+                  "ai-trade-option-vrp-collector",
+              ], stderr=subprocess.DEVNULL, text=True, timeout=10))
+              retention = None
+              for index, argument in enumerate(command):
+                  if argument.startswith("--retention-hours="):
+                      retention = int(argument.split("=", 1)[1])
+                  elif argument == "--retention-hours":
+                      retention = int(command[index + 1])
+              live_checks["CURRENT_OPTION_RETENTION"] = (
+                  retention is not None and retention >= 960
+              )
+          except (OSError, ValueError, TypeError, IndexError, subprocess.SubprocessError):
+              pass
+          try:
+              disk = os.statvfs(root)
+              # Existing CD minimum-free-space floor; not a Day-35 capacity forecast.
+              live_checks["DATA_DISK_MINIMUM_HEADROOM"] = (
+                  disk.f_bavail * disk.f_frsize >= 671088640 and disk.f_favail > 0
+              )
+          except OSError:
+              pass
+          for name, passed in live_checks.items():
+              print(f"{name}={'PASS' if passed else 'FAIL'}")
+          PY_LIVE
 
           option_report="${deploy_root}/data/reports/closed_loop/${expected_research_run_id}/option_variance_risk_premium_sequential_payoff.json"
           summary_report="${deploy_root}/data/reports/closed_loop/${expected_research_run_id}/closed_loop_report.json"
@@ -352,6 +407,9 @@ jobs:
           while IFS='=' read -r check result; do
             [[ -n "${check}" && -n "${result}" ]] || continue
             case "${check}" in
+              CURRENT_OPTION_*|DATA_DISK_MINIMUM_HEADROOM)
+                continue
+                ;;
               METRIC_*)
                 echo "::notice title=ECS release audit metric::${check}=${result}"
                 continue
@@ -406,3 +464,16 @@ jobs:
       - name: Verify option v2 summary routing
         if: always()
         run: grep -Fxq 'OPTION_V2_SUMMARY_ROUTED=PASS' release_checks
+
+      - name: Verify current capture freshness retention and disk floor
+        if: always()
+        run: |
+          set -euo pipefail
+          for check in CURRENT_OPTION_SEGMENT_FRESH CURRENT_OPTION_RETENTION DATA_DISK_MINIMUM_HEADROOM; do
+            if grep -Fxq "${check}=PASS" release_checks; then
+              echo "::notice title=Current collection checks::check=${check}; result=PASS"
+            else
+              echo "::error title=Current collection checks::check=${check}; result=FAIL"
+              exit 2
+            fi
+          done
