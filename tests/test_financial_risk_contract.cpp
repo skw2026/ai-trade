@@ -97,5 +97,10 @@ int main() {
   Check(invalid.Apply(target, true,
                       std::numeric_limits<double>::quiet_NaN(), 0.5).reduce_only,
         "Non-finite drawdown must fail closed");
+  RiskThresholds zero_threshold;
+  zero_threshold.min_liquidation_distance = 0.0;
+  RiskEngine zero_guard(500.0, zero_threshold);
+  Check(zero_guard.Apply(target, true, 0.0, 0.0).reduce_only,
+        "A zero threshold cannot make unknown/breached risk safe");
   return failures ? 1 : 0;
 }

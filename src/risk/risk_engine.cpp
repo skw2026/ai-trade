@@ -40,6 +40,7 @@ RiskMode RiskEngine::ResolveMode(bool trade_ok,
   }
   if (!trade_ok || forced_reduce_only_ || !valid_drawdown ||
       !std::isfinite(liq_distance_pct) ||
+      liq_distance_pct <= 0.0 ||
       liq_distance_pct < thresholds_.min_liquidation_distance) {
     return RiskMode::kReduceOnly;
   }
