@@ -1,6 +1,7 @@
 #include "risk/risk_engine.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace ai_trade {
 
@@ -8,47 +9,41 @@ namespace ai_trade {
  * @brief 风险状态机判定
  *
  * 优先级从高到低：
- * 1. 通道异常 / 强制只减仓（reduce-only）；
- * 2. 强平距离不足；
- * 3. 回撤阈值分级。
+ * 1. 回撤熔断 / 冷却（目标归零）；
+ * 2. 通道异常 / 未知风险 / 强平距离不足 / 强制只减仓；
+ * 3. 回撤降档 / 正常。回撤滞回独立保留。
  */
 RiskMode RiskEngine::ResolveMode(bool trade_ok,
                                  double drawdown_pct,
                                  double liq_distance_pct) {
-  // 1. 外部硬开关或交易通道异常 -> 强制只减仓
-  if (!trade_ok || forced_reduce_only_) {
+  const bool valid_drawdown = std::isfinite(drawdown_pct) && drawdown_pct >= 0.0;
+  if (valid_drawdown) {
+    if (drawdown_pct >= thresholds_.fuse_drawdown ||
+        (drawdown_mode_ == RiskMode::kFuse &&
+         drawdown_pct >= thresholds_.fuse_recover_drawdown)) {
+      drawdown_mode_ = RiskMode::kFuse;
+    } else if (drawdown_pct >= thresholds_.cooldown_drawdown ||
+               (drawdown_mode_ == RiskMode::kCooldown &&
+                drawdown_pct >= thresholds_.cooldown_recover_drawdown)) {
+      drawdown_mode_ = RiskMode::kCooldown;
+    } else if (drawdown_pct >= thresholds_.degraded_drawdown ||
+               (drawdown_mode_ == RiskMode::kDegraded &&
+                drawdown_pct >= thresholds_.degraded_recover_drawdown)) {
+      drawdown_mode_ = RiskMode::kDegraded;
+    } else {
+      drawdown_mode_ = RiskMode::kNormal;
+    }
+  }
+  if (drawdown_mode_ == RiskMode::kFuse ||
+      drawdown_mode_ == RiskMode::kCooldown) {
+    return drawdown_mode_;
+  }
+  if (!trade_ok || forced_reduce_only_ || !valid_drawdown ||
+      !std::isfinite(liq_distance_pct) ||
+      liq_distance_pct < thresholds_.min_liquidation_distance) {
     return RiskMode::kReduceOnly;
   }
-
-  // 2. 强平距离保护 (P95 < 8% -> 强制减仓)
-  if (liq_distance_pct < thresholds_.min_liquidation_distance) {
-    return RiskMode::kReduceOnly;
-  }
-
-  // 3. 回撤三级阈值检查
-  if (drawdown_pct >= thresholds_.fuse_drawdown) {
-    return RiskMode::kFuse;
-  }
-  // 4. 恢复阈值（滞回）：避免在边界附近发生 Normal/Degraded/Cooldown/Fuse 来回抖动。
-  if (mode_ == RiskMode::kFuse &&
-      drawdown_pct >= thresholds_.fuse_recover_drawdown) {
-    return RiskMode::kFuse;
-  }
-  if (drawdown_pct >= thresholds_.cooldown_drawdown) {
-    return RiskMode::kCooldown;
-  }
-  if (mode_ == RiskMode::kCooldown &&
-      drawdown_pct >= thresholds_.cooldown_recover_drawdown) {
-    return RiskMode::kCooldown;
-  }
-  if (drawdown_pct >= thresholds_.degraded_drawdown) {
-    return RiskMode::kDegraded;
-  }
-  if (mode_ == RiskMode::kDegraded &&
-      drawdown_pct >= thresholds_.degraded_recover_drawdown) {
-    return RiskMode::kDegraded;
-  }
-  return RiskMode::kNormal;
+  return drawdown_mode_;
 }
 
 /**

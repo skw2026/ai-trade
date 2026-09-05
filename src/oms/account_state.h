@@ -79,8 +79,12 @@ class AccountState {
   
   double drawdown_pct() const;
   
-  /// Calculates the P95 liquidation distance (Risk Metric).
+  /// Legacy upper-tail statistic: diagnostic only, never a safety gate.
   double liquidation_distance_p95() const;
+
+  /// Minimum over all open positions. Empty account: 1; missing risk: nullopt.
+  /// Callers must prohibit increases when any position has unknown risk.
+  std::optional<double> minimum_liquidation_distance() const;
 
   double mark_price(const std::string& symbol) const;
   double position_qty(const std::string& symbol) const;

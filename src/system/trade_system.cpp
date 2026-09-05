@@ -224,7 +224,12 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   // 5. Risk Management
   decision.target = TargetPosition{decision.signal.symbol, decision.signal.suggested_notional_usd};
   
-  const double liq_dist = account_.liquidation_distance_p95();
+  // Safe legs cannot conceal dangerous ones; unknown risk prohibits increases.
+  const auto minimum_liq_dist = account_.minimum_liquidation_distance();
+  if (!minimum_liq_dist.has_value()) {
+    PushReason(&decision.signal.reason_codes, "RISK_LIQUIDATION_DATA_UNKNOWN");
+  }
+  const double liq_dist = minimum_liq_dist.value_or(0.0);
   decision.risk_adjusted = risk_.Apply(decision.target, trade_ok, account_.drawdown_pct(), liq_dist);
 
   // 5.1. Global Account Gross Notional Check

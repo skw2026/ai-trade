@@ -411,11 +411,11 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
 
     if (current_section == "risk" &&
         current_subsection == "liquidation" &&
-        key == "min_distance_p95") {
+        (key == "min_distance" || key == "min_distance_p95")) {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
         if (out_error != nullptr) {
-          *out_error = "risk.liquidation.min_distance_p95 解析失败，行号: " +
+          *out_error = "risk.liquidation." + key + " 解析失败，行号: " +
                        std::to_string(line_no);
         }
         return false;

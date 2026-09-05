@@ -90,6 +90,10 @@ if(BUILD_TESTING)
   target_link_libraries(trade_system_test PRIVATE ai_trade_system)
   add_test(NAME trade_system_test COMMAND trade_system_test)
 
+  add_executable(financial_risk_contract_test tests/test_financial_risk_contract.cpp)
+  target_link_libraries(financial_risk_contract_test PRIVATE ai_trade_system)
+  add_test(NAME financial_risk_contract_test COMMAND financial_risk_contract_test)
+
   option(AI_TRADE_REQUIRE_PYTHON_TESTS
          "Require Python interpreter for Python unit tests when BUILD_TESTING=ON"
          ON)
@@ -105,6 +109,8 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME option_historical_sample_qualification_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_historical_sample.py)
     add_test(NAME assess_run_log_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_assess_run_log.py)
     add_test(NAME validate_decision_benchmark_test

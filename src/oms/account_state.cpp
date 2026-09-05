@@ -110,6 +110,28 @@ double AccountState::drawdown_pct() const {
   return std::max(0.0, dd);
 }
 
+std::optional<double> AccountState::minimum_liquidation_distance() const {
+  double minimum = std::numeric_limits<double>::infinity();
+  bool has_position = false;
+  for (const auto& [_, position] : positions_) {
+    if (!std::isfinite(position.qty)) return std::nullopt;
+    if (std::fabs(position.qty) <= kEpsilon) continue;
+    has_position = true;
+    // Entry cost is not evidence of current liquidation risk.
+    const double mark = position.mark_price;
+    const double liq = position.liquidation_price;
+    if (!std::isfinite(mark) || !std::isfinite(liq) ||
+        mark <= kEpsilon || liq <= kEpsilon) {
+      return std::nullopt;
+    }
+    const double distance =
+        position.qty > 0.0 ? (mark - liq) / mark : (liq - mark) / mark;
+    if (!std::isfinite(distance)) return std::nullopt;
+    minimum = std::min(minimum, std::max(0.0, distance));
+  }
+  return has_position ? minimum : 1.0;
+}
+
 double AccountState::liquidation_distance_p95() const {
   struct Sample {
     double distance;
@@ -292,7 +314,8 @@ void AccountState::SyncFromRemotePositions(
     PositionState state;
     state.qty = remote.qty;
     state.avg_entry_price = std::max(0.0, remote.avg_entry_price);
-    state.mark_price = (remote.mark_price > kEpsilon) ? remote.mark_price : state.avg_entry_price;
+    // Valuation may fall back to entry via EffectiveMarkPrice; risk may not.
+    state.mark_price = remote.mark_price;
     state.liquidation_price = std::max(0.0, remote.liquidation_price);
     positions_[remote.symbol] = state;
   }
@@ -338,7 +361,7 @@ void AccountState::ForceSyncPositionsFromRemote(
     PositionState state;
     state.qty = remote.qty;
     state.avg_entry_price = std::max(0.0, remote.avg_entry_price);
-    state.mark_price = (remote.mark_price > kEpsilon) ? remote.mark_price : state.avg_entry_price;
+    state.mark_price = remote.mark_price;
     state.liquidation_price = std::max(0.0, remote.liquidation_price);
     synced[remote.symbol] = state;
   }

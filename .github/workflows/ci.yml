@@ -72,6 +72,8 @@ jobs:
           set -euo pipefail
           ctest --test-dir build -N > /tmp/ctest-list.txt
           grep -q "trade_system_test" /tmp/ctest-list.txt
+          grep -q "financial_risk_contract_test" /tmp/ctest-list.txt
+          grep -q "option_historical_sample_qualification_test" /tmp/ctest-list.txt
           grep -q "assess_run_log_test" /tmp/ctest-list.txt
           grep -q "compose_consistency_test" /tmp/ctest-list.txt
           grep -q "materialize_release_compose_test" /tmp/ctest-list.txt

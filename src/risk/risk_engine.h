@@ -28,7 +28,7 @@ class RiskEngine {
    * @param target 策略建议的目标净名义敞口（single-symbol, signed）
    * @param trade_ok 交易所交易通道是否健康
    * @param drawdown_pct 当前账户回撤百分比 (0.0 ~ 1.0)
-   * @param liq_distance_pct 当前强平距离百分比 (0.0 ~ 1.0)
+   * @param liq_distance_pct 所有持仓的最小强平距离；未知传 0，空仓传 1
    * @return RiskAdjustedPosition 经风控修正后的目标净名义敞口
    */
   RiskAdjustedPosition Apply(const TargetPosition& target,
@@ -45,6 +45,7 @@ class RiskEngine {
   double max_abs_notional_usd_{3000.0};  ///< 单 symbol 净名义敞口绝对值上限（USD）。
   RiskThresholds thresholds_{};  ///< 回撤与强平距离阈值集合。
   RiskMode mode_{RiskMode::kNormal};  ///< 当前风险状态机模式。
+  RiskMode drawdown_mode_{RiskMode::kNormal};  ///< 独立回撤滞回，不被断连擦除。
   bool forced_reduce_only_{false};  ///< 外部硬开关：强制只减仓（reduce-only）。
 };
 
