@@ -1,0 +1,24 @@
+{
+  "schema_version": "option_subaccount_research_scope_v1",
+  "mode": "offline_design_only",
+  "venue": "bybit",
+  "account_boundary": "dedicated_subaccount",
+  "margin_mode": "REGULAR_MARGIN",
+  "settlement_currency": "USDT",
+  "subaccount_uid": null,
+  "approved_capital_usdt": null,
+  "automatic_top_up": false,
+  "assume_loss_capped_by_deposit": false,
+  "borrowing_policy": "reject_any_observed_liability",
+  "permissions": {
+    "design": true,
+    "offline_validation": true,
+    "account_creation": false,
+    "account_mode_change": false,
+    "fund_transfer": false,
+    "credential_access": false,
+    "order_submission": false,
+    "demo_activation": false,
+    "live_activation": false
+  }
+}
