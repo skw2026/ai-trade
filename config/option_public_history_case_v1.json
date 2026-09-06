@@ -1,0 +1,12 @@
+{
+  "schema_version": "option_public_history_case_v1",
+  "start_ms": 1788220800000,
+  "end_ms": 1788336000000,
+  "option_symbols": [
+    "BTC-2SEP26-78750-C-USDT",
+    "BTC-2SEP26-78750-P-USDT"
+  ],
+  "sample_date": "2026-09-01",
+  "sample_offset_minute": 0,
+  "sample_raw_sha256": "7c0b9bd405360a2e9920442cfc3b225c8d609c9d5171e2d46e0e38e981a2a6df"
+}

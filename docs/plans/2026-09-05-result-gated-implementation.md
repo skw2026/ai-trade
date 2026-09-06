@@ -35,6 +35,7 @@
 - 真实样例：同一 strike/expiry 的 call/put 共 301 条合格观察，零拒绝，`PASS_SAMPLE_SCHEMA_ONLY`。连续历史和收益资格均为 false。
 - R3–R8 未宣称完成；旧 v2 的 funding、完整 NAV/margin、持仓跟踪等缺口仍保留，不能被 R1 的测试成功覆盖。
 - 2026-09-06 已完成子账户离线账务内核与严格权限合同的首轮本地验证（18 项新测试、72 项完整回归及最终定向回归）。它作为数据资格所需的账务定义，不跳过 R2、不将合成测试认定为 R3 完整资格。见 [子账户设计与离线合同](2026-09-06-option-subaccount-risk-contract.md) 及 [本轮结果](../reviews/2026-09-06-option-subaccount-offline-foundation.md)。
+- R2 公开结算证据子项：已取得并哈希留存 5 个 funding rate 事件及两个同价交割记录；全段/分段检查、真实输入离线重放一致，新增 15 项测试与 73 项完整回归通过。完整历史决策仍为 `INSUFFICIENT_HISTORICAL_EVIDENCE`，未计算收益。下一出口为现有原始归档的完整生命周期及来源匹配核验，见 [真实数据资格报告](../reviews/2026-09-06-option-public-history-qualification.md)。
 
 具体证据与发布状态见 [首批结果报告](../reviews/2026-09-05-result-gated-foundation.md)。
 
