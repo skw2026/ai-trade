@@ -1,0 +1,36 @@
+{
+  "schema_version": "option_archive_lifecycle_case_v1",
+  "lifecycle_id": "bybit_btc_usdt_option_20260902_78750_pair",
+  "experiment_id": "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2",
+  "window": {
+    "start_epoch_ms": 1788242400000,
+    "end_epoch_ms": 1788336000000,
+    "start_utc": "2026-09-01T06:00:00Z",
+    "end_utc": "2026-09-02T08:00:00Z"
+  },
+  "option_contract": {
+    "symbols": [
+      "BTC-2SEP26-78750-C-USDT",
+      "BTC-2SEP26-78750-P-USDT"
+    ],
+    "delivery_time_epoch_ms": 1788336000000,
+    "settle_coin": "USDT",
+    "minimum_executable_size_btc": 0.01
+  },
+  "hedge_contract": {
+    "symbol": "BTCUSDT",
+    "minimum_executable_size_btc": 0.001,
+    "maximum_book_age_seconds": 120
+  },
+  "coverage_contract": {
+    "expected_poll_interval_seconds": 60,
+    "maximum_snapshot_gap_seconds": 180,
+    "all_observed_snapshots_must_be_qualified": true,
+    "require_paired_delivery_evidence": true
+  },
+  "research_domain": "development_only",
+  "economic_evidence": false,
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}

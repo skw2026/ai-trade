@@ -111,6 +111,8 @@ if(BUILD_TESTING)
   else()
     add_test(NAME option_public_history_qualification_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_public_history.py)
+    add_test(NAME option_archive_lifecycle_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_archive_lifecycle.py)
     add_test(NAME option_subaccount_ledger_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_subaccount_ledger.py)
     add_test(NAME option_historical_sample_qualification_test

@@ -1,0 +1,159 @@
+name: Option Archive Lifecycle Audit
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - CD
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: option-archive-lifecycle-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          github.event.workflow_run.conclusion == 'success' }}
+    timeout-minutes: 30
+    env:
+      AUDIT_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      AUDIT_RUN_ID: option-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
+      AUDIT_CAPTURE_ROOT: /opt/ai-trade/data/research/bybit_btc_option_vrp_v2
+      AUDIT_OUTPUT_ROOT: /opt/ai-trade/data/reports/option_archive_lifecycle
+    steps:
+      - name: Checkout deployed revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.AUDIT_EXPECTED_SHA }}
+
+      - name: Check deploy secrets
+        run: |
+          set -euo pipefail
+          test -n "${{ secrets.ECS_HOST }}"
+          test -n "${{ secrets.ECS_USER }}"
+          test -n "${{ secrets.ECS_SSH_KEY }}"
+
+      - name: Audit aggregate lifecycle coverage on ECS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          AUDIT_EXPECTED_SHA: ${{ env.AUDIT_EXPECTED_SHA }}
+          AUDIT_RUN_ID: ${{ env.AUDIT_RUN_ID }}
+          AUDIT_CAPTURE_ROOT: ${{ env.AUDIT_CAPTURE_ROOT }}
+          AUDIT_OUTPUT_ROOT: ${{ env.AUDIT_OUTPUT_ROOT }}
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          command_timeout: 20m
+          envs: AUDIT_EXPECTED_SHA,AUDIT_RUN_ID,AUDIT_CAPTURE_ROOT,AUDIT_OUTPUT_ROOT
+          script: |
+            set -euo pipefail
+            export PYTHONDONTWRITEBYTECODE=1
+            DEPLOY_ROOT="/opt/ai-trade"
+            RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"
+            if [[ -z "${RELEASE_DIR}" ||
+                  "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/${AUDIT_EXPECTED_SHA}" ]]; then
+              echo "option archive audit release mismatch: ${RELEASE_DIR:-<missing>}" >&2
+              exit 1
+            fi
+            python3 "${RELEASE_DIR}/deploy/release_integrity.py" \
+              --release-dir "${RELEASE_DIR}"
+            OUTPUT_DIR="${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}"
+            mkdir -p "${OUTPUT_DIR}"
+            cd "${RELEASE_DIR}"
+            python3 tools/audit_option_archive_lifecycle.py \
+              --root "${AUDIT_CAPTURE_ROOT}" \
+              --policy config/option_variance_risk_premium_sequential_payoff_v2.json \
+              --manifest config/option_variance_risk_premium_sequential_payoff_manifest_v2.json \
+              --case config/option_archive_lifecycle_case_v1.json \
+              --executed-release-sha "${AUDIT_EXPECTED_SHA}" \
+              --output "${OUTPUT_DIR}/report.json"
+
+      - name: Download aggregate report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          umask 077
+          cat > .artifacts/ecs_key <<'EOF'
+          ${{ secrets.ECS_SSH_KEY }}
+          EOF
+          sed -i 's/\r$//' .artifacts/ecs_key
+          chmod 600 .artifacts/ecs_key
+          PORT="${{ secrets.ECS_PORT || 22 }}"
+          HOST="${{ secrets.ECS_HOST }}"
+          USER="${{ secrets.ECS_USER }}"
+          KNOWN_HOSTS_FILE=".artifacts/known_hosts"
+          if [[ -z "${HOST}" || -z "${USER}" ]] || \
+             ! ssh-keygen -y -f .artifacts/ecs_key >/dev/null 2>&1 || \
+             ! ssh-keyscan -p "${PORT}" -t ed25519,ecdsa,rsa "${HOST}" > "${KNOWN_HOSTS_FILE}" 2>/dev/null; then
+            rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+            exit 0
+          fi
+          REMOTE_REPORT="${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/report.json"
+          scp -i .artifacts/ecs_key -P "${PORT}" \
+            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+            -o StrictHostKeyChecking=yes \
+            "${USER}@${HOST}:${REMOTE_REPORT}" .artifacts/report.json
+          rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+
+      - name: Validate aggregate report
+        if: always()
+        env:
+          EXPECTED_SHA: ${{ env.AUDIT_EXPECTED_SHA }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(".artifacts/report.json")
+          if not path.is_file():
+              raise SystemExit("aggregate lifecycle report was not downloaded")
+          report = json.loads(path.read_text(encoding="utf-8"))
+          if report.get("schema_version") != "option_archive_lifecycle_audit_v1":
+              raise SystemExit("aggregate lifecycle report schema mismatch")
+          if report.get("identities", {}).get("executed_release_sha") != os.environ["EXPECTED_SHA"]:
+              raise SystemExit("aggregate lifecycle report release mismatch")
+          if report.get("decision") not in {
+              "PASS_ARCHIVE_LIFECYCLE_ONLY", "INSUFFICIENT_ARCHIVE_LIFECYCLE"
+          }:
+              raise SystemExit(f"aggregate lifecycle audit failed: {report.get('decision')}")
+          if report.get("economic_evidence") is not False:
+              raise SystemExit("aggregate lifecycle report overclaims economic evidence")
+          for field in (
+              "promotion_authority", "demo_activation_authorized", "live_activation_authorized"
+          ):
+              if report.get(field) is not False:
+                  raise SystemExit(f"aggregate lifecycle report grants forbidden authority: {field}")
+          forbidden = ("scoped_options", "ordered_inputs", "invalid_segments", ".jsonl.xz")
+          rendered = json.dumps(report, sort_keys=True)
+          if any(value in rendered for value in forbidden):
+              raise SystemExit("aggregate lifecycle report leaked raw archive detail")
+          print(json.dumps({
+              "decision": report["decision"],
+              "reason_code": report["reason_code"],
+              "coverage": report["lifecycle_coverage"],
+              "settlement": report["settlement"],
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload aggregate lifecycle report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: option-archive-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/report.json
+          if-no-files-found: warn
