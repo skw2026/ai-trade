@@ -15,12 +15,15 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 import audit_option_lifecycle_v3 as audit
+import audit_option_lifecycle_payoff_v3 as payoff
 import capture_bybit_option_lifecycle_v3 as capture
 import run_option_lifecycle_collector_v3 as runner
 
 
 POLICY_PATH = ROOT / "config/option_lifecycle_capture_v3.json"
 MANIFEST_PATH = ROOT / "config/option_lifecycle_capture_manifest_v3.json"
+PAYOFF_POLICY_PATH = ROOT / "config/option_lifecycle_payoff_v1.json"
+PAYOFF_MANIFEST_PATH = ROOT / "config/option_lifecycle_payoff_manifest_v1.json"
 
 
 def instrument(symbol: str, delivery: int, side: str) -> dict:
@@ -122,7 +125,7 @@ class OptionLifecycleV3Test(unittest.TestCase):
     def _snapshot(self, timestamp: int, lifecycle: dict, *, delivery: bool = False,
                   missing: bool = False) -> dict:
         tracked = [] if missing else [
-            {**contract, **ticker(contract["symbol"], delta="0.5" if contract["optionsType"] == "Call" else "-0.5"),
+            {**contract, **ticker(contract["symbol"], delta="0.5" if contract["optionsType"] == "Call" else "-0.4"),
              "observation_status": "OBSERVED"}
             for contract in lifecycle["contracts"]
         ]
@@ -239,6 +242,48 @@ class OptionLifecycleV3Test(unittest.TestCase):
             )
             self.assertEqual(report["decision"], "INVALID_OPTION_LIFECYCLE_ARCHIVE")
 
+    def test_payoff_waits_then_reconciles_without_profitability_claim(self):
+        delivery = self.start + 86400000
+        lifecycle = self.lifecycle(delivery)
+        timestamps = list(range(self.start, delivery + 1, 180000))
+        snapshots = [
+            self._snapshot(timestamp, lifecycle, delivery=timestamp == delivery)
+            for timestamp in timestamps
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            pending_root = pathlib.Path(temporary) / "pending" / capture.CAPTURE_ROOT_NAME
+            self._archive(pending_root, [[snapshots[0]], [snapshots[1]]])
+            pending = payoff.audit(
+                root=pending_root, capture_policy_path=POLICY_PATH,
+                capture_manifest_path=MANIFEST_PATH,
+                payoff_policy_path=PAYOFF_POLICY_PATH,
+                payoff_manifest_path=PAYOFF_MANIFEST_PATH,
+                generated_at_epoch_ms=self.start + 180000,
+            )
+            self.assertEqual(pending["decision"], "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF")
+            root = pathlib.Path(temporary) / "complete" / capture.CAPTURE_ROOT_NAME
+            self._archive(root, [snapshots[:240], snapshots[240:]])
+            report = payoff.audit(
+                root=root, capture_policy_path=POLICY_PATH,
+                capture_manifest_path=MANIFEST_PATH,
+                payoff_policy_path=PAYOFF_POLICY_PATH,
+                payoff_manifest_path=PAYOFF_MANIFEST_PATH,
+                generated_at_epoch_ms=delivery + 1000,
+            )
+            self.assertEqual(
+                report["decision"],
+                "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY",
+            )
+            self.assertFalse(report["profitability_evidence"])
+            self.assertTrue(report["controls"]["all_accounting_identities_pass"])
+            self.assertAlmostEqual(report["controls"]["long_short_gross_residual_usdt"], 0.0)
+            self.assertGreater(
+                next(row for row in report["actions"]
+                     if row["action_id"] == "short_selected_straddle")["hedge_trade_count"],
+                0,
+            )
+            self.assertNotIn("hedge_ledger", json.dumps(report))
+
     def test_runner_binds_state_and_frozen_contract(self):
         args = type("Args", (), {
             "poll_interval_sec": 60, "base_url": capture.BASE_URL,
@@ -253,6 +298,24 @@ class OptionLifecycleV3Test(unittest.TestCase):
         self.assertIn("tracking_state.json", rendered)
         self.assertIn(str(POLICY_PATH), rendered)
         self.assertIn(str(MANIFEST_PATH), rendered)
+
+    def test_hourly_gate_and_release_bundle_bind_frozen_payoff(self):
+        workflow = (ROOT / ".github/workflows/option-lifecycle-v3.yml").read_text(encoding="utf-8")
+        cd = (ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
+        for value in (
+            "17 * * * *", "audit_option_lifecycle_payoff_v3.py",
+            "option_lifecycle_payoff_v1.json", "option_lifecycle_payoff_manifest_v1.json",
+            "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF",
+            "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY",
+        ):
+            self.assertIn(value, workflow)
+        for value in (
+            "audit_option_lifecycle_payoff_v3.py",
+            "option_lifecycle_payoff_v1.json",
+            "option_lifecycle_payoff_manifest_v1.json",
+        ):
+            self.assertIn(value, cd)
+        self.assertNotIn("API_SECRET", workflow)
 
 
 if __name__ == "__main__":

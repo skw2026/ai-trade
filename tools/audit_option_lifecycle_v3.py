@@ -340,6 +340,7 @@ def audit(*, root: pathlib.Path, policy_path: pathlib.Path, manifest_path: pathl
     delivery_time = None
     segment_ids: set[str] = set()
     maximum_internal_gap = 0
+    pre_delivery_unqualified_count = 0
     if selected:
         lifecycle = selected[0]["active_lifecycle"]
         delivery_time = int(lifecycle["delivery_time_epoch_ms"])
@@ -357,6 +358,8 @@ def audit(*, root: pathlib.Path, policy_path: pathlib.Path, manifest_path: pathl
                 reasons[tracked_reason] += 1
             if hedge_reason:
                 reasons[hedge_reason] += 1
+            if timestamp <= delivery_time and (tracked_reason is not None or hedge_reason is not None):
+                pre_delivery_unqualified_count += 1
             if tracked_reason is None and hedge_reason is None and timestamp <= delivery_time:
                 qualified.append(timestamp)
             rows = snapshot["delivery_prices"]
@@ -372,6 +375,7 @@ def audit(*, root: pathlib.Path, policy_path: pathlib.Path, manifest_path: pathl
         replay["root_present"] and replay["valid_segment_count"] >= 2
         and replay["invalid_segment_count"] == 0 and selected and entry_valid
         and cross_segment and len(qualified) >= 2 and maximum_internal_gap <= maximum_gap_ms
+        and pre_delivery_unqualified_count == 0
     )
     if replay["invalid_segment_count"]:
         decision, reason_code = policy["lifecycle_gate"]["invalid_decision"], "ARCHIVE_INTEGRITY_FAILURE"
@@ -413,6 +417,7 @@ def audit(*, root: pathlib.Path, policy_path: pathlib.Path, manifest_path: pathl
             "lifecycle_id": lifecycle_id,
             "exact_pair_selected": bool(selected), "entry_executable": entry_valid,
             "selected_snapshot_count": len(selected), "qualified_snapshot_count": len(qualified),
+            "pre_delivery_unqualified_snapshot_count": pre_delivery_unqualified_count,
             "distinct_segment_count": len(segment_ids),
             "sticky_cross_segment_continuity": cross_segment,
             "maximum_internal_gap_seconds": maximum_internal_gap / 1000.0,

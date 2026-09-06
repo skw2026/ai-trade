@@ -1,0 +1,14 @@
+{
+  "schema_version": "option_lifecycle_payoff_manifest_v1",
+  "experiment_id": "btc_bybit_usdt_option_lifecycle_payoff_v1",
+  "policy_path": "config/option_lifecycle_payoff_v1.json",
+  "policy_canonical_sha256": "d1044514b6085936199a9ea3717c3234da2124e2466fa93aca43560919f36a62",
+  "capture_observation_start_epoch_ms": 1788695100000,
+  "payoff_freeze_epoch_ms": 1788703200000,
+  "payoff_freeze_utc": "2026-09-06T14:00:00Z",
+  "freeze_rule": "payoff actions, hedge cadence and costs are immutable before first tracked delivery",
+  "research_domain": "development_only",
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}

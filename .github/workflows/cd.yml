@@ -600,6 +600,9 @@ jobs:
               "${RELEASE_TMP}/tools/capture_bybit_option_lifecycle_v3.py" \
               "${RELEASE_TMP}/tools/run_option_lifecycle_collector_v3.py" \
               "${RELEASE_TMP}/tools/audit_option_lifecycle_v3.py" \
+              "${RELEASE_TMP}/config/option_lifecycle_payoff_v1.json" \
+              "${RELEASE_TMP}/config/option_lifecycle_payoff_manifest_v1.json" \
+              "${RELEASE_TMP}/tools/audit_option_lifecycle_payoff_v3.py" \
               "${RELEASE_TMP}/tools/audit_option_variance_risk_premium_feasibility.py" \
               "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff.json" \
               "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff_manifest.json" \
