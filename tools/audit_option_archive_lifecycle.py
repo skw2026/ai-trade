@@ -179,10 +179,10 @@ def _hedge_reason(snapshot: Mapping[str, Any], *, timestamp: int,
         return "HEDGE_CROSSED_BBO"
     if min(bid_size, ask_size) + 1e-12 < minimum_size:
         return "HEDGE_INSUFFICIENT_BBO_SIZE"
-    if book_time > timestamp:
-        return "HEDGE_BOOK_FROM_FUTURE"
     if timestamp - book_time > maximum_age_ms:
         return "HEDGE_BOOK_STALE"
+    if book_time - timestamp > maximum_age_ms:
+        return "HEDGE_BOOK_CLOCK_SKEW_EXCEEDS_BOUND"
     return None
 
 
@@ -234,6 +234,9 @@ def audit_lifecycle(*, root: pathlib.Path, policy_path: pathlib.Path,
     qualified_timestamps: list[int] = []
     pair_timestamps: list[int] = []
     hedge_qualified_count = 0
+    hedge_book_future_timestamp_count = 0
+    maximum_hedge_book_lead_ms = 0
+    maximum_absolute_hedge_book_skew_ms = 0
     lifecycle_snapshot_count = 0
     unqualified_snapshot_count = 0
     for snapshot in replay["snapshots"]:
@@ -267,6 +270,18 @@ def audit_lifecycle(*, root: pathlib.Path, policy_path: pathlib.Path,
             snapshot, timestamp=timestamp, minimum_size=hedge_minimum,
             maximum_age_ms=maximum_age_ms,
         )
+        book = snapshot.get("hedge_orderbook_l1")
+        if isinstance(book, Mapping):
+            try:
+                book_skew_ms = int(book.get("ts")) - timestamp
+            except (TypeError, ValueError):
+                pass
+            else:
+                hedge_book_future_timestamp_count += int(book_skew_ms > 0)
+                maximum_hedge_book_lead_ms = max(maximum_hedge_book_lead_ms, book_skew_ms)
+                maximum_absolute_hedge_book_skew_ms = max(
+                    maximum_absolute_hedge_book_skew_ms, abs(book_skew_ms)
+                )
         hedge_ok = hedge_reason is None
         if hedge_ok:
             hedge_qualified_count += 1
@@ -358,6 +373,11 @@ def audit_lifecycle(*, root: pathlib.Path, policy_path: pathlib.Path,
             "unqualified_snapshot_count": unqualified_snapshot_count,
             "paired_option_snapshot_count": len(pair_timestamps),
             "hedge_qualified_snapshot_count": hedge_qualified_count,
+            "hedge_book_future_timestamp_count": hedge_book_future_timestamp_count,
+            "maximum_hedge_book_lead_seconds": maximum_hedge_book_lead_ms / 1000.0,
+            "maximum_absolute_hedge_book_skew_seconds": (
+                maximum_absolute_hedge_book_skew_ms / 1000.0
+            ),
             "symbol_observation_counts": dict(sorted(symbol_observation_counts.items())),
             "first_qualified_epoch_ms": qualified_timestamps[0] if qualified_timestamps else None,
             "last_qualified_epoch_ms": qualified_timestamps[-1] if qualified_timestamps else None,

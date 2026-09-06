@@ -169,11 +169,13 @@ jobs:
               f"h{int(coverage['hedge_qualified_snapshot_count'])}",
               f"g{int(coverage['coverage_gap_count'])}",
               f"m{round(float(coverage['maximum_gap_seconds']))}",
+              f"l{coverage.get('last_pair_epoch_ms') or 0}",
+              f"t{round(float(coverage.get('last_pair_dte_days') or 0) * 86400)}",
               f"s{int(integrity['valid_segment_count'])}_{int(integrity['invalid_segment_count'])}",
               f"d{int(bool(report['settlement']['paired_delivery_evidence_valid']))}",
               f"r-{reason_index}",
           ))
-          suffix = suffix.replace("/", "_").replace("\\", "_")[:180]
+          suffix = suffix.replace("/", "_").replace("\\", "_")[:190]
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"artifact_suffix={suffix}\n")
           PY

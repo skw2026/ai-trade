@@ -67,7 +67,8 @@ class OptionArchiveLifecycleTest(unittest.TestCase):
         return rows
 
     def snapshot(self, timestamp, *, include_pair=True, bad_size=False,
-                 stale_hedge=False, delivery=False, delivery_time=None):
+                 stale_hedge=False, future_hedge_ms=0, delivery=False,
+                 delivery_time=None):
         delivery_time = self.end if delivery_time is None else delivery_time
         delivery_rows = []
         if delivery:
@@ -95,7 +96,7 @@ class OptionArchiveLifecycleTest(unittest.TestCase):
             "hedge_ticker": {"bid1Price": "77990", "ask1Price": "78010"},
             "hedge_orderbook_l1": {
                 "b": [["77990", "1"]], "a": [["78010", "1"]],
-                "ts": timestamp - (121000 if stale_hedge else 0),
+                "ts": timestamp - (121000 if stale_hedge else 0) + future_hedge_ms,
             },
         }
 
@@ -183,6 +184,26 @@ class OptionArchiveLifecycleTest(unittest.TestCase):
         reasons = report["lifecycle_coverage"]["reason_counts"]
         self.assertEqual(reasons["OPTION_INSUFFICIENT_BBO_SIZE"], 2)
         self.assertEqual(reasons["HEDGE_BOOK_STALE"], 1)
+
+    def test_exchange_book_after_poll_start_obeys_frozen_absolute_age_bound(self):
+        def within_bound(rows):
+            rows[0] = self.snapshot(self.start, future_hedge_ms=5000)
+            return rows
+        report, _ = self.run_audit(within_bound)
+        self.assertEqual(report["decision"], lifecycle.PASS_DECISION)
+        self.assertEqual(report["lifecycle_coverage"]["hedge_book_future_timestamp_count"], 1)
+        self.assertEqual(report["lifecycle_coverage"]["maximum_hedge_book_lead_seconds"], 5.0)
+
+        def outside_bound(rows):
+            rows[0] = self.snapshot(self.start, future_hedge_ms=121000)
+            return rows
+        report, _ = self.run_audit(outside_bound)
+        self.assertEqual(
+            report["lifecycle_coverage"]["reason_counts"][
+                "HEDGE_BOOK_CLOCK_SKEW_EXCEEDS_BOUND"
+            ],
+            1,
+        )
 
     def test_internal_and_edge_gaps_are_explicit(self):
         def mutate(rows):
