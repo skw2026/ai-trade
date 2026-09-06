@@ -223,6 +223,15 @@ class OptionArchiveLifecycleTest(unittest.TestCase):
         self.assertNotIn(".jsonl.xz", rendered)
         self.assertNotIn("invalid_segments", rendered)
 
+    def test_workflow_exposes_only_aggregate_index_without_authentication(self):
+        workflow = (ROOT / ".github" / "workflows" / "option-archive-lifecycle.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("artifact_suffix=", workflow)
+        self.assertIn("steps.validate.outputs.artifact_suffix", workflow)
+        self.assertIn("reason_counts", workflow)
+        self.assertNotIn("GITHUB_TOKEN", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -109,6 +109,7 @@ jobs:
 
       - name: Validate aggregate report
         if: always()
+        id: validate
         env:
           EXPECTED_SHA: ${{ env.AUDIT_EXPECTED_SHA }}
         shell: bash
@@ -148,12 +149,39 @@ jobs:
               "coverage": report["lifecycle_coverage"],
               "settlement": report["settlement"],
           }, indent=2, sort_keys=True))
+
+          coverage = report["lifecycle_coverage"]
+          integrity = report["archive_integrity"]
+          reasons = coverage.get("reason_counts", {})
+          reason_index = ".".join(
+              f"{key}_{int(value)}"
+              for key, value in sorted(
+                  reasons.items(), key=lambda item: (-int(item[1]), item[0])
+              )[:4]
+          ) or "NONE"
+          suffix = "--".join((
+              report["decision"],
+              report["reason_code"],
+              f"o{int(coverage['observed_snapshot_count'])}",
+              f"q{int(coverage['qualified_snapshot_count'])}",
+              f"u{int(coverage['unqualified_snapshot_count'])}",
+              f"p{int(coverage['paired_option_snapshot_count'])}",
+              f"h{int(coverage['hedge_qualified_snapshot_count'])}",
+              f"g{int(coverage['coverage_gap_count'])}",
+              f"m{round(float(coverage['maximum_gap_seconds']))}",
+              f"s{int(integrity['valid_segment_count'])}_{int(integrity['invalid_segment_count'])}",
+              f"d{int(bool(report['settlement']['paired_delivery_evidence_valid']))}",
+              f"r-{reason_index}",
+          ))
+          suffix = suffix.replace("/", "_").replace("\\", "_")[:180]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"artifact_suffix={suffix}\n")
           PY
 
       - name: Upload aggregate lifecycle report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: option-archive-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
+          name: option-archive-lifecycle-${{ steps.validate.outputs.artifact_suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/report.json
           if-no-files-found: warn
