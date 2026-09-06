@@ -1,0 +1,15 @@
+{
+  "schema_version": "option_lifecycle_capture_manifest_v1",
+  "experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v3",
+  "policy_path": "config/option_lifecycle_capture_v3.json",
+  "policy_canonical_sha256": "acdd24bdcc2657e170666da4146b41c14e0ea6cda9a5c18d97052ed8e2c30896",
+  "observation_start_epoch_ms": 1788695100000,
+  "observation_start_utc": "2026-09-06T11:45:00Z",
+  "freeze_rule": "only checksum-valid v3 XZ snapshots at or after observation_start are eligible",
+  "supersedes_capture_experiment_id": "btc_bybit_usdt_option_vrp_1d_sequential_payoff_v2",
+  "supersession_reason": "discovery DTE and moneyness filters did not retain selected contracts through delivery",
+  "research_domain": "development_only",
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}

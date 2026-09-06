@@ -1,0 +1,68 @@
+{
+  "schema_version": "option_lifecycle_capture_policy_v1",
+  "experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v3",
+  "research_domain": "development_only",
+  "capture_contract": {
+    "capture_schema_version": "bybit_btc_option_lifecycle_capture_v3",
+    "snapshot_schema_version": "bybit_btc_option_lifecycle_snapshot_v3",
+    "state_schema_version": "bybit_btc_option_lifecycle_state_v3",
+    "capture_root_name": "bybit_btc_option_lifecycle_v3",
+    "raw_codec": "xz_lzma_preset1",
+    "venue": "bybit",
+    "category": "option",
+    "base_coin": "BTC",
+    "quote_coin": "USDT",
+    "settle_coin": "USDT",
+    "hedge_category": "linear",
+    "hedge_symbol": "BTCUSDT",
+    "poll_interval_seconds": 60,
+    "minimum_retention_hours": 960,
+    "minimum_pressure_retention_hours": 864
+  },
+  "discovery_contract": {
+    "minimum_dte_days": 0.5,
+    "maximum_dte_days": 1.5,
+    "target_dte_days": 1.0,
+    "maximum_absolute_moneyness": 0.1,
+    "minimum_entry_bid_size_btc": 0.01,
+    "minimum_entry_ask_size_btc": 0.01,
+    "pair_rule": "complete_call_put_same_delivery_and_strike",
+    "ranking_rule": "minimum_abs_dte_to_target_then_abs_moneyness_then_delivery_then_strike",
+    "selection_role": "research_tracking_only_not_an_order"
+  },
+  "tracking_contract": {
+    "maximum_active_lifecycles": 1,
+    "sticky_until": "paired_delivery_evidence",
+    "ignore_discovery_dte_after_selection": true,
+    "ignore_discovery_moneyness_after_selection": true,
+    "record_missing_or_non_executable_ticker_without_imputation": true,
+    "maximum_completed_state_entries": 64
+  },
+  "timestamp_contract": {
+    "snapshot_timestamp": "poll_started_epoch_ms",
+    "preserve_poll_started_epoch_ms": true,
+    "preserve_snapshot_completed_epoch_ms": true,
+    "preserve_exchange_orderbook_epoch_ms": true,
+    "maximum_poll_latency_seconds": 120,
+    "maximum_absolute_hedge_book_skew_seconds": 120
+  },
+  "lifecycle_gate": {
+    "maximum_snapshot_gap_seconds": 180,
+    "maximum_terminal_gap_seconds": 180,
+    "minimum_option_entry_size_btc": 0.01,
+    "minimum_hedge_bbo_size_btc": 0.001,
+    "require_tracked_ticker_until_delivery": true,
+    "require_delta_and_index_until_delivery": true,
+    "require_paired_delivery_evidence": true,
+    "option_bbo_after_entry_role": "observed_quality_metric_not_exit_assumption",
+    "pass_decision": "PASS_FIRST_COMPLETE_LIFECYCLE_FOR_PAYOFF_RECONSTRUCTION_ONLY",
+    "wait_decision": "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE",
+    "insufficient_decision": "INSUFFICIENT_FIRST_COMPLETE_LIFECYCLE",
+    "invalid_decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE"
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

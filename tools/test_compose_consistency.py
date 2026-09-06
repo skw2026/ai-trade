@@ -408,15 +408,18 @@ class ComposeConsistencyTest(unittest.TestCase):
     def test_option_vrp_collector_is_public_persistent_and_health_checked(self):
         for services in (self.dev_services, self.prod_services):
             collector = services["option-vrp-collector"]
-            self.assertIn("run_option_vrp_collector.py", collector)
+            self.assertIn("run_option_lifecycle_collector_v3.py", collector)
             self.assertIn("restart: unless-stopped", collector)
             self.assertIn("healthcheck", collector)
-            self.assertIn("bybit_btc_option_vrp_v2", collector)
-            self.assertIn("OPTION_VRP_V2_RETENTION_HOURS:-960", collector)
+            self.assertIn("bybit_btc_option_lifecycle_v3", collector)
+            self.assertIn("option_lifecycle_capture_v3.json", collector)
+            self.assertIn("option_lifecycle_capture_manifest_v3.json", collector)
+            self.assertIn("OPTION_LIFECYCLE_V3_RETENTION_HOURS:-960", collector)
             self.assertIn("OPTION_VRP_BOOTSTRAP_SEGMENT_DURATION_SEC:-65", collector)
             self.assertIn("OPTION_VRP_SEGMENT_DURATION_SEC:-905", collector)
             self.assertIn("OPTION_VRP_POLL_INTERVAL_SEC:-60", collector)
             self.assertNotIn("OPTION_VRP_RETENTION_HOURS:-240", collector)
+            self.assertNotIn("bybit_btc_option_vrp_v2", collector)
             self.assertNotIn("API_KEY", collector)
             self.assertNotIn("API_SECRET", collector)
         self.assertIn(
@@ -1823,6 +1826,8 @@ class ComposeConsistencyTest(unittest.TestCase):
             "DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS",
             "DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS",
             "DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS",
+            "DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS",
+            "DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS",
             "DEPLOY_LOCK_WAIT_SECONDS",
         ):
             with self.subTest(workflow_variable=variable):
@@ -1867,6 +1872,14 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             "DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS || '864' }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS || '960' }}",
+            workflow,
+        )
+        self.assertIn(
+            "DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS: ${{ vars.DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS || '864' }}",
             workflow,
         )
         self.assertIn('--max-run-bytes "${DEPLOY_REPORT_MAX_BYTES}"', script)
@@ -2186,9 +2199,10 @@ ensure_deploy_post_pull_capacity
             self.assertIn("--expected-root-name\nbybit_sol_liquidations\n", capture_args)
             self.assertIn("--expected-root-name\nbybit_btc_option_vrp\n", capture_args)
             self.assertIn("--expected-root-name\nbybit_btc_option_vrp_v2\n", capture_args)
+            self.assertIn("--expected-root-name\nbybit_btc_option_lifecycle_v3\n", capture_args)
             self.assertEqual(capture_args.count("--retention-hours\n35\n"), 2)
             self.assertEqual(capture_args.count("--retention-hours\n193\n"), 1)
-            self.assertEqual(capture_args.count("--retention-hours\n864\n"), 1)
+            self.assertEqual(capture_args.count("--retention-hours\n864\n"), 2)
 
             pathlib.Path(base_env["FAKE_DF_COUNT"]).unlink()
             base_env["FAKE_FREE_AFTER_KIB"] = "20000"

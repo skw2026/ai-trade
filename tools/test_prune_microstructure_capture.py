@@ -76,7 +76,8 @@ class CaptureRetentionTest(unittest.TestCase):
         return raw, source_feature, source_report, upgraded_feature, upgraded_report
 
     def write_option_vrp_xz_segment(
-        self, root: pathlib.Path, segment_id: str, *, mtime: float
+        self, root: pathlib.Path, segment_id: str, *, mtime: float,
+        schema_version: str = "bybit_btc_option_vrp_capture_v2",
     ) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
         raw = root / "raw" / "BTC" / f"{segment_id}.jsonl.xz"
         features = root / "features" / "BTC" / f"{segment_id}.csv"
@@ -86,7 +87,7 @@ class CaptureRetentionTest(unittest.TestCase):
         raw.write_bytes(b"xz")
         features.write_bytes(b"features")
         report.write_text(json.dumps({
-            "schema_version": "bybit_btc_option_vrp_capture_v2",
+            "schema_version": schema_version,
             "raw_codec": "xz_lzma_preset1", "status": "PASS",
             "raw": {"path": f"raw/BTC/{raw.name}"},
             "features": {"path": f"features/BTC/{features.name}"},
@@ -125,6 +126,21 @@ class CaptureRetentionTest(unittest.TestCase):
             report = retention.prune_capture_root(
                 root, retention_seconds=500, now_epoch=1000,
                 expected_root_name="bybit_btc_option_vrp_v2",
+            )
+            self.assertEqual(report["segments_removed"], 1)
+            self.assertEqual(report["segments_skipped"], [])
+            self.assertTrue(all(not path.exists() for path in segment))
+
+    def test_removes_expired_option_lifecycle_v3_xz_bundle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp) / "bybit_btc_option_lifecycle_v3"
+            segment = self.write_option_vrp_xz_segment(
+                root, "old", mtime=100,
+                schema_version="bybit_btc_option_lifecycle_capture_v3",
+            )
+            report = retention.prune_capture_root(
+                root, retention_seconds=500, now_epoch=1000,
+                expected_root_name="bybit_btc_option_lifecycle_v3",
             )
             self.assertEqual(report["segments_removed"], 1)
             self.assertEqual(report["segments_skipped"], [])
