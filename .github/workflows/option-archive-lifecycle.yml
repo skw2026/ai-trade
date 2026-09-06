@@ -2,6 +2,11 @@ name: Option Archive Lifecycle Audit
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/option-archive-lifecycle.yml
   workflow_run:
     workflows:
       - CD
@@ -12,18 +17,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: option-archive-lifecycle-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+  group: option-archive-lifecycle-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || (github.event_name == 'push' && github.event.before || github.sha) }}
   cancel-in-progress: false
 
 jobs:
   audit:
     runs-on: ubuntu-latest
     if: >-
-      ${{ github.event_name == 'workflow_dispatch' ||
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' ||
           github.event.workflow_run.conclusion == 'success' }}
     timeout-minutes: 30
     env:
-      AUDIT_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      # A workflow-only push audits the still-deployed parent release immediately;
+      # workflow_run audits the exact revision whose CD just completed.
+      AUDIT_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || (github.event_name == 'push' && github.event.before || github.sha) }}
       AUDIT_RUN_ID: option-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
       AUDIT_CAPTURE_ROOT: /opt/ai-trade/data/research/bybit_btc_option_vrp_v2
       AUDIT_OUTPUT_ROOT: /opt/ai-trade/data/reports/option_archive_lifecycle
@@ -59,24 +66,64 @@ jobs:
             set -euo pipefail
             export PYTHONDONTWRITEBYTECODE=1
             DEPLOY_ROOT="/opt/ai-trade"
-            RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"
-            if [[ -z "${RELEASE_DIR}" ||
-                  "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/${AUDIT_EXPECTED_SHA}" ]]; then
-              echo "option archive audit release mismatch: ${RELEASE_DIR:-<missing>}" >&2
-              exit 1
-            fi
-            python3 "${RELEASE_DIR}/deploy/release_integrity.py" \
-              --release-dir "${RELEASE_DIR}"
             OUTPUT_DIR="${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}"
             mkdir -p "${OUTPUT_DIR}"
-            cd "${RELEASE_DIR}"
-            python3 tools/audit_option_archive_lifecycle.py \
-              --root "${AUDIT_CAPTURE_ROOT}" \
-              --policy config/option_variance_risk_premium_sequential_payoff_v2.json \
-              --manifest config/option_variance_risk_premium_sequential_payoff_manifest_v2.json \
-              --case config/option_archive_lifecycle_case_v1.json \
-              --executed-release-sha "${AUDIT_EXPECTED_SHA}" \
-              --output "${OUTPUT_DIR}/report.json"
+            REPORT_PATH="${OUTPUT_DIR}/report.json"
+            audit_status=0
+            (
+              RELEASE_DIR="$(readlink -f "${DEPLOY_ROOT}/current")"
+              if [[ -z "${RELEASE_DIR}" ||
+                    "${RELEASE_DIR}" != "${DEPLOY_ROOT}/releases/${AUDIT_EXPECTED_SHA}" ]]; then
+                echo "option archive audit release mismatch: ${RELEASE_DIR:-<missing>}" >&2
+                exit 1
+              fi
+              python3 "${RELEASE_DIR}/deploy/release_integrity.py" \
+                --release-dir "${RELEASE_DIR}"
+              cd "${RELEASE_DIR}"
+              python3 tools/audit_option_archive_lifecycle.py \
+                --root "${AUDIT_CAPTURE_ROOT}" \
+                --policy config/option_variance_risk_premium_sequential_payoff_v2.json \
+                --manifest config/option_variance_risk_premium_sequential_payoff_manifest_v2.json \
+                --case config/option_archive_lifecycle_case_v1.json \
+                --executed-release-sha "${AUDIT_EXPECTED_SHA}" \
+                --output "${REPORT_PATH}"
+            ) || audit_status=$?
+            if (( audit_status != 0 )) && [[ ! -s "${REPORT_PATH}" ]]; then
+              AUDIT_FAILURE_STATUS="${audit_status}" python3 - "${REPORT_PATH}" "${AUDIT_EXPECTED_SHA}" <<'PY'
+            import json
+            import os
+            import sys
+            from pathlib import Path
+
+            report = {
+                "schema_version": "option_archive_lifecycle_audit_v1",
+                "identities": {"executed_release_sha": sys.argv[2]},
+                "archive_integrity": {
+                    "root_present": False, "valid_segment_count": 0,
+                    "invalid_segment_count": 0, "eligible_snapshot_count_all_time": 0,
+                    "duplicate_snapshot_count": 0, "checksum_bound_seconds_all_time": 0,
+                },
+                "lifecycle_coverage": {
+                    "observed_snapshot_count": 0, "qualified_snapshot_count": 0,
+                    "unqualified_snapshot_count": 0, "paired_option_snapshot_count": 0,
+                    "hedge_qualified_snapshot_count": 0, "coverage_gap_count": 0,
+                    "maximum_gap_seconds": 0, "last_pair_epoch_ms": None,
+                    "last_pair_dte_days": None,
+                    "reason_counts": {"REMOTE_AUDIT_COMMAND_FAILED": 1},
+                },
+                "settlement": {"paired_delivery_evidence_valid": False},
+                "decision": "TECHNICALLY_INVALID_ARCHIVE",
+                "reason_code": "REMOTE_AUDIT_COMMAND_FAILED",
+                "remote_exit_status": int(os.environ["AUDIT_FAILURE_STATUS"]),
+                "economic_evidence": False, "promotion_authority": False,
+                "demo_activation_authorized": False, "live_activation_authorized": False,
+            }
+            Path(sys.argv[1]).write_text(
+                json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            PY
+            fi
+            exit "${audit_status}"
 
       - name: Download aggregate report
         if: always()
@@ -101,11 +148,20 @@ jobs:
             exit 0
           fi
           REMOTE_REPORT="${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/report.json"
-          scp -i .artifacts/ecs_key -P "${PORT}" \
-            -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
-            -o StrictHostKeyChecking=yes \
-            "${USER}@${HOST}:${REMOTE_REPORT}" .artifacts/report.json
+          download_status=1
+          for attempt in 1 2 3; do
+            if scp -i .artifacts/ecs_key -P "${PORT}" \
+              -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
+              -o StrictHostKeyChecking=yes \
+              "${USER}@${HOST}:${REMOTE_REPORT}" .artifacts/report.json; then
+              download_status=0
+              break
+            fi
+            echo "aggregate report download attempt ${attempt} failed" >&2
+            sleep 10
+          done
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
+          exit "${download_status}"
 
       - name: Validate aggregate report
         if: always()
@@ -128,10 +184,9 @@ jobs:
               raise SystemExit("aggregate lifecycle report schema mismatch")
           if report.get("identities", {}).get("executed_release_sha") != os.environ["EXPECTED_SHA"]:
               raise SystemExit("aggregate lifecycle report release mismatch")
-          if report.get("decision") not in {
+          accepted_decision = report.get("decision") in {
               "PASS_ARCHIVE_LIFECYCLE_ONLY", "INSUFFICIENT_ARCHIVE_LIFECYCLE"
-          }:
-              raise SystemExit(f"aggregate lifecycle audit failed: {report.get('decision')}")
+          }
           if report.get("economic_evidence") is not False:
               raise SystemExit("aggregate lifecycle report overclaims economic evidence")
           for field in (
@@ -178,6 +233,8 @@ jobs:
           suffix = suffix.replace("/", "_").replace("\\", "_")[:190]
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"artifact_suffix={suffix}\n")
+          if not accepted_decision:
+              raise SystemExit(f"aggregate lifecycle audit failed: {report.get('decision')}")
           PY
 
       - name: Upload aggregate lifecycle report

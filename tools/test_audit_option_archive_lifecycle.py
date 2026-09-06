@@ -251,6 +251,9 @@ class OptionArchiveLifecycleTest(unittest.TestCase):
         self.assertIn("artifact_suffix=", workflow)
         self.assertIn("steps.validate.outputs.artifact_suffix", workflow)
         self.assertIn("reason_counts", workflow)
+        self.assertIn("github.event.before", workflow)
+        self.assertIn("REMOTE_AUDIT_COMMAND_FAILED", workflow)
+        self.assertIn("for attempt in 1 2 3", workflow)
         self.assertNotIn("GITHUB_TOKEN", workflow)
 
 
