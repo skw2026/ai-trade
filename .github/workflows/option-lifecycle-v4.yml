@@ -127,21 +127,85 @@ jobs:
             rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
             exit 0
           fi
-          download_status=1
+          report_downloaded=false
           for attempt in 1 2 3; do
             if scp -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
-              "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/report.json" .artifacts/report.json && \
-               scp -i .artifacts/ecs_key -P "${PORT}" \
+              "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/report.json" .artifacts/report.json; then
+              report_downloaded=true
+              break
+            fi
+            sleep 10
+          done
+          payoff_downloaded=false
+          for attempt in 1 2 3; do
+            if scp -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
               "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/payoff.json" .artifacts/payoff.json; then
-              download_status=0
+              payoff_downloaded=true
               break
             fi
             sleep 10
           done
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
-          exit "${download_status}"
+          echo "report_downloaded=${report_downloaded} payoff_downloaded=${payoff_downloaded}"
+          [[ "${report_downloaded}" == "true" ]]
+
+      - name: Summarize aggregate audit diagnostics
+        if: always()
+        id: diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          def token(value, fallback):
+              rendered = str(value or fallback).upper()
+              return rendered if re.fullmatch(r"[A-Z0-9_]+", rendered) else fallback
+
+          report_path = Path(".artifacts/report.json")
+          payoff_path = Path(".artifacts/payoff.json")
+          suffix = "NO_REPORT"
+          if report_path.is_file():
+              try:
+                  report = json.loads(report_path.read_text(encoding="utf-8"))
+                  if report.get("schema_version") != "option_lifecycle_audit_v4":
+                      suffix = "LIFECYCLE_SCHEMA_MISMATCH"
+                  else:
+                      integrity = report.get("archive_integrity", {})
+                      gate = report.get("startup_gate", {})
+                      lifecycle = report.get("lifecycle_gate", {})
+                      payoff_decision = "NO_PAYOFF"
+                      if payoff_path.is_file():
+                          try:
+                              payoff = json.loads(payoff_path.read_text(encoding="utf-8"))
+                              if payoff.get("schema_version") == "option_lifecycle_payoff_audit_v2":
+                                  payoff_decision = token(payoff.get("decision"), "PAYOFF_DECISION_UNKNOWN")
+                              else:
+                                  payoff_decision = "PAYOFF_SCHEMA_MISMATCH"
+                          except (OSError, json.JSONDecodeError):
+                              payoff_decision = "PAYOFF_UNREADABLE"
+                      suffix = "--".join((
+                          token(report.get("decision"), "DECISION_UNKNOWN"),
+                          token(gate.get("status"), "STATUS_UNKNOWN"),
+                          f"s{int(integrity.get('valid_segment_count') or 0)}_{int(integrity.get('invalid_segment_count') or 0)}",
+                          f"n{int(integrity.get('checksum_bound_snapshot_count') or 0)}",
+                          f"x{int(gate.get('distinct_segment_count') or 0)}",
+                          f"q{int(gate.get('qualified_snapshot_count') or 0)}",
+                          f"d{int(bool(lifecycle.get('paired_delivery_evidence_valid')))}",
+                          token(report.get("reason_code"), "REASON_UNKNOWN"),
+                          payoff_decision,
+                      ))[:190]
+              except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                  suffix = "LIFECYCLE_REPORT_UNREADABLE"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"artifact_suffix={suffix}\n")
+          print(suffix)
+          PY
 
       - name: Validate aggregate audit report
         if: always()
@@ -220,7 +284,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: option-lifecycle-v4-${{ steps.validate.outputs.artifact_suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: option-lifecycle-v4-${{ steps.diagnostics.outputs.artifact_suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .artifacts/report.json
             .artifacts/payoff.json

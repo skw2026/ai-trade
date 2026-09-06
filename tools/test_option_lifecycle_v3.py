@@ -372,6 +372,9 @@ class OptionLifecycleV3Test(unittest.TestCase):
         self.assertIn("AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '40' || '1' }}", workflow)
         self.assertIn("timeout-minutes: 50", workflow)
         self.assertIn("command_timeout: 45m", workflow)
+        self.assertIn("Summarize aggregate audit diagnostics", workflow)
+        self.assertIn("steps.diagnostics.outputs.artifact_suffix", workflow)
+        self.assertIn("report_downloaded=${report_downloaded} payoff_downloaded=${payoff_downloaded}", workflow)
         for value in (
             "audit_option_lifecycle_payoff_v3.py",
             "option_lifecycle_payoff_v1.json",
