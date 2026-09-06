@@ -24,6 +24,8 @@ POLICY_SCHEMA_VERSION = "option_lifecycle_payoff_policy_v1"
 MANIFEST_SCHEMA_VERSION = "option_lifecycle_payoff_manifest_v1"
 FROZEN_POLICY_CANONICAL_SHA256 = "d1044514b6085936199a9ea3717c3234da2124e2466fa93aca43560919f36a62"
 FROZEN_MANIFEST_CANONICAL_SHA256 = "9a8f6917a81ca2de3a0738a25d3a9929c1cfcf3a26de7f31b5ad2faba5eb403f"
+PAYOFF_POLICY_RELATIVE_PATH = "config/option_lifecycle_payoff_v1.json"
+SOURCE_EXPERIMENT_ID = "btc_bybit_usdt_option_lifecycle_capture_v3"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
@@ -57,11 +59,11 @@ def load_contract(policy_path: pathlib.Path, manifest_path: pathlib.Path
     if manifest.get("policy_canonical_sha256") != policy_sha:
         raise ValueError("payoff manifest policy identity mismatch")
     if (manifest.get("experiment_id") != policy.get("experiment_id")
-            or manifest.get("policy_path") != "config/option_lifecycle_payoff_v1.json"):
+            or manifest.get("policy_path") != PAYOFF_POLICY_RELATIVE_PATH):
         raise ValueError("payoff experiment identity mismatch")
     source = policy.get("source_contract", {})
     expected_source = {
-        "experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v3",
+        "experiment_id": SOURCE_EXPERIMENT_ID,
         "capture_schema_version": capture.SCHEMA_VERSION,
         "snapshot_schema_version": capture.SNAPSHOT_SCHEMA_VERSION,
         "capture_root_name": capture.CAPTURE_ROOT_NAME,

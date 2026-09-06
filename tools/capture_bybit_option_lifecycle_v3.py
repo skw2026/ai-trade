@@ -11,6 +11,7 @@ import lzma
 import math
 import os
 import pathlib
+import signal
 import tempfile
 import time
 import urllib.error
@@ -28,6 +29,7 @@ CAPTURE_ROOT_NAME = "bybit_btc_option_lifecycle_v3"
 RAW_CODEC = "xz_lzma_preset1"
 FROZEN_POLICY_CANONICAL_SHA256 = "acdd24bdcc2657e170666da4146b41c14e0ea6cda9a5c18d97052ed8e2c30896"
 FROZEN_MANIFEST_CANONICAL_SHA256 = "9573f45d5b13d873675ad5fc7798c5fcf33fc20d7d515727ee6eaa374ef8bc81"
+POLICY_RELATIVE_PATH = "config/option_lifecycle_capture_v3.json"
 BASE_URL = v2.BASE_URL
 BASE_COIN = "BTC"
 QUOTE_COIN = "USDT"
@@ -39,6 +41,12 @@ OUTPUT_FIELDS = (
     "tracked_two_sided_count", "tracked_entry_executable_count",
     "paired_delivery_evidence_count", "hedge_bid", "hedge_ask",
 )
+_TERMINATION_REQUESTED = False
+
+
+def _request_termination(_signum: int, _frame: Any) -> None:
+    global _TERMINATION_REQUESTED
+    _TERMINATION_REQUESTED = True
 
 
 def canonical_sha256(payload: Any) -> str:
@@ -107,7 +115,7 @@ def load_contract(policy_path: pathlib.Path, manifest_path: pathlib.Path) -> tup
     if canonical_sha256(manifest) != FROZEN_MANIFEST_CANONICAL_SHA256:
         raise ValueError("v3 lifecycle frozen manifest identity mismatch")
     if (manifest.get("experiment_id") != policy.get("experiment_id")
-            or manifest.get("policy_path") != "config/option_lifecycle_capture_v3.json"):
+            or manifest.get("policy_path") != POLICY_RELATIVE_PATH):
         raise ValueError("v3 lifecycle experiment identity mismatch")
     capture = policy.get("capture_contract", {})
     expected = {
@@ -358,6 +366,7 @@ def capture_live(*, raw_output: pathlib.Path, state: Dict[str, Any], policy: Map
                  clock: Callable[[], float] = time.time,
                  monotonic: Callable[[], float] = time.monotonic,
                  sleeper: Callable[[float], None] = time.sleep,
+                 stop_requested: Callable[[], bool] | None = None,
                  ) -> tuple[list[Dict[str, Any]], int, int, str, Dict[str, Any]]:
     raw_output.parent.mkdir(parents=True, exist_ok=True)
     if raw_output.suffix != ".xz":
@@ -367,6 +376,7 @@ def capture_live(*, raw_output: pathlib.Path, state: Dict[str, Any], policy: Map
     termination_reason = "duration_complete"
     deadline = monotonic() + duration_sec
     observation_start = int(manifest["observation_start_epoch_ms"])
+    should_stop = stop_requested or (lambda: _TERMINATION_REQUESTED)
     policy_sha, manifest_sha = canonical_sha256(policy), canonical_sha256(manifest)
     with lzma.open(raw_output, "wt", encoding="utf-8", preset=1) as handle:
         while True:
@@ -475,10 +485,20 @@ def capture_live(*, raw_output: pathlib.Path, state: Dict[str, Any], policy: Map
                 state["completed_lifecycles"] = history[-keep:]
                 state["active_lifecycle"] = None
                 state["revision"] = int(state.get("revision") or 0) + 1
+            if should_stop():
+                termination_reason = "termination_requested"
+                break
             remaining = deadline - monotonic()
             if remaining <= 0:
                 break
-            sleeper(min(poll_interval_sec, remaining))
+            sleep_remaining = min(poll_interval_sec, remaining)
+            while sleep_remaining > 0.0 and not should_stop():
+                step = min(1.0, sleep_remaining)
+                sleeper(step)
+                sleep_remaining -= step
+            if should_stop():
+                termination_reason = "termination_requested"
+                break
     return features, started, completed, termination_reason, state
 
 
@@ -546,6 +566,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    global _TERMINATION_REQUESTED
+    _TERMINATION_REQUESTED = False
+    signal.signal(signal.SIGTERM, _request_termination)
+    signal.signal(signal.SIGINT, _request_termination)
     args = parse_args()
     if args.duration_sec < 0 or args.poll_interval_sec <= 0:
         raise ValueError("v3 lifecycle capture durations are invalid")

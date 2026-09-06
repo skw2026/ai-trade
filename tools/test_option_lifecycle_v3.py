@@ -7,6 +7,8 @@ import csv
 import json
 import lzma
 import pathlib
+import signal
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -299,12 +301,70 @@ class OptionLifecycleV3Test(unittest.TestCase):
         self.assertIn(str(POLICY_PATH), rendered)
         self.assertIn(str(MANIFEST_PATH), rendered)
 
+    def test_termination_request_seals_successful_partial_poll(self):
+        delivery = self.start + 86400000
+        call, put, _, _ = self.pair(delivery)
+
+        def fetcher(path, params, *, base_url):
+            del base_url
+            if path.endswith("instruments-info"):
+                rows = [instrument(call, delivery, "Call"), instrument(put, delivery, "Put")]
+            elif path.endswith("delivery-price"):
+                rows = []
+            elif path.endswith("orderbook"):
+                return {"result": {"ts": self.start, "b": [["79999", "1"]], "a": [["80001", "1"]]}}
+            elif params["category"] == "option":
+                rows = [ticker(call), ticker(put, delta="-0.4")]
+            else:
+                rows = [{"symbol": "BTCUSDT", "bid1Price": "79999", "ask1Price": "80001"}]
+            return {"result": {"list": rows}}
+
+        clock_values = iter([self.start / 1000.0, (self.start + 1000) / 1000.0])
+        with tempfile.TemporaryDirectory() as temporary:
+            raw = pathlib.Path(temporary) / "partial.jsonl.xz"
+            features, started, completed, reason, _ = capture.capture_live(
+                raw_output=raw,
+                state=capture.initial_state(policy=self.policy, manifest=self.manifest),
+                policy=self.policy, manifest=self.manifest, duration_sec=905,
+                poll_interval_sec=60, base_url="https://public.invalid",
+                fetcher=fetcher, clock=lambda: next(clock_values),
+                monotonic=lambda: 0.0, sleeper=lambda _: None,
+                stop_requested=lambda: True,
+            )
+            self.assertEqual((started, completed), (self.start, self.start))
+            self.assertEqual(reason, "termination_requested")
+            self.assertEqual(len(features), 1)
+            with lzma.open(raw, "rt", encoding="utf-8") as handle:
+                self.assertEqual(len(handle.readlines()), 1)
+
+    def test_runner_forwards_shutdown_to_active_capture(self):
+        class Process:
+            signals = []
+
+            @staticmethod
+            def poll():
+                return None
+
+            @classmethod
+            def send_signal(cls, signum):
+                cls.signals.append(signum)
+
+        runner._SHUTDOWN_REQUESTED = False
+        runner._ACTIVE_PROCESS = Process()
+        try:
+            runner._request_shutdown(signal.SIGTERM, None)
+            self.assertTrue(runner._SHUTDOWN_REQUESTED)
+            self.assertEqual(Process.signals, [signal.SIGTERM])
+        finally:
+            runner._ACTIVE_PROCESS = None
+            runner._SHUTDOWN_REQUESTED = False
+
     def test_hourly_gate_and_release_bundle_bind_frozen_payoff(self):
-        workflow = (ROOT / ".github/workflows/option-lifecycle-v3.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/option-lifecycle-v4.yml").read_text(encoding="utf-8")
         cd = (ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
         for value in (
-            "17 * * * *", "audit_option_lifecycle_payoff_v3.py",
-            "option_lifecycle_payoff_v1.json", "option_lifecycle_payoff_manifest_v1.json",
+            "17 * * * *", "audit_option_lifecycle_payoff_v4.py",
+            "option_lifecycle_payoff_v2.json", "option_lifecycle_payoff_manifest_v2.json",
             "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF",
             "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY",
         ):
@@ -313,9 +373,34 @@ class OptionLifecycleV3Test(unittest.TestCase):
             "audit_option_lifecycle_payoff_v3.py",
             "option_lifecycle_payoff_v1.json",
             "option_lifecycle_payoff_manifest_v1.json",
+            "audit_option_lifecycle_payoff_v4.py",
+            "option_lifecycle_payoff_v2.json",
+            "option_lifecycle_payoff_manifest_v2.json",
+            "capture_bybit_option_lifecycle_v4.py",
+            "run_option_lifecycle_collector_v4.py",
+            "audit_option_lifecycle_v4.py",
         ):
             self.assertIn(value, cd)
         self.assertNotIn("API_SECRET", workflow)
+
+    def test_v4_wrappers_load_frozen_contracts_and_wait_without_archive(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temp = pathlib.Path(temporary)
+            output = temp / "payoff.json"
+            root = temp / "bybit_btc_option_lifecycle_v4"
+            result = subprocess.run([
+                sys.executable, str(ROOT / "tools/audit_option_lifecycle_payoff_v4.py"),
+                "--root", str(root),
+                "--capture-policy", str(ROOT / "config/option_lifecycle_capture_v4.json"),
+                "--capture-manifest", str(ROOT / "config/option_lifecycle_capture_manifest_v4.json"),
+                "--payoff-policy", str(ROOT / "config/option_lifecycle_payoff_v2.json"),
+                "--payoff-manifest", str(ROOT / "config/option_lifecycle_payoff_manifest_v2.json"),
+                "--output", str(output),
+            ], cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(report["schema_version"], "option_lifecycle_payoff_audit_v2")
+            self.assertEqual(report["decision"], "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF")
 
 
 if __name__ == "__main__":

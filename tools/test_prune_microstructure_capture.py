@@ -146,6 +146,21 @@ class CaptureRetentionTest(unittest.TestCase):
             self.assertEqual(report["segments_skipped"], [])
             self.assertTrue(all(not path.exists() for path in segment))
 
+    def test_removes_expired_option_lifecycle_v4_xz_bundle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp) / "bybit_btc_option_lifecycle_v4"
+            segment = self.write_option_vrp_xz_segment(
+                root, "old", mtime=100,
+                schema_version="bybit_btc_option_lifecycle_capture_v4",
+            )
+            report = retention.prune_capture_root(
+                root, retention_seconds=500, now_epoch=1000,
+                expected_root_name="bybit_btc_option_lifecycle_v4",
+            )
+            self.assertEqual(report["segments_removed"], 1)
+            self.assertEqual(report["segments_skipped"], [])
+            self.assertTrue(all(not path.exists() for path in segment))
+
     def test_rejects_root_name_drift_without_deleting(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp) / "wrong"

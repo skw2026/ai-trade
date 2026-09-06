@@ -1,0 +1,87 @@
+{
+  "schema_version": "option_lifecycle_payoff_policy_v1",
+  "experiment_id": "btc_bybit_usdt_option_lifecycle_payoff_v2",
+  "research_domain": "development_only",
+  "source_contract": {
+    "experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v4",
+    "capture_schema_version": "bybit_btc_option_lifecycle_capture_v4",
+    "snapshot_schema_version": "bybit_btc_option_lifecycle_snapshot_v4",
+    "capture_root_name": "bybit_btc_option_lifecycle_v4",
+    "capture_policy_canonical_sha256": "3057e78a46208d72ec4990ea9604744f0ed211e90b3c5f407a1132ee0927d253",
+    "capture_manifest_canonical_sha256": "ea77d54faa383ad5b5f21c520d2d90ecf8ea8b304af8be316f55602d16e20036",
+    "lifecycle_rule": "first_checksum_valid_deployment_safe_sticky_lifecycle_only"
+  },
+  "actions": [
+    {
+      "action_id": "no_trade",
+      "position_side": "flat",
+      "quantity_btc_per_leg": 0.0,
+      "role": "required_control"
+    },
+    {
+      "action_id": "short_selected_straddle",
+      "position_side": "short",
+      "quantity_btc_per_leg": 0.01,
+      "role": "primary_vrp_diagnostic"
+    },
+    {
+      "action_id": "long_selected_straddle",
+      "position_side": "long",
+      "quantity_btc_per_leg": 0.01,
+      "role": "sign_control"
+    }
+  ],
+  "entry_contract": {
+    "timestamp_rule": "lifecycle_selected_epoch_ms",
+    "pair_rule": "exact_sticky_call_put_pair",
+    "long_entry_price": "ask",
+    "short_entry_price": "bid",
+    "minimum_executable_size_btc": 0.01
+  },
+  "hedge_contract": {
+    "symbol": "BTCUSDT",
+    "rebalance_interval_seconds": 3600,
+    "first_rebalance_at_entry": true,
+    "rebalance_through_delivery": true,
+    "minimum_trade_quantity_btc": 0.001,
+    "quantity_step_btc": 0.001,
+    "rounding_rule": "nearest_quantity_step_half_away_from_zero",
+    "target_formula": "-signed_option_quantity_btc*(call_delta+put_delta)",
+    "buy_price": "ask",
+    "sell_price": "bid",
+    "close_residual_at_last_qualified_snapshot_before_delivery": true
+  },
+  "cost_contract": {
+    "option_taker_fee_rate": 0.0003,
+    "option_fee_cap_fraction": 0.07,
+    "linear_taker_fee_rate": 0.00055,
+    "delivery_fee_rate": 0.00015,
+    "delivery_fee_cap_fraction_of_intrinsic": 0.125,
+    "daily_option_delivery_fee_treatment": "conservative_standard_rate_not_exchange_exemption",
+    "base_option_slippage_ticks": 0.0,
+    "stress_option_slippage_ticks": 1.0,
+    "base_hedge_slippage_bps": 0.0,
+    "stress_hedge_slippage_bps": 1.0,
+    "capital_normalizer": "entry_index_price_usdt*quantity_btc_per_leg",
+    "fee_rebate_assumed": false,
+    "comparability_rule": "identical_to_frozen_v2_cost_contract"
+  },
+  "evidence_contract": {
+    "minimum_lifecycles_for_profitability_claim": 6,
+    "single_lifecycle_role": "payoff_and_cost_reconciliation_only",
+    "profitability_claim_allowed": false,
+    "sharpe_claim_allowed": false,
+    "drawdown_claim_allowed": false
+  },
+  "decision_contract": {
+    "wait_decision": "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF",
+    "invalid_decision": "INVALID_FIRST_LIFECYCLE_PAYOFF",
+    "insufficient_decision": "INSUFFICIENT_FIRST_LIFECYCLE_PAYOFF",
+    "reconciled_decision": "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY"
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

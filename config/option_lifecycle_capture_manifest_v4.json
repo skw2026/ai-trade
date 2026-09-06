@@ -1,0 +1,15 @@
+{
+  "schema_version": "option_lifecycle_capture_manifest_v1",
+  "experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v4",
+  "policy_path": "config/option_lifecycle_capture_v4.json",
+  "policy_canonical_sha256": "3057e78a46208d72ec4990ea9604744f0ed211e90b3c5f407a1132ee0927d253",
+  "observation_start_epoch_ms": 1788701400000,
+  "observation_start_utc": "2026-09-06T13:30:00Z",
+  "freeze_rule": "only checksum-valid v4 XZ snapshots at or after observation_start are eligible",
+  "supersedes_capture_experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v3",
+  "supersession_reason": "v3 did not atomically seal a partial segment when CD stopped the collector",
+  "research_domain": "development_only",
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}

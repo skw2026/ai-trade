@@ -18,6 +18,7 @@ UPGRADE_SOURCE_SCHEMA_VERSION = "bybit_cross_asset_microstructure_v2"
 UPGRADE_TARGET_SCHEMA_VERSION = "bybit_cross_asset_microstructure_v3"
 OPTION_VRP_XZ_SCHEMA_VERSION = "bybit_btc_option_vrp_capture_v2"
 OPTION_LIFECYCLE_XZ_SCHEMA_VERSION = "bybit_btc_option_lifecycle_capture_v3"
+OPTION_LIFECYCLE_V4_XZ_SCHEMA_VERSION = "bybit_btc_option_lifecycle_capture_v4"
 OPTION_VRP_XZ_CODEC = "xz_lzma_preset1"
 
 
@@ -70,7 +71,8 @@ def _expired_bundle_files(
     if not is_deterministic_upgrade:
         is_option_vrp_xz = bool(
             payload.get("schema_version") in {
-                OPTION_VRP_XZ_SCHEMA_VERSION, OPTION_LIFECYCLE_XZ_SCHEMA_VERSION
+                OPTION_VRP_XZ_SCHEMA_VERSION, OPTION_LIFECYCLE_XZ_SCHEMA_VERSION,
+                OPTION_LIFECYCLE_V4_XZ_SCHEMA_VERSION,
             }
             and payload.get("raw_codec") == OPTION_VRP_XZ_CODEC
         )

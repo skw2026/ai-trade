@@ -57,6 +57,7 @@ DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_RESEARCH_CAPTURE_RETENTION_HOU
 DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS:-240}"
 DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-960}"
 DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS:-960}"
+DEPLOY_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS:-960}"
 # Only used when post-pull free space is below the deployment transaction
 # floor.  Preserve one complete frozen 34.2h window while releasing the older
 # retry window so a digest-pinned deployment can finish without touching the
@@ -65,6 +66,7 @@ DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_RESEARCH_CAP
 DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS:-193}"
 DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-864}"
 DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS:-864}"
+DEPLOY_PRESSURE_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS:-864}"
 # The production scheduler's bounded Closed Loop run may hold this lock for
 # up to 4800 seconds.  A standalone deploy must wait beyond that contract.
 DEPLOY_LOCK_WAIT_SECONDS="${DEPLOY_LOCK_WAIT_SECONDS:-5400}"
@@ -361,6 +363,7 @@ cleanup_deploy_host_storage() {
   DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS:-240}"
   DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-960}"
   DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS:-960}"
+  DEPLOY_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS="${DEPLOY_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS:-960}"
   for variable_name in \
     DEPLOY_RELEASE_KEEP_COUNT \
     DEPLOY_RUNTIME_COMPOSE_KEEP_COUNT \
@@ -370,7 +373,8 @@ cleanup_deploy_host_storage() {
     DEPLOY_RESEARCH_CAPTURE_RETENTION_HOURS \
     DEPLOY_OPTION_VRP_CAPTURE_RETENTION_HOURS \
     DEPLOY_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS \
-    DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS
+    DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS \
+    DEPLOY_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS
   do
     if [[ ! "${!variable_name}" =~ ^[0-9]+$ ]]; then
       echo "[deploy] invalid ${variable_name}: ${!variable_name}"
@@ -436,6 +440,10 @@ cleanup_deploy_host_storage() {
     echo "[deploy] option lifecycle v3 retention must preserve the frozen lifecycle evidence budget"
     return 1
   fi
+  if (( DEPLOY_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS < 960 )); then
+    echo "[deploy] option lifecycle v4 retention must preserve the deployment-safe lifecycle evidence budget"
+    return 1
+  fi
   if ! python3 "${capture_pruner}" \
       --root "${DEPLOY_RELEASE_ROOT}/data/research/microstructure" \
       --expected-root-name microstructure \
@@ -469,6 +477,13 @@ cleanup_deploy_host_storage() {
       --expected-root-name bybit_btc_option_lifecycle_v3 \
       --retention-hours "${DEPLOY_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS}"; then
     echo "[deploy] Bybit option lifecycle v3 research capture cleanup failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_lifecycle_v4" \
+      --expected-root-name bybit_btc_option_lifecycle_v4 \
+      --retention-hours "${DEPLOY_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS}"; then
+    echo "[deploy] Bybit option lifecycle v4 research capture cleanup failed"
     return 1
   fi
   # The service slot previously captured Binance L2/trades.  That information
@@ -561,6 +576,7 @@ reclaim_research_capture_for_transaction() {
   DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_CAPTURE_RETENTION_HOURS:-193}"
   DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_VRP_V2_CAPTURE_RETENTION_HOURS:-864}"
   DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS:-864}"
+  DEPLOY_PRESSURE_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS="${DEPLOY_PRESSURE_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS:-864}"
   if [[ ! "${DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS}" =~ ^[0-9]+$ ]] ||
      (( DEPLOY_PRESSURE_RESEARCH_CAPTURE_RETENTION_HOURS < 35 )); then
     echo "[deploy] emergency research capture retention must preserve one frozen 34.2h window"
@@ -583,6 +599,12 @@ reclaim_research_capture_for_transaction() {
      (( DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS < 864 )); then
     echo "[deploy] emergency option lifecycle v3 retention must preserve a complete lifecycle window"
     DEPLOY_DISK_FAILURE_REASON="invalid_pressure_option_lifecycle_v3_capture_retention"
+    return 1
+  fi
+  if [[ ! "${DEPLOY_PRESSURE_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS}" =~ ^[0-9]+$ ]] ||
+     (( DEPLOY_PRESSURE_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS < 864 )); then
+    echo "[deploy] emergency option lifecycle v4 retention must preserve a complete lifecycle window"
+    DEPLOY_DISK_FAILURE_REASON="invalid_pressure_option_lifecycle_v4_capture_retention"
     return 1
   fi
   local capture_pruner="${COMPOSE_DIR}/tools/prune_microstructure_capture.py"
@@ -625,6 +647,13 @@ reclaim_research_capture_for_transaction() {
       --expected-root-name bybit_btc_option_lifecycle_v3 \
       --retention-hours "${DEPLOY_PRESSURE_OPTION_LIFECYCLE_V3_CAPTURE_RETENTION_HOURS}"; then
     DEPLOY_DISK_FAILURE_REASON="pressure_option_lifecycle_v3_capture_gc_failed"
+    return 1
+  fi
+  if ! python3 "${capture_pruner}" \
+      --root "${DEPLOY_RELEASE_ROOT}/data/research/bybit_btc_option_lifecycle_v4" \
+      --expected-root-name bybit_btc_option_lifecycle_v4 \
+      --retention-hours "${DEPLOY_PRESSURE_OPTION_LIFECYCLE_V4_CAPTURE_RETENTION_HOURS}"; then
+    DEPLOY_DISK_FAILURE_REASON="pressure_option_lifecycle_v4_capture_gc_failed"
     return 1
   fi
   return 0

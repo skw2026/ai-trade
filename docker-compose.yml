@@ -105,20 +105,21 @@ services:
     image: ai-trade-research:latest
     container_name: ai-trade-option-vrp-collector
     restart: unless-stopped
+    stop_grace_period: 75s
     working_dir: /app
-    entrypoint: ["python3", "/app/tools/run_option_lifecycle_collector_v3.py", "run"]
+    entrypoint: ["python3", "/app/tools/run_option_lifecycle_collector_v4.py", "run"]
     command:
-      - "--root=/app/data/research/bybit_btc_option_lifecycle_v3"
-      - "--policy=/app/config/option_lifecycle_capture_v3.json"
-      - "--manifest=/app/config/option_lifecycle_capture_manifest_v3.json"
+      - "--root=/app/data/research/bybit_btc_option_lifecycle_v4"
+      - "--policy=/app/config/option_lifecycle_capture_v4.json"
+      - "--manifest=/app/config/option_lifecycle_capture_manifest_v4.json"
       - "--bootstrap-segment-duration-sec=${OPTION_VRP_BOOTSTRAP_SEGMENT_DURATION_SEC:-65}"
       - "--segment-duration-sec=${OPTION_VRP_SEGMENT_DURATION_SEC:-905}"
       - "--poll-interval-sec=${OPTION_VRP_POLL_INTERVAL_SEC:-60}"
-      - "--retention-hours=${OPTION_LIFECYCLE_V3_RETENTION_HOURS:-960}"
+      - "--retention-hours=${OPTION_LIFECYCLE_V4_RETENTION_HOURS:-960}"
     volumes:
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "python3", "/app/tools/run_option_lifecycle_collector_v3.py", "healthcheck", "--root=/app/data/research/bybit_btc_option_lifecycle_v3", "--policy=/app/config/option_lifecycle_capture_v3.json", "--manifest=/app/config/option_lifecycle_capture_manifest_v3.json", "--max-stale-sec=1800"]
+      test: ["CMD", "python3", "/app/tools/run_option_lifecycle_collector_v4.py", "healthcheck", "--root=/app/data/research/bybit_btc_option_lifecycle_v4", "--policy=/app/config/option_lifecycle_capture_v4.json", "--manifest=/app/config/option_lifecycle_capture_manifest_v4.json", "--max-stale-sec=1800"]
       interval: 60s
       timeout: 10s
       retries: 3

@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import json
 import pathlib
+import signal
 import subprocess
 import sys
 import time
@@ -18,6 +19,28 @@ import prune_microstructure_capture as retention
 
 HEALTH_SCHEMA_VERSION = "option_lifecycle_collector_health_v3"
 LATEST_SCHEMA_VERSION = "option_lifecycle_latest_segment_v3"
+CAPTURE_SCRIPT_NAME = "capture_bybit_option_lifecycle_v3.py"
+_ACTIVE_PROCESS: subprocess.Popen[Any] | None = None
+_SHUTDOWN_REQUESTED = False
+
+
+def _request_shutdown(signum: int, _frame: Any) -> None:
+    global _SHUTDOWN_REQUESTED
+    _SHUTDOWN_REQUESTED = True
+    if _ACTIVE_PROCESS is not None and _ACTIVE_PROCESS.poll() is None:
+        _ACTIVE_PROCESS.send_signal(signum)
+
+
+def run_segment(command: Sequence[str]) -> None:
+    global _ACTIVE_PROCESS
+    process = subprocess.Popen(command)
+    _ACTIVE_PROCESS = process
+    try:
+        return_code = process.wait()
+    finally:
+        _ACTIVE_PROCESS = None
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, command)
 
 
 def atomic_write_json(path: pathlib.Path, payload: Dict[str, Any]) -> None:
@@ -36,7 +59,7 @@ def segment_command(args: argparse.Namespace, *, root: pathlib.Path,
     report = root / "reports" / collector.BASE_COIN / f"{segment_id}.json"
     return ([
         sys.executable,
-        str(pathlib.Path(__file__).resolve().parent / "capture_bybit_option_lifecycle_v3.py"),
+        str(pathlib.Path(__file__).resolve().parent / CAPTURE_SCRIPT_NAME),
         "--raw", str(raw), "--features", str(features), "--report", str(report),
         "--state", str(root / "tracking_state.json"), "--capture-root", str(root),
         "--policy", str(pathlib.Path(args.policy).resolve()),
@@ -69,6 +92,10 @@ def _health_payload(*, state: str, policy: Dict[str, Any], manifest: Dict[str, A
 
 
 def run(args: argparse.Namespace) -> int:
+    global _SHUTDOWN_REQUESTED
+    _SHUTDOWN_REQUESTED = False
+    signal.signal(signal.SIGTERM, _request_shutdown)
+    signal.signal(signal.SIGINT, _request_shutdown)
     policy, manifest = collector.load_contract(pathlib.Path(args.policy), pathlib.Path(args.manifest))
     root = pathlib.Path(args.root).resolve()
     if root.name != collector.CAPTURE_ROOT_NAME:
@@ -85,7 +112,7 @@ def run(args: argparse.Namespace) -> int:
             segment_started_epoch_ms=started, consecutive_failures=failures,
         ))
         try:
-            subprocess.run(command, check=True)
+            run_segment(command)
             report = json.loads(report_path.read_text(encoding="utf-8"))
             if report.get("status") != "PASS":
                 raise RuntimeError("v3 lifecycle capture report did not pass")
@@ -125,6 +152,8 @@ def run(args: argparse.Namespace) -> int:
             if args.max_segments <= 0:
                 time.sleep(min(float(args.max_backoff_sec), 2.0 ** min(failures, 6)))
         completed += 1
+        if _SHUTDOWN_REQUESTED:
+            break
     return 0 if successes > 0 else 2
 
 

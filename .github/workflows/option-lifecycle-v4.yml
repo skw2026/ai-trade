@@ -1,4 +1,4 @@
-name: Option Lifecycle V3 Gate
+name: Option Lifecycle V4 Gate
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: option-lifecycle-v3
+  group: option-lifecycle-v4
   cancel-in-progress: false
 
 jobs:
@@ -25,9 +25,9 @@ jobs:
     timeout-minutes: 35
     env:
       AUDIT_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
-      AUDIT_RUN_ID: option-lifecycle-v3-${{ github.run_id }}-${{ github.run_attempt }}
-      AUDIT_CAPTURE_ROOT: /opt/ai-trade/data/research/bybit_btc_option_lifecycle_v3
-      AUDIT_OUTPUT_ROOT: /opt/ai-trade/data/reports/option_lifecycle_v3
+      AUDIT_RUN_ID: option-lifecycle-v4-${{ github.run_id }}-${{ github.run_attempt }}
+      AUDIT_CAPTURE_ROOT: /opt/ai-trade/data/research/bybit_btc_option_lifecycle_v4
+      AUDIT_OUTPUT_ROOT: /opt/ai-trade/data/reports/option_lifecycle_v4
       AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '24' || '1' }}
     steps:
       - name: Check deploy secrets
@@ -74,10 +74,10 @@ jobs:
             cd "${RELEASE_DIR}"
             startup_pass=false
             for attempt in $(seq 1 "${AUDIT_STARTUP_ATTEMPTS}"); do
-              python3 tools/audit_option_lifecycle_v3.py \
+              python3 tools/audit_option_lifecycle_v4.py \
                 --root "${AUDIT_CAPTURE_ROOT}" \
-                --policy config/option_lifecycle_capture_v3.json \
-                --manifest config/option_lifecycle_capture_manifest_v3.json \
+                --policy config/option_lifecycle_capture_v4.json \
+                --manifest config/option_lifecycle_capture_manifest_v4.json \
                 --executed-release-sha "${EXECUTED_SHA}" \
                 --output "${REPORT_PATH}"
               STARTUP_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["startup_gate"]["status"])' "${REPORT_PATH}")"
@@ -96,12 +96,12 @@ jobs:
             if [[ "${startup_pass}" != "true" ]]; then
               exit 3
             fi
-            python3 tools/audit_option_lifecycle_payoff_v3.py \
+            python3 tools/audit_option_lifecycle_payoff_v4.py \
               --root "${AUDIT_CAPTURE_ROOT}" \
-              --capture-policy config/option_lifecycle_capture_v3.json \
-              --capture-manifest config/option_lifecycle_capture_manifest_v3.json \
-              --payoff-policy config/option_lifecycle_payoff_v1.json \
-              --payoff-manifest config/option_lifecycle_payoff_manifest_v1.json \
+              --capture-policy config/option_lifecycle_capture_v4.json \
+              --capture-manifest config/option_lifecycle_capture_manifest_v4.json \
+              --payoff-policy config/option_lifecycle_payoff_v2.json \
+              --payoff-manifest config/option_lifecycle_payoff_manifest_v2.json \
               --executed-release-sha "${EXECUTED_SHA}" \
               --output "${PAYOFF_REPORT_PATH}"
 
@@ -157,51 +157,51 @@ jobs:
 
           path = Path(".artifacts/report.json")
           if not path.is_file():
-              raise SystemExit("aggregate v3 lifecycle report was not downloaded")
+              raise SystemExit("aggregate v4 lifecycle report was not downloaded")
           report = json.loads(path.read_text(encoding="utf-8"))
-          if report.get("schema_version") != "option_lifecycle_audit_v3":
-              raise SystemExit("aggregate v3 lifecycle report schema mismatch")
+          if report.get("schema_version") != "option_lifecycle_audit_v4":
+              raise SystemExit("aggregate v4 lifecycle report schema mismatch")
           executed = report.get("identities", {}).get("executed_release_sha", "")
           if not re.fullmatch(r"[0-9a-f]{40}", executed):
-              raise SystemExit("aggregate v3 lifecycle report release mismatch")
+              raise SystemExit("aggregate v4 lifecycle report release mismatch")
           expected = os.environ.get("AUDIT_EXPECTED_SHA", "")
           if expected and executed != expected:
-              raise SystemExit("aggregate v3 lifecycle report expected release mismatch")
+              raise SystemExit("aggregate v4 lifecycle report expected release mismatch")
           for field in ("economic_evidence", "promotion_authority", "demo_activation_authorized", "live_activation_authorized"):
               if report.get(field) is not False:
                   raise SystemExit(f"aggregate report grants forbidden authority: {field}")
           rendered = json.dumps(report, sort_keys=True)
           if any(value in rendered for value in ("tracked_options", "discovery_options", ".jsonl.xz", "tracking_state.json")):
-              raise SystemExit("aggregate v3 lifecycle report leaked raw evidence")
+              raise SystemExit("aggregate v4 lifecycle report leaked raw evidence")
           accepted = {
               "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE",
               "PASS_FIRST_COMPLETE_LIFECYCLE_FOR_PAYOFF_RECONSTRUCTION_ONLY",
               "INSUFFICIENT_FIRST_COMPLETE_LIFECYCLE",
           }
           if report.get("decision") not in accepted or report.get("startup_gate", {}).get("status") != "PASS":
-              raise SystemExit(f"v3 lifecycle startup gate failed: {report.get('decision')}")
+              raise SystemExit(f"v4 lifecycle startup gate failed: {report.get('decision')}")
           payoff_path = Path(".artifacts/payoff.json")
           if not payoff_path.is_file():
-              raise SystemExit("aggregate v3 lifecycle payoff report was not downloaded")
+              raise SystemExit("aggregate v4 lifecycle payoff report was not downloaded")
           payoff = json.loads(payoff_path.read_text(encoding="utf-8"))
-          if payoff.get("schema_version") != "option_lifecycle_payoff_audit_v1":
-              raise SystemExit("aggregate v3 lifecycle payoff report schema mismatch")
+          if payoff.get("schema_version") != "option_lifecycle_payoff_audit_v2":
+              raise SystemExit("aggregate v4 lifecycle payoff report schema mismatch")
           if payoff.get("identities", {}).get("executed_release_sha") != executed:
-              raise SystemExit("aggregate v3 lifecycle payoff release mismatch")
+              raise SystemExit("aggregate v4 lifecycle payoff release mismatch")
           for field in ("profitability_evidence", "sharpe_evidence", "drawdown_evidence",
                         "promotion_authority", "demo_activation_authorized", "live_activation_authorized"):
               if payoff.get(field) is not False:
                   raise SystemExit(f"aggregate payoff report grants forbidden evidence or authority: {field}")
           payoff_rendered = json.dumps(payoff, sort_keys=True)
           if any(value in payoff_rendered for value in ("hedge_ledger", "tracked_options", "discovery_options", ".jsonl.xz", "tracking_state.json")):
-              raise SystemExit("aggregate v3 payoff report leaked raw evidence")
+              raise SystemExit("aggregate v4 payoff report leaked raw evidence")
           payoff_accepted = {
               "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF",
               "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY",
               "INSUFFICIENT_FIRST_LIFECYCLE_PAYOFF",
           }
           if payoff.get("decision") not in payoff_accepted:
-              raise SystemExit(f"v3 lifecycle payoff gate failed: {payoff.get('decision')}")
+              raise SystemExit(f"v4 lifecycle payoff gate failed: {payoff.get('decision')}")
           gate = report["startup_gate"]
           integrity = report["archive_integrity"]
           suffix = "--".join((
@@ -220,7 +220,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: option-lifecycle-v3-${{ steps.validate.outputs.artifact_suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: option-lifecycle-v4-${{ steps.validate.outputs.artifact_suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .artifacts/report.json
             .artifacts/payoff.json
