@@ -369,6 +369,9 @@ class OptionLifecycleV3Test(unittest.TestCase):
             "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY",
         ):
             self.assertIn(value, workflow)
+        self.assertIn("AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '40' || '1' }}", workflow)
+        self.assertIn("timeout-minutes: 50", workflow)
+        self.assertIn("command_timeout: 45m", workflow)
         for value in (
             "audit_option_lifecycle_payoff_v3.py",
             "option_lifecycle_payoff_v1.json",

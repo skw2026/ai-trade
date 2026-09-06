@@ -22,13 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    timeout-minutes: 35
+    timeout-minutes: 50
     env:
       AUDIT_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
       AUDIT_RUN_ID: option-lifecycle-v4-${{ github.run_id }}-${{ github.run_attempt }}
       AUDIT_CAPTURE_ROOT: /opt/ai-trade/data/research/bybit_btc_option_lifecycle_v4
       AUDIT_OUTPUT_ROOT: /opt/ai-trade/data/reports/option_lifecycle_v4
-      AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '24' || '1' }}
+      AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '40' || '1' }}
     steps:
       - name: Check deploy secrets
         run: |
@@ -51,7 +51,7 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          command_timeout: 30m
+          command_timeout: 45m
           envs: AUDIT_EXPECTED_SHA,AUDIT_RUN_ID,AUDIT_CAPTURE_ROOT,AUDIT_OUTPUT_ROOT,AUDIT_STARTUP_ATTEMPTS
           script: |
             set -euo pipefail
