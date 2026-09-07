@@ -56,21 +56,85 @@ jobs:
           script: |
             set -euo pipefail
             export PYTHONDONTWRITEBYTECODE=1
-            RELEASE_DIR="$(readlink -f /opt/ai-trade/current)"
-            EXECUTED_SHA="$(basename "${RELEASE_DIR}")"
-            if [[ ! "${EXECUTED_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
-              echo "invalid deployed release identity: ${EXECUTED_SHA}" >&2
-              exit 1
-            fi
-            if [[ -n "${AUDIT_EXPECTED_SHA}" && "${EXECUTED_SHA}" != "${AUDIT_EXPECTED_SHA}" ]]; then
-              echo "option lifecycle audit release mismatch: ${EXECUTED_SHA} != ${AUDIT_EXPECTED_SHA}" >&2
-              exit 1
-            fi
-            python3 "${RELEASE_DIR}/deploy/release_integrity.py" --release-dir "${RELEASE_DIR}"
+            AUDIT_EXPECTED_SHA="${AUDIT_EXPECTED_SHA:-}"
+            AUDIT_RUN_ID="${AUDIT_RUN_ID:-option-lifecycle-v4-preflight-unknown}"
+            AUDIT_CAPTURE_ROOT="${AUDIT_CAPTURE_ROOT:-/opt/ai-trade/data/research/bybit_btc_option_lifecycle_v4}"
+            AUDIT_OUTPUT_ROOT="${AUDIT_OUTPUT_ROOT:-/opt/ai-trade/data/reports/option_lifecycle_v4}"
+            AUDIT_STARTUP_ATTEMPTS="${AUDIT_STARTUP_ATTEMPTS:-1}"
             OUTPUT_DIR="${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}"
             mkdir -p "${OUTPUT_DIR}"
             REPORT_PATH="${OUTPUT_DIR}/report.json"
             PAYOFF_REPORT_PATH="${OUTPUT_DIR}/payoff.json"
+            EXECUTED_SHA=""
+            write_preflight_failure() {
+              local reason_code="$1"
+              PRECHECK_REASON_CODE="${reason_code}" \
+              PRECHECK_EXECUTED_SHA="${EXECUTED_SHA}" \
+              python3 - "${REPORT_PATH}" <<'PY'
+            import json
+            import os
+            import pathlib
+            import sys
+            import tempfile
+
+            path = pathlib.Path(sys.argv[1])
+            report = {
+                "schema_version": "option_lifecycle_audit_v4",
+                "identities": {
+                    "executed_release_sha": os.environ.get("PRECHECK_EXECUTED_SHA", ""),
+                },
+                "archive_integrity": {
+                    "root_present": False,
+                    "valid_segment_count": 0,
+                    "invalid_segment_count": 1,
+                    "checksum_bound_snapshot_count": 0,
+                },
+                "startup_gate": {
+                    "status": "FAIL",
+                    "reason_counts": {"PREFLIGHT_FAILURE": 1},
+                },
+                "lifecycle_gate": {"paired_delivery_evidence_valid": False},
+                "decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE",
+                "reason_code": os.environ["PRECHECK_REASON_CODE"],
+                "economic_evidence": False,
+                "promotion_authority": False,
+                "demo_activation_authorized": False,
+                "live_activation_authorized": False,
+            }
+            path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    json.dump(report, handle, indent=2, sort_keys=True)
+                    handle.write("\n")
+                pathlib.Path(temporary_name).replace(path)
+            finally:
+                pathlib.Path(temporary_name).unlink(missing_ok=True)
+            PY
+            }
+            fail_preflight() {
+              local reason_code="$1"
+              write_preflight_failure "${reason_code}"
+              echo "option lifecycle preflight failed: ${reason_code}" >&2
+              exit 1
+            }
+            if [[ ! "${AUDIT_STARTUP_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
+              fail_preflight "INVALID_STARTUP_ATTEMPTS"
+            fi
+            RELEASE_DIR="$(readlink -f /opt/ai-trade/current || true)"
+            if [[ -z "${RELEASE_DIR}" ]]; then
+              fail_preflight "DEPLOYED_RELEASE_LINK_MISSING"
+            fi
+            EXECUTED_SHA="$(basename "${RELEASE_DIR}")"
+            if [[ ! "${EXECUTED_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+              fail_preflight "DEPLOYED_RELEASE_IDENTITY_INVALID"
+            fi
+            if [[ -n "${AUDIT_EXPECTED_SHA}" && "${EXECUTED_SHA}" != "${AUDIT_EXPECTED_SHA}" ]]; then
+              fail_preflight "DEPLOYED_RELEASE_MISMATCH"
+            fi
+            if ! python3 "${RELEASE_DIR}/deploy/release_integrity.py" --release-dir "${RELEASE_DIR}"; then
+              fail_preflight "RELEASE_INTEGRITY_FAILURE"
+            fi
             cd "${RELEASE_DIR}"
             startup_pass=false
             for attempt in $(seq 1 "${AUDIT_STARTUP_ATTEMPTS}"); do

@@ -375,6 +375,10 @@ class OptionLifecycleV3Test(unittest.TestCase):
         self.assertIn("Summarize aggregate audit diagnostics", workflow)
         self.assertIn("steps.diagnostics.outputs.artifact_suffix", workflow)
         self.assertIn("report_downloaded=${report_downloaded} payoff_downloaded=${payoff_downloaded}", workflow)
+        self.assertIn('AUDIT_EXPECTED_SHA="${AUDIT_EXPECTED_SHA:-}"', workflow)
+        self.assertIn("write_preflight_failure", workflow)
+        self.assertIn('fail_preflight "RELEASE_INTEGRITY_FAILURE"', workflow)
+        self.assertIn('"reason_counts": {"PREFLIGHT_FAILURE": 1}', workflow)
         for value in (
             "audit_option_lifecycle_payoff_v3.py",
             "option_lifecycle_payoff_v1.json",
