@@ -61,7 +61,7 @@ class ReleaseIntegrityTest(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def run_validator(self, repair: bool = False):
+    def run_validator(self, repair: bool = False, summary: pathlib.Path | None = None):
         command = [
             sys.executable,
             str(VALIDATOR),
@@ -76,6 +76,8 @@ class ReleaseIntegrityTest(unittest.TestCase):
                     str(self.quarantine),
                 ]
             )
+        if summary is not None:
+            command.extend(["--summary-output", str(summary)])
         return subprocess.run(command, capture_output=True, text=True, check=False)
 
     def test_valid_release_passes(self):
@@ -115,6 +117,35 @@ class ReleaseIntegrityTest(unittest.TestCase):
             len(list(self.quarantine.glob("*/data/reports/run.json"))),
             1,
         )
+
+    def test_summary_exposes_only_categories_and_counts(self):
+        runtime_file = self.root / "data" / "reports" / "private-run.json"
+        runtime_file.parent.mkdir(parents=True)
+        runtime_file.write_text("{}\n", encoding="utf-8")
+        summary = pathlib.Path(self.temp_dir.name) / "summary.json"
+
+        result = self.run_validator(repair=True, summary=summary)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(summary.read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload["schema_version"],
+            "ai_trade_release_integrity_summary_v1",
+        )
+        self.assertTrue(payload["valid"])
+        self.assertTrue(payload["runtime_contamination_repaired"])
+        self.assertEqual(payload["initial"]["unexpected_count"], 1)
+        self.assertEqual(payload["final"]["unexpected_count"], 0)
+        self.assertNotIn("private-run", json.dumps(payload))
+
+    def test_summary_cannot_contaminate_immutable_release(self):
+        summary = self.root / "data" / "reports" / "summary.json"
+
+        result = self.run_validator(summary=summary)
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("summary output must be outside release", result.stderr)
+        self.assertFalse(summary.exists())
 
     def test_unknown_unexpected_file_is_rejected(self):
         unknown = self.root / "tools" / "injected.txt"

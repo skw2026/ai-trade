@@ -613,6 +613,9 @@ jobs:
               "${RELEASE_TMP}/config/option_lifecycle_payoff_v2.json" \
               "${RELEASE_TMP}/config/option_lifecycle_payoff_manifest_v2.json" \
               "${RELEASE_TMP}/tools/audit_option_lifecycle_payoff_v4.py" \
+              "${RELEASE_TMP}/config/option_lifecycle_economic_v1.json" \
+              "${RELEASE_TMP}/config/option_lifecycle_economic_manifest_v1.json" \
+              "${RELEASE_TMP}/tools/audit_option_lifecycle_economics_v1.py" \
               "${RELEASE_TMP}/tools/audit_option_variance_risk_premium_feasibility.py" \
               "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff.json" \
               "${RELEASE_TMP}/config/option_variance_risk_premium_sequential_payoff_manifest.json" \

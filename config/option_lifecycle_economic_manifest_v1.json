@@ -1,0 +1,15 @@
+{
+  "schema_version": "option_lifecycle_economic_manifest_v1",
+  "experiment_id": "btc_bybit_usdt_option_lifecycle_economic_v1",
+  "policy_path": "config/option_lifecycle_economic_v1.json",
+  "policy_canonical_sha256": "fbc9851193c8a34e587b81b647f3dea19c44006509b80ee2b8b9c3f39b5c30fa",
+  "source_capture_observation_start_epoch_ms": 1788701400000,
+  "source_payoff_freeze_epoch_ms": 1788703200000,
+  "aggregation_freeze_epoch_ms": 1788832800000,
+  "aggregation_freeze_utc": "2026-09-08T02:00:00Z",
+  "freeze_rule": "all thresholds and lifecycle-level aggregation are immutable before the second v4 lifecycle delivery outcome",
+  "research_domain": "development_only",
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}

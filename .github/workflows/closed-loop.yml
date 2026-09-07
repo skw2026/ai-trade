@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Checkout contract source
+      - name: Checkout workflow source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
@@ -73,6 +73,23 @@ jobs:
           test -n "${{ secrets.ECS_HOST }}"
           test -n "${{ secrets.ECS_USER }}"
           test -n "${{ secrets.ECS_SSH_KEY }}"
+
+      - name: Resolve immutable deployed revision
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_HOST_FINGERPRINT_SECRET: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
+          REQUESTED_SHA: ${{ github.event_name == 'push' && github.sha || '' }}
+        run: bash tools/resolve_closed_loop_deployed_sha.sh
+
+      - name: Checkout deployed contract source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CLOSED_LOOP_DEPLOYED_SHA }}
+          fetch-depth: 1
 
       - name: Run Closed Loop on ECS
         uses: appleboy/ssh-action@v1.2.0
@@ -105,7 +122,7 @@ jobs:
           CLOSED_LOOP_LOCK_BUSY_POLICY: ${{ github.event_name == 'schedule' && 'skip' || 'fail' }}
           CLOSED_LOOP_RUNNER_LOCK_WAIT_SECONDS: "900"
           CLOSED_LOOP_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
-          CLOSED_LOOP_GIT_COMMIT: ${{ github.sha }}
+          CLOSED_LOOP_GIT_COMMIT: ${{ env.CLOSED_LOOP_DEPLOYED_SHA }}
           CLOSED_LOOP_GIT_BRANCH: ${{ github.ref_type == 'tag' && 'main' || github.ref_name }}
         with:
           host: ${{ secrets.ECS_HOST }}
@@ -370,7 +387,7 @@ jobs:
           CLOSED_LOOP_ECS_HOST_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT }}
           CLOSED_LOOP_ECS_HOST_FINGERPRINT_VAR: ${{ vars.ECS_HOST_FINGERPRINT }}
           CLOSED_LOOP_EXPECTED_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
-          CLOSED_LOOP_EXPECTED_GIT_SHA: ${{ github.sha }}
+          CLOSED_LOOP_EXPECTED_GIT_SHA: ${{ env.CLOSED_LOOP_DEPLOYED_SHA }}
         run: bash tools/download_closed_loop_reports.sh
 
       - name: Upload Closed Loop Artifacts

@@ -65,11 +65,14 @@ jobs:
             mkdir -p "${OUTPUT_DIR}"
             REPORT_PATH="${OUTPUT_DIR}/report.json"
             PAYOFF_REPORT_PATH="${OUTPUT_DIR}/payoff.json"
+            ECONOMICS_REPORT_PATH="${OUTPUT_DIR}/economics.json"
+            INTEGRITY_SUMMARY_PATH="${OUTPUT_DIR}/release_integrity_summary.json"
             EXECUTED_SHA=""
             write_preflight_failure() {
               local reason_code="$1"
               PRECHECK_REASON_CODE="${reason_code}" \
               PRECHECK_EXECUTED_SHA="${EXECUTED_SHA}" \
+              PRECHECK_INTEGRITY_SUMMARY_PATH="${INTEGRITY_SUMMARY_PATH}" \
               python3 - "${REPORT_PATH}" <<'PY'
             import json
             import os
@@ -78,6 +81,19 @@ jobs:
             import tempfile
 
             path = pathlib.Path(sys.argv[1])
+            integrity_path = pathlib.Path(
+                os.environ["PRECHECK_INTEGRITY_SUMMARY_PATH"]
+            )
+            try:
+                release_integrity = json.loads(
+                    integrity_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                release_integrity = {
+                    "schema_version": "ai_trade_release_integrity_summary_v1",
+                    "valid": False,
+                    "summary_available": False,
+                }
             report = {
                 "schema_version": "option_lifecycle_audit_v4",
                 "identities": {
@@ -93,6 +109,7 @@ jobs:
                     "status": "FAIL",
                     "reason_counts": {"PREFLIGHT_FAILURE": 1},
                 },
+                "release_integrity": release_integrity,
                 "lifecycle_gate": {"paired_delivery_evidence_valid": False},
                 "decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE",
                 "reason_code": os.environ["PRECHECK_REASON_CODE"],
@@ -108,6 +125,35 @@ jobs:
                     json.dump(report, handle, indent=2, sort_keys=True)
                     handle.write("\n")
                 pathlib.Path(temporary_name).replace(path)
+            finally:
+                pathlib.Path(temporary_name).unlink(missing_ok=True)
+            PY
+            }
+            attach_integrity_summary() {
+              REPORT_PATH_VALUE="${REPORT_PATH}" \
+              INTEGRITY_SUMMARY_PATH_VALUE="${INTEGRITY_SUMMARY_PATH}" \
+              python3 - <<'PY'
+            import json
+            import os
+            import pathlib
+            import tempfile
+
+            report_path = pathlib.Path(os.environ["REPORT_PATH_VALUE"])
+            integrity_path = pathlib.Path(
+                os.environ["INTEGRITY_SUMMARY_PATH_VALUE"]
+            )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report["release_integrity"] = json.loads(
+                integrity_path.read_text(encoding="utf-8")
+            )
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{report_path.name}.", dir=report_path.parent
+            )
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    json.dump(report, handle, indent=2, sort_keys=True)
+                    handle.write("\n")
+                pathlib.Path(temporary_name).replace(report_path)
             finally:
                 pathlib.Path(temporary_name).unlink(missing_ok=True)
             PY
@@ -132,7 +178,11 @@ jobs:
             if [[ -n "${AUDIT_EXPECTED_SHA}" && "${EXECUTED_SHA}" != "${AUDIT_EXPECTED_SHA}" ]]; then
               fail_preflight "DEPLOYED_RELEASE_MISMATCH"
             fi
-            if ! python3 "${RELEASE_DIR}/deploy/release_integrity.py" --release-dir "${RELEASE_DIR}"; then
+            if ! python3 "${RELEASE_DIR}/deploy/release_integrity.py" \
+              --release-dir "${RELEASE_DIR}" \
+              --repair-runtime-contamination \
+              --quarantine-root /opt/ai-trade/data/release-contamination \
+              --summary-output "${INTEGRITY_SUMMARY_PATH}"; then
               fail_preflight "RELEASE_INTEGRITY_FAILURE"
             fi
             cd "${RELEASE_DIR}"
@@ -144,6 +194,7 @@ jobs:
                 --manifest config/option_lifecycle_capture_manifest_v4.json \
                 --executed-release-sha "${EXECUTED_SHA}" \
                 --output "${REPORT_PATH}"
+              attach_integrity_summary
               STARTUP_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["startup_gate"]["status"])' "${REPORT_PATH}")"
               DECISION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["decision"])' "${REPORT_PATH}")"
               if [[ "${STARTUP_STATUS}" == "PASS" ]]; then
@@ -168,6 +219,16 @@ jobs:
               --payoff-manifest config/option_lifecycle_payoff_manifest_v2.json \
               --executed-release-sha "${EXECUTED_SHA}" \
               --output "${PAYOFF_REPORT_PATH}"
+            python3 tools/audit_option_lifecycle_economics_v1.py \
+              --root "${AUDIT_CAPTURE_ROOT}" \
+              --capture-policy config/option_lifecycle_capture_v4.json \
+              --capture-manifest config/option_lifecycle_capture_manifest_v4.json \
+              --payoff-policy config/option_lifecycle_payoff_v2.json \
+              --payoff-manifest config/option_lifecycle_payoff_manifest_v2.json \
+              --economic-policy config/option_lifecycle_economic_v1.json \
+              --economic-manifest config/option_lifecycle_economic_manifest_v1.json \
+              --executed-release-sha "${EXECUTED_SHA}" \
+              --output "${ECONOMICS_REPORT_PATH}"
 
       - name: Download aggregate audit report
         if: always()
@@ -211,8 +272,18 @@ jobs:
             fi
             sleep 10
           done
+          economics_downloaded=false
+          for attempt in 1 2 3; do
+            if scp -i .artifacts/ecs_key -P "${PORT}" \
+              -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
+              "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/economics.json" .artifacts/economics.json; then
+              economics_downloaded=true
+              break
+            fi
+            sleep 10
+          done
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
-          echo "report_downloaded=${report_downloaded} payoff_downloaded=${payoff_downloaded}"
+          echo "report_downloaded=${report_downloaded} payoff_downloaded=${payoff_downloaded} economics_downloaded=${economics_downloaded}"
           [[ "${report_downloaded}" == "true" ]]
 
       - name: Summarize aggregate audit diagnostics
@@ -233,6 +304,7 @@ jobs:
 
           report_path = Path(".artifacts/report.json")
           payoff_path = Path(".artifacts/payoff.json")
+          economics_path = Path(".artifacts/economics.json")
           suffix = "NO_REPORT"
           if report_path.is_file():
               try:
@@ -244,15 +316,41 @@ jobs:
                       gate = report.get("startup_gate", {})
                       lifecycle = report.get("lifecycle_gate", {})
                       payoff_decision = "NO_PAYOFF"
+                      economic_decision = "NO_ECONOMICS"
+                      economic_progress = "e0_6"
                       if payoff_path.is_file():
                           try:
-                              payoff = json.loads(payoff_path.read_text(encoding="utf-8"))
+                              payoff = json.loads(
+                                  payoff_path.read_text(encoding="utf-8")
+                              )
                               if payoff.get("schema_version") == "option_lifecycle_payoff_audit_v2":
-                                  payoff_decision = token(payoff.get("decision"), "PAYOFF_DECISION_UNKNOWN")
+                                  payoff_decision = token(
+                                      payoff.get("decision"),
+                                      "PAYOFF_DECISION_UNKNOWN",
+                                  )
                               else:
                                   payoff_decision = "PAYOFF_SCHEMA_MISMATCH"
                           except (OSError, json.JSONDecodeError):
                               payoff_decision = "PAYOFF_UNREADABLE"
+                      if economics_path.is_file():
+                          try:
+                              economics = json.loads(
+                                  economics_path.read_text(encoding="utf-8")
+                              )
+                              if economics.get("schema_version") == "option_lifecycle_economic_audit_v1":
+                                  economic_decision = token(
+                                      economics.get("decision"),
+                                      "ECONOMIC_DECISION_UNKNOWN",
+                                  )
+                                  progress = economics.get("progress", {})
+                                  economic_progress = (
+                                      f"e{int(progress.get('complete_lifecycle_count') or 0)}_"
+                                      f"{int(progress.get('minimum_complete_lifecycles') or 6)}"
+                                  )
+                              else:
+                                  economic_decision = "ECONOMIC_SCHEMA_MISMATCH"
+                          except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                              economic_decision = "ECONOMIC_UNREADABLE"
                       suffix = "--".join((
                           token(report.get("decision"), "DECISION_UNKNOWN"),
                           token(gate.get("status"), "STATUS_UNKNOWN"),
@@ -263,6 +361,8 @@ jobs:
                           f"d{int(bool(lifecycle.get('paired_delivery_evidence_valid')))}",
                           token(report.get("reason_code"), "REASON_UNKNOWN"),
                           payoff_decision,
+                          economic_progress,
+                          economic_decision,
                       ))[:190]
               except (OSError, json.JSONDecodeError, TypeError, ValueError):
                   suffix = "LIFECYCLE_REPORT_UNREADABLE"
@@ -330,18 +430,45 @@ jobs:
           }
           if payoff.get("decision") not in payoff_accepted:
               raise SystemExit(f"v4 lifecycle payoff gate failed: {payoff.get('decision')}")
+          economics_path = Path(".artifacts/economics.json")
+          if not economics_path.is_file():
+              raise SystemExit("aggregate v4 lifecycle economics report was not downloaded")
+          economics = json.loads(economics_path.read_text(encoding="utf-8"))
+          if economics.get("schema_version") != "option_lifecycle_economic_audit_v1":
+              raise SystemExit("aggregate v4 lifecycle economics report schema mismatch")
+          if economics.get("identities", {}).get("executed_release_sha") != executed:
+              raise SystemExit("aggregate v4 lifecycle economics release mismatch")
+          for field in ("profitability_claim_allowed", "sharpe_claim_allowed", "drawdown_claim_allowed",
+                        "promotion_authority", "demo_activation_authorized", "live_activation_authorized"):
+              if economics.get(field) is not False:
+                  raise SystemExit(f"aggregate economics report grants forbidden claim or authority: {field}")
+          economics_rendered = json.dumps(economics, sort_keys=True)
+          if any(value in economics_rendered for value in ("hedge_ledger", "tracked_options", "discovery_options", ".jsonl.xz", "tracking_state.json")):
+              raise SystemExit("aggregate v4 economics report leaked raw evidence")
+          economics_accepted = {
+              "WAIT_FOR_MULTI_LIFECYCLE_ECONOMIC_EVIDENCE",
+              "CONTINUE_MULTI_LIFECYCLE_ECONOMIC_EVIDENCE",
+              "PASS_MULTI_LIFECYCLE_ECONOMICS_FOR_DEMO_REVIEW_ONLY",
+              "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+          }
+          if economics.get("decision") not in economics_accepted:
+              raise SystemExit(f"v4 lifecycle economics gate failed: {economics.get('decision')}")
           gate = report["startup_gate"]
           integrity = report["archive_integrity"]
+          progress = economics["progress"]
           suffix = "--".join((
               report["decision"], f"s{integrity['valid_segment_count']}_{integrity['invalid_segment_count']}",
               f"n{integrity['checksum_bound_snapshot_count']}", f"x{gate['distinct_segment_count']}",
               f"q{gate['qualified_snapshot_count']}", f"d{int(report['lifecycle_gate']['paired_delivery_evidence_valid'])}",
               payoff["decision"],
+              f"e{progress['complete_lifecycle_count']}_{progress['minimum_complete_lifecycles']}",
+              economics["decision"],
           ))[:190]
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"artifact_suffix={suffix}\n")
           print(json.dumps({"startup_gate": gate, "lifecycle_gate": report["lifecycle_gate"],
-                            "decision": report["decision"], "payoff": payoff}, indent=2, sort_keys=True))
+                            "decision": report["decision"], "payoff": payoff,
+                            "economics": economics}, indent=2, sort_keys=True))
           PY
 
       - name: Upload aggregate lifecycle report
@@ -352,4 +479,5 @@ jobs:
           path: |
             .artifacts/report.json
             .artifacts/payoff.json
+            .artifacts/economics.json
           if-no-files-found: warn

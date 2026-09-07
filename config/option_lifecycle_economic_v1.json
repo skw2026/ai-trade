@@ -1,0 +1,57 @@
+{
+  "schema_version": "option_lifecycle_economic_policy_v1",
+  "experiment_id": "btc_bybit_usdt_option_lifecycle_economic_v1",
+  "research_domain": "development_only",
+  "source_contract": {
+    "capture_experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v4",
+    "capture_policy_canonical_sha256": "3057e78a46208d72ec4990ea9604744f0ed211e90b3c5f407a1132ee0927d253",
+    "capture_manifest_canonical_sha256": "ea77d54faa383ad5b5f21c520d2d90ecf8ea8b304af8be316f55602d16e20036",
+    "payoff_experiment_id": "btc_bybit_usdt_option_lifecycle_payoff_v2",
+    "payoff_policy_canonical_sha256": "4b0eb39aa8b8d75e37d9b7bde52e2a163b629168d85de22f699b0898c17d8931",
+    "payoff_manifest_canonical_sha256": "a2fc098e992a6b09667dcce83dc94e4f2a98dc9dae89b7a7d0b924d8ffb0cfc8",
+    "lifecycle_scope": "all_checksum_valid_v4_sticky_lifecycles_in_selection_order",
+    "action_ids": [
+      "no_trade",
+      "short_selected_straddle",
+      "long_selected_straddle"
+    ],
+    "primary_action_id": "short_selected_straddle"
+  },
+  "aggregation_contract": {
+    "independent_unit": "completed_sticky_lifecycle",
+    "minimum_complete_lifecycles": 6,
+    "snapshot_rows_are_independent_samples": false,
+    "chronological_order": "lifecycle_selected_epoch_ms",
+    "confidence_method": "deterministic_lifecycle_bootstrap",
+    "confidence_level": 0.9,
+    "bootstrap_samples": 10000,
+    "bootstrap_seed": 20260908,
+    "positive_threshold_bps": 0.0,
+    "pass_minimum_stress_positive_ratio": 0.6666666666666666,
+    "pass_require_base_mean_bps_above": 0.0,
+    "pass_require_stress_mean_bps_above": 0.0,
+    "pass_require_stress_median_bps_above": 0.0,
+    "pass_require_stress_mean_lcb_bps_above": 0.0,
+    "futility_stress_mean_ucb_bps_at_or_below": 0.0,
+    "inconclusive_action": "continue_collecting_without_parameter_change"
+  },
+  "decision_contract": {
+    "wait_decision": "WAIT_FOR_MULTI_LIFECYCLE_ECONOMIC_EVIDENCE",
+    "continue_decision": "CONTINUE_MULTI_LIFECYCLE_ECONOMIC_EVIDENCE",
+    "pass_decision": "PASS_MULTI_LIFECYCLE_ECONOMICS_FOR_DEMO_REVIEW_ONLY",
+    "stop_decision": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+    "insufficient_decision": "INSUFFICIENT_MULTI_LIFECYCLE_COVERAGE",
+    "invalid_decision": "INVALID_MULTI_LIFECYCLE_ECONOMIC_ARCHIVE"
+  },
+  "claim_contract": {
+    "single_or_subminimum_lifecycle_profitability_claim_allowed": false,
+    "pass_is_demo_review_not_activation": true,
+    "sharpe_claim_allowed": false,
+    "drawdown_claim_allowed": false
+  },
+  "authorities": {
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  }
+}

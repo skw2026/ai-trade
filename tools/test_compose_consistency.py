@@ -959,7 +959,7 @@ class ComposeConsistencyTest(unittest.TestCase):
         ):
             self.assertIn(f'"{artifact_name}":', validator)
         run_blocks = re.findall(
-            r"(?ms)^        run: \|\n((?:(?:^          .*\n)|(?:^\s*$))*)",
+            r"(?m)^        run: \|\n((?:^          .*\n|^ *\n)*)",
             workflow,
         )
         self.assertTrue(run_blocks)
@@ -969,6 +969,9 @@ class ComposeConsistencyTest(unittest.TestCase):
         workflow = CLOSED_LOOP_WORKFLOW.read_text(encoding="utf-8")
         smoke_workflow = SMOKE_WORKFLOW.read_text(encoding="utf-8")
         downloader = REPORT_DOWNLOADER_SCRIPT.read_text(encoding="utf-8")
+        resolver = (
+            ROOT / "tools" / "resolve_closed_loop_deployed_sha.sh"
+        ).read_text(encoding="utf-8")
         self.assertIn(
             'default: "SOLUSDT"',
             workflow,
@@ -1011,6 +1014,27 @@ class ComposeConsistencyTest(unittest.TestCase):
         )
         self.assertIn(
             "github.ref_type == 'tag' && 'main' || github.ref_name",
+            workflow,
+        )
+        self.assertIn("Resolve immutable deployed revision", workflow)
+        self.assertIn(
+            "run: bash tools/resolve_closed_loop_deployed_sha.sh",
+            workflow,
+        )
+        self.assertIn(
+            "REQUESTED_SHA: ${{ github.event_name == 'push' && github.sha || '' }}",
+            workflow,
+        )
+        self.assertIn("CLOSED_LOOP_DEPLOYED_SHA=%s", resolver)
+        self.assertIn("readlink -f /opt/ai-trade/current", resolver)
+        self.assertIn("requested revision is not deployed", resolver)
+        self.assertIn("ref: ${{ env.CLOSED_LOOP_DEPLOYED_SHA }}", workflow)
+        self.assertIn(
+            "CLOSED_LOOP_GIT_COMMIT: ${{ env.CLOSED_LOOP_DEPLOYED_SHA }}",
+            workflow,
+        )
+        self.assertIn(
+            "CLOSED_LOOP_EXPECTED_GIT_SHA: ${{ env.CLOSED_LOOP_DEPLOYED_SHA }}",
             workflow,
         )
         self.assertIn(

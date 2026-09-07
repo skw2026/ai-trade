@@ -367,6 +367,10 @@ class OptionLifecycleV3Test(unittest.TestCase):
             "option_lifecycle_payoff_v2.json", "option_lifecycle_payoff_manifest_v2.json",
             "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF",
             "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY",
+            "audit_option_lifecycle_economics_v1.py",
+            "option_lifecycle_economic_v1.json",
+            "option_lifecycle_economic_manifest_v1.json",
+            "WAIT_FOR_MULTI_LIFECYCLE_ECONOMIC_EVIDENCE",
         ):
             self.assertIn(value, workflow)
         self.assertIn("AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '40' || '1' }}", workflow)
@@ -374,10 +378,12 @@ class OptionLifecycleV3Test(unittest.TestCase):
         self.assertIn("command_timeout: 45m", workflow)
         self.assertIn("Summarize aggregate audit diagnostics", workflow)
         self.assertIn("steps.diagnostics.outputs.artifact_suffix", workflow)
-        self.assertIn("report_downloaded=${report_downloaded} payoff_downloaded=${payoff_downloaded}", workflow)
+        self.assertIn("economics_downloaded=${economics_downloaded}", workflow)
         self.assertIn('AUDIT_EXPECTED_SHA="${AUDIT_EXPECTED_SHA:-}"', workflow)
         self.assertIn("write_preflight_failure", workflow)
         self.assertIn('fail_preflight "RELEASE_INTEGRITY_FAILURE"', workflow)
+        self.assertIn("--repair-runtime-contamination", workflow)
+        self.assertIn("--summary-output \"${INTEGRITY_SUMMARY_PATH}\"", workflow)
         self.assertIn('"reason_counts": {"PREFLIGHT_FAILURE": 1}', workflow)
         for value in (
             "audit_option_lifecycle_payoff_v3.py",
@@ -386,6 +392,9 @@ class OptionLifecycleV3Test(unittest.TestCase):
             "audit_option_lifecycle_payoff_v4.py",
             "option_lifecycle_payoff_v2.json",
             "option_lifecycle_payoff_manifest_v2.json",
+            "audit_option_lifecycle_economics_v1.py",
+            "option_lifecycle_economic_v1.json",
+            "option_lifecycle_economic_manifest_v1.json",
             "capture_bybit_option_lifecycle_v4.py",
             "run_option_lifecycle_collector_v4.py",
             "audit_option_lifecycle_v4.py",

@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path, PurePosixPath
 
 
@@ -226,6 +227,53 @@ def format_result(result: IntegrityResult) -> str:
     return " ".join(fields) if fields else "no_failures"
 
 
+def result_counts(result: IntegrityResult) -> dict[str, int]:
+    return {
+        "manifest_failure_count": len(result.manifest_failures),
+        "missing_count": len(result.missing),
+        "unexpected_count": len(result.unexpected),
+        "hash_mismatch_count": len(result.hash_mismatch),
+        "symlink_count": len(result.symlinks),
+    }
+
+
+def write_summary(
+    path: Path | None,
+    *,
+    initial: IntegrityResult,
+    final: IntegrityResult,
+    repair_attempted: bool,
+    repaired: bool,
+    quarantine_created: bool,
+    repair_error: str | None = None,
+) -> None:
+    if path is None:
+        return
+    payload = {
+        "schema_version": "ai_trade_release_integrity_summary_v1",
+        "valid": final.valid,
+        "listed_file_count": final.listed_count,
+        "repair_attempted": repair_attempted,
+        "runtime_contamination_repaired": repaired,
+        "quarantine_created": quarantine_created,
+        "repair_error": repair_error,
+        "initial": result_counts(initial),
+        "final": result_counts(final),
+    }
+    path = path.expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        Path(temporary_name).replace(path)
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validate an immutable release tree against its signed file set."
@@ -233,16 +281,38 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--release-dir", required=True, type=Path)
     parser.add_argument("--repair-runtime-contamination", action="store_true")
     parser.add_argument("--quarantine-root", type=Path)
+    parser.add_argument(
+        "--summary-output",
+        type=Path,
+        help="Write path-free integrity categories and counts as JSON.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     root = args.release_dir.resolve()
+    if args.summary_output is not None:
+        summary_output = args.summary_output.expanduser().resolve()
+        try:
+            summary_output.relative_to(root)
+        except ValueError:
+            pass
+        else:
+            print(
+                "RELEASE_TREE_INTEGRITY_INVALID: summary output must be outside release directory",
+                file=sys.stderr,
+            )
+            return 2
     result = validate_release(root)
+    initial = result
     quarantined: Path | None = None
+    repair_attempted = False
+    repaired = False
+    repair_error: str | None = None
 
     if not result.valid and args.repair_runtime_contamination:
+        repair_attempted = True
         repairable = (
             bool(result.unexpected)
             and not result.manifest_failures
@@ -253,6 +323,16 @@ def main() -> int:
         )
         if repairable:
             if args.quarantine_root is None:
+                repair_error = "quarantine_root_required"
+                write_summary(
+                    args.summary_output,
+                    initial=initial,
+                    final=result,
+                    repair_attempted=repair_attempted,
+                    repaired=False,
+                    quarantine_created=False,
+                    repair_error=repair_error,
+                )
                 print(
                     "RELEASE_TREE_INTEGRITY_INVALID: "
                     "--quarantine-root is required for repair",
@@ -266,12 +346,33 @@ def main() -> int:
                     result.unexpected,
                 )
             except (OSError, ValueError) as exc:
+                repair_error = "quarantine_failed"
+                write_summary(
+                    args.summary_output,
+                    initial=initial,
+                    final=result,
+                    repair_attempted=repair_attempted,
+                    repaired=False,
+                    quarantine_created=False,
+                    repair_error=repair_error,
+                )
                 print(
                     f"RELEASE_TREE_INTEGRITY_INVALID: quarantine_failed={exc}",
                     file=sys.stderr,
                 )
                 return 1
             result = validate_release(root)
+            repaired = result.valid
+
+    write_summary(
+        args.summary_output,
+        initial=initial,
+        final=result,
+        repair_attempted=repair_attempted,
+        repaired=repaired,
+        quarantine_created=quarantined is not None,
+        repair_error=repair_error,
+    )
 
     if not result.valid:
         print(
