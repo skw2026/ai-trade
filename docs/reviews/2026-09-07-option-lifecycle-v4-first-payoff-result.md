@@ -38,7 +38,7 @@
 - `d1`：call/put 成对交割证据有效；
 - lifecycle 完整且冻结 payoff 账本已完成 diagnostic-only 对账。
 
-冻结 pair 为 `BTC-7SEP26-80000-C-USDT` 与 `BTC-7SEP26-80000-P-USDT`，交割时间 `2026-09-07T08:00:00Z`（北京时间 16:00）。交割后使用 Bybit 公开 delivery endpoint 复核，两腿 delivery price 均为 `79309.8205649`，delivery identity 一致。
+2026-09-12 勘误：首次 STOP 原始 ZIP 经工作流校验后，首期 lifecycle ID 确认为 `btc-usdt-1788768000000-79750-a9f8f42224b2`，执行价是 **79750**。本文原先记录的 80000 缺少原始报告支持，现撤回；按冻结合约命名规则对应 `BTC-7SEP26-79750-C-USDT` 与 `BTC-7SEP26-79750-P-USDT`。这只是文档身份勘误，没有改变历史选约或交易规则。交割时间仍为 `2026-09-07T08:00:00Z`（北京时间 16:00）；此前公开 delivery endpoint 返回的共同交割价 `79309.8205649` 不能用于证明执行价。校验证据见 [C1 关闭结果](2026-09-12-option-candidate-closure-result.md)。
 
 ## 结果边界
 
