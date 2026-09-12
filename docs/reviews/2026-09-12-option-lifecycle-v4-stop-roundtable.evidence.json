@@ -1,0 +1,82 @@
+{
+  "schema_version": "roundtable_review_evidence_index_v1",
+  "review_date": "2026-09-12",
+  "checked_at_utc": "2026-09-12T13:49:07Z",
+  "repository": "skw2026/ai-trade",
+  "reviewed_source_sha": "f5dd0ca1434eef757acf70e3904806098470a1ec",
+  "candidate": {
+    "experiment_id": "btc_bybit_usdt_option_lifecycle_economic_v1",
+    "primary_action_id": "short_selected_straddle",
+    "economic_policy_canonical_sha256": "fbc9851193c8a34e587b81b647f3dea19c44006509b80ee2b8b9c3f39b5c30fa",
+    "economic_manifest_canonical_sha256": "d2dc77a9aa24b89337114c6d1a924e30933d7b134182a90949695ef95578d21c",
+    "payoff_policy_canonical_sha256": "4b0eb39aa8b8d75e37d9b7bde52e2a163b629168d85de22f699b0898c17d8931",
+    "payoff_manifest_canonical_sha256": "a2fc098e992a6b09667dcce83dc94e4f2a98dc9dae89b7a7d0b924d8ffb0cfc8",
+    "aggregation_freeze_utc": "2026-09-08T02:00:00Z"
+  },
+  "review_disposition": "STOP_CURRENT_FROZEN_CANDIDATE_ADVANCEMENT",
+  "disposition_scope": "review_record_only_not_consumed_by_runtime",
+  "closeout_anchor_run_id": 34685429648,
+  "stop_decision_inferred_from_metadata_and_source": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+  "stop_reason_inferred_from_source": "STRESS_EDGE_FUTILITY_BOUND_NONPOSITIVE",
+  "evidence_level": "public_run_and_artifact_metadata_plus_source_review",
+  "artifact_payload_downloaded": false,
+  "artifact_zip_digest_verified_locally": false,
+  "unauthenticated_anchor_download_http_status": 401,
+  "six_lifecycle_ids_verified_from_payload": false,
+  "production_pnl_recomputed_locally": false,
+  "full_cashflow_attribution_complete": false,
+  "runtime_terminal_latch_implemented": false,
+  "services_stopped_by_this_review": false,
+  "profitability_claim_allowed": false,
+  "sharpe_claim_allowed": false,
+  "drawdown_claim_allowed": false,
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false,
+  "observations": [
+    {
+      "run_id": 34673396357,
+      "run_created_at_utc": "2026-09-12T04:35:16Z",
+      "run_conclusion": "success",
+      "artifact_id": 10291702163,
+      "artifact_created_at_utc": "2026-09-12T04:36:07Z",
+      "artifact_digest_as_reported": "sha256:8c77998e539681b7d7f36433da1485863e5c82f2112318eab70ffdbd6873fc8c",
+      "artifact_name": "option-lifecycle-v4-PASS_FIRST_COMPLETE_LIFECYCLE_FOR_PAYOFF_RECONSTRUCTION_ONLY--PASS--s544_0--n8584--x77--q1178--d1--FIRST_LIFECYCLE_COMPLETE--RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY--e5_6--WAIT-34673396357-1",
+      "metadata_url": "https://api.github.com/repos/skw2026/ai-trade/actions/runs/34673396357/artifacts"
+    },
+    {
+      "run_id": 34685429648,
+      "run_created_at_utc": "2026-09-12T09:16:51Z",
+      "run_conclusion": "success",
+      "artifact_id": 10295950463,
+      "artifact_created_at_utc": "2026-09-12T09:17:43Z",
+      "artifact_expires_at_utc": "2026-12-11T09:16:51Z",
+      "artifact_expired_at_check": false,
+      "artifact_size_in_bytes": 6590,
+      "artifact_digest_as_reported": "sha256:d9d69ab4bc83ad9c7a5669fb1e3666aa74db5c6112f68ce236496ca9acfc8e1d",
+      "artifact_name": "option-lifecycle-v4-PASS_FIRST_COMPLETE_LIFECYCLE_FOR_PAYOFF_RECONSTRUCTION_ONLY--PASS--s563_0--n8888--x77--q1178--d1--FIRST_LIFECYCLE_COMPLETE--RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY--e6_6--STOP-34685429648-1",
+      "metadata_url": "https://api.github.com/repos/skw2026/ai-trade/actions/runs/34685429648/artifacts"
+    },
+    {
+      "run_id": 34694876041,
+      "run_created_at_utc": "2026-09-12T12:52:41Z",
+      "run_conclusion": "success",
+      "artifact_id": 10298443760,
+      "artifact_created_at_utc": "2026-09-12T12:53:35Z",
+      "artifact_expires_at_utc": "2026-12-11T12:52:41Z",
+      "artifact_expired_at_check": false,
+      "artifact_size_in_bytes": 6594,
+      "artifact_digest_as_reported": "sha256:10ba9b8da635df92b6a894a243ecda5c3ab64d8ccc1315ac07aa40be6851d925",
+      "artifact_name": "option-lifecycle-v4-PASS_FIRST_COMPLETE_LIFECYCLE_FOR_PAYOFF_RECONSTRUCTION_ONLY--PASS--s577_0--n9112--x77--q1178--d1--FIRST_LIFECYCLE_COMPLETE--RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY--e6_6--STOP-34694876041-1",
+      "metadata_url": "https://api.github.com/repos/skw2026/ai-trade/actions/runs/34694876041/artifacts"
+    }
+  ],
+  "local_validation": {
+    "existing_tests_passed": 23,
+    "existing_test_command": "PYTHONPATH=tools python3 -m unittest tools.test_audit_option_lifecycle_economics_v1 tools.test_audit_option_subaccount_ledger -v",
+    "synthetic_six_negative_lifecycles_returns_stop": true,
+    "mock_aggregation_six_negative_then_twelve_positive_can_return_pass": true,
+    "synthetic_probes_are_market_evidence": false,
+    "full_project_ci_run_by_this_review": false
+  }
+}

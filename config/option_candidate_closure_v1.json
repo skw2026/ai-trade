@@ -1,0 +1,22 @@
+{
+  "schema_version": "option_candidate_closure_registry_v1",
+  "candidate_experiment_id": "btc_bybit_usdt_option_lifecycle_economic_v1",
+  "primary_action_id": "short_selected_straddle",
+  "economic_policy_canonical_sha256": "fbc9851193c8a34e587b81b647f3dea19c44006509b80ee2b8b9c3f39b5c30fa",
+  "economic_manifest_canonical_sha256": "d2dc77a9aa24b89337114c6d1a924e30933d7b134182a90949695ef95578d21c",
+  "status": "CLOSED",
+  "closure_anchor": {
+    "repository": "skw2026/ai-trade",
+    "run_id": 34685429648,
+    "artifact_id": 10295950463,
+    "artifact_zip_sha256": "d9d69ab4bc83ad9c7a5669fb1e3666aa74db5c6112f68ce236496ca9acfc8e1d",
+    "executed_release_sha": "f5dd0ca1434eef757acf70e3904806098470a1ec",
+    "complete_lifecycle_count": 6,
+    "decision": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE"
+  },
+  "reopening_allowed": false,
+  "new_identity_alone_permits_reopening": false,
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}

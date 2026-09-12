@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: option-lifecycle-v4
@@ -30,6 +31,11 @@ jobs:
       AUDIT_OUTPUT_ROOT: /opt/ai-trade/data/reports/option_lifecycle_v4
       AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '40' || '1' }}
     steps:
+      - name: Checkout governance implementation
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
       - name: Check deploy secrets
         run: |
           set -euo pipefail
@@ -471,13 +477,34 @@ jobs:
                             "economics": economics}, indent=2, sort_keys=True))
           PY
 
+      - name: Verify frozen STOP evidence and enforce candidate closure
+        id: governance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Use the Actions token to fetch only the explicitly pinned research
+          # artifact. The governance tool verifies the original ZIP digest.
+          gh api repos/skw2026/ai-trade/actions/artifacts/10295950463/zip \
+            > .artifacts/closed-candidate-anchor.zip
+          python3 tools/audit_option_candidate_closure.py \
+            --registry config/option_candidate_closure_v1.json \
+            --anchor-zip .artifacts/closed-candidate-anchor.zip \
+            --current .artifacts/economics.json \
+            --output .artifacts/candidate-governance.json \
+            --emit-annotations
+          echo "state=CLOSED" >> "${GITHUB_OUTPUT}"
+
       - name: Upload aggregate lifecycle report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: option-lifecycle-v4-${{ steps.diagnostics.outputs.artifact_suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: option-lifecycle-v4-${{ steps.governance.outputs.state || 'UNVERIFIED' }}-${{ steps.diagnostics.outputs.artifact_suffix }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .artifacts/report.json
             .artifacts/payoff.json
             .artifacts/economics.json
+            .artifacts/candidate-governance.json
+            .artifacts/closed-candidate-anchor.zip
           if-no-files-found: warn

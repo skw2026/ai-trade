@@ -223,6 +223,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_option_lifecycle_v3.py)
     add_test(NAME option_lifecycle_economics_v1_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_lifecycle_economics_v1.py)
+    add_test(NAME option_candidate_closure_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_candidate_closure.py)
     add_test(NAME option_vrp_feasibility_audit_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_variance_risk_premium_feasibility.py)
     add_test(NAME option_vrp_sequential_payoff_audit_test
