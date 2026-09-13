@@ -490,6 +490,11 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
             for timestamp in sorted(rates_in_lifecycle)],
         "hedge_trade_count": len(hedge["ledger"]),
         "maximum_reconstructed_hedge_position_btc": text_number(maximum_position),
+        "exit_liquidity_unqualified_checkpoint_count": sum(
+            row["exit_bbo_qualified"] is False for row in ledger_report["checkpoints"]),
+        "first_exit_liquidity_gap_ts_ms": next((
+            row["ts_ms"] for row in ledger_report["checkpoints"]
+            if row["exit_bbo_qualified"] is False), None),
         "frozen_primary": frozen,
     }
     return ledger_input, ledger_report, metadata

@@ -87,10 +87,11 @@ def quote(row: dict[str, Any], now: int, max_age: int) -> tuple[Decimal, Decimal
     age = now - integer(row["ts_ms"], "quote.ts_ms")
     require(0 <= age <= max_age, "quote stale or from future")
     bid = number(row["bid"], "bid", nonnegative=True)
-    ask = number(row["ask"], "ask", positive=True)
-    require(bid <= ask, "crossed quote")
-    return bid, ask, number(row["bid_size"], "bid_size", positive=True), number(
-        row["ask_size"], "ask_size", positive=True)
+    ask = number(row["ask"], "ask", nonnegative=True)
+    # A missing side is an observed liquidity state, not an executable price.
+    require(bid == 0 or ask == 0 or bid <= ask, "crossed quote")
+    return bid, ask, number(row["bid_size"], "bid_size", nonnegative=True), number(
+        row["ask_size"], "ask_size", nonnegative=True)
 
 
 def _audit(scope: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
@@ -200,8 +201,8 @@ def _audit(scope: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
                 price = number(event["price_usdt_per_btc"], "fill price", positive=True)
                 fee = number(event["fee_usdt"], "fill fee", nonnegative=True)
                 bid, ask, bid_size, ask_size = quote(event["execution_quote"], now, quote_age)
-                require((qty > 0 and qty <= ask_size and price >= ask) or
-                        (qty < 0 and -qty <= bid_size and price <= bid), "fill violates taker price/quantity")
+                require((qty > 0 and ask > 0 and qty <= ask_size and price >= ask) or
+                        (qty < 0 and bid > 0 and -qty <= bid_size and price <= bid), "fill violates taker price/quantity")
                 new = old + qty
                 if meta["kind"] == "linear_perpetual":
                     realized = min(abs(old), abs(qty)) * (price - averages[symbol]) * (ONE if old > 0 else -ONE) if old * qty < 0 else ZERO
@@ -255,12 +256,14 @@ def _audit(scope: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
         marks = event["valuation"]
         require(set(marks) == set(open_positions), "incomplete/extra position valuation")
         nav = bbo_nav = cash
+        exit_bbo_qualified = True
         for symbol, qty in open_positions.items():
             meta = instruments[symbol]
             row = marks[symbol]
             bid, ask, bid_size, ask_size = quote(row, now, quote_age)
-            if (qty > 0 and (bid == 0 or qty > bid_size)) or (qty < 0 and -qty > ask_size):
+            if (qty > 0 and (bid == 0 or qty > bid_size)) or (qty < 0 and (ask == 0 or -qty > ask_size)):
                 missing.add("EXIT_BBO_DEPTH_INSUFFICIENT")
+                exit_bbo_qualified = False
             mark = number(row["mark"], "mark", nonnegative=meta["kind"] != "linear_perpetual",
                           positive=meta["kind"] == "linear_perpetual")
             basis = averages[symbol] if meta["kind"] == "linear_perpetual" else ZERO
@@ -309,7 +312,8 @@ def _audit(scope: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
         breaches.update(reasons)
         checkpoints.append({"id": key, "ts_ms": now, "cash_usdt": text_number(cash),
                             "nav_usdt": text_number(nav),
-                            "bbo_nav_before_future_close_fees_usdt": text_number(bbo_nav),
+                            "bbo_nav_before_future_close_fees_usdt": text_number(bbo_nav) if exit_bbo_qualified else None,
+                            "exit_bbo_qualified": exit_bbo_qualified,
                             "drawdown": text_number(drawdown), "risk_reasons": sorted(reasons),
                             "exit_review_latched": exit_latched})
     if set(funding_schedule) != funded:

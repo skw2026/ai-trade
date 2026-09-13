@@ -114,6 +114,8 @@ class SummaryTest(unittest.TestCase):
             "timeline_snapshot_count": 99, "hedge_trade_count": 20,
             "maximum_reconstructed_hedge_position_btc": "0.01",
             "settled_funding_boundaries": boundaries, "funding_boundary_count": 3,
+            "exit_liquidity_unqualified_checkpoint_count": 0,
+            "first_exit_liquidity_gap_ts_ms": None,
         })
         report["provenance"].update(funding_source_sha256=adapter.FUNDING_EVIDENCE_SHA256,
                                     funding_provenance="pinned_committed_diagnostic_evidence")

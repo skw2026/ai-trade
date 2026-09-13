@@ -83,6 +83,15 @@ def summary(report: dict[str, Any], *, expected_release: str) -> dict[str, Any]:
             require(type(source[key]) is int and 0 <= source[key] <= 1000000,
                     "invalid source count")
             result[key] = source[key]
+        count = source["exit_liquidity_unqualified_checkpoint_count"]
+        first = source["first_exit_liquidity_gap_ts_ms"]
+        require(type(count) is int and 0 <= count <= 1000000, "invalid liquidity gap count")
+        require((count == 0 and first is None) or
+                (count > 0 and type(first) is int
+                 and target["selected_epoch_ms"] <= first <= target["delivery_time_epoch_ms"]),
+                "invalid first liquidity gap time")
+        result.update(exit_liquidity_unqualified_checkpoint_count=count,
+                      first_exit_liquidity_gap_ts_ms=first)
         rates, _ = adapter.load_pinned_funding_rates()
         boundaries = [{"ts_ms": timestamp, "settled_rate": rate}
                       for timestamp, rate in sorted(rates.items())
@@ -95,6 +104,8 @@ def summary(report: dict[str, Any], *, expected_release: str) -> dict[str, Any]:
                 and all(isinstance(gap, str) and re.fullmatch(r"[A-Z_]{1,100}", gap) for gap in gaps)
                 and {"MARGIN_EVIDENCE_MISSING", "SCHEDULED_FUNDING_MISSING"} <= set(gaps),
                 "missing or unsafe gap list")
+        require((count > 0) == ("EXIT_BBO_DEPTH_INSUFFICIENT" in gaps),
+                "liquidity gap count and qualification disagree")
         require(re.fullmatch(r"[0-9a-f]{64}", report["ledger_input_sha256"]) is not None,
                 "invalid ledger identity")
         require(re.fullmatch(r"[0-9a-f]{64}", report["ledger_file_sha256"]) is not None,

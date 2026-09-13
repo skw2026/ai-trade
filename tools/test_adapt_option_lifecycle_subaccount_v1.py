@@ -28,6 +28,7 @@ class RealSymbolArchive(fixtures.OptionLifecycleEconomicsV1Test):
     completion_after_delivery = False
     shallow_hedge_depth = False
     changing_hedge = False
+    zero_valuation_side = ""
 
     def lifecycle(self, index: int, selected: int, delivery: int,
                   premium: float) -> dict:
@@ -76,6 +77,11 @@ class RealSymbolArchive(fixtures.OptionLifecycleEconomicsV1Test):
             for row in result["tracked_options"]:
                 row["delta"] = (("0.95" if hour % 2 == 0 else "0.85")
                                 if row["optionsType"].lower() == "call" else "-0.05")
+        if self.zero_valuation_side and timestamp > lifecycle["selected_epoch_ms"]:
+            for row in result["tracked_options"]:
+                row[f"{self.zero_valuation_side}1Size"] = "0"
+                if self.zero_valuation_side == "ask":
+                    row["ask1Price"] = "0"
         return result
 
 
@@ -155,6 +161,18 @@ class AdapterTest(unittest.TestCase):
         for quantity in ("0.00101", "-0.00101", "0.00000000001", "NaN"):
             with self.subTest(quantity=quantity), self.assertRaises(ValueError):
                 adapter.exact_frozen_lot(quantity, Decimal("0.001"))
+
+    def test_missing_post_entry_bbo_preserves_nav_and_exit_evidence_gap(self):
+        for side in ("bid", "ask"):
+            self.case.zero_valuation_side = side
+            with tempfile.TemporaryDirectory() as temporary:
+                root, target, rates = self.make_archive(pathlib.Path(temporary))
+                _, report = adapter.adapt(root=root, target=target, rates=rates)
+            with self.subTest(side=side):
+                self.assertEqual(report["decision"], adapter.DECISION)
+                self.assertEqual("EXIT_BBO_DEPTH_INSUFFICIENT" in report["known_gaps"], side == "ask")
+                self.assertEqual(report["source"]["exit_liquidity_unqualified_checkpoint_count"] > 0,
+                                 side == "ask")
 
     def test_funding_boundary_cannot_be_silently_omitted(self):
         with tempfile.TemporaryDirectory() as temporary:

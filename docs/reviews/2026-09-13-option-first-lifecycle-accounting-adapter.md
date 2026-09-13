@@ -42,3 +42,11 @@ python3 tools/adapt_option_lifecycle_subaccount_v1.py \
 真实远端结果须以本次发布后的报告为准，本节只说明部署接线，不预填重放结论。
 
 部署验证期间补充了跨小时换仓反例：旧浮点对冲记录可将 `0.009 BTC` 表示为 `0.009000000000000001`，原适配器因此被严格 Decimal ledger 判为 `invalid lot`。现按冻结 `quantity_step_btc` 恢复整数手数，误差上限为 `min(1e-12 BTC, step × 1e-9)`，同时核对每笔变动与前后仓位一致；超出范围不舍入通过。冻结动作、费用与 PnL 比较容差没有改变。适配器 11 项测试及相关账务/经济/关闭/摘要回归通过；完整初轮回归为 80/80。
+
+## 真实输入驱动的盘口语义修正
+
+`8930465` 已部署后的真实首期报告返回 `downstream ledger TECHNICALLY_INVALID: bid_size: must be positive`。该报告没有给出零买量发生的具体时刻，不能据此断言对应卖出持仓无法买回。代码复核确认原账本把成交和估值共用的“两侧数量必须大于零”当作格式合同，使未用于退出的一侧缺量也阻断 mark 账务。
+
+本轮裁决：负数量、未来/过时或真正交叉的双侧报价仍为无效；观察到零价格/零数量是一种流动性状态。FILL 必须在实际使用的一侧有正价格且数量足够；持仓估值保留独立 mark，按 long 所需 bid / short 所需 ask 核验退出侧。退出侧缺价或深度不足时，记录 `EXIT_BBO_DEPTH_INSUFFICIENT`，该检查点的 `bbo_nav_before_future_close_fees_usdt` 为 `null`，不能把零价或不足深度计算成可实现的完整退出价值。`exit_bbo_qualified` 只描述该检查点的盘口深度，未包含未来平仓费用、margin 或盈利资格。
+
+这项修正不补报价、不跳过检查点、不改变冻结成交；完整 C2 仍受 funding、适用费用、margin 和数据来源资格约束。新增反例分别覆盖未用侧缺量、long/short 退出侧缺量、缺 ask、零价格或零数量不得成交、负数量仍非法，以及 V4 raw → 账本的端到端估值缺口。

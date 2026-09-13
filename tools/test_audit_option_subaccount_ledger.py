@@ -233,6 +233,47 @@ class SubaccountLedgerTest(unittest.TestCase):
             data["events"][1]["margin"][field] = value
             self.assert_invalid(data, message)
 
+    def test_zero_unused_side_does_not_invalidate_mark_or_buy_to_cover(self):
+        data = fixture()
+        data["events"][2]["valuation"][CALL]["bid_size"] = "0"
+        result = self.run_case(data)
+        self.assertEqual(result["status"], "PASS_OFFLINE_ACCOUNTING_ONLY", result)
+        self.assertEqual(Decimal(result["checkpoints"][2]["nav_usdt"]), Decimal("999.6"))
+        self.assertTrue(result["checkpoints"][2]["exit_bbo_qualified"])
+
+    def test_zero_exit_depth_keeps_mark_but_withholds_liquidation_value(self):
+        for index, symbol, field in ((2, CALL, "ask_size"), (3, PERP, "bid_size")):
+            data = fixture()
+            data["events"][index]["valuation"][symbol][field] = "0"
+            result = self.run_case(data)
+            with self.subTest(symbol=symbol):
+                self.assertEqual(result["status"], "INSUFFICIENT_EVIDENCE", result)
+                self.assertIn("EXIT_BBO_DEPTH_INSUFFICIENT", result["missing_evidence"])
+                self.assertIsNone(result["checkpoints"][index]["bbo_nav_before_future_close_fees_usdt"])
+                self.assertFalse(result["checkpoints"][index]["exit_bbo_qualified"])
+                self.assertEqual(Decimal(result["final_cash_usdt"]), Decimal("1003.3"))
+
+    def test_missing_ask_price_is_not_crossed_or_free_short_exit(self):
+        data = fixture()
+        data["events"][2]["valuation"][CALL].update(ask="0", ask_size="0")
+        result = self.run_case(data)
+        self.assertEqual(result["status"], "INSUFFICIENT_EVIDENCE", result)
+        self.assertIsNone(result["checkpoints"][2]["bbo_nav_before_future_close_fees_usdt"])
+        self.assertEqual(Decimal(result["checkpoints"][2]["nav_usdt"]), Decimal("999.6"))
+
+    def test_zero_executed_side_price_or_depth_cannot_create_a_fill(self):
+        for index, fields_to_zero in ((1, ("bid", "bid_size")), (3, ("ask", "ask_size"))):
+            for field in fields_to_zero:
+                data = fixture()
+                data["events"][index]["execution_quote"][field] = "0"
+                with self.subTest(index=index, field=field):
+                    self.assert_invalid(data, "taker price/quantity")
+
+    def test_negative_observed_size_still_invalidates_ledger(self):
+        data = fixture()
+        data["events"][2]["valuation"][CALL]["bid_size"] = "-1"
+        self.assert_invalid(data, "must be nonnegative")
+
     def test_usdt_is_not_assumed_equal_to_usd(self):
         data = fixture()
         for event in data["events"]:
