@@ -32,3 +32,11 @@ python3 tools/adapt_option_lifecycle_subaccount_v1.py \
 本机没有 V4 原始归档，`gh` 也没有登录；现有 C1 artifact 只有三份聚合报告，不含逐快照 raw，不能从聚合 PnL 反造持仓路径。因此本轮没有声称真实首期适配成功，也没有访问账户凭据或交易接口。
 
 下一步是在持有 `/opt/ai-trade/data/research/bybit_btc_option_lifecycle_v4` 的部署环境只读运行上述工具并保存两个哈希输出。若得到来源证据缺口，按实际 reason 停止；若得到预期 incomplete 报告，再以重建出的真实最大 hedge 仓位和三个首期 funding 边界限定所需 settlement mark、适用费用及普通 Cross 保证金样例。精确数据仍不足时，只申请这一期、这些字段和时间窗口，不先扩大采购，也不启动新候选或 forward 时钟。
+
+## 继续推进：部署重放接线
+
+用户要求继续至下一个验证停点后，已将真实首期重放接入既有 V4 Gate：CD 成功后及手动运行执行一次，小时定时审计不重复运行 C2。逐事件 ledger 保存在 ECS 的 run-specific 目录，聚合 adapter report 纳入 artifact；有限白名单 annotations 提供 release、程序 SHA256、raw 集合身份及账务缺项或具体来源失败原因。
+
+发布前发现部署包原本不含适配器引用的两份提交内 JSON 证据，现已将它们按精确文件名复制进包并纳入 `.release-content.sha256`；复制配方测试验证独立发布目录可以载入固定证据。失败报告也保留 release/程序身份，来源时间或容量缺口保留对应时间、数量及 raw 哈希。完整账务通过、换候选或启动前向权限均保持 false。
+
+真实远端结果须以本次发布后的报告为准，本节只说明部署接线，不预填重放结论。

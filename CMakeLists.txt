@@ -117,6 +117,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_subaccount_ledger.py)
     add_test(NAME option_lifecycle_subaccount_adapter_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_adapt_option_lifecycle_subaccount_v1.py)
+    add_test(NAME option_lifecycle_adapter_summary_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_summarize_option_lifecycle_adapter.py)
     add_test(NAME option_historical_sample_qualification_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_historical_sample.py)
     add_test(NAME assess_run_log_test

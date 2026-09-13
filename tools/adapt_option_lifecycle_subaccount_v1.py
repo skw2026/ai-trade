@@ -15,6 +15,7 @@ from decimal import Decimal
 import hashlib
 import json
 import pathlib
+import re
 import statistics
 from typing import Any, Mapping, Sequence
 
@@ -51,6 +52,10 @@ AUTHORITIES = {
 
 class EvidenceGap(ValueError):
     """A bounded source is insufficient, rather than uncertainties being filled."""
+
+    def __init__(self, reason: str, context: Mapping[str, Any] | None = None):
+        super().__init__(reason)
+        self.context = dict(context or {})
 
 
 def require(condition: bool, reason: str) -> None:
@@ -273,6 +278,10 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
                 and snapshot["active_lifecycle"].get("lifecycle_id") == target["lifecycle_id"]]
     require(bool(selected), "pinned lifecycle snapshots are absent")
     selected.sort(key=lambda row: int(row["timestamp_epoch_ms"]))
+    source_identity = {
+        "archive_input_set_sha256": capture.canonical_sha256(replay["input_identities"]),
+        "target_snapshot_set_sha256": capture.canonical_sha256(selected),
+    }
     lifecycle = selected[0]["active_lifecycle"]
     start = int(lifecycle["selected_epoch_ms"])
     delivery = int(lifecycle["delivery_time_epoch_ms"])
@@ -336,7 +345,10 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
 
     entry_time = _availability(timeline[0])
     if entry_time > delivery:
-        raise EvidenceGap("ENTRY_OBSERVATION_AVAILABLE_AFTER_DELIVERY")
+        raise EvidenceGap("ENTRY_OBSERVATION_AVAILABLE_AFTER_DELIVERY", {
+            **source_identity,
+            "snapshot_ts_ms": start, "available_ts_ms": entry_time,
+            "delivery_ts_ms": delivery})
     for side in ("call", "put"):
         row = entry_rows[side]
         symbol = str(row["symbol"])
@@ -361,7 +373,10 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
         trades = hedge_by_snapshot.pop(source_time, [])
         if event_time > delivery:
             if trades:
-                raise EvidenceGap("HEDGE_OBSERVATION_AVAILABLE_AFTER_DELIVERY")
+                raise EvidenceGap("HEDGE_OBSERVATION_AVAILABLE_AFTER_DELIVERY", {
+                    **source_identity,
+                    "snapshot_ts_ms": source_time, "available_ts_ms": event_time,
+                    "delivery_ts_ms": delivery, "affected_trade_count": len(trades)})
             continue
         last_usable_snapshot = snapshot
         for trade_index, trade in enumerate(trades):
@@ -371,7 +386,12 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
             available = (Decimal(quote["ask_size"]) if change > 0
                          else Decimal(quote["bid_size"]))
             if abs(change) > available:
-                raise EvidenceGap("HEDGE_EXECUTION_DEPTH_INSUFFICIENT")
+                raise EvidenceGap("HEDGE_EXECUTION_DEPTH_INSUFFICIENT", {
+                    **source_identity,
+                    "snapshot_ts_ms": source_time, "available_ts_ms": event_time,
+                    "delivery_ts_ms": delivery,
+                    "required_quantity_btc": text_number(abs(change)),
+                    "available_quantity_btc": text_number(available)})
             positions["BTCUSDT"] += change
             ledger.close(positions["BTCUSDT"],
                          Decimal(str(trade["position_after_btc"])),
@@ -530,6 +550,8 @@ def main() -> int:
                         help="optional local raw-response qualification; the pinned committed evidence is the default")
     parser.add_argument("--ledger-output", required=True, type=pathlib.Path)
     parser.add_argument("--report-output", required=True, type=pathlib.Path)
+    parser.add_argument("--executed-release-sha", default="",
+                        help="optional deployed Git identity; checked against workflow release")
     args = parser.parse_args()
     outputs = {args.ledger_output.resolve(), args.report_output.resolve()}
     inputs = {args.root.resolve(), CLOSURE_EVIDENCE.resolve(),
@@ -540,7 +562,16 @@ def main() -> int:
         report = _invalid_report("outputs must be distinct and cannot overwrite inputs")
         print(report["decision"])
         return 2
+    provenance = {
+        "executed_release_sha": args.executed_release_sha,
+        "closure_evidence_sha256": CLOSURE_EVIDENCE_SHA256,
+        "adapter_engine_sha256": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
+        "ledger_engine_sha256": hashlib.sha256(pathlib.Path(ledger.__file__).read_bytes()).hexdigest(),
+    }
     try:
+        require(not args.executed_release_sha or
+                re.fullmatch(r"[0-9a-f]{40}", args.executed_release_sha) is not None,
+                "invalid executed release identity")
         target, closed = load_pinned_target()
         if args.funding_source is None:
             rates, funding_sha = load_pinned_funding_rates()
@@ -548,25 +579,25 @@ def main() -> int:
         else:
             _, rates, funding_sha = funding.funding_source(args.funding_source)
             funding_provenance = "local_checksum_bound_raw_response_replay"
-        ledger_input, report = adapt(root=args.root, target=target, rates=rates)
-        report["provenance"] = {
-            "closure_evidence_sha256": CLOSURE_EVIDENCE_SHA256,
+        provenance.update({
             "closure_source_run_id": closed["source_run_id"],
             "closure_executed_release_sha": closed["closure_anchor"]["executed_release_sha"],
             "funding_source_sha256": funding_sha,
             "funding_provenance": funding_provenance,
-            "adapter_engine_sha256": hashlib.sha256(
-                pathlib.Path(__file__).read_bytes()).hexdigest(),
-            "ledger_engine_sha256": hashlib.sha256(
-                pathlib.Path(ledger.__file__).read_bytes()).hexdigest(),
-        }
+        })
+        ledger_input, report = adapt(root=args.root, target=target, rates=rates)
+        report["provenance"] = provenance
         lifecycle_economics._atomic_write(args.ledger_output, ledger_input)
+        report["ledger_file_sha256"] = hashlib.sha256(args.ledger_output.read_bytes()).hexdigest()
         report["ledger_output_written"] = True
         lifecycle_economics._atomic_write(args.report_output, report)
         print(report["decision"])
         return 0
     except EvidenceGap as exc:
         report = _invalid_report(str(exc), evidence_gap=True)
+        report["provenance"] = provenance
+        report["target_lifecycle_id"] = TARGET_LIFECYCLE
+        report["gap_context"] = exc.context
         report["ledger_output_written"] = False
         lifecycle_economics._atomic_write(args.report_output, report)
         print(report["decision"])
@@ -574,6 +605,8 @@ def main() -> int:
     except (OSError, ValueError, TypeError, KeyError, IndexError,
             ArithmeticError, json.JSONDecodeError) as exc:
         report = _invalid_report(str(exc))
+        report["provenance"] = provenance
+        report["target_lifecycle_id"] = TARGET_LIFECYCLE
         report["ledger_output_written"] = False
         lifecycle_economics._atomic_write(args.report_output, report)
         print(report["decision"])

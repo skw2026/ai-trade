@@ -246,6 +246,10 @@ jobs:
           cp -f deploy/write_deployment_diagnostics.py \
             "${PAYLOAD_DIR}/deploy/write_deployment_diagnostics.py"
           cp -a config observability ops tools "${PAYLOAD_DIR}/"
+          mkdir -p "${PAYLOAD_DIR}/docs/reviews"
+          cp docs/reviews/2026-09-12-option-candidate-closure-result.evidence.json \
+            docs/reviews/2026-09-13-option-funding-sensitivity-result.evidence.json \
+            "${PAYLOAD_DIR}/docs/reviews/"
           python3 deploy/materialize_release_compose.py \
             --input "${PAYLOAD_DIR}/docker-compose.prod.yml" \
             --release-dir "${PAYLOAD_DIR}"
@@ -259,6 +263,7 @@ jobs:
               observability \
               ops \
               tools \
+              docs \
               -type f -print0 \
               | LC_ALL=C sort -z \
               | xargs -0 sha256sum > .release-content.sha256
@@ -325,6 +330,9 @@ jobs:
           grep -q '^\./ops/cron/closed-loop.cron.example$' /tmp/deploy_bundle.list
           grep -q '^\./tools/closed_loop_runner.sh$' /tmp/deploy_bundle.list
           grep -q '^\./tools/evaluate_demo_incubation.py$' /tmp/deploy_bundle.list
+          grep -q '^\./tools/adapt_option_lifecycle_subaccount_v1.py$' /tmp/deploy_bundle.list
+          grep -q '^\./docs/reviews/2026-09-12-option-candidate-closure-result.evidence.json$' /tmp/deploy_bundle.list
+          grep -q '^\./docs/reviews/2026-09-13-option-funding-sensitivity-result.evidence.json$' /tmp/deploy_bundle.list
           grep -q '^\./tools/run_microstructure_alpha_development.py$' \
             /tmp/deploy_bundle.list
           grep -q '^\./tools/run_microstructure_alpha_lifecycle.py$' \

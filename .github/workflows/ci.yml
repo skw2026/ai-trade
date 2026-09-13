@@ -75,6 +75,8 @@ jobs:
           grep -q "financial_risk_contract_test" /tmp/ctest-list.txt
           grep -q "option_historical_sample_qualification_test" /tmp/ctest-list.txt
           grep -q "option_subaccount_ledger_test" /tmp/ctest-list.txt
+          grep -q "option_lifecycle_subaccount_adapter_test" /tmp/ctest-list.txt
+          grep -q "option_lifecycle_adapter_summary_test" /tmp/ctest-list.txt
           grep -q "option_public_history_qualification_test" /tmp/ctest-list.txt
           grep -q "option_archive_lifecycle_audit_test" /tmp/ctest-list.txt
           grep -q "assess_run_log_test" /tmp/ctest-list.txt

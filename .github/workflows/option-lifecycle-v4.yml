@@ -30,6 +30,7 @@ jobs:
       AUDIT_CAPTURE_ROOT: /opt/ai-trade/data/research/bybit_btc_option_lifecycle_v4
       AUDIT_OUTPUT_ROOT: /opt/ai-trade/data/reports/option_lifecycle_v4
       AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '40' || '1' }}
+      C2_RUN_ADAPTER: ${{ github.event_name != 'schedule' && 'true' || 'false' }}
     steps:
       - name: Checkout governance implementation
         uses: actions/checkout@v4
@@ -51,6 +52,7 @@ jobs:
           AUDIT_CAPTURE_ROOT: ${{ env.AUDIT_CAPTURE_ROOT }}
           AUDIT_OUTPUT_ROOT: ${{ env.AUDIT_OUTPUT_ROOT }}
           AUDIT_STARTUP_ATTEMPTS: ${{ env.AUDIT_STARTUP_ATTEMPTS }}
+          C2_RUN_ADAPTER: ${{ env.C2_RUN_ADAPTER }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
@@ -58,7 +60,7 @@ jobs:
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
           command_timeout: 45m
-          envs: AUDIT_EXPECTED_SHA,AUDIT_RUN_ID,AUDIT_CAPTURE_ROOT,AUDIT_OUTPUT_ROOT,AUDIT_STARTUP_ATTEMPTS
+          envs: AUDIT_EXPECTED_SHA,AUDIT_RUN_ID,AUDIT_CAPTURE_ROOT,AUDIT_OUTPUT_ROOT,AUDIT_STARTUP_ATTEMPTS,C2_RUN_ADAPTER
           script: |
             set -euo pipefail
             export PYTHONDONTWRITEBYTECODE=1
@@ -235,6 +237,17 @@ jobs:
               --economic-manifest config/option_lifecycle_economic_manifest_v1.json \
               --executed-release-sha "${EXECUTED_SHA}" \
               --output "${ECONOMICS_REPORT_PATH}"
+            if [[ "${C2_RUN_ADAPTER:-false}" == "true" ]]; then
+              # Read raw only; keep event-level ledger on ECS. The downloaded
+              # report is validated separately, including on invalid input.
+              c2_exit=0
+              python3 tools/adapt_option_lifecycle_subaccount_v1.py \
+                --root "${AUDIT_CAPTURE_ROOT}" \
+                --executed-release-sha "${EXECUTED_SHA}" \
+                --ledger-output "${OUTPUT_DIR}/first.ledger-input.json" \
+                --report-output "${OUTPUT_DIR}/first.adapter-report.json" || c2_exit=$?
+              echo "C2 adapter process exit=${c2_exit}"
+            fi
 
       - name: Download aggregate audit report
         if: always()
@@ -288,6 +301,12 @@ jobs:
             fi
             sleep 10
           done
+          if [[ "${C2_RUN_ADAPTER}" == "true" ]]; then
+            scp -i .artifacts/ecs_key -P "${PORT}" \
+              -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
+              "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/first.adapter-report.json" \
+              .artifacts/first.adapter-report.json || true
+          fi
           rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
           echo "report_downloaded=${report_downloaded} payoff_downloaded=${payoff_downloaded} economics_downloaded=${economics_downloaded}"
           [[ "${report_downloaded}" == "true" ]]
@@ -496,6 +515,16 @@ jobs:
             --emit-annotations
           echo "state=CLOSED" >> "${GITHUB_OUTPUT}"
 
+      - name: Validate and summarize first lifecycle accounting adapter
+        if: ${{ always() && env.C2_RUN_ADAPTER == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/summarize_option_lifecycle_adapter.py \
+            --report .artifacts/first.adapter-report.json \
+            --lifecycle-report .artifacts/report.json \
+            --expected-release "${AUDIT_EXPECTED_SHA}"
+
       - name: Upload aggregate lifecycle report
         if: always()
         uses: actions/upload-artifact@v4
@@ -507,4 +536,5 @@ jobs:
             .artifacts/economics.json
             .artifacts/candidate-governance.json
             .artifacts/closed-candidate-anchor.zip
+            .artifacts/first.adapter-report.json
           if-no-files-found: warn
