@@ -462,6 +462,7 @@ def replay(capture: pathlib.Path, expected_sha: str | None = None) -> dict[str, 
     complete: set[str] = set()
     failed: set[str] = set(manifest["errors"])
     codes = {name: error_code(ValueError(value)) for name, value in manifest["errors"].items()}
+    shapes: dict[str, Any] = {}
     cursors: dict[str, set[str]] = {}
     for index, page in enumerate(pages):
         group, request = page["group"], page["request"]
@@ -504,6 +505,16 @@ def replay(capture: pathlib.Path, expected_sha: str | None = None) -> dict[str, 
         except (ValueError, KeyError, TypeError) as exc:
             failed.add(group)
             codes[group] = error_code(exc)
+            # Only schema types/cardinalities, never account values or IDs.
+            payload = decode(raw)
+            data = payload.get("result")
+            if isinstance(data, dict):
+                shapes[group] = {"response_time_type": type(payload.get("time")).__name__,
+                                 "response_time_present": "time" in payload,
+                                 "time_now_present": "timeNow" in payload,
+                                 "cursor_type": type(data.get("nextPageCursor")).__name__,
+                                 "cursor_present": "nextPageCursor" in data,
+                                 "rows_count": len(data["list"]) if isinstance(data.get("list"), list) else None}
     missing = set(plan(source, start, end)) - complete
     summary: dict[str, Any] = {"schema_version": SCHEMA, "source": source,
         "start_ms": start, "end_ms": end, "manifest_sha256": digest(raw_manifest),
@@ -511,6 +522,7 @@ def replay(capture: pathlib.Path, expected_sha: str | None = None) -> dict[str, 
         "response_pages": len(pages), "complete_groups": sorted(complete),
         "failed_or_incomplete_groups": sorted(failed | missing),
         "error_codes": codes,
+        "failure_field_shapes": shapes,
         "promotion_authority": False, "order_submission": False, "account_mode_change": False}
     if failed or missing:
         summary.update(status="READONLY_CAPTURE_INCOMPLETE", gaps=["SOURCE_CAPTURE_INCOMPLETE"])
@@ -535,12 +547,19 @@ def main() -> int:
     parser.add_argument("--end-ms", type=int)
     parser.add_argument("--root", type=pathlib.Path, default=pathlib.Path("data/research/bybit_readonly"))
     parser.add_argument("--capture", type=pathlib.Path)
+    parser.add_argument("--capture-parent", type=pathlib.Path)
     parser.add_argument("--expected-manifest-sha256")
     parser.add_argument("--env-file", type=pathlib.Path)
     parser.add_argument("--allow-legacy-demo-credentials", action="store_true")
     args = parser.parse_args()
     try:
         if args.action == "replay":
+            if args.capture_parent is not None:
+                require(args.capture is None and args.capture_parent.is_dir() and
+                        not args.capture_parent.is_symlink(), "CAPTURE_PARENT_INVALID")
+                candidates = [p for p in args.capture_parent.iterdir() if p.is_dir() and not p.is_symlink()]
+                require(len(candidates) == 1, "CAPTURE_PARENT_NOT_UNIQUE")
+                args.capture = candidates[0]
             require(args.capture is not None, "CAPTURE_PATH_REQUIRED")
             report = replay(args.capture, args.expected_manifest_sha256)
         else:
