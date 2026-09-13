@@ -42,7 +42,7 @@
 
 - 工具：[audit_option_funding_sensitivity.py](../../tools/audit_option_funding_sensitivity.py)，纯离线、只读输入、stdout 输出；复用已有来源与数值校验器，无账户或网络功能。固定本次 C1 摘要身份，拒绝跨窗口和不匹配 bundle。
 - 13 项测试覆盖手算、负/零 rate、缺失/错位/重复/未收盘 candle、坏 OHLC、来源身份、腐败字节、symlink、权限变更、端到端重放，以及“即使情景转正仍不得晋级”。已注册 CTest 与 CI 检查。
-- warnings-as-errors 构建、完整 **78/78 CTest** 通过；最终 13 项新测试、四组相关定向回归和真实 18 边界重放通过。独立 Decimal 算术复核两种情景一致。远端发布结果另行补记，不以本地验证冒充 CI/CD 已成功。
+- warnings-as-errors 构建、完整 **78/78 CTest** 通过；最终 13 项新测试、四组相关定向回归和真实 18 边界重放通过。独立 Decimal 算术复核两种情景一致。CI YAML 由 Ruby/Psych 成功解析；本机默认 Python 未安装 PyYAML，未为此变更依赖。
 - 可阅读数值与来源：[JSON 证据](2026-09-13-option-funding-sensitivity-result.evidence.json)。费用合计按原六期浮点输出转 Decimal 后求和，末位差异不超过原浮点精度；未改原 C1 数值文件。
 
 本地数据根为 `data/research/option_lifecycle_funding_qualification/`：
@@ -67,3 +67,21 @@ python3 tools/audit_option_funding_sensitivity.py \
 4. 如果现有归档仍不足，再取得**一期、明确合约、明确字段与时间窗口**的数据样本/报价。Tardis 官方合同列出 [Bybit Options](https://docs.tardis.dev/historical-data-details/bybit-options) 与 [Bybit 永续 tickers/orderbook](https://docs.tardis.dev/historical-data-details/bybit) 历史渠道，但不能据此认定订阅包含精确结算真值或保证金数据；先验样本，采购另批。当前未采购、未要求交易密钥。
 
 本轮只完成 C2 的一个诊断子项；完整 C2/C3、C4 新候选、C5 前向等待均未通过或未启动。现有采集保留，旧候选保持 CLOSED，Demo/live 权限不变。
+
+## 发布闭环
+
+实现已推送 main：`120378d9bf241a2d887568ae26ef7ab005ae5da3`。同提交远端结果：
+
+| 门禁 | 结果 |
+|---|---|
+| [CI 34733507513](https://github.com/skw2026/ai-trade/actions/runs/34733507513) | success |
+| [CD 34733507485](https://github.com/skw2026/ai-trade/actions/runs/34733507485) | success |
+| [V4 Gate 34734025528](https://github.com/skw2026/ai-trade/actions/runs/34734025528) | success |
+| [Archive Audit 34734025435](https://github.com/skw2026/ai-trade/actions/runs/34734025435) | success |
+| [Closed Loop Smoke 34734025482](https://github.com/skw2026/ai-trade/actions/runs/34734025482) | success，完成更新于 03:04:22 UTC |
+
+期间本地 GitHub API 查询发生连接超时，最终 IPv4 查询已确认 Smoke success；没有把查询失败误判为部署失败，也未修改网络配置。治理/运行门禁绿色不构成策略经济通过。
+
+同提交 V4 artifact `10310541038` 的名称继续以 `option-lifecycle-v4-CLOSED-` 开头，摘要为六个完整生命周期，未恢复晋级。
+
+此发布结果补记为 docs-only `[skip ci]` 提交，不触发第二次部署。研究工具没有接入自动晋级或发单链；原有三个用户未提交文件继续保留。
