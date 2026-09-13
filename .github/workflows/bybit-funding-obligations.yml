@@ -1,0 +1,130 @@
+name: Bybit Funding Obligations
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/bybit-funding-obligations
+    paths:
+      - .github/workflows/bybit-funding-obligations.yml
+      - tools/audit_bybit_funding_obligations.py
+      - tools/test_audit_bybit_funding_obligations.py
+      - tools/audit_bybit_readonly_evidence.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bybit-funding-obligations
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline tests
+        run: |
+          python3 tools/test_audit_bybit_readonly_evidence.py
+          python3 tools/test_audit_bybit_funding_obligations.py
+      - name: Bind both executable files
+        id: identity
+        run: |
+          echo "auditor=$(sha256sum tools/audit_bybit_funding_obligations.py | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "source=$(sha256sum tools/audit_bybit_readonly_evidence.py | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Copy offline auditor to independent data directory
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          source: tools/audit_bybit_funding_obligations.py,tools/audit_bybit_readonly_evidence.py
+          target: /opt/ai-trade/data/research/bybit_funding_runner/${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Replay pinned private archive against public settled calendars
+        shell: bash
+        env:
+          AUDIT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          AUDITOR_SHA: ${{ steps.identity.outputs.auditor }}
+          SOURCE_SHA: ${{ steps.identity.outputs.source }}
+          DEMO_SHA: 87b0742758068307b1f89b36b07ef7a2448294c510c0263468173b94c68eae1a
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT || vars.ECS_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "${AUDIT_RUN_ID}" =~ ^[0-9]+-[0-9]+$ ]]
+          [[ "${AUDITOR_SHA}" =~ ^[0-9a-f]{64}$ && "${SOURCE_SHA}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${DEMO_SHA}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ && "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]]
+          KEY_DIR="$(mktemp -d "${RUNNER_TEMP}/bybit-funding-XXXXXX")"
+          trap 'rm -f "${KEY_DIR}/key" "${KEY_DIR}/known_hosts"; rmdir "${KEY_DIR}"' EXIT
+          printf '%s\n' "${ECS_SSH_KEY}" > "${KEY_DIR}/key"
+          sed -i 's/\r$//' "${KEY_DIR}/key"
+          ssh-keygen -y -f "${KEY_DIR}/key" >/dev/null
+          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > "${KEY_DIR}/known_hosts" 2>/dev/null
+          if [[ -n "${ECS_FINGERPRINT}" ]]; then
+            ssh-keygen -lf "${KEY_DIR}/known_hosts" | awk '{print $2}' | grep -Fxq "${ECS_FINGERPRINT}"
+          fi
+          mkdir -p .artifacts
+          remote_exit=0
+          ssh -i "${KEY_DIR}/key" -p "${ECS_PORT}" \
+            -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- ${AUDIT_RUN_ID} ${AUDITOR_SHA} ${SOURCE_SHA} ${DEMO_SHA}" \
+            > .artifacts/funding-summary.json <<'REMOTE' || remote_exit=$?
+          set -euo pipefail
+          umask 077
+          export PYTHONDONTWRITEBYTECODE=1
+          run_id="$1"
+          auditor_sha="$2"
+          source_sha="$3"
+          demo_sha="$4"
+          runner="/opt/ai-trade/data/research/bybit_funding_runner/${run_id}/tools"
+          printf '%s  %s\n' "${auditor_sha}" "${runner}/audit_bybit_funding_obligations.py" | sha256sum -c - >/dev/null
+          printf '%s  %s\n' "${source_sha}" "${runner}/audit_bybit_readonly_evidence.py" | sha256sum -c - >/dev/null
+          python3 "${runner}/audit_bybit_funding_obligations.py" collect-public \
+            --demo-parent /opt/ai-trade/data/research/bybit_readonly_private/34761067389-1 \
+            --demo-sha256 "${demo_sha}" \
+            --calendar-root "/opt/ai-trade/data/research/bybit_funding_private/${run_id}"
+          REMOTE
+          echo "remote_exit=${remote_exit}"
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          path = pathlib.Path('.artifacts/funding-summary.json')
+          if not 0 < path.stat().st_size < 16384:
+              raise SystemExit('No bounded funding summary')
+          report = json.loads(path.read_text())
+          allowed = {'schema_version', 'status', 'reason', 'counts', 'gaps', 'scope',
+                     'five_second_inclusion_guard_ms', 'initial_position_assumed_zero',
+                     'snapshot_used_as_window_endpoint', 'no_funding_obligation_accountwide_proven',
+                     'funding_fee_model_qualified', 'historical_cross_margin_qualified',
+                     'c2_option_accounting_qualified', 'private_api_calls', 'order_submission',
+                     'promotion_authority', 'balances_or_cash_amounts_published',
+                     'calendar_manifest_sha256', 'public_response_pages', 'calendar_partition_check',
+                     'calendar_independent_completeness_proven', 'demo_manifest_sha256',
+                     'auditor_sha256', 'source_replayer_sha256'}
+          report = {k: v for k, v in report.items() if k in allowed}
+          if report.get('schema_version') != 'bybit_funding_obligations_v1':
+              raise SystemExit('Funding summary schema mismatch')
+          if report.get('status') != 'FUNDING_AUDIT_NOT_COMPLETED':
+              for field, key in [('auditor_sha256', 'AUDITOR_SHA'), ('source_replayer_sha256', 'SOURCE_SHA'),
+                                 ('demo_manifest_sha256', 'DEMO_SHA')]:
+                  if report.get(field) != os.environ[key]:
+                      raise SystemExit('Funding evidence identity mismatch')
+          rendered = json.dumps(report, sort_keys=True).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::notice title=Bybit funding obligations::' + rendered)
+          if report.get('status') not in ('OBSERVED_BOUNDARIES_FLAT_CONDITIONAL',
+                  'OBSERVED_EXPOSURE_WITHOUT_SETTLEMENT_RECORD', 'FUNDING_OBLIGATIONS_UNRESOLVED',
+                  'FUNDING_RECORDS_REQUIRE_SEPARATE_RECONCILIATION'):
+              raise SystemExit('Funding audit incomplete')
+          PY
+          [[ "${remote_exit}" == 0 ]]
+      # No credentials/env file used remotely, no account/raw artifact uploads.
