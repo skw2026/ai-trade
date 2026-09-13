@@ -7,6 +7,10 @@ on:
         description: "Optional existing capture run-attempt to replay without account access"
         required: false
         default: ""
+      manifest_sha256:
+        description: "Required when replay_run_id is set: pinned source manifest SHA256"
+        required: false
+        default: ""
   push:
     branches:
       - research/bybit-demo-readonly
@@ -55,6 +59,7 @@ jobs:
           # Pin the existing failed capture for parser qualification. Manual
           # dispatch with an empty replay ID performs a new Demo GET capture.
           READONLY_REPLAY_RUN_ID: ${{ github.event_name == 'push' && '34761067389-1' || inputs.replay_run_id }}
+          READONLY_MANIFEST_SHA: ${{ github.event_name == 'push' && '87b0742758068307b1f89b36b07ef7a2448294c510c0263468173b94c68eae1a' || inputs.manifest_sha256 }}
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
           ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
@@ -66,6 +71,8 @@ jobs:
           [[ "${READONLY_RUN_ID}" =~ ^[0-9]+-[0-9]+$ ]]
           [[ "${READONLY_CODE_SHA}" =~ ^[0-9a-f]{64}$ ]]
           [[ -z "${READONLY_REPLAY_RUN_ID}" || "${READONLY_REPLAY_RUN_ID}" =~ ^[0-9]+-[0-9]+$ ]]
+          [[ -z "${READONLY_MANIFEST_SHA}" || "${READONLY_MANIFEST_SHA}" =~ ^[0-9a-f]{64}$ ]]
+          [[ -z "${READONLY_REPLAY_RUN_ID}" || "${READONLY_MANIFEST_SHA}" =~ ^[0-9a-f]{64}$ ]]
           [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ ]]
           [[ "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]]
           KEY_DIR="$(mktemp -d "${RUNNER_TEMP}/bybit-readonly-XXXXXX")"
@@ -82,7 +89,7 @@ jobs:
           ssh -i "${KEY_DIR}/key" -p "${ECS_PORT}" \
             -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 "${ECS_USER}@${ECS_HOST}" \
-            "bash -s -- ${READONLY_RUN_ID} ${READONLY_CODE_SHA} ${READONLY_REPLAY_RUN_ID}" \
+            "bash -s -- ${READONLY_RUN_ID} ${READONLY_CODE_SHA} '${READONLY_REPLAY_RUN_ID}' '${READONLY_MANIFEST_SHA}'" \
             > .artifacts/readonly-summary.json <<'REMOTE' || remote_exit=$?
           set -euo pipefail
           umask 077
@@ -90,11 +97,13 @@ jobs:
           run_id="$1"
           code_sha="$2"
           replay_run_id="${3:-}"
+          manifest_sha="${4:-}"
           script="/opt/ai-trade/data/research/bybit_readonly_runner/${run_id}/tools/audit_bybit_readonly_evidence.py"
           printf '%s  %s\n' "${code_sha}" "${script}" | sha256sum -c - >/dev/null
           if [[ -n "${replay_run_id}" ]]; then
             python3 "${script}" replay \
-              --capture-parent "/opt/ai-trade/data/research/bybit_readonly_private/${replay_run_id}"
+              --capture-parent "/opt/ai-trade/data/research/bybit_readonly_private/${replay_run_id}" \
+              --expected-manifest-sha256 "${manifest_sha}"
           else
             python3 "${script}" collect \
               --source demo \
@@ -107,6 +116,7 @@ jobs:
           python3 - <<'PY'
           import json
           import pathlib
+          import os
           import re
 
           path = pathlib.Path('.artifacts/readonly-summary.json')
@@ -119,6 +129,8 @@ jobs:
                      'manifest_sha256', 'collector_sha256', 'replayer_sha256', 'response_pages',
                      'complete_groups', 'failed_or_incomplete_groups', 'error_codes', 'gaps',
                      'failure_field_shapes',
+                     'collector_error_codes', 'response_time_missing_groups',
+                     'trade_execution_records', 'execution_fee_records_checked', 'funding_execution_records',
                      'promotion_authority', 'order_submission', 'account_mode_change', 'counts',
                      'margin_mode', 'account_margin_fields_applicable', 'account_margin_fields_present',
                      'cash_identity_checked', 'matched_execution_transactions', 'funding_settlement_records',
@@ -127,6 +139,10 @@ jobs:
           report = {key: value for key, value in report.items() if key in allowed}
           if report.get('schema_version') != 'bybit_readonly_evidence_v1' or report.get('source') != 'demo':
               raise SystemExit('Readonly summary source mismatch')
+          if 'replayer_sha256' in report and report['replayer_sha256'] != os.environ['READONLY_CODE_SHA']:
+              raise SystemExit('Readonly engine identity mismatch')
+          if os.environ.get('READONLY_REPLAY_RUN_ID') and report.get('manifest_sha256') != os.environ['READONLY_MANIFEST_SHA']:
+              raise SystemExit('Readonly pinned source identity mismatch')
           rendered = json.dumps(report, sort_keys=True)
           rendered = rendered.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
           print('::notice title=Bybit Demo readonly evidence::' + rendered)

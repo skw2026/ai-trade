@@ -235,17 +235,18 @@ def safe_read(path: pathlib.Path) -> bytes:
     return path.read_bytes()
 
 
-def result(raw: bytes) -> dict[str, Any]:
+def result(raw: bytes, *, allow_missing_time: bool = False) -> dict[str, Any]:
     payload = decode(raw)
     require(type(payload.get("retCode")) is int, "API_CODE_INVALID")
     require(payload["retCode"] == 0, "API_ERROR_" + str(payload["retCode"]))
-    require(type(payload.get("time")) is int and payload["time"] > 0, "SERVER_TIME_INVALID")
+    if not (allow_missing_time and "time" not in payload):
+        require(type(payload.get("time")) is int and payload["time"] > 0, "SERVER_TIME_INVALID")
     require(isinstance(payload.get("result"), dict), "API_RESULT_INVALID")
     return payload["result"]
 
 
 def response_rows(raw: bytes, group: str) -> tuple[list[dict[str, Any]], str]:
-    data = result(raw)
+    data = result(raw, allow_missing_time=group == "account")
     if group == "account":
         require(data.get("marginMode") in ("ISOLATED_MARGIN", "REGULAR_MARGIN", "PORTFOLIO_MARGIN"),
                 "MARGIN_MODE_INVALID")
@@ -256,6 +257,10 @@ def response_rows(raw: bytes, group: str) -> tuple[list[dict[str, Any]], str]:
     if group not in ("transactions", "wallet"):
         require(data.get("category") == "linear", "CATEGORY_MISMATCH")
     cursor = data.get("nextPageCursor", "")
+    # Observed Demo terminal empty transaction page returns explicit null.
+    # Do not extend this exception to nonempty pages or other endpoint types.
+    if group == "transactions" and not rows and cursor is None:
+        cursor = ""
     require(isinstance(cursor, str) and len(cursor) <= 2048, "CURSOR_INVALID")
     return rows, cursor
 
@@ -368,15 +373,25 @@ def audit_demo(groups: dict[str, list[Any]], start: int, end: int) -> dict[str, 
                     "DUPLICATE_OR_MISSING_TRADE_ID")
             trades[key] = row
     executions: dict[tuple[str, str], dict[str, Any]] = {}
-    matched = 0
+    matched = trade_count = funding_execution_count = fee_checked = 0
     for row in groups.get("executions", []):
         require(start <= epoch(row.get("execTime")) <= end, "EXECUTION_OUTSIDE_WINDOW")
         key = (row.get("symbol"), row.get("execId"))
         require(all(isinstance(v, str) and v for v in key) and key not in executions,
                 "DUPLICATE_OR_MISSING_EXECUTION_ID")
         executions[key] = row
+        if row.get("execType") == "Funding":
+            number(row.get("execFee"))
+            funding_execution_count += 1
         if row.get("execType") != "Trade":
             continue
+        trade_count += 1
+        require(row.get("side") in ("Buy", "Sell") and isinstance(row.get("orderId"), str)
+                and row["orderId"], "EXECUTION_TRADE_IDENTITY_INVALID")
+        number(row.get("execFee"))
+        require(number(row.get("execQty")) > 0 and number(row.get("execPrice")) > 0,
+                "EXECUTION_VALUES_INVALID")
+        fee_checked += 1
         tx = trades.get(key)
         if tx is None:
             gaps.add("EXECUTION_WITHOUT_TRANSACTION")
@@ -395,12 +410,14 @@ def audit_demo(groups: dict[str, list[Any]], start: int, end: int) -> dict[str, 
         gaps.add("NO_TRANSACTION_EVIDENCE")
     if not matched:
         gaps.add("NO_MATCHED_TRADE_EVIDENCE")
-    if not funding_count:
+    if not funding_count and not funding_execution_count:
         gaps.add("NO_FUNDING_SETTLEMENT_OBSERVED")
     return {
         "counts": counts, "margin_mode": mode, "account_margin_fields_applicable": mode != "ISOLATED_MARGIN",
         "account_margin_fields_present": margin_present, "cash_identity_checked": cash_ok,
         "matched_execution_transactions": matched, "funding_settlement_records": funding_count,
+        "trade_execution_records": trade_count, "execution_fee_records_checked": fee_checked,
+        "funding_execution_records": funding_execution_count,
         "gaps": sorted(gaps), "historical_margin_reconstructed": False,
         "snapshot_is_atomic": False, "history_exhaustion_proves_retention": False,
         "c2_option_accounting_qualified": False, "balances_or_cash_amounts_published": False,
@@ -460,8 +477,12 @@ def replay(capture: pathlib.Path, expected_sha: str | None = None) -> dict[str, 
             set(manifest["errors"]) <= set(requests) | {"marks"}, "ERROR_MANIFEST_INVALID")
     groups: dict[str, list[Any]] = {}
     complete: set[str] = set()
-    failed: set[str] = set(manifest["errors"])
-    codes = {name: error_code(ValueError(value)) for name, value in manifest["errors"].items()}
+    # Collector schema failures are provenance, not immutable parser verdicts.
+    # The fixed replayer must still prove every expected group/page exhausted.
+    collector_codes = {name: error_code(ValueError(value)) for name, value in manifest["errors"].items()}
+    failed: set[str] = set()
+    codes: dict[str, str] = {}
+    time_missing: set[str] = set()
     shapes: dict[str, Any] = {}
     cursors: dict[str, set[str]] = {}
     for index, page in enumerate(pages):
@@ -481,10 +502,15 @@ def replay(capture: pathlib.Path, expected_sha: str | None = None) -> dict[str, 
         require(type(page["sent_ms"]) is int and type(page["received_ms"]) is int and
                 manifest["created_ms"] <= page["sent_ms"] <= page["received_ms"], "REQUEST_TIMING_INVALID")
         try:
-            data = result(raw)
-            server_time = decode(raw)["time"]
-            require(page["sent_ms"] - 60_000 <= server_time <= page["received_ms"] + 60_000,
-                    "SERVER_CLOCK_MISMATCH")
+            data = result(raw, allow_missing_time=source == "demo" and group == "account")
+            server_time = decode(raw).get("time")
+            if server_time is None:
+                # Missing response time is explicitly retained as a limitation;
+                # updatedTime or local receipt is never relabelled exchange time.
+                time_missing.add(group)
+            else:
+                require(page["sent_ms"] - 60_000 <= server_time <= page["received_ms"] + 60_000,
+                        "SERVER_CLOCK_MISMATCH")
             if group.startswith("mark_"):
                 require(data.get("category") == "linear" and data.get("symbol") == "BTCUSDT", "MARK_IDENTITY_MISMATCH")
                 require(server_time >= int(group[5:]) + 120_000, "MARK_CANDLE_NOT_CLOSED")
@@ -522,6 +548,8 @@ def replay(capture: pathlib.Path, expected_sha: str | None = None) -> dict[str, 
         "response_pages": len(pages), "complete_groups": sorted(complete),
         "failed_or_incomplete_groups": sorted(failed | missing),
         "error_codes": codes,
+        "collector_error_codes": collector_codes,
+        "response_time_missing_groups": sorted(time_missing),
         "failure_field_shapes": shapes,
         "promotion_authority": False, "order_submission": False, "account_mode_change": False}
     if failed or missing:
@@ -535,7 +563,9 @@ def replay(capture: pathlib.Path, expected_sha: str | None = None) -> dict[str, 
             summary.update(status="READONLY_CHECKS_FAILED", gaps=[error_code(exc)])
             return summary
     summary.update(checks)
-    summary["status"] = "READONLY_CAPTURED_CHECKS_PASS" if not checks["gaps"] else "READONLY_CAPTURED_GAPS"
+    if time_missing:
+        summary["gaps"] = sorted(set(summary["gaps"]) | {"ACCOUNT_RESPONSE_TIME_NOT_PROVIDED"})
+    summary["status"] = "READONLY_CAPTURED_CHECKS_PASS" if not summary["gaps"] else "READONLY_CAPTURED_GAPS"
     return summary
 
 

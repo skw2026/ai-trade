@@ -296,6 +296,59 @@ class ReadonlyEvidenceTest(unittest.TestCase):
         for value in (True, 1.2, "Infinity", "1e100", "", "0." + "1" * 25):
             with self.assertRaises(ValueError): audit.number(value)
 
+    def test_real_demo_missing_account_time_and_null_empty_transaction_cursor(self):
+        fake = FakeTransport(demo_fixture())
+        original = fake.get
+        def get(request):
+            raw = original(request)
+            payload = audit.decode(raw)
+            if request["path"] == "/v5/account/info":
+                del payload["time"]
+            if request["path"] == "/v5/account/transaction-log":
+                payload["result"].update(list=[], nextPageCursor=None)
+            return audit.encode(payload)
+        fake.get = get
+        capture = self.capture(fake)
+        # Old collector rejected these exact field shapes. Keep its historical
+        # verdict while independently proving the retained pages with new code.
+        self.mutate_manifest(capture, lambda m: m["errors"].update(account="SERVER_TIME_INVALID", transactions="CURSOR_INVALID"))
+        report = audit.replay(capture)
+        self.assertEqual(report["status"], "READONLY_CAPTURED_GAPS")
+        self.assertEqual(report["response_time_missing_groups"], ["account"])
+        self.assertEqual(report["counts"]["transactions"], 0)
+        self.assertEqual(report["execution_fee_records_checked"], 1)
+        self.assertIn("ACCOUNT_RESPONSE_TIME_NOT_PROVIDED", report["gaps"])
+        self.assertIn("NO_TRANSACTION_EVIDENCE", report["gaps"])
+        self.assertFalse(report["history_exhaustion_proves_retention"])
+        self.assertEqual(report["collector_error_codes"]["account"], "SERVER_TIME_INVALID")
+
+    def test_null_cursor_nonempty_page_and_other_missing_time_still_fail(self):
+        with self.assertRaisesRegex(ValueError, "CURSOR_INVALID"):
+            audit.response_rows(response("transactions", demo_fixture()["transactions"], None), "transactions")
+        payload = audit.decode(response("wallet", demo_fixture()["wallet"]))
+        del payload["time"]
+        with self.assertRaisesRegex(ValueError, "SERVER_TIME_INVALID"):
+            audit.response_rows(audit.encode(payload), "wallet")
+
+    def test_funding_execution_is_separate_from_cash_ledger(self):
+        groups = demo_fixture()
+        groups["transactions"] = []
+        groups["executions"].append({**groups["executions"][0], "execId": "funding", "execType": "Funding", "execFee": "0.002"})
+        result = audit.audit_demo(groups, START, END)
+        self.assertEqual(result["funding_execution_records"], 1)
+        self.assertIn("NO_TRANSACTION_EVIDENCE", result["gaps"])
+        self.assertNotIn("NO_FUNDING_SETTLEMENT_OBSERVED", result["gaps"])
+
+    def test_capture_parent_must_be_unique(self):
+        capture = self.capture()
+        result = subprocess.run([sys.executable, audit.__file__, "replay", "--capture-parent", str(self.root)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.capture()
+        result = subprocess.run([sys.executable, audit.__file__, "replay", "--capture-parent", str(self.root)],
+                                capture_output=True, text=True)
+        self.assertEqual(json.loads(result.stdout)["reason"], "CAPTURE_PARENT_NOT_UNIQUE")
+
 
 if __name__ == "__main__":
     unittest.main()
