@@ -1,0 +1,107 @@
+{
+  "schema_version": "option_c2_deployed_replay_result_v1",
+  "decision": "WAIT_FOR_C2_SOURCE_AND_ACCOUNTING_EVIDENCE",
+  "source_replay": {
+    "run_id": 34759528652,
+    "check_run_id": 103729756254,
+    "artifact_id": 10317999223,
+    "artifact_zip_sha256": "1ba95eaf3b8983477af24e3ac4a1bf688cc5b88a0e7010d4b4d72f81335b7d44"
+  },
+  "report_verification": {
+    "run_id": 34759813150,
+    "check_run_id": 103730546252,
+    "verifier_commit": "7bb3724035f22f8baea6cd05d0d07f0101da6b69",
+    "conclusion": "success",
+    "ci_run_id": 34759813149,
+    "ci_conclusion": "success",
+    "evidence_source": "authenticated Actions download of the pinned aggregate ZIP, checksum validation, then release-bound whitelist annotation; not local raw replay"
+  },
+  "prior_attempts": [
+    {
+      "run_id": 34758120604,
+      "check_run_id": 103725976068,
+      "executed_release_sha": "e4e368c2870718427fa4fe700933b4bf35873b31",
+      "decision": "INVALID_OPTION_LIFECYCLE_SUBACCOUNT_ADAPTER",
+      "reason": "adapter must not produce an accounting or risk pass",
+      "report_file_sha256": "0ffe314631a0a58093664619897e6a0397c8b00593896e943af3dc7eec1f6833",
+      "adapter_engine_sha256": "5e8bc677c77d75420b24596f1a0758b27257dcf1b0991dd31f505beb7e353789",
+      "ledger_engine_sha256": "635ef3be8ba665347d3dd6c194c133fd42b42772e733a250873856aae007a443",
+      "evidence_source": "release-bound GitHub Actions validated annotation; local machine did not replay ECS raw",
+      "root_cause_confirmed_from_remote_report": false
+    },
+    {
+      "run_id": 34758513785,
+      "check_run_id": 103727028095,
+      "executed_release_sha": "89304653d81e2cdb046c54b3c351d6db418b56d4",
+      "decision": "INVALID_OPTION_LIFECYCLE_SUBACCOUNT_ADAPTER",
+      "reason": "downstream ledger TECHNICALLY_INVALID: bid_size: must be positive",
+      "report_file_sha256": "eb821105bfb060340e32390aba4e5f7846ecc694bc921832af17b661c6dbee48",
+      "adapter_engine_sha256": "01ca6c29c748f00f6cfcb3292632fccb08c162b4e404cee6a806223f230ca22c",
+      "ledger_engine_sha256": "635ef3be8ba665347d3dd6c194c133fd42b42772e733a250873856aae007a443",
+      "evidence_source": "release-bound GitHub Actions validated annotation; local machine did not replay ECS raw"
+    }
+  ],
+  "report": {
+    "account_risk_qualified": false,
+    "actual_account_performance": false,
+    "archive_input_set_sha256": "94c3e96a582f10b03dd3a52b2c48cada0fb275a4eb870d4d997209cab16df8ce",
+    "authorities": {
+      "demo_activation_authorized": false,
+      "live_activation_authorized": false,
+      "order_submission_authorized": false,
+      "promotion_authority": false
+    },
+    "candidate_state": "CLOSED",
+    "cashflows_qualified": false,
+    "decision": "C2_FIRST_LIFECYCLE_ADAPTED_ACCOUNTING_INCOMPLETE",
+    "drawdown_claim_allowed": false,
+    "economic_qualification": false,
+    "exit_liquidity_unqualified_checkpoint_count": 2,
+    "first_exit_liquidity_gap_ts_ms": 1788743795883,
+    "forward_wait_started": false,
+    "hedge_trade_count": 14,
+    "historical_data_qualified": false,
+    "known_gaps": [
+      "EXACT_FUNDING_SETTLEMENT_MARKS_MISSING",
+      "EXIT_BBO_DEPTH_INSUFFICIENT",
+      "HISTORICAL_EXCHANGE_MARGIN_MODEL_UNVALIDATED",
+      "MARGIN_EVIDENCE_MISSING",
+      "OPTION_TICKER_EXCHANGE_TIMESTAMP_MISSING",
+      "RAW_TARGET_SNAPSHOT_SET_NOT_PREVIOUSLY_PINNED",
+      "SCHEDULED_FUNDING_MISSING"
+    ],
+    "ledger_base_pnl_usdt": "-2.284817561061710155000000000000000000000000000000000000000",
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "ledger_input_sha256": "baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689",
+    "ledger_status": "INSUFFICIENT_EVIDENCE",
+    "maximum_reconstructed_hedge_position_btc": "0.007",
+    "new_candidate_registered": false,
+    "profitability_claim_allowed": false,
+    "provenance": {
+      "adapter_engine_sha256": "eea3bf9118b01aa71366caabb38bd9c7f1abcc35be15e7cb0633701638b5a769",
+      "closure_evidence_sha256": "eee37c222b2a1c6d80e301434fa506f6d7b1a67889f4375a9d258ef9a17c0ebf",
+      "executed_release_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "ledger_engine_sha256": "73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8"
+    },
+    "report_file_sha256": "683a4817df56b0a9bd1553d1c5836a3da3a26b9b1c52ad84ddcce4e1cc419b24",
+    "settled_funding_boundaries": [
+      {
+        "settled_rate": "0.00002976",
+        "ts_ms": 1788710400000
+      },
+      {
+        "settled_rate": "0.00002607",
+        "ts_ms": 1788739200000
+      },
+      {
+        "settled_rate": "0.00000745",
+        "ts_ms": 1788768000000
+      }
+    ],
+    "sharpe_claim_allowed": false,
+    "target_lifecycle_id": "btc-usdt-1788768000000-79750-a9f8f42224b2",
+    "target_snapshot_count": 1179,
+    "target_snapshot_set_sha256": "3bad663f05b17753a6dbb7c32c064783550c8215b89c8cb4c18a1fcd4999e17c",
+    "timeline_snapshot_count": 1178
+  }
+}
