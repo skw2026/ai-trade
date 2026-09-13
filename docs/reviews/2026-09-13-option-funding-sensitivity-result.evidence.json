@@ -1,0 +1,244 @@
+{
+  "account_risk_qualified": false,
+  "actual_account_performance": false,
+  "assumptions": [
+    "position caps are hypotheses, not verified archive extrema or risk limits",
+    "settlement marks assumed no higher than surrounding candle highs; this is NOT verified",
+    "every returned boundary receives maximum favourable funding, regardless of actual position or sign",
+    "counterfactual gross and other costs unchanged; no strategy is simulated",
+    "all delivery fees removed only in the explicitly labelled optimistic sensitivity"
+  ],
+  "authorities": {
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false,
+    "order_submission_authorized": false,
+    "promotion_authority": false
+  },
+  "candidate_state": "CLOSED",
+  "cashflows_qualified": false,
+  "decision": "DIAGNOSTIC_ONLY_C2_INCOMPLETE",
+  "drawdown_claim_allowed": false,
+  "economic_qualification": false,
+  "event_count": 18,
+  "forward_wait_started": false,
+  "frozen_totals_usdt": {
+    "base_net_pnl_usdt": "-5.6523370836326955",
+    "delivery_fee_usdt": "0.63719470980404120",
+    "stress_net_pnl_usdt": "-8.1194421036326957"
+  },
+  "funding_events": [
+    {
+      "settled_rate": "0.00002976",
+      "ts_ms": 1788710400000
+    },
+    {
+      "settled_rate": "0.00002607",
+      "ts_ms": 1788739200000
+    },
+    {
+      "settled_rate": "0.00000745",
+      "ts_ms": 1788768000000
+    },
+    {
+      "settled_rate": "0.00001982",
+      "ts_ms": 1788796800000
+    },
+    {
+      "settled_rate": "0.00003603",
+      "ts_ms": 1788825600000
+    },
+    {
+      "settled_rate": "0.00002994",
+      "ts_ms": 1788854400000
+    },
+    {
+      "settled_rate": "0.00005769",
+      "ts_ms": 1788883200000
+    },
+    {
+      "settled_rate": "0.00005357",
+      "ts_ms": 1788912000000
+    },
+    {
+      "settled_rate": "0.00006898",
+      "ts_ms": 1788940800000
+    },
+    {
+      "settled_rate": "0.00007774",
+      "ts_ms": 1788969600000
+    },
+    {
+      "settled_rate": "0.00001277",
+      "ts_ms": 1788998400000
+    },
+    {
+      "settled_rate": "0.00004095",
+      "ts_ms": 1789027200000
+    },
+    {
+      "settled_rate": "0.00007636",
+      "ts_ms": 1789056000000
+    },
+    {
+      "settled_rate": "0.00005091",
+      "ts_ms": 1789084800000
+    },
+    {
+      "settled_rate": "0.00002005",
+      "ts_ms": 1789113600000
+    },
+    {
+      "settled_rate": "0.00005602",
+      "ts_ms": 1789142400000
+    },
+    {
+      "settled_rate": "0.00000219",
+      "ts_ms": 1789171200000
+    },
+    {
+      "settled_rate": "0.00001549",
+      "ts_ms": 1789200000000
+    }
+  ],
+  "limitations": [
+    "candle extrema are context, not settlement prices or BBO",
+    "same-provider funding partitions do not independently prove calendar completeness",
+    "no causal position reconstruction, margin model, full NAV or risk qualification",
+    "aggregate USDT sensitivity does not recompute or preserve the bootstrap decision"
+  ],
+  "mark_contexts": [
+    {
+      "context_high_usdt": "79692.18",
+      "context_low_usdt": "79664.6",
+      "ts_ms": 1788710400000
+    },
+    {
+      "context_high_usdt": "80323.3",
+      "context_low_usdt": "80205.61",
+      "ts_ms": 1788739200000
+    },
+    {
+      "context_high_usdt": "79387.5",
+      "context_low_usdt": "79330.83",
+      "ts_ms": 1788768000000
+    },
+    {
+      "context_high_usdt": "78855.9",
+      "context_low_usdt": "78775.07",
+      "ts_ms": 1788796800000
+    },
+    {
+      "context_high_usdt": "79104.5",
+      "context_low_usdt": "79045.84",
+      "ts_ms": 1788825600000
+    },
+    {
+      "context_high_usdt": "78445",
+      "context_low_usdt": "78267.36",
+      "ts_ms": 1788854400000
+    },
+    {
+      "context_high_usdt": "78873.51",
+      "context_low_usdt": "78712.8",
+      "ts_ms": 1788883200000
+    },
+    {
+      "context_high_usdt": "78473.5",
+      "context_low_usdt": "78414.8",
+      "ts_ms": 1788912000000
+    },
+    {
+      "context_high_usdt": "79304.45",
+      "context_low_usdt": "79235.81",
+      "ts_ms": 1788940800000
+    },
+    {
+      "context_high_usdt": "78605.9",
+      "context_low_usdt": "78541.33",
+      "ts_ms": 1788969600000
+    },
+    {
+      "context_high_usdt": "78285.9",
+      "context_low_usdt": "78243.57",
+      "ts_ms": 1788998400000
+    },
+    {
+      "context_high_usdt": "78111.1",
+      "context_low_usdt": "78047.46",
+      "ts_ms": 1789027200000
+    },
+    {
+      "context_high_usdt": "77286.6",
+      "context_low_usdt": "77192.96",
+      "ts_ms": 1789056000000
+    },
+    {
+      "context_high_usdt": "76618.9",
+      "context_low_usdt": "76501.75",
+      "ts_ms": 1789084800000
+    },
+    {
+      "context_high_usdt": "77215.7",
+      "context_low_usdt": "77181.31",
+      "ts_ms": 1789113600000
+    },
+    {
+      "context_high_usdt": "77950",
+      "context_low_usdt": "77571.85",
+      "ts_ms": 1789142400000
+    },
+    {
+      "context_high_usdt": "77234.3",
+      "context_low_usdt": "77174",
+      "ts_ms": 1789171200000
+    },
+    {
+      "context_high_usdt": "77260.4",
+      "context_low_usdt": "77228.34",
+      "ts_ms": 1789200000000
+    }
+  ],
+  "new_candidate_registered": false,
+  "position_caps_verified": false,
+  "profitability_claim_allowed": false,
+  "provenance": {
+    "audit_engine_sha256": "dd1d2d83618704025515e4b3f1961a536d714e16ba96f3df78ec3d6d46928226",
+    "closure_source_run_id": 34699018540,
+    "closure_summary_not_raw_archive_replay": true,
+    "closure_summary_sha256": "eee37c222b2a1c6d80e301434fa506f6d7b1a67889f4375a9d258ef9a17c0ebf",
+    "engine_sha256": {
+      "audit_option_candidate_closure.py": "c88958dd99c44f79d209db89abb3b75fe399da0114ca9d54a71a7dc721ae8244",
+      "audit_option_public_history.py": "80888a45859c10eaac364b187d699bd82a63d34a0dbaf97882598d3f8c78df08",
+      "audit_option_subaccount_ledger.py": "635ef3be8ba665347d3dd6c194c133fd42b42772e733a250873856aae007a443"
+    },
+    "funding_source_sha256": "406db9b65c75de2992cc1bc7074e5b0c0afe27d17d373975125f9476c044eefb",
+    "local_checksum_replay_not_independent_origin_authentication": true,
+    "mark_bundle_sha256": "2ae0626de467c2c216311fcfcae2b840c259e5993365f0ff39cb068b0eddcde9"
+  },
+  "scenarios": [
+    {
+      "assumed_absolute_position_cap_btc": "0.01",
+      "base_break_even_uniform_mark_usdt": "829043.7060726463427154989073",
+      "conditional_base_total_usdt": "-5.1179814563256955",
+      "conditional_funding_credit_envelope_usdt": "0.534355627307",
+      "conditional_stress_total_usdt": "-7.5850864763256957",
+      "conditional_stress_without_any_delivery_fee_usdt": "-6.94789176652165450",
+      "stress_break_even_context_multiplier": "15.19482847883977341740651224",
+      "stress_break_even_uniform_mark_usdt": "1190900.732429735798413001071"
+    },
+    {
+      "assumed_absolute_position_cap_btc": "0.02",
+      "base_break_even_uniform_mark_usdt": "414521.8530363231713577494536",
+      "conditional_base_total_usdt": "-4.5836258290186955",
+      "conditional_funding_credit_envelope_usdt": "1.068711254614",
+      "conditional_stress_total_usdt": "-7.0507308490186957",
+      "conditional_stress_without_any_delivery_fee_usdt": "-6.41353613921465450",
+      "stress_break_even_context_multiplier": "7.597414239419886708703256119",
+      "stress_break_even_uniform_mark_usdt": "595450.3662148678992065005354"
+    }
+  ],
+  "schema_version": "option_funding_sensitivity_v1",
+  "settlement_marks_qualified": false,
+  "sharpe_claim_allowed": false,
+  "sum_absolute_settled_rates": "0.00068179"
+}
