@@ -4,6 +4,8 @@
 
 ## 当前实施范围
 
+9 月 13 日最新推进：按用户确认的现有 Bybit Demo，新增[官方历史补数与 Demo GET 归档/对账线](2026-09-13-bybit-official-and-demo-readonly.md)。先把可直接取得的数据用起来，供应商仅是精确缺项的后备来源；C2 历史期权研究与现有 linear Demo 测试分别验收，C5 仍未启动。
+
 - C1：新增独立关闭注册表及审计器；固定首次 STOP 的 GitHub run、artifact、ZIP SHA256、release 和经济合同。GitHub Actions 通过自身只读权限下载原产物，验证三份报告及六期会计/聚合恒等式。本地 14 项新测试、77/77 CTest 完整回归、warnings-as-errors 构建及 YAML/Bash 语法检查通过。
 - 注册表按经济合同绑定已关闭候选，不能通过改候选名、改注册表或最新 batch PASS 自动重新晋级。未知/损坏证据 fail closed；冻结 payoff/economic 源码和四个合同保持不变。
 - 治理报告与原 ZIP 一同进入研究产物，有限长度、白名单字段的 annotations 提供可核对的研究数值与身份，不包含原始行情、账户或凭据。
