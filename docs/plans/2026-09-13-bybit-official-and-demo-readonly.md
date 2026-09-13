@@ -63,6 +63,8 @@ Demo 当前归档范围：USDT 全类别现金流水，linear/USDT 成交与订�
 
 ## 验收与下一点
 
+执行更新：[20 笔实际成交的资金费义务核验](../reviews/2026-09-13-funding-obligations-and-cross-reference.md)已经完成：所涉品种 21 个返回结算边界均为空仓（有留存/来源完整性限制）。新工具 `audit_bybit_funding_obligations.py` 仅重放固定私有归档并查询公开日历；新增工作流不读取账户凭据、不启动周期归档。下一真实资金费对账样本须等待自然跨结算事件，Cross 仍按独立模型合同推进。
+
 - `READONLY_CAPTURED_CHECKS_PASS`：本次已返回数据通过限定检查，不表示完整账户历史、盈利或 C2 通过。
 - `READONLY_CAPTURED_GAPS`：采集完成，但缺对应流水、成交、资金费记录或适用字段；逐项判定真实无事件、接口延迟还是取数缺失。
 - `READONLY_CAPTURE_INCOMPLETE` / `READONLY_CHECKS_FAILED`：先定位请求、分页或恒等式问题，不能进入策略收益评估。
