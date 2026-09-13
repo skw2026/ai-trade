@@ -107,7 +107,7 @@ class SummaryTest(unittest.TestCase):
         report.update(decision=adapter.DECISION, ledger_output_written=True,
                       ledger_status="INSUFFICIENT_EVIDENCE", ledger_input_sha256="e" * 64,
                       ledger_file_sha256="f" * 64,
-                      ledger_base_pnl_usdt=target["primary_payoff"]["base_net_pnl_usdt"],
+                      ledger_base_pnl_usdt=str(target["primary_payoff"]["base_net_pnl_usdt"]),
                       known_gaps=["MARGIN_EVIDENCE_MISSING", "SCHEDULED_FUNDING_MISSING"], source={
             "frozen_primary": target["primary_payoff"], "archive_input_set_sha256": "b" * 64,
             "target_snapshot_set_sha256": "c" * 64, "target_snapshot_count": 100,
@@ -120,7 +120,8 @@ class SummaryTest(unittest.TestCase):
         report["provenance"].update(funding_source_sha256=adapter.FUNDING_EVIDENCE_SHA256,
                                     funding_provenance="pinned_committed_diagnostic_evidence")
         self.assertEqual(reporting.summary(report, expected_release=RELEASE)["decision"], adapter.DECISION)
-        for field, value in (("ledger_base_pnl_usdt", 1), ("ledger_status", "PASS"),
+        for field, value in (("ledger_base_pnl_usdt", "1"), ("ledger_base_pnl_usdt", -2.284818),
+                             ("ledger_status", "PASS"),
                              ("known_gaps", [])):
             changed = copy.deepcopy(report)
             changed[field] = value

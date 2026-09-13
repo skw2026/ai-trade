@@ -1,0 +1,70 @@
+name: Option C2 Pinned Report Verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/c2-report-verification
+    paths:
+      - .github/workflows/option-c2-report-verification.yml
+      - tools/summarize_option_lifecycle_adapter.py
+      - tools/test_summarize_option_lifecycle_adapter.py
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test summary contract
+        run: python3 tools/test_summarize_option_lifecycle_adapter.py
+      - name: Download the pinned aggregate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          gh api repos/skw2026/ai-trade/actions/artifacts/10317999223/zip \
+            > .artifacts/c2-source.zip
+          printf '%s  %s\n' \
+            '1ba95eaf3b8983477af24e3ac4a1bf688cc5b88a0e7010d4b4d72f81335b7d44' \
+            '.artifacts/c2-source.zip' | sha256sum -c -
+      - name: Read only the two bounded report members
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import zipfile
+
+          root = pathlib.Path('.artifacts')
+          with zipfile.ZipFile(root / 'c2-source.zip') as archive:
+              for name in ('report.json', 'first.adapter-report.json'):
+                  matches = [item for item in archive.infolist() if item.filename == name]
+                  if len(matches) != 1 or not 0 < matches[0].file_size <= 2 * 1024 * 1024:
+                      raise SystemExit('missing, duplicate or oversized pinned report')
+                  # No archive-provided paths are extracted.
+                  (root / name).write_bytes(archive.read(matches[0]))
+          PY
+      - name: Verify the actual deployed report and emit bounded evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/summarize_option_lifecycle_adapter.py \
+            --report .artifacts/first.adapter-report.json \
+            --lifecycle-report .artifacts/report.json \
+            --expected-release 170d84acb8ac9547a321802f9250215c98deb0dc
+      - name: Preserve the verified source artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: option-c2-pinned-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/c2-source.zip
+            .artifacts/first.adapter-report.json
+          if-no-files-found: error

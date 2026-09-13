@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from decimal import Decimal
 import hashlib
 import json
 import pathlib
@@ -73,8 +74,10 @@ def summary(report: dict[str, Any], *, expected_release: str) -> dict[str, Any]:
         source = report["source"]
         for key in adapter.closure.MONEY_FIELDS:
             adapter.closure.equal(source["frozen_primary"][key], target["primary_payoff"][key])
-        adapter.closure.equal(report["ledger_base_pnl_usdt"],
-                              target["primary_payoff"]["base_net_pnl_usdt"])
+        adapter.ledger.close(
+            adapter.ledger.number(report["ledger_base_pnl_usdt"], "ledger base PnL"),
+            Decimal(str(target["primary_payoff"]["base_net_pnl_usdt"])),
+            "ledger base PnL")
         for key in ("archive_input_set_sha256", "target_snapshot_set_sha256"):
             require(re.fullmatch(r"[0-9a-f]{64}", source[key]) is not None,
                     "invalid raw input identity")
