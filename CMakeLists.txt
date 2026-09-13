@@ -109,6 +109,8 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME bybit_readonly_evidence_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_bybit_readonly_evidence.py)
     add_test(NAME option_public_history_qualification_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_public_history.py)
     add_test(NAME option_archive_lifecycle_audit_test

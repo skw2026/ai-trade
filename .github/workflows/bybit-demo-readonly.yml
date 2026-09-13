@@ -1,0 +1,75 @@
+name: Bybit Demo Readonly Evidence
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/bybit-demo-readonly
+    paths:
+      - .github/workflows/bybit-demo-readonly.yml
+      - tools/audit_bybit_readonly_evidence.py
+      - tools/test_audit_bybit_readonly_evidence.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bybit-demo-readonly-evidence
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify offline transport and replay contract
+        run: python3 tools/test_audit_bybit_readonly_evidence.py
+      - name: Bind the standalone collector bytes
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          CODE_SHA="$(sha256sum tools/audit_bybit_readonly_evidence.py | cut -d ' ' -f 1)"
+          echo "sha256=${CODE_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Copy standalone collector without changing the running release
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          source: tools/audit_bybit_readonly_evidence.py
+          target: /opt/ai-trade/data/research/bybit_readonly_runner/${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Capture and replay existing Demo account with GET only
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          READONLY_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          READONLY_CODE_SHA: ${{ steps.identity.outputs.sha256 }}
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          command_timeout: 15m
+          envs: READONLY_RUN_ID,READONLY_CODE_SHA
+          script: |
+            set -euo pipefail
+            umask 077
+            export PYTHONDONTWRITEBYTECODE=1
+            [[ "${READONLY_RUN_ID}" =~ ^[0-9]+-[0-9]+$ ]]
+            [[ "${READONLY_CODE_SHA}" =~ ^[0-9a-f]{64}$ ]]
+            SCRIPT="/opt/ai-trade/data/research/bybit_readonly_runner/${READONLY_RUN_ID}/tools/audit_bybit_readonly_evidence.py"
+            printf '%s  %s\n' "${READONLY_CODE_SHA}" "${SCRIPT}" | sha256sum -c -
+            # No sourcing env files, printing keys, docker exec, restart,
+            # new account, transfer, order, or modification of deployed code.
+            # Legacy keys, if needed, can only be sent to api-demo.bybit.com.
+            python3 "${SCRIPT}" collect \
+              --source demo \
+              --root "/opt/ai-trade/data/research/bybit_readonly_private/${READONLY_RUN_ID}" \
+              --env-file /opt/ai-trade/.env.runtime \
+              --allow-legacy-demo-credentials
+      # Deliberately no artifact download/upload: private raw, order identifiers
+      # and exact balances stay on ECS. The log contains an amount-free summary.
