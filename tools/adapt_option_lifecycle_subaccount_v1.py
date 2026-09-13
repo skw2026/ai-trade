@@ -69,6 +69,16 @@ def text_number(value: Any) -> str:
     return format(result, "f")
 
 
+def exact_frozen_lot(value: Any, step: Decimal) -> Decimal:
+    """Recover frozen integer lots, accepting only binary-float roundoff."""
+    quantity = Decimal(text_number(value))
+    require(step.is_finite() and step > 0, "invalid frozen quantity step")
+    exact = (quantity / step).to_integral_value() * step
+    require(abs(exact - quantity) <= min(Decimal("1e-12"), step * Decimal("1e-9")),
+            "frozen quantity is materially off lot grid")
+    return exact
+
+
 def sha256_json(value: Any) -> str:
     return hashlib.sha256(ledger.canonical(value)).hexdigest()
 
@@ -366,6 +376,7 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
     for row in hedge["ledger"]:
         hedge_by_snapshot[int(row["timestamp_epoch_ms"])].append(row)
     maximum_position = Decimal(0)
+    hedge_step = Decimal(instruments["BTCUSDT"]["qty_step"])
     last_usable_snapshot = timeline[0]
     for snapshot_index, snapshot in enumerate(timeline):
         source_time = int(snapshot["timestamp_epoch_ms"])
@@ -380,8 +391,12 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
             continue
         last_usable_snapshot = snapshot
         for trade_index, trade in enumerate(trades):
-            change = Decimal(str(trade["quantity_btc"])) * (
+            raw_change = Decimal(str(trade["quantity_btc"])) * (
                 Decimal(1) if trade["side"] == "buy" else Decimal(-1))
+            after = exact_frozen_lot(trade["position_after_btc"], hedge_step)
+            change = after - positions["BTCUSDT"]
+            require(change == exact_frozen_lot(raw_change, hedge_step) and change != 0,
+                    "frozen quantity and target position disagree")
             quote = _execution_quote(snapshot, "BTCUSDT", event_time)
             available = (Decimal(quote["ask_size"]) if change > 0
                          else Decimal(quote["bid_size"]))
@@ -456,7 +471,7 @@ def build_ledger_input(*, root: pathlib.Path, target: Mapping[str, Any],
     }
     ledger_report = ledger.audit(ledger.SCOPE.copy(), ledger_input)
     require(ledger_report["status"] == "INSUFFICIENT_EVIDENCE",
-            "adapter must not produce an accounting or risk pass")
+            f"downstream ledger {ledger_report['status']}: {ledger_report.get('error', 'unexpected qualification or risk state')}")
     require("MARGIN_EVIDENCE_MISSING" in ledger_report["missing_evidence"]
             and "SCHEDULED_FUNDING_MISSING" in ledger_report["missing_evidence"],
             "known C2 gaps were not preserved by downstream ledger")
@@ -511,6 +526,7 @@ def adapt(*, root: pathlib.Path, target: Mapping[str, Any],
             "Funding boundaries are retained without inventing settlement marks or cash deltas.",
             "No margin snapshot or historical exchange margin model is synthesized.",
             "Illustrative ledger limits are branch checks, not approved risk limits.",
+            "Frozen floating-point quantities are recovered as exact lots within at most 1e-12 BTC; material off-grid quantities are rejected.",
         ],
         "cashflows_qualified": False,
         "historical_data_qualified": False,

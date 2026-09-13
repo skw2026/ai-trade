@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+from decimal import Decimal
 import json
 import pathlib
 import subprocess
@@ -26,6 +27,7 @@ class RealSymbolArchive(fixtures.OptionLifecycleEconomicsV1Test):
     __unittest_skip_why__ = "fixture helper; exercised by AdapterTest"
     completion_after_delivery = False
     shallow_hedge_depth = False
+    changing_hedge = False
 
     def lifecycle(self, index: int, selected: int, delivery: int,
                   premium: float) -> dict:
@@ -69,6 +71,11 @@ class RealSymbolArchive(fixtures.OptionLifecycleEconomicsV1Test):
             result["hedge_orderbook_l1"]["a"][0][1] = "0.001"
             for row in result["tracked_options"]:
                 row["delta"] = "0.5"
+        if self.changing_hedge:
+            hour = (timestamp - lifecycle["selected_epoch_ms"]) // 3600000
+            for row in result["tracked_options"]:
+                row["delta"] = (("0.95" if hour % 2 == 0 else "0.85")
+                                if row["optionsType"].lower() == "call" else "-0.05")
         return result
 
 
@@ -129,6 +136,25 @@ class AdapterTest(unittest.TestCase):
             changed["primary_payoff"]["base_net_pnl_usdt"] += 1
             with self.assertRaisesRegex(ValueError, "accounting or aggregate mismatch"):
                 adapter.adapt(root=root, target=changed, rates=rates)
+
+    def test_hourly_hedge_float_tail_does_not_create_fractional_lots(self):
+        self.case.changing_hedge = True
+        self.case.lifecycle_duration_ms = 7200000
+        with tempfile.TemporaryDirectory() as temporary:
+            root, target, rates = self.make_archive(pathlib.Path(temporary))
+            ledger_input, report = adapter.adapt(root=root, target=target, rates=rates)
+        self.assertEqual(report["decision"], adapter.DECISION)
+        fills = [row for row in ledger_input["events"]
+                 if row["type"] == "FILL" and row["symbol"] == "BTCUSDT"]
+        self.assertGreaterEqual(len(fills), 3)
+        self.assertTrue(all(Decimal(row["signed_qty_btc"]) % Decimal("0.001") == 0
+                            for row in fills))
+        self.assertEqual(sum(Decimal(row["signed_qty_btc"]) for row in fills), 0)
+
+    def test_materially_off_grid_quantity_cannot_be_rounded_into_validity(self):
+        for quantity in ("0.00101", "-0.00101", "0.00000000001", "NaN"):
+            with self.subTest(quantity=quantity), self.assertRaises(ValueError):
+                adapter.exact_frozen_lot(quantity, Decimal("0.001"))
 
     def test_funding_boundary_cannot_be_silently_omitted(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -184,7 +184,7 @@ class OptionLifecycleEconomicsV1Test(unittest.TestCase):
         final_delivery = selected
         segment_index = 0
         for lifecycle_index in range(lifecycle_count):
-            delivery = selected + 720000
+            delivery = selected + getattr(self, "lifecycle_duration_ms", 720000)
             lifecycle = self.lifecycle(
                 lifecycle_index, selected, delivery, premium
             )
