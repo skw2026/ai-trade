@@ -109,6 +109,8 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME bybit_cross_margin_reference_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_bybit_cross_margin_reference.py)
     add_test(NAME bybit_funding_obligations_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_bybit_funding_obligations.py)
     add_test(NAME bybit_readonly_evidence_test
