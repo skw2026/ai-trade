@@ -120,6 +120,10 @@ class SummaryTest(unittest.TestCase):
         report["provenance"].update(funding_source_sha256=adapter.FUNDING_EVIDENCE_SHA256,
                                     funding_provenance="pinned_committed_diagnostic_evidence")
         self.assertEqual(reporting.summary(report, expected_release=RELEASE)["decision"], adapter.DECISION)
+        # Account averages can produce >18 fractional digits at the ledger's
+        # 60-digit internal precision, without violating external input rules.
+        report["ledger_base_pnl_usdt"] += "00000000000000000000000000000001"
+        self.assertEqual(reporting.summary(report, expected_release=RELEASE)["decision"], adapter.DECISION)
         for field, value in (("ledger_base_pnl_usdt", "1"), ("ledger_base_pnl_usdt", -2.284818),
                              ("ledger_status", "PASS"),
                              ("known_gaps", [])):

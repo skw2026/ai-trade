@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import hashlib
 import json
 import pathlib
@@ -34,6 +34,18 @@ def digest(path: pathlib.Path) -> str:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
+
+
+def output_amount(value: Any) -> Decimal:
+    # The ledger computes with 60-digit precision. Its output must not be
+    # reparsed through the stricter 18-decimal external-input contract.
+    require(isinstance(value, str) and len(value) <= 128
+            and re.fullmatch(r"-?\d+(?:\.\d+)?", value) is not None,
+            "ledger output amount must be a bounded decimal string")
+    result = Decimal(value)
+    require(result.is_finite() and abs(result) <= Decimal("1e18"),
+            "invalid ledger output amount magnitude")
+    return result
 
 
 def summary(report: dict[str, Any], *, expected_release: str) -> dict[str, Any]:
@@ -74,10 +86,12 @@ def summary(report: dict[str, Any], *, expected_release: str) -> dict[str, Any]:
         source = report["source"]
         for key in adapter.closure.MONEY_FIELDS:
             adapter.closure.equal(source["frozen_primary"][key], target["primary_payoff"][key])
-        adapter.ledger.close(
-            adapter.ledger.number(report["ledger_base_pnl_usdt"], "ledger base PnL"),
-            Decimal(str(target["primary_payoff"]["base_net_pnl_usdt"])),
-            "ledger base PnL")
+        with localcontext() as context:
+            context.prec = 60
+            adapter.ledger.close(
+                output_amount(report["ledger_base_pnl_usdt"]),
+                Decimal(str(target["primary_payoff"]["base_net_pnl_usdt"])),
+                "ledger base PnL")
         for key in ("archive_input_set_sha256", "target_snapshot_set_sha256"):
             require(re.fullmatch(r"[0-9a-f]{64}", source[key]) is not None,
                     "invalid raw input identity")
@@ -176,7 +190,10 @@ def main() -> int:
         print(annotation(value))
         return 2 if value["decision"].startswith("INVALID_") else 0
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        print(f"C2 summary rejected: {type(exc).__name__}")
+        reason = str(exc)
+        if re.fullmatch(r"[A-Za-z0-9 _,.:/'-]{1,200}", reason) is None:
+            reason = "unsafe or oversized details withheld"
+        print(f"::error title=C2 summary validation::{type(exc).__name__}: {reason}")
         return 2
 
 
