@@ -34,6 +34,7 @@ __pycache__/
 
 # CI / local temp artifacts
 .artifacts/
+.worktrees/
 
 # IDE/editor local files
 .vscode/

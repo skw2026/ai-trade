@@ -1,6 +1,6 @@
 # 结果驱动实施：风险保护与历史样例资格
 
-状态：首批实现已完成本地验证，发布状态在实际检查后补充。不是盈利结论。
+状态：R1 风险保护修复及发布验证完成，最终提交 CI/CD/Smoke 均成功；R2 仅完成真实历史样例资格子项。不是盈利结论。
 
 ## R1：金融风险保护
 
@@ -14,7 +14,23 @@
 
 补充边界复核：旧配置允许阈值为 0，单纯用 `distance < threshold` 会放行代表未知/已触及强平位的 0。新增反例已复现；按金融语义将非正距离作为独立保护条件，不修改运行阈值、不伪造输入。该边界改动需以最终提交再次验证，不能沿用上一提交的 CI 结论。
 
-补充保护后再次完整构建和 71/71 CTest 通过。首个提交 `b18990e` 的 [CI 33972663285](https://github.com/skw2026/ai-trade/actions/runs/33972663285) 已成功；最终含零阈值保护的提交另行等待准确 SHA 的 CI/CD/Smoke，不以首个提交代替。
+补充保护后再次完整构建和 71/71 CTest 通过。首个提交 `b18990e` 的 [CI 33972663285](https://github.com/skw2026/ai-trade/actions/runs/33972663285) 已成功；最终含零阈值保护的提交按准确 SHA 核对 CI/CD/Smoke，结果见下，不以首个提交代替。
+
+### 发布核对
+
+最终代码提交：`6a02a8af08ef7bd8524b60825d4cd8fba85dcb47`，已推送 `main`。
+
+| 检查 | 实际结果 |
+|---|---|
+| 最终提交 [CI 33972921908](https://github.com/skw2026/ai-trade/actions/runs/33972921908) | SUCCESS |
+| 最终提交 [CD 33972921916](https://github.com/skw2026/ai-trade/actions/runs/33972921916) | SUCCESS，镜像构建与 ECS 部署均成功 |
+| 最终提交部署后 [Smoke 33973723220](https://github.com/skw2026/ai-trade/actions/runs/33973723220) | SUCCESS，ECS 运行检查、报告下载、Smoke 证据验收均成功 |
+
+Smoke 完成时间为 `2026-09-05T15:13:12Z`，对应 SHA 与最终提交一致。结论来自 GitHub 运行及逐步状态核对；没有把旧版本跳过的任务或本地测试代替远端验收。未通过本次公开 API 直接下载审阅 ECS 原始日志，因此不据此新增经济或账户状态结论。
+
+首个提交的 [CD 33972663266](https://github.com/skw2026/ai-trade/actions/runs/33972663266) 已成功。其触发的 [Smoke 33973305918](https://github.com/skw2026/ai-trade/actions/runs/33973305918) 因默认分支已更新，被版本一致性规则跳过；不是最终提交的 Smoke 成功证据。
+
+本节为发布后本地核对记录，不为记录流水线状态再次推送触发新部署。
 
 ## R2 子项：真实历史样例
 
@@ -34,6 +50,8 @@
 
 本地生成报告：`data/research/option_historical_qualification/4bbcd922091106b9819d7e70b187ffd7525f4b4ae7638af2f9d6f593d103d4b4.qualification.json`。原始供应商样例不提交到 Git。
 
+同一原始文件离线重放后，原始哈希、301 条合格观察、零拒绝和覆盖区间一致。重放报告为 `data/research/option_historical_qualification/replay/ebc45aae764b96e7d39ffd6dbd1178fbfb5bd55f040d8ea9e161573383c0f28f.qualification.json`，按设计标记 `local_unverified_input`，不把本地重放当成新的网络来源证明或独立样本。
+
 来源：[Tardis 官方 Bybit Options 数据合同](https://docs.tardis.dev/historical-data-details/bybit-options)。这是实际取得并解析的样例，不再只是供应商宣传的覆盖能力；但尚未验收全生命周期连续历史、instrument 单位、真实交割、hedge/funding、费用/margin 以及授权预算。
 
 进一步读取[公开产品覆盖元数据](https://api.tardis.dev/v1/exchanges/bybit-options)：共有 33,020 个 BTC `-USDT` 历史 symbol，最早 `availableSince` 为 `2025-02-19T00:00:00Z`；本次 C/P 两个 symbol 均列为 `2026-08-30` 至 `2026-09-03`。这是供应商声明的符号覆盖，不是已下载验收的连续历史；不能将全场所 2023 年起点套用到 BTC USDT 产品。
@@ -43,4 +61,4 @@
 - R2 完整数据资格仍未通过；R3 完整现金流、NAV/margin 与持仓生命周期仍待实现。
 - 旧 v2 配置、身份、时钟、亏损与缺口未改；样例不能计入其 forward。
 - 期权产品与逐仓要求的冲突待用户确认；未切换账户或启用任何新交易。
-- CI/CD/Smoke 结果必须以实际运行身份补充，不能以本地测试代替。
+- 最终提交 CI/CD/Smoke 均已按实际运行身份核对成功；这证明本轮技术交付，不证明策略收益、Sharpe 或最大回撤达标。
