@@ -1,0 +1,644 @@
+{
+  "schema_version": "c2_acceptance_delivery_evidence_v1",
+  "review_date": "2026-09-14",
+  "code_commit": "31db22aa85e666d1900e15c50bcaca00bdd16ab8",
+  "workflow_run": 34827779493,
+  "check_run": 103923788701,
+  "workflow_conclusion": "success",
+  "summary_sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+  "summary_chunks": [
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 0,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "{\"acceptance\":{\"authorities\":{\"demo_activation_authorized\":false,\"live_activation_authorized\":false,\"order_submission_authorized\":false,\"promotion_authority\":false},\"candidate_state\":\"CLOSED\",\"checks\":[{\"close_condition\":\"Already recomputed cash per event; does not establish external source authenticity.\",\"id\":\"source_and_cash_replay\",\"observation\":{\"base_pnl_usdt\":\"-2.284817561061710155000000000000000000000000000000000000000\",\"events\":1182,\"reference_checkpoints\":1201,\"source_unchanged\":true},\"state\":\"PASS\"},{\"close_condition\":\"Every supported published numeric case must match; conflicting source parameters cannot be accepted.\",\"id\":\"published_reference_arithmetic\",\"observation\":{\"passed\":2,\"quarantined_source_count\":1,\"total\":2},\"state\":\"PASS\"},{\"close_condition\":\"Accounting replay success does not approve capital, risk limits or a path that breaches the frozen limits.\",\"id\":\"frozen_ledger_risk\",\"observation\":{\"exit_latched\":false,\"reference_risk_review_checkpoints\":0,\"risk_breaches\":[]},\"state\":\"NO_OBSERVED_BREACH\"},{\"close_condition\":\"Investigate each original quote; deeper same-venue evidence may resolve L1-only uncertainty, never invent liquidity.\",\"id\":\"observed_exit_l1\",\"observation\":{\"checkpoints\":2,\"classifications\":{\"OBSERVED_L1_EXIT_CONSTRAINT\":2},\"distinct_quote_observations\":2},\"state\":\"CONSTRAINT_OBSERVED\"},{\"close_condition\":\"Exact settlement price or approved error-bounded research basis; minute OHLC is not exact cashflow evidence.\",\"id\":\"funding_amount\",\"observation\":{\"base_plus_funding_interval_contains_zero\":false,\"cash_high_usdt\":\"-0.0080831619867\",\"cash_low_usdt\":\"-0.0080990141550\",\"interval_width_usdt\":\"0.0000158521683\",\"returned_boundaries\":3},\"state\":\"BOUNDED_RESEARCH_ONLY\"},{\"close_condition\":\"Effective-dated parameter/fee source covering the target interval and field-level verifier.\",\"id\":\"historical_parameters\",\"observation\":\"Current risk snapshot and illustrative option factors; historical fee applicability not proven.\",\"state\":\"VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS\"},{\"close_condition\":\"Independent same-state Cross sample and discrepancy analysis, without changing the existing Demo mode.\",\"id\":\"independent_cross_account\",\"observation\":\"Published isolated examples do not supply the mixed option/hedge/order account reference.\",\"state\":\"VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS\"},{\"close_condition\":\"Proven source/time coverage or separately approved bounded model contract, not an assertion in JSON.\",\"id\":\"historical_price_and_source\",\"observation\":\"Option local receipts, prior minute prices, linear option-index proxy and FX scenario.\",\"state\":\"VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS\"},{\"close_condition\":\"Validated execution/order-occupancy model or an appropriately sourced order path.\",\"id\":\"historical_order_path\",\"observat"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 1,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "ion\":\"Explicit instantaneous-taker/no-resting-order model; not observed exchange orders.\",\"state\":\"VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS\"}],\"dependency_sha256\":{\"audit_bybit_cross_account.py\":\"764e8975e59e3bfed878ed1cb14549a50bc107673b32b3552843b3526652fd59\",\"audit_bybit_readonly_evidence.py\":\"8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae\",\"audit_c2_reference_conformance.py\":\"f8afafc5a936999b2885a94bac2a29f920e7004cdac6454d245465a45dc8d606\",\"audit_option_c2_integration.py\":\"eb226e8988377925bbdf926ace827a1760c3841d8a0458a73219e84c69e9560d\",\"audit_option_exit_evidence.py\":\"f2de712544b6490790aa084971741c971979c4df8898970d207c38c4a9e725dc\",\"audit_option_subaccount_ledger.py\":\"73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8\",\"bybit_cross_margin_reference.py\":\"f4efd0166c82e84194e4f19435704aa90cbd2bcd65978a60cdfa64bfb6cd478d\",\"collect_bybit_c2_market.py\":\"6abfb81554e74e6dcc1b1391f298b5f36455cf6ff4764dc56f3e3a83e34a4e47\"},\"engine_sha256\":\"a963ca58b015f87c1f60af762fbb9020df275cd32d4e217d71aa2221d9201f04\",\"exit_evidence\":{\"actual_exit_failure_proven\":false,\"authorities\":{\"demo_activation_authorized\":false,\"live_activation_authorized\":false,\"order_submission_authorized\":false,\"promotion_authority\":false},\"classification_counts\":{\"OBSERVED_L1_EXIT_CONSTRAINT\":2},\"distinct_bad_quote_observations\":2,\"findings\":[{\"classification\":\"OBSERVED_L1_EXIT_CONSTRAINT\",\"continuous_outage_duration_ms\":null,\"exit_side\":\"bid\",\"has_full_l1_exit\":false,\"l1_capacity_fraction\":\"0.4\",\"l1_size_btc\":\"0.002\",\"ledger_exit_latched\":false,\"ledger_risk_reasons_at_checkpoint\":[],\"neighbour_bracket_ms\":115353,\"next_full_l1_observation\":{\"exit_side\":\"bid\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"1.204\",\"position_qty_btc\":\"0.005\",\"price_usdt_per_btc\":\"79948.30\",\"quote_ts_ms\":1788743850203,\"same_timestamp_delivery_pending\":false,\"seq\":753,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788743850517},\"position_qty_btc\":\"0.005\",\"previous_full_l1_observation\":{\"exit_side\":\"bid\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"2.627\",\"position_qty_btc\":\"0.005\",\"price_usdt_per_btc\":\"79875.90\",\"quote_ts_ms\":1788743734803,\"same_timestamp_delivery_pending\":false,\"seq\":751,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788743735164},\"price_usdt_per_btc\":\"79857.50\",\"quote_ts_ms\":1788743795602,\"reasons\":[\"L1_SIZE_BELOW_POSITION\"],\"required_qty_btc\":\"0.005\",\"same_timestamp_delivery_pending\":false,\"seq\":752,\"shortfall_btc\":\"0.003\",\"symbol\":\"BTCUSDT\",\"ts_ms\":1788743795883},{\"classification\":\"OBSERVED_L1_EXIT_CONSTRAINT\",\"continuous_outage_duration_ms\":null,\"exit_side\":\"ask\",\"has_full_l1_exit\":false,\"l1_capacity_fraction\":\"0.2857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857\",\"l1_size_btc\":\"0.002\",\"ledger_exit_latched\":false,\"ledger_risk_reasons_at_checkpoint\":[],\"neighbou"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 2,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "r_bracket_ms\":121114,\"next_full_l1_observation\":{\"exit_side\":\"ask\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"4.096\",\"position_qty_btc\":\"-0.007\",\"price_usdt_per_btc\":\"79338.50\",\"quote_ts_ms\":1788767886803,\"same_timestamp_delivery_pending\":false,\"seq\":1178,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788767887075},\"position_qty_btc\":\"-0.007\",\"previous_full_l1_observation\":{\"exit_side\":\"ask\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"5.882\",\"position_qty_btc\":\"-0.007\",\"price_usdt_per_btc\":\"79325.00\",\"quote_ts_ms\":1788767765603,\"same_timestamp_delivery_pending\":false,\"seq\":1176,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788767765961},\"price_usdt_per_btc\":\"79343.70\",\"quote_ts_ms\":1788767826202,\"reasons\":[\"L1_SIZE_BELOW_POSITION\"],\"required_qty_btc\":\"0.007\",\"same_timestamp_delivery_pending\":false,\"seq\":1177,\"shortfall_btc\":\"0.005\",\"symbol\":\"BTCUSDT\",\"ts_ms\":1788767826502}],\"full_orderbook_capacity_known\":false,\"historical_liquidity_qualified\":false,\"interpretation_limits\":[\"local_receipt_option_timestamps\",\"no_unobserved_depth_or_interpolation\",\"l1_shortfall_does_not_prove_full_book_shortfall\",\"neighbours_not_continuous_outage_duration\",\"research_risk_latch_not_actual_exchange_liquidation\"],\"ledger_canonical_sha256\":\"baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689\",\"ledger_events\":1182,\"schema_version\":\"option_exit_evidence_v1\",\"source_ledger_unchanged\":true,\"status\":\"EXIT_CONSTRAINTS_CLASSIFIED\",\"symbol_checkpoint_findings\":2,\"unqualified_checkpoint_count\":2},\"forward_started\":false,\"funding_interval_width_usdt\":\"0.0000158521683\",\"historical_status\":\"NOT_QUALIFIED_UNSUPPORTED_PROOF_CLASSES\",\"historical_verification_supported\":false,\"ledger_canonical_sha256\":\"baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689\",\"ledger_file_sha256\":\"4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491\",\"market_manifest_sha256\":\"187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575\",\"market_source\":{\"collector_sha256\":\"652a9d61bacbfba665a50c5f2c400d4bf980147a2a59682590ee72505b76f92a\",\"counts\":{\"funding\":3,\"index\":1112,\"mark\":1112,\"risk\":35},\"end_ms\":1788768000000,\"exact_settlement_marks_qualified\":false,\"historical_risk_tiers_qualified\":false,\"independent_history_completeness_proven\":false,\"manifest_sha256\":\"187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575\",\"option_history_error_codes\":{\"option:BTC-7SEP26-79750-C-USDT\":[10001],\"option:BTC-7SEP26-79750-P-USDT\":[10001]},\"option_history_incomplete\":[\"option:BTC-7SEP26-79750-C-USDT\",\"option:BTC-7SEP26-79750-P-USDT\"],\"order_submission\":false,\"promotion_authority\":false,\"replayer_sha256\":\"6abfb81554e74e6dcc1b1391f298b5f36455cf6ff4764dc56f3e3a83e34a4e47\",\"response_pages\":12,\"schema_version\":\"bybit_c2_market_archive_v1\",\"start_ms\":1788701451985,\"status\":\"PUBLIC_MARKET_REPLAYED_WITH_GAPS\"},\"observed_exi"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 3,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "t_l1_passed\":false,\"observed_ledger_risk_passed\":true,\"prior_failures_not_erased\":true,\"reference_conformance\":{\"authorities\":{\"account_mode_change\":false,\"order_submission\":false,\"production_integrated\":false,\"promotion_authority\":false},\"cases\":[{\"actual\":{\"account_im_rate\":\"0.235\",\"account_mm_rate\":\"0.126\",\"total_initial_margin_usd\":\"2350.00\",\"total_maintenance_margin_usd\":\"1260.000\"},\"expected\":{\"account_im_rate\":\".235\",\"account_mm_rate\":\".126\",\"total_initial_margin_usd\":\"2350\",\"total_maintenance_margin_usd\":\"1260\"},\"field_matches\":{\"account_im_rate\":true,\"account_mm_rate\":true,\"total_initial_margin_usd\":true,\"total_maintenance_margin_usd\":true},\"id\":\"option_published_position_and_account_rates\",\"source\":\"https://www.bybit.com/en/help-center/article/Initial-Maintenance-Margin-Calculations-Options\",\"status\":\"PASS\"},{\"actual\":{\"order_maintenance_margin_usdt\":\"5250.000\",\"position_maintenance_margin_usdt\":\"4500.000\",\"total_maintenance_margin_usd\":\"9750.000\"},\"expected\":{\"order_maintenance_margin_usdt\":\"5250\",\"position_maintenance_margin_usdt\":\"4500\",\"total_maintenance_margin_usd\":\"9750\"},\"field_matches\":{\"order_maintenance_margin_usdt\":true,\"position_maintenance_margin_usdt\":true,\"total_maintenance_margin_usd\":true},\"id\":\"linear_published_position_plus_order_base_mm\",\"source\":\"https://www.bybit.com/en/help-center/article/Maintenance-Margin-USDT-Contract\",\"status\":\"PASS\"}],\"coverage_limits\":[\"not_independent_exchange_account_snapshot\",\"no_option_plus_hedge_plus_order_published_case\",\"linear_case_excludes_close_fee_reserve\",\"illustrative_eth_numbers_mapped_to_synthetic_btc_schema\",\"synthetic_symbol_date_not_historical_applicability\"],\"cross_engine_sha256\":\"764e8975e59e3bfed878ed1cb14549a50bc107673b32b3552843b3526652fd59\",\"engine_sha256\":\"f8afafc5a936999b2885a94bac2a29f920e7004cdac6454d245465a45dc8d606\",\"historical_margin_qualified\":false,\"passed_cases\":2,\"quarantined_sources\":[{\"accepted_as_current_reference\":false,\"current_parameter_im_usdt\":\"1302.50\",\"page_computed_mm_usdt\":\"938\",\"page_parameter_im_usdt\":\"2315.00\",\"page_table_labeled_mm_usdt\":\"2315\",\"status\":\"PARAMETER_AND_IM_MM_LABEL_CONFLICT\",\"url\":\"https://www.bybit.com/en/help-center/article/Comparison-of-Spread-Strategies-in-Cross-Margin-and-Portfolio-Margin\"}],\"schema_version\":\"c2_reference_conformance_v1\",\"status\":\"REFERENCE_CASES_PASS_WITH_QUARANTINED_SOURCE\"},\"research_replay_accepted\":true,\"schema_version\":\"option_c2_acceptance_v1\",\"source_ledger_missing_evidence\":[\"EXIT_BBO_DEPTH_INSUFFICIENT\",\"MARGIN_EVIDENCE_MISSING\",\"SCHEDULED_FUNDING_MISSING\"],\"source_ledger_status\":\"INSUFFICIENT_EVIDENCE\",\"source_ledger_unchanged\":true,\"status\":\"RESEARCH_REPLAY_ACCEPTED_WITH_LIMITS\",\"unsupported_verifiers\":[\"historical_parameters\",\"independent_cross_account\",\"historical_price_and_source\",\"historical_o"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 4,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "rder_path\"]},\"authorities\":{\"account_mode_change\":false,\"order_submission\":false,\"production_integrated\":false,\"promotion_authority\":false},\"base_plus_funding_high_usdt\":\"-2.292900723048410155000000000000000000000000000000000000000\",\"base_plus_funding_low_usdt\":\"-2.292916575216710155000000000000000000000000000000000000000\",\"base_pnl_usdt\":\"-2.284817561061710155000000000000000000000000000000000000000\",\"c2_qualified\":false,\"candidate_state\":\"CLOSED\",\"cross_engine_sha256\":\"764e8975e59e3bfed878ed1cb14549a50bc107673b32b3552843b3526652fd59\",\"depth_source_probe\":{\"depth_downloaded\":false,\"engine_sha256\":\"c71a528262c6ba89b58a015c03852e880a3210dd3bf9588aae1c67b411182aa2\",\"historical_liquidity_qualified\":false,\"http_status\":403,\"order_submission\":false,\"received_ms\":1789377591886,\"request_url\":\"https://www.bybit.com/x-api/quote/public/support/download/list-files?bizType=contract&productId=orderbook&symbols=BTCUSDT&interval=daily&periods=&startDay=2026-09-07&endDay=2026-09-07\",\"schema_version\":\"bybit_c2_depth_source_probe_v1\",\"sent_ms\":1789377591823,\"status\":\"PUBLIC_DEPTH_DIRECTORY_HTTP_UNAVAILABLE\"},\"engine_sha256\":\"eb226e8988377925bbdf926ace827a1760c3841d8a0458a73219e84c69e9560d\",\"exit_evidence\":{\"actual_exit_failure_proven\":false,\"authorities\":{\"demo_activation_authorized\":false,\"live_activation_authorized\":false,\"order_submission_authorized\":false,\"promotion_authority\":false},\"classification_counts\":{\"OBSERVED_L1_EXIT_CONSTRAINT\":2},\"distinct_bad_quote_observations\":2,\"engine_sha256\":\"f2de712544b6490790aa084971741c971979c4df8898970d207c38c4a9e725dc\",\"findings\":[{\"classification\":\"OBSERVED_L1_EXIT_CONSTRAINT\",\"continuous_outage_duration_ms\":null,\"exit_side\":\"bid\",\"has_full_l1_exit\":false,\"l1_capacity_fraction\":\"0.4\",\"l1_size_btc\":\"0.002\",\"ledger_exit_latched\":false,\"ledger_risk_reasons_at_checkpoint\":[],\"neighbour_bracket_ms\":115353,\"next_full_l1_observation\":{\"exit_side\":\"bid\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"1.204\",\"position_qty_btc\":\"0.005\",\"price_usdt_per_btc\":\"79948.30\",\"quote_ts_ms\":1788743850203,\"same_timestamp_delivery_pending\":false,\"seq\":753,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788743850517},\"position_qty_btc\":\"0.005\",\"previous_full_l1_observation\":{\"exit_side\":\"bid\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"2.627\",\"position_qty_btc\":\"0.005\",\"price_usdt_per_btc\":\"79875.90\",\"quote_ts_ms\":1788743734803,\"same_timestamp_delivery_pending\":false,\"seq\":751,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788743735164},\"price_usdt_per_btc\":\"79857.50\",\"quote_ts_ms\":1788743795602,\"reasons\":[\"L1_SIZE_BELOW_POSITION\"],\"required_qty_btc\":\"0.005\",\"same_timestamp_delivery_pending\":false,\"seq\":752,\"shortfall_btc\":\"0.003\",\"symbol\":\"BTCUSDT\",\"ts_ms\":1788743795883},{\"classification\":\"OBSERVED_L1_EXIT_CONSTRAINT\",\"continuous_outage_duration_ms\":null,\"exit_side\":\"ask\",\"has_full_l1_exit\":false,\"l"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 5,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "1_capacity_fraction\":\"0.2857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857\",\"l1_size_btc\":\"0.002\",\"ledger_exit_latched\":false,\"ledger_risk_reasons_at_checkpoint\":[],\"neighbour_bracket_ms\":121114,\"next_full_l1_observation\":{\"exit_side\":\"ask\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"4.096\",\"position_qty_btc\":\"-0.007\",\"price_usdt_per_btc\":\"79338.50\",\"quote_ts_ms\":1788767886803,\"same_timestamp_delivery_pending\":false,\"seq\":1178,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788767887075},\"position_qty_btc\":\"-0.007\",\"previous_full_l1_observation\":{\"exit_side\":\"ask\",\"has_full_l1_exit\":true,\"l1_size_btc\":\"5.882\",\"position_qty_btc\":\"-0.007\",\"price_usdt_per_btc\":\"79325.00\",\"quote_ts_ms\":1788767765603,\"same_timestamp_delivery_pending\":false,\"seq\":1176,\"symbol\":\"BTCUSDT\",\"ts_ms\":1788767765961},\"price_usdt_per_btc\":\"79343.70\",\"quote_ts_ms\":1788767826202,\"reasons\":[\"L1_SIZE_BELOW_POSITION\"],\"required_qty_btc\":\"0.007\",\"same_timestamp_delivery_pending\":false,\"seq\":1177,\"shortfall_btc\":\"0.005\",\"symbol\":\"BTCUSDT\",\"ts_ms\":1788767826502}],\"full_orderbook_capacity_known\":false,\"historical_liquidity_qualified\":false,\"interpretation_limits\":[\"local_receipt_option_timestamps\",\"no_unobserved_depth_or_interpolation\",\"l1_shortfall_does_not_prove_full_book_shortfall\",\"neighbours_not_continuous_outage_duration\",\"research_risk_latch_not_actual_exchange_liquidation\"],\"ledger_canonical_sha256\":\"baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689\",\"ledger_engine_sha256\":\"73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8\",\"ledger_events\":1182,\"ledger_file_sha256\":\"4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491\",\"schema_version\":\"option_exit_evidence_v1\",\"source_ledger_unchanged\":true,\"status\":\"EXIT_CONSTRAINTS_CLASSIFIED\",\"symbol_checkpoint_findings\":2,\"unqualified_checkpoint_count\":2},\"forward_started\":false,\"funding_amounts_qualified\":false,\"funding_boundaries\":[{\"cash_high_usdt\":\"0.0023716392768\",\"cash_low_usdt\":\"0.00237112800\",\"mark_high\":\"79692.18\",\"mark_low\":\"79675\",\"position_inclusion_ambiguous\":false,\"position_qty_max\":\"-0.001\",\"position_qty_min\":\"-0.001\",\"rate\":\"0.00002976\",\"ts_ms\":1788710400000},{\"cash_high_usdt\":\"-0.0104548012635\",\"cash_low_usdt\":\"-0.010470142155\",\"mark_high\":\"80323.3\",\"mark_low\":\"80205.61\",\"position_inclusion_ambiguous\":false,\"position_qty_max\":\"0.005\",\"position_qty_min\":\"0.005\",\"rate\":\"0.00002607\",\"ts_ms\":1788739200000},{\"cash_high_usdt\":\"0E-13\",\"cash_low_usdt\":\"0E-13\",\"mark_high\":\"79387.5\",\"mark_low\":\"79330.83\",\"position_inclusion_ambiguous\":false,\"position_qty_max\":\"0.000\",\"position_qty_min\":\"0.000\",\"rate\":\"0.00000745\",\"ts_ms\":1788768000000}],\"funding_cash_high_usdt\":\"-0.0080831619867\",\"funding_cash_low_usdt\":\"-0.0080990141550\",\"fx_scenario_usdt_usd\":\"1\",\"historical_margin_qual"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 6,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "ified\":false,\"historical_qualification_gaps\":[\"historical_margin_and_fee_parameters_unverified\",\"independent_cross_account_reference_missing\",\"one_minute_prices_not_checkpoint_or_settlement_truth\",\"option_index_uses_linear_index_proxy\",\"fx_is_explicit_scenario_not_bybit_historical_index\",\"instantaneous_taker_order_model_not_observed_orders\",\"funding_band_retrospective_not_causal_decision_feature\",\"linear_order_mm_close_reserve_convention\"],\"ledger_canonical_sha256\":\"baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689\",\"ledger_engine_sha256\":\"73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8\",\"ledger_events\":1182,\"ledger_file_sha256\":\"4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491\",\"market_manifest_sha256\":\"187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575\",\"market_source\":{\"collector_sha256\":\"652a9d61bacbfba665a50c5f2c400d4bf980147a2a59682590ee72505b76f92a\",\"counts\":{\"funding\":3,\"index\":1112,\"mark\":1112,\"risk\":35},\"end_ms\":1788768000000,\"exact_settlement_marks_qualified\":false,\"historical_risk_tiers_qualified\":false,\"independent_history_completeness_proven\":false,\"manifest_sha256\":\"187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575\",\"option_history_error_codes\":{\"option:BTC-7SEP26-79750-C-USDT\":[10001],\"option:BTC-7SEP26-79750-P-USDT\":[10001]},\"option_history_incomplete\":[\"option:BTC-7SEP26-79750-C-USDT\",\"option:BTC-7SEP26-79750-P-USDT\"],\"order_submission\":false,\"promotion_authority\":false,\"replayer_sha256\":\"6abfb81554e74e6dcc1b1391f298b5f36455cf6ff4764dc56f3e3a83e34a4e47\",\"response_pages\":12,\"schema_version\":\"bybit_c2_market_archive_v1\",\"start_ms\":1788701451985,\"status\":\"PUBLIC_MARKET_REPLAYED_WITH_GAPS\"},\"max_abs_nav_difference_from_frozen_mark_basis_usdt\":\"0.613150000000000000000000000000000000\",\"minimum_risk_headroom_usd\":\"580.352986779430739885001998790000000000000000\",\"model_checkpoints\":1201,\"order_model\":\"instantaneous_taker_no_resting_orders\",\"peak_imr_reference\":\"0.2748416857659405140827766748103748890889635033706545851168248407460554959307089044976876967465645068\",\"peak_mmr_reference\":\"0.07677173081778062343731282998335457641958778175717817039596203617856309972212599636992578825281801588\",\"pending_order_checks\":19,\"public_option_mark_valuations\":0,\"reference_engine_sha256\":\"f4efd0166c82e84194e4f19435704aa90cbd2bcd65978a60cdfa64bfb6cd478d\",\"reversal_fills_split_without_changing_total_qty_or_fee\":3,\"risk_review_checkpoints\":0,\"schema_version\":\"option_c2_cross_integration_v1\",\"source_ledger_missing_evidence\":[\"EXIT_BBO_DEPTH_INSUFFICIENT\",\"MARGIN_EVIDENCE_MISSING\",\"SCHEDULED_FUNDING_MISSING\"],\"source_ledger_status\":\"INSUFFICIENT_EVIDENCE\",\"source_ledger_unchanged\":true,\"status\":\"C2_REFERENCE_INTEGRATED_NOT_QUALIFIED\",\"trace_sha256\":\"326d5e12fb8d6a1c2ff1101fcbf9d7eee03d"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 7,
+      "total": 8,
+      "sha256": "1f7592f7a3670b9e685991bc773784326621f06206fbaea82e2b823b8be5870c",
+      "text": "364539c38720c4fec97abeea39c3\"}"
+    }
+  ],
+  "acceptance": {
+    "authorities": {
+      "demo_activation_authorized": false,
+      "live_activation_authorized": false,
+      "order_submission_authorized": false,
+      "promotion_authority": false
+    },
+    "candidate_state": "CLOSED",
+    "checks": [
+      {
+        "close_condition": "Already recomputed cash per event; does not establish external source authenticity.",
+        "id": "source_and_cash_replay",
+        "observation": {
+          "base_pnl_usdt": "-2.284817561061710155000000000000000000000000000000000000000",
+          "events": 1182,
+          "reference_checkpoints": 1201,
+          "source_unchanged": true
+        },
+        "state": "PASS"
+      },
+      {
+        "close_condition": "Every supported published numeric case must match; conflicting source parameters cannot be accepted.",
+        "id": "published_reference_arithmetic",
+        "observation": {
+          "passed": 2,
+          "quarantined_source_count": 1,
+          "total": 2
+        },
+        "state": "PASS"
+      },
+      {
+        "close_condition": "Accounting replay success does not approve capital, risk limits or a path that breaches the frozen limits.",
+        "id": "frozen_ledger_risk",
+        "observation": {
+          "exit_latched": false,
+          "reference_risk_review_checkpoints": 0,
+          "risk_breaches": []
+        },
+        "state": "NO_OBSERVED_BREACH"
+      },
+      {
+        "close_condition": "Investigate each original quote; deeper same-venue evidence may resolve L1-only uncertainty, never invent liquidity.",
+        "id": "observed_exit_l1",
+        "observation": {
+          "checkpoints": 2,
+          "classifications": {
+            "OBSERVED_L1_EXIT_CONSTRAINT": 2
+          },
+          "distinct_quote_observations": 2
+        },
+        "state": "CONSTRAINT_OBSERVED"
+      },
+      {
+        "close_condition": "Exact settlement price or approved error-bounded research basis; minute OHLC is not exact cashflow evidence.",
+        "id": "funding_amount",
+        "observation": {
+          "base_plus_funding_interval_contains_zero": false,
+          "cash_high_usdt": "-0.0080831619867",
+          "cash_low_usdt": "-0.0080990141550",
+          "interval_width_usdt": "0.0000158521683",
+          "returned_boundaries": 3
+        },
+        "state": "BOUNDED_RESEARCH_ONLY"
+      },
+      {
+        "close_condition": "Effective-dated parameter/fee source covering the target interval and field-level verifier.",
+        "id": "historical_parameters",
+        "observation": "Current risk snapshot and illustrative option factors; historical fee applicability not proven.",
+        "state": "VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS"
+      },
+      {
+        "close_condition": "Independent same-state Cross sample and discrepancy analysis, without changing the existing Demo mode.",
+        "id": "independent_cross_account",
+        "observation": "Published isolated examples do not supply the mixed option/hedge/order account reference.",
+        "state": "VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS"
+      },
+      {
+        "close_condition": "Proven source/time coverage or separately approved bounded model contract, not an assertion in JSON.",
+        "id": "historical_price_and_source",
+        "observation": "Option local receipts, prior minute prices, linear option-index proxy and FX scenario.",
+        "state": "VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS"
+      },
+      {
+        "close_condition": "Validated execution/order-occupancy model or an appropriately sourced order path.",
+        "id": "historical_order_path",
+        "observation": "Explicit instantaneous-taker/no-resting-order model; not observed exchange orders.",
+        "state": "VERIFIER_NOT_SUPPORTED_FOR_THESE_INPUTS"
+      }
+    ],
+    "dependency_sha256": {
+      "audit_bybit_cross_account.py": "764e8975e59e3bfed878ed1cb14549a50bc107673b32b3552843b3526652fd59",
+      "audit_bybit_readonly_evidence.py": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+      "audit_c2_reference_conformance.py": "f8afafc5a936999b2885a94bac2a29f920e7004cdac6454d245465a45dc8d606",
+      "audit_option_c2_integration.py": "eb226e8988377925bbdf926ace827a1760c3841d8a0458a73219e84c69e9560d",
+      "audit_option_exit_evidence.py": "f2de712544b6490790aa084971741c971979c4df8898970d207c38c4a9e725dc",
+      "audit_option_subaccount_ledger.py": "73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8",
+      "bybit_cross_margin_reference.py": "f4efd0166c82e84194e4f19435704aa90cbd2bcd65978a60cdfa64bfb6cd478d",
+      "collect_bybit_c2_market.py": "6abfb81554e74e6dcc1b1391f298b5f36455cf6ff4764dc56f3e3a83e34a4e47"
+    },
+    "engine_sha256": "a963ca58b015f87c1f60af762fbb9020df275cd32d4e217d71aa2221d9201f04",
+    "exit_evidence": {
+      "actual_exit_failure_proven": false,
+      "authorities": {
+        "demo_activation_authorized": false,
+        "live_activation_authorized": false,
+        "order_submission_authorized": false,
+        "promotion_authority": false
+      },
+      "classification_counts": {
+        "OBSERVED_L1_EXIT_CONSTRAINT": 2
+      },
+      "distinct_bad_quote_observations": 2,
+      "findings": [
+        {
+          "classification": "OBSERVED_L1_EXIT_CONSTRAINT",
+          "continuous_outage_duration_ms": null,
+          "exit_side": "bid",
+          "has_full_l1_exit": false,
+          "l1_capacity_fraction": "0.4",
+          "l1_size_btc": "0.002",
+          "ledger_exit_latched": false,
+          "ledger_risk_reasons_at_checkpoint": [],
+          "neighbour_bracket_ms": 115353,
+          "next_full_l1_observation": {
+            "exit_side": "bid",
+            "has_full_l1_exit": true,
+            "l1_size_btc": "1.204",
+            "position_qty_btc": "0.005",
+            "price_usdt_per_btc": "79948.30",
+            "quote_ts_ms": 1788743850203,
+            "same_timestamp_delivery_pending": false,
+            "seq": 753,
+            "symbol": "BTCUSDT",
+            "ts_ms": 1788743850517
+          },
+          "position_qty_btc": "0.005",
+          "previous_full_l1_observation": {
+            "exit_side": "bid",
+            "has_full_l1_exit": true,
+            "l1_size_btc": "2.627",
+            "position_qty_btc": "0.005",
+            "price_usdt_per_btc": "79875.90",
+            "quote_ts_ms": 1788743734803,
+            "same_timestamp_delivery_pending": false,
+            "seq": 751,
+            "symbol": "BTCUSDT",
+            "ts_ms": 1788743735164
+          },
+          "price_usdt_per_btc": "79857.50",
+          "quote_ts_ms": 1788743795602,
+          "reasons": [
+            "L1_SIZE_BELOW_POSITION"
+          ],
+          "required_qty_btc": "0.005",
+          "same_timestamp_delivery_pending": false,
+          "seq": 752,
+          "shortfall_btc": "0.003",
+          "symbol": "BTCUSDT",
+          "ts_ms": 1788743795883
+        },
+        {
+          "classification": "OBSERVED_L1_EXIT_CONSTRAINT",
+          "continuous_outage_duration_ms": null,
+          "exit_side": "ask",
+          "has_full_l1_exit": false,
+          "l1_capacity_fraction": "0.2857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857",
+          "l1_size_btc": "0.002",
+          "ledger_exit_latched": false,
+          "ledger_risk_reasons_at_checkpoint": [],
+          "neighbour_bracket_ms": 121114,
+          "next_full_l1_observation": {
+            "exit_side": "ask",
+            "has_full_l1_exit": true,
+            "l1_size_btc": "4.096",
+            "position_qty_btc": "-0.007",
+            "price_usdt_per_btc": "79338.50",
+            "quote_ts_ms": 1788767886803,
+            "same_timestamp_delivery_pending": false,
+            "seq": 1178,
+            "symbol": "BTCUSDT",
+            "ts_ms": 1788767887075
+          },
+          "position_qty_btc": "-0.007",
+          "previous_full_l1_observation": {
+            "exit_side": "ask",
+            "has_full_l1_exit": true,
+            "l1_size_btc": "5.882",
+            "position_qty_btc": "-0.007",
+            "price_usdt_per_btc": "79325.00",
+            "quote_ts_ms": 1788767765603,
+            "same_timestamp_delivery_pending": false,
+            "seq": 1176,
+            "symbol": "BTCUSDT",
+            "ts_ms": 1788767765961
+          },
+          "price_usdt_per_btc": "79343.70",
+          "quote_ts_ms": 1788767826202,
+          "reasons": [
+            "L1_SIZE_BELOW_POSITION"
+          ],
+          "required_qty_btc": "0.007",
+          "same_timestamp_delivery_pending": false,
+          "seq": 1177,
+          "shortfall_btc": "0.005",
+          "symbol": "BTCUSDT",
+          "ts_ms": 1788767826502
+        }
+      ],
+      "full_orderbook_capacity_known": false,
+      "historical_liquidity_qualified": false,
+      "interpretation_limits": [
+        "local_receipt_option_timestamps",
+        "no_unobserved_depth_or_interpolation",
+        "l1_shortfall_does_not_prove_full_book_shortfall",
+        "neighbours_not_continuous_outage_duration",
+        "research_risk_latch_not_actual_exchange_liquidation"
+      ],
+      "ledger_canonical_sha256": "baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689",
+      "ledger_events": 1182,
+      "schema_version": "option_exit_evidence_v1",
+      "source_ledger_unchanged": true,
+      "status": "EXIT_CONSTRAINTS_CLASSIFIED",
+      "symbol_checkpoint_findings": 2,
+      "unqualified_checkpoint_count": 2
+    },
+    "forward_started": false,
+    "funding_interval_width_usdt": "0.0000158521683",
+    "historical_status": "NOT_QUALIFIED_UNSUPPORTED_PROOF_CLASSES",
+    "historical_verification_supported": false,
+    "ledger_canonical_sha256": "baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689",
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "market_manifest_sha256": "187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575",
+    "market_source": {
+      "collector_sha256": "652a9d61bacbfba665a50c5f2c400d4bf980147a2a59682590ee72505b76f92a",
+      "counts": {
+        "funding": 3,
+        "index": 1112,
+        "mark": 1112,
+        "risk": 35
+      },
+      "end_ms": 1788768000000,
+      "exact_settlement_marks_qualified": false,
+      "historical_risk_tiers_qualified": false,
+      "independent_history_completeness_proven": false,
+      "manifest_sha256": "187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575",
+      "option_history_error_codes": {
+        "option:BTC-7SEP26-79750-C-USDT": [
+          10001
+        ],
+        "option:BTC-7SEP26-79750-P-USDT": [
+          10001
+        ]
+      },
+      "option_history_incomplete": [
+        "option:BTC-7SEP26-79750-C-USDT",
+        "option:BTC-7SEP26-79750-P-USDT"
+      ],
+      "order_submission": false,
+      "promotion_authority": false,
+      "replayer_sha256": "6abfb81554e74e6dcc1b1391f298b5f36455cf6ff4764dc56f3e3a83e34a4e47",
+      "response_pages": 12,
+      "schema_version": "bybit_c2_market_archive_v1",
+      "start_ms": 1788701451985,
+      "status": "PUBLIC_MARKET_REPLAYED_WITH_GAPS"
+    },
+    "observed_exit_l1_passed": false,
+    "observed_ledger_risk_passed": true,
+    "prior_failures_not_erased": true,
+    "reference_conformance": {
+      "authorities": {
+        "account_mode_change": false,
+        "order_submission": false,
+        "production_integrated": false,
+        "promotion_authority": false
+      },
+      "cases": [
+        {
+          "actual": {
+            "account_im_rate": "0.235",
+            "account_mm_rate": "0.126",
+            "total_initial_margin_usd": "2350.00",
+            "total_maintenance_margin_usd": "1260.000"
+          },
+          "expected": {
+            "account_im_rate": ".235",
+            "account_mm_rate": ".126",
+            "total_initial_margin_usd": "2350",
+            "total_maintenance_margin_usd": "1260"
+          },
+          "field_matches": {
+            "account_im_rate": true,
+            "account_mm_rate": true,
+            "total_initial_margin_usd": true,
+            "total_maintenance_margin_usd": true
+          },
+          "id": "option_published_position_and_account_rates",
+          "source": "https://www.bybit.com/en/help-center/article/Initial-Maintenance-Margin-Calculations-Options",
+          "status": "PASS"
+        },
+        {
+          "actual": {
+            "order_maintenance_margin_usdt": "5250.000",
+            "position_maintenance_margin_usdt": "4500.000",
+            "total_maintenance_margin_usd": "9750.000"
+          },
+          "expected": {
+            "order_maintenance_margin_usdt": "5250",
+            "position_maintenance_margin_usdt": "4500",
+            "total_maintenance_margin_usd": "9750"
+          },
+          "field_matches": {
+            "order_maintenance_margin_usdt": true,
+            "position_maintenance_margin_usdt": true,
+            "total_maintenance_margin_usd": true
+          },
+          "id": "linear_published_position_plus_order_base_mm",
+          "source": "https://www.bybit.com/en/help-center/article/Maintenance-Margin-USDT-Contract",
+          "status": "PASS"
+        }
+      ],
+      "coverage_limits": [
+        "not_independent_exchange_account_snapshot",
+        "no_option_plus_hedge_plus_order_published_case",
+        "linear_case_excludes_close_fee_reserve",
+        "illustrative_eth_numbers_mapped_to_synthetic_btc_schema",
+        "synthetic_symbol_date_not_historical_applicability"
+      ],
+      "cross_engine_sha256": "764e8975e59e3bfed878ed1cb14549a50bc107673b32b3552843b3526652fd59",
+      "engine_sha256": "f8afafc5a936999b2885a94bac2a29f920e7004cdac6454d245465a45dc8d606",
+      "historical_margin_qualified": false,
+      "passed_cases": 2,
+      "quarantined_sources": [
+        {
+          "accepted_as_current_reference": false,
+          "current_parameter_im_usdt": "1302.50",
+          "page_computed_mm_usdt": "938",
+          "page_parameter_im_usdt": "2315.00",
+          "page_table_labeled_mm_usdt": "2315",
+          "status": "PARAMETER_AND_IM_MM_LABEL_CONFLICT",
+          "url": "https://www.bybit.com/en/help-center/article/Comparison-of-Spread-Strategies-in-Cross-Margin-and-Portfolio-Margin"
+        }
+      ],
+      "schema_version": "c2_reference_conformance_v1",
+      "status": "REFERENCE_CASES_PASS_WITH_QUARANTINED_SOURCE"
+    },
+    "research_replay_accepted": true,
+    "schema_version": "option_c2_acceptance_v1",
+    "source_ledger_missing_evidence": [
+      "EXIT_BBO_DEPTH_INSUFFICIENT",
+      "MARGIN_EVIDENCE_MISSING",
+      "SCHEDULED_FUNDING_MISSING"
+    ],
+    "source_ledger_status": "INSUFFICIENT_EVIDENCE",
+    "source_ledger_unchanged": true,
+    "status": "RESEARCH_REPLAY_ACCEPTED_WITH_LIMITS",
+    "unsupported_verifiers": [
+      "historical_parameters",
+      "independent_cross_account",
+      "historical_price_and_source",
+      "historical_order_path"
+    ]
+  },
+  "exit_evidence": {
+    "actual_exit_failure_proven": false,
+    "authorities": {
+      "demo_activation_authorized": false,
+      "live_activation_authorized": false,
+      "order_submission_authorized": false,
+      "promotion_authority": false
+    },
+    "classification_counts": {
+      "OBSERVED_L1_EXIT_CONSTRAINT": 2
+    },
+    "distinct_bad_quote_observations": 2,
+    "engine_sha256": "f2de712544b6490790aa084971741c971979c4df8898970d207c38c4a9e725dc",
+    "findings": [
+      {
+        "classification": "OBSERVED_L1_EXIT_CONSTRAINT",
+        "continuous_outage_duration_ms": null,
+        "exit_side": "bid",
+        "has_full_l1_exit": false,
+        "l1_capacity_fraction": "0.4",
+        "l1_size_btc": "0.002",
+        "ledger_exit_latched": false,
+        "ledger_risk_reasons_at_checkpoint": [],
+        "neighbour_bracket_ms": 115353,
+        "next_full_l1_observation": {
+          "exit_side": "bid",
+          "has_full_l1_exit": true,
+          "l1_size_btc": "1.204",
+          "position_qty_btc": "0.005",
+          "price_usdt_per_btc": "79948.30",
+          "quote_ts_ms": 1788743850203,
+          "same_timestamp_delivery_pending": false,
+          "seq": 753,
+          "symbol": "BTCUSDT",
+          "ts_ms": 1788743850517
+        },
+        "position_qty_btc": "0.005",
+        "previous_full_l1_observation": {
+          "exit_side": "bid",
+          "has_full_l1_exit": true,
+          "l1_size_btc": "2.627",
+          "position_qty_btc": "0.005",
+          "price_usdt_per_btc": "79875.90",
+          "quote_ts_ms": 1788743734803,
+          "same_timestamp_delivery_pending": false,
+          "seq": 751,
+          "symbol": "BTCUSDT",
+          "ts_ms": 1788743735164
+        },
+        "price_usdt_per_btc": "79857.50",
+        "quote_ts_ms": 1788743795602,
+        "reasons": [
+          "L1_SIZE_BELOW_POSITION"
+        ],
+        "required_qty_btc": "0.005",
+        "same_timestamp_delivery_pending": false,
+        "seq": 752,
+        "shortfall_btc": "0.003",
+        "symbol": "BTCUSDT",
+        "ts_ms": 1788743795883
+      },
+      {
+        "classification": "OBSERVED_L1_EXIT_CONSTRAINT",
+        "continuous_outage_duration_ms": null,
+        "exit_side": "ask",
+        "has_full_l1_exit": false,
+        "l1_capacity_fraction": "0.2857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857142857",
+        "l1_size_btc": "0.002",
+        "ledger_exit_latched": false,
+        "ledger_risk_reasons_at_checkpoint": [],
+        "neighbour_bracket_ms": 121114,
+        "next_full_l1_observation": {
+          "exit_side": "ask",
+          "has_full_l1_exit": true,
+          "l1_size_btc": "4.096",
+          "position_qty_btc": "-0.007",
+          "price_usdt_per_btc": "79338.50",
+          "quote_ts_ms": 1788767886803,
+          "same_timestamp_delivery_pending": false,
+          "seq": 1178,
+          "symbol": "BTCUSDT",
+          "ts_ms": 1788767887075
+        },
+        "position_qty_btc": "-0.007",
+        "previous_full_l1_observation": {
+          "exit_side": "ask",
+          "has_full_l1_exit": true,
+          "l1_size_btc": "5.882",
+          "position_qty_btc": "-0.007",
+          "price_usdt_per_btc": "79325.00",
+          "quote_ts_ms": 1788767765603,
+          "same_timestamp_delivery_pending": false,
+          "seq": 1176,
+          "symbol": "BTCUSDT",
+          "ts_ms": 1788767765961
+        },
+        "price_usdt_per_btc": "79343.70",
+        "quote_ts_ms": 1788767826202,
+        "reasons": [
+          "L1_SIZE_BELOW_POSITION"
+        ],
+        "required_qty_btc": "0.007",
+        "same_timestamp_delivery_pending": false,
+        "seq": 1177,
+        "shortfall_btc": "0.005",
+        "symbol": "BTCUSDT",
+        "ts_ms": 1788767826502
+      }
+    ],
+    "full_orderbook_capacity_known": false,
+    "historical_liquidity_qualified": false,
+    "interpretation_limits": [
+      "local_receipt_option_timestamps",
+      "no_unobserved_depth_or_interpolation",
+      "l1_shortfall_does_not_prove_full_book_shortfall",
+      "neighbours_not_continuous_outage_duration",
+      "research_risk_latch_not_actual_exchange_liquidation"
+    ],
+    "ledger_canonical_sha256": "baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689",
+    "ledger_engine_sha256": "73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8",
+    "ledger_events": 1182,
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "schema_version": "option_exit_evidence_v1",
+    "source_ledger_unchanged": true,
+    "status": "EXIT_CONSTRAINTS_CLASSIFIED",
+    "symbol_checkpoint_findings": 2,
+    "unqualified_checkpoint_count": 2
+  },
+  "depth_source_probe": {
+    "depth_downloaded": false,
+    "engine_sha256": "c71a528262c6ba89b58a015c03852e880a3210dd3bf9588aae1c67b411182aa2",
+    "historical_liquidity_qualified": false,
+    "http_status": 403,
+    "order_submission": false,
+    "received_ms": 1789377591886,
+    "request_url": "https://www.bybit.com/x-api/quote/public/support/download/list-files?bizType=contract&productId=orderbook&symbols=BTCUSDT&interval=daily&periods=&startDay=2026-09-07&endDay=2026-09-07",
+    "schema_version": "bybit_c2_depth_source_probe_v1",
+    "sent_ms": 1789377591823,
+    "status": "PUBLIC_DEPTH_DIRECTORY_HTTP_UNAVAILABLE"
+  },
+  "unchanged_reference": {
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "trace_sha256": "326d5e12fb8d6a1c2ff1101fcbf9d7eee03d364539c38720c4fec97abeea39c3",
+    "base_pnl_usdt": "-2.284817561061710155000000000000000000000000000000000000000",
+    "market_manifest_sha256": "187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575"
+  },
+  "local_verification": {
+    "ctest_passed": 90,
+    "ctest_total": 90,
+    "ctest_seconds": "320.21",
+    "focused_cases": {
+      "exit": 7,
+      "reference": 2,
+      "acceptance_and_probe": 11
+    },
+    "evidence_integrity": {
+      "complete_chunks": true,
+      "summary_sha256": true,
+      "dependency_sha256_count": 8,
+      "depth_probe_file_sha256": true,
+      "reference_trace_unchanged": true,
+      "local_document_links": true,
+      "workflow_bash_syntax": true
+    }
+  },
+  "remaining_capability_gaps": [
+    "historical_parameters",
+    "independent_cross_account",
+    "historical_price_and_source",
+    "historical_order_path"
+  ],
+  "minimum_depth_windows_utc": [
+    {
+      "from": "2026-09-07T01:15:30Z",
+      "to": "2026-09-07T01:18:00Z",
+      "symbol": "BTCUSDT",
+      "category": "linear",
+      "anchor_quote_ms": 1788743795602,
+      "required_side": "bid",
+      "required_qty_btc": "0.005"
+    },
+    {
+      "from": "2026-09-07T07:55:30Z",
+      "to": "2026-09-07T07:59:00Z",
+      "symbol": "BTCUSDT",
+      "category": "linear",
+      "anchor_quote_ms": 1788767826202,
+      "required_side": "ask",
+      "required_qty_btc": "0.007"
+    }
+  ],
+  "authorities": {
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false,
+    "order_submission_authorized": false,
+    "promotion_authority": false
+  },
+  "depth_source_probe_identity": {
+    "reused_from_workflow_run": 34827285554,
+    "summary_file_sha256": "925012795b5658c93c3a7d1242ce2a4445b856d540933058a972d2b784b04770",
+    "path": "/opt/ai-trade/data/research/c2_cross_results/34827285554-1/depth-source-probe/summary.json",
+    "fresh_request_in_final_run": false
+  },
+  "ci_verification": {
+    "run": 34827779398,
+    "check_run": 103923788279,
+    "head_sha": "31db22aa85e666d1900e15c50bcaca00bdd16ab8",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "delivery_contract": {
+    "documentation_commit_skips_ci": true,
+    "code_and_runtime_config_changed_after_verified_commit": false,
+    "production_cd_requested": false
+  }
+}
