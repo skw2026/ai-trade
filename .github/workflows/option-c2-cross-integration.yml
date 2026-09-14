@@ -99,6 +99,7 @@ jobs:
           [[ "${#captures[@]}" == 1 ]]
           market_capture="$(dirname "${captures[0]}")"
           market_sha="$(sha256sum "${captures[0]}" | cut -d ' ' -f 1)"
+          [[ "${market_sha}" == 187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575 ]]
           python3 tools/audit_option_c2_integration.py \
             --ledger /opt/ai-trade/data/reports/option_lifecycle_v4/option-lifecycle-v4-34759528652-1/first.ledger-input.json \
             --ledger-sha256 4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491 \
@@ -139,8 +140,17 @@ jobs:
                   raise SystemExit('C2 source ledger mismatch')
               if report.get('c2_qualified') is not False or report.get('source_ledger_unchanged') is not True:
                   raise SystemExit('C2 qualification boundary changed')
-          rendered = json.dumps(report, sort_keys=True).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print('::notice title=C2 Cross integration::' + rendered)
+          # GitHub truncates each annotation at 4096 bytes. Preserve exact
+          # numeric text and the complete report in hash-bound small chunks.
+          rendered = json.dumps(report, sort_keys=True, separators=(',', ':'))
+          digest = hashlib.sha256(rendered.encode()).hexdigest()
+          chunks = [rendered[i:i + 1400] for i in range(0, len(rendered), 1400)]
+          for index, chunk in enumerate(chunks):
+              envelope = json.dumps({'schema': 'c2_annotation_chunk_v1', 'part': index,
+                  'total': len(chunks), 'sha256': digest, 'text': chunk}, separators=(',', ':'))
+              assert len(envelope.encode()) < 3500
+              envelope = envelope.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title=C2 Cross integration {index + 1}/{len(chunks)}::' + envelope)
           if report.get('status') != 'C2_REFERENCE_INTEGRATED_NOT_QUALIFIED':
               raise SystemExit('C2 integration incomplete')
           PY

@@ -111,6 +111,8 @@ if(BUILD_TESTING)
   else()
     add_test(NAME option_c2_cross_integration_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_c2_integration.py)
+    add_test(NAME c2_fx_proxy_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_c2_fx_proxy.py)
     add_test(NAME bybit_c2_market_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_bybit_c2_market.py)
     add_test(NAME bybit_cross_account_test

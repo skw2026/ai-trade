@@ -73,6 +73,7 @@ jobs:
           ctest --test-dir build -N > /tmp/ctest-list.txt
           grep -q "trade_system_test" /tmp/ctest-list.txt
           grep -q "option_c2_cross_integration_test" /tmp/ctest-list.txt
+          grep -q "c2_fx_proxy_test" /tmp/ctest-list.txt
           grep -q "bybit_c2_market_test" /tmp/ctest-list.txt
           grep -q "bybit_cross_account_test" /tmp/ctest-list.txt
           grep -q "bybit_cross_margin_reference_test" /tmp/ctest-list.txt
