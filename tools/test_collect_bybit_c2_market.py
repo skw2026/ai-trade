@@ -93,6 +93,14 @@ class C2MarketTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'RAW_HASH'):
             market.replay(cap, sha)
 
+    def test_option_api_failure_is_an_explicit_gap_not_zero_price(self):
+        cap, _ = self.capture([CALL])
+        sha = self.mutate(cap, 4, lambda raw: raw.update(retCode=10001, result={}))
+        data, report = market.replay(cap, sha)
+        self.assertEqual(report['option_history_error_codes'], {'option:' + CALL: [10001]})
+        self.assertEqual(len(data['mark']), 1112)
+        self.assertEqual(len(data['option:' + CALL]), 612)
+
     def test_transport_public_get_no_auth_and_rejects_injected_query(self):
         requests = market.plan(START, END)
         transport = market.Transport(requests)

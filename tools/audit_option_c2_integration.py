@@ -133,6 +133,7 @@ def integrate(data, market, market_identity, *, fx='1'):
                 marks[symbol] = prior_close(market[stream], now)
                 if symbol != 'BTCUSDT': proxy_option_marks += 1
             else:
+                require(symbol != 'BTCUSDT', 'PERPETUAL_CLOSED_MARK_MISSING')
                 require(symbol in local_marks, 'OPTION_MARK_CONTEXT_MISSING')
                 marks[symbol] = local_marks[symbol]
         return {'schema_version': cross.SCHEMA, 'evidence_kind': 'explicit_research_model',

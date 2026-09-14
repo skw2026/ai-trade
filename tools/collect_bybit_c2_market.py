@@ -22,6 +22,7 @@ require = wire.require
 
 def plan(start, end, options=()):
     wire.window(start, end)
+    require(start >= 2 * MINUTE, "MARKET_START_TOO_EARLY")
     require(end - start <= 2 * wire.DAY, "C2_WINDOW_EXCEEDS_TWO_DAYS")
     require(isinstance(options, (list, tuple)) and list(options) == sorted(set(options)) and
             len(options) <= 2 and all(ledger.OPTION.fullmatch(s) for s in options), "OPTION_SCOPE_INVALID")
@@ -104,6 +105,7 @@ def replay(capture, expected_sha):
     require(len(manifest["pages"]) == len(requests), "MARKET_PAGE_CHAIN_INCOMPLETE")
     data = {"mark": {}, "index": {}, "funding": {}, "risk": []}
     option_gaps = set()
+    option_errors = {}
     for i, (page, request) in enumerate(zip(manifest["pages"], requests)):
         require(page["request"] == request and page["file"] == f"{i:04d}.raw", "MARKET_REQUEST_PLAN_MISMATCH")
         raw = wire.safe_read(capture / page["file"])
@@ -115,7 +117,10 @@ def replay(capture, expected_sha):
                 page["sent_ms"] - MINUTE <= server <= page["received_ms"] + MINUTE, "MARKET_CLOCK_INVALID")
         group, params = request["group"], request["params"]
         if group.startswith("option:") and payload.get("retCode") != 0:
+            code = payload.get("retCode")
+            require(type(code) is int, "OPTION_ERROR_CODE_INVALID")
             option_gaps.add(group)
+            option_errors.setdefault(group, set()).add(code)
             continue
         result = wire.result(raw)
         require(result.get("category") == params["category"] and result.get("nextPageCursor", "") == "",
@@ -154,6 +159,7 @@ def replay(capture, expected_sha):
     summary = {"schema_version": SCHEMA, "status": "PUBLIC_MARKET_REPLAYED_WITH_GAPS" if option_gaps else "PUBLIC_MARKET_REPLAYED",
         "manifest_sha256": expected_sha, "start_ms": start, "end_ms": end, "response_pages": len(requests),
         "counts": {key: len(rows) for key, rows in data.items()}, "option_history_incomplete": sorted(option_gaps),
+        "option_history_error_codes": {key: sorted(value) for key, value in sorted(option_errors.items())},
         "collector_sha256": manifest["collector_sha256"], "replayer_sha256": wire.digest(pathlib.Path(__file__).read_bytes()),
         "exact_settlement_marks_qualified": False, "historical_risk_tiers_qualified": False,
         "independent_history_completeness_proven": False, "order_submission": False, "promotion_authority": False}

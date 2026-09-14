@@ -140,6 +140,14 @@ class C2IntegrationTest(unittest.TestCase):
         market['index'].clear()
         with self.assertRaisesRegex(ValueError, 'CANDLE_MISSING'):
             integration.integrate(data, market, 'synthetic')
+        data, market = fixture()
+        market['mark'].clear()
+        # No funding boundaries in this negative case: exercise margin input
+        # validation, not the independent funding envelope preflight.
+        data['funding_schedule'] = []
+        market['funding'] = {}
+        with self.assertRaisesRegex(ValueError, 'PERPETUAL_CLOSED_MARK_MISSING'):
+            integration.integrate(data, market, 'synthetic')
 
     def test_cli_hash_rejection_no_trace_write(self):
         data, _ = fixture()
