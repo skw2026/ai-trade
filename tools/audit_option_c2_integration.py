@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import copy
 import pathlib
+import traceback
 from decimal import Decimal, ROUND_HALF_EVEN
 
 import audit_bybit_cross_account as cross
@@ -235,10 +236,12 @@ def main():
     parser.add_argument('--trace-output', type=pathlib.Path, required=True)
     parser.add_argument('--fx-scenario', default='1')
     args = parser.parse_args()
+    stage = 'read_ledger'
     try:
         data, identity = ledger.read_input(args.ledger)
         require(wire.SHA.fullmatch(args.ledger_sha256) and identity == args.ledger_sha256, 'PINNED_LEDGER_HASH_MISMATCH')
         if args.collect_market_root:
+            stage = 'collect_market'
             require(args.market_capture is None and args.market_sha256 is None, 'AMBIGUOUS_MARKET_INPUT')
             options = sorted(s for s in data['instruments'] if s != 'BTCUSDT')
             requests = market_tool.plan(data['start_ts_ms'], data['end_ts_ms'], options)
@@ -246,9 +249,12 @@ def main():
                                                        market_tool.Transport(requests))
             args.market_sha256 = wire.digest(wire.safe_read(args.market_capture / 'manifest.json'))
         require(args.market_capture is not None and args.market_sha256 is not None, 'MARKET_PIN_REQUIRED')
+        stage = 'replay_market'
         market, source = market_tool.replay(args.market_capture, args.market_sha256)
         require((source['start_ms'], source['end_ms']) == (data['start_ts_ms'], data['end_ts_ms']), 'MARKET_LEDGER_WINDOW_MISMATCH')
+        stage = 'integrate'
         summary, traces = integrate(data, market, args.market_sha256, fx=args.fx_scenario)
+        stage = 'write_trace'
         args.trace_output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         require(not args.trace_output.parent.is_symlink(), 'TRACE_PARENT_SYMLINK')
         wire.safe_file(args.trace_output, wire.encode({'summary': summary, 'checkpoints': traces}))
@@ -261,7 +267,15 @@ def main():
         print(wire.encode(summary).decode(), end='')
         return 0
     except (ValueError, KeyError, TypeError, ArithmeticError, OSError) as exc:
+        # Only our checked-in code locations, never values, stack locals,
+        # exception text, ledger content or credentials.
+        allowed_files = {pathlib.Path(module.__file__).name for module in (cross, wire, ledger, ref, market_tool)}
+        allowed_files.add(pathlib.Path(__file__).name)
+        locations = [{'file': pathlib.Path(frame.filename).name, 'line': frame.lineno}
+                     for frame in traceback.extract_tb(exc.__traceback__)
+                     if pathlib.Path(frame.filename).name in allowed_files]
         print(wire.encode({'status': 'C2_INTEGRATION_NOT_COMPLETED', 'reason': wire.error_code(exc),
+                          'stage': stage, 'code_locations': locations,
                           'c2_qualified': False, 'authorities': cross.AUTHORITY.copy()}).decode(), end='')
         return 2
 

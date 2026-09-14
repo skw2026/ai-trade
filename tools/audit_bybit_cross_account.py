@@ -163,7 +163,7 @@ def calculate(state, rules):
         else:
             meta = instruments[symbol]
             detail = ref.option_position(kind=meta["kind"], qty=pos["qty"], entry=pos["entry"],
-                index=str(index), mark=str(marks[symbol]), strike=meta["strike"], rules=rules["option_factors"])
+                index=format(index, "f"), mark=format(marks[symbol], "f"), strike=meta["strike"], rules=rules["option_factors"])
             option_value += detail["option_value_usdt"]
         pos_im += detail["im_usdt"]
         pos_mm += detail["mm_usdt"]
@@ -220,7 +220,7 @@ def calculate(state, rules):
                 continue
             action = "buy_to_close" if order["intent"] == "reduce" else "buy_to_open" if order["side"] == "Buy" else "sell_to_open"
             detail = ref.option_order(kind=meta["kind"], action=action, qty=order["remaining_qty"],
-                price=order["limit_price"], index=str(index), mark=str(marks[symbol]),
+                price=order["limit_price"], index=format(index, "f"), mark=format(marks[symbol], "f"),
                 strike=meta["strike"], rules=rules["option_factors"], **extra)
             im, mm, loss = detail["order_im_usdt"], ZERO, ZERO
         order_im += im

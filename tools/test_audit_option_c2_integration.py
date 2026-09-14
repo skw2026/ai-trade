@@ -104,6 +104,15 @@ class C2IntegrationTest(unittest.TestCase):
         self.assertEqual(a['peak_mmr_reference'], b['peak_mmr_reference'])
         self.assertNotEqual(a['minimum_risk_headroom_usd'], b['minimum_risk_headroom_usd'])
 
+    def test_zero_scaled_option_mark_keeps_fixed_decimal_boundary(self):
+        data, market = fixture()
+        for symbol in (CALL, PUT):
+            market['option:' + symbol] = {t: {'open': '0.00000000', 'high': '0.00000000',
+                'low': '0.00000000', 'close': '0.00000000'} for t in market['mark']}
+        report, _ = integration.integrate(data, market, 'synthetic')
+        self.assertGreater(report['public_option_mark_valuations'], 0)
+        self.assertFalse(report['c2_qualified'])
+
     def test_reversal_split_retains_cash_and_fees(self):
         data, market = fixture()
         event = data['events'][4]

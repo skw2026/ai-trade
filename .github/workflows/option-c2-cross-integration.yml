@@ -92,10 +92,17 @@ jobs:
           cd "${runner}"
           printf '%s  %s\n' "${bundle_sha}" .artifacts/c2-bundle.sha256 | sha256sum -c - >/dev/null
           sha256sum -c .artifacts/c2-bundle.sha256 >/dev/null
+          # Reuse the public capture retained by the first real run. Never
+          # overwrite it or refetch current rules between defect-repair runs.
+          capture_root=/opt/ai-trade/data/research/c2_cross_public/34801292053-1
+          mapfile -t captures < <(find "${capture_root}" -mindepth 2 -maxdepth 2 -type f -name manifest.json)
+          [[ "${#captures[@]}" == 1 ]]
+          market_capture="$(dirname "${captures[0]}")"
+          market_sha="$(sha256sum "${captures[0]}" | cut -d ' ' -f 1)"
           python3 tools/audit_option_c2_integration.py \
             --ledger /opt/ai-trade/data/reports/option_lifecycle_v4/option-lifecycle-v4-34759528652-1/first.ledger-input.json \
             --ledger-sha256 4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491 \
-            --collect-market-root "/opt/ai-trade/data/research/c2_cross_public/${run_id}" \
+            --market-capture "${market_capture}" --market-sha256 "${market_sha}" \
             --trace-output "/opt/ai-trade/data/research/c2_cross_results/${run_id}/first.reference-trace.json"
           REMOTE
           echo "remote_exit=${remote_exit}"
@@ -107,7 +114,7 @@ jobs:
           if not 0 < path.stat().st_size < 30000:
               raise SystemExit('No bounded C2 integration summary')
           report = json.loads(path.read_text())
-          allowed = {'schema_version', 'status', 'reason', 'ledger_canonical_sha256', 'market_manifest_sha256',
+          allowed = {'schema_version', 'status', 'reason', 'stage', 'code_locations', 'ledger_canonical_sha256', 'market_manifest_sha256',
               'ledger_events', 'model_checkpoints', 'pending_order_checks',
               'reversal_fills_split_without_changing_total_qty_or_fee', 'funding_boundaries',
               'funding_cash_low_usdt', 'funding_cash_high_usdt', 'base_pnl_usdt',
