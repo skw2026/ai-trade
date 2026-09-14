@@ -72,6 +72,9 @@ jobs:
           set -euo pipefail
           ctest --test-dir build -N > /tmp/ctest-list.txt
           grep -q "trade_system_test" /tmp/ctest-list.txt
+          grep -q "option_c2_cross_integration_test" /tmp/ctest-list.txt
+          grep -q "bybit_c2_market_test" /tmp/ctest-list.txt
+          grep -q "bybit_cross_account_test" /tmp/ctest-list.txt
           grep -q "bybit_cross_margin_reference_test" /tmp/ctest-list.txt
           grep -q "bybit_funding_obligations_test" /tmp/ctest-list.txt
           grep -q "bybit_readonly_evidence_test" /tmp/ctest-list.txt
