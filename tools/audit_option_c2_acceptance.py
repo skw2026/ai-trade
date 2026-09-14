@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from decimal import Decimal, localcontext
 import pathlib
+import json
 
 import audit_bybit_readonly_evidence as wire
 import audit_option_subaccount_ledger as ledger
@@ -18,6 +19,27 @@ import audit_c2_reference_conformance as references
 import collect_bybit_c2_market as market_tool
 
 require = wire.require
+
+
+def annotation_chunks(report):
+    """Fit both per-annotation bytes and GitHub's per-step annotation count."""
+    payload = json.dumps(report, sort_keys=True, separators=(',', ':'))
+    sha = wire.digest(payload.encode())
+    texts, cursor = [], 0
+    while cursor < len(payload):
+        end = min(len(payload), cursor + 2800)
+        while end > cursor:
+            test = {'schema': 'c2_annotation_chunk_v1', 'part': 99, 'total': 99,
+                    'sha256': sha, 'text': payload[cursor:end]}
+            if len(json.dumps(test, separators=(',', ':')).encode()) < 3500:
+                break
+            end -= 100
+        require(end > cursor, 'ANNOTATION_CHUNK_TOO_LARGE')
+        texts.append(payload[cursor:end])
+        cursor = end
+    require(len(texts) <= 10, 'ANNOTATION_COUNT_EXCEEDS_STEP_LIMIT')
+    return [{'schema': 'c2_annotation_chunk_v1', 'part': i, 'total': len(texts), 'sha256': sha, 'text': text}
+            for i, text in enumerate(texts)]
 
 
 @integration.ref.exact

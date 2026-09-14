@@ -1,12 +1,30 @@
 #!/usr/bin/env python3
 import copy
+import json
+import pathlib
+import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 import audit_option_c2_acceptance as acceptance
+import probe_bybit_c2_depth_source as depth_probe
 from test_audit_option_c2_integration import fixture, CALL
 
 
 class AcceptanceTest(unittest.TestCase):
+    def test_large_notice_payload_reassembles_with_hash_and_bounded_count(self):
+        payload = {'escaped': ('\\"\n测试' * 1000)}
+        chunks = acceptance.annotation_chunks(payload)
+        raw = ''.join(c['text'] for c in chunks)
+        self.assertEqual(json.loads(raw), payload)
+        self.assertLessEqual(len(chunks), 10)
+        self.assertTrue(all(len(json.dumps(c, separators=(',', ':')).encode()) < 3500 for c in chunks))
+        self.assertEqual(acceptance.wire.digest(raw.encode()), chunks[0]['sha256'])
+
+    def test_unbounded_notice_count_fails_before_publishing_partial_evidence(self):
+        with self.assertRaisesRegex(ValueError, 'COUNT_EXCEEDS'):
+            acceptance.annotation_chunks({'too_large': 'x' * 40000})
+
     def test_research_acceptance_is_separate_from_historical_verifier_capability(self):
         data, market = fixture()
         saved = copy.deepcopy(data)
@@ -61,6 +79,41 @@ class AcceptanceTest(unittest.TestCase):
         state = lambda report: next(c['state'] for c in report['checks'] if c['id'] == 'funding_amount')
         self.assertEqual(state(first), 'BOUNDED_RESEARCH_ONLY')
         self.assertEqual(state(second), 'NO_OBLIGATION_ON_RETURNED_BOUNDARIES')
+
+
+class DepthProbeTest(unittest.TestCase):
+    def test_public_metadata_is_not_downloaded_and_signed_query_not_published(self):
+        payload = acceptance.wire.encode({'ret_code': 0, 'result': {'list': [
+            {'filename': 'BTCUSDT.zip', 'url': 'https://example.com/depth.zip?secret=test', 'size': 100}]}})
+        class Reply:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, size): return payload
+        with tempfile.TemporaryDirectory() as temp:
+            opener = unittest.mock.Mock()
+            opener.open.return_value = Reply()
+            report = depth_probe.probe(pathlib.Path(temp) / 'capture', opener)
+        req = opener.open.call_args.args[0]
+        self.assertEqual(req.full_url, depth_probe.URL)
+        self.assertEqual(req.method, 'GET')
+        self.assertEqual(set(dict(req.header_items())), {'User-agent'})
+        self.assertNotIn('secret=test', json.dumps(report))
+        self.assertTrue(report['files'][0]['has_query'])
+        self.assertFalse(report['depth_downloaded'])
+        self.assertFalse(report['historical_liquidity_qualified'])
+
+    def test_http_denial_stays_unavailable_not_empty_history(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp) / 'capture'
+            opener = unittest.mock.Mock()
+            opener.open.side_effect = HTTPError(depth_probe.URL, 403, 'Forbidden', {}, None)
+            report = depth_probe.probe(root, opener)
+            self.assertEqual(report['http_status'], 403)
+            self.assertEqual(report['status'], 'PUBLIC_DEPTH_DIRECTORY_HTTP_UNAVAILABLE')
+            self.assertNotIn('files', report)
+            self.assertFalse((root / 'response.raw').exists())
+            with self.assertRaises(FileExistsError): depth_probe.probe(root, opener)
 
 
 if __name__ == '__main__':

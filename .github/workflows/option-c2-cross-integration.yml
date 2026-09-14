@@ -20,6 +20,7 @@ on:
       - tools/test_audit_c2_reference_conformance.py
       - tools/audit_option_c2_acceptance.py
       - tools/test_audit_option_c2_acceptance.py
+      - tools/probe_bybit_c2_depth_source.py
 
 permissions:
   contents: read
@@ -52,7 +53,7 @@ jobs:
             tools/audit_option_subaccount_ledger.py tools/bybit_cross_margin_reference.py \
             tools/collect_bybit_c2_market.py tools/audit_option_c2_integration.py \
             tools/audit_option_exit_evidence.py tools/audit_c2_reference_conformance.py \
-            tools/audit_option_c2_acceptance.py > .artifacts/c2-bundle.sha256
+            tools/audit_option_c2_acceptance.py tools/probe_bybit_c2_depth_source.py > .artifacts/c2-bundle.sha256
           echo "bundle=$(sha256sum .artifacts/c2-bundle.sha256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Copy independent research bundle without changing release
         uses: appleboy/scp-action@v0.1.7
@@ -62,7 +63,7 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          source: tools/audit_bybit_cross_account.py,tools/audit_bybit_readonly_evidence.py,tools/audit_option_subaccount_ledger.py,tools/bybit_cross_margin_reference.py,tools/collect_bybit_c2_market.py,tools/audit_option_c2_integration.py,tools/audit_option_exit_evidence.py,tools/audit_c2_reference_conformance.py,tools/audit_option_c2_acceptance.py,.artifacts/c2-bundle.sha256
+          source: tools/audit_bybit_cross_account.py,tools/audit_bybit_readonly_evidence.py,tools/audit_option_subaccount_ledger.py,tools/bybit_cross_margin_reference.py,tools/collect_bybit_c2_market.py,tools/audit_option_c2_integration.py,tools/audit_option_exit_evidence.py,tools/audit_c2_reference_conformance.py,tools/audit_option_c2_acceptance.py,tools/probe_bybit_c2_depth_source.py,.artifacts/c2-bundle.sha256
           target: /opt/ai-trade/data/research/c2_cross_runner/${{ github.run_id }}-${{ github.run_attempt }}
       - name: Reconstruct pinned C2 account with public history
         shell: bash
@@ -129,12 +130,16 @@ jobs:
             --market-capture "${market_capture}" --market-sha256 "${market_sha}" \
             --output "/opt/ai-trade/data/research/c2_cross_results/${run_id}/first.acceptance.json" \
             > .artifacts/acceptance.json
+          python3 tools/probe_bybit_c2_depth_source.py \
+            --root "/opt/ai-trade/data/research/c2_cross_results/${run_id}/depth-source-probe" \
+            > .artifacts/depth-source.json
           python3 - <<'COMBINE'
           import json
           import pathlib
           report = json.loads(pathlib.Path('.artifacts/integration.json').read_text())
           report['exit_evidence'] = json.loads(pathlib.Path('.artifacts/exit.json').read_text())
           report['acceptance'] = json.loads(pathlib.Path('.artifacts/acceptance.json').read_text())
+          report['depth_source_probe'] = json.loads(pathlib.Path('.artifacts/depth-source.json').read_text())
           print(json.dumps(report, sort_keys=True))
           COMBINE
           REMOTE
@@ -159,7 +164,7 @@ jobs:
               'funding_amounts_qualified', 'historical_margin_qualified', 'c2_qualified',
               'candidate_state', 'forward_started', 'authorities', 'ledger_file_sha256',
               'trace_sha256', 'engine_sha256', 'cross_engine_sha256', 'reference_engine_sha256',
-              'ledger_engine_sha256', 'market_source', 'exit_evidence', 'acceptance'}
+              'ledger_engine_sha256', 'market_source', 'exit_evidence', 'acceptance', 'depth_source_probe'}
           report = {k: v for k, v in report.items() if k in allowed}
           if report.get('status') == 'C2_REFERENCE_INTEGRATED_NOT_QUALIFIED':
               for field, name in [('engine_sha256', 'audit_option_c2_integration.py'),
@@ -184,15 +189,13 @@ jobs:
                   raise SystemExit('Unexpected acceptance result')
               if acceptance.get('ledger_file_sha256') != report['ledger_file_sha256']:
                   raise SystemExit('Acceptance source mismatch')
-          # GitHub truncates each annotation at 4096 bytes. Preserve exact
-          # numeric text and the complete report in hash-bound small chunks.
-          rendered = json.dumps(report, sort_keys=True, separators=(',', ':'))
-          digest = hashlib.sha256(rendered.encode()).hexdigest()
-          chunks = [rendered[i:i + 1400] for i in range(0, len(rendered), 1400)]
+          # Bound both single-message bytes AND per-step annotation count.
+          import sys
+          sys.path.insert(0, 'tools')
+          from audit_option_c2_acceptance import annotation_chunks
+          chunks = annotation_chunks(report)
           for index, chunk in enumerate(chunks):
-              envelope = json.dumps({'schema': 'c2_annotation_chunk_v1', 'part': index,
-                  'total': len(chunks), 'sha256': digest, 'text': chunk}, separators=(',', ':'))
-              assert len(envelope.encode()) < 3500
+              envelope = json.dumps(chunk, separators=(',', ':'))
               envelope = envelope.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::notice title=C2 Cross integration {index + 1}/{len(chunks)}::' + envelope)
           if report.get('status') != 'C2_REFERENCE_INTEGRATED_NOT_QUALIFIED':
