@@ -130,9 +130,15 @@ jobs:
             --market-capture "${market_capture}" --market-sha256 "${market_sha}" \
             --output "/opt/ai-trade/data/research/c2_cross_results/${run_id}/first.acceptance.json" \
             > .artifacts/acceptance.json
-          python3 tools/probe_bybit_c2_depth_source.py \
-            --root "/opt/ai-trade/data/research/c2_cross_results/${run_id}/depth-source-probe" \
-            > .artifacts/depth-source.json
+          # The public directory returned 403. Reuse that pinned observation
+          # during code-only revalidation; do not repeatedly hit the endpoint.
+          PYTHONPATH=tools python3 - > .artifacts/depth-source.json <<'PROBE'
+          import pathlib
+          import audit_bybit_readonly_evidence as wire
+          raw = wire.safe_read(pathlib.Path('/opt/ai-trade/data/research/c2_cross_results/34827285554-1/depth-source-probe/summary.json'))
+          wire.require(wire.digest(raw) == '925012795b5658c93c3a7d1242ce2a4445b856d540933058a972d2b784b04770', 'DEPTH_PROBE_PIN_MISMATCH')
+          print(raw.decode(), end='')
+          PROBE
           python3 - <<'COMBINE'
           import json
           import pathlib

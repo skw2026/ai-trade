@@ -63,6 +63,10 @@ def audit(data, market, market_identity):
           {'passed': reference['passed_cases'], 'total': len(reference['cases']),
            'quarantined_source_count': len(reference['quarantined_sources'])},
           'Every supported published numeric case must match; conflicting source parameters cannot be accepted.')
+    check('frozen_ledger_risk', 'RISK_REJECTED' if baseline['risk_breaches'] else 'NO_OBSERVED_BREACH',
+          {'risk_breaches': baseline['risk_breaches'], 'exit_latched': baseline['exit_review_latched'],
+           'reference_risk_review_checkpoints': summary['risk_review_checkpoints']},
+          'Accounting replay success does not approve capital, risk limits or a path that breaches the frozen limits.')
     check('observed_exit_l1', 'PASS_OBSERVED' if exit_report['unqualified_checkpoint_count'] == 0 else 'CONSTRAINT_OBSERVED',
           {'checkpoints': exit_report['unqualified_checkpoint_count'],
            'distinct_quote_observations': exit_report['distinct_bad_quote_observations'],
@@ -97,6 +101,7 @@ def audit(data, market, market_identity):
     return {'schema_version': 'option_c2_acceptance_v1',
         'status': 'RESEARCH_REPLAY_ACCEPTED_WITH_LIMITS' if research_pass else 'RESEARCH_REPLAY_REJECTED',
         'research_replay_accepted': research_pass,
+        'observed_ledger_risk_passed': not baseline['risk_breaches'],
         'observed_exit_l1_passed': exit_report['unqualified_checkpoint_count'] == 0,
         'historical_verification_supported': False,
         'historical_status': 'NOT_QUALIFIED_UNSUPPORTED_PROOF_CLASSES',

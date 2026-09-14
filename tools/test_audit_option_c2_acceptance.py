@@ -44,6 +44,17 @@ class AcceptanceTest(unittest.TestCase):
         self.assertFalse(report['observed_exit_l1_passed'])
         self.assertEqual(report['exit_evidence']['unqualified_checkpoint_count'], 1)
 
+    def test_cash_replay_does_not_hide_risk_rejection(self):
+        data, market = fixture()
+        data['illustrative_limits']['drawdown_exit'] = '0.0001'
+        report = acceptance.audit(data, market, 'synthetic-market')
+        self.assertTrue(report['research_replay_accepted'])
+        self.assertFalse(report['observed_ledger_risk_passed'])
+        self.assertEqual(report['source_ledger_status'], 'RISK_REJECTED_OFFLINE')
+        check = next(c for c in report['checks'] if c['id'] == 'frozen_ledger_risk')
+        self.assertEqual(check['state'], 'RISK_REJECTED')
+        self.assertIn('NAV_OR_DRAWDOWN_EXIT', check['observation']['risk_breaches'])
+
     def test_reference_case_failure_changes_acceptance(self):
         data, market = fixture()
         original = acceptance.references.audit
