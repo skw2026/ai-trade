@@ -1,0 +1,243 @@
+{
+  "schema_version": "c2_stage_review_evidence_v1",
+  "review_date": "2026-09-14",
+  "code_commit": "d9f9d4210c595ac3bec230fab2eb467a4b135952",
+  "workflow_run": 34801945418,
+  "check_run": 103846200094,
+  "workflow_conclusion": "success",
+  "final_code_ci": {
+    "run_id": 34801945253,
+    "conclusion": "success",
+    "head_sha": "d9f9d4210c595ac3bec230fab2eb467a4b135952"
+  },
+  "summary_sha256": "5ce552c5a407283e698e3718b061e4d1050eb0187e950d4831f6a27ced798f8f",
+  "summary_chunks": [
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 0,
+      "total": 4,
+      "sha256": "5ce552c5a407283e698e3718b061e4d1050eb0187e950d4831f6a27ced798f8f",
+      "text": "{\"authorities\":{\"account_mode_change\":false,\"order_submission\":false,\"production_integrated\":false,\"promotion_authority\":false},\"base_plus_funding_high_usdt\":\"-2.292900723048410155000000000000000000000000000000000000000\",\"base_plus_funding_low_usdt\":\"-2.292916575216710155000000000000000000000000000000000000000\",\"base_pnl_usdt\":\"-2.284817561061710155000000000000000000000000000000000000000\",\"c2_qualified\":false,\"candidate_state\":\"CLOSED\",\"cross_engine_sha256\":\"764e8975e59e3bfed878ed1cb14549a50bc107673b32b3552843b3526652fd59\",\"engine_sha256\":\"eb226e8988377925bbdf926ace827a1760c3841d8a0458a73219e84c69e9560d\",\"forward_started\":false,\"funding_amounts_qualified\":false,\"funding_boundaries\":[{\"cash_high_usdt\":\"0.0023716392768\",\"cash_low_usdt\":\"0.00237112800\",\"mark_high\":\"79692.18\",\"mark_low\":\"79675\",\"position_inclusion_ambiguous\":false,\"position_qty_max\":\"-0.001\",\"position_qty_min\":\"-0.001\",\"rate\":\"0.00002976\",\"ts_ms\":1788710400000},{\"cash_high_usdt\":\"-0.0104548012635\",\"cash_low_usdt\":\"-0.010470142155\",\"mark_high\":\"80323.3\",\"mark_low\":\"80205.61\",\"position_inclusion_ambiguous\":false,\"position_qty_max\":\"0.005\",\"position_qty_min\":\"0.005\",\"rate\":\"0.00002607\",\"ts_ms\":1788739200000},{\"cash_high_usdt\":\"0E-13\",\"cash_low_usdt\":\"0E-13\",\"mark_high\":\"79387.5\",\"mark_low\":\"79330.83\",\"position_inclusion_ambiguous\":false,\"position_qty_max\":\"0.000\",\"position_qty_min\":\"0.000\",\"rate\":\"0.00000745\",\"ts_ms\":"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 1,
+      "total": 4,
+      "sha256": "5ce552c5a407283e698e3718b061e4d1050eb0187e950d4831f6a27ced798f8f",
+      "text": "1788768000000}],\"funding_cash_high_usdt\":\"-0.0080831619867\",\"funding_cash_low_usdt\":\"-0.0080990141550\",\"fx_scenario_usdt_usd\":\"1\",\"historical_margin_qualified\":false,\"historical_qualification_gaps\":[\"historical_margin_and_fee_parameters_unverified\",\"independent_cross_account_reference_missing\",\"one_minute_prices_not_checkpoint_or_settlement_truth\",\"option_index_uses_linear_index_proxy\",\"fx_is_explicit_scenario_not_bybit_historical_index\",\"instantaneous_taker_order_model_not_observed_orders\",\"funding_band_retrospective_not_causal_decision_feature\",\"linear_order_mm_close_reserve_convention\"],\"ledger_canonical_sha256\":\"baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689\",\"ledger_engine_sha256\":\"73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8\",\"ledger_events\":1182,\"ledger_file_sha256\":\"4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491\",\"market_manifest_sha256\":\"187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575\",\"market_source\":{\"collector_sha256\":\"652a9d61bacbfba665a50c5f2c400d4bf980147a2a59682590ee72505b76f92a\",\"counts\":{\"funding\":3,\"index\":1112,\"mark\":1112,\"risk\":35},\"end_ms\":1788768000000,\"exact_settlement_marks_qualified\":false,\"historical_risk_tiers_qualified\":false,\"independent_history_completeness_proven\":false,\"manifest_sha256\":\"187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575\",\"option_history_error"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 2,
+      "total": 4,
+      "sha256": "5ce552c5a407283e698e3718b061e4d1050eb0187e950d4831f6a27ced798f8f",
+      "text": "_codes\":{\"option:BTC-7SEP26-79750-C-USDT\":[10001],\"option:BTC-7SEP26-79750-P-USDT\":[10001]},\"option_history_incomplete\":[\"option:BTC-7SEP26-79750-C-USDT\",\"option:BTC-7SEP26-79750-P-USDT\"],\"order_submission\":false,\"promotion_authority\":false,\"replayer_sha256\":\"6abfb81554e74e6dcc1b1391f298b5f36455cf6ff4764dc56f3e3a83e34a4e47\",\"response_pages\":12,\"schema_version\":\"bybit_c2_market_archive_v1\",\"start_ms\":1788701451985,\"status\":\"PUBLIC_MARKET_REPLAYED_WITH_GAPS\"},\"max_abs_nav_difference_from_frozen_mark_basis_usdt\":\"0.613150000000000000000000000000000000\",\"minimum_risk_headroom_usd\":\"580.352986779430739885001998790000000000000000\",\"model_checkpoints\":1201,\"order_model\":\"instantaneous_taker_no_resting_orders\",\"peak_imr_reference\":\"0.2748416857659405140827766748103748890889635033706545851168248407460554959307089044976876967465645068\",\"peak_mmr_reference\":\"0.07677173081778062343731282998335457641958778175717817039596203617856309972212599636992578825281801588\",\"pending_order_checks\":19,\"public_option_mark_valuations\":0,\"reference_engine_sha256\":\"f4efd0166c82e84194e4f19435704aa90cbd2bcd65978a60cdfa64bfb6cd478d\",\"reversal_fills_split_without_changing_total_qty_or_fee\":3,\"risk_review_checkpoints\":0,\"schema_version\":\"option_c2_cross_integration_v1\",\"source_ledger_missing_evidence\":[\"EXIT_BBO_DEPTH_INSUFFICIENT\",\"MARGIN_EVIDENCE_MISSING\",\"SCHEDULED_FUNDING_MISSING\"],\"source_ledger_status\":\"IN"
+    },
+    {
+      "schema": "c2_annotation_chunk_v1",
+      "part": 3,
+      "total": 4,
+      "sha256": "5ce552c5a407283e698e3718b061e4d1050eb0187e950d4831f6a27ced798f8f",
+      "text": "SUFFICIENT_EVIDENCE\",\"source_ledger_unchanged\":true,\"status\":\"C2_REFERENCE_INTEGRATED_NOT_QUALIFIED\",\"trace_sha256\":\"326d5e12fb8d6a1c2ff1101fcbf9d7eee03d364539c38720c4fec97abeea39c3\"}"
+    }
+  ],
+  "result": {
+    "authorities": {
+      "account_mode_change": false,
+      "order_submission": false,
+      "production_integrated": false,
+      "promotion_authority": false
+    },
+    "base_plus_funding_high_usdt": "-2.292900723048410155000000000000000000000000000000000000000",
+    "base_plus_funding_low_usdt": "-2.292916575216710155000000000000000000000000000000000000000",
+    "base_pnl_usdt": "-2.284817561061710155000000000000000000000000000000000000000",
+    "c2_qualified": false,
+    "candidate_state": "CLOSED",
+    "cross_engine_sha256": "764e8975e59e3bfed878ed1cb14549a50bc107673b32b3552843b3526652fd59",
+    "engine_sha256": "eb226e8988377925bbdf926ace827a1760c3841d8a0458a73219e84c69e9560d",
+    "forward_started": false,
+    "funding_amounts_qualified": false,
+    "funding_boundaries": [
+      {
+        "cash_high_usdt": "0.0023716392768",
+        "cash_low_usdt": "0.00237112800",
+        "mark_high": "79692.18",
+        "mark_low": "79675",
+        "position_inclusion_ambiguous": false,
+        "position_qty_max": "-0.001",
+        "position_qty_min": "-0.001",
+        "rate": "0.00002976",
+        "ts_ms": 1788710400000
+      },
+      {
+        "cash_high_usdt": "-0.0104548012635",
+        "cash_low_usdt": "-0.010470142155",
+        "mark_high": "80323.3",
+        "mark_low": "80205.61",
+        "position_inclusion_ambiguous": false,
+        "position_qty_max": "0.005",
+        "position_qty_min": "0.005",
+        "rate": "0.00002607",
+        "ts_ms": 1788739200000
+      },
+      {
+        "cash_high_usdt": "0E-13",
+        "cash_low_usdt": "0E-13",
+        "mark_high": "79387.5",
+        "mark_low": "79330.83",
+        "position_inclusion_ambiguous": false,
+        "position_qty_max": "0.000",
+        "position_qty_min": "0.000",
+        "rate": "0.00000745",
+        "ts_ms": 1788768000000
+      }
+    ],
+    "funding_cash_high_usdt": "-0.0080831619867",
+    "funding_cash_low_usdt": "-0.0080990141550",
+    "fx_scenario_usdt_usd": "1",
+    "historical_margin_qualified": false,
+    "historical_qualification_gaps": [
+      "historical_margin_and_fee_parameters_unverified",
+      "independent_cross_account_reference_missing",
+      "one_minute_prices_not_checkpoint_or_settlement_truth",
+      "option_index_uses_linear_index_proxy",
+      "fx_is_explicit_scenario_not_bybit_historical_index",
+      "instantaneous_taker_order_model_not_observed_orders",
+      "funding_band_retrospective_not_causal_decision_feature",
+      "linear_order_mm_close_reserve_convention"
+    ],
+    "ledger_canonical_sha256": "baffa7dc8b22f7fa0562679bc2025650d7c683d2ae65e870c901fcf299b28689",
+    "ledger_engine_sha256": "73fb1b2de111f9aedefe354e6953f28ad60d09e1ac1abb24183c16f8758c09a8",
+    "ledger_events": 1182,
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "market_manifest_sha256": "187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575",
+    "market_source": {
+      "collector_sha256": "652a9d61bacbfba665a50c5f2c400d4bf980147a2a59682590ee72505b76f92a",
+      "counts": {
+        "funding": 3,
+        "index": 1112,
+        "mark": 1112,
+        "risk": 35
+      },
+      "end_ms": 1788768000000,
+      "exact_settlement_marks_qualified": false,
+      "historical_risk_tiers_qualified": false,
+      "independent_history_completeness_proven": false,
+      "manifest_sha256": "187ab711a6fe675e5302b92356d952844a16df4de2ff9b44227cce70af97a575",
+      "option_history_error_codes": {
+        "option:BTC-7SEP26-79750-C-USDT": [
+          10001
+        ],
+        "option:BTC-7SEP26-79750-P-USDT": [
+          10001
+        ]
+      },
+      "option_history_incomplete": [
+        "option:BTC-7SEP26-79750-C-USDT",
+        "option:BTC-7SEP26-79750-P-USDT"
+      ],
+      "order_submission": false,
+      "promotion_authority": false,
+      "replayer_sha256": "6abfb81554e74e6dcc1b1391f298b5f36455cf6ff4764dc56f3e3a83e34a4e47",
+      "response_pages": 12,
+      "schema_version": "bybit_c2_market_archive_v1",
+      "start_ms": 1788701451985,
+      "status": "PUBLIC_MARKET_REPLAYED_WITH_GAPS"
+    },
+    "max_abs_nav_difference_from_frozen_mark_basis_usdt": "0.613150000000000000000000000000000000",
+    "minimum_risk_headroom_usd": "580.352986779430739885001998790000000000000000",
+    "model_checkpoints": 1201,
+    "order_model": "instantaneous_taker_no_resting_orders",
+    "peak_imr_reference": "0.2748416857659405140827766748103748890889635033706545851168248407460554959307089044976876967465645068",
+    "peak_mmr_reference": "0.07677173081778062343731282998335457641958778175717817039596203617856309972212599636992578825281801588",
+    "pending_order_checks": 19,
+    "public_option_mark_valuations": 0,
+    "reference_engine_sha256": "f4efd0166c82e84194e4f19435704aa90cbd2bcd65978a60cdfa64bfb6cd478d",
+    "reversal_fills_split_without_changing_total_qty_or_fee": 3,
+    "risk_review_checkpoints": 0,
+    "schema_version": "option_c2_cross_integration_v1",
+    "source_ledger_missing_evidence": [
+      "EXIT_BBO_DEPTH_INSUFFICIENT",
+      "MARGIN_EVIDENCE_MISSING",
+      "SCHEDULED_FUNDING_MISSING"
+    ],
+    "source_ledger_status": "INSUFFICIENT_EVIDENCE",
+    "source_ledger_unchanged": true,
+    "status": "C2_REFERENCE_INTEGRATED_NOT_QUALIFIED",
+    "trace_sha256": "326d5e12fb8d6a1c2ff1101fcbf9d7eee03d364539c38720c4fec97abeea39c3"
+  },
+  "fx_proxy": {
+    "bybit_historical_fx_qualified": false,
+    "candle_count": 1110,
+    "collector_sha256": "2b9d8903fa17c3b6d44a7f91aec5ce537ad629fe357969dd8c50a9c2d670b0ad",
+    "end_ms": 1788768000000,
+    "endpoint": "https://api.exchange.coinbase.com/products/USDT-USD/candles",
+    "expected_candles": 1112,
+    "independent_history_completeness_proven": false,
+    "manifest_sha256": "682e1361db83b1b726b4518b2f36c9dec98609d9e7f13ed4b6482058326b971d",
+    "missing_minutes": 2,
+    "observed_high_usd_per_usdt": "1.00005",
+    "observed_low_usd_per_usdt": "0.99978",
+    "order_submission": false,
+    "promotion_authority": false,
+    "replayer_sha256": "2b9d8903fa17c3b6d44a7f91aec5ce537ad629fe357969dd8c50a9c2d670b0ad",
+    "response_pages": 4,
+    "schema_version": "c2_external_fx_proxy_v1",
+    "start_ms": 1788701451985,
+    "status": "EXTERNAL_FX_PROXY_WITH_GAPS",
+    "unobserved_price_bound_proven": false
+  },
+  "fx_capture_directory": "data/research/c2_fx_proxy/2026-09-14/fx-proxy-5v0an3ex",
+  "fx_missing_utc": [
+    "2026-09-06T14:19:00Z",
+    "2026-09-07T07:31:00Z"
+  ],
+  "observed_fx_headroom_scenarios_usd": [
+    "580.2253091223392651222272983502662",
+    "580.3820044287697114219962488899395"
+  ],
+  "funding_interval_width_usdt": "0.0000158521683",
+  "local_ctest": {
+    "passed": 87,
+    "total": 87,
+    "seconds": "228.53",
+    "latest_changed_suites_rerun_passed": 2
+  },
+  "new_focused_cases": {
+    "cross_account": 18,
+    "market": 8,
+    "integration": 12,
+    "fx_proxy": 6
+  },
+  "convergence_contract": {
+    "consecutive_no_progress_cycles_trigger": 3,
+    "counts_as_progress": [
+      "key_evidence_gap_reduced",
+      "decision_relevant_uncertainty_narrowed",
+      "new_reproducible_result"
+    ],
+    "does_not_count": [
+      "same_input_rerun",
+      "code_volume",
+      "more_checkpoints_as_independent_samples"
+    ],
+    "automated_monitor_installed": false
+  },
+  "stage_decision": {
+    "C1": "CLOSED",
+    "C2_reference": "INTEGRATED",
+    "C2_qualification": "EVIDENCE_INSUFFICIENT",
+    "C3": "NOT_STARTED",
+    "C4": "NOT_STARTED",
+    "C5": "NOT_STARTED"
+  },
+  "authorities": {
+    "new_account_access": false,
+    "account_mode_change": false,
+    "order_submission": false,
+    "transfer": false,
+    "paid_data_purchase": false,
+    "production_deployment": false,
+    "promotion_authority": false
+  }
+}

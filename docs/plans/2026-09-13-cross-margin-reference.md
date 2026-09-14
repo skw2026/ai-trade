@@ -2,6 +2,8 @@
 
 日期：2026-09-13（Asia/Shanghai）。状态：`REFERENCE_ARITHMETIC_ONLY`。
 
+2026-09-14 更新：已新增[组合/订单与历史集成参考模型](2026-09-14-c2-cross-integration-model.md)，并完成真实首期 1,201 检查点重放。以下范围保留为原基线的历史说明，不再将“组合算术未实现”作为当前停点；历史资格仍未通过，见[阶段复盘](../reviews/2026-09-14-c2-integration-stage-review.md)。
+
 `tools/bybit_cross_margin_reference.py` 是可重复的 Decimal 算术基线，不是完整交易所组合保证金引擎。它不生成 `audit_option_subaccount_ledger.py` 所需的 qualified margin snapshots，不改变独立子账户离线权限合同，不读取任何账户凭据。
 
 ## 官方规则版本和实际验算
