@@ -16,6 +16,10 @@ on:
       - tools/test_audit_option_c2_integration.py
       - tools/audit_option_exit_evidence.py
       - tools/test_audit_option_exit_evidence.py
+      - tools/audit_c2_reference_conformance.py
+      - tools/test_audit_c2_reference_conformance.py
+      - tools/audit_option_c2_acceptance.py
+      - tools/test_audit_option_c2_acceptance.py
 
 permissions:
   contents: read
@@ -36,6 +40,8 @@ jobs:
           python3 tools/test_collect_bybit_c2_market.py
           python3 tools/test_audit_option_c2_integration.py
           python3 tools/test_audit_option_exit_evidence.py
+          python3 tools/test_audit_c2_reference_conformance.py
+          python3 tools/test_audit_option_c2_acceptance.py
       - name: Bind complete executable bundle
         id: identity
         shell: bash
@@ -45,7 +51,8 @@ jobs:
           sha256sum tools/audit_bybit_cross_account.py tools/audit_bybit_readonly_evidence.py \
             tools/audit_option_subaccount_ledger.py tools/bybit_cross_margin_reference.py \
             tools/collect_bybit_c2_market.py tools/audit_option_c2_integration.py \
-            tools/audit_option_exit_evidence.py > .artifacts/c2-bundle.sha256
+            tools/audit_option_exit_evidence.py tools/audit_c2_reference_conformance.py \
+            tools/audit_option_c2_acceptance.py > .artifacts/c2-bundle.sha256
           echo "bundle=$(sha256sum .artifacts/c2-bundle.sha256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - name: Copy independent research bundle without changing release
         uses: appleboy/scp-action@v0.1.7
@@ -55,7 +62,7 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          source: tools/audit_bybit_cross_account.py,tools/audit_bybit_readonly_evidence.py,tools/audit_option_subaccount_ledger.py,tools/bybit_cross_margin_reference.py,tools/collect_bybit_c2_market.py,tools/audit_option_c2_integration.py,tools/audit_option_exit_evidence.py,.artifacts/c2-bundle.sha256
+          source: tools/audit_bybit_cross_account.py,tools/audit_bybit_readonly_evidence.py,tools/audit_option_subaccount_ledger.py,tools/bybit_cross_margin_reference.py,tools/collect_bybit_c2_market.py,tools/audit_option_c2_integration.py,tools/audit_option_exit_evidence.py,tools/audit_c2_reference_conformance.py,tools/audit_option_c2_acceptance.py,.artifacts/c2-bundle.sha256
           target: /opt/ai-trade/data/research/c2_cross_runner/${{ github.run_id }}-${{ github.run_attempt }}
       - name: Reconstruct pinned C2 account with public history
         shell: bash
@@ -116,11 +123,18 @@ jobs:
             --ledger-sha256 4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491 \
             --output "/opt/ai-trade/data/research/c2_cross_results/${run_id}/first.exit-evidence.json" \
             > .artifacts/exit.json
+          python3 tools/audit_option_c2_acceptance.py \
+            --ledger /opt/ai-trade/data/reports/option_lifecycle_v4/option-lifecycle-v4-34759528652-1/first.ledger-input.json \
+            --ledger-sha256 4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491 \
+            --market-capture "${market_capture}" --market-sha256 "${market_sha}" \
+            --output "/opt/ai-trade/data/research/c2_cross_results/${run_id}/first.acceptance.json" \
+            > .artifacts/acceptance.json
           python3 - <<'COMBINE'
           import json
           import pathlib
           report = json.loads(pathlib.Path('.artifacts/integration.json').read_text())
           report['exit_evidence'] = json.loads(pathlib.Path('.artifacts/exit.json').read_text())
+          report['acceptance'] = json.loads(pathlib.Path('.artifacts/acceptance.json').read_text())
           print(json.dumps(report, sort_keys=True))
           COMBINE
           REMOTE
@@ -130,7 +144,7 @@ jobs:
           import json
           import pathlib
           path = pathlib.Path('.artifacts/c2-summary.json')
-          if not 0 < path.stat().st_size < 30000:
+          if not 0 < path.stat().st_size < 60000:
               raise SystemExit('No bounded C2 integration summary')
           report = json.loads(path.read_text())
           allowed = {'schema_version', 'status', 'reason', 'stage', 'code_locations', 'ledger_canonical_sha256', 'market_manifest_sha256',
@@ -145,7 +159,7 @@ jobs:
               'funding_amounts_qualified', 'historical_margin_qualified', 'c2_qualified',
               'candidate_state', 'forward_started', 'authorities', 'ledger_file_sha256',
               'trace_sha256', 'engine_sha256', 'cross_engine_sha256', 'reference_engine_sha256',
-              'ledger_engine_sha256', 'market_source', 'exit_evidence'}
+              'ledger_engine_sha256', 'market_source', 'exit_evidence', 'acceptance'}
           report = {k: v for k, v in report.items() if k in allowed}
           if report.get('status') == 'C2_REFERENCE_INTEGRATED_NOT_QUALIFIED':
               for field, name in [('engine_sha256', 'audit_option_c2_integration.py'),
@@ -163,6 +177,13 @@ jobs:
                   raise SystemExit('Exit auditor identity mismatch')
               if exit_report.get('ledger_file_sha256') != report['ledger_file_sha256'] or exit_report.get('source_ledger_unchanged') is not True:
                   raise SystemExit('Exit auditor source mismatch')
+              acceptance = report['acceptance']
+              if acceptance.get('engine_sha256') != hashlib.sha256(pathlib.Path('tools/audit_option_c2_acceptance.py').read_bytes()).hexdigest():
+                  raise SystemExit('Acceptance auditor identity mismatch')
+              if acceptance.get('research_replay_accepted') is not True or acceptance.get('historical_verification_supported') is not False:
+                  raise SystemExit('Unexpected acceptance result')
+              if acceptance.get('ledger_file_sha256') != report['ledger_file_sha256']:
+                  raise SystemExit('Acceptance source mismatch')
           # GitHub truncates each annotation at 4096 bytes. Preserve exact
           # numeric text and the complete report in hash-bound small chunks.
           rendered = json.dumps(report, sort_keys=True, separators=(',', ':'))

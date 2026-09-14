@@ -16,7 +16,7 @@ import audit_option_subaccount_ledger as ledger
 require = wire.require
 
 
-def audit(data):
+def _audit(data):
     baseline = ledger.audit(ledger.SCOPE, data)
     require(baseline['status'] != 'TECHNICALLY_INVALID', 'EXIT_SOURCE_LEDGER_INVALID')
     identity = wire.digest(ledger.canonical(data))
@@ -77,6 +77,12 @@ def audit(data):
             'l1_shortfall_does_not_prove_full_book_shortfall', 'neighbours_not_continuous_outage_duration',
             'research_risk_latch_not_actual_exchange_liquidation'],
         'authorities': ledger.AUTHORITIES.copy()}
+
+
+def audit(data):
+    with localcontext() as context:
+        context.prec = 100
+        return _audit(data)
 
 
 def main():
