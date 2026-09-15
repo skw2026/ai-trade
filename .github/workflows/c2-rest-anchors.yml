@@ -2,13 +2,8 @@ name: C2 Archived REST Anchors
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - research/c2-rest-alignment
-    paths:
-      - .github/workflows/c2-rest-anchors.yml
-      - tools/audit_c2_rest_anchors.py
-      - tools/test_audit_c2_rest_anchors.py
+  # Rerun manually only after the trusted ECS_HOST_FINGERPRINT is configured.
+  # Ordinary commits must not repeatedly attempt an unchanged blocked source.
 
 permissions:
   contents: read
@@ -35,17 +30,7 @@ jobs:
             tools/fetch_bybit_c2_depth_archive.py tools/audit_bybit_readonly_evidence.py \
             docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json > .artifacts/rest-bundle.sha256
           echo "bundle=$(sha256sum .artifacts/rest-bundle.sha256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - name: Copy independent extractor without changing release
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.ECS_HOST }}
-          username: ${{ secrets.ECS_USER }}
-          key: ${{ secrets.ECS_SSH_KEY }}
-          port: ${{ secrets.ECS_PORT || 22 }}
-          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          source: tools/audit_c2_rest_anchors.py,tools/audit_bybit_c2_depth.py,tools/fetch_bybit_c2_depth_archive.py,tools/audit_bybit_readonly_evidence.py,docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json,.artifacts/rest-bundle.sha256
-          target: /opt/ai-trade/data/research/c2_rest_runner/${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Read existing frozen public-market archive
+      - name: Verify host before copying extractor and reading frozen archive
         shell: bash
         env:
           AUDIT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
@@ -62,17 +47,33 @@ jobs:
           [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ && "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo '::error::REST_SSH_TARGET_INVALID'; exit 1; }
           [[ "${ECS_PORT}" =~ ^[0-9]+$ ]] || { echo '::error::REST_SSH_PORT_INVALID'; exit 1; }
           [[ -n "${ECS_FINGERPRINT}" ]] || { echo '::error::REST_HOST_FINGERPRINT_NOT_CONFIGURED'; exit 1; }
+          [[ "${ECS_FINGERPRINT}" =~ ^SHA256:[a-zA-Z0-9+/]{43}$ ]] || { echo '::error::REST_HOST_FINGERPRINT_INVALID'; exit 1; }
           KEY_DIR="$(mktemp -d "${RUNNER_TEMP}/c2-rest-XXXXXX")"
-          trap 'rm -f "${KEY_DIR}/key" "${KEY_DIR}/known_hosts"; rmdir "${KEY_DIR}"' EXIT
+          trap 'rm -f "${KEY_DIR}/key" "${KEY_DIR}/known_hosts" "${KEY_DIR}/scanned" "${KEY_DIR}/candidate"; rmdir "${KEY_DIR}"' EXIT
           printf '%s\n' "${ECS_SSH_KEY}" > "${KEY_DIR}/key"
           sed -i 's/\r$//' "${KEY_DIR}/key"
           ssh-keygen -y -f "${KEY_DIR}/key" >/dev/null || { echo '::error::REST_SSH_KEY_INVALID'; exit 1; }
-          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > "${KEY_DIR}/known_hosts" 2>/dev/null || { echo '::error::REST_HOST_KEY_SCAN_FAILED'; exit 1; }
-          ssh-keygen -lf "${KEY_DIR}/known_hosts" | awk '{print $2}' | grep -Fxq "${ECS_FINGERPRINT}" || { echo '::error::REST_HOST_FINGERPRINT_MISMATCH'; exit 1; }
+          ssh-keyscan -T 10 -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > "${KEY_DIR}/scanned" 2>/dev/null || { echo '::error::REST_HOST_KEY_SCAN_FAILED'; exit 1; }
+          # Only the independently pinned key becomes trusted, never all scanned keys.
+          : > "${KEY_DIR}/known_hosts"
+          while IFS= read -r candidate; do
+            printf '%s\n' "${candidate}" > "${KEY_DIR}/candidate"
+            if ssh-keygen -lf "${KEY_DIR}/candidate" 2>/dev/null | awk '{print $2}' | grep -Fxq "${ECS_FINGERPRINT}"; then
+              printf '%s\n' "${candidate}" >> "${KEY_DIR}/known_hosts"
+            fi
+          done < "${KEY_DIR}/scanned"
+          [[ -s "${KEY_DIR}/known_hosts" ]] || { echo '::error::REST_HOST_FINGERPRINT_MISMATCH'; exit 1; }
+          ssh_options=(-i "${KEY_DIR}/key" -p "${ECS_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes -o UpdateHostKeys=no -o ConnectTimeout=20)
+          tar -czf .artifacts/rest-bundle.tar.gz tools/audit_c2_rest_anchors.py tools/audit_bybit_c2_depth.py \
+            tools/fetch_bybit_c2_depth_archive.py tools/audit_bybit_readonly_evidence.py \
+            docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json .artifacts/rest-bundle.sha256
+          ssh "${ssh_options[@]}" "${ECS_USER}@${ECS_HOST}" \
+            "umask 077; mkdir -p /opt/ai-trade/data/research/c2_rest_runner && mkdir /opt/ai-trade/data/research/c2_rest_runner/${AUDIT_RUN_ID} && tar -xzf - -C /opt/ai-trade/data/research/c2_rest_runner/${AUDIT_RUN_ID}" \
+            < .artifacts/rest-bundle.tar.gz
           remote_exit=0
-          ssh -i "${KEY_DIR}/key" -p "${ECS_PORT}" \
-            -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=20 "${ECS_USER}@${ECS_HOST}" \
+          ssh "${ssh_options[@]}" "${ECS_USER}@${ECS_HOST}" \
             "bash -s -- ${AUDIT_RUN_ID} ${BUNDLE_SHA}" \
             > .artifacts/rest-result.json <<'REMOTE' || remote_exit=$?
           set -euo pipefail

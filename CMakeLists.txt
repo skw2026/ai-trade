@@ -123,6 +123,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_bybit_c2_depth.py)
     add_test(NAME c2_rest_anchors_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_c2_rest_anchors.py)
+    add_test(NAME c2_rest_depth_alignment_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_c2_rest_depth_alignment.py)
     add_test(NAME bybit_c2_market_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_bybit_c2_market.py)
     add_test(NAME bybit_cross_account_test
