@@ -1,0 +1,130 @@
+{
+  "schema_version": "c2_rest_alignment_checkpoint_v1",
+  "date": "2026-09-15",
+  "code_commit": "633119a48b18b1b2f41ad2f664afd85bd5fdb21b",
+  "status": "ENGINEERING_IMPLEMENTED_REMOTE_EVIDENCE_BLOCKED",
+  "gate_state": {
+    "c1": "CLOSED",
+    "c2_historical_qualified": false,
+    "c3_started": false,
+    "c4_started": false,
+    "c5_started": false
+  },
+  "source_contract": {
+    "lifecycle_id": "btc-usdt-1788768000000-79750-a9f8f42224b2",
+    "target_snapshot_count": 1179,
+    "target_snapshot_set_sha256": "3bad663f05b17753a6dbb7c32c064783550c8215b89c8cb4c18a1fcd4999e17c",
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "ledger_sequences": [
+      752,
+      1177
+    ],
+    "anchor_evidence": {
+      "path": "docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json",
+      "sha256": "02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a"
+    },
+    "prior_depth_evidence": {
+      "path": "docs/reviews/2026-09-15-c2-public-depth-replay.evidence.json",
+      "sha256": "7710997e5824bfd118ce065862cb80bc1b2240f3e0b5e86f0f5bbcbcb8b97296"
+    },
+    "archive_sha256": "3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785",
+    "member_sha256": "48e6037aa06b47c6b4f1d7a591b9eef13ba6d96c7645c55634bc06fb758f539b"
+  },
+  "actual_source_result": {
+    "rest_anchor_report_obtained": false,
+    "rest_anchor_report_sha256": null,
+    "real_rest_depth_alignment_run": false,
+    "real_rest_depth_alignment_report_sha256": null,
+    "real_rest_metadata_sequence_relationship": "NOT_YET_OBSERVED",
+    "prior_exact_depth_supported_count": 0,
+    "prior_anchor_count": 2,
+    "prior_depth_result_changed": false,
+    "historical_qualification_reduced_by_this_iteration": false
+  },
+  "remote_attempts": [
+    {
+      "run_id": 34955356298,
+      "check_id": 104335970557,
+      "code_commit": "efe16c427009e0e477436e186c832a19a1e19098",
+      "conclusion": "failure",
+      "tool_copy_succeeded": true,
+      "rest_report_published": false,
+      "reason": "exit_1_without_specific_diagnostic"
+    },
+    {
+      "run_id": 34955614761,
+      "check_id": 104336833143,
+      "code_commit": "4a5a4fd3cd7258c75ab2a468b541424e6ccb10e3",
+      "conclusion": "failure",
+      "tool_copy_succeeded": true,
+      "rest_report_published": false,
+      "reason": "REST_HOST_FINGERPRINT_NOT_CONFIGURED",
+      "annotations": [
+        {
+          "title": "",
+          "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+          "annotation_level": "warning"
+        },
+        {
+          "title": "",
+          "message": "Process completed with exit code 1.",
+          "annotation_level": "failure"
+        },
+        {
+          "title": "",
+          "message": "REST_HOST_FINGERPRINT_NOT_CONFIGURED",
+          "annotation_level": "failure"
+        }
+      ]
+    }
+  ],
+  "final_transport": {
+    "trigger": "workflow_dispatch_only",
+    "mandatory_trusted_fingerprint": true,
+    "checks_before_file_transfer": true,
+    "only_matching_host_keys_trusted": true,
+    "strict_host_key_checking": true,
+    "unattended_retries_disabled": true,
+    "final_transport_remote_success_verified": false,
+    "user_action": "Configure verified SSH host SHA256 fingerprint as ECS_HOST_FINGERPRINT repository Actions variable or secret, then manually dispatch C2 Archived REST Anchors.",
+    "fingerprint_not_a_historical_qualification_gap": true
+  },
+  "local_verification": {
+    "targeted_tests": 18,
+    "targeted_tests_passed": 18,
+    "registered_ctest_count": 93,
+    "full_ctest_status": "PASS",
+    "full_ctest_passed": 93,
+    "full_ctest_failed": 0,
+    "full_ctest_seconds": 271.19,
+    "shell_syntax_passed": true,
+    "synthetic_tests_are_historical_evidence": false
+  },
+  "ci": {
+    "run_id": 34956116421,
+    "check_id": 104338463285,
+    "head_sha": "633119a48b18b1b2f41ad2f664afd85bd5fdb21b",
+    "status": "completed",
+    "conclusion": "success",
+    "updated_at": "2026-09-15T10:10:20Z"
+  },
+  "code_file_sha256": {
+    "tools/audit_c2_rest_anchors.py": "f99b06f6ea2ed482f59ba00b9404965b136c3d034bfcbc935a345f2f556ac4b7",
+    "tools/audit_c2_rest_depth_alignment.py": "118dfc92ac2489395fb43042ca259523930545bd0ec725179f293ba67e3817e5",
+    "tools/test_audit_c2_rest_anchors.py": "d68fc75aaf0a64e9f94bd73edd5ef34472ec6f873890a664d824eb116398a421",
+    "tools/test_c2_rest_depth_alignment.py": "c7cb38947eb620ccd2f0eeed1735f2ca73a0b063278f46a671231cfbc6a76542",
+    ".github/workflows/c2-rest-anchors.yml": "131be758d0e05521ed018f9debbca4e10de3af307058db714ec3f6a98ad2be04"
+  },
+  "authority_boundary": {
+    "account_api_calls": 0,
+    "exchange_archive_downloads": 0,
+    "order_submission": false,
+    "account_mode_change": false,
+    "production_deployment": false,
+    "source_ledger_modified": false,
+    "historical_raw_modified": false,
+    "isolated_research_tool_copies_performed_in_early_attempts": 2,
+    "branches_deleted": false,
+    "historical_evidence_promoted": false
+  }
+}
