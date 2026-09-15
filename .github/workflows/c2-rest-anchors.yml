@@ -1,0 +1,120 @@
+name: C2 Archived REST Anchors
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/c2-rest-alignment
+    paths:
+      - .github/workflows/c2-rest-anchors.yml
+      - tools/audit_c2_rest_anchors.py
+      - tools/test_audit_c2_rest_anchors.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c2-archived-rest-anchors
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test frozen source binding
+        run: python3 tools/test_audit_c2_rest_anchors.py
+      - name: Pin research bundle
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          sha256sum tools/audit_c2_rest_anchors.py tools/audit_bybit_c2_depth.py \
+            tools/fetch_bybit_c2_depth_archive.py tools/audit_bybit_readonly_evidence.py \
+            docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json > .artifacts/rest-bundle.sha256
+          echo "bundle=$(sha256sum .artifacts/rest-bundle.sha256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Copy independent extractor without changing release
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          source: tools/audit_c2_rest_anchors.py,tools/audit_bybit_c2_depth.py,tools/fetch_bybit_c2_depth_archive.py,tools/audit_bybit_readonly_evidence.py,docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json,.artifacts/rest-bundle.sha256
+          target: /opt/ai-trade/data/research/c2_rest_runner/${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Read existing frozen public-market archive
+        shell: bash
+        env:
+          AUDIT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          BUNDLE_SHA: ${{ steps.identity.outputs.bundle }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT || vars.ECS_HOST_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "${AUDIT_RUN_ID}" =~ ^[0-9]+-[0-9]+$ && "${BUNDLE_SHA}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ && "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]]
+          [[ "${ECS_PORT}" =~ ^[0-9]+$ && -n "${ECS_FINGERPRINT}" ]]
+          KEY_DIR="$(mktemp -d "${RUNNER_TEMP}/c2-rest-XXXXXX")"
+          trap 'rm -f "${KEY_DIR}/key" "${KEY_DIR}/known_hosts"; rmdir "${KEY_DIR}"' EXIT
+          printf '%s\n' "${ECS_SSH_KEY}" > "${KEY_DIR}/key"
+          sed -i 's/\r$//' "${KEY_DIR}/key"
+          ssh-keygen -y -f "${KEY_DIR}/key" >/dev/null
+          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > "${KEY_DIR}/known_hosts" 2>/dev/null
+          ssh-keygen -lf "${KEY_DIR}/known_hosts" | awk '{print $2}' | grep -Fxq "${ECS_FINGERPRINT}"
+          remote_exit=0
+          ssh -i "${KEY_DIR}/key" -p "${ECS_PORT}" \
+            -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 "${ECS_USER}@${ECS_HOST}" \
+            "bash -s -- ${AUDIT_RUN_ID} ${BUNDLE_SHA}" \
+            > .artifacts/rest-result.json <<'REMOTE' || remote_exit=$?
+          set -euo pipefail
+          umask 077
+          export PYTHONDONTWRITEBYTECODE=1
+          run_id="$1"
+          cd "/opt/ai-trade/data/research/c2_rest_runner/${run_id}"
+          printf '%s  %s\n' "$2" .artifacts/rest-bundle.sha256 | sha256sum -c - >/dev/null
+          sha256sum -c .artifacts/rest-bundle.sha256 >/dev/null
+          python3 tools/audit_c2_rest_anchors.py \
+            --root /opt/ai-trade/data/research/bybit_btc_option_lifecycle_v4 \
+            --ledger /opt/ai-trade/data/reports/option_lifecycle_v4/option-lifecycle-v4-34759528652-1/first.ledger-input.json \
+            --anchor-evidence docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json \
+            --anchor-evidence-sha256 02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a \
+            --output "/opt/ai-trade/data/research/c2_rest_results/${run_id}/first.rest-anchors.json"
+          REMOTE
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          path = pathlib.Path('.artifacts/rest-result.json')
+          if not 0 < path.stat().st_size < 20000:
+              raise SystemExit('No bounded REST result')
+          report = json.loads(path.read_text())
+          if report.get('status') == 'REST_ANCHORS_BOUND_TO_FROZEN_SOURCE':
+              expected = hashlib.sha256(pathlib.Path('tools/audit_c2_rest_anchors.py').read_bytes()).hexdigest()
+              if report['engine_sha256'] != expected or report['target_snapshot_count'] != 1179:
+                  raise SystemExit('REST extractor identity mismatch')
+              if report['historical_c2_qualified'] is not False or any(report['authorities'].values()):
+                  raise SystemExit('REST authority boundary changed')
+          payload = json.dumps(report, sort_keys=True, separators=(',', ':'))
+          sha = hashlib.sha256(payload.encode()).hexdigest()
+          texts = [payload[i:i + 2200] for i in range(0, len(payload), 2200)]
+          if not 0 < len(texts) <= 10:
+              raise SystemExit('REST annotation count budget')
+          envelopes = [json.dumps({'schema': 'c2_rest_annotation_chunk_v1', 'part': i, 'total': len(texts),
+              'sha256': sha, 'text': text}, separators=(',', ':')) for i, text in enumerate(texts)]
+          if any(len(e.encode()) >= 3500 for e in envelopes):
+              raise SystemExit('REST annotation byte budget')
+          for i, envelope in enumerate(envelopes):
+              escaped = envelope.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title=C2 REST anchors {i + 1}/{len(texts)}::' + escaped)
+          if report.get('status') != 'REST_ANCHORS_BOUND_TO_FROZEN_SOURCE':
+              raise SystemExit('REST extraction incomplete')
+          PY
+          [[ "${remote_exit}" == 0 ]]
+      # Original raw/ledger are read-only. Only two public quote observations
+      # and provenance leave ECS; no account credentials or exchange requests.
