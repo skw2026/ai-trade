@@ -1,0 +1,83 @@
+name: Bybit C2 Depth Replay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/c2-depth-replay
+    paths:
+      - .github/workflows/bybit-c2-depth-replay.yml
+      - tools/fetch_bybit_c2_depth_archive.py
+      - tools/audit_bybit_c2_depth.py
+      - tools/test_bybit_c2_depth.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bybit-c2-depth-replay
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test bounded download and causal replay
+        run: python3 tools/test_bybit_c2_depth.py
+      - name: Fetch one pinned public archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .artifacts
+          python3 tools/fetch_bybit_c2_depth_archive.py --root .artifacts/source
+          printf '%s  %s\n' \
+            3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785 \
+            .artifacts/source/2026-09-07_BTCUSDT_ob200.data.zip | sha256sum -c -
+          printf '%s  %s\n' \
+            02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a \
+            docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json | sha256sum -c -
+      - name: Reconstruct entire archive and two frozen exit observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          manifest_sha="$(sha256sum .artifacts/source/manifest.json | cut -d ' ' -f 1)"
+          python3 tools/audit_bybit_c2_depth.py \
+            --capture .artifacts/source --manifest-sha256 "${manifest_sha}" \
+            --anchor-evidence docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json \
+            --anchor-evidence-sha256 02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a \
+            --output .artifacts/depth-result.json
+      - name: Publish only bounded research result and source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          report = json.loads(pathlib.Path('.artifacts/depth-result.json').read_text())
+          if report['engine_sha256'] != hashlib.sha256(pathlib.Path('tools/audit_bybit_c2_depth.py').read_bytes()).hexdigest():
+              raise SystemExit('Depth engine identity mismatch')
+          if report['archive_sha256'] != '3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785':
+              raise SystemExit('Depth archive identity mismatch')
+          if report['historical_c2_qualified'] is not False or any(report['authorities'].values()):
+              raise SystemExit('Depth authority boundary changed')
+          report['archive_manifest'] = json.loads(pathlib.Path('.artifacts/source/manifest.json').read_text())
+          payload = json.dumps(report, sort_keys=True, separators=(',', ':'))
+          sha = hashlib.sha256(payload.encode()).hexdigest()
+          texts = [payload[i:i + 2200] for i in range(0, len(payload), 2200)]
+          if not 0 < len(texts) <= 10:
+              raise SystemExit('Depth annotation count budget exceeded')
+          envelopes = [json.dumps({'schema': 'c2_depth_annotation_chunk_v1', 'part': i, 'total': len(texts),
+                          'sha256': sha, 'text': text}, separators=(',', ':')) for i, text in enumerate(texts)]
+          if any(len(envelope.encode()) >= 3500 for envelope in envelopes):
+              raise SystemExit('Depth annotation byte budget exceeded')
+          for i, envelope in enumerate(envelopes):
+              escaped = envelope.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title=C2 Depth replay {i + 1}/{len(texts)}::' + escaped)
+          PY
+      # No secrets, account endpoints, SSH, deployment, raw-data upload or trading.
