@@ -1,0 +1,418 @@
+{
+  "schema_version": "c2_public_depth_delivery_evidence_v1",
+  "date": "2026-09-15",
+  "code_commit": "1e87ca77dc04816c6dab6f15e2471eac75739979",
+  "local_manifest": {
+    "archive_bytes": 131048463,
+    "archive_file": "2026-09-07_BTCUSDT_ob200.data.zip",
+    "archive_sha256": "3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785",
+    "complete": true,
+    "engine_sha256": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae",
+    "etag": "\"079135330030363d4b632035fd6103ae\"",
+    "expected_bytes": 131048463,
+    "head_http_status": 200,
+    "historical_liquidity_qualified": false,
+    "last_modified": "Tue, 08 Sep 2026 00:03:39 GMT",
+    "order_submission": false,
+    "received_ms": 1789454649093,
+    "schema_version": "bybit_c2_depth_archive_v1",
+    "sent_ms": 1789454607689,
+    "source_access": "public_https_no_credentials",
+    "source_url": "https://quote-saver.bycsi.com/orderbook/linear/BTCUSDT/2026-09-07_BTCUSDT_ob200.data.zip",
+    "status": "DEPTH_ARCHIVE_DOWNLOADED",
+    "zip": {
+      "compressed_member_bytes": 131048273,
+      "crc32": "efc89164",
+      "member": "2026-09-07_BTCUSDT_ob200.data",
+      "uncompressed_bytes": 832935584
+    }
+  },
+  "local_manifest_sha256": "35beb1e5a84b5907fe2547e84e7841aa8910bc5f99f5b1113ca68db4c7c1fd52",
+  "local_report": {
+    "anchor_evidence_sha256": "02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a",
+    "anchors": [
+      {
+        "actual_order_fill_proven": false,
+        "age_ms": 72,
+        "anchor_quote_ts_ms": 1788743795602,
+        "ask_levels": 200,
+        "bid_levels": 200,
+        "book_identity": {
+          "cross_seq": 806333932904,
+          "cts_ms": 1788743795527,
+          "ts_ms": 1788743795530,
+          "update_id": 39317795
+        },
+        "exact_anchor_depth_supported": false,
+        "exit_side": "bid",
+        "future_book_used": false,
+        "initializing_snapshot_ts_ms": 1788739200129,
+        "l1_price_matches": false,
+        "l1_size_matches": false,
+        "ledger_seq": 752,
+        "next_publication_ts_ms": 1788743795629,
+        "original_l1_price_usdt": "79857.50",
+        "original_l1_size_btc": "0.002",
+        "reconstructed_l1_price_usdt": "79858.50",
+        "reconstructed_l1_size_btc": "1.975",
+        "required_qty_btc": "0.005",
+        "status": "PRIOR_DEPTH_L1_MISMATCH",
+        "sweep": {
+          "extra_cost_vs_same_book_l1_usdt": "0.00000",
+          "fees_and_market_impact_included": false,
+          "filled_qty_btc": "0.005",
+          "fills": [
+            {
+              "price_usdt": "79858.50",
+              "qty_btc": "0.005"
+            }
+          ],
+          "full_qty_in_displayed_book": true,
+          "gross_notional_usdt": "399.29250",
+          "levels_used": 1,
+          "unfilled_qty_btc": "0.000",
+          "vwap_usdt": "79858.50"
+        },
+        "symbol": "BTCUSDT",
+        "update_gaps_since_snapshot": 0
+      },
+      {
+        "actual_order_fill_proven": false,
+        "age_ms": 72,
+        "anchor_quote_ts_ms": 1788767826202,
+        "ask_levels": 200,
+        "bid_levels": 200,
+        "book_identity": {
+          "cross_seq": 806492873413,
+          "cts_ms": 1788767826127,
+          "ts_ms": 1788767826130,
+          "update_id": 39557862
+        },
+        "exact_anchor_depth_supported": false,
+        "exit_side": "ask",
+        "future_book_used": false,
+        "initializing_snapshot_ts_ms": 1788739200129,
+        "l1_price_matches": false,
+        "l1_size_matches": false,
+        "ledger_seq": 1177,
+        "next_publication_ts_ms": 1788767826229,
+        "original_l1_price_usdt": "79343.70",
+        "original_l1_size_btc": "0.002",
+        "reconstructed_l1_price_usdt": "79343.30",
+        "reconstructed_l1_size_btc": "0.286",
+        "required_qty_btc": "0.007",
+        "status": "PRIOR_DEPTH_L1_MISMATCH",
+        "sweep": {
+          "extra_cost_vs_same_book_l1_usdt": "0.00000",
+          "fees_and_market_impact_included": false,
+          "filled_qty_btc": "0.007",
+          "fills": [
+            {
+              "price_usdt": "79343.30",
+              "qty_btc": "0.007"
+            }
+          ],
+          "full_qty_in_displayed_book": true,
+          "gross_notional_usdt": "555.40310",
+          "levels_used": 1,
+          "unfilled_qty_btc": "0.000",
+          "vwap_usdt": "79343.30"
+        },
+        "symbol": "BTCUSDT",
+        "update_gaps_since_snapshot": 0
+      }
+    ],
+    "archive_collector_sha256": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae",
+    "archive_manifest_sha256": "35beb1e5a84b5907fe2547e84e7841aa8910bc5f99f5b1113ca68db4c7c1fd52",
+    "archive_sha256": "3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785",
+    "archive_source_url": "https://quote-saver.bycsi.com/orderbook/linear/BTCUSDT/2026-09-07_BTCUSDT_ob200.data.zip",
+    "authorities": {
+      "account_mode_change": false,
+      "order_submission": false,
+      "promotion": false
+    },
+    "dependency_sha256": {
+      "audit_bybit_readonly_evidence.py": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+      "fetch_bybit_c2_depth_archive.py": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae"
+    },
+    "engine_sha256": "cad050f6381032c453ea921e6d09499fa233c4c75653873d8849cda41b531f9e",
+    "exact_anchor_depth_supported_count": 0,
+    "file_boundary_padding_ms": 1000,
+    "first_publication_ts_ms": 1788739200129,
+    "historical_c2_qualified": false,
+    "independent_archive_completeness_proven": false,
+    "last_publication_ts_ms": 1788825600129,
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "limits": [
+      "ob200_is_displayed_depth_not_all_liquidity",
+      "rpi_orders_excluded",
+      "prior_publication_is_not_exact_rest_snapshot",
+      "rest_cross_sequence_not_bound",
+      "no_execution_latency_or_market_impact_model",
+      "no_actual_exit_or_cashflow_rewrite"
+    ],
+    "member_bytes": 832935584,
+    "member_sha256": "48e6037aa06b47c6b4f1d7a591b9eef13ba6d96c7645c55634bc06fb758f539b",
+    "outside_nominal_day_rows": 3,
+    "rows": 862255,
+    "schema_version": "bybit_c2_depth_replay_v1",
+    "snapshot_count": 2,
+    "source_ledger_modified": false,
+    "source_row_order_preserved": true,
+    "status": "DEPTH_REPLAYED_WITH_ALIGNMENT_VERDICTS",
+    "update_gap_events": 0,
+    "zip_crc_verified": true
+  },
+  "local_report_sha256": "1ed83c482d56d60ac771e165992dd1017b14bb8a335d61a785c62fa2a5de6680",
+  "source_metadata_checks": {
+    "ob200": "HTTP_200",
+    "ob500": "HTTP_404_NoSuchKey",
+    "ob1": "HTTP_404_NoSuchKey",
+    "ob50": "HTTP_404_NoSuchKey",
+    "ob1000": "HTTP_404_NoSuchKey",
+    "scope": "same CDN, date and symbol filename variants only; not exhaustive provider search"
+  },
+  "prior_implementation_attempt": {
+    "code_status": "uncommitted_development",
+    "status": "DEPTH_REPLAY_NOT_COMPLETED",
+    "reason": "DEPTH_TIME_INVALID",
+    "diagnosed_first_boundary_row": 862253,
+    "observed_next_day_rows": 3,
+    "max_next_day_offset_ms": 129,
+    "repair": "explicit 1000ms archive-boundary tolerance with out-of-day count; target anchors must remain within nominal day"
+  },
+  "local_verification": {
+    "focused_tests_passed": 16,
+    "full_ctest_status": "passed",
+    "ctest_passed": 91,
+    "ctest_total": 91,
+    "ctest_seconds": "250.96",
+    "local_report_and_manifest_sha256_verified": true,
+    "remote_summary_sha256_verified": true,
+    "dependencies_sha256_verified": true,
+    "local_document_links_verified": true,
+    "workflow_bash_syntax_verified": true
+  },
+  "independent_replay": {
+    "workflow_run": 34938799386,
+    "check_run": 104282488105,
+    "status": "completed",
+    "conclusion": "success",
+    "summary_sha256": "6c33a5c4261a13c311ec8cc62fb5d9f5179b1cd3e030c9a35df18f1bb630fa54",
+    "summary_chunks": [
+      {
+        "schema": "c2_depth_annotation_chunk_v1",
+        "part": 0,
+        "total": 3,
+        "sha256": "6c33a5c4261a13c311ec8cc62fb5d9f5179b1cd3e030c9a35df18f1bb630fa54",
+        "text": "{\"anchor_evidence_sha256\":\"02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a\",\"anchors\":[{\"actual_order_fill_proven\":false,\"age_ms\":72,\"anchor_quote_ts_ms\":1788743795602,\"ask_levels\":200,\"bid_levels\":200,\"book_identity\":{\"cross_seq\":806333932904,\"cts_ms\":1788743795527,\"ts_ms\":1788743795530,\"update_id\":39317795},\"exact_anchor_depth_supported\":false,\"exit_side\":\"bid\",\"future_book_used\":false,\"initializing_snapshot_ts_ms\":1788739200129,\"l1_price_matches\":false,\"l1_size_matches\":false,\"ledger_seq\":752,\"next_publication_ts_ms\":1788743795629,\"original_l1_price_usdt\":\"79857.50\",\"original_l1_size_btc\":\"0.002\",\"reconstructed_l1_price_usdt\":\"79858.50\",\"reconstructed_l1_size_btc\":\"1.975\",\"required_qty_btc\":\"0.005\",\"status\":\"PRIOR_DEPTH_L1_MISMATCH\",\"sweep\":{\"extra_cost_vs_same_book_l1_usdt\":\"0.00000\",\"fees_and_market_impact_included\":false,\"filled_qty_btc\":\"0.005\",\"fills\":[{\"price_usdt\":\"79858.50\",\"qty_btc\":\"0.005\"}],\"full_qty_in_displayed_book\":true,\"gross_notional_usdt\":\"399.29250\",\"levels_used\":1,\"unfilled_qty_btc\":\"0.000\",\"vwap_usdt\":\"79858.50\"},\"symbol\":\"BTCUSDT\",\"update_gaps_since_snapshot\":0},{\"actual_order_fill_proven\":false,\"age_ms\":72,\"anchor_quote_ts_ms\":1788767826202,\"ask_levels\":200,\"bid_levels\":200,\"book_identity\":{\"cross_seq\":806492873413,\"cts_ms\":1788767826127,\"ts_ms\":1788767826130,\"update_id\":39557862},\"exact_anchor_depth_supported\":false,\"exit_side\":\"ask\",\"future_book_used\":false,\"initializing_snapshot_ts_ms\":1788739200129,\"l1_price_matches\":false,\"l1_size_matches\":false,\"ledger_seq\":1177,\"next_publication_ts_ms\":1788767826229,\"original_l1_price_usdt\":\"79343.70\",\"original_l1_size_btc\":\"0.002\",\"reconstructed_l1_price_usdt\":\"79343.30\",\"reconstructed_l1_size_btc\":\"0.286\",\"required_qty_btc\":\"0.007\",\"status\":\"PRIOR_DEPTH_L1_MISMATCH\",\"sweep\":{\"extra_cost_vs_same_book_l1_usdt\":\"0.00000\",\"fees_and_market_impact_included\":false,\"filled_qty_btc\":\"0.007\",\"fills\":[{\"price_usdt\":\"79343.30\",\"qty_btc\":\"0.007\"}],\"full_qty_in_displayed_book\":true,\"gross_notional_usdt\":\"555.40310\",\"levels_used\":1,\"unfilled_qty_btc\":\"0.000\",\"vwap_usdt\":\"79343.30\"},\"symbol\":\"BTCUSDT\",\"update_gaps_since_snapshot\":0}],\"archive_collector_sha256\":\"48db3cda1a81ac1d9655ffd5363803d7"
+      },
+      {
+        "schema": "c2_depth_annotation_chunk_v1",
+        "part": 1,
+        "total": 3,
+        "sha256": "6c33a5c4261a13c311ec8cc62fb5d9f5179b1cd3e030c9a35df18f1bb630fa54",
+        "text": "ff58d3bb15946983ad539a9e14e2c3ae\",\"archive_manifest\":{\"archive_bytes\":131048463,\"archive_file\":\"2026-09-07_BTCUSDT_ob200.data.zip\",\"archive_sha256\":\"3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785\",\"complete\":true,\"engine_sha256\":\"48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae\",\"etag\":\"\\\"079135330030363d4b632035fd6103ae\\\"\",\"expected_bytes\":131048463,\"head_http_status\":200,\"historical_liquidity_qualified\":false,\"last_modified\":\"Tue, 08 Sep 2026 00:03:39 GMT\",\"order_submission\":false,\"received_ms\":1789455069206,\"schema_version\":\"bybit_c2_depth_archive_v1\",\"sent_ms\":1789455059906,\"source_access\":\"public_https_no_credentials\",\"source_url\":\"https://quote-saver.bycsi.com/orderbook/linear/BTCUSDT/2026-09-07_BTCUSDT_ob200.data.zip\",\"status\":\"DEPTH_ARCHIVE_DOWNLOADED\",\"zip\":{\"compressed_member_bytes\":131048273,\"crc32\":\"efc89164\",\"member\":\"2026-09-07_BTCUSDT_ob200.data\",\"uncompressed_bytes\":832935584}},\"archive_manifest_sha256\":\"ae624849f530c6303afd688a6fbe2e1fb5a3228a5ef662d5cbb1c24fada168aa\",\"archive_sha256\":\"3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785\",\"archive_source_url\":\"https://quote-saver.bycsi.com/orderbook/linear/BTCUSDT/2026-09-07_BTCUSDT_ob200.data.zip\",\"authorities\":{\"account_mode_change\":false,\"order_submission\":false,\"promotion\":false},\"dependency_sha256\":{\"audit_bybit_readonly_evidence.py\":\"8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae\",\"fetch_bybit_c2_depth_archive.py\":\"48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae\"},\"engine_sha256\":\"cad050f6381032c453ea921e6d09499fa233c4c75653873d8849cda41b531f9e\",\"exact_anchor_depth_supported_count\":0,\"file_boundary_padding_ms\":1000,\"first_publication_ts_ms\":1788739200129,\"historical_c2_qualified\":false,\"independent_archive_completeness_proven\":false,\"last_publication_ts_ms\":1788825600129,\"ledger_file_sha256\":\"4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491\",\"limits\":[\"ob200_is_displayed_depth_not_all_liquidity\",\"rpi_orders_excluded\",\"prior_publication_is_not_exact_rest_snapshot\",\"rest_cross_sequence_not_bound\",\"no_execution_latency_or_market_impact_model\",\"no_actual_exit_or_cashflow_rewrite\"],\"member_bytes\":83"
+      },
+      {
+        "schema": "c2_depth_annotation_chunk_v1",
+        "part": 2,
+        "total": 3,
+        "sha256": "6c33a5c4261a13c311ec8cc62fb5d9f5179b1cd3e030c9a35df18f1bb630fa54",
+        "text": "2935584,\"member_sha256\":\"48e6037aa06b47c6b4f1d7a591b9eef13ba6d96c7645c55634bc06fb758f539b\",\"outside_nominal_day_rows\":3,\"rows\":862255,\"schema_version\":\"bybit_c2_depth_replay_v1\",\"snapshot_count\":2,\"source_ledger_modified\":false,\"source_row_order_preserved\":true,\"status\":\"DEPTH_REPLAYED_WITH_ALIGNMENT_VERDICTS\",\"update_gap_events\":0,\"zip_crc_verified\":true}"
+      }
+    ],
+    "report": {
+      "anchor_evidence_sha256": "02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a",
+      "anchors": [
+        {
+          "actual_order_fill_proven": false,
+          "age_ms": 72,
+          "anchor_quote_ts_ms": 1788743795602,
+          "ask_levels": 200,
+          "bid_levels": 200,
+          "book_identity": {
+            "cross_seq": 806333932904,
+            "cts_ms": 1788743795527,
+            "ts_ms": 1788743795530,
+            "update_id": 39317795
+          },
+          "exact_anchor_depth_supported": false,
+          "exit_side": "bid",
+          "future_book_used": false,
+          "initializing_snapshot_ts_ms": 1788739200129,
+          "l1_price_matches": false,
+          "l1_size_matches": false,
+          "ledger_seq": 752,
+          "next_publication_ts_ms": 1788743795629,
+          "original_l1_price_usdt": "79857.50",
+          "original_l1_size_btc": "0.002",
+          "reconstructed_l1_price_usdt": "79858.50",
+          "reconstructed_l1_size_btc": "1.975",
+          "required_qty_btc": "0.005",
+          "status": "PRIOR_DEPTH_L1_MISMATCH",
+          "sweep": {
+            "extra_cost_vs_same_book_l1_usdt": "0.00000",
+            "fees_and_market_impact_included": false,
+            "filled_qty_btc": "0.005",
+            "fills": [
+              {
+                "price_usdt": "79858.50",
+                "qty_btc": "0.005"
+              }
+            ],
+            "full_qty_in_displayed_book": true,
+            "gross_notional_usdt": "399.29250",
+            "levels_used": 1,
+            "unfilled_qty_btc": "0.000",
+            "vwap_usdt": "79858.50"
+          },
+          "symbol": "BTCUSDT",
+          "update_gaps_since_snapshot": 0
+        },
+        {
+          "actual_order_fill_proven": false,
+          "age_ms": 72,
+          "anchor_quote_ts_ms": 1788767826202,
+          "ask_levels": 200,
+          "bid_levels": 200,
+          "book_identity": {
+            "cross_seq": 806492873413,
+            "cts_ms": 1788767826127,
+            "ts_ms": 1788767826130,
+            "update_id": 39557862
+          },
+          "exact_anchor_depth_supported": false,
+          "exit_side": "ask",
+          "future_book_used": false,
+          "initializing_snapshot_ts_ms": 1788739200129,
+          "l1_price_matches": false,
+          "l1_size_matches": false,
+          "ledger_seq": 1177,
+          "next_publication_ts_ms": 1788767826229,
+          "original_l1_price_usdt": "79343.70",
+          "original_l1_size_btc": "0.002",
+          "reconstructed_l1_price_usdt": "79343.30",
+          "reconstructed_l1_size_btc": "0.286",
+          "required_qty_btc": "0.007",
+          "status": "PRIOR_DEPTH_L1_MISMATCH",
+          "sweep": {
+            "extra_cost_vs_same_book_l1_usdt": "0.00000",
+            "fees_and_market_impact_included": false,
+            "filled_qty_btc": "0.007",
+            "fills": [
+              {
+                "price_usdt": "79343.30",
+                "qty_btc": "0.007"
+              }
+            ],
+            "full_qty_in_displayed_book": true,
+            "gross_notional_usdt": "555.40310",
+            "levels_used": 1,
+            "unfilled_qty_btc": "0.000",
+            "vwap_usdt": "79343.30"
+          },
+          "symbol": "BTCUSDT",
+          "update_gaps_since_snapshot": 0
+        }
+      ],
+      "archive_collector_sha256": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae",
+      "archive_manifest": {
+        "archive_bytes": 131048463,
+        "archive_file": "2026-09-07_BTCUSDT_ob200.data.zip",
+        "archive_sha256": "3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785",
+        "complete": true,
+        "engine_sha256": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae",
+        "etag": "\"079135330030363d4b632035fd6103ae\"",
+        "expected_bytes": 131048463,
+        "head_http_status": 200,
+        "historical_liquidity_qualified": false,
+        "last_modified": "Tue, 08 Sep 2026 00:03:39 GMT",
+        "order_submission": false,
+        "received_ms": 1789455069206,
+        "schema_version": "bybit_c2_depth_archive_v1",
+        "sent_ms": 1789455059906,
+        "source_access": "public_https_no_credentials",
+        "source_url": "https://quote-saver.bycsi.com/orderbook/linear/BTCUSDT/2026-09-07_BTCUSDT_ob200.data.zip",
+        "status": "DEPTH_ARCHIVE_DOWNLOADED",
+        "zip": {
+          "compressed_member_bytes": 131048273,
+          "crc32": "efc89164",
+          "member": "2026-09-07_BTCUSDT_ob200.data",
+          "uncompressed_bytes": 832935584
+        }
+      },
+      "archive_manifest_sha256": "ae624849f530c6303afd688a6fbe2e1fb5a3228a5ef662d5cbb1c24fada168aa",
+      "archive_sha256": "3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785",
+      "archive_source_url": "https://quote-saver.bycsi.com/orderbook/linear/BTCUSDT/2026-09-07_BTCUSDT_ob200.data.zip",
+      "authorities": {
+        "account_mode_change": false,
+        "order_submission": false,
+        "promotion": false
+      },
+      "dependency_sha256": {
+        "audit_bybit_readonly_evidence.py": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+        "fetch_bybit_c2_depth_archive.py": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae"
+      },
+      "engine_sha256": "cad050f6381032c453ea921e6d09499fa233c4c75653873d8849cda41b531f9e",
+      "exact_anchor_depth_supported_count": 0,
+      "file_boundary_padding_ms": 1000,
+      "first_publication_ts_ms": 1788739200129,
+      "historical_c2_qualified": false,
+      "independent_archive_completeness_proven": false,
+      "last_publication_ts_ms": 1788825600129,
+      "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+      "limits": [
+        "ob200_is_displayed_depth_not_all_liquidity",
+        "rpi_orders_excluded",
+        "prior_publication_is_not_exact_rest_snapshot",
+        "rest_cross_sequence_not_bound",
+        "no_execution_latency_or_market_impact_model",
+        "no_actual_exit_or_cashflow_rewrite"
+      ],
+      "member_bytes": 832935584,
+      "member_sha256": "48e6037aa06b47c6b4f1d7a591b9eef13ba6d96c7645c55634bc06fb758f539b",
+      "outside_nominal_day_rows": 3,
+      "rows": 862255,
+      "schema_version": "bybit_c2_depth_replay_v1",
+      "snapshot_count": 2,
+      "source_ledger_modified": false,
+      "source_row_order_preserved": true,
+      "status": "DEPTH_REPLAYED_WITH_ALIGNMENT_VERDICTS",
+      "update_gap_events": 0,
+      "zip_crc_verified": true
+    }
+  },
+  "ci": {
+    "workflow_run": 34938799485,
+    "check_run": 104282488136,
+    "head_sha": "1e87ca77dc04816c6dab6f15e2471eac75739979",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "gate_state": {
+    "data_archive_obtained": true,
+    "exact_anchor_depth_supported_count": 0,
+    "total_anchors": 2,
+    "historical_c2_qualified": false,
+    "new_independent_cross_sample_obtained": false,
+    "source_ledger_modified": false,
+    "production_deployment": false,
+    "account_mode_change": false,
+    "order_submission": false
+  },
+  "cross_environment_comparison": {
+    "semantic_fields_compared": 27,
+    "all_semantic_fields_equal": true,
+    "excluded_fields": [
+      "archive_manifest",
+      "archive_manifest_sha256"
+    ],
+    "exclusion_reason": "Independent collection times and manifest identity differ; both raw archives have the pre-pinned SHA."
+  },
+  "delivery_contract": {
+    "documentation_commit_skips_ci": true,
+    "tested_code_commit": "1e87ca77dc04816c6dab6f15e2471eac75739979",
+    "production_cd_requested": false
+  }
+}
