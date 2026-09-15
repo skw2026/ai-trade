@@ -58,16 +58,17 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          [[ "${AUDIT_RUN_ID}" =~ ^[0-9]+-[0-9]+$ && "${BUNDLE_SHA}" =~ ^[0-9a-f]{64}$ ]]
-          [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ && "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]]
-          [[ "${ECS_PORT}" =~ ^[0-9]+$ && -n "${ECS_FINGERPRINT}" ]]
+          [[ "${AUDIT_RUN_ID}" =~ ^[0-9]+-[0-9]+$ && "${BUNDLE_SHA}" =~ ^[0-9a-f]{64}$ ]] || { echo '::error::REST_BUNDLE_PREFLIGHT_INVALID'; exit 1; }
+          [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ && "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo '::error::REST_SSH_TARGET_INVALID'; exit 1; }
+          [[ "${ECS_PORT}" =~ ^[0-9]+$ ]] || { echo '::error::REST_SSH_PORT_INVALID'; exit 1; }
+          [[ -n "${ECS_FINGERPRINT}" ]] || { echo '::error::REST_HOST_FINGERPRINT_NOT_CONFIGURED'; exit 1; }
           KEY_DIR="$(mktemp -d "${RUNNER_TEMP}/c2-rest-XXXXXX")"
           trap 'rm -f "${KEY_DIR}/key" "${KEY_DIR}/known_hosts"; rmdir "${KEY_DIR}"' EXIT
           printf '%s\n' "${ECS_SSH_KEY}" > "${KEY_DIR}/key"
           sed -i 's/\r$//' "${KEY_DIR}/key"
-          ssh-keygen -y -f "${KEY_DIR}/key" >/dev/null
-          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > "${KEY_DIR}/known_hosts" 2>/dev/null
-          ssh-keygen -lf "${KEY_DIR}/known_hosts" | awk '{print $2}' | grep -Fxq "${ECS_FINGERPRINT}"
+          ssh-keygen -y -f "${KEY_DIR}/key" >/dev/null || { echo '::error::REST_SSH_KEY_INVALID'; exit 1; }
+          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > "${KEY_DIR}/known_hosts" 2>/dev/null || { echo '::error::REST_HOST_KEY_SCAN_FAILED'; exit 1; }
+          ssh-keygen -lf "${KEY_DIR}/known_hosts" | awk '{print $2}' | grep -Fxq "${ECS_FINGERPRINT}" || { echo '::error::REST_HOST_FINGERPRINT_MISMATCH'; exit 1; }
           remote_exit=0
           ssh -i "${KEY_DIR}/key" -p "${ECS_PORT}" \
             -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o StrictHostKeyChecking=yes \
