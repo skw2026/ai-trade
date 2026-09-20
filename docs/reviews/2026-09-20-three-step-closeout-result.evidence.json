@@ -1,0 +1,233 @@
+{
+  "schema_version": "ai_trade_three_step_closeout_v1",
+  "date": "2026-09-20",
+  "baseline_sha": "42e977247cc70e8c9519703e997b4cbe241ae2c7",
+  "implementation_sha": "4ee227aa40090efcb4e52d6587dd553f2ee56b71",
+  "transport_fix_sha": "e3fe71a94ec1087a7762da950b99dfdfdbcfc597",
+  "research_decision": "NO_QUALIFIED_CANDIDATE",
+  "candidate_state": "CLOSED_CANDIDATE_NO_REOPEN",
+  "historical_c2_status": "NOT_QUALIFIED",
+  "automatic_c2_continuation": false,
+  "new_candidate_registered": false,
+  "authorities": {
+    "research_schedule_publication": true,
+    "readonly_audit": true,
+    "production_release_update": false,
+    "service_restart": false,
+    "order_submission": false,
+    "account_mode_change": false,
+    "fund_transfer": false,
+    "data_purchase": false
+  },
+  "local_tests": {
+    "full_ctest": {
+      "passed": 94,
+      "total": 94,
+      "elapsed_seconds": 155.08
+    },
+    "closeout_regression_cases": 7,
+    "readonly_transport_cases": 22,
+    "initial_ctest": {
+      "passed": 93,
+      "total": 94,
+      "failure": "obsolete hourly-cron assertion",
+      "resolution": "update expected trigger contract, preserve frozen payoff and safety assertions"
+    },
+    "yaml_parse": true,
+    "embedded_shell_syntax": true
+  },
+  "readonly_run": {
+    "run_id": 35498278569,
+    "job_id": 106045263876,
+    "head_sha": "e3fe71a94ec1087a7762da950b99dfdfdbcfc597",
+    "conclusion": "success",
+    "completed_at": "2026-09-20T07:58:41Z",
+    "first_attempt": {
+      "run_id": 35498199459,
+      "job_id": 106045046937,
+      "conclusion": "failure",
+      "failed_step": "Copy standalone collector without changing the running release",
+      "account_step": "skipped",
+      "raw_failure_log_available": false
+    },
+    "evidence_source": "GitHub authenticated workflow amount-free check annotations; raw account archive remains on ECS"
+  },
+  "runtime_snapshot": {
+    "config_mount_matches_release": true,
+    "containers": {
+      "ai-trade": {
+        "health": "healthy",
+        "restarts": 0,
+        "running": true
+      },
+      "ai-trade-option-vrp-collector": {
+        "health": "healthy",
+        "restarts": 0,
+        "running": true
+      },
+      "ai-trade-scheduler": {
+        "health": "healthy",
+        "restarts": 0,
+        "running": true
+      },
+      "ai-trade-watchdog": {
+        "health": "unknown",
+        "restarts": 0,
+        "running": true
+      }
+    },
+    "identity_status": "PASS",
+    "latest_flags": {
+      "evidence_persistence_failed": false,
+      "reconcile_reduce_only": false,
+      "trade_ok": true,
+      "trading_halted": false
+    },
+    "manifest_identity_matches": true,
+    "manifest_sha256": "392046ad372ab560c7973d6491a2f5d2771c19386d1dc7e8a24b2155fc7b41e0",
+    "observed_at": "2026-09-20T07:58:30.455269+00:00",
+    "order_submission": false,
+    "release_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+    "release_tree_integrity_passed": true,
+    "runtime_config_sha256": "4051c0f346b3f1f80b71df7197424e993a2d9c38d818ad57cbfee5bd91388b6f",
+    "runtime_image_matches_manifest": true,
+    "runtime_status_count_last_15m_bounded": 13,
+    "schema_version": "demo_runtime_readonly_v1",
+    "service_restart": false,
+    "snapshot_is_atomic": false,
+    "status": "OBSERVED_NOT_FULL_RUNTIME_ACCEPTANCE"
+  },
+  "demo_account_replay": {
+    "account_margin_fields_applicable": false,
+    "account_margin_fields_present": false,
+    "account_mode_change": false,
+    "balances_or_cash_amounts_published": false,
+    "c2_option_accounting_qualified": false,
+    "cash_identity_checked": 21,
+    "collector_error_codes": {},
+    "collector_sha256": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+    "complete_groups": [
+      "account",
+      "executions",
+      "open_orders",
+      "orders",
+      "positions",
+      "transactions",
+      "wallet"
+    ],
+    "counts": {
+      "account": 1,
+      "executions": 21,
+      "open_orders": 0,
+      "orders": 33,
+      "positions": 0,
+      "transactions": 21,
+      "wallet": 1
+    },
+    "end_ms": 1789890998490,
+    "error_codes": {},
+    "execution_fee_records_checked": 21,
+    "failed_or_incomplete_groups": [],
+    "failure_field_shapes": {},
+    "funding_execution_records": 0,
+    "funding_settlement_records": 0,
+    "gaps": [
+      "ACCOUNT_RESPONSE_TIME_NOT_PROVIDED",
+      "NO_FUNDING_SETTLEMENT_OBSERVED"
+    ],
+    "historical_margin_reconstructed": false,
+    "history_exhaustion_proves_retention": false,
+    "manifest_sha256": "188458003f4c50c86dd4f309a9f85b0c9fca71b9ec1d346c0d2b4466c5957495",
+    "margin_mode": "ISOLATED_MARGIN",
+    "matched_execution_transactions": 21,
+    "order_submission": false,
+    "promotion_authority": false,
+    "replayer_sha256": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+    "response_pages": 10,
+    "response_time_missing_groups": [
+      "account"
+    ],
+    "schema_version": "bybit_readonly_evidence_v1",
+    "snapshot_is_atomic": false,
+    "source": "demo",
+    "start_ms": 1789286198491,
+    "status": "READONLY_CAPTURED_GAPS",
+    "trade_execution_records": 21
+  },
+  "local_replay": {
+    "status": "PASS_ECONOMIC_EVENT_REPEATABILITY_WITH_STATE_TRACE_DIFFERENCE",
+    "row_count": 26164,
+    "start_ms": "1763230800000",
+    "end_ms": "1771079700000",
+    "fills_per_run": [
+      4,
+      4
+    ],
+    "terminal_flat_both": true,
+    "full_selected_trace_identical": false,
+    "economic_events_and_terminal_identical": true,
+    "economic_events_and_terminal_sha256": [
+      "e46fbf4cd34b86b88897909f315a91a400f8f1636caff7f6bf98523e30cd3414",
+      "e46fbf4cd34b86b88897909f315a91a400f8f1636caff7f6bf98523e30cd3414"
+    ],
+    "full_selected_trace_sha256": [
+      "f05741dc4044cefe4a98036a4ef24b4a89e01c9f1cac6f741b8ca1bddc299f03",
+      "62d747132c25f56dfeec26402ffb0ba3c169b4a3e3570b99d9a15bb40296b692"
+    ],
+    "differences": [
+      {
+        "fill_index": 0,
+        "field": "order_state_before",
+        "values": [
+          "new",
+          "sent"
+        ]
+      }
+    ],
+    "normalization": "ordered fields listed in report; wall-clock IDs/timestamps excluded; order_state_before excluded ONLY from economic equality, retained in full-trace comparison",
+    "funding_source_present": false,
+    "deployed_policy_equivalence_proven": false,
+    "profitability_claim": false,
+    "sha256": {
+      "build/trade_bot": "372165091a52b8866257830b5d43b84afd5fab1bcf142a5c2f2038f7adc1b62c",
+      "config/bybit.replay.yaml": "01fbeb91c6dc886eb009c5b4a496bde757be1314ef3e8c000e9540db57a657dd",
+      "data/research/ohlcv_5m.csv": "6846a7675442d4b036700bd1a226f7270378c48a6185aaa4952da44d232bcc9b"
+    },
+    "log_sha256": {
+      "run-1": "7d32838e419ba93f4362c601f9152ef66518cf56ffafaba7e73965bae9bd5cf6",
+      "run-2": "f961f247cde6226546df7dd3f09173b76f827a52abb68537246c4056846e1425"
+    }
+  },
+  "runtime_source_diff": {
+    "baseline_deployed_release": "170d84acb8ac9547a321802f9250215c98deb0dc",
+    "against": "e3fe71a94ec1087a7762da950b99dfdfdbcfc597",
+    "unchanged_paths": [
+      "src",
+      "include",
+      "config/bybit.demo.s5.yaml",
+      "config/bybit.replay.yaml",
+      "deploy",
+      "docker-compose.prod.yml",
+      "ops",
+      "tools/closed_loop_runner.sh"
+    ]
+  },
+  "acceptance": {
+    "runtime_identity": "PASS_SCOPED_SNAPSHOT",
+    "account_reconciliation": "MATCHED_TRADES_PASS_FULL_ACCOUNT_EVIDENCE_INSUFFICIENT",
+    "fixed_input_replay": "ECONOMIC_EVENTS_PASS_FULL_SELECTED_STATE_TRACE_FAIL",
+    "safety_guards": "PASS_EXISTING_ISOLATED_REGRESSIONS_NO_PRODUCTION_FAULT_INJECTION",
+    "release_recovery": "PASS_EXISTING_ISOLATED_REGRESSIONS_NO_NEW_PRODUCTION_ROLLBACK",
+    "overall": "NOT_FULL_ENGINEERING_ACCEPTANCE"
+  },
+  "main_publication": {
+    "status": "PENDING"
+  },
+  "independent_ci": {
+    "status": "completed",
+    "conclusion": "success",
+    "run_id": 35498278624,
+    "head_sha": "e3fe71a94ec1087a7762da950b99dfdfdbcfc597",
+    "completed_at": "2026-09-20T08:02:46Z"
+  }
+}
