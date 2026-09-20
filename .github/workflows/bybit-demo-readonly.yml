@@ -15,6 +15,7 @@ on:
     branches:
       - research/bybit-demo-readonly
       - research/demo-closeout-20260920
+      - fix/replay-ordering-closeout-20260920
     paths:
       - .github/workflows/bybit-demo-readonly.yml
       - tools/audit_bybit_readonly_evidence.py
@@ -51,10 +52,12 @@ jobs:
         env:
           READONLY_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           READONLY_CODE_SHA: ${{ steps.identity.outputs.sha256 }}
-          # Pin the existing failed capture for parser qualification. Manual
-          # dispatch with an empty replay ID performs a new Demo GET capture.
-          READONLY_REPLAY_RUN_ID: ${{ github.event_name == 'push' && github.ref_name == 'research/bybit-demo-readonly' && '34761067389-1' || inputs.replay_run_id }}
-          READONLY_MANIFEST_SHA: ${{ github.event_name == 'push' && github.ref_name == 'research/bybit-demo-readonly' && '87b0742758068307b1f89b36b07ef7a2448294c510c0263468173b94c68eae1a' || inputs.manifest_sha256 }}
+          # Engineering closeout is archive-only, including manual dispatch
+          # on this branch: it must never fall back to a fresh account capture.
+          # Retain the legacy parser-qualification branch's original source.
+          READONLY_ARCHIVE_ONLY: ${{ github.ref_name == 'fix/replay-ordering-closeout-20260920' && 'true' || 'false' }}
+          READONLY_REPLAY_RUN_ID: ${{ github.ref_name == 'fix/replay-ordering-closeout-20260920' && '35498278569-1' || github.event_name == 'push' && github.ref_name == 'research/bybit-demo-readonly' && '34761067389-1' || inputs.replay_run_id }}
+          READONLY_MANIFEST_SHA: ${{ github.ref_name == 'fix/replay-ordering-closeout-20260920' && '188458003f4c50c86dd4f309a9f85b0c9fca71b9ec1d346c0d2b4466c5957495' || github.event_name == 'push' && github.ref_name == 'research/bybit-demo-readonly' && '87b0742758068307b1f89b36b07ef7a2448294c510c0263468173b94c68eae1a' || inputs.manifest_sha256 }}
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
           ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
@@ -68,6 +71,10 @@ jobs:
           [[ -z "${READONLY_REPLAY_RUN_ID}" || "${READONLY_REPLAY_RUN_ID}" =~ ^[0-9]+-[0-9]+$ ]]
           [[ -z "${READONLY_MANIFEST_SHA}" || "${READONLY_MANIFEST_SHA}" =~ ^[0-9a-f]{64}$ ]]
           [[ -z "${READONLY_REPLAY_RUN_ID}" || "${READONLY_MANIFEST_SHA}" =~ ^[0-9a-f]{64}$ ]]
+          if [[ "${READONLY_ARCHIVE_ONLY}" == true ]]; then
+            [[ "${READONLY_REPLAY_RUN_ID}" == 35498278569-1 ]] || exit 2
+            [[ "${READONLY_MANIFEST_SHA}" == 188458003f4c50c86dd4f309a9f85b0c9fca71b9ec1d346c0d2b4466c5957495 ]] || exit 2
+          fi
           [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ ]]
           [[ "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]]
           [[ "${ECS_PORT}" =~ ^[0-9]+$ ]]

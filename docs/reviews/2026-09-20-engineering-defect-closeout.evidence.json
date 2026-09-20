@@ -1,0 +1,53 @@
+{
+  "schema_version": "engineering_defect_closeout_v1",
+  "date": "2026-09-20",
+  "baseline_sha": "833a6d90644e0bd88545dafe97c408beb9c3a67d",
+  "research_decision": "NO_QUALIFIED_CANDIDATE",
+  "historical_c2_status": "NOT_QUALIFIED",
+  "fix_scope": "INLINE_OFFLINE_REPLAY_BACKGROUND_DEMO_UNCHANGED",
+  "root_cause": "ADAPTER_FILL_PUBLICATION_PRECEDES_EXECUTOR_RESULT_PUBLICATION_WITHOUT_CROSS_QUEUE_BARRIER",
+  "root_cause_test": "CONTROLLED_ACK_BARRIER_USING_REAL_OFFLINE_BYBIT_ADAPTER",
+  "local_build": {"status": "PASS", "warnings_as_errors": true, "build_type": "Release"},
+  "ctest": {"status": "PASS", "passed": 96, "total": 96, "seconds": 158.75, "previous_full_pass_seconds": 161.66},
+  "targeted_tests": {"ack_ordering_cases": 3, "inline_execution_case": 1, "nonzero_fee_dedup_and_recovery": true, "repeated_cpp_passes": 10, "trace_comparator_tests": 7, "readonly_tests": 25, "closeout_contract_tests": 7},
+  "fixed_replay": {
+    "status": "PASS_SELECTED_FILL_STATE_AND_TERMINAL_TRACE",
+    "runs_prespecified": 3,
+    "exit_codes": [0, 0, 0],
+    "fills_per_run": [4, 4, 4],
+    "row_count": 26164,
+    "input_sha256": "6846a7675442d4b036700bd1a226f7270378c48a6185aaa4952da44d232bcc9b",
+    "config_sha256": "01fbeb91c6dc886eb009c5b4a496bde757be1314ef3e8c000e9540db57a657dd",
+    "binary_sha256": "e2e224aa96873a787a4e01416a82653a18119231d5a34fea7b147ff2506c0e19",
+    "trace_sha256_all_runs": "2efa72c0c5cbaed05df913997ee71630892b91880be577badcfd8dd8ef9ffcd2",
+    "log_sha256": ["fbbaa2e24a5d0595f768dfa2bce8635272f75c4495f64a77a487ade46927f774", "bbdbe6972dae7b482969ca5dde87743720ed67c808a87aff37d39ae3ecdf23d1", "f0d7a5f73a886959bfefa7ff46de4bbc828c37ef0b99ac1850adf8d6fd87d1a4"],
+    "log_directory": "/private/tmp/ai-trade-replay-final.YHoKjY",
+    "initial_validation": {"runs": 3, "status": "PASS", "log_directory": "/private/tmp/ai-trade-replay-closeout.N1n6Ib", "binary_sha256": "68a5f5ca515a2c96ae9c78950793330d97966e3cca229ae86b0a1cb58ffcc31a"},
+    "order_state_before_included": true,
+    "all_emitted_fill_fields_compared": true,
+    "old_pair_still_fails_same_comparator": true,
+    "matches_old_ack_first_trace": true,
+    "terminal_flat": true,
+    "all_runtime_state_certified": false,
+    "profitability_claim": false,
+    "deployed_policy_equivalence_proven": false
+  },
+  "account": {
+    "status": "MATCHED_TRADES_PASS_FULL_ACCOUNT_EVIDENCE_INSUFFICIENT",
+    "basis": "EXISTING_CAPTURE_SUMMARIES_AND_UNCHANGED_REPLAYER_SOURCE_REVIEW",
+    "private_raw_replayed_this_turn": false,
+    "new_account_get_requests_this_turn": false,
+    "collector_sha256": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+    "captures": [
+      {"date": "2026-09-13", "manifest_sha256": "87b0742758068307b1f89b36b07ef7a2448294c510c0263468173b94c68eae1a", "matched_trades": 20, "funding_execution_records": 0, "funding_settlement_records": 0},
+      {"date": "2026-09-20", "manifest_sha256": "188458003f4c50c86dd4f309a9f85b0c9fca71b9ec1d346c0d2b4466c5957495", "matched_trades": 21, "funding_execution_records": 0, "funding_settlement_records": 0}
+    ],
+    "overlapping_windows_not_additive": true,
+    "gaps": ["ACCOUNT_RESPONSE_TIME_NOT_PROVIDED", "NO_FUNDING_SETTLEMENT_OBSERVED", "NON_ATOMIC_SNAPSHOT"],
+    "automatic_wait_or_recapture_scheduled": false,
+    "c2_option_accounting_qualified": false
+  },
+  "remote_validation": {"status": "NOT_RUN_PENDING_EXPLICIT_BRANCH_AUTHORIZATION", "new_ci_claimed": false},
+  "authority": {"remote_push": false, "ecs_release_change": false, "service_restart": false, "order_submission": false, "fund_transfer": false, "production_rollback": false, "new_research": false},
+  "overall": "NOT_FULL_ENGINEERING_ACCEPTANCE"
+}

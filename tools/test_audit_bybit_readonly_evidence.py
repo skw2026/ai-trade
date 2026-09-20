@@ -349,6 +349,43 @@ class ReadonlyEvidenceTest(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(json.loads(result.stdout)["reason"], "CAPTURE_PARENT_NOT_UNIQUE")
 
+    def test_elapsed_time_cannot_supply_missing_funding_evidence(self):
+        groups = demo_fixture()
+        groups["transactions"] = [groups["transactions"][0]]
+        capture = self.capture(FakeTransport(groups))
+        before = audit.replay(capture)
+        with patch.object(audit, "now_ms", return_value=NOW + 14 * audit.DAY):
+            after = audit.replay(capture)
+        self.assertEqual(before, after)
+        self.assertEqual(after["matched_execution_transactions"], 1)
+        self.assertEqual(after["status"], "READONLY_CAPTURED_GAPS")
+        self.assertIn("NO_FUNDING_SETTLEMENT_OBSERVED", after["gaps"])
+
+    def test_complete_timestamps_do_not_prove_atomic_snapshot(self):
+        report = audit.replay(self.capture())
+        self.assertEqual(report["status"], "READONLY_CAPTURED_CHECKS_PASS")
+        self.assertEqual(report["response_time_missing_groups"], [])
+        self.assertFalse(report["snapshot_is_atomic"])
+        self.assertFalse(report["historical_margin_reconstructed"])
+        self.assertFalse(report["c2_option_accounting_qualified"])
+
+    def test_local_receipt_and_account_update_time_do_not_replace_server_time(self):
+        fake = FakeTransport(demo_fixture())
+        original = fake.get
+
+        def get(request):
+            payload = audit.decode(original(request))
+            if request["path"] == "/v5/account/info":
+                del payload["time"]
+                payload["result"]["updatedTime"] = str(NOW)
+            return audit.encode(payload)
+
+        fake.get = get
+        report = audit.replay(self.capture(fake))
+        self.assertEqual(report["response_time_missing_groups"], ["account"])
+        self.assertIn("ACCOUNT_RESPONSE_TIME_NOT_PROVIDED", report["gaps"])
+        self.assertFalse(report["snapshot_is_atomic"])
+
 
 if __name__ == "__main__":
     unittest.main()
