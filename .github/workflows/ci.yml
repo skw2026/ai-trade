@@ -72,6 +72,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build -N > /tmp/ctest-list.txt
           grep -q "trade_system_test" /tmp/ctest-list.txt
+          grep -q "research_closeout_contract_test" /tmp/ctest-list.txt
           grep -q "option_c2_cross_integration_test" /tmp/ctest-list.txt
           grep -q "c2_fx_proxy_test" /tmp/ctest-list.txt
           grep -q "option_exit_evidence_test" /tmp/ctest-list.txt

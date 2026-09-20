@@ -109,6 +109,8 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME research_closeout_contract_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_research_closeout_contract.py)
     add_test(NAME option_c2_cross_integration_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_c2_integration.py)
     add_test(NAME c2_fx_proxy_test

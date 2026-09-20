@@ -1,0 +1,1053 @@
+{
+  "schema_version": "project_comprehensive_roundtable_v1",
+  "review_date": "2026-09-20",
+  "review_baseline_commit": "42e977247cc70e8c9519703e997b4cbe241ae2c7",
+  "review_mode": "READ_ONLY_DIAGNOSTICS_AND_LOCAL_REPORT_ONLY",
+  "roundtable_method": "Single-reviewer multi-perspective challenge; not external expert endorsement or independent multi-agent certification",
+  "local_checks": {
+    "working_tree_clean_at_start": true,
+    "configure_and_build": "PASS",
+    "ctest_passed": 93,
+    "ctest_failed": 0,
+    "ctest_seconds": 168.91,
+    "existing_evidence_json_count": 11,
+    "existing_evidence_json_parse": "PASS",
+    "six_frozen_lifecycle_totals_recomputed": "PASS",
+    "c2_integration_summary_chunks_verified": 4,
+    "c2_acceptance_summary_chunks_verified": 8,
+    "rest_and_depth_report_hashes_verified": true,
+    "dependency_hashes_verified": true,
+    "git_diff_check": "PASS",
+    "local_disk_available_human": "50 GiB",
+    "local_disk_capacity_percent": 89,
+    "ecs_disk_health_verified": false
+  },
+  "run_inventory": {
+    "total_count": 36,
+    "runs": [
+      {
+        "id": 35495809665,
+        "name": "C2 Archived REST Anchors",
+        "head_sha": "4c374dcbe6ef97df7a863630d2a7b6f41822464e",
+        "event": "push",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-20T07:02:36Z",
+        "updated_at": "2026-09-20T07:02:55Z"
+      },
+      {
+        "id": 35495809680,
+        "name": "CI",
+        "head_sha": "4c374dcbe6ef97df7a863630d2a7b6f41822464e",
+        "event": "push",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-20T07:02:36Z",
+        "updated_at": "2026-09-20T07:07:23Z"
+      },
+      {
+        "id": 35493594196,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-20T06:11:45Z",
+        "updated_at": "2026-09-20T06:13:24Z"
+      },
+      {
+        "id": 35480450937,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-20T01:04:51Z",
+        "updated_at": "2026-09-20T01:06:34Z"
+      },
+      {
+        "id": 35474856655,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T22:59:36Z",
+        "updated_at": "2026-09-19T23:01:13Z"
+      },
+      {
+        "id": 35467937240,
+        "name": "Closed Loop Research",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T20:37:04Z",
+        "updated_at": "2026-09-19T21:15:16Z"
+      },
+      {
+        "id": 35467883477,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T20:36:00Z",
+        "updated_at": "2026-09-19T20:38:14Z"
+      },
+      {
+        "id": 35459743930,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T17:59:11Z",
+        "updated_at": "2026-09-19T18:00:47Z"
+      },
+      {
+        "id": 35448548942,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T14:22:41Z",
+        "updated_at": "2026-09-19T14:24:17Z"
+      },
+      {
+        "id": 35438636030,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T10:53:49Z",
+        "updated_at": "2026-09-19T10:55:23Z"
+      },
+      {
+        "id": 35425008931,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T05:50:14Z",
+        "updated_at": "2026-09-19T05:51:49Z"
+      },
+      {
+        "id": 35408866784,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-19T00:17:51Z",
+        "updated_at": "2026-09-19T00:19:23Z"
+      },
+      {
+        "id": 35397833407,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-18T21:39:05Z",
+        "updated_at": "2026-09-18T21:40:35Z"
+      },
+      {
+        "id": 35393794495,
+        "name": "Closed Loop Research",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-18T20:52:28Z",
+        "updated_at": "2026-09-18T21:28:41Z"
+      },
+      {
+        "id": 35380114769,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-18T18:25:42Z",
+        "updated_at": "2026-09-18T18:27:12Z"
+      },
+      {
+        "id": 35356483915,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-18T14:28:54Z",
+        "updated_at": "2026-09-18T14:30:28Z"
+      },
+      {
+        "id": 35330964034,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-18T09:42:50Z",
+        "updated_at": "2026-09-18T09:44:21Z"
+      },
+      {
+        "id": 35307740868,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-18T04:38:39Z",
+        "updated_at": "2026-09-18T04:40:05Z"
+      },
+      {
+        "id": 35287310118,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-17T23:32:40Z",
+        "updated_at": "2026-09-17T23:34:07Z"
+      },
+      {
+        "id": 35276024300,
+        "name": "Closed Loop Research",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-17T21:19:36Z",
+        "updated_at": "2026-09-17T21:56:59Z"
+      },
+      {
+        "id": 35270031326,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-17T20:18:41Z",
+        "updated_at": "2026-09-17T20:20:07Z"
+      },
+      {
+        "id": 35249721155,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-17T16:57:07Z",
+        "updated_at": "2026-09-17T16:58:32Z"
+      },
+      {
+        "id": 35216578707,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-17T11:36:31Z",
+        "updated_at": "2026-09-17T11:37:55Z"
+      },
+      {
+        "id": 35188461671,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-17T06:07:10Z",
+        "updated_at": "2026-09-17T06:08:35Z"
+      },
+      {
+        "id": 35166668656,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-17T00:27:59Z",
+        "updated_at": "2026-09-17T00:29:21Z"
+      },
+      {
+        "id": 35156117630,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-16T22:08:07Z",
+        "updated_at": "2026-09-16T22:09:29Z"
+      },
+      {
+        "id": 35151386616,
+        "name": "Closed Loop Research",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-16T21:15:51Z",
+        "updated_at": "2026-09-16T21:52:49Z"
+      },
+      {
+        "id": 35137139608,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-16T18:52:46Z",
+        "updated_at": "2026-09-16T18:54:08Z"
+      },
+      {
+        "id": 35111977401,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-16T14:56:46Z",
+        "updated_at": "2026-09-16T14:58:07Z"
+      },
+      {
+        "id": 35082033958,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-16T09:54:23Z",
+        "updated_at": "2026-09-16T09:55:43Z"
+      },
+      {
+        "id": 35057222515,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-16T04:51:23Z",
+        "updated_at": "2026-09-16T04:52:39Z"
+      },
+      {
+        "id": 35039275420,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-16T00:16:03Z",
+        "updated_at": "2026-09-16T00:17:21Z"
+      },
+      {
+        "id": 35024833982,
+        "name": "Closed Loop Research",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-15T21:18:20Z",
+        "updated_at": "2026-09-15T21:56:54Z"
+      },
+      {
+        "id": 35024735974,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-15T21:17:20Z",
+        "updated_at": "2026-09-15T21:18:36Z"
+      },
+      {
+        "id": 35005733272,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-15T18:09:41Z",
+        "updated_at": "2026-09-15T18:10:56Z"
+      },
+      {
+        "id": 34975420204,
+        "name": "Option Lifecycle V4 Gate",
+        "head_sha": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+        "event": "schedule",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-09-15T13:30:21Z",
+        "updated_at": "2026-09-15T13:31:36Z"
+      }
+    ]
+  },
+  "run_inventory_scope": {
+    "created_from_utc": "2026-09-15T10:12:00Z",
+    "query_observed_on": "2026-09-20",
+    "v4_gate_runs": 29,
+    "daily_closed_loop_runs": 5,
+    "rest_extraction_runs": 1,
+    "ci_runs": 1,
+    "returned": 36,
+    "total": 36,
+    "all_run_summaries_are_not_business_pass": true
+  },
+  "latest_v4": {
+    "run_id": 35493594196,
+    "job_id": 106032578769,
+    "job": {
+      "id": 106032578769,
+      "name": "audit",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-20T06:11:48Z",
+      "completed_at": "2026-09-20T06:13:24Z",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout governance implementation",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Check deploy secrets",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Audit checksum-bound lifecycle on ECS",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Download aggregate audit report",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Summarize aggregate audit diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate aggregate audit report",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify frozen STOP evidence and enforce candidate closure",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Validate and summarize first lifecycle accounting adapter",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Upload aggregate lifecycle report",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Checkout governance implementation",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "closure": {
+      "account_risk_qualified": false,
+      "anchor_archive_input_set_sha256": "6b63b4082524d204d8ca6c69f2a34d795ce2d60b10c26fa3814492ec680b9146",
+      "anchor_report_file_sha256": {
+        "economics.json": "74c8cd96f380fb06fff99d4b2cf1398d2ffc05f5d84f8b976ad2e2c0ef00b25f",
+        "payoff.json": "16038624b6c121335f7dd3c11bbc023205067ef6296bb3698da8840a437293f5",
+        "report.json": "d67e6489a36b15188a20f2f5811db046692678f85ee52ad561718d0dc18ab850"
+      },
+      "candidate_experiment_id": "btc_bybit_usdt_option_lifecycle_economic_v1",
+      "closure_anchor": {
+        "artifact_id": 10295950463,
+        "artifact_zip_sha256": "d9d69ab4bc83ad9c7a5669fb1e3666aa74db5c6112f68ce236496ca9acfc8e1d",
+        "complete_lifecycle_count": 6,
+        "decision": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+        "executed_release_sha": "f5dd0ca1434eef757acf70e3904806098470a1ec",
+        "repository": "skw2026/ai-trade",
+        "run_id": 34685429648
+      },
+      "closure_evidence_verified": true,
+      "closure_latched": true,
+      "current_batch_decision": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+      "current_complete_lifecycle_count": 13,
+      "current_executed_release_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "current_report_sha256": "5afbac48d5386b8b6cb8769e34bf1ef2d646ba636908d5bcfd6fd846383945af",
+      "decision": "CLOSED_CANDIDATE_NO_REOPEN",
+      "demo_activation_authorized": false,
+      "demo_review_eligible": false,
+      "drawdown_claim_allowed": false,
+      "full_cashflow_attribution_complete": false,
+      "live_activation_authorized": false,
+      "profitability_claim_allowed": false,
+      "promotion_authority": false,
+      "registry_canonical_sha256": "61806c18be984ce4d68582bf6b2e91f1912edae4a87293e8ad6f76ba06b0f3b2",
+      "schema_version": "option_candidate_closure_audit_v1",
+      "sharpe_claim_allowed": false
+    },
+    "records": [
+      {
+        "data": {
+          "delivery_time_epoch_ms": 1789200000000,
+          "lifecycle_id": "btc-usdt-1789200000000-77250-70ed6fd896fe",
+          "primary_payoff": {
+            "base_net_bps": -47.51890868142273,
+            "base_net_pnl_usdt": -3.670113199994864,
+            "capital_normalizer_usdt": 772.3479561789001,
+            "delivery_fee_usdt": 0.04878514458749123,
+            "gross_pnl_usdt": -0.6659811567000151,
+            "hedge_fee_usdt": 2.389138125,
+            "hedge_spread_cost_usdt": 0.002800000000017462,
+            "option_fee_usdt": 0.46340877370734,
+            "option_spread_cost_usdt": 0.1,
+            "stress_increment_usdt": 0.5343887500000001,
+            "stress_net_bps": -54.43792420706515,
+            "stress_net_pnl_usdt": -4.204501949994864
+          },
+          "selected_epoch_ms": 1789113650197
+        },
+        "kind": "lifecycle"
+      },
+      {
+        "data": {
+          "delivery_time_epoch_ms": 1789113600000,
+          "lifecycle_id": "btc-usdt-1789113600000-78000-ffeb570e0e89",
+          "primary_payoff": {
+            "base_net_bps": 18.41114848479161,
+            "base_net_pnl_usdt": 1.438029423790203,
+            "capital_normalizer_usdt": 781.0644865409,
+            "delivery_fee_usdt": 0.11589793648533,
+            "gross_pnl_usdt": 3.227609902199916,
+            "hedge_fee_usdt": 1.10374385,
+            "hedge_spread_cost_usdt": 0.0012999999998428396,
+            "option_fee_usdt": 0.46863869192454,
+            "option_spread_cost_usdt": 0.1,
+            "stress_increment_usdt": 0.3006807,
+            "stress_net_bps": 14.561521403017295,
+            "stress_net_pnl_usdt": 1.137348723790203
+          },
+          "selected_epoch_ms": 1789027291754
+        },
+        "kind": "lifecycle"
+      },
+      {
+        "data": {
+          "delivery_time_epoch_ms": 1789027200000,
+          "lifecycle_id": "btc-usdt-1789027200000-79250-6b50f2066659",
+          "primary_payoff": {
+            "base_net_bps": -11.788492431445993,
+            "base_net_pnl_usdt": -0.9344081507619127,
+            "capital_normalizer_usdt": 792.6443149502,
+            "delivery_fee_usdt": 0.11705307459191998,
+            "gross_pnl_usdt": 1.3156306128001596,
+            "hedge_fee_usdt": 1.5555991000000002,
+            "hedge_spread_cost_usdt": 0.0018000000000320138,
+            "option_fee_usdt": 0.47558658897012,
+            "option_spread_cost_usdt": 0.1,
+            "stress_increment_usdt": 0.38283620000000007,
+            "stress_net_bps": -16.618353603465536,
+            "stress_net_pnl_usdt": -1.317244350761913
+          },
+          "selected_epoch_ms": 1788940869002
+        },
+        "kind": "lifecycle"
+      },
+      {
+        "data": {
+          "delivery_time_epoch_ms": 1788940800000,
+          "lifecycle_id": "btc-usdt-1788940800000-78250-3ce24282b233",
+          "primary_payoff": {
+            "base_net_bps": -21.854026294899285,
+            "base_net_pnl_usdt": -1.7117767725282653,
+            "capital_normalizer_usdt": 783.2775294719,
+            "delivery_fee_usdt": 0.11885656584509999,
+            "gross_pnl_usdt": 0.7470943659999367,
+            "hedge_fee_usdt": 1.817948055,
+            "hedge_spread_cost_usdt": 0.002099999999962165,
+            "option_fee_usdt": 0.46996651768313996,
+            "option_spread_cost_usdt": 0.05,
+            "stress_increment_usdt": 0.4305360100000001,
+            "stress_net_bps": -27.35062224972356,
+            "stress_net_pnl_usdt": -2.1423127825282653
+          },
+          "selected_epoch_ms": 1788854513362
+        },
+        "kind": "lifecycle"
+      },
+      {
+        "data": {
+          "delivery_time_epoch_ms": 1788854400000,
+          "lifecycle_id": "btc-usdt-1788854400000-79500-557eecf15046",
+          "primary_payoff": {
+            "base_net_bps": 19.026207880652514,
+            "base_net_pnl_usdt": 1.5107491769238715,
+            "capital_normalizer_usdt": 794.0358827153,
+            "delivery_fee_usdt": 0.11763725744685,
+            "gross_pnl_usdt": 3.794282978999977,
+            "hedge_fee_usdt": 1.5626750150000002,
+            "hedge_spread_cost_usdt": 0.0018000000000756699,
+            "option_fee_usdt": 0.4764215296291799,
+            "option_spread_cost_usdt": 0.125,
+            "stress_increment_usdt": 0.38412272999999997,
+            "stress_net_bps": 14.188608744874838,
+            "stress_net_pnl_usdt": 1.1266264469238716
+          },
+          "selected_epoch_ms": 1788768068396
+        },
+        "kind": "lifecycle"
+      },
+      {
+        "data": {
+          "delivery_time_epoch_ms": 1788768000000,
+          "lifecycle_id": "btc-usdt-1788768000000-79750-a9f8f42224b2",
+          "primary_payoff": {
+            "base_net_bps": -28.63269517502622,
+            "base_net_pnl_usdt": -2.284817561061728,
+            "capital_normalizer_usdt": 797.9750236906001,
+            "delivery_fee_usdt": 0.11896473084735,
+            "gross_pnl_usdt": 0.20500564900003182,
+            "hedge_fee_usdt": 1.8399734650000004,
+            "hedge_spread_cost_usdt": 0.002100000000049477,
+            "option_fee_usdt": 0.47878501421436,
+            "option_spread_cost_usdt": 0.05,
+            "stress_increment_usdt": 0.4345406300000001,
+            "stress_net_bps": -34.07823691629863,
+            "stress_net_pnl_usdt": -2.719358191061728
+          },
+          "selected_epoch_ms": 1788701451985
+        },
+        "kind": "lifecycle"
+      },
+      {
+        "data": {
+          "long_selected_straddle": {
+            "base_max_drawdown_bps": 290.73738448748156,
+            "base_mean_bps": -48.456230747913594,
+            "base_mean_lcb_bps": -59.869697549783325,
+            "base_mean_ucb_bps": -37.536084734980875,
+            "base_median_bps": -42.95730841618612,
+            "base_positive_ratio": 0,
+            "lifecycle_count": 6,
+            "maximum_stress_net_bps": -37.192299320716984,
+            "minimum_stress_net_bps": -81.38095080764498,
+            "stress_max_drawdown_bps": 322.1156250987922,
+            "stress_mean_bps": -53.685937516465366,
+            "stress_mean_lcb_bps": -65.11008955965016,
+            "stress_mean_ucb_bps": -43.27606658355097,
+            "stress_median_bps": -48.12053697960803,
+            "stress_positive_ratio": 0
+          },
+          "no_trade": {
+            "base_max_drawdown_bps": 0,
+            "base_mean_bps": 0,
+            "base_mean_lcb_bps": 0,
+            "base_mean_ucb_bps": 0,
+            "base_median_bps": 0,
+            "base_positive_ratio": 0,
+            "lifecycle_count": 6,
+            "maximum_stress_net_bps": 0,
+            "minimum_stress_net_bps": 0,
+            "stress_max_drawdown_bps": 0,
+            "stress_mean_bps": 0,
+            "stress_mean_lcb_bps": 0,
+            "stress_mean_ucb_bps": 0,
+            "stress_median_bps": 0,
+            "stress_positive_ratio": 0
+          },
+          "short_selected_straddle": {
+            "base_max_drawdown_bps": 72.3567662173501,
+            "base_mean_bps": -12.059461036225017,
+            "base_mean_lcb_bps": -28.39106298602884,
+            "base_mean_ucb_bps": 4.167175109470608,
+            "base_median_bps": -16.82125936317264,
+            "base_positive_ratio": 0.3333333333333333,
+            "lifecycle_count": 6,
+            "maximum_stress_net_bps": 14.561521403017295,
+            "minimum_stress_net_bps": -54.43792420706515,
+            "stress_max_drawdown_bps": 103.73500682866074,
+            "stress_mean_bps": -17.289167804776792,
+            "stress_mean_lcb_bps": -33.92356913118059,
+            "stress_mean_ucb_bps": -0.5926143686825783,
+            "stress_median_bps": -21.984487926594547,
+            "stress_positive_ratio": 0.3333333333333333
+          }
+        },
+        "kind": "aggregates"
+      },
+      {
+        "data": {
+          "account_risk_qualified": false,
+          "anchor_archive_input_set_sha256": "6b63b4082524d204d8ca6c69f2a34d795ce2d60b10c26fa3814492ec680b9146",
+          "anchor_report_file_sha256": {
+            "economics.json": "74c8cd96f380fb06fff99d4b2cf1398d2ffc05f5d84f8b976ad2e2c0ef00b25f",
+            "payoff.json": "16038624b6c121335f7dd3c11bbc023205067ef6296bb3698da8840a437293f5",
+            "report.json": "d67e6489a36b15188a20f2f5811db046692678f85ee52ad561718d0dc18ab850"
+          },
+          "candidate_experiment_id": "btc_bybit_usdt_option_lifecycle_economic_v1",
+          "closure_anchor": {
+            "artifact_id": 10295950463,
+            "artifact_zip_sha256": "d9d69ab4bc83ad9c7a5669fb1e3666aa74db5c6112f68ce236496ca9acfc8e1d",
+            "complete_lifecycle_count": 6,
+            "decision": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+            "executed_release_sha": "f5dd0ca1434eef757acf70e3904806098470a1ec",
+            "repository": "skw2026/ai-trade",
+            "run_id": 34685429648
+          },
+          "closure_evidence_verified": true,
+          "closure_latched": true,
+          "current_batch_decision": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+          "current_complete_lifecycle_count": 13,
+          "current_executed_release_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+          "current_report_sha256": "5afbac48d5386b8b6cb8769e34bf1ef2d646ba636908d5bcfd6fd846383945af",
+          "decision": "CLOSED_CANDIDATE_NO_REOPEN",
+          "demo_activation_authorized": false,
+          "demo_review_eligible": false,
+          "drawdown_claim_allowed": false,
+          "full_cashflow_attribution_complete": false,
+          "live_activation_authorized": false,
+          "profitability_claim_allowed": false,
+          "promotion_authority": false,
+          "registry_canonical_sha256": "61806c18be984ce4d68582bf6b2e91f1912edae4a87293e8ad6f76ba06b0f3b2",
+          "schema_version": "option_candidate_closure_audit_v1",
+          "sharpe_claim_allowed": false
+        },
+        "kind": "closure"
+      }
+    ],
+    "source_kind": "bounded publicly emitted validated closure records"
+  },
+  "daily_closed_loop": {
+    "runs": [
+      {
+        "run_id": 35467937240,
+        "id": 105963579907,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-19T20:37:06Z",
+        "completed_at": "2026-09-19T21:15:15Z",
+        "job_duration_seconds": 2289,
+        "annotation_bytes": 4096,
+        "annotations": [
+          {
+            "title": "Closed Loop evidence summary",
+            "message": "failed_steps=market_alpha_development,microstructure_alpha_development,microstructure_alpha_lifecycle,alpha_source_route; runner_errors=[ERROR] development market-alpha screen found no positive-cost candidate | {\"schema_version\": \"funding_basis_carry_opportunity_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\": | {\"schema_version\": \"cross_venue_funding_differential_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\" | {\"schema_version\": \"account_structural_economics_audit_v1\", \"status\": \"COMPLETE\", \"fully_verifiable_zero_fee_upper_bound\": true, \"account_cost_verification_status\": \"UNAVAILABLE\", \"research_domain\": \"account_cost_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, ; runner_tail=[GC] - 20260919T164530Z | [GC] daily_summary: keep=5 deleted=0 keep_limit=120 max_age_hours=72 | [GC] weekly_summary: keep=2 deleted=0 keep_limit=104 max_age_hours=72 | [GC] recycle completed | [INFO] recycle done | [INFO] closed loop research finished: <path>; upstream=market_alpha_development=REJECTED,liquidation_information_set_experiment=COMPLETE,maker_execution_opportunity_experiment=NOT_READY,cross_asset_residual_opportunity_experiment=NOT_READY,funding_basis_carry_opportunity_experiment=COMPLETE,cross_venue_funding_differential_experiment=COMPLETE,account_structural_economics_audit=COMPLETE,option_variance_risk_premium_feasibility=COMPLETE,option_variance_risk_premium_sequential_payoff=COMPLETE,maker_execution_learnability_experiment=NOT_READY,maker_subsecond_information_experiment=UNAVAILABLE,microstructure_alpha_development=REJECTED,microstructure_regime_evidence=STAGE_REVIEW_REQUIRED,microstructure_alpha_lifecycle=FAIL,alpha_source_route=FAIL,decision_benchmark_build=UNAVAILABLE,decision_candidate_preflight=UNAVAILABLE; information_set_decision=STOP_INFORMATION_SOURCE; information_set_progress=common_row_count:140573,oracle_trade_count:166,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:5.644315000502218,oracle_stress_lcb_bps:2.8943150005022176,control_trade_count:157,control_positive_split_ratio:0.0,control_base_lcb_bps:-16.00739670044802,control_stress_lcb_bps:-18.75739670044802,treatment_trade_count:118,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-17.71703226400491,treatment_stress_lcb_bps:-20.46703226400491,paired_delta_base_lcb_bps:-5.545990648686738,paired_delta_stress_lcb_bps:-5.545990648686739,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false; maker_opportunity_decision=UNAVAILABLE; maker_opportunity_progress=UNAVAILABLE; residual_opportunity_decision=UNAVAILABLE; residual_opportunity_progress=UNAVAILABLE; carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY; carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0; cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY; cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0; account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING; account_economics_progress=upstream_gross_bps:9.144200387088157,upstream_execution_cost_bps:27.905916343355972,inferred_st",
+            "annotation_level": "warning"
+          }
+        ],
+        "visible_decisions": [
+          "information_set_decision=STOP_INFORMATION_SOURCE",
+          "information_set_progress=common_row_count:140573,oracle_trade_count:166,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:5.644315000502218,oracle_stress_lcb_bps:2.8943150005022176,control_trade_count:157,control_positive_split_ratio:0.0,control_base_lcb_bps:-16.00739670044802,control_stress_lcb_bps:-18.75739670044802,treatment_trade_count:118,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-17.71703226400491,treatment_stress_lcb_bps:-20.46703226400491,paired_delta_base_lcb_bps:-5.545990648686738,paired_delta_stress_lcb_bps:-5.545990648686739,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false",
+          "maker_opportunity_decision=UNAVAILABLE",
+          "residual_opportunity_decision=UNAVAILABLE",
+          "carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY",
+          "carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0",
+          "cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY",
+          "cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0",
+          "account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING"
+        ]
+      },
+      {
+        "run_id": 35393794495,
+        "id": 105757959485,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-18T20:52:56Z",
+        "completed_at": "2026-09-18T21:28:40Z",
+        "job_duration_seconds": 2144,
+        "annotation_bytes": 4096,
+        "annotations": [
+          {
+            "title": "Closed Loop evidence summary",
+            "message": "failed_steps=market_alpha_development,microstructure_alpha_development,microstructure_alpha_lifecycle,alpha_source_route; runner_errors=[ERROR] development market-alpha screen found no positive-cost candidate | {\"schema_version\": \"funding_basis_carry_opportunity_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\": | {\"schema_version\": \"cross_venue_funding_differential_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\" | {\"schema_version\": \"account_structural_economics_audit_v1\", \"status\": \"COMPLETE\", \"fully_verifiable_zero_fee_upper_bound\": true, \"account_cost_verification_status\": \"UNAVAILABLE\", \"research_domain\": \"account_cost_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, ; runner_tail=[GC] - 20260918T163949Z | [GC] daily_summary: keep=5 deleted=0 keep_limit=120 max_age_hours=72 | [GC] weekly_summary: keep=2 deleted=0 keep_limit=104 max_age_hours=72 | [GC] recycle completed | [INFO] recycle done | [INFO] closed loop research finished: <path>; upstream=market_alpha_development=REJECTED,liquidation_information_set_experiment=COMPLETE,maker_execution_opportunity_experiment=NOT_READY,cross_asset_residual_opportunity_experiment=NOT_READY,funding_basis_carry_opportunity_experiment=COMPLETE,cross_venue_funding_differential_experiment=COMPLETE,account_structural_economics_audit=COMPLETE,option_variance_risk_premium_feasibility=COMPLETE,option_variance_risk_premium_sequential_payoff=COMPLETE,maker_execution_learnability_experiment=NOT_READY,maker_subsecond_information_experiment=UNAVAILABLE,microstructure_alpha_development=REJECTED,microstructure_regime_evidence=STAGE_REVIEW_REQUIRED,microstructure_alpha_lifecycle=FAIL,alpha_source_route=FAIL,decision_benchmark_build=UNAVAILABLE,decision_candidate_preflight=UNAVAILABLE; information_set_decision=STOP_INFORMATION_SOURCE; information_set_progress=common_row_count:138411,oracle_trade_count:231,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:5.253873292547465,oracle_stress_lcb_bps:2.503873292547464,control_trade_count:246,control_positive_split_ratio:0.0,control_base_lcb_bps:-20.248642436631034,control_stress_lcb_bps:-22.998642436631037,treatment_trade_count:211,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-20.203515205286067,treatment_stress_lcb_bps:-22.953515205286067,paired_delta_base_lcb_bps:-1.8809076981409643,paired_delta_stress_lcb_bps:-1.880907698140962,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false; maker_opportunity_decision=UNAVAILABLE; maker_opportunity_progress=UNAVAILABLE; residual_opportunity_decision=UNAVAILABLE; residual_opportunity_progress=UNAVAILABLE; carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY; carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0; cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY; cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0; account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING; account_economics_progress=upstream_gross_bps:9.144200387088157,upstream_execution_cost_bps:27.905916343355972,inferre",
+            "annotation_level": "warning"
+          }
+        ],
+        "visible_decisions": [
+          "information_set_decision=STOP_INFORMATION_SOURCE",
+          "information_set_progress=common_row_count:138411,oracle_trade_count:231,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:5.253873292547465,oracle_stress_lcb_bps:2.503873292547464,control_trade_count:246,control_positive_split_ratio:0.0,control_base_lcb_bps:-20.248642436631034,control_stress_lcb_bps:-22.998642436631037,treatment_trade_count:211,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-20.203515205286067,treatment_stress_lcb_bps:-22.953515205286067,paired_delta_base_lcb_bps:-1.8809076981409643,paired_delta_stress_lcb_bps:-1.880907698140962,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false",
+          "maker_opportunity_decision=UNAVAILABLE",
+          "residual_opportunity_decision=UNAVAILABLE",
+          "carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY",
+          "carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0",
+          "cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY",
+          "cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0",
+          "account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING"
+        ]
+      },
+      {
+        "run_id": 35276024300,
+        "id": 105386746360,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-17T21:19:38Z",
+        "completed_at": "2026-09-17T21:56:59Z",
+        "job_duration_seconds": 2241,
+        "annotation_bytes": 4096,
+        "annotations": [
+          {
+            "title": "Closed Loop evidence summary",
+            "message": "failed_steps=market_alpha_development,microstructure_alpha_development,microstructure_alpha_lifecycle,alpha_source_route; runner_errors=[ERROR] development market-alpha screen found no positive-cost candidate | {\"schema_version\": \"funding_basis_carry_opportunity_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\": | {\"schema_version\": \"cross_venue_funding_differential_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\" | {\"schema_version\": \"account_structural_economics_audit_v1\", \"status\": \"COMPLETE\", \"fully_verifiable_zero_fee_upper_bound\": true, \"account_cost_verification_status\": \"UNAVAILABLE\", \"research_domain\": \"account_cost_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, ; runner_tail=[GC] - 20260917T162305Z | [GC] daily_summary: keep=5 deleted=0 keep_limit=120 max_age_hours=72 | [GC] weekly_summary: keep=2 deleted=0 keep_limit=104 max_age_hours=72 | [GC] recycle completed | [INFO] recycle done | [INFO] closed loop research finished: <path>; upstream=market_alpha_development=REJECTED,liquidation_information_set_experiment=COMPLETE,maker_execution_opportunity_experiment=NOT_READY,cross_asset_residual_opportunity_experiment=NOT_READY,funding_basis_carry_opportunity_experiment=COMPLETE,cross_venue_funding_differential_experiment=COMPLETE,account_structural_economics_audit=COMPLETE,option_variance_risk_premium_feasibility=COMPLETE,option_variance_risk_premium_sequential_payoff=COMPLETE,maker_execution_learnability_experiment=NOT_READY,maker_subsecond_information_experiment=UNAVAILABLE,microstructure_alpha_development=REJECTED,microstructure_regime_evidence=STAGE_REVIEW_REQUIRED,microstructure_alpha_lifecycle=FAIL,alpha_source_route=FAIL,decision_benchmark_build=UNAVAILABLE,decision_candidate_preflight=UNAVAILABLE; information_set_decision=STOP_INFORMATION_SOURCE; information_set_progress=common_row_count:138773,oracle_trade_count:200,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:4.3161226586601416,oracle_stress_lcb_bps:1.5661226586601424,control_trade_count:164,control_positive_split_ratio:0.0,control_base_lcb_bps:-18.474984582539154,control_stress_lcb_bps:-21.89592537074056,treatment_trade_count:186,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-14.872046715104164,treatment_stress_lcb_bps:-17.622046715104165,paired_delta_base_lcb_bps:-7.376594512129173,paired_delta_stress_lcb_bps:-8.910918343543642,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false; maker_opportunity_decision=UNAVAILABLE; maker_opportunity_progress=UNAVAILABLE; residual_opportunity_decision=UNAVAILABLE; residual_opportunity_progress=UNAVAILABLE; carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY; carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0; cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY; cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0; account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING; account_economics_progress=upstream_gross_bps:9.144200387088157,upstream_execution_cost_bps:27.905916343355972,inferre",
+            "annotation_level": "warning"
+          }
+        ],
+        "visible_decisions": [
+          "information_set_decision=STOP_INFORMATION_SOURCE",
+          "information_set_progress=common_row_count:138773,oracle_trade_count:200,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:4.3161226586601416,oracle_stress_lcb_bps:1.5661226586601424,control_trade_count:164,control_positive_split_ratio:0.0,control_base_lcb_bps:-18.474984582539154,control_stress_lcb_bps:-21.89592537074056,treatment_trade_count:186,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-14.872046715104164,treatment_stress_lcb_bps:-17.622046715104165,paired_delta_base_lcb_bps:-7.376594512129173,paired_delta_stress_lcb_bps:-8.910918343543642,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false",
+          "maker_opportunity_decision=UNAVAILABLE",
+          "residual_opportunity_decision=UNAVAILABLE",
+          "carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY",
+          "carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0",
+          "cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY",
+          "cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0",
+          "account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING"
+        ]
+      },
+      {
+        "run_id": 35151386616,
+        "id": 104980275127,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-16T21:15:53Z",
+        "completed_at": "2026-09-16T21:52:48Z",
+        "job_duration_seconds": 2215,
+        "annotation_bytes": 4096,
+        "annotations": [
+          {
+            "title": "Closed Loop evidence summary",
+            "message": "failed_steps=market_alpha_development,microstructure_alpha_development,microstructure_alpha_lifecycle,alpha_source_route; runner_errors=[ERROR] development market-alpha screen found no positive-cost candidate | {\"schema_version\": \"funding_basis_carry_opportunity_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\": | {\"schema_version\": \"cross_venue_funding_differential_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\" | {\"schema_version\": \"account_structural_economics_audit_v1\", \"status\": \"COMPLETE\", \"fully_verifiable_zero_fee_upper_bound\": true, \"account_cost_verification_status\": \"UNAVAILABLE\", \"research_domain\": \"account_cost_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, ; runner_tail=[GC] - 20260916T160542Z | [GC] daily_summary: keep=4 deleted=1 keep_limit=120 max_age_hours=72 | [GC] weekly_summary: keep=2 deleted=1 keep_limit=104 max_age_hours=72 | [GC] recycle completed | [INFO] recycle done | [INFO] closed loop research finished: <path>; upstream=market_alpha_development=REJECTED,liquidation_information_set_experiment=COMPLETE,maker_execution_opportunity_experiment=NOT_READY,cross_asset_residual_opportunity_experiment=NOT_READY,funding_basis_carry_opportunity_experiment=COMPLETE,cross_venue_funding_differential_experiment=COMPLETE,account_structural_economics_audit=COMPLETE,option_variance_risk_premium_feasibility=COMPLETE,option_variance_risk_premium_sequential_payoff=COMPLETE,maker_execution_learnability_experiment=NOT_READY,maker_subsecond_information_experiment=UNAVAILABLE,microstructure_alpha_development=REJECTED,microstructure_regime_evidence=STAGE_REVIEW_REQUIRED,microstructure_alpha_lifecycle=FAIL,alpha_source_route=FAIL,decision_benchmark_build=UNAVAILABLE,decision_candidate_preflight=UNAVAILABLE; information_set_decision=STOP_INFORMATION_SOURCE; information_set_progress=common_row_count:136437,oracle_trade_count:194,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:2.8876253783784547,oracle_stress_lcb_bps:0.13762537837845468,control_trade_count:79,control_positive_split_ratio:0.0,control_base_lcb_bps:-17.850717514006174,control_stress_lcb_bps:-20.600717514006174,treatment_trade_count:119,treatment_positive_split_ratio:0.16666666666666666,treatment_base_lcb_bps:-19.56774130704514,treatment_stress_lcb_bps:-22.31774130704514,paired_delta_base_lcb_bps:-12.191034599895817,paired_delta_stress_lcb_bps:-12.191034599895819,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false; maker_opportunity_decision=UNAVAILABLE; maker_opportunity_progress=UNAVAILABLE; residual_opportunity_decision=UNAVAILABLE; residual_opportunity_progress=UNAVAILABLE; carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY; carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0; cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY; cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0; account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING; account_economics_progress=upstream_gross_bps:9.144200387088157,upstream_execution_cost_bps:27.905916",
+            "annotation_level": "warning"
+          }
+        ],
+        "visible_decisions": [
+          "information_set_decision=STOP_INFORMATION_SOURCE",
+          "information_set_progress=common_row_count:136437,oracle_trade_count:194,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:2.8876253783784547,oracle_stress_lcb_bps:0.13762537837845468,control_trade_count:79,control_positive_split_ratio:0.0,control_base_lcb_bps:-17.850717514006174,control_stress_lcb_bps:-20.600717514006174,treatment_trade_count:119,treatment_positive_split_ratio:0.16666666666666666,treatment_base_lcb_bps:-19.56774130704514,treatment_stress_lcb_bps:-22.31774130704514,paired_delta_base_lcb_bps:-12.191034599895817,paired_delta_stress_lcb_bps:-12.191034599895819,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false",
+          "maker_opportunity_decision=UNAVAILABLE",
+          "residual_opportunity_decision=UNAVAILABLE",
+          "carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY",
+          "carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0",
+          "cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY",
+          "cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0",
+          "account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING"
+        ]
+      },
+      {
+        "run_id": 35024833982,
+        "id": 104569234934,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-09-15T21:18:23Z",
+        "completed_at": "2026-09-15T21:56:53Z",
+        "job_duration_seconds": 2310,
+        "annotation_bytes": 4096,
+        "annotations": [
+          {
+            "title": "Closed Loop evidence summary",
+            "message": "failed_steps=market_alpha_development,microstructure_alpha_development,microstructure_alpha_lifecycle,alpha_source_route; runner_errors=[ERROR] development market-alpha screen found no positive-cost candidate | {\"schema_version\": \"funding_basis_carry_opportunity_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\": | {\"schema_version\": \"cross_venue_funding_differential_experiment_v1\", \"status\": \"COMPLETE\", \"fully_verifiable\": true, \"research_domain\": \"historical_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, \"demo_activation_authorized\": false, \"live_activation_authorized\" | {\"schema_version\": \"account_structural_economics_audit_v1\", \"status\": \"COMPLETE\", \"fully_verifiable_zero_fee_upper_bound\": true, \"account_cost_verification_status\": \"UNAVAILABLE\", \"research_domain\": \"account_cost_development_only\", \"promotion_evidence\": false, \"promotion_eligible\": false, \"promotion_authority\": false, ; runner_tail=[GC] - 20260915T154907Z | [GC] daily_summary: keep=4 deleted=1 keep_limit=120 max_age_hours=72 | [GC] weekly_summary: keep=3 deleted=0 keep_limit=104 max_age_hours=72 | [GC] recycle completed | [INFO] recycle done | [INFO] closed loop research finished: <path>; upstream=market_alpha_development=REJECTED,liquidation_information_set_experiment=COMPLETE,maker_execution_opportunity_experiment=NOT_READY,cross_asset_residual_opportunity_experiment=NOT_READY,funding_basis_carry_opportunity_experiment=COMPLETE,cross_venue_funding_differential_experiment=COMPLETE,account_structural_economics_audit=COMPLETE,option_variance_risk_premium_feasibility=COMPLETE,option_variance_risk_premium_sequential_payoff=COMPLETE,maker_execution_learnability_experiment=NOT_READY,maker_subsecond_information_experiment=UNAVAILABLE,microstructure_alpha_development=REJECTED,microstructure_regime_evidence=STAGE_REVIEW_REQUIRED,microstructure_alpha_lifecycle=FAIL,alpha_source_route=FAIL,decision_benchmark_build=UNAVAILABLE,decision_candidate_preflight=UNAVAILABLE; information_set_decision=STOP_CURRENT_RESEARCH_FAMILY; information_set_progress=common_row_count:137420,oracle_trade_count:172,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:2.0952452618226465,oracle_stress_lcb_bps:-0.6547547381773526,control_trade_count:215,control_positive_split_ratio:0.0,control_base_lcb_bps:-16.873621203440795,control_stress_lcb_bps:-19.623621203440795,treatment_trade_count:198,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-13.306527985955407,treatment_stress_lcb_bps:-16.05652798595541,paired_delta_base_lcb_bps:-4.001655474396421,paired_delta_stress_lcb_bps:-4.001655474396422,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false; maker_opportunity_decision=UNAVAILABLE; maker_opportunity_progress=UNAVAILABLE; residual_opportunity_decision=UNAVAILABLE; residual_opportunity_progress=UNAVAILABLE; carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY; carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0; cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY; cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0; account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING; account_economics_progress=upstream_gross_bps:9.144200387088157,upstream_execution_cost_bps:27.905916343355972,i",
+            "annotation_level": "warning"
+          }
+        ],
+        "visible_decisions": [
+          "information_set_decision=STOP_CURRENT_RESEARCH_FAMILY",
+          "information_set_progress=common_row_count:137420,oracle_trade_count:172,oracle_positive_split_ratio:1.0,oracle_base_lcb_bps:2.0952452618226465,oracle_stress_lcb_bps:-0.6547547381773526,control_trade_count:215,control_positive_split_ratio:0.0,control_base_lcb_bps:-16.873621203440795,control_stress_lcb_bps:-19.623621203440795,treatment_trade_count:198,treatment_positive_split_ratio:0.0,treatment_base_lcb_bps:-13.306527985955407,treatment_stress_lcb_bps:-16.05652798595541,paired_delta_base_lcb_bps:-4.001655474396421,paired_delta_stress_lcb_bps:-4.001655474396422,control_permutation_passed:false,treatment_permutation_passed:false,paired_permutation_passed:false",
+          "maker_opportunity_decision=UNAVAILABLE",
+          "residual_opportunity_decision=UNAVAILABLE",
+          "carry_opportunity_decision=STOP_FUNDING_BASIS_CARRY_FAMILY",
+          "carry_opportunity_progress=common_row_count:36288,source_funding_event_count:378,oracle_trade_count:0,oracle_funding_event_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,boundary_pass_ratio:0.0",
+          "cross_venue_funding_decision=STOP_CROSS_VENUE_FUNDING_DIFFERENTIAL_FAMILY",
+          "cross_venue_funding_progress=common_row_count:36288,bybit_source_funding_event_count:378,binance_source_funding_event_count:378,oracle_trade_count:0,oracle_positive_split_ratio:0.0,oracle_base_lcb_bps:0.0,oracle_stress_lcb_bps:0.0,maximum_candidate_gross_bps:9.144200387088157,maximum_candidate_execution_cost_bps:27.905916343355972,maximum_candidate_stress_bps:-29.8477840832027,boundary_pass_ratio:0.0",
+          "account_economics_decision=STOP_ACCOUNT_FEE_TIER_RESCUE_FOR_CROSS_VENUE_FUNDING"
+        ]
+      }
+    ],
+    "total_job_seconds": 11199,
+    "total_job_minutes": 186.65,
+    "scope_of_duration": "Actions job elapsed time, not measured ECS CPU time or billed spend",
+    "carry_visible_progress_unique_count": 1,
+    "cross_venue_visible_progress_unique_count": 1,
+    "information_set_visible_progress_unique_count": 5,
+    "input_hash_equality_proven": false,
+    "full_artifacts_downloaded": false,
+    "public_summaries_incomplete": true,
+    "all_five_annotation_lengths": [
+      4096,
+      4096,
+      4096,
+      4096,
+      4096
+    ],
+    "latest_artifact": {
+      "id": 10593010293,
+      "size_in_bytes": 28761542,
+      "expired": false,
+      "expires_at": "2026-12-18T20:37:04Z"
+    }
+  },
+  "latest_release_workflows": {
+    "cd": {
+      "id": 34758912163,
+      "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-13T13:06:32Z",
+      "updated_at": "2026-09-13T13:19:41Z",
+      "event": "push"
+    },
+    "smoke": {
+      "id": 34759528629,
+      "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-13T13:19:43Z",
+      "updated_at": "2026-09-13T13:26:10Z",
+      "event": "workflow_run"
+    },
+    "latest_v4_reported_release": "170d84acb8ac9547a321802f9250215c98deb0dc",
+    "runtime_directly_inspected": false,
+    "demo_account_requeried": false,
+    "live_positions_orders_or_process_health_claimed": false
+  },
+  "economic_frozen_six": {
+    "gross_pnl_usdt": "8.62364235230000602",
+    "base_net_pnl_usdt": "-5.6523370836326955",
+    "stress_net_pnl_usdt": "-8.1194421036326957",
+    "hedge_fee_usdt": "10.2690776100000008",
+    "hedge_fee_share_of_listed_base_cost_percent": 71.93,
+    "evidence_kind": "public_market_counterfactual_not_actual_account_pnl",
+    "qualified_new_candidate_count": 0
+  },
+  "current_stage": {
+    "c1": "CLOSED_CANDIDATE_NO_REOPEN",
+    "c2": "HISTORICAL_QUALIFICATION_NOT_PASSED",
+    "c3": "NOT_PASSED",
+    "c4": "NO_NEW_QUALIFIED_CANDIDATE",
+    "c5": "NOT_STARTED",
+    "strict_historical_qualification_supported_by_current_acceptance_tool": false,
+    "unsupported_proof_classes": [
+      "historical_parameters",
+      "independent_cross_account",
+      "historical_price_and_source",
+      "historical_order_path"
+    ],
+    "rest_provenance_bound": true,
+    "pinned_ob200_exact_anchor_matches": 0,
+    "rest_anchor_count": 2
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "priority": "P1",
+      "finding": "Daily discovery schedule is not gated by the current C2 project stage or family terminal result before heavy work.",
+      "source": "tools/closed_loop_runner.sh:6986",
+      "evidence": "Five scheduled jobs, visible repeated terminal decisions, 186.65 total job minutes; carry and cross-venue metrics unchanged but information-set metrics changed."
+    },
+    {
+      "id": "F2",
+      "priority": "P1",
+      "finding": "Public closed-loop annotation is unbounded and real output is incomplete.",
+      "source": "tools/summarize_closed_loop_failure.py:2001",
+      "evidence": "All five public messages end at 4096 characters; synthetic allowed-size error/tail fixture emits 5153 bytes."
+    },
+    {
+      "id": "F3",
+      "priority": "P1",
+      "finding": "C2 research replay exists, but four historical proof-class verifiers are unsupported.",
+      "source": "tools/audit_option_c2_acceptance.py:88",
+      "evidence": "historical_verification_supported remains false by declared capability, not a data-dependent test waiting to turn green."
+    },
+    {
+      "id": "F4",
+      "priority": "P1",
+      "finding": "Successful scheduled jobs and old Smoke do not prove current Demo runtime or account health.",
+      "source": ".github/workflows/closed-loop.yml:97",
+      "evidence": "Default research action skips registration/activation/restart; last Smoke completed 2026-09-13T13:26:10Z. No direct runtime snapshot this review."
+    },
+    {
+      "id": "F5",
+      "priority": "P1",
+      "finding": "SSH trust configuration differs across workflows and helper scripts.",
+      "source": ".github/workflows/option-lifecycle-v4.yml:61",
+      "evidence": "REST accepts secret or variable and requires a pinned key; legacy action reads secret only, some helpers make pinning optional and trust all scanned host keys. Actual secret/variable placement is not inspected."
+    },
+    {
+      "id": "F6",
+      "priority": "P2",
+      "finding": "Research model validation, historical factual certification and execution permission need separate machine-readable exits.",
+      "source": "tools/audit_option_subaccount_ledger.py:344",
+      "evidence": "Counterfactual orders cannot have fabricated real account records; a separately approved bounded model is not a historical-fact or trading authorization."
+    },
+    {
+      "id": "F7",
+      "priority": "P2",
+      "finding": "Separate REST L1 sampling and public ob200 archive cannot restore the frozen intermediate states.",
+      "source": "docs/reviews/2026-09-20-c2-rest-depth-resolution.evidence.json",
+      "evidence": "Two source-bound REST cross sequences strictly between events; exact same-archive recovery path already closed."
+    }
+  ],
+  "synthetic_diagnostic": {
+    "single_annotation_bytes": 5153,
+    "over_4096": true,
+    "contains_real_account_data": false,
+    "source_code_modified": false
+  },
+  "prior_evidence_file_sha256": {
+    "docs/reviews/2026-09-12-option-candidate-closure-result.evidence.json": "eee37c222b2a1c6d80e301434fa506f6d7b1a67889f4375a9d258ef9a17c0ebf",
+    "docs/reviews/2026-09-12-option-lifecycle-v4-stop-roundtable.evidence.json": "b387e1408a4196ef1323cc8ba845e37829bc71bc696e75dc1a1c76a41f2f1f43",
+    "docs/reviews/2026-09-13-bybit-official-demo-readonly-result.evidence.json": "e9e311f5cf04953057c2a0c487b3d7798364ffb4604f7b149acbd8daf49bfc36",
+    "docs/reviews/2026-09-13-funding-obligations-and-cross-reference.evidence.json": "86ead349178f93b2bda920469fe093a104db1058595ae20b4363a1c0018fabef",
+    "docs/reviews/2026-09-13-option-first-lifecycle-deployed-result.evidence.json": "6288bdf8d30eb54c89494dfbc08cae60b47592e06488c4ddd32c5abc0b2b0f18",
+    "docs/reviews/2026-09-13-option-funding-sensitivity-result.evidence.json": "489767c56d52052dccbe402ce2ce133e236aca0167735f048f4b205d3f1d2ad4",
+    "docs/reviews/2026-09-14-c2-acceptance-and-exit-evidence.evidence.json": "02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a",
+    "docs/reviews/2026-09-14-c2-integration-stage-review.evidence.json": "fc51b31168793cdc90b4292637521b84a5645921e7ea7557a6f53befd8e864c0",
+    "docs/reviews/2026-09-15-c2-public-depth-replay.evidence.json": "7710997e5824bfd118ce065862cb80bc1b2240f3e0b5e86f0f5bbcbcb8b97296",
+    "docs/reviews/2026-09-15-c2-rest-alignment-checkpoint.evidence.json": "750dab7a25f52c6ad830ef56551cd94e35922b6c2870cfa4548581a503134217",
+    "docs/reviews/2026-09-20-c2-rest-depth-resolution.evidence.json": "bc77f7a96214f9627751b32e6f3c6f1ed5e393327210ae86f771a0ddcf092f6a"
+  },
+  "limitations": [
+    "No direct ECS process/account/disk inspection this turn",
+    "Public closed-loop annotations are truncated; full private artifact not downloaded",
+    "Source identity and numerical checks are not profitability certification",
+    "Roundtable is a single-reviewer structured internal review",
+    "Pipeline source reviewed selectively with full regression, not a whole-repository security certification"
+  ],
+  "changes_this_review": {
+    "trading_code": false,
+    "workflow_configuration": false,
+    "remote_runtime": false,
+    "account_settings": false,
+    "source_evidence_overwrite": false,
+    "remote_workflow_dispatch": false,
+    "git_commit": false,
+    "git_push": false,
+    "local_report_artifacts_only": true
+  },
+  "proposal_only": {
+    "batch_a": "Convergent scheduling, complete bounded reports, unified SSH trust, fresh read-only runtime inventory",
+    "batch_b": "Freeze factual-vs-model acceptance contract and implement independently verifiable evidence capabilities",
+    "batch_c": "Versioned coherent market-data capture and one bounded validation problem; no new strategy promotion before required gates",
+    "requires_explicit_approval_before_implementation": true,
+    "strict_historical_gate_relaxed": false,
+    "new_account_or_order_authority": false
+  }
+}

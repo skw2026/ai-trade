@@ -359,11 +359,11 @@ class OptionLifecycleV3Test(unittest.TestCase):
             runner._ACTIVE_PROCESS = None
             runner._SHUTDOWN_REQUESTED = False
 
-    def test_hourly_gate_and_release_bundle_bind_frozen_payoff(self):
+    def test_explicit_gate_and_release_bundle_bind_frozen_payoff(self):
         workflow = (ROOT / ".github/workflows/option-lifecycle-v4.yml").read_text(encoding="utf-8")
         cd = (ROOT / ".github/workflows/cd.yml").read_text(encoding="utf-8")
         for value in (
-            "17 * * * *", "audit_option_lifecycle_payoff_v4.py",
+            "workflow_dispatch:", "workflow_run:", "audit_option_lifecycle_payoff_v4.py",
             "option_lifecycle_payoff_v2.json", "option_lifecycle_payoff_manifest_v2.json",
             "WAIT_FOR_FIRST_COMPLETE_LIFECYCLE_PAYOFF",
             "RECONCILED_FIRST_LIFECYCLE_PAYOFF_FOR_DIAGNOSTIC_ONLY",
@@ -373,6 +373,8 @@ class OptionLifecycleV3Test(unittest.TestCase):
             "WAIT_FOR_MULTI_LIFECYCLE_ECONOMIC_EVIDENCE",
         ):
             self.assertIn(value, workflow)
+        self.assertNotIn("  schedule:", workflow)
+        self.assertNotIn("17 * * * *", workflow)
         self.assertIn("AUDIT_STARTUP_ATTEMPTS: ${{ github.event_name == 'workflow_run' && '40' || '1' }}", workflow)
         self.assertIn("timeout-minutes: 50", workflow)
         self.assertIn("command_timeout: 45m", workflow)

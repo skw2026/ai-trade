@@ -2,8 +2,8 @@ name: Option Lifecycle V4 Gate
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 * * * *"
+  # The candidate is permanently closed. Retain manual / post-CD verification,
+  # not hourly economic recomputation. This does not stop the V4 collector.
   workflow_run:
     workflows:
       - CD
@@ -22,7 +22,8 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     if: >-
-      ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     timeout-minutes: 50
     env:
       AUDIT_EXPECTED_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}

@@ -14,6 +14,7 @@ on:
   push:
     branches:
       - research/bybit-demo-readonly
+      - research/demo-closeout-20260920
     paths:
       - .github/workflows/bybit-demo-readonly.yml
       - tools/audit_bybit_readonly_evidence.py
@@ -34,6 +35,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify offline transport and replay contract
         run: python3 tools/test_audit_bybit_readonly_evidence.py
+      - name: Require pinned SSH host identity before copying code
+        env:
+          ECS_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT || vars.ECS_HOST_FINGERPRINT }}
+        run: test -n "${ECS_FINGERPRINT}"
       - name: Bind the standalone collector bytes
         id: identity
         shell: bash
@@ -48,7 +53,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
-          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT || vars.ECS_HOST_FINGERPRINT }}
           source: tools/audit_bybit_readonly_evidence.py
           target: /opt/ai-trade/data/research/bybit_readonly_runner/${{ github.run_id }}-${{ github.run_attempt }}
       - name: Capture and replay existing Demo account with GET only
@@ -58,8 +63,8 @@ jobs:
           READONLY_CODE_SHA: ${{ steps.identity.outputs.sha256 }}
           # Pin the existing failed capture for parser qualification. Manual
           # dispatch with an empty replay ID performs a new Demo GET capture.
-          READONLY_REPLAY_RUN_ID: ${{ github.event_name == 'push' && '34761067389-1' || inputs.replay_run_id }}
-          READONLY_MANIFEST_SHA: ${{ github.event_name == 'push' && '87b0742758068307b1f89b36b07ef7a2448294c510c0263468173b94c68eae1a' || inputs.manifest_sha256 }}
+          READONLY_REPLAY_RUN_ID: ${{ github.event_name == 'push' && github.ref_name == 'research/bybit-demo-readonly' && '34761067389-1' || inputs.replay_run_id }}
+          READONLY_MANIFEST_SHA: ${{ github.event_name == 'push' && github.ref_name == 'research/bybit-demo-readonly' && '87b0742758068307b1f89b36b07ef7a2448294c510c0263468173b94c68eae1a' || inputs.manifest_sha256 }}
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
           ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
@@ -80,10 +85,16 @@ jobs:
           printf '%s\n' "${ECS_SSH_KEY}" > "${KEY_DIR}/key"
           sed -i 's/\r$//' "${KEY_DIR}/key"
           ssh-keygen -y -f "${KEY_DIR}/key" >/dev/null
-          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" > "${KEY_DIR}/known_hosts" 2>/dev/null
-          if [[ -n "${ECS_FINGERPRINT}" ]]; then
-            ssh-keygen -lf "${KEY_DIR}/known_hosts" | awk '{print $2}' | grep -Fxq "${ECS_FINGERPRINT}"
-          fi
+          test -n "${ECS_FINGERPRINT}"
+          # Trust only the pinned key, not other unverified keys from keyscan.
+          ssh-keyscan -p "${ECS_PORT}" -t ed25519,ecdsa,rsa "${ECS_HOST}" 2>/dev/null |
+            while IFS= read -r host_key; do
+              observed="$(printf '%s\n' "${host_key}" | ssh-keygen -lf - | awk '{print $2}')"
+              if [[ "${observed}" == "${ECS_FINGERPRINT}" ]]; then
+                printf '%s\n' "${host_key}"
+              fi
+            done > "${KEY_DIR}/known_hosts"
+          test -s "${KEY_DIR}/known_hosts"
           mkdir -p .artifacts
           remote_exit=0
           ssh -i "${KEY_DIR}/key" -p "${ECS_PORT}" \
@@ -100,6 +111,70 @@ jobs:
           manifest_sha="${4:-}"
           script="/opt/ai-trade/data/research/bybit_readonly_runner/${run_id}/tools/audit_bybit_readonly_evidence.py"
           printf '%s  %s\n' "${code_sha}" "${script}" | sha256sum -c - >/dev/null
+          # Amount-free runtime evidence. No docker exec/restart, env-file read,
+          # repair flag, raw log output or account mutation is used here.
+          python3 - <<'PY'
+          import datetime, hashlib, json, pathlib, re, subprocess, sys
+
+          def command(args):
+              return subprocess.run(args, capture_output=True, text=True, timeout=30)
+
+          def digest(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          report = {'schema_version': 'demo_runtime_readonly_v1',
+                    'observed_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'status': 'EVIDENCE_INSUFFICIENT', 'snapshot_is_atomic': False,
+                    'order_submission': False, 'service_restart': False}
+          try:
+              release = pathlib.Path('/opt/ai-trade/current').resolve(strict=True)
+              if release.parent != pathlib.Path('/opt/ai-trade/releases') or not re.fullmatch('[0-9a-f]{40}', release.name):
+                  raise ValueError('release identity')
+              manifest_path = release / 'release_manifest.json'
+              manifest = json.loads(manifest_path.read_text())
+              report['release_sha'] = release.name
+              report['manifest_sha256'] = digest(manifest_path)
+              report['manifest_identity_matches'] = manifest.get('git_sha') == release.name
+              integrity = command(['python3', str(release / 'deploy/release_integrity.py'), '--release-dir', str(release)])
+              report['release_tree_integrity_passed'] = integrity.returncode == 0
+              report['containers'] = {}
+              template = ('{"running":{{json .State.Running}},"restarts":{{json .RestartCount}},'
+                          '"image":{{json .Config.Image}},"cmd":{{json .Config.Cmd}},'
+                          '"mounts":{{json .Mounts}},"health":'
+                          '{{if .State.Health}}{{json .State.Health.Status}}{{else}}"unknown"{{end}}}')
+              for name in ('ai-trade', 'ai-trade-watchdog', 'ai-trade-scheduler', 'ai-trade-option-vrp-collector'):
+                  inspected = command(['docker', 'inspect', '--format', template, name])
+                  if inspected.returncode:
+                      report['containers'][name] = {'state': 'UNAVAILABLE'}
+                      continue
+                  item = json.loads(inspected.stdout)
+                  report['containers'][name] = {key: item[key] for key in ('running', 'restarts', 'health')}
+                  if name == 'ai-trade':
+                      report['runtime_image_matches_manifest'] = item['image'] == manifest.get('images', {}).get('runtime')
+                      config_args = [arg.split('=', 1)[1] for arg in item['cmd'] or [] if arg.startswith('--config=')]
+                      mount = [m for m in item['mounts'] if m.get('Destination') == '/app/config']
+                      report['config_mount_matches_release'] = len(mount) == 1 and pathlib.Path(mount[0]['Source']).resolve() == release / 'config' and mount[0].get('RW') is False
+                      if len(config_args) == 1 and re.fullmatch(r'(?:/app/)?config/[A-Za-z0-9_.-]+\.yaml', config_args[0]):
+                          config = release / 'config' / pathlib.Path(config_args[0]).name
+                          if config.resolve().parent == release / 'config':
+                              report['runtime_config_sha256'] = digest(config)
+              logs = command(['docker', 'logs', '--since', '15m', '--tail', '20000', 'ai-trade'])
+              lines = [line for line in (logs.stdout + logs.stderr).splitlines() if 'RUNTIME_STATUS:' in line]
+              report['runtime_status_count_last_15m_bounded'] = len(lines) if logs.returncode == 0 else None
+              if lines and logs.returncode == 0:
+                  report['latest_flags'] = {key: value == 'true' for key, value in re.findall(
+                      r'\b(trade_ok|trading_halted|evidence_persistence_failed|reconcile_reduce_only)=(true|false)', lines[-1])}
+              required = ('manifest_identity_matches', 'release_tree_integrity_passed',
+                          'runtime_image_matches_manifest', 'config_mount_matches_release')
+              report['identity_status'] = 'PASS' if all(report.get(key) is True for key in required) and report.get('runtime_config_sha256') else 'FAIL'
+              report['status'] = 'OBSERVED_NOT_FULL_RUNTIME_ACCEPTANCE'
+          except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+              report['reason'] = 'RUNTIME_READONLY_INCOMPLETE'
+          text = json.dumps(report, sort_keys=True)
+          if len(text.encode()) > 3500:
+              raise SystemExit('Runtime summary exceeded public limit')
+          print('::notice title=Demo runtime readonly::' + text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'), file=sys.stderr)
+          PY
           if [[ -n "${replay_run_id}" ]]; then
             python3 "${script}" replay \
               --capture-parent "/opt/ai-trade/data/research/bybit_readonly_private/${replay_run_id}" \

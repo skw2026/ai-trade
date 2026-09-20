@@ -46,8 +46,8 @@ on:
         required: false
         default: "0"
         type: string
-  schedule:
-    - cron: "15 18 * * *"
+  # 2026-09-20 closeout: research is explicitly invoked, never a daily loop.
+  # Runtime assess, watchdog and collectors remain independent and unchanged.
 
 permissions:
   contents: read
@@ -58,6 +58,7 @@ concurrency:
 
 jobs:
   run-closed-loop:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
