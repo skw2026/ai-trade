@@ -114,6 +114,8 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME validation_stop_gate_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validation_gate.py)
     add_test(NAME replay_trace_comparison_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_replay_trace.py)
     add_test(NAME research_closeout_contract_test

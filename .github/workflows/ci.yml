@@ -65,7 +65,7 @@ jobs:
           fi
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja
+        run: python3 tools/validation_gate.py run --label configure -- cmake -S . -B build -G Ninja
 
       - name: Verify Required Tests Registered
         run: |
@@ -73,6 +73,7 @@ jobs:
           ctest --test-dir build -N > /tmp/ctest-list.txt
           grep -q "trade_system_test" /tmp/ctest-list.txt
           grep -q "execution_ordering_test" /tmp/ctest-list.txt
+          grep -q "validation_stop_gate_test" /tmp/ctest-list.txt
           grep -q "replay_trace_comparison_test" /tmp/ctest-list.txt
           grep -q "research_closeout_contract_test" /tmp/ctest-list.txt
           grep -q "option_c2_cross_integration_test" /tmp/ctest-list.txt
@@ -144,7 +145,7 @@ jobs:
           grep -q "web_static_test" /tmp/ctest-list.txt
 
       - name: Build
-        run: cmake --build build -j"$(nproc)"
+        run: python3 tools/validation_gate.py run --label build -- cmake --build build -j"$(nproc)"
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: python3 tools/validation_gate.py run --label full-test -- ctest --test-dir build --output-on-failure
