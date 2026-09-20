@@ -221,7 +221,24 @@
     "overall": "NOT_FULL_ENGINEERING_ACCEPTANCE"
   },
   "main_publication": {
-    "status": "PENDING"
+    "status": "PUBLISHED_DEFAULT_BRANCH_VERIFIED",
+    "verified_payload_commit": "d905440fe4fe6aa549105986406a80e597aa05d0",
+    "verified_at_utc": "2026-09-20T08:05:01Z",
+    "skip_automatic_ci_cd": true,
+    "remote_workflow_blobs_match_local": true,
+    "workflow_blob_sha": {
+      ".github/workflows/closed-loop.yml": "6c9a56f15189588fcdb854d675364bf1f6b8c668",
+      ".github/workflows/option-lifecycle-v4.yml": "3082f0288b537c8ef12ecdfc240f0f5d03503aa0"
+    },
+    "research_cron_present": false,
+    "v4_cron_present": false,
+    "repository_in_progress_runs": 0,
+    "repository_queued_runs": 0,
+    "latest_cd_run_id": 34758912163,
+    "latest_cd_head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+    "latest_cd_updated_at": "2026-09-13T13:19:41Z",
+    "future_execution_observation_claimed": false,
+    "verification_note": "Default-branch configuration and queue verified; no wait-for-next-cron inference and no assertion that safety monitoring was stopped."
   },
   "independent_ci": {
     "status": "completed",
