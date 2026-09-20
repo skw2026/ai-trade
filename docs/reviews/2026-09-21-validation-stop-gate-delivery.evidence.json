@@ -1,0 +1,95 @@
+{
+  "schema_version": "validation_stop_gate_delivery_v1",
+  "date": "2026-09-21",
+  "stage_goal": "PERSIST_FAILURE_STOP_ROOT_CAUSE_AND_PATH_REVIEW_WITHOUT_DEPLOYMENT",
+  "main_before": "153905819c81512b8c18271e90f3d31c31a1ee90",
+  "implementation_sha": "427ded0773e7690126e79cd9173742d3ccb847b5",
+  "implementation_tree": "de1be6f858db90bc3683492e721c1528aa5789e3",
+  "local_validation": {
+    "full_ctest": {
+      "passed": 97,
+      "total": 97,
+      "seconds": 170.61,
+      "scope": "BEFORE_FINAL_CWD_IDENTITY_HARDENING"
+    },
+    "final_gate_unit_tests": {
+      "passed": 11,
+      "total": 11,
+      "seconds": 3.818
+    },
+    "final_registered_regression": {
+      "passed": 3,
+      "total": 3,
+      "seconds": 4.27
+    },
+    "yaml_syntax": "PASS",
+    "diff_check": "PASS",
+    "trading_source_and_configuration_diff": "EMPTY",
+    "unexpected_failures": 0
+  },
+  "mechanism": {
+    "sticky_failure": true,
+    "unknown_root_cause_retry": false,
+    "every_failure_path_review": true,
+    "repeated_failure_route_reassessment_threshold": 2,
+    "first_structural_failure_route_reassessment": true,
+    "one_retry_same_command_and_cwd": true,
+    "review_hash_pinned": true,
+    "reset_or_force_command": false,
+    "ci_configure_build_test_wrapped": true
+  },
+  "limits": [
+    "PROCESS_CHECKS_DO_NOT_PROVE_DIAGNOSIS_TRUE",
+    "LOCAL_STATE_NOT_SYNCHRONIZED_BETWEEN_MACHINES",
+    "EXIT_ZERO_ALONE_NOT_BUSINESS_ACCEPTANCE",
+    "NO_QUALIFIED_CANDIDATE",
+    "C2_NOT_QUALIFIED",
+    "FULL_ACCOUNT_EVIDENCE_INSUFFICIENT"
+  ],
+  "authority": {
+    "main_delivery": true,
+    "ecs_deployment": false,
+    "service_restart": false,
+    "order_submission": false,
+    "fund_transfer": false,
+    "new_strategy_research": false
+  },
+  "latest_cd_before": {
+    "id": 34758912163,
+    "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+    "conclusion": "success",
+    "updated_at": "2026-09-13T13:19:41Z"
+  },
+  "next_action": "APPLY_PROTOCOL_TO_NEXT_SEPARATELY_APPROVED_STAGE_NO_AUTOMATIC_DEPLOYMENT_OR_RESEARCH",
+  "ci": {
+    "id": 35524397272,
+    "head_sha": "427ded0773e7690126e79cd9173742d3ccb847b5",
+    "status": "completed",
+    "conclusion": "success",
+    "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35524397272",
+    "updated_at": "2026-09-20T17:02:55Z",
+    "job_id": 106113926388,
+    "job_conclusion": "success",
+    "test_step_completed_at": "2026-09-20T17:02:52Z"
+  },
+  "merge_sha": "39b5dcef59db572176b71fc9fd675207dff0bf83",
+  "merge_tree": "de1be6f858db90bc3683492e721c1528aa5789e3",
+  "merge_tree_matches_independently_tested_branch": true,
+  "remote_main_merge_verified": true,
+  "workflow_verification": {
+    "observed_at": "2026-09-20T17:04:10Z",
+    "merge_runs": {
+      "total_count": 0,
+      "runs": []
+    },
+    "latest_cd_after": {
+      "id": 34758912163,
+      "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "conclusion": "success",
+      "updated_at": "2026-09-13T13:19:41Z",
+      "status": "completed"
+    }
+  },
+  "new_ecs_direct_probe": false,
+  "overall": "VALIDATION_STOP_AND_PATH_REVIEW_DELIVERED_TO_MAIN_WITHOUT_DEPLOYMENT"
+}
