@@ -1,0 +1,438 @@
+{
+  "schema_version": "c2_rest_depth_alignment_delivery_v1",
+  "date": "2026-09-20",
+  "status": "REST_SOURCE_RECOVERED_OB200_EXACT_STATE_PATH_CLOSED",
+  "resume_commit": "4c374dcbe6ef97df7a863630d2a7b6f41822464e",
+  "prior_delivery_commit": "ff59a985ee2d05e626e5a89988e0678f364f6094",
+  "remote_extraction": {
+    "run_id": 35495809665,
+    "check_id": 106038407420,
+    "conclusion": "success",
+    "created_at": "2026-09-20T07:02:36Z",
+    "updated_at": "2026-09-20T07:02:55Z",
+    "trusted_fingerprint_verified": true,
+    "fingerprint_value_published": false,
+    "trigger": "isolated_research_branch_push_after_user_confirmed_configuration",
+    "results_path": "/opt/ai-trade/data/research/c2_rest_results/35495809665-1/first.rest-anchors.json",
+    "annotation_chunk_count": 2,
+    "annotation_payload_sha256": "0970363ce4c510b6b6967fd42a01b65626bed6a02cfa770a2088022d34edf3a2",
+    "annotation_chunks": [
+      {
+        "schema": "c2_rest_annotation_chunk_v1",
+        "part": 0,
+        "total": 2,
+        "sha256": "0970363ce4c510b6b6967fd42a01b65626bed6a02cfa770a2088022d34edf3a2",
+        "text": "{\"anchor_evidence_sha256\":\"02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a\",\"anchors\":[{\"book\":{\"a\":[[\"79857.60\",\"8.095\"]],\"b\":[[\"79857.50\",\"0.002\"]],\"cts\":1788743795601,\"s\":\"BTCUSDT\",\"seq\":806333937279,\"ts\":1788743795602,\"u\":19775697},\"exit_side\":\"bid\",\"ledger_both_sides_match\":true,\"ledger_event_ts_ms\":1788743795883,\"ledger_seq\":752,\"missing_metadata\":[],\"poll_completed_ms\":1788743795883,\"poll_started_ms\":1788743795171,\"quote_ts_ms\":1788743795602,\"required_qty_btc\":\"0.005\",\"source\":{\"line\":15,\"raw_file\":\"raw/BTC/20260907T010224.694824Z.jsonl.xz\",\"raw_sha256\":\"1769f084f7a1449b7d6cb06c4e4522618e373b62ece99ec3b7e029dacca25c50\",\"report_file\":\"20260907T010224.694824Z.json\",\"report_sha256\":\"6135976c2381c906b06f140e7ae0b675dbe28bd328cdb736ae60d172bafb1378\",\"snapshot_canonical_sha256\":\"f6686897209d3b256d5c0192fa1b041870e46d508da00e92f3b2a3e8dd049276\"}},{\"book\":{\"a\":[[\"79343.70\",\"0.002\"]],\"b\":[[\"79343.60\",\"5.270\"]],\"cts\":1788767826201,\"s\":\"BTCUSDT\",\"seq\":806492876901,\"ts\":1788767826202,\"u\":19895850},\"exit_side\":\"ask\",\"ledger_both_sides_match\":true,\"ledger_event_ts_ms\":1788767826502,\"ledger_seq\":1177,\"missing_metadata\":[],\"poll_completed_ms\":1788767826502,\"poll_started_ms\":1788767825968,\"quote_ts_ms\":1788767826202,\"required_qty_btc\":\"0.007\",\"source\":{\"line\":8,\"raw_file\":\"raw/BTC/20260907T075001.216472Z.jsonl.xz\",\"raw_sha256\":\"973a04a32bebc433dd2af4da9efca896b145ce3d38a57c4109d101cb05c2fb89\",\"report_file\":\"20260907T075001.216472Z.json\",\"report_sha256\":\"939f51daba3965cde133a589193ee0f353f246308e00fa642d250a447ef8dbaf\",\"snapshot_canonical_sha256\":\"a6a4031c75657b32d993831a8128fa6b3415c206650f363beeb32a0211c6fca0\"}}],\"authorities\":{\"account_mode_change\":false,\"order_submission\":false,\"promotion\":false},\"dependency_sha256\":{\"audit_bybit_c2_depth.py\":\"cad050f6381032c453ea921e6d09499fa233c4c75653873d8849cda41b531f9e\",\"audit_bybit_readonly_evidence.py\":\"8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae\",\"fetch_bybit_c2_depth_archive.py\":\"48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae\"},\"engine_sha256\":\"f99b06f6ea2ed482f59ba00b9404965b136c3d034bfcbc935a345f2f556ac4b7\",\"historical_c2_qualified\":false,\"ledger_file_sha256\":\"4c642dc0a"
+      },
+      {
+        "schema": "c2_rest_annotation_chunk_v1",
+        "part": 1,
+        "total": 2,
+        "sha256": "0970363ce4c510b6b6967fd42a01b65626bed6a02cfa770a2088022d34edf3a2",
+        "text": "55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491\",\"rest_metadata_complete_count\":2,\"schema_version\":\"c2_archived_rest_anchors_v1\",\"segment_identities_sha256\":\"257b2f0336e4556d2820fb8137236fee7da13877a646a44c6d0cb2c8c3f27921\",\"segments_checked\":77,\"source_ledger_modified\":false,\"status\":\"REST_ANCHORS_BOUND_TO_FROZEN_SOURCE\",\"target_snapshot_count\":1179,\"target_snapshot_set_sha256\":\"3bad663f05b17753a6dbb7c32c064783550c8215b89c8cb4c18a1fcd4999e17c\"}"
+      }
+    ]
+  },
+  "rest_report_sha256": "e1f61f351537685ac4897ac78c3239eba6af3ae5be1e186884520ae4cdc49d8f",
+  "rest_report": {
+    "anchor_evidence_sha256": "02469cb09254edca163620019924aa1d12bb415ff87f1961f44f9271f7c8c74a",
+    "anchors": [
+      {
+        "book": {
+          "a": [
+            [
+              "79857.60",
+              "8.095"
+            ]
+          ],
+          "b": [
+            [
+              "79857.50",
+              "0.002"
+            ]
+          ],
+          "cts": 1788743795601,
+          "s": "BTCUSDT",
+          "seq": 806333937279,
+          "ts": 1788743795602,
+          "u": 19775697
+        },
+        "exit_side": "bid",
+        "ledger_both_sides_match": true,
+        "ledger_event_ts_ms": 1788743795883,
+        "ledger_seq": 752,
+        "missing_metadata": [],
+        "poll_completed_ms": 1788743795883,
+        "poll_started_ms": 1788743795171,
+        "quote_ts_ms": 1788743795602,
+        "required_qty_btc": "0.005",
+        "source": {
+          "line": 15,
+          "raw_file": "raw/BTC/20260907T010224.694824Z.jsonl.xz",
+          "raw_sha256": "1769f084f7a1449b7d6cb06c4e4522618e373b62ece99ec3b7e029dacca25c50",
+          "report_file": "20260907T010224.694824Z.json",
+          "report_sha256": "6135976c2381c906b06f140e7ae0b675dbe28bd328cdb736ae60d172bafb1378",
+          "snapshot_canonical_sha256": "f6686897209d3b256d5c0192fa1b041870e46d508da00e92f3b2a3e8dd049276"
+        }
+      },
+      {
+        "book": {
+          "a": [
+            [
+              "79343.70",
+              "0.002"
+            ]
+          ],
+          "b": [
+            [
+              "79343.60",
+              "5.270"
+            ]
+          ],
+          "cts": 1788767826201,
+          "s": "BTCUSDT",
+          "seq": 806492876901,
+          "ts": 1788767826202,
+          "u": 19895850
+        },
+        "exit_side": "ask",
+        "ledger_both_sides_match": true,
+        "ledger_event_ts_ms": 1788767826502,
+        "ledger_seq": 1177,
+        "missing_metadata": [],
+        "poll_completed_ms": 1788767826502,
+        "poll_started_ms": 1788767825968,
+        "quote_ts_ms": 1788767826202,
+        "required_qty_btc": "0.007",
+        "source": {
+          "line": 8,
+          "raw_file": "raw/BTC/20260907T075001.216472Z.jsonl.xz",
+          "raw_sha256": "973a04a32bebc433dd2af4da9efca896b145ce3d38a57c4109d101cb05c2fb89",
+          "report_file": "20260907T075001.216472Z.json",
+          "report_sha256": "939f51daba3965cde133a589193ee0f353f246308e00fa642d250a447ef8dbaf",
+          "snapshot_canonical_sha256": "a6a4031c75657b32d993831a8128fa6b3415c206650f363beeb32a0211c6fca0"
+        }
+      }
+    ],
+    "authorities": {
+      "account_mode_change": false,
+      "order_submission": false,
+      "promotion": false
+    },
+    "dependency_sha256": {
+      "audit_bybit_c2_depth.py": "cad050f6381032c453ea921e6d09499fa233c4c75653873d8849cda41b531f9e",
+      "audit_bybit_readonly_evidence.py": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+      "fetch_bybit_c2_depth_archive.py": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae"
+    },
+    "engine_sha256": "f99b06f6ea2ed482f59ba00b9404965b136c3d034bfcbc935a345f2f556ac4b7",
+    "historical_c2_qualified": false,
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "rest_metadata_complete_count": 2,
+    "schema_version": "c2_archived_rest_anchors_v1",
+    "segment_identities_sha256": "257b2f0336e4556d2820fb8137236fee7da13877a646a44c6d0cb2c8c3f27921",
+    "segments_checked": 77,
+    "source_ledger_modified": false,
+    "status": "REST_ANCHORS_BOUND_TO_FROZEN_SOURCE",
+    "target_snapshot_count": 1179,
+    "target_snapshot_set_sha256": "3bad663f05b17753a6dbb7c32c064783550c8215b89c8cb4c18a1fcd4999e17c"
+  },
+  "alignment_report_sha256": "ec234609be86a89ca9f8c4f0e7196985e99aa778066e81864b7bac64c1e456ff",
+  "alignment_report": {
+    "anchors": [
+      {
+        "actual_order_fill_proven": false,
+        "brackets": {
+          "cross_seq": {
+            "after": {
+              "cross_seq": 806333938891,
+              "cts_ms": 1788743795627,
+              "row_number": 45932,
+              "ts_ms": 1788743795629,
+              "type": "delta",
+              "update_id": 39317796
+            },
+            "before": {
+              "cross_seq": 806333932904,
+              "cts_ms": 1788743795527,
+              "row_number": 45931,
+              "ts_ms": 1788743795530,
+              "type": "delta",
+              "update_id": 39317795
+            },
+            "equal": []
+          },
+          "engine_time": {
+            "after": {
+              "cross_seq": 806333938891,
+              "cts_ms": 1788743795627,
+              "row_number": 45932,
+              "ts_ms": 1788743795629,
+              "type": "delta",
+              "update_id": 39317796
+            },
+            "before": {
+              "cross_seq": 806333932904,
+              "cts_ms": 1788743795527,
+              "row_number": 45931,
+              "ts_ms": 1788743795530,
+              "type": "delta",
+              "update_id": 39317795
+            },
+            "equal": []
+          },
+          "publication": {
+            "after": {
+              "cross_seq": 806333938891,
+              "cts_ms": 1788743795627,
+              "row_number": 45932,
+              "ts_ms": 1788743795629,
+              "type": "delta",
+              "update_id": 39317796
+            },
+            "before": {
+              "cross_seq": 806333932904,
+              "cts_ms": 1788743795527,
+              "row_number": 45931,
+              "ts_ms": 1788743795530,
+              "type": "delta",
+              "update_id": 39317795
+            },
+            "equal": []
+          }
+        },
+        "exact_cross_sequence_message_count": 0,
+        "exit_side": "bid",
+        "full_depth_at_rest_state_verified": false,
+        "future_liquidity_used": false,
+        "ledger_seq": 752,
+        "missing_metadata": [],
+        "required_qty_btc": "0.005",
+        "rest_book": {
+          "a": [
+            [
+              "79857.60",
+              "8.095"
+            ]
+          ],
+          "b": [
+            [
+              "79857.50",
+              "0.002"
+            ]
+          ],
+          "cts": 1788743795601,
+          "s": "BTCUSDT",
+          "seq": 806333937279,
+          "ts": 1788743795602,
+          "u": 19775697
+        },
+        "rest_u_comparable_to_ob200_u": false,
+        "source_snapshot": {
+          "line": 15,
+          "raw_file": "raw/BTC/20260907T010224.694824Z.jsonl.xz",
+          "raw_sha256": "1769f084f7a1449b7d6cb06c4e4522618e373b62ece99ec3b7e029dacca25c50",
+          "report_file": "20260907T010224.694824Z.json",
+          "report_sha256": "6135976c2381c906b06f140e7ae0b675dbe28bd328cdb736ae60d172bafb1378",
+          "snapshot_canonical_sha256": "f6686897209d3b256d5c0192fa1b041870e46d508da00e92f3b2a3e8dd049276"
+        },
+        "status": "REST_STATE_BETWEEN_OB200_UPDATES",
+        "time_gaps": {
+          "following_cts_after_rest_ms": 26,
+          "following_publication_after_rest_ms": 27,
+          "rest_cts_after_preceding_ms": 74,
+          "rest_publication_after_preceding_ms": 72
+        }
+      },
+      {
+        "actual_order_fill_proven": false,
+        "brackets": {
+          "cross_seq": {
+            "after": {
+              "cross_seq": 806492877807,
+              "cts_ms": 1788767826227,
+              "row_number": 285999,
+              "ts_ms": 1788767826229,
+              "type": "delta",
+              "update_id": 39557863
+            },
+            "before": {
+              "cross_seq": 806492873413,
+              "cts_ms": 1788767826127,
+              "row_number": 285998,
+              "ts_ms": 1788767826130,
+              "type": "delta",
+              "update_id": 39557862
+            },
+            "equal": []
+          },
+          "engine_time": {
+            "after": {
+              "cross_seq": 806492877807,
+              "cts_ms": 1788767826227,
+              "row_number": 285999,
+              "ts_ms": 1788767826229,
+              "type": "delta",
+              "update_id": 39557863
+            },
+            "before": {
+              "cross_seq": 806492873413,
+              "cts_ms": 1788767826127,
+              "row_number": 285998,
+              "ts_ms": 1788767826130,
+              "type": "delta",
+              "update_id": 39557862
+            },
+            "equal": []
+          },
+          "publication": {
+            "after": {
+              "cross_seq": 806492877807,
+              "cts_ms": 1788767826227,
+              "row_number": 285999,
+              "ts_ms": 1788767826229,
+              "type": "delta",
+              "update_id": 39557863
+            },
+            "before": {
+              "cross_seq": 806492873413,
+              "cts_ms": 1788767826127,
+              "row_number": 285998,
+              "ts_ms": 1788767826130,
+              "type": "delta",
+              "update_id": 39557862
+            },
+            "equal": []
+          }
+        },
+        "exact_cross_sequence_message_count": 0,
+        "exit_side": "ask",
+        "full_depth_at_rest_state_verified": false,
+        "future_liquidity_used": false,
+        "ledger_seq": 1177,
+        "missing_metadata": [],
+        "required_qty_btc": "0.007",
+        "rest_book": {
+          "a": [
+            [
+              "79343.70",
+              "0.002"
+            ]
+          ],
+          "b": [
+            [
+              "79343.60",
+              "5.270"
+            ]
+          ],
+          "cts": 1788767826201,
+          "s": "BTCUSDT",
+          "seq": 806492876901,
+          "ts": 1788767826202,
+          "u": 19895850
+        },
+        "rest_u_comparable_to_ob200_u": false,
+        "source_snapshot": {
+          "line": 8,
+          "raw_file": "raw/BTC/20260907T075001.216472Z.jsonl.xz",
+          "raw_sha256": "973a04a32bebc433dd2af4da9efca896b145ce3d38a57c4109d101cb05c2fb89",
+          "report_file": "20260907T075001.216472Z.json",
+          "report_sha256": "939f51daba3965cde133a589193ee0f353f246308e00fa642d250a447ef8dbaf",
+          "snapshot_canonical_sha256": "a6a4031c75657b32d993831a8128fa6b3415c206650f363beeb32a0211c6fca0"
+        },
+        "status": "REST_STATE_BETWEEN_OB200_UPDATES",
+        "time_gaps": {
+          "following_cts_after_rest_ms": 26,
+          "following_publication_after_rest_ms": 27,
+          "rest_cts_after_preceding_ms": 74,
+          "rest_publication_after_preceding_ms": 72
+        }
+      }
+    ],
+    "archive_rows_checked": 862255,
+    "archive_sha256": "3f44ac697461f4760adaa20e613de3d91c9e63454c7b7ffd22f798882d3cc785",
+    "authorities": {
+      "account_mode_change": false,
+      "order_submission": false,
+      "promotion": false
+    },
+    "between_updates_count": 2,
+    "dependency_sha256": {
+      "audit_bybit_c2_depth.py": "cad050f6381032c453ea921e6d09499fa233c4c75653873d8849cda41b531f9e",
+      "audit_bybit_readonly_evidence.py": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+      "audit_c2_rest_anchors.py": "f99b06f6ea2ed482f59ba00b9404965b136c3d034bfcbc935a345f2f556ac4b7",
+      "fetch_bybit_c2_depth_archive.py": "48db3cda1a81ac1d9655ffd5363803d7ff58d3bb15946983ad539a9e14e2c3ae"
+    },
+    "depth_delivery_evidence_sha256": "7710997e5824bfd118ce065862cb80bc1b2240f3e0b5e86f0f5bbcbcb8b97296",
+    "engine_sha256": "118dfc92ac2489395fb43042ca259523930545bd0ec725179f293ba67e3817e5",
+    "historical_c2_qualified": false,
+    "ledger_file_sha256": "4c642dc0a55b3caed712abce6016ffcbb9f56a078a4b81e211b1b37499ea7491",
+    "limits": [
+      "metadata_comparison_not_full_depth_verifier",
+      "seq_delta_not_missing_packet_count",
+      "rest_u_and_ob200_u_different_streams",
+      "future_metadata_only_brackets_not_execution_input"
+    ],
+    "member_bytes": 832935584,
+    "member_sha256": "48e6037aa06b47c6b4f1d7a591b9eef13ba6d96c7645c55634bc06fb758f539b",
+    "rest_report_sha256": "e1f61f351537685ac4897ac78c3239eba6af3ae5be1e186884520ae4cdc49d8f",
+    "schema_version": "c2_rest_depth_alignment_v1",
+    "sequence_match_anchor_count": 0,
+    "source_ledger_modified": false,
+    "status": "REST_METADATA_ALIGNMENT_COMPLETED",
+    "target_snapshot_set_sha256": "3bad663f05b17753a6dbb7c32c064783550c8215b89c8cb4c18a1fcd4999e17c",
+    "zip_crc_verified": true
+  },
+  "validation": {
+    "local_targeted_tests_passed": 18,
+    "remote_source_binding_tests_passed": 5,
+    "frozen_target_snapshots_verified": 1179,
+    "source_segments_checked": 77,
+    "complete_rest_metadata_count": 2,
+    "archive_messages_checked": 862255,
+    "archive_and_member_hashes_verified": true,
+    "zip_crc_verified": true,
+    "prior_depth_predecessor_identities_verified": true,
+    "annotation_payload_and_report_encoding_verified": true,
+    "extractor_and_alignment_dependency_hashes_verified": true,
+    "full_local_ctest_rerun_this_turn": false,
+    "engine_code_changed": false,
+    "final_workflow_restored_to_prior_main_bytes": true
+  },
+  "ci": {
+    "run_id": 35495809680,
+    "check_id": 106038407217,
+    "head_sha": "4c374dcbe6ef97df7a863630d2a7b6f41822464e",
+    "status": "completed",
+    "conclusion": "success",
+    "updated_at": "2026-09-20T07:07:23Z"
+  },
+  "decision": {
+    "same_archive_exact_rest_state_recovery": "CLOSED_INSUFFICIENT_SOURCE_RESOLUTION",
+    "reason": "Both frozen REST cross sequences fall strictly between adjacent ob200 events, no equal sequence exists in the full pinned archive, and the previously replayed preceding books have different L1 states.",
+    "matching_sequence_anchor_count": 0,
+    "between_updates_anchor_count": 2,
+    "c2_historical_qualified": false,
+    "c1": "CLOSED",
+    "c3_started": false,
+    "c4_started": false,
+    "c5_started": false,
+    "future_liquidity_used": false,
+    "actual_order_fill_proven": false,
+    "finer_history_globally_unavailable_proven": false,
+    "next_valid_input": "Same-venue finer historical event/depth evidence covering the two frozen REST states, or a separately approved and frozen bounded research execution model.",
+    "other_historical_obligations_unchanged": true,
+    "repeated_same_archive_retry_needed": false
+  },
+  "authority_boundary": {
+    "exchange_api_calls": 0,
+    "exchange_archive_downloads": 0,
+    "account_api_calls": 0,
+    "order_submission": false,
+    "account_mode_change": false,
+    "production_deployment": false,
+    "source_ledger_modified": false,
+    "source_raw_modified": false,
+    "writes": "Only isolated ECS research tool/result directories and local research artifacts/documentation",
+    "branches_deleted": false
+  }
+}
