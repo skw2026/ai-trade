@@ -1,0 +1,74 @@
+{
+  "schema_version": "mainline_engineering_delivery_v1",
+  "date": "2026-09-21",
+  "stage_goal": "DELIVER_VERIFIED_ENGINEERING_FIX_TO_MAIN_WITHOUT_ECS_DEPLOYMENT",
+  "main_before": "833a6d90644e0bd88545dafe97c408beb9c3a67d",
+  "accepted_branch_head": "8b002bfd695196f5ca7d973e59f8d49bbb1c1978",
+  "independently_tested_sha": "421475b1730b127c8b369709ecf28d39953a23e3",
+  "ci_run_id": 35523224877,
+  "ci_conclusion": "success",
+  "merge_sha": "5b361969f44f55c88cd479af78634fe1010a2783",
+  "merge_parents": [
+    "833a6d90644e0bd88545dafe97c408beb9c3a67d",
+    "8b002bfd695196f5ca7d973e59f8d49bbb1c1978"
+  ],
+  "merge_tree": "4fb9249be64e4b84cd4b40988ed07f60dc1024bd",
+  "accepted_branch_tree": "4fb9249be64e4b84cd4b40988ed07f60dc1024bd",
+  "complete_tree_matches_accepted_branch": true,
+  "all_non_docs_files_match_independently_tested_sha": true,
+  "merge_commit_skip_ci": true,
+  "targeted_regression": {
+    "passed": 7,
+    "total": 7,
+    "seconds": 2.05
+  },
+  "remote_main_merge_verified": true,
+  "workflow_verification": {
+    "observed_at": "2026-09-20 16:48:02 UTC",
+    "merge_head_runs": {
+      "total_count": 0,
+      "runs": []
+    },
+    "latest_cd_before": {
+      "id": 34758912163,
+      "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "status": "completed",
+      "conclusion": "success",
+      "updated_at": "2026-09-13T13:19:41Z"
+    },
+    "latest_cd_after": {
+      "id": 34758912163,
+      "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "status": "completed",
+      "conclusion": "success",
+      "updated_at": "2026-09-13T13:19:41Z"
+    }
+  },
+  "deployment_evidence": {
+    "new_ecs_probe_during_main_delivery": false,
+    "most_recent_direct_runtime_observation": "2026-09-20T16:36:17.549002+00:00",
+    "runtime_evidence_source": "docs/reviews/2026-09-21-engineering-remote-acceptance.evidence.json",
+    "last_directly_observed_release": "170d84acb8ac9547a321802f9250215c98deb0dc",
+    "basis": "NO_DEPLOYMENT_ACTIONS_AND_NO_NEW_CD; PRIOR_DIRECT_SNAPSHOT_IS_NOT_A_NEW_POST_MERGE_SNAPSHOT"
+  },
+  "authority": {
+    "main_merge": true,
+    "ecs_release_update": false,
+    "service_restart": false,
+    "order_submission": false,
+    "account_mode_change": false,
+    "fund_transfer": false,
+    "production_rollback": false,
+    "new_research": false,
+    "new_sample_wait": false
+  },
+  "remaining_limits": [
+    "FULL_ACCOUNT_EVIDENCE_INSUFFICIENT",
+    "PRODUCTION_ROLLBACK_NOT_EXERCISED",
+    "NO_QUALIFIED_CANDIDATE",
+    "C2_NOT_QUALIFIED"
+  ],
+  "overall": "MAINLINE_ENGINEERING_DELIVERY_COMPLETE_NOT_DEPLOYED",
+  "full_system_acceptance": false,
+  "next_stage": "SEPARATE_PROJECT_DIRECTION_DECISION_NO_AUTOMATIC_RESEARCH_OR_DEPLOYMENT"
+}
