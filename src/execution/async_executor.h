@@ -30,10 +30,14 @@ struct AsyncResult {
  */
 class AsyncExecutor {
  public:
+  enum class Mode { kBackground, kInlineReplay };
+
   /**
    * @param adapter 交易所适配器，生命周期由外部管理（不持有所有权）
+   * @param mode 回放在调用线程完成执行并入队结果；线上默认保持异步。
    */
-  explicit AsyncExecutor(ExchangeAdapter* adapter);
+  explicit AsyncExecutor(ExchangeAdapter* adapter,
+                         Mode mode = Mode::kBackground);
   ~AsyncExecutor();
 
   /// 启动后台工作线程；重复调用无副作用。
@@ -58,7 +62,10 @@ class AsyncExecutor {
     std::string cancel_id;  ///< cancel 任务目标 client_order_id。
   };
 
+  void ExecuteTask(const Task& task);
+
   ExchangeAdapter* adapter_{nullptr};  ///< 外部注入适配器（不拥有所有权）。
+  const Mode mode_;
   std::thread worker_;  ///< 后台执行线程。
   std::mutex queue_mutex_;  ///< 任务队列互斥锁。
   std::condition_variable queue_cv_;  ///< 任务到达通知。

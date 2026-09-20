@@ -3908,9 +3908,16 @@ bool BotApplication::Initialize() {
     return false;
   }
 
-  // 执行通道单线程串行化，避免并发提交导致状态竞态。
-  executor_ = std::make_unique<AsyncExecutor>(adapter_.get());
+  // Offline replay must not advance the simulated market between submission
+  // and its result because of host thread scheduling. Demo/live retain the
+  // background worker and must continue accepting fills before REST ACKs.
+  executor_ = std::make_unique<AsyncExecutor>(
+      adapter_.get(), config_.mode == "replay"
+                          ? AsyncExecutor::Mode::kInlineReplay
+                          : AsyncExecutor::Mode::kBackground);
   executor_->Start();
+  LogInfo(std::string("EXECUTION_MODE: ") +
+          (config_.mode == "replay" ? "inline_replay" : "background"));
 
   InitializeUniverse();
   if (!SyncRemotePositions()) {
@@ -4768,6 +4775,11 @@ void BotApplication::RunLoop() {
 
     FillEvent fill;
     while (adapter_->PollFill(&fill)) {
+      // A previous fill may enqueue a protective/close order. In replay its
+      // execution has already completed; consume that result before its fill.
+      if (config_.mode == "replay") {
+        ProcessAsyncResults();
+      }
       has_fill = true;
       ProcessFillEvent(fill);
     }
