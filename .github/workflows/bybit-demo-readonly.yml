@@ -46,16 +46,6 @@ jobs:
           set -euo pipefail
           CODE_SHA="$(sha256sum tools/audit_bybit_readonly_evidence.py | cut -d ' ' -f 1)"
           echo "sha256=${CODE_SHA}" >> "$GITHUB_OUTPUT"
-      - name: Copy standalone collector without changing the running release
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.ECS_HOST }}
-          username: ${{ secrets.ECS_USER }}
-          key: ${{ secrets.ECS_SSH_KEY }}
-          port: ${{ secrets.ECS_PORT || 22 }}
-          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT || vars.ECS_HOST_FINGERPRINT }}
-          source: tools/audit_bybit_readonly_evidence.py
-          target: /opt/ai-trade/data/research/bybit_readonly_runner/${{ github.run_id }}-${{ github.run_attempt }}
       - name: Capture and replay existing Demo account with GET only
         shell: bash
         env:
@@ -80,6 +70,8 @@ jobs:
           [[ -z "${READONLY_REPLAY_RUN_ID}" || "${READONLY_MANIFEST_SHA}" =~ ^[0-9a-f]{64}$ ]]
           [[ "${ECS_HOST}" =~ ^[a-zA-Z0-9.:-]+$ ]]
           [[ "${ECS_USER}" =~ ^[a-zA-Z0-9_-]+$ ]]
+          [[ "${ECS_PORT}" =~ ^[0-9]+$ ]]
+          [[ "${ECS_FINGERPRINT}" =~ ^SHA256:[a-zA-Z0-9+/]{43}$ ]]
           KEY_DIR="$(mktemp -d "${RUNNER_TEMP}/bybit-readonly-XXXXXX")"
           trap 'rm -f "${KEY_DIR}/key" "${KEY_DIR}/known_hosts"; rmdir "${KEY_DIR}"' EXIT
           printf '%s\n' "${ECS_SSH_KEY}" > "${KEY_DIR}/key"
@@ -95,11 +87,18 @@ jobs:
               fi
             done > "${KEY_DIR}/known_hosts"
           test -s "${KEY_DIR}/known_hosts"
+          ssh_options=(-i "${KEY_DIR}/key" -p "${ECS_PORT}" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o GlobalKnownHostsFile=/dev/null
+            -o StrictHostKeyChecking=yes -o UpdateHostKeys=no -o ConnectTimeout=20)
           mkdir -p .artifacts
+          # Reuse the native pinned-key transport already validated for REST
+          # evidence; create a fresh data-only runner, never edit the release.
+          tar -czf .artifacts/readonly-runner.tar.gz tools/audit_bybit_readonly_evidence.py
+          ssh "${ssh_options[@]}" "${ECS_USER}@${ECS_HOST}" \
+            "umask 077; mkdir -p /opt/ai-trade/data/research/bybit_readonly_runner && mkdir /opt/ai-trade/data/research/bybit_readonly_runner/${READONLY_RUN_ID} && tar -xzf - -C /opt/ai-trade/data/research/bybit_readonly_runner/${READONLY_RUN_ID}" \
+            < .artifacts/readonly-runner.tar.gz
           remote_exit=0
-          ssh -i "${KEY_DIR}/key" -p "${ECS_PORT}" \
-            -o UserKnownHostsFile="${KEY_DIR}/known_hosts" -o StrictHostKeyChecking=yes \
-            -o ConnectTimeout=20 "${ECS_USER}@${ECS_HOST}" \
+          ssh "${ssh_options[@]}" "${ECS_USER}@${ECS_HOST}" \
             "bash -s -- ${READONLY_RUN_ID} ${READONLY_CODE_SHA} '${READONLY_REPLAY_RUN_ID}' '${READONLY_MANIFEST_SHA}'" \
             > .artifacts/readonly-summary.json <<'REMOTE' || remote_exit=$?
           set -euo pipefail
