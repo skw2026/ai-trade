@@ -1,0 +1,171 @@
+{
+  "schema_version": "engineering_closeout_remote_acceptance_v1",
+  "date": "2026-09-21",
+  "implementation_sha": "ea2ad35",
+  "verified_head_sha": "421475b1730b127c8b369709ecf28d39953a23e3",
+  "branch": "fix/replay-ordering-closeout-20260920",
+  "local_validation": {
+    "previous_full_ctest_passed": 96,
+    "previous_full_ctest_total": 96,
+    "current_targeted_ctest_passed": 4,
+    "archive_only_guard_tests": 8,
+    "readonly_tests": 25,
+    "yaml_and_shell_syntax": "PASS"
+  },
+  "independent_ci": {
+    "run_id": 35523224877,
+    "job_id": 106110814285,
+    "status": "completed",
+    "conclusion": "success",
+    "completed_at": "2026-09-20T16:40:50Z",
+    "verified_head_sha": "421475b1730b127c8b369709ecf28d39953a23e3",
+    "build": "success",
+    "test": "success",
+    "required_tests_registration": "success"
+  },
+  "private_archive_replay": {
+    "run_id": 35523224984,
+    "job_id": 106110814805,
+    "conclusion": "success",
+    "completed_at": "2026-09-20T16:36:28Z",
+    "source_capture_run_attempt": "35498278569-1",
+    "raw_pages_replayed_on_ecs": true,
+    "new_account_capture": false,
+    "raw_data_exported": false,
+    "summary": {
+      "account_margin_fields_applicable": false,
+      "account_margin_fields_present": false,
+      "account_mode_change": false,
+      "balances_or_cash_amounts_published": false,
+      "c2_option_accounting_qualified": false,
+      "cash_identity_checked": 21,
+      "collector_error_codes": {},
+      "collector_sha256": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+      "complete_groups": [
+        "account",
+        "executions",
+        "open_orders",
+        "orders",
+        "positions",
+        "transactions",
+        "wallet"
+      ],
+      "counts": {
+        "account": 1,
+        "executions": 21,
+        "open_orders": 0,
+        "orders": 33,
+        "positions": 0,
+        "transactions": 21,
+        "wallet": 1
+      },
+      "end_ms": 1789890998490,
+      "error_codes": {},
+      "execution_fee_records_checked": 21,
+      "failed_or_incomplete_groups": [],
+      "failure_field_shapes": {},
+      "funding_execution_records": 0,
+      "funding_settlement_records": 0,
+      "gaps": [
+        "ACCOUNT_RESPONSE_TIME_NOT_PROVIDED",
+        "NO_FUNDING_SETTLEMENT_OBSERVED"
+      ],
+      "historical_margin_reconstructed": false,
+      "history_exhaustion_proves_retention": false,
+      "manifest_sha256": "188458003f4c50c86dd4f309a9f85b0c9fca71b9ec1d346c0d2b4466c5957495",
+      "margin_mode": "ISOLATED_MARGIN",
+      "matched_execution_transactions": 21,
+      "order_submission": false,
+      "promotion_authority": false,
+      "replayer_sha256": "8787192a3c1947bed3899b5522d4b72ebeb68cdeddbde1b7966182b1c7257eae",
+      "response_pages": 10,
+      "response_time_missing_groups": [
+        "account"
+      ],
+      "schema_version": "bybit_readonly_evidence_v1",
+      "snapshot_is_atomic": false,
+      "source": "demo",
+      "start_ms": 1789286198491,
+      "status": "READONLY_CAPTURED_GAPS",
+      "trade_execution_records": 21
+    },
+    "all_summary_fields_match_prior_capture": true
+  },
+  "runtime_snapshot": {
+    "config_mount_matches_release": true,
+    "containers": {
+      "ai-trade": {
+        "health": "healthy",
+        "restarts": 0,
+        "running": true
+      },
+      "ai-trade-option-vrp-collector": {
+        "health": "healthy",
+        "restarts": 0,
+        "running": true
+      },
+      "ai-trade-scheduler": {
+        "health": "healthy",
+        "restarts": 0,
+        "running": true
+      },
+      "ai-trade-watchdog": {
+        "health": "unknown",
+        "restarts": 0,
+        "running": true
+      }
+    },
+    "identity_status": "PASS",
+    "latest_flags": {
+      "evidence_persistence_failed": false,
+      "reconcile_reduce_only": false,
+      "trade_ok": true,
+      "trading_halted": false
+    },
+    "manifest_identity_matches": true,
+    "manifest_sha256": "392046ad372ab560c7973d6491a2f5d2771c19386d1dc7e8a24b2155fc7b41e0",
+    "observed_at": "2026-09-20T16:36:17.549002+00:00",
+    "order_submission": false,
+    "release_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+    "release_tree_integrity_passed": true,
+    "runtime_config_sha256": "4051c0f346b3f1f80b71df7197424e993a2d9c38d818ad57cbfee5bd91388b6f",
+    "runtime_image_matches_manifest": true,
+    "runtime_status_count_last_15m_bounded": 47,
+    "schema_version": "demo_runtime_readonly_v1",
+    "service_restart": false,
+    "snapshot_is_atomic": false,
+    "status": "OBSERVED_NOT_FULL_RUNTIME_ACCEPTANCE"
+  },
+  "publication": {
+    "remote_branch_pushed": true,
+    "main_merged": false,
+    "main_before": "833a6d90644e0bd88545dafe97c408beb9c3a67d",
+    "latest_cd_before": {
+      "run_id": 34758912163,
+      "release_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "updated_at": "2026-09-13T13:19:41Z"
+    },
+    "main_after": "833a6d90644e0bd88545dafe97c408beb9c3a67d",
+    "latest_cd_after": {
+      "id": 34758912163,
+      "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "status": "completed",
+      "conclusion": "success",
+      "updated_at": "2026-09-13T13:19:41Z"
+    },
+    "verification_observed_at": "2026-09-20 16:42:18 UTC"
+  },
+  "authority": {
+    "service_restart": false,
+    "order_submission": false,
+    "fund_transfer": false,
+    "account_mode_change": false,
+    "new_research": false,
+    "new_forward_wait": false,
+    "ecs_trading_release_change": false
+  },
+  "overall": "BOUNDED_ENGINEERING_CLOSEOUT_VERIFIED_NOT_DEPLOYED",
+  "research_decision": "NO_QUALIFIED_CANDIDATE",
+  "historical_c2_status": "NOT_QUALIFIED",
+  "full_engineering_acceptance": false
+}
