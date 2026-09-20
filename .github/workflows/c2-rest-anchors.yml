@@ -2,6 +2,15 @@ name: C2 Archived REST Anchors
 
 on:
   workflow_dispatch:
+  # Temporary scoped resume after the user confirmed the trusted fingerprint.
+  # Remove this push trigger before delivery back to main.
+  push:
+    branches:
+      - research/c2-rest-resume-20260920
+    paths:
+      - .github/workflows/c2-rest-anchors.yml
+      - tools/audit_c2_rest_anchors.py
+      - tools/test_audit_c2_rest_anchors.py
   # Rerun manually only after the trusted ECS_HOST_FINGERPRINT is configured.
   # Ordinary commits must not repeatedly attempt an unchanged blocked source.
 
