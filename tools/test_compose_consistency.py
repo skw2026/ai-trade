@@ -83,6 +83,34 @@ class ComposeConsistencyTest(unittest.TestCase):
         cls.dev_services = parse_services(DEV_COMPOSE)
         cls.prod_services = parse_services(PROD_COMPOSE)
 
+    def test_docker_build_validation_uses_sticky_gate_for_all_three_steps(self):
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        block = re.search(
+            r"^RUN python3 tools/validation_gate\.py run --label docker-configure.*?(?=\n\n)",
+            dockerfile, re.MULTILINE | re.DOTALL,
+        )
+        self.assertIsNotNone(block)
+        commands = block.group(0).replace("\\\n", " ").split("&&")
+        self.assertEqual(len(commands), 3)
+        for command, label, timeout, executable in zip(
+            commands, ("docker-configure", "docker-build", "docker-test"),
+            (120, 1800, 900), ("cmake -S", "cmake --build", "ctest --test-dir"),
+        ):
+            self.assertIn(
+                f"python3 tools/validation_gate.py run --label {label} --timeout {timeout} --",
+                command,
+            )
+            self.assertIn(executable, command)
+            self.assertNotIn("||", command)
+        self.assertIn("--output-on-failure --stop-on-failure", commands[-1])
+
+    def test_docker_context_excludes_local_evidence_and_runtime_credentials(self):
+        rules = set((ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines())
+        for rule in (".git", "build/", "data/", ".artifacts/", ".env", ".env.local",
+                     ".env.runtime", ".env.*.local"):
+            self.assertIn(rule, rules)
+        self.assertNotIn(".env.example", rules)
+
     def test_prod_has_closed_loop_services(self):
         self.assertIn("ai-trade", self.prod_services)
         self.assertIn("watchdog", self.prod_services)

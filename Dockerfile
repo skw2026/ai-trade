@@ -63,9 +63,12 @@ WORKDIR /workspace
 COPY . .
 
 # [修改] 增加 -DAI_TRADE_ENABLE_CATBOOST=ON 开关
-RUN cmake -S . -B build -G Ninja -DAI_TRADE_USE_BEAST_WEBSOCKET=ON -DAI_TRADE_ENABLE_CATBOOST=ON && \
-    cmake --build build -j"$(nproc)" && \
-    ctest --test-dir build --output-on-failure
+RUN python3 tools/validation_gate.py run --label docker-configure --timeout 120 -- \
+      cmake -S . -B build -G Ninja -DAI_TRADE_USE_BEAST_WEBSOCKET=ON -DAI_TRADE_ENABLE_CATBOOST=ON && \
+    python3 tools/validation_gate.py run --label docker-build --timeout 1800 -- \
+      cmake --build build -j"$(nproc)" && \
+    python3 tools/validation_gate.py run --label docker-test --timeout 900 -- \
+      ctest --test-dir build --output-on-failure --stop-on-failure
 
 FROM ubuntu:24.04 AS runtime-base
 

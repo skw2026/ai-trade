@@ -5,6 +5,13 @@
 build/
 bin/
 data/
+.artifacts/
+
+# Local runtime credentials and evidence must not enter COPY . . or caches.
+.env
+.env.local
+.env.runtime
+.env.*.local
 
 *.log
 *.tmp
