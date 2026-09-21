@@ -1,0 +1,28 @@
+{
+  "failure_id": "ffcb7408945949789dc63abb61476f70",
+  "decision": "retry",
+  "goal": "Acquire the exact frozen 218-page official public archive under 500 attempted GETs and the original two-hour stage deadline",
+  "expected": "Every required page has HTTP 200, API retCode 0, exact request identity and complete grid; no automatic retries",
+  "observed": "84 successful pages; attempt 85 returned HTTP 200 with retCode 10006 and Too many visits / Exceeded API Rate Limit. No subsequent requests, conversion or economic execution occurred.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The immediate failure is server-declared API rate limiting, not TLS, missing market rows, malformed OHLC, or parameter rejection. Official documentation identifies 10006 as rate limit. Exact quota bucket, reset timestamp and contribution of other callers are unknown because headers were not archived; this review does not claim our observed approximately 0.491 requests/second exhausted the published default IP limit or guarantee retry success.",
+  "evidence": [
+    ".artifacts/mvp-reference-history-20260921/archive/attempt-0085.json",
+    ".artifacts/mvp-reference-history-20260921/archive/receipt-0085.json",
+    ".artifacts/mvp-reference-history-20260921/archive/response-0085.json",
+    ".artifacts/mvp-reference-history-20260921/request-plan.json",
+    "https://bybit-exchange.github.io/docs/v5/rate-limit",
+    "https://bybit-exchange.github.io/docs/v5/error"
+  ],
+  "next_action": "After more than 60 seconds without market requests following the 2026-09-21T15:15:07Z failure, one identical-command retry using unchanged collector, source, binary, request plan, TLS validation and validation criteria. Verify and reuse all 84 successful cached pages; retain the failed attempt/response and append new receipts. No alternate IP, domain, proxy, account, automatic retry or quota evasion. A repeated failure halts this acquisition and requires route reassessment rather than another retry.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "A bounded transport recheck serves the same fixed input contract; no economic result has been computed or used to select data.",
+    "data_feasibility": "All six funding pages and 39 pairs of trade/mark pages already passed exact-grid checks. The failed body explicitly reports limiting rather than an absent historical interval. Remaining-page availability remains unproven.",
+    "method_feasibility": "The official API describes rolling rate limits; a completed cooldown and one reviewed original-command retry are justified without claiming the unknown quota reset is certified. Cache reuse avoids repeating successful requests, and the original guard stops immediately on any recurrence.",
+    "budget_and_exit": "85 attempts charged so far, 415 remain under the unchanged 500 cap, 134 planned pages remain. Deadline stays 2026-09-21T17:09:40Z. Original collector command timeout 1800 seconds; any further failure blocks again and invokes full route reassessment."
+  }
+}

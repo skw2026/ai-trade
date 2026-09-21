@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "stage": "original_mvp_manual_risk_cycle_completion",
+  "status": "MVP_BEHAVIOR_CONTRACT_PASS_OFFLINE",
+  "resumed_at_utc": "2026-09-21T13:21:37Z",
+  "shared_engineering_budget_seconds": 14400,
+  "prior_segment_conservative_seconds": 1500,
+  "baseline_commit": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+  "user_decision": "confirmed_manual_only_new_risk_cycle_preserve_lifetime_losses_and_drawdown",
+  "contracts": {
+    "closed_5m_signal_clock": "PASS_SYNTHETIC",
+    "next_open_execution_and_accounting": "PASS_SYNTHETIC",
+    "manual_risk_recovery": "PASS_SYNTHETIC_OFFLINE",
+    "historical_screen": "NOT_STARTED",
+    "economic_qualification": "NOT_GRANTED"
+  },
+  "policy": {
+    "automatic_rearm": false,
+    "automatic_stage_advance": false,
+    "cooldown_ms": 86400000,
+    "min_stage_dwell_ms": 86400000,
+    "stage_cap_fractions": [0.25, 0.5, 1.0],
+    "max_recovery_loss_fraction": 0.02,
+    "max_cycle_duration_ms": 604800000,
+    "drawdown_actions": [0.08, 0.12, 0.20],
+    "lifetime_drawdown_breach_sticky": true,
+    "reset_account_cash_or_peak": false,
+    "approval_requires_flat_idle_healthy": true,
+    "approval_requires_unique_id_cycle_time_review_and_budgets": true,
+    "audit_before_state_commit": true,
+    "existing_journal_restart": "REJECT_NO_OVERWRITE",
+    "full_checkpoint_resume": "NOT_IMPLEMENTED_NOT_CLAIMED"
+  },
+  "validation": {
+    "configure": "PASS",
+    "final_build": "PASS",
+    "final_targeted": {"passed": 5, "total": 5, "seconds": 2.25},
+    "full": {
+      "passed": 100,
+      "total": 100,
+      "failed": 0,
+      "seconds": 158.06,
+      "completed_at_utc": "2026-09-21T13:37:27.388648Z",
+      "gate_label": "manual-risk-full-regression",
+      "argv": ["ctest", "--test-dir", "build", "--output-on-failure", "--stop-on-failure"],
+      "command_sha256": "0d5142a4737d80d3d546513b0c050bf7740e9a2b69c8c3770e82b73aa55edd56"
+    },
+    "unexpected_failures_this_segment": 0,
+    "prior_segment_failure_reviews_preserved": true
+  },
+  "authority": {
+    "offline_synthetic_only": true,
+    "external_history_get_requests": 0,
+    "real_account_accesses": 0,
+    "historical_economic_experiments": 0,
+    "parameter_searches": 0,
+    "commit_or_push": false,
+    "deployment": false,
+    "fresh_ecs_observation": false,
+    "demo_or_live_activation": false,
+    "c2": "NOT_QUALIFIED",
+    "old_candidate_closures_unchanged": true
+  },
+  "limitations": [
+    "Manual API is a controlled offline interface, not an identity provider or live operator UI.",
+    "Budget is a trigger, not a guaranteed loss cap during gaps.",
+    "Replay requires a new exclusive audit journal; existing journal rejects startup rather than resuming full state.",
+    "Synthetic test observations are not real account losses, historical returns, or profitability qualification.",
+    "Legacy replay CSV writer omits mark_open/mark_close and leaves funding empty; historical inputs and decision contract remain to be bound.",
+    "No automatic renewal of the closed historical-screen budget."
+  ],
+  "file_sha256": {
+    "src/risk/manual_risk_cycle.h": "4656e8438636d7e8def7b031f9532f202860a98931162ef3d95131339fbacd3a",
+    "src/risk/manual_risk_cycle.cpp": "666229c06289239b8c3a7e4abc7d92b5ffc8d054bc4aa8c344d4dbbea920c905",
+    "src/risk/risk_engine.h": "aa5fd6bc069f2e2ab1d2d06690ee9d7148cc55201a28d5d291e64ca26f4107ac",
+    "src/oms/account_state.h": "ddcdc652361c41b2dd6bfee4e163b4c075e0290bcea1616c9e599a3486909ca9",
+    "src/system/trade_system.cpp": "c06558a251f3f36cff4702122d1b707043db284e4b75dca8c0eb8ac5c9103dec",
+    "src/system/trade_system.h": "0490367331c89f8bc61850160eff422c5860dfbeab1fbc92477a73c8574a791f",
+    "src/app/bot_app.cpp": "183ac86fe5c774791c66512e80fad4c568c6a70e1f06156514601bbf74dd85b5",
+    "src/app/bot_app.h": "7964b529dc97d7e1c0a1018b0017ba889dc79458fb48a86877d45d8dc744c361",
+    "src/core/config.cpp": "39f7374a5894ebc7728af88539ab0a3fdc43092b356f2d5cde5371c217630675",
+    "src/core/config.h": "26cb3d778c114991302c80862a8bfa8b52daa81e4a7e72332826f382846741c1",
+    "src/core/types.h": "b9becd1d856b843ea3a93ac79e6650420e5cf7dc9664d6447cb4ef3079455e42",
+    "src/exchange/bybit_exchange_adapter.cpp": "03d9722399485a27933281f5b1fb6c7defb2a4d8d73a7306b74c80fabdf0eace",
+    "src/exchange/bybit_exchange_adapter.h": "8baaf2b2dbf31827b40412c999d8a92132736cd54cdd042ce0de764fd59a6800",
+    "src/market/closed_bar_clock.cpp": "352fd84d2420a9c09be8d9fb8a897e48635c1b6aadee6c575c6092ffe83de4e8",
+    "src/market/closed_bar_clock.h": "c4f3bc819c6fe1de9312b59c3094221d6adab4173de7ef5b55bb2c3eddc3cc3a",
+    "src/monitor/gate_monitor.cpp": "021c6c39982aed98b6f37de50a86bd8f72148bab1c3116222e90e7622370271f",
+    "tests/test_manual_risk_cycle.cpp": "c68ae90b8da0426c278dd4465b7d8280b71afba472a1c5247989e0c885375ebd",
+    "tests/test_mvp_contract.cpp": "a3af00caf74756c7f4efd989ecdc72c4e4598cf9a53d6288e1957d873eec7f42",
+    "CMakeLists.txt": "8a243ba272e1eb65c0a063626343d6144778cd857ad874c8da7f34cb69d081b9",
+    "config/bybit.replay.mvp.yaml": "06f64aab329efced409db8756bbb523aeeca516c47511d501ed24384a231742a"
+  },
+  "local_validation_artifact_sha256": {
+    "build/manual_risk_cycle_test": "5f9c898aed252cde6d1a65dde0961a7f5384e69fb31c5e65d5b5c0aa7b51fdd4",
+    "build/mvp_contract_test": "d02a70efa066f93f040abddda09a1cfd2e0e0efee2cd596f3f6ba9152af15d62",
+    "build/trade_bot": "e4b197a9e5d044f1c0de97d3b4ee871ba9366df7ea7300f6491989fc5900a652",
+    "build/Testing/Temporary/LastTest.log": "6acef880df0f1667f7a5a2f5a0933274ca70c1788df7dfc477393e8b3f1aae09"
+  },
+  "preserved_evidence_sha256": {
+    "docs/reviews/2026-09-21-mvp-contract-repair.evidence.json": "4be03cb5f1bc88b342cafd3c3b73f9a45e3a26f105879b2f23085bc0a603be6a",
+    "docs/reviews/2026-09-21-original-mvp-contract.evidence.json": "c9851196107f7f146f40ee96fe7bda5fb4475dec2e79e7497187193b8fbbe416",
+    "tools/audit_original_mvp_contract.cpp": "27adbec62f88a580d180ff45a2bf083f62ccb55149b61bbd5104e11b480d59a4",
+    "tools/fixtures/original_mvp_contract_audit.csv": "684a428b403115379c32536b1a886213acff2a87c54127344a32daf23d65f80b",
+    "docs/plans/2026-09-21-weekly-momentum-screen-v1.json": "71a8580421ba0a2e51f342475c2c7ba9541079aaaaad04ab55256f0e66214c16",
+    "docs/reviews/2026-09-21-etf-timing-audit.evidence.json": "185c6b65852becbf19a6de67ceb60dabfab72d46ffd06dff7777c58517725a61"
+  }
+}

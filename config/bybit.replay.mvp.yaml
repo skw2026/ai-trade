@@ -1,0 +1,93 @@
+# Engineering-only fixed original-MVP reference, NOT a qualified candidate.
+# Closed bars: 5m; parameters inherited from core defaults, not return-selected.
+system:
+  id: "original-mvp-causal-reference"
+  mode: "replay"
+  closed_bar_mvp: true
+  primary_symbol: "BTCUSDT"
+  data_path: "./.artifacts/original-mvp-replay"
+  max_ticks: 0
+  status_log_interval_ticks: 20
+  remote_risk_refresh_interval_ticks: 0
+  reconcile:
+    enabled: false
+exchange:
+  platform: "bybit"
+  bybit:
+    testnet: true
+    demo_trading: false
+    category: "linear"
+    public_ws_enabled: false
+    public_ws_rest_fallback: false
+    private_ws_enabled: false
+    private_ws_rest_fallback: false
+    replay_default_interval_ms: 300000
+risk:
+  max_abs_notional_usd: 3000
+  max_drawdown:
+    degraded_threshold: 0.08
+    degraded_recover_threshold: 0.06
+    cooldown_threshold: 0.12
+    cooldown_recover_threshold: 0.10
+    fuse_threshold: 0.20
+    fuse_recover_threshold: 0.16
+strategy:
+  signal_notional_usd: 1000
+  signal_deadband_abs: 0.1
+  signal_deadband_bps: 0
+  default_tick_interval_ms: 300000
+  signal_valid_for_ms: 300000
+  min_hold_ticks: 0
+  params:
+    ema_fast: 12
+    ema_slow: 26
+  trend_breakout_lookback_ticks: 0
+  trend_slope_lookback_ticks: 0
+  trend_vol_cap_annual: 0
+  trend_strength_scale: 0
+  vol_target_pct: 0.40
+  vol_target_max_leverage: 3.0
+  defensive_notional_ratio: 0
+execution:
+  max_order_notional: 1000
+  min_rebalance_notional_usd: 0
+  include_inflight_notional_in_position: true
+  min_order_interval_ms: 0
+  reverse_signal_cooldown_ticks: 0
+  enable_fee_aware_entry_gate: true
+  entry_fee_bps: 5.5
+  exit_fee_bps: 5.5
+  expected_slippage_bps: 1.0
+  min_expected_edge_bps: 1.0
+  adaptive_fee_gate_enabled: false
+  maker_entry_enabled: false
+  candidate_probe_enabled: false
+  protection:
+    enabled: false
+regime:
+  enabled: true
+  warmup_ticks: 20
+  ewma_alpha: 0.20
+  bar_interval_ms: 300000
+  switch_confirm_ticks: 0
+  trend_threshold: 0.0008
+  extreme_threshold: 0.0030
+  volatility_threshold: 0.0018
+integrator:
+  enabled: false
+  mode: "off"
+  shadow:
+    enabled: false
+self_evolution:
+  enabled: false
+universe:
+  enabled: false
+  candidate_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  fallback_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+gate:
+  min_effective_signals_per_day: 24
+  min_fills_per_day: 4
+  heartbeat_empty_signal_ticks: 12
+  window_ticks: 288
+  enforce_runtime_actions: false
+  auto_resume_when_flat: false

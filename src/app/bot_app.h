@@ -603,6 +603,7 @@ class BotApplication {
       managed_protection_by_symbol_;
   std::unordered_map<std::string, double> latest_mark_price_by_symbol_;
   bool replay_terminal_settlement_started_{false};
+  std::int64_t last_mvp_gate_bar_ts_{0};
   bool replay_terminal_close_submitted_{false};
   bool replay_terminal_settlement_failed_{false};
   int replay_terminal_settlement_idle_polls_{0};

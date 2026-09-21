@@ -1,0 +1,276 @@
+{
+  "account_qualification": false,
+  "annual_economic_result_available": false,
+  "archive_integrity_diagnostic": {
+    "hash_mismatches": [],
+    "prior_mismatches_except_updated_current_state": []
+  },
+  "archive_inventory_canonical_tree_sha256": "698f4dd8df1680dad9d23e45b09b0262985edc23a44b6c5c9c07086136948728",
+  "archive_inventory_file_count": 889,
+  "authority": {
+    "account_access": false,
+    "approved_proposal": "docs/plans/2026-09-21-mvp-reference-history-one-shot.md",
+    "automatic_retry": false,
+    "commit_push_deployment": false,
+    "contract_sha256": "f50dfdc5e7db2d15a16cffdf0ed832b4bcd15901d7645247ed1447fdb2c20d62",
+    "deadline_utc": "2026-09-21T17:09:40Z",
+    "fixed_reference_only": true,
+    "historical_execution_approved": true,
+    "maximum_compute_seconds": 3600,
+    "maximum_public_gets": 500,
+    "parameter_search": false,
+    "schema": "mvp_reference_history_authorization_v1",
+    "started_at_utc": "2026-09-21T15:09:40Z",
+    "trading": false,
+    "training": false,
+    "user_instruction": "\u6267\u884c\u4e0b\u4e00\u6b65"
+  },
+  "baseline_commit": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+  "build_artifact_sha256": {
+    "build/execution_ordering_test": "231d888c223e5a64420fa4709db2c86201a6d9f248f02ef892ba181a1644a191",
+    "build/financial_risk_contract_test": "952437676c99a0535b62900ea20fe238d7ef6c7b6d29a68095eb0ddbdef6836c",
+    "build/manual_risk_cycle_test": "255c1eeaae759360524d54b31d78a13d1821175d10dc2818cf4b5a430860558b",
+    "build/mvp_contract_test": "7f0bf5964f489082cd11e28bf941a3213e6cfbfa183d8548f00406d54bd79d8c",
+    "build/replay_reference_account_test": "dbe9cbfbcda929933e2fea9f01e75dc1e5e0d8b67ee89802ed898f9859ca258d",
+    "build/trade_bot": "cd9fe8148f2f0e309d4c1ccf9c6788a732a137947f1833eb70b93c924713cf95",
+    "build/trade_system_test": "9331954ec8a821df7215a35ad8e70bdab7bde5401fcead002e001b1f2f02341b"
+  },
+  "deadline_utc": "2026-09-21T17:09:40Z",
+  "decision": "INSUFFICIENT",
+  "demo_activation_authorized": false,
+  "economic_qualification": false,
+  "elapsed_wall_seconds_at_archival": 1191.252,
+  "evidence_created_at_utc": "2026-09-21T15:29:31.252412+00:00",
+  "file_sha256": {
+    "config/bybit.replay.mvp-reference.yaml": "be555bd3bff4036d09e8cc4e9023d26bb1e6f5eac19332bcce1aa8ca53c0bf0b",
+    "config/bybit.replay.mvp.yaml": "06f64aab329efced409db8756bbb523aeeca516c47511d501ed24384a231742a",
+    "docs/CURRENT_STATE.md": "232a91ab1ec6cb505d43ebdeab98a886b3777d392e7e676a9fd54fe1b5fbdc55",
+    "docs/plans/2026-09-21-mvp-reference-history-execution.json": "87a41497c6a24c3c088209d60abbad7b709bfdefc9e4a0bf9a59b25bddb6f86d",
+    "docs/plans/2026-09-21-mvp-reference-history-one-shot.md": "066f29152312b600a6fc40e5983cfcb609241cdb8a8a5b1d8af6e9e52abd5109",
+    "docs/plans/2026-09-21-mvp-reference-v1.json": "f50dfdc5e7db2d15a16cffdf0ed832b4bcd15901d7645247ed1447fdb2c20d62",
+    "docs/reviews/2026-09-21-mvp-history-rate-limit-review.json": "14aa34f4527713db6129f5f6bda0f9f9476679e93adcf33fbbc32c2bce9126e9",
+    "docs/reviews/2026-09-21-mvp-history-screen-result.md": "46295076b6efa7a2245a111215b21af14027ab257ef9ad9f41bf7f8e5b9f1231",
+    "docs/reviews/2026-09-21-mvp-history-stop-review.json": "db07ba0a193713d3e19e29a7d4b741f3f8700d14456d12d27998947bad9a5ec8",
+    "docs/reviews/2026-09-21-mvp-reference.evidence.json": "e0f595a973622c9f5d26f8ea2494bc08ff53b5d98ea570e8b3a1976a007884ad",
+    "tools/audit_mvp_reference_stop.py": "657f89d097e80295c712eaff50b2fcad4206fab08c5ce1c3d89955b3bc5106be",
+    "tools/collect_mvp_reference_history.py": "47daf417e3389d972893d853968359191b2b10068d4a50e340490e9c930ee048",
+    "tools/mvp_reference_inputs.py": "c12267edd479cdf58b0b8f7998672d562343a2d8e236e832fd1456e125cc00a1",
+    "tools/mvp_reference_pipeline.py": "49ae7c948f3442385add9747e9a85cce980d44de51281d86433996917c92428d",
+    "tools/mvp_reference_verdict.py": "85fd68d4c4a77aad723c29c14074cdba6f80ae981ae4750f0b3d91642167d684",
+    "tools/test_collect_mvp_reference_history.py": "97c684c7cb59fb7964d01907c1e382736821c9a16dec859ae9188f3fe1e39fb1"
+  },
+  "historical_input_complete": true,
+  "independent_observed_ledger_diagnostic": {
+    "annual_result_available": false,
+    "diagnostic_only": true,
+    "distinct_filled_orders": 1265,
+    "log_sha256": "9c15ac602717334deba596774d46f1db4d7dbeaf3b1c878bd6f762d7e86b41ef",
+    "matched_closed_bars": 8887,
+    "matched_fill_parts": 2399,
+    "max_drawdown_bound_reconciliation_error": 6.661338147750939e-16,
+    "max_equity_reconciliation_error": 9.094947017729282e-12,
+    "new_economic_experiment": false,
+    "plan_sha256": "6521637da57eb50066a4e577d8fbdac1b4db8606d1cc0a3e0cb350b06ac66131",
+    "stop": {
+      "cash": 9210.05756304627,
+      "collateral": 474.0057195300001,
+      "drawdown_upper": 0.08003506455093105,
+      "entry": 105450.6,
+      "equity": 9206.35568304627,
+      "fees": 549.8337211949996,
+      "funding_paid": 1.345615758741001,
+      "funding_uncertainty": 0.035054527823500006,
+      "mark": 105039.28,
+      "phase": "close_before_alpha",
+      "point_drawdown": 0.07985654844741023,
+      "point_peak": 10005.348261199999,
+      "price_pnl_before_execution_costs_on_same_fill_path": -141.99238000000523,
+      "qty": 0.009000000000000001,
+      "realized_pnl_after_slippage_before_fees": -238.7631000000074,
+      "risk_distance": 0.49174664919547356,
+      "slippage_and_adverse_tick_cost_on_observed_fills": 100.47260000000225,
+      "ts": 1738269600000,
+      "unrealized_pnl": -3.701880000000063,
+      "upper_peak": 10007.2516612,
+      "utc": "2025-01-30T20:40:00+00:00"
+    },
+    "strategy_rerun": false,
+    "stress_executed": false
+  },
+  "input_proof": {
+    "bars": 105409,
+    "complete": true,
+    "contract_sha256": "f50dfdc5e7db2d15a16cffdf0ed832b4bcd15901d7645247ed1447fdb2c20d62",
+    "csv_sha256": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+    "end_exclusive_ms": 1767225900000,
+    "evaluation_start_ms": 1735689600000,
+    "funding_events": 1099,
+    "historical_account_qualification": false,
+    "manifest_sha256": "d6d5fc70ff578e5038a201dcf36bee843dbe64b023cce7af0a4ef3b953a8d60c",
+    "raw_pages": 218,
+    "schema": "mvp_reference_input_bundle_v1",
+    "source_start_ms": 1735603200000,
+    "synthetic_only": false
+  },
+  "key_artifact_sha256": {
+    ".artifacts/mvp-reference-history-20260921/archive-inventory.json": "b8d06230d5406814174ab84e8336baa5d3beedae96e108d02a0eb3604cdeae54",
+    ".artifacts/mvp-reference-history-20260921/archive/manifest.json": "d6d5fc70ff578e5038a201dcf36bee843dbe64b023cce7af0a4ef3b953a8d60c",
+    ".artifacts/mvp-reference-history-20260921/prepared/base.log": "9c15ac602717334deba596774d46f1db4d7dbeaf3b1c878bd6f762d7e86b41ef",
+    ".artifacts/mvp-reference-history-20260921/prepared/base.yaml": "7efe1acf6a9340717bf030d9e08525a4af5a0698d82a079395d16d931ff3dffe",
+    ".artifacts/mvp-reference-history-20260921/prepared/execution-authority.json": "18f9924cc6988254f40cecd408f08d777255f1761603be40a45931b24970efe2",
+    ".artifacts/mvp-reference-history-20260921/prepared/execution-claim.json": "40c0287332b9372aa888b60d8efbe90e810f21e25689c564e5f5c5aa2d6675b8",
+    ".artifacts/mvp-reference-history-20260921/prepared/input-proof.json": "76a517c3f0875cfc6b34612f722a400811fba95a2ace5b4e6469b9957eb425e1",
+    ".artifacts/mvp-reference-history-20260921/prepared/replay.csv": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+    ".artifacts/mvp-reference-history-20260921/prepared/result.json": "3c162b52cdccf92c9bf6c3fb07c1b47e5d351915b71f3581a64c7a4959fb9e54",
+    ".artifacts/mvp-reference-history-20260921/prepared/run-plan.json": "6521637da57eb50066a4e577d8fbdac1b4db8606d1cc0a3e0cb350b06ac66131",
+    ".artifacts/mvp-reference-history-20260921/prepared/stress.yaml": "23b42d880967356028e737820392660f864fc79c5e82fee5cdcefb3c302234d6",
+    ".artifacts/mvp-reference-history-20260921/request-plan.json": "046c9ed0a8980b5981cc3483c659b9cabf8ca29d10ec7394d115c00ba3ecc686",
+    ".artifacts/mvp-reference-history-20260921/stop-ledger-audit.json": "1e8ebff1b649741952e3b666670f5fffd9930a9411a55b6776b569c384752677"
+  },
+  "next_action": "No additional run of this fixed contract. Reuse archived data/tools only within separately authorized work. A new independently justified mechanism and ex-ante cost/risk contract are prerequisites for any new profit experiment; none is started here.",
+  "official_sources": [
+    "https://bybit-exchange.github.io/docs/v5/market/kline",
+    "https://bybit-exchange.github.io/docs/v5/market/mark-kline",
+    "https://bybit-exchange.github.io/docs/v5/market/history-fund-rate",
+    "https://bybit-exchange.github.io/docs/v5/error",
+    "https://bybit-exchange.github.io/docs/v5/rate-limit"
+  ],
+  "original_pipeline_result": {
+    "account_qualification": false,
+    "decision": "INSUFFICIENT",
+    "demo_activation_authorized": false,
+    "economic_qualification": false,
+    "elapsed_seconds": 11.119589749985607,
+    "plan_sha256": "6521637da57eb50066a4e577d8fbdac1b4db8606d1cc0a3e0cb350b06ac66131",
+    "reason": "REFERENCE_RUNTIME_OR_INTRABAR_STOP",
+    "receipts": [
+      {
+        "argv": [
+          "/Users/sk.wang/Projects/c++/ai-trade/build/trade_bot",
+          "--config=/Users/sk.wang/Projects/c++/ai-trade/.artifacts/mvp-reference-history-20260921/prepared/base.yaml"
+        ],
+        "binary_sha256": "cd9fe8148f2f0e309d4c1ccf9c6788a732a137947f1833eb70b93c924713cf95",
+        "config_sha256": "7efe1acf6a9340717bf030d9e08525a4af5a0698d82a079395d16d931ff3dffe",
+        "csv_sha256": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+        "cwd": "/Users/sk.wang/Projects/c++/ai-trade/.artifacts/mvp-reference-history-20260921/prepared",
+        "exit_code": 1,
+        "log_sha256": "9c15ac602717334deba596774d46f1db4d7dbeaf3b1c878bd6f762d7e86b41ef",
+        "scenario": "base"
+      }
+    ],
+    "synthetic_only": false
+  },
+  "original_result_reclassified": false,
+  "phase_closed": true,
+  "project_disposition": "NO_GO_CURRENT_REFERENCE_MVP_CONTINUATION",
+  "schema_version": 1,
+  "source_identity_matches_prior": true,
+  "source_tree_sha256": "fa1944703ab7b9aa9d76dfaabbe53975749191a421ac6192f325845f9b9c053d",
+  "specific_stop_reason": "INSUFFICIENT_ACCOUNTING_CONTROL_PATH",
+  "stage": "mvp_reference_history_one_shot",
+  "started_at_utc": "2026-09-21T15:09:40Z",
+  "usage": {
+    "collector_command_reviewed_retries": 1,
+    "commit_push_deployment": false,
+    "economic_base_invocations": 1,
+    "economic_retries": 0,
+    "economic_stress_invocations": 0,
+    "failed_market_gets": 1,
+    "official_market_get_attempts": 219,
+    "parameter_searches": 0,
+    "pipeline_elapsed_seconds": 11.119589749985607,
+    "real_account_accesses": 0,
+    "successful_unique_pages": 218,
+    "training_runs": 0
+  },
+  "validation": {
+    "collector_synthetic_tests_passed": 6,
+    "economic_stop_diagnosed_and_closed": true,
+    "full_regression_this_stage": "NOT_RUN",
+    "gate_status": "HALTED",
+    "post_stop_checks": "READ_ONLY_DIAGNOSIS_AND_ARCHIVING_NOT_FORMAL_RETRY",
+    "preflight_identity_records": 130,
+    "prior_full_regression": {
+      "at_utc": "2026-09-21T14:44:42.909440+00:00",
+      "passed": 102,
+      "total": 102
+    },
+    "stage_events": [
+      {
+        "at": "2026-09-21T15:10:01.947201+00:00",
+        "command_sha256": "572cbb493942bc9d4bce2c976f8c94a711c37fd6205106441a04b7611c205c52",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "mvp-history-approved-preflight",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:11:52.771115+00:00",
+        "command_sha256": "79654e0b7945c5bb420c63c17350d39e9574aae2f278e486f926045632d5fb28",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "mvp-history-collector-synthetic",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:12:01.281681+00:00",
+        "command_sha256": "140c7e2276c07979fcb426dfd39afc1243034dfc55a061d607cd960c28215e88",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "mvp-history-freeze-request-plan",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:15:07.626678+00:00",
+        "command_sha256": "1087574eb61cb1cb3e376b2d66ad08ef19068ceaa58334227613e2ffe1473772",
+        "event": "validation",
+        "exit_code": 1,
+        "label": "mvp-history-public-collection",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:16:28.011621+00:00",
+        "decision": "retry",
+        "event": "review",
+        "failure_id": "ffcb7408945949789dc63abb61476f70",
+        "review_path": "/Users/sk.wang/Projects/c++/ai-trade/docs/reviews/2026-09-21-mvp-history-rate-limit-review.json",
+        "review_sha256": "14aa34f4527713db6129f5f6bda0f9f9476679e93adcf33fbbc32c2bce9126e9"
+      },
+      {
+        "at": "2026-09-21T15:20:46.492894+00:00",
+        "command_sha256": "1087574eb61cb1cb3e376b2d66ad08ef19068ceaa58334227613e2ffe1473772",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "mvp-history-public-collection",
+        "retry_of": "ffcb7408945949789dc63abb61476f70"
+      },
+      {
+        "at": "2026-09-21T15:20:53.470447+00:00",
+        "command_sha256": "83af526678c230e2d6fc54da5eae300a3d1522da286d2db932ab8b675cfbd332",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "mvp-history-full-input-prepare",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:21:33.599855+00:00",
+        "command_sha256": "ef8102889231aa4595d3793f493eb5733a48641baae460929febd9af92d17302",
+        "event": "validation",
+        "exit_code": 2,
+        "label": "mvp-history-one-shot-screen",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:26:13.392707+00:00",
+        "decision": "stop",
+        "event": "review",
+        "failure_id": "a16b1aed424847bcb25e7ade63536cb5",
+        "review_path": "/Users/sk.wang/Projects/c++/ai-trade/docs/reviews/2026-09-21-mvp-history-stop-review.json",
+        "review_sha256": "db07ba0a193713d3e19e29a7d4b741f3f8700d14456d12d27998947bad9a5ec8"
+      }
+    ],
+    "stop_review_failure_id": "a16b1aed424847bcb25e7ade63536cb5",
+    "unexpected_collection_failures": 1,
+    "unresolved_collection_failures": 0
+  }
+}

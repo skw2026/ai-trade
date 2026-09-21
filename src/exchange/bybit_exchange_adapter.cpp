@@ -16,6 +16,8 @@
 
 #include "core/json_utils.h"
 #include "core/log.h"
+#include "market/closed_bar_clock.h"
+#include "risk/replay_reference_account.h"
 
 namespace ai_trade {
 
@@ -369,6 +371,10 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
   const auto open_idx = LookupHeaderIndex(header_map, "open");
   const auto high_idx = LookupHeaderIndex(header_map, "high");
   const auto low_idx = LookupHeaderIndex(header_map, "low");
+  const auto mark_open_idx = LookupHeaderIndex(header_map, "mark_open");
+  const auto mark_close_idx = LookupHeaderIndex(header_map, "mark_close");
+  const auto mark_high_idx = LookupHeaderIndex(header_map, "mark_high");
+  const auto mark_low_idx = LookupHeaderIndex(header_map, "mark_low");
   if (!open_idx.has_value() || !high_idx.has_value() || !low_idx.has_value() ||
       !volume_idx.has_value()) {
     if (out_error != nullptr) {
@@ -493,6 +499,15 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
         interval_ms = std::max(1, options.replay_default_interval_ms);
       }
     }
+    if (options.replay_causal_bars &&
+        (interval_ms != ClosedBarClock::kIntervalMs ||
+         ts_ms % ClosedBarClock::kIntervalMs != 0 ||
+         (previous_ts_by_symbol.count(symbol) &&
+          ts_ms != previous_ts_by_symbol.at(symbol) + interval_ms) ||
+         ts_ms > std::numeric_limits<std::int64_t>::max() - interval_ms)) {
+      if (out_error) *out_error = "causal replay requires contiguous aligned 5m bars";
+      return false;
+    }
     previous_ts_by_symbol[symbol] = ts_ms;
 
     double funding_rate_per_interval =
@@ -528,6 +543,49 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
       }
     }
 
+    if (options.replay_causal_bars) {
+      double mark_open = 0.0;
+      double mark_close = 0.0;
+      if (!parse_optional_price(mark_open_idx, "mark_open", &mark_open) ||
+          !parse_optional_price(mark_close_idx, "mark_close", &mark_close) ||
+          !std::isfinite(funding_rate_per_interval)) {
+        if (out_error) *out_error = "causal replay requires mark_open/mark_close and explicit funding";
+        return false;
+      }
+      MarketEvent opening;
+      opening.ts_ms = ts_ms;
+      opening.symbol = symbol;
+      opening.price = open;
+      opening.mark_price = mark_open;
+      opening.funding_rate_per_interval = funding_rate_per_interval;
+      opening.execution_disabled = execution_disabled;
+      opening.execution_only = true;
+      out_events->push_back(opening);
+      MarketEvent closing = opening;
+      closing.ts_ms += interval_ms;
+      closing.price = price;
+      closing.mark_price = mark_close;
+      closing.open_price = open;
+      closing.high_price = high;
+      closing.low_price = low;
+      closing.volume = volume;
+      closing.interval_ms = interval_ms;
+      closing.funding_rate_per_interval = 0.0;
+      closing.execution_only = false;
+      closing.completed_bar = true;
+      if (options.replay_reference_account) {
+        if (symbol != "BTCUSDT" ||
+            !parse_optional_price(mark_high_idx, "mark_high", &closing.mark_high_price) ||
+            !parse_optional_price(mark_low_idx, "mark_low", &closing.mark_low_price) ||
+            closing.mark_high_price < std::max(mark_open, mark_close) ||
+            closing.mark_low_price > std::min(mark_open, mark_close)) {
+          if (out_error) *out_error = "reference replay requires BTC mark OHLC bounds";
+          return false;
+        }
+      }
+      out_events->push_back(closing);
+      continue;
+    }
     out_events->push_back(MarketEvent{
         ts_ms,
         symbol,
@@ -550,6 +608,21 @@ bool LoadReplayMarketData(const BybitAdapterOptions& options,
                    options.replay_market_data_path;
     }
     return false;
+  }
+  if (options.replay_causal_bars) {
+    std::stable_sort(out_events->begin(), out_events->end(),
+        [](const MarketEvent& a, const MarketEvent& b) {
+          if (a.ts_ms != b.ts_ms) return a.ts_ms < b.ts_ms;
+          if (a.completed_bar != b.completed_bar) return a.completed_bar;
+          return a.symbol < b.symbol;
+        });
+    for (std::size_t i = 0; i < out_events->size(); ++i) {
+      auto& event = (*out_events)[i];
+      event.decision_batch_end = event.completed_bar &&
+          (i + 1 == out_events->size() ||
+           !(*out_events)[i + 1].completed_bar ||
+           (*out_events)[i + 1].ts_ms != event.ts_ms);
+    }
   }
   return true;
 }
@@ -1203,6 +1276,13 @@ bool LoadTradeRuleForSymbol(BybitRestClient* rest_client,
  * 5. 预热 execution 游标，避免重启后误消费历史成交。
  */
 bool BybitExchangeAdapter::Connect() {
+  if (options_.replay_reference_account && !options_.replay_causal_bars) return false;
+  if (options_.replay_causal_bars &&
+      (!IsReplayMode(options_) || options_.replay_market_data_path.empty() ||
+       options_.maker_entry_enabled)) {
+    LogError("causal MVP adapter requires offline CSV replay without maker");
+    return false;
+  }
   options_.symbols = NormalizeSymbols(options_.symbols, options_.primary_symbol);
   observed_exec_ids_.clear();
   pending_fills_.clear();
@@ -1210,6 +1290,12 @@ bool BybitExchangeAdapter::Connect() {
   replay_reduce_reserved_qty_by_client_id_.clear();
   pending_markets_.clear();
   replay_market_events_.clear();
+  replay_market_orders_.clear();
+  causal_replay_submitted_ids_.clear();
+  if (options_.replay_causal_bars) {
+    replay_cursor_ = 0;
+    replay_seq_ = 0;
+  }
   last_market_ts_ms_by_symbol_.clear();
   last_volume_24h_by_symbol_.clear();
   last_public_ws_reconnect_attempt_ms_ = 0;
@@ -1241,6 +1327,26 @@ bool BybitExchangeAdapter::Connect() {
     LogInfo(
         "Bybit 主网实盘连接已硬性禁用：必须先完成 Demo 长期孵化并通过人工实盘测试复核");
     return false;
+  }
+  // The explicitly offline MVP path must not even inspect credentials.
+  if (options_.replay_causal_bars) {
+    connected_ = true;
+    if (options_.replay_reference_account) {
+      BybitSymbolTradeRule rule;
+      rule.qty_step = rule.min_order_qty = ReplayReferenceRules::kQtyStep;
+      rule.min_notional_value = ReplayReferenceRules::kMinEntry;
+      rule.price_tick = ReplayReferenceRules::kPriceTick;
+      symbol_trade_rules_["BTCUSDT"] = rule;
+      LogInfo("OFFLINE_REFERENCE_RULES_V1: not_exchange_or_historical_account_rules");
+    }
+    market_channel_ = MarketChannel::kReplay;
+    fill_channel_ = FillChannel::kReplay;
+    account_snapshot_ = ExchangeAccountSnapshot{
+        .account_mode = options_.remote_account_mode,
+        .margin_mode = options_.remote_margin_mode,
+        .position_mode = options_.remote_position_mode};
+    LogInfo("CAUSAL_MVP_REPLAY: offline, credentials not resolved");
+    return true;
   }
   std::string api_key;
   std::string api_secret;
@@ -1716,6 +1822,7 @@ bool BybitExchangeAdapter::PollMarket(MarketEvent* out_event) {
       last_price_by_symbol_[out_event->symbol] = out_event->price;
       last_market_ts_ms_by_symbol_[out_event->symbol] = out_event->ts_ms;
       ++replay_seq_;
+      TriggerReplayMarketOrders(*out_event);
       TriggerReplayRestingOrders(*out_event);
       TriggerReplayConditionalOrders(*out_event);
       return true;
@@ -1909,6 +2016,12 @@ bool BybitExchangeAdapter::EnqueueReplayFill(const OrderIntent& intent,
         enqueue_qty;
   }
   fill_price = ApplyReplaySlippage(options_, intent, fill_price);
+  if (options_.replay_reference_account) {
+    fill_price = ReplayReferenceRules::AdversePrice(fill_price, intent.direction);
+    if (fill_price <= 0) throw std::runtime_error("REFERENCE_SCREEN_STOP:INSUFFICIENT_TICK_PRICE");
+    if (!intent.reduce_only && enqueue_qty * fill_price < ReplayReferenceRules::kMinEntry)
+      throw std::runtime_error("REFERENCE_SCREEN_STOP:INSUFFICIENT_GAP_MIN_NOTIONAL");
+  }
   const double fee_bps = ReplayFeeBpsForIntent(options_, intent);
   const FillLiquidity liquidity = ReplayFillLiquidity(options_, intent);
   auto make_fill = [&](double qty) {
@@ -1926,7 +2039,11 @@ bool BybitExchangeAdapter::EnqueueReplayFill(const OrderIntent& intent,
   };
 
   // 回放模式模拟部分成交：拆分为两笔 FillEvent。
-  const double first_qty = enqueue_qty * 0.6;
+  double first_qty = enqueue_qty * 0.6;
+  if (options_.replay_reference_account) {
+    first_qty = ReplayReferenceRules::QuantizeQuantity(first_qty);
+    if (first_qty < ReplayReferenceRules::kQtyStep) first_qty = enqueue_qty;
+  }
   const double second_qty = enqueue_qty - first_qty;
   pending_fills_.push_back(make_fill(first_qty));
   if (second_qty > 1e-9) {
@@ -1975,6 +2092,26 @@ void BybitExchangeAdapter::TriggerReplayConditionalOrders(
     }
   }
   replay_conditional_orders_.swap(kept);
+}
+
+void BybitExchangeAdapter::TriggerReplayMarketOrders(const MarketEvent& event) {
+  if (!options_.replay_causal_bars || !event.execution_only) return;
+  std::deque<ReplayRestingOrder> kept;
+  for (const auto& order : replay_market_orders_) {
+    if (order.intent.symbol != event.symbol ||
+        replay_seq_ <= order.submitted_replay_seq || event.execution_disabled) {
+      kept.push_back(order);
+      continue;
+    }
+    // The opening event has no future OHLC or volume. Quantity was fixed by
+    // the decision; gap risk changes executed notional, never the old signal.
+    if (EnqueueReplayFill(order.intent, event.price)) {
+      order_symbol_by_client_id_.erase(order.intent.client_order_id);
+    } else {
+      kept.push_back(order);
+    }
+  }
+  replay_market_orders_.swap(kept);
 }
 
 void BybitExchangeAdapter::TriggerReplayRestingOrders(
@@ -2207,12 +2344,32 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
     return false;
   }
 
+  if (intent.replay_terminal_settlement &&
+      (!IsReplayMode(options_) || !intent.reduce_only ||
+       intent.purpose != OrderPurpose::kReduce)) return false;
+  if (options_.replay_causal_bars && intent.replay_terminal_settlement &&
+      replay_cursor_ < replay_market_events_.size()) return false;
+  if (options_.replay_causal_bars &&
+      (!std::isfinite(intent.qty) || !std::isfinite(intent.price) ||
+       IsConditionalProtectionOrder(intent))) return false;
+
   if (IsReplayMode(options_)) {
     OrderIntent replay_intent = intent;
     replay_intent.symbol = ToUpperCopy(intent.symbol);
+    if (options_.replay_causal_bars &&
+        causal_replay_submitted_ids_.count(intent.client_order_id)) return true;
+    if (options_.replay_reference_account) {
+      const double rounded = ReplayReferenceRules::QuantizeQuantity(intent.qty);
+      if (intent.symbol != "BTCUSDT" || std::abs(intent.direction) != 1 || intent.price <= 0 ||
+          rounded < ReplayReferenceRules::kQtyStep || std::fabs(rounded - intent.qty) > 1e-9 ||
+          (!intent.replay_terminal_settlement && intent.qty * intent.price > 1000 + 1e-8) ||
+          (!intent.reduce_only && intent.qty * intent.price < ReplayReferenceRules::kMinEntry))
+        return false;
+    }
     order_symbol_by_client_id_[replay_intent.client_order_id] =
         replay_intent.symbol;
     if (IsConditionalProtectionOrder(replay_intent)) {
+      if (options_.replay_causal_bars) return false;
       if (replay_intent.price <= 0.0) {
         return false;
       }
@@ -2228,7 +2385,15 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
           ReplayRestingOrder{replay_intent, replay_seq_});
       return true;
     }
+    if (options_.replay_causal_bars && !intent.replay_terminal_settlement) {
+      replay_market_orders_.push_back(ReplayRestingOrder{replay_intent, replay_seq_});
+      causal_replay_submitted_ids_.insert(intent.client_order_id);
+      return true;
+    }
     double fill_price = replay_intent.price;
+    if (options_.replay_causal_bars && intent.replay_terminal_settlement) {
+      fill_price = last_price_by_symbol_[replay_intent.symbol];
+    }
     if (fill_price <= 0.0) {
       const auto it = last_price_by_symbol_.find(replay_intent.symbol);
       if (it != last_price_by_symbol_.end() && it->second > 0.0) {
@@ -2238,7 +2403,10 @@ bool BybitExchangeAdapter::SubmitOrder(const OrderIntent& intent) {
     if (fill_price <= 0.0) {
       return false;
     }
-    return EnqueueReplayFill(replay_intent, fill_price);
+    const bool enqueued = EnqueueReplayFill(replay_intent, fill_price);
+    if (enqueued && options_.replay_causal_bars)
+      causal_replay_submitted_ids_.insert(intent.client_order_id);
+    return enqueued;
   }
 
   if (rest_client_ == nullptr) {
@@ -2556,6 +2724,11 @@ bool BybitExchangeAdapter::CancelOrder(const std::string& client_order_id) {
       }
     }
     replay_resting_orders_.swap(resting_kept);
+    std::deque<ReplayRestingOrder> market_kept;
+    for (const auto& order : replay_market_orders_) {
+      if (order.intent.client_order_id != client_order_id) market_kept.push_back(order);
+    }
+    replay_market_orders_.swap(market_kept);
     order_symbol_by_client_id_.erase(client_order_id);
     return true;
   }
@@ -2980,6 +3153,20 @@ bool BybitExchangeAdapter::GetRemoteOpenOrders(
           .reduce_only = intent.reduce_only,
           .close_on_trigger = false,
       });
+    }
+    for (const auto& order : replay_market_orders_) {
+      const auto& intent = order.intent;
+      RemoteOpenOrderSnapshot pending;
+      pending.client_order_id = intent.client_order_id;
+      pending.exchange_order_id = intent.client_order_id;
+      pending.symbol = intent.symbol;
+      pending.status = "New";
+      pending.order_type = "Market";
+      pending.direction = intent.direction;
+      pending.original_qty = intent.qty;
+      pending.leaves_qty = intent.qty;
+      pending.reduce_only = intent.reduce_only;
+      out_orders->push_back(pending);
     }
     for (const auto& order : replay_conditional_orders_) {
       const OrderIntent& intent = order.intent;

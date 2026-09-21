@@ -1,0 +1,28 @@
+{
+  "failure_id": "a73b38aecf06434c9381dddfc3a9288e",
+  "decision": "retry",
+  "goal": "Independent offline engineering freeze with a clean nested build and full unchanged regression acceptance",
+  "expected": "All 105 registered CTest cases complete successfully using the new build and repository fixtures",
+  "observed": "Full CTest stopped at case 4 trade_system_test with exit 8. Its stderr reports it cannot locate the repository config directory from .artifacts/engineering-freeze-20260921/build. The first 3 cases passed; remaining cases did not run.",
+  "root_cause_status": "confirmed",
+  "root_cause": "tests/test_trade_system.cpp searched only cwd/config and cwd/../config. That implicit one-level build layout does not hold for the deliberately isolated nested build. The unchanged repository config files exist; production configuration loading was not reached for this check. Fix CMake to pass the source config directory explicitly and consume argv in the test; keep its complete config list and assertions, working directory, production code and clean build unchanged.",
+  "evidence": [
+    ".artifacts/engineering-freeze-20260921/first-full-ctest-failure.log",
+    ".artifacts/engineering-freeze-20260921/validation-state.json",
+    "tests/test_trade_system.cpp: repository configuration lookup previously checked only current_path and one parent",
+    "CMakeLists.txt: trade_system_test now receives CMAKE_SOURCE_DIR/config"
+  ],
+  "next_action": "One exact reviewed cmake --build to regenerate the CTest entry and rebuild the test, then one retry of the original full CTest argv from the repository root. Archive and commit remain blocked until it succeeds.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "repair_build_argv": ["cmake", "--build", ".artifacts/engineering-freeze-20260921/build", "--parallel", "4"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade",
+  "path_review": {
+    "goal_alignment": "Make engineering verification independent of build-directory depth; do not change the research goal or economic verdict.",
+    "data_feasibility": "The fixtures are existing local YAML files; no network or account access is necessary.",
+    "method_feasibility": "CMake knows the source directory and passes it to the built test. Explicit identity is stronger than cwd heuristics; all prior assertions and test cases remain.",
+    "budget_and_exit": "One repair build capped at 300s and one original full-suite retry capped at 900s, within the shared 2h engineering stage. Another unresolved failure blocks and requires route reassessment."
+  }
+}

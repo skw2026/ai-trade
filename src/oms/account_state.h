@@ -35,7 +35,7 @@ class AccountState {
   void OnMarket(const MarketEvent& event);
 
   /// Applies a fill execution to the portfolio.
-  void ApplyFill(const FillEvent& fill);
+  void ApplyFill(const FillEvent& fill, bool preserve_mark = false);
   /// Records fee/realized-PnL audit counters for a fill already reflected by
   /// an authoritative remote position/balance snapshot. Does not mutate
   /// positions or cash, preventing REST/WS races from double applying fills.
@@ -44,7 +44,7 @@ class AccountState {
                                     double avg_entry_price_before);
   /// Applies one interval of funding. Positive means the account paid funding.
   double ApplyFunding(const std::string& symbol,
-                      double funding_rate_per_interval);
+                      double funding_rate_per_interval, bool exact_rate = false);
 
   /// Replaces local positions with a remote snapshot (e.g., from REST API).
   void SyncFromRemotePositions(const std::vector<RemotePositionSnapshot>& positions,
@@ -78,6 +78,8 @@ class AccountState {
   double cumulative_realized_net_pnl_usd() const;
   
   double drawdown_pct() const;
+  /// Read-only lifetime reference; manual risk cycles never reset it.
+  double peak_equity_usd() const { return peak_equity_usd_; }
   
   /// Legacy upper-tail statistic: diagnostic only, never a safety gate.
   double liquidation_distance_p95() const;

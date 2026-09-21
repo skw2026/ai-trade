@@ -1,0 +1,25 @@
+{
+  "failure_id": "a7502b1c0f9040729fc13e342a93555f",
+  "decision": "retry",
+  "goal": "构建只使用合成数据的原 MVP 合同诊断工具，不运行历史回测或改变策略",
+  "expected": "cmake --build build --target original_mvp_contract_audit --parallel 4 在原目录成功",
+  "observed": "首次编译退出 2：tools/audit_original_mvp_contract.cpp:163:21: error: no matching function for call to 'ToString'；RiskMode 没有对应重载，诊断未运行",
+  "root_cause_status": "confirmed",
+  "root_cause": "新增诊断工具错误假定 core/types.h 提供 RiskMode 的 ToString 重载；该头文件实际仅提供 AccountMode/MarginMode/PositionMode/Regime/RegimeBucket/FillLiquidity/LiquidityPreference 等转换。修复仅在诊断工具中加入覆盖五个枚举值的 RiskName，不改运行时代码、输入或判断口径。",
+  "evidence": [
+    ".artifacts/validation-gate/state.json：failure_id a7502b1c0f9040729fc13e342a93555f，original-mvp-synthetic-audit-build exit_code=2",
+    "src/core/types.h：RiskMode 五值定义及 ToString 重载列表",
+    "tools/audit_original_mvp_contract.cpp：RiskName 和替换后的观察结果格式化调用"
+  ],
+  "next_action": "仅以相同 cwd、argv 原命令复验一次构建；通过才执行合成诊断，失败则继续阻断",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "仍只取得当前代码行为的可复现证据；不将编译通过当成原 MVP 或盈利通过",
+    "data_feasibility": "合成 CSV 和代码中的确定性价格序列已在本地，无账户、行情样本或网络依赖",
+    "method_feasibility": "编译失败唯一诊断为枚举格式化缺失；已有实际五值定义支持本地格式化修复，不需要更换算法或降低断言",
+    "budget_and_exit": "修复及一次原命令复验计入第一步 2 小时及全阶段 16 小时预算；构建超时 180 秒，再失败立即停下复盘，不重置门禁"
+  }
+}

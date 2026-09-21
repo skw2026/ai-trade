@@ -1,0 +1,21 @@
+{
+  "failure_id": "b6433dd02fcf47f19617afa4d0123144",
+  "decision": "retry",
+  "goal": "Validate real offline binary composition with both fixed cost paths, preserving negative cases and no historical experiment",
+  "expected": "Synthetic raw archive to CSV to real binary to terminal receipts, including observed execution at both frozen costs",
+  "observed": "24 tests, one failure: stress fill list empty. Base had 1152 fill parts; both processes exited zero and closed flat.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Test oracle incorrectly expected a roughly 20 bps signal from a price increment of 1 near 500 to clear the unchanged stress fee-aware hurdle of 27 bps. The stress log shows ORDER_FILTERED_COST, required 27 bps and expected edge below 20; this is correct execution filtering, not a broken CLI or accounting path.",
+  "evidence": [".artifacts/mvp-reference-20260921/cli-zero-fill-reproduction/base.log", ".artifacts/mvp-reference-20260921/cli-zero-fill-reproduction/stress.log", ".artifacts/mvp-reference-20260921/cli-zero-fill-reproduction/result.json", ".artifacts/mvp-reference-20260921/cli-zero-fill-reproduction/run-plan.json"],
+  "next_action": "Retain original slope-1 fixture as an asserted negative cost case, add separate analytically specified slope-2 fixture (initial 40 bps exceeds 27) for positive execution coverage at both costs, and assert actual fill fee formulas. No strategy, costs, contract, historical input or economic verdict standard changes. Retry original Python command once.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Both stress execution and correct cost rejection must be tested; manufacturing historical profitability is neither needed nor permitted.",
+    "data_feasibility": "All generated OHLC/funding are synthetic local fixtures with synthetic-only identities; no market download or account API.",
+    "method_feasibility": "Fee-aware threshold is observable as 27 bps. Preserve the old below-threshold input and add a mathematically above-threshold input rather than weakening the assertion or lowering costs.",
+    "budget_and_exit": "One same-command retry, 90 seconds. Failure reblocks with route reassessment; approved four-hour total unchanged."
+  }
+}

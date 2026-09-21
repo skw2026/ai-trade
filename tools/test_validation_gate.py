@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import validation_gate as gate
 
 GATE = pathlib.Path(__file__).resolve().with_name("validation_gate.py")
 
@@ -140,6 +142,48 @@ class ValidationGateTest(unittest.TestCase):
                           "private_value='synthetic-secret-marker'; raise SystemExit(1)")
         self.assertEqual(result.returncode, 1)
         self.assertNotIn("synthetic-secret-marker", self.state.read_text())
+
+    def test_reviewed_repair_build_cannot_clear_original_acceptance(self):
+        original = self.fail()["command_sha256"]
+        command = ["cmake", "--build", "synthetic-build"]
+        record = {**self.review_record(), "repair_build_argv": command,
+                  "repair_build_cwd": str(pathlib.Path.cwd().resolve())}
+        self.assertEqual(self.submit_review(record).returncode, 0)
+        self.assertEqual(self.cli("retry", "--", *self.command).returncode, 2)
+        self.assertEqual(self.cli("repair-build", "--", "cmake", "--build", "wrong").returncode, 2)
+        state = gate.load(self.state)
+        with mock.patch.object(gate.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
+            self.assertEqual(gate.repair_build(self.state, state, command, 10), 0)
+            run.assert_called_once()
+        self.assertEqual(state["status"], "RETRY_APPROVED")
+        self.assertEqual(state["active"]["command_sha256"], original)
+        self.assertEqual(self.cli("repair-build", "--", *command).returncode, 2)
+        self.assertEqual(self.cli("run", "--label", "downstream", "--", *self.command).returncode, 2)
+        self.script.write_text("raise SystemExit(0)\n")
+        self.assertEqual(self.cli("retry", "--", *self.command).returncode, 0)
+
+    def test_failed_repair_requires_new_review_and_route_reassessment(self):
+        self.fail()
+        command = ["cmake", "--build", "synthetic-build"]
+        record = {**self.review_record(), "repair_build_argv": command,
+                  "repair_build_cwd": str(pathlib.Path.cwd().resolve())}
+        self.assertEqual(self.submit_review(record).returncode, 0)
+        state = gate.load(self.state)
+        with mock.patch.object(gate.subprocess, "run", return_value=mock.Mock(returncode=1)):
+            self.assertEqual(gate.repair_build(self.state, state, command, 10), 1)
+        self.assertEqual(state["status"], "BLOCKED")
+        self.assertEqual(state["active"]["failure_count"], 2)
+        self.assertEqual(self.submit_review(self.review_record()).returncode, 2)
+
+    def test_repair_requires_build_command_and_exact_review_identity(self):
+        self.fail()
+        record = {**self.review_record(), "repair_build_argv": ["echo", "skip"],
+                  "repair_build_cwd": str(pathlib.Path.cwd().resolve())}
+        self.assertEqual(self.submit_review(record).returncode, 2)
+        record["repair_build_argv"] = ["cmake", "--build", "synthetic"]
+        self.assertEqual(self.submit_review(record).returncode, 0)
+        self.review_file.write_text(self.review_file.read_text()+"\n")
+        self.assertEqual(self.cli("repair-build", "--", *record["repair_build_argv"]).returncode, 2)
 
 
 if __name__ == "__main__":

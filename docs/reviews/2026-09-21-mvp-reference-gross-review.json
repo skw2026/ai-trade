@@ -1,0 +1,23 @@
+{
+  "failure_id": "7a54551cda994d6f95966a7ebb085bd8",
+  "decision": "retry",
+  "goal": "Frozen offline reference model with unchanged mark-valued gross cap and full synthetic application settlement",
+  "expected": "replay_reference_account_test passes accounting, rejection, and end-to-end synthetic assertions",
+  "observed": "First full application failed on third entry order's second partial at mark 504 and fill 504.1; rejected INSUFFICIENT_GAP_GROSS_LIMIT",
+  "root_cause_status": "confirmed",
+  "root_cause": "New check multiplied the entire resulting quantity by max(mark, fill). Existing AccountState gross and RiskEngine target use mark. Thus adverse execution tick cost incorrectly revalued older holdings; next quantity 5.952 times mark 504 is 2999.808 below 3000, whereas times fill 504.1 is 3000.4032. Collateral must still use actual fill cost.",
+  "evidence": [".artifacts/mvp-reference-20260921/first-account-failure.log", "src/oms/account_state.cpp:gross_notional_usd", "src/risk/replay_reference_account.cpp:OnFill", "docs/plans/2026-09-21-mvp-reference-v1.json"],
+  "next_action": "Use current mark for gross cap; keep fill price for collateral and fees, unchanged 3000 cap, unchanged synthetic application and negative gap test. One reviewed build, then one identical ctest retry. Add the tightly bound repair-build preparation path because test-only retry previously had no gated rebuild path; build success never clears the failed test.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Restore one coherent valuation basis without changing strategy, reference contract or risk threshold.",
+    "data_feasibility": "All observations are synthetic and local; no data/account dependency.",
+    "method_feasibility": "Mark 504 and unchanged resulting size prove cap remains below 3000; large mark-valued gap remains a negative test. Fees remain charged in cash and collateral.",
+    "budget_and_exit": "One 120s bounded rebuild and one original ctest retry; failure reblocks and requires route reassessment; remaining four-hour stage not extended."
+  },
+  "repair_build_argv": ["cmake", "--build", "build", "--target", "replay_reference_account_test", "--parallel", "4"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade"
+}

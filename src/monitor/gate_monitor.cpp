@@ -46,6 +46,10 @@ std::optional<std::string> GateMonitor::OnDecision(
     const Signal& signal,
     const RiskAdjustedPosition& adjusted,
     const std::optional<OrderIntent>& intent) {
+  if (!signal.new_decision) {
+    if (intent.has_value()) ++order_intents_;
+    return std::nullopt;
+  }
   if (HasExposure(signal.suggested_notional_usd)) {
     ++raw_signals_;
   }

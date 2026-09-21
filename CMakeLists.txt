@@ -40,12 +40,15 @@ add_library(ai_trade_system STATIC
   src/exchange/bybit_exchange_adapter.cpp
   src/exchange/binance_exchange_adapter.cpp
   src/market/market_data.cpp
+  src/market/closed_bar_clock.cpp
   src/universe/universe_selector.cpp
   src/strategy/strategy_engine.cpp
   src/strategy/integrator_shadow.cpp
   src/strategy/microstructure_demo_overlay.cpp
   src/regime/regime_engine.cpp
   src/risk/risk_engine.cpp
+  src/risk/manual_risk_cycle.cpp
+  src/risk/replay_reference_account.cpp
   src/execution/execution_engine.cpp
   src/execution/order_throttle.cpp
   src/execution/async_executor.cpp
@@ -86,9 +89,34 @@ target_link_libraries(trade_bot PRIVATE ai_trade_system)
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(replay_reference_account_test tests/test_replay_reference_account.cpp)
+  target_link_libraries(replay_reference_account_test PRIVATE ai_trade_system)
+  add_test(NAME replay_reference_account_test COMMAND replay_reference_account_test
+           ${CMAKE_SOURCE_DIR}/config/bybit.replay.mvp-reference.yaml)
+  set_tests_properties(replay_reference_account_test PROPERTIES TIMEOUT 30 LABELS "offline;mvp;reference")
+  add_executable(manual_risk_cycle_test tests/test_manual_risk_cycle.cpp)
+  target_link_libraries(manual_risk_cycle_test PRIVATE ai_trade_system)
+  add_test(NAME manual_risk_cycle_test COMMAND manual_risk_cycle_test
+           ${CMAKE_SOURCE_DIR}/config/bybit.replay.mvp.yaml)
+  set_tests_properties(manual_risk_cycle_test PROPERTIES TIMEOUT 30 LABELS "offline;mvp;risk")
+  add_executable(mvp_contract_test tests/test_mvp_contract.cpp)
+  target_link_libraries(mvp_contract_test PRIVATE ai_trade_system)
+  add_test(NAME mvp_contract_test COMMAND mvp_contract_test
+           ${CMAKE_SOURCE_DIR}/config/bybit.replay.mvp.yaml)
+  set_tests_properties(mvp_contract_test PROPERTIES TIMEOUT 30 LABELS "offline;mvp")
+  # Explicit one-shot synthetic diagnostic, not an economic backtest or a
+  # regression test that would bless known strategy-contract gaps.
+  add_executable(original_mvp_contract_audit EXCLUDE_FROM_ALL
+                 tools/audit_original_mvp_contract.cpp)
+  target_link_libraries(original_mvp_contract_audit PRIVATE ai_trade_system)
+
+  add_executable(mvp_history_readiness_audit EXCLUDE_FROM_ALL
+                 tools/audit_mvp_history_readiness.cpp)
+  target_link_libraries(mvp_history_readiness_audit PRIVATE ai_trade_system)
+
   add_executable(trade_system_test tests/test_trade_system.cpp)
   target_link_libraries(trade_system_test PRIVATE ai_trade_system)
-  add_test(NAME trade_system_test COMMAND trade_system_test)
+  add_test(NAME trade_system_test COMMAND trade_system_test ${CMAKE_SOURCE_DIR}/config)
 
   add_executable(execution_ordering_test tests/test_execution_ordering.cpp)
   target_link_libraries(execution_ordering_test PRIVATE ai_trade_system)
@@ -116,6 +144,18 @@ if(BUILD_TESTING)
   else()
     add_test(NAME validation_stop_gate_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validation_gate.py)
+    add_test(NAME mvp_reference_pipeline_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_mvp_reference_pipeline.py
+                     --binary $<TARGET_FILE:trade_bot>)
+    set_tests_properties(mvp_reference_pipeline_test PROPERTIES TIMEOUT 60 LABELS "offline;mvp;reference")
+    add_test(NAME mvp_history_collector_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_mvp_reference_history.py)
+    add_test(NAME mvp_stop_ledger_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_mvp_reference_stop.py)
+    add_test(NAME offline_evidence_seal_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_seal_offline_evidence.py)
+    set_tests_properties(mvp_history_collector_test mvp_stop_ledger_audit_test offline_evidence_seal_test
+                         PROPERTIES TIMEOUT 30 LABELS "offline;mvp;reference")
     # Synthetic fixtures only; never invoke the historical-screen CLI in CI.
     add_test(NAME weekly_momentum_screen_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_screen_weekly_momentum.py)

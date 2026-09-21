@@ -1,0 +1,18 @@
+{
+  "schema": "mvp_reference_history_authorization_v1",
+  "user_instruction": "执行下一步",
+  "approved_proposal": "docs/plans/2026-09-21-mvp-reference-history-one-shot.md",
+  "started_at_utc": "2026-09-21T15:09:40Z",
+  "deadline_utc": "2026-09-21T17:09:40Z",
+  "contract_sha256": "f50dfdc5e7db2d15a16cffdf0ed832b4bcd15901d7645247ed1447fdb2c20d62",
+  "maximum_public_gets": 500,
+  "maximum_compute_seconds": 3600,
+  "historical_execution_approved": true,
+  "fixed_reference_only": true,
+  "automatic_retry": false,
+  "parameter_search": false,
+  "training": false,
+  "account_access": false,
+  "trading": false,
+  "commit_push_deployment": false
+}

@@ -1,0 +1,155 @@
+{
+  "schema_version": "bounded_paper_review_record_v1",
+  "record_type": "source_notes_not_raw_http_archive_or_experiment",
+  "stage_id": "20260921-index-rebalance-paper-review",
+  "decision": "NO_GO_INDEX_REBALANCE_REVIEW",
+  "candidate_count_selected": 0,
+  "authorization_interpretation": "User execute-next continues only the new-mechanism evidence review offered by the preceding MVP closeout, not an experiment or remote delivery.",
+  "started_at_utc": "2026-09-21T15:34:36Z",
+  "external_source_review_ended_at_utc": "2026-09-21T15:37:53Z",
+  "closeout_recorded_at_utc": "2026-09-21T15:40:33Z",
+  "elapsed_seconds_to_closeout": 357,
+  "deadline_utc": "2026-09-21T16:04:36Z",
+  "frozen_plan": {
+    "path": "docs/plans/2026-09-21-index-rebalance-paper-review.md",
+    "sha256": "2103269ae7b278220758aa28fd46d328334afa60330b3e816cbb3fa2579a853f"
+  },
+  "usage": {
+    "mechanisms_reviewed": 1,
+    "mechanism_limit": 1,
+    "search_queries": 6,
+    "search_query_limit": 6,
+    "selected_primary_source_objects": 8,
+    "primary_source_object_limit": 8,
+    "web_tool_calls": 5,
+    "calls_containing_open_or_find": 4,
+    "open_or_find_batch_limit": 12,
+    "historical_market_data_requests": 0,
+    "backtests": 0,
+    "training_runs": 0,
+    "account_reads_or_writes": 0,
+    "formal_validation_runs": 0,
+    "commits_or_pushes": 0,
+    "deployments_or_service_changes": 0
+  },
+  "search_queries": [
+    "cryptocurrency index inclusion rebalancing price effects research paper Bitwise",
+    "site.bitwiseinvestments.com index reconstitution methodology announcement rebalance",
+    "\"cryptocurrency\" \"index inclusion\" price effect paper",
+    "\"cryptocurrency\" \"index rebalancing\" \"price\" study",
+    "crypto \"index\" \"inclusion\" \"event study\" paper",
+    "site.nber.org \"Disappearing Index Effect\""
+  ],
+  "sources": [
+    {
+      "id": "S01",
+      "url": "https://bitwiseinvestments.com/indexes/methodologies/bitwise-crypto-asset-index-methodology",
+      "access": "official_page_relevant_sections",
+      "supports": "General monthly reconstitution, record-date convention and index-specific exceptions.",
+      "does_not_establish": "Historical publication timestamps, actual fund orders or residual trading edge."
+    },
+    {
+      "id": "S02",
+      "url": "https://bitwiseinvestments.com/indexes/rebalance-notifications/bitwise-crypto-asset-indexes",
+      "access": "official_current_notification_page",
+      "supports": "Page labels Aug 23 2026, as of 4pm ET, constituent changes for Aug 31 2026; listed indexes say no changes.",
+      "does_not_establish": "First publication time, revision history or absence of weight rebalancing."
+    },
+    {
+      "id": "S03",
+      "url": "https://www.sec.gov/Archives/edgar/data/1723788/000121390025119317/ea0268822-424b3_bitwise10.htm",
+      "access": "issuer_prospectus_on_sec_relevant_sections_only",
+      "supports": "A real trust aims to track the index with exceptions and monthly rebalancing.",
+      "does_not_establish": "Latest full legal position, aggregate event-specific tracking capital, precise executed demand or execution clock."
+    },
+    {
+      "id": "S04",
+      "url": "https://bybit-exchange.github.io/docs/v5/market/instrument",
+      "access": "official_api_documentation_only",
+      "supports": "Instrument status, launchTime and request parameter schema without historical as-of parameter.",
+      "does_not_establish": "Every historical constituent was tradable under identical rules. No endpoint request executed."
+    },
+    {
+      "id": "S05",
+      "url": "https://www.nber.org/papers/w30748",
+      "pdf_url": "https://www.nber.org/system/files/working_papers/w30748/w30748.pdf",
+      "access": "official_search_abstract_and_metadata_only",
+      "direct_pdf_open": "TOOL_INTERNAL_ERROR",
+      "direct_abstract_open": "TOOL_INTERNAL_ERROR",
+      "failure_root_cause": "UNKNOWN",
+      "response": "Stopped further access attempts; no alternate-host search, paywall workaround or claim of full-text review.",
+      "supports": "Greenwood and Sammon study declining S&P 500 index addition/deletion effects; used only as a countercheck to naive index-demand inference.",
+      "does_not_establish": "A crypto mechanism effect size or executable post-announcement return."
+    },
+    {
+      "id": "S06",
+      "url": "https://bitwiseinvestments.com/indexes/committee-meeting-notes/bitwise-crypto-asset-indexes/special-meeting-march-29-2023",
+      "access": "official_meeting_notes_relevant_section",
+      "supports": "Record-date rule changed effective April 2023.",
+      "does_not_establish": "A complete historical methodology or publication-version chain."
+    },
+    {
+      "id": "S07",
+      "url": "https://bitwiseinvestments.com/indexes/rebalance-results/bitwise-crypto-asset-indexes/may-2026",
+      "access": "official_result_page_event_identification_only",
+      "supports": "Historical result page lists HYPE/XLM additions and DOT/AVAX deletions for the large-cap index.",
+      "does_not_establish": "Those results were available before the event. No price or weight series extracted."
+    },
+    {
+      "id": "S08",
+      "url": "https://www.bybit.com/en/help-center/article/Futures-Contracts-Fees-Explained",
+      "access": "official_usdt_contract_fee_section",
+      "supports": "Displayed taker fee 0.055% per side; approximately 11 bps for equal-notional entry and exit before other costs.",
+      "does_not_establish": "User account fees, historical fees, slippage, funding, executable edge or total cost."
+    }
+  ],
+  "decision_basis": {
+    "confirmed": [
+      "Official rules, notification/results and a real tracking product exist.",
+      "Selected rules have changed over time, so current methodology cannot silently stand for all history.",
+      "Existing daily activity requirements differ from a sparse monthly event hypothesis."
+    ],
+    "not_established": [
+      "Independent empirical support for the specified executable post-announcement crypto return window within the bounded search.",
+      "An event-level first-publication and revision chain.",
+      "Event-time passive demand size, execution schedule and historical Bybit product mapping.",
+      "A precommitted cost, capital and risk-execution contract compatible with product activity requirements."
+    ],
+    "route_reassessment": {
+      "goal_alignment": "Economic evidence before new engineering; no claim that more source pages are profit progress.",
+      "data_feasibility": "Specific official entry points exist, but point-in-time and demand/execution joins remain unverified.",
+      "method_feasibility": "Do not transfer equity index effects or use ex-post index membership as contemporaneous signals.",
+      "budget_and_exit": "Single mechanism and six-query cap reached. Close with zero candidates, no replacement mechanism or automatic follow-up experiment."
+    },
+    "no_go_scope": "This bounded paper review, not an empirical rejection of every index-related strategy."
+  },
+  "prior_state_to_preserve": {
+    "gate_status": "HALTED",
+    "failure_id": "a16b1aed424847bcb25e7ade63536cb5",
+    "gate_state_path": ".artifacts/validation-gate/state.json",
+    "gate_state_sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+    "prior_file_sha256": {
+      "docs/reviews/2026-09-21-mvp-history-screen.evidence.json": "0e3ce52bfd27fe59d278ca77554882d1096018b3ab1d227e7bd835f4b5af2752",
+      "docs/reviews/2026-09-21-new-route-decision.md": "62614fa339094261f62b5d3e3e18983bd2aa86e39e544133a727c70a0f3a63f6",
+      "docs/reviews/2026-09-21-etf-timing-audit.evidence.json": "185c6b65852becbf19a6de67ceb60dabfab72d46ffd06dff7777c58517725a61",
+      "docs/plans/2026-09-21-mvp-reference-v1.json": "f50dfdc5e7db2d15a16cffdf0ed832b4bcd15901d7645247ed1447fdb2c20d62"
+    },
+    "research_status": "NO_QUALIFIED_CANDIDATE",
+    "c2_status": "NOT_QUALIFIED",
+    "old_routes_reopened": false
+  },
+  "limits": [
+    "Not an exhaustive literature or index-provider survey.",
+    "Web source notes, not immutable raw-response snapshots.",
+    "Read-only document/hash diagnosis is not formal gate retry or economic validation.",
+    "No current ECS/service observation or change."
+  ],
+  "read_only_closeout_diagnosis": {
+    "json_fields_readable": true,
+    "frozen_plan_hash_unchanged": true,
+    "listed_prior_file_hashes_unchanged": true,
+    "gate_state_hash_unchanged": true,
+    "formal_validation_or_retry": false
+  },
+  "next_action": "Preserve assets and pause automatic profit research. Re-entry needs specific decision-changing evidence and an explicitly scoped task; no default two-week wait."
+}

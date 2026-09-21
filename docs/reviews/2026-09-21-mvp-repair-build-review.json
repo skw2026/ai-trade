@@ -1,0 +1,25 @@
+{
+  "failure_id": "4c57735e70ca468b8ac92c7c031863a0",
+  "decision": "retry",
+  "goal": "构建原 MVP 时钟/回放限定改造及合成验收，不运行历史实验",
+  "expected": "cmake --build build --parallel 4 在原工作目录构建成功",
+  "observed": "首次退出 2，src/monitor/gate_monitor.cpp:23 静态函数不能访问 order_intents_，:24 bool 函数不能返回 std::nullopt；验收尚未启动",
+  "root_cause_status": "confirmed",
+  "root_cause": "编辑补丁用两个函数共有的三参数签名作锚点，把 new_decision 的统计过滤放进静态 IsPolicyFlatSignal，而不是返回 optional<string> 的 OnDecision。源码和编译器诊断一致。修复仅将同一过滤块移动到完整函数名 OnDecision 下，不改变条件、阈值或测试。",
+  "evidence": [
+    ".artifacts/validation-gate/state.json：mvp-contract-repair-build exit_code=2，failure_id 4c57735e70ca468b8ac92c7c031863a0",
+    "src/monitor/gate_monitor.cpp：IsPolicyFlatSignal 与 OnDecision 的签名和修正位置",
+    "tests/test_mvp_contract.cpp：缓存目标不得增加 raw/effective signal 计数的断言未改"
+  ],
+  "next_action": "仅复验一次同目录同 argv 的完整构建，成功后才运行合成验收",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "过滤的目的仍是禁止重复 tick 把同一闭合 bar 的目标统计成多个策略信号",
+    "data_feasibility": "全部验收输入由本地合成，不依赖历史行情、账户或网络",
+    "method_feasibility": "OnDecision 是既有统计状态更新入口，支持计数和 optional 返回；移动过滤块即可保留所需语义，风险减仓 intent 计数仍保留",
+    "budget_and_exit": "修复和一次复验计入 11:52:02 UTC 开始的 4h 预算，构建最多 240 秒；再次失败即重新阻断并重审，不改变门禁状态文件"
+  }
+}

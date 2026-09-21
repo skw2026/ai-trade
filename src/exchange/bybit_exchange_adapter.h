@@ -74,6 +74,8 @@ struct BybitAdapterOptions {
       "funding_rate_per_interval"};  ///< replay CSV 资金费列名（可缺省）。
   int replay_default_interval_ms{
       5000};  ///< replay CSV 缺失 interval 时的默认 bar 间隔。
+  bool replay_causal_bars{false};  // opt-in 5m open/close stream, next-open taker
+  bool replay_reference_account{false};  // explicitly synthetic margin/order rules
   double replay_entry_fee_bps{0.0};  ///< replay Entry 成交手续费估计（bps）。
   double replay_exit_fee_bps{0.0};  ///< replay Reduce/TP/SL 成交手续费估计（bps）。
   double replay_expected_slippage_bps{0.0};  ///< replay taker 成交单侧滑点估计（bps）。
@@ -161,6 +163,7 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   void TriggerReplayConditionalOrders(const MarketEvent& event);
   /// 回放模式被动限价单按后续 K 线高低价触发。
   void TriggerReplayRestingOrders(const MarketEvent& event);
+  void TriggerReplayMarketOrders(const MarketEvent& event);
   /// 回放模式生成虚拟成交；调用方必须持有 state_mutex_。
   bool EnqueueReplayFill(const OrderIntent& intent, double fill_price);
   /// REST 模式成交读取（execution/list）。
@@ -217,6 +220,8 @@ class BybitExchangeAdapter : public ExchangeAdapter {
   std::unordered_map<std::string, BybitSymbolTradeRule> symbol_trade_rules_;  ///< symbol 交易规则缓存。
   std::deque<ReplayConditionalOrder> replay_conditional_orders_;  ///< replay 条件保护单。
   std::deque<ReplayRestingOrder> replay_resting_orders_;  ///< replay 被动限价挂单。
+  std::deque<ReplayRestingOrder> replay_market_orders_;  ///< causal next-open takers
+  std::unordered_set<std::string> causal_replay_submitted_ids_;
   std::deque<FillEvent> pending_fills_;  ///< 待消费成交队列。
   // reduce-only 成交排队时先预留可平数量，避免多个订单在 fill 落账前共同超平。
   std::unordered_map<std::string, double>

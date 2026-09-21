@@ -1,0 +1,116 @@
+{
+  "schema_version": "original_mvp_bounded_decision_evidence_v1",
+  "base_commit": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+  "stage_started_at_utc": "2026-09-21T11:04:19Z",
+  "observation_at_utc": "2026-09-21T11:11:39Z",
+  "archive_identity_checked_at_utc": "2026-09-21T11:15:42Z",
+  "elapsed_seconds_to_archive_identity_check": 683,
+  "decision": "INSUFFICIENT_BASELINE_CONTRACT",
+  "historical_screen": "NOT_STARTED_CONTRACT_GATE_FAILED",
+  "next_action": "STOP_CURRENT_INVESTMENT_ROUND",
+  "authority": {
+    "total_effective_hours_limit": 16,
+    "step_one_effective_hours_limit": 2,
+    "official_public_get_limit": 500,
+    "official_public_get_used": 0,
+    "historical_compute_seconds_limit": 3600,
+    "historical_compute_seconds_used": 0,
+    "historical_experiments_started": 0,
+    "synthetic_observation_runs": 1,
+    "credential_access": false,
+    "account_access": false,
+    "external_orders": false,
+    "deployment": false,
+    "commit_or_push": false,
+    "economic_qualification": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  },
+  "diagnostic_command": [
+    "./build/original_mvp_contract_audit",
+    "config/bybit.replay.assess.yaml",
+    "tools/fixtures/original_mvp_contract_audit.csv"
+  ],
+  "diagnostic_context": {
+    "all_prices_and_account_states": "synthetic",
+    "cadence_regime": "fixed_uptrend_non_warmup_volatility_0.0001_to_isolate_base_strategy",
+    "cadence_configs": ["StrategyConfig defaults", "tracked bybit.replay.assess.yaml"],
+    "latency_strategy": "StrategyConfig defaults, real Strategy/Risk/Execution/Bybit replay components",
+    "latency_costs": "synthetic reference: 5.5 bps entry fee, 1 bps slippage; not observed account fees",
+    "latency_controls": "maker_entry_enabled false versus true; not two economic candidates",
+    "flat_recovery": "synthetic losses 13% and 21%, then flat; no deposits, peak reset, restart or income",
+    "scope": "isolated component-path observation, not full BotApplication or live account acceptance",
+    "process_exit_zero_means": "observation completed, not contract/economic PASS"
+  },
+  "observation": {
+    "schema_version": "original_mvp_synthetic_contract_audit_v1",
+    "synthetic_only": true,
+    "historical_backtest": false,
+    "cadence": {
+      "span_ms": 295000,
+      "events": 60,
+      "core_default_evaluations": 59,
+      "core_first_active_offset_ms": -1,
+      "configured_evaluations": 59,
+      "configured_active_signals": 0,
+      "configured_first_active_offset_ms": -1
+    },
+    "latency": {
+      "signal_close": 101,
+      "taker_fill_parts_before_next_event": 2,
+      "taker_same_event_vwap": 101.0101,
+      "maker_fill_parts_before_next_event": 0,
+      "maker_fill_parts_after_next_event": 2
+    },
+    "flat_recovery": {
+      "simulated_5m_steps": 2016,
+      "cooldown_drawdown": 0.13,
+      "cooldown_final_mode": "COOLDOWN",
+      "cooldown_nonzero_targets": 0,
+      "fuse_drawdown": 0.21,
+      "fuse_final_mode": "FUSE",
+      "fuse_nonzero_targets": 0
+    },
+    "contract_aligned": false,
+    "economic_qualification": false,
+    "next_action": "STOP_FOR_REVIEW"
+  },
+  "technical_validation": {
+    "configure": "PASS",
+    "build_first_attempt": "FAIL_COMPILE_MISSING_RISKMODE_TOSTRING",
+    "failure_id": "a7502b1c0f9040729fc13e342a93555f",
+    "review": "docs/reviews/2026-09-21-original-mvp-audit-build-review.json",
+    "original_command_retry": "PASS_ONCE_AFTER_REVIEW",
+    "observation_process_exit": 0,
+    "focused_regression": "5/5 PASS, 4.74 seconds",
+    "focused_tests": [
+      "financial_risk_contract_test",
+      "validation_stop_gate_test",
+      "run_paired_evolution_replay_test",
+      "run_replay_validation_test",
+      "feature_parity_contract_test"
+    ],
+    "qualification_caveat": "technical passes do not override contract_aligned=false"
+  },
+  "sha256": {
+    "tools/audit_original_mvp_contract.cpp": "27adbec62f88a580d180ff45a2bf083f62ccb55149b61bbd5104e11b480d59a4",
+    "tools/fixtures/original_mvp_contract_audit.csv": "684a428b403115379c32536b1a886213acff2a87c54127344a32daf23d65f80b",
+    "CMakeLists.txt": "9f5ab01a24f65556023b67d3608f4d10568861ddb4b7b6742f666add5f879cd5",
+    "src/strategy/strategy_engine.cpp": "1b37ef437fb4e7f0c80ef0b561337a412351d65dd151d0b838972ba35cf3f7c8",
+    "src/strategy/strategy_engine.h": "5585363cf0e89528a9e6501b757974042d4f92e7c8d83b7f151a16bec7db4816",
+    "src/research/online_feature_engine.cpp": "3e514b24f5d532c297adb2d5ca864485de625bc0c74187df5b23719380255deb",
+    "src/exchange/bybit_exchange_adapter.cpp": "484ae4342b641a71b2888e04a0d6af7b86d610c5d521013fa4239f383a1ab56a",
+    "src/risk/risk_engine.cpp": "a3ac20777c8f764f8f59d22f86b7ea629d500caa1b3d5a00b7abae71c9a4882b",
+    "src/oms/account_state.cpp": "18bfc159ca788a5d273cdc0b409203954754c12d66437f665ced724d13752850",
+    "src/system/trade_system.cpp": "683ea64280b1208c650e79fd7baa832795dd7153648f205ce80ad9463148b5bf",
+    "src/core/config.h": "895618058684e9eb261c69c16c26230fb2746e92d3c8e2149ddd1ad3dab9bd4b",
+    "src/core/types.h": "ca7bd4517502cc96a989e2792ef06d98c76302962bae29bad4051250299b7480",
+    "config/bybit.replay.assess.yaml": "9d30fe7b3e83b2658075b36d02e713e0a37b56dfb3a33646b4a89659592ff7ea",
+    "build/original_mvp_contract_audit": "964fc5550653f97c94c985ef7562d77dd2279b968a09e23a77d5a2441147f217",
+    "data/reports/replay_validation/latest/replay_validation_report.json": "3135439f2d05dbd786d47e44de35fd9459590f1d96125cc756a57a8b6dd62778",
+    "data/reports/replay_validation/corpus_smoke/replay_validation_report.json": "38498ad80ab665ec00f386e2ce5da2a0683956f37916db7aee35a49dbecf6405",
+    "data/reports/replay_validation/corpus_smoke_reuse/replay_validation_report.json": "66f1d38ec02489f68532d5348853fb35eade30b02fc08702c0126c5bc9f69552",
+    "docs/plans/2026-09-21-weekly-momentum-screen-v1.json": "71a8580421ba0a2e51f342475c2c7ba9541079aaaaad04ab55256f0e66214c16",
+    "docs/reviews/2026-09-21-etf-timing-audit.evidence.json": "185c6b65852becbf19a6de67ceb60dabfab72d46ffd06dff7777c58517725a61"
+  }
+}

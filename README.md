@@ -8,7 +8,7 @@
 
 ---
 
-当前状态（2026-09-20）：本轮研究按“未产出合格候选”结案，旧候选关闭、C2 历史资格未通过；当前交付限于现有 Demo 工程验收。自动研究调度与远端生效情况见 [当前状态](docs/CURRENT_STATE.md) 和 [三步收口结果](docs/reviews/2026-09-20-three-step-closeout-result.md)。下方“已覆盖”仅指需求文档覆盖，不代表盈利或运行验收通过。
+当前状态（2026-09-22）：离线工程已封版，全量 105/105 测试通过，代码本地提交、证据本机校验归档；未推送或部署。研究仍未产出合格候选，旧路线关闭、C2 历史资格未通过，不激活 Demo。安全使用与数据保存见 [离线工程封版说明](docs/OFFLINE_ENGINEERING_FREEZE.md)，具体结果见 [当前状态](docs/CURRENT_STATE.md)。下方“已覆盖”仅指需求文档覆盖，不代表盈利或运行验收通过。
 
 ## 需求符合性核对表
 
@@ -93,12 +93,8 @@ ai-trade/
 ```
 
 ### 本地运行骨架
-```bash
-cmake -S . -B build
-cmake --build build -j 8
-./build/trade_bot
-ctest --test-dir build --output-on-failure
-```
+
+当前请使用[离线工程回归入口](docs/OFFLINE_ENGINEERING_FREEZE.md#工程回归入口)，经验证门禁完成构建和合成测试。不要直接启动 `trade_bot`、覆盖绑定历史证据的旧 `build/`，或借新状态文件重跑已关闭策略。以下 Docker/运行说明是通用能力说明，不代表当前发布或交易授权。
 
 ### 工程质量门禁（推荐）
 ```bash

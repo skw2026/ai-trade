@@ -1,0 +1,4 @@
+timestamp,symbol,open,high,low,price,volume,interval_ms,funding_rate_per_interval,mark_open,mark_close
+1704067200000,BTCUSDT,100,100,100,100,1,300000,0,100,100
+1704067500000,BTCUSDT,100,100,100,100,1,300000,0,100,100
+1704067800000,BTCUSDT,100,100,100,100,1,300000,0,100,100

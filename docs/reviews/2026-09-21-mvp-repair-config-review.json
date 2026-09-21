@@ -1,0 +1,26 @@
+{
+  "failure_id": "08800fd02ef9461f9d64451da5bd5c9c",
+  "decision": "retry",
+  "goal": "验收固定原 MVP 的闭合 bar 时钟、因果成交与账务，不跑历史收益筛查",
+  "expected": "原定向 CTest 命令中四项测试通过",
+  "observed": "mvp_contract_test 在 CheckConfiguration 首项退出：frozen MVP config did not load。CTest stop-on-failure 停止后续三项。只读配置解析复现输出：未识别配置项 strategy.trend_ema_fast，行号 41；进程在构造/启动应用前退出 1。",
+  "root_cause_status": "confirmed",
+  "root_cause": "新 YAML 把 C++ 字段 trend_ema_fast/trend_ema_slow 误当配置键。既有 LoadAppConfigFromYaml 明确只接受 strategy.params.ema_fast/ema_slow。修复仅换 YAML 路径，数值保持 12/26；没有改解析器、策略、输入序列或断言。",
+  "evidence": [
+    "src/core/config.cpp:1800 附近：current_subsection=params 且 key=ema_fast/ema_slow 的既有映射",
+    "config/bybit.replay.mvp.yaml：EMA 值 12/26 不变，仅层级/键修正",
+    ".artifacts/validation-gate/state.json：08800fd02ef9461f9d64451da5bd5c9c / mvp-contract-repair-targeted",
+    "2026-09-21 12:04:54 UTC：./build/trade_bot --config=config/bybit.replay.mvp.yaml --check-exchange 仅作配置失败定位，在解析层终止，无账户/网络/交易"
+  ],
+  "next_action": "对同目录原 argv 的四项 CTest 复验一次，任一后续失败重新阻断",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "仍固定同一原 MVP 参数，不以配置错误换参数或换策略",
+    "data_feasibility": "输入是合成 OHLC/tick 与本地固定 YAML，无历史或账户依赖",
+    "method_feasibility": "既有解析路径与预期值已直接核对，首个失败在任何策略/成交测试之前，修复不需要降低验收",
+    "budget_and_exit": "本次诊断与复验计入同一 4h 额度；原定向测试最多 120 秒，第二次失败需要整条路径复核，不跳过当前测试"
+  }
+}

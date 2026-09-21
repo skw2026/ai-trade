@@ -820,6 +820,8 @@ std::unique_ptr<ExchangeAdapter> CreateAdapter(const AppConfig& config) {
     options.replay_interval_column = config.bybit.replay_interval_column;
     options.replay_funding_rate_column = config.bybit.replay_funding_rate_column;
     options.replay_default_interval_ms = config.bybit.replay_default_interval_ms;
+    options.replay_causal_bars = config.closed_bar_mvp;
+    options.replay_reference_account = config.replay_reference_account;
     options.replay_entry_fee_bps = config.execution_entry_fee_bps;
     options.replay_exit_fee_bps = config.execution_exit_fee_bps;
     options.replay_expected_slippage_bps = config.execution_expected_slippage_bps;
@@ -3684,7 +3686,19 @@ int BotApplication::Run() {
   if (!Initialize()) {
     return 1;
   }
-  RunLoop();
+  try {
+    RunLoop();
+  } catch (const std::exception& error) {
+    if (!config_.closed_bar_mvp) throw;
+    if (config_.replay_reference_account) {
+      const auto& reason = system_.reference_account().stop_reason();
+      LogError("REFERENCE_STOP_JSON {\"reason\":\"" +
+               (reason.empty() ? std::string("INSUFFICIENT_RUNTIME") : reason) + "\"}");
+    }
+    LogError("MVP_REPLAY_ABORTED: " + std::string(error.what()));
+    Shutdown();
+    return 1;
+  }
   Shutdown();
   return replay_terminal_settlement_failed_ ? 1 : 0;
 }
@@ -3759,6 +3773,14 @@ bool BotApplication::Initialize() {
   std::string wal_error;
   if (!wal_.Initialize(&wal_error)) {
     LogError("WAL 初始化失败: " + wal_error);
+    return false;
+  }
+
+  if (config_.closed_bar_mvp &&
+      !system_.OpenMvpRiskJournal(
+          (std::filesystem::path(config_.data_path) / "mvp_manual_risk_v1.journal").string(),
+          &wal_error)) {
+    LogError("MVP_RISK_JOURNAL_BLOCKED: " + wal_error);
     return false;
   }
 
@@ -4756,18 +4778,56 @@ void BotApplication::ApplyCandidateEpisodeFill(
 void BotApplication::RunLoop() {
   MarketEvent event;
   while (true) {
+    if (config_.closed_bar_mvp && system_.mvp_risk_state().latched) {
+      // Cancel ALL-symbol queued entries before polling another executable
+      // open. A risk latch must not let a previously queued entry add risk.
+      for (const auto& id : oms_.PendingOrderIds()) {
+        const auto* order = oms_.Find(id);
+        if (!order || order->intent.reduce_only || order->intent.purpose != OrderPurpose::kEntry)
+          continue;
+        oms_.MarkCancelPending(id);
+        executor_->Cancel(id);
+        ProcessAsyncResults(); // inline in offline replay
+        if (const auto* after = oms_.Find(id);
+            !after || !OrderManager::IsTerminalState(after->state))
+          throw std::runtime_error("MVP latched pending entry cancellation failed");
+      }
+    }
     const bool has_market =
         !replay_terminal_settlement_started_ && adapter_->PollMarket(&event);
     bool advanced_tick = false;
     bool has_fill = false;
 
     if (has_market) {
+      if (config_.closed_bar_mvp) system_.SetMvpPendingOrders(oms_.HasPendingOrders());
       advanced_tick = true;
       has_tick_strategy_signal_ = false;
       tick_cost_filtered_signal_ = false;
       tick_trend_notional_usd_ = 0.0;
       tick_defensive_notional_usd_ = 0.0;
       tick_strategy_signal_symbol_.clear();
+      if (config_.closed_bar_mvp && event.execution_only) {
+        // Boundary order: old holders pay funding at the opening mark, then
+        // pending next-open fills land, then this event evaluates current risk.
+        // Neither a just-entered position nor the close event pays it again.
+        system_.OnMarketSnapshot(event);
+        const double paid = system_.ApplyFunding(
+            event.symbol, event.funding_rate_per_interval);
+        if (std::fabs(paid) > kNotionalEpsilon) {
+          LogInfo("FUNDING_APPLIED: symbol=" + event.symbol +
+                  ", rate_per_interval=" + std::to_string(event.funding_rate_per_interval) +
+                  ", funding_paid_usd=" + std::to_string(paid) +
+                  ", source=causal_open_before_fills");
+        }
+        event.funding_rate_per_interval = 0.0;
+        ProcessAsyncResults();
+        FillEvent opening_fill;
+        while (adapter_->PollFill(&opening_fill)) {
+          ProcessAsyncResults();
+          has_fill = true;
+          ProcessFillEvent(opening_fill);
+        }
+      }
       ProcessMarketEvent(event);
     }
 
@@ -4789,7 +4849,11 @@ void BotApplication::RunLoop() {
       ++market_tick_count_;
       RunRemoteRiskRefresh();
       RunReconcile();
-      RunGateMonitor();
+      if (!config_.closed_bar_mvp ||
+          (event.decision_batch_end && event.ts_ms != last_mvp_gate_bar_ts_)) {
+        last_mvp_gate_bar_ts_ = event.ts_ms;
+        RunGateMonitor();
+      }
       RunSelfEvolution();
       LogStatus();
     }
@@ -4965,10 +5029,22 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     settled_position_candidate_id = episode_it->second.lineage.candidate_id;
     settled_position_policy_reason = episode_it->second.lineage.policy_reason;
   }
+  system_.SetMvpPendingOrders(oms_.HasPendingOrders());
   auto decision = system_.Evaluate(
       event, trade_ok, symbol_inflight_notional_usd,
       has_pending_symbol_net_orders, settled_position_candidate_id,
       settled_position_policy_reason);
+  if (config_.replay_reference_account && event.completed_bar) {
+    std::ostringstream record;
+    record << std::setprecision(17) << "REFERENCE_BAR_JSON {\"ts\":" << event.ts_ms
+           << ",\"warmup\":" << (event.execution_disabled ? "true" : "false")
+           << ",\"signal\":" << (decision.base_signal.new_decision &&
+                 std::fabs(decision.risk_adjusted.adjusted_notional_usd) > 1e-9 ? "true" : "false")
+           << ",\"equity\":" << system_.account().equity_usd()
+           << ",\"funding_uncertainty\":" << system_.reference_account().funding_uncertainty()
+           << ",\"drawdown_upper\":" << system_.reference_account().max_drawdown_upper() << "}";
+    LogInfo(record.str());
+  }
   CancelConflictingMicrostructureEntries(decision);
   constexpr double kRebalanceGapEpsilon = 1e-6;
   if (!decision.risk_adjusted.symbol.empty()) {
@@ -5099,7 +5175,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
   tick_defensive_notional_usd_ = executable_components.second;
   tick_strategy_signal_symbol_ =
       decision.signal.symbol.empty() ? event.symbol : decision.signal.symbol;
-  has_tick_strategy_signal_ = !tick_strategy_signal_symbol_.empty();
+  has_tick_strategy_signal_ = !tick_strategy_signal_symbol_.empty() &&
+                              decision.base_signal.new_decision;
   if (HasExposure(decision.base_signal.trend_notional_usd) ||
       HasExposure(decision.base_signal.defensive_notional_usd) ||
       HasExposure(decision.base_signal.suggested_notional_usd)) {
@@ -6049,6 +6126,15 @@ void BotApplication::ProcessFillEvent(const FillEvent& fill) {
     system_.OnFill(fill);
   }
   gate_monitor_.OnFill(fill);
+  if (config_.replay_reference_account) {
+    std::ostringstream record;
+    record << std::setprecision(17) << "REFERENCE_FILL_JSON {\"ts\":"
+           << system_.mvp_risk_state().last_ts_ms << ",\"order\":"
+           << std::quoted(fill.client_order_id) << ",\"fill\":" << std::quoted(fill.fill_id)
+           << ",\"qty\":" << fill.qty << ",\"price\":" << fill.price
+           << ",\"fee\":" << fill.fee << "}";
+    LogInfo(record.str());
+  }
   const auto* fill_order_record = oms_.Find(fill.client_order_id);
   const auto persisted_intent_it =
       persisted_intent_by_id_.find(fill.client_order_id);
@@ -8700,6 +8786,7 @@ bool BotApplication::AdvanceReplayTerminalSettlement() {
       close_intent.price = mark_price;
       close_intent.reduce_only = true;
       close_intent.liquidity_preference = LiquidityPreference::kTaker;
+      close_intent.replay_terminal_settlement = true;
       replay_terminal_close_order_ids_.insert(close_intent.client_order_id);
       if (!EnqueueIntent(close_intent, nullptr)) {
         replay_terminal_settlement_failed_ = true;
@@ -8728,6 +8815,15 @@ bool BotApplication::AdvanceReplayTerminalSettlement() {
           std::to_string(system_.account().cumulative_fee_usd()) +
           ", funding_paid_usd=" +
           std::to_string(system_.account().cumulative_funding_paid_usd()));
+  if (config_.replay_reference_account) {
+    std::ostringstream record;
+    record << std::setprecision(17) << "REFERENCE_TERMINAL_JSON {\"flat\":true,\"pending\":false,"
+           << "\"equity\":" << system_.account().equity_usd()
+           << ",\"collateral\":" << system_.reference_account().collateral()
+           << ",\"funding_uncertainty\":" << system_.reference_account().funding_uncertainty()
+           << ",\"drawdown_upper\":" << system_.reference_account().max_drawdown_upper() << "}";
+    LogInfo(record.str());
+  }
   return true;
 }
 

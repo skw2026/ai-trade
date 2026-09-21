@@ -1,0 +1,282 @@
+{
+  "archive": {
+    "archive_bytes": 14098060,
+    "archive_path": ".artifacts/engineering-freeze-20260921/closed-mvp-evidence.tar.gz",
+    "archive_sha256": "d2626cfdf85670cdd0ca294b6ef45f520b3dfe4b49443944c23e8d6fde4caad1",
+    "extracted_or_executed": false,
+    "file_count": 1000,
+    "historical_identity_records": 999,
+    "payload_bytes": 92540813,
+    "payload_manifest_sha256": "88f1a59b2591daaee027b7b754ac0e30cc58d64b7a729940e79ae4b6fcbf2df0",
+    "verified": true
+  },
+  "baseline_commit": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+  "boundaries": {
+    "account_access": false,
+    "archive_extracted_or_executed": false,
+    "archive_uploaded": false,
+    "deploy": false,
+    "historical_strategy_reruns": 0,
+    "new_public_history_requests": 0,
+    "originals_deleted": false,
+    "push": false,
+    "remote_ci_executed": false,
+    "research_model_training": false,
+    "service_restart": false
+  },
+  "captured_at_utc": "2026-09-21T16:06:14.136144+00:00",
+  "changed_technical_file_sha256": {
+    "CMakeLists.txt": "c95e305d6497a787072940acc36d934c9150c5ac34ffaa291316e3ed34c90293",
+    "config/bybit.replay.mvp-reference.yaml": "be555bd3bff4036d09e8cc4e9023d26bb1e6f5eac19332bcce1aa8ca53c0bf0b",
+    "config/bybit.replay.mvp.yaml": "06f64aab329efced409db8756bbb523aeeca516c47511d501ed24384a231742a",
+    "src/app/bot_app.cpp": "14245f76af120afdcd9b244886ab8c75830be30e18d1d367409b73ef6a5007b0",
+    "src/app/bot_app.h": "7964b529dc97d7e1c0a1018b0017ba889dc79458fb48a86877d45d8dc744c361",
+    "src/core/config.cpp": "c6c1785bdf4d6f0750fc20993128b070b108c8b869581dddf3f8288fb67efda3",
+    "src/core/config.h": "9e3263fa79058f125ccfdc97dece3b9658e53793147820faf7169e15b03e5573",
+    "src/core/types.h": "c6eced004e17c313d7293e8cf882bfbb4ec2c54082b7b25b6915616c60d1ebd8",
+    "src/exchange/bybit_exchange_adapter.cpp": "62f7c9cfb397f1e6db59fae10a09d7cd391563154514a82a5d7a2ec2742d1372",
+    "src/exchange/bybit_exchange_adapter.h": "372686eeb0bb6cecf7040afbae5aadeaa936ffc93832677576f1ff24fd5ef2b7",
+    "src/market/closed_bar_clock.cpp": "352fd84d2420a9c09be8d9fb8a897e48635c1b6aadee6c575c6092ffe83de4e8",
+    "src/market/closed_bar_clock.h": "c4f3bc819c6fe1de9312b59c3094221d6adab4173de7ef5b55bb2c3eddc3cc3a",
+    "src/monitor/gate_monitor.cpp": "021c6c39982aed98b6f37de50a86bd8f72148bab1c3116222e90e7622370271f",
+    "src/oms/account_state.cpp": "81f0b8df355b91eaedac1c86566c3c071090e7299d18996465720f6cf20f4aec",
+    "src/oms/account_state.h": "762a2bb5ae980c99d3e3ffb842d5fe6d2570e9e5d0f65382ddfcbf203f2db2fa",
+    "src/risk/manual_risk_cycle.cpp": "666229c06289239b8c3a7e4abc7d92b5ffc8d054bc4aa8c344d4dbbea920c905",
+    "src/risk/manual_risk_cycle.h": "4656e8438636d7e8def7b031f9532f202860a98931162ef3d95131339fbacd3a",
+    "src/risk/replay_reference_account.cpp": "18e987e55b1b728baf9aa4f00a9b544bbdb802b467ab642dc6db9211cfc2ff27",
+    "src/risk/replay_reference_account.h": "e76de978aca5f7f55a6393b58cc14db5c7b1cfaf2c353726608750074a083224",
+    "src/risk/risk_engine.h": "aa5fd6bc069f2e2ab1d2d06690ee9d7148cc55201a28d5d291e64ca26f4107ac",
+    "src/system/trade_system.cpp": "c2db927d67ff4a60d58f0fa744d58651b4d50121532e7873a5430e101b9ddd5d",
+    "src/system/trade_system.h": "824b21b92a55887ab1ec91aab22a03181b5b831b15264350123ad9a5d32981c8",
+    "tests/test_manual_risk_cycle.cpp": "c68ae90b8da0426c278dd4465b7d8280b71afba472a1c5247989e0c885375ebd",
+    "tests/test_mvp_contract.cpp": "a3af00caf74756c7f4efd989ecdc72c4e4598cf9a53d6288e1957d873eec7f42",
+    "tests/test_replay_reference_account.cpp": "89faf84ed0d52ddc534790124a7250eb36ead630f212fcaad585cdc35f389ac4",
+    "tests/test_trade_system.cpp": "1b5a7c601580df412a2d9e6008765687a13ab5644e9d12b9b5e1edc513270259",
+    "tools/audit_mvp_history_readiness.cpp": "a06032010cf16321190af442b5047c6f82e2ad9a7281a5563fee3c3d179e77f9",
+    "tools/audit_mvp_reference_stop.py": "657f89d097e80295c712eaff50b2fcad4206fab08c5ce1c3d89955b3bc5106be",
+    "tools/audit_original_mvp_contract.cpp": "27adbec62f88a580d180ff45a2bf083f62ccb55149b61bbd5104e11b480d59a4",
+    "tools/collect_mvp_reference_history.py": "47daf417e3389d972893d853968359191b2b10068d4a50e340490e9c930ee048",
+    "tools/fixtures/mvp_history_readiness_synthetic.csv": "a73823064f99bb8ba425f2a3ebf1311066304cfb3fb171786e7e0bc9d6f6b20e",
+    "tools/fixtures/original_mvp_contract_audit.csv": "684a428b403115379c32536b1a886213acff2a87c54127344a32daf23d65f80b",
+    "tools/mvp_reference_inputs.py": "c12267edd479cdf58b0b8f7998672d562343a2d8e236e832fd1456e125cc00a1",
+    "tools/mvp_reference_pipeline.py": "49ae7c948f3442385add9747e9a85cce980d44de51281d86433996917c92428d",
+    "tools/mvp_reference_verdict.py": "85fd68d4c4a77aad723c29c14074cdba6f80ae981ae4750f0b3d91642167d684",
+    "tools/seal_offline_evidence.py": "3c5670158f61425793e040d4dd786087e1d2c779a0f193412e88c585ab3a22b7",
+    "tools/test_audit_mvp_reference_stop.py": "024db478936247ca91c9fdcdea3868fc5060702f326040f7dc8f8ed180215ae7",
+    "tools/test_collect_mvp_reference_history.py": "97c684c7cb59fb7964d01907c1e382736821c9a16dec859ae9188f3fe1e39fb1",
+    "tools/test_mvp_reference_pipeline.py": "80843af7d978fb54fa4df08ba19e283aad78aaa57eb31f4ff893800596e6144e",
+    "tools/test_seal_offline_evidence.py": "072e1049268c65337ff58b3043dcfaa8a8affe11e89b8fcf24303306274f10f4",
+    "tools/test_validation_gate.py": "541a403ecaf835bbf5f11fe04c063a0f3e4db98d3d3b23fab3b42d8c1dfb881a",
+    "tools/validation_gate.py": "4dee197dfc939736153395d4919b35f87b6920fe83048be8efe02dc357c27bd2"
+  },
+  "deadline_utc": "2026-09-21T17:50:43+00:00",
+  "decision": "OFFLINE_ENGINEERING_FREEZE_COMPLETE_WITH_THIS_LOCAL_COMMIT",
+  "delivery_commit": "the local commit containing this evidence file; exact SHA bound in ignored post-commit receipt",
+  "environment": {
+    "beast": false,
+    "build_type": "Debug",
+    "catboost": false,
+    "cmake": "4.2.1",
+    "compiler": "AppleClang 17",
+    "platform": "Darwin arm64",
+    "python": "3.14.7"
+  },
+  "failure_review_sha256": "d617384b8817a2f8d5733cc64fa276aab40f27cbffcefd6ba824508531edc656",
+  "limitations": [
+    "same-machine archive only; not offsite disaster recovery",
+    "no Linux/Docker/remote CI acceptance of this commit",
+    "engineering PASS is not profitability or Demo permission",
+    "historical intermediate binaries overwritten before this stage are not recreated",
+    "full engineering raw logs remain local and are hash-bound here, not included in the historical archive"
+  ],
+  "local_evidence_sha256": {
+    ".artifacts/engineering-freeze-20260921/archive-receipt.json": "31696bfdbef91c0326fad55da7f0767f470caa4c4034a3839f1e9c75f7a8ed1a",
+    ".artifacts/engineering-freeze-20260921/build.log": "177c54ed08027a4563643fe99cb3663d7551ef86421000d0e4533ea0c45db211",
+    ".artifacts/engineering-freeze-20260921/evidence-payload.json": "88f1a59b2591daaee027b7b754ac0e30cc58d64b7a729940e79ae4b6fcbf2df0",
+    ".artifacts/engineering-freeze-20260921/first-full-ctest-failure.log": "56959250e4feb03b6e9877de9f604c1d825640b70e35272a73d57c528df792aa",
+    ".artifacts/engineering-freeze-20260921/full-ctest.log": "5194bf294da8b28c323b79edc0cc2d04efa3cd95952bbc520e8c45d8dca5074d",
+    ".artifacts/engineering-freeze-20260921/targeted-ctest.log": "91105942d7ddbb982821ce3c5eac4cc6a4748416572fa17a1968ccff0742cace"
+  },
+  "new_build_artifact_sha256": {
+    ".artifacts/engineering-freeze-20260921/build/execution_ordering_test": "e9e7c0b404452afd6100233b212324feeb23921eb2a8e0f1586dfbd822240f7a",
+    ".artifacts/engineering-freeze-20260921/build/financial_risk_contract_test": "3de6b3656eb10ab0a2473eddb7db7fe33099d7babdbd3301f8e73e2af2f10470",
+    ".artifacts/engineering-freeze-20260921/build/manual_risk_cycle_test": "ebd93761ff3fb68d5c0880aa417637c9252408fb99e8329e96160efa3c5b94f3",
+    ".artifacts/engineering-freeze-20260921/build/mvp_contract_test": "17d956643a585a243f452c24a4b68f99401316a9a6f9d5e46e632fdc6fbb5ccd",
+    ".artifacts/engineering-freeze-20260921/build/mvp_history_readiness_audit": "3028d62ed937b644e1c41554b643a1f959c0bfa6f50a63774f5b129d2418397b",
+    ".artifacts/engineering-freeze-20260921/build/original_mvp_contract_audit": "a38c09d4a70af8358ba915b3304a4770f87e61eaa407e62fe7284a8e31432d31",
+    ".artifacts/engineering-freeze-20260921/build/replay_reference_account_test": "0442923bcf019c3bd6a1fb5d87e766b00c6fb843de16348c3edffba690c0b6e6",
+    ".artifacts/engineering-freeze-20260921/build/trade_bot": "0006713188e8947117c6608e97d4b1b3338e363a4270982b8b09910b730ba8c7",
+    ".artifacts/engineering-freeze-20260921/build/trade_system_test": "c9c2dd1d26d02da6d124a77dc2a7b7dbc83c4075251e578fa3b329a57bf2f024"
+  },
+  "old_research_gate": {
+    "failure_id": "a16b1aed424847bcb25e7ade63536cb5",
+    "path": ".artifacts/validation-gate/state.json",
+    "sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+    "status": "HALTED"
+  },
+  "schema_version": "offline_engineering_freeze_v1",
+  "started_at_utc": "2026-09-21T15:50:43+00:00",
+  "unchanged_research": [
+    "NO_QUALIFIED_CANDIDATE",
+    "C2_NOT_QUALIFIED",
+    "NO_GO_CURRENT_REFERENCE_MVP_CONTINUATION",
+    "NO_GO_NEW_ROUTE",
+    "INSUFFICIENT_POINT_IN_TIME_EVIDENCE"
+  ],
+  "validation": {
+    "engineering_gate_path": ".artifacts/engineering-freeze-20260921/validation-state.json",
+    "engineering_gate_status_at_capture": "READY",
+    "full_ctest": {
+      "argv": [
+        "ctest",
+        "--test-dir",
+        ".artifacts/engineering-freeze-20260921/build",
+        "--output-on-failure",
+        "--stop-on-failure",
+        "--output-log",
+        "/Users/sk.wang/Projects/c++/ai-trade/.artifacts/engineering-freeze-20260921/full-ctest.log"
+      ],
+      "completed_at_utc": "2026-09-21T16:04:08.483962+00:00",
+      "cwd": "/Users/sk.wang/Projects/c++/ai-trade",
+      "failed": 0,
+      "first_failure_id": "a73b38aecf06434c9381dddfc3a9288e",
+      "original_command_retries": 1,
+      "passed": 105,
+      "seconds": 169.37
+    },
+    "history_through_archive_verification": [
+      {
+        "at": "2026-09-21T15:53:36.125677+00:00",
+        "command_sha256": "d809ef0baec0cacd4cdcec9a94cb0520fc4f0c3b0a08c187452d7aacaf30a868",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-new-offline-unit-tests",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:53:56.632166+00:00",
+        "command_sha256": "a73ca27fdf09f8d5d23d3e6613b986e01b4d7c46ebf186e732ff85185c929c57",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-clean-configure",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:54:37.601417+00:00",
+        "command_sha256": "5b640aaf1bbcb93b1b555c67de72c2bf2c4f09be659831c7c738dd17ce49da60",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-clean-build",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:55:23.710385+00:00",
+        "command_sha256": "e4ed02e032ac4ca5812ef53d4f89c4efe5756368f94abde87dcdc814f3911fe5",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-targeted-regression",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:56:56.193833+00:00",
+        "command_sha256": "a81269c38238fda694ad4321eb08ff195ce75eefb238cb1dd259f821287cae59",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-archive-unit-tests",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:57:02.892332+00:00",
+        "command_sha256": "93a59cdb72bb919da19f2b77514eea003e3497618ffe0c8431e03b5d404ac0ad",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-historical-identity",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:57:03.578811+00:00",
+        "command_sha256": "a73ca27fdf09f8d5d23d3e6613b986e01b4d7c46ebf186e732ff85185c929c57",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-final-configure",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:57:14.628790+00:00",
+        "command_sha256": "5b640aaf1bbcb93b1b555c67de72c2bf2c4f09be659831c7c738dd17ce49da60",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-final-build",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:57:25.794610+00:00",
+        "command_sha256": "f4f6b21ef968774d484b29ae22884ba46e011380f5c79b0dba09d75eed46bb14",
+        "event": "validation",
+        "exit_code": 8,
+        "label": "freeze-full-regression",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T15:59:33.929199+00:00",
+        "decision": "retry",
+        "event": "review",
+        "failure_id": "a73b38aecf06434c9381dddfc3a9288e",
+        "review_path": "/Users/sk.wang/Projects/c++/ai-trade/docs/reviews/2026-09-21-engineering-freeze-test-path-review.json",
+        "review_sha256": "d617384b8817a2f8d5733cc64fa276aab40f27cbffcefd6ba824508531edc656"
+      },
+      {
+        "at": "2026-09-21T15:59:37.095525+00:00",
+        "command_sha256": "5b640aaf1bbcb93b1b555c67de72c2bf2c4f09be659831c7c738dd17ce49da60",
+        "event": "repair_build",
+        "exit_code": 0,
+        "failure_id": "a73b38aecf06434c9381dddfc3a9288e"
+      },
+      {
+        "at": "2026-09-21T16:04:08.483962+00:00",
+        "command_sha256": "f4f6b21ef968774d484b29ae22884ba46e011380f5c79b0dba09d75eed46bb14",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-full-regression",
+        "retry_of": "a73b38aecf06434c9381dddfc3a9288e"
+      },
+      {
+        "at": "2026-09-21T16:04:15.336085+00:00",
+        "command_sha256": "ed794fd617fd5f3b6a10d206f92371dfeb4c531e5ac67980fbed9d16c46070a1",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-diagnostic-targets-compile-only",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T16:04:26.705651+00:00",
+        "command_sha256": "f74a1769948d9c293bb16e50ca8209d9874858a781d5b734a1b367dba8a0ce10",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-closed-evidence-archive",
+        "retry_of": null
+      },
+      {
+        "at": "2026-09-21T16:04:41.766391+00:00",
+        "command_sha256": "834310b481976fb2f57b93ac6e2425e96e3192052d447bdf70e57a4692d7fe41",
+        "event": "validation",
+        "exit_code": 0,
+        "label": "freeze-independent-archive-verification",
+        "retry_of": null
+      }
+    ],
+    "optional_audit_targets": "compiled only; not executed",
+    "python_subtests": {
+      "archive": 7,
+      "collector": 6,
+      "failure_gate": 14,
+      "pipeline": 29,
+      "stop_ledger_audit": 8
+    },
+    "targeted_ctest": {
+      "failed": 0,
+      "passed": 9,
+      "seconds": 13.73
+    }
+  }
+}

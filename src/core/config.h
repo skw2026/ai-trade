@@ -284,6 +284,8 @@ struct AppConfig {
   std::string source_config_path;
   std::string system_id{"bot-dev"};
   std::string mode{"replay"};
+  bool closed_bar_mvp{false};  // opt-in, offline-only 5m contract
+  bool replay_reference_account{false};  // explicit research model, never exchange risk
   std::string primary_symbol{"BTCUSDT"};
   int system_max_ticks{0};
   int system_status_log_interval_ticks{20};
@@ -504,6 +506,8 @@ struct AppConfig {
     };
   }
 };
+
+bool ValidateClosedBarMvpConfig(const AppConfig& config, std::string* out_error);
 
 bool LoadAppConfigFromYaml(const std::string& file_path,
                            AppConfig* out_config,

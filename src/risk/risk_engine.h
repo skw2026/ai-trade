@@ -40,6 +40,12 @@ class RiskEngine {
   RiskMode mode() const { return mode_; }
 
  private:
+  friend class TradeSystem;
+  // Called only after the offline controller durably accepts manual approval.
+  void BeginApprovedManualCycle() {
+    drawdown_mode_ = RiskMode::kNormal;
+    mode_ = forced_reduce_only_ ? RiskMode::kReduceOnly : RiskMode::kNormal;
+  }
   RiskMode ResolveMode(bool trade_ok, double drawdown_pct, double liq_distance_pct);
 
   double max_abs_notional_usd_{3000.0};  ///< 单 symbol 净名义敞口绝对值上限（USD）。

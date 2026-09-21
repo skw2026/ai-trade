@@ -301,6 +301,21 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       current_subsection.clear();
     }
 
+    if (current_section == "system" && key == "replay_reference_account") {
+      if (!ParseBool(value, &config.replay_reference_account)) {
+        if (out_error) *out_error = "system.replay_reference_account must be boolean";
+        return false;
+      }
+      continue;
+    }
+    if (current_section == "system" && key == "closed_bar_mvp") {
+      if (!ParseBool(value, &config.closed_bar_mvp)) {
+        if (out_error) *out_error = "system.closed_bar_mvp must be boolean";
+        return false;
+      }
+      continue;
+    }
+
     if (current_section == "risk" && key == "max_abs_notional_usd") {
       double parsed = 0.0;
       if (!ParseDouble(value, &parsed)) {
@@ -5809,9 +5824,44 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
     }
     return false;
   }
+  if (!ValidateClosedBarMvpConfig(config, out_error)) return false;
   config.source_config_path = file_path;
   config.integrator.shadow.runtime_config_path = file_path;
   *out_config = config;
+  return true;
+}
+
+bool ValidateClosedBarMvpConfig(const AppConfig& config, std::string* out_error) {
+  if (config.replay_reference_account &&
+      (!config.closed_bar_mvp || config.primary_symbol != "BTCUSDT" || config.universe.enabled ||
+       config.reconcile.enabled || config.system_remote_risk_refresh_interval_ticks != 0 ||
+       config.bybit.expected_margin_mode != MarginMode::kIsolated ||
+       config.bybit.expected_position_mode != PositionMode::kOneWay ||
+       config.risk_max_abs_notional_usd != 3000 || config.execution_max_order_notional != 1000 ||
+       !((config.execution_entry_fee_bps == 5.5 && config.execution_exit_fee_bps == 5.5 &&
+          config.execution_expected_slippage_bps == 1) ||
+         (config.execution_entry_fee_bps == 11 && config.execution_exit_fee_bps == 11 &&
+          config.execution_expected_slippage_bps == 2)))) {
+    if (out_error) *out_error = "reference account requires fixed BTC-only isolated offline MVP";
+    return false;
+  }
+  if (!config.closed_bar_mvp) return true;
+  if (config.mode != "replay" || config.exchange != "bybit" ||
+      config.system_max_ticks != 0 ||
+      config.risk_thresholds.degraded_drawdown != 0.08 ||
+      config.risk_thresholds.cooldown_drawdown != 0.12 ||
+      config.risk_thresholds.fuse_drawdown != 0.20 ||
+      config.self_evolution.enabled || config.strategy_defensive_notional_ratio != 0 ||
+      config.integrator.mode != IntegratorMode::kOff ||
+      config.integrator.shadow.enabled || config.integrator.microstructure_demo.enabled ||
+      config.execution_adaptive_fee_gate_enabled ||
+      config.execution_candidate_probe_enabled || config.execution_maker_entry_enabled ||
+      config.protection.enabled) {
+    if (out_error) *out_error =
+        "closed_bar_mvp requires complete offline Bybit replay, fixed 8/12/20 risk, pure trend, no model/"
+        "evolution/adaptive fee/probe/maker/protection overlays";
+    return false;
+  }
   return true;
 }
 

@@ -66,6 +66,13 @@ struct MarketEvent {
   bool feature_only{false};
   // Replay 可先注入因果历史来预热 regime/strategy，但该阶段禁止下单。
   bool execution_disabled{false};
+  // Opt-in causal MVP stream: an explicit OHLC is visible only at its end;
+  // open events may value risk/settle funding/fill orders but never update alpha.
+  bool completed_bar{false};
+  bool execution_only{false};
+  bool decision_batch_end{false};  // last closed symbol at this replay timestamp
+  Price mark_high_price{std::numeric_limits<double>::quiet_NaN()};
+  Price mark_low_price{std::numeric_limits<double>::quiet_NaN()};
 };
 
 /// Regime Analysis Snapshot
@@ -104,6 +111,7 @@ struct Signal {
   double confidence{0.0}; // 0.0 to 1.0
   Timestamp valid_until_ms{0};
   std::vector<std::string> reason_codes{};
+  bool new_decision{true};  // false: retained target for risk checks only
 };
 
 /// Integrator / ML Model Inference
@@ -158,6 +166,7 @@ struct OrderIntent {
   int direction{0};
   Quantity qty{0.0};
   Price price{0.0};
+  bool replay_terminal_settlement{false};  // explicit, replay-only reduce exit
 };
 
 /// Execution Fill Report

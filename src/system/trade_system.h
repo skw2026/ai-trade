@@ -9,9 +9,12 @@
 #include "core/types.h"
 #include "execution/execution_engine.h"
 #include "market/market_data.h"
+#include "market/closed_bar_clock.h"
 #include "oms/account_state.h"
 #include "regime/regime_engine.h"
 #include "risk/risk_engine.h"
+#include "risk/manual_risk_cycle.h"
+#include "risk/replay_reference_account.h"
 #include "strategy/integrator_shadow.h"
 #include "strategy/microstructure_demo_overlay.h"
 #include "strategy/strategy_engine.h"
@@ -91,9 +94,7 @@ class TradeSystem {
                        double avg_entry_price_before);
   void OnMarketSnapshot(const MarketEvent& event);
   double ApplyFunding(const std::string& symbol,
-                      double funding_rate_per_interval) {
-    return account_.ApplyFunding(symbol, funding_rate_per_interval);
-  }
+                      double funding_rate_per_interval);
 
   // --- Remote Synchronization ---
 
@@ -139,8 +140,22 @@ class TradeSystem {
   }
   
   // Risk Control
-  void ForceReduceOnly(bool enabled) { risk_.SetForcedReduceOnly(enabled); }
+  void ForceReduceOnly(bool enabled) {
+    risk_.SetForcedReduceOnly(enabled);
+    mvp_forced_reduce_only_ = enabled;
+    ObserveMvpRisk(manual_risk_.state().last_ts_ms);
+  }
   RiskMode GetRiskMode() const { return risk_.mode(); }
+
+  // Offline/manual API; main event-loop thread only. No automatic caller.
+  bool OpenMvpRiskJournal(const std::string& path, std::string* error);
+  bool ApproveMvpRiskCycle(const ManualRiskApproval& approval, std::string* error);
+  void SetMvpPendingOrders(bool pending) {
+    mvp_pending_orders_ = pending;
+    ObserveMvpRisk(manual_risk_.state().last_ts_ms);
+  }
+  const ManualRiskCycleState& mvp_risk_state() const { return manual_risk_.state(); }
+  const ReplayReferenceAccount& reference_account() const { return reference_account_; }
 
   // Accessors
   const AccountState& GetAccount() const { return account_; }
@@ -184,6 +199,18 @@ class TradeSystem {
   double max_account_gross_notional_usd_;
   bool evolution_enabled_{false};
   std::array<EvolutionWeights, 3> evolution_weights_by_bucket_;
+  bool closed_bar_mvp_{false};
+  bool reference_enabled_{false};
+  ReplayReferenceAccount reference_account_;
+  ManualRiskCycle manual_risk_;
+  bool mvp_pending_orders_{false};
+  bool mvp_symbol_pending_orders_{false};
+  bool mvp_trade_healthy_{false};
+  bool mvp_forced_reduce_only_{false};
+  void ObserveMvpRisk(std::int64_t ts_ms);
+  ClosedBarClock strategy_clock_;
+  std::unordered_map<std::string, Signal> closed_signals_;
+  std::unordered_map<std::string, RegimeState> closed_regimes_;
 
 };
 

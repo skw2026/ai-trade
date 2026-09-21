@@ -1,0 +1,36 @@
+{
+  "failure_id": "a16b1aed424847bcb25e7ade63536cb5",
+  "decision": "stop",
+  "goal": "One fixed reference historical falsification screen, with no tuning, risk-cycle restart, account access or deployment",
+  "expected": "Complete the fixed base/stress screen or close immediately at its frozen risk/input/path stop condition; INSUFFICIENT must block further execution and be diagnosed",
+  "observed": "Complete official annual inputs passed. Base exited at 2025-01-30T20:40:00Z with INSUFFICIENT_ACCOUNTING_CONTROL_PATH. Its 8.003506455093105% reference drawdown upper bound exceeded the frozen 8% boundary. Stress and EOF liquidation were not executed; original result remains INSUFFICIENT.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The frozen guard intentionally stops before applying alpha when the reference drawdown bound reaches 8%, since continuing would require a separately identified risk-control execution path. This is not a missing-data, zero-fill, liquidation-price, TLS, rounding, or ledger-divergence error. Independent cash/margin/mark reconciliation of all 8887 logged bars and 2399 actual fill parts matches to less than 1e-11 cash error. Point-sampled drawdown is only 7.985654844741023%, but the upper bound uses intrabar mark extrema and funding uncertainty; calling it a confirmed 12% latch or liquidation would be false. The unchanged method cannot continue past this realized boundary; more data or rerunning cannot change that without changing the contract.",
+  "evidence": [
+    ".artifacts/mvp-reference-history-20260921/prepared/input-proof.json",
+    ".artifacts/mvp-reference-history-20260921/prepared/result.json",
+    ".artifacts/mvp-reference-history-20260921/prepared/base.log:REFERENCE_STOP_JSON",
+    ".artifacts/mvp-reference-history-20260921/stop-ledger-audit.json",
+    "tools/audit_mvp_reference_stop.py",
+    "src/risk/replay_reference_account.cpp:AfterAccounting",
+    "docs/plans/2026-09-21-mvp-reference-v1.json"
+  ],
+  "next_action": "Close this authorized attempt and the current MVP-to-profit continuation path; preserve all inputs, bound executable/configuration, failure and accounting evidence. No original-command retry, new output directory, stress run, finer-data download, risk-threshold change or new alpha in this stage.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "not_viable_under_unchanged_contract_after_observed_boundary",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "The goal is a bounded decision, not obtaining a green annual report. A diagnosed stop is a completed decision without inventing profitability or a different REJECT label.",
+    "data_feasibility": "218 verified responses, 105409 aligned 5m trade/mark bars and 1099 funding events are available. There is no remaining missing-annual-history excuse; exact intrabar risk-control actions and account execution remain outside these data and this reference contract.",
+    "method_feasibility": "Reference accounting is coherent, but any path reaching the 8% control boundary exits as INSUFFICIENT before the 12% latch and before a full-year net-return decision. Continuing requires a changed model/contract, not a harmless patch. The observed fixed-fill price path is already negative before fee/slippage decomposition, so this result does not justify automatic simulation expansion.",
+    "budget_and_exit": "219 public GET attempts in total including one earlier rate-limit failure; one economic base invocation, 11.11958975 seconds pipeline time, zero stress invocations and zero economic retries. Original deadline 17:09:40 UTC remains; stop now, no automatic extension."
+  },
+  "route_reassessment": {
+    "old_route_failure": "Engineering completeness and data availability were prerequisites, not evidence of an economic edge. This run reaches a deliberately unresolved control-path boundary in its first month. Repeating engineering/data completion and then demanding a full annual verdict is structurally mismatched with that stop contract on the observed path.",
+    "replacement": "Close the current attempt with INSUFFICIENT and a project-level NO_GO for automatic continuation. Reuse the archived dataset/accounting tools if separately authorized, but do not reopen this fixed contract. Any future profit research must first present a separately justified mechanism, net-cost evidence, ex-ante risk execution contract and finite acceptance budget; no such new route is started here.",
+    "feasibility_evidence": "Existing ledger reconciliation explains all observed marked loss: price-path component -141.99238, execution slippage/tick -100.47260, fees -549.833721195, funding -1.345615759 = -793.644316954 synthetic units. This is a decomposition of the same observed orders, not a zero-cost counterfactual strategy or full-year/OOS estimate. Data/tool reuse is feasible; future profitability is unproven.",
+    "budget": "Zero additional historical GETs or strategy executions after this stop; only read-only root-cause checks and closeout documentation.",
+    "stop_condition": "This review closes the path now. No waits for two weeks, repeated old strategy trials, forced EOF settlement, reclassification of the frozen result or new development cycle without a separate user decision."
+  }
+}

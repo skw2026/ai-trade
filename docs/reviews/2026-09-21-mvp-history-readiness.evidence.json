@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "stage": "mvp_history_readiness",
+  "started_at_utc": "2026-09-21T13:56:58Z",
+  "decision": "INSUFFICIENT_REPLAY_CAPITAL_CONTRACT",
+  "root_cause_status": "confirmed",
+  "structural_issue": true,
+  "historical_screen_ready": false,
+  "historical_screen_started": false,
+  "economic_qualification": false,
+  "baseline_commit": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+  "budget_seconds": 3600,
+  "observations": [
+    {"synthetic_only": true, "direction": 1, "fill_parts": 2, "flat_entry_allowed": true, "position_risk_known": false, "adapter_liquidation_price": 0, "refresh_repairs_risk": false, "system_unknown_reason": true, "same_side_add_blocked": true, "holding_forced_flat": false, "partial_reduce_preserved": true, "reverse_closes_only": true, "known_safe_control_add_allowed": true},
+    {"synthetic_only": true, "direction": -1, "fill_parts": 2, "flat_entry_allowed": true, "position_risk_known": false, "adapter_liquidation_price": 0, "refresh_repairs_risk": false, "system_unknown_reason": true, "same_side_add_blocked": true, "holding_forced_flat": false, "partial_reduce_preserved": true, "reverse_closes_only": true, "known_safe_control_add_allowed": true}
+  ],
+  "validation": {
+    "configure": "PASS",
+    "build": "PASS",
+    "synthetic_diagnostic": {"completed_at_utc": "2026-09-21T14:02:47.644277Z", "process_exit_code": 0, "business_readiness": false, "command_sha256": "ff763d004483e98226ee4d954edfcdd38eb65a90da3294b54c538d27d2548904"},
+    "targeted": {"passed": 5, "total": 5, "seconds": 0.28, "completed_at_utc": "2026-09-21T14:02:56.672427Z", "command_sha256": "6ee948d6c8d1dbad7221640b5c0b134bf45f9c0f8b6b8afecdf1127f3c695adf"},
+    "full_suite_this_turn": "NOT_RUN",
+    "unexpected_command_failures": 0
+  },
+  "authority": {
+    "market_data_get_requests": 0,
+    "official_documentation_reads_only": true,
+    "historical_economic_experiments": 0,
+    "real_account_accesses": 0,
+    "strategy_or_risk_parameter_changes": 0,
+    "trading_implementation_changes_this_turn": false,
+    "commit_push_deployment": false,
+    "new_reference_margin_model_approved": false,
+    "closed_historical_budget_reopened": false
+  },
+  "local_data_inventory": {
+    "five_minute_ohlcv": {"path": "data/research/ohlcv_5m.csv", "sha256": "6846a7675442d4b036700bd1a226f7270378c48a6185aaa4952da44d232bcc9b", "rows": 26164, "first_bar_start_utc": "2025-11-15T18:20:00Z", "last_bar_start_utc": "2026-02-14T14:35:00Z", "interval_mismatch_count": 0, "symbol_venue_provenance": "NOT_BOUND", "mark_funding": "MISSING"},
+    "weekly_raw_manifest": {"path": ".artifacts/weekly-momentum-screen-20260921/source-manifest.json", "sha256": "4fd55ead9cca6e188227b80cf4c3216d5bb18a5e2a87e14548e832ee881cb246", "responses": 48, "trade_mark_interval_minutes": 60, "all_raw_response_hashes_reverified_this_turn": false}
+  },
+  "file_sha256": {
+    "CMakeLists.txt": "d00bc4ddbe70b1b18ddf16f672e3c5898f13d89f5b8b5feb951b3fc14cc3a299",
+    "tools/audit_mvp_history_readiness.cpp": "a06032010cf16321190af442b5047c6f82e2ad9a7281a5563fee3c3d179e77f9",
+    "tools/fixtures/mvp_history_readiness_synthetic.csv": "a73823064f99bb8ba425f2a3ebf1311066304cfb3fb171786e7e0bc9d6f6b20e",
+    "docs/plans/2026-09-21-mvp-history-readiness.md": "29e93a55df9b84a27a28ea1dbea9ab9190d2d1331090d656aac0680591b9dc6c",
+    "config/bybit.replay.mvp.yaml": "06f64aab329efced409db8756bbb523aeeca516c47511d501ed24384a231742a",
+    "docs/reviews/2026-09-21-mvp-manual-risk-cycle.evidence.json": "bb8876cd0f9b837634d75c9547eb120519a17b2b68265a8aae828ca00273f3d9"
+  },
+  "local_validation_artifact_sha256": {
+    "build/mvp_history_readiness_audit": "eaa2c93794f98fde9d2d36c11e9bf3b9e1f3ac880236090ca0dbba6799217fb7",
+    "build/Testing/Temporary/LastTest.log": "b722fe2d85c161e067af499d2551d476e752e0a57533d4d5828be07641e182ed"
+  },
+  "process_gate_ready_is_not_business_readiness": true,
+  "route_reassessment": {
+    "old_route_failure": "Offline hypothetical positions have no margin/liquidation model; public OHLC and a faster refresh cannot produce account-specific liquidation risk.",
+    "replacement": "Propose explicitly labeled offline reference capital/margin and trading-rule contract; preserve fail-closed unknown protection. No implementation before user decision.",
+    "feasibility_evidence": "Official market endpoints supply OHLC/funding and rule structures; synthetic real-component diagnostic isolates missing risk. Model adequacy for real accounts remains unproven.",
+    "budget": "Proposed separate 4h offline engineering cap; no historical sampling, account access or deployment.",
+    "stop_condition": "No fixed complete contract within first hour, failed required validation, or total budget expiry stops dependent work; no automatic extension or alpha change."
+  }
+}

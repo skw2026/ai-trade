@@ -449,7 +449,11 @@ class MockBybitHttpTransport final : public ai_trade::BybitHttpTransport {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc != 2) {
+    std::cerr << "trade_system_test requires an explicit repository config directory\n";
+    return 1;
+  }
   {
     // 使用极短周期的 EMA 以便在第 2 个 tick 就能触发信号
     ai_trade::StrategyConfig fast_strategy;
@@ -5363,19 +5367,9 @@ int main() {
   }
 
   {
-    std::filesystem::path config_root;
-    for (const auto& candidate : {
-             std::filesystem::current_path() / "config",
-             std::filesystem::current_path() / ".." / "config",
-         }) {
-      if (std::filesystem::exists(candidate / "default.yaml")) {
-        config_root = candidate;
-        break;
-      }
-    }
-    if (config_root.empty()) {
-      std::cerr << "无法定位仓库 config 目录，当前路径: "
-                << std::filesystem::current_path() << "\n";
+    const std::filesystem::path config_root(argv[1]);
+    if (!std::filesystem::is_regular_file(config_root / "default.yaml")) {
+      std::cerr << "无法定位显式指定的仓库 config 目录: " << config_root << "\n";
       return 1;
     }
 

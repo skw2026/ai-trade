@@ -100,6 +100,19 @@ def review(path, state, review_path):
         state["status"] = "RETRY_APPROVED"
         active["review_path"] = str(review_path.resolve())
         active["review_sha256"] = sha(raw)
+        repair = record.get("repair_build_argv")
+        if repair is not None:
+            require(isinstance(repair, list) and len(repair) >= 3 and
+                    repair[:2] == ["cmake", "--build"] and all(nonempty(v) for v in repair),
+                    "repair is restricted to one reviewed cmake --build command")
+            require(record.get("repair_build_cwd") == str(pathlib.Path.cwd().resolve()),
+                    "repair build cwd must be explicitly reviewed")
+            active["repair_build_sha256"] = sha(json.dumps(
+                {"argv": repair, "cwd": record["repair_build_cwd"]}, ensure_ascii=True, sort_keys=True).encode())
+            active["repair_build_completed"] = False
+        else:
+            active.pop("repair_build_sha256", None)
+            active.pop("repair_build_completed", None)
     else:
         state["status"] = "HALTED"
     state["history"].append({"at": stamp(), "event": "review", "failure_id": active["failure_id"],
@@ -107,6 +120,43 @@ def review(path, state, review_path):
                              "review_path": str(review_path.resolve())})
     save(path, state)
     return 0
+
+
+def repair_build(path, state, command, timeout):
+    """Reviewed preparation only; never clears the original failed acceptance."""
+    require(state["status"] == "RETRY_APPROVED", "repair build requires accepted root-cause review")
+    active = state["active"]
+    require(active.get("repair_build_completed") is False, "no unused reviewed repair build")
+    require(sha(pathlib.Path(active["review_path"]).read_bytes()) == active["review_sha256"],
+            "review changed after approval")
+    identity = {"argv": command, "cwd": str(pathlib.Path.cwd().resolve())}
+    require(sha(json.dumps(identity, ensure_ascii=True, sort_keys=True).encode()) ==
+            active.get("repair_build_sha256"), "repair build command/cwd differs from review")
+    state["status"] = "RUNNING"
+    save(path, state)
+    try:
+        result = subprocess.run(command, timeout=timeout, check=False)
+        code = result.returncode if result.returncode >= 0 else 128-result.returncode
+    except subprocess.TimeoutExpired:
+        code = 124
+    except OSError:
+        code = 127
+    except KeyboardInterrupt:
+        code = 130
+    state["history"].append({"at": stamp(), "event": "repair_build",
+                             "failure_id": active["failure_id"], "exit_code": code,
+                             "command_sha256": active["repair_build_sha256"]})
+    if code == 0:
+        active["repair_build_completed"] = True
+        state["status"] = "RETRY_APPROVED"
+    else:
+        active["failure_count"] += 1
+        active["failure_id"] = uuid.uuid4().hex
+        active.pop("review_path", None)
+        active.pop("review_sha256", None)
+        state["status"] = "BLOCKED"
+    save(path, state)
+    return code
 
 
 def execute(path, state, command, label, retry, timeout):
@@ -117,6 +167,8 @@ def execute(path, state, command, label, retry, timeout):
             "validation blocked: diagnose and review before retry; do not advance dependent work")
     if retry:
         active = state["active"]
+        require("repair_build_sha256" not in active or active.get("repair_build_completed") is True,
+                "reviewed repair build must complete before original acceptance retry")
         require(active["command_sha256"] == command_sha,
                 "retry must rerun the failed command in the same directory, not a weaker substitute")
         require(sha(pathlib.Path(active["review_path"]).read_bytes()) == active["review_sha256"],
@@ -159,7 +211,7 @@ def main():
     commands.add_parser("status")
     review_parser = commands.add_parser("review")
     review_parser.add_argument("--file", type=pathlib.Path, required=True)
-    for verb in ("run", "retry"):
+    for verb in ("run", "retry", "repair-build"):
         command_parser = commands.add_parser(verb)
         command_parser.add_argument("--label")
         command_parser.add_argument("--timeout", type=int, default=600)
@@ -181,7 +233,8 @@ def main():
             else:
                 require(0 < args.timeout <= 3600, "timeout must be in 1..3600 seconds")
                 command = args.command[1:] if args.command[:1] == ["--"] else args.command
-                code = execute(args.state, state, command, args.label, args.action == "retry", args.timeout)
+                code = repair_build(args.state, state, command, args.timeout) if args.action == "repair-build" else \
+                    execute(args.state, state, command, args.label, args.action == "retry", args.timeout)
             print("VALIDATION_GATE " + json.dumps(summary(state), sort_keys=True), flush=True)
             return code
     except (OSError, ValueError, KeyError, TypeError) as exc:

@@ -201,7 +201,7 @@ void AccountState::OnMarket(const MarketEvent& event) {
   RefreshPeakEquity();
 }
 
-void AccountState::ApplyFill(const FillEvent& fill) {
+void AccountState::ApplyFill(const FillEvent& fill, bool preserve_mark) {
   const double signed_qty = static_cast<double>(fill.direction) * fill.qty;
   if (std::fabs(signed_qty) < kEpsilon) return;
 
@@ -248,7 +248,7 @@ void AccountState::ApplyFill(const FillEvent& fill) {
     }
   }
 
-  if (fill.price > kEpsilon) {
+  if (!preserve_mark && fill.price > kEpsilon) {
     position.mark_price = fill.price;
   }
   RefreshPeakEquity();
@@ -283,9 +283,9 @@ void AccountState::RecordReflectedFillEconomics(
 }
 
 double AccountState::ApplyFunding(const std::string& symbol,
-                                  double funding_rate_per_interval) {
+                                  double funding_rate_per_interval, bool exact_rate) {
   if (!std::isfinite(funding_rate_per_interval) ||
-      std::fabs(funding_rate_per_interval) <= kEpsilon) {
+      std::fabs(funding_rate_per_interval) <= (exact_rate ? 0.0 : kEpsilon)) {
     return 0.0;
   }
   const auto it = positions_.find(symbol);

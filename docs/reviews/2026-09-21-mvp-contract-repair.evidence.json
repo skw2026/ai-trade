@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "stage": "original_mvp_bounded_contract_repair",
+  "started_at_utc": "2026-09-21T11:52:02Z",
+  "engineering_budget_seconds": 14400,
+  "baseline_commit": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+  "status": "PARTIAL_ENGINEERING_PASS_PENDING_RISK_RECOVERY_DECISION",
+  "whole_contract_passed": false,
+  "contracts": {
+    "closed_5m_signal_clock": "PASS_SYNTHETIC",
+    "next_open_execution_and_accounting": "PASS_SYNTHETIC",
+    "risk_recovery": "PENDING_PRODUCT_DECISION",
+    "historical_screen": "NOT_STARTED"
+  },
+  "scope": {
+    "new_mode": "system.closed_bar_mvp=true, offline Bybit replay only",
+    "default_enabled": false,
+    "synthetic_inputs_only": true,
+    "real_account_accesses": 0,
+    "external_history_get_requests": 0,
+    "historical_economic_experiments": 0,
+    "parameter_searches": 0,
+    "commit_or_push": false,
+    "deployment": false,
+    "fresh_ecs_observation": false,
+    "demo_or_live_activation_authorized": false,
+    "old_candidate_closures_unchanged": true,
+    "c2": "NOT_QUALIFIED",
+    "risk_engine_and_account_high_watermark_unchanged": true
+  },
+  "validation": {
+    "configure": "PASS",
+    "final_build": "PASS",
+    "targeted": {"passed": 4, "total": 4, "seconds": 2.51},
+    "full": {
+      "passed": 99,
+      "total": 99,
+      "failed": 0,
+      "seconds": 158.22,
+      "completed_at_utc": "2026-09-21T12:11:57.038599Z",
+      "gate_label": "mvp-contract-full-regression",
+      "argv": ["ctest", "--test-dir", "build", "--output-on-failure", "--stop-on-failure"],
+      "command_sha256": "0d5142a4737d80d3d546513b0c050bf7740e9a2b69c8c3770e82b73aa55edd56"
+    },
+    "resolved_failures": [
+      {
+        "failure_id": "4c57735e70ca468b8ac92c7c031863a0",
+        "label": "mvp-contract-repair-build",
+        "first_exit_code": 2,
+        "review": "docs/reviews/2026-09-21-mvp-repair-build-review.json",
+        "same_command_retries": 1,
+        "retry_exit_code": 0,
+        "command_sha256": "711f2cea4c2b89eeb584039813fc861e4b143bcff9f68cbe18964ba9798d81bb"
+      },
+      {
+        "failure_id": "08800fd02ef9461f9d64451da5bd5c9c",
+        "label": "mvp-contract-repair-targeted",
+        "first_exit_code": 8,
+        "review": "docs/reviews/2026-09-21-mvp-repair-config-review.json",
+        "same_command_retries": 1,
+        "retry_exit_code": 0,
+        "command_sha256": "67252919cd01325ace9868df3bdcb648672a294e788bbb0a6472ea108f48f729"
+      }
+    ]
+  },
+  "limitations": [
+    "Risk recovery direction not selected; existing safety latch remains. No automatic rearm or hidden drawdown reset.",
+    "Engineering tests do not establish profitability, historical qualification, or deployment permission.",
+    "Synthetic full-app fixture disables fee-aware entry gate to exercise execution; frozen MVP config retains it.",
+    "OHLC bars do not reconstruct intrabar tick paths or actual exchange fills.",
+    "New CSV requires bar-start timestamps, mark_open, mark_close and explicit funding; legacy runner output is not certified for this mode.",
+    "Prior audit evidence describes legacy code behavior; it was preserved, not regenerated as a passing result."
+  ],
+  "file_sha256": {
+    "src/market/closed_bar_clock.h": "c4f3bc819c6fe1de9312b59c3094221d6adab4173de7ef5b55bb2c3eddc3cc3a",
+    "src/market/closed_bar_clock.cpp": "352fd84d2420a9c09be8d9fb8a897e48635c1b6aadee6c575c6092ffe83de4e8",
+    "src/system/trade_system.cpp": "c1b7ea830c70906b896d83351466de87ba9592d340fdd24d786ab1700a0737e2",
+    "src/system/trade_system.h": "50627b3fcfd61a15753263f6a23ec6fb2619b70ff0a2a79990bd56b81a870a75",
+    "src/exchange/bybit_exchange_adapter.cpp": "03d9722399485a27933281f5b1fb6c7defb2a4d8d73a7306b74c80fabdf0eace",
+    "src/exchange/bybit_exchange_adapter.h": "8baaf2b2dbf31827b40412c999d8a92132736cd54cdd042ce0de764fd59a6800",
+    "src/core/config.cpp": "ad9a777c97d48af8188d524607bee3dc11ac90bf823178da5d755913437a4bfd",
+    "src/core/config.h": "26cb3d778c114991302c80862a8bfa8b52daa81e4a7e72332826f382846741c1",
+    "src/core/types.h": "b9becd1d856b843ea3a93ac79e6650420e5cf7dc9664d6447cb4ef3079455e42",
+    "src/app/bot_app.cpp": "0711f430deb3604cf37c57e5641e15441f6866ac49178d1ee9cffeecf2b4e6db",
+    "src/app/bot_app.h": "7964b529dc97d7e1c0a1018b0017ba889dc79458fb48a86877d45d8dc744c361",
+    "src/monitor/gate_monitor.cpp": "021c6c39982aed98b6f37de50a86bd8f72148bab1c3116222e90e7622370271f",
+    "config/bybit.replay.mvp.yaml": "06f64aab329efced409db8756bbb523aeeca516c47511d501ed24384a231742a",
+    "tests/test_mvp_contract.cpp": "a0cc1a19d9f12f183d889c64f9c43ad5945528941fcc5b3f9d8b01405b4a1baf",
+    "CMakeLists.txt": "9a3eddfe218a49f5545136796aa82fad81cb7eaf4438acf2db33d15557070d83",
+    "docs/reviews/2026-09-21-mvp-repair-build-review.json": "90e647a46d8dad6278ec7ecfbdbdf0e36e3fe026b4eedf4f20f50ad72dc168d8",
+    "docs/reviews/2026-09-21-mvp-repair-config-review.json": "902c877b8c453aa0ababad8e7e538ed438a054e816a892d6daff1b3426344ae9"
+  },
+  "local_validation_artifact_sha256": {
+    "build/mvp_contract_test": "01c68b77f55081fde1d00dfd7d48ecadfe250c4afd7bbe7d20c140576d720c30",
+    "build/trade_bot": "f4e5007191eac08b4d7b8ad10ab2cc65d9f566923b22708593a5ea92db2c1a3e",
+    "build/Testing/Temporary/LastTest.log": "ec17c6f33e4847c03588e8bf73b1d85e3069670215f7448078d378cc946c1347"
+  },
+  "preserved_evidence_sha256": {
+    "docs/reviews/2026-09-21-original-mvp-contract.evidence.json": "c9851196107f7f146f40ee96fe7bda5fb4475dec2e79e7497187193b8fbbe416",
+    "tools/audit_original_mvp_contract.cpp": "27adbec62f88a580d180ff45a2bf083f62ccb55149b61bbd5104e11b480d59a4",
+    "tools/fixtures/original_mvp_contract_audit.csv": "684a428b403115379c32536b1a886213acff2a87c54127344a32daf23d65f80b",
+    "docs/plans/2026-09-21-weekly-momentum-screen-v1.json": "71a8580421ba0a2e51f342475c2c7ba9541079aaaaad04ab55256f0e66214c16",
+    "docs/reviews/2026-09-21-etf-timing-audit.evidence.json": "185c6b65852becbf19a6de67ceb60dabfab72d46ffd06dff7777c58517725a61"
+  }
+}

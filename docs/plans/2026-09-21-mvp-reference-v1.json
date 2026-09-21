@@ -1,0 +1,70 @@
+{
+  "schema": "mvp_offline_reference_v1",
+  "frozen_at_utc": "2026-09-21T14:15:08Z",
+  "authority": {"synthetic_engineering_only": true, "historical_execution_approved": false, "account_qualification": false},
+  "symbol": "BTCUSDT",
+  "category": "linear",
+  "interval_ms": 300000,
+  "source_start_utc": "2024-12-31T00:00:00Z",
+  "evaluation_start_utc": "2025-01-01T00:00:00Z",
+  "end_exclusive_utc": "2026-01-01T00:05:00Z",
+  "sample_label": "retrospective_reference_not_unseen_OOS",
+  "capital": {
+    "initial_cash": 10000,
+    "currency": "synthetic_USDT_at_fixed_USD_parity",
+    "leverage": 2,
+    "gross_cap": 3000,
+    "maintenance_rate": 0.01,
+    "exit_liability_rate": 0.0013,
+    "maintenance_deduction": 0,
+    "reference_tier_max_mark_notional": 10000,
+    "auto_add_margin": false,
+    "entry_margin": "abs(fill_qty)*fill_price/leverage-entry_fee",
+    "funding_debit": "signed_qty*mark_open*actual_event_rate_from_isolated_collateral",
+    "reduction": "release_collateral_pro_rata; realized_PnL_and_exit_fee_to_free_cash",
+    "liquidation_equation": "collateral+q*(mark-entry)=abs(q)*mark*(maintenance_rate+exit_liability_rate)",
+    "unknown_or_outside_reference_tier": "INSUFFICIENT_STOP",
+    "confirmed_maintenance_breach": "REJECT_REFERENCE_MARGIN_STOP"
+  },
+  "reference_order_rules": {"qty_step": 0.001, "min_qty": 0.001, "min_entry_notional": 5, "price_tick": 0.1, "max_order_notional": 1000, "historically_certified": false, "dust": "INSUFFICIENT_STOP_NO_WRITE_OFF"},
+  "costs": {
+    "base": {"entry_fee_bps": 5.5, "exit_fee_bps": 5.5, "slippage_bps": 1},
+    "stress": {"entry_fee_bps": 11, "exit_fee_bps": 11, "slippage_bps": 2},
+    "price_rounding": "adverse_tick_after_slippage",
+    "account_fee_or_executable_quote_qualification": false
+  },
+  "input": {
+    "public_host": "api.bybit.com",
+    "trade_endpoint": "/v5/market/kline",
+    "mark_endpoint": "/v5/market/mark-price-kline",
+    "funding_endpoint": "/v5/market/funding/history",
+    "funding_required_grid_ms": 28800000,
+    "funding_grid_mismatch": "INSUFFICIENT_STOP_NOT_ZERO_FILL",
+    "raw_hash_and_request_coverage_required": true,
+    "interpolation_allowed": false,
+    "future_fields_on_open": false,
+    "mark_high_low_required_at_close": true,
+    "funding_valuation": "reference_mark_open; accumulate_abs(q_old*rate)*(mark_high-mark_low)_uncertainty_at_close",
+    "terminal": "cancel_pending; flatten_at_last_trade_close_with_cost; end_must_not_be_funding_grid_boundary"
+  },
+  "risk": {
+    "drawdown_actions": [0.08, 0.12, 0.20],
+    "minimum_liquidation_distance": 0.08,
+    "intrabar_crossing": "INSUFFICIENT_STOP_BEFORE_NEXT_ALPHA; never infer_high_low_order_or_simulate_favorable_fill",
+    "manual_recovery_during_screen": false,
+    "seconds_level_risk_qualification": false
+  },
+  "verdict": {
+    "priority": ["confirmed_reference_risk_reject", "input_or_accounting_or_path_insufficient", "fixed_activity_or_net_return_reject", "worth_further_review"],
+    "min_signals_per_complete_UTC_day": 24,
+    "min_distinct_filled_orders_per_complete_UTC_day": 4,
+    "count_partial_fills_as_separate_orders": false,
+    "required_cost_scenarios": ["base", "stress"],
+    "net_requirement": "both_scenarios_positive_after_terminal_cost_and_funding_uncertainty; both_calendar_halves_positive",
+    "risk_requirement": "no_latch_no_reference_liquidation_no_unresolved_intrabar_control",
+    "positive_label": "WORTH_FURTHER_REVIEW_NOT_PROFIT_QUALIFIED",
+    "repeat_tune_train_after_reject": false
+  },
+  "future_history_budget_proposal_not_authorization": {"max_public_gets": 500, "max_compute_seconds": 3600, "auto_retry": false},
+  "rule_origin": "Explicit research assumptions, NOT historical Bybit rules or current account settings"
+}

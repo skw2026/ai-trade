@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
 
 #include "core/log.h"
 
@@ -87,7 +88,14 @@ TradeSystem::TradeSystem(const AppConfig& config)
       integrator_shadow_(config.integrator.shadow),
       microstructure_demo_overlay_(config.integrator.microstructure_demo),
       integrator_config_(config.integrator),
-      max_account_gross_notional_usd_(config.risk_max_abs_notional_usd) {
+      max_account_gross_notional_usd_(config.risk_max_abs_notional_usd),
+      closed_bar_mvp_(config.closed_bar_mvp),
+      reference_enabled_(config.replay_reference_account),
+      manual_risk_(config.closed_bar_mvp ? config.risk_max_abs_notional_usd : 3000.0,
+                   config.risk_thresholds) {
+  std::string error;
+  if (!ValidateClosedBarMvpConfig(config, &error))
+    throw std::invalid_argument(error);
   
   // Initialize default weights
   evolution_weights_by_bucket_.fill({1.0, 0.0});
@@ -109,11 +117,14 @@ TradeSystem::TradeSystem(double risk_cap_usd, double max_order_notional_usd,
       integrator_shadow_(integrator_config.shadow),
       microstructure_demo_overlay_(integrator_config.microstructure_demo),
       integrator_config_(integrator_config),
-      max_account_gross_notional_usd_(risk_cap_usd) {
+      max_account_gross_notional_usd_(risk_cap_usd),
+      manual_risk_(3000.0, risk_thresholds) {
   evolution_weights_by_bucket_.fill({1.0, 0.0});
 }
 
 bool TradeSystem::OnPrice(double price, bool trade_ok) {
+  if (closed_bar_mvp_)
+    throw std::logic_error("MVP requires causal adapter execution, not immediate OnPrice fills");
   const MarketEvent event = market_generator_.Next(price);
   const auto decision = Evaluate(event, trade_ok, 0.0);
   
@@ -155,12 +166,42 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
 
   // 1. Update Account Valuation
   account_.OnMarket(event);
+  if (reference_enabled_) reference_account_.OnMarket(event, account_);
+  if (closed_bar_mvp_) {
+    mvp_trade_healthy_ = trade_ok;
+    mvp_symbol_pending_orders_ = has_pending_symbol_net_orders;
+    // A local pending flag can add a block, never erase the global one.
+    manual_risk_.Observe(event.ts_ms, account_, trade_ok && !mvp_forced_reduce_only_,
+                         mvp_pending_orders_ || mvp_symbol_pending_orders_);
+  }
 
-  // 2. Regime Analysis
-  decision.regime = regime_.OnMarket(event);
-
-  // 3. Strategy Signal Generation
-  decision.base_signal = strategy_.OnMarket(event, account_, decision.regime);
+  // A single causal clock owns BOTH regime and base strategy. Intrabar events
+  // retain a target for risk but cannot create alpha decisions or rebalances.
+  if (closed_bar_mvp_) {
+    const auto closed = strategy_clock_.Push(event);
+    if (closed) {
+      decision.regime = regime_.OnMarket(*closed);
+      // A tick in the next bucket closes the previous bar. Its price must not
+      // leak into volatility sizing of that previous bar's signal.
+      AccountState at_close = account_;
+      at_close.OnMarket(*closed);
+      decision.base_signal = strategy_.OnMarket(*closed, at_close, decision.regime);
+      decision.base_signal.valid_until_ms =
+          closed->ts_ms + ClosedBarClock::kIntervalMs;
+      closed_signals_[event.symbol] = decision.base_signal;
+      closed_regimes_[event.symbol] = decision.regime;
+    } else {
+      decision.base_signal = closed_signals_[event.symbol];
+      decision.base_signal.symbol = event.symbol;
+      decision.base_signal.new_decision = false;
+      PushReason(&decision.base_signal.reason_codes, "STR_WAIT_CLOSED_5M_BAR");
+      decision.regime = closed_regimes_[event.symbol];
+      decision.regime.symbol = event.symbol;
+    }
+  } else {
+    decision.regime = regime_.OnMarket(event);
+    decision.base_signal = strategy_.OnMarket(event, account_, decision.regime);
+  }
   if (decision.base_signal.symbol.empty()) {
     decision.base_signal.symbol = event.symbol;
   }
@@ -225,12 +266,27 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   decision.target = TargetPosition{decision.signal.symbol, decision.signal.suggested_notional_usd};
   
   // Safe legs cannot conceal dangerous ones; unknown risk prohibits increases.
-  const auto minimum_liq_dist = account_.minimum_liquidation_distance();
+  const auto minimum_liq_dist = reference_enabled_ ? reference_account_.RiskDistance(account_) :
+                                                  account_.minimum_liquidation_distance();
+  if (reference_enabled_) PushReason(&decision.signal.reason_codes, "RISK_OFFLINE_REFERENCE_MARGIN_V1");
   if (!minimum_liq_dist.has_value()) {
     PushReason(&decision.signal.reason_codes, "RISK_LIQUIDATION_DATA_UNKNOWN");
   }
   const double liq_dist = minimum_liq_dist.value_or(0.0);
-  decision.risk_adjusted = risk_.Apply(decision.target, trade_ok, account_.drawdown_pct(), liq_dist);
+  // Serialize pending execution across symbols in the offline MVP. Until an
+  // earlier order settles/cancels, its unused gross budget cannot be promised
+  // to another symbol (and pending reductions do not free capital early).
+  const bool pending_mvp_execution = closed_bar_mvp_ &&
+      (mvp_pending_orders_ || has_pending_symbol_net_orders);
+  decision.risk_adjusted = risk_.Apply(decision.target, trade_ok && !pending_mvp_execution,
+      closed_bar_mvp_ ? manual_risk_.control_drawdown() : account_.drawdown_pct(), liq_dist);
+  if (closed_bar_mvp_) {
+    if (pending_mvp_execution)
+      PushReason(&decision.signal.reason_codes, "RISK_MVP_PENDING_ORDER_SERIALIZATION");
+    PushReason(&decision.signal.reason_codes, manual_risk_.state().latched ?
+        "RISK_MANUAL_CYCLE_LATCHED" : manual_risk_.state().cycle > 0 ?
+        "RISK_MANUAL_CYCLE_APPROVED" : "RISK_INITIAL_CYCLE");
+  }
 
   // 5.1. Global Account Gross Notional Check
   const double settled_symbol_notional =
@@ -244,7 +300,9 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
                         std::fabs(settled_symbol_notional));
   const double other_symbols_gross =
       std::max(0.0, gross_notional - std::fabs(symbol_current_notional));
-  const double symbol_budget = std::max(0.0, max_account_gross_notional_usd_ - other_symbols_gross);
+  const double gross_cap = closed_bar_mvp_ ? manual_risk_.gross_cap_usd() :
+                                            max_account_gross_notional_usd_;
+  const double symbol_budget = std::max(0.0, gross_cap - other_symbols_gross);
   
   if (std::fabs(decision.risk_adjusted.adjusted_notional_usd) > symbol_budget) {
     decision.risk_adjusted.adjusted_notional_usd = std::clamp(
@@ -252,19 +310,34 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   }
 
   // 6. Execution
-  decision.intent = execution_.BuildIntent(decision.risk_adjusted,
-                                           symbol_current_notional,
-                                           event.price);
+  const bool intrabar = closed_bar_mvp_ && !decision.base_signal.new_decision;
+  const bool risk_reduction =
+      decision.risk_adjusted.reduce_only || base_signal_expired ||
+      (closed_bar_mvp_ && std::fabs(symbol_current_notional) > symbol_budget) ||
+      (decision.risk_adjusted.risk_mode == RiskMode::kDegraded &&
+       std::fabs(decision.risk_adjusted.adjusted_notional_usd) <
+           std::fabs(symbol_current_notional));
+  if (!intrabar || risk_reduction) {
+    auto execution_target = decision.risk_adjusted;
+    if (intrabar) execution_target.reduce_only = true;
+    decision.intent = execution_.BuildIntent(execution_target,
+                                             symbol_current_notional,
+                                             event.price);
+  }
   return decision;
 }
 
 void TradeSystem::OnFill(const FillEvent& fill) {
-  account_.ApplyFill(fill);
+  if (reference_enabled_) reference_account_.OnFill(fill, account_);
+  account_.ApplyFill(fill, reference_enabled_);
+  if (reference_enabled_) reference_account_.AfterAccounting(account_);
+  ObserveMvpRisk(manual_risk_.state().last_ts_ms);
 }
 
 void TradeSystem::OnReflectedFill(const FillEvent& fill,
                                   double position_qty_before,
                                   double avg_entry_price_before) {
+  if (reference_enabled_) throw std::logic_error("reference account forbids reflected remote fills");
   account_.RecordReflectedFillEconomics(fill,
                                         position_qty_before,
                                         avg_entry_price_before);
@@ -272,27 +345,83 @@ void TradeSystem::OnReflectedFill(const FillEvent& fill,
 
 void TradeSystem::OnMarketSnapshot(const MarketEvent& event) {
   account_.OnMarket(event);
+  if (reference_enabled_) reference_account_.OnMarket(event, account_);
+  ObserveMvpRisk(event.ts_ms);
+}
+
+void TradeSystem::ObserveMvpRisk(std::int64_t ts_ms) {
+  if (closed_bar_mvp_ && ts_ms > 0)
+    manual_risk_.Observe(ts_ms, account_, mvp_trade_healthy_ && !mvp_forced_reduce_only_,
+                         mvp_pending_orders_ || mvp_symbol_pending_orders_);
+}
+
+double TradeSystem::ApplyFunding(const std::string& symbol, double rate) {
+  if (reference_enabled_) {
+    if (symbol != "BTCUSDT") throw std::invalid_argument("REFERENCE_FUNDING_SYMBOL");
+    reference_account_.OnFunding(rate, account_.position_qty(symbol) *
+        account_.mark_price(symbol) * rate, account_);
+  }
+  const double paid = account_.ApplyFunding(symbol, rate, reference_enabled_);
+  if (reference_enabled_) reference_account_.AfterAccounting(account_);
+  ObserveMvpRisk(manual_risk_.state().last_ts_ms);
+  return paid;
+}
+
+bool TradeSystem::OpenMvpRiskJournal(const std::string& path, std::string* error) {
+  if (!closed_bar_mvp_) {
+    if (error) *error = "manual risk journal is offline MVP only";
+    return false;
+  }
+  return manual_risk_.OpenNewJournal(path, error);
+}
+
+bool TradeSystem::ApproveMvpRiskCycle(const ManualRiskApproval& approval, std::string* error) {
+  if (reference_enabled_) {
+    if (error) *error = "reference screening cannot approve another risk cycle";
+    return false;
+  }
+  if (!closed_bar_mvp_) {
+    if (error) *error = "manual risk approval is offline MVP only";
+    return false;
+  }
+  ObserveMvpRisk(manual_risk_.state().last_ts_ms);
+  const auto old_cycle = manual_risk_.state().cycle;
+  if (!manual_risk_.Approve(approval, error)) return false;
+  if (manual_risk_.state().cycle != old_cycle) risk_.BeginApprovedManualCycle();
+  // A manual budget change cannot reuse a pre-approval alpha target.
+  closed_signals_.clear();
+  return true;
 }
 
 void TradeSystem::SyncAccountFromRemotePositions(
     const std::vector<RemotePositionSnapshot>& positions,
     double baseline_cash_usd) {
+  if (reference_enabled_) throw std::logic_error("reference account forbids remote rebase");
+  if (closed_bar_mvp_ && manual_risk_.state().initialized)
+    throw std::logic_error("MVP manual risk history forbids account rebase after observations");
   account_.SyncFromRemotePositions(positions, baseline_cash_usd);
 }
 
 void TradeSystem::RefreshAccountRiskFromRemotePositions(
     const std::vector<RemotePositionSnapshot>& positions) {
+  if (reference_enabled_) throw std::logic_error("reference risk cannot ingest exchange snapshots");
   account_.RefreshRiskFromRemotePositions(positions);
 }
 
 void TradeSystem::ForceSyncAccountPositionsFromRemote(
     const std::vector<RemotePositionSnapshot>& positions) {
+  if (reference_enabled_) throw std::logic_error("reference account forbids position overwrite");
+  if (closed_bar_mvp_ && manual_risk_.state().initialized)
+    throw std::logic_error("MVP manual risk history forbids position overwrite");
   account_.ForceSyncPositionsFromRemote(positions);
 }
 
 void TradeSystem::SyncAccountFromRemoteBalance(
     const RemoteAccountBalanceSnapshot& balance,
     bool reset_peak_to_equity) {
+  if (reference_enabled_) throw std::logic_error("reference account forbids balance overwrite");
+  if (closed_bar_mvp_ && manual_risk_.state().initialized)
+    throw std::logic_error("MVP manual risk history forbids balance rebase after observations");
   account_.SyncFromRemoteAccountBalance(balance, reset_peak_to_equity);
 }
 
