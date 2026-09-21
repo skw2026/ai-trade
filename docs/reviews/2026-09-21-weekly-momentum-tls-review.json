@@ -1,0 +1,25 @@
+{
+  "failure_id": "38b3dc4446ca4afba02934e1264d5c60",
+  "decision": "retry",
+  "goal": "Check at most four unauthenticated official source samples for the single weekly BTC hypothesis; no strategy execution",
+  "expected": "Verified TLS, successful public response and exact requested sample scope",
+  "observed": "First request failed before obtaining an HTTP response: SSL CERTIFICATE_VERIFY_FAILED, unable to get local issuer certificate; remaining three requests were not attempted",
+  "root_cause_status": "confirmed",
+  "root_cause": "Local Python 3.14 default CA file /Library/Frameworks/Python.framework/Versions/3.14/etc/openssl/cert.pem does not exist; ssl.get_default_verify_paths reports both cafile and capath null. OS CA bundle /etc/ssl/cert.pem exists. System curl with default TLS verification reaches the same endpoint and receives HTTP 404 for HEAD; that proves its TLS connection, not GET availability.",
+  "evidence": [
+    ".artifacts/validation-gate/state.json failure 38b3dc4446ca4afba02934e1264d5c60 at 2026-09-21T00:10:10Z",
+    "Read-only Python SSL path diagnostic: default_cafile_exists=false, system_cafile_exists=true, certifi_installed=false",
+    "System curl HEAD diagnostic at 2026-09-21T00:10:32Z: HTTPS certificate verification enabled, HTTP/2 404; no historical response body fetched"
+  ],
+  "next_action": "Explicitly load existing OS trust anchors with ssl.create_default_context(cafile='/etc/ssl/cert.pem'); keep hostname checking and CERT_REQUIRED; retry original probe command once without changing endpoints, payload checks or global certificate configuration",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "A transport-local trust-store defect is distinct from strategy viability; fixing only TLS enables the same bounded source check, not a research experiment",
+    "data_feasibility": "Official source endpoints are documented, but their GET samples are not yet proven; failed TLS does not show Bybit data is unavailable",
+    "method_feasibility": "Existing system trust store repairs the missing local CA input without disabling verification; success still requires the original exact sample assertions",
+    "budget_and_exit": "One evidence-authorized retry of the original command, maximum four public GET samples, no pagination or internal retry. Initial TLS failure obtained no HTTP body; one diagnostic HEAD is recorded separately. Any further failure stops and requires route reassessment; no strategy backtest or second hypothesis"
+  }
+}

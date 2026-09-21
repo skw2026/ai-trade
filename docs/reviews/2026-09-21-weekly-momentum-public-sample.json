@@ -1,0 +1,358 @@
+{
+  "account_access": false,
+  "observed_at": "2026-09-21T00:11:05.056564+00:00",
+  "requests_attempted": 4,
+  "requests_not_attempted": 0,
+  "results": [
+    {
+      "name": "trade_daily",
+      "payload": {
+        "result": {
+          "category": "linear",
+          "list": [
+            [
+              "1673136000000",
+              "16938",
+              "17190",
+              "16907",
+              "17119.5",
+              "48890.622",
+              "830806301.92900002"
+            ],
+            [
+              "1673049600000",
+              "16940",
+              "16974",
+              "16904",
+              "16938",
+              "18890.73",
+              "319820967.4959999919"
+            ],
+            [
+              "1672963200000",
+              "16826",
+              "17031.5",
+              "16675",
+              "16940",
+              "95139.388",
+              "1600852208.1579999924"
+            ],
+            [
+              "1672876800000",
+              "16847.5",
+              "16873.5",
+              "16747",
+              "16826",
+              "49374.574",
+              "830347501.4574999809"
+            ],
+            [
+              "1672790400000",
+              "16670",
+              "16988",
+              "16652",
+              "16847.5",
+              "107056.584",
+              "1802658949.0490000248"
+            ],
+            [
+              "1672704000000",
+              "16668",
+              "16774",
+              "16605",
+              "16670",
+              "65314.938",
+              "1089751727.1024999619"
+            ],
+            [
+              "1672617600000",
+              "16622.5",
+              "16799",
+              "16552",
+              "16668",
+              "64844.907",
+              "1082761028.0204999447"
+            ]
+          ],
+          "symbol": "BTCUSDT"
+        },
+        "retCode": 0,
+        "retExtInfo": {},
+        "retMsg": "OK",
+        "time": 1789949465637
+      },
+      "response_sha256": "26b363c13dc163a70aec864f0db0c13af024ef714d8f64e7531a1534c758c6f4",
+      "row_count": 7,
+      "status": "SAMPLE_CHECKED_NOT_FULL_HISTORY",
+      "url": "https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=D&start=1672617600000&end=1673222399999&limit=7"
+    },
+    {
+      "name": "mark_daily",
+      "payload": {
+        "result": {
+          "category": "linear",
+          "list": [
+            [
+              "1673136000000",
+              "16938",
+              "17167.26",
+              "16907",
+              "17119.5"
+            ],
+            [
+              "1673049600000",
+              "16940",
+              "16974",
+              "16904",
+              "16938"
+            ],
+            [
+              "1672963200000",
+              "16825.76",
+              "17028.32",
+              "16683.5",
+              "16940"
+            ],
+            [
+              "1672876800000",
+              "16847.5",
+              "16873.28",
+              "16755.41",
+              "16825.76"
+            ],
+            [
+              "1672790400000",
+              "16670.77",
+              "16980",
+              "16652",
+              "16847.5"
+            ],
+            [
+              "1672704000000",
+              "16668.95",
+              "16773.5",
+              "16606.68",
+              "16670.77"
+            ],
+            [
+              "1672617600000",
+              "16619.83",
+              "16793.67",
+              "16552.3",
+              "16668.95"
+            ]
+          ],
+          "symbol": "BTCUSDT"
+        },
+        "retCode": 0,
+        "retExtInfo": {},
+        "retMsg": "OK",
+        "time": 1789949466250
+      },
+      "response_sha256": "a6c4978aba7e4642224882ab051846c10b818fe0f897d4631f66081f6bc3a3ac",
+      "row_count": 7,
+      "status": "SAMPLE_CHECKED_NOT_FULL_HISTORY",
+      "url": "https://api.bybit.com/v5/market/mark-price-kline?category=linear&symbol=BTCUSDT&interval=D&start=1672617600000&end=1673222399999&limit=7"
+    },
+    {
+      "name": "funding",
+      "payload": {
+        "result": {
+          "category": "linear",
+          "list": [
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1673193600000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1673164800000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1673136000000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1673107200000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.00002609",
+              "fundingRateTimestamp": "1673078400000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.00000582",
+              "fundingRateTimestamp": "1673049600000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1673020800000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.00008281",
+              "fundingRateTimestamp": "1672992000000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "-0.00003394",
+              "fundingRateTimestamp": "1672963200000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672934400000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.00003569",
+              "fundingRateTimestamp": "1672905600000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.00006612",
+              "fundingRateTimestamp": "1672876800000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672848000000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672819200000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672790400000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672761600000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672732800000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672704000000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672675200000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672646400000",
+              "symbol": "BTCUSDT"
+            },
+            {
+              "fundingRate": "0.0001",
+              "fundingRateTimestamp": "1672617600000",
+              "symbol": "BTCUSDT"
+            }
+          ]
+        },
+        "retCode": 0,
+        "retExtInfo": {},
+        "retMsg": "OK",
+        "time": 1789949466864
+      },
+      "response_sha256": "2e7fed0cd5ee42f7469847678e8b8f34f8ee0f2c5ec45cd67b53eea802a1ab9d",
+      "row_count": 21,
+      "status": "SAMPLE_CHECKED_NOT_FULL_HISTORY",
+      "url": "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=BTCUSDT&startTime=1672617600000&endTime=1673222399999&limit=200"
+    },
+    {
+      "name": "instrument_current",
+      "payload": {
+        "result": {
+          "category": "linear",
+          "list": [
+            {
+              "baseCoin": "BTC",
+              "contractType": "LinearPerpetual",
+              "copyTrading": "both",
+              "deliveryFeeRate": "",
+              "deliveryTime": "0",
+              "displayName": "BTCUSDT",
+              "forbidUplWithdrawal": false,
+              "fullName": "Bitcoin",
+              "fundingInterval": 480,
+              "isPreListing": false,
+              "launchTime": "1584230400000",
+              "leverageFilter": {
+                "leverageStep": "0.01",
+                "maxLeverage": "150.00",
+                "minLeverage": "1"
+              },
+              "lotSizeFilter": {
+                "maxMktOrderQty": "150.000",
+                "maxOrderQty": "1500.000",
+                "minNotionalValue": "5",
+                "minOrderQty": "0.001",
+                "postOnlyMaxOrderQty": "1500.000",
+                "qtyStep": "0.001"
+              },
+              "lowerFundingRate": "-0.00333",
+              "marketRegion": "",
+              "preListingInfo": null,
+              "priceFilter": {
+                "maxPrice": "1999999.80",
+                "minPrice": "0.10",
+                "tickSize": "0.10"
+              },
+              "priceScale": "2",
+              "quoteCoin": "USDT",
+              "riskParameters": {
+                "priceLimitRatioX": "0.01",
+                "priceLimitRatioY": "0.02"
+              },
+              "settleCoin": "USDT",
+              "status": "Trading",
+              "symbol": "BTCUSDT",
+              "symbolId": 5,
+              "symbolType": "",
+              "underlyingTicker": "",
+              "unifiedMarginTrade": true,
+              "upperFundingRate": "0.00333"
+            }
+          ],
+          "nextPageCursor": ""
+        },
+        "retCode": 0,
+        "retExtInfo": {},
+        "retMsg": "OK",
+        "time": 1789949467508
+      },
+      "response_sha256": "5c23db8c48d2f983667a0124556a6b6d33f9fd29fc0c52888f2f990e6f5eb0e3",
+      "row_count": 1,
+      "status": "SAMPLE_CHECKED_NOT_FULL_HISTORY",
+      "url": "https://api.bybit.com/v5/market/instruments-info?category=linear&symbol=BTCUSDT"
+    }
+  ],
+  "sample_end_ms_exclusive": 1673222400000,
+  "sample_start_ms": 1672617600000,
+  "source": "https://api.bybit.com",
+  "status": "PASS_SAMPLE_ONLY",
+  "strategy_execution": false,
+  "tls": {
+    "cafile": "/etc/ssl/cert.pem",
+    "check_hostname": true,
+    "verify_mode": "CERT_REQUIRED"
+  }
+}

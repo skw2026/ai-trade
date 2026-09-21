@@ -1,0 +1,192 @@
+{
+  "schema_version": "weekly_momentum_screen_delivery_v1",
+  "date": "2026-09-21",
+  "authorization": "USER_APPROVED_ONE_OFF_SCREEN_MAX_100_PUBLIC_GETS_30_MIN_NO_TUNING_NO_TRAINING_NO_ACCOUNT_NO_TRADING",
+  "hypothesis_id": "BTC_WEEKLY_DIRECTIONAL_MOMENTUM_7D_7D_V1",
+  "contract_sha256": "71a8580421ba0a2e51f342475c2c7ba9541079aaaaad04ab55256f0e66214c16",
+  "implementation_sha256": "3b8602060a382a8218367413534567ce609587e1e1e7f0f555f3de3ff6fe4754",
+  "test_file_sha256": "0f725f0d840e7ab4ac6b9a85d23c97f23499e8b5023cd5f4ee0e2d6b21de0c4e",
+  "synthetic_tests": {
+    "passed": 14,
+    "total": 14,
+    "seconds": 0.019
+  },
+  "result": {
+    "attempted_public_gets": 48,
+    "authority": {
+      "account_access": false,
+      "candidate_promotion": false,
+      "deployment": false,
+      "order_submission": false,
+      "parameter_search": false,
+      "second_hypothesis": false,
+      "training": false
+    },
+    "complete_week_count": 9,
+    "contract_sha256": "71a8580421ba0a2e51f342475c2c7ba9541079aaaaad04ab55256f0e66214c16",
+    "decision": "REJECT",
+    "drawdown_lower_bound_within_model": 0.21029616967113207,
+    "elapsed_seconds": 34.96485895900696,
+    "events": [
+      {
+        "fee": 0.00055,
+        "new_q": 0.00005822246805042066,
+        "old_q": 0,
+        "reference_price": 17175.5,
+        "time": "2023-01-09T01:00:00+00:00",
+        "turnover": 1
+      },
+      {
+        "fee": 0.0012882594393176326,
+        "new_q": -0.00004337547984124574,
+        "old_q": 0.00005822246805042066,
+        "reference_price": 23054.5,
+        "time": "2023-02-06T01:00:00+00:00",
+        "turnover": 2.342289889668423
+      },
+      {
+        "fee": 0.0011274612331648919,
+        "new_q": 0.000041312754073437556,
+        "old_q": -0.00004337547984124574,
+        "reference_price": 24205.6,
+        "time": "2023-02-20T01:00:00+00:00",
+        "turnover": 2.049929514845258
+      },
+      {
+        "fee": 0.0010835833443500677,
+        "new_q": -0.000042583815595044946,
+        "old_q": 0.000041312754073437556,
+        "reference_price": 23483.1,
+        "time": "2023-02-27T01:00:00+00:00",
+        "turnover": 1.9701515351819412
+      }
+    ],
+    "full_window_evaluated": false,
+    "funding_cash_lower": 0.0017951508118402863,
+    "funding_cash_upper": 0.0019948560526572698,
+    "historical_account_evidence": false,
+    "initial_capital": 1,
+    "maximum_notional_per_initial_capital": 1.408721725713953,
+    "nav_lower": 1.123568392959735,
+    "nav_upper": 1.1237680982005533,
+    "observed_at": "2026-09-21T00:38:09.661509+00:00",
+    "past_peak_lower": 1.4230247531312672,
+    "position_not_simulated_closed": true,
+    "profitability_qualified": false,
+    "quantity_at_stop": -0.000042583815595044946,
+    "realized_reference_gross": 0.2625119100051065,
+    "reason": "REFERENCE_RISK_LIMIT",
+    "reference_fees": 0.004049304016832592,
+    "schema_version": "weekly_momentum_reference_screen_v1",
+    "source_bytes": 2709759,
+    "source_manifest_sha256": "4fd55ead9cca6e188227b80cf4c3216d5bb18a5e2a87e14548e832ee881cb246",
+    "source_rows": {
+      "funding": 2206,
+      "mark_hourly": 17642,
+      "trade_hourly": 17642
+    },
+    "stopped_at": "2023-03-17T11:00:00+00:00",
+    "turnover": 7.362370939695622,
+    "unknown_execution_cost_bps": null,
+    "weekly": [
+      {
+        "end": "2023-01-16T01:00:00+00:00",
+        "hi": 0.22344995950458513,
+        "lo": 0.2233877102283719,
+        "turnover": 1
+      },
+      {
+        "end": "2023-01-23T01:00:00+00:00",
+        "hi": 0.10156735048024812,
+        "lo": 0.10155044907623645,
+        "turnover": 0
+      },
+      {
+        "end": "2023-01-30T01:00:00+00:00",
+        "hi": 0.05582515210619787,
+        "lo": 0.05580850956304051,
+        "turnover": 0
+      },
+      {
+        "end": "2023-02-06T01:00:00+00:00",
+        "hi": -0.04326470134785021,
+        "lo": -0.043283145235946785,
+        "turnover": 0
+      },
+      {
+        "end": "2023-02-13T01:00:00+00:00",
+        "hi": 0.054761238866527284,
+        "lo": 0.05475155529139464,
+        "turnover": 2.342289889668423
+      },
+      {
+        "end": "2023-02-20T01:00:00+00:00",
+        "hi": -0.10245019278884748,
+        "lo": -0.10247196637436029,
+        "turnover": 0
+      },
+      {
+        "end": "2023-02-27T01:00:00+00:00",
+        "hi": -0.03290002723245822,
+        "lo": -0.0329161820891859,
+        "turnover": 2.049929514845258
+      },
+      {
+        "end": "2023-03-06T01:00:00+00:00",
+        "hi": 0.04536791578921395,
+        "lo": 0.045357074801358754,
+        "turnover": 1.970151535181941
+      },
+      {
+        "end": "2023-03-13T01:00:00+00:00",
+        "hi": 0.0013855016357000594,
+        "lo": 0.0013732332868445773,
+        "turnover": 0
+      }
+    ]
+  },
+  "stop_point_independent_identity": {
+    "status": "PASS_STOP_POINT_IDENTITY_ONLY",
+    "method": "REPLICATING_PORTFOLIO_VALUE_IDENTITY_NOT_PERPETUAL_WALLET_BALANCE",
+    "raw_response_hashes_checked": 48,
+    "peak_lower_at": "2023-03-10T11:00:00+00:00",
+    "maximum_prior_drawdown_bound": 0.1966956203432284,
+    "result_sha256": "12fab7312b5ad80f298222b8b6470ddc3f35f66f642310ad82f3d75134f0aa0c",
+    "remaining_strategy_path_evaluated": false
+  },
+  "root_cause_evidence": {
+    "march_13_signal_week_open": 22419,
+    "march_13_signal_week_close": 21978.9,
+    "march_13_signal_week_return": -0.019630670413488538,
+    "peak_mark_close": 19616.37,
+    "stop_mark_close": 26692.99,
+    "mark_rebound_between_checkpoints": 0.36075074032555476,
+    "last_position_change_utc": "2023-02-27T01:00:00+00:00",
+    "final_unrealized_reference_pnl": -0.13668936384037894,
+    "classification": "FIXED_WEEKLY_DIRECTIONAL_EXPOSURE_VIOLATES_FROZEN_REFERENCE_RISK_BUDGET_NOT_A_DATA_ACCESS_OR_ACCOUNT_CERTIFICATION_FAILURE"
+  },
+  "path_review": {
+    "goal_alignment": "Single falsifiable question, not open-ended search for profitability",
+    "data_feasibility": "Historical public sample expanded once under explicit authorization; 48 raw pages archived",
+    "method_feasibility": "Fixed reference model is falsifiable without claiming actual fees, executable prices, historical margin or independent holdout",
+    "budget_and_exit": "34.9649 seconds, 48 GETs; stop on first risk breach; no bootstrap, no remaining strategy path, no altered parameters, no H2"
+  },
+  "artifacts": {
+    "directory": ".artifacts/weekly-momentum-screen-20260921",
+    "manifest": "source-manifest.json",
+    "result": "result.json",
+    "independent_diagnosis": "verify_stop.py"
+  },
+  "closure": {
+    "decision": "REJECT",
+    "scope": "FROZEN_REFERENCE_MODEL_AND_CAPITAL_RISK_MAPPING_ONLY",
+    "actual_account_loss_inferred": false,
+    "negative_population_expected_return_inferred": false,
+    "all_trend_strategies_rejected": false,
+    "old_candidates_reopened": false,
+    "automatic_next_experiment": false,
+    "production_changed": false,
+    "committed_or_pushed": false
+  },
+  "next_step": "CLOSE_THIS_CONTRACT_AND_RETAIN_EVIDENCE; ANY_NEW_RISK_MAPPING_OR_HYPOTHESIS_REQUIRES_SEPARATE_DECISION"
+}

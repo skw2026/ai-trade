@@ -116,6 +116,10 @@ if(BUILD_TESTING)
   else()
     add_test(NAME validation_stop_gate_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validation_gate.py)
+    # Synthetic fixtures only; never invoke the historical-screen CLI in CI.
+    add_test(NAME weekly_momentum_screen_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_screen_weekly_momentum.py)
+    set_tests_properties(weekly_momentum_screen_test PROPERTIES TIMEOUT 30 LABELS "offline;research")
     add_test(NAME replay_trace_comparison_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_replay_trace.py)
     add_test(NAME research_closeout_contract_test

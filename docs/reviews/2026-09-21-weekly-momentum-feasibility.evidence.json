@@ -1,0 +1,130 @@
+{
+  "schema_version": "single_hypothesis_feasibility_v1",
+  "date": "2026-09-21",
+  "hypothesis_id": "BTC_WEEKLY_DIRECTIONAL_MOMENTUM_7D_7D_V1",
+  "authorization": "FEASIBILITY_REVIEW_ONLY",
+  "decision": "NO_GO_CURRENT_EVIDENCE",
+  "decision_scope": "NO_STRATEGY_EXPERIMENT_OR_IMPLEMENTATION_APPROVED",
+  "economic_outcome": "UNTESTED_NOT_PROVEN_UNPROFITABLE",
+  "hypothesis": {
+    "venue": "Bybit",
+    "symbol": "BTCUSDT",
+    "product": "USDT_LINEAR_PERPETUAL",
+    "lookback_calendar_days": 7,
+    "holding_calendar_days": 7,
+    "decision_schedule": "MONDAY_00_00_UTC_CLOSED_INFORMATION_ONLY",
+    "model_training": false,
+    "parameter_search": false,
+    "second_hypothesis": false
+  },
+  "contract_file": "docs/plans/2026-09-21-weekly-momentum-feasibility.md",
+  "checks": {
+    "source_documentation": "CONFIRMED",
+    "public_sample": "PASS_SAMPLE_ONLY",
+    "difference_from_closed_contracts": "DISTINCT_CONTRACT_NOT_PROOF_OF_NEW_EDGE",
+    "current_net_edge": "NOT_EVALUATED",
+    "account_bound_fee_and_risk_contract": "NOT_BOUND",
+    "execution_cost_uncertainty": "NOT_CALIBRATED",
+    "full_historical_mark_funding_cashflows": "NOT_ACQUIRED_OR_VALIDATED",
+    "statistical_effect_and_budget_contract": "NOT_ESTABLISHED"
+  },
+  "observed_source_samples": {
+    "observed_at": "2026-09-21T00:11:05.056564+00:00",
+    "window_start_ms": 1672617600000,
+    "window_end_ms_exclusive": 1673222400000,
+    "trade_daily_rows": 7,
+    "mark_daily_rows": 7,
+    "funding_rows": 21,
+    "current_instrument_rows": 1,
+    "artifact": "docs/reviews/2026-09-21-weekly-momentum-public-sample.json",
+    "raw_response_retained": false,
+    "decoded_response_payloads_retained": true
+  },
+  "cost_reference": {
+    "public_standard_taker_fee_bps_per_fill": 5.5,
+    "equal_entry_exit_notional_round_trip_fee_bps": 11,
+    "fee_reference_is_actual_account_observation": false,
+    "round_trip_value_excludes_funding_spread_slippage_and_capital": true,
+    "current_fee_rate_not_assumed_historical": true
+  },
+  "calendar": {
+    "existing_csv_rows": 26164,
+    "existing_csv_start_utc": "2025-11-15T18:20:00Z",
+    "existing_csv_end_utc": "2026-02-14T14:35:00Z",
+    "calendar_days": 90.84722222222223,
+    "calendar_week_upper_bound_before_warmup": 12,
+    "two_week_forward_weekly_outcomes_upper_bound": 2,
+    "nonoverlap_does_not_prove_independence": true,
+    "source_requalified": false
+  },
+  "validation_failure": {
+    "failure_id": "38b3dc4446ca4afba02934e1264d5c60",
+    "cause": "PYTHON_DEFAULT_CA_FILE_MISSING",
+    "dependent_requests_stopped": 3,
+    "tls_verification_disabled": false,
+    "diagnostic_head_requests": 1,
+    "evidence_review": "docs/reviews/2026-09-21-weekly-momentum-tls-review.json",
+    "authorized_original_command_retries": 1,
+    "retry_source_get_requests": 4,
+    "retry_result": "PASS_SAMPLE_ONLY",
+    "terminal_technical_gate": "READY"
+  },
+  "path_reassessment": {
+    "goal_alignment": "Research must produce a bounded investment-of-effort decision, not manufacture profitability or add engineering indefinitely",
+    "data_feasibility": "Public historical samples exist; no need to claim exchange history is unavailable or start a two-week clock",
+    "method_feasibility": "Daily prices alone do not bind executable PnL and margin path; slower trading can reduce turnover but increases holding risk and funding exposure",
+    "budget_and_exit": "Review completed in this turn within one engineering day; NO_GO, no second hypothesis, experiment, training, deployment, automatic follow-on task"
+  },
+  "next_reentry_conditions": [
+    "EVIDENCED_EXECUTION_AND_FEE_BOUND_FOR_FIXED_SIZE",
+    "EXPLICIT_NORMALIZED_CAPITAL_MARGIN_TAIL_RISK_AND_FUNDING_CONTRACT",
+    "DECLARED_MINIMUM_EFFECT_STATISTICAL_METHOD_DATA_AND_BUDGET_COMPATIBLE",
+    "EXPLICIT_APPROVAL_OF_ANY_NEW_OFFLINE_TASK"
+  ],
+  "authority": {
+    "strategy_backtest": false,
+    "strategy_training": false,
+    "candidate_registration": false,
+    "promotion": false,
+    "demo_activation": false,
+    "live_activation": false,
+    "account_access": false,
+    "ecs_deploy": false,
+    "order_submission": false,
+    "repository_push": false
+  },
+  "sources": [
+    {
+      "url": "https://www.nber.org/papers/w24877",
+      "use": "Hypothesis motivation only; old study, not current Bybit evidence"
+    },
+    {
+      "url": "https://bybit-exchange.github.io/docs/v5/market/kline",
+      "use": "Historical trade Kline schema"
+    },
+    {
+      "url": "https://bybit-exchange.github.io/docs/v5/market/mark-kline",
+      "use": "Historical mark Kline schema, not executable price"
+    },
+    {
+      "url": "https://bybit-exchange.github.io/docs/v5/market/history-fund-rate",
+      "use": "Settlement rate timestamps; not account cashflows"
+    },
+    {
+      "url": "https://bybit-exchange.github.io/docs/v5/market/instrument",
+      "use": "Current instrument, not historical risk parameters"
+    },
+    {
+      "url": "https://www.bybit.com/en/help-center/article/Futures-Contracts-Fees-Explained",
+      "use": "Public standard fee reference, not account actual or historical fee"
+    },
+    {
+      "url": "https://www.bybit.com/en/help-center/article/Funding-fee-calculation",
+      "use": "Quantity times mark price times funding rate"
+    },
+    {
+      "url": "https://bybit-exchange.github.io/docs/v5/demo",
+      "use": "Demo endpoint scope; fee-rate absent from documented supported list"
+    }
+  ]
+}
