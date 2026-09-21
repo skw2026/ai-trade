@@ -1,0 +1,148 @@
+{
+  "archive": {
+    "bytes": 14098060,
+    "files": 1000,
+    "offsite_backup_completed": false,
+    "path": ".artifacts/engineering-freeze-20260921/closed-mvp-evidence.tar.gz",
+    "reverified": true,
+    "sha256": "d2626cfdf85670cdd0ca294b6ef45f520b3dfe4b49443944c23e8d6fde4caad1",
+    "uploaded": false
+  },
+  "blocking_decision": {
+    "command_executed": false,
+    "kind": "explicit_public_code_publication_approval",
+    "pending_scope": "publish frozen source and necessary engineering review documents to independent branch and run CI only; no main update, deployment or raw archive upload",
+    "reason": "platform rejected execution of push to public repository; generic continue was not accepted as explicit approval for this code payload",
+    "workaround_attempted": false
+  },
+  "boundaries": {
+    "account_access": false,
+    "deployment_started": false,
+    "main_updated": false,
+    "new_history_download": false,
+    "originals_deleted": false,
+    "raw_archive_uploaded": false,
+    "remote_ci_started": false,
+    "research_reopened": false
+  },
+  "captured_at_utc": "2026-09-21T17:23:21.830525+00:00",
+  "connection": {
+    "gh_cli_logged_in": false,
+    "git_https_helper_noninteractive_credential": false,
+    "git_ssh_read": "working",
+    "github_plugin_connected": false,
+    "plugin_is_current_blocker": false,
+    "public_api_system_curl_tls_verified": "working",
+    "python_default_tls": "SSLCertVerificationError",
+    "tls_verification_disabled": false
+  },
+  "decision": "REMOTE_PREFLIGHT_PASS_PUBLIC_PUSH_APPROVAL_REQUIRED",
+  "engineering_gate_status": "READY",
+  "first_failure": {
+    "cause": "undeclared PyYAML dependency in one-off checker",
+    "failure_id": "38d9ac8196b041f98d1bf5a516b41b28",
+    "resolved": true,
+    "same_command_retries": 1
+  },
+  "local_evidence_sha256": {
+    ".artifacts/engineering-remote-20260922/first-preflight-failure.log": "71fa9047cd75ae4e5e05b6caf6af6283274cbf3a216ef3a70e9bede265cd5ae3",
+    ".artifacts/engineering-remote-20260922/preflight.json": "fc31d1d1d9a719f0d7f7001f7ba019b7728d2f3017d0d5f4ae2d322bc972ace1",
+    ".artifacts/engineering-remote-20260922/remote_acceptance.py": "e730096ae79ed346d01d63392d1b8eca5bc0f4a212708cefe7b512bfaf199e7f",
+    "docs/reviews/2026-09-22-remote-freeze-preflight-review.json": "b06c6bcf3f354142b314494426f7f75aa5f32003c40fcc9f5619485096eddfb0"
+  },
+  "original_freeze_commit": "a1079a5772389c9059128293e82bfdd23863999d",
+  "post_rejection_remote_refs": {
+    "main": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+    "validation_branch_exists": false
+  },
+  "preflight": {
+    "branch": "validation/offline-freeze-20260922",
+    "freeze": "a1079a5772389c9059128293e82bfdd23863999d",
+    "latest_cd": {
+      "conclusion": "success",
+      "head_sha": "170d84acb8ac9547a321802f9250215c98deb0dc",
+      "id": 34758912163,
+      "status": "completed",
+      "updated_at": "2026-09-13T13:19:41Z"
+    },
+    "main": "9b76b3daffc433bfc1a4f2f764415d51a24fa98d",
+    "old_research_gate_unchanged": true,
+    "push_workflows": [
+      "ci.yml"
+    ],
+    "repo": "skw2026/ai-trade",
+    "reviewed_workflow_scope": {
+      "bybit-c2-depth-replay.yml": "manual or research/c2-depth-replay only",
+      "bybit-demo-readonly.yml": "manual or three named legacy research/fix branches only",
+      "bybit-funding-obligations.yml": "manual or research/bybit-funding-obligations only",
+      "c2-rest-anchors.yml": "manual only",
+      "cd.yml": "main push or manual only",
+      "ci.yml": "all branch pushes and pull requests; contents read only",
+      "closed-loop.yml": "research/** tags or manual only",
+      "option-archive-lifecycle.yml": "main workflow-path push, manual or CD completion only",
+      "option-c2-cross-integration.yml": "manual or two named legacy research branches only",
+      "option-c2-report-verification.yml": "manual or research/c2-report-verification only",
+      "option-lifecycle-v4.yml": "manual or CD completion only",
+      "smoke.yml": "manual or CD completion only"
+    },
+    "tree": "fa5040216d76739a3e8d589e0a7cab55bf77633c",
+    "visibility": "public",
+    "workflow_sha256": {
+      ".github/workflows/bybit-c2-depth-replay.yml": "21fb6826446ced472ff359b18cc2cbc9217fa556be178df55aeb3d381b1a4dfd",
+      ".github/workflows/bybit-demo-readonly.yml": "c46826b54941b39f8d64a679ad864666725c5ec4128ad1f2d01ec01e41fbbdcd",
+      ".github/workflows/bybit-funding-obligations.yml": "b3b3eb385117fb01715790e03c1ba47fb1dd2bdc4d504ca5c29f547d56f2bec7",
+      ".github/workflows/c2-rest-anchors.yml": "131be758d0e05521ed018f9debbca4e10de3af307058db714ec3f6a98ad2be04",
+      ".github/workflows/cd.yml": "efd2cf302542e7b51853edeec94353a9ca0066a7468c4a3a167f0b4585be4aee",
+      ".github/workflows/ci.yml": "0359769057ca6b7f05cc2970feb20729d77408fa39bc625c88295317eb50d7d1",
+      ".github/workflows/closed-loop.yml": "4c8f8f3b07dbd467f4425292b281a51a7f9540ec5769f0cf956838b99b889e16",
+      ".github/workflows/option-archive-lifecycle.yml": "a114e63abf48de506b662549ebbe4aa9b81343ff35ec0ebb831e960ef7d99bc2",
+      ".github/workflows/option-c2-cross-integration.yml": "5614b94fd06659302fdca1e69c93505c6b286d77c7b17a7593fcf071db090bf3",
+      ".github/workflows/option-c2-report-verification.yml": "65d8fac13d40f35882a745d417d617ea64867b237293c516bb8c9dd95a3c4cea",
+      ".github/workflows/option-lifecycle-v4.yml": "8835ae4f2568bfeba90ecdb5b0640d1cb17713a991fcba465b9afb1fff809b04",
+      ".github/workflows/smoke.yml": "a7917a3e3a82fea21884d2ab19964d16d23b5ec0c90d99a387fdce9ceed4e593"
+    }
+  },
+  "review_wording_correction": {
+    "actual_named_legacy_branches": 8,
+    "field": "path_review.method_feasibility",
+    "legacy_branch_filtered_workflows": 5,
+    "original": "six legacy branch routes",
+    "review_bytes_preserved": true
+  },
+  "schema_version": "offline_freeze_remote_preflight_v1",
+  "stage_gate_history": [
+    {
+      "at": "2026-09-21T17:19:58.590643+00:00",
+      "command_sha256": "350a978ea4f92d85f1dd2afdb83356b71542036412c7176cb8513138fc6e336e",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "remote-freeze-safe-preflight",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-21T17:20:58.133732+00:00",
+      "decision": "retry",
+      "event": "review",
+      "failure_id": "38d9ac8196b041f98d1bf5a516b41b28",
+      "review_path": "/Users/sk.wang/Projects/c++/ai-trade/docs/reviews/2026-09-22-remote-freeze-preflight-review.json",
+      "review_sha256": "b06c6bcf3f354142b314494426f7f75aa5f32003c40fcc9f5619485096eddfb0"
+    },
+    {
+      "at": "2026-09-21T17:21:12.767457+00:00",
+      "command_sha256": "350a978ea4f92d85f1dd2afdb83356b71542036412c7176cb8513138fc6e336e",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "remote-freeze-safe-preflight",
+      "retry_of": "38d9ac8196b041f98d1bf5a516b41b28"
+    },
+    {
+      "at": "2026-09-21T17:22:06.551990+00:00",
+      "command_sha256": "834310b481976fb2f57b93ac6e2425e96e3192052d447bdf70e57a4692d7fe41",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "remote-delivery-local-archive-recheck",
+      "retry_of": null
+    }
+  ],
+  "started_at_utc": "2026-09-21T17:15:35+00:00"
+}

@@ -1,0 +1,27 @@
+{
+  "failure_id": "38d9ac8196b041f98d1bf5a516b41b28",
+  "decision": "retry",
+  "goal": "Validate the fixed non-main branch and unchanged deployment boundary before any remote write",
+  "expected": "Frozen workflow identities reviewed, only CI triggered by the fixed branch, remote main and CD unchanged",
+  "observed": "The one-off public API checker failed on import yaml before it could issue a remote request or push anything; Python raised ModuleNotFoundError and the gate blocked",
+  "root_cause_status": "confirmed",
+  "root_cause": "The new ad-hoc checker unnecessarily assumed PyYAML was installed. PyYAML is not declared in the project requirements and the active Python cannot import it. This is a checker dependency defect, not a trading defect or failed remote CI. Replace parsing with the explicitly reviewed inventory of all 12 exact frozen workflow files, verify the entire file set and each full byte sequence against a1079a5, and retain branch/main/CD/gate identity requirements. No workflow or CI criterion changes.",
+  "evidence": [
+    ".artifacts/engineering-remote-20260922/first-preflight-failure.log",
+    ".artifacts/engineering-freeze-20260921/validation-state.json",
+    "tools/requirements-research.txt does not declare PyYAML",
+    "All 12 frozen workflow trigger headers inspected; only ci.yml accepts validation/offline-freeze-20260922 pushes",
+    ".artifacts/engineering-remote-20260922/remote_acceptance.py now verifies the fixed complete workflow inventory against frozen Git blobs"
+  ],
+  "next_action": "Retry the exact preflight command once from the same repository root, capped at 180 seconds. No remote push until PASS; another unresolved failure triggers whole-route reassessment.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "This remains read-only verification of safe engineering delivery; no main merge, account, deployment or research scope is added.",
+    "data_feasibility": "The 12 frozen workflow blobs, Git SSH main ref and public GitHub API are available. Public API connectivity using system curl TLS validation was observed before formal preflight.",
+    "method_feasibility": "The fixed branch is not main or any of the six legacy branch routes, no research tag is created, and chained workflows only follow CD. Reject any byte/set drift from the reviewed frozen tree; exact SHA polling independently verifies actual workflows after push.",
+    "budget_and_exit": "One original-command retry within the shared 45-minute delivery cap; no package installation, threshold weakening, new gate or blind retry. Stop dependent actions if it does not pass."
+  }
+}
