@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "record_type": "selected_public_metadata_transcription_not_raw_dataset",
+  "audit_start_utc": "2026-09-21T05:21:13Z",
+  "external_review_end_utc": "2026-09-21T05:25:16Z",
+  "hard_deadline_utc": "2026-09-21T05:51:13Z",
+  "decision": "INSUFFICIENT_POINT_IN_TIME_EVIDENCE",
+  "parent_decision": "NO_GO_NEW_ROUTE",
+  "selected_routes": 0,
+  "publication_authorized": false,
+  "observations": {
+    "matching_author_repository": {
+      "metadata_url": "https://api.github.com/repos/boonchuan/etf-price-impact",
+      "created_at": "2026-04-13T00:15:19Z",
+      "updated_at": "2026-04-13T00:17:31Z",
+      "pushed_at": "2026-04-13T00:17:27Z",
+      "default_branch": "main",
+      "history_url": "https://api.github.com/repos/boonchuan/etf-price-impact/commits?path=etf_net_flows.csv&per_page=100",
+      "visible_path_commits": 1,
+      "commit_sha": "8bc56859988729b07212767ea4fa7e835bce6fbe",
+      "author_date": "2026-04-13T00:16:58Z",
+      "committer_date": "2026-04-13T00:16:58Z",
+      "parents": [],
+      "signature_status": "unsigned",
+      "tree_sha": "492214dff01e9665aa10c0d459786dd9ac0cfd96",
+      "tree_url": "https://api.github.com/repos/boonchuan/etf-price-impact/git/trees/492214dff01e9665aa10c0d459786dd9ac0cfd96",
+      "tree_truncated": false,
+      "tree_entries": 12,
+      "file_path": "etf_net_flows.csv",
+      "git_blob_sha1_from_tree": "762961592a2f1ce22927fc958baad5ed2344628d",
+      "blob_size_from_tree_bytes": 5603,
+      "blob_downloaded": false,
+      "internal_columns_or_rows_inspected": false,
+      "per_observation_published_at": null,
+      "per_observation_revision_history": null
+    },
+    "related_author_repository": {
+      "history_url": "https://api.github.com/repos/boonchuan/btc-etf-price-impact/commits?path=data&per_page=100",
+      "visible_path_commits": 1,
+      "commit_sha": "bcde03445e5f94944d814a5572ba384d339288f3",
+      "author_date": "2026-04-13T07:12:22Z",
+      "committer_date": "2026-04-13T07:12:22Z",
+      "tree_sha": "a1b3407d0f416cc6cebb086858221e51380ba494",
+      "parents": [],
+      "data_downloaded": false
+    },
+    "farside_publication_description": {
+      "url": "https://farside.co.uk/page/4/",
+      "usual_update_window": "US evening and night",
+      "historical_version_index_verified": false,
+      "absence_of_other_archives_proven": false
+    },
+    "farside_error_statement": {
+      "post_url": "https://x.com/FarsideUK/status/1934927273452507260",
+      "verified_via": "https://publish.x.com/oembed?url=https%3A%2F%2Fx.com%2FFarsideUK%2Fstatus%2F1934927273452507260&omit_script=true&dnt=true",
+      "author_name": "Farside Investors",
+      "embedded_display_date": "2025-06-17",
+      "meaning": "Author acknowledges an earlier incorrect Ark value; does not supply old/new values or the full correction chain.",
+      "exact_publication_utc_verified": false,
+      "affected_data_date": null,
+      "old_value": null,
+      "new_value": null,
+      "original_post_link": null,
+      "proof_of_error_in_paper_sample": false
+    },
+    "ibit_disclosure": {
+      "product_url": "https://www.ishares.com/us/products/333011/ishares-bitcoin-trust-etf",
+      "prospectus_url": "https://www.ishares.com/us/literature/prospectus/p-ishares-bitcoin-trust-12-31.pdf",
+      "prospectus_date": "2025-07-31",
+      "supplement_date": "2025-11-21",
+      "nav_release_pdf_page_one_based": 77,
+      "nav_release_typically_by_et": "17:30",
+      "nav_release_generally_no_later_than_et": "20:00",
+      "hard_guarantee": false,
+      "aggregate_etf_flow_release_time_verified": false,
+      "per_day_revision_archive_verified": false
+    }
+  },
+  "scope": {
+    "github_metadata_gets": 4,
+    "market_dataset_downloads": 0,
+    "author_csv_or_code_execution": 0,
+    "backtests_or_training": 0,
+    "account_accesses": 0,
+    "procurement_or_provider_contact": 0,
+    "deployments_or_trades": 0,
+    "commits_or_pushes": 0,
+    "incidental_market_snippets_displayed": true,
+    "incidental_market_values_extracted_or_computed": false
+  },
+  "interpretation": {
+    "confirmed_failure_point": "No verified mapping from historical signal content/version to availability before the proposed decision window.",
+    "paper_lookahead_bias": "UNKNOWN",
+    "complete_provider_archive_existence": "UNKNOWN",
+    "next_action": "Close the approved timing audit; local documentation integrity validation only. No automatic experiment, source expansion or waiting period."
+  }
+}
