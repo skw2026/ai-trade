@@ -148,6 +148,14 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_mvp_reference_pipeline.py
                      --binary $<TARGET_FILE:trade_bot>)
     set_tests_properties(mvp_reference_pipeline_test PROPERTIES TIMEOUT 60 LABELS "offline;mvp;reference")
+    # These synthetic end-to-end tests validate accounting, not host disk
+    # throughput. Keep every real journal write/fsync and the original timeouts,
+    # but isolate their disposable fixtures from variable runner disk latency.
+    # Durability/error-path tests (manual_risk_cycle, WAL, etc.) are unchanged.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND IS_DIRECTORY "/dev/shm")
+      set_tests_properties(replay_reference_account_test mvp_reference_pipeline_test
+                           PROPERTIES ENVIRONMENT "TMPDIR=/dev/shm")
+    endif()
     add_test(NAME mvp_history_collector_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_collect_mvp_reference_history.py)
     add_test(NAME mvp_stop_ledger_audit_test

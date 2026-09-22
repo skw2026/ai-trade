@@ -1,0 +1,23 @@
+{
+  "schema_version": "synthetic_fixture_storage_diagnosis_v1",
+  "failed_sha": "b933b487e6629ccc2fbd640d77428814eb55a765",
+  "ci_run_id": 35736300272,
+  "ci_job_id": 106774308393,
+  "ci_log_sha256": "a976d642bf8aa503fef5e0795a57cb3c31f107177f29aa5d0883861179d687e3",
+  "remote_result": {"passed": 107, "total": 109, "account_timeout_seconds": 30.08, "pipeline_timeout_seconds": 60.02, "cd_deployed": false},
+  "diagnostic_environment": "existing local Ubuntu Linux arm64 container, network none, source read-only, GNU 13.3.0",
+  "same_original_ctest_limits": {"account_seconds": 30, "pipeline_seconds": 60},
+  "unmodified_linux_diagnostic": {"account_seconds": 5.81, "pipeline_seconds": 32.92, "passed": 2},
+  "profile_original_account": {"wall_seconds": 4.813, "fsync_calls": 6793, "fsync_seconds": 4.574237},
+  "profile_tmpfs_account": {"wall_seconds": 0.093, "fsync_calls": 6793, "fsync_seconds": 0.000799},
+  "controlled_non_tmpfs_fsync_delay_us": 5000,
+  "fault_injected_original": {"exit_code": 124, "wall_seconds": 30.006, "last_observed_fsync_calls": 3000, "last_observed_fsync_seconds": 27.540745},
+  "fault_injected_tmpfs": {"exit_code": 0, "wall_seconds": 0.134, "fsync_calls": 6793, "fsync_seconds": 0.002339},
+  "tmpfs_pipeline": {"passed": 29, "test_seconds": 1.130, "wall_seconds": 1.190},
+  "original_runner_syscall_cause": "UNKNOWN_NOT_RECORDED",
+  "confirmed_repair_target": "SYNTHETIC_FUNCTIONAL_TEST_COUPLED_TO_HOST_SYNC_DISK_LATENCY",
+  "formal_acceptance": false,
+  "production_fsync_removed": false,
+  "test_timeouts_increased": false,
+  "historical_failures_reclassified": false
+}

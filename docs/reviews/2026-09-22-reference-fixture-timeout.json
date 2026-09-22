@@ -1,0 +1,27 @@
+{
+  "failure_id": "03c1237df73642f3b3492d4bb0e2f6af",
+  "decision": "retry",
+  "goal": "按冻结工程/数据边界交付同一 main SHA，保留已知数据 FAIL",
+  "expected": "精确提交 CI 全量 109 项成功，再由原 CD 和部署后检查验收",
+  "observed": "b933b48 的 CI 35736300272 中 replay_reference_account_test 30.08 秒、mvp_reference_pipeline_test 60.02 秒超时，其余 107 项成功；CD 未部署，四个 post-CD skipped。",
+  "root_cause_status": "confirmed",
+  "root_cause": "确认并通过受控故障注入复现的测试层缺陷：两个纯合成功能测试把临时账本的逐事件同步落盘速度纳入短时限，未隔离宿主磁盘吞吐。单项原实现执行 6793 次真实 fsync，断网 Linux 普通临时盘 4.813 秒中 fsync 占 4.574237 秒；仅对非 tmpfs fsync 注入 5ms 延迟即原 30 秒超时，同一二进制/断言/6793 次调用在 tmpfs 0.134 秒通过。原失败 runner 未保存系统调用/磁盘指标，其具体瞬时 I/O 原因仍 unknown；不声称本地注入重建了该主机历史。纠正对象是已证明的测试存储依赖，不修改交易或风控实现。",
+  "evidence": [
+    "https://github.com/skw2026/ai-trade/actions/runs/35736300272",
+    ".artifacts/mainline-deployment-20260922/run-35736300272-job-106774308393.log sha256=a976d642bf8aa503fef5e0795a57cb3c31f107177f29aa5d0883861179d687e3",
+    "docs/reviews/2026-09-22-reference-fixture-timeout.evidence.json",
+    "src/risk/manual_risk_cycle.cpp: Write/Commit/Observe 保留每事件 fsync",
+    "CMakeLists.txt: 两个原 30/60 秒 TIMEOUT 不变，Linux 合成临时目录限定 /dev/shm"
+  ],
+  "next_action": "限定两个 Linux 合成测试使用独立自动清理临时目录（TMPDIR=/dev/shm）；其余持久化测试及全部生产代码不动。诊断检查实际 CTest 注册属性和两项原测试，再允许一次纠正发布；以原 exact-source-ci 命令且 latest 精确新 SHA 一次 retry，失败重新 BLOCKED，不能继续 rerun。成功后接续原冻结部署与数据验收，不把该复验成功当成旧 runner 磁盘故障证据。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "修正功能测试依赖外部磁盘吞吐的非确定性，不将短时限测试变成宿主存储基准；工程与数据边界合同不变。",
+    "data_feasibility": "只使用发明的合成行情与本地已有 Linux 镜像，断网执行；临时数据自动清理，无真实历史/账户数据。",
+    "method_feasibility": "普通盘与 tmpfs 使用同一二进制、原全部断言及相同 fsync 调用数；可重复的 30 秒失败与 0.134 秒通过对照，pipeline 的 29 项在 tmpfs 1.130 秒全部通过。真实持久化/故障路径专项测试继续使用原目录和语义。",
+    "budget_and_exit": "在原 90 有效工程分钟内仅本次诊断和一次有证据的纠正发布；不增测试超时、不删断言、不改 120 秒数据合同；任何第二次未解决失败重新复核路线。"
+  }
+}

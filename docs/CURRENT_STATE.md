@@ -1,5 +1,7 @@
 # 当前项目状态
 
+最新修复接续（2026-09-22）：首批 `b933b48` 的 CI 两项既有合成回放测试超时（其余 107/109 通过），CD 被阻断、未部署，post-CD 均 skipped。已暂停并完成[测试存储依赖复盘](reviews/2026-09-22-reference-fixture-timeout.json)：单项 6,793 次 fsync，受控磁盘延迟可复现原 30 秒超时；tmpfs 对照保留同样调用和断言。原 runner 具体 I/O 原因没有记录，仍 unknown，不冒充历史主机证明。限定两个 Linux 合成测试临时目录隔离，原超时、生产持久化和专项测试不改；门禁已接受一次纠正发布/原命令复验，当前 RETRY_APPROVED，尚未验收通过。以下是首批发布前记录。
+
 最新接续（2026-09-22）：用户在拆分验收建议后回复“继续”，现按[事前冻结边界](plans/2026-09-22-engineering-data-boundary.md)连续交付。旧耦合工程阶段已按[停止复盘](reviews/2026-09-22-coupled-engineering-stop.json)进入 **HALTED（原失败保留，不追溯 PASS）**；新独立工程阶段本地定向与完整 CTest **109/109 PASS，173.23 秒**。新增固定关闭锚点回归和分段拒绝原因，120 秒合同、历史原件、研究 HALTED 均不改。下一步为本批一次 main 发布、精确 SHA 的工程/数据两路实测；尚未声称远端通过。V4 已知 460.494 秒分段应继续 FAIL，Archive 应保持证据不足；新增未知失败或缺报告仍暂停，不因拆分而忽略。以下为此前时点记录。
 
 最新取证结果（2026-09-22 21:01）：**`PINNED_RAW_POLL_LATENCY_VIOLATION_CONFIRMED`**。诊断入口 `896911c` 已交付 main，[只读运行 35730700390](https://github.com/skw2026/ai-trade/actions/runs/35730700390) attempt 1 成功；报告/原件 hash 和计数全部匹配，8 条快照中第 3 条确为 460.494 秒，超出冻结 120 秒。poll 为 03:56:48.404–04:04:28.898 UTC，完成于主机 OOM kill 后 2.898 秒；时间强关联，不冒充请求级因果证明。**本次定位阶段完成，不再索取同一内核日志或盲重跑；过去的超时不能靠新样本修复。** 该 SHA 实际只有诊断任务，无 CI/CD；交易 release 仍为 `45a9f1b`，工程 BLOCKED 与旧研究 HALTED 哈希未变。工程整体尚未通过；固定工程回归与动态数据质量若要拆分，属于下一阶段验收边界决策，当前没有自行改口径。详见[取证结案与后续边界](reviews/2026-09-22-v4-segment-readonly-result.md)及[证据](reviews/2026-09-22-v4-segment-readonly-result.evidence.json)。以下为此前时点记录。
