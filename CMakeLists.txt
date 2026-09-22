@@ -224,6 +224,8 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_replay_validation.py)
     add_test(NAME compose_consistency_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_compose_consistency.py)
+    add_test(NAME ecs_ssh_transport_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_ecs_ssh.py)
     add_test(NAME closed_loop_runner_transaction_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_closed_loop_runner_transaction.py)
     add_test(NAME materialize_release_compose_test

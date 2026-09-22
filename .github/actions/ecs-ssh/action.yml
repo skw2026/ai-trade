@@ -1,0 +1,54 @@
+name: Pinned ECS SSH
+description: OpenSSH using only the existing trusted SHA256 host-key fingerprint
+inputs:
+  host:
+    required: true
+    description: Existing ECS host
+  username:
+    required: true
+    description: Existing ECS user
+  key:
+    required: true
+    description: Existing SSH private key (never printed)
+  port:
+    default: '22'
+    description: Existing SSH port
+  fingerprint:
+    required: true
+    description: Trusted SHA256 fingerprint; no trust-on-first-use
+  mode:
+    default: script
+    description: script, preflight or upload
+  command_timeout:
+    default: 10m
+    description: Bounded execution timeout
+  envs:
+    default: ''
+    description: Explicit comma-separated forwarded environment names
+  script:
+    default: ''
+    description: Remote script sent through stdin, never echoed
+  source:
+    default: ''
+    description: Local directory containing the two deployment bundle files
+  release_id:
+    default: ''
+    description: Exact run-attempt-SHA identity for bundle upload
+runs:
+  using: composite
+  steps:
+    - name: Execute pinned transport
+      shell: bash
+      env:
+        ECS_TRANSPORT_HOST: ${{ inputs.host }}
+        ECS_TRANSPORT_USER: ${{ inputs.username }}
+        ECS_TRANSPORT_KEY: ${{ inputs.key }}
+        ECS_TRANSPORT_PORT: ${{ inputs.port }}
+        ECS_TRANSPORT_FINGERPRINT: ${{ inputs.fingerprint }}
+        ECS_TRANSPORT_MODE: ${{ inputs.mode }}
+        ECS_TRANSPORT_TIMEOUT: ${{ inputs.command_timeout }}
+        ECS_TRANSPORT_ENVS: ${{ inputs.envs }}
+        ECS_TRANSPORT_SCRIPT: ${{ inputs.script }}
+        ECS_TRANSPORT_SOURCE: ${{ inputs.source }}
+        ECS_TRANSPORT_RELEASE_ID: ${{ inputs.release_id }}
+      run: python3 "${GITHUB_ACTION_PATH}/../../../deploy/ecs_ssh.py"

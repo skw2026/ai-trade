@@ -46,7 +46,7 @@ jobs:
           test -n "${{ secrets.ECS_SSH_KEY }}"
 
       - name: Audit checksum-bound lifecycle on ECS
-        uses: appleboy/ssh-action@v1.2.0
+        uses: ./.github/actions/ecs-ssh
         env:
           AUDIT_EXPECTED_SHA: ${{ env.AUDIT_EXPECTED_SHA }}
           AUDIT_RUN_ID: ${{ env.AUDIT_RUN_ID }}
@@ -272,9 +272,15 @@ jobs:
             rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
             exit 0
           fi
+          trap 'rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"' EXIT
+          PINNED_HOST_KEY_ALGORITHMS="$(python3 deploy/ecs_ssh.py pin-known-hosts \
+            "${KNOWN_HOSTS_FILE}" "${HOST}" "${PORT}" "${{ secrets.ECS_HOST_FINGERPRINT }}")"
+          pinned_options=(-F /dev/null -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no
+            -o BatchMode=yes -o IdentitiesOnly=yes -o VerifyHostKeyDNS=no
+            -o HostKeyAlgorithms="${PINNED_HOST_KEY_ALGORITHMS}")
           report_downloaded=false
           for attempt in 1 2 3; do
-            if scp -i .artifacts/ecs_key -P "${PORT}" \
+            if scp "${pinned_options[@]}" -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
               "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/report.json" .artifacts/report.json; then
               report_downloaded=true
@@ -284,7 +290,7 @@ jobs:
           done
           payoff_downloaded=false
           for attempt in 1 2 3; do
-            if scp -i .artifacts/ecs_key -P "${PORT}" \
+            if scp "${pinned_options[@]}" -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
               "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/payoff.json" .artifacts/payoff.json; then
               payoff_downloaded=true
@@ -294,7 +300,7 @@ jobs:
           done
           economics_downloaded=false
           for attempt in 1 2 3; do
-            if scp -i .artifacts/ecs_key -P "${PORT}" \
+            if scp "${pinned_options[@]}" -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
               "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/economics.json" .artifacts/economics.json; then
               economics_downloaded=true
@@ -303,7 +309,7 @@ jobs:
             sleep 10
           done
           if [[ "${C2_RUN_ADAPTER}" == "true" ]]; then
-            scp -i .artifacts/ecs_key -P "${PORT}" \
+            scp "${pinned_options[@]}" -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" -o StrictHostKeyChecking=yes \
               "${USER}@${HOST}:${AUDIT_OUTPUT_ROOT}/${AUDIT_RUN_ID}/first.adapter-report.json" \
               .artifacts/first.adapter-report.json || true

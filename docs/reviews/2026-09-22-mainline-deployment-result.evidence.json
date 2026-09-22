@@ -1,0 +1,86 @@
+{
+  "schema_version": "mainline_deployment_observation_v1",
+  "decision": "MAINLINE_CI_IMAGES_PASS_DEPLOY_UPLOAD_BLOCKED",
+  "as_of_utc": "2026-09-22T00:14:00Z",
+  "delivery_sha": "d111d68a85a050ac0a1c906338bfa380920c49fb",
+  "delivery_tree": "131b332226520dc8f82d5412c5c9dc888a4316b7",
+  "remote_main_sha": "d111d68a85a050ac0a1c906338bfa380920c49fb",
+  "public_main_and_existing_test_cd_authorized": true,
+  "local_tests": {
+    "targeted_passed": 5,
+    "targeted_seconds": 12.15,
+    "targeted_log_sha256": "068bb9947ebe45d081de7b2578ce6cbc4fd0fbf00288c5c10075be73413b221d",
+    "full_passed": 105,
+    "full_seconds": 171.91,
+    "full_log_sha256": "ccf5b12f377e4134db956311d1dbd891e62551ef18b251e18796153b25f9ca3c"
+  },
+  "runs": [
+    {"name": "CI", "id": 35670052868, "attempt": 1, "conclusion": "success", "completed_at_utc": "2026-09-22T00:04:31Z"},
+    {"name": "CD", "id": 35670052847, "attempt": 1, "conclusion": "failure", "completed_at_utc": "2026-09-22T00:11:13Z"},
+    {"name": "Closed Loop Smoke", "id": 35670886290, "attempt": 1, "conclusion": "skipped"},
+    {"name": "Option Archive Lifecycle Audit", "id": 35670886201, "attempt": 1, "conclusion": "skipped"},
+    {"name": "Option Lifecycle V4 Gate", "id": 35670886325, "attempt": 1, "conclusion": "skipped"}
+  ],
+  "cd_steps": {
+    "Wait for Exact CI Success": "success",
+    "Build and Push Runtime Image": "success",
+    "Build and Push Research Image": "success",
+    "Build and Push Web Image": "success",
+    "Create Deployment Bundle": "success",
+    "Upload Deployment Bundle": "failure",
+    "Deploy to ECS": "skipped",
+    "Download Deploy Gate Reports": "failure",
+    "Upload Deploy Gate Artifacts": "success"
+  },
+  "diagnosis": {
+    "earliest_failed_step": "Upload Deployment Bundle",
+    "job_id": 106566637238,
+    "root_cause_status": "unknown",
+    "root_cause": "Public metadata does not distinguish SSH authentication, host fingerprint, network, target permissions or upload-action failure.",
+    "job_logs_http_status": 403,
+    "artifact_download_http_status": 401,
+    "public_job_page": "Sign in to view logs",
+    "public_step_fragment_http_status": 404,
+    "gh_cli_authenticated": false,
+    "standard_gh_token_env_present": false,
+    "diagnostic_artifact_id": 10669834672,
+    "diagnostic_artifact_name": "deploy-closed-loop-35670052847-1",
+    "diagnostic_artifact_digest": "sha256:a8a3c9183f865c67a8a70e66d4fb6b1f33baa03864dd93eafdf69b0ccfe2517f",
+    "diagnostic_artifact_contents_downloaded": false,
+    "retry_authorized": false,
+    "required_external_input": "Authenticated read access to this Actions job, or redacted failing upload-step logs. No new deployment approval needed."
+  },
+  "engineering_gate": {
+    "path": ".artifacts/engineering-freeze-20260921/validation-state.json",
+    "status": "BLOCKED",
+    "failure_id": "da145ecbb92e498a8418df4637756d5b",
+    "failure_count": 1,
+    "label": "mainline-exact-cd",
+    "command_sha256": "a7c577fb173ca07b610b8e97fba0431a7f548fcb835ddc9bda2667e7536c8408"
+  },
+  "evidence_root": ".artifacts/mainline-deployment-20260922",
+  "evidence_sha256": {
+    "preflight.json": "8d05bda3714cd1a7a75857a87818f6673494ec27c662e33df6594f5159674806",
+    "observation-1790035526767193000.json": "768d2ccf7e9c377886c3bce54f415a11ac4ef10fd43cd0d0b66d7ac74c301a7b",
+    "observation-1790035882030806000.json": "08f396c7fd8d99435bdc35b5e85463febabcf0a85dbcc45bc0607009cca8babb",
+    "cd-failure-public-diagnostics.json": "98d8e9ca732956654131ac7e44e3da2de8933f36c9f904196c7a9e1880bdb691",
+    "failed-job-public-page.html": "1d909f4d3345ceaee1484a6a9f3f292117be7f877dfaf40fdf7ba993506fcb13",
+    "failed-upload-public-fragment.txt": "0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5"
+  },
+  "boundaries": {
+    "remote_full_test_count_independently_read": false,
+    "deployment_complete": false,
+    "post_cd_complete": false,
+    "current_ecs_release_directly_observed": false,
+    "incoming_partial_upload_state": "unknown",
+    "workflow_reruns": 0,
+    "post_failure_pushes": 0,
+    "raw_history_archive_uploaded": false,
+    "strategy_or_risk_parameter_changes": false,
+    "economic_qualification": "NOT_PROVEN_BY_ENGINEERING",
+    "closed_research_reopened": false,
+    "old_research_gate_status": "HALTED",
+    "old_research_gate_sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+    "result_documents": "LOCAL_ONLY_AFTER_FAILURE"
+  }
+}

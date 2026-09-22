@@ -120,6 +120,17 @@ jobs:
               time.sleep(10)
           PY
 
+      - name: Preflight pinned ECS connection
+        uses: ./.github/actions/ecs-ssh
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || 22 }}
+          fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
+          mode: preflight
+          command_timeout: 2m
+
       - name: Compute Image Metadata
         id: meta
         run: |
@@ -343,19 +354,20 @@ jobs:
           )
 
       - name: Upload Deployment Bundle
-        uses: appleboy/scp-action@v0.1.7
+        uses: ./.github/actions/ecs-ssh
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || 22 }}
           fingerprint: ${{ secrets.ECS_HOST_FINGERPRINT }}
-          source: ".release-artifacts/${{ env.DEPLOY_RELEASE_ID }}/deploy_bundle.tgz,.release-artifacts/${{ env.DEPLOY_RELEASE_ID }}/deploy_bundle.tgz.sha256"
-          target: "/opt/ai-trade/incoming/${{ env.DEPLOY_RELEASE_ID }}"
-          strip_components: 2
+          mode: upload
+          command_timeout: 5m
+          source: .release-artifacts/${{ env.DEPLOY_RELEASE_ID }}
+          release_id: ${{ env.DEPLOY_RELEASE_ID }}
 
       - name: Deploy to ECS
-        uses: appleboy/ssh-action@v1.2.0
+        uses: ./.github/actions/ecs-ssh
         env:
           AI_TRADE_IMAGE: ${{ env.RUNTIME_IMAGE_REF }}
           AI_TRADE_RESEARCH_IMAGE: ${{ env.RESEARCH_IMAGE_REF }}
@@ -795,19 +807,9 @@ jobs:
           EOF
             exit 0
           fi
-          if [[ -n "${EXPECTED_FINGERPRINT}" ]]; then
-            if ! ssh-keygen -lf "${KNOWN_HOSTS_FILE}" | awk '{print $2}' | grep -Fxq "${EXPECTED_FINGERPRINT}"; then
-              echo "[deploy] host fingerprint mismatch, skip artifact download"
-              rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
-              cat > .artifacts/deploy_gate_download_status.json <<'EOF'
-          {
-            "status": "SKIPPED",
-            "reason": "host_fingerprint_mismatch"
-          }
-          EOF
-              exit 0
-            fi
-          fi
+          trap 'rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"' EXIT
+          PINNED_HOST_KEY_ALGORITHMS="$(python3 deploy/ecs_ssh.py pin-known-hosts \
+            "${KNOWN_HOSTS_FILE}" "${HOST}" "${PORT}" "${EXPECTED_FINGERPRINT}")"
 
           downloaded=0
           missing=()
@@ -831,6 +833,9 @@ jobs:
             local tmp_path="${local_path}.tmp"
             rm -f "${tmp_path}" "${local_path}"
             if scp -i .artifacts/ecs_key -P "${PORT}" \
+              -F /dev/null -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o VerifyHostKeyDNS=no \
+              -o HostKeyAlgorithms="${PINNED_HOST_KEY_ALGORITHMS}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
               -o StrictHostKeyChecking=yes \
               "${USER}@${HOST}:${remote_path}" "${tmp_path}"; then

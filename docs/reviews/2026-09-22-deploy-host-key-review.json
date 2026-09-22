@@ -1,0 +1,36 @@
+{
+  "failure_id": "da145ecbb92e498a8418df4637756d5b",
+  "decision": "retry",
+  "goal": "Complete the already-authorized exact-main-SHA engineering deployment and post-CD checks, without changing trading or economic qualification.",
+  "expected": "Exact CI and image builds succeed, deployment executes successfully, then exact-release Smoke/Archive/V4 checks execute and succeed.",
+  "observed": "CI and all image builds succeeded. Upload failed before deployment with ssh: handshake failed: ssh: host key fingerprint mismatch. The later OpenSSH downloader passed the configured fingerprint membership check, authenticated and reported missing not-yet-generated deployment files.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The upload client's negotiated host key did not match the configured SHA256 pin. The same run found that pin among keys offered to OpenSSH, so changing or removing the trusted pin is not justified. The two transport paths have incompatible host-key selection/trust handling: drone-scp checks one negotiated key while the old OpenSSH path admits every scanned key if any matches. Exact negotiated key algorithms were not logged and remain unknown. ECS_HOST_FINGERPRINT metadata shows an update on 2026-09-20, after the last successful deployment; the CD workflow itself is byte-identical to that successful revision. Separately, no connection preflight preceded image builds, and local Actions log access was absent until the user logged in.",
+  "evidence": [
+    ".artifacts/mainline-deployment-20260922/cd-35670052847-deploy-106566637238.log lines 648-649 and 878-894; sha256 a60967ec594a87a6e6a2317d1af8dd99d3c7fb097bdb439ba5d57b6e327b08d0",
+    ".artifacts/mainline-deployment-20260922/observation-1790035882030806000.json",
+    "GitHub ECS_HOST_FINGERPRINT metadata updatedAt=2026-09-20T07:00:38Z (value not read)",
+    "CD workflow blob at 170d84a and d111d68: 932d798ea7ead705583b873b3f13386cd3622319",
+    "https://raw.githubusercontent.com/appleboy/drone-scp/v1.6.14/go.mod",
+    "https://raw.githubusercontent.com/appleboy/easyssh-proxy/v1.5.0/easyssh.go",
+    "https://man.openbsd.org/ssh_config.5"
+  ],
+  "next_action": "Use one scoped OpenSSH helper for CD upload/commands and required post-CD commands. Admit only keyscan entries matching the existing trusted pin; force their corresponding modern host-key algorithms, strict host checking, no other known-host sources. Add read-only connection and deployment-directory preflight before image builds and sanitized failure codes. Retain exact CI, release integrity, rollback, risk and candidate-closure checks. Run bounded local diagnostic reproductions of the trust contract, then one reviewed corrective main publication through existing CI/CD and retry the original local CD acceptance command; retain all failed observations. Do not publish raw logs or credentials.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Repair the first failed deployment boundary only, including the same dependency in required post-CD checks; no economic research or trading changes.",
+    "data_feasibility": "Authenticated Actions logs are now available. Existing pin matched an offered key and existing SSH credentials authenticated in the failing run; no new trust material is needed for the proposed strict path.",
+    "method_feasibility": "A private known_hosts file containing only the configured fingerprint and an explicit matching HostKeyAlgorithms list removes client preference ambiguity without trusting additional scanned keys. The server must prove possession of that exact key during SSH handshake.",
+    "budget_and_exit": "At most one engineering hour for diagnosis/repair/local diagnostic reproductions, then one corrective CI/CD attempt under existing workflow timeouts. Any new failure is recorded and stops dependent work; no second blind push/rerun, no disabling fingerprint checks. Missing trusted identity or external privileges is a user-input stop."
+  },
+  "route_reassessment": {
+    "old_route_failure": "Rebuilding images cannot resolve incompatible SSH host-key handling, and a scan-any-key check followed by trusting all keys is insufficiently strict. Merely changing the stored pin to satisfy one client's preference would perpetuate the inconsistency.",
+    "replacement": "Preserve the stored trust anchor, select only its matching public key, use a shared strict OpenSSH transport, preflight before expensive image work, and emit secret-free error classifications.",
+    "feasibility_evidence": "Same-run OpenSSH authenticated after the current fingerprint membership check. Official client implementation confirms negotiated-key exact comparison. Local negative/multi-key diagnostics will cover missing/mismatched pins, key selection, env quoting and fail-closed behavior before the corrective publication.",
+    "budget": "One hour engineering, one reviewed corrective publication; no new research, accounts, secrets, host-key rotation or production-risk changes.",
+    "stop_condition": "A pin not offered by the host, SSH authentication failure, permission failure, failed CI/CD or post-CD acceptance blocks progress. A second unresolved failure requires a new route review, not another automatic retry."
+  }
+}

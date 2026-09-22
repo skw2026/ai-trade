@@ -61,7 +61,7 @@ jobs:
           test -n "${{ secrets.ECS_SSH_KEY }}"
 
       - name: Run Smoke on ECS
-        uses: appleboy/ssh-action@v1.2.0
+        uses: ./.github/actions/ecs-ssh
         env:
           SMOKE_SINCE: ${{ env.SMOKE_SINCE }}
           SMOKE_MIN_RUNTIME_STATUS: ${{ env.SMOKE_MIN_RUNTIME_STATUS }}
@@ -197,11 +197,17 @@ jobs:
             rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"
             exit 0
           fi
+          trap 'rm -f .artifacts/ecs_key "${KNOWN_HOSTS_FILE}"' EXIT
+          PINNED_HOST_KEY_ALGORITHMS="$(python3 deploy/ecs_ssh.py pin-known-hosts \
+            "${KNOWN_HOSTS_FILE}" "${HOST}" "${PORT}" "${{ secrets.ECS_HOST_FINGERPRINT }}")"
+          pinned_options=(-F /dev/null -o GlobalKnownHostsFile=/dev/null -o UpdateHostKeys=no
+            -o BatchMode=yes -o IdentitiesOnly=yes -o VerifyHostKeyDNS=no
+            -o HostKeyAlgorithms="${PINNED_HOST_KEY_ALGORITHMS}")
           download_failed=0
           fetch_report() {
             local remote_path="$1"
             local local_path="$2"
-            if ! scp -i .artifacts/ecs_key -P "${PORT}" \
+            if ! scp "${pinned_options[@]}" -i .artifacts/ecs_key -P "${PORT}" \
               -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
               -o StrictHostKeyChecking=yes \
               "${USER}@${HOST}:${remote_path}" "${local_path}"; then
@@ -220,7 +226,7 @@ jobs:
             ".artifacts/run_manifest.json"
           fetch_report "/opt/ai-trade/current/release_manifest.json" \
             ".artifacts/release_manifest.json"
-          if ! ssh -i .artifacts/ecs_key -p "${PORT}" \
+          if ! ssh "${pinned_options[@]}" -i .artifacts/ecs_key -p "${PORT}" \
             -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
             -o StrictHostKeyChecking=yes \
             "${USER}@${HOST}" \
@@ -228,7 +234,7 @@ jobs:
             > ".artifacts/container_state.txt"; then
             download_failed=1
           fi
-          if ! ssh -i .artifacts/ecs_key -p "${PORT}" \
+          if ! ssh "${pinned_options[@]}" -i .artifacts/ecs_key -p "${PORT}" \
             -o UserKnownHostsFile="${KNOWN_HOSTS_FILE}" \
             -o StrictHostKeyChecking=yes \
             "${USER}@${HOST}" \

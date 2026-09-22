@@ -1340,11 +1340,12 @@ class ComposeConsistencyTest(unittest.TestCase):
             "WEB_IMAGE_REF: ${{ needs.build-test-push.outputs.web_image_uri }}@${{ needs.build-test-push.outputs.web_image_digest }}",
             workflow,
         )
-        self.assertIn(
-            'target: "/opt/ai-trade/incoming/${{ env.DEPLOY_RELEASE_ID }}"',
-            workflow,
-        )
-        self.assertIn("strip_components: 2", workflow)
+        self.assertIn("source: .release-artifacts/${{ env.DEPLOY_RELEASE_ID }}", workflow)
+        self.assertIn("release_id: ${{ env.DEPLOY_RELEASE_ID }}", workflow)
+        self.assertIn("mode: upload", workflow)
+        transport = (ROOT / "deploy/ecs_ssh.py").read_text()
+        self.assertIn('remote = "/opt/ai-trade/incoming/" + release_id', transport)
+        self.assertIn('source / "deploy_bundle.tgz.sha256"', transport)
         self.assertIn("ai_trade_release_manifest_v1", workflow)
         self.assertIn(".release-content.sha256", workflow)
         self.assertIn("DEPLOY_BUNDLE_SHA256", workflow)

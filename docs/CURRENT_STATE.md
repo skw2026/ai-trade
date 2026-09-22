@@ -2,6 +2,10 @@
 
 更新时间：2026-09-22（Asia/Shanghai；本次工程阶段始于 2026-09-21 UTC）
 
+最新接续：用户完成 GitHub 登录后，已取得原失败日志，确认上传动作为 **`ssh: host key fingerprint mismatch`**，不是交易测试失败。同一任务后续 OpenSSH 通过现有指纹成员校验并成功认证；两条 SSH 路径对主机密钥选择/信任集合的处理不同。指纹配置更新于 9 月 20 日，晚于上次成功部署；具体协商密钥算法未记录，不猜测或重填可信指纹。根因/路线[复盘](reviews/2026-09-22-deploy-host-key-review.json)已被原工程 gate 接受，当前 **RETRY_APPROVED，尚未复验通过**。限定修复统一 CD 与三项 post-CD 的严格 OpenSSH 固定密钥，增加构建镜像前只读预检与脱敏错误分类；本地 15+43+9+8 项诊断通过，不冒充远端部署通过。下一步为本批一次纠正发布、精确 SHA CI/CD 原命令复验及 post-CD 验收；详情见[修复范围与验收说明](reviews/2026-09-22-deploy-host-key-repair.md)。下段 unknown/未登录是保留的首轮阻断快照，不是当前诊断。
+
+最新实测（2026-09-22 08:14 北京时间）：**`MAINLINE_CI_IMAGES_PASS_DEPLOY_UPLOAD_BLOCKED`**。`d111d68a85a050ac0a1c906338bfa380920c49fb` 已直接推送 main；本地 105/105、该精确 SHA 的 Linux CI、运行/研究/Web 三种镜像构建发布均通过。CD `35670052847` 在 **Upload Deployment Bundle** 失败，`Deploy to ECS` 未执行，三个 post-CD 检查均 skipped，不能记部署通过或已更新线上 release。工程 gate 已 BLOCKED（首次失败 `da145ecbb92e498a8418df4637756d5b`）；没有 rerun、第二次发布、门禁放宽或旧研究重开。**上传失败的具体根因仍 unknown**：公开注释仅有退出码，日志 API 403、产物 API 401、公开页面要求登录；本机 `gh` 未登录。下一步只需在本机登录可读 Actions 日志的 GitHub 账号，或提供失败上传步骤的脱敏错误日志；不是再次申请发布授权。取得证据后先根因/路线复盘，再限定修复和一次原命令复验。详见[主线发布结果及阻断诊断](reviews/2026-09-22-mainline-deployment-result.md)和[证据索引](reviews/2026-09-22-mainline-deployment-result.evidence.json)。本段及结果文档仅本地留档，失败后未再推送。
+
 最新授权与动作：用户明确允许**现有公开仓库直接 main 合入/push，并通过 CI/CD 部署到现有测试环境验证，不再逐次索权，也不以先做分支/账户管理为前置条件**。此前公开推送审批停点已由这条新授权接续；不改写下述历史拒绝事实。当前执行[主线部署验证计划](plans/2026-09-22-mainline-deployment-validation.md)：以精确提交的 CI、镜像构建、ECS 部署门禁及部署后检查为工程出口；失败先诊断和纠偏。部署不自动启用离线参考 MVP、不调整既有策略参数、不重开已关闭研究，不涉及实盘或资金操作。策略经济方向仍须独立证据，不能用 CI/CD 通过代替。
 
 下段是新授权前的已留档阻断快照，不再要求重复公开代码/主线部署授权。
