@@ -1,0 +1,26 @@
+{
+  "failure_id": "0f3b3a5b73c44f7687692117aee06785",
+  "decision": "stop",
+  "goal": "原 source-diagnostics-post-cd 整批工程交付",
+  "expected": "同一 main SHA 的 Smoke、Archive、V4 全部真实 success",
+  "observed": "45a9f1b 的 CI/CD/Smoke/Archive 成功，V4 因归档无效段失败；一次原命令复验失败，failure_count=2。",
+  "root_cause_status": "confirmed",
+  "root_cause": "固定报告和原件哈希核对后确认历史快照耗时 460494 ms，违反不可变的 120000 ms 时效合同。该缺陷足以令原审计拒绝，不能通过增加样本或重部署修复。原工程出口与持续增长研究归档的全部数据资格耦合，导致相同工程代码被历史数据永久阻断。未声称重建旧 run 的全部输入或证明唯一拒绝项。",
+  "evidence": [
+    "docs/reviews/2026-09-22-archive-oom-delivery.evidence.json",
+    "docs/reviews/2026-09-22-v4-segment-readonly-result.evidence.json",
+    "https://github.com/skw2026/ai-trade/actions/runs/35730700390"
+  ],
+  "next_action": "保留原命令、失败和历史输入，将旧耦合验收停止为未通过。用户在明确工程/数据拆分建议后回复继续；据此以新合同单独验收固定工程回归，数据资格继续 FAIL，禁止研究和交易晋级。不是旧命令 retry 或更弱命令替换。",
+  "scope_unchanged": false,
+  "acceptance_unchanged": false,
+  "path_verdict": "blocked_under_original_acceptance",
+  "structural_issue": true,
+  "route_reassessment": {
+    "old_route_failure": "把已关闭研究族的动态全归档资格作为工程封版前提；真实历史超时不可逆。",
+    "replacement": "明确新工程出口与独立数据质量出口，旧阶段保留失败停止，不能追溯改绿。",
+    "feasibility_evidence": "CI/CD/Smoke/Archive 实测成功；固定六期 STOP 锚点已由原关闭登记表绑定；单分段原件取证与 120 秒边界拒绝行为已确认。",
+    "budget": "新阶段至多一个实现/发布批次；发生未预期失败按既有协议暂停，不恢复旧研究预算。",
+    "stop_condition": "任一必需工程检查失败或必需输入身份/证据不足即停止依赖推进；动态质量 FAIL 不得授予数据或交易资格。"
+  }
+}

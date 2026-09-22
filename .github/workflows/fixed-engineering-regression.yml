@@ -1,0 +1,68 @@
+name: Fixed Engineering Regression
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - CD
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fixed-engineering-regression-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  fixed-regression:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Checkout exact verification revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+
+      - name: Verify fixed timing rejection and closure regressions
+        run: |
+          python3 tools/validation_gate.py run --label fixed-timing -- python3 tools/test_fixed_engineering_regression.py
+          python3 tools/validation_gate.py run --label fixed-closure -- python3 tools/test_audit_option_candidate_closure.py
+          python3 tools/validation_gate.py run --label diagnostic-reader -- python3 tools/test_diagnose_option_lifecycle_segment.py
+
+      - name: Fetch exact frozen STOP anchor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .artifacts/fixed-engineering
+          gh api repos/skw2026/ai-trade/actions/artifacts/10295950463/zip \
+            > .artifacts/fixed-engineering/anchor.zip
+
+      - name: Verify frozen closure without claiming current data
+        run: |
+          python3 tools/validation_gate.py run --label frozen-real-anchor -- \
+            python3 tools/audit_option_candidate_closure.py \
+              --registry config/option_candidate_closure_v1.json \
+              --anchor-zip .artifacts/fixed-engineering/anchor.zip \
+              --anchor-only --verification-sha "${EXPECTED_SHA}" \
+              --output .artifacts/fixed-engineering/frozen-closure.json
+
+      - name: Upload fixed engineering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixed-engineering-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/fixed-engineering/frozen-closure.json
+          if-no-files-found: error

@@ -20,6 +20,33 @@ import capture_bybit_option_lifecycle_v3 as capture
 
 SCHEMA_VERSION = "option_lifecycle_audit_v3"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
+SEGMENT_REASON_CODES = {
+    "snapshot poll latency exceeds contract": "POLL_LATENCY_EXCEEDS_CONTRACT",
+    "capture artifact checksum mismatch": "ARTIFACT_CHECKSUM_MISMATCH",
+    "capture report frozen identity mismatch": "FROZEN_IDENTITY_MISMATCH",
+    "capture report row counts conflict": "ROW_COUNT_MISMATCH",
+    "snapshot timestamp escapes ordered report coverage": "SNAPSHOT_COVERAGE_MISMATCH",
+    "conflicting duplicate snapshot timestamp": "CROSS_SEGMENT_SNAPSHOT_CONFLICT",
+    "conflicting duplicate snapshot timestamp within segment": "WITHIN_SEGMENT_SNAPSHOT_CONFLICT",
+}
+
+
+def _segment_diagnostic(path, error, phase, line, checksums_verified):
+    """Add allowlisted identities, not exception text or arbitrary archive fields."""
+    report_sha = None
+    try:
+        if path.is_file() and not path.is_symlink() and path.stat().st_size <= 1024 * 1024:
+            report_sha = capture.sha256_file(path)
+    except OSError:
+        pass
+    return {
+        "report": path.name if re.fullmatch(r"[0-9]{8}T[0-9]{6}\.[0-9]{6}Z\.json", path.name) else None,
+        "report_sha256": report_sha,
+        "reason_code": SEGMENT_REASON_CODES.get(str(error), "SEGMENT_VALIDATION_FAILURE"),
+        "phase": phase,
+        "snapshot_line": line if phase == "snapshot" else None,
+        "artifact_checksums_verified": checksums_verified,
+    }
 
 
 def _number(value: Any, *, field: str, positive: bool = False,
@@ -134,6 +161,8 @@ def replay_capture_root(root: pathlib.Path, *, policy: Mapping[str, Any],
         "invalid_segment_count": 0, "eligible_snapshot_count": 0,
         "duplicate_snapshot_count": 0, "ignored_pre_observation_snapshot_count": 0,
         "snapshots": [], "snapshot_segment": {}, "input_identities": [],
+        "invalid_segments": [], "invalid_segment_reason_counts": {},
+        "invalid_segment_details_truncated": False,
     }
     reports_root = root / "reports" / capture.BASE_COIN
     if not reports_root.is_dir():
@@ -145,6 +174,7 @@ def replay_capture_root(root: pathlib.Path, *, policy: Mapping[str, Any],
     identities: Dict[int, str] = {}
     segment_by_timestamp: Dict[int, str] = {}
     for report_path in sorted(reports_root.glob("*.json")):
+        phase, lines, checksums_verified = "report", 0, False
         try:
             if report_path.is_symlink() or not report_path.is_file():
                 raise ValueError("capture report path is unsafe")
@@ -170,12 +200,14 @@ def replay_capture_root(root: pathlib.Path, *, policy: Mapping[str, Any],
             end = int(coverage.get("capture_completed_epoch_ms") or 0)
             if start <= 0 or end < start:
                 raise ValueError("capture report coverage invalid")
+            phase = "artifacts"
             raw_path = _safe_artifact(root, raw_meta.get("path"), root / "raw" / capture.BASE_COIN)
             feature_path = _safe_artifact(root, feature_meta.get("path"), root / "features" / capture.BASE_COIN)
             if raw_path.name != f"{report_path.stem}.jsonl.xz" or feature_path.name != f"{report_path.stem}.csv":
                 raise ValueError("capture artifact filenames do not bind report")
             if capture.sha256_file(raw_path) != raw_meta.get("sha256") or capture.sha256_file(feature_path) != feature_meta.get("sha256"):
                 raise ValueError("capture artifact checksum mismatch")
+            checksums_verified, phase = True, "snapshot"
             lines = 0
             segment_rows: Dict[int, Dict[str, Any]] = {}
             prior = 0
@@ -197,10 +229,12 @@ def replay_capture_root(root: pathlib.Path, *, policy: Mapping[str, Any],
                             raise ValueError("conflicting duplicate snapshot timestamp within segment")
                         result["duplicate_snapshot_count"] += 1
                     segment_rows[timestamp] = snapshot
+            phase = "counts"
             if lines <= 0 or any(int(value or 0) != lines for value in (
                 coverage.get("successful_poll_count"), raw_meta.get("snapshot_count"), feature_meta.get("row_count")
             )):
                 raise ValueError("capture report row counts conflict")
+            phase = "merge"
             for timestamp, snapshot in segment_rows.items():
                 digest = capture.canonical_sha256(snapshot)
                 if timestamp in identities:
@@ -218,8 +252,15 @@ def replay_capture_root(root: pathlib.Path, *, policy: Mapping[str, Any],
                 "eligible_snapshot_count": len(segment_rows),
             })
             result["valid_segment_count"] += 1
-        except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError, lzma.LZMAError):
+        except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError, lzma.LZMAError) as error:
             result["invalid_segment_count"] += 1
+            diagnostic = _segment_diagnostic(report_path, error, phase, lines, checksums_verified)
+            code = diagnostic["reason_code"]
+            result["invalid_segment_reason_counts"][code] = result["invalid_segment_reason_counts"].get(code, 0) + 1
+            if len(result["invalid_segments"]) < 20:
+                result["invalid_segments"].append(diagnostic)
+            else:
+                result["invalid_segment_details_truncated"] = True
     timestamps = sorted(by_timestamp)
     result["snapshots"] = [by_timestamp[timestamp] for timestamp in timestamps]
     result["snapshot_segment"] = {str(timestamp): segment_by_timestamp[timestamp] for timestamp in timestamps}
@@ -411,6 +452,9 @@ def audit(*, root: pathlib.Path, policy_path: pathlib.Path, manifest_path: pathl
             "checksum_bound_snapshot_count": replay["eligible_snapshot_count"],
             "duplicate_snapshot_count": replay["duplicate_snapshot_count"],
             "ignored_pre_observation_snapshot_count": replay["ignored_pre_observation_snapshot_count"],
+            "invalid_segment_reason_counts": replay["invalid_segment_reason_counts"],
+            "invalid_segments": replay["invalid_segments"],
+            "invalid_segment_details_truncated": replay["invalid_segment_details_truncated"],
         },
         "startup_gate": {
             "status": "PASS" if phase_pass else ("FAIL" if replay["invalid_segment_count"] else "WAIT"),

@@ -162,7 +162,8 @@ def validate_economics(report: dict[str, Any], registry: dict[str, Any], policy:
     return completed
 
 
-def audit(*, registry_path: pathlib.Path, anchor_zip: pathlib.Path, current_path: pathlib.Path) -> dict[str, Any]:
+def verified_anchor(*, registry_path: pathlib.Path, anchor_zip: pathlib.Path):
+    """The same frozen checks for both live comparison and engineering-only use."""
     registry = load_registry(registry_path)
     policy, _, _ = economics.load_contract(
         ROOT / "config/option_lifecycle_economic_v1.json", ROOT / "config/option_lifecycle_economic_manifest_v1.json",
@@ -200,6 +201,31 @@ def audit(*, registry_path: pathlib.Path, anchor_zip: pathlib.Path, current_path
         require(action["action_id"] == original["action_id"], "first payoff action mismatch")
         for field in ("gross_pnl_usdt", "base_net_pnl_usdt", "stress_net_pnl_usdt"):
             equal(action[field], original[field])
+    return registry, policy, reports, hashes, completed
+
+
+def audit_frozen_anchor(*, registry_path: pathlib.Path, anchor_zip: pathlib.Path,
+                        verification_sha: str) -> dict[str, Any]:
+    require(re.fullmatch(r"[0-9a-f]{40}", verification_sha or "") is not None,
+            "engineering verification SHA required")
+    registry, _, _, hashes, _ = verified_anchor(registry_path=registry_path, anchor_zip=anchor_zip)
+    return {
+        "schema_version": "option_frozen_closure_engineering_v1",
+        "decision": "FROZEN_CLOSED_CANDIDATE_VERIFIED",
+        "verification_sha": verification_sha,
+        "registry_canonical_sha256": REGISTRY_SHA256,
+        "closure_anchor": registry["closure_anchor"],
+        "anchor_report_file_sha256": hashes,
+        "closure_evidence_verified": True, "closure_latched": True,
+        "current_data_evaluated": False, "economic_evidence": False,
+        "demo_review_eligible": False,
+        **{field: False for field in AUTHORITY_FIELDS + CLAIM_FIELDS},
+    }
+
+
+def audit(*, registry_path: pathlib.Path, anchor_zip: pathlib.Path, current_path: pathlib.Path) -> dict[str, Any]:
+    registry, policy, reports, hashes, completed = verified_anchor(registry_path=registry_path, anchor_zip=anchor_zip)
+    anchor, expected, primary = reports["economics.json"], registry["closure_anchor"], registry["primary_action_id"]
     current_raw = read(current_path)
     current = decode(current_raw)
     validate_economics(current, registry, policy)
@@ -242,13 +268,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", type=pathlib.Path, required=True)
     parser.add_argument("--anchor-zip", type=pathlib.Path, required=True)
-    parser.add_argument("--current", type=pathlib.Path, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--current", type=pathlib.Path)
+    mode.add_argument("--anchor-only", action="store_true")
+    parser.add_argument("--verification-sha")
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--emit-annotations", action="store_true")
     args = parser.parse_args()
     try:
-        require(args.output.resolve() not in {args.registry.resolve(), args.anchor_zip.resolve(), args.current.resolve()}, "output cannot overwrite input")
-        report = audit(registry_path=args.registry, anchor_zip=args.anchor_zip, current_path=args.current)
+        inputs = {args.registry.resolve(), args.anchor_zip.resolve()}
+        if args.current is not None:
+            inputs.add(args.current.resolve())
+        require(args.output.resolve() not in inputs, "output cannot overwrite input")
+        if args.anchor_only:
+            require(not args.emit_annotations, "anchor-only emits its own scoped artifact, not current annotations")
+            report = audit_frozen_anchor(registry_path=args.registry, anchor_zip=args.anchor_zip,
+                                         verification_sha=args.verification_sha)
+        else:
+            report = audit(registry_path=args.registry, anchor_zip=args.anchor_zip, current_path=args.current)
         lines = annotations(report) if args.emit_annotations else []
     except (OSError, ValueError, TypeError, KeyError, zipfile.BadZipFile) as exc:
         print(f"candidate closure failed closed: {type(exc).__name__}: {exc}")

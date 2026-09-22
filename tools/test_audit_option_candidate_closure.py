@@ -127,6 +127,32 @@ class CandidateClosureTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "registry identity"):
                 closure.load_registry(path)
 
+    def test_anchor_only_never_claims_current_data_or_activation(self):
+        registry, archive, current = self.prepare()
+        before = [p.read_bytes() for p in (registry, archive, current)]
+        # Even invalid current data is neither read nor claimed by this new scope.
+        with patch.object(closure, "REGISTRY_SHA256", closure.capture.canonical_sha256(self.record)):
+            report = closure.audit_frozen_anchor(registry_path=registry, anchor_zip=archive,
+                                                  verification_sha='b' * 40)
+        self.assertEqual(report['schema_version'], 'option_frozen_closure_engineering_v1')
+        self.assertTrue(report['closure_latched'])
+        self.assertFalse(report['current_data_evaluated'])
+        self.assertFalse(report['economic_evidence'])
+        self.assertNotIn('current_batch_decision', report)
+        for field in closure.AUTHORITY_FIELDS + closure.CLAIM_FIELDS:
+            self.assertFalse(report[field])
+        self.assertEqual(before, [p.read_bytes() for p in (registry, archive, current)])
+
+    def test_anchor_only_retains_all_stop_and_hash_checks(self):
+        self.anchor = copy.deepcopy(self.positive)
+        registry, archive, _ = self.prepare()
+        with patch.object(closure, "REGISTRY_SHA256", closure.capture.canonical_sha256(self.record)):
+            with self.assertRaisesRegex(ValueError, 'not a completed economic STOP'):
+                closure.audit_frozen_anchor(registry_path=registry, anchor_zip=archive, verification_sha='b'*40)
+            archive.write_bytes(archive.read_bytes() + b'drift')
+            with self.assertRaisesRegex(ValueError, 'ZIP digest'):
+                closure.audit_frozen_anchor(registry_path=registry, anchor_zip=archive, verification_sha='b'*40)
+
     def test_corrupt_or_different_zip_rejected(self):
         registry, archive, current = self.prepare()
         archive.write_bytes(archive.read_bytes() + b"drift")

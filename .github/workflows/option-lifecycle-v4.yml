@@ -197,12 +197,17 @@ jobs:
             cd "${RELEASE_DIR}"
             startup_pass=false
             for attempt in $(seq 1 "${AUDIT_STARTUP_ATTEMPTS}"); do
+              # Independent data-quality lane: fail closed, with a process-local
+              # address-space bound. Never drop the bad input to make it green.
+              (
+              ulimit -v 3145728 || exit 70
               python3 tools/audit_option_lifecycle_v4.py \
                 --root "${AUDIT_CAPTURE_ROOT}" \
                 --policy config/option_lifecycle_capture_v4.json \
                 --manifest config/option_lifecycle_capture_manifest_v4.json \
                 --executed-release-sha "${EXECUTED_SHA}" \
                 --output "${REPORT_PATH}"
+              )
               attach_integrity_summary
               STARTUP_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["startup_gate"]["status"])' "${REPORT_PATH}")"
               DECISION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["decision"])' "${REPORT_PATH}")"

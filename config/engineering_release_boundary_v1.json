@@ -1,0 +1,46 @@
+{
+  "schema_version": "engineering_release_boundary_v1",
+  "scope": "FIXED_ENGINEERING_SEPARATE_FROM_LIVE_DATA_QUALITY",
+  "engineering_workflows": {
+    "CI": {
+      "event": "push",
+      "steps": ["Configure", "Verify Required Tests Registered", "Build", "Test"]
+    },
+    "CD": {
+      "event": "push",
+      "steps": ["Wait for Exact CI Success", "Preflight pinned ECS connection", "Build and Push Runtime Image", "Build and Push Research Image", "Build and Push Web Image", "Upload Deployment Bundle", "Deploy to ECS"]
+    },
+    "Closed Loop Smoke": {
+      "event": "workflow_run",
+      "steps": ["Run Smoke on ECS", "Download Smoke Reports", "Evaluate Smoke Evidence"]
+    },
+    "Fixed Engineering Regression": {
+      "event": "workflow_run",
+      "steps": ["Verify fixed timing rejection and closure regressions", "Fetch exact frozen STOP anchor", "Verify frozen closure without claiming current data", "Upload fixed engineering evidence"]
+    }
+  },
+  "data_workflows": {
+    "Option Archive Lifecycle Audit": "success",
+    "Option Lifecycle V4 Gate": "failure"
+  },
+  "known_v4_failure": {
+    "report": "20260922T035334.633790Z.json",
+    "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+    "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+    "snapshot_line": 3,
+    "phase": "snapshot",
+    "artifact_checksums_verified": true
+  },
+  "archive_expected_decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+  "archive_case_canonical_sha256": "7fa05c3633805d3dc47db18844c946dd2701c7f7cbd34f637eccf29a16b596df",
+  "archive_policy_canonical_sha256": "6f23634e0f5e6a708d76387f6552e9089a0ef830bbb82790300d97ececd5530b",
+  "v4_policy_canonical_sha256": "3057e78a46208d72ec4990ea9604744f0ed211e90b3c5f407a1132ee0927d253",
+  "v4_manifest_canonical_sha256": "ea77d54faa383ad5b5f21c520d2d90ecf8ea8b304af8be316f55602d16e20036",
+  "closure_registry_canonical_sha256": "61806c18be984ce4d68582bf6b2e91f1912edae4a87293e8ad6f76ba06b0f3b2",
+  "closure_anchor_zip_sha256": "d9d69ab4bc83ad9c7a5669fb1e3666aa74db5c6112f68ce236496ca9acfc8e1d",
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false,
+  "unexpected_data_failures_block_this_delivery": true,
+  "historical_failure_reclassified_as_pass": false
+}

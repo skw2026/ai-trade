@@ -312,6 +312,12 @@ if(BUILD_TESTING)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_lifecycle_economics_v1.py)
     add_test(NAME option_candidate_closure_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_candidate_closure.py)
+    add_test(NAME fixed_engineering_regression_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_fixed_engineering_regression.py)
+    add_test(NAME engineering_release_boundary_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_check_engineering_release.py)
+    add_test(NAME option_segment_diagnostic_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_diagnose_option_lifecycle_segment.py)
     add_test(NAME option_funding_sensitivity_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_option_funding_sensitivity.py)
     add_test(NAME option_vrp_feasibility_audit_test
