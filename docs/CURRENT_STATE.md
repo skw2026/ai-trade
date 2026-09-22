@@ -1,5 +1,7 @@
 # 当前项目状态
 
+最新结案（2026-09-23）：**OFFLINE_LEARNING_COMPONENT_LOOP_DELIVERED**。代码`2a4f464`已直接main推送并真实部署；本地、CI、Docker内均110/110，远端真实Miner/CatBoost/C++学习链、负例/回滚及五组收据校验通过。Smoke/固定回归成功，实际release与容器revision一致、running、重启0；运行仍PASS_WITH_ACTIONS、execution NOT_EVALUATED。原权限失败经用户批准的同gate一次纠正SHA/run绑定修复，旧失败保留，阶段READY；旧研究/旧工程HALTED哈希未改。Archive仍INSUFFICIENT，V4精确保留唯一旧460.494秒坏段失败，没有新数据资格或真实策略晋升。**本阶段已收口，不再等待两周或重复发布；完整生产自学习/盈利目标尚未完成。下一工程优先项为小时评估与六小时更新解耦，不重开旧市场研究。** 详见[结案复核与后续节奏](reviews/2026-09-22-offline-learning-loop-result.md)及[脱敏机器证据](reviews/2026-09-23-offline-learning-delivery.evidence.json)。以下为保留的过程/失败记录，不覆盖本段结果。
+
 最新接续（2026-09-23）：用户已批准同一 gate 对纠正 CD 提交的 SHA/run 进行一次等价绑定，旧失败及验收标准保留。正在完成类型化门禁、Linux目录属主修复、完整回归和一次纠正发布；尚未取得新远端验收，不宣称部署成功。下面“等待流程决定”是此前记录，现已接续。
 
 最新实测（2026-09-22）：**LOCAL_OFFLINE_COMPONENT_LOOP_PASS / REMOTE_DELIVERY_BLOCKED**。`ea853a3` 已推送；CI110/110、Docker内110/110，但新增远端学习步骤在写 `/evidence/acceptance` 时权限失败，部署未执行。Linux目录属主/cap-drop差异已对照确认，已本地限定为使用宿主UID/GID，不放宽安全限制。原gate BLOCKED；执行者将正式观察命令绑定旧run，纠正代码的新SHA/run无法按原argv复验，已向用户提出一次等价验收入口的流程决定，答复前不发布/部署、不重置门禁。详见[阻断诊断](reviews/2026-09-22-offline-learning-publication-blocked.md)。以下为此前本地通过记录。

@@ -1,0 +1,106 @@
+{
+  "schema_version": "offline_learning_delivery_receipt_v1",
+  "decision": "OFFLINE_LEARNING_COMPONENT_LOOP_DELIVERED",
+  "scope": "TEST_ONLY_OFFLINE_COMPONENT_INTEGRATION",
+  "release_sha": "2a4f464146c0a21ca591b989a00da6966438d0ef",
+  "observed_at_utc": "2026-09-22T17:17:59.828297+00:00",
+  "source_commit": "https://github.com/skw2026/ai-trade/commit/2a4f464146c0a21ca591b989a00da6966438d0ef",
+  "tests": {
+    "local": {"passed": 110, "total": 110, "seconds": 178.45},
+    "ci": {"passed": 110, "total": 110, "seconds": 227.42},
+    "docker": {"passed": 110, "total": 110, "seconds": 152.22},
+    "gate_unit_tests": 22,
+    "learning_harness_unit_tests": 8,
+    "unit_counts_are_included_in_full_ctest_not_additive": true
+  },
+  "runs": {
+    "CI": {"id": 35757951098, "attempt": 1, "conclusion": "success"},
+    "CD": {"id": 35757951133, "attempt": 1, "conclusion": "success"},
+    "Closed Loop Smoke": {"id": 35759427947, "attempt": 1, "conclusion": "success"},
+    "Fixed Engineering Regression": {"id": 35759427892, "attempt": 1, "conclusion": "success"},
+    "Option Archive Lifecycle Audit": {"id": 35759428005, "attempt": 1, "conclusion": "success"},
+    "Option Lifecycle V4 Gate": {"id": 35759427971, "attempt": 1, "conclusion": "failure"}
+  },
+  "learning": {
+    "status": "PASS",
+    "artifact_id": 10709291323,
+    "github_reported_zip_digest": "sha256:acb1402cea5b512d53d5ad0ddca86f1b26ee41f9f8f60d1191ba060a678353fe",
+    "result_sha256": "48d6febac5569c80a1ba86b74a5d0a4d94bf43c9087b6fdda2aff13d5e5b5a8d",
+    "driver_sha256": "44fab1ed026e833d8509aa2bd341dde9e4c32084d1e7e29ab210b73e76ae153b",
+    "verifier_sha256": "5d2db27aba75cc6105bdb9a7c4fad05a0b3f7bed7569fefff68d172c4dbedfab",
+    "training_implementation_sha256": "45919b5c455d395b75938d61f04f6c70ab71075b05118f7756509d3589550e80",
+    "learned_model_sha256": "d4a8d470e789e3eaeb9ae795b6e628d62f4fb65b0afce914a465789836621d14",
+    "shuffled_model_sha256": "52d9e79af535c71788ee245621b53689c3363554e0882c1b58adff8e12a4efb8",
+    "all_reported_training_and_trace_artifact_hashes_verified": true,
+    "all_native_ledgers_matched": true,
+    "all_terminal_positions_flat": true,
+    "max_probability_error": 1.1102230246251565e-16,
+    "cases": {
+      "positive": {"episodes": 495, "offline_control_accepted": true, "mean_net_lcb95": 0.059781812648136985},
+      "adaptive": {"episodes": 495, "offline_control_accepted": true, "update_decisions": 14, "weight_changes": 2},
+      "noise": {"episodes": 491, "offline_control_accepted": false},
+      "shuffled": {"episodes": 1, "offline_control_accepted": false},
+      "cost": {"episodes": 495, "offline_control_accepted": false},
+      "drift": {"episodes": 742, "offline_control_accepted": false, "rollbacks": 2, "cooldown_evaluations": 6}
+    },
+    "synthetic_data_only": true,
+    "strict_takeover_rejects_synthetic_report": true,
+    "hourly_evaluation_proven": false,
+    "risk_normalized_market_advantage_proven": false,
+    "full_production_registry_promotion_proven": false
+  },
+  "engineering": {
+    "decision": "ENGINEERING_PASS_DATA_NOT_QUALIFIED",
+    "container_status": "running",
+    "container_restart_count": 0,
+    "release_and_container_revision_match": true,
+    "runtime_verdict": "PASS_WITH_ACTIONS",
+    "protection_status": "PASS",
+    "account_sync_status": "OK",
+    "execution_status": "NOT_EVALUATED",
+    "closure_latched": true
+  },
+  "data_quality": {
+    "status": "FAIL",
+    "archive_decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+    "v4_decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE",
+    "invalid_segment_count": 1,
+    "known_failure": {
+      "report": "20260922T035334.633790Z.json",
+      "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+      "snapshot_line": 3,
+      "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT"
+    },
+    "historical_failure_reclassified_as_pass": false
+  },
+  "receipt_input_sha256": {
+    "snapshot": "7f3e3ca4b5f23b0b7513ac137d4adf101583bace4b5b89533e428389d7afd8eb",
+    "freshness": "f343d760681636d1a2b90d2c96a898f00554a39a9a05566e4aff5fbf61a7062c",
+    "runtime": "b91781c3526887a2bcde81c6805162bfa0b0d4bece474037892ef9071d652b65",
+    "closure": "61df5ca8d30fc846f1db1b3ea61d94e627a58f095b094d8fa69ba01427bf53f9",
+    "archive": "9efb4a92f0e4422bd2287f59364dc41a6c4450ca2e8776a83143f3cbe770427b",
+    "v4": "5313a36172e2a2f19acc645e07f5fa079bb68eb71a5c3d7cba5b41a1011cd774",
+    "ci_log": "c1d50ae2565d542f981905b6407805aa2c9159bd99480842d9d0263186d07869",
+    "cd_build_log": "e52a2599ec8e55ec6c9aebeb5e75cd1d34e630b1e10a985f6824c9fd4be1a793",
+    "local_receipt_checker": "f49410cbbe0a2d176d70c7c159ae233614cf4d0133b5c25f5c46f34fda6feeab"
+  },
+  "gate": {
+    "stage_status_at_acceptance": "READY",
+    "original_failure_id": "e729fce407bc47b3aa360c4093604576",
+    "original_cd_run_id": 35744573261,
+    "original_failed_sha": "ea853a3a9832249a70a0ecb3d4e22eb5fef731a2",
+    "original_command_sha256": "36d118d7c2fdc64f5520b12699ae5bf26207f9792e321d35fd64966cd4828a51",
+    "corrective_review_sha256": "74a69766ce44fe0ccc27c4fdd80347cfed7cc8a4f8e88067ba5c45044e78fb1f",
+    "corrective_release_attempts": 1,
+    "old_halted_states_unchanged": true,
+    "old_research_state_sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+    "old_engineering_state_sha256": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d"
+  },
+  "full_mechanism_valid": false,
+  "market_economic_evidence": false,
+  "business_qualified": false,
+  "production_goals_complete": false,
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}
