@@ -1,0 +1,132 @@
+name: ECS Segment Readonly Diagnosis
+
+on:
+  workflow_dispatch:
+    inputs:
+      report:
+        description: Exact V4 report filename (timestamp.json)
+        required: true
+        type: string
+      report_sha256:
+        description: Previously observed SHA256 of that report
+        required: true
+        type: string
+      expected_release_sha:
+        description: Existing deployed revision; this workflow never deploys
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ecs-single-segment-readonly-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Diagnose one pinned segment without changing ECS files
+        env:
+          DIAG_REPORT: ${{ inputs.report }}
+          DIAG_REPORT_SHA: ${{ inputs.report_sha256 }}
+          DIAG_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+          ECS_TRANSPORT_HOST: ${{ secrets.ECS_HOST }}
+          ECS_TRANSPORT_USER: ${{ secrets.ECS_USER }}
+          ECS_TRANSPORT_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_TRANSPORT_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_TRANSPORT_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT }}
+        run: |
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shlex
+          import subprocess
+          import sys
+
+          os.umask(0o077)
+          specs = (
+              ('DIAG_REPORT', r'[0-9]{8}T[0-9]{6}\.[0-9]{6}Z\.json', '--report'),
+              ('DIAG_REPORT_SHA', r'[0-9a-f]{64}', '--report-sha256'),
+              ('DIAG_RELEASE_SHA', r'[0-9a-f]{40}', '--expected-release-sha'),
+          )
+          argv = []
+          for name, pattern, flag in specs:
+              value = os.environ.get(name, '')
+              if not re.fullmatch(pattern, value):
+                  raise SystemExit('DIAGNOSTIC_INPUT_INVALID')
+              argv.extend((flag, value))
+          source = Path('tools/diagnose_option_lifecycle_segment.py').read_text()
+          marker = 'AI_TRADE_PINNED_SEGMENT_DIAGNOSTIC'
+          if marker in source:
+              raise SystemExit('DIAGNOSTIC_SOURCE_DELIMITER_COLLISION')
+          script = (
+              'set -euo pipefail\nulimit -v 524288\n'
+              'timeout --signal=TERM --kill-after=5s 90s python3 -B - '
+              + shlex.join(argv) + " <<'" + marker + "'\n" + source + '\n' + marker + '\n'
+          )
+          env = dict(os.environ, ECS_TRANSPORT_MODE='script', ECS_TRANSPORT_TIMEOUT='180s',
+                     ECS_TRANSPORT_ENVS='', ECS_TRANSPORT_SCRIPT=script)
+          result = None
+          transport_code = 2
+          transport_reason = 'NO_DIAGNOSTIC_RECEIPT'
+          safe_transport_reasons = {
+              'ECS_HOST_INVALID', 'ECS_USER_INVALID', 'ECS_PORT_INVALID',
+              'ECS_TRUSTED_FINGERPRINT_REQUIRED', 'ECS_SSH_KEY_REQUIRED', 'ECS_SSH_KEY_INVALID',
+              'ECS_HOST_KEY_SCAN_TIMEOUT', 'ECS_HOST_KEY_SCAN_FAILED',
+              'ECS_HOST_FINGERPRINT_MISMATCH', 'ECS_HOST_KEY_REJECTED',
+              'ECS_SSH_AUTH_FAILED', 'ECS_SSH_CONNECTION_FAILED',
+              'ECS_REMOTE_COMMAND_FAILED', 'ECS_TRANSPORT_TIMEOUT', 'ECS_LOCAL_TRANSPORT_IO_FAILED',
+          }
+          try:
+              completed = subprocess.run(
+                  [sys.executable, '-B', 'deploy/ecs_ssh.py'], env=env,
+                  capture_output=True, timeout=210, check=False)
+              transport_code = completed.returncode
+              for line in completed.stdout.splitlines():
+                  notice = line.decode('utf-8', errors='replace')
+                  prefix = '::error title=ECS transport::'
+                  if notice.startswith(prefix) and notice[len(prefix):] in safe_transport_reasons:
+                      transport_reason = notice[len(prefix):]
+                  try:
+                      candidate = json.loads(line)
+                  except (ValueError, UnicodeError):
+                      continue
+                  if isinstance(candidate, dict) and candidate.get('schema_version') == 'option_lifecycle_segment_diagnostic_v1':
+                      result = candidate
+          except subprocess.TimeoutExpired:
+              transport_reason = 'DIAGNOSTIC_RUNNER_TIMEOUT'
+          # Never upload/echo SSH output: it is not part of the allowlisted receipt.
+          if result is None:
+              result = {'schema_version': 'option_lifecycle_segment_diagnostic_v1',
+                        'diagnosis_completed': False, 'reason_code': transport_reason,
+                        'archive_acceptance_evaluated': False}
+          result['diagnostic_source_sha256'] = hashlib.sha256(source.encode()).hexdigest()
+          result['diagnostic_commit_sha'] = os.environ['GITHUB_SHA']
+          result['transport_completed_successfully'] = transport_code == 0
+          Path('.artifacts').mkdir(exist_ok=True)
+          with Path('.artifacts/segment-diagnostic.json').open('x') as handle:
+              json.dump(result, handle, sort_keys=True, indent=2, allow_nan=False)
+              handle.write('\n')
+          print(json.dumps(result, sort_keys=True, allow_nan=False))
+          if transport_code != 0 or result.get('diagnosis_completed') is not True:
+              raise SystemExit(2)
+          PY
+
+      - name: Retain sanitized diagnostic receipt (not an acceptance result)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecs-segment-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/segment-diagnostic.json
+          retention-days: 7
+          if-no-files-found: warn

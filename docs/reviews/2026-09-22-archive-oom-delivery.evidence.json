@@ -1,0 +1,202 @@
+{
+  "schema_version": "archive_oom_repaired_v4_input_blocked_v1",
+  "observed_at_utc": "2026-09-22T10:03:36.564823+00:00",
+  "code_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+  "status": "ARCHIVE_OOM_REPAIR_OBSERVED_V4_ARCHIVE_INTEGRITY_BLOCKED",
+  "ci": {
+    "run_id": 35711582779,
+    "conclusion": "success",
+    "tests": 106,
+    "seconds": 223.61,
+    "log_sha256": "d5d58751164a47ed560f3a3b30437518824d607a88b481d970fcb56c05601fcf"
+  },
+  "cd": {
+    "run_id": 35711582772,
+    "conclusion": "success",
+    "docker_tests": 106,
+    "docker_test_seconds": 203.29,
+    "log_sha256": "a4b61d60d85e6f4c05e9b45cf6c7b0a3612046dbc1c56e5290b81a2ce28929a6",
+    "deployment": {
+      "status": "PASS",
+      "reason": "deployment_committed",
+      "release": {
+        "git_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99"
+      }
+    }
+  },
+  "smoke": {
+    "run_id": 35712918894,
+    "conclusion": "success",
+    "freshness": {
+      "status": "PASS",
+      "container_restart_count": 0,
+      "expected_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+      "release_git_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+      "container_image_revision": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+      "container_status": "running"
+    },
+    "runtime": {
+      "verdict": "PASS_WITH_ACTIONS",
+      "execution_status": "NOT_EVALUATED",
+      "protection_status": "PASS",
+      "account_sync_status": "OK",
+      "warn_reasons": [
+        "Integrator 处于 canary/active 但未观测到策略接管事件",
+        "Integrator 处于 canary/active 但未观测到 shadow scored>0"
+      ],
+      "integrator_availability": {
+        "schema_version": "integrator_availability_v1",
+        "evidence_scope": "LATEST_OBSERVED_BOOT_OR_LOG_WINDOW",
+        "runtime_mode": "canary",
+        "legacy_source_state": "REJECTED_GOVERNANCE",
+        "legacy_reason_codes": [
+          "GOVERNANCE_REJECTED",
+          "data.training_symbol",
+          "data.bar_interval_ms",
+          "data.online_bar_source",
+          "data.source_venue",
+          "data.source_category",
+          "data.price_type",
+          "data.volume_unit",
+          "metrics_oos.mean_model_net_edge_bps_per_round_trip",
+          "metrics_oos.primary_objective",
+          "governance.primary_objective"
+        ],
+        "router_state": "ARMED_WAITING_ELIGIBLE_SOURCE",
+        "microstructure_source_state": "UNKNOWN",
+        "policy_applied_count": 0,
+        "shadow_scored_window_count": 0,
+        "grants_trading_authority": false,
+        "proves_economic_qualification": false,
+        "waiting_alone_resolves_legacy_rejection": false,
+        "next_action": "REVIEW_REJECTED_SOURCE_CONTRACT_NO_AUTO_RETRAIN_OR_ACTIVATION"
+      }
+    },
+    "diagnostic_matches_summary": true,
+    "business": {
+      "overall_status": "FAIL",
+      "strategy_success_status": "FAIL",
+      "research_decision": "STOP"
+    },
+    "report_sha256": "ad2fe4d6ac9679471dce266277bdf31ef45ff4471ab05e4d260304fa26280f71"
+  },
+  "archive": {
+    "run_id": 35712918944,
+    "conclusion": "success",
+    "report_sha256": "27f3b349de9918a452a81cecc03b3ad381f0acf7b4366759883ca981682ca1ff",
+    "decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+    "integrity": {
+      "checksum_bound_seconds_all_time": 449790.914,
+      "duplicate_snapshot_count": 0,
+      "eligible_snapshot_count_all_time": 7962,
+      "invalid_segment_count": 0,
+      "root_present": true,
+      "valid_segment_count": 504
+    },
+    "resource": {
+      "address_space_limit_bytes": 2147483648,
+      "elapsed_seconds": 68.218,
+      "exit_code": 0,
+      "peak_rss_bytes": 48783360,
+      "pid": 411978,
+      "started_at_epoch_ms": 1790070809618
+    },
+    "resource_log_sha256": "260affcb8ac4b02aaea0c3135c9572b0adcff1af8428d314c3c1831cd012ea29",
+    "frozen_fields_compared": [
+      "window",
+      "lifecycle_coverage",
+      "settlement",
+      "decision",
+      "reason_code",
+      "economic_evidence",
+      "promotion_authority",
+      "demo_activation_authorized",
+      "live_activation_authorized"
+    ],
+    "all_frozen_fields_equal_to_last_success": true,
+    "observed_snapshots": 1652,
+    "qualified_snapshots": 889
+  },
+  "v4": {
+    "run_id": 35712918843,
+    "conclusion": "failure",
+    "report_sha256": "82016c261fb7f00e26ad88588b708052c1438587d8c07e34cdc66003dad9023c",
+    "report": {
+      "archive_integrity": {
+        "checksum_bound_snapshot_count": 24181,
+        "duplicate_snapshot_count": 0,
+        "ignored_pre_observation_snapshot_count": 8,
+        "invalid_segment_count": 1,
+        "root_present": true,
+        "valid_segment_count": 1534
+      },
+      "decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE",
+      "demo_activation_authorized": false,
+      "economic_evidence": false,
+      "generated_at_epoch_ms": 1790070851017,
+      "identities": {
+        "archive_input_set_sha256": "b43c9e190247af93f472e979479a0f79ea69c198932f292a8d71e1a662aa1cd3",
+        "audit_implementation_sha256": "3bddfab77aac596235e7958831d578f3086e757bf4102b8e5a2b99ebad8f933d",
+        "executed_release_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+        "experiment_id": "btc_bybit_usdt_option_lifecycle_capture_v4",
+        "manifest_canonical_sha256": "ea77d54faa383ad5b5f21c520d2d90ecf8ea8b304af8be316f55602d16e20036",
+        "policy_canonical_sha256": "3057e78a46208d72ec4990ea9604744f0ed211e90b3c5f407a1132ee0927d253"
+      },
+      "lifecycle_gate": {
+        "delivery_price_usdt": 79309.8205649,
+        "delivery_time_epoch_ms": 1788768000000,
+        "last_qualified_epoch_ms": 1788767947088,
+        "paired_delivery_evidence_valid": true,
+        "terminal_gap_seconds": 52.912
+      },
+      "limitations": [
+        "This gate qualifies immutable lifecycle data only; it is not a profitability backtest.",
+        "Mutable collector state is excluded from evidentiary reconstruction.",
+        "No account, credential, funding action or order is used by this public-data audit."
+      ],
+      "live_activation_authorized": false,
+      "promotion_authority": false,
+      "reason_code": "ARCHIVE_INTEGRITY_FAILURE",
+      "schema_version": "option_lifecycle_audit_v4",
+      "startup_gate": {
+        "distinct_segment_count": 77,
+        "entry_executable": true,
+        "exact_pair_selected": true,
+        "lifecycle_id": "btc-usdt-1788768000000-79750-a9f8f42224b2",
+        "maximum_internal_gap_seconds": 69.465,
+        "pre_delivery_unqualified_snapshot_count": 0,
+        "qualified_snapshot_count": 1178,
+        "reason_counts": {
+          "TICKER_MISSING": 1
+        },
+        "selected_snapshot_count": 1179,
+        "status": "FAIL",
+        "sticky_cross_segment_continuity": true
+      }
+    },
+    "previous_valid_segments": 1510,
+    "previous_invalid_segments": 0,
+    "startup_detail_equal_except_status": true,
+    "lifecycle_gate_equal": true,
+    "implementation_sha_equal": true,
+    "new_closure_verification": "SKIPPED",
+    "adapter_missing_is_downstream_consequence": true,
+    "invalid_segment_exact_reason": "UNKNOWN"
+  },
+  "engineering_gate": {
+    "status": "BLOCKED",
+    "failure_id": "0f3b3a5b73c44f7687692117aee06785",
+    "failure_count": 2,
+    "label": "source-diagnostics-post-cd"
+  },
+  "research_gate": {
+    "status": "HALTED",
+    "sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "additional_publish_or_rerun_after_v4_failure": false,
+  "original_host_logs_published": false,
+  "snapshot": {
+    "path": ".artifacts/mainline-deployment-20260922/observation-1790070990443144000.json",
+    "sha256": "92a0906adf27c8930096088269d6e1efa40c9aab889cd494f37d11166380bf26"
+  }
+}

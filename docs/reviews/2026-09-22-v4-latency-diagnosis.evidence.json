@@ -1,0 +1,77 @@
+{
+  "schema_version": "v4_latency_metadata_diagnosis_v1",
+  "recorded_at_utc": "2026-09-22T10:36:43Z",
+  "status": "METADATA_LATENCY_ANOMALY_CONFIRMED_RAW_LINK_PENDING",
+  "evidence_source": "USER_PASTED_ECS_METADATA_QUERY_STDOUT",
+  "source_observed_at_utc": null,
+  "metadata": {
+    "report": "20260922T035334.633790Z.json",
+    "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+    "report_sha256_independently_recomputed": false,
+    "status_pass": true,
+    "max_poll_latency_ms": 460494,
+    "limit_ms": 120000,
+    "overage_ms": 340494,
+    "reports": 1537,
+    "suspects": 1,
+    "shown": 1,
+    "scope": "METADATA_DIAGNOSIS_NOT_ARCHIVE_ACCEPTANCE"
+  },
+  "previous_failed_audit": {
+    "run_id": 35712918843,
+    "release_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+    "total_segments": 1535,
+    "invalid_segments": 1,
+    "same_input_snapshot_as_metadata_query": false
+  },
+  "source_behavior": {
+    "capture_status_pass_does_not_enforce_poll_latency": true,
+    "audit_rejects_snapshot_over_frozen_latency": true,
+    "audit_error": "snapshot poll latency exceeds contract",
+    "audit_discards_per_segment_exception_detail": true,
+    "any_invalid_segment_blocks_aggregate": true,
+    "capture_core_sha256": "d736502f367e5a113eb6419b7d8b8d5e2d57de008f5717633a6de37fecbbd906",
+    "audit_core_sha256": "3bddfab77aac596235e7958831d578f3086e757bf4102b8e5a2b99ebad8f933d"
+  },
+  "synthetic_reproduction": {
+    "scope": "LOCAL_DIAGNOSIS_NOT_ECS_ACCEPTANCE",
+    "input_latencies_ms": [120000, 120001, 460494],
+    "capture_statuses": ["PASS", "PASS", "PASS"],
+    "snapshot_results": ["ACCEPTED", "snapshot poll latency exceeds contract", "snapshot poll latency exceeds contract"],
+    "artifact_hashing_mocked": true,
+    "network_calls": 0,
+    "real_archive_replayed": false
+  },
+  "unknowns": [
+    "The metadata digest and raw/feature checksums have not been independently read from ECS.",
+    "The exact offending raw snapshot line and start/end timestamps remain unavailable.",
+    "This metadata suspect has not been proved the sole rejected segment of run 35712918843.",
+    "Host OOM is confirmed separately; its causal role in this poll latency is not proved."
+  ],
+  "local_diagnostic_preparation": {
+    "script": "tools/diagnose_option_lifecycle_segment.py",
+    "workflow": ".github/workflows/ecs-segment-diagnostic.yml",
+    "offline_fixture_checks": 12,
+    "offline_fixture_check_result": "PASS_DIAGNOSTIC_SCOPE_ONLY",
+    "formal_acceptance_executed": false,
+    "workflow_published": false,
+    "workflow_executed": false,
+    "diagnostic_publication_exception_requested": true,
+    "job_timeout_minutes": 5,
+    "remote_timeout_seconds": 90,
+    "remote_address_space_limit_bytes": 536870912,
+    "input_segment_limit": 1
+  },
+  "gate_states_unchanged": {
+    "engineering_status": "BLOCKED",
+    "engineering_failure_id": "0f3b3a5b73c44f7687692117aee06785",
+    "engineering_failure_count": 2,
+    "engineering_state_sha256": "2549d814ad01759df63469d8a209d67327f62a2c7f89268b148badf26dbf786e",
+    "research_status": "HALTED",
+    "research_state_sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "publication_or_deployment": false,
+  "archive_mutation": false,
+  "acceptance_or_policy_change": false,
+  "new_trading_authority": false
+}
