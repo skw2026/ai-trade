@@ -1,0 +1,143 @@
+{
+  "schema_version": "runtime_source_diagnostics_blocked_v1",
+  "decision": "CODE_DEPLOYED_POST_CD_ARCHIVE_BLOCKED",
+  "observed_at_utc": "2026-09-22T04:09:17.987127+00:00",
+  "code_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+  "observation_sha256": "e35d02026fb8d48551f864eb89eb5f367a6f5a4cbbf0ea9c3fc4c5241c8e8b87",
+  "runs": [
+    {
+      "id": 35684829322,
+      "name": "Option Archive Lifecycle Audit",
+      "head_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35684829322"
+    },
+    {
+      "id": 35684829346,
+      "name": "Closed Loop Smoke",
+      "head_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35684829346"
+    },
+    {
+      "id": 35684829320,
+      "name": "Option Lifecycle V4 Gate",
+      "head_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35684829320"
+    },
+    {
+      "id": 35683979257,
+      "name": "CI",
+      "head_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35683979257"
+    },
+    {
+      "id": 35683979288,
+      "name": "CD",
+      "head_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35683979288"
+    }
+  ],
+  "tests": {
+    "local_assess_cases": 88,
+    "local_summary_cases": 75,
+    "ci_ctest_passed": 106,
+    "ci_test_seconds": 238.38,
+    "docker_ctest_passed": 106,
+    "docker_test_seconds": 200.25
+  },
+  "smoke": {
+    "verdict": "PASS_WITH_ACTIONS",
+    "protection_status": "PASS",
+    "execution_status": "NOT_EVALUATED",
+    "account_sync_status": "OK",
+    "warn_reasons": [
+      "Integrator 处于 canary/active 但未观测到策略接管事件",
+      "Integrator 处于 canary/active 但未观测到 shadow scored>0"
+    ],
+    "integrator_availability": {
+      "schema_version": "integrator_availability_v1",
+      "evidence_scope": "LATEST_OBSERVED_BOOT_OR_LOG_WINDOW",
+      "runtime_mode": "canary",
+      "legacy_source_state": "REJECTED_GOVERNANCE",
+      "legacy_reason_codes": [
+        "GOVERNANCE_REJECTED",
+        "data.training_symbol",
+        "data.bar_interval_ms",
+        "data.online_bar_source",
+        "data.source_venue",
+        "data.source_category",
+        "data.price_type",
+        "data.volume_unit",
+        "metrics_oos.mean_model_net_edge_bps_per_round_trip",
+        "metrics_oos.primary_objective",
+        "governance.primary_objective"
+      ],
+      "router_state": "ARMED_WAITING_ELIGIBLE_SOURCE",
+      "microstructure_source_state": "UNKNOWN",
+      "policy_applied_count": 0,
+      "shadow_scored_window_count": 0,
+      "grants_trading_authority": false,
+      "proves_economic_qualification": false,
+      "waiting_alone_resolves_legacy_rejection": false,
+      "next_action": "REVIEW_REJECTED_SOURCE_CONTRACT_NO_AUTO_RETRAIN_OR_ACTIVATION"
+    },
+    "diagnostic_summary_identical": true,
+    "runtime_report_sha256": "309ffa3d010d184451ef9c91df0aa4487878c1b23517109c0a2146ebb869435c",
+    "closed_loop_report_sha256": "4ef65c16b9a1e9aaae83a9a240dff9c28b49c4d00fd19c056307353970701b69",
+    "freshness_status": "PASS",
+    "restart_count": 0
+  },
+  "business": {
+    "overall_status": "FAIL",
+    "strategy_success_status": "FAIL",
+    "research_decision": "STOP"
+  },
+  "archive_failure": {
+    "decision": "TECHNICALLY_INVALID_ARCHIVE",
+    "reason_code": "REMOTE_AUDIT_COMMAND_FAILED",
+    "remote_exit_status": 137,
+    "report_sha256": "c88ab085b6634796f59642ac53d1b99979bbf4c42d2d032495f376ccfea358c5",
+    "raw_job_log_sha256": "aaba7a968f0a67260938334648c9b21e1f5e4df70702aecee16467d3980b0342",
+    "failure_started_at_utc": "2026-09-22T03:53:52Z",
+    "failure_completed_at_utc": "2026-09-22T04:04:27Z",
+    "ssh_connected_and_release_integrity_passed": true,
+    "root_cause_status": "unknown",
+    "oom_confirmed": false
+  },
+  "candidate_governance": {
+    "decision": "CLOSED_CANDIDATE_NO_REOPEN",
+    "closure_evidence_verified": true,
+    "closure_latched": true,
+    "promotion_authority": false,
+    "demo_activation_authorized": false,
+    "live_activation_authorized": false
+  },
+  "validation_gate": {
+    "status": "BLOCKED",
+    "failure_id": "8eb82b37bfcf463094aabbab490dd1e4",
+    "label": "source-diagnostics-post-cd",
+    "review_accepted": false,
+    "retry_performed": false
+  },
+  "research_gate": {
+    "status": "HALTED",
+    "sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "code_risk": "All full snapshots retained before lifecycle-window filtering; OOM is plausible but no host kill evidence available.",
+  "missing_evidence": "ECS kernel/process termination record around 2026-09-22T04:04:27Z",
+  "raw_evidence_published": false
+}

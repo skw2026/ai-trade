@@ -1,0 +1,52 @@
+{
+  "schema_version": "archive_host_oom_evidence_v1",
+  "source": "User-provided ECS journal excerpt, received 2026-09-22",
+  "source_sha256": "01f9f57ed0a11884361420c907cb3ac4956745f03b018982cd0bf3ba60d77daa",
+  "source_published": false,
+  "redactions": ["host identifier", "SSH source IP", "unrelated host processes and raw kernel stack"],
+  "failed_release_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+  "archive_run_id": 35684829322,
+  "remote_exit_status": 137,
+  "remote_error_at_utc": "2026-09-22T04:04:27.3521846Z",
+  "kernel_kill_at_utc": "2026-09-22T04:04:26Z",
+  "oom_scope": "global_oom",
+  "constraint": "CONSTRAINT_NONE",
+  "victim": {
+    "comm": "python3",
+    "pid": 307958,
+    "anon_rss_kib": 4346384,
+    "file_rss_kib": 0,
+    "shmem_rss_kib": 0,
+    "total_vm_kib": 4365280,
+    "oom_score_adj": 0,
+    "rss_gib": 4.1450347900390625
+  },
+  "host": {
+    "ram_pages": 2055394,
+    "page_size_bytes_inferred_from_matching_victim_rows": 4096,
+    "ram_gib": 7.840705871582031,
+    "total_swap_kib": 0,
+    "free_swap_kib": 0
+  },
+  "other_large_python": {
+    "pid": 308508,
+    "rss_pages": 476240,
+    "rss_gib": 1.81671142578125,
+    "exact_command": "UNKNOWN"
+  },
+  "corroboration": [
+    "systemd recorded an OOM-killed process in session-58795.scope.",
+    "That session and its SSH connection closed at 04:04:27 UTC, matching the failed Archive command.",
+    "The same host reported a snapd watchdog timeout and SIGABRT; this is a separate process/event, not the Python OOM victim."
+  ],
+  "interpretation": {
+    "host_global_oom_confirmed": true,
+    "python_oom_kill_confirmed": true,
+    "archive_failure_link": "Strong same-host, same-second/session correlation with exit 137 and the full-snapshot retention code path; historical full command line was not captured.",
+    "allocation_trigger": "AliYunDunUpdate",
+    "allocation_trigger_is_not_proven_memory_pressure_cause": true,
+    "other_python_is_v4": "UNCONFIRMED",
+    "code_risk": "Full archive snapshots retained before selecting the lifecycle window.",
+    "no_claim_of_exact_per_workflow_memory_attribution": true
+  }
+}

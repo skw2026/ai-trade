@@ -16,9 +16,10 @@ import math
 import os
 import pathlib
 import re
+import sys
 import tempfile
 import time
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Callable, Dict, Mapping, Sequence
 
 import capture_bybit_option_vrp_v2 as capture
 from audit_option_vrp_sequential_payoff import (
@@ -208,6 +209,26 @@ def _coverage_gaps(timestamps: Sequence[int], *, start: int, end: int,
     return gaps
 
 
+def _lifecycle_snapshot_projection(snapshot: Dict[str, Any], *, start: int, end: int,
+                                   symbols: Sequence[str]) -> Dict[str, Any] | None:
+    """Retain only what lifecycle qualification reads, after full input checks.
+
+    Keep duplicate option rows: collapsing them would weaken qualification.
+    Delivery evidence, including evidence after this window, is retained by the
+    replay layer independently of this payload projection.
+    """
+    timestamp = int(snapshot["timestamp_epoch_ms"])
+    if not start <= timestamp <= end:
+        return None
+    return {
+        "timestamp_epoch_ms": timestamp,
+        "scoped_options": [row for row in snapshot["scoped_options"]
+                           if str(row.get("symbol") or "") in symbols],
+        "hedge_ticker": snapshot.get("hedge_ticker"),
+        "hedge_orderbook_l1": snapshot.get("hedge_orderbook_l1"),
+    }
+
+
 def audit_lifecycle(*, root: pathlib.Path, policy_path: pathlib.Path,
                     manifest_path: pathlib.Path, case_path: pathlib.Path,
                     executed_release_sha: str | None = None,
@@ -216,7 +237,6 @@ def audit_lifecycle(*, root: pathlib.Path, policy_path: pathlib.Path,
         raise ValueError("executed release SHA is invalid")
     policy, manifest = load_frozen_contract(policy_path, manifest_path)
     case = load_case(case_path, policy=policy, manifest=manifest)
-    replay = replay_capture_root(root, policy=policy, manifest=manifest)
     window = case["window"]
     option_contract = case["option_contract"]
     hedge_contract = case["hedge_contract"]
@@ -224,6 +244,12 @@ def audit_lifecycle(*, root: pathlib.Path, policy_path: pathlib.Path,
     start, end = int(window["start_epoch_ms"]), int(window["end_epoch_ms"])
     delivery = int(option_contract["delivery_time_epoch_ms"])
     symbols = [str(value) for value in option_contract["symbols"]]
+    replay = replay_capture_root(
+        root, policy=policy, manifest=manifest,
+        snapshot_projector=lambda snapshot: _lifecycle_snapshot_projection(
+            snapshot, start=start, end=end, symbols=symbols
+        ),
+    )
     option_minimum = float(option_contract["minimum_executable_size_btc"])
     hedge_minimum = float(hedge_contract["minimum_executable_size_btc"])
     maximum_age_ms = int(hedge_contract["maximum_book_age_seconds"]) * 1000
@@ -425,15 +451,37 @@ def _atomic_write(path: pathlib.Path, payload: Mapping[str, Any]) -> None:
             os.unlink(temporary_name)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=pathlib.Path, required=True)
-    parser.add_argument("--policy", type=pathlib.Path, required=True)
-    parser.add_argument("--manifest", type=pathlib.Path, required=True)
-    parser.add_argument("--case", type=pathlib.Path, required=True)
-    parser.add_argument("--output", type=pathlib.Path)
-    parser.add_argument("--executed-release-sha")
-    args = parser.parse_args()
+def _with_resource_receipt(operation: Callable[[], int]) -> int:
+    """Emit allowlisted process evidence without paths, input rows or stderr.
+
+    The remote shell sets RLIMIT_AS before starting Python. A killed process
+    cannot emit its final receipt; its flushed start PID still binds host logs.
+    """
+    import resource
+
+    started = time.monotonic()
+    limit = resource.getrlimit(resource.RLIMIT_AS)[0]
+    identity = {"pid": os.getpid(), "started_at_epoch_ms": int(time.time() * 1000),
+                "address_space_limit_bytes": None if limit == resource.RLIM_INFINITY else limit}
+    print("ARCHIVE_AUDIT_STARTED " + json.dumps(identity, sort_keys=True), flush=True)
+    exit_code = None
+    try:
+        exit_code = operation()
+        return exit_code
+    except MemoryError:
+        exit_code = 70
+        print("ARCHIVE_AUDIT_MEMORY_ALLOCATION_FAILED", flush=True)
+        return exit_code
+    finally:
+        maximum_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        print("ARCHIVE_AUDIT_RESOURCE " + json.dumps({
+            **identity, "exit_code": exit_code,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "peak_rss_bytes": int(maximum_rss if sys.platform == "darwin" else maximum_rss * 1024),
+        }, sort_keys=True), flush=True)
+
+
+def _execute_cli(args: argparse.Namespace) -> int:
     report = audit_lifecycle(
         root=args.root, policy_path=args.policy, manifest_path=args.manifest,
         case_path=args.case, executed_release_sha=args.executed_release_sha,
@@ -443,6 +491,22 @@ def main() -> int:
         _atomic_write(args.output, report)
     print(rendered)
     return 2 if report["decision"] == INVALID_DECISION else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=pathlib.Path, required=True)
+    parser.add_argument("--policy", type=pathlib.Path, required=True)
+    parser.add_argument("--manifest", type=pathlib.Path, required=True)
+    parser.add_argument("--case", type=pathlib.Path, required=True)
+    parser.add_argument("--output", type=pathlib.Path)
+    parser.add_argument("--executed-release-sha")
+    parser.add_argument("--emit-resource-usage", action="store_true",
+                        help="Emit process identity, configured address-space limit and peak RSS")
+    args = parser.parse_args()
+    if args.emit_resource_usage:
+        return _with_resource_receipt(lambda: _execute_cli(args))
+    return _execute_cli(args)
 
 
 if __name__ == "__main__":

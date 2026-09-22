@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
+import contextlib
+import io
 import json
 import lzma
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -244,6 +248,60 @@ class OptionArchiveLifecycleTest(unittest.TestCase):
         self.assertNotIn(".jsonl.xz", rendered)
         self.assertNotIn("invalid_segments", rendered)
 
+    def test_projection_preserves_whole_report_and_post_window_delivery(self):
+        def mutate(rows):
+            rows[-1] = self.snapshot(self.end)
+            rows.append(self.snapshot(self.end + 60000, delivery=True))
+            for snapshot in rows:
+                unrelated = dict(snapshot["scoped_options"][0], symbol="BTC-OTHER-C-USDT")
+                snapshot["scoped_options"].append(unrelated)
+            return rows
+
+        projected, _ = self.run_audit(mutate)
+        replay = lifecycle.replay_capture_root
+        def full_replay(root, **kwargs):
+            kwargs.pop("snapshot_projector")
+            return replay(root, **kwargs)
+        with mock.patch.object(lifecycle, "replay_capture_root", side_effect=full_replay):
+            full, _ = self.run_audit(mutate)
+        self.assertEqual(projected, full)
+        self.assertEqual(projected["decision"], lifecycle.PASS_DECISION)
+        self.assertEqual(projected["archive_integrity"]["eligible_snapshot_count_all_time"], 4)
+        self.assertEqual(projected["lifecycle_coverage"]["observed_snapshot_count"], 3)
+
+    def test_projection_keeps_duplicate_target_rows_and_rejects_bad_unrelated_rows(self):
+        def duplicate(rows):
+            rows[0]["scoped_options"].append(dict(rows[0]["scoped_options"][0]))
+            return rows
+        report, _ = self.run_audit(duplicate)
+        self.assertEqual(report["decision"], lifecycle.INSUFFICIENT_DECISION)
+        self.assertEqual(report["lifecycle_coverage"]["reason_counts"]["DUPLICATE_OPTION_SYMBOL"], 1)
+
+        def bad_unrelated(rows):
+            rows.append(self.snapshot(self.end + 60000))
+            rows[-1]["scoped_options"].append(
+                dict(rows[-1]["scoped_options"][0], symbol="BTC-OTHER-C-USDT", settleCoin="USDC")
+            )
+            return rows
+        report, _ = self.run_audit(bad_unrelated)
+        self.assertEqual(report["decision"], lifecycle.INVALID_DECISION)
+
+    def test_projection_retains_only_window_pair_and_hedge_without_mutating_input(self):
+        snapshot = self.snapshot(self.start)
+        snapshot["scoped_options"].append(dict(snapshot["scoped_options"][0], symbol="unrelated"))
+        identity = capture.canonical_sha256(snapshot)
+        project = lambda row: lifecycle._lifecycle_snapshot_projection(
+            row, start=self.start, end=self.end, symbols=self.symbols
+        )
+        retained = project(snapshot)
+        self.assertEqual(set(retained), {
+            "timestamp_epoch_ms", "scoped_options", "hedge_ticker", "hedge_orderbook_l1"
+        })
+        self.assertEqual(len(retained["scoped_options"]), 2)
+        self.assertEqual(capture.canonical_sha256(snapshot), identity)
+        self.assertIsNone(project(self.snapshot(self.end + 1)))
+        self.assertIsNone(project(self.snapshot(self.start - 1)))
+
     def test_workflow_exposes_only_aggregate_index_without_authentication(self):
         workflow = (ROOT / ".github" / "workflows" / "option-archive-lifecycle.yml").read_text(
             encoding="utf-8"
@@ -258,6 +316,64 @@ class OptionArchiveLifecycleTest(unittest.TestCase):
         self.assertIn("REMOTE_AUDIT_COMMAND_FAILED", workflow)
         self.assertIn("for attempt in 1 2 3", workflow)
         self.assertNotIn("GITHUB_TOKEN", workflow)
+        self.assertIn("ulimit -v 2097152 || exit 70", workflow)
+        self.assertIn("--emit-resource-usage", workflow)
+        self.assertLess(workflow.index("ulimit -v"), workflow.index("python3 -u tools/audit_option_archive_lifecycle.py"))
+
+    def test_resource_receipt_preserves_exit_status_and_omits_inputs(self):
+        import resource
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = lifecycle._with_resource_receipt(lambda: 2)
+        self.assertEqual(status, 2)
+        lines = output.getvalue().splitlines()
+        self.assertEqual(len(lines), 2)
+        started = json.loads(lines[0].split(" ", 1)[1])
+        finished = json.loads(lines[-1].split(" ", 1)[1])
+        self.assertGreater(started["pid"], 0)
+        self.assertEqual(started["pid"], finished["pid"])
+        self.assertEqual(finished["exit_code"], 2)
+        self.assertGreaterEqual(finished["peak_rss_bytes"], 0)
+        self.assertEqual(set(finished), {
+            "pid", "started_at_epoch_ms", "address_space_limit_bytes",
+            "exit_code", "elapsed_seconds", "peak_rss_bytes",
+        })
+        limit = resource.getrlimit(resource.RLIMIT_AS)[0]
+        self.assertEqual(started["address_space_limit_bytes"],
+                         None if limit == resource.RLIM_INFINITY else limit)
+
+    def test_memory_failure_is_nonzero_and_does_not_print_exception_content(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = lifecycle._with_resource_receipt(mock.Mock(side_effect=MemoryError("private-path")))
+        self.assertEqual(status, 70)
+        self.assertIn("ARCHIVE_AUDIT_MEMORY_ALLOCATION_FAILED", output.getvalue())
+        self.assertNotIn("private-path", output.getvalue())
+        self.assertEqual(json.loads(output.getvalue().splitlines()[-1].split(" ", 1)[1])["exit_code"], 70)
+
+    def test_unexpected_error_is_not_turned_into_success(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaisesRegex(ValueError, "fixture"):
+            lifecycle._with_resource_receipt(mock.Mock(side_effect=ValueError("fixture")))
+        self.assertIsNone(json.loads(output.getvalue().splitlines()[-1].split(" ", 1)[1])["exit_code"])
+
+    @unittest.skipUnless(sys.platform == "linux", "real address-space budget requires Linux")
+    def test_real_process_budget_rejects_allocation_without_host_oom(self):
+        # Only the disposable child is limited. The allocation must fail before
+        # materializing 256 MiB; no stress workload or parent limit change.
+        code = """
+import resource
+import audit_option_archive_lifecycle as audit
+resource.setrlimit(resource.RLIMIT_AS, (64 * 1024 * 1024, 64 * 1024 * 1024))
+raise SystemExit(audit._with_resource_receipt(lambda: len(bytearray(256 * 1024 * 1024))))
+"""
+        result = subprocess.run([sys.executable, "-c", code], cwd=ROOT / "tools",
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 70, result.stderr)
+        self.assertIn("ARCHIVE_AUDIT_MEMORY_ALLOCATION_FAILED", result.stdout)
+        receipt = json.loads(result.stdout.splitlines()[-1].split(" ", 1)[1])
+        self.assertEqual(receipt["address_space_limit_bytes"], 64 * 1024 * 1024)
+        self.assertEqual(receipt["exit_code"], 70)
 
 
 if __name__ == "__main__":

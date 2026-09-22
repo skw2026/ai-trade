@@ -1,6 +1,12 @@
 # 当前项目状态
 
-封版后接续（2026-09-22）：用户要求继续，现仅补齐 Smoke 两项告警的原因诊断，范围见[有界工程计划](plans/2026-09-22-runtime-source-diagnostics.md)。确认旧 integrator 被治理门槛拒绝，而 canary 模式只是路由仍 armed，不等于模型可用；微观结构源具体缺口不能由无事件推断，保留 UNKNOWN。新增只读 `integrator_availability`，不改变原判定/警告、策略源码、配置或研究关闭。88 项运行评估、75 项摘要测试通过，旧两份日志离线新旧全字段一致，见[本地证据](reviews/2026-09-22-runtime-source-diagnostics.local-evidence.json)。本批待一次精确 SHA 发布及 post-CD 验收，不提前计部署通过。下方原工程结案及经济负结论保持。
+最新接续（2026-09-22 17:38）：**`HOST_OOM_CONFIRMED_CORRECTIVE_RELEASE_REVIEWED`**。用户补充的内核日志确认 04:04:26 UTC 主机 `global_oom` 杀掉 Python（4.145 GiB RSS），对应 SSH 会话随后结束，与 Archive 137 时点一致；不再缺同一事件日志。完整历史命令行未记录，另一个 1.817 GiB Python 不直接归为 V4。原工程 gate 已接受[根因/路线复盘](reviews/2026-09-22-archive-oom-review.json)，RETRY_APPROVED；准备唯一一次纠正发布及原 post-CD 命令复验。修复保留全归档校验、减少快照驻留，仅为 Archive 增加 2 GiB 地址空间上限和脱敏 PID/RSS 回执。本地诊断 Archive 15 成功/1 Linux 专属跳过、Sequential 13、SSH 15；YAML 缺依赖先停并隔离补齐后一次复核成功。尚未宣称纠正部署/全量验收通过；旧研究仍 HALTED。详见[修复与固定出口](reviews/2026-09-22-archive-oom-repair.md)及[主机证据](reviews/2026-09-22-archive-oom.evidence.json)。以下缺日志/unknown 是原阶段记录，不能覆盖本段新证据。
+
+最新接续（2026-09-22 13:00）：**`LOCAL_MEMORY_REPAIR_DIAGNOSED_REMOTE_CAUSE_UNKNOWN`**。针对 Archive 全归档完整快照驻留风险，已完成本地限定投影修复；原全部输入校验、全时间统计、重复/交割冲突及生命周期裁决保留。13 组合成新旧对照一致，384 快照样本 Python 分配峰值从 24,620,664 降到 1,673,365 字节（约 93.2%）；这不是 ECS OOM 证明或正式验收。新增 7 个回归方法待门禁允许后执行，未提交推送或部署。04:57:39 UTC 远端复查仍是原 Archive failure、其他四项 success；两个 gate 哈希未变。现有本机/工作流入口无法取得内核终止证据，仍需 ECS 对应时段脱敏日志或可用 SSH 别名；不盲重跑、不继续扩大改造。详见[本地修复、诊断及接续条件](reviews/2026-09-22-archive-memory-local-repair.md)和[证据](reviews/2026-09-22-archive-memory-local-repair.evidence.json)。
+
+封版后接续（2026-09-22 12:09）：**`CODE_DEPLOYED_POST_CD_ARCHIVE_BLOCKED`**。用户要求继续后，已通过 `a59c2b8` 直接 main 发布只读 `integrator_availability` 诊断；本地 88+75 项通过，精确 SHA 的 CI 和 Docker 内均 106/106，CD、Smoke、V4 成功，新诊断已在真实报告及摘要生效。**Archive 后置审计失败：远端退出 137**，SSH 和 release tree 校验已通过；OOM 只是待证假设，不是已确认根因。已暂停结案/后续发布，工程 gate BLOCKED，未 rerun。代码存在全归档完整快照常驻内存再筛窗口的资源风险；仍缺 ECS 12:04:27 前后的内核/进程终止证据，已请求脱敏日志或可用 SSH 别名。详见[本轮结果与失败复盘](reviews/2026-09-22-runtime-source-diagnostics-result.md)和[脱敏证据](reviews/2026-09-22-runtime-source-diagnostics-result.evidence.json)。失败后这些更新仅本地留档，未再提交推送。
+
+本批不改策略、风控、账户和候选：旧模型治理拒绝已明确显示，canary 不等于模型可用；微观结构源具体缺口仍 UNKNOWN；原两项警告保留，Smoke 为 PASS_WITH_ACTIONS，经济结果 FAIL / STOP、旧研究 HALTED 保持。范围见[有界工程计划](plans/2026-09-22-runtime-source-diagnostics.md)，旧日志不变性及本地回归见[本地证据](reviews/2026-09-22-runtime-source-diagnostics.local-evidence.json)。以下 `e47e21b` 是上一批已完成工程交付，不覆盖本批的归档失败。
 
 更新时间：2026-09-22 11:24（Asia/Shanghai；本次工程阶段始于 2026-09-21 UTC）
 

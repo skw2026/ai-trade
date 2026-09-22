@@ -1,0 +1,251 @@
+{
+  "base_sha": "a59c2b80eeb8788ba389a40d2b5fe1f9d12f8c6d",
+  "baseline_source_sha256": {
+    "lifecycle": "729b6b7276968d1339079ee5303d22439bd0b217073dacccc166ebe4bdbf27d3",
+    "replay": "70c0a50b7e1c0b1cd06b488000e0b2787e199bda00feb50600ba035f3c5ff268"
+  },
+  "gate_hashes_before_and_after": {
+    ".artifacts/engineering-freeze-20260921/validation-state.json": "322688103a29ea186b4a5ab9b3588425c9e0751cbe61714237f849098cefd47d",
+    ".artifacts/validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "gates_unchanged": true,
+  "kind": "LOCAL_SYNTHETIC_DIAGNOSTIC_NOT_RELEASE_ACCEPTANCE",
+  "limitations": [
+    "Python traced allocations, not ECS RSS or memory limits.",
+    "Synthetic inputs only; no real archive qualification or OOM attribution.",
+    "Metadata still grows with archive identities, delivery evidence and segment count.",
+    "Formal unit/CI/post-CD validation remains blocked."
+  ],
+  "local_source_sha256": {
+    "audit_option_archive_lifecycle.py": "1ba5828d7bed3ac4145e63b5fcea8d6e09a2ebb503b4cee930300a1649531462",
+    "audit_option_vrp_sequential_payoff.py": "51a2138132de48123054818b3aeff17a523d654a5744dce765855f5dc816a0bb",
+    "test_audit_option_archive_lifecycle.py": "3cadbdc055fc3048820826da42f65ccdc2e11c689545d24f648715e3629d2c02",
+    "test_audit_option_vrp_sequential_payoff.py": "5b118c352f5b831dc8f0631cea7491e355ff3dea73d28a8638e7a6ae682a93d2"
+  },
+  "memory": [
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "baseline": {
+        "elapsed_seconds": 0.1098,
+        "peak_python_bytes": 5370180,
+        "retained_option_row_count": 3200,
+        "retained_python_bytes": 3846873,
+        "retained_snapshot_count": 64
+      },
+      "input_snapshots": 64,
+      "local_projection": {
+        "elapsed_seconds": 0.1072,
+        "peak_python_bytes": 1610649,
+        "retained_option_row_count": 6,
+        "retained_python_bytes": 26733,
+        "retained_snapshot_count": 3
+      },
+      "option_rows_per_snapshot": 50,
+      "peak_reduction_fraction": 0.700075
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "baseline": {
+        "elapsed_seconds": 0.6426,
+        "peak_python_bytes": 24620664,
+        "retained_option_row_count": 19200,
+        "retained_python_bytes": 23031417,
+        "retained_snapshot_count": 384
+      },
+      "input_snapshots": 384,
+      "local_projection": {
+        "elapsed_seconds": 0.6313,
+        "peak_python_bytes": 1673365,
+        "retained_option_row_count": 6,
+        "retained_python_bytes": 26829,
+        "retained_snapshot_count": 3
+      },
+      "option_rows_per_snapshot": 50,
+      "peak_reduction_fraction": 0.932034
+    }
+  ],
+  "observations": [
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "PASS_ARCHIVE_LIFECYCLE_ONLY",
+      "default_replay_exactly_equal": true,
+      "fixture": "clean",
+      "invalid_segment_count": 0,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "PASS_ARCHIVE_LIFECYCLE_ONLY",
+      "default_replay_exactly_equal": true,
+      "fixture": "late_delivery",
+      "invalid_segment_count": 0,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "PASS_ARCHIVE_LIFECYCLE_ONLY",
+      "default_replay_exactly_equal": true,
+      "fixture": "duplicate_identical",
+      "invalid_segment_count": 0,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+      "default_replay_exactly_equal": true,
+      "fixture": "duplicate_target_row",
+      "invalid_segment_count": 0,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "within_timestamp",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "across_timestamp",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "within_delivery",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "across_delivery",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "bad_outside_window",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "PASS_ARCHIVE_LIFECYCLE_ONLY",
+      "default_replay_exactly_equal": true,
+      "fixture": "pre_observation",
+      "invalid_segment_count": 0,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "backwards",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "row_count",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    },
+    {
+      "all_integrity_metadata_exactly_equal": true,
+      "decision": "TECHNICALLY_INVALID_ARCHIVE",
+      "default_replay_exactly_equal": true,
+      "fixture": "tamper_outside_window",
+      "invalid_segment_count": 1,
+      "lifecycle_report_equal_except_implementation_identity": true
+    }
+  ],
+  "observed_at_utc": "2026-09-22T04:59:22.239462+00:00",
+  "remote_oom_confirmed": false,
+  "diagnostic_script": {
+    "path": ".artifacts/archive-memory-diagnostic-20260922/probe.py",
+    "sha256": "ecceb458e78aad0914c0511ae31f2ef775c5d40973867dec8b5c31d017618189"
+  },
+  "private_result": {
+    "path": ".artifacts/archive-memory-diagnostic-20260922/result.json",
+    "sha256": "4aa6411e84bb8c2197873416edffd076e1178e6b3bc2c1b83bea059d00d8fbc3"
+  },
+  "remote_observation": {
+    "observed_at_utc": "2026-09-22T04:57:39.049629+00:00",
+    "path": ".artifacts/mainline-deployment-20260922/observation-1790053059051093000.json",
+    "sha256": "1844942f052dd6e939235322e2c42c6f52e4d76aaa580bae16d9222ff5c43edf",
+    "runs": [
+      {
+        "id": 35684829322,
+        "name": "Option Archive Lifecycle Audit",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1
+      },
+      {
+        "id": 35684829346,
+        "name": "Closed Loop Smoke",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      },
+      {
+        "id": 35684829320,
+        "name": "Option Lifecycle V4 Gate",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      },
+      {
+        "id": 35683979257,
+        "name": "CI",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      },
+      {
+        "id": 35683979288,
+        "name": "CD",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1
+      }
+    ]
+  },
+  "engineering_gate": {
+    "status": "BLOCKED",
+    "failure_id": "8eb82b37bfcf463094aabbab490dd1e4",
+    "root_cause_status": "unknown",
+    "review_submitted": false,
+    "retry_performed": false
+  },
+  "research_gate": {
+    "status": "HALTED",
+    "reopened": false
+  },
+  "delivery": {
+    "local_repair_only": true,
+    "additional_unit_test_methods": 7,
+    "formal_unit_tests_run": false,
+    "committed": false,
+    "pushed": false,
+    "deployed": false
+  },
+  "access_checks": {
+    "project_ssh_alias_found": false,
+    "project_ssh_environment_present": false,
+    "aliyun_cli_available": false,
+    "existing_workflow_kernel_log_input": false,
+    "secrets_exported": false
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "failure_id": "8eb82b37bfcf463094aabbab490dd1e4",
+  "decision": "retry",
+  "goal": "Complete the already-authorized source-diagnostics release and exact-SHA CI/CD/post-CD engineering acceptance without changing economic qualification or trading behavior.",
+  "expected": "CI, CD, Smoke, Archive and V4 succeed for one deployed main SHA; Archive must perform all original integrity and lifecycle checks.",
+  "observed": "On a59c2b8, Archive remote Python terminated with status 137 at 04:04:27 UTC; CI/CD/Smoke/V4 succeeded. The original grouped check first reported the then-incomplete Smoke, while the decisive Archive failure persisted. User-supplied host logs now record a global OOM killing python3 PID 307958 at 04:04:26 UTC, 4.145 GiB anonymous RSS, and the affected SSH session closing at 04:04:27. Another Python process held 1.817 GiB; total host RAM was approximately 7.841 GiB, without swap.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The host exhausted allocatable memory and the kernel OOM killer killed a large Python process in the failed SSH time window. The archive implementation retains all full snapshots before filtering one lifecycle; this is a confirmed unbounded payload-retention defect and matches the failed job's resource behavior. Concurrent memory consumption and missing audit process budget aggravate the failure. The full historical command lines of the two Python PIDs were not captured, so exact per-workflow attribution remains unconfirmed; AliYunDunUpdate merely triggered allocation and is not established as the memory-pressure cause. The former unknown OOM hypothesis is now supported by explicit global_oom and Out of memory: Killed process records. SSH trust and release integrity passed; this was not the configured 20-minute timeout.",
+  "evidence": [
+    "docs/reviews/2026-09-22-archive-oom.evidence.json; original user attachment sha256 01f9f57ed0a11884361420c907cb3ac4956745f03b018982cd0bf3ba60d77daa (raw host/IP log not published)",
+    "docs/reviews/2026-09-22-runtime-source-diagnostics-result.evidence.json; Archive run 35684829322/job 106609309898, remote_exit_status 137",
+    "docs/reviews/2026-09-22-archive-memory-local-repair.evidence.json; 13 synthetic deployed-source comparisons preserve original reports/integrity; 384 snapshots reduce traced Python peak 24620664 to 1673365 bytes",
+    "tools/audit_option_vrp_sequential_payoff.py replay_capture_root; tools/audit_option_archive_lifecycle.py audit_lifecycle"
+  ],
+  "next_action": "Finish the bounded snapshot projection repair with unchanged full-input checks, add an Archive-only 2 GiB address-space ceiling and allowlisted PID/peak-RSS/elapsed/exit receipts, run bounded local diagnostic regressions, then exactly one reviewed corrective main publication using existing CI/CD. The resource ceiling applies only inside the remote audit subshell; failure remains nonzero and never qualifies an incomplete report. Observe exact-SHA CI/CD/Smoke/Archive/V4 and retry the original post-CD command once in the same working directory. Preserve all failed snapshots. Do not rerun the old workflow, raise the ceiling on failure, export secrets, add swap, stop agents, alter trading, or reopen research.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Repair the existing mandatory read-only archive acceptance, not strategy selection or profitability. Keep the same qualification thresholds, inputs and post-CD workflow set.",
+    "data_feasibility": "Kernel evidence has now been supplied; no further user log or SSH credential is required for this corrective attempt. Existing GH Actions transport can execute the reviewed repair and deliver aggregate evidence.",
+    "method_feasibility": "Validate and hash full records but retain only needed lifecycle fields; preserve all-time identities, counts, delivery evidence, duplicate conflicts and whole-segment commit rules. Synthetic old/new equality and memory observations support the approach. A 2 GiB virtual-memory cap, below the observed 4.145 GiB victim RSS, bounds this audit process tree; it is not a guarantee against unrelated host pressure. PID/RSS receipts make the corrective run measurable.",
+    "budget_and_exit": "At most one engineering hour from this evidence receipt for local repair/diagnostics and one corrective publication; remote jobs retain existing timeouts. Any new diagnostic, CI, deployment or post-CD failure stops dependent work. No blind rerun, second push, budget increase or server upgrade. After review only one original-command retry may clear the engineering gate."
+  },
+  "route_reassessment": {
+    "old_route_failure": "A single-window audit repeatedly accumulated the entire growing archive as Python objects on a shared small host; concurrent post-CD consumers could exceed host memory. Waiting, rebuilding unchanged code or adding historical samples cannot fix that retention pattern, and generic exit reporting hid resource attribution.",
+    "replacement": "Keep full archive integrity checks while projecting retained payloads, constrain this audit's address space, and emit secret-free process/resource receipts. Preserve all existing qualification decisions and exact-release acceptance.",
+    "feasibility_evidence": "Explicit host OOM record, 4.145 GiB victim RSS, no swap, and 13 fixed-input old/new comparisons plus measured 93.2% traced-peak reduction on the larger synthetic fixture. Real archive resource usage remains a required corrective-run observation, not a preclaimed result.",
+    "budget": "One hour local engineering, one corrective CI/CD publication, one original post-CD retry; no account/server-capacity changes or new research.",
+    "stop_condition": "Any new failure, memory allocation failure, missing resource evidence, release mismatch or altered integrity/qualification blocks acceptance. A second unresolved failure requires a new route reassessment rather than another automatic run."
+  }
+}

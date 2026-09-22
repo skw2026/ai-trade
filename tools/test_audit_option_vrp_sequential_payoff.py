@@ -180,6 +180,80 @@ class OptionVrpSequentialPayoffTest(unittest.TestCase):
             invalid = audit.replay_capture_root(root, policy=self.policy, manifest=self.manifest)
             self.assertEqual(invalid["invalid_segment_count"], 1)
 
+    def assert_projection_preserves_integrity(self, root):
+        full = audit.replay_capture_root(root, policy=self.policy, manifest=self.manifest)
+        projected = audit.replay_capture_root(
+            root, policy=self.policy, manifest=self.manifest,
+            snapshot_projector=lambda snapshot: None,
+        )
+        self.assertEqual(projected["snapshots"], [])
+        self.assertEqual(
+            {key: value for key, value in full.items() if key != "snapshots"},
+            {key: value for key, value in projected.items() if key != "snapshots"},
+        )
+        return full
+
+    def test_projection_preserves_counts_coverage_duplicates_and_late_delivery(self):
+        start = int(self.manifest["observation_start_epoch_ms"]) + 1000
+        expiry = start + 120000
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / capture.CAPTURE_ROOT_NAME
+            first = self.snapshot(start, expiry)
+            last = self.snapshot(expiry + 60000, expiry, delivery=True)
+            self.write_segment(root, [first, first], name="a")
+            self.write_segment(root, [first, last], name="b")
+            full = self.assert_projection_preserves_integrity(root)
+            self.assertEqual(full["eligible_snapshot_count"], 2)
+            self.assertEqual(full["duplicate_snapshot_count"], 1)
+            self.assertEqual(full["first_eligible_epoch_ms"], start)
+            self.assertEqual(full["last_eligible_epoch_ms"], expiry + 60000)
+            self.assertEqual(len(full["delivery_evidence"]), 2)
+
+    def test_projection_keeps_conflict_checks_for_discarded_snapshots(self):
+        start = int(self.manifest["observation_start_epoch_ms"]) + 1000
+        expiry = start + 120000
+        for conflict in ("within_timestamp", "across_timestamp", "within_delivery", "across_delivery"):
+            with self.subTest(conflict=conflict), tempfile.TemporaryDirectory() as temporary:
+                root = pathlib.Path(temporary) / capture.CAPTURE_ROOT_NAME
+                first = self.snapshot(start, expiry, delivery=True)
+                second = self.snapshot(start, expiry, delivery=True)
+                if conflict.endswith("timestamp"):
+                    second["scoped_options"][0]["delta"] = "0.6"
+                else:
+                    second["timestamp_epoch_ms"] += 60000
+                    second["delivery_prices"][0]["deliveryPrice"] = "101001"
+                if conflict.startswith("within"):
+                    self.write_segment(root, [first, second])
+                else:
+                    self.write_segment(root, [first], name="a")
+                    self.write_segment(root, [second], name="b")
+                full = self.assert_projection_preserves_integrity(root)
+                self.assertEqual(full["invalid_segment_count"], 1)
+
+    def test_projection_does_not_commit_delivery_from_invalid_segment(self):
+        start = int(self.manifest["observation_start_epoch_ms"]) + 1000
+        expiry = start + 120000
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / capture.CAPTURE_ROOT_NAME
+            _, report = self.write_segment(root, [self.snapshot(start, expiry, delivery=True)])
+            payload = json.loads(report.read_text())
+            payload["features"]["row_count"] += 1
+            report.write_text(json.dumps(payload))
+            full = self.assert_projection_preserves_integrity(root)
+            self.assertEqual(full["invalid_segment_count"], 1)
+            self.assertEqual(full["eligible_snapshot_count"], 0)
+            self.assertEqual(full["delivery_evidence"], {})
+
+    def test_projection_still_validates_discarded_option_rows(self):
+        start = int(self.manifest["observation_start_epoch_ms"]) + 1000
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / capture.CAPTURE_ROOT_NAME
+            snapshot = self.snapshot(start, start + 120000)
+            snapshot["scoped_options"][0]["settleCoin"] = "USDC"
+            self.write_segment(root, [snapshot])
+            full = self.assert_projection_preserves_integrity(root)
+            self.assertEqual(full["invalid_segment_count"], 1)
+
     def test_episode_uses_causal_crossing_delivery_and_final_hedge(self):
         start = int(self.manifest["observation_start_epoch_ms"]) + 1000
         expiry = start + 2 * 86400000

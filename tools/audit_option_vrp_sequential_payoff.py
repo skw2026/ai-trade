@@ -12,7 +12,7 @@ import pathlib
 import random
 import statistics
 import time
-from typing import Any, Dict, Iterable, Mapping, Sequence
+from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 
 import capture_bybit_option_vrp_v2 as capture
 from option_vrp_sequential_contracts import (
@@ -188,8 +188,17 @@ def _validate_snapshot(snapshot: Mapping[str, Any], policy: Mapping[str, Any]) -
 
 
 def replay_capture_root(
-    root: pathlib.Path, *, policy: Mapping[str, Any], manifest: Mapping[str, Any]
+    root: pathlib.Path, *, policy: Mapping[str, Any], manifest: Mapping[str, Any],
+    snapshot_projector: Callable[[Dict[str, Any]], Dict[str, Any] | None] | None = None,
 ) -> Dict[str, Any]:
+    """Validate the full archive, optionally retaining only a snapshot projection.
+
+    Projection changes only ``snapshots``; counts, identities, duplicate/conflict
+    checks and delivery evidence still cover every eligible input. A projector
+    must be deterministic and must not mutate its input. Returning None drops
+    the payload, not its integrity checks. Segment state is committed only after
+    the entire segment has passed validation, including cross-segment conflicts.
+    """
     scope = policy["capture_contract"]
     root = root.expanduser().resolve()
     if root.name != scope["capture_root_name"]:
@@ -271,13 +280,15 @@ def replay_capture_root(
                     if timestamp in segment_identities and segment_identities[timestamp] != identity:
                         raise ValueError("conflicting duplicate snapshot timestamp within segment")
                     segment_identities[timestamp] = identity
-                    segment_snapshots[timestamp] = snapshot
                     for row in snapshot["delivery_prices"]:
                         key = (str(row["symbol"]), int(row["deliveryTime"]), str(row["settleCoin"]))
                         price = _number(row["deliveryPrice"], field="delivery.deliveryPrice", positive=True)
                         if key in segment_delivery and segment_delivery[key] != price:
                             raise ValueError("conflicting delivery evidence within segment")
                         segment_delivery[key] = price
+                    retained = snapshot if snapshot_projector is None else snapshot_projector(snapshot)
+                    if retained is not None:
+                        segment_snapshots[timestamp] = retained
             if (
                 segment_line_count <= 0
                 or int(raw_meta.get("snapshot_count") or 0) != segment_line_count
@@ -291,13 +302,14 @@ def replay_capture_root(
             for key, price in segment_delivery.items():
                 if key in delivery_evidence and delivery_evidence[key] != price:
                     raise ValueError("conflicting delivery evidence")
-            segment_eligible = sum(timestamp not in snapshot_identity for timestamp in segment_snapshots)
-            result["duplicate_snapshot_count"] += len(segment_snapshots) - segment_eligible
+            segment_eligible = sum(timestamp not in snapshot_identity for timestamp in segment_identities)
+            result["duplicate_snapshot_count"] += len(segment_identities) - segment_eligible
             result["ignored_pre_observation_snapshot_count"] += segment_pre_observation
-            for timestamp, snapshot in segment_snapshots.items():
+            for timestamp, identity in segment_identities.items():
                 if timestamp not in snapshot_identity:
-                    snapshot_identity[timestamp] = segment_identities[timestamp]
-                    snapshot_by_timestamp[timestamp] = snapshot
+                    snapshot_identity[timestamp] = identity
+                    if timestamp in segment_snapshots:
+                        snapshot_by_timestamp[timestamp] = segment_snapshots[timestamp]
             delivery_evidence.update(segment_delivery)
             if segment_eligible:
                 intervals.append((max(segment_start, observation_start), segment_end))
@@ -314,12 +326,12 @@ def replay_capture_root(
             result["invalid_segments"].append({"report": report_path.name, "reason": str(exc)})
     snapshots = [snapshot_by_timestamp[key] for key in sorted(snapshot_by_timestamp)]
     result["snapshots"] = snapshots
-    result["eligible_snapshot_count"] = len(snapshots)
-    result["successful_poll_count"] = len(snapshots)
+    result["eligible_snapshot_count"] = len(snapshot_identity)
+    result["successful_poll_count"] = len(snapshot_identity)
     result["checksum_bound_seconds"] = _merged_duration_ms(intervals) / 1000.0
-    if snapshots:
-        result["first_eligible_epoch_ms"] = int(snapshots[0]["timestamp_epoch_ms"])
-        result["last_eligible_epoch_ms"] = int(snapshots[-1]["timestamp_epoch_ms"])
+    if snapshot_identity:
+        result["first_eligible_epoch_ms"] = min(snapshot_identity)
+        result["last_eligible_epoch_ms"] = max(snapshot_identity)
     result["delivery_evidence"] = {
         f"{symbol}|{delivery_time}|{settle}": price
         for (symbol, delivery_time, settle), price in sorted(delivery_evidence.items())

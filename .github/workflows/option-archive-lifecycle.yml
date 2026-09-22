@@ -75,11 +75,15 @@ jobs:
               python3 "${RELEASE_DIR}/deploy/release_integrity.py" \
                 --release-dir "${RELEASE_DIR}"
               cd "${RELEASE_DIR}"
-              python3 tools/audit_option_archive_lifecycle.py \
+              # Bound this audit process tree, not trading services. Failure to
+              # apply the 2 GiB address-space ceiling must not run unbounded.
+              ulimit -v 2097152 || exit 70
+              python3 -u tools/audit_option_archive_lifecycle.py \
                 --root "${AUDIT_CAPTURE_ROOT}" \
                 --policy config/option_variance_risk_premium_sequential_payoff_v2.json \
                 --manifest config/option_variance_risk_premium_sequential_payoff_manifest_v2.json \
                 --case config/option_archive_lifecycle_case_v1.json \
+                --emit-resource-usage \
                 --executed-release-sha "${AUDIT_EXPECTED_SHA}" \
                 --output "${REPORT_PATH}"
             ) || audit_status=$?
