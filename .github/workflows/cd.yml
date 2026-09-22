@@ -198,6 +198,7 @@ jobs:
           mkdir -p .artifacts/offline-learning-cd
           python3 tools/validation_gate.py run --label offline-learning --timeout 600 -- \
             docker run --rm --network none --read-only --cap-drop ALL \
+              --user "$(id -u):$(id -g)" \
               --security-opt no-new-privileges --cpus 2 --memory 2g \
               --tmpfs /tmp:rw,nosuid,nodev,size=128m \
               -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=2 \

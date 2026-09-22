@@ -1,5 +1,9 @@
 # 当前项目状态
 
+最新接续（2026-09-23）：用户已批准同一 gate 对纠正 CD 提交的 SHA/run 进行一次等价绑定，旧失败及验收标准保留。正在完成类型化门禁、Linux目录属主修复、完整回归和一次纠正发布；尚未取得新远端验收，不宣称部署成功。下面“等待流程决定”是此前记录，现已接续。
+
+最新实测（2026-09-22）：**LOCAL_OFFLINE_COMPONENT_LOOP_PASS / REMOTE_DELIVERY_BLOCKED**。`ea853a3` 已推送；CI110/110、Docker内110/110，但新增远端学习步骤在写 `/evidence/acceptance` 时权限失败，部署未执行。Linux目录属主/cap-drop差异已对照确认，已本地限定为使用宿主UID/GID，不放宽安全限制。原gate BLOCKED；执行者将正式观察命令绑定旧run，纠正代码的新SHA/run无法按原argv复验，已向用户提出一次等价验收入口的流程决定，答复前不发布/部署、不重置门禁。详见[阻断诊断](reviews/2026-09-22-offline-learning-publication-blocked.md)。以下为此前本地通过记录。
+
 最新接续（2026-09-22）：用户批准按目标对齐方案自动落地16有效工程小时离线自学习验收。本地 **LOCAL_OFFLINE_COMPONENT_LOOP_PASS**：真实Miner/CatBoost/C++决策及独立账务贯通，正例495个完整episode，噪声/打乱标签/高成本拒绝，反转触发回滚与冷却；完整CTest110/110。两次测试适配层错误先暂停、根因/路线复盘、限定修复，原模型与失败均保留。CD新增强制断网学习验收，当前**尚待远端发布验收**，不提前宣称部署成功。该证据不是市场盈利、生产调度/晋升或完整P0证明；已确认评估/更新时钟仍耦合，作为具名产品缺口保留。本批不重开旧研究、候选或账户交易。详见[离线阶段结果](reviews/2026-09-22-offline-learning-loop-result.md)和[冻结计划](plans/2026-09-22-offline-learning-loop.md)。以下为此前阶段记录。
 
 最新结案（2026-09-22）：**`ENGINEERING_PASS_DATA_NOT_QUALIFIED`**。工程/数据拆分边界已落地并完成真实部署验收，release `13756de` 的 CI 与 Docker 均 **109/109**，CD、Smoke、固定锚点回归成功，实际容器 revision 一致、running、重启 0。Archive 审计成功但仍证据不足；V4 真实 failure，新增诊断精确确认只有原 460.494 秒坏段（哈希、第 3 行、原因码全匹配），没有删坏段或放宽 120 秒。首批两个合成回放超时已停下复盘，经临时存储隔离的一次纠正发布及原命令 retry 通过；旧失败保留，原 runner 瞬时 I/O 原因仍不冒充已证明。新阶段 READY，旧工程与旧研究 HALTED 保持。**本阶段收口，不再重复发布/等待两周；业务仍 FAIL，策略接管未观察到，无新研究/交易资格。** 详见[结案与收口复盘](reviews/2026-09-22-engineering-data-boundary-result.md)及[脱敏证据](reviews/2026-09-22-engineering-data-boundary-result.evidence.json)。以下为保留的阶段过程记录，不覆盖本段最终结论。

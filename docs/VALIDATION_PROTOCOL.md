@@ -74,6 +74,27 @@ python3 tools/validation_gate.py retry -- ctest --test-dir build --output-on-fai
 
 ## CI 与边界
 
+### 不可变 CD run 的一次纠正发布（2026-09-23 用户批准）
+
+失败命令若固定旧提交的 `gh run watch RUN --exit-status --interval 30`，
+修复源码会产生新 SHA/run；不能重跑旧源码或偷偷改 command hash。
+用户本次明确批准同一 gate 的类型化等价验收。复盘增加 `corrective_release`，
+绑定原 run/SHA、原 cwd、授权依据及固定 `exact-cd-v1` 合同，仅支持
+`skw2026/ai-trade` 的 main push / `.github/workflows/cd.yml`。
+
+1. 本次门禁实现先做隔离合成单测自举；不改变真实 gate，也不冒充发布通过。
+2. 原 gate 接受确认根因/路线复盘后，`release-prepare` 仅执行固定完整 CTest，
+   验证至少原110项和两个关键测试存在；成功仍为 RETRY_APPROVED，不能运行依赖验收。
+3. 发布一次纠正提交，执行 `release-retry --sha FULL_SHA --run-id NEW_RUN`。
+   必须是原失败提交的后继、不同 SHA/run、首次运行；固定旧失败仍为 failure。
+   校验远端 repo/branch/event/workflow/SHA/run，等待真实 CD 成功，再逐项验证
+   构建、离线学习、证据上传和实际部署成功；缺失/skipped/超时均不放行。
+4. 原失败、复盘 hash、新绑定及结果追加到同一历史。任一步失败重新 BLOCKED，
+   次数递增；第二次失败需路线重审。中断保守阻断，不提供 reset/force 或无限重绑。
+
+普通失败仍须原 argv/cwd retry。此例外不改变市场证据、策略晋升或账户权限；
+最终部署后收据检查仍是单独的必需验收，不由 CD watcher 代替。
+
 ### 编译型测试失败后的限定重建
 
 若原失败命令仅为 CTest，修复源码后可在已确认根因的复盘中额外指定唯一 `repair_build_argv`（只允许 `cmake --build ...`）及绝对 `repair_build_cwd`。门禁接受复盘后，执行 `repair-build --timeout 120 -- 原复盘重建命令`，成功仍保持 RETRY_APPROVED，只允许一次原验收命令 `retry`；不能因此开展其他 `run`。重建失败增加失败计数并重新 BLOCKED，第二次未解决须重审路线。未审核、改 argv/cwd、重复重建或改复盘均拒绝；不重置状态、不新建 --state、不将构建成功当作测试通过。此入口仅解决“测试需要新二进制”的前置工作，不扩展账户/部署权限。

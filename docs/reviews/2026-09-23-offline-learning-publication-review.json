@@ -1,0 +1,43 @@
+{
+  "failure_id": "e729fce407bc47b3aa360c4093604576",
+  "decision": "retry",
+  "goal": "Deliver the frozen TEST_ONLY offline learning component loop through exact-source CI/CD and separate postdeploy evidence acceptance.",
+  "expected": "CD learning step and all real deployment steps succeed; no skipped substitute, unchanged learning and engineering criteria.",
+  "observed": "CD 35744573261 failed before training at mkdir /evidence/acceptance with errno 13. Deployment skipped. CI and runtime image tests both 110/110.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Linux bind directory is owned by runner UID with mode 0755; default container root with all capabilities dropped cannot write it. Linux tmpfs control reproduced errno 13 as root and success as owner. Separately the local watcher pinned an immutable old run, preventing corrected-source acceptance.",
+  "evidence": [
+    "docs/reviews/2026-09-22-offline-learning-publication-blocked.md",
+    "CD run 35744573261 job 106802722166 log sha256 6ccff195f78d8303d61a58b93a8ee4c20dbaf6487281b6b47186fc88e78f5cd9",
+    "Linux tmpfs uid=1001,gid=1001,mode=0755 paired root/owner diagnosis with identical cap-drop ALL/read-only/network none restrictions",
+    "2026-09-23 user ok approving one same-gate corrective SHA/run binding, not arbitrary command substitution"
+  ],
+  "next_action": "Use host UID/GID for output bind; isolated gate bootstrap then fixed full regression via release-prepare, one corrective main release and typed release-retry, then mandatory exact-release postdeploy/learning receipts.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Repair evidence delivery, not strategy logic or market qualification; complete the existing bounded stage.",
+    "data_feasibility": "All learning fixtures synthetic; authenticated GitHub run/job/artifact APIs available; no account or market data needed.",
+    "method_feasibility": "Owner identity resolves confirmed Linux DAC denial without added capabilities; typed run binding verifies immutable successor identity and unchanged mandatory steps.",
+    "budget_and_exit": "Within existing 16 effective engineering hours. One complete local preparation (600 seconds) and one corrective release/watch (3600 seconds), followed by bounded postdeploy checks. Any new unexpected failure stops dependencies and requires diagnosis."
+  },
+  "route_reassessment": {
+    "old_route_failure": "A watcher pinned to old run ID cannot consume a workflow source fix. Re-running old workflow or resetting the gate is invalid.",
+    "replacement": "Same state and original command hash retained; explicitly approved typed contract binds one new descendant SHA and first-attempt main/CD run.",
+    "feasibility_evidence": "GitHub immutable run metadata plus ancestry and required job/step conclusions are machine-checkable; isolated negative tests exercise mismatch, tampering, missing/failed/skipped steps and repeat rejection.",
+    "budget": "One corrective release within original stage budget; no model retraining search, threshold changes or market research.",
+    "stop_condition": "Full preparation or equivalent CD validation failure returns BLOCKED and increments original failure lineage. No blind rerun or second binding."
+  },
+  "corrective_release": {
+    "repo": "skw2026/ai-trade",
+    "branch": "main",
+    "workflow": ".github/workflows/cd.yml",
+    "acceptance": "exact-cd-v1",
+    "authorization": "2026-09-23 user ok to same-gate equivalent corrective-release binding; standing main/CI/CD authorization retained",
+    "original_run_id": 35744573261,
+    "original_sha": "ea853a3a9832249a70a0ecb3d4e22eb5fef731a2",
+    "cwd": "/Users/sk.wang/Projects/c++/ai-trade"
+  }
+}

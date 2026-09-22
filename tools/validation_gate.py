@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,14 @@ import uuid
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_STATE = ROOT / ".artifacts/validation-gate/state.json"
 STATUSES = {"READY", "RUNNING", "BLOCKED", "RETRY_APPROVED", "HALTED"}
+RELEASE_REPO = "skw2026/ai-trade"
+RELEASE_STEPS = {
+    "build-test-push": ("Wait for Exact CI Success", "Preflight pinned ECS connection",
+                        "Build and Push Runtime Image", "Build and Push Research Image",
+                        "Verify Offline Learning Loop", "Upload Offline Learning Evidence",
+                        "Build and Push Web Image", "Compute Deploy Gate"),
+    "deploy-ecs": ("Upload Deployment Bundle", "Deploy to ECS"),
+}
 
 
 def require(ok, message):
@@ -69,6 +78,32 @@ def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+def command_hash(command, cwd):
+    return sha(json.dumps({"argv": command, "cwd": cwd}, ensure_ascii=True, sort_keys=True).encode())
+
+
+def release_contract(record, active):
+    """One narrow exception: replace an immutable failed main/CD run, never arbitrary argv."""
+    contract = record.get("corrective_release")
+    if contract is None:
+        return None
+    require(isinstance(contract, dict), "corrective_release must be an object")
+    require(contract.get("repo") == RELEASE_REPO and contract.get("branch") == "main" and
+            contract.get("workflow") == ".github/workflows/cd.yml" and
+            contract.get("acceptance") == "exact-cd-v1", "unsupported release contract")
+    require(nonempty(contract.get("authorization")), "release correction requires recorded authorization")
+    run_id = contract.get("original_run_id")
+    require(type(run_id) is int and run_id > 0, "invalid original run ID")
+    require(re.fullmatch(r"[0-9a-f]{40}", contract.get("original_sha", "")), "invalid original SHA")
+    cwd = str(pathlib.Path.cwd().resolve())
+    require(contract.get("cwd") == cwd, "release correction must retain original cwd")
+    original = ["gh", "run", "watch", str(run_id), "--exit-status", "--interval", "30"]
+    require(command_hash(original, cwd) == active["command_sha256"],
+            "release correction only supports the exact original gh CD watcher")
+    require(record.get("repair_build_argv") is None, "release preparation cannot be combined with repair-build")
+    return contract
+
+
 def review(path, state, review_path):
     require(state["status"] == "BLOCKED", "review requires a blocked validation")
     raw = review_path.read_bytes()
@@ -97,6 +132,12 @@ def review(path, state, review_path):
             require(isinstance(route, dict), "route_reassessment must be an object")
             for field in ("old_route_failure", "replacement", "feasibility_evidence", "budget", "stop_condition"):
                 require(nonempty(route.get(field)), "repeated/structural failure requires route reassessment: " + field)
+        contract = release_contract(record, active)
+        for key in ("corrective_release", "release_prepared", "release_binding"):
+            active.pop(key, None)
+        if contract is not None:
+            active["corrective_release"] = contract
+            active["release_prepared"] = False
         state["status"] = "RETRY_APPROVED"
         active["review_path"] = str(review_path.resolve())
         active["review_sha256"] = sha(raw)
@@ -159,6 +200,134 @@ def repair_build(path, state, command, timeout):
     return code
 
 
+def reviewed_release(state):
+    require(state["status"] == "RETRY_APPROVED", "corrective release requires accepted failure review")
+    active = state["active"]
+    require(sha(pathlib.Path(active["review_path"]).read_bytes()) == active["review_sha256"],
+            "review changed after approval")
+    contract = active.get("corrective_release")
+    require(isinstance(contract, dict), "no reviewed corrective release")
+    require(contract["cwd"] == str(pathlib.Path.cwd().resolve()), "release cwd differs from review")
+    return active, contract
+
+
+def finish_release_action(path, state, event, code, **details):
+    active = state["active"]
+    state["history"].append({"at": stamp(), "event": event, "exit_code": code,
+                             "retry_of": active["failure_id"],
+                             "original_command_sha256": active["command_sha256"], **details})
+    if code:
+        active["failure_count"] += 1
+        active["failure_id"] = uuid.uuid4().hex
+        active.pop("review_path", None)
+        active.pop("review_sha256", None)
+        state["status"] = "BLOCKED"
+    elif event == "release_prepare":
+        active["release_prepared"] = True
+        state["status"] = "RETRY_APPROVED"
+    else:
+        state["status"], state["active"] = "READY", None
+    save(path, state)
+    return code
+
+
+def release_prepare(path, state, timeout):
+    active, _ = reviewed_release(state)
+    require(active.get("release_prepared") is False, "release preparation already consumed")
+    # Fixed full suite: no arbitrary preparation command or test filtering.
+    command = ["ctest", "--test-dir", "build", "--output-on-failure", "--no-tests=error"]
+    state["status"] = "RUNNING"
+    save(path, state)
+    try:
+        inventory = subprocess.run(["ctest", "--test-dir", "build", "--show-only=json-v1"],
+                                   capture_output=True, text=True, timeout=30, check=True)
+        tests = json.loads(inventory.stdout).get("tests", [])
+        require(len(tests) >= 110 and {"validation_stop_gate_test", "offline_learning_harness_test"}
+                <= {test.get("name") for test in tests}, "required full regression inventory missing")
+        result = subprocess.run(command, timeout=timeout, check=False)
+        code = result.returncode if result.returncode >= 0 else 128-result.returncode
+    except subprocess.TimeoutExpired:
+        code = 124
+    except OSError:
+        code = 127
+    except (ValueError, KeyError, TypeError, subprocess.CalledProcessError):
+        code = 1
+    except KeyboardInterrupt:
+        code = 130
+    return finish_release_action(path, state, "release_prepare", code,
+                                 command_sha256=command_hash(command, str(pathlib.Path.cwd().resolve())))
+
+
+def release_api(suffix):
+    result = subprocess.run(["gh", "api", "repos/" + RELEASE_REPO + suffix],
+                            capture_output=True, text=True, timeout=45, check=True)
+    return json.loads(result.stdout)
+
+
+def check_release_run(run, run_id, expected_sha):
+    require(run.get("id") == run_id and run.get("head_sha") == expected_sha and
+            run.get("repository", {}).get("full_name") == RELEASE_REPO and
+            run.get("head_repository", {}).get("full_name") == RELEASE_REPO and
+            run.get("head_branch") == "main" and run.get("event") == "push" and
+            run.get("path") == ".github/workflows/cd.yml" and run.get("run_attempt") == 1,
+            "CD identity mismatch (repo/workflow/branch/SHA/run/attempt)")
+
+
+def check_release_jobs(payload):
+    jobs = payload.get("jobs", [])
+    require(payload.get("total_count") == len(jobs), "incomplete CD job evidence")
+    for name, required_steps in RELEASE_STEPS.items():
+        matches = [job for job in jobs if job.get("name") == name]
+        require(len(matches) == 1 and matches[0].get("conclusion") == "success", "CD job not successful: " + name)
+        for step in required_steps:
+            matches_step = [s for s in matches[0].get("steps", []) if s.get("name") == step]
+            require(len(matches_step) == 1 and matches_step[0].get("conclusion") == "success",
+                    "CD required step absent/skipped/failed: " + step)
+
+
+def release_retry(path, state, new_sha, run_id, timeout):
+    active, contract = reviewed_release(state)
+    require(active.get("release_prepared") is True, "full local release preparation required")
+    require("release_binding" not in active, "corrective release binding already consumed")
+    require(re.fullmatch(r"[0-9a-f]{40}", new_sha) and new_sha != contract["original_sha"] and
+            run_id > contract["original_run_id"], "correction requires a new SHA and new run")
+    binding = {"original_run_id": contract["original_run_id"], "original_sha": contract["original_sha"],
+               "new_run_id": run_id, "new_sha": new_sha, "repo": RELEASE_REPO,
+               "workflow": contract["workflow"], "acceptance": contract["acceptance"],
+               "required_steps": RELEASE_STEPS, "review_sha256": active["review_sha256"]}
+    active["release_binding"] = binding
+    state["history"].append({"at": stamp(), "event": "release_binding", **binding})
+    state["status"] = "RUNNING"
+    save(path, state)  # Consume before I/O; crash is never an implicit pass or second attempt.
+    code = 1
+    try:
+        old = release_api(f'/actions/runs/{contract["original_run_id"]}')
+        check_release_run(old, contract["original_run_id"], contract["original_sha"])
+        require(old.get("status") == "completed" and old.get("conclusion") == "failure",
+                "original run must remain failed")
+        new = release_api(f"/actions/runs/{run_id}")
+        check_release_run(new, run_id, new_sha)
+        ancestry = release_api(f'/compare/{contract["original_sha"]}...{new_sha}')
+        require(ancestry.get("status") == "ahead" and
+                ancestry.get("merge_base_commit", {}).get("sha") == contract["original_sha"],
+                "corrective release must descend from failed source")
+        result = subprocess.run(["gh", "run", "watch", str(run_id), "--repo", RELEASE_REPO,
+                                 "--exit-status", "--interval", "30"], timeout=timeout, check=False)
+        require(result.returncode == 0, "corrective CD did not succeed")
+        final = release_api(f"/actions/runs/{run_id}")
+        check_release_run(final, run_id, new_sha)
+        require(final.get("status") == "completed" and final.get("conclusion") == "success",
+                "corrective CD has no completed success")
+        check_release_jobs(release_api(f"/actions/runs/{run_id}/attempts/1/jobs?per_page=100"))
+        code = 0
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+        # Never print captured API bodies or authentication diagnostics.
+        print("CORRECTIVE_RELEASE_FAILED: " + type(exc).__name__, file=sys.stderr, flush=True)
+    except KeyboardInterrupt:
+        code = 130
+    return finish_release_action(path, state, "release_retry", code, binding=binding)
+
+
 def execute(path, state, command, label, retry, timeout):
     require(command, "a validation command is required after --")
     identity = {"argv": command, "cwd": str(pathlib.Path.cwd().resolve())}
@@ -167,6 +336,7 @@ def execute(path, state, command, label, retry, timeout):
             "validation blocked: diagnose and review before retry; do not advance dependent work")
     if retry:
         active = state["active"]
+        require("corrective_release" not in active, "review requires typed release-retry, not ordinary retry")
         require("repair_build_sha256" not in active or active.get("repair_build_completed") is True,
                 "reviewed repair build must complete before original acceptance retry")
         require(active["command_sha256"] == command_sha,
@@ -211,6 +381,12 @@ def main():
     commands.add_parser("status")
     review_parser = commands.add_parser("review")
     review_parser.add_argument("--file", type=pathlib.Path, required=True)
+    prepare_parser = commands.add_parser("release-prepare")
+    prepare_parser.add_argument("--timeout", type=int, default=600)
+    release_parser = commands.add_parser("release-retry")
+    release_parser.add_argument("--sha", required=True)
+    release_parser.add_argument("--run-id", type=int, required=True)
+    release_parser.add_argument("--timeout", type=int, default=3600)
     for verb in ("run", "retry", "repair-build"):
         command_parser = commands.add_parser(verb)
         command_parser.add_argument("--label")
@@ -232,9 +408,14 @@ def main():
                 code = review(args.state, state, args.file)
             else:
                 require(0 < args.timeout <= 3600, "timeout must be in 1..3600 seconds")
-                command = args.command[1:] if args.command[:1] == ["--"] else args.command
-                code = repair_build(args.state, state, command, args.timeout) if args.action == "repair-build" else \
-                    execute(args.state, state, command, args.label, args.action == "retry", args.timeout)
+                if args.action == "release-prepare":
+                    code = release_prepare(args.state, state, args.timeout)
+                elif args.action == "release-retry":
+                    code = release_retry(args.state, state, args.sha, args.run_id, args.timeout)
+                else:
+                    command = args.command[1:] if args.command[:1] == ["--"] else args.command
+                    code = repair_build(args.state, state, command, args.timeout) if args.action == "repair-build" else \
+                        execute(args.state, state, command, args.label, args.action == "retry", args.timeout)
             print("VALIDATION_GATE " + json.dumps(summary(state), sort_keys=True), flush=True)
             return code
     except (OSError, ValueError, KeyError, TypeError) as exc:

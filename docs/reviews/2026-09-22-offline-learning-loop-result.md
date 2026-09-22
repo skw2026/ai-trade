@@ -1,6 +1,10 @@
 # 离线自学习闭环阶段结果
 
-当前：**LOCAL_OFFLINE_COMPONENT_LOOP_PASS / REMOTE_DELIVERY_PENDING**。
+当前：**LOCAL_OFFLINE_COMPONENT_LOOP_PASS / REMOTE_DELIVERY_BLOCKED**。
+提交 `ea853a3` 的 CI 与运行镜像测试均110/110，但远端学习步骤因输出目录
+权限失败，部署未执行。根因已用Linux对照确认并完成本地限定修复；另有
+验收命令绑定旧run的流程错误，已提出一次明确的复验入口纠正决定。
+详见[发布阻断与根因](2026-09-22-offline-learning-publication-blocked.md)。
 不是整个自学习产品、盈利资格、真实 canary 或生产晋升已通过。
 本批依据[16小时冻结计划](../plans/2026-09-22-offline-learning-loop.md)，不重开旧研究。
 

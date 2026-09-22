@@ -11,6 +11,12 @@
 
 ## 开始与阶段边界
 
+- 2026-09-23 用户以“ok”批准纠正 CD 观察命令固定旧 run 的流程缺陷：
+  同一离线阶段 gate 经确认根因复盘后，可一次绑定同仓库 main/CD 的纠正 SHA/run，
+  保留原失败、原命令 hash 和验收标准；使用 typed `release-prepare` / `release-retry`，
+  不允许任意换 argv、重置 state 或解除旧 HALTED。仅本次门禁实现的隔离单测可先行自举，
+  随后正式完整回归仍经原 gate；成功后按既有授权完成一次纠正发布及部署后验收。
+
 - 2026-09-22 用户批准按目标对齐方案自动落地：本批执行
   `docs/plans/2026-09-22-offline-learning-loop.md` 的 16 有效工程小时离线验收。
   使用独立 `.artifacts/offline-learning-loop-20260922/validation-state.json`；

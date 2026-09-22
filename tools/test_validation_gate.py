@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Negative gate scenarios below are intentional tests, not project failures."""
 import fcntl
+import copy
 import json
 import pathlib
 import subprocess
@@ -184,6 +185,146 @@ class ValidationGateTest(unittest.TestCase):
         self.assertEqual(self.submit_review(record).returncode, 0)
         self.review_file.write_text(self.review_file.read_text()+"\n")
         self.assertEqual(self.cli("repair-build", "--", *record["repair_build_argv"]).returncode, 2)
+
+    def release_review(self):
+        # All states, APIs and gh execution here are synthetic and isolated.
+        state = {"schema_version": 1, "status": "BLOCKED", "history": [{"event": "original_failure"}],
+                 "active": {"failure_id": "original-failure", "failure_count": 1, "label": "exact-source-cd",
+                            "command_sha256": gate.command_hash(
+                                ["gh", "run", "watch", "100", "--exit-status", "--interval", "30"],
+                                str(pathlib.Path.cwd().resolve()))}}
+        gate.save(self.state, state)
+        record = self.review_record()
+        record["corrective_release"] = {
+            "repo": gate.RELEASE_REPO, "branch": "main", "workflow": ".github/workflows/cd.yml",
+            "acceptance": "exact-cd-v1", "authorization": "synthetic explicit approval",
+            "original_run_id": 100, "original_sha": "a" * 40, "cwd": str(pathlib.Path.cwd().resolve())}
+        return record
+
+    def approved_release(self, prepared=True):
+        self.assertEqual(self.submit_review(self.release_review()).returncode, 0)
+        state = gate.load(self.state)
+        if prepared:
+            state["active"]["release_prepared"] = True
+            gate.save(self.state, state)
+        return state
+
+    def release_responses(self):
+        old = {"id": 100, "head_sha": "a" * 40, "repository": {"full_name": gate.RELEASE_REPO},
+               "head_repository": {"full_name": gate.RELEASE_REPO}, "head_branch": "main", "event": "push",
+               "path": ".github/workflows/cd.yml", "run_attempt": 1,
+               "status": "completed", "conclusion": "failure"}
+        new = {**copy.deepcopy(old), "id": 200, "head_sha": "b" * 40, "conclusion": "success"}
+        jobs = [{"name": name, "conclusion": "success", "steps": [
+                    {"name": step, "conclusion": "success"} for step in steps]}
+                for name, steps in gate.RELEASE_STEPS.items()]
+        return [old, new, {"status": "ahead", "merge_base_commit": {"sha": "a" * 40}},
+                copy.deepcopy(new), {"total_count": len(jobs), "jobs": jobs}]
+
+    def test_release_review_cannot_replace_arbitrary_command_or_contract(self):
+        record = self.release_review()
+        for field, value in (("repo", "wrong/repo"), ("branch", "other"), ("workflow", "ci.yml"),
+                             ("acceptance", "weaker"), ("original_run_id", 101),
+                             ("original_sha", "short"), ("cwd", "/tmp"), ("authorization", "")):
+            altered = copy.deepcopy(record)
+            altered["corrective_release"][field] = value
+            self.assertEqual(self.submit_review(altered).returncode, 2, field)
+        state = gate.load(self.state)
+        state["active"]["command_sha256"] = "not-a-gh-watch-command"
+        gate.save(self.state, state)
+        self.assertEqual(self.submit_review(record).returncode, 2)
+
+    def test_release_prepare_is_fixed_full_suite_one_use_and_not_acceptance(self):
+        state = self.approved_release(prepared=False)
+        original = state["active"]["command_sha256"]
+        names = ["validation_stop_gate_test", "offline_learning_harness_test"] + [f"fixture{i}" for i in range(108)]
+        inventory = mock.Mock(stdout=json.dumps({"tests": [{"name": n} for n in names]}))
+        with mock.patch.object(gate.subprocess, "run", side_effect=[inventory, mock.Mock(returncode=0)]) as run:
+            self.assertEqual(gate.release_prepare(self.state, state, 600), 0)
+            self.assertEqual(run.call_args.args[0], ["ctest", "--test-dir", "build", "--output-on-failure", "--no-tests=error"])
+        self.assertEqual(state["status"], "RETRY_APPROVED")
+        self.assertEqual(state["active"]["command_sha256"], original)
+        with self.assertRaises(ValueError):
+            gate.release_prepare(self.state, state, 600)
+        self.assertEqual(self.cli("run", "--label", "skip", "--", *self.command).returncode, 2)
+        self.assertEqual(self.cli("retry", "--", "gh", "run", "watch", "100",
+                                  "--exit-status", "--interval", "30").returncode, 2)
+
+    def test_release_preparation_missing_tests_or_failure_blocks(self):
+        for failure in (mock.Mock(stdout='{"tests": []}'), OSError("synthetic")):
+            state = self.approved_release(prepared=False)
+            with mock.patch.object(gate.subprocess, "run", side_effect=[failure]):
+                self.assertNotEqual(gate.release_prepare(self.state, state, 600), 0)
+            self.assertEqual(state["status"], "BLOCKED")
+            self.assertEqual(state["active"]["failure_count"], 2)
+
+    def test_release_requires_preparation_review_integrity_and_original_directory(self):
+        state = self.approved_release(prepared=False)
+        with self.assertRaisesRegex(ValueError, "preparation"):
+            gate.release_retry(self.state, state, "b" * 40, 200, 60)
+        state["active"]["release_prepared"] = True
+        for source, run_id in (("a" * 40, 200), ("b" * 40, 100), ("invalid", 200)):
+            with self.assertRaises(ValueError):
+                gate.release_retry(self.state, state, source, run_id, 60)
+        self.assertEqual(self.cli("release-retry", "--sha", "b" * 40, "--run-id", "200", cwd=self.root).returncode, 2)
+        self.review_file.write_text(self.review_file.read_text() + "\n")
+        with self.assertRaisesRegex(ValueError, "review changed"):
+            gate.release_retry(self.state, state, "b" * 40, 200, 60)
+
+    def test_release_success_retains_original_failure_and_exact_new_binding(self):
+        state = self.approved_release()
+        with mock.patch.object(gate, "release_api", side_effect=self.release_responses()), \
+             mock.patch.object(gate.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
+            self.assertEqual(gate.release_retry(self.state, state, "b" * 40, 200, 60), 0)
+            self.assertEqual(run.call_args.args[0], ["gh", "run", "watch", "200", "--repo", gate.RELEASE_REPO,
+                                                    "--exit-status", "--interval", "30"])
+        self.assertEqual(state["status"], "READY")
+        self.assertEqual(state["history"][0]["event"], "original_failure")
+        self.assertEqual(state["history"][-1]["retry_of"], "original-failure")
+        self.assertEqual(state["history"][-1]["binding"]["new_sha"], "b" * 40)
+        with self.assertRaises(ValueError):
+            gate.release_retry(self.state, state, "c" * 40, 300, 60)
+
+    def test_release_metadata_mutations_or_missing_skipped_steps_block(self):
+        mutations = [(1, field, value) for field, value in (
+            ("id", 201), ("head_sha", "c" * 40), ("repository", {"full_name": "other/repo"}),
+            ("head_repository", {"full_name": "other/repo"}), ("head_branch", "other"),
+            ("event", "workflow_dispatch"), ("path", ".github/workflows/ci.yml"), ("run_attempt", 2))]
+        mutations += [(0, "conclusion", "success"), (2, "status", "diverged"),
+                      (3, "conclusion", "failure"), (4, "total_count", 3), (4, "jobs", [])]
+        for index, field, value in mutations:
+            with self.subTest(field=field, value=value):
+                state = self.approved_release()
+                responses = self.release_responses()
+                responses[index][field] = value
+                with mock.patch.object(gate, "release_api", side_effect=responses), \
+                     mock.patch.object(gate.subprocess, "run", return_value=mock.Mock(returncode=0)):
+                    self.assertEqual(gate.release_retry(self.state, state, "b" * 40, 200, 60), 1)
+                self.assertEqual(state["status"], "BLOCKED")
+                self.assertEqual(state["active"]["failure_count"], 2)
+        for conclusion in ("skipped", "failure", None):
+            payload = self.release_responses()[-1]
+            payload["jobs"][0]["steps"][4]["conclusion"] = conclusion
+            with self.assertRaisesRegex(ValueError, "required step"):
+                gate.check_release_jobs(payload)
+
+    def test_release_watch_failure_and_interruption_never_pass(self):
+        for outcome in (mock.Mock(returncode=1), subprocess.TimeoutExpired("gh", 60), KeyboardInterrupt()):
+            state = self.approved_release()
+            with mock.patch.object(gate, "release_api", side_effect=self.release_responses()), \
+                 mock.patch.object(gate.subprocess, "run", side_effect=[outcome]):
+                self.assertNotEqual(gate.release_retry(self.state, state, "b" * 40, 200, 60), 0)
+            self.assertEqual(state["status"], "BLOCKED")
+            self.assertEqual(self.submit_review(self.review_record()).returncode, 2)
+
+    def test_halted_gate_has_no_corrective_release_escape(self):
+        state = self.approved_release()
+        state["status"] = "HALTED"
+        gate.save(self.state, state)
+        for action in (lambda: gate.release_prepare(self.state, state, 60),
+                       lambda: gate.release_retry(self.state, state, "b" * 40, 200, 60)):
+            with self.assertRaises(ValueError):
+                action()
 
 
 if __name__ == "__main__":

@@ -87,6 +87,7 @@ class OfflineLearningLoopTest(unittest.TestCase):
         self.assertIn("tools/validation_gate.py run", block)
         self.assertIn("--network none", block)
         self.assertIn("--read-only", block)
+        self.assertIn('--user "$(id -u):$(id -g)"', block)
         self.assertNotIn("continue-on-error", block)
         self.assertLess(workflow.index("name: Verify Offline Learning Loop"),
                         workflow.index("name: Compute Deploy Gate"))
