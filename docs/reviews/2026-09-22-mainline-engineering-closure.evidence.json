@@ -1,0 +1,256 @@
+{
+  "schema_version": "mainline_engineering_closure_v1",
+  "checked_at_utc": "2026-09-22T03:24:10.986253+00:00",
+  "decision": "MAINLINE_ENGINEERING_DEPLOYMENT_COMPLETE_WITH_RUNTIME_ACTIONS",
+  "deployed_code_sha": "e47e21ba80d67eac148595066fce009976a28264",
+  "observation": {
+    "observed_at_utc": "2026-09-22T03:18:39.512149+00:00",
+    "filename": "observation-1790047119513089000.json",
+    "sha256": "1597326a532d3b043cb50368ad98ee3be2695d86b925f2273b65432c817339ee"
+  },
+  "runs": [
+    {
+      "id": 35681591088,
+      "name": "CI",
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35681591088",
+      "head_sha": "e47e21ba80d67eac148595066fce009976a28264",
+      "head_branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "jobs": [
+        {
+          "id": 106599502117,
+          "name": "build-and-test",
+          "started_at": "2026-09-22T03:01:09Z",
+          "completed_at": "2026-09-22T03:05:46Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 35681591100,
+      "name": "CD",
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35681591100",
+      "head_sha": "e47e21ba80d67eac148595066fce009976a28264",
+      "head_branch": "main",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "jobs": [
+        {
+          "id": 106599501912,
+          "name": "build-test-push",
+          "started_at": "2026-09-22T03:01:08Z",
+          "completed_at": "2026-09-22T03:11:29Z",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 106601465795,
+          "name": "deploy-ecs",
+          "started_at": "2026-09-22T03:11:33Z",
+          "completed_at": "2026-09-22T03:14:50Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 35682446670,
+      "name": "Closed Loop Smoke",
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35682446670",
+      "head_sha": "e47e21ba80d67eac148595066fce009976a28264",
+      "head_branch": "main",
+      "event": "workflow_run",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "jobs": [
+        {
+          "id": 106602098414,
+          "name": "smoke",
+          "started_at": "2026-09-22T03:15:01Z",
+          "completed_at": "2026-09-22T03:16:54Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 35682446685,
+      "name": "Option Archive Lifecycle Audit",
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35682446685",
+      "head_sha": "e47e21ba80d67eac148595066fce009976a28264",
+      "head_branch": "main",
+      "event": "workflow_run",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "jobs": [
+        {
+          "id": 106602099759,
+          "name": "audit",
+          "started_at": "2026-09-22T03:15:00Z",
+          "completed_at": "2026-09-22T03:16:38Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 35682446754,
+      "name": "Option Lifecycle V4 Gate",
+      "html_url": "https://github.com/skw2026/ai-trade/actions/runs/35682446754",
+      "head_sha": "e47e21ba80d67eac148595066fce009976a28264",
+      "head_branch": "main",
+      "event": "workflow_run",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "jobs": [
+        {
+          "id": 106602098789,
+          "name": "audit",
+          "started_at": "2026-09-22T03:15:17Z",
+          "completed_at": "2026-09-22T03:18:06Z",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "run_id": 35681591088,
+      "job_id": 106599502117,
+      "passed": 106,
+      "failed": 0,
+      "seconds": 211.75,
+      "raw_log_sha256": "630c96640753d16fd942dd96e41003a9f099842faedfacacce30f193d93a6f1d"
+    },
+    {
+      "run_id": 35681591100,
+      "job_id": 106599501912,
+      "passed": 106,
+      "failed": 0,
+      "seconds": 200.83,
+      "raw_log_sha256": "1e546cc4f81773c3dd05e1487184afa95537cf95ec2c3fc89ef40740921c5219"
+    }
+  ],
+  "deployment": {
+    "status": "PASS",
+    "reason": "deployment_committed",
+    "run_id": "deploy-35681591100-1",
+    "artifact_hashes_verified": {
+      "step_status": "5a27ff0f1cd1b50335c939f38db72d95df97ea434abad94c79f4de89a6ed3b36",
+      "runtime_log": "e3ac9d33d5567e64408d1c3955696d96c0bad65367aaa8401e2c931720ccd079",
+      "runtime_assess_report": "3795693ed54a8f1a388cff4c783809d42d03495edfa237ce1e0f6dae18cac34b",
+      "trade_ledger_report": "31ac80987edb168d04031ab646beaeed7f2a759efdb5eb3de9f3965e07e0a536",
+      "closed_loop_mechanism_report": "fe8d99b7106d0ec3507d164ab81a3643b2a2b6bb6b70acaa1fa65e5195b5d004"
+    },
+    "run_manifest_sha256": "a85f58f7d28c7f881e504a62174160c5d34c1dde14411394b2d5335e2c624acb",
+    "diagnostics_sha256": "a56e69cf9244f02bab71da27a8d7290a8842fd0e9dd93f3ed0648b169608344d",
+    "images": {
+      "research": "ghcr.io/skw2026/ai-trade-research@sha256:a669059d3fd986d7f7c97bc9817c090b1ee15835f8bb66f0e40162f1dba37eb2",
+      "runtime": "ghcr.io/skw2026/ai-trade@sha256:f096571ce08fb5f99ed80ddc4d69e7f2ca627534bd6145e570d8d7ae6f9b13ac",
+      "web": "ghcr.io/skw2026/ai-trade-web@sha256:f462f034b65bffb876344c4c7c71a96183b233b74037fcc2ccd281213cc64be4"
+    }
+  },
+  "smoke": {
+    "freshness": {
+      "status": "PASS",
+      "container_status": "running",
+      "container_restart_count": 0,
+      "container_image_revision": "e47e21ba80d67eac148595066fce009976a28264",
+      "release_git_sha": "e47e21ba80d67eac148595066fce009976a28264",
+      "expected_run_id": "smoke-35682446670-1"
+    },
+    "runtime": {
+      "verdict": "PASS_WITH_ACTIONS",
+      "protection_status": "PASS",
+      "account_sync_status": "OK",
+      "execution_status": "NOT_EVALUATED",
+      "warn_reasons": [
+        "Integrator 处于 canary/active 但未观测到策略接管事件",
+        "Integrator 处于 canary/active 但未观测到 shadow scored>0"
+      ]
+    },
+    "runtime_report_sha256": "a95c1eca5c39250a8b99a7f7de7049d337a56227678eb6ceffe969cf9c366014"
+  },
+  "business_report": {
+    "overall_status": "FAIL",
+    "strategy_success_status": "FAIL",
+    "runtime_health_status": "PASS",
+    "research_decision": "STOP",
+    "promotion_readiness_status": "NOT_EVALUATED"
+  },
+  "archive": {
+    "decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+    "reason_code": "OBSERVED_SNAPSHOTS_NOT_FULLY_QUALIFIED",
+    "report_sha256": "3a42515e9e02eccaafa8cafba7bf7a14e01de83f48c8037910b2ae3a096fe104"
+  },
+  "v4": {
+    "decision": "PASS_FIRST_COMPLETE_LIFECYCLE_FOR_PAYOFF_RECONSTRUCTION_ONLY",
+    "report_sha256": "a288a6570c3edb7c138e3bd5e52d959782eae18569e70f96a94482cfbd5babda",
+    "economics_decision": "STOP_MULTI_LIFECYCLE_ECONOMICS_NO_STRESS_EDGE",
+    "economics_report_sha256": "eab6677de62d06d4368e4e1cbe920a5627819e96ca729a1f76bad3fd9c003ebc",
+    "governance": {
+      "decision": "CLOSED_CANDIDATE_NO_REOPEN",
+      "closure_evidence_verified": true,
+      "closure_latched": true,
+      "demo_activation_authorized": false,
+      "live_activation_authorized": false,
+      "promotion_authority": false,
+      "profitability_claim_allowed": false
+    },
+    "governance_report_sha256": "64fd15893ac53b0b967c478e8fc4b219ad6c62e5246ddc7aa273b8025af562e6",
+    "closed_anchor_zip_sha256": "d9d69ab4bc83ad9c7a5669fb1e3666aa74db5c6112f68ce236496ca9acfc8e1d"
+  },
+  "c2": {
+    "decision": "C2_FIRST_LIFECYCLE_ADAPTED_ACCOUNTING_INCOMPLETE",
+    "candidate_state": "CLOSED",
+    "economic_qualification": false,
+    "historical_data_qualified": false,
+    "cashflows_qualified": false,
+    "account_risk_qualified": false,
+    "authorities": {
+      "demo_activation_authorized": false,
+      "live_activation_authorized": false,
+      "order_submission_authorized": false,
+      "promotion_authority": false
+    },
+    "report_sha256": "5ea6822dde0e5df7baed74a79680d5c298388ae5763a2040db0a8b1df8ba4bea"
+  },
+  "research_gate": {
+    "status": "HALTED",
+    "sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+    "unchanged": true
+  },
+  "scope": {
+    "trusted_fingerprint_changed": false,
+    "trading_source_or_config_changed_by_repair": false,
+    "new_research_started": false,
+    "raw_evidence_published": false,
+    "economic_qualification_granted": false
+  },
+  "original_failure": {
+    "run_id": 35670052847,
+    "job_id": 106566637238,
+    "failure_id": "da145ecbb92e498a8418df4637756d5b",
+    "reason": "ssh_host_key_fingerprint_mismatch",
+    "raw_log_sha256": "a60967ec594a87a6e6a2317d1af8dd99d3c7fb097bdb439ba5d57b6e327b08d0",
+    "history_preserved": true
+  },
+  "validation_protocol": {
+    "engineering_gate_status": "READY",
+    "original_retry_succeeded_at_utc": "2026-09-22T03:15:57.568103+00:00",
+    "original_command_sha256": "a7c577fb173ca07b610b8e97fba0431a7f548fcb835ddc9bda2667e7536c8408",
+    "accepted_review_sha256": "33dfdc2938cacba09e02d872742857ee74b370e39613c32aee42fd46e6cd55d4",
+    "post_cd_pass_at_utc": "2026-09-22T03:19:11.304014+00:00",
+    "raw_artifacts_remain_local": true
+  }
+}

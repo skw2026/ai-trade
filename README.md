@@ -8,7 +8,7 @@
 
 ---
 
-当前状态（2026-09-22）：离线工程已封版，全量 105/105 测试通过、证据本机校验归档；用户已授权直接 main 推送及现有测试环境 CI/CD 部署验证，不再逐次审批。当前批次的真实 CI/CD 结果以 [当前状态](docs/CURRENT_STATE.md) 为准。研究仍未产出合格候选，旧路线关闭、C2 历史资格未通过；工程部署不等于盈利资格或新策略激活。离线使用与数据保存见 [封版说明](docs/OFFLINE_ENGINEERING_FREEZE.md)。下方“已覆盖”仅指需求文档覆盖，不代表盈利或运行验收通过。
+当前状态（2026-09-22）：**主线工程部署阶段已结案**。`e47e21b` 已推送 main 并部署既有测试环境，Linux CI 与 Docker 内部测试均 106/106，CI/CD/Smoke/Archive/V4 五项工作流执行成功。Smoke 运行评估为 **PASS_WITH_ACTIONS**（策略接管和 shadow 评分缺观测，执行资格未评估），不是所有业务能力通过。研究仍未产出合格候选，旧路线关闭、C2 历史资格未通过；工程部署不等于盈利资格或新策略激活。详见 [结案结果](docs/reviews/2026-09-22-mainline-engineering-closure.md) 与 [当前状态](docs/CURRENT_STATE.md)。离线使用与数据保存见 [封版说明](docs/OFFLINE_ENGINEERING_FREEZE.md)。下方“已覆盖”仅指需求文档覆盖，不代表盈利或运行验收通过。
 
 ## 需求符合性核对表
 

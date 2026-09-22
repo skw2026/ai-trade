@@ -1,6 +1,12 @@
 # 当前项目状态
 
-更新时间：2026-09-22（Asia/Shanghai；本次工程阶段始于 2026-09-21 UTC）
+更新时间：2026-09-22 11:24（Asia/Shanghai；本次工程阶段始于 2026-09-21 UTC）
+
+最新结案：**`MAINLINE_ENGINEERING_DEPLOYMENT_COMPLETE_WITH_RUNTIME_ACTIONS`**。代码 `e47e21ba80d67eac148595066fce009976a28264` 已直接推送 main 并部署至既有测试环境；Linux CI 与 Docker 内全量均 **106/106 PASS**，CI/CD/Smoke/Archive/V4 五个精确 SHA 工作流均实际执行成功，未以 skipped 充数。CD 为 `deployment_committed`，current release 与运行容器 revision 一致，容器 running、重启 0。原 SSH 失败复盘后一个纠正发布、一次原命令复验成功，工程 gate READY，旧失败证据保留。详见[工程结案与复盘](reviews/2026-09-22-mainline-engineering-closure.md)及[脱敏机器证据](reviews/2026-09-22-mainline-engineering-closure.evidence.json)。结案文档另行 docs-only `[skip ci]` 归档，部署代码仍以 `e47e21b` 为准。
+
+**限制没有消失：** Smoke 新鲜度 PASS，但运行评估 **PASS_WITH_ACTIONS**：未观测到策略接管及 `shadow scored>0`，execution NOT_EVALUATED；保护 PASS、账户同步 OK。完整业务报告仍 FAIL / research STOP；Archive 历史证据不足，V4 候选保持 CLOSED，C2 历史/账务/风险/经济资格均 false。无新 Demo/live/下单/晋级权限，旧研究 gate 仍 HALTED 且哈希未变。**工程阶段到此完成，不再以重复运行、两周等待或旧路线重开延长；盈利目标尚未得到证明。** 下一动作仅为结案文档推送与远端身份核对，不重复部署。
+
+以下为保留的诊断、失败及旧阶段快照；其“尚未登录／待复验／待授权／下一步”均是当时状态，不覆盖上面的最终交付结论。原失败结果文档已随纠正代码提交归档。
 
 最新接续：用户完成 GitHub 登录后，已取得原失败日志，确认上传动作为 **`ssh: host key fingerprint mismatch`**，不是交易测试失败。同一任务后续 OpenSSH 通过现有指纹成员校验并成功认证；两条 SSH 路径对主机密钥选择/信任集合的处理不同。指纹配置更新于 9 月 20 日，晚于上次成功部署；具体协商密钥算法未记录，不猜测或重填可信指纹。根因/路线[复盘](reviews/2026-09-22-deploy-host-key-review.json)已被原工程 gate 接受，当前 **RETRY_APPROVED，尚未复验通过**。限定修复统一 CD 与三项 post-CD 的严格 OpenSSH 固定密钥，增加构建镜像前只读预检与脱敏错误分类；本地 15+43+9+8 项诊断通过，不冒充远端部署通过。下一步为本批一次纠正发布、精确 SHA CI/CD 原命令复验及 post-CD 验收；详情见[修复范围与验收说明](reviews/2026-09-22-deploy-host-key-repair.md)。下段 unknown/未登录是保留的首轮阻断快照，不是当前诊断。
 
