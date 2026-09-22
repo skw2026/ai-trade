@@ -1,5 +1,7 @@
 # 当前项目状态
 
+最新结案（2026-09-22）：**`ENGINEERING_PASS_DATA_NOT_QUALIFIED`**。工程/数据拆分边界已落地并完成真实部署验收，release `13756de` 的 CI 与 Docker 均 **109/109**，CD、Smoke、固定锚点回归成功，实际容器 revision 一致、running、重启 0。Archive 审计成功但仍证据不足；V4 真实 failure，新增诊断精确确认只有原 460.494 秒坏段（哈希、第 3 行、原因码全匹配），没有删坏段或放宽 120 秒。首批两个合成回放超时已停下复盘，经临时存储隔离的一次纠正发布及原命令 retry 通过；旧失败保留，原 runner 瞬时 I/O 原因仍不冒充已证明。新阶段 READY，旧工程与旧研究 HALTED 保持。**本阶段收口，不再重复发布/等待两周；业务仍 FAIL，策略接管未观察到，无新研究/交易资格。** 详见[结案与收口复盘](reviews/2026-09-22-engineering-data-boundary-result.md)及[脱敏证据](reviews/2026-09-22-engineering-data-boundary-result.evidence.json)。以下为保留的阶段过程记录，不覆盖本段最终结论。
+
 最新修复接续（2026-09-22）：首批 `b933b48` 的 CI 两项既有合成回放测试超时（其余 107/109 通过），CD 被阻断、未部署，post-CD 均 skipped。已暂停并完成[测试存储依赖复盘](reviews/2026-09-22-reference-fixture-timeout.json)：单项 6,793 次 fsync，受控磁盘延迟可复现原 30 秒超时；tmpfs 对照保留同样调用和断言。原 runner 具体 I/O 原因没有记录，仍 unknown，不冒充历史主机证明。限定两个 Linux 合成测试临时目录隔离，原超时、生产持久化和专项测试不改；门禁已接受一次纠正发布/原命令复验，当前 RETRY_APPROVED，尚未验收通过。以下是首批发布前记录。
 
 最新接续（2026-09-22）：用户在拆分验收建议后回复“继续”，现按[事前冻结边界](plans/2026-09-22-engineering-data-boundary.md)连续交付。旧耦合工程阶段已按[停止复盘](reviews/2026-09-22-coupled-engineering-stop.json)进入 **HALTED（原失败保留，不追溯 PASS）**；新独立工程阶段本地定向与完整 CTest **109/109 PASS，173.23 秒**。新增固定关闭锚点回归和分段拒绝原因，120 秒合同、历史原件、研究 HALTED 均不改。下一步为本批一次 main 发布、精确 SHA 的工程/数据两路实测；尚未声称远端通过。V4 已知 460.494 秒分段应继续 FAIL，Archive 应保持证据不足；新增未知失败或缺报告仍暂停，不因拆分而忽略。以下为此前时点记录。

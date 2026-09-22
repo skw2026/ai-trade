@@ -1,0 +1,318 @@
+{
+  "archive_integrity": {
+    "checksum_bound_seconds_all_time": 449790.914,
+    "duplicate_snapshot_count": 0,
+    "eligible_snapshot_count_all_time": 7962,
+    "invalid_segment_count": 0,
+    "root_present": true,
+    "valid_segment_count": 504
+  },
+  "archive_reason_code": "OBSERVED_SNAPSHOTS_NOT_FULLY_QUALIFIED",
+  "archive_resource": {
+    "address_space_limit_bytes": 2147483648,
+    "elapsed_seconds": 67.48,
+    "exit_code": 0,
+    "peak_rss_bytes": 48734208,
+    "pid": 492492,
+    "started_at_epoch_ms": 1790086744307
+  },
+  "archive_resource_log_sha256": "42a9327e95ac44c35ee5744cb53c890074fa762081a79e012e9cb83bf1c87023",
+  "artifacts": {
+    "archive": {
+      "artifact_id": 10698847376,
+      "run_attempt": 1,
+      "run_id": 35739447229,
+      "zip_digest": "sha256:592196ad026659ccb119396790c7c2ae9059e00332378fb6bedd686565c019cb"
+    },
+    "fixed": {
+      "artifact_id": 10699096981,
+      "run_attempt": 1,
+      "run_id": 35739447049,
+      "zip_digest": "sha256:e5d5d617c11ddbeb88c394c861f7b5ae98e75515ef40d7739282a029fdb3eed4"
+    },
+    "smoke": {
+      "artifact_id": 10698577754,
+      "run_attempt": 1,
+      "run_id": 35739446926,
+      "zip_digest": "sha256:06e765dcd65823ce894f7a7f78ecd286fbf38f2561916d72db1cd22cdb159fd1"
+    },
+    "v4": {
+      "artifact_id": 10698962419,
+      "run_attempt": 1,
+      "run_id": 35739446973,
+      "zip_digest": "sha256:cc4c8893777b782cf94134817c4cbe5775bde9a11166adbeccb4317edaeab401"
+    }
+  },
+  "boundary": "FIXED_ENGINEERING_SEPARATE_FROM_LIVE_DATA_QUALITY",
+  "boundary_file_sha256": "11d19c45c54cfeb3e2d4a87f7704e590169e85d80ffa05f0b6fcfae5b5c809b3",
+  "business_qualified": false,
+  "cd_tests": {
+    "job_id": 106779697754,
+    "log_sha256": "593d449dbdc9c24fe45cf15f8ef2945715748baeeb971e1733cb131584f7a4f8",
+    "passed": 109,
+    "run_id": 35737881056,
+    "seconds": [
+      187.12
+    ],
+    "successful_test_summaries": 1
+  },
+  "ci_tests": {
+    "job_id": 106779700909,
+    "log_sha256": "98657e32f92c0d3e6ead0655cf2f34579a7487198eb64284f96df6149ce3d892",
+    "passed": 109,
+    "run_id": 35737880824,
+    "seconds": [
+      222.71
+    ],
+    "successful_test_summaries": 1
+  },
+  "current_gate_history": [
+    {
+      "at": "2026-09-22T13:35:46.185215+00:00",
+      "command_sha256": "6b107fe5c26df68af86fcd60e32eb161159bdeb153eb9bd9419cca9204d418ed",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "fixed-latency-negative",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:35:47.741209+00:00",
+      "command_sha256": "0fb2a6e4a725fb740ddcb541b4db089a604dd7257921c9e5b6af645a59b4ac23",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "frozen-closure-regression",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:35:48.675696+00:00",
+      "command_sha256": "657b2650ccf4553b2bbd66ceb0c309c62d10607542e0e909e882e81dc68989ea",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "legacy-lifecycle-regression",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:39:16.522881+00:00",
+      "command_sha256": "172261d10277f79c9b46dfe7ac2afde3087e82a95724a01ed8994507cd28b95b",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "release-boundary-negative-cases",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:39:16.775784+00:00",
+      "command_sha256": "24538c47bce50ea1607b49f5c7eeb08d230849b54a2ad627cf8b1cbefaf8d84f",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "bounded-diagnostic-reader",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:39:24.519854+00:00",
+      "command_sha256": "c956dba8489b79f3aec346a47639f23a50ceaff44fb5dca7662096748be22f15",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "configure",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:39:43.388261+00:00",
+      "command_sha256": "146358468bc0dbb831dc7f2492716ac4513e1ed41d74979a9d3eeff4ad150ee9",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "build",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:43:48.195141+00:00",
+      "command_sha256": "493f436bdb2bd6d3f754023dd56b600fd9b61479ad154128de2705a4ec67e9be",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "full-regression",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:51:21.509267+00:00",
+      "command_sha256": "2ba229dcd2d936dce9274823e4f6d8c53877e0a87e43a4430f8dcb4579eaf9bf",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "frozen-real-anchor",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T13:59:01.719888+00:00",
+      "command_sha256": "f3375d7653e240b33ab57f0606804db63eb98ebd89a368a5ea116dd91f4dfd81",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "exact-source-ci",
+      "retry_of": null
+    },
+    {
+      "at": "2026-09-22T14:04:56.781001+00:00",
+      "decision": "retry",
+      "event": "review",
+      "failure_id": "03c1237df73642f3b3492d4bb0e2f6af",
+      "review_path": "/Users/sk.wang/Projects/c++/ai-trade/docs/reviews/2026-09-22-reference-fixture-timeout.json",
+      "review_sha256": "8864a31d9d160bfc8c371a7f49dc5d8ec5406ed93650be5622531acf15297c2f"
+    },
+    {
+      "at": "2026-09-22T14:10:32.753025+00:00",
+      "command_sha256": "f3375d7653e240b33ab57f0606804db63eb98ebd89a368a5ea116dd91f4dfd81",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "exact-source-ci",
+      "retry_of": "03c1237df73642f3b3492d4bb0e2f6af"
+    },
+    {
+      "at": "2026-09-22T14:23:26.341193+00:00",
+      "command_sha256": "8f0a45943287b44399e043fd4d546ef8610ad3f96f48bc024a9dac664549d48b",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "split-release-acceptance",
+      "retry_of": null
+    }
+  ],
+  "current_gate_sha256": "3c9275c213d1116a2bf848c6ebca519e15f40816d15cd90a1939ec01bac12fb9",
+  "data_quality": {
+    "archive_decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+    "known_failure": {
+      "artifact_checksums_verified": true,
+      "phase": "snapshot",
+      "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+      "report": "20260922T035334.633790Z.json",
+      "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+      "snapshot_line": 3
+    },
+    "runs": [
+      {
+        "conclusion": "success",
+        "name": "Option Archive Lifecycle Audit",
+        "run_attempt": 1,
+        "run_id": 35739447229
+      },
+      {
+        "conclusion": "failure",
+        "name": "Option Lifecycle V4 Gate",
+        "run_attempt": 1,
+        "run_id": 35739446973
+      }
+    ],
+    "status": "FAIL",
+    "v4_decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE"
+  },
+  "decision": "ENGINEERING_PASS_DATA_NOT_QUALIFIED",
+  "demo_activation_authorized": false,
+  "engineering": {
+    "closure_latched": true,
+    "runs": [
+      {
+        "conclusion": "success",
+        "name": "CI",
+        "run_attempt": 1,
+        "run_id": 35737880824
+      },
+      {
+        "conclusion": "success",
+        "name": "CD",
+        "run_attempt": 1,
+        "run_id": 35737881056
+      },
+      {
+        "conclusion": "success",
+        "name": "Closed Loop Smoke",
+        "run_attempt": 1,
+        "run_id": 35739446926
+      },
+      {
+        "conclusion": "success",
+        "name": "Fixed Engineering Regression",
+        "run_attempt": 1,
+        "run_id": 35739447049
+      }
+    ],
+    "status": "PASS"
+  },
+  "fixed_identities_after_delivery": {
+    "candidate_registry": {
+      "path": "config/option_candidate_closure_v1.json",
+      "sha256": "950c78492d8f44792cd1b7025738f9a7071a07918219bfe206b632156da6c537"
+    },
+    "coupled_engineering_gate": {
+      "path": ".artifacts/engineering-freeze-20260921/validation-state.json",
+      "sha256": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+      "status": "HALTED"
+    },
+    "new_boundary": {
+      "path": "config/engineering_release_boundary_v1.json",
+      "sha256": "11d19c45c54cfeb3e2d4a87f7704e590169e85d80ffa05f0b6fcfae5b5c809b3"
+    },
+    "original_checker": {
+      "path": ".artifacts/mainline-deployment-20260922/observe.py",
+      "sha256": "0b61e963ac66c6d4d1f1a3603e506b36bc55d98d1880a1cbfe0b48636d892278"
+    },
+    "research_gate": {
+      "path": ".artifacts/validation-gate/state.json",
+      "sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+      "status": "HALTED"
+    },
+    "v4_capture_policy": {
+      "path": "config/option_lifecycle_capture_v4.json",
+      "sha256": "4eb28767780240360104c2b56a3f59b223563ce5519d800b86673f0dda469537"
+    }
+  },
+  "formal_result_sha256": "5e8a790ea1c2f5466955c5837c049953286c577eba34ccb0cf5656a3e4bf048b",
+  "historical_failure_reclassified_as_pass": false,
+  "input_sha256": {
+    "archive": "f0db50ee45f50104ef93c1eb5c931ecf74cd57aafbb116c79d0dc713fbfeceb6",
+    "closure": "7ac34ddc96f26f0d49c10f57ec457877e4b3b09e1e9732b5407f69d2b8bc0605",
+    "freshness": "6fbcd7dfc54a28f81c05b668a0da69e47a772ff36b172382f1de82cca48e5c33",
+    "runtime": "0135c8b32ef4f470cfbc7d8bb6828e22d194968a4eac33fcdf99b706aead9de1",
+    "snapshot": "8abed598c4908a6577931e5a6c120c35e29e32d27ab37fcae5668aef3305a865",
+    "v4": "df34930a291fa0fcd77b7ebcf47631803f807df46dfabe05979fc4a2803d1b00"
+  },
+  "live_activation_authorized": false,
+  "local_tests": {
+    "passed": 109,
+    "scope": "pre-publication full regression; correction additionally verified in Linux CI",
+    "seconds": 173.23
+  },
+  "observed_at_utc": "2026-09-22T14:22:12.654247+00:00",
+  "prior_failed_ci": {
+    "decision": "FAIL",
+    "review": "2026-09-22-reference-fixture-timeout.json",
+    "run_id": 35736300272,
+    "sha": "b933b487e6629ccc2fbd640d77428814eb55a765"
+  },
+  "promotion_authority": false,
+  "release_sha": "13756de7e1c182f74b03fdeb90cf6c3a8875f690",
+  "runtime": {
+    "account_sync_status": "OK",
+    "execution_status": "NOT_EVALUATED",
+    "protection_status": "PASS",
+    "verdict": "PASS_WITH_ACTIONS"
+  },
+  "schema_version": "engineering_release_result_v1",
+  "v4_integrity": {
+    "checksum_bound_snapshot_count": 24464,
+    "duplicate_snapshot_count": 0,
+    "ignored_pre_observation_snapshot_count": 8,
+    "invalid_segment_count": 1,
+    "invalid_segment_details_truncated": false,
+    "invalid_segment_reason_counts": {
+      "POLL_LATENCY_EXCEEDS_CONTRACT": 1
+    },
+    "invalid_segments": [
+      {
+        "artifact_checksums_verified": true,
+        "phase": "snapshot",
+        "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+        "report": "20260922T035334.633790Z.json",
+        "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+        "snapshot_line": 3
+      }
+    ],
+    "root_present": true,
+    "valid_segment_count": 1553
+  },
+  "v4_reason_code": "ARCHIVE_INTEGRITY_FAILURE"
+}
