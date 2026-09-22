@@ -1,0 +1,95 @@
+{
+  "schema_version": "v4_segment_readonly_result_v1",
+  "status": "PINNED_RAW_POLL_LATENCY_VIOLATION_CONFIRMED",
+  "observed_at_utc": "2026-09-22T13:01:17Z",
+  "diagnostic_commit_sha": "896911c5f7410ef087f559097e3a6d4d2f31e3b1",
+  "workflow": {
+    "name": "ECS Segment Readonly Diagnosis",
+    "run_id": 35730700390,
+    "run_attempt": 1,
+    "job_id": 106755252410,
+    "event": "workflow_dispatch",
+    "conclusion": "success",
+    "job_started_at_utc": "2026-09-22T13:00:47Z",
+    "job_completed_at_utc": "2026-09-22T13:01:00Z",
+    "meaning": "DIAGNOSIS_COMPLETED_NOT_ARCHIVE_ACCEPTANCE",
+    "artifact_id": 10695502166,
+    "artifact_zip_sha256_from_github": "02ffe120958750e643edc029cd55ff860218a480283e165d9dde218a60e90f12",
+    "artifact_size_bytes": 934,
+    "receipt_sha256": "3cb19b51e8ba87400484fbf75969c870c3c9921170ae66e319e38782fdd6abdc"
+  },
+  "receipt": {
+    "schema_version": "option_lifecycle_segment_diagnostic_v1",
+    "scope": "SINGLE_SEGMENT_DIAGNOSIS_NOT_ARCHIVE_ACCEPTANCE",
+    "report": "20260922T035334.633790Z.json",
+    "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+    "executed_release_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+    "diagnostic_commit_sha": "896911c5f7410ef087f559097e3a6d4d2f31e3b1",
+    "diagnostic_source_sha256": "981cf6cd511e9f0819de034734a54f43c828432850ff20625a01ab9754540fa6",
+    "artifact_sha256": {
+      "features": "ca532c6786a10439116eb444f1774981abd770098946c4c7cbbd12ca4b1e12ed",
+      "raw": "b023757f749f45e222ec014871c7c6a2e6cca09e2459e81b8c2c644df523905b"
+    },
+    "artifact_checksums_match": true,
+    "capture_status_pass": true,
+    "snapshot_count": 8,
+    "report_counts_match_raw": true,
+    "metadata_max_latency_matches_raw": true,
+    "maximum_poll_latency_ms": 460494,
+    "limit_ms": 120000,
+    "over_limit_snapshot_count": 1,
+    "over_limit_examples": [
+      {
+        "line": 3,
+        "poll_started_epoch_ms": 1790049408404,
+        "snapshot_completed_epoch_ms": 1790049868898,
+        "poll_latency_ms": 460494
+      }
+    ],
+    "timing_diagnosis": "POLL_LATENCY_EXCEEDS_FROZEN_CONTRACT",
+    "diagnosis_completed": true,
+    "transport_completed_successfully": true,
+    "other_snapshot_contracts_checked": false,
+    "archive_acceptance_evaluated": false,
+    "grants_trading_authority": false
+  },
+  "timeline": {
+    "poll_start_utc": "2026-09-22T03:56:48.404Z",
+    "oom_kill_utc": "2026-09-22T04:04:26.000Z",
+    "poll_end_utc": "2026-09-22T04:04:28.898Z",
+    "oom_kill_within_poll_interval": true,
+    "seconds_after_oom_kill_until_poll_end": 2.898,
+    "oom_causal_attribution": "STRONG_TEMPORAL_ASSOCIATION_NOT_REQUEST_LEVEL_CAUSAL_PROOF"
+  },
+  "conclusions": {
+    "raw_timing_violation_confirmed": true,
+    "metadata_claim_independently_verified": true,
+    "capture_pass_is_not_data_qualification": true,
+    "violation_is_sufficient_to_fail_frozen_snapshot_timing_check": true,
+    "sole_invalid_segment_of_historic_audit_proved": false,
+    "historic_failure_input_set_replayed": false,
+    "waiting_or_more_samples_repairs_this_snapshot": false,
+    "root_localization_phase_complete": true,
+    "whole_engineering_acceptance_passed": false
+  },
+  "safety_observation": {
+    "only_run_on_diagnostic_commit": 35730700390,
+    "ci_or_cd_runs_on_diagnostic_commit": 0,
+    "latest_cd_run_id": 35711582772,
+    "latest_cd_sha": "45a9f1b12caa3d26791ba282d7e89c4af381ea99",
+    "ecs_files_written_by_diagnostic": false,
+    "account_access_or_orders": false,
+    "full_archive_or_research_rerun": false,
+    "new_background_schedule": false,
+    "formal_gate_retry": false,
+    "engineering_gate_status": "BLOCKED",
+    "engineering_gate_sha256": "2549d814ad01759df63469d8a209d67327f62a2c7f89268b148badf26dbf786e",
+    "research_gate_status": "HALTED",
+    "research_gate_sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "local_diagnostic_checks": {
+    "offline_fixture_cases_passed": 12,
+    "mocked_workflow_transport_paths_passed": 2,
+    "formal_engineering_acceptance": false
+  }
+}
