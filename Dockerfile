@@ -131,6 +131,7 @@ ARG BUILD_REVISION
 LABEL org.opencontainers.image.revision="${BUILD_REVISION}"
 
 COPY --from=build /workspace/build/trade_bot /app/trade_bot
+COPY --from=build /workspace/build/offline_learning_driver /app/offline_learning_driver
 COPY --from=build /workspace/config /app/config
 COPY --from=build /workspace/ops /app/ops
 COPY --from=build /workspace/tools /app/tools

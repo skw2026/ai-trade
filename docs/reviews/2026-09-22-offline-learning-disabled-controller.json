@@ -1,0 +1,30 @@
+{
+  "failure_id": "5700a648b2404221b7178336717c1a4f",
+  "decision": "retry",
+  "goal": "同一真实训练产物的离线学习/执行/反馈验收",
+  "expected": "固定对照始终使用声明的 0.5/0.5 权重，自适应组使用控制器状态",
+  "observed": "首次 positive 对照在第一个验收 bar 触发 weight bounds violated；模型已真实训练和加载，尚未产生该组交易",
+  "root_cause_status": "confirmed",
+  "root_cause": "新增测试驱动错误地读取 disabled SelfEvolutionController 的内部权重。生产 Initialize 在 enabled=false 时提前返回、保持 initialized=false，BucketRuntime 默认 1/0；这不是已初始化的固定 0.5/0.5。固定组应使用事前声明的常量配置。生产控制器和边界断言均不改。另将驱动传入的累计 fills 改为 OnTick 所要求的本 tick 增量，不更改样本门槛。",
+  "evidence": [
+    "src/evolution/self_evolution_controller.cpp:62 Initialize disabled early return",
+    "src/evolution/self_evolution_controller.h BucketRuntime defaults",
+    ".artifacts/offline-learning-loop-20260922/acceptance/positive.log sha256=069b85145e5950653eee599d8eee22a3eb067f53d22fab6dc36a3170971f4c76",
+    "learned.cbm sha256=3aa5d8f05c3bc6daf4cf5aa57a9b2e791a7eba35d473b5eb31f392243d84f624",
+    "shuffled.cbm sha256=0bdf49e53fc288ec3903101b681ad853dae3d74819aa99fe45e07252cff3a742",
+    "miner.json sha256=10416a01221c36173f475cfe10c4c8a70e4d00df4eb1d01d0dffc5430699a3c4"
+  ],
+  "next_action": "仅重建离线驱动，保留第一轮全部文件；原命令一次 retry 在 acceptance/retry-1 留存新结果，并校验/复用原两个模型，不重新训练、不换随机种子。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "修正固定对照接线，不将无效默认值解释为学习或改变原学习目标。",
+    "data_feasibility": "原合成开发数据、Miner、两个真实模型和失败日志均在本地保留，无外部数据或账户依赖。",
+    "method_feasibility": "原函数明确 disabled 不初始化；固定权重直接来自预先声明的 0.5/0.5，不依赖未知模型表现。",
+    "budget_and_exit": "使用原16工程小时总预算；一次限定重建和原命令复验，新的失败重新阻断并复核整条路线。"
+  },
+  "repair_build_argv": ["cmake", "--build", "/evidence/build", "--target", "offline_learning_driver", "-j", "4"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade"
+}

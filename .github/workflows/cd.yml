@@ -188,6 +188,33 @@ jobs:
             ${{ steps.meta.outputs.research_image_uri }}:${{ steps.meta.outputs.research_image_tag }}
             ${{ steps.meta.outputs.research_image_uri }}:latest
 
+      - name: Verify Offline Learning Loop
+        env:
+          RESEARCH_REF: ${{ steps.meta.outputs.research_image_uri }}@${{ steps.research_image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "${RESEARCH_REF}"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${RESEARCH_REF}")" = "${GITHUB_SHA}"
+          mkdir -p .artifacts/offline-learning-cd
+          python3 tools/validation_gate.py run --label offline-learning --timeout 600 -- \
+            docker run --rm --network none --read-only --cap-drop ALL \
+              --security-opt no-new-privileges --cpus 2 --memory 2g \
+              --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+              -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=2 \
+              -e PYTHONDONTWRITEBYTECODE=1 -e VERIFICATION_SHA="${GITHUB_SHA}" \
+              -v "${PWD}/.artifacts/offline-learning-cd:/evidence" \
+              --entrypoint python3 "${RESEARCH_REF}" \
+              /app/tools/verify_offline_learning_loop.py \
+              --driver /app/offline_learning_driver --output /evidence/acceptance
+
+      - name: Upload Offline Learning Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-learning-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/offline-learning-cd/
+          if-no-files-found: warn
+
       - name: Build and Push Web Image
         id: web_image
         uses: docker/build-push-action@v6

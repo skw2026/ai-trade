@@ -1,0 +1,35 @@
+{
+  "failure_id": "ccc03ad323534f178d906f2437e5c38f",
+  "decision": "retry",
+  "goal": "同一候选的离线学习、决策、成交与反馈真实贯通",
+  "expected": "模型的多/空方向与生产政策、执行意图一致，独立账与 C++ 账完全一致",
+  "observed": "固定对照完成495个episode，但独立账 net 不匹配；第一次负向模型提案后 C++ qty 实际为正",
+  "root_cause_status": "confirmed",
+  "root_cause": "测试驱动把生产 EvaluateIntegratorPolicy 已带符号的 suggested_notional_usd 再乘 direction，导致负方向变成正方向。只读逐笔重算双重符号模型与原 C++ net 差 -2.2737367544323206e-13，费用和资金费亦一致；是新增测试适配层的语义错误，不是训练失败或生产账务错误。修复直接传递 signed notional，并断言政策/意图方向一致。",
+  "evidence": [
+    "src/system/trade_system.cpp:604-607 signed policy notional",
+    ".artifacts/offline-learning-loop-20260922/acceptance/retry-1/positive.trace.csv first negative proposal followed by positive qty",
+    "READ_ONLY_FAILURE_DIAGNOSIS_NOT_ACCEPTANCE: observed-double-sign net=-26.60025766022496, native=-26.600257660224731; exact synthetic ledger reconstruction",
+    "Original two model hashes remain unchanged; no new fit or random seed"
+  ],
+  "next_action": "按完整路线复核限定修正测试适配层，原门禁一次重建/原命令复验；retry-2独立保留结果。再次失败停止本批验收，不再继续修复轮次。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "真实政策必须改变真实测试成交方向；不以正确预测但错误执行冒充学习闭环。",
+    "data_feasibility": "全部合成输入及两个模型已冻结，本轮不依赖新增数据。",
+    "method_feasibility": "直接生产 signed target 与原接口语义一致；独立账未放宽，增加最近边界方向断言。",
+    "budget_and_exit": "原16小时预算内第二个也是最后一个修复轮次；一次原命令复验，若仍失败则停止本批并交付失败，不换阶段或重新训练。"
+  },
+  "route_reassessment": {
+    "old_route_failure": "两个失败都来自新增组合驱动对生产接口语义的误读（disabled状态、signed notional），说明只拼组件不核对边界语义不够。不能解释为市场策略失败。",
+    "replacement": "不更换研究路线或重建框架；逐条核对模型→signed policy→risk→intent→fill→ledger→tick增量→controller的接口，将固定权重、成交方向、费用对账、更新上限作为逐步断言，保留完整独立账。",
+    "feasibility_evidence": "真实Miner/CatBoost/C++已运行；原495episode逐笔重建精确解释账差，无需调参、扩大数据或改变生产接口。",
+    "budget": "共享原16有效工程小时上限，本次限定一个重建和一次复验，不再授权第三轮修复。",
+    "stop_condition": "任何后续同命令失败则停止本批；不得降低净收益、样本、概率一致性、回滚或对账门槛。"
+  },
+  "repair_build_argv": ["cmake", "--build", "/evidence/build", "--target", "offline_learning_driver", "-j", "4"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade"
+}

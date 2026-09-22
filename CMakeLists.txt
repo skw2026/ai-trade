@@ -89,6 +89,9 @@ target_link_libraries(trade_bot PRIVATE ai_trade_system)
 
 include(CTest)
 if(BUILD_TESTING)
+  # Offline integration driver only: never installed into the runtime image.
+  add_executable(offline_learning_driver tests/offline_learning_driver.cpp)
+  target_link_libraries(offline_learning_driver PRIVATE ai_trade_system)
   add_executable(replay_reference_account_test tests/test_replay_reference_account.cpp)
   target_link_libraries(replay_reference_account_test PRIVATE ai_trade_system)
   add_test(NAME replay_reference_account_test COMMAND replay_reference_account_test
@@ -144,6 +147,9 @@ if(BUILD_TESTING)
   else()
     add_test(NAME validation_stop_gate_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validation_gate.py)
+    add_test(NAME offline_learning_harness_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_offline_learning_loop.py)
+    set_tests_properties(offline_learning_harness_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
     add_test(NAME mvp_reference_pipeline_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_mvp_reference_pipeline.py
                      --binary $<TARGET_FILE:trade_bot>)
