@@ -1,0 +1,78 @@
+{
+  "status": "PASS",
+  "scope": "offline-existing-logs-no-live-account-access",
+  "observations": [
+    {
+      "stage": "DEPLOY",
+      "raw_log_sha256": "e3ac9d33d5567e64408d1c3955696d96c0bad65367aaa8401e2c931720ccd079",
+      "old_fields_unchanged": true,
+      "verdict": "PASS",
+      "diagnostic": {
+        "schema_version": "integrator_availability_v1",
+        "evidence_scope": "LATEST_OBSERVED_BOOT_OR_LOG_WINDOW",
+        "runtime_mode": "UNKNOWN",
+        "legacy_source_state": "REJECTED_GOVERNANCE",
+        "legacy_reason_codes": [
+          "GOVERNANCE_REJECTED",
+          "data.training_symbol",
+          "data.bar_interval_ms",
+          "data.online_bar_source",
+          "data.source_venue",
+          "data.source_category",
+          "data.price_type",
+          "data.volume_unit",
+          "metrics_oos.mean_model_net_edge_bps_per_round_trip",
+          "metrics_oos.primary_objective",
+          "governance.primary_objective"
+        ],
+        "router_state": "ARMED_WAITING_ELIGIBLE_SOURCE",
+        "microstructure_source_state": "UNKNOWN",
+        "policy_applied_count": 0,
+        "shadow_scored_window_count": 0,
+        "grants_trading_authority": false,
+        "proves_economic_qualification": false,
+        "waiting_alone_resolves_legacy_rejection": false,
+        "next_action": "REVIEW_REJECTED_SOURCE_CONTRACT_NO_AUTO_RETRAIN_OR_ACTIVATION"
+      }
+    },
+    {
+      "stage": "SMOKE",
+      "raw_log_sha256": "ba489f75a27af920d674d0b114adb8ba9c64ae14c96088e9568bff3f6835939a",
+      "old_fields_unchanged": true,
+      "verdict": "PASS_WITH_ACTIONS",
+      "diagnostic": {
+        "schema_version": "integrator_availability_v1",
+        "evidence_scope": "LATEST_OBSERVED_BOOT_OR_LOG_WINDOW",
+        "runtime_mode": "canary",
+        "legacy_source_state": "REJECTED_GOVERNANCE",
+        "legacy_reason_codes": [
+          "GOVERNANCE_REJECTED",
+          "data.training_symbol",
+          "data.bar_interval_ms",
+          "data.online_bar_source",
+          "data.source_venue",
+          "data.source_category",
+          "data.price_type",
+          "data.volume_unit",
+          "metrics_oos.mean_model_net_edge_bps_per_round_trip",
+          "metrics_oos.primary_objective",
+          "governance.primary_objective"
+        ],
+        "router_state": "ARMED_WAITING_ELIGIBLE_SOURCE",
+        "microstructure_source_state": "UNKNOWN",
+        "policy_applied_count": 0,
+        "shadow_scored_window_count": 0,
+        "grants_trading_authority": false,
+        "proves_economic_qualification": false,
+        "waiting_alone_resolves_legacy_rejection": false,
+        "next_action": "REVIEW_REJECTED_SOURCE_CONTRACT_NO_AUTO_RETRAIN_OR_ACTIVATION"
+      }
+    }
+  ],
+  "baseline_code_sha": "e47e21ba80d67eac148595066fce009976a28264",
+  "local_tests": {
+    "assess_run_log": 88,
+    "build_closed_loop_report": 75,
+    "new_regression_cases": 9
+  }
+}

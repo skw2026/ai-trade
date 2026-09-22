@@ -1,5 +1,7 @@
 # 当前项目状态
 
+封版后接续（2026-09-22）：用户要求继续，现仅补齐 Smoke 两项告警的原因诊断，范围见[有界工程计划](plans/2026-09-22-runtime-source-diagnostics.md)。确认旧 integrator 被治理门槛拒绝，而 canary 模式只是路由仍 armed，不等于模型可用；微观结构源具体缺口不能由无事件推断，保留 UNKNOWN。新增只读 `integrator_availability`，不改变原判定/警告、策略源码、配置或研究关闭。88 项运行评估、75 项摘要测试通过，旧两份日志离线新旧全字段一致，见[本地证据](reviews/2026-09-22-runtime-source-diagnostics.local-evidence.json)。本批待一次精确 SHA 发布及 post-CD 验收，不提前计部署通过。下方原工程结案及经济负结论保持。
+
 更新时间：2026-09-22 11:24（Asia/Shanghai；本次工程阶段始于 2026-09-21 UTC）
 
 最新结案：**`MAINLINE_ENGINEERING_DEPLOYMENT_COMPLETE_WITH_RUNTIME_ACTIONS`**。代码 `e47e21ba80d67eac148595066fce009976a28264` 已直接推送 main 并部署至既有测试环境；Linux CI 与 Docker 内全量均 **106/106 PASS**，CI/CD/Smoke/Archive/V4 五个精确 SHA 工作流均实际执行成功，未以 skipped 充数。CD 为 `deployment_committed`，current release 与运行容器 revision 一致，容器 running、重启 0。原 SSH 失败复盘后一个纠正发布、一次原命令复验成功，工程 gate READY，旧失败证据保留。详见[工程结案与复盘](reviews/2026-09-22-mainline-engineering-closure.md)及[脱敏机器证据](reviews/2026-09-22-mainline-engineering-closure.evidence.json)。结案文档另行 docs-only `[skip ci]` 归档，部署代码仍以 `e47e21b` 为准。

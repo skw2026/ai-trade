@@ -417,6 +417,7 @@ def assess_runtime(path: Path) -> Dict[str, Any]:
         "execution_status": payload.get("execution_status"),
         "market_context_status": payload.get("market_context_status"),
         "account_sync_status": payload.get("account_sync_status"),
+        "integrator_availability": payload.get("integrator_availability", {}),
         "protection_fail_reasons": payload.get("protection_fail_reasons", []),
         "execution_fail_reasons": payload.get("execution_fail_reasons", []),
         "metrics": payload.get("metrics", {}),

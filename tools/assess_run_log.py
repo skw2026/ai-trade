@@ -3086,6 +3086,87 @@ def extract_feature_scale_diagnostics(text: str) -> Dict[str, object]:
     }
 
 
+def extract_integrator_availability(text: str) -> Dict[str, Any]:
+    """Explain observed source availability, never grant trading qualification.
+
+    Missing startup/lifecycle events remain UNKNOWN. A configured canary mode
+    is not proof of a usable model, and an accepted signal is not profitability.
+    Reset at a new process/boot so old rejection or success cannot leak forward.
+    Only fixed reason codes are emitted; raw model errors may contain paths.
+    """
+    def empty() -> Dict[str, Any]:
+        return {
+            "schema_version": "integrator_availability_v1",
+            "evidence_scope": "LATEST_OBSERVED_BOOT_OR_LOG_WINDOW",
+            "runtime_mode": "UNKNOWN",
+            "legacy_source_state": "UNKNOWN",
+            "legacy_reason_codes": [],
+            "router_state": "UNKNOWN",
+            "microstructure_source_state": "UNKNOWN",
+            "policy_applied_count": 0,
+            "shadow_scored_window_count": 0,
+            "grants_trading_authority": False,
+            "proves_economic_qualification": False,
+        }
+
+    result = empty()
+    boot_id = ""
+    governance_fields = (
+        "data.training_symbol", "data.bar_interval_ms", "data.online_bar_source",
+        "data.source_venue", "data.source_category", "data.price_type",
+        "data.volume_unit", "metrics_oos.mean_model_net_edge_bps_per_round_trip",
+        "metrics_oos.primary_objective", "governance.primary_objective",
+    )
+    for line in text.splitlines():
+        boot = re.search(r"PROCESS_START:\s*boot_id=([^,\s]+)", line)
+        runtime_boot = re.search(r"RUNTIME_STATUS:.*boot=\{id=([^,}\s]+)", line)
+        observed_boot = boot or runtime_boot
+        if boot or (observed_boot and boot_id and observed_boot[1] != boot_id):
+            result = empty()
+        if observed_boot:
+            boot_id = observed_boot[1]
+        if "INTEGRATOR_DEGRADED:" in line:
+            governance = "integrator 报告治理门槛未通过:" in line
+            result["legacy_source_state"] = "REJECTED_GOVERNANCE" if governance else "DEGRADED"
+            result["legacy_reason_codes"] = (
+                ["GOVERNANCE_REJECTED", *[field for field in governance_fields if field in line]]
+                if governance else ["INITIALIZATION_OR_HISTORY_FAILED"]
+            )
+        elif "INTEGRATOR_INIT:" in line:
+            result["legacy_source_state"] = "INITIALIZED"
+            result["legacy_reason_codes"] = []
+            result["router_state"] = "UNKNOWN"
+        elif "INTEGRATOR_SAFE_OFF:" in line:
+            result["legacy_source_state"] = "SAFE_OFF"
+        if "ALPHA_SOURCE_ROUTER_ARMED:" in line:
+            result["router_state"] = "ARMED_WAITING_ELIGIBLE_SOURCE"
+        if "MICROSTRUCTURE_DEMO_SIGNAL_ACCEPTED:" in line:
+            result["microstructure_source_state"] = "SIGNAL_ACCEPTED"
+        elif "MICROSTRUCTURE_DEMO_FAIL_CLOSED:" in line:
+            result["microstructure_source_state"] = "FAIL_CLOSED"
+        if "INTEGRATOR_POLICY_APPLIED:" in line:
+            result["policy_applied_count"] += 1
+        if "RUNTIME_STATUS:" in line:
+            mode = re.search(r"\bintegrator_mode=(off|shadow|canary|active)\b", line)
+            if mode:
+                result["runtime_mode"] = mode[1]
+            if re.search(r"shadow_window=\{[^}]*\bscored=[1-9][0-9]*\b", line):
+                result["shadow_scored_window_count"] += 1
+
+    rejected = "GOVERNANCE_REJECTED" in result["legacy_reason_codes"]
+    result["waiting_alone_resolves_legacy_rejection"] = False if rejected else None
+    if result["microstructure_source_state"] == "FAIL_CLOSED":
+        action = "REVIEW_MICROSTRUCTURE_FAIL_CLOSED_EVIDENCE"
+    elif rejected:
+        action = "REVIEW_REJECTED_SOURCE_CONTRACT_NO_AUTO_RETRAIN_OR_ACTIVATION"
+    elif result["legacy_source_state"] in {"DEGRADED", "SAFE_OFF"}:
+        action = "REVIEW_INITIALIZATION_FAILURE_KEEP_GUARDS"
+    else:
+        action = "VERIFY_SOURCE_AND_CANDIDATE_EVIDENCE_NO_QUALIFICATION_INFERRED"
+    result["next_action"] = action
+    return result
+
+
 def assess(
     text: str,
     stage: StageRule,
@@ -5387,6 +5468,7 @@ def assess(
         "execution_status": execution_status,
         "market_context_status": market_context_status,
         "account_sync_status": account_sync_status,
+        "integrator_availability": extract_integrator_availability(original_text),
         "metrics": metrics,
         "account_pnl": account_pnl,
         "account_equity_continuity": account_equity_continuity,
@@ -5417,6 +5499,10 @@ def print_report(report: Dict[str, object]) -> None:
         print(f"MARKET_CONTEXT_STATUS: {report['market_context_status']}")
     if "account_sync_status" in report:
         print(f"ACCOUNT_SYNC_STATUS: {report['account_sync_status']}")
+    if "integrator_availability" in report:
+        print("INTEGRATOR_AVAILABILITY: " + json.dumps(
+            report["integrator_availability"], ensure_ascii=False, sort_keys=True
+        ))
     print("METRICS:")
     metrics = report["metrics"]
     assert isinstance(metrics, dict)

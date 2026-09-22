@@ -27,6 +27,89 @@ ASSESS = load_assess_module()
 
 
 class AssessRunLogTest(unittest.TestCase):
+    def test_integrator_availability_explains_rejection_without_granting_authority(self):
+        text = "\n".join([
+            "PROCESS_START: boot_id=one, startup_utc=2026-09-22T00:00:00Z",
+            "INTEGRATOR_DEGRADED: integrator 报告治理门槛未通过: "
+            "data.training_symbol 缺失; data.bar_interval_ms 必须 > 0; "
+            "data.source_venue 必须为 bybit; governance.primary_objective 必须为 net",
+            "ALPHA_SOURCE_ROUTER_ARMED: legacy OHLCV source unavailable",
+            "RUNTIME_STATUS: boot={id=one}, integrator_mode=canary, shadow_window={scored=0}",
+        ])
+        result = ASSESS.extract_integrator_availability(text)
+        self.assertEqual(result["legacy_source_state"], "REJECTED_GOVERNANCE")
+        self.assertIn("data.training_symbol", result["legacy_reason_codes"])
+        self.assertEqual(result["router_state"], "ARMED_WAITING_ELIGIBLE_SOURCE")
+        self.assertEqual(result["microstructure_source_state"], "UNKNOWN")
+        self.assertEqual(result["runtime_mode"], "canary")
+        self.assertFalse(result["waiting_alone_resolves_legacy_rejection"])
+        self.assertFalse(result["grants_trading_authority"])
+        self.assertFalse(result["proves_economic_qualification"])
+
+    def test_integrator_availability_missing_events_are_unknown_not_closed(self):
+        for text in ("", "RUNTIME_STATUS: integrator_mode=canary"):
+            result = ASSESS.extract_integrator_availability(text)
+            self.assertEqual(result["legacy_source_state"], "UNKNOWN")
+            self.assertEqual(result["microstructure_source_state"], "UNKNOWN")
+            self.assertIsNone(result["waiting_alone_resolves_legacy_rejection"])
+
+    def test_integrator_availability_recovery_and_safe_off_follow_event_order(self):
+        rejected = "INTEGRATOR_DEGRADED: integrator 报告治理门槛未通过: data.training_symbol 缺失\n"
+        initialized = "INTEGRATOR_INIT: mode=canary, model_version=synthetic\n"
+        for text, expected in ((rejected + initialized, "INITIALIZED"),
+                               (initialized + rejected, "REJECTED_GOVERNANCE"),
+                               (rejected + "INTEGRATOR_SAFE_OFF: strict init failed", "SAFE_OFF")):
+            with self.subTest(expected=expected):
+                result = ASSESS.extract_integrator_availability(text)
+                self.assertEqual(result["legacy_source_state"], expected)
+                if expected == "INITIALIZED":
+                    self.assertEqual(result["legacy_reason_codes"], [])
+
+    def test_integrator_availability_does_not_copy_raw_errors(self):
+        for text in ("INTEGRATOR_DEGRADED: cannot open /private/credential secret-value",
+                     "INTEGRATOR_DEGRADED: integrator 报告治理门槛未通过: secret-value",
+                     "MICROSTRUCTURE_DEMO_FAIL_CLOSED: reason=secret-value"):
+            with self.subTest(text=text):
+                result = json.dumps(ASSESS.extract_integrator_availability(text))
+                self.assertNotIn("secret-value", result)
+                self.assertNotIn("/private", result)
+
+    def test_integrator_availability_new_boot_clears_previous_evidence(self):
+        old = ("PROCESS_START: boot_id=old\nINTEGRATOR_INIT: mode=canary\n"
+               "INTEGRATOR_POLICY_APPLIED: mode=canary\n"
+               "MICROSTRUCTURE_DEMO_SIGNAL_ACCEPTED: status=flat\n"
+               "RUNTIME_STATUS: boot={id=old}, integrator_mode=canary, shadow_window={scored=3}\n")
+        for new_boot in ("PROCESS_START: boot_id=new\n",
+                         "RUNTIME_STATUS: boot={id=new}, integrator_mode=canary\n"):
+            with self.subTest(new_boot=new_boot):
+                result = ASSESS.extract_integrator_availability(old + new_boot)
+                self.assertEqual(result["legacy_source_state"], "UNKNOWN")
+                self.assertEqual(result["microstructure_source_state"], "UNKNOWN")
+                self.assertEqual(result["policy_applied_count"], 0)
+                self.assertEqual(result["shadow_scored_window_count"], 0)
+
+    def test_integrator_availability_microstructure_events_do_not_imply_qualification(self):
+        accepted = "MICROSTRUCTURE_DEMO_SIGNAL_ACCEPTED: candidate_id=synthetic, status=flat\n"
+        failed = "MICROSTRUCTURE_DEMO_FAIL_CLOSED: reason=stale\n"
+        for text, expected in ((accepted + failed, "FAIL_CLOSED"),
+                               (failed + accepted, "SIGNAL_ACCEPTED")):
+            result = ASSESS.extract_integrator_availability(text)
+            self.assertEqual(result["microstructure_source_state"], expected)
+            self.assertFalse(result["grants_trading_authority"])
+            self.assertFalse(result["proves_economic_qualification"])
+
+    def test_integrator_availability_does_not_change_assessment_gates(self):
+        runtime = self._runtime_line(20, 0.0).replace("integrator_mode=shadow", "integrator_mode=canary")
+        baseline = ASSESS.assess(runtime, ASSESS.STAGE_RULES["SMOKE"], min_runtime_status=1)
+        diagnosed = ASSESS.assess(
+            "INTEGRATOR_DEGRADED: integrator 报告治理门槛未通过: data.training_symbol 缺失\n"
+            "ALPHA_SOURCE_ROUTER_ARMED: legacy OHLCV source unavailable\n" + runtime,
+            ASSESS.STAGE_RULES["SMOKE"], min_runtime_status=1)
+        for key in ("verdict", "warn_reasons", "fail_reasons", "protection_status", "execution_status"):
+            self.assertEqual(diagnosed[key], baseline[key], key)
+        self.assertIn("Integrator 处于 canary/active 但未观测到策略接管事件", diagnosed["warn_reasons"])
+        self.assertEqual(diagnosed["integrator_availability"]["legacy_source_state"], "REJECTED_GOVERNANCE")
+
     @staticmethod
     def _execution_policy_identity():
         policy = {"execution.slippage_bps": 2.0}

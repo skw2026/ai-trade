@@ -24,6 +24,22 @@ REPORT = load_module()
 
 
 class BuildClosedLoopReportTest(unittest.TestCase):
+    def test_runtime_preserves_availability_without_changing_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "runtime.json"
+            diagnostic = {"legacy_source_state": "REJECTED_GOVERNANCE", "grants_trading_authority": False}
+            path.write_text(json.dumps({"verdict": "FAIL", "integrator_availability": diagnostic}))
+            result = REPORT.assess_runtime(path)
+            self.assertEqual(result["integrator_availability"], diagnostic)
+            self.assertEqual(result["status"], "fail")
+
+    def test_runtime_legacy_report_has_no_invented_availability(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "runtime.json"
+            path.write_text(json.dumps({"verdict": "PASS"}))
+            result = REPORT.assess_runtime(path)
+            self.assertEqual(result["integrator_availability"], {})
+
     def test_data_pipeline_keeps_research_benchmark_failure_diagnostic_only(self):
         with tempfile.TemporaryDirectory() as td:
             report = pathlib.Path(td) / "data_pipeline_report.json"
