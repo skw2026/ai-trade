@@ -15,6 +15,12 @@
   `docs/plans/2026-09-23-independent-safety-withdrawal.md`实现新风险语义并连续验证交付。
   旧严格批次及更早 HALTED 不改；新 gate 仅服务本合同。原始证据只读、工作副本
   隔离可写，线上 profile 和市场候选不变，不以部署代码冒称已启用或盈利资格。
+  本批已由d80f409交付：本机/Linux/CI/CD镜像均119/119，部署前往返及部署后
+  六组收据独立核对通过，94份证据完整，实际release/容器同SHA、running、重启0。
+  新gate READY，首轮noexec失败及四份旧HALTED不改；Archive仍INSUFFICIENT，
+  V4只有原绑定超时FAIL。新开关默认关闭，无生产profile变化或自动恢复权限。
+  工程批次已结案，不默认等两周或重开旧研究；详见对应结果报告。后续真实候选
+  资格和启用/恢复治理须独立实质合同，不能以继续修发布工具替代经济证据。
 
 - 2026-09-23 用户接续具体自学习验收方案要求“那就不要停，继续啊”：按
   `docs/plans/2026-09-23-strict-learning-integration.md`连续完成严格模型组合验证、

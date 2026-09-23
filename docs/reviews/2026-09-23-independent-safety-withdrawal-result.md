@@ -1,9 +1,39 @@
 # 独立安全撤回：阶段验收与复盘
 
-当前：**LOCAL_ENGINEERING_PASS / REMOTE_DELIVERY_PENDING**。
+当前：**INDEPENDENT_SAFETY_WITHDRAWAL_ENGINEERING_DELIVERED**。
 依据[冻结合同](../plans/2026-09-23-independent-safety-withdrawal.md)，用户已选择
-独立安全撤回；旧严格批次 HALTED 不重置，本批新工程 gate 已完成本地验收。
-代码尚待精确 SHA 的 CI/CD 和部署后收据，不提前宣称已部署。
+独立安全撤回；代码 `d80f409b6c6a6fae1ba93f7337477df1a5e80a35` 已推送 main、
+完成 CI/CD、真实部署和六组收据独立验收。本批 gate 为 READY；包括旧严格批次
+在内的四份 HALTED 均不重置。工程批次结案，不代表市场资格或完整生产自学习通过。
+
+## 远端交付已证明
+
+- [CI 35879227370](https://github.com/skw2026/ai-trade/actions/runs/35879227370)
+  **119/119，226.42 秒**；
+  [CD 35879227496](https://github.com/skw2026/ai-trade/actions/runs/35879227496)
+  镜像内 **119/119，152.94 秒**，均为本 SHA 首次运行，无 rerun。
+- CD 在 2026-09-23 15:17:27 UTC 完成证据往返核验，15:17:28 留存收据，
+  15:18:04 开始部署，15:29:01 部署成功。94 份文件（含两份隐藏锁和新增六份
+  安全轨迹/日志）全部匹配清单；下载后再次核对身份、摘要、源代码与实际模型。
+- 本次 CD 固定合成训练模型 SHA256 为
+  `5c006af072aba053a55e2b5611462e5560f452fef1cb411bd13313405e40fe79`，
+  不冒充下述本地旧模型。三个安全场景逐窗独立复算一致：正常4窗、短窗85窗；
+  退化第1200根bar撤回，权重0.55，后336次观测不解锁。统计门槛、小时评估、
+  六小时调权、注册隔离拒绝及故障事务证据均继续通过。
+- [Smoke 35881983115](https://github.com/skw2026/ai-trade/actions/runs/35881983115)
+  与[固定工程回归 35881983031](https://github.com/skw2026/ai-trade/actions/runs/35881983031)
+  成功。实际 release/容器 revision 均为本 SHA，容器 running、重启0；
+  runtime 为 PASS_WITH_ACTIONS、保护 PASS、账户同步 OK，execution 仍 NOT_EVALUATED，
+  不据此声称真实成交或完整交易验收通过。
+- [Archive 35881983035](https://github.com/skw2026/ai-trade/actions/runs/35881983035)
+  工作流成功但结论仍 INSUFFICIENT_ARCHIVE_LIFECYCLE；
+  [V4 35881983091](https://github.com/skw2026/ai-trade/actions/runs/35881983091)
+  仍真实 failure。独立核对仅原 `20260922T035334.633790Z.json` 第3行超时，
+  SHA256 `65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350`，
+  无新增未知坏段。旧失败未重分类为 PASS，市场资格不变。
+
+完整脱敏收据见[交付机器证据](2026-09-23-independent-safety-withdrawal.evidence.json)。
+原始账户/运行报告只留本地私有证据目录，不随文档公开上传。
 
 ## 本地已证明
 
@@ -57,6 +87,10 @@ Docker tmpfs `/tmp` 默认 noexec：相同临时可执行替身在 `/tmp` errno1
 满足原资格与恢复审核。`NO_QUALIFIED_CANDIDATE`、C2 `NOT_QUALIFIED`、旧研究停止
 均不变，不新增真实候选/账户动作。
 
-下一步连续完成本提交 main 发布，核对 CI/CD、Smoke、固定工程、Archive、V4 六组
-收据及新增安全痕迹的传输/独立复算；只有原绑定 V4 超时可保持已知数据 FAIL，
-新增未知错误仍暂停。验收通过即本工程批次结案，不默认等两周、不自动重开市场研究。
+本工程批次已收口，最后仅归档文档并以 `[skip ci]` 推送，不重复部署、不默认等两周。
+旧严格批次的本地步长修复作为本次代码祖先纳入本次119项验收，不追溯改写旧批次失败。
+
+后续推进边界明确：统计调权与安全处置分离的工程缺口已补齐；线上新开关仍为默认
+关闭，本批没有自动恢复入口。下一实质缺口是合格市场候选及启用/恢复治理，不能靠
+延长观察、重跑旧研究或继续修发布工具代替。本次不自动扩大为新研究、真实候选激活、
+修改线上 profile 或账户动作；需新的实质合同才能接续这些范围。

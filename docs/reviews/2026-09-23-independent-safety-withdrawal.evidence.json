@@ -1,0 +1,238 @@
+{
+  "artifact_receipts": {
+    "archive": {
+      "artifact_id": 10760164186,
+      "run_attempt": 1,
+      "run_id": 35881983035,
+      "zip_digest": "sha256:52cd7456ad6c0b613d5b0a01e19c458276a1e7fc286f37f412821b57371524d3"
+    },
+    "fixed": {
+      "artifact_id": 10760783578,
+      "run_attempt": 1,
+      "run_id": 35881983031,
+      "zip_digest": "sha256:e89c8221c3865b9d1984eed5c42dfaa8ed21fdec103dd6cdcc324010811e2078"
+    },
+    "learning": {
+      "artifact_id": 10760645909,
+      "run_attempt": 1,
+      "run_id": 35879227496,
+      "zip_digest": "sha256:b96eea6d63340d65a76fc7c27a0677d67a45d056bc933e1b243e390aec7ea463"
+    },
+    "smoke": {
+      "artifact_id": 10760564117,
+      "run_attempt": 1,
+      "run_id": 35881983115,
+      "zip_digest": "sha256:598a6235ae6edd902df5d18755dfe55867a45046cdfff3fba23b85657bbb6372"
+    },
+    "v4": {
+      "artifact_id": 10760583598,
+      "run_attempt": 1,
+      "run_id": 35881983091,
+      "zip_digest": "sha256:f9b5f9ed4d16d079fb6961a1f621abf8946f56d910ec807ac188131be4ca43ba"
+    }
+  },
+  "decision": "INDEPENDENT_SAFETY_WITHDRAWAL_ENGINEERING_DELIVERED",
+  "demo_trading_authority": false,
+  "deployment": {
+    "container_image_revision": "d80f409b6c6a6fae1ba93f7337477df1a5e80a35",
+    "container_restart_count": 0,
+    "container_status": "running",
+    "expected_sha": "d80f409b6c6a6fae1ba93f7337477df1a5e80a35",
+    "release_git_sha": "d80f409b6c6a6fae1ba93f7337477df1a5e80a35",
+    "status": "PASS"
+  },
+  "engineering": {
+    "boundary": "FIXED_ENGINEERING_SEPARATE_FROM_LIVE_DATA_QUALITY",
+    "boundary_file_sha256": "11d19c45c54cfeb3e2d4a87f7704e590169e85d80ffa05f0b6fcfae5b5c809b3",
+    "business_qualified": false,
+    "data_quality": {
+      "archive_decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+      "known_failure": {
+        "artifact_checksums_verified": true,
+        "phase": "snapshot",
+        "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+        "report": "20260922T035334.633790Z.json",
+        "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+        "snapshot_line": 3
+      },
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "Option Archive Lifecycle Audit",
+          "run_attempt": 1,
+          "run_id": 35881983035
+        },
+        {
+          "conclusion": "failure",
+          "name": "Option Lifecycle V4 Gate",
+          "run_attempt": 1,
+          "run_id": 35881983091
+        }
+      ],
+      "status": "FAIL",
+      "v4_decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE"
+    },
+    "decision": "ENGINEERING_PASS_DATA_NOT_QUALIFIED",
+    "demo_activation_authorized": false,
+    "engineering": {
+      "closure_latched": true,
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "CI",
+          "run_attempt": 1,
+          "run_id": 35879227370
+        },
+        {
+          "conclusion": "success",
+          "name": "CD",
+          "run_attempt": 1,
+          "run_id": 35879227496
+        },
+        {
+          "conclusion": "success",
+          "name": "Closed Loop Smoke",
+          "run_attempt": 1,
+          "run_id": 35881983115
+        },
+        {
+          "conclusion": "success",
+          "name": "Fixed Engineering Regression",
+          "run_attempt": 1,
+          "run_id": 35881983031
+        }
+      ],
+      "status": "PASS"
+    },
+    "historical_failure_reclassified_as_pass": false,
+    "input_sha256": {
+      "archive": "f38ff8d6bf1afc3f786ac058458beaee8f52023debea537c0c127ee0fba7db39",
+      "closure": "9d2909c57b3a6377264d3aa46a7c5c9b3857cd152f69322fe8d4e880031b4392",
+      "freshness": "7479f471ddfe45cc6e97dfa866cc4791258b9b61ff876ce86b625b613426251e",
+      "runtime": "b87dfa48cd4a7ca76122c05275bd31748d0c32e48b4a8bd15e474abf98ac543e",
+      "snapshot": "c33a196b7fe4b8f1da32b14ac32768534b0b82b5bbf0ce223606e1e6b5fb4a42",
+      "v4": "cb9f6dabab26105821346386c1cf6d722591b8682031b723d090a7ec8b33eae2"
+    },
+    "live_activation_authorized": false,
+    "promotion_authority": false,
+    "release_sha": "d80f409b6c6a6fae1ba93f7337477df1a5e80a35",
+    "runtime": {
+      "account_sync_status": "OK",
+      "execution_status": "NOT_EVALUATED",
+      "protection_status": "PASS",
+      "verdict": "PASS_WITH_ACTIONS"
+    },
+    "schema_version": "engineering_release_result_v1"
+  },
+  "learning_report_sha256": "b25f71cfac65654bae7d62aef4009763a2a5712dd744649442debfb5f5e33e02",
+  "live_safety_profile_enabled": false,
+  "local_evidence_sha256": "92123788803fbc752cface88ed49586c78a791eb8a8e7cc8bb7000490ef68b78",
+  "local_regression": {
+    "linux": {
+      "log_sha256": "9624bc0dcc61f75baff9189c2483fc13ad3bbd4955fc67ad284d2b6efa134485",
+      "seconds": 98.49,
+      "tests": 119
+    },
+    "native": {
+      "log_sha256": "049b209b220f13acefd1025837ea376b7962f6fac2681ca98c9c6e2b36711727",
+      "seconds": 186.7,
+      "tests": 119
+    }
+  },
+  "market_economic_evidence": false,
+  "observed_at_utc": "2026-09-23T15:32:30.676693+00:00",
+  "old_halted_state_sha256": {
+    ".artifacts/engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    ".artifacts/offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    ".artifacts/strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    ".artifacts/validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "old_halted_states_unchanged": true,
+  "production_goals_complete": false,
+  "production_promotion_authority": false,
+  "release_sha": "d80f409b6c6a6fae1ba93f7337477df1a5e80a35",
+  "remote_regression": {
+    "ci": {
+      "job_id": 107243036809,
+      "run_id": 35879227370,
+      "seconds": 226.42,
+      "sha256": "d2d692f2302881125ed81ec5ad6a704f70d04ae544baef49d5967a0b22ab1e25",
+      "tests": 119
+    },
+    "docker": {
+      "job_id": 107243037250,
+      "run_id": 35879227496,
+      "seconds": 152.94,
+      "sha256": "154307d61bab14bc23c4f7ecc7bc5620139b8aa43703174e820a4267f10c8838",
+      "tests": 119
+    }
+  },
+  "safety_cases": {
+    "drift": {
+      "assessments": 5,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 336,
+      "withdrawal": {
+        "tick": 1200,
+        "weight": 0.55
+      }
+    },
+    "positive": {
+      "assessments": 4,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 0,
+      "withdrawal": null
+    },
+    "short": {
+      "assessments": 85,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 0,
+      "withdrawal": null
+    }
+  },
+  "safety_model_sha256": "5c006af072aba053a55e2b5611462e5560f452fef1cb411bd13313405e40fe79",
+  "schema_version": "independent_safety_delivery_v1",
+  "transport": {
+    "artifact_id": 10760645909,
+    "demo_trading_authority": false,
+    "file_count": 94,
+    "full_mechanism_valid": false,
+    "hidden_lock_count": 2,
+    "manifest_sha256": "092fc7bf374b8177174a565e7fd2cdc47be34ea455464f4fe3c9ea0647b587d4",
+    "market_economic_evidence": false,
+    "production_promotion_authority": false,
+    "run_attempt": 1,
+    "run_id": 35879227496,
+    "schema_version": "evidence_transport_receipt_v1",
+    "scope": "TEST_ONLY_EVIDENCE_TRANSPORT",
+    "status": "PASS",
+    "verification_git_sha": "d80f409b6c6a6fae1ba93f7337477df1a5e80a35"
+  },
+  "transport_step_times": {
+    "Deploy to ECS": {
+      "completed_at": "2026-09-23T15:29:01Z",
+      "started_at": "2026-09-23T15:18:04Z"
+    },
+    "Download Offline Evidence Roundtrip": {
+      "completed_at": "2026-09-23T15:17:27Z",
+      "started_at": "2026-09-23T15:17:27Z"
+    },
+    "Prepare Offline Evidence Transfer": {
+      "completed_at": "2026-09-23T15:17:26Z",
+      "started_at": "2026-09-23T15:17:26Z"
+    },
+    "Upload Offline Evidence Transfer Receipt": {
+      "completed_at": "2026-09-23T15:17:28Z",
+      "started_at": "2026-09-23T15:17:27Z"
+    },
+    "Upload Offline Learning Evidence": {
+      "completed_at": "2026-09-23T15:17:27Z",
+      "started_at": "2026-09-23T15:17:26Z"
+    },
+    "Verify Offline Evidence Roundtrip": {
+      "completed_at": "2026-09-23T15:17:27Z",
+      "started_at": "2026-09-23T15:17:27Z"
+    }
+  },
+  "transport_verified_before_deploy": true
+}
