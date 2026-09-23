@@ -1,0 +1,148 @@
+{
+  "base_git_sha": "aeb5a816f4231ac95456e625af7a99ccf217ac9c",
+  "bounded_cases": {
+    "drift": {
+      "assessments": 6,
+      "rollbacks": 0,
+      "selection_or_step_violations": 0,
+      "updates": 5
+    },
+    "holdout_reversal": {
+      "assessments": 4,
+      "rollbacks": 0,
+      "selection_or_step_violations": 0,
+      "updates": 2
+    },
+    "positive": {
+      "assessments": 4,
+      "rollbacks": 0,
+      "selection_or_step_violations": 0,
+      "updates": 2
+    },
+    "short": {
+      "assessments": 85,
+      "rollbacks": 0,
+      "selection_or_step_violations": 0,
+      "updates": 0
+    }
+  },
+  "code_pushed": false,
+  "decision": "HALTED_LINUX_VALIDATION_AND_STRICT_WITHDRAWAL_CONTRACT_OPEN",
+  "demo_trading_authority": false,
+  "exposure_attribution": {
+    "arms": {
+      "adaptive": {
+        "entry_notional_sum": 22952,
+        "fixed_40_notional_net": 31.310711536173855,
+        "raw_net": 36.29842594579772
+      },
+      "positive": {
+        "entry_notional_sum": 19800,
+        "fixed_40_notional_net": 31.310711536173855,
+        "raw_net": 31.310711536173855
+      }
+    },
+    "attribution_residual": 0,
+    "equal_risk_proven": false,
+    "exposure_scaling_component": 4.987714409623862,
+    "fixed_notional_net_delta": 0,
+    "market_alpha_proven": false,
+    "paired_episodes": 495,
+    "raw_net_delta": 4.987714409623862,
+    "verdict": "EXPOSURE_SCALING_ONLY"
+  },
+  "full_mechanism_valid": false,
+  "limits": [
+    "strict virtual control is not exchange fills",
+    "strict baseline rollback/cooldown is not implemented by this patch",
+    "legacy non-strict grid semantics unchanged; new reachability bound is strict-mode only",
+    "fixed notional is not complete risk normalization",
+    "Linux full regression NOT PASS; no third retry",
+    "no CI/CD receipts for this local change"
+  ],
+  "market_economic_evidence": false,
+  "model_sha256": "e619b795ecc82a6ab9760fe2fe388098abacb10a3ca2837f2e3b0630a4b1218a",
+  "old_halted_sha256": {
+    ".artifacts/engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    ".artifacts/offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    ".artifacts/validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "original_executed_step_violations": [
+    {
+      "after": 0.6,
+      "before": 0.5,
+      "case": "drift",
+      "reason": "MAX_WEIGHT_STEP_EXCEEDED",
+      "tick": 240
+    },
+    {
+      "after": 0.4,
+      "before": 0.6,
+      "case": "drift",
+      "reason": "MAX_WEIGHT_STEP_EXCEEDED",
+      "tick": 960
+    },
+    {
+      "after": 0.4,
+      "before": 0.5,
+      "case": "holdout_reversal",
+      "reason": "MAX_WEIGHT_STEP_EXCEEDED",
+      "tick": 480
+    },
+    {
+      "after": 0.6,
+      "before": 0.5,
+      "case": "positive",
+      "reason": "MAX_WEIGHT_STEP_EXCEEDED",
+      "tick": 240
+    }
+  ],
+  "phase_contract_pass": false,
+  "private_evidence_sha256": {
+    "bounded-acceptance/diagnostic.json": "b0737d67a86bce7fbfad9eee09e7870422c93d63a908d3d01a65fed28676e270",
+    "diagnosis-original/diagnostic.json": "00450048bf797845cf46e83da69d3beb0c1dd271c3d0e853ccf9046f79e15b0b",
+    "linux-tests-attempt1.log": "7a4879bcc1ea5dcba60117392968aefabee8a3c56fbe0c55c9616c0c1d545d3c",
+    "linux-tests-attempt2.log": "ae4cb577839a1ee8775934af37bd0c5acb5cfb3dad154e44f4b51fbfb6298581",
+    "native-tests-before-fixture-fix.log": "960a6d76c49ea30adefcaf005a04651ac1d392663883dfb966164a14816f7bb7",
+    "validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8"
+  },
+  "production_promotion_authority": false,
+  "same_original_model_used": true,
+  "schema_version": "strict_learning_stage_diagnosis_v1",
+  "scope": "READ_ONLY_POST_STOP_DIAGNOSIS_NOT_ACCEPTANCE",
+  "service_deployed": false,
+  "source_sha256": {
+    ".github/workflows/ci.yml": "0df4bccd57ade30123d2ec247f2c52f1cde38d0637213183cb7fc27ed86f436d",
+    "CMakeLists.txt": "7d1f7ada7f15d162b0678c2e7c8e423defd1c54805cc26ab0bb132e57e046610",
+    "src/evolution/self_evolution_controller.cpp": "6b8f2090a9da27e457f1d722c16a4ca72a63a72aae01728682743f099da7cdbe",
+    "tests/offline_learning_driver.cpp": "54516c35df4609d05ca886c09b1a325d6d2f58e79abacb5111a97a9d61469e0d",
+    "tests/test_strict_evolution.cpp": "45a932a5ad243b7a59bca0cba9886145a5d3f01dd0cdba9906d144e6832fc99a",
+    "tools/audit_strict_learning.py": "861270369bd56526905ab859bdcf8cdfd7020f1c7193fcfcfeee84f270500490",
+    "tools/test_audit_strict_learning.py": "d01eb7cb9fba3f539d6d826bba2c9b5038515976f85dad60ac7fad145899dc71",
+    "tools/test_bybit_c2_depth.py": "f43d89a032cd8cff01f0a3361dd3cf908557774cf3fdd2d911af49e2c83abc6b"
+  },
+  "tests": {
+    "linux_attempt1": {
+      "failed": 1,
+      "failed_test": "bybit_c2_depth_test",
+      "not_run": 89,
+      "passed": 27,
+      "seconds": 5.51
+    },
+    "linux_attempt2": {
+      "bybit_c2_depth_test_after_fixture_correction": "PASS",
+      "failed": 1,
+      "failed_test": "closed_loop_runner_transaction_test",
+      "not_run": 63,
+      "passed": 53,
+      "seconds": 57.15
+    },
+    "native_full": {
+      "passed": 117,
+      "scope": "before subsequent capacity-fixture-only correction",
+      "seconds": 177.37,
+      "total": 117
+    }
+  },
+  "validation_state": "HALTED"
+}

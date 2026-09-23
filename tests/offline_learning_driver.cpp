@@ -57,6 +57,100 @@ MarketEvent Event(const research::ResearchBar& b) {
   e.completed_bar = true;
   return e;
 }
+// Separate strict-control probe. No fills or registry writes: production model
+// signals feed the production controller's counterfactual virtual ledger.
+// Keep the original execution/accounting fixture below unchanged.
+void StrictReplay(int argc, char** argv) {
+  Check(argc == 9, "strict REPORT MODEL CSV START INTERVAL VERSION TRACE");
+  const auto report = ReadJson(argv[2]);
+  Check(JsonAsBool(JsonObjectField(&report, "test_only")).value_or(false),
+        "TEST_ONLY_REQUIRED");
+  const auto version = JsonAsString(JsonObjectField(&report, "model_version"));
+  Check(version && *version == argv[7], "CANDIDATE_IDENTITY_MISMATCH");
+  const auto bars = Bars(argv[4]);
+  const int start = std::stoi(argv[5]), interval = std::stoi(argv[6]);
+  Check(start >= 300 && start + interval <= static_cast<int>(bars.size()) &&
+        (interval == 12 || interval == 240), "invalid strict fixture window");
+  IntegratorShadowConfig sc;
+  sc.enabled = sc.require_model_file = true;
+  sc.log_model_score = false;
+  sc.model_report_path = argv[2];
+  sc.model_path = argv[3];
+  sc.active_meta_path.clear();
+  sc.feature_window_ticks = 300;
+  std::string error;
+  IntegratorShadow takeover(sc), model(sc);
+  Check(!takeover.Initialize(true, &error) && error.find("治理门槛") != std::string::npos,
+        "strict synthetic takeover must remain rejected");
+  Check(model.Initialize(false, &error), "model load: " + error);
+  IntegratorConfig policy;
+  policy.enabled = policy.canary_allow_independent_signal = true;
+  policy.mode = IntegratorMode::kCanary;
+  policy.canary_confidence_threshold = 0.5;
+  policy.canary_independent_notional_usd = 80;
+  SelfEvolutionConfig ec;
+  ec.enabled = ec.use_virtual_pnl = ec.use_counterfactual_search = true;
+  ec.counterfactual_require_temporal_holdout = true;
+  // Deliberately request the legacy fallback; strict mode must suppress it.
+  ec.counterfactual_fallback_to_factor_ic = ec.enable_factor_ic_adaptive_weights = true;
+  ec.enable_learnability_gate = true;
+  ec.clock_tick_interval_ms = kBar;
+  ec.update_interval_ticks = interval;
+  ec.min_update_interval_ticks = 72;
+  ec.counterfactual_superiority_min_samples_for_update = 10;
+  ec.counterfactual_superiority_min_t_stat_for_update = 1.5;
+  ec.virtual_cost_bps = 6.5;
+  ec.rollback_cooldown_ticks = 288;
+  SelfEvolutionController controller(ec);
+  Check(controller.Initialize(0, 10000, {0.5, 0.5}, &error, 0,
+                              bars[start].ts_ms - kBar), error);
+  Signal flat;
+  flat.symbol = "SYNTHBTC";
+  RegimeState regime;
+  regime.bucket = RegimeBucket::kRange;
+  double delayed_signal = 0;
+  std::ofstream out(argv[8]);
+  Check(out.good(), "strict trace output unavailable");
+  out << "index,p_up,model_signal,delayed_signal,price,action,action_type,before,weight,best,"
+         "train_samples,holdout_samples,learn_samples,learn_t,learn_pass,hold_t,hold_n,"
+         "superiority_pass,used_search,strict,fallback,virtual_pnl,objective,rolled_back\n";
+  out << std::setprecision(17);
+  for (int i = 0; i < static_cast<int>(bars.size()); ++i) {
+    const auto event = Event(bars[i]);
+    model.OnMarket(event);
+    if (i < start) continue;
+    const auto inference = model.Infer(flat, regime);
+    Check(inference.enabled && inference.model_version == *version, "strict inference identity");
+    const auto proposed = EvaluateIntegratorPolicy(policy, inference, flat, 0, false, true);
+    const double model_signal = proposed.applied ? proposed.signal.suggested_notional_usd : 0;
+    const auto before = controller.current_weights().trend_weight;
+    const auto action = controller.OnTick(i - start + 1, 0, RegimeBucket::kRange, 0, 0,
+        delayed_signal, 0, event.price, "SYNTHBTC", false, 0, 10000, 6.5, 0.000025, event.ts_ms);
+    out << i << ',' << inference.p_up << ',' << model_signal << ',' << delayed_signal
+        << ',' << event.price << ',' << (action ? action->reason_code : "none")
+        << ',' << (action ? static_cast<int>(action->type) : -1)
+        << ',' << before << ',' << controller.current_weights().trend_weight
+        << ',' << (action ? action->counterfactual_best_trend_weight : before)
+        << ',' << (action ? action->counterfactual_train_samples : 0)
+        << ',' << (action ? action->counterfactual_holdout_samples : 0)
+        << ',' << (action ? action->learnability_samples : 0)
+        << ',' << (action ? action->learnability_t_stat : 0)
+        << ',' << (action && action->learnability_gate_passed)
+        << ',' << (action ? action->counterfactual_superiority_t_stat : 0)
+        << ',' << (action ? action->counterfactual_superiority_samples : 0)
+        << ',' << (action && action->counterfactual_superiority_gate_passed)
+        << ',' << (action && action->used_counterfactual_search)
+        << ',' << (action && action->counterfactual_temporal_holdout_required)
+        << ',' << (action && (action->counterfactual_fallback_to_factor_ic_enabled ||
+                             action->counterfactual_fallback_to_factor_ic_used))
+        << ',' << (action ? action->window_virtual_pnl_usd : 0)
+        << ',' << (action ? action->window_objective_score : 0)
+        << ',' << (action && action->rolled_back_to_baseline) << '\n';
+    delayed_signal = model_signal;  // Never send the next bar's inference early.
+  }
+  Check(out.good(), "strict trace write failed");
+  std::cout << "TEST_ONLY strict virtual control; no fills/promotion\n";
+}
 void Replay(int argc, char** argv) {
   Check(argc == 10, "replay REPORT MODEL CSV START FEE_BPS ADAPTIVE VERSION TRACE");
   const auto report = ReadJson(argv[2]);
@@ -243,6 +337,8 @@ int main(int argc, char** argv) {
       c.top_k = 3;
       std::string error;
       Check(research::SaveMinerReport(research::Miner().Run(Bars(argv[2]), c), argv[3], &error), error);
+    } else if (std::string(argv[1]) == "strict") {
+      StrictReplay(argc, argv);
     } else {
       Check(std::string(argv[1]) == "replay", "unknown mode");
       Replay(argc, argv);

@@ -40,10 +40,15 @@ class Opener:
 
 
 class DownloadTest(unittest.TestCase):
-    def run_capture(self, opener):
+    def run_capture(self, opener, free_bytes=2 * fetch.MAX_COMPRESSED):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary) / 'capture'
-            result = fetch.collect(root, opener)
+            # The archive and transport are synthetic; host /tmp capacity must
+            # not decide their identity/CRC tests. Exercise the real capacity
+            # guard separately with an explicit insufficient-space fixture.
+            with patch.object(fetch.shutil, 'disk_usage') as disk:
+                disk.return_value.free = free_bytes
+                result = fetch.collect(root, opener)
             self.assertEqual(json.loads((root / 'manifest.json').read_text()), result)
             return result
 
@@ -63,6 +68,13 @@ class DownloadTest(unittest.TestCase):
         result = self.run_capture(opener)
         self.assertFalse(result['complete'])
         self.assertEqual(len(opener.requests), 1)
+
+    def test_insufficient_disk_rejected_before_get(self):
+        opener = Opener(archive_bytes())
+        result = self.run_capture(opener, free_bytes=2 * fetch.MAX_COMPRESSED - 1)
+        self.assertFalse(result['complete'])
+        self.assertEqual(result['reason'], 'DEPTH_DISK_BUDGET_UNAVAILABLE')
+        self.assertEqual([r.get_method() for r in opener.requests], ['HEAD'])
 
     def test_truncated_changed_etag_and_wrong_member_are_rejected(self):
         for opener in [Opener(archive_bytes(), declared=99999),
@@ -200,7 +212,9 @@ class ArchiveReplayTest(unittest.TestCase):
         raw = archive_bytes(b''.join((json.dumps(r) + '\n').encode() for r in rows))
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary) / 'capture'
-            fetch.collect(root, Opener(raw))
+            with patch.object(fetch.shutil, 'disk_usage') as disk:
+                disk.return_value.free = 2 * fetch.MAX_COMPRESSED
+                fetch.collect(root, Opener(raw))
             manifest_sha = fetch.wire.digest((root / 'manifest.json').read_bytes())
             report = audit.replay(root, manifest_sha, evidence, evidence_sha)
             self.assertTrue(report['zip_crc_verified'])

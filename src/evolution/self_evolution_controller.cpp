@@ -545,14 +545,29 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
             : bucket_window_virtual_pnl_by_candidate_[eval_index];
     if (!candidate_scores.empty() &&
         candidate_scores.size() == counterfactual_trend_weight_grid_.size()) {
-      std::size_t best_index = 0;
-      double best_score = candidate_scores[0];
-      for (std::size_t i = 1; i < candidate_scores.size(); ++i) {
-        if (candidate_scores[i] > best_score) {
-          best_score = candidate_scores[i];
-          best_index = i;
+      // In strict mode select only reachable candidates BEFORE looking at the
+      // holdout. Clipping the winner afterwards would apply a different weight
+      // from the one whose holdout evidence was validated. Legacy mode keeps
+      // its historical grid-search semantics; no live profile is changed here.
+      std::optional<std::size_t> best_reachable;
+      for (std::size_t i = 0; i < candidate_scores.size(); ++i) {
+        if (config_.counterfactual_require_temporal_holdout &&
+            std::fabs(counterfactual_trend_weight_grid_[i] -
+                      runtime.current_trend_weight) >
+                config_.max_weight_step + kWeightEpsilon) {
+          continue;
+        }
+        if (!best_reachable || candidate_scores[i] > candidate_scores[*best_reachable]) {
+          best_reachable = i;
         }
       }
+      if (!best_reachable) {
+        action.reason_code = "EVOLUTION_COUNTERFACTUAL_NO_REACHABLE_CANDIDATE";
+        ResetWindowAttribution(eval_index);
+        return action;
+      }
+      const std::size_t best_index = *best_reachable;
+      const double best_score = candidate_scores[best_index];
       const double best_trend_weight = counterfactual_trend_weight_grid_[best_index];
       best_counterfactual_candidate = EvolutionWeights{
           best_trend_weight,

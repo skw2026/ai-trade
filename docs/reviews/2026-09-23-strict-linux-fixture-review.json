@@ -1,0 +1,26 @@
+{
+  "failure_id": "55608964075748adb1d5a6d07cdaca1a",
+  "decision": "retry",
+  "goal": "同源117项Linux离线工程回归，保留所有深度归档安全保护",
+  "expected": "全量117项通过；合成ZIP及内存网络桩验证身份/CRC，容量不足独立拒绝",
+  "observed": "27项通过后bybit_c2_depth_test失败；两个合成正例complete=false，后续回放报DEPTH_CAPTURE_NOT_COMPLETE",
+  "root_cause_status": "confirmed",
+  "root_cause": "本次执行者使用256MiB tmpfs。旧单测虽然用内存网络桩和微小合成ZIP，仍调用真实shutil.disk_usage，触发生产400MiB可用空间门槛。相同隔离容器复现free=268435456、required=419430400、reason=DEPTH_DISK_BUDGET_UNAVAILABLE；仅把测试容量替身设为1GiB，原捕获立即complete=true。不是外部下载、CRC、模型或生产代码回归。",
+  "evidence": [
+    ".artifacts/strict-learning-20260923/linux-tests-attempt1.log",
+    "tools/fetch_bybit_c2_depth_archive.py: free >= 2 * MAX_COMPRESSED; MAX_COMPRESSED=200MiB",
+    "READ_ONLY_FAILURE_DIAGNOSIS_NOT_ACCEPTANCE: tmp_free=268435456 required_free=419430400 original_reason=DEPTH_DISK_BUDGET_UNAVAILABLE",
+    "Same original stub/ZIP with mocked capacity: complete=true, network_used=false"
+  ],
+  "next_action": "只修改离线单测容量依赖，并新增不足容量拒绝且不GET的负例；生产阈值/归档验收不改。按原docker/ctest命令一次retry，仍在同一256MiB tmpfs。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "复现真正严格自学习行为，同时不能把无关的宿主容量依赖误归为算法失败；全量测试必须完成。",
+    "data_feasibility": "测试ZIP在内存生成、HTTP全部内存桩，无需网络、账户或新增历史行情。",
+    "method_feasibility": "隔离受控环境输入而非绕过保护，新增400MiB-1必须拒绝并只发HEAD的回归；原正负例与hash/CRC断言保持。",
+    "budget_and_exit": "本批4小时自设上限内第二轮也是最后一轮限定修复。原命令一次复验；若仍失败，不再扩展第三轮，先完整路径复核并结案。"
+  }
+}

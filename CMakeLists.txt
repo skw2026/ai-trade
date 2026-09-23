@@ -92,6 +92,10 @@ if(BUILD_TESTING)
   # Offline integration driver only: never installed into the runtime image.
   add_executable(offline_learning_driver tests/offline_learning_driver.cpp)
   target_link_libraries(offline_learning_driver PRIVATE ai_trade_system)
+  add_executable(strict_evolution_test tests/test_strict_evolution.cpp)
+  target_link_libraries(strict_evolution_test PRIVATE ai_trade_system)
+  add_test(NAME strict_evolution_test COMMAND strict_evolution_test)
+  set_tests_properties(strict_evolution_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
   add_executable(self_evolution_clock_test tests/test_self_evolution_clock.cpp)
   target_link_libraries(self_evolution_clock_test PRIVATE ai_trade_system)
   add_test(NAME self_evolution_clock_test COMMAND self_evolution_clock_test)
@@ -154,6 +158,9 @@ if(BUILD_TESTING)
     add_test(NAME offline_learning_harness_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_offline_learning_loop.py)
     set_tests_properties(offline_learning_harness_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
+    add_test(NAME strict_learning_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_strict_learning.py)
+    set_tests_properties(strict_learning_audit_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
     add_test(NAME model_registry_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_model_registry.py)
     add_test(NAME activation_transaction_test

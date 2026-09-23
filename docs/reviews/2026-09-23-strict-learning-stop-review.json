@@ -1,0 +1,36 @@
+{
+  "failure_id": "0d76563ba3fd4fcbba60d876bf56f0c5",
+  "decision": "stop",
+  "goal": "真实模型严格选择、受限更新和退化处置的组合证明及跨平台交付",
+  "expected": "同源117项完整回归通过；原样本/因果/步长约束保持，严格退化处置具有明确且可验收的风险语义",
+  "observed": "本机全量117/117通过；Linux首次深度容量夹具失败，限定修复后原命令复验通过该项，但在第54项事务测试因默认锁路径落在只读源码挂载而失败，53项通过、63项未执行。真实模型四组严格选择/步长已通过，严格基线回滚仍0次。",
+  "root_cause_status": "confirmed",
+  "root_cause": "执行者将适用于纯模型验收的只读源码/小tmpfs环境直接用于全量事务测试，却未盘点其工作区锁写入和容量前置。旧深度测试的真实容量依赖已隔离；事务测试的source tools/closed_loop_runner.sh会按默认./data/models/closed_loop_runner.lock创建锁，源码挂载ro使shell重定向报EROFS、flock为坏fd并退出，部分预期观测文件因此没有生成。日志与相同O_CREAT诊断均确认EROFS；独立可写临时文件可加锁。不声称未执行的63项已通过。严格回退另有结构性问题：生产代码显式禁止严格模式走旧基线回滚，不能靠修测试环境解决。",
+  "evidence": [
+    ".artifacts/strict-learning-20260923/linux-tests-attempt1.log",
+    ".artifacts/strict-learning-20260923/linux-tests-attempt2.log",
+    ".artifacts/strict-learning-20260923/native-tests-before-fixture-fix.log",
+    ".artifacts/strict-learning-20260923/diagnosis-original/diagnostic.json",
+    ".artifacts/strict-learning-20260923/bounded-acceptance/diagnostic.json",
+    "READ_ONLY_FAILURE_DIAGNOSIS_NOT_ACCEPTANCE: create_missing_lock_like_shell_redirection source_errno=30 EROFS; isolated_writable_lock_succeeds=true",
+    "src/evolution/self_evolution_controller.cpp: strict mode excludes ShouldRollback branch"
+  ],
+  "next_action": "本批停止并保留全部失败；不执行第三次修复/复验或发布服务。归档已验证的局部步长修复及加仓归因。下一次实质决策为严格退化采用独立安全撤回还是仅统计回退；接续时必须先设计与CI一致的隔离可写工作副本/锁目录及容量预检，不把真实账户目录可写挂载进测试。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "blocked",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "不因用户要求持续推进而用普通模式回滚、Linux部分通过或总收益增长代替完整自学习要求。",
+    "data_feasibility": "模型、原合成数据、模型方向和逐笔归因均已取得，原输入hash保持；当前不是缺历史数据。",
+    "method_feasibility": "严格选优/步长方法已由99次实际模型评估核验。基线恢复与安全撤回不能混为同一算法动作，需要具名风险语义；全量测试另需可写的隔离工作副本而非源码ro。",
+    "budget_and_exit": "4有效工程小时尚未耗尽，但预先限定的两轮修复已使用（步长修复、容量夹具修复），且存在结构性严格回退问题；按否定出口停止，不通过换state/改argv/临时扩大限额继续。"
+  },
+  "route_reassessment": {
+    "old_route_failure": "只证明普通反馈回滚，再把严格留出组件测试拼在旁边，不能证明同一模式的闭环；将模型容器限制照搬全量事务验证又引入无关环境故障，说明必须按执行依赖验收测试环境。",
+    "replacement": "先确定统计调权与安全撤回的关系；推荐退化后独立锁存冻结学习/候选新增风险，已有减仓风控保留，恢复重新过原资格。工程验证用只读原始证据+可写的隔离工作副本，不给真实账户数据写权限，容量/锁/依赖一次性预检，再跑固定全量。",
+    "feasibility_evidence": "同一模型在修复后正例分0.50→0.55→0.60更新；反转后段拒绝、85次短窗口冻结、所有99次选择无越界。源码和实测共同证明严格基线回滚不可达；EROFS与独立临时锁对照明确指出环境差异。",
+    "budget": "不续本批修复次数，不新建状态规避失败；待实质风险语义选择后另冻结接续范围和投入。",
+    "stop_condition": "未决定风险语义前不实现安全撤回、不交易发布；不运行第三次正式验收；不得降低门槛或将局部通过追溯为阶段PASS。"
+  }
+}
