@@ -1,0 +1,270 @@
+{
+  "archive_diagnosis": {
+    "acceptance_retried": false,
+    "api_zip_digest": "sha256:db52bcb7a87b2a9041025f20c721ebddb910880e11d89162c22e4ba107fc0065",
+    "artifact_id": 10730610233,
+    "conclusion": "HIDDEN_LOCK_FILES_OMITTED_BY_UPLOAD",
+    "mismatched_existing_files": [],
+    "missing_in_original_zip": [
+      {
+        "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "path": "registry_empty/registry/.index.lock"
+      },
+      {
+        "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "path": "registry_with_previous/registry/.index.lock"
+      }
+    ],
+    "registration_manifest_file_count": 55,
+    "release_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+    "scope": "READ_ONLY_DIAGNOSIS_NOT_ACCEPTANCE",
+    "stage_delivered": false,
+    "upload_action_sha": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "upload_log_include_hidden_files": false,
+    "zip_digest_matches_api": true,
+    "zip_member_count": 86,
+    "zip_sha256": "db52bcb7a87b2a9041025f20c721ebddb910880e11d89162c22e4ba107fc0065"
+  },
+  "archive_diagnosis_sha256": "76f9488a7c9e28d6ae1ff6dea66f3fe63eaf23fbd54c38f0093bd0ade0c5034f",
+  "artifact_receipts": {
+    "archive": {
+      "artifact_id": 10730720741,
+      "run_attempt": 1,
+      "run_id": 35812360276,
+      "zip_digest": "sha256:b029ba853a96bfb8c917a686cd0ceb1620cd3f58dbcf84f7859cf9c6cce57ed4"
+    },
+    "fixed": {
+      "artifact_id": 10729359605,
+      "run_attempt": 1,
+      "run_id": 35812360297,
+      "zip_digest": "sha256:82c6f8b4c4f35eab92d876f54b454a9556e5f51f2b5b28b4a7e095b55e3e8c0b"
+    },
+    "learning": {
+      "artifact_id": 10730610233,
+      "run_attempt": 1,
+      "run_id": 35811406019,
+      "zip_digest": "sha256:db52bcb7a87b2a9041025f20c721ebddb910880e11d89162c22e4ba107fc0065"
+    },
+    "smoke": {
+      "artifact_id": 10730516581,
+      "run_attempt": 1,
+      "run_id": 35812360293,
+      "zip_digest": "sha256:17d845e5005a234073d8f5991aa1a5d33cbd2eb071d28cd2cfdcd51ba921b57a"
+    },
+    "v4": {
+      "artifact_id": 10730571187,
+      "run_attempt": 1,
+      "run_id": 35812360338,
+      "zip_digest": "sha256:e444d8d56945f4e9f8aa3c5e4e6f32057e465e162eca6cb64ec53144628e9498"
+    }
+  },
+  "data_observed": {
+    "archive": {
+      "decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+      "invalid_segment_count": 0,
+      "reason_code": "OBSERVED_SNAPSHOTS_NOT_FULLY_QUALIFIED"
+    },
+    "v4": {
+      "decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE",
+      "invalid_segment_count": 1,
+      "invalid_segments": [
+        {
+          "artifact_checksums_verified": true,
+          "phase": "snapshot",
+          "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+          "report": "20260922T035334.633790Z.json",
+          "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+          "snapshot_line": 3
+        }
+      ],
+      "reason_code": "ARCHIVE_INTEGRITY_FAILURE"
+    }
+  },
+  "decision": "REGISTRATION_DELIVERY_HALTED_MISSING_ARTIFACTS",
+  "failure_review_sha256": {
+    "2026-09-23-registration-artifact-upload-review.json": "c383dd3728150c77dbd37dc08ae68204c8c08fc4fda9562e7dbe5f2b26f2f3ab",
+    "2026-09-23-registry-cli-help-review.json": "c4275f843e9eb6eb8316180404d259d2edd764ba61c56377127ab49767fa3013",
+    "2026-09-23-registry-isolation-path-review.json": "8d3fc1e11b555518c68fc3977caded01268d08b3ea6eb8dddfa558691d063d5e"
+  },
+  "final_acceptance_pass": false,
+  "freshness_observed": {
+    "container_image_revision": "e219065d7d5e9950177d804b775ad4f5f6701898",
+    "container_restart_count": 0,
+    "container_status": "running",
+    "expected_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+    "release_git_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+    "status": "PASS"
+  },
+  "gate": {
+    "failure_id": "747c331083a74e6a99e405b617a14b25",
+    "state_sha256": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    "status": "HALTED"
+  },
+  "observed_at_utc": "2026-09-23T03:02:24.623804+00:00",
+  "old_halted_states": {
+    ".artifacts/engineering-freeze-20260921/validation-state.json": {
+      "sha256": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+      "status": "HALTED"
+    },
+    ".artifacts/validation-gate/state.json": {
+      "sha256": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+      "status": "HALTED"
+    }
+  },
+  "production_goals_complete": false,
+  "registration_report_sha256": "302f9fa3d5a64c86e525b4ef0a4392810e7872838316344bd976b26351e503d0",
+  "registration_reported": {
+    "cases": [
+      {
+        "activated": false,
+        "active_file_count": 0,
+        "active_files_unchanged": true,
+        "decision": "REJECTED"
+      },
+      {
+        "activated": false,
+        "active_file_count": 4,
+        "active_files_unchanged": true,
+        "decision": "REJECTED"
+      }
+    ],
+    "demo_trading_authority": false,
+    "faults": {
+      "artifact_corruption": {
+        "complete_episode_count": 0,
+        "decision": "rollback",
+        "live_runtime_observed": false,
+        "rollback_service_executed": false
+      },
+      "deadline": {
+        "complete_episode_count": 0,
+        "decision": "rollback",
+        "live_runtime_observed": false,
+        "rollback_service_executed": false
+      },
+      "runtime_identity": {
+        "complete_episode_count": 0,
+        "decision": "rollback",
+        "live_runtime_observed": false,
+        "rollback_service_executed": false
+      },
+      "staged_identity": {
+        "complete_episode_count": 0,
+        "decision": "rollback",
+        "live_runtime_observed": false,
+        "rollback_service_executed": false
+      },
+      "zero_episodes": {
+        "complete_episode_count": 0,
+        "decision": "pending",
+        "live_runtime_observed": false,
+        "rollback_service_executed": false
+      }
+    },
+    "full_mechanism_valid": false,
+    "input_sha256": {
+      "development.csv": "29e4ccc694a20729bf70640f63f639fb0337d5cd23c0ae90c38e57f7dad679fc",
+      "learned.cbm": "5575f6404efcf972fd87f904d9b689876ac8f41b84ebc5477860b4734ff4827e",
+      "learned.json": "4c6211bdfc555c2667bc0494bb15f9e1c6c1357031bfbc52faea25b9b9c74926",
+      "miner.json": "10416a01221c36173f475cfe10c4c8a70e4d00df4eb1d01d0dffc5430699a3c4",
+      "shuffled.cbm": "eb47b75e37e51f0379285dadb421469c5424195b44e2ceeb0a72b72d0cc12aab",
+      "shuffled.json": "a6005a5ef4bb03f325e2f1e16133726669f84992d724692f1a655b42b01c5bb4"
+    },
+    "learning_verification_git_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+    "market_economic_evidence": false,
+    "model_tree_count": 80,
+    "original_inputs_unchanged": true,
+    "production_promotion_authority": false,
+    "production_registry_written": false,
+    "scope": "TEST_ONLY_REGISTRATION_ISOLATION",
+    "status": "PASS",
+    "verification_git_sha": "e219065d7d5e9950177d804b775ad4f5f6701898"
+  },
+  "release_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+  "repair_budget": {
+    "allowed_rounds": 2,
+    "consumed_rounds": 2,
+    "extra_round_authorized": false
+  },
+  "runs": [
+    {
+      "conclusion": "success",
+      "head_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+      "id": 35812360297,
+      "name": "Fixed Engineering Regression",
+      "run_attempt": 1,
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+      "id": 35812360276,
+      "name": "Option Archive Lifecycle Audit",
+      "run_attempt": 1,
+      "status": "completed"
+    },
+    {
+      "conclusion": "failure",
+      "head_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+      "id": 35812360338,
+      "name": "Option Lifecycle V4 Gate",
+      "run_attempt": 1,
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+      "id": 35812360293,
+      "name": "Closed Loop Smoke",
+      "run_attempt": 1,
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+      "id": 35811406059,
+      "name": "CI",
+      "run_attempt": 1,
+      "status": "completed"
+    },
+    {
+      "conclusion": "success",
+      "head_sha": "e219065d7d5e9950177d804b775ad4f5f6701898",
+      "id": 35811406019,
+      "name": "CD",
+      "run_attempt": 1,
+      "status": "completed"
+    }
+  ],
+  "runtime_observed": {
+    "account_sync_status": "OK",
+    "execution_status": "NOT_EVALUATED",
+    "protection_status": "PASS",
+    "verdict": "PASS_WITH_ACTIONS"
+  },
+  "schema_version": "registration_delivery_failure_v1",
+  "scope": "DEPLOYED_RELEASE_WITH_FAILED_FINAL_DELIVERY_ACCEPTANCE",
+  "tests": {
+    "local": {
+      "passed": 114,
+      "seconds": 181.74,
+      "total": 114
+    },
+    "remote": {
+      "ci": {
+        "job_id": 107023592892,
+        "run_id": 35811406059,
+        "seconds": 183.9,
+        "sha256": "052895b4be66f611ad525d623ce5bb820e5a5506d8f8215537ab40270d86ea03",
+        "tests": 114
+      },
+      "docker": {
+        "job_id": 107023593262,
+        "run_id": 35811406019,
+        "seconds": 190.1,
+        "sha256": "1a323e7798eb6f7f24eb97ce28484c481b3f3d262b46cfa2cf7d499f454f2097",
+        "tests": 114
+      }
+    }
+  }
+}

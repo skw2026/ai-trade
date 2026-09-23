@@ -1,6 +1,6 @@
 # 当前项目状态
 
-当前推进（2026-09-23）：用户接续后执行注册/晋升链隔离验收。两组既有测试已纳入强制清单，真实模型注册拒绝与五种事务故障注入已在Linux断网容器通过；CLI帮助转义和验收路径别名两次失败均先复盘，再原命令复验通过。正在完成114项完整回归及远端交付，尚不宣称本批部署验收成功。无生产注册、canary或晋升操作；旧数据/研究结论不变。见[合同](plans/2026-09-23-registration-isolation.md)与[结果记录](reviews/2026-09-23-registration-isolation-result.md)。
+当前停止（2026-09-23）：**REGISTRATION_DELIVERY_HALTED_MISSING_ARTIFACTS**。`e219065`已推送main并部署，本地/CI/Docker114/114、Smoke成功；但最终注册隔离证据包缺两份`.index.lock`，阶段交付未通过。已确认上传步骤`include-hidden-files:false`排除了它们，原始ZIP摘要与GitHub一致，其余53份登记文件hash匹配；不是Bybit或模型故障，不补造文件或删断言。CLI帮助及路径别名两轮修复额度已用完，本批gate经停止复盘进入HALTED，失败与旧HALTED均保留。已提出最多2有效工程小时/1次纠正发布的独立证据传输批次，预算决定前不实现、不复验、不发布服务；无默认两周等待。真实模型隔离拒绝/五种故障裁决已有报告，不冒称完整交付、生产注册或真实回滚。见[结果与具体补救方案](reviews/2026-09-23-registration-isolation-result.md)、[缺件复盘](reviews/2026-09-23-registration-artifact-upload-review.json)和[脱敏证据](reviews/2026-09-23-registration-isolation.evidence.json)。下列“当前结案/下一步”为保留的历史时点，不覆盖本段。
 
 当前结案（2026-09-23）：**EVOLUTION_CLOCK_DECOUPLING_DELIVERED**。`71783fa`已推送main并部署，本地/CI/Docker均111/111；真实学习链六组及五组部署收据通过。独立小时评估、六小时普通调权下限、回滚/冷却及事件时间已接入应用，正常/反转场景85/128次小时评估；现有策略配置未改，不冒称线上小时模式已启用。实际容器revision一致、running、重启0；运行仍PASS_WITH_ACTIONS、execution NOT_EVALUATED。本地查询TLS超时经复盘后同命令一次复验通过，没有重跑发布；原gate READY，旧HALTED哈希不变。Archive仍INSUFFICIENT，V4仅原坏段FAIL，业务资格仍不通过。**本批收口，不需要两周等待；下一批为注册/晋升链隔离验收，先补两组现有测试的CTest/CI覆盖，再贯通真实训练产物的拒绝/身份/回滚证据，不启用真实候选。** 见[结果与下一节奏](reviews/2026-09-23-evolution-clocks-result.md)、[机器证据](reviews/2026-09-23-evolution-clocks.evidence.json)及[事前合同](plans/2026-09-23-evolution-clocks.md)。以下是保留的历史阶段记录，旧“下一步”不覆盖本段。
 

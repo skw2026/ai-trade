@@ -1,0 +1,35 @@
+{
+  "failure_id": "747c331083a74e6a99e405b617a14b25",
+  "decision": "stop",
+  "goal": "完成注册隔离证据在远端执行、归档、下载和逐文件核对的交付闭环",
+  "expected": "CD上传包包含registration-result.json登记的全部55份文件，下载后原样核对，不缺件、不改hash",
+  "observed": "CI/CD/Smoke均success、三处完整回归114/114，但最终registration-exact-delivery-receipts命令因registry_empty/registry/.index.lock缺失退出1；只读诊断确认另一registry_with_previous/registry/.index.lock也缺失。53份存在文件hash全部匹配。",
+  "root_cause_status": "confirmed",
+  "root_cause": "新验收器file_set(output)把两个实际注册器产生的隐藏.index.lock纳入完整性清单；既有Upload Offline Learning Evidence使用actions/upload-artifact@v4且未启用隐藏文件。CD实际日志明确include-hidden-files:false。直接下载的原始ZIP摘要与GitHub API及上传日志一致，ZIP本身缺两份隐藏锁文件，不是下载解压差异、文件内容损坏或交易服务故障。新增CD测试只验证计算步骤和隔离参数，没有验证报告清单到上传包的完整传输，发现缺件的检查又位于部署之后。",
+  "evidence": [
+    ".artifacts/offline-learning-loop-20260922/validation-state.json：failure_id=747c331083a74e6a99e405b617a14b25，原命令及失败保留",
+    ".artifacts/registration-isolation-20260923/archive-diagnosis.json：sha256=76f9488a7c9e28d6ae1ff6dea66f3fe63eaf23fbd54c38f0093bd0ade0c5034f，READ_ONLY_DIAGNOSIS_NOT_ACCEPTANCE",
+    "CD35811406019/job107023593262上传日志：resolved action ea165f8d65b6e75b540449e92b4886f43607fa02，include-hidden-files:false，86 files；日志sha256=1a323e7798eb6f7f24eb97ce28484c481b3f3d262b46cfa2cf7d499f454f2097",
+    "GitHub artifact10730610233原始ZIP sha256=db52bcb7a87b2a9041025f20c721ebddb910880e11d89162c22e4ba107fc0065；API摘要与上传日志相同；两锁文件在ZIP内不存在，未补造",
+    "tools/verify_registration_isolation.py:file_set与tools/model_registry.py:FileLock；.github/workflows/cd.yml:Upload Offline Learning Evidence输入未包含include-hidden-files",
+    "https://github.com/actions/upload-artifact/blob/v4/action.yml：include-hidden-files默认false；实际运行取值另由固定run日志证实"
+  ],
+  "next_action": "本批最多两轮修复已用完，停止正式验收/后续发布，保留已部署e219065与未通过的最终交付结论；仅归档脱敏诊断。已向用户提出一次独立、最多2有效工程小时/1次纠正发布的证据传输批次，获得预算决定前不实现、不复验、不重置此gate。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "budget_exhausted",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "原目标需要可复核交付，而非仅runner内测试成功；生产配置、交易资格和真实候选不在补救范围内",
+    "data_feasibility": "原ZIP不可恢复缺件；即使锁文件预期为空也不能在下载后补造。模型/报告/归档内容未显示hash损坏，不需市场补证或等待两周",
+    "method_feasibility": "建议只在专用合成证据目录保留隐藏文件，并将上传后下载、清单/内容核验放在部署之前；缺件/损坏/越界负例必须阻断，不删除锁文件断言",
+    "budget_and_exit": "原4有效工程小时/最多两轮修复不续期；本批停止。额外纠正预算需明确决定，不能用CI绿或运行正常追溯PASS"
+  },
+  "route_reassessment": {
+    "old_route_failure": "函数覆盖遗漏CLI，隔离适配遗漏路径别名，发布适配遗漏隐藏文件；共同问题是只测各节点、没有先验验证节点间的CLI/路径/序列化传输合同。当前上传成功不保证收据完整，最终检查太晚",
+    "replacement": "保留原测试和最终严格清单，拟新增传输往返边界并使部署依赖其成功；先对缺件/内容损坏/目录逃逸做离线负例，再限一次纠正发布，真实下载包完整才部署/结案",
+    "feasibility_evidence": "原始ZIP和上传日志已精确确认只有两份被默认排除的隐藏锁文件，非模型或市场方向失败；既有部署证据上传步骤已有显式include-hidden-files配置，但本步骤遗漏",
+    "budget": "原批两轮修复用完；拟议额外2有效工程小时、1次纠正发布尚未获批",
+    "stop_condition": "不通过当前批次；在新预算批准前不做第三轮修复。新批若获批后仍失败则停止，不删清单、不调资格或扩大市场研究"
+  }
+}
