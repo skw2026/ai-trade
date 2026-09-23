@@ -1,5 +1,7 @@
 # 当前项目状态
 
+当前推进（2026-09-23）：用户接续后执行注册/晋升链隔离验收。两组既有测试已纳入强制清单，真实模型注册拒绝与五种事务故障注入已在Linux断网容器通过；CLI帮助转义和验收路径别名两次失败均先复盘，再原命令复验通过。正在完成114项完整回归及远端交付，尚不宣称本批部署验收成功。无生产注册、canary或晋升操作；旧数据/研究结论不变。见[合同](plans/2026-09-23-registration-isolation.md)与[结果记录](reviews/2026-09-23-registration-isolation-result.md)。
+
 当前结案（2026-09-23）：**EVOLUTION_CLOCK_DECOUPLING_DELIVERED**。`71783fa`已推送main并部署，本地/CI/Docker均111/111；真实学习链六组及五组部署收据通过。独立小时评估、六小时普通调权下限、回滚/冷却及事件时间已接入应用，正常/反转场景85/128次小时评估；现有策略配置未改，不冒称线上小时模式已启用。实际容器revision一致、running、重启0；运行仍PASS_WITH_ACTIONS、execution NOT_EVALUATED。本地查询TLS超时经复盘后同命令一次复验通过，没有重跑发布；原gate READY，旧HALTED哈希不变。Archive仍INSUFFICIENT，V4仅原坏段FAIL，业务资格仍不通过。**本批收口，不需要两周等待；下一批为注册/晋升链隔离验收，先补两组现有测试的CTest/CI覆盖，再贯通真实训练产物的拒绝/身份/回滚证据，不启用真实候选。** 见[结果与下一节奏](reviews/2026-09-23-evolution-clocks-result.md)、[机器证据](reviews/2026-09-23-evolution-clocks.evidence.json)及[事前合同](plans/2026-09-23-evolution-clocks.md)。以下是保留的历史阶段记录，旧“下一步”不覆盖本段。
 
 最新结案（2026-09-23）：**OFFLINE_LEARNING_COMPONENT_LOOP_DELIVERED**。代码`2a4f464`已直接main推送并真实部署；本地、CI、Docker内均110/110，远端真实Miner/CatBoost/C++学习链、负例/回滚及五组收据校验通过。Smoke/固定回归成功，实际release与容器revision一致、running、重启0；运行仍PASS_WITH_ACTIONS、execution NOT_EVALUATED。原权限失败经用户批准的同gate一次纠正SHA/run绑定修复，旧失败保留，阶段READY；旧研究/旧工程HALTED哈希未改。Archive仍INSUFFICIENT，V4精确保留唯一旧460.494秒坏段失败，没有新数据资格或真实策略晋升。**本阶段已收口，不再等待两周或重复发布；完整生产自学习/盈利目标尚未完成。下一工程优先项为小时评估与六小时更新解耦，不重开旧市场研究。** 详见[结案复核与后续节奏](reviews/2026-09-22-offline-learning-loop-result.md)及[脱敏机器证据](reviews/2026-09-23-offline-learning-delivery.evidence.json)。以下为保留的过程/失败记录，不覆盖本段结果。

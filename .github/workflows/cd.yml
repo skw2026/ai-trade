@@ -207,6 +207,17 @@ jobs:
               --entrypoint python3 "${RESEARCH_REF}" \
               /app/tools/verify_offline_learning_loop.py \
               --driver /app/offline_learning_driver --output /evidence/acceptance
+          python3 tools/validation_gate.py run --label registration-isolation --timeout 180 -- \
+            docker run --rm --network none --read-only --cap-drop ALL \
+              --user "$(id -u):$(id -g)" \
+              --security-opt no-new-privileges --cpus 2 --memory 2g \
+              --tmpfs /tmp:rw,nosuid,nodev,size=128m \
+              -e OPENBLAS_NUM_THREADS=1 -e OMP_NUM_THREADS=2 \
+              -e PYTHONDONTWRITEBYTECODE=1 -e VERIFICATION_SHA="${GITHUB_SHA}" \
+              -v "${PWD}/.artifacts/offline-learning-cd:/evidence" \
+              --entrypoint python3 "${RESEARCH_REF}" \
+              /app/tools/verify_registration_isolation.py \
+              --learning-result /evidence/acceptance/result.json --output /evidence/registration
 
       - name: Upload Offline Learning Evidence
         if: always()

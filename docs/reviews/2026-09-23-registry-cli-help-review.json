@@ -1,0 +1,26 @@
+{
+  "failure_id": "284e352cf82a4c72a9c1c1c0d7a34630",
+  "decision": "retry",
+  "goal": "真实注册CLI隔离拒绝、身份和事务边界验证",
+  "expected": "原注册入口对TEST_ONLY输入返回拒绝退出码3，不改active产物",
+  "observed": "新增隔离回归子进程退出1，尚未进入注册门禁；其余三组定向回归通过。后续Linux实测被gate阻断，未执行。",
+  "root_cause_status": "confirmed",
+  "root_cause": "tools/model_registry.py:549附近argparse帮助字符串含未转义的95%。本地Python3.14在add_argument时调用_check_help，格式展开直接抛ValueError: badly formed help string，程序未进入run_register。原23项注册测试直接调函数，未覆盖CLI解析。受控诊断复现保留同一堆栈，不是模型或资格门禁故障。",
+  "evidence": [
+    "原gate registration-targeted-regression失败记录；CTest新隔离测试require exit3失败，其余3项PASS",
+    "/private/tmp/ai-trade-registry-diagnosis.arSUAl/diagnosis/registry_empty/registry.log：DIAGNOSTIC_REPRODUCTION_NOT_GATE_RETRY，Python3.14 argparse._check_help/_expand_help堆栈",
+    "tools/model_registry.py parse_args: --min_model_net_edge_lcb_bps的原help字符串95%",
+    "tools/test_model_registry.py原测试直接调用run_register；本次新增实际CLI --help回归"
+  ],
+  "next_action": "仅将argparse帮助字符串95%转义为95%%，新增CLI帮助回归，并在隔离驱动异常消息保留子进程原因。模型/来源/经济门槛/生产动作不改；一次原cwd/argv的CTest复验。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "补齐函数测试遗漏的真实CLI入口，仍证明相同模型的拒绝与不改active，而非放宽资格",
+    "data_feasibility": "复用已通过的真实训练文件，未下载市场数据；失败在解析阶段，与数据可得性无关",
+    "method_feasibility": "Python argparse标准百分号转义保留原帮助文本和全部参数语义，不替换注册入口，不mock真实CLI",
+    "budget_and_exit": "原定向命令一次复验，150秒内；再失败停止依赖并重审路线，不重置gate或跳过CLI"
+  }
+}

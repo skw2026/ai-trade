@@ -154,6 +154,15 @@ if(BUILD_TESTING)
     add_test(NAME offline_learning_harness_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_offline_learning_loop.py)
     set_tests_properties(offline_learning_harness_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
+    add_test(NAME model_registry_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_model_registry.py)
+    add_test(NAME activation_transaction_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_evaluate_activation_transaction.py)
+    set_tests_properties(model_registry_test activation_transaction_test
+                         PROPERTIES TIMEOUT 60 LABELS "offline;promotion")
+    add_test(NAME registration_isolation_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_registration_isolation.py)
+    set_tests_properties(registration_isolation_test PROPERTIES TIMEOUT 60 LABELS "offline;promotion")
     add_test(NAME mvp_reference_pipeline_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_mvp_reference_pipeline.py
                      --binary $<TARGET_FILE:trade_bot>)

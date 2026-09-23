@@ -1,0 +1,33 @@
+{
+  "failure_id": "5e2882ec33434dfdac1d40d5fd877582",
+  "decision": "retry",
+  "goal": "保持注册隔离边界，完成真实产物的拒绝/身份/回滚验证",
+  "expected": "真实拒绝注册的归档副本必须位于临时registry目录内，active不变",
+  "observed": "CLI修复与帮助回归已通过；新增隔离测试在artifact.is_relative_to(case/registry)处误报越界，定向其余3组仍通过，gate failure_count=2",
+  "root_cause_status": "confirmed",
+  "root_cause": "新增验收驱动只对artifact执行resolve，却未对允许根目录执行resolve。本机TemporaryDirectory使用/var/folders，而artifact解析成/private/var/folders，Path.is_relative_to是字面路径前缀比较，导致同一真实目录被误判。只读tempfile路径诊断确认raw/canonical不同、canonical child对raw根为false、对canonical根为true；不是注册器真的写出隔离目录。",
+  "evidence": [
+    "原命令retry的CTest堆栈：verify_registration_isolation.py confined-root断言；CLI help及原注册/事务测试均PASS",
+    "只读Python tempfile.gettempdir/pathlib.resolve/is_relative_to诊断及/var -> private/var链接",
+    "tools/verify_registration_isolation.py原写法artifact.resolve()对比未规范化case/registry",
+    "新增独立目录别名与真实symlink越界反例，后者必须继续拒绝"
+  ],
+  "next_action": "允许根和产物均resolve后比较，保持真实越界硬拒绝；一次原cwd/argv的CTest复验，不改注册门槛或交易逻辑",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "隔离验收必须处理系统目录别名且拒绝真实逃逸；不能关闭目录约束来修绿",
+    "data_feasibility": "固定真实模型文件已存在且只读复用，两次失败均发生在验收入口/适配层，不需新行情",
+    "method_feasibility": "生产注册器和事务评估原测试通过；新增CLI与路径反例覆盖先前遗漏，hash/active不变/无commit断言不减",
+    "budget_and_exit": "本批第二且最后一轮限定修复；一次同命令复验，再失败停止依赖并按预算出口结案，不增加修复轮次"
+  },
+  "route_reassessment": {
+    "old_route_failure": "只看函数测试的覆盖不足以证明真实CLI；新隔离驱动又假设临时目录字面路径等于真实路径，两个边界假设未提前测试",
+    "replacement": "仍复用原生产CLI/评估器；补CLI帮助回归与canonical confinement正反例，先完成小回归再Linux真实产物，再完整回归和远端交付",
+    "feasibility_evidence": "原注册23项/事务14项初次已过，修复后注册含CLI24项也通过；失败点有确定堆栈和本机路径对照，不涉及经济假设不可达",
+    "budget": "维持4有效工程小时、最多两轮修复；本轮为第二轮，无新训练或外部数据成本",
+    "stop_condition": "原命令再失败或隔离实际越界、active被改、合成晋升，停止本批交付，不发布或变更验收标准"
+  }
+}

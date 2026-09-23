@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -25,6 +26,12 @@ REGISTRY = load_module()
 
 
 class ModelRegistryTest(unittest.TestCase):
+    def test_register_cli_help_is_valid(self):
+        result = subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name("model_registry.py")),
+                                 "register", "--help"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("95%", result.stdout)
+
     def test_final_holdout_consumption_binds_candidate_and_verified_ledger(self):
         with tempfile.TemporaryDirectory() as td:
             root = pathlib.Path(td)

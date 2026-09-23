@@ -550,7 +550,7 @@ def parse_args() -> argparse.Namespace:
         "--min_model_net_edge_lcb_bps",
         type=float,
         default=0.0,
-        help="主激活门槛：OOS 每 bar 净收益 95% 下置信界",
+        help="主激活门槛：OOS 每 bar 净收益 95%% 下置信界",
     )
     register.add_argument(
         "--min_split_trained_count",

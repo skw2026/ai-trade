@@ -75,6 +75,9 @@ jobs:
           grep -q "execution_ordering_test" /tmp/ctest-list.txt
           grep -q "validation_stop_gate_test" /tmp/ctest-list.txt
           grep -q "offline_learning_harness_test" /tmp/ctest-list.txt
+          grep -q "model_registry_test" /tmp/ctest-list.txt
+          grep -q "activation_transaction_test" /tmp/ctest-list.txt
+          grep -q "registration_isolation_test" /tmp/ctest-list.txt
           grep -q "self_evolution_clock_test" /tmp/ctest-list.txt
           grep -q "replay_trace_comparison_test" /tmp/ctest-list.txt
           grep -q "research_closeout_contract_test" /tmp/ctest-list.txt
