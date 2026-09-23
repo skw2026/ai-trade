@@ -1,0 +1,272 @@
+{
+  "artifact_receipts": {
+    "archive": {
+      "artifact_id": 10749881633,
+      "run_attempt": 1,
+      "run_id": 35860109610,
+      "zip_digest": "sha256:a8902a3f99f9b644613bf8fc97a95439e798e26b0a6596c62dc810559396c7c0"
+    },
+    "fixed": {
+      "artifact_id": 10750086168,
+      "run_attempt": 1,
+      "run_id": 35860109659,
+      "zip_digest": "sha256:78a8fe1270f567dcb98d0fd3aebdac5b47bd1538a53b961dfd46c9bf9661470a"
+    },
+    "learning": {
+      "artifact_id": 10748084853,
+      "run_attempt": 1,
+      "run_id": 35858617127,
+      "zip_digest": "sha256:f2ae006115891c5e2f7fcc93b39559a23faf16fbce25bbbed5fa5bbe4bd19e60"
+    },
+    "smoke": {
+      "artifact_id": 10749271855,
+      "run_attempt": 1,
+      "run_id": 35860109717,
+      "zip_digest": "sha256:0e740ca7a9c50d47674966f789a14df5de357dabb81f17876a353f199354bad2"
+    },
+    "v4": {
+      "artifact_id": 10750365149,
+      "run_attempt": 1,
+      "run_id": 35860109616,
+      "zip_digest": "sha256:d5107a41bdb09d41e2a2206ab88a795eed42adaa8e5e28f3ce1f1d215a535cad"
+    }
+  },
+  "correction_publication_count": 1,
+  "decision": "CORRECTED_EVIDENCE_TRANSPORT_DELIVERED",
+  "engineering": {
+    "boundary": "FIXED_ENGINEERING_SEPARATE_FROM_LIVE_DATA_QUALITY",
+    "boundary_file_sha256": "11d19c45c54cfeb3e2d4a87f7704e590169e85d80ffa05f0b6fcfae5b5c809b3",
+    "business_qualified": false,
+    "data_quality": {
+      "archive_decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+      "known_failure": {
+        "artifact_checksums_verified": true,
+        "phase": "snapshot",
+        "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+        "report": "20260922T035334.633790Z.json",
+        "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+        "snapshot_line": 3
+      },
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "Option Archive Lifecycle Audit",
+          "run_attempt": 1,
+          "run_id": 35860109610
+        },
+        {
+          "conclusion": "failure",
+          "name": "Option Lifecycle V4 Gate",
+          "run_attempt": 1,
+          "run_id": 35860109616
+        }
+      ],
+      "status": "FAIL",
+      "v4_decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE"
+    },
+    "decision": "ENGINEERING_PASS_DATA_NOT_QUALIFIED",
+    "demo_activation_authorized": false,
+    "engineering": {
+      "closure_latched": true,
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "CI",
+          "run_attempt": 1,
+          "run_id": 35858617288
+        },
+        {
+          "conclusion": "success",
+          "name": "CD",
+          "run_attempt": 1,
+          "run_id": 35858617127
+        },
+        {
+          "conclusion": "success",
+          "name": "Closed Loop Smoke",
+          "run_attempt": 1,
+          "run_id": 35860109717
+        },
+        {
+          "conclusion": "success",
+          "name": "Fixed Engineering Regression",
+          "run_attempt": 1,
+          "run_id": 35860109659
+        }
+      ],
+      "status": "PASS"
+    },
+    "historical_failure_reclassified_as_pass": false,
+    "input_sha256": {
+      "archive": "92397b9282c11414640cf33813fbd4bd0ead1f25bf9030151616b52995bd0ab3",
+      "closure": "60de384788bfeca2264e24d41ef61b9b9bd4b75975b64eb9cb9ddd7ba93ca395",
+      "freshness": "836cde99e8db3e58daac5545007fbc3634ddc2a349822b6834f4d20afe929259",
+      "runtime": "ad6d445faa7fb38dd15455b3f2a860a61515e6c7721aadb4830405409cbc8865",
+      "snapshot": "dc42966df06063cb432a8896dbcef6974cc6153a5a754f36a6ee31810a03bc91",
+      "v4": "26f4055f5df7ef431c6a015f62bba95d6be0d94f1c8f25f9198111825f50ea61"
+    },
+    "live_activation_authorized": false,
+    "promotion_authority": false,
+    "release_sha": "25e0116119d11265aac4fc2aee467a5c3b9a1a3f",
+    "runtime": {
+      "account_sync_status": "OK",
+      "execution_status": "NOT_EVALUATED",
+      "protection_status": "PASS",
+      "verdict": "PASS_WITH_ACTIONS"
+    },
+    "schema_version": "engineering_release_result_v1"
+  },
+  "freshness": {
+    "container_image_revision": "25e0116119d11265aac4fc2aee467a5c3b9a1a3f",
+    "container_restart_count": 0,
+    "container_status": "running",
+    "expected_sha": "25e0116119d11265aac4fc2aee467a5c3b9a1a3f",
+    "release_git_sha": "25e0116119d11265aac4fc2aee467a5c3b9a1a3f",
+    "status": "PASS"
+  },
+  "learning_report_sha256": "1188b5f579c6d0f31c76b6f20c8a083b05671647381bc26cae42fcc959572069",
+  "linux_transport": {
+    "artifact_id": 0,
+    "demo_trading_authority": false,
+    "file_count": 88,
+    "full_mechanism_valid": false,
+    "hidden_lock_count": 2,
+    "manifest_sha256": "95d3e5736508a27b9ab5f65c7095148c4c6bc2161fd2a23a6e3ea4d418916497",
+    "market_economic_evidence": false,
+    "new_training_executed": false,
+    "old_incomplete_archive_rejected": true,
+    "old_zip_sha256": "db52bcb7a87b2a9041025f20c721ebddb910880e11d89162c22e4ba107fc0065",
+    "original_sources_unchanged": true,
+    "production_promotion_authority": false,
+    "run_attempt": 0,
+    "run_id": 0,
+    "schema_version": "evidence_transport_receipt_v1",
+    "scope": "TEST_ONLY_EVIDENCE_TRANSPORT",
+    "status": "PASS",
+    "verification_git_sha": "uncommitted_local"
+  },
+  "local_transport": {
+    "artifact_id": 0,
+    "demo_trading_authority": false,
+    "file_count": 88,
+    "full_mechanism_valid": false,
+    "hidden_lock_count": 2,
+    "manifest_sha256": "95d3e5736508a27b9ab5f65c7095148c4c6bc2161fd2a23a6e3ea4d418916497",
+    "market_economic_evidence": false,
+    "new_training_executed": false,
+    "old_incomplete_archive_rejected": true,
+    "old_zip_sha256": "db52bcb7a87b2a9041025f20c721ebddb910880e11d89162c22e4ba107fc0065",
+    "original_sources_unchanged": true,
+    "production_promotion_authority": false,
+    "run_attempt": 0,
+    "run_id": 0,
+    "schema_version": "evidence_transport_receipt_v1",
+    "scope": "TEST_ONLY_EVIDENCE_TRANSPORT",
+    "status": "PASS",
+    "verification_git_sha": "uncommitted_local"
+  },
+  "observed_at_utc": "2026-09-23T12:26:09.213732+00:00",
+  "old_halted_states_unchanged": true,
+  "old_learning_gate_sha256": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+  "old_registration_failure_preserved": true,
+  "original_failure_id": "747c331083a74e6a99e405b617a14b25",
+  "production_goals_complete": false,
+  "registration_report_sha256": "c2ef2bfdd5b4cb8bc925500d3892d8eee416acaf9d5473ce8d4a87742f23b7c6",
+  "registration_summary": {
+    "fault_decisions": {
+      "artifact_corruption": "rollback",
+      "deadline": "rollback",
+      "runtime_identity": "rollback",
+      "staged_identity": "rollback",
+      "zero_episodes": "pending"
+    },
+    "model_tree_count": 80,
+    "production_registry_written": false,
+    "rejected_registration_cases": 2
+  },
+  "release_sha": "25e0116119d11265aac4fc2aee467a5c3b9a1a3f",
+  "schema_version": "evidence_transport_correction_delivery_v1",
+  "source_sha256": {
+    ".github/workflows/cd.yml": "3909bcea345cda83ca2bd266bc0957af68fd06c7e55a9e48d8a1581649405898",
+    ".github/workflows/ci.yml": "21b5a4d33288c2e7c486b025ad57967561da56fe6d4f6f9f13d2beec3a10c8af",
+    "CMakeLists.txt": "6e52536faaa22b74f30bf6d632249d5ba39fe16edacd4441092458dc5ca31e91",
+    "docs/plans/2026-09-23-evidence-transport-correction.md": "8f5c3bb8d475785e1f3ede6b9773a8e61502582332b935ad0333ece64629372e",
+    "tools/test_verify_evidence_transport.py": "eb1d81b3631ee8eef5abeade244e674ef9a3598dbc31ef0240c521aa3367c9e3",
+    "tools/verify_evidence_transport.py": "c4514776a9f525674ed22893b0230c625853356b7ac5ec577c3d092f4e178f5c"
+  },
+  "tests": {
+    "local": {
+      "seconds": 182.64,
+      "tests": 115
+    },
+    "remote": {
+      "ci": {
+        "job_id": 107173045905,
+        "run_id": 35858617288,
+        "seconds": 224.84,
+        "sha256": "13811c812eb59dc5d0a6b7d95de30a10815df91c2d703d39a488d30a6983f068",
+        "tests": 115
+      },
+      "docker": {
+        "job_id": 107173045930,
+        "run_id": 35858617127,
+        "seconds": 191.91,
+        "sha256": "98385e1008022bb141df279b360372b671919291e807ee262769bac64501faba",
+        "tests": 115
+      }
+    },
+    "targeted_methods": 12
+  },
+  "transport": {
+    "artifact_id": 10748084853,
+    "demo_trading_authority": false,
+    "file_count": 88,
+    "full_mechanism_valid": false,
+    "hidden_lock_count": 2,
+    "manifest_sha256": "d6e14ae1ccefb02e2329f81d4bd7dd0e42967bf85a82bcae8420b50811211379",
+    "market_economic_evidence": false,
+    "production_promotion_authority": false,
+    "run_attempt": 1,
+    "run_id": 35858617127,
+    "schema_version": "evidence_transport_receipt_v1",
+    "scope": "TEST_ONLY_EVIDENCE_TRANSPORT",
+    "status": "PASS",
+    "verification_git_sha": "25e0116119d11265aac4fc2aee467a5c3b9a1a3f"
+  },
+  "transport_artifact": {
+    "artifact_id": 10748149928,
+    "files": {
+      "manifest.json": "d6e14ae1ccefb02e2329f81d4bd7dd0e42967bf85a82bcae8420b50811211379",
+      "roundtrip.json": "2d006f2ebd8006761c11aeadab430dd9ac89be1460a1e2158462ff7c1182cf25"
+    },
+    "run_id": 35858617127,
+    "zip_digest": "sha256:77abbe20597d92feb9350a54c880a7f50f1907e5730d64ed66b95e0bbee82b09"
+  },
+  "transport_step_times": {
+    "Deploy to ECS": {
+      "completed_at": "2026-09-23T12:22:00Z",
+      "started_at": "2026-09-23T12:19:30Z"
+    },
+    "Download Offline Evidence Roundtrip": {
+      "completed_at": "2026-09-23T12:18:50Z",
+      "started_at": "2026-09-23T12:18:49Z"
+    },
+    "Prepare Offline Evidence Transfer": {
+      "completed_at": "2026-09-23T12:18:48Z",
+      "started_at": "2026-09-23T12:18:48Z"
+    },
+    "Upload Offline Evidence Transfer Receipt": {
+      "completed_at": "2026-09-23T12:18:50Z",
+      "started_at": "2026-09-23T12:18:50Z"
+    },
+    "Upload Offline Learning Evidence": {
+      "completed_at": "2026-09-23T12:18:49Z",
+      "started_at": "2026-09-23T12:18:48Z"
+    },
+    "Verify Offline Evidence Roundtrip": {
+      "completed_at": "2026-09-23T12:18:50Z",
+      "started_at": "2026-09-23T12:18:50Z"
+    }
+  },
+  "transport_verified_before_deploy": true
+}

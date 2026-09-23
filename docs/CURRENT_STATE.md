@@ -1,6 +1,6 @@
 # 当前项目状态
 
-当前接续（2026-09-23）：用户已批准一次最多2有效工程小时/1次纠正发布的证据传输批次，正在补专用目录隐藏文件上传及部署前下载核验。使用[新合同](plans/2026-09-23-evidence-transport-correction.md)绑定的独立gate；原三个HALTED、缺件ZIP和失败结论不改。尚未发布纠正代码或宣称交付通过。下段待预算决定是批准前的历史记录。
+当前结案（2026-09-23）：**CORRECTED_EVIDENCE_TRANSPORT_DELIVERED**。唯一纠正代码`25e0116`已推送main并部署；本地/CI/Docker均115/115，部署前真实上传/下载核验和部署后六组收据独立核对通过，88份文件含两份隐藏锁文件完整匹配。12:18:50 UTC完成回读，12:19:30开始部署；实际release/容器revision一致、running、重启0，Smoke与固定工程回归成功。新gate READY、无新增非预期失败，三个旧HALTED与旧坏包hash保持，原失败不追溯改绿。运行仍PASS_WITH_ACTIONS、execution NOT_EVALUATED；Archive仍INSUFFICIENT、V4仅原坏段FAIL，无生产注册/真实canary或盈利资格。**本批收口，不重复修复链、不等两周；后续实质缺口是真实市场候选资格，不自动重开研究。** 见[交付与复盘](reviews/2026-09-23-evidence-transport-correction-result.md)、[机器证据](reviews/2026-09-23-evidence-transport-correction.evidence.json)和[本批合同](plans/2026-09-23-evidence-transport-correction.md)。下列失败、待预算和旧“下一步”均为保留的历史时点，不覆盖本段。
 
 当前停止（2026-09-23）：**REGISTRATION_DELIVERY_HALTED_MISSING_ARTIFACTS**。`e219065`已推送main并部署，本地/CI/Docker114/114、Smoke成功；但最终注册隔离证据包缺两份`.index.lock`，阶段交付未通过。已确认上传步骤`include-hidden-files:false`排除了它们，原始ZIP摘要与GitHub一致，其余53份登记文件hash匹配；不是Bybit或模型故障，不补造文件或删断言。CLI帮助及路径别名两轮修复额度已用完，本批gate经停止复盘进入HALTED，失败与旧HALTED均保留。已提出最多2有效工程小时/1次纠正发布的独立证据传输批次，预算决定前不实现、不复验、不发布服务；无默认两周等待。真实模型隔离拒绝/五种故障裁决已有报告，不冒称完整交付、生产注册或真实回滚。见[结果与具体补救方案](reviews/2026-09-23-registration-isolation-result.md)、[缺件复盘](reviews/2026-09-23-registration-artifact-upload-review.json)和[脱敏证据](reviews/2026-09-23-registration-isolation.evidence.json)。下列“当前结案/下一步”为保留的历史时点，不覆盖本段。
 
