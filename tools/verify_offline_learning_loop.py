@@ -313,6 +313,10 @@ def verify(binary, output):
         fixed_returns.append(qty * (exit_price - entry) - qty * (entry + exit_price) * 0.00055
                              - qty * positive_rows[i + 2][4] * 0.000025)
     require(cases["positive"]["net"] > sum(fixed_returns), "no uplift over fixed direction")
+    # Same actually trained TEST_ONLY model; strict statistical updates and
+    # independent withdrawal are separate acceptance paths, both mandatory.
+    from verify_evolution_safety import verify as verify_safety
+    safety = verify_safety(binary, training_root, output)
     report = {
         "schema_version": "offline_learning_loop_v1", "status": "PASS",
         "scope": "TEST_ONLY_OFFLINE_COMPONENT_INTEGRATION",
@@ -327,6 +331,7 @@ def verify(binary, output):
         "fit_last_feature_index": TRAIN_BARS - 3, "last_training_label_index": TRAIN_BARS - 1,
         "first_acceptance_feature_index": START, "factor_set_version": factor_version,
         "cases": cases, "fixed_direction_net": sum(fixed_returns),
+        "safety_withdrawal": safety,
         "driver_sha256": sha(binary),
         "training_artifact_sha256": {name: sha(training_root / name) for name in
             ("development.csv", "miner.json", "learned.cbm", "learned.json", "shuffled.cbm", "shuffled.json")},

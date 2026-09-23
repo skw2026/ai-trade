@@ -1,0 +1,68 @@
+{
+  "demo_trading_authority": false,
+  "environment_diagnosis_sha256": "6a98c5b469d96695a2cc2d8e24991146c96b4d159809e6178bfc9f3c26fac46e",
+  "environment_root_cause": "tmpfs noexec prevents executable stand-ins; CTest build-owned scratch fixes it",
+  "full_regression": {
+    "linux": {
+      "log_sha256": "9624bc0dcc61f75baff9189c2483fc13ad3bbd4955fc67ad284d2b6efa134485",
+      "seconds": 98.49,
+      "tests": 119
+    },
+    "native": {
+      "log_sha256": "049b209b220f13acefd1025837ea376b7962f6fac2681ca98c9c6e2b36711727",
+      "seconds": 186.7,
+      "tests": 119
+    }
+  },
+  "live_safety_profile_enabled": false,
+  "market_economic_evidence": false,
+  "model_cases": {
+    "drift": {
+      "assessments": 5,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 336,
+      "withdrawal": {
+        "tick": 1200,
+        "weight": 0.55
+      }
+    },
+    "positive": {
+      "assessments": 4,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 0,
+      "withdrawal": null
+    },
+    "short": {
+      "assessments": 85,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 0,
+      "withdrawal": null
+    }
+  },
+  "model_evidence_sha256": {
+    "safety-drift.log": "6f24e59d6ba7614ff33aa1483348a4f3239e1231fefd011095980ea5d09f2702",
+    "safety-drift.trace.csv": "37dadefaf3c34ecc8ec45e04b056b417201cc8cd93178e3ba43fd776a88e0133",
+    "safety-positive.log": "6f24e59d6ba7614ff33aa1483348a4f3239e1231fefd011095980ea5d09f2702",
+    "safety-positive.trace.csv": "bd9430731c1fc4c8682c0f47acf5afa39554fec4e4d7fad62dfe8d93e2309767",
+    "safety-result.json": "88b67410ed57445354b70cb45d1cd2bc92daf7d2244bcf925c3025eaffbfae02",
+    "safety-short.log": "6f24e59d6ba7614ff33aa1483348a4f3239e1231fefd011095980ea5d09f2702",
+    "safety-short.trace.csv": "752746dd17fa10d920fe056822c3828f1636d383a8a94a1d51f7990f2418a1a3"
+  },
+  "model_sha256": "e619b795ecc82a6ab9760fe2fe388098abacb10a3ca2837f2e3b0630a4b1218a",
+  "old_halted_state_sha256": {
+    ".artifacts/engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    ".artifacts/offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    ".artifacts/strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    ".artifacts/validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "old_halted_states_unchanged": true,
+  "original_failure_sha256": "8473288005e386a87f3b986cef3027fc074883cd55e3921a6cf786337203fe06",
+  "production_goals_complete": false,
+  "production_promotion_authority": false,
+  "release_deployed": false,
+  "schema_version": "independent_safety_local_v1",
+  "scope": "TEST_ONLY_INDEPENDENT_SAFETY_WITHDRAWAL",
+  "source_files_matched": 409,
+  "source_manifest_sha256": "7c7c739ae2bddcf971599ec6d7d8f6f2fdf61963f54cdeb58814d186157e9184",
+  "status": "LOCAL_ENGINEERING_PASS"
+}

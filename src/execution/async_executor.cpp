@@ -69,6 +69,11 @@ void AsyncExecutor::PollResults(std::vector<AsyncResult>* out_results) {
   out_results->swap(results_);
 }
 
+void AsyncExecutor::LatchSafetyWithdrawal() {
+  safety_withdrawn_.store(true);
+  std::lock_guard<std::mutex> lock(send_mutex_);
+}
+
 void AsyncExecutor::WorkerLoop() {
   while (true) {
     Task task;
@@ -92,9 +97,12 @@ void AsyncExecutor::WorkerLoop() {
 void AsyncExecutor::ExecuteTask(const Task& task) {
   AsyncResult result;
   if (task.type == Task::kSubmit) {
+    std::lock_guard<std::mutex> send_lock(send_mutex_);
     result.client_order_id = task.intent.client_order_id;
     result.is_cancel = false;
-    if (adapter_) {
+    if (safety_withdrawn_.load() && !task.intent.reduce_only) {
+      result.error = "EVOLUTION_SAFETY_WITHDRAWAL_LATCHED";
+    } else if (adapter_) {
       result.success = adapter_->SubmitOrder(task.intent);
       if (!result.success) {
         result.error = "SubmitOrder returned false";

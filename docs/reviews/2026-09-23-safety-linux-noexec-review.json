@@ -1,0 +1,26 @@
+{
+  "failure_id": "1df0572f606649cbb51a249ca68c3f78",
+  "decision": "retry",
+  "goal": "独立安全撤回与全量119项Linux回归",
+  "expected": "同源全部119项通过，不跳过事务测试、不更改安全语义或原模型",
+  "observed": "前55项通过，第56项事务测试失败，其余63项未执行；临时Python/flock/timeout替身未生效，出现缺观察文件及docker command not found。",
+  "root_cause_status": "confirmed",
+  "root_cause": "隔离Docker的/tmp tmpfs实际挂载rw,nosuid,nodev,noexec。既有事务测试将可执行替身写入tempfile目录，chmod755也不能执行；PATH搜索回落到真实工具。相同shebang探针在/tmp执行errno13，在/evidence/build执行退出0，mount和statvfs确认NOEXEC。不是需要真实Docker守护进程、不是模型或Bybit故障。预检只验证可写/fsync/flock，漏掉临时替身执行权限，是执行者的验证环境遗漏。",
+  "evidence": [
+    ".artifacts/safety-withdrawal-20260923/linux-tests-attempt1.log",
+    ".artifacts/safety-withdrawal-20260923/noexec-diagnosis.json",
+    ".artifacts/safety-withdrawal-20260923/diagnose_tmp_exec.py",
+    "tools/test_closed_loop_runner_transaction.py: temporary executable python3/flock/timeout stand-ins"
+  ],
+  "next_action": "CTestCustom.cmake将所有默认临时夹具统一定位到隔离构建目录test-tmp；CMake永久生成相同文件，既有纯数据fsync测试的per-test /dev/shm覆盖保持。当前已按同一模板实例化配置修复，不修改二进制、不需要repair-build，不换原docker/ctest命令或增设state。原日志另存后仅一次原命令retry。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "独立安全动作和真实旧模型控制验收已经有局部证据，全量事务回归仍是发布必要条件；不把局部通过说成收口。",
+    "data_feasibility": "649份源码副本、旧模型和合成输入均可用；容量和锁已通过，没有外部数据依赖。",
+    "method_feasibility": "构建目录已执行C++测试且同shebang探针退出0；将默认临时目录指向该隔离目录保留测试替身和原断言，生产/tmp及权限不变。",
+    "budget_and_exit": "8有效工程小时合同内，最多一次原命令复验；若再次失败立即阻断并整条路线重审，不跳过失败项或更换门禁。"
+  }
+}

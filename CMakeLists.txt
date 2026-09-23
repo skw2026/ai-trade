@@ -62,6 +62,7 @@ add_library(ai_trade_system STATIC
   src/oms/order_manager.cpp
   src/oms/reconciler.cpp
   src/storage/wal_store.cpp
+  src/storage/evolution_safety_journal.cpp
   src/system/trade_system.cpp
 )
 target_include_directories(ai_trade_system PUBLIC src)
@@ -89,10 +90,17 @@ target_link_libraries(trade_bot PRIVATE ai_trade_system)
 
 include(CTest)
 if(BUILD_TESTING)
+  # Transaction fixtures execute temporary CLI stand-ins. Docker's default
+  # tmpfs is noexec; keep them in an isolated build-owned executable directory.
+  configure_file(tools/CTestCustom.cmake.in CTestCustom.cmake @ONLY)
   # Offline integration driver only: never installed into the runtime image.
   add_executable(offline_learning_driver tests/offline_learning_driver.cpp)
   target_link_libraries(offline_learning_driver PRIVATE ai_trade_system)
   add_executable(strict_evolution_test tests/test_strict_evolution.cpp)
+  add_executable(evolution_safety_test tests/test_evolution_safety.cpp)
+  target_link_libraries(evolution_safety_test PRIVATE ai_trade_system)
+  add_test(NAME evolution_safety_test COMMAND evolution_safety_test)
+  set_tests_properties(evolution_safety_test PROPERTIES TIMEOUT 30 LABELS "offline;learning;safety")
   target_link_libraries(strict_evolution_test PRIVATE ai_trade_system)
   add_test(NAME strict_evolution_test COMMAND strict_evolution_test)
   set_tests_properties(strict_evolution_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
@@ -161,6 +169,9 @@ if(BUILD_TESTING)
     add_test(NAME strict_learning_audit_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_strict_learning.py)
     set_tests_properties(strict_learning_audit_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
+    add_test(NAME evolution_safety_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_evolution_safety.py)
+    set_tests_properties(evolution_safety_audit_test PROPERTIES TIMEOUT 30 LABELS "offline;learning;safety")
     add_test(NAME model_registry_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_model_registry.py)
     add_test(NAME activation_transaction_test

@@ -91,6 +91,7 @@ void StrictReplay(int argc, char** argv) {
   SelfEvolutionConfig ec;
   ec.enabled = ec.use_virtual_pnl = ec.use_counterfactual_search = true;
   ec.counterfactual_require_temporal_holdout = true;
+  ec.safety_withdrawal_enabled = std::string(argv[1]) == "safety";
   // Deliberately request the legacy fallback; strict mode must suppress it.
   ec.counterfactual_fallback_to_factor_ic = ec.enable_factor_ic_adaptive_weights = true;
   ec.enable_learnability_gate = true;
@@ -113,7 +114,7 @@ void StrictReplay(int argc, char** argv) {
   Check(out.good(), "strict trace output unavailable");
   out << "index,p_up,model_signal,delayed_signal,price,action,action_type,before,weight,best,"
          "train_samples,holdout_samples,learn_samples,learn_t,learn_pass,hold_t,hold_n,"
-         "superiority_pass,used_search,strict,fallback,virtual_pnl,objective,rolled_back\n";
+         "superiority_pass,used_search,strict,fallback,virtual_pnl,objective,rolled_back,safety_withdrawn\n";
   out << std::setprecision(17);
   for (int i = 0; i < static_cast<int>(bars.size()); ++i) {
     const auto event = Event(bars[i]);
@@ -145,7 +146,8 @@ void StrictReplay(int argc, char** argv) {
                              action->counterfactual_fallback_to_factor_ic_used))
         << ',' << (action ? action->window_virtual_pnl_usd : 0)
         << ',' << (action ? action->window_objective_score : 0)
-        << ',' << (action && action->rolled_back_to_baseline) << '\n';
+        << ',' << (action && action->rolled_back_to_baseline)
+        << ',' << controller.safety_withdrawn() << '\n';
     delayed_signal = model_signal;  // Never send the next bar's inference early.
   }
   Check(out.good(), "strict trace write failed");
@@ -337,7 +339,7 @@ int main(int argc, char** argv) {
       c.top_k = 3;
       std::string error;
       Check(research::SaveMinerReport(research::Miner().Run(Bars(argv[2]), c), argv[3], &error), error);
-    } else if (std::string(argv[1]) == "strict") {
+    } else if (std::string(argv[1]) == "strict" || std::string(argv[1]) == "safety") {
       StrictReplay(argc, argv);
     } else {
       Check(std::string(argv[1]) == "replay", "unknown mode");

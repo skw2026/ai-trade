@@ -20,6 +20,7 @@
 #include "oms/order_manager.h"
 #include "oms/reconciler.h"
 #include "storage/wal_store.h"
+#include "storage/evolution_safety_journal.h"
 #include "system/trade_system.h"
 #include "universe/universe_selector.h"
 
@@ -346,7 +347,14 @@ class BotApplication {
    *
    * 仅触发组合层权重变化，不触碰风控不可动层参数。
    */
-  void RunSelfEvolution(std::int64_t event_time_ms = 0);
+  void RunSelfEvolution(std::int64_t event_time_ms = 0,
+                        std::int64_t observation_tick = -1);
+  void LatchEvolutionSafetyWithdrawal(bool persist);
+  void CancelEvolutionRiskOrders();
+  EvolutionSafetyJournal evolution_safety_journal_;
+  bool evolution_safety_withdrawn_{false};
+  std::int64_t safety_last_observation_tick_{-1};
+  std::unordered_set<std::string> safety_cancel_attempted_;
   bool LoadSelfEvolutionWeights(
       std::array<EvolutionWeights, 3>* out_weights,
       bool* out_state_exists,
@@ -372,7 +380,7 @@ class BotApplication {
    * @brief 停机清理
    * 停止执行线程并输出结束日志。
    */
-  void Shutdown();
+  void Shutdown(bool clean = true);
 
   /// 订单漏斗统计（用于运行态可观测闭环）。
   struct DecisionFunnelStats {

@@ -3404,6 +3404,16 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "self_evolution" && key == "safety_withdrawal_enabled") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error) *out_error = "self_evolution.safety_withdrawal_enabled must be bool";
+        return false;
+      }
+      config.self_evolution.safety_withdrawal_enabled = parsed;
+      continue;
+    }
+
     if (current_section == "self_evolution" && key == "clock_tick_interval_ms") {
       int parsed = 0;
       if (!ParseInt(value, &parsed)) {

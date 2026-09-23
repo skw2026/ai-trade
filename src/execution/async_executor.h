@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <atomic>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -49,6 +50,9 @@ class AsyncExecutor {
   void Submit(const OrderIntent& intent);
   /// 异步提交撤单任务。
   void Cancel(const std::string& client_order_id);
+  // One-way, serialized with actual sends. A request already inside the
+  // adapter completes first and must be cancelled/reconciled by its owner.
+  void LatchSafetyWithdrawal();
 
   /// 非阻塞轮询执行结果；返回后 `out_results` 持有本轮所有结果。
   void PollResults(std::vector<AsyncResult>* out_results);
@@ -66,6 +70,8 @@ class AsyncExecutor {
 
   ExchangeAdapter* adapter_{nullptr};  ///< 外部注入适配器（不拥有所有权）。
   const Mode mode_;
+  std::mutex send_mutex_;
+  std::atomic<bool> safety_withdrawn_{false};
   std::thread worker_;  ///< 后台执行线程。
   std::mutex queue_mutex_;  ///< 任务队列互斥锁。
   std::condition_variable queue_cv_;  ///< 任务到达通知。

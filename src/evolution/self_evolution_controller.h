@@ -18,6 +18,7 @@ enum class SelfEvolutionActionType {
   kUpdated,
   kRolledBack,
   kSkipped,
+  kSafetyWithdrawn,
 };
 
 /// 单次自进化评估结果（用于审计日志与运行态观测）。
@@ -128,6 +129,9 @@ class SelfEvolutionController {
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
+  bool safety_withdrawn() const { return safety_withdrawn_; }
+  // One-way even across Initialize/RestoreCurrentWeights. No automatic release.
+  void LatchSafetyWithdrawal() { safety_withdrawn_ = true; }
   EvolutionWeights current_weights(RegimeBucket bucket) const;
   EvolutionWeights rollback_anchor_weights(RegimeBucket bucket) const;
   /// 恢复跨进程持久化的分桶权重；基线仍使用当前配置，回滚锚点重置为恢复值。
@@ -151,6 +155,14 @@ class SelfEvolutionController {
   int degrade_window_count(RegimeBucket bucket) const;
 
  private:
+  bool safety_withdrawn_{false};
+  std::array<int, 3> safety_loss_streak_{};
+  struct SafetyWindow {
+    double realized{0.0}, virtual_pnl{0.0}, drawdown{0.0}, churn{0.0};
+    int ticks{0}, virtual_samples{0};
+  };
+  std::array<SafetyWindow, 3> safety_windows_{};
+  std::optional<SelfEvolutionAction> AssessSafety(std::int64_t tick, double equity);
   struct BucketRuntime {
     double current_trend_weight{1.0};
     double current_defensive_weight{0.0};

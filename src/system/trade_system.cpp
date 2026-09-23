@@ -310,6 +310,12 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   }
 
   // 6. Execution
+  if (evolution_safety_withdrawn_) {
+    // Local portfolio guard; does not toggle an exchange/account risk setting
+    // and cannot override a hard-risk target of zero.
+    decision.risk_adjusted.reduce_only = true;
+    PushReason(&decision.signal.reason_codes, "EVOLUTION_SAFETY_WITHDRAWAL_LATCHED");
+  }
   const bool intrabar = closed_bar_mvp_ && !decision.base_signal.new_decision;
   const bool risk_reduction =
       decision.risk_adjusted.reduce_only || base_signal_expired ||

@@ -1,0 +1,4 @@
+# CTest-only scratch root, no runtime/account data. Per-test TMPDIR properties
+# (e.g. fsync-heavy pure-data fixtures on /dev/shm) still override this default.
+file(MAKE_DIRECTORY "@CMAKE_BINARY_DIR@/test-tmp")
+set(ENV{TMPDIR} "@CMAKE_BINARY_DIR@/test-tmp")

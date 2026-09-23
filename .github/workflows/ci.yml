@@ -76,6 +76,8 @@ jobs:
           grep -q "validation_stop_gate_test" /tmp/ctest-list.txt
           grep -q "offline_learning_harness_test" /tmp/ctest-list.txt
           grep -q "strict_evolution_test" /tmp/ctest-list.txt
+          grep -q "evolution_safety_test" /tmp/ctest-list.txt
+          grep -q "evolution_safety_audit_test" /tmp/ctest-list.txt
           grep -q "strict_learning_audit_test" /tmp/ctest-list.txt
           grep -q "model_registry_test" /tmp/ctest-list.txt
           grep -q "activation_transaction_test" /tmp/ctest-list.txt

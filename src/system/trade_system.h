@@ -114,6 +114,8 @@ class TradeSystem {
   // --- Configuration & Control ---
 
   void EnableEvolution(bool enabled) { evolution_enabled_ = enabled; }
+  void LatchEvolutionSafetyWithdrawal() { evolution_safety_withdrawn_ = true; }
+  bool evolution_safety_withdrawn() const { return evolution_safety_withdrawn_; }
   
   bool SetEvolutionWeights(double trend_weight, double defensive_weight,
                            std::string* out_error);
@@ -198,6 +200,7 @@ class TradeSystem {
   IntegratorConfig integrator_config_;
   double max_account_gross_notional_usd_;
   bool evolution_enabled_{false};
+  bool evolution_safety_withdrawn_{false};
   std::array<EvolutionWeights, 3> evolution_weights_by_bucket_;
   bool closed_bar_mvp_{false};
   bool reference_enabled_{false};

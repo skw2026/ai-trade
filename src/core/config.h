@@ -104,6 +104,8 @@ struct UniverseConfig {
 
 struct SelfEvolutionConfig {
   bool enabled{false};
+  // Independent, persistent withdrawal; never restores unqualified weights.
+  bool safety_withdrawal_enabled{false};
   // 0: legacy market-event count; >0: milliseconds per event-time clock tick.
   int clock_tick_interval_ms{0};
   // Evaluation cadence, independent of the global weight-update rate limit.

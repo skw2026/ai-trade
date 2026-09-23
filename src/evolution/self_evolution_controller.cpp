@@ -117,7 +117,53 @@ bool SelfEvolutionController::Initialize(
   next_update_tick_ = current_tick + config_.min_update_interval_ticks;
   cooldown_until_tick_ = current_tick;
   initialized_ = true;
+  safety_windows_ = {};
+  safety_loss_streak_ = {};
   return true;
+}
+
+std::optional<SelfEvolutionAction> SelfEvolutionController::AssessSafety(
+    std::int64_t tick, double equity) {
+  std::optional<SelfEvolutionAction> result;
+  for (std::size_t i = 0; i < safety_windows_.size(); ++i) {
+    const auto& w = safety_windows_[i];
+    const double pnl = config_.use_virtual_pnl ? w.virtual_pnl : w.realized;
+    const double score = ComputeObjectiveScore(pnl, w.drawdown, w.churn, equity, w.ticks);
+    const bool observed = config_.use_virtual_pnl ? w.virtual_samples > 0 : std::fabs(w.realized) > kStatsEpsilon;
+    const bool loss = observed && std::isfinite(pnl) && std::isfinite(score) &&
+                      pnl < 0 && score <= ObjectiveThreshold();
+    auto& streak = safety_loss_streak_[i];
+    streak = loss ? streak + 1 : 0;
+    if (streak < std::max(1, config_.rollback_degrade_windows) || result) continue;
+    LatchSafetyWithdrawal();
+    const auto weights = current_weights(BucketFromIndex(i));
+    SelfEvolutionAction a;
+    a.type = SelfEvolutionActionType::kSafetyWithdrawn;
+    a.reason_code = "EVOLUTION_SAFETY_WITHDRAWAL_LATCHED";
+    a.tick = tick;
+    a.regime_bucket = BucketFromIndex(i);
+    a.window_pnl_usd = pnl;
+    a.window_realized_pnl_usd = w.realized;
+    a.window_virtual_pnl_usd = w.virtual_pnl;
+    a.window_objective_score = score;
+    a.window_max_drawdown_pct = w.drawdown;
+    a.window_notional_churn_usd = w.churn;
+    a.window_bucket_ticks = w.ticks;
+    a.used_virtual_pnl = config_.use_virtual_pnl;
+    a.used_counterfactual_search = config_.use_counterfactual_search && config_.use_virtual_pnl;
+    a.counterfactual_temporal_holdout_required = config_.counterfactual_require_temporal_holdout;
+    a.trend_weight_before = a.trend_weight_after = weights.trend_weight;
+    a.defensive_weight_before = a.defensive_weight_after = weights.defensive_weight;
+    a.counterfactual_best_trend_weight = weights.trend_weight;
+    a.counterfactual_best_defensive_weight = weights.defensive_weight;
+    a.degrade_windows = streak;
+    a.clock_tick_interval_ms = config_.clock_tick_interval_ms;
+    result = a;
+  }
+  // Independent fixed windows: statistical selection must neither starve a
+  // losing bucket nor count an unevaluated old loss more than once.
+  safety_windows_ = {};
+  return result;
 }
 
 EvolutionWeights SelfEvolutionController::current_weights(
@@ -182,7 +228,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     double observed_turnover_cost_bps,
     double observed_funding_rate_per_tick,
     std::int64_t event_time_ms) {
-  if (!config_.enabled || !initialized_) {
+  if (!config_.enabled || !initialized_ || safety_withdrawn_) {
     return std::nullopt;
   }
 
@@ -200,6 +246,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   clock_tick_ = current_tick;
 
   const std::size_t active_index = BucketIndex(regime_bucket);
+  const double virtual_before = bucket_window_virtual_pnl_usd_[active_index];
+  const int samples_before = bucket_window_learnability_stats_[active_index].samples;
   if (account_equity_usd > 0.0 && std::isfinite(account_equity_usd)) {
     last_observed_equity_usd_ = account_equity_usd;
     has_last_observed_equity_ = true;
@@ -414,6 +462,16 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     signal_state.has_state = true;
   }
 
+  if (config_.safety_withdrawal_enabled) {
+    auto& w = safety_windows_[active_index];
+    w.realized += delta_realized_net_pnl_usd;
+    w.virtual_pnl += bucket_window_virtual_pnl_usd_[active_index] - virtual_before;
+    w.virtual_samples += config_.use_virtual_pnl
+        ? bucket_window_learnability_stats_[active_index].samples - samples_before : 0;
+    w.drawdown = std::max(w.drawdown, std::max(0.0, drawdown_pct));
+    w.churn += has_last_observed_notional_ ? std::fabs(account_notional_usd - last_observed_notional_usd_) : 0;
+    ++w.ticks;
+  }
   last_observed_realized_net_pnl_usd_ = realized_net_pnl_usd;
   has_last_observed_realized_net_pnl_ = true;
   last_observed_notional_usd_ = account_notional_usd;
@@ -423,6 +481,9 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     return std::nullopt;
   }
 
+  if (config_.safety_withdrawal_enabled) {
+    if (auto safety = AssessSafety(current_tick, objective_equity_usd)) return safety;
+  }
   const std::size_t eval_index = SelectEvalBucket(active_index);
   const RegimeBucket eval_bucket = BucketFromIndex(eval_index);
   const double window_realized_pnl_usd = bucket_window_realized_pnl_usd_[eval_index];

@@ -364,6 +364,8 @@ const char* EvolutionActionTypeToString(SelfEvolutionActionType type) {
       return "rolled_back";
     case SelfEvolutionActionType::kSkipped:
       return "skipped";
+    case SelfEvolutionActionType::kSafetyWithdrawn:
+      return "safety_withdrawn";
   }
   return "unknown";
 }
@@ -3699,10 +3701,10 @@ int BotApplication::Run() {
                (reason.empty() ? std::string("INSUFFICIENT_RUNTIME") : reason) + "\"}");
     }
     LogError("MVP_REPLAY_ABORTED: " + std::string(error.what()));
-    Shutdown();
+    Shutdown(false);
     return 1;
   }
-  Shutdown();
+  Shutdown(!replay_terminal_settlement_failed_);
   return replay_terminal_settlement_failed_ ? 1 : 0;
 }
 
@@ -3778,6 +3780,16 @@ bool BotApplication::Initialize() {
     LogError("WAL 初始化失败: " + wal_error);
     return false;
   }
+
+  // Consult existing state EVEN if learning/safety is now disabled. A config
+  // edit or a different executable must never unlock a previous withdrawal.
+  if (!evolution_safety_journal_.Open(config_.data_path,
+          config_.self_evolution.enabled &&
+              config_.self_evolution.safety_withdrawal_enabled, &wal_error)) {
+    LogError("EVOLUTION_SAFETY_STARTUP_BLOCKED: " + wal_error);
+    return false;
+  }
+  if (evolution_safety_journal_.withdrawn()) LatchEvolutionSafetyWithdrawal(false);
 
   if (config_.closed_bar_mvp &&
       !system_.OpenMvpRiskJournal(
@@ -3940,6 +3952,7 @@ bool BotApplication::Initialize() {
       adapter_.get(), config_.mode == "replay"
                           ? AsyncExecutor::Mode::kInlineReplay
                           : AsyncExecutor::Mode::kBackground);
+  if (evolution_safety_withdrawn_) executor_->LatchSafetyWithdrawal();
   executor_->Start();
   LogInfo(std::string("EXECUTION_MODE: ") +
           (config_.mode == "replay" ? "inline_replay" : "background"));
@@ -3951,6 +3964,7 @@ bool BotApplication::Initialize() {
   if (!RecoverStartupOrdersAndProtection()) {
     return false;
   }
+  if (evolution_safety_withdrawn_) CancelEvolutionRiskOrders();
 
   if (config_.integrator.enabled &&
       system_.integrator_mode() != IntegratorMode::kOff &&
@@ -4781,6 +4795,7 @@ void BotApplication::ApplyCandidateEpisodeFill(
 void BotApplication::RunLoop() {
   MarketEvent event;
   while (true) {
+    if (evolution_safety_withdrawn_) CancelEvolutionRiskOrders();
     if (config_.closed_bar_mvp && system_.mvp_risk_state().latched) {
       // Cancel ALL-symbol queued entries before polling another executable
       // open. A risk latch must not let a previously queued entry add risk.
@@ -4988,7 +5003,8 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
     episode_it->second.funding_paid_usd += episode_funding_paid;
   }
   UpdateProfitProtection(event);
-  ManageCandidateProbeLifecycle(event);
+  if (!config_.self_evolution.safety_withdrawal_enabled)
+    ManageCandidateProbeLifecycle(event);
   ManageStrategyReduceLifecycle(event);
   RefreshProtectionReduceOnlyRelease("market_tick_flat_idle");
 
@@ -5180,6 +5196,16 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
       decision.signal.symbol.empty() ? event.symbol : decision.signal.symbol;
   has_tick_strategy_signal_ = !tick_strategy_signal_symbol_.empty() &&
                               decision.base_signal.new_decision;
+  if (config_.self_evolution.safety_withdrawal_enabled) {
+    // Observe this event BEFORE it can enqueue a new-risk order. The legacy
+    // end-of-loop call is deduplicated using the same market-event ordinal.
+    RunSelfEvolution(event.ts_ms, market_tick_count_ + 1);
+    if (evolution_safety_withdrawn_ && decision.intent && !decision.intent->reduce_only)
+      decision.intent.reset();
+    // Repricing can create a new entry too; it must not run before this event's
+    // safety observation. Hard-risk/protective reductions above remain active.
+    ManageCandidateProbeLifecycle(event);
+  }
   if (HasExposure(decision.base_signal.trend_notional_usd) ||
       HasExposure(decision.base_signal.defensive_notional_usd) ||
       HasExposure(decision.base_signal.suggested_notional_usd)) {
@@ -5743,6 +5769,10 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
 bool BotApplication::EnqueueIntent(
     const OrderIntent& intent,
     const IntegratorCandidateLineage* integrator_lineage) {
+  if (evolution_safety_withdrawn_ && !intent.reduce_only) {
+    LogInfo("ORDER_REJECTED_EVOLUTION_SAFETY: client_order_id=" + intent.client_order_id);
+    return false;
+  }
   if (intent_ids_.count(intent.client_order_id)) return false;
 
   OrderIntent attributed_intent = intent;
@@ -7645,9 +7675,44 @@ void BotApplication::RunGateMonitor() {
   }
 }
 
-void BotApplication::RunSelfEvolution(std::int64_t event_time_ms) {
+void BotApplication::LatchEvolutionSafetyWithdrawal(bool persist) {
+  evolution_safety_withdrawn_ = true;
+  self_evolution_.LatchSafetyWithdrawal();
+  system_.LatchEvolutionSafetyWithdrawal();
+  if (executor_) executor_->LatchSafetyWithdrawal();
+  std::string error;
+  if (persist && !evolution_safety_journal_.Withdraw(&error))
+    LogError("EVOLUTION_SAFETY_PERSIST_FAILED: " + error);
+  // Once sent, cancellation is a request, not proof of absence of late fills.
+  CancelEvolutionRiskOrders();
+  LogInfo("EVOLUTION_SAFETY_WITHDRAWAL_LATCHED: scope=process_portfolio, "
+          "learning=frozen, new_risk=blocked, protections=preserved, auto_resume=false");
+}
+
+void BotApplication::CancelEvolutionRiskOrders() {
+  if (!executor_) return;
+  for (const auto& id : oms_.PendingOrderIds()) {
+    const auto* order = oms_.Find(id);
+    if (!order || order->intent.reduce_only ||
+        order->state == OrderState::kCancelPending ||
+        order->state == OrderState::kCancelConfirmed) continue;
+    // One immediate attempt per order/boot. Failed cancellation remains in OMS
+    // for the existing stale-order reconciler, not a tight retry storm.
+    if (!safety_cancel_attempted_.insert(id).second) continue;
+    oms_.MarkCancelPending(id);
+    executor_->Cancel(id);
+  }
+}
+
+void BotApplication::RunSelfEvolution(std::int64_t event_time_ms,
+                                     std::int64_t observation_tick) {
   if (!config_.self_evolution.enabled) {
     return;
+  }
+  if (observation_tick < 0) observation_tick = market_tick_count_;
+  if (config_.self_evolution.safety_withdrawal_enabled) {
+    if (observation_tick <= safety_last_observation_tick_) return;
+    safety_last_observation_tick_ = observation_tick;
   }
 
   const RegimeBucket active_bucket =
@@ -7665,7 +7730,7 @@ void BotApplication::RunSelfEvolution(std::int64_t event_time_ms) {
       has_tick_strategy_signal_ ? tick_strategy_signal_symbol_ : std::string();
   const double observed_turnover_cost_bps = std::max(0.0, 0.5 * RoundTripCostBps());
   const auto action =
-      self_evolution_.OnTick(market_tick_count_,
+      self_evolution_.OnTick(observation_tick,
                              system_.account().cumulative_realized_net_pnl_usd(),
                              active_bucket,
                              system_.account().drawdown_pct(),
@@ -7684,6 +7749,9 @@ void BotApplication::RunSelfEvolution(std::int64_t event_time_ms) {
   if (!action.has_value()) {
     return;
   }
+
+  if (action->type == SelfEvolutionActionType::kSafetyWithdrawn)
+    LatchEvolutionSafetyWithdrawal(true);
 
   if (action->type == SelfEvolutionActionType::kUpdated ||
       action->type == SelfEvolutionActionType::kRolledBack) {
@@ -8098,6 +8166,8 @@ void BotApplication::LogStatus() {
   }
 
   LogInfo("RUNTIME_STATUS: ticks=" + std::to_string(market_tick_count_) +
+          ", evolution_safety_withdrawn=" +
+          std::string(evolution_safety_withdrawn_ ? "true" : "false") +
           ", trade_ok=" + std::string(trade_ok ? "true" : "false") +
           ", trading_halted=" +
           std::string(trading_halted_ ? "true" : "false") +
@@ -8839,8 +8909,11 @@ bool BotApplication::AdvanceReplayTerminalSettlement() {
 }
 
 // 停机顺序：先停执行线程，再输出结束日志。
-void BotApplication::Shutdown() {
+void BotApplication::Shutdown(bool clean) {
   if (executor_) executor_->Stop();
+  std::string safety_error;
+  if (clean && !evolution_safety_journal_.CloseClean(&safety_error))
+    LogError("EVOLUTION_SAFETY_CLEAN_SHUTDOWN_FAILED: " + safety_error);
   LogInfo("Bot Shutdown.");
 }
 
