@@ -219,13 +219,47 @@ jobs:
               /app/tools/verify_registration_isolation.py \
               --learning-result /evidence/acceptance/result.json --output /evidence/registration
 
+      - name: Prepare Offline Evidence Transfer
+        run: |
+          python3 tools/validation_gate.py run --label evidence-transfer-prepare --timeout 60 -- \
+            python3 tools/verify_evidence_transport.py prepare \
+              --root .artifacts/offline-learning-cd \
+              --manifest .artifacts/offline-evidence-transport/manifest.json \
+              --expected-sha "${GITHUB_SHA}"
+
       - name: Upload Offline Learning Evidence
-        if: always()
+        id: offline_evidence
         uses: actions/upload-artifact@v4
         with:
           name: offline-learning-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/offline-learning-cd/
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Download Offline Evidence Roundtrip
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.offline_evidence.outputs.artifact-id }}
+          path: .artifacts/offline-evidence-downloaded
+          merge-multiple: true
+
+      - name: Verify Offline Evidence Roundtrip
+        run: |
+          python3 tools/validation_gate.py run --label evidence-transfer-roundtrip --timeout 60 -- \
+            python3 tools/verify_evidence_transport.py verify \
+              --root .artifacts/offline-evidence-downloaded \
+              --manifest .artifacts/offline-evidence-transport/manifest.json \
+              --expected-sha "${GITHUB_SHA}" \
+              --artifact-id "${{ steps.offline_evidence.outputs.artifact-id }}" \
+              --run-id "${GITHUB_RUN_ID}" --run-attempt "${GITHUB_RUN_ATTEMPT}" \
+              --output .artifacts/offline-evidence-transport/roundtrip.json
+
+      - name: Upload Offline Evidence Transfer Receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-evidence-transport-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/offline-evidence-transport/
+          if-no-files-found: error
 
       - name: Build and Push Web Image
         id: web_image

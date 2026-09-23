@@ -163,6 +163,9 @@ if(BUILD_TESTING)
     add_test(NAME registration_isolation_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_registration_isolation.py)
     set_tests_properties(registration_isolation_test PROPERTIES TIMEOUT 60 LABELS "offline;promotion")
+    add_test(NAME evidence_transport_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_verify_evidence_transport.py)
+    set_tests_properties(evidence_transport_test PROPERTIES TIMEOUT 60 LABELS "offline;delivery")
     add_test(NAME mvp_reference_pipeline_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_mvp_reference_pipeline.py
                      --binary $<TARGET_FILE:trade_bot>)

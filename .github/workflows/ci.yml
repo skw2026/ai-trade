@@ -78,6 +78,7 @@ jobs:
           grep -q "model_registry_test" /tmp/ctest-list.txt
           grep -q "activation_transaction_test" /tmp/ctest-list.txt
           grep -q "registration_isolation_test" /tmp/ctest-list.txt
+          grep -q "evidence_transport_test" /tmp/ctest-list.txt
           grep -q "self_evolution_clock_test" /tmp/ctest-list.txt
           grep -q "replay_trace_comparison_test" /tmp/ctest-list.txt
           grep -q "research_closeout_contract_test" /tmp/ctest-list.txt

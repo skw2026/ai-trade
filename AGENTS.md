@@ -11,6 +11,11 @@
 
 ## 开始与阶段边界
 
+- 2026-09-23 用户以ok批准追加证据传输纠正批次，按
+  `docs/plans/2026-09-23-evidence-transport-correction.md`连续落地，最多2有效
+  工程小时/1次纠正代码发布。旧三个HALTED及缺件证据不改，使用该合同绑定
+  的独立新gate；不重新索取普通提交/部署授权，不扩大研究或交易权限。
+
 - 2026-09-23 注册隔离批次最终交付失败：e219065已部署、114项回归通过，但
   上传包排除两份隐藏锁文件。两轮修复额度耗尽，原离线工程gate已按
   `docs/reviews/2026-09-23-registration-artifact-upload-review.json`停止为HALTED。
