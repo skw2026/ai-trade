@@ -909,6 +909,9 @@ std::string BotApplication::SelfEvolutionPolicyFingerprint() const {
              << config_.self_evolution.use_counterfactual_search << '|'
              << config_.self_evolution.counterfactual_require_temporal_holdout
              << '|' << config_.self_evolution.enable_learnability_gate;
+    if (config_.self_evolution.clock_tick_interval_ms > 0) {
+      fallback << "|event_clock_ms=" << config_.self_evolution.clock_tick_interval_ms;
+    }
     payload = fallback.str();
   }
   static const std::optional<std::string> executable_hash = [] {
@@ -4854,7 +4857,7 @@ void BotApplication::RunLoop() {
         last_mvp_gate_bar_ts_ = event.ts_ms;
         RunGateMonitor();
       }
-      RunSelfEvolution();
+      RunSelfEvolution(event.ts_ms);
       LogStatus();
     }
 
@@ -7642,7 +7645,7 @@ void BotApplication::RunGateMonitor() {
   }
 }
 
-void BotApplication::RunSelfEvolution() {
+void BotApplication::RunSelfEvolution(std::int64_t event_time_ms) {
   if (!config_.self_evolution.enabled) {
     return;
   }
@@ -7675,7 +7678,8 @@ void BotApplication::RunSelfEvolution() {
                              std::max(0, pending_fills_for_evolution_),
                              system_.account().equity_usd(),
                              observed_turnover_cost_bps,
-                             observed_funding_rate_per_tick);
+                             observed_funding_rate_per_tick,
+                             event_time_ms);
   pending_fills_for_evolution_ = 0;
   if (!action.has_value()) {
     return;
@@ -7803,6 +7807,9 @@ void BotApplication::RunSelfEvolution() {
           "}, candidate_trend_weight_delta=" +
           std::to_string(action->candidate_trend_weight_delta) +
           ", degrade_windows=" + std::to_string(action->degrade_windows) +
+          ", clock_tick=" + std::to_string(action->tick) +
+          ", clock_tick_interval_ms=" + std::to_string(action->clock_tick_interval_ms) +
+          ", update_wait_remaining_ticks=" + std::to_string(action->update_wait_remaining_ticks) +
           ", cooldown_remaining_ticks=" +
           std::to_string(action->cooldown_remaining_ticks));
 }
@@ -7980,11 +7987,11 @@ void BotApplication::LogStatus() {
   const bool evolution_enabled =
       config_.self_evolution.enabled && self_evolution_.initialized();
   const bool evolution_cooldown =
-      evolution_enabled && market_tick_count_ < self_evolution_.cooldown_until_tick();
+      evolution_enabled && self_evolution_.clock_tick() < self_evolution_.cooldown_until_tick();
   const int evolution_cooldown_remaining =
       evolution_cooldown
           ? static_cast<int>(self_evolution_.cooldown_until_tick() -
-                             market_tick_count_)
+                             self_evolution_.clock_tick())
           : 0;
   const double window_realized_net_delta_usd =
       has_last_status_account_snapshot_
@@ -8640,6 +8647,10 @@ void BotApplication::LogStatus() {
           "," + std::to_string(evolution_weights[2].defensive_weight) + ")}" +
           ", next_eval_tick=" +
           std::to_string(self_evolution_.next_eval_tick()) +
+          ", next_update_tick=" + std::to_string(self_evolution_.next_update_tick()) +
+          ", clock_tick=" + std::to_string(self_evolution_.clock_tick()) +
+          ", clock_tick_interval_ms=" + std::to_string(config_.self_evolution.clock_tick_interval_ms) +
+          ", rejected_event_time_count=" + std::to_string(self_evolution_.rejected_event_time_count()) +
           ", cooldown=" + std::string(evolution_cooldown ? "true" : "false") +
           ", cooldown_remaining_ticks=" +
           std::to_string(evolution_cooldown_remaining) + "}");

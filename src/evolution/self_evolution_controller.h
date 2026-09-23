@@ -70,6 +70,8 @@ struct SelfEvolutionAction {
   int direction_consistency_streak{0};
   int direction_consistency_direction{0};  // +1=trend up, -1=trend down, 0=none
   int cooldown_remaining_ticks{0};
+  int update_wait_remaining_ticks{0};
+  int clock_tick_interval_ms{0};
   int degrade_windows{0};
 };
 
@@ -99,7 +101,8 @@ class SelfEvolutionController {
                   double initial_equity_usd,
                   const std::pair<double, double>& initial_weights,
                   std::string* out_error,
-                  double initial_realized_net_pnl_usd = 0.0);
+                  double initial_realized_net_pnl_usd = 0.0,
+                  std::int64_t initial_event_time_ms = 0);
 
   /**
    * @brief 每个行情 tick 调用一次，按配置周期评估是否更新/回滚
@@ -120,7 +123,8 @@ class SelfEvolutionController {
                                             int fill_count = 0,
                                             double account_equity_usd = 0.0,
                                             double observed_turnover_cost_bps = 0.0,
-                                            double observed_funding_rate_per_tick = 0.0);
+                                            double observed_funding_rate_per_tick = 0.0,
+                                            std::int64_t event_time_ms = 0);
 
   bool enabled() const { return config_.enabled; }
   bool initialized() const { return initialized_; }
@@ -137,6 +141,9 @@ class SelfEvolutionController {
     return rollback_anchor_weights(RegimeBucket::kRange);
   }
   std::int64_t next_eval_tick() const { return next_eval_tick_; }
+  std::int64_t next_update_tick() const { return next_update_tick_; }
+  std::int64_t clock_tick() const { return clock_tick_; }
+  std::int64_t rejected_event_time_count() const { return rejected_event_time_count_; }
   std::int64_t cooldown_until_tick() const { return cooldown_until_tick_; }
   int degrade_window_count() const {
     return degrade_window_count(RegimeBucket::kRange);
@@ -179,7 +186,7 @@ class SelfEvolutionController {
   static RegimeBucket BucketFromIndex(std::size_t index);
   BucketRuntime& RuntimeFor(RegimeBucket bucket);
   const BucketRuntime& RuntimeFor(RegimeBucket bucket) const;
-  int EffectiveUpdateIntervalTicks() const;
+  int EvaluationIntervalTicks() const;
   std::size_t SelectEvalBucket(std::size_t preferred_index) const;
   double ComputeObjectiveScore(double window_pnl_usd,
                                double window_max_drawdown_pct,
@@ -250,7 +257,12 @@ class SelfEvolutionController {
   bool has_last_observed_notional_{false};
   std::unordered_map<std::string, SignalState> signal_states_by_symbol_;
   std::int64_t next_eval_tick_{0};
+  std::int64_t next_update_tick_{0};
   std::int64_t cooldown_until_tick_{0};
+  std::int64_t clock_tick_{0};
+  std::int64_t clock_origin_ms_{0};
+  std::int64_t last_event_time_ms_{0};
+  std::int64_t rejected_event_time_count_{0};
 };
 
 }  // namespace ai_trade

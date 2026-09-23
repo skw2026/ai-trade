@@ -104,6 +104,9 @@ struct UniverseConfig {
 
 struct SelfEvolutionConfig {
   bool enabled{false};
+  // 0: legacy market-event count; >0: milliseconds per event-time clock tick.
+  int clock_tick_interval_ms{0};
+  // Evaluation cadence, independent of the global weight-update rate limit.
   int update_interval_ticks{60};
   int min_update_interval_ticks{60};
   double min_abs_window_pnl_usd{0.0};

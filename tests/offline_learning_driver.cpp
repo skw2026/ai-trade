@@ -97,8 +97,8 @@ void Replay(int argc, char** argv) {
   ExecutionEngine execution(80);
   SelfEvolutionConfig ec;
   ec.enabled = adaptive;
-  // Current controller combines these via max(): this fixture proves the 6h
-  // update bound, not independent hourly assessment (a retained PRD gap).
+  // Event-time clock: assessment every hour, ordinary updates at most every 6h.
+  ec.clock_tick_interval_ms = kBar;
   ec.update_interval_ticks = 12;
   ec.min_update_interval_ticks = 72;
   ec.rollback_degrade_windows = 2;
@@ -107,7 +107,7 @@ void Replay(int argc, char** argv) {
   // additional churn penalty in this bounded synthetic controller fixture.
   ec.objective_gamma_notional_churn = 0.00001;
   SelfEvolutionController evolution(ec);
-  Check(evolution.Initialize(0, 10000, {0.5, 0.5}, &error), error);
+  Check(evolution.Initialize(0, 10000, {0.5, 0.5}, &error, 0, bars[start].ts_ms - kBar), error);
   Signal flat;
   flat.symbol = "SYNTHBTC";
   RegimeState regime;
@@ -115,7 +115,7 @@ void Replay(int argc, char** argv) {
   int pending_at = -1, close_at = -1, fills = 0, episodes = 0, previous_fills = 0;
   int pending_direction = 0;
   double pending_notional = 0;
-  std::int64_t last_update_tick = -72, cooldown_until = 0;
+  std::int64_t last_update_tick = 0, cooldown_until = 0;
   std::ofstream out(argv[9]);
   Check(out.good(), "trace output unavailable");
   out << "index,p_up,applied,direction,episodes,fills,net,fee,funding,weight,action,cash,qty\n";
@@ -161,7 +161,12 @@ void Replay(int argc, char** argv) {
     const std::int64_t tick = i - start + 1;
     const auto action = evolution.OnTick(tick, account.cumulative_realized_net_pnl_usd(),
         RegimeBucket::kRange, account.drawdown_pct(), account.current_notional_usd(),
-        0, 0, e.price, "SYNTHBTC", false, fills - previous_fills, account.equity_usd());
+        0, 0, e.price, "SYNTHBTC", false, fills - previous_fills, account.equity_usd(), 0, 0, e.ts_ms);
+    if (adaptive) {
+      Check(evolution.clock_tick() == tick && evolution.next_eval_tick() == (tick / 12 + 1) * 12,
+            "hourly event-time assessment schedule violated");
+      Check(action.has_value() == (tick % 12 == 0), "hourly active-window assessment missing/duplicated");
+    }
     previous_fills = fills;
     std::string action_name = "none";
     if (action) {
@@ -178,6 +183,7 @@ void Replay(int argc, char** argv) {
               std::abs(action->trend_weight_after - 0.5) < 1e-10,
               "rollback failed to restore baseline");
         cooldown_until = tick + 288;
+        last_update_tick = tick;
       }
     }
     // A disabled controller intentionally does not initialize its state. The

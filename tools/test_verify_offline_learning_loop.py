@@ -73,6 +73,33 @@ class OfflineLearningLoopTest(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, "real numpy/CatBoost required"):
                     loop.verify(pathlib.Path("absent"), pathlib.Path(directory) / "out")
 
+    def clock_fixture(self):
+        rows = loop.generate(24)
+        records = [{"index": i, "weight": 0.5,
+                    "action": "EVOLUTION_UPDATE_INTERVAL_PENDING" if (i + 1) % 12 == 0 else "none"}
+                   for i in range(24)]
+        return rows, records
+
+    def test_independent_hourly_clock_audit(self):
+        rows, records = self.clock_fixture()
+        report = loop.check_clock(records, rows, True)
+        self.assertEqual(report["evaluation_count"], 2)
+        self.assertEqual(report["ordinary_update_elapsed_ms"], [])
+        self.assertEqual(report["minimum_update_interval_ms"], 21600000)
+        self.assertEqual(report["rollback_cooldown_ms"], 86400000)
+
+    def test_missing_hourly_assessment_cannot_pass(self):
+        rows, records = self.clock_fixture()
+        records[11]["action"] = "none"
+        with self.assertRaisesRegex(AssertionError, "missing/extra hourly"):
+            loop.check_clock(records, rows, True)
+
+    def test_early_weight_update_cannot_pass(self):
+        rows, records = self.clock_fixture()
+        records[11].update(action="EVOLUTION_WEIGHT_INCREASE_TREND", weight=0.55)
+        with self.assertRaisesRegex(AssertionError, "too early"):
+            loop.check_clock(records, rows, True)
+
     def test_each_failed_case_stops_before_dependent_scenarios(self):
         with self.assertRaisesRegex(AssertionError, "learnable control rejected"):
             loop.check_case("positive", {"offline_control_accepted": False}, {})

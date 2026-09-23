@@ -133,6 +133,40 @@ def summarize(trace, rows, fee_bps):
     }, records
 
 
+def check_clock(records, rows, adaptive):
+    """Independently audit elapsed-time decisions, not the message counter."""
+    origin = rows[int(records[0]["index"])][0] - BAR_MS
+    evaluations, updates, rollbacks = [], [], []
+    previous_weight, next_update_ms, cooldown_ms = 0.5, 72 * BAR_MS, 0
+    for r in records:
+        elapsed = rows[int(r["index"])][0] - origin
+        action, weight = r["action"], float(r["weight"])
+        if action != "none":
+            evaluations.append(elapsed)
+        changed = abs(weight - previous_weight) > 1e-10
+        if action == "EVOLUTION_ROLLBACK_TRIGGERED":
+            require(abs(weight - 0.5) < 1e-10, "clock: rollback baseline mismatch")
+            rollbacks.append(elapsed)
+            next_update_ms, cooldown_ms = elapsed + 72 * BAR_MS, elapsed + 288 * BAR_MS
+        elif changed:
+            require(action in ("EVOLUTION_WEIGHT_INCREASE_TREND", "EVOLUTION_WEIGHT_DECREASE_TREND"),
+                    "clock: unattributed weight change")
+            require(elapsed >= next_update_ms and elapsed >= cooldown_ms,
+                    "clock: ordinary update too early or inside cooldown")
+            updates.append(elapsed)
+            next_update_ms = elapsed + 72 * BAR_MS
+        previous_weight = weight
+    last_elapsed = rows[int(records[-1]["index"])][0] - origin
+    expected = list(range(12 * BAR_MS, last_elapsed + 1, 12 * BAR_MS)) if adaptive else []
+    require(evaluations == expected, "clock: missing/extra hourly assessments")
+    return {"event_time_clock": True, "hourly_assessment_proven": adaptive,
+            "evaluation_count": len(evaluations),
+            "update_wait_evaluations": sum(r["action"] == "EVOLUTION_UPDATE_INTERVAL_PENDING" for r in records),
+            "ordinary_update_elapsed_ms": updates, "rollback_elapsed_ms": rollbacks,
+            "evaluation_interval_ms": 12 * BAR_MS,
+            "minimum_update_interval_ms": 72 * BAR_MS, "rollback_cooldown_ms": 288 * BAR_MS}
+
+
 def check_case(name, result, cases):
     """Stop dependent scenarios at the first unexpected verdict, not at EOF."""
     if name == "positive":
@@ -237,6 +271,7 @@ def verify(binary, output):
         args = ["replay", metadata, model_path, csv_path, START, fee, int(adaptive), version, trace]
         run_driver(binary, args, output / f"{name}.log")
         result, records = summarize(trace, rows, fee)
+        result["clock"] = check_clock(records, rows, adaptive)
         require(sha(model_path) == before_model, "model changed during holdout")
         matrix, all_names, _ = train.build_feature_matrix(train.load_ohlcv_csv(csv_path), specs)
         matrix = matrix[:, [all_names.index(n) for n in names]]
@@ -283,6 +318,8 @@ def verify(binary, output):
         "scope": "TEST_ONLY_OFFLINE_COMPONENT_INTEGRATION",
         "production_promotion_authority": False, "market_economic_evidence": False,
         "demo_trading_authority": False, "full_mechanism_valid": False,
+        "hourly_event_time_evaluation_proven": all(cases[n]["clock"]["hourly_assessment_proven"]
+                                                   for n in ("adaptive", "drift")),
         "verification_git_sha": os.environ.get("VERIFICATION_SHA", "uncommitted_local"),
         "verifier_sha256": sha(pathlib.Path(__file__)),
         "training_implementation_sha256": sha(pathlib.Path(train.__file__)),
@@ -298,7 +335,7 @@ def verify(binary, output):
                    "no live canary", "no real-market adaptive uplift claim",
                    "adaptive-vs-frozen exposure differs; not risk-normalized alpha evidence",
                    "counterfactual holdout selection covered separately, not this controller fixture",
-                   "controller combines evaluation/update intervals; independent hourly evaluation unproven",
+                   "event-time cadence exercised offline; existing deployed strategy profiles retain legacy clock mode",
                    "uses production training functions, not full research orchestration"],
     }
     write_json(output / "result.json", report)

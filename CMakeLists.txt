@@ -92,6 +92,10 @@ if(BUILD_TESTING)
   # Offline integration driver only: never installed into the runtime image.
   add_executable(offline_learning_driver tests/offline_learning_driver.cpp)
   target_link_libraries(offline_learning_driver PRIVATE ai_trade_system)
+  add_executable(self_evolution_clock_test tests/test_self_evolution_clock.cpp)
+  target_link_libraries(self_evolution_clock_test PRIVATE ai_trade_system)
+  add_test(NAME self_evolution_clock_test COMMAND self_evolution_clock_test)
+  set_tests_properties(self_evolution_clock_test PROPERTIES TIMEOUT 30 LABELS "offline;evolution")
   add_executable(replay_reference_account_test tests/test_replay_reference_account.cpp)
   target_link_libraries(replay_reference_account_test PRIVATE ai_trade_system)
   add_test(NAME replay_reference_account_test COMMAND replay_reference_account_test

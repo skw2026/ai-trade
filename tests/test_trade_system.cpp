@@ -3323,6 +3323,39 @@ int main(int argc, char** argv) {
   }
 
   {
+    // 应用必须传递事件时间；消息计数不能冒充小时，纯空窗仍推进评估计划。
+    ai_trade::AppConfig config;
+    config.self_evolution.enabled = true;
+    config.self_evolution.clock_tick_interval_ms = 300000;
+    config.self_evolution.update_interval_ticks = 12;
+    config.self_evolution.min_update_interval_ticks = 72;
+    ai_trade::BotApplication app(config);
+    std::string error;
+    if (!app.self_evolution_.Initialize(0, 10000, {0.5, 0.5}, &error)) return 1;
+    app.market_tick_count_ = 5000;
+    app.RunSelfEvolution(1704067200000);
+    if (app.self_evolution_.clock_tick() != 0 || app.self_evolution_.next_eval_tick() != 12) {
+      std::cerr << "应用未正确锚定自进化事件时钟\n"; return 1;
+    }
+    app.market_tick_count_ += 10000;
+    app.RunSelfEvolution(1704067200000);
+    if (app.self_evolution_.clock_tick() != 0) {
+      std::cerr << "消息突发错误推进自进化时钟\n"; return 1;
+    }
+    app.RunSelfEvolution(1704070800000);
+    if (app.self_evolution_.clock_tick() != 12 || app.self_evolution_.next_eval_tick() != 24 ||
+        app.self_evolution_.next_update_tick() != 72) {
+      std::cerr << "应用未保持小时评估与六小时更新分离\n"; return 1;
+    }
+    auto legacy = config;
+    legacy.self_evolution.clock_tick_interval_ms = 0;
+    ai_trade::BotApplication old_clock(legacy);
+    if (old_clock.SelfEvolutionPolicyFingerprint() == app.SelfEvolutionPolicyFingerprint()) {
+      std::cerr << "自进化状态身份未绑定时钟契约\n"; return 1;
+    }
+  }
+
+  {
     // 自进化控制器：正收益窗口应提高 trend 权重（受 max_weight_step 约束）。
     ai_trade::SelfEvolutionConfig config;
     config.enabled = true;

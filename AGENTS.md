@@ -11,6 +11,10 @@
 
 ## 开始与阶段边界
 
+- 2026-09-23 用户要求自动执行已确定的后续计划：本批按
+  `docs/plans/2026-09-23-evolution-clocks.md`完成评估/更新时钟解耦及交付。
+  沿用READY的离线工程gate历史，旧HALTED及已结案产物不改；不变更当前策略配置。
+
 - 2026-09-23 用户以“ok”批准纠正 CD 观察命令固定旧 run 的流程缺陷：
   同一离线阶段 gate 经确认根因复盘后，可一次绑定同仓库 main/CD 的纠正 SHA/run，
   保留原失败、原命令 hash 和验收标准；使用 typed `release-prepare` / `release-retry`，

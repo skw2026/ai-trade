@@ -346,7 +346,7 @@ class BotApplication {
    *
    * 仅触发组合层权重变化，不触碰风控不可动层参数。
    */
-  void RunSelfEvolution();
+  void RunSelfEvolution(std::int64_t event_time_ms = 0);
   bool LoadSelfEvolutionWeights(
       std::array<EvolutionWeights, 3>* out_weights,
       bool* out_state_exists,

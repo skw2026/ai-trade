@@ -64,11 +64,23 @@ bool SelfEvolutionController::Initialize(
     double initial_equity_usd,
     const std::pair<double, double>& initial_weights,
     std::string* out_error,
-    double initial_realized_net_pnl_usd) {
+    double initial_realized_net_pnl_usd,
+    std::int64_t initial_event_time_ms) {
   if (!config_.enabled) {
     initialized_ = false;
     return true;
   }
+
+  if (config_.clock_tick_interval_ms < 0 || config_.update_interval_ticks <= 0 ||
+      config_.min_update_interval_ticks < 0 || initial_event_time_ms < 0) {
+    if (out_error != nullptr) *out_error = "invalid evolution clock configuration";
+    return false;
+  }
+  if (config_.clock_tick_interval_ms > 0) current_tick = 0;
+  clock_tick_ = current_tick;
+  clock_origin_ms_ = initial_event_time_ms;
+  last_event_time_ms_ = initial_event_time_ms;
+  rejected_event_time_count_ = 0;
 
   if (initial_equity_usd <= 0.0) {
     if (out_error != nullptr) {
@@ -101,7 +113,8 @@ bool SelfEvolutionController::Initialize(
   has_last_observed_notional_ = false;
   signal_states_by_symbol_.clear();
   ResetWindowAttribution();
-  next_eval_tick_ = current_tick + EffectiveUpdateIntervalTicks();
+  next_eval_tick_ = current_tick + EvaluationIntervalTicks();
+  next_update_tick_ = current_tick + config_.min_update_interval_ticks;
   cooldown_until_tick_ = current_tick;
   initialized_ = true;
   return true;
@@ -167,10 +180,24 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     int fill_count,
     double account_equity_usd,
     double observed_turnover_cost_bps,
-    double observed_funding_rate_per_tick) {
+    double observed_funding_rate_per_tick,
+    std::int64_t event_time_ms) {
   if (!config_.enabled || !initialized_) {
     return std::nullopt;
   }
+
+  if (config_.clock_tick_interval_ms > 0) {
+    // Reject before changing attribution: an old/missing timestamp must not
+    // manufacture samples, shorten a cooldown, or make a new update eligible.
+    if (event_time_ms <= 0 || event_time_ms < last_event_time_ms_) {
+      ++rejected_event_time_count_;
+      return std::nullopt;
+    }
+    if (clock_origin_ms_ == 0) clock_origin_ms_ = event_time_ms;
+    last_event_time_ms_ = event_time_ms;
+    current_tick = (event_time_ms - clock_origin_ms_) / config_.clock_tick_interval_ms;
+  }
+  clock_tick_ = current_tick;
 
   const std::size_t active_index = BucketIndex(regime_bucket);
   if (account_equity_usd > 0.0 && std::isfinite(account_equity_usd)) {
@@ -244,7 +271,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
       const BucketRuntime& runtime = bucket_runtime_[active_index];
       bool holdout_sample = (bucket_window_ticks_[active_index] % 2 == 0);
       if (config_.counterfactual_require_temporal_holdout) {
-        const std::int64_t interval = EffectiveUpdateIntervalTicks();
+        const std::int64_t interval = EvaluationIntervalTicks();
         const std::int64_t window_start_tick = next_eval_tick_ - interval;
         const std::int64_t train_ticks = static_cast<std::int64_t>(
             std::ceil(static_cast<double>(interval) *
@@ -415,7 +442,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
                             window_bucket_ticks);
 
   // 固定周期评估：先结算窗口，再推进下一个评估点。
-  next_eval_tick_ = current_tick + EffectiveUpdateIntervalTicks();
+  next_eval_tick_ = current_tick + EvaluationIntervalTicks();
 
   if (ShouldSkipPassiveWindow(eval_index)) {
     ResetWindowAttribution(eval_index);
@@ -426,6 +453,9 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
 
   SelfEvolutionAction action;
   action.tick = current_tick;
+  action.clock_tick_interval_ms = config_.clock_tick_interval_ms;
+  action.update_wait_remaining_ticks = static_cast<int>(
+      std::max<std::int64_t>(0, next_update_tick_ - current_tick));
   action.regime_bucket = eval_bucket;
   action.window_pnl_usd = window_pnl_usd;
   action.window_realized_pnl_usd = window_realized_pnl_usd;
@@ -740,6 +770,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     runtime.pending_direction = 0;
     runtime.pending_direction_streak = 0;
     cooldown_until_tick_ = current_tick + config_.rollback_cooldown_ticks;
+    next_update_tick_ = current_tick + config_.min_update_interval_ticks;
     runtime.degrade_windows.clear();
 
     action.type = SelfEvolutionActionType::kRolledBack;
@@ -751,6 +782,15 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
     action.direction_consistency_direction = 0;
     action.cooldown_remaining_ticks = config_.rollback_cooldown_ticks;
     action.degrade_windows = 0;
+    ResetWindowAttribution(eval_index);
+    return action;
+  }
+
+  // Assess deterioration at the evaluation cadence even while ordinary updates
+  // are rate-limited. This is global, so switching regime buckets cannot bypass it.
+  if (current_tick < next_update_tick_) {
+    action.type = SelfEvolutionActionType::kSkipped;
+    action.reason_code = "EVOLUTION_UPDATE_INTERVAL_PENDING";
     ResetWindowAttribution(eval_index);
     return action;
   }
@@ -908,6 +948,7 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   runtime.rollback_anchor_defensive_weight = runtime.current_defensive_weight;
   runtime.current_trend_weight = candidate.trend_weight;
   runtime.current_defensive_weight = candidate.defensive_weight;
+  next_update_tick_ = current_tick + config_.min_update_interval_ticks;
 
   action.type = SelfEvolutionActionType::kUpdated;
   if (candidate_source == CandidateSource::kCounterfactual) {
@@ -929,9 +970,8 @@ std::optional<SelfEvolutionAction> SelfEvolutionController::OnTick(
   return action;
 }
 
-int SelfEvolutionController::EffectiveUpdateIntervalTicks() const {
-  return std::max(config_.update_interval_ticks,
-                  config_.min_update_interval_ticks);
+int SelfEvolutionController::EvaluationIntervalTicks() const {
+  return config_.update_interval_ticks;
 }
 
 std::size_t SelfEvolutionController::SelectEvalBucket(

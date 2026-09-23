@@ -3404,6 +3404,19 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "self_evolution" && key == "clock_tick_interval_ms") {
+      int parsed = 0;
+      if (!ParseInt(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "self_evolution.clock_tick_interval_ms 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.self_evolution.clock_tick_interval_ms = parsed;
+      continue;
+    }
+
     if (current_section == "self_evolution" &&
         key == "update_interval_ticks") {
       int parsed = 0;
@@ -5517,6 +5530,12 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
   if (config.system_remote_risk_refresh_interval_ticks < 0) {
     if (out_error != nullptr) {
       *out_error = "system.remote_risk_refresh_interval_ticks 不能为负数";
+    }
+    return false;
+  }
+  if (config.self_evolution.clock_tick_interval_ms < 0) {
+    if (out_error != nullptr) {
+      *out_error = "self_evolution.clock_tick_interval_ms 不能为负数";
     }
     return false;
   }
