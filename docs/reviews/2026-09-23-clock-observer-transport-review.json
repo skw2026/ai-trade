@@ -1,0 +1,26 @@
+{
+  "failure_id": "0849bb0d4da7481f84a22e766a01a33a",
+  "decision": "retry",
+  "goal": "核对71783fa同一发布的CI/CD及部署后回执，不重跑发布",
+  "expected": "有界只读观察完成，CI/CD/Smoke/固定工程成功，数据报告随后按冻结合同精确校验",
+  "observed": "本地gh api查询退出1：net/http: TLS handshake timeout；异常由观察脚本传播到gate，尚未形成部署后验收结论",
+  "root_cause_status": "confirmed",
+  "root_cause": "已确认直接终止原因是本机读取GitHub状态时TLS握手超时，而非远端CI/CD失败。随后同一API路径的只读诊断成功，精确同SHA的CI35803490079、CD35803490109、Smoke35804297640与固定工程35804297654均completed/success且attempt1。Archive成功，V4 failure仍待原件匹配，不能先当成可接受。TLS超时的更底层网络/主机原因unknown，不宣称已定位；无证据支持修改交易或学习源码。",
+  "evidence": [
+    ".artifacts/offline-learning-loop-20260922/validation-state.json（2026-09-23T02:24:18.630763+00:00失败，command_sha256=8c06bc28fac67a4ae21a962b7ad21a12c786d0e356a8b93887e615e9e6bca2bc）",
+    ".artifacts/evolution-clocks-20260923/observation-1790124385651875000.json（原始进行中快照保留）",
+    ".artifacts/evolution-clocks-20260923/release.json（发布SHA未改）",
+    "2026-09-23T02:25 UTC只读诊断：同一head_sha的runs API恢复，CI/CD各run API确认success/attempt1；原控制台明确TLS handshake timeout和CalledProcessError"
+  ],
+  "next_action": "查询链路恢复且远端已结束，执行一次原cwd/argv的watch retry，仅取得同一发布的新快照；通过后按原合同下载并校验收据，不修改源码、不rerun、不新部署、不重置gate",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "失败属于取证通道，时钟改造仍需同一发布的实际回执证明，不把查询失败等同于模型故障或工程PASS",
+    "data_feasibility": "同一GitHub API刚刚恢复成功，六组工作流均已结束；尚须下载真实产物并核对内容",
+    "method_feasibility": "原稳定观察入口读取未变的release.json，已完成工作流无需等待训练或再发版；后续精确SHA、哈希、旧坏段校验均不变",
+    "budget_and_exit": "仅一次原命令复验，既有35分钟观察上限不增加；再次查询失败或新未知工作流失败立即阻断并重审，不转交用户盲重跑"
+  }
+}

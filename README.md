@@ -8,7 +8,7 @@
 
 ---
 
-当前状态（2026-09-22）：**主线工程部署阶段已结案**。`e47e21b` 已推送 main 并部署既有测试环境，Linux CI 与 Docker 内部测试均 106/106，CI/CD/Smoke/Archive/V4 五项工作流执行成功。Smoke 运行评估为 **PASS_WITH_ACTIONS**（策略接管和 shadow 评分缺观测，执行资格未评估），不是所有业务能力通过。研究仍未产出合格候选，旧路线关闭、C2 历史资格未通过；工程部署不等于盈利资格或新策略激活。详见 [结案结果](docs/reviews/2026-09-22-mainline-engineering-closure.md) 与 [当前状态](docs/CURRENT_STATE.md)。离线使用与数据保存见 [封版说明](docs/OFFLINE_ENGINEERING_FREEZE.md)。下方“已覆盖”仅指需求文档覆盖，不代表盈利或运行验收通过。
+当前状态（2026-09-23）：**离线学习链与评估/更新时钟解耦已交付**。`71783fa`已部署既有测试环境，本地/CI/Docker完整CTest均111/111，真实模型六组离线验收及部署后收据通过。每小时评估、至少六小时普通调权与回滚冷却已在事件时间测试中证明；现有线上策略配置未启用新时间模式。Smoke仍为**PASS_WITH_ACTIONS**、执行资格未评估；Archive证据不足，V4真实保留唯一旧超时坏段失败。工程通过不等于数据合格、完整生产自学习或盈利资格，旧研究和候选关闭状态不变。详见[本批结案](docs/reviews/2026-09-23-evolution-clocks-result.md)和[当前状态](docs/CURRENT_STATE.md)。离线使用与数据保存见[封版说明](docs/OFFLINE_ENGINEERING_FREEZE.md)。下方“已覆盖”仅指需求文档覆盖，不代表盈利或运行验收通过。
 
 ## 需求符合性核对表
 

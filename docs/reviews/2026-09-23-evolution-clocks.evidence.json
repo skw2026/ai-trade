@@ -1,0 +1,333 @@
+{
+  "schema_version": "evolution_clock_delivery_v1",
+  "decision": "EVOLUTION_CLOCK_DECOUPLING_DELIVERED",
+  "release_sha": "71783fae45e83d3ef615bcb073061470c52bc9e1",
+  "observed_at_utc": "2026-09-23T02:25:45.839081+00:00",
+  "verification": {
+    "local_full_ctest": {
+      "passed": 111,
+      "total": 111,
+      "seconds": 177.39
+    },
+    "remote_full_ctest": {
+      "ci": {
+        "job_id": 106998933518,
+        "run_id": 35803490079,
+        "seconds": 132.92,
+        "sha256": "4d0fb637676cb89b78cc0c41212426687a7b20a27fa2880583b7449e6d39a90b",
+        "tests": 111
+      },
+      "docker": {
+        "job_id": 106998933640,
+        "run_id": 35803490109,
+        "seconds": 124.91,
+        "sha256": "72e7b1c161e4b7158f239fd9af916995bf2068b54437e4ed52c1c71f789d41a3",
+        "tests": 111
+      }
+    },
+    "harness_unit_tests": 11
+  },
+  "clock_contract": {
+    "tick_interval_ms": 300000,
+    "evaluation_interval_ms": 3600000,
+    "minimum_update_interval_ms": 21600000,
+    "rollback_cooldown_ms": 86400000
+  },
+  "learning": {
+    "status": "PASS",
+    "scope": "TEST_ONLY_OFFLINE_COMPONENT_INTEGRATION",
+    "verification_git_sha": "71783fae45e83d3ef615bcb073061470c52bc9e1",
+    "verifier_sha256": "ef42efda7d2c0c63b12a37e26aef4326295b679885e97bf79159ce6b770867ca",
+    "training_implementation_sha256": "45919b5c455d395b75938d61f04f6c70ab71075b05118f7756509d3589550e80",
+    "driver_sha256": "dc6544fbb92d483425e3703b7152d37684fbbe2d98839a5087f93e63d19c6fc2",
+    "report_sha256": "a8dd79f2d480780eba516fc8f07df67b02dbfe20d3cacc10e129ba7a7a6d12d1",
+    "hourly_event_time_evaluation_proven": true,
+    "cases": {
+      "adaptive": {
+        "episodes": 495,
+        "weight_changes": 7,
+        "rollbacks": 0,
+        "cooldown_evaluations": 0,
+        "native_ledger_matched": true,
+        "terminal_flat": true,
+        "max_probability_error": 1.1102230246251565e-16,
+        "offline_control_accepted": true,
+        "clock": {
+          "evaluation_count": 85,
+          "evaluation_interval_ms": 3600000,
+          "event_time_clock": true,
+          "hourly_assessment_proven": true,
+          "minimum_update_interval_ms": 21600000,
+          "ordinary_update_elapsed_ms": [
+            21600000,
+            43200000,
+            122400000,
+            144000000,
+            244800000,
+            266400000,
+            288000000
+          ],
+          "rollback_cooldown_ms": 86400000,
+          "rollback_elapsed_ms": [],
+          "update_wait_evaluations": 40
+        }
+      },
+      "cost": {
+        "episodes": 495,
+        "weight_changes": 0,
+        "rollbacks": 0,
+        "cooldown_evaluations": 0,
+        "native_ledger_matched": true,
+        "terminal_flat": true,
+        "max_probability_error": 1.1102230246251565e-16,
+        "offline_control_accepted": false,
+        "clock": {
+          "evaluation_count": 0,
+          "evaluation_interval_ms": 3600000,
+          "event_time_clock": true,
+          "hourly_assessment_proven": false,
+          "minimum_update_interval_ms": 21600000,
+          "ordinary_update_elapsed_ms": [],
+          "rollback_cooldown_ms": 86400000,
+          "rollback_elapsed_ms": [],
+          "update_wait_evaluations": 0
+        }
+      },
+      "drift": {
+        "episodes": 742,
+        "weight_changes": 7,
+        "rollbacks": 3,
+        "cooldown_evaluations": 58,
+        "native_ledger_matched": true,
+        "terminal_flat": true,
+        "max_probability_error": 1.1102230246251565e-16,
+        "offline_control_accepted": false,
+        "clock": {
+          "evaluation_count": 128,
+          "evaluation_interval_ms": 3600000,
+          "event_time_clock": true,
+          "hourly_assessment_proven": true,
+          "minimum_update_interval_ms": 21600000,
+          "ordinary_update_elapsed_ms": [
+            21600000,
+            43200000,
+            122400000,
+            144000000,
+            234000000,
+            324000000,
+            414000000
+          ],
+          "rollback_cooldown_ms": 86400000,
+          "rollback_elapsed_ms": [
+            237600000,
+            327600000,
+            417600000
+          ],
+          "update_wait_evaluations": 25
+        }
+      },
+      "noise": {
+        "episodes": 491,
+        "weight_changes": 0,
+        "rollbacks": 0,
+        "cooldown_evaluations": 0,
+        "native_ledger_matched": true,
+        "terminal_flat": true,
+        "max_probability_error": 1.1102230246251565e-16,
+        "offline_control_accepted": false,
+        "clock": {
+          "evaluation_count": 0,
+          "evaluation_interval_ms": 3600000,
+          "event_time_clock": true,
+          "hourly_assessment_proven": false,
+          "minimum_update_interval_ms": 21600000,
+          "ordinary_update_elapsed_ms": [],
+          "rollback_cooldown_ms": 86400000,
+          "rollback_elapsed_ms": [],
+          "update_wait_evaluations": 0
+        }
+      },
+      "positive": {
+        "episodes": 495,
+        "weight_changes": 0,
+        "rollbacks": 0,
+        "cooldown_evaluations": 0,
+        "native_ledger_matched": true,
+        "terminal_flat": true,
+        "max_probability_error": 1.1102230246251565e-16,
+        "offline_control_accepted": true,
+        "clock": {
+          "evaluation_count": 0,
+          "evaluation_interval_ms": 3600000,
+          "event_time_clock": true,
+          "hourly_assessment_proven": false,
+          "minimum_update_interval_ms": 21600000,
+          "ordinary_update_elapsed_ms": [],
+          "rollback_cooldown_ms": 86400000,
+          "rollback_elapsed_ms": [],
+          "update_wait_evaluations": 0
+        }
+      },
+      "shuffled": {
+        "episodes": 1,
+        "weight_changes": 0,
+        "rollbacks": 0,
+        "cooldown_evaluations": 0,
+        "native_ledger_matched": true,
+        "terminal_flat": true,
+        "max_probability_error": 1.1102230246251565e-16,
+        "offline_control_accepted": false,
+        "clock": {
+          "evaluation_count": 0,
+          "evaluation_interval_ms": 3600000,
+          "event_time_clock": true,
+          "hourly_assessment_proven": false,
+          "minimum_update_interval_ms": 21600000,
+          "ordinary_update_elapsed_ms": [],
+          "rollback_cooldown_ms": 86400000,
+          "rollback_elapsed_ms": [],
+          "update_wait_evaluations": 0
+        }
+      }
+    }
+  },
+  "engineering": {
+    "boundary": "FIXED_ENGINEERING_SEPARATE_FROM_LIVE_DATA_QUALITY",
+    "boundary_file_sha256": "11d19c45c54cfeb3e2d4a87f7704e590169e85d80ffa05f0b6fcfae5b5c809b3",
+    "business_qualified": false,
+    "data_quality": {
+      "archive_decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+      "known_failure": {
+        "artifact_checksums_verified": true,
+        "phase": "snapshot",
+        "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+        "report": "20260922T035334.633790Z.json",
+        "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+        "snapshot_line": 3
+      },
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "Option Archive Lifecycle Audit",
+          "run_attempt": 1,
+          "run_id": 35804297681
+        },
+        {
+          "conclusion": "failure",
+          "name": "Option Lifecycle V4 Gate",
+          "run_attempt": 1,
+          "run_id": 35804297680
+        }
+      ],
+      "status": "FAIL",
+      "v4_decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE"
+    },
+    "decision": "ENGINEERING_PASS_DATA_NOT_QUALIFIED",
+    "demo_activation_authorized": false,
+    "engineering": {
+      "closure_latched": true,
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "CI",
+          "run_attempt": 1,
+          "run_id": 35803490079
+        },
+        {
+          "conclusion": "success",
+          "name": "CD",
+          "run_attempt": 1,
+          "run_id": 35803490109
+        },
+        {
+          "conclusion": "success",
+          "name": "Closed Loop Smoke",
+          "run_attempt": 1,
+          "run_id": 35804297640
+        },
+        {
+          "conclusion": "success",
+          "name": "Fixed Engineering Regression",
+          "run_attempt": 1,
+          "run_id": 35804297654
+        }
+      ],
+      "status": "PASS"
+    },
+    "historical_failure_reclassified_as_pass": false,
+    "input_sha256": {
+      "archive": "869848d4ca94b0e427d873fef98a56b8dda65a54fdc7f71e4de572b57706a429",
+      "closure": "fa35f9a84e538db7f55d2b90c408c3b14ea1489c2b4a030236c3b12490692844",
+      "freshness": "117da745c8dc0dc13dbb51a722523390e9f62198cee8dd31307695daeffb2882",
+      "runtime": "9924acd702c24424044dfd54fae09ce1b4474656508f05015c9ff6a9a79c5dec",
+      "snapshot": "65bdc6bc2c6ad9b359c34a5dbb94f50c88d52fd81dc008ce882aa65f52b99e95",
+      "v4": "1536bd0b32edd096055746fb7f1a5c6205d1d08ed1ff0e1bb87b07f3245ca0a0"
+    },
+    "live_activation_authorized": false,
+    "promotion_authority": false,
+    "release_sha": "71783fae45e83d3ef615bcb073061470c52bc9e1",
+    "runtime": {
+      "account_sync_status": "OK",
+      "execution_status": "NOT_EVALUATED",
+      "protection_status": "PASS",
+      "verdict": "PASS_WITH_ACTIONS"
+    },
+    "schema_version": "engineering_release_result_v1"
+  },
+  "freshness": {
+    "status": "PASS",
+    "expected_sha": "71783fae45e83d3ef615bcb073061470c52bc9e1",
+    "release_git_sha": "71783fae45e83d3ef615bcb073061470c52bc9e1",
+    "container_image_revision": "71783fae45e83d3ef615bcb073061470c52bc9e1",
+    "container_status": "running",
+    "container_restart_count": 0
+  },
+  "artifact_receipts": {
+    "archive": {
+      "artifact_id": 10727151154,
+      "run_attempt": 1,
+      "run_id": 35804297681,
+      "zip_digest": "sha256:cae664004b62c1306a4efd78b9b69bffe0151871e42c6bda76d36ebbab7300d8"
+    },
+    "fixed": {
+      "artifact_id": 10727051269,
+      "run_attempt": 1,
+      "run_id": 35804297654,
+      "zip_digest": "sha256:5236ac55d2b873d5a5a79b09dc4237fbf8cc5dd0e3dd01f18482108194b81a56"
+    },
+    "learning": {
+      "artifact_id": 10726689851,
+      "run_attempt": 1,
+      "run_id": 35803490109,
+      "zip_digest": "sha256:ddea9565cccbae60b051693609bc1fe9e82ce166084fb5b2d1e42cc40b663715"
+    },
+    "smoke": {
+      "artifact_id": 10727505540,
+      "run_attempt": 1,
+      "run_id": 35804297640,
+      "zip_digest": "sha256:6c9f9c5635037fde3c521f46cd52663fa3c9c181feabf536c1fd5180db678314"
+    },
+    "v4": {
+      "artifact_id": 10726996712,
+      "run_attempt": 1,
+      "run_id": 35804297680,
+      "zip_digest": "sha256:9e74ef6c583ae850ce2020956fa377f1a20c0c3ee45d71e49eab59243797403d"
+    }
+  },
+  "observation_failure": {
+    "failure_id": "0849bb0d4da7481f84a22e766a01a33a",
+    "reason": "GITHUB_API_TLS_HANDSHAKE_TIMEOUT",
+    "infrastructure_root_cause": "unknown",
+    "same_command_retry_passed": true,
+    "workflow_rerun": false,
+    "release_rebind": false
+  },
+  "old_halted_states_unchanged": true,
+  "active_strategy_configuration_changed": false,
+  "live_event_time_profile_enabled": false,
+  "production_goals_complete": false,
+  "market_economic_evidence": false,
+  "promotion_authority": false,
+  "demo_activation_authorized": false,
+  "live_activation_authorized": false
+}
