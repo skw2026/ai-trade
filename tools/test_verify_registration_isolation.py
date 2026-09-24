@@ -89,6 +89,15 @@ class RegistrationIsolationTest(unittest.TestCase):
             for fault in ('zero_episodes', 'runtime_identity', 'staged_identity', 'artifact_corruption', 'deadline'):
                 result = audit.transaction(source, output, metadata, fault, 'd' * 64)
                 self.assertEqual(result['decision'], 'pending' if fault == 'zero_episodes' else 'rollback')
+                if fault == 'zero_episodes':
+                    safety = result['safety_interlock']
+                    self.assertEqual(safety['status'], 'PASS')
+                    self.assertFalse(safety['production_promotion_authority'])
+                    self.assertEqual(len(safety['cases']), 7)
+                    for name, case in safety['cases'].items():
+                        self.assertEqual(case['decision'], 'commit' if name == 'clear_control' else 'rollback')
+                        self.assertEqual(case['repeat_decision'], case['decision'])
+                        self.assertEqual(case['synthetic_complete_episodes'], 30)
                 self.assertFalse(result['rollback_service_executed'])
             self.assertEqual(audit.file_set(source), before)
 

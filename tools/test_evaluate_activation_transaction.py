@@ -6,6 +6,9 @@ import datetime as dt
 import pathlib
 import tempfile
 import unittest
+import copy
+
+import evolution_safety_evidence as safety
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -74,6 +77,11 @@ class ActivationDecisionTest(unittest.TestCase):
         }
         return {
             "verdict": "PASS",
+            "evolution_safety": safety.extract(
+                "RUNTIME_STATUS: ticks=1, evolution_safety_withdrawn=false, "
+                "evolution_safety_identity={runtime_config_sha256=" + "c" * 64
+                + ", trade_bot_sha256=" + "d" * 64 + "}, boot={id=boot-candidate-v1}"
+            ),
             "metrics": {
                 **hard_safety,
                 "integrator_model_version_latest": "model-v1",
@@ -142,6 +150,39 @@ class ActivationDecisionTest(unittest.TestCase):
             self.assertAlmostEqual(
                 second["evidence"]["total_funding_paid_usd"], 0.06
             )
+
+    def test_safety_refusal_overrides_positive_economics_and_is_sticky(self):
+        for fault in ("withdrawn", "missing", "malformed", "boot", "config", "binary", "counter", "state"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as td:
+                state = self.make_state(pathlib.Path(td))
+                runtime = self.runtime(state, [self.episode(i, 0.1) for i in range(5)])
+                clean = copy.deepcopy(runtime)
+                proof = runtime["evolution_safety"]
+                if fault == "withdrawn":
+                    proof["status"], proof["withdrawn_count"] = "WITHDRAWN", 1
+                elif fault == "missing":
+                    runtime.pop("evolution_safety")
+                elif fault == "malformed":
+                    runtime["evolution_safety"] = "false"
+                elif fault in ("boot", "config", "binary"):
+                    proof[{"boot": "boot_id", "config": "runtime_config_sha256", "binary": "trade_bot_sha256"}[fault]] = "wrong"
+                elif fault == "counter":
+                    proof["withdrawn_count"] = False  # bool is not a valid integer counter
+                else:
+                    state["evidence"] = "corrupt"
+                kwargs = dict(mechanism={"status": "pass"}, min_complete_episodes=5,
+                              min_positive_episode_ratio=0.5, min_mean_realized_net_per_fill_usd=0.0,
+                              max_pending_hours=0)
+                result = MODULE.evaluate(state, runtime, **kwargs)
+                self.assertEqual(result["decision"], "rollback")
+                self.assertTrue(result["safety_requalification_required"])
+                self.assertTrue(any("evolution safety:" in r for r in result["hard_fail_reasons"]))
+                # Serialize as the runner does, then present a fully good report.
+                import json
+                restored = json.loads(json.dumps(state))
+                result = MODULE.evaluate(restored, clean, **kwargs)
+                self.assertEqual(result["decision"], "rollback")
+                self.assertTrue(result["safety_requalification_required"])
 
     def test_persisted_episode_funding_mutation_rolls_back(self):
         with tempfile.TemporaryDirectory() as td:

@@ -2031,12 +2031,35 @@ PY
                 EOF
                 }
 
+                # This positive fixture must supply explicit, identity-bound safety
+                # evidence. Missing evidence remains a production rejection.
+                add_safety_evidence() {
+                  python3 - "${ASSESS_JSON_PATH}" <<'PY'
+                import json
+                import sys
+                from pathlib import Path
+                sys.path.insert(0, "tools")
+                from evolution_safety_evidence import extract
+                path = Path(sys.argv[1])
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["evolution_safety"] = extract(
+                    "RUNTIME_STATUS: boot={id=boot-candidate-v2} "
+                    "evolution_safety_withdrawn=false "
+                    "evolution_safety_identity={runtime_config_sha256=" + "c" * 64
+                    + ", trade_bot_sha256=" + "d" * 64 + "}"
+                )
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                PY
+                }
+
                 write_assess 1 15
+                add_safety_evidence
                 resolve_activation_transaction
                 test "$(activation_transaction_status)" = "canary_pending_evidence"
                 test "$(read_activation_resolution_decision)" = "pending"
 
                 write_assess 15 30
+                add_safety_evidence
                 resolve_activation_transaction
                 test "$(activation_transaction_status)" = "committed"
                 test "$(read_activation_resolution_decision)" = "commit"

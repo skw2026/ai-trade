@@ -1,0 +1,32 @@
+{
+  "failure_id": "eede232b31dc4e40adbc1414fdd83776",
+  "decision": "retry",
+  "goal": "Read-only actual-model registration and safety promotion isolation with unchanged verifier",
+  "expected": "The requested python3 /source/tools/verify_registration_isolation.py executes and verifies all isolation cases",
+  "observed": "Image's integrator_train.py argparse exited 2 for missing mandatory training arguments; the requested verifier did not execute and no training occurred",
+  "root_cause_status": "confirmed",
+  "root_cause": "The local research image has Entrypoint [python3,/app/tools/integrator_train.py]. Docker appended the intended verifier command as trainer arguments. The executor omitted an entrypoint override when composing this validation invocation.",
+  "evidence": [
+    "Docker image sha256:798aacc11d814f97a7e5421e783f2c2a526f3f60ff27911d1416b82745b63e8b Config.Entrypoint",
+    ".artifacts/safety-promotion-20260924/entrypoint-environment.json",
+    ".artifacts/safety-promotion-20260924/validation-state.json"
+  ],
+  "next_action": "Preserve original image under a unique backup tag. Temporarily correct only this local validation tag's ENTRYPOINT to empty with identical filesystem layers, record both IDs/configs/layers, run the identical gate retry once, and restore original tag in finally. No production images, remote tags or source verifier changes.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Restore intended invocation of unchanged real-artifact verifier, not a trainer or a weaker substitute",
+    "data_feasibility": "Existing model and source remain read-only mounted, output is a new isolated directory, no network or account access",
+    "method_feasibility": "Docker Config.Entrypoint fully explains argparse failure. Empty entrypoint executes original command; all filesystem layer digests, verifier assertions and input hashes stay unchanged",
+    "budget_and_exit": "One metadata-only local environment correction and one exact-command retry with 300 second limit. Always restore existing image tag. Any failure blocks publication and requires fresh review"
+  },
+  "route_reassessment": {
+    "old_route_failure": "Two earlier source/fixture migration omissions were resolved with original retries. This third separate failure is another executor preparation omission, not a model or project data failure. Reusing an image without checking its entrypoint was insufficient",
+    "replacement": "Complete this exact bounded isolation verification with recorded image-environment correction; retain both full 119-test successes and require exact SHA remote evidence before declaring delivery",
+    "feasibility_evidence": "Native 119/119 and Linux 119/119 passed. The image already contains the required model dependencies; only the default invocation metadata conflicts with the explicitly requested verifier command",
+    "budget": "No added training, research, source changes or acceptance relaxation; remains inside six effective engineering hours",
+    "stop_condition": "No silent tag substitution: original ID must match precheck, corrected image must have identical layers and restored original ID must match afterward. Any mismatch or verifier failure stops dependencies"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "failure_id": "65f3a626ef2a410cb08ae603791a0d0f",
+  "decision": "retry",
+  "goal": "Deliver safety withdrawal promotion interlock without relaxing safety or candidate requirements",
+  "expected": "All 119 native CTest tests pass, including cumulative episode transaction commit with explicitly clear safety evidence",
+  "observed": "118/119 passed; positive shell transaction fixture omitted evolution_safety, correctly rolled back, then hit docker: command not found in the fixture's rollback branch",
+  "root_cause_status": "confirmed",
+  "root_cause": "The handwritten positive assessment in test_activation_resolver_accumulates_episode_evidence_then_commits predates mandatory safety evidence. Evaluator reports evidence missing or unsupported before the shell rollback command. Docker absence is downstream, not the cause. Unit fixtures and the registration verifier were migrated but this shell caller was missed.",
+  "evidence": [
+    ".artifacts/safety-promotion-20260924/native-tests.failed.log",
+    "tools/test_closed_loop_runner_transaction.py:test_activation_resolver_accumulates_episode_evidence_then_commits",
+    "tools/evolution_safety_evidence.py",
+    "tools/test_evaluate_activation_transaction.py"
+  ],
+  "next_action": "Supply this positive fixture with explicit false status and matching boot/config/binary through the production extractor; retry the identical full CTest command once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "The test still proves 15 episodes pending and 30 unique complete episodes committed; safety omission remains a rejection in production and negative tests",
+    "data_feasibility": "This is an isolated synthetic shell fixture; explicit known boot/config/binary already exist and need no account, network or new model",
+    "method_feasibility": "Add production-parser evidence only to the positive fixture. No Docker substitute, relaxed assertion, production fallback or changed candidate threshold",
+    "budget_and_exit": "One original full native retry, timeout 900 seconds, within the six effective hour phase limit; any failure blocks dependent Linux/release steps again"
+  },
+  "route_reassessment": {
+    "old_route_failure": "Two separate migration omissions occurred: corrupt evidence reset in the evaluator (already fixed and targeted retry passed) and this old shell positive fixture. Local unit coverage alone did not cover all existing call sites",
+    "replacement": "Keep the original safety contract, audit direct evaluator callers and require both complete native and Linux suites plus actual-model registration isolation before publishing",
+    "feasibility_evidence": "The targeted 113 tests pass, full native 118 others pass; the failing fixture supplies all original identity and episode prerequisites but demonstrably no new safety object. Other handcrafted build-report fixtures consume decisions rather than calling this evaluator",
+    "budget": "One bounded fixture edit and one identical 119-test retry; no additional training, research or deployment before all local checks pass",
+    "stop_condition": "Any unknown failure pauses dependencies; scope or criterion change and phase budget exhaustion require a substantive decision, not a gate reset"
+  }
+}

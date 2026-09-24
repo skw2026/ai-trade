@@ -1,5 +1,14 @@
 # 当前项目状态
 
+最新接续（2026-09-24）：**LOCAL_SAFETY_PROMOTION_INTERLOCK_PASS_REMOTE_PENDING**。
+安全撤回与晋升拒绝联动已实现：原日志不受平仓重基准截断，boot/配置/二进制绑定，
+撤回/缺证/畸形/错身份拒绝commit，当前事务拒绝不能被后续收益或正常报告自动清除。
+本机119/119、Linux119/119，410份相关源码一致；只读既有真实模型的七类隔离场景通过。
+三处实现/夹具/环境遗漏均先暂停、确认根因和路线后原命令唯一复验，原失败保留，gate READY。
+当前准备main及既有CI/CD交付，尚不声称远端通过；config未改、无unlock/恢复或真实候选激活。
+旧四份HALTED、NO_QUALIFIED_CANDIDATE、C2 NOT_QUALIFIED不变。
+详见[本批结果与边界](reviews/2026-09-24-safety-promotion-interlock-result.md)。下列为历史结果，不覆盖本段。
+
 最新结案（2026-09-23）：**INDEPENDENT_SAFETY_WITHDRAWAL_ENGINEERING_DELIVERED**。用户选择的独立安全撤回已由`d80f409`推送main并真实部署；本机、Linux、CI、CD镜像内均119/119。部署前证据往返、部署后六组收据及同模型安全轨迹独立复算通过，94份文件（含两份隐藏锁）完整。实际release/容器revision一致、running、重启0，Smoke与固定工程回归成功；安全退化在第1200根bar撤回、权重0.55，后336次观测不解锁，应用/发送/持久化/重启、多桶和重报价边界已覆盖。首轮Linux的/tmp noexec失败已确认根因、限定修复并原命令唯一复验；原失败和四份HALTED均保留，新gate READY。运行仍PASS_WITH_ACTIONS、execution NOT_EVALUATED；Archive仍INSUFFICIENT、V4精确保留唯一旧超时FAIL。**本批工程收口；config profile未改，新触发器默认关闭，不声称线上已启用、真实交易或盈利资格。** 不默认等两周、不重开旧研究；后续实质缺口是合格市场候选与启用/恢复治理，不重复修发布链代替目标验证。见[阶段结果](reviews/2026-09-23-independent-safety-withdrawal-result.md)、[交付证据](reviews/2026-09-23-independent-safety-withdrawal.evidence.json)、[本地证据](reviews/2026-09-23-independent-safety-withdrawal.local-evidence.json)及[行为合同](EVOLUTION_SAFETY.md)。以下旧停止/待选择均是历史时点，不覆盖本次结果。
 
 当前停止（2026-09-23）：**HALTED_LINUX_VALIDATION_AND_STRICT_WITHDRAWAL_CONTRACT_OPEN**。[严格组合批次](plans/2026-09-23-strict-learning-integration.md)已在同一真实模型上复现0.50→0.60及0.60→0.40超步长，并本地限定修复严格选优可达范围；修复后99次评估无越界，后段反转拒绝、85次短窗冻结。原495笔配对交易的约4.99合成增益在固定名义本金后为0，只是敞口缩放。本机117/117（容量夹具后续修改前），Linux真实模型四组局部通过；Linux全量先因256MiB tmpfs/400MiB保护的单测依赖失败，限定隔离夹具后唯一复验通过该项，但第54项事务锁写源码ro失败（53通过、1失败、63未执行），不能称全量通过。两轮修复用完，本批gate已HALTED，无第三次重跑、推送或部署。严格基线回滚仍0次，须决定独立安全撤回或仅统计回退；不能删严格保护或默认等两周。现有线上profile、旧三个HALTED、候选关闭不改。见[结果与整条路线复盘](reviews/2026-09-23-strict-learning-integration-result.md)、[机器证据](reviews/2026-09-23-strict-learning-integration.evidence.json)和[停止复盘](reviews/2026-09-23-strict-learning-stop-review.json)。此前传输纠正已完成；其“后续实质缺口是市场候选”不能解释为所有生产自学习工程项已完成。

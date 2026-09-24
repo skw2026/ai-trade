@@ -1,0 +1,113 @@
+{
+  "demo_trading_authority": false,
+  "entrypoint_environment_sha256": "12e809420bb880d1986df1a98727e693c4400213791626c48f4211873ffb44fb",
+  "entrypoint_original_tag_restored": true,
+  "entrypoint_review_sha256": "418ed5245e5e272629de142b31f80ac04d82759f82624831fb270d6d883997c3",
+  "failed_evaluator_sha256": "0e838c566003b76a5b10c4c23cedb5c7bf3c519a5bc52a2f9e601650d3f79cbe",
+  "failed_native_log_sha256": "b0f0bbfd1682fb5c68acaaad9a0246c05090e3fecad7111d5cc86d2207d6f5db",
+  "failure_review_sha256": "6390ecf6647ae1e9b0963188a4f512d12458534416b62824be5cc59fa56436f5",
+  "full_regression": {
+    "linux": {
+      "log_sha256": "b0d3f6d36f2828d45fa0c896af4c058bb5cb61705b8b4b57a7892d679d8ea0d2",
+      "seconds": 91.54,
+      "tests": 119
+    },
+    "native": {
+      "log_sha256": "47000c4c2d4e4525bfa8984983f09e5b1c03e852f6b91a9f200e85deaac79891",
+      "seconds": 166.09,
+      "tests": 119
+    }
+  },
+  "live_safety_profile_enabled": false,
+  "market_economic_evidence": false,
+  "old_halted_state_sha256": {
+    ".artifacts/engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    ".artifacts/offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    ".artifacts/strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    ".artifacts/validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "old_halted_states_unchanged": true,
+  "production_goals_complete": false,
+  "production_promotion_authority": false,
+  "registration_receipt_sha256": "ec4530120708b9c8ad31bc2e21d7d7e6bbb300b5989dd9b10756100fecaeaf7e",
+  "release_deployed": false,
+  "reused_model_sha256": "5c006af072aba053a55e2b5611462e5560f452fef1cb411bd13313405e40fe79",
+  "safety_interlock": {
+    "cases": {
+      "binary": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: identity mismatch: trade_bot_sha256"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "boot": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: identity mismatch: boot_id"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "clear_control": {
+        "decision": "commit",
+        "reason_codes": [],
+        "repeat_decision": "commit",
+        "synthetic_complete_episodes": 30
+      },
+      "config": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: identity mismatch: runtime_config_sha256"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "malformed": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: evidence counts missing or invalid"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "missing": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: evidence missing or unsupported"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "withdrawn": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: state is not explicitly CLEAR",
+          "evolution safety: evidence incomplete or withdrawal observed",
+          "evolution safety: identity mismatch: boot_id",
+          "evolution safety: identity mismatch: runtime_config_sha256",
+          "evolution safety: identity mismatch: trade_bot_sha256"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      }
+    },
+    "live_runtime_observed": false,
+    "production_promotion_authority": false,
+    "scope": "TEST_ONLY_SYNTHETIC_POSITIVE_ECONOMICS_REFUSAL",
+    "status": "PASS"
+  },
+  "schema_version": "safety_promotion_local_v1",
+  "scope": "TEST_ONLY_SAFETY_PROMOTION_INTERLOCK",
+  "shell_fixture_review_sha256": "868730d9cb2bc17b636b9a8a05e8b3dfe87a4e68cd22598426503912b1ec4b9e",
+  "source_files_matched": 410,
+  "source_manifest_sha256": "b0fdeb4f6b6bd39ee98b1f875a07db5b33be67521ccc82288d429f3333749cb9",
+  "status": "LOCAL_ENGINEERING_PASS"
+}

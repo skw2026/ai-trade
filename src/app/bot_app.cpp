@@ -8168,6 +8168,9 @@ void BotApplication::LogStatus() {
   LogInfo("RUNTIME_STATUS: ticks=" + std::to_string(market_tick_count_) +
           ", evolution_safety_withdrawn=" +
           std::string(evolution_safety_withdrawn_ ? "true" : "false") +
+          ", evolution_safety_identity={runtime_config_sha256=" +
+          system_.integrator_runtime_config_sha256() + ", trade_bot_sha256=" +
+          system_.integrator_trade_bot_sha256() + "}" +
           ", trade_ok=" + std::string(trade_ok ? "true" : "false") +
           ", trading_halted=" +
           std::string(trading_halted_ ? "true" : "false") +

@@ -19,6 +19,7 @@ import subprocess
 import sys
 
 import evaluate_activation_transaction as activation
+from evolution_safety_evidence import extract as extract_safety
 
 ROOT = Path(__file__).resolve().parents[1]
 SCOPE = 'TEST_ONLY_REGISTRATION_ISOLATION'
@@ -170,7 +171,12 @@ def transaction(source, output, metadata, fault, driver_sha256):
     else:
         require(fault == 'zero_episodes', 'unknown fault injection')
     write(case / 'state-before.json', state)
-    result = activation.evaluate(state, {'verdict': 'PASS', 'metrics': metrics}, mechanism={}, now=now,
+    runtime = {'verdict': 'PASS', 'metrics': metrics, 'evolution_safety': extract_safety(
+        'RUNTIME_STATUS: evolution_safety_withdrawn=false, boot={id=TEST_ONLY_BOOT}, '
+        'evolution_safety_identity={runtime_config_sha256=' + identity['runtime_config_sha256']
+        + ', trade_bot_sha256=' + identity['trade_bot_sha256'] + '}')}
+    safety_cases = safety_interlock_cases(state, runtime, now) if fault == 'zero_episodes' else None
+    result = activation.evaluate(state, runtime, mechanism={}, now=now,
         min_complete_episodes=30, min_positive_episode_ratio=0.5,
         min_mean_realized_net_per_fill_usd=0.0, max_pending_hours=72.0)
     decision = 'pending' if fault == 'zero_episodes' else 'rollback'
@@ -189,7 +195,47 @@ def transaction(source, output, metadata, fault, driver_sha256):
     return {'decision': decision, 'fault': fault, 'complete_episode_count': 0,
             'input_model_sha256': artifacts['model']['sha256'], 'input_report_sha256': artifacts['report']['sha256'],
             'decision_sha256': sha(case / 'decision.json'), 'live_runtime_observed': False,
-            'rollback_service_executed': False}
+            'rollback_service_executed': False, 'safety_interlock': safety_cases}
+
+
+def safety_interlock_cases(state, runtime, now):
+    """Synthetic positive economics are ONLY a counterfactual refusal test."""
+    expected = activation.candidate_identity(state)
+    clean = copy.deepcopy(runtime)
+    clean['metrics']['integrator_policy_closed_episode_events'] = [
+        {'position_episode_id': 'TEST_ONLY_EPISODE_' + str(i),
+         'candidate_id': expected['model_version'], 'model_version': expected['model_version'],
+         'mode': 'canary', 'policy_reason': 'canary_independent_signal',
+         'symbol': expected['training_symbol'], 'realized_net_usd': 0.1, 'funding_paid_usd': 0.0,
+         'fill_event_count': 2, 'unique_order_count': 2, 'evidence_complete': True,
+         'activation_transaction_id': state['run_id'], 'evidence_boot_id': 'TEST_ONLY_BOOT',
+         'runtime_config_sha256': expected['runtime_config_sha256'],
+         'trade_bot_sha256': expected['trade_bot_sha256'], 'closed_at_utc': activation.utc_iso(now),
+         'recovered_after_restart': False} for i in range(30)]
+    kwargs = dict(mechanism={'status': 'pass'}, now=now, min_complete_episodes=30,
+                  min_positive_episode_ratio=0.5, min_mean_realized_net_per_fill_usd=0.0, max_pending_hours=72.0)
+    outcomes = {}
+    for fault in ('clear_control', 'withdrawn', 'missing', 'malformed', 'boot', 'config', 'binary'):
+        case, observed = copy.deepcopy(state), copy.deepcopy(clean)
+        proof = observed['evolution_safety']
+        if fault == 'withdrawn':
+            proof = extract_safety('EVOLUTION_SAFETY_WITHDRAWAL_LATCHED: TEST_ONLY\n')
+            observed['evolution_safety'] = proof
+        elif fault == 'missing':
+            observed.pop('evolution_safety')
+        elif fault == 'malformed':
+            proof['withdrawn_count'] = False
+        elif fault in ('boot', 'config', 'binary'):
+            proof[{'boot': 'boot_id', 'config': 'runtime_config_sha256', 'binary': 'trade_bot_sha256'}[fault]] = 'wrong'
+        result = activation.evaluate(case, observed, **kwargs)
+        require(result['decision'] == ('commit' if fault == 'clear_control' else 'rollback'),
+                'safety positive-economics refusal mismatch: ' + fault)
+        repeat = activation.evaluate(json.loads(json.dumps(case)), clean, **kwargs)
+        require(repeat['decision'] == result['decision'], 'safety refusal was automatically cleared: ' + fault)
+        outcomes[fault] = {'decision': result['decision'], 'repeat_decision': repeat['decision'],
+                           'reason_codes': result['hard_fail_reasons'], 'synthetic_complete_episodes': 30}
+    return {'scope': 'TEST_ONLY_SYNTHETIC_POSITIVE_ECONOMICS_REFUSAL', 'status': 'PASS',
+            'cases': outcomes, 'live_runtime_observed': False, 'production_promotion_authority': False}
 
 
 def verify(learning_path, output):
@@ -219,7 +265,8 @@ def verify(learning_path, output):
                          'no live canary or production promotion', 'transaction evaluator decisions, not live service rollback',
                          'runtime identity uses an offline driver and fixture config, not live attestations'],
               'source_sha256': {name: sha(ROOT / 'tools' / name) for name in
-                               ('verify_registration_isolation.py', 'model_registry.py', 'evaluate_activation_transaction.py')},
+                               ('verify_registration_isolation.py', 'model_registry.py', 'evaluate_activation_transaction.py',
+                                'evolution_safety_evidence.py')},
               'artifact_sha256': file_set(output)}
     write(output / 'registration-result.json', report)
     return report

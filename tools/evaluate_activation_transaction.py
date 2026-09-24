@@ -12,6 +12,8 @@ import math
 from pathlib import Path
 from typing import Any, Dict, List
 
+from evolution_safety_evidence import rejection_reasons as safety_rejection_reasons
+
 
 ACTIVE_STATUSES = {
     "activated_pending_validation",
@@ -294,6 +296,15 @@ def runtime_identity(metrics: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def transaction_evidence(state: Dict[str, Any]) -> Dict[str, Any]:
+    evidence = state.setdefault("evidence", {})
+    if not isinstance(evidence, dict):
+        evidence = {"evolution_safety_requalification_required": True,
+                    "evolution_safety_first_rejection": ["transaction evidence is malformed"]}
+        state["evidence"] = evidence
+    return evidence
+
+
 def merge_candidate_episodes(
     state: Dict[str, Any],
     metrics: Dict[str, Any],
@@ -302,10 +313,7 @@ def merge_candidate_episodes(
     expected_identity: Dict[str, str],
     runtime_boot_id: str,
 ) -> tuple[Dict[str, Dict[str, Any]], List[str]]:
-    evidence = state.setdefault("evidence", {})
-    if not isinstance(evidence, dict):
-        evidence = {}
-        state["evidence"] = evidence
+    evidence = transaction_evidence(state)
     episodes = evidence.get("episodes", {})
     if not isinstance(episodes, dict):
         episodes = {}
@@ -532,10 +540,7 @@ def evaluate(
         pending_reasons.append("runtime candidate identity incomplete")
 
     runtime_boot_id = str(metrics.get("runtime_boot_id_latest", "")).strip()
-    evidence = state.setdefault("evidence", {})
-    if not isinstance(evidence, dict):
-        evidence = {}
-        state["evidence"] = evidence
+    evidence = transaction_evidence(state)
     expected_boot_id = str(evidence.get("runtime_boot_id", "")).strip()
     if not runtime_boot_id:
         hard_fail_reasons.append("runtime boot identity missing")
@@ -546,6 +551,18 @@ def evaluate(
         )
     elif not expected_boot_id:
         evidence["runtime_boot_id"] = runtime_boot_id
+
+    safety_failures = safety_rejection_reasons(
+        runtime.get("evolution_safety"), expected, runtime_boot_id
+    )
+    # Transaction-local refusal is persistent, independent of later economics.
+    # Rolling back model artifacts does not unlock the process-portfolio latch.
+    if safety_failures:
+        evidence["evolution_safety_requalification_required"] = True
+        evidence.setdefault("evolution_safety_first_rejection", list(safety_failures))
+    if "evolution_safety_requalification_required" in evidence:
+        hard_fail_reasons.append("evolution safety: transaction requires new qualification; automatic recovery forbidden")
+    hard_fail_reasons.extend(safety_failures)
 
     for metric_name in HARD_SAFETY_METRICS:
         if metric_name not in metrics:
@@ -692,6 +709,8 @@ def evaluate(
         "candidate_identity": expected,
         "activation_policy_sha256": state["activation_policy_sha256"],
         "evaluated_at_utc": utc_iso(current),
+        "evolution_safety": runtime.get("evolution_safety"),
+        "safety_requalification_required": "evolution_safety_requalification_required" in evidence,
         "runtime_verdict": verdict or None,
         "mechanism_status": mechanism_status or None,
         "identity_complete": identity_complete,

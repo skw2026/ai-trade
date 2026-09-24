@@ -27,6 +27,43 @@ ASSESS = load_assess_module()
 
 
 class AssessRunLogTest(unittest.TestCase):
+    @staticmethod
+    def _safety_line(state="false", boot="one", config="a" * 64, binary="b" * 64):
+        return ("RUNTIME_STATUS: ticks=10, evolution_safety_withdrawn=" + state
+                + ", evolution_safety_identity={runtime_config_sha256=" + config
+                + ", trade_bot_sha256=" + binary + "}, boot={id=" + boot + "}")
+
+    def test_safety_evidence_explicit_and_identity_bound(self):
+        clear = ASSESS.extract_evolution_safety(self._safety_line())
+        self.assertEqual(clear["status"], "CLEAR")
+        self.assertEqual(clear["boot_id"], "one")
+        self.assertFalse(clear["grants_trading_authority"])
+        for text in ("", "RUNTIME_STATUS: ticks=1", self._safety_line("falseish"),
+                     self._safety_line(config="missing"),
+                     self._safety_line() + "\n" + self._safety_line(boot="two"),
+                     self._safety_line() + "\n" + self._safety_line(binary="c" * 64),
+                     self._safety_line() + ", evolution_safety_withdrawn=false"):
+            with self.subTest(text=text):
+                self.assertEqual(ASSESS.extract_evolution_safety(text)["status"], "UNPROVEN")
+
+    def test_safety_withdrawal_cannot_be_erased_by_later_status_or_boot(self):
+        for prefix in (self._safety_line("true"), "EVOLUTION_SAFETY_WITHDRAWAL_LATCHED: scope=process_portfolio",
+                       "EVOLUTION_SAFETY_PERSIST_FAILED: io"):
+            text = prefix + "\n" + self._safety_line(boot="new")
+            report = ASSESS.assess(text, ASSESS.STAGE_RULES["DEPLOY"], min_runtime_status=0)
+            self.assertEqual(report["evolution_safety"]["status"], "WITHDRAWN")
+            # A working risk latch is not itself a failed protection mechanism.
+            self.assertEqual(report["protection_status"], "PASS")
+
+    def test_safety_uses_original_log_before_flat_rebase(self):
+        text = "2026-02-14 15:00:00 [INFO] EVOLUTION_SAFETY_WITHDRAWAL_LATCHED: scope=process_portfolio\n"
+        text += self._runtime_line(10, 100.0) + "\n" + self._runtime_line(20, 0.0)
+        text += "\n" + self._safety_line()
+        report = ASSESS.assess(text, ASSESS.STAGE_RULES["S5"], min_runtime_status=0)
+        self.assertTrue(report["flat_start_rebased"])
+        self.assertEqual(report["evolution_safety"]["status"], "WITHDRAWN")
+        self.assertEqual(report["evolution_safety"]["latched_event_count"], 1)
+
     def test_integrator_availability_explains_rejection_without_granting_authority(self):
         text = "\n".join([
             "PROCESS_START: boot_id=one, startup_utc=2026-09-22T00:00:00Z",

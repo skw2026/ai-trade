@@ -1,0 +1,25 @@
+{
+  "failure_id": "5160f82e59744dfc9d00f9a424749a5c",
+  "decision": "retry",
+  "goal": "Safety evidence failure must deny promotion even with positive complete episodes and remain refused in the same transaction",
+  "expected": "All 113 targeted tests pass, including corrupted transaction evidence returning rollback",
+  "observed": "113 tests ran; one failure in test_safety_refusal_overrides_positive_economics_and_is_sticky, fault=state: commit != rollback. Other cases passed. No build, publication or deployment followed the failure.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The initial patch changed the later reset inside merge_candidate_episodes but missed the earlier identical reset in evaluate. evaluate converted the malformed evidence string to an empty dict before the new refusal check, so the later merge never saw corruption. This is an implementation omission, not a market or runtime-data failure.",
+  "evidence": [
+    ".artifacts/safety-promotion-20260924/validation-state.json",
+    ".artifacts/safety-promotion-20260924/failed-evaluator.py",
+    "tools/test_evaluate_activation_transaction.py:test_safety_refusal_overrides_positive_economics_and_is_sticky"
+  ],
+  "next_action": "Replace both reset sites with one transaction_evidence helper that persists a refusal marker on malformed evidence. Retry the exact original targeted command once, with all assertions and positive-economics inputs unchanged.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Rejecting corrupted state is part of the agreed fail-closed promotion interlock, not a new recovery or trading feature.",
+    "data_feasibility": "The existing deterministic local test directly supplies malformed transaction evidence; no market data, accounts or new samples are required.",
+    "method_feasibility": "Both normalization sites are visible in failed-evaluator.py. A shared helper preserves rejection at the earliest use and across JSON serialization; the existing failing test checks both initial refusal and repeat evaluation.",
+    "budget_and_exit": "One exact-command retry under 180 seconds within the six-hour engineering self-limit. A second unresolved failure blocks dependent work and requires full route reassessment; no automatic reset or publication."
+  }
+}

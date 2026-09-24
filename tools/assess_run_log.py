@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from evolution_safety_evidence import extract as extract_evolution_safety
+
 
 @dataclass(frozen=True)
 class StageRule:
@@ -5469,6 +5471,7 @@ def assess(
         "market_context_status": market_context_status,
         "account_sync_status": account_sync_status,
         "integrator_availability": extract_integrator_availability(original_text),
+        "evolution_safety": extract_evolution_safety(original_text),
         "metrics": metrics,
         "account_pnl": account_pnl,
         "account_equity_continuity": account_equity_continuity,
@@ -5503,6 +5506,8 @@ def print_report(report: Dict[str, object]) -> None:
         print("INTEGRATOR_AVAILABILITY: " + json.dumps(
             report["integrator_availability"], ensure_ascii=False, sort_keys=True
         ))
+    if "evolution_safety" in report:
+        print("EVOLUTION_SAFETY: " + json.dumps(report["evolution_safety"], sort_keys=True))
     print("METRICS:")
     metrics = report["metrics"]
     assert isinstance(metrics, dict)

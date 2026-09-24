@@ -42,6 +42,21 @@
 原市场/候选资格及恢复审核；当前 `NO_QUALIFIED_CANDIDATE` 不变。
 可在 `RUNTIME_STATUS` 查看 `evolution_safety_withdrawn`。
 
+### 晋升拒绝联动（2026-09-24）
+
+每条运行快照同时输出 `evolution_safety_identity`，绑定实际配置/二进制摘要及同条
+快照的 boot。日志审计从原始输入（平仓重基准之前）提取 `evolution_safety`：
+只有显式未撤回、身份完整且一致的窗口为 CLEAR；缺失、畸形、跨身份为 UNPROVEN；
+任意撤回/持久化失败事件或 true 快照为 WITHDRAWN。CLEAR 不是市场或交易资格。
+
+激活事务的最终 commit 必须检查该证据并与候选及实际 boot 匹配。安全证据不合格
+即 rollback 决策，且在该事务记录重新资格要求；后续盈利、正常报告或重启评估器
+不能自动抹掉拒绝。模型回滚不清除进程安全日志，减仓/保护行为保持。本联动不是
+自动恢复、初始候选审批或真实 canary 的授权；不新增 unlock/clear API。
+
+保护状态与晋升资格分别报告：安全锁生效本身不等于保护机制损坏。因此旧日志仍
+可用于原工程诊断，但没有新安全证据就不能作为晋升 commit 的依据。
+
 CTest 的 `evolution_safety_test` 覆盖真实生产应用/控制器/执行器/持久化组合，
 `evolution_safety_audit_test` 覆盖审计器负例。CD 原固定学习回归额外用同一实际
 训练模型跑正常、退化、短窗口控制；逐窗口虚拟账独立复算，失败阻止部署。
