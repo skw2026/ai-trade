@@ -1,0 +1,155 @@
+{
+  "E1": {
+    "decision": "INSUFFICIENT_HISTORICAL_POSITIONING_INPUT",
+    "experiments": 0,
+    "market_gets": 0
+  },
+  "E2": {
+    "bootstrap": null,
+    "candidate_mark_open_equity_hi": 0.9737856729921484,
+    "candidate_mark_open_equity_lo": 0.9737646609982047,
+    "complete_cycles": 4,
+    "decision": "REJECT",
+    "drawdown_hi": 0.08086429068336976,
+    "drawdown_lo": 0.08083377049117013,
+    "full_window_evaluated": false,
+    "last_bar_utc": "2025-05-10T13:30:00+00:00",
+    "last_mark_bar_open": 0.4122,
+    "ledger": {
+      "candidate": {
+        "cash_hi": 1.0089754798850241,
+        "cash_lo": 1.0089544678910805,
+        "entry_price": 0.3613383,
+        "execution_events": 9,
+        "fees": 0.0012325143076186056,
+        "funding_events": 100,
+        "funding_hi": 0.0011430989537425476,
+        "funding_lo": 0.0011220869597991397,
+        "gross_after_slippage": 0.009064895238899324,
+        "q": -0.6918724087648611,
+        "slippage": 0.0022411964108527,
+        "turnover": 2.2409351047611006
+      },
+      "control": {
+        "cash_hi": 1.0343616972570608,
+        "cash_lo": 1.034342407435895,
+        "entry_price": 0.3617,
+        "execution_events": 9,
+        "fees": 0.0,
+        "funding_events": 364,
+        "funding_hi": 0.0011573425857823116,
+        "funding_lo": 0.0011380527646187974,
+        "gross_after_slippage": 0.03320435467127829,
+        "q": -0.1785477183909319,
+        "slippage": 0.0,
+        "turnover": 0.5661661371723318
+      }
+    },
+    "max_notional": 0.29793039939601385,
+    "planned_coin_ms": 2167087256.4551644,
+    "planned_control_coin_ms": 2167087256.4551644,
+    "planned_cycles": 20,
+    "reason": "DEFINITE_REFERENCE_RISK_BREACH",
+    "stop_fill_simulated": false
+  },
+  "authority_used": {
+    "account_access": false,
+    "candidate_activation": false,
+    "deployment": false,
+    "orders": false,
+    "parameter_search": false,
+    "recovery": false,
+    "training": false
+  },
+  "closeout_source_sha256": {
+    "docs/reviews/2026-09-28-candidate-intake-sources.json": "4798161455fcbb2456106aaea69766bdeb719e9d4cf100219d0e7c30b11728d6",
+    "tools/audit_candidate_intake.py": "cae24547ccb83a4a16dddcf6a219c6f121edb90b8a7b56e94d93e43fd7e3b5ea"
+  },
+  "compute_seconds": 0.005471458949614316,
+  "experiment_count": 1,
+  "inputs": {
+    "funding": 1825,
+    "funding_intervals_hours": [
+      8.0
+    ],
+    "mark": 29186,
+    "trade": 29186
+  },
+  "local_evidence": {
+    "bytes": 4407531,
+    "directory": ".artifacts/candidate-intake-20260928/e2",
+    "files": 448,
+    "index_sha256": "5913b52a4f418d82212eef7a1184645fef39fc96bc56e442f37b931ae7e08660",
+    "key_files": {
+      "cash-audit.json": "306674ab0c8bad987567c68a4ab7c35a40d551fa1b80f522c927f99a5014b0f3",
+      "collection-complete.json": "977e50f23c56f08787dfe71f8759aaaebc5ad4133603b7f84e3196a45d7f182a",
+      "collection-start.json": "e88c5e6ab33a5b039bf607cec9eb087ed86e692b2ef7d4cdb82e8e81dc4fe2e2",
+      "economic-start.json": "6882a773c8265fddea1dd110647b797c20b96ce90a76e05ba5c7ae5822e9ae5a",
+      "inspection.json": "513883a6dab7d94587d7033032fd6fda871b13b0d7e7766759f57b8b5c3b1a3f",
+      "plan.json": "4e5e7189b030c27ddb73ff507d5adf65bfc6a4e92cdcb8ec6f3aff5a271362ae",
+      "result.json": "198c91356e360d6a8ebb0eeee0ca59b6be5ec240566e8ce93b8095f9bb56e3f8"
+    },
+    "raw_bytes": 4183720
+  },
+  "market_candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "no_automatic_budget_renewal": true,
+  "old_gate_sha256": {
+    "candidate-governance-20260928/validation-state.json": "319bf86388b1eb65b070ba49e428d6d54dfd16038a36c8342aae9bb663b37ebf",
+    "engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    "offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    "regional-session-20260928/validation-state.json": "4d3ad8ffe9c21c8d898f6cc0a40268e26ea99b2ccadad1eb495779a7077d8a22",
+    "regional-session-screen-20260928/validation-state.json": "55d98883af3749cb656cd4d89e898a2abbbb17d87bbb9826861283c54aa401bb",
+    "safety-promotion-20260924/validation-state.json": "25f7174f281d375cf4576202f2f83b5fcb9cdc3c1307902231c3a3fb77c4fca0",
+    "safety-withdrawal-20260923/validation-state.json": "314d3a9fb5aa60bbfa694e935525474ceec610178d8e43041bc758a53f966a76",
+    "strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    "validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "phase_status": "COMPLETED_BOUNDED_BATCH",
+  "profitability_qualified": false,
+  "requests": {
+    "elapsed_seconds": 178.39822602272034,
+    "failed": 0,
+    "limit": 240,
+    "market_gets": 147,
+    "retries": 0,
+    "successes": 147
+  },
+  "schema": "candidate_intake_batch_evidence_v1",
+  "supplemental_risk_stop_audit": {
+    "status": "PASS",
+    "local_path": ".artifacts/candidate-intake-20260928/risk-stop-audit.json",
+    "sha256": "5de572705b291edf33160bcbc0fd0b9b05508715050b1a25d60a290ffd067388",
+    "tool": "tools/audit_unlock_risk_stop.py",
+    "tool_sha256": "940ea524166f9ef6c2aa30b52dcfc22ba083638c7c4b8ef44434083ce2618ffa",
+    "result_sha256": "198c91356e360d6a8ebb0eeee0ca59b6be5ec240566e8ce93b8095f9bb56e3f8",
+    "first_stop_utc": "2025-05-10T13:30:00+00:00",
+    "prior_peak_lower": "1.056938846156653006597363375",
+    "observed_nav_upper": "0.971502494043223471903933018",
+    "drawdown_lower": "0.0808337704911705757396178207",
+    "strategy_rerun": false,
+    "later_path_evaluated": false
+  },
+  "selected_for_further_review": [],
+  "source_sha256": {
+    "docs/contracts/token_unlock_screen_v1.json": "11dff1577b8c6688e3a802049bd5919bcaa193d7f670a4a7f1a4e236f72fb66f",
+    "docs/plans/2026-09-28-candidate-intake-batch.md": "723a12edd3ad4300048cb7c9f56b676d9d3a8637993ed77a75e8503446c2d875",
+    "tools/screen_regional_session.py": "44944fc3f53f79e7145b57c66411c8975b77a7960c0e3d20652cb99c1767e201",
+    "tools/screen_token_unlock.py": "af8bdb3e913bb29728d4a6fd53b4f77bf019224c758bb27f12220a3795589d42",
+    "tools/test_screen_token_unlock.py": "0574d0bea1e6294e55bdc91e3c223255289166a9f396b9ccb607cd8f517f2c79"
+  },
+  "started": {
+    "maximum_experiments": 1,
+    "started_at": "2026-09-28T05:11:23.760637+00:00"
+  },
+  "validations": {
+    "cash_audit": "PASS",
+    "nonzero_validation_exits": 0,
+    "old_closeout_tests": 8,
+    "old_gates_unchanged": 9,
+    "platform_ci_claimed": false,
+    "statistics_audit": {
+      "status": "NOT_APPLICABLE_RISK_STOP"
+    },
+    "synthetic_tests": 22
+  }
+}

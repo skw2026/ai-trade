@@ -1,5 +1,20 @@
 # 当前项目状态
 
+最新双机制批次结案（2026-09-28）：**COMPLETED_BOUNDED_BATCH / 0_SELECTED**。
+用户接续完整候选引入方案要求持续至阶段结果；按16有效小时/2机制/240行情GET上限执行。
+E1期权到期压力释放：已核对公开历史/供应商入口，但未绑定必需的历史逐合约持仓与
+净对冲方向输入，`INSUFFICIENT_HISTORICAL_POSITIONING_INPUT`，不把总OI或钟点当信号替身。
+E2预告ARB团队/投资者解锁：官方2023固定文档提供事前月历，已做一次固定参考实测。
+147请求全部成功、trade/mark各29,186根、1,825期funding；第5个窗口在
+2025-05-10 13:30 UTC触线，回撤下界8.0834%超过8%，`REJECT / DEFINITE_REFERENCE_RISK_BREACH`。
+4个完整周期后停止，无后段计算/统计、无伪造平仓；触线bar的最差参考权益约0.9715，
+不是账户亏损8.08%，回撤基于约1.0569的过去峰值。独立Decimal现金和风险边界均匹配。
+22项新合成测试、8项旧关闭测试通过，9份旧gate字节身份保持，无技术失败或自动重试。
+本批选0，`NO_QUALIFIED_CANDIDATE`与C2 `NOT_QUALIFIED`保持；不调参数/缩仓救结果，
+不训练、访问账户、交易、部署或开始两周等待。研究工具/脱敏结案按main权限交付，跳过CI/CD。
+见[阶段结果、根因与后续边界](reviews/2026-09-28-candidate-intake-result.md)及
+[机器证据](reviews/2026-09-28-candidate-intake.evidence.json)。下列为历史阶段，不覆盖本段。
+
 最新纠偏实测结案（2026-09-28）：**INSUFFICIENT_EVIDENCE / NET_OR_TIMING_LOWER_BOUND_NOT_POSITIVE**。
 用户明确同意区分研究进入与候选资格，已按[冻结合同](plans/2026-09-28-regional-session-correction.md)
 完成同一BTC时段机制的唯一离线筛查：107次GET全部成功，trade/mark各51,056根、532期资金费；

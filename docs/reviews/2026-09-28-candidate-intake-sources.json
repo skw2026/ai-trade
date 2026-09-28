@@ -1,0 +1,22 @@
+{
+  "schema": "candidate_intake_primary_sources_v1",
+  "review_date": "2026-09-28",
+  "market_data_requested_at_admission": 0,
+  "sources": [
+    {"id":"E1-paper","url":"https://www.sciencedirect.com/science/article/pii/S1544612326008688","access":"publisher abstract indexed; direct full-page open error; full methods unverified","supports":"expiry-related reversal hypothesis, not Bybit executable profitability"},
+    {"id":"E1-authors-abstract","url":"https://www.fernuni-hagen.de/bwlbuf/docs/boa_derivatives_conference.pdf","access":"author conference abstract indexed","supports":"net call selling and spot-price change as proposed predictors; not replication of full methodology"},
+    {"id":"E1-deribit-summary","url":"https://docs.deribit.com/api-reference/market-data/public-get_book_summary_by_currency","access":"read official documentation","supports":"current chain OI summary; currency/kind parameters, no historical time range"},
+    {"id":"E1-deribit-collection","url":"https://docs.deribit.com/articles/options-data-collection-best-practices","access":"read official documentation","supports":"ticker Greeks and chain lifecycle; current snapshots are not historical holdings"},
+    {"id":"E1-deribit-history","url":"https://static.deribit.com/files/DeribitInstitutionalSetupGuide.pdf","access":"official guide historical-data section indexed","supports":"historical trades and instrument metadata via history host; not certified historical full-chain OI or dealer inventory"},
+    {"id":"E1-tardis-chain","url":"https://docs.tardis.dev/historical-data-details/deribit","access":"read supplier documentation","supports":"historical options_chain archive exists; not fetched or independently qualified"},
+    {"id":"E1-tardis-access","url":"https://docs.tardis.dev/downloadable-csv-files/overview","access":"read supplier documentation","supports":"first day of each month without API key; not continuous daily input"},
+    {"id":"E2-fixed-vesting","url":"https://raw.githubusercontent.com/ArbitrumFoundation/docs/58a5f6f234ae4978c25e9184478bf64338445c91/docs/airdrop-eligibility-distribution.md","access":"read immutable official source version","supports":"team/investor first unlock one year after 2023-03-16; then monthly for remaining three years; not realized sale certification"},
+    {"id":"E2-git-provenance","url":"https://github.com/ArbitrumFoundation/docs/commit/58a5f6f234ae4978c25e9184478bf64338445c91","api":"https://api.github.com/repos/ArbitrumFoundation/docs/commits/58a5f6f234ae4978c25e9184478bf64338445c91","access":"public GitHub API commit metadata and patch read","committed_at":"2023-05-01T20:50:48Z","supports":"fixed text predates selected reference window; not independent first-publication timestamp certification"},
+    {"id":"E2-trade","url":"https://bybit-exchange.github.io/docs/v5/market/kline","access":"read official docs","supports":"linear symbol trade OHLC interval30 limit1000"},
+    {"id":"E2-mark","url":"https://bybit-exchange.github.io/docs/v5/market/mark-kline","access":"read official docs","supports":"mark OHLC interval30 limit1000"},
+    {"id":"E2-funding","url":"https://bybit-exchange.github.io/docs/v5/market/history-fund-rate","access":"read official docs","supports":"bounded historical funding; per-symbol interval; limit200"},
+    {"id":"E2-fees","url":"https://www.bybit.com/en/help-center/article/Futures-Contracts-Fees-Explained","access":"read official help","supports":"current public non-VIP taker reference; not actual account or historical fee certification"}
+  ],
+  "limitations": ["6MV original research link could not be read; not used as a verified empirical premise", "discovery search snippets mentioned 2024 ARB declines; disclosed, not called unseen data", "E1 data gap is scoped to verified public inputs, not a claim that paid archives or author data do not exist"],
+  "admission": {"E1":"INSUFFICIENT_HISTORICAL_POSITIONING_INPUT","E2":"ADMIT_FALSIFIABLE_REFERENCE_SCREEN_NOT_PROFIT_PROOF"}
+}
