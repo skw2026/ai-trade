@@ -1,0 +1,266 @@
+{
+  "alternative_ultrasound": "Official source inspected only: rounded daily timestamps, historical fill, and pending-deposit handling; no live historical response acceptance",
+  "candidate_qualified": false,
+  "combined_api_and_source_open_units": 12,
+  "commercial_use_permission": "NOT_ESTABLISHED: Community documents specify noncommercial license",
+  "completion_delay_cause": "UNKNOWN: first processing, recomputation or correction not distinguished",
+  "decision": "DO_NOT_START_ORIGINAL_BURN_ATTRIBUTION_EXPERIMENT",
+  "economic_experiments": 0,
+  "experiment_authorized": false,
+  "formal_technical_failures": 0,
+  "free_issuance_and_total_supply_available": true,
+  "full_history_downloaded": false,
+  "mapping": [
+    {
+      "asset": "eth",
+      "definition_unit": "Native units",
+      "free_daily": [
+        {
+          "community": true,
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2015-07-30T00:00:00.000000000Z"
+        }
+      ],
+      "full_catalog_daily": [
+        {
+          "community": true,
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2015-07-30T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "IssTotNtv"
+    },
+    {
+      "asset": "eth",
+      "definition_unit": "Native units",
+      "free_daily": [
+        {
+          "community": true,
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2015-07-30T00:00:00.000000000Z"
+        }
+      ],
+      "full_catalog_daily": [
+        {
+          "community": true,
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2015-07-30T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "SplyCur"
+    },
+    {
+      "asset": "eth",
+      "definition_unit": "Native units",
+      "free_daily": [],
+      "full_catalog_daily": [
+        {
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2015-07-30T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "SplyBurntNtv"
+    },
+    {
+      "asset": "eth",
+      "definition_unit": "Seconds",
+      "free_daily": [
+        {
+          "community": true,
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2015-07-30T00:00:00.000000000Z"
+        }
+      ],
+      "full_catalog_daily": [
+        {
+          "community": true,
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2015-07-30T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "AssetEODCompletionTime"
+    },
+    {
+      "asset": "eth_cl",
+      "definition_unit": "Native units",
+      "free_daily": [],
+      "full_catalog_daily": [
+        {
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2020-12-01T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "IssContNtv"
+    },
+    {
+      "asset": "eth_cl",
+      "definition_unit": "Native units",
+      "free_daily": [],
+      "full_catalog_daily": [
+        {
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2020-12-01T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "IssTotNtv"
+    },
+    {
+      "asset": "eth_cl",
+      "definition_unit": "Events",
+      "free_daily": [],
+      "full_catalog_daily": [
+        {
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2020-12-01T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "PenaltyNtv"
+    },
+    {
+      "asset": "eth_cl",
+      "definition_unit": "Events",
+      "free_daily": [],
+      "full_catalog_daily": [
+        {
+          "frequency": "1d",
+          "max_time": "2026-09-27T00:00:00.000000000Z",
+          "min_time": "2020-12-01T00:00:00.000000000Z"
+        }
+      ],
+      "metric": "SlashedNtv"
+    }
+  ],
+  "market_price_rows": 0,
+  "net_supply_proxy_contract_design_possible": true,
+  "next": "Close this input review; do not wait. A net-supply proxy would need an explicitly different frozen contract and bounded experiment scope.",
+  "original_fee_burn_attribution_ready": false,
+  "plan_sha256": "30380a0104417b588b2f1bbb03459b48fb4790b8aea763bd22e606d276ff62c6",
+  "point_in_time_vintage_proven": false,
+  "preserved_old_gate_sha256": {
+    "candidate-governance-20260928/validation-state.json": "319bf86388b1eb65b070ba49e428d6d54dfd16038a36c8342aae9bb663b37ebf",
+    "candidate-intake-20260928/validation-state.json": "6d550f9da602e701c4588213d4e0a61b0dbec49499815fcb89d19c5e1a478204",
+    "capacity-first-20260928/validation-state.json": "ea17ad13eb6799d8f5212e5f39a729f750ce79b9601e24488bcde7f6846310a9",
+    "engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    "free-option-flow-20260928/validation-state.json": "73cf7cac5138c3e2132a1c55edf393186250fc48c20ac6bb3d7e17dcc62226d5",
+    "offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    "option-flow-proxy-20260928/validation-state.json": "8197102f64237f978619a34ba319d64a778c4986ffe90e11578ff377a7edb08f",
+    "regional-session-20260928/validation-state.json": "4d3ad8ffe9c21c8d898f6cc0a40268e26ea99b2ccadad1eb495779a7077d8a22",
+    "regional-session-screen-20260928/validation-state.json": "55d98883af3749cb656cd4d89e898a2abbbb17d87bbb9826861283c54aa401bb",
+    "safety-promotion-20260924/validation-state.json": "25f7174f281d375cf4576202f2f83b5fcb9cdc3c1307902231c3a3fb77c4fca0",
+    "safety-withdrawal-20260923/validation-state.json": "314d3a9fb5aa60bbfa694e935525474ceec610178d8e43041bc758a53f966a76",
+    "strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    "validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "proxy_is_not_pure_fee_burn": true,
+  "raw_receipts": {
+    "community": {
+      "at": "2026-09-28T14:37:01.731199+00:00",
+      "bytes": 7182,
+      "sha256": "84e5325a15196bf2fb219d068ab8819bf83ff60afb979a7f767b8990bdd2b700",
+      "status": 200,
+      "url": "https://community-api.coinmetrics.io/v4/catalog-v2/asset-metrics?assets=eth%2Ceth_cl&page_size=10000"
+    },
+    "definitions": {
+      "at": "2026-09-28T14:37:31.091838+00:00",
+      "bytes": 3788,
+      "sha256": "fca94650c0d24d757acb753c2ceaeb565cfb79ee9d624655cc5086fafc91706b",
+      "status": 200,
+      "url": "https://community-api.coinmetrics.io/v4/reference-data/asset-metrics?metrics=SplyBurntNtv%2CIssContNtv%2CIssTotNtv%2CPenaltyNtv%2CSlashedNtv%2CSplyCur%2CAssetCompletionTime%2CAssetEODCompletionTime&page_size=10000"
+    },
+    "full": {
+      "at": "2026-09-28T14:37:28.862571+00:00",
+      "bytes": 3655,
+      "sha256": "eb2d51d7fe5c30ecdff0a4285a85774fcf2213cc0b4b67b2dc37e7844984c1df",
+      "status": 200,
+      "url": "https://community-api.coinmetrics.io/v4/catalog-all-v2/asset-metrics?assets=eth%2Ceth_cl&page_size=10000&metrics=SplyBurntNtv%2CIssContNtv%2CIssTotNtv%2CPenaltyNtv%2CSlashedNtv%2CSplyCur%2CAssetCompletionTime%2CAssetEODCompletionTime"
+    },
+    "sample-2023-01-01": {
+      "at": "2026-09-28T14:38:16.033617+00:00",
+      "bytes": 209,
+      "sha256": "eefa7954de3e71f08d31a7aceb465e19d10fdd5a4c22648a56ef0c3e5ea36b1d",
+      "status": 200,
+      "url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=eth&metrics=IssTotNtv%2CSplyCur%2CAssetCompletionTime%2CAssetEODCompletionTime&frequency=1d&start_time=2023-01-01&end_time=2023-01-01&page_size=1"
+    },
+    "sample-2024-03-14": {
+      "at": "2026-09-28T14:38:17.981630+00:00",
+      "bytes": 209,
+      "sha256": "7d2f80285f10f80489aaa4312f6bcbf42427c2ec450d39cff6d6df41a8fd0f3b",
+      "status": 200,
+      "url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=eth&metrics=IssTotNtv%2CSplyCur%2CAssetCompletionTime%2CAssetEODCompletionTime&frequency=1d&start_time=2024-03-14&end_time=2024-03-14&page_size=1"
+    },
+    "sample-2025-06-01": {
+      "at": "2026-09-28T14:38:20.865080+00:00",
+      "bytes": 209,
+      "sha256": "c90bad5891471e0a336e6a7e9a124fd8a56d53f18458fdaf5b74eece39ce99d9",
+      "status": 200,
+      "url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=eth&metrics=IssTotNtv%2CSplyCur%2CAssetCompletionTime%2CAssetEODCompletionTime&frequency=1d&start_time=2025-06-01&end_time=2025-06-01&page_size=1"
+    }
+  },
+  "recorded_anonymous_api_gets": 6,
+  "samples": [
+    {
+      "date": "2023-01-01",
+      "first_publication_proven": false,
+      "period_end_utc": "2023-01-02T00:00:00+00:00",
+      "present_fields": [
+        "AssetCompletionTime",
+        "AssetEODCompletionTime",
+        "IssTotNtv",
+        "SplyCur",
+        "asset",
+        "time"
+      ],
+      "recorded_completion_utc": "2023-01-02T01:23:27+00:00",
+      "seconds_after_period_end": 5007,
+      "status_fields_present": []
+    },
+    {
+      "date": "2024-03-14",
+      "first_publication_proven": false,
+      "period_end_utc": "2024-03-15T00:00:00+00:00",
+      "present_fields": [
+        "AssetCompletionTime",
+        "AssetEODCompletionTime",
+        "IssTotNtv",
+        "SplyCur",
+        "asset",
+        "time"
+      ],
+      "recorded_completion_utc": "2024-03-15T01:56:47+00:00",
+      "seconds_after_period_end": 7007,
+      "status_fields_present": []
+    },
+    {
+      "date": "2025-06-01",
+      "first_publication_proven": false,
+      "period_end_utc": "2025-06-02T00:00:00+00:00",
+      "present_fields": [
+        "AssetCompletionTime",
+        "AssetEODCompletionTime",
+        "IssTotNtv",
+        "SplyCur",
+        "asset",
+        "time"
+      ],
+      "recorded_completion_utc": "2025-06-23T03:22:10+00:00",
+      "seconds_after_period_end": 1826530,
+      "status_fields_present": []
+    }
+  ],
+  "scope": "ETH_SUPPLY_INPUT_REVIEW_ONLY",
+  "source_code_open_units_included_in_34": 6,
+  "source_read_units": 34,
+  "status": "PARTIAL_INPUTS",
+  "synthetic_tests": 10,
+  "total_public_read_units": 40
+}

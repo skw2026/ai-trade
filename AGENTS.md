@@ -11,6 +11,17 @@
 
 ## 开始与阶段边界
 
+- 2026-09-28用户同意ETH燃烧/净发行输入评审，按
+  `docs/plans/2026-09-28-eth-supply-input-review.md`连续完成字段、免费历史入口、
+  发布/修订时钟和立项裁决；自限90分钟/40公开读取（真实API至多12），0回测/
+  收益/训练/账户/交易/采购/部署，不自动续经济实验。13旧gate保持，独立gate
+  仅服务此评审；main脱敏交付[skip ci]，不将输入可用等同盈利/启用资格。
+  已以PARTIAL_INPUTS结案：34资料读取+6实际API=40，10合成测试通过，13旧gate
+  保持；免费eth/IssTotNtv与SplyCur可读，burn/eth_cl罚没不在免费目录。
+  2025-06-01样例completion记录为6月23日，初发/重算原因UNKNOWN，不能拿T+2
+  冒称PIT。0行情/回测；原燃烧归因不立项，净供给代理仅为下一合同设计建议。
+  见`docs/reviews/2026-09-28-eth-supply-input-result.md`；不自动续实验/采购/等待。
+
 - 2026-09-28用户明确“同意”容量前置的新机制端到端批次，按
   `docs/plans/2026-09-28-capacity-first-new-mechanisms.md`连续执行：8有效小时、
   2个新机制（零售注意力、ETH协议燃烧供给）、200公开读取、最多1次固定实验。
