@@ -1,5 +1,14 @@
 # 当前项目状态
 
+最新补充诊断（2026-09-28）：**EXPIRED_METADATA_ACCESS_CONFIRMED / HISTORICAL_TRADES_STILL_UNAVAILABLE**。
+补查上轮遗漏的单合约/序号读取路径，新增6 GET、累计18。www返回已到期样例
+合约正确元数据；history目录仍500，单合约/序号/元数据4x400。关键缺件收敛为
+完整历史逐笔成交，不再笼统称所有历史信息无入口，内部故障根因仍UNKNOWN。
+11份gate和旧证据保持，0回测/训练/交易/采购/部署。本轮只读诊断已完成。
+已核Tardis当前订阅条件：没有一次性固定日期购买，短期免费试用不覆盖原60日历。
+接续需已有许可数据/只读入口；没有时须实质费用或范围决定，不重复失败请求。
+见[补充实测、证据与具体数据条件](reviews/2026-09-28-deribit-instrument-diagnosis.md)。
+
 最新数据准入结案（2026-09-28）：**INSUFFICIENT_HISTORICAL_TRADE_ACCESS / 0_EXPERIMENTS**。
 用户OK批准[独立期权成交压力代理](plans/2026-09-28-option-flow-proxy.md)，不再等论文。
 实际12 GET：history历史成交四次500/11094（数量/日期/方法对照均约20秒），

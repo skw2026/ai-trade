@@ -1,0 +1,176 @@
+{
+  "scope": "DIAGNOSTIC_METADATA_NOT_ACCEPTANCE",
+  "decision": "HISTORICAL_TRADES_STILL_UNAVAILABLE",
+  "new_gets": 6,
+  "cumulative_gets": 18,
+  "formal_retries": 0,
+  "economic_experiments": 0,
+  "account_access": false,
+  "purchase": false,
+  "deployment": false,
+  "records": [
+    {
+      "api_error": {
+        "code": 11094,
+        "message": "internal_server_error"
+      },
+      "bytes": 157,
+      "error": "HTTP Error 500: Internal Server Error",
+      "http_status": 500,
+      "index": 1,
+      "raw_sha256": "61ce798b79a253d98dad9eedf4cc9169c12a1e804645b542212f78d62d73f59e",
+      "scope": "DIAGNOSIS_NOT_ACCEPTANCE",
+      "truncated": false,
+      "url": "https://history.deribit.com/api/v2/public/get_instruments?currency=BTC&kind=option&expired=false&include_old=true",
+      "raw_hash_matches": true
+    },
+    {
+      "bytes": 972,
+      "error": null,
+      "field_names": [
+        "base_currency",
+        "base_currency_uuid",
+        "block_trade_commission",
+        "block_trade_min_trade_amount",
+        "block_trade_tick_size",
+        "contract_size",
+        "counter_currency",
+        "creation_timestamp",
+        "expiration_timestamp",
+        "index_id",
+        "instrument_id",
+        "instrument_name",
+        "instrument_type",
+        "is_active",
+        "kind",
+        "maker_commission",
+        "min_trade_amount",
+        "option_type",
+        "price_index",
+        "product_group",
+        "quote_currency",
+        "quote_currency_uuid",
+        "settlement_currency",
+        "settlement_period",
+        "state",
+        "strike",
+        "taker_commission",
+        "tick_size",
+        "tick_size_steps",
+        "underlying_type"
+      ],
+      "http_status": 200,
+      "index": 2,
+      "metadata": {
+        "base_currency": "BTC",
+        "contract_size": 1,
+        "creation_timestamp": 1769990280000,
+        "expiration_timestamp": 1777017600000,
+        "expiry": null,
+        "instrument_name": "BTC-24APR26-72000-C",
+        "kind": "option",
+        "option_type": "call",
+        "settlement_currency": "BTC"
+      },
+      "raw_sha256": "ca8ee5c01e23523de85f4573f1976973fb66f884a72fbdf9ea4184378d3e42b7",
+      "scope": "DIAGNOSIS_NOT_ACCEPTANCE",
+      "truncated": false,
+      "url": "https://www.deribit.com/api/v2/public/get_instrument?instrument_name=BTC-24APR26-72000-C",
+      "raw_hash_matches": true
+    },
+    {
+      "api_error": {
+        "code": -32602,
+        "data": {
+          "param": "instrument_name",
+          "reason": "wrong format"
+        },
+        "message": "Invalid params"
+      },
+      "bytes": 206,
+      "error": "HTTP Error 400: Bad Request",
+      "http_status": 400,
+      "index": 3,
+      "raw_sha256": "aab226f0458f679f12ce441f1ab5b74639193a44227cd94bd1e1787fc584ab9d",
+      "scope": "DIAGNOSIS_NOT_ACCEPTANCE",
+      "truncated": false,
+      "url": "https://history.deribit.com/api/v2/public/get_last_trades_by_instrument?instrument_name=BTC-24APR26-72000-C&count=1&include_old=true",
+      "raw_hash_matches": true
+    },
+    {
+      "api_error": {
+        "code": -32602,
+        "data": {
+          "param": "instrument_name",
+          "reason": "wrong format"
+        },
+        "message": "Invalid params"
+      },
+      "bytes": 205,
+      "error": "HTTP Error 400: Bad Request",
+      "http_status": 400,
+      "index": 4,
+      "raw_sha256": "0f99ff742cab195095c70ec58a181bef029f77ffadedce97141b61489cbde3c9",
+      "scope": "DIAGNOSIS_NOT_ACCEPTANCE",
+      "truncated": false,
+      "url": "https://history.deribit.com/api/v2/public/get_last_trades_by_instrument?instrument_name=BTC-26MAR27-76000-P&count=1&include_old=true",
+      "raw_hash_matches": true
+    },
+    {
+      "api_error": {
+        "code": -32602,
+        "data": {
+          "param": "instrument_name",
+          "reason": "wrong format"
+        },
+        "message": "Invalid params"
+      },
+      "bytes": 206,
+      "error": "HTTP Error 400: Bad Request",
+      "http_status": 400,
+      "index": 5,
+      "raw_sha256": "957548257ae15081990682d0166a8a1eaeda349dd2b0a39defd7922070762174",
+      "scope": "DIAGNOSIS_NOT_ACCEPTANCE",
+      "truncated": false,
+      "url": "https://history.deribit.com/api/v2/public/get_last_trades_by_instrument?instrument_name=BTC-26MAR27-76000-P&start_seq=1&end_seq=1&count=1&include_old=true",
+      "raw_hash_matches": true
+    },
+    {
+      "api_error": {
+        "code": -32602,
+        "data": {
+          "param": "instrument_name",
+          "reason": "wrong format"
+        },
+        "message": "Invalid params"
+      },
+      "bytes": 205,
+      "error": "HTTP Error 400: Bad Request",
+      "http_status": 400,
+      "index": 6,
+      "raw_sha256": "8956f5275b112fd711a18d634699930d22a19e4bb6fa4b00ce249ddc4c179aea",
+      "scope": "DIAGNOSIS_NOT_ACCEPTANCE",
+      "truncated": false,
+      "url": "https://history.deribit.com/api/v2/public/get_instrument?instrument_name=BTC-26MAR27-76000-P&include_old=true",
+      "raw_hash_matches": true
+    }
+  ],
+  "original_identities_unchanged": true,
+  "original_gate_sha256": "8197102f64237f978619a34ba319d64a778c4986ffe90e11578ff377a7edb08f",
+  "old_ten_gates": {
+    "candidate-governance-20260928/validation-state.json": "319bf86388b1eb65b070ba49e428d6d54dfd16038a36c8342aae9bb663b37ebf",
+    "candidate-intake-20260928/validation-state.json": "6d550f9da602e701c4588213d4e0a61b0dbec49499815fcb89d19c5e1a478204",
+    "engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    "offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    "regional-session-20260928/validation-state.json": "4d3ad8ffe9c21c8d898f6cc0a40268e26ea99b2ccadad1eb495779a7077d8a22",
+    "regional-session-screen-20260928/validation-state.json": "55d98883af3749cb656cd4d89e898a2abbbb17d87bbb9826861283c54aa401bb",
+    "safety-promotion-20260924/validation-state.json": "25f7174f281d375cf4576202f2f83b5fcb9cdc3c1307902231c3a3fb77c4fca0",
+    "safety-withdrawal-20260923/validation-state.json": "314d3a9fb5aa60bbfa694e935525474ceec610178d8e43041bc758a53f966a76",
+    "strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    "validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "initial_plan_sha256": "fa8109c2f85d6b156b2d9f44c2c5058c8170a1a636aa3d38f73dcdfc4f6b920d",
+  "initial_plan_copy_matches": true,
+  "executed_source_sha256": "c1c3b003cc61bbfe414969a35ffb1a9195d2dd5521f2e6067cd470e914fa44be",
+  "source_unchanged": true
+}
