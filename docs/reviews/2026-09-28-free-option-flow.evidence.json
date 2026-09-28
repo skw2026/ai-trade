@@ -1,0 +1,23 @@
+{
+  "scope": "ONE_FIXED_MONTH_START_RESEARCH_SCREEN_NOT_CANDIDATE_QUALIFICATION",
+  "authorization": "User selected option 1: free-data redesign, 8 effective hours, 200 GETs, at most one experiment",
+  "decision": "INSUFFICIENT_EVIDENCE",
+  "reason": "INSUFFICIENT_SAMPLE",
+  "candidate_selected": 0,
+  "calendar": {"first": "2023-01-01", "last": "2026-09-01", "monthly_first_days": 45, "old_60_consecutive_days_revalidated": false},
+  "requests": {"market_and_metadata": 182, "documentation_conservative_count": 16, "total": 198, "maximum": 200, "complete_http_200": 181, "local_size_guard_http_200": 1},
+  "data": {"options_rows": 904654, "unique_inverse_btc_option_rows": 530555, "trade_5m_rows": 12960, "mark_5m_rows": 12960, "funding_events": 135, "base_quality_days": 45, "incident_uncertainty_excluded_days": 12, "zero_call_days_outside_incidents": 9, "zero_call_days_total": 12, "valid_days": 24, "late_target_calls_excluded": 0, "duplicate_btc_rows": 0, "input_files_hashed": 727, "raw_bytes_including_failed_prefix": 89078409},
+  "experiment": {"count": 1, "full_window_evaluated": true, "counts": {"A": 8, "B": 4, "C": 16}, "required_valid_days": 30, "required_group_days": 8, "mean_net": {"A": -0.001135846637239381, "B": 0.000832427762077475, "C": -0.0006816718783293147}, "A_minus_B": -0.001968274399316856, "A_minus_C": -0.0004541747589100664, "A_mean_gross_mid": 0.0010647563520021636, "A_mean_after_slippage": 0.00006419187788735126, "A_mean_fees": 0.0012000385151267323, "A_mean_funding_paid": 0.0, "reference_final_nav": 0.9977299890992755, "reference_drawdown_lower": 0.003971311003543606, "reference_drawdown_upper": 0.003971311003543606, "bootstrap_executed": false, "statistical_rejection_claimed": false},
+  "verification": {"new_synthetic_tests": 27, "historical_closeout_tests": 8, "independent_decimal_audit": "PASS", "independent_sample_exit_audit": "PASS_SAMPLE_FLOOR", "rows_checked": 45, "technical_gate_after_audit": "READY", "resolved_formal_failures": 1, "original_command_retries": 1, "failure_id": "c91367e825c14bc5ad3fe5deb57b2619", "old_gates_unchanged": 11},
+  "sha256": {
+    "plan": "85f6e3cd18390c386368867cb303e7bb17dc7bc850eb10db6a2bda612f74af94",
+    "freeze.json": "4fd10ab1195b53d849cf28ec913b97224bcd508b6b7445543b5877f5caa9a55e",
+    "economy-freeze.json": "993aeda32a8a2680d5714352ca80c08221a9c5624fe388d41f3417fba358dac7",
+    "collection.json": "73c1f4daeea61fee7ecaab19a57cc2bdd958353c985299f2f780085da0786f58",
+    "experiment-start.json": "b73241f2e98c69fd78c81f862763fdfcebe67a0f1fec432f546ff0b59dc94456",
+    "result.json": "e1d47afc712243075905bcd3ece07ea8165a7c0c05519bfbd8908f284d3067ba",
+    "audit.json": "951208475654984341a6374634161f7cc273a3ccefffb0498f9c7bc6d8097513",
+    "metadata-diagnosis.json": "44b7d0df56b9f88e51e602d37512b649476365b85fb38a5bedbf2a01545dab83"
+  },
+  "authority": {"profitability_qualified": false, "promotion": false, "training": false, "account_access": false, "trading": false, "purchase": false, "deployment": false, "automatic_followup_batch": false, "waiting_period_started": false}
+}

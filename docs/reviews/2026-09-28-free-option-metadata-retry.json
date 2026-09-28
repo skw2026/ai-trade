@@ -1,0 +1,26 @@
+{
+  "failure_id": "c91367e825c14bc5ad3fe5deb57b2619",
+  "decision": "retry",
+  "goal": "Validate the same fixed month-start option and Bybit historical inputs before economic computation",
+  "expected": "Three fixed option anchors and first-day Bybit pages plus complete public exchange metadata, within byte and GET limits",
+  "observed": "First six GETs passed; metadata HTTP 200 advertised 218213179 bytes without content encoding and exceeded the unchanged 64MiB transport cap",
+  "root_cause_status": "confirmed",
+  "root_cause": "The metadata request omitted Accept-Encoding, so urllib received the complete 218MB identity-encoded contract directory; the local size guard correctly stopped it. Same-URL gzip diagnostic returned 5121660 bytes and decoded exactly 218213179 bytes with id, coverage, and incident reports intact",
+  "evidence": [
+    ".artifacts/free-option-flow-20260928/receipts/007.json",
+    ".artifacts/free-option-flow-20260928/receipts/008.json",
+    ".artifacts/free-option-flow-20260928/metadata-diagnosis.json",
+    "docs/reviews/2026-09-28-free-option-metadata-diagnosis.md"
+  ],
+  "next_action": "Run the original python3 tools/free_option_flow_data.py probe once; reuse hash-checked successful response files, including the complete compressed diagnostic metadata, without another network GET",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Still the explicitly authorized fixed 45 month-start hypothesis, no returns viewed, no replacement dates",
+    "data_feasibility": "All three option anchors and all three first-day Bybit input types are available; gzip metadata is now complete under original caps",
+    "method_feasibility": "Only metadata HTTP representation changed. Timestamps, taker semantics, coverage checks, fees, samples and statistical thresholds remain frozen. Two reversed-year incident intervals will be conservatively flagged, never silently corrected",
+    "budget_and_exit": "One original retry, no new GET expected. Four documentation lookups are conservatively counted, so planned batch is 182 market requests plus 16 document reads = 198 of 200. Any retry failure blocks again; no resets or extra economic experiments"
+  }
+}
