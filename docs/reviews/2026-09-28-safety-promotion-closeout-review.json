@@ -1,0 +1,32 @@
+{
+  "failure_id": "ceb47a20401a4253bd6bedd92d8e55e2",
+  "decision": "retry",
+  "goal": "Archive the already-passed independent delivery evidence with explicit observation dates",
+  "expected": "Receipt writer verifies prior required acceptance successes and preserves all sealed source evidence",
+  "observed": "Writer asserted gate READY while being run through that same gate, which correctly sets RUNNING before executing the child",
+  "root_cause_status": "confirmed",
+  "root_cause": "Executor introduced a self-state assertion error in the private closeout writer. validation_gate.execute sets status RUNNING before subprocess.run; READY cannot be true inside its guarded child. Prior independent delivery and curated evidence steps already passed. No receipt was written before the assertion.",
+  "evidence": [
+    "tools/validation_gate.py:execute",
+    ".artifacts/safety-promotion-20260924/closeout_receipt.py",
+    ".artifacts/safety-promotion-20260924/validation-state.json"
+  ],
+  "next_action": "Assert RUNNING with the exact current label, explicitly require both earlier acceptance history events exited 0, retain all hash/authority assertions, then retry the same receipt command once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Only final evidence indexing remains; no new product stage, deployment or market experiment",
+    "data_feasibility": "Original 109 sealed files, full 94-file delivery manifest and independent acceptance results are present",
+    "method_feasibility": "Correct assertion follows actual gate lifecycle and also binds preceding successful acceptance; no criterion removed from delivery verification",
+    "budget_and_exit": "One original 60-second receipt retry, then docs-only closure; any further failure pauses, no blanket rerun"
+  },
+  "route_reassessment": {
+    "old_route_failure": "Private delivery wrappers accumulated avoidable executor errors. This latest error is not a new system or economic problem and must not restart engineering work",
+    "replacement": "Correct only the self-state assertion, finish the existing receipt and docs closure, and do not introduce additional wrapper stages",
+    "feasibility_evidence": "Actual independent delivery verifier and curated receipt generation already exited 0; the traceback points directly to READY assertion before file creation",
+    "budget": "Single small private-script correction and exact original retry; no build, tests or remote mutation",
+    "stop_condition": "No gate reset or new acceptance boundary; another failure pauses the closure command"
+  }
+}

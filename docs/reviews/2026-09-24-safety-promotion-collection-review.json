@@ -1,0 +1,34 @@
+{
+  "failure_id": "7de16f464cf544e19e9a0b68f86e33e6",
+  "decision": "retry",
+  "goal": "Collect all six exact-release receipt groups without overwriting original evidence",
+  "expected": "Five original report groups, both full test logs and the sixth transport receipt are collected and identity-bound",
+  "observed": "Five report groups and CI log were saved; gh run view for CD 36021770890 job 107708188792 failed with unexpected EOF before writing docker-tests.log or obtaining transport receipt",
+  "root_cause_status": "confirmed",
+  "root_cause": "Confirmed log transport failure: gh reported unexpected EOF and exit 1 during retrieval of the already-successful CD log. The private collector was one-shot and unconditionally redownloaded artifacts, so an exact retry would also reject its own existing evidence directories. The cause of the underlying truncated connection is not established; this is not evidence of deployment or model failure.",
+  "upstream_connection_termination_cause": "unknown",
+  "evidence": [
+    ".artifacts/safety-promotion-20260924/delivery_base.collection-failed.py",
+    ".artifacts/safety-promotion-20260924/delivery-index.json",
+    ".artifacts/safety-promotion-20260924/ci-tests.log",
+    ".artifacts/safety-promotion-20260924/partial-collection-seal.json"
+  ],
+  "next_action": "Hash-seal every already downloaded file, add strict resume checking the sealed bytes plus remote artifact ID/digest/run identity, preserve the CI log, fetch only the missing CD log and transport receipt, and retry identical collection argv once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Finish original engineering acceptance of unchanged release, not another deployment or strategy experiment",
+    "data_feasibility": "Remote main remains 21e8d46; original runs completed and five artifact groups already exist locally with ID/digest/hash evidence",
+    "method_feasibility": "Resume is fail-closed: changed bytes, expired/different artifact, wrong run or missing hashes reject. Same 119-test and 94-file assertions remain; no manufactured logs or ignored failure",
+    "budget_and_exit": "One original collection retry, timeout 1200 seconds. Another error pauses dependencies; no rerun, redeploy or new research"
+  },
+  "route_reassessment": {
+    "old_route_failure": "Two distinct observation-channel failures reveal that the private delivery harness was less robust than the production pipeline: lossy diagnostics then non-resumable collection. Repeating deployment cannot improve this evidence channel",
+    "replacement": "Preserve the successful production run and all raw evidence; implement narrow resume with immutable file and artifact binding, then perform the original independent acceptance",
+    "feasibility_evidence": "Original CI and CD are successful, exact SHA is still main, five downloaded groups and one test log are present. Missing evidence is identifiable and downloadable from the same original run",
+    "budget": "Private collector-only patch and one retry inside the original effective engineering budget; elapsed calendar gaps are not extra experiment cycles",
+    "stop_condition": "Any artifact mismatch, further channel failure, unexpected V4 identity or failed acceptance blocks closure. Never erase historical errors or weaken the contract"
+  }
+}

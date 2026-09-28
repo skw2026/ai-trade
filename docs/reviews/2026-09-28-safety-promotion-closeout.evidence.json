@@ -1,0 +1,81 @@
+{
+  "collection_review_sha256": "f31689351b1f512d3289a67ba26d7f93111e333af420e21f9373576d29f658e9",
+  "delivery_evidence_sha256": "d608e595c697db2da65d9d9fb71e98ba19a6dab7eba54fa00dbcf9ca515bcb5f",
+  "new_deployment_after_original_release": false,
+  "new_runtime_observation_on_closeout_date": false,
+  "observer_review_sha256": "66a91d43bca5cd1dfb06487f7dafd2902ed11aadb256b5b57f9948b58719475a",
+  "old_halted_states_unchanged": true,
+  "original_api_error_upstream_cause": "UNKNOWN",
+  "original_workflow_receipts": [
+    {
+      "conclusion": "failure",
+      "created_at": "2026-09-24T15:56:29Z",
+      "head_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+      "id": 36023830765,
+      "name": "Option Lifecycle V4 Gate",
+      "run_attempt": 1,
+      "updated_at": "2026-09-24T15:59:10Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-09-24T15:56:29Z",
+      "head_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+      "id": 36023830810,
+      "name": "Fixed Engineering Regression",
+      "run_attempt": 1,
+      "updated_at": "2026-09-24T15:56:42Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-09-24T15:56:29Z",
+      "head_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+      "id": 36023830772,
+      "name": "Closed Loop Smoke",
+      "run_attempt": 1,
+      "updated_at": "2026-09-24T15:58:13Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-09-24T15:56:29Z",
+      "head_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+      "id": 36023830878,
+      "name": "Option Archive Lifecycle Audit",
+      "run_attempt": 1,
+      "updated_at": "2026-09-24T15:58:02Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-09-24T15:39:31Z",
+      "head_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+      "id": 36021770996,
+      "name": "CI",
+      "run_attempt": 1,
+      "updated_at": "2026-09-24T15:44:41Z"
+    },
+    {
+      "conclusion": "success",
+      "created_at": "2026-09-24T15:39:31Z",
+      "head_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+      "id": 36021770890,
+      "name": "CD",
+      "run_attempt": 1,
+      "updated_at": "2026-09-24T15:56:27Z"
+    }
+  ],
+  "partial_collection_seal_sha256": "8a1471f62e21e97ff69701c8df06c7cc4ae620ea1eb55fd0709de9a070f40e01",
+  "partial_collection_unchanged": true,
+  "preserved_partial_collection_file_count": 109,
+  "production_promotion_authority": false,
+  "scope": "RETROSPECTIVE_EXACT_RELEASE_ACCEPTANCE_NOT_CURRENT_RUNTIME_OBSERVATION",
+  "transport_artifact": {
+    "artifact_id": 10818580987,
+    "files": {
+      "manifest.json": "8ad4221bccf5eda8a8e99fb9bee298a8c74d3e39a91b6b17ec63ce53e22cbe2e",
+      "roundtrip.json": "e96fcac9fa16c6a0d66c492171cf05c0c5a1ae1ef674aebb685c9e66d2036127"
+    },
+    "run_id": 36021770890,
+    "zip_digest": "sha256:93947d8e9e12a16849fa09d951366837ecd0e8604a9ed1579e9e9132e82d6ae6"
+  },
+  "verified_at_utc": "2026-09-28T02:10:04.389541+00:00",
+  "workflow_rerun": false
+}

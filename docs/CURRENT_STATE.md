@@ -1,13 +1,17 @@
 # 当前项目状态
 
-最新接续（2026-09-24）：**LOCAL_SAFETY_PROMOTION_INTERLOCK_PASS_REMOTE_PENDING**。
+最新结案（2026-09-28）：**SAFETY_PROMOTION_INTERLOCK_ENGINEERING_DELIVERED**。
 安全撤回与晋升拒绝联动已实现：原日志不受平仓重基准截断，boot/配置/二进制绑定，
 撤回/缺证/畸形/错身份拒绝commit，当前事务拒绝不能被后续收益或正常报告自动清除。
-本机119/119、Linux119/119，410份相关源码一致；只读既有真实模型的七类隔离场景通过。
-三处实现/夹具/环境遗漏均先暂停、确认根因和路线后原命令唯一复验，原失败保留，gate READY。
-当前准备main及既有CI/CD交付，尚不声称远端通过；config未改、无unlock/恢复或真实候选激活。
+代码21e8d46已于9月24日main推送并部署；本机/Linux/CI/CD镜像均119/119，410份本地相关源码一致。
+六组远端收据、94份文件、真实运行日志安全身份独立复算及七类隔离场景全部通过。
+当次release/容器revision一致、running、重启0；runtime仍PASS_WITH_ACTIONS、execution NOT_EVALUATED。
+本轮9月28日完成旧发布的追溯验收，不冒充今天新健康观测。六次本地实现/验证/观察归档失败
+均暂停、具名复盘及原命令唯一复验，原失败保留，gate READY；其中原API故障上游原因仍UNKNOWN。
+config未改、无unlock/恢复或真实候选激活；Archive仍INSUFFICIENT，V4严格仅原超时段FAIL。
 旧四份HALTED、NO_QUALIFIED_CANDIDATE、C2 NOT_QUALIFIED不变。
-详见[本批结果与边界](reviews/2026-09-24-safety-promotion-interlock-result.md)。下列为历史结果，不覆盖本段。
+本批工程收口，不等两周、不重复发布；下一实质关口为具名候选准入及启用/恢复合同，缺候选即NO_GO，
+不重开旧研究或自动启动canary/336小时计时。详见[结果与具体后续关口](reviews/2026-09-24-safety-promotion-interlock-result.md)。下列为历史结果，不覆盖本段。
 
 最新结案（2026-09-23）：**INDEPENDENT_SAFETY_WITHDRAWAL_ENGINEERING_DELIVERED**。用户选择的独立安全撤回已由`d80f409`推送main并真实部署；本机、Linux、CI、CD镜像内均119/119。部署前证据往返、部署后六组收据及同模型安全轨迹独立复算通过，94份文件（含两份隐藏锁）完整。实际release/容器revision一致、running、重启0，Smoke与固定工程回归成功；安全退化在第1200根bar撤回、权重0.55，后336次观测不解锁，应用/发送/持久化/重启、多桶和重报价边界已覆盖。首轮Linux的/tmp noexec失败已确认根因、限定修复并原命令唯一复验；原失败和四份HALTED均保留，新gate READY。运行仍PASS_WITH_ACTIONS、execution NOT_EVALUATED；Archive仍INSUFFICIENT、V4精确保留唯一旧超时FAIL。**本批工程收口；config profile未改，新触发器默认关闭，不声称线上已启用、真实交易或盈利资格。** 不默认等两周、不重开旧研究；后续实质缺口是合格市场候选与启用/恢复治理，不重复修发布链代替目标验证。见[阶段结果](reviews/2026-09-23-independent-safety-withdrawal-result.md)、[交付证据](reviews/2026-09-23-independent-safety-withdrawal.evidence.json)、[本地证据](reviews/2026-09-23-independent-safety-withdrawal.local-evidence.json)及[行为合同](EVOLUTION_SAFETY.md)。以下旧停止/待选择均是历史时点，不覆盖本次结果。
 

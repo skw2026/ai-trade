@@ -1,0 +1,328 @@
+{
+  "artifact_receipts": {
+    "archive": {
+      "artifact_id": 10818626763,
+      "run_attempt": 1,
+      "run_id": 36023830878,
+      "zip_digest": "sha256:10ee3dd0c8ae15247f3b3e2e68f16032c79660b5ce0993a6f4f755bf37b24292"
+    },
+    "fixed": {
+      "artifact_id": 10819605209,
+      "run_attempt": 1,
+      "run_id": 36023830810,
+      "zip_digest": "sha256:c3d8de212515983c9d41184022f8f86768ae3c0dcab539c80bca865f8c6654a6"
+    },
+    "learning": {
+      "artifact_id": 10818376059,
+      "run_attempt": 1,
+      "run_id": 36021770890,
+      "zip_digest": "sha256:90b63ad46fe0aecdffeb24d53dc804a994abab59654d3c944f37d026347c4c59"
+    },
+    "smoke": {
+      "artifact_id": 10819315568,
+      "run_attempt": 1,
+      "run_id": 36023830772,
+      "zip_digest": "sha256:5c065cc56cd0e13affe518808ad78ecf4e46323b4e5a8fc041218ba676a482cd"
+    },
+    "v4": {
+      "artifact_id": 10818052172,
+      "run_attempt": 1,
+      "run_id": 36023830765,
+      "zip_digest": "sha256:f2dab28ea2959e6d534cb563c057b77adea36025baa34b42d51542c5f7734c33"
+    }
+  },
+  "decision": "SAFETY_PROMOTION_INTERLOCK_ENGINEERING_DELIVERED",
+  "demo_trading_authority": false,
+  "deployment": {
+    "container_image_revision": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+    "container_restart_count": 0,
+    "container_status": "running",
+    "expected_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+    "release_git_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+    "status": "PASS"
+  },
+  "engineering": {
+    "boundary": "FIXED_ENGINEERING_SEPARATE_FROM_LIVE_DATA_QUALITY",
+    "boundary_file_sha256": "11d19c45c54cfeb3e2d4a87f7704e590169e85d80ffa05f0b6fcfae5b5c809b3",
+    "business_qualified": false,
+    "data_quality": {
+      "archive_decision": "INSUFFICIENT_ARCHIVE_LIFECYCLE",
+      "known_failure": {
+        "artifact_checksums_verified": true,
+        "phase": "snapshot",
+        "reason_code": "POLL_LATENCY_EXCEEDS_CONTRACT",
+        "report": "20260922T035334.633790Z.json",
+        "report_sha256": "65cf0282562da2edae5eb0a28e983a5abc21511431f051a212da14115c55c350",
+        "snapshot_line": 3
+      },
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "Option Archive Lifecycle Audit",
+          "run_attempt": 1,
+          "run_id": 36023830878
+        },
+        {
+          "conclusion": "failure",
+          "name": "Option Lifecycle V4 Gate",
+          "run_attempt": 1,
+          "run_id": 36023830765
+        }
+      ],
+      "status": "FAIL",
+      "v4_decision": "INVALID_OPTION_LIFECYCLE_ARCHIVE"
+    },
+    "decision": "ENGINEERING_PASS_DATA_NOT_QUALIFIED",
+    "demo_activation_authorized": false,
+    "engineering": {
+      "closure_latched": true,
+      "runs": [
+        {
+          "conclusion": "success",
+          "name": "CI",
+          "run_attempt": 1,
+          "run_id": 36021770996
+        },
+        {
+          "conclusion": "success",
+          "name": "CD",
+          "run_attempt": 1,
+          "run_id": 36021770890
+        },
+        {
+          "conclusion": "success",
+          "name": "Closed Loop Smoke",
+          "run_attempt": 1,
+          "run_id": 36023830772
+        },
+        {
+          "conclusion": "success",
+          "name": "Fixed Engineering Regression",
+          "run_attempt": 1,
+          "run_id": 36023830810
+        }
+      ],
+      "status": "PASS"
+    },
+    "historical_failure_reclassified_as_pass": false,
+    "input_sha256": {
+      "archive": "932e5aa32398283e0c89bd66851b3df3c81d38ed846ab1d16a1f58f979985f0f",
+      "closure": "d23b2a7805d0b9f93741b7a0ee64170d6011fa88d812fbe060366ee01ed6f396",
+      "freshness": "54402134e3e6d6ed60a9c3222ea16f792062a77a6f9727a59f2980257d04ae94",
+      "runtime": "dd0c20825b51fdc60ca7ccdfc78145cd9c0588ad096879ff188cb32d3f305839",
+      "snapshot": "73212895756a4238eac808d0ae161eafee2a33be4d46366ed6b18b66ae701fe3",
+      "v4": "8f2a729563a8054e7772c3f3f38e68c5b55bdf397b7c504a365e3ea91b5fe0e1"
+    },
+    "live_activation_authorized": false,
+    "promotion_authority": false,
+    "release_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+    "runtime": {
+      "account_sync_status": "OK",
+      "execution_status": "NOT_EVALUATED",
+      "protection_status": "PASS",
+      "verdict": "PASS_WITH_ACTIONS"
+    },
+    "schema_version": "engineering_release_result_v1"
+  },
+  "learning_report_sha256": "0585754ad4b501093474181c13a2251c898e7d5c1957e7faca8e38f5076711df",
+  "live_safety_profile_enabled": false,
+  "local_evidence_sha256": "362bc065fb1c53a7a2b5f6d06e44f70d5bbec86ef6fc1dd4243259d14ecbd19b",
+  "local_regression": {
+    "linux": {
+      "log_sha256": "b0d3f6d36f2828d45fa0c896af4c058bb5cb61705b8b4b57a7892d679d8ea0d2",
+      "seconds": 91.54,
+      "tests": 119
+    },
+    "native": {
+      "log_sha256": "47000c4c2d4e4525bfa8984983f09e5b1c03e852f6b91a9f200e85deaac79891",
+      "seconds": 166.09,
+      "tests": 119
+    }
+  },
+  "market_economic_evidence": false,
+  "observed_at_utc": "2026-09-25T01:12:39.461683+00:00",
+  "old_halted_state_sha256": {
+    ".artifacts/engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    ".artifacts/offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    ".artifacts/strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    ".artifacts/validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "old_halted_states_unchanged": true,
+  "production_goals_complete": false,
+  "production_promotion_authority": false,
+  "release_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04",
+  "remote_regression": {
+    "ci": {
+      "job_id": 107708188199,
+      "run_id": 36021770996,
+      "seconds": 233.44,
+      "sha256": "9b61e64b087b0691054ec3ff126bf4150ec8fc7cce47a6289811277e47a56e0e",
+      "tests": 119
+    },
+    "docker": {
+      "job_id": 107708188792,
+      "run_id": 36021770890,
+      "seconds": 192.88,
+      "sha256": "b861df6e66b4d880b4c2f89e5bfaff32a6cf454ea2b921df6af43147d07f0f99",
+      "tests": 119
+    }
+  },
+  "runtime_safety_evidence": {
+    "boot_id": "boot-1790265310310",
+    "grants_trading_authority": false,
+    "identity_count": 1,
+    "invalid_count": 0,
+    "latched_event_count": 0,
+    "missing_count": 0,
+    "persist_failed_count": 0,
+    "proves_economic_qualification": false,
+    "runtime_config_sha256": "4051c0f346b3f1f80b71df7197424e993a2d9c38d818ad57cbfee5bd91388b6f",
+    "runtime_status_count": 4,
+    "schema_version": "evolution_safety_evidence_v1",
+    "scope": "ORIGINAL_LOG_WINDOW_NO_REBASE",
+    "status": "CLEAR",
+    "trade_bot_sha256": "228cb7c5fb1ae1a04757c89d47d18dbd07d60d7967144cf0dbfa8b7c33f966f0",
+    "withdrawn_count": 0
+  },
+  "runtime_safety_log_sha256": "20edf353c7e2e6a1c28c1319c6b2e0bc48c50c50fdd6606e22023e01a0597be7",
+  "safety_cases": {
+    "drift": {
+      "assessments": 5,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 336,
+      "withdrawal": {
+        "tick": 1200,
+        "weight": 0.55
+      }
+    },
+    "positive": {
+      "assessments": 4,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 0,
+      "withdrawal": null
+    },
+    "short": {
+      "assessments": 85,
+      "independent_virtual_ledger_matched": true,
+      "post_withdrawal_observations": 0,
+      "withdrawal": null
+    }
+  },
+  "safety_interlock": {
+    "cases": {
+      "binary": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: identity mismatch: trade_bot_sha256"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "boot": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: identity mismatch: boot_id"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "clear_control": {
+        "decision": "commit",
+        "reason_codes": [],
+        "repeat_decision": "commit",
+        "synthetic_complete_episodes": 30
+      },
+      "config": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: identity mismatch: runtime_config_sha256"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "malformed": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: evidence counts missing or invalid"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "missing": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: evidence missing or unsupported"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      },
+      "withdrawn": {
+        "decision": "rollback",
+        "reason_codes": [
+          "evolution safety: transaction requires new qualification; automatic recovery forbidden",
+          "evolution safety: state is not explicitly CLEAR",
+          "evolution safety: evidence incomplete or withdrawal observed",
+          "evolution safety: identity mismatch: boot_id",
+          "evolution safety: identity mismatch: runtime_config_sha256",
+          "evolution safety: identity mismatch: trade_bot_sha256"
+        ],
+        "repeat_decision": "rollback",
+        "synthetic_complete_episodes": 30
+      }
+    },
+    "live_runtime_observed": false,
+    "production_promotion_authority": false,
+    "scope": "TEST_ONLY_SYNTHETIC_POSITIVE_ECONOMICS_REFUSAL",
+    "status": "PASS"
+  },
+  "safety_model_sha256": "e08e4ca2a997624dbee70adc032cc9a579f14db9b1228115f1d33b73dc764daf",
+  "schema_version": "safety_promotion_delivery_v1",
+  "transport": {
+    "artifact_id": 10818376059,
+    "demo_trading_authority": false,
+    "file_count": 94,
+    "full_mechanism_valid": false,
+    "hidden_lock_count": 2,
+    "manifest_sha256": "8ad4221bccf5eda8a8e99fb9bee298a8c74d3e39a91b6b17ec63ce53e22cbe2e",
+    "market_economic_evidence": false,
+    "production_promotion_authority": false,
+    "run_attempt": 1,
+    "run_id": 36021770890,
+    "schema_version": "evidence_transport_receipt_v1",
+    "scope": "TEST_ONLY_EVIDENCE_TRANSPORT",
+    "status": "PASS",
+    "verification_git_sha": "21e8d46f9506b7c6ef88fa835005ff3331492b04"
+  },
+  "transport_step_times": {
+    "Deploy to ECS": {
+      "completed_at": "2026-09-24T15:55:39Z",
+      "started_at": "2026-09-24T15:53:51Z"
+    },
+    "Download Offline Evidence Roundtrip": {
+      "completed_at": "2026-09-24T15:53:10Z",
+      "started_at": "2026-09-24T15:53:09Z"
+    },
+    "Prepare Offline Evidence Transfer": {
+      "completed_at": "2026-09-24T15:53:08Z",
+      "started_at": "2026-09-24T15:53:08Z"
+    },
+    "Upload Offline Evidence Transfer Receipt": {
+      "completed_at": "2026-09-24T15:53:10Z",
+      "started_at": "2026-09-24T15:53:10Z"
+    },
+    "Upload Offline Learning Evidence": {
+      "completed_at": "2026-09-24T15:53:09Z",
+      "started_at": "2026-09-24T15:53:08Z"
+    },
+    "Verify Offline Evidence Roundtrip": {
+      "completed_at": "2026-09-24T15:53:10Z",
+      "started_at": "2026-09-24T15:53:10Z"
+    }
+  },
+  "transport_verified_before_deploy": true
+}

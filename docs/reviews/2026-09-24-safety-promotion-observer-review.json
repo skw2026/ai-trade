@@ -1,0 +1,33 @@
+{
+  "failure_id": "4d77e87bd3364a6fb83387188520b7d0",
+  "decision": "retry",
+  "goal": "Read-only exact-SHA workflow observation, followed by independent required artifact acceptance",
+  "expected": "Observer retains actual API failure evidence and completes only after all six exact-SHA first-attempt workflows finish",
+  "observed": "Observer stopped with API_ERROR from a nonzero gh api result. It discarded return code and stderr, leaving no upstream diagnostic. Separate read-only queries now return all six completed original runs: CI/CD/Smoke/fixed/Archive success, V4 failure still unaccepted.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Confirmed local observer defect: read_api captured but discarded the failed subprocess diagnostics and propagated a generic API_ERROR, preventing attribution. This is a read-channel/diagnostic failure, not an observed CI/CD failure. The specific upstream cause of the original gh error remains unknown and is NOT inferred from later query success.",
+  "upstream_error_cause_status": "unknown",
+  "evidence": [
+    ".artifacts/safety-promotion-20260924/read-error-1790265985792055000.json",
+    ".artifacts/safety-promotion-20260924/delivery_base.failed.py:read_api",
+    "GitHub original CI 36021770996, CD 36021770890, Smoke 36023830772, fixed 36023830810, Archive 36023830878, V4 36023830765"
+  ],
+  "next_action": "Retain return code and bounded stderr/stdout in private diagnostics. One identical read-only observer retry against the unchanged release SHA. No API retry classification or workflow criterion changes, no rerun/redeploy, and no reclassification of the historical channel failure. Artifact acceptance remains a separate mandatory step.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Verify the release already deployed by existing CI/CD, without repeating any service or trading mutation",
+    "data_feasibility": "Read-only API inspection independently confirms six immutable run identities now exist and are completed. Their artifacts still require full validation",
+    "method_feasibility": "Only diagnostic retention changes; the same argv/cwd/SHA/run-attempt/event/status requirements remain, including failure on another API error",
+    "budget_and_exit": "One original observer retry, bounded by original 3300 seconds and phase effective-work budget; completed runs should need one observation. Another read failure blocks again with retained cause, no blind rerun"
+  },
+  "route_reassessment": {
+    "old_route_failure": "A generic observer error was incorrectly too lossy to diagnose its upstream source. More strategy samples, code releases or image rebuilds cannot solve missing observation diagnostics",
+    "replacement": "Keep deployed code and all workflows unchanged; repair private error recording, read the existing immutable outcomes once, then require six independent artifact groups and raw safety-log recomputation",
+    "feasibility_evidence": "Both complete local suites passed; exact remote CI and CD succeeded and post-deploy outcomes exist. Original failures remain in the gate history and upstream cause remains explicitly unknown",
+    "budget": "Diagnostic-only local patch plus one same-command read-only retry; no new deployment, research, account operation or acceptance relaxation",
+    "stop_condition": "Any subsequent channel failure, new workflow failure, unknown V4 segment, missing receipt or identity mismatch blocks final delivery; no criterion change or gate reset"
+  }
+}
