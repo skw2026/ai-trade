@@ -1,0 +1,32 @@
+{
+  "status": "DESIGN_VALIDATED_ONLY",
+  "calendar_slots": 157,
+  "historical_capacity": "NOT_EVALUATED",
+  "economic_effect": "NOT_EVALUATED",
+  "preserved_files": 46,
+  "preserved_gates": 14,
+  "new_research_reads": 0,
+  "economic_attempts": 0,
+  "candidate_qualified": false,
+  "source_sha256": {
+    "docs/plans/2026-09-28-eth-net-supply-design.md": "bb200b7be3df58859a2b7a0e717c6e9b58de063465cc26da5389c839417148f6",
+    "docs/contracts/eth_net_supply_proxy_v1.json": "0e11227b41fd8edf126e4bf77092878a40c3008486e6839f1c83911b59b210cd",
+    "tools/eth_net_supply_contract.py": "872f223f1372fd8c70f2ab908a088d3c4d4a2a16840d20f582e2027c01702b63",
+    "tools/test_eth_net_supply_contract.py": "9405ab8b974c1d8d2e80c656eee76d34caf553cced52adfc1d409d913beb2694"
+  },
+  "validation": {
+    "synthetic_tests_passed": 20,
+    "existing_closeout_tests_passed": 8,
+    "unexpected_failures": 0
+  },
+  "publication": {
+    "remote_main_observed": "db5f29bf66f5feeaee23f4156271049716d4f735",
+    "query": "gh api repos/skw2026/ai-trade/git/ref/heads/main --jq '.object.sha'",
+    "observation_date_utc": "2026-09-28",
+    "actual_push_attempts_this_stage": 0,
+    "previous_publication_gate": "BLOCKED",
+    "server_internal_cause": "UNKNOWN",
+    "delivered": false
+  },
+  "scope_note": "Calendar counts and tests are synthetic/design evidence only; no historical capacity or economic experiment was run."
+}

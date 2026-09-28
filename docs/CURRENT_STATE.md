@@ -1,5 +1,21 @@
 # 当前项目状态
 
+最新设计结案（2026-09-28）：**DESIGN_VALIDATED_ONLY，净供给代理合同已固定**。
+[合同与结果](reviews/2026-09-28-eth-net-supply-design-result.md)：周频7日供给净变化，
+价格动量/始终做多两个对照；157预定周，容量144/四格20/两半64前置；固定成本、
+25%参考配置与8%回撤出口。20合成测试+8旧关闭回归通过，46旧文件含14gate不变。
+0新增研究读取/真实容量/收益实验；历史版本与经济效果仍未知，NO_QUALIFIED_CANDIDATE
+不变。仅本地交付；只读远端main仍db5f29b，旧发布BLOCKED、无实际重推/部署。
+下一实质范围为合同所列8小时/120读取/1次完整否定筛查，尚未授权，不拆成逐步批准。
+没有候选等待时钟或两周等待。下列输入评审及发布故障为保留历史，不覆盖本结论。
+
+交付补充（2026-09-28）：下述ETH输入评审已本地提交`abc2988`，但GitHub push
+返回Internal Server Error；ref API与ls-remote确认远端仍`db5f29b`，无新工作流/CD。
+权限/dry-run正常不能证明实际写入恢复，服务端内部原因UNKNOWN；未重复push。
+本轮交付gate BLOCKED（`bd66bb677ac44b349daedd077455bc0b`），不是输入评审未完成。
+详见[发布故障及只读诊断](reviews/2026-09-28-eth-supply-publication-failure.md)。
+此故障归档在本地，未宣称已经推送；13旧gate不改，无账户/交易/部署动作。
+
 最新输入评审结案（2026-09-28）：**PARTIAL_INPUTS，原燃烧归因暂不立项**。
 [ETH字段/历史/时钟评审](reviews/2026-09-28-eth-supply-input-result.md)已实际核验：
 免费全网发行IssTotNtv、总供给SplyCur可读；专用burn与eth_cl罚没不在免费目录。

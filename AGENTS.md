@@ -11,6 +11,15 @@
 
 ## 开始与阶段边界
 
+- 2026-09-28用户同意净供给变化代理的合同设计，按
+  `docs/plans/2026-09-28-eth-net-supply-design.md`完成固定合同/合成验证/本地交付。
+  90分钟、0新增研究读取/真实容量/收益/回测；不续上一批预算，不解除发布BLOCKED。
+  新设计gate仅验本合同，14旧gate及原件保持；后续筛查为单独实质范围决定。
+  已完成DESIGN_VALIDATED_ONLY：20合成/8旧关闭回归通过，46文件含14gate保持，
+  真实容量/经济效果NOT_EVALUATED；结果见`docs/reviews/2026-09-28-eth-net-supply-design-result.md`。
+  后续8小时/120读取/1尝试为完整筛查提案，尚未执行或获批；不拆成逐步索权。
+  本地交付、不重推；原发布BLOCKED/未知根因和NO_QUALIFIED_CANDIDATE保持。
+
 - 2026-09-28用户同意ETH燃烧/净发行输入评审，按
   `docs/plans/2026-09-28-eth-supply-input-review.md`连续完成字段、免费历史入口、
   发布/修订时钟和立项裁决；自限90分钟/40公开读取（真实API至多12），0回测/
@@ -21,6 +30,10 @@
   2025-06-01样例completion记录为6月23日，初发/重算原因UNKNOWN，不能拿T+2
   冒称PIT。0行情/回测；原燃烧归因不立项，净供给代理仅为下一合同设计建议。
   见`docs/reviews/2026-09-28-eth-supply-input-result.md`；不自动续实验/采购/等待。
+  发布补充：本地abc2988被GitHub服务端Internal Server Error拒绝，远端仍db5f29b。
+  只读权限/dry-run正常，内部根因UNKNOWN；交付验收gate BLOCKED、未实际重推。
+  见`docs/reviews/2026-09-28-eth-supply-publication-failure.md`；仅归档诊断，不将输入
+  评审通过冒称远端交付或自动绕过复验边界。
 
 - 2026-09-28用户明确“同意”容量前置的新机制端到端批次，按
   `docs/plans/2026-09-28-capacity-first-new-mechanisms.md`连续执行：8有效小时、
