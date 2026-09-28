@@ -11,6 +11,20 @@
 
 ## 开始与阶段边界
 
+- 2026-09-28用户在独立期权成交压力代理方案后回复OK，按
+  `docs/plans/2026-09-28-option-flow-proxy.md`连续完成新独立有界筛查：总计8有效
+  工程小时（含前2小时可行性）、200匿名公开行情GET、30分钟计算、1次实验。
+  不再等待最终论文/邮件；不是E1复现，不把taker方向当dealer净持仓/Gamma。
+  先20 GET内只核数据可行性，再冻结经济合同，不调参/训练/账户/交易/采购/部署。
+  新gate `.artifacts/option-flow-proxy-20260928/validation-state.json`仅服务此授权，
+  十份旧gate及所有关闭结论保留，main交付[skip ci]并验证无自动CI/CD。
+  本批已在数据可行性出口停止：12 GET（4x500、4x400、4x200），历史成交无
+  可验收输入；主站最新控制可读，历史服务具体内部根因UNKNOWN。10项原探测
+  合成测试通过，首个正式GET失败后11项只读诊断，无正式retry/经济实验/交易。
+  gate HALTED，十份旧gate及计划hash不改；只完成诊断交付，不自动续预算。
+  见`docs/reviews/2026-09-28-option-flow-proxy-result.md`。接续实质输入为同源完整
+  历史文件/已授权只读供应商或官方历史入口恢复证据，不再以最终论文为前置。
+
 - 2026-09-28接续结案的只读诊断补正见
   `docs/reviews/2026-09-28-e1-input-definition-erratum.md`：E1方法与官方字段映射
   尚未核清，不能断言购买历史OI必然解决，也不能把taker方向当dealer净持仓。

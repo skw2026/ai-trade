@@ -1,0 +1,213 @@
+{
+  "schema": "option_flow_proxy_diagnostic_v1",
+  "scope": "DIAGNOSTIC_METADATA_NOT_ACCEPTANCE",
+  "decision": "INSUFFICIENT_HISTORICAL_TRADE_ACCESS",
+  "failure_id": "0ea648c079f54d959163721d1c0ba0ec",
+  "market_gets": 12,
+  "economic_experiments": 0,
+  "economic_compute_seconds": 0,
+  "qualified_candidates": 0,
+  "formal_retries": 0,
+  "account_access": false,
+  "deployment": false,
+  "old_gates_unchanged": true,
+  "records": [
+    {
+      "attempt": "000001",
+      "at": "2026-09-28T09:46:43.126944+00:00",
+      "key": "options-1785742200000-1785743699999",
+      "http_status": 500,
+      "raw_sha256": "d96b9bdef6200fb3154d441623fe0025dd761b26ce279cce81193a5dd488f0e5",
+      "hash_matches": true,
+      "api_error": {
+        "message": "internal_server_error",
+        "code": 11094
+      },
+      "server_processing_us": 20001602,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000002",
+      "at": "2026-09-28T09:47:40.014770+00:00",
+      "key": "diagnosis-main-same-window",
+      "http_status": 200,
+      "raw_sha256": "28d39c337d69ccef22451a0104763a84113a587440785aa1366ea4cb9c98350b",
+      "hash_matches": true,
+      "api_error": null,
+      "server_processing_us": 413,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000003",
+      "at": "2026-09-28T09:48:17.002435+00:00",
+      "key": "diagnosis-history-count1",
+      "http_status": 500,
+      "raw_sha256": "8b38a75413342c9f452350ff4d6d13b22f7f1304071a9d32d7c2db42c0598044",
+      "hash_matches": true,
+      "api_error": {
+        "message": "internal_server_error",
+        "code": 11094
+      },
+      "server_processing_us": 20001299,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000004",
+      "at": "2026-09-28T09:48:37.911548+00:00",
+      "key": "diagnosis-history-recent-count1",
+      "http_status": 500,
+      "raw_sha256": "54ed5f332c736fe0fefca56517854426607b3f73909d28ac4ccb21574c222057",
+      "hash_matches": true,
+      "api_error": {
+        "message": "internal_server_error",
+        "code": 11094
+      },
+      "server_processing_us": 20001463,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000005",
+      "at": "2026-09-28T09:48:58.798190+00:00",
+      "key": "diagnosis-main-recent",
+      "http_status": 200,
+      "raw_sha256": "403fbb603f46f155058360b6aed83707b103f64402efaef4e2e8b029d9e03a6c",
+      "hash_matches": true,
+      "api_error": null,
+      "server_processing_us": 219,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000006",
+      "at": "2026-09-28T09:48:59.719856+00:00",
+      "key": "diagnosis-history-metadata",
+      "http_status": 400,
+      "raw_sha256": "960791e915a9da6986020f3ed798034b522858d7f6cd20ea00f56a8dbd1e6ed3",
+      "hash_matches": true,
+      "api_error": {
+        "message": "Invalid params",
+        "data": {
+          "reason": "wrong format",
+          "param": "instrument_name"
+        },
+        "code": -32602
+      },
+      "server_processing_us": 603,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000007",
+      "at": "2026-09-28T09:49:46.061684+00:00",
+      "key": "diagnosis-main-latest",
+      "http_status": 200,
+      "raw_sha256": "932f500f793301a333a2fb231571ffbf8eea6f39b6cadd4167899461ddb41360",
+      "hash_matches": true,
+      "api_error": null,
+      "server_processing_us": 219,
+      "trade_count": 1
+    },
+    {
+      "attempt": "000008",
+      "at": "2026-09-28T09:49:46.875074+00:00",
+      "key": "diagnosis-history-option-metadata",
+      "http_status": 400,
+      "raw_sha256": "142690f25a0340bf2ea188b71de259a9730f81ff6598614379d6e69960588c13",
+      "hash_matches": true,
+      "api_error": {
+        "message": "Invalid params",
+        "data": {
+          "reason": "wrong format",
+          "param": "instrument_name"
+        },
+        "code": -32602
+      },
+      "server_processing_us": 1242,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000009",
+      "at": "2026-09-28T09:49:47.687785+00:00",
+      "key": "diagnosis-history-other-method",
+      "http_status": 500,
+      "raw_sha256": "80921c7fe8320db21e07545138d0d5b10845821e0d5927885445955e607b8f1c",
+      "hash_matches": true,
+      "api_error": {
+        "message": "internal_server_error",
+        "code": 11094
+      },
+      "server_processing_us": 20003257,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000010",
+      "at": "2026-09-28T09:50:08.479905+00:00",
+      "key": "diagnosis-main-other-method",
+      "http_status": 200,
+      "raw_sha256": "ccb4105804d2d302cb4153ac8bcd4cd6210527e7bf6e5b258b3f06bf9a14db4c",
+      "hash_matches": true,
+      "api_error": null,
+      "server_processing_us": 359,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000011",
+      "at": "2026-09-28T09:51:10.673783+00:00",
+      "key": "diagnosis-json-get_last_trades_by_currency_and_time",
+      "http_status": 400,
+      "raw_sha256": "041cb3fc78b8e430313db26131e6d142268cb4d304fa442451488d39797d412f",
+      "hash_matches": true,
+      "api_error": {
+        "message": "Invalid params",
+        "data": {
+          "reason": "value required",
+          "param": "currency"
+        },
+        "code": -32602
+      },
+      "server_processing_us": 747,
+      "trade_count": 0
+    },
+    {
+      "attempt": "000012",
+      "at": "2026-09-28T09:51:11.480726+00:00",
+      "key": "diagnosis-json-get_instrument",
+      "http_status": 400,
+      "raw_sha256": "7d5b485d72585b8b8636505be1782c267ac5efc30d982015712c41b850053e22",
+      "hash_matches": true,
+      "api_error": {
+        "message": "Invalid params",
+        "data": {
+          "reason": "value required",
+          "param": "instrument_name"
+        },
+        "code": -32602
+      },
+      "server_processing_us": 306,
+      "trade_count": 0
+    }
+  ],
+  "old_gates": {
+    "candidate-governance-20260928/validation-state.json": "319bf86388b1eb65b070ba49e428d6d54dfd16038a36c8342aae9bb663b37ebf",
+    "candidate-intake-20260928/validation-state.json": "6d550f9da602e701c4588213d4e0a61b0dbec49499815fcb89d19c5e1a478204",
+    "engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    "offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    "regional-session-20260928/validation-state.json": "4d3ad8ffe9c21c8d898f6cc0a40268e26ea99b2ccadad1eb495779a7077d8a22",
+    "regional-session-screen-20260928/validation-state.json": "55d98883af3749cb656cd4d89e898a2abbbb17d87bbb9826861283c54aa401bb",
+    "safety-promotion-20260924/validation-state.json": "25f7174f281d375cf4576202f2f83b5fcb9cdc3c1307902231c3a3fb77c4fca0",
+    "safety-withdrawal-20260923/validation-state.json": "314d3a9fb5aa60bbfa694e935525474ceec610178d8e43041bc758a53f966a76",
+    "strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    "validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "probe_freeze_sha256": "85c1fb7ef53a422c1e9fcb45eab87cf3cf9633ea3d388ad64d33d05fe4a583de",
+  "plan_unchanged": true,
+  "initial_test_count": 10,
+  "initial_sources": {
+    "tools/option_flow_probe.py": "6c831ae10898c5ccf8fc9a081c7b16108248d8386a4173f037658f6f4e6688bf",
+    "tools/screen_regional_session.py": "44944fc3f53f79e7145b57c66411c8975b77a7960c0e3d20652cb99c1767e201",
+    "tools/test_option_flow_probe.py": "e0f784adc99ed0d432f6238b174410d1e03904091e6a9b499ce4d3a44fa9b53f"
+  },
+  "diagnostic_sources": {
+    "tools/option_flow_probe.py": "5bf369ae2cb7bc9009ea7f2fab198f301a79d8e6e74cf1dc09824be711f27405",
+    "tools/screen_regional_session.py": "44944fc3f53f79e7145b57c66411c8975b77a7960c0e3d20652cb99c1767e201",
+    "tools/test_option_flow_probe.py": "e0f784adc99ed0d432f6238b174410d1e03904091e6a9b499ce4d3a44fa9b53f"
+  }
+}

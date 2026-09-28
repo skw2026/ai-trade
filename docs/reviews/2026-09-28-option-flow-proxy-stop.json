@@ -1,0 +1,34 @@
+{
+  "failure_id": "0ea648c079f54d959163721d1c0ba0ec",
+  "decision": "stop",
+  "goal": "独立期权成交压力代理：先绑定可观察的历史成交输入，再执行唯一经济筛查",
+  "expected": "固定日历窗口的完整成交、到期元数据和底层覆盖可验证；不把空响应当零成交",
+  "observed": "首个正式历史GET HTTP500；随后11次有界只读诊断，四次历史成交请求均11094内部错误，三个主站历史查询为空；主站最新成交可读。历史元数据和GET JSON正文对照另有四次400。未完成数据准入。",
+  "root_cause_status": "unknown",
+  "root_cause": "已定位到历史服务读取层，原始响应显示约20秒服务端处理后internal_server_error。底层数据库/索引/上游依赖的具体原因无服务端日志，不能宣称已知。400的参数兼容问题与500分别记录；不能据此断言整个历史库永久不可用或市场没有成交。",
+  "evidence": [
+    ".artifacts/option-flow-proxy-20260928/raw/000001.bin",
+    ".artifacts/option-flow-proxy-20260928/raw/000003.bin",
+    ".artifacts/option-flow-proxy-20260928/raw/000004.bin",
+    ".artifacts/option-flow-proxy-20260928/raw/000009.bin",
+    "docs/reviews/2026-09-28-option-flow-proxy.evidence.json"
+  ],
+  "next_action": "停止依赖历史输入的采集和经济实验；完成脱敏诊断交付。接续须取得同源完整历史输入或官方历史入口恢复的实质证据，不自动重试、延长样本或改用时间信号。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "unproven",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "去掉论文复现依赖正确；但没有真实期权输入仍不能回答增量预测价值。工具成功不是项目经济目标成功。",
+    "data_feasibility": "官方文档给出历史服务；实测本批入口未取得目标成交。主站最新成功不能覆盖历史空页。供应商月首公开数据在固定60日历中仅两日，不能替代全部日历。",
+    "method_feasibility": "本批代理不需要真实dealer持仓或最终论文，但需完整taker成交和expiry映射。当前不具备，未冻结经济合同、未运行收益、未称机制被否定。",
+    "budget_and_exit": "12/20可行性GET、12/200总GET，0/1实验、0经济计算；前2小时额度内收口，未耗尽预算不构成继续无依据请求的理由。"
+  },
+  "route_reassessment": {
+    "old_route_failure": "等最终论文不能修复历史数据读取；假定官方文档等于实际可用同样不成立。",
+    "replacement": "本次已做主机、数量、日期、方法、最新记录和请求编码的诊断对照；没有获得可验收的等价历史入口，不擅自采购或改窗口。",
+    "feasibility_evidence": "主站最新成交有返回，历史成交四次500，三个主站历史结果为空，错误原文/摘要留存；外部数据可用性未证实。",
+    "budget": "原8有效工程小时/200 GET/30分钟计算不扩张；未使用的预算不自动转成新机制或未来复验许可。",
+    "stop_condition": "当前固定数据入口不可用，未知上游原因无法据实授权retry，门禁HALTED；只完成诊断文档/代码交付，不实施依赖步骤。"
+  }
+}
