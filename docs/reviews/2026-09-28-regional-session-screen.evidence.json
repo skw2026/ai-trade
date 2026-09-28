@@ -1,0 +1,103 @@
+{
+  "schema": "regional_session_fixed_screen_result_v1",
+  "authorization": "User explicitly agreed to corrected research admission and one fixed offline screen",
+  "baseline_git_sha": "59f7a246fc3143c996538d92f4f9903b478a7e48",
+  "mechanism_id": "btc_regional_session_premium_v1",
+  "decision": "INSUFFICIENT_EVIDENCE",
+  "reason": "NET_OR_TIMING_LOWER_BOUND_NOT_POSITIVE",
+  "phase_status": "COMPLETED_SINGLE_SCREEN_NO_CANDIDATE_ACTIVATION",
+  "project_candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "sample_classification": "retrospective_fixed_rule_screen_not_prospective_or_certified_independent_holdout",
+  "window": {"first_entry_utc":"2026-04-01T06:35:00Z","final_cycle_boundary_utc":"2026-09-25T06:35:00Z"},
+  "execution": {
+    "public_gets": 107,
+    "public_get_limit": 120,
+    "successful_pages": 107,
+    "failed_requests": 0,
+    "retries": 0,
+    "collection_seconds": 165.65040111541748,
+    "trade_bars": 51056,
+    "mark_bars": 51056,
+    "funding_events_in_input": 532,
+    "funding_events_with_position": 531,
+    "market_experiments": 1,
+    "compute_started_at_utc": "2026-09-28T04:25:16.890020+00:00",
+    "compute_seconds": 0.10303520801244304,
+    "full_window_evaluated": true,
+    "completed_cycles": 118,
+    "day_observations": 178,
+    "reference_entry_exit_events": 236,
+    "terminal_candidate_quantity": 0,
+    "terminal_control_quantity": 0
+  },
+  "reference_results_per_initial_capital": {
+    "gross_before_reference_costs": 0.07665254459129878,
+    "fees": 0.03248566176548568,
+    "adverse_slippage": 0.011812970980822603,
+    "funding_lo": -0.003546665104777345,
+    "funding_hi": -0.003536678900952065,
+    "candidate_net_lo": 0.0288072467402172,
+    "candidate_net_hi": 0.0288172329440437,
+    "frictionless_time_control_net_lo": 0.051100790219839,
+    "frictionless_time_control_net_hi": 0.051108878930469,
+    "candidate_minus_control_lo": -0.0223016321902518,
+    "candidate_minus_control_hi": -0.0222835572757953,
+    "reference_drawdown_lo": 0.07557104900248035,
+    "reference_drawdown_hi": 0.07557706444811352,
+    "reference_drawdown_limit": 0.08,
+    "max_reference_notional": 0.28185164330277435,
+    "planned_candidate_coin_ms": 44759.77189096543,
+    "planned_control_coin_ms": 44759.77189096543
+  },
+  "bootstrap_per_initial_capital_per_day": [
+    {"block_days":7,"net_lo":-0.00046424008319693365,"net_hi":0.0007985524013338613,"timing_lo":-0.0003103625772690722,"timing_hi":0.000052164425614274785},
+    {"block_days":14,"net_lo":-0.00045225887234713916,"net_hi":0.0007465232405579959,"timing_lo":-0.00030397379469921716,"timing_hi":0.00005137718077716843}
+  ],
+  "inference": {
+    "method": "joint circular moving blocks; 5000 replicates per frozen block length",
+    "bounds": "5th and 95th percentiles: separate one-sided 95 percent bounds, not a two-sided 95 percent interval",
+    "stationarity_and_independent_holdout_certified": false,
+    "time_control_matches": "BTC quantity-hours only; not dollar beta, volatility or tail risk",
+    "control_is_deployable_alternative_strategy": false,
+    "execution_costs_empirically_certified": false,
+    "profitability_qualified": false,
+    "promotion_authority": false
+  },
+  "validation": {
+    "synthetic_tests": {"passed":20,"seconds":0.023},
+    "old_closeout_tests": {"passed":8,"seconds":0.062},
+    "input_grid_and_source_identity": "PASS",
+    "independent_decimal_cash_audit": "PASS",
+    "strategy_rerun_for_audit": false,
+    "old_gate_hashes_unchanged": 8,
+    "new_gate_status": "READY",
+    "new_gate_scope": "technical execution only, not economic qualification",
+    "full_platform_ctest_or_ci_claimed": false
+  },
+  "source_sha256": {
+    "docs/contracts/regional_session_screen_v1.json": "43eb4286376a0f3aea685a94395e7c299bb1fc74ada85091c39238f99affff76",
+    "docs/plans/2026-09-28-regional-session-correction.md": "8c4c04c17c07672d29b590e231ec371bf7b445a5f2ae8205023f124d3e82c3c9",
+    "tools/screen_regional_session.py": "44944fc3f53f79e7145b57c66411c8975b77a7960c0e3d20652cb99c1767e201",
+    "tools/test_screen_regional_session.py": "2880014312e58ec6058da660a0d644c711628e0252902c8d4f6eefdaf73c66eb"
+  },
+  "local_evidence": {
+    "directory": ".artifacts/regional-session-screen-20260928/run",
+    "files": 435,
+    "bytes": 7691495,
+    "raw_response_files": 107,
+    "raw_response_bytes": 7230521,
+    "canonical_index_algorithm": "Sort regular files by relative path; entries {path,bytes,sha256}; json.dumps(entries,sort_keys=True,separators=(comma,colon)).encode(); SHA256",
+    "canonical_index_sha256": "acaaaf847a1c362621a1330ce1fca5432b0ba8d3b78fe2f215b7fb7aab42b96d",
+    "file_sha256": {
+      "plan.json": "0c2b060764a5f2b0067e48927e60feea9f9a9bf7078e2e05552bb03570a0c457",
+      "collection-start.json": "deca035b00d21b7d1524cc26303f97eba12bea79a656dc6fa6729f981fa0abd7",
+      "collection-complete.json": "2038d272f0cffcc2fd5888e026bec68d5f4a67c46ed258dadb33ae8d080456ff",
+      "input-inspection.json": "e6992ef8eede5f5ff4c97bfbd97cfe41f772d0571e327b002d27dadd7f0c6e90",
+      "economic-start.json": "03d8370c0957b7b6fa58cbbab3c90b88a75e5ae4a4903778cf7573c24d31d14f",
+      "result.json": "57551ab91f0725b8214e23acdb20243f101ad302149cb54ce8d9983685133d29",
+      "cash-audit.json": "4698e51f5c9bf6202671031909d54dcca77ae2b641af66c9803942d2dea845ed"
+    }
+  },
+  "authority_used": {"account_access":false,"orders":false,"training":false,"parameter_search":false,"candidate_activation":false,"recovery":false,"deployment":false},
+  "next_action": "Close this fixed screen; no automatic sample extension, parameter/fee changes, second mechanism or candidate activation"
+}
