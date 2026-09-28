@@ -1,0 +1,27 @@
+{
+  "id": "btc-wikipedia-attention-v1",
+  "authority": {"trade": false, "account": false, "deploy": false, "train": false, "tune": false},
+  "priority": "R1 first; R2 deferred if R1 reaches the sole experiment; no result-based switching",
+  "mechanism": "Independent Bitcoin attention-reversal hypothesis motivated by ElBahrawy et al. 2019, not an exact replication or Liu-Tsyvinski momentum strategy",
+  "calendar": {"first_entry": "2022-01-01T12:00:00Z", "end_exclusive": "2026-01-01T12:00:00Z", "spacing_hours": 24, "holding_hours": 24, "reason": "Last four complete calendar years, fixed before fetching any new data"},
+  "attention": {"project": "en.wikipedia", "access": "all-access", "agent": "user", "article": "Bitcoin", "new_day_offset": -2, "old_day_offset": -3, "up_position": -1, "down_position": 1, "equal": "exclude", "lag_after_new_day_end_hours": 36},
+  "known_input_exclusion": {"from": "2021-06-04", "through": "2022-01-27", "reason": "Wikimedia official traffic data-loss incident; exclude decision if either input day overlaps, no imputation"},
+  "availability": {"historical_vintage_proven": false, "scope": "Reconstructed public-data negative screen only; 36h lag exceeds documented usual daily load plus cache, not a first-publication guarantee. Positive result requires PIT/incident audit before any candidate qualification."},
+  "price_control": {"new_price": "entry calendar day minus 1 at 00:00 UTC trade open", "old_price": "entry calendar day minus 2 at 00:00 UTC trade open", "direction": "contrarian: short if new > old, long if new < old", "equal": "exclude"},
+  "capacity": {"minimum_valid_days": 1000, "minimum_each_attention_price_sign_cell": 100, "minimum_each_two_year_half": 400, "require_all_requested_grid_rows": true, "no_return_computation": true},
+  "market": {"host": "https://api.bybit.com", "category": "linear", "symbol": "BTCUSDT", "interval": "60", "funding_grid_hours": 8, "start": "2021-12-30T00:00:00Z", "end_exclusive": "2026-01-01T13:00:00Z"},
+  "cost": {"fee_bps_per_side": 6, "slippage_bps_per_side": 5, "basis": "Fixed reference stress assumption, not verified account tier or historical executed costs", "funding": "Signed actual historical rate times hourly mark open and signed quantity for entry <= timestamp < exit"},
+  "economy": {"allocation": 0.25, "quantity": "allocation times pre-entry reference NAV divided by slipped entry price; constant during each 24h position", "daily_flatten": true, "reinvest": true, "reference_drawdown_stop": 0.08, "risk": "Hourly mark OHLC drawdown lower/upper bounds; >= limit lower is REJECT, upper-only is INSUFFICIENT_RISK_ORDER. Stop immediately; no invented intrabar fill, no later outcome computation.", "controls": ["same-day price contrarian with identical costs", "same-day long with identical costs"], "statistic": "Unit-notional mean net and paired differences to both controls", "bootstrap": {"type": "circular moving-block days", "block_days": 14, "replicates": 4000, "seed": 9282026, "lower_quantile": 0.016666666666666666, "family": "three one-sided bounds, Bonferroni 5%"}, "positive_requirements": "Complete fixed path with no risk stop; all three lower bounds > 0; both two-year halves have positive mean net. Positive means WORTH_INDEPENDENT_CHECK only, never qualified.", "nonpositive": "INSUFFICIENT_EVIDENCE unless definite reference-risk breach gives REJECT"},
+  "budget": {"documentation_reads_used": 23, "documentation_reads_max": 24, "all_public_reads_max": 200, "economic_experiments_max": 1, "compute_seconds_max": 1800, "effective_hours_max": 8},
+  "sources": [
+    "https://arxiv.org/html/1902.04517v2",
+    "https://www.nber.org/papers/w24877",
+    "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+    "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/concepts/page-views.html",
+    "https://lists.wikimedia.org/hyperkitty/list/analytics%40lists.wikimedia.org/thread/3VHDVLXIGIOYHOVAKPMOYKKWUMINSAUI/",
+    "https://wikitech.wikimedia.org/wiki/Data_Platform/Data_Lake/Traffic/Pageview_hourly",
+    "https://bybit-exchange.github.io/docs/v5/market/kline",
+    "https://bybit-exchange.github.io/docs/v5/market/mark-kline",
+    "https://bybit-exchange.github.io/docs/v5/market/history-fund-rate"
+  ]
+}

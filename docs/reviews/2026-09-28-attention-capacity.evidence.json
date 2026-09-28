@@ -1,0 +1,115 @@
+{
+  "actual_public_gets": 99,
+  "all_actual_gets_200": true,
+  "attribution_scope": "Descriptive completed prefix only, not full-history or causal profit attribution",
+  "audit": {
+    "capacity_days": 1430,
+    "cash_max_error": 4.6629367034256575e-15,
+    "old_gates_unchanged": 12,
+    "result_sha256": "b2fb6305ed3c60d953803e248b61140605660a227b86ec1450f5fc71347d3e3f",
+    "statistics_audited": false,
+    "status": "TECHNICAL_AUDIT_PASS_NOT_CANDIDATE_QUALIFICATION",
+    "unit_max_error": 2.6020852139652106e-16
+  },
+  "bootstrap_executed": false,
+  "candidate_qualified": false,
+  "candidate_state": "NO_QUALIFIED_CANDIDATE",
+  "capacity": {
+    "cells": {
+      "-1_-1": 338,
+      "-1_1": 314,
+      "1_-1": 379,
+      "1_1": 399
+    },
+    "eligible": true,
+    "halves": [
+      700,
+      730
+    ],
+    "thresholds": {
+      "minimum_each_attention_price_sign_cell": 100,
+      "minimum_each_two_year_half": 400,
+      "minimum_valid_days": 1000,
+      "no_return_computation": true,
+      "require_all_requested_grid_rows": true
+    },
+    "valid_days": 1430
+  },
+  "completed_positions": 98,
+  "completed_prefix_mean_unit_returns": {
+    "fee": 0.001199644715272707,
+    "funding": -1.7389020143177246e-05,
+    "long_control_net": -0.002841694280746731,
+    "net": -0.0004077931244110457,
+    "price_control_net": -0.0007337249234732899,
+    "raw_gross": 0.0017738914747580038,
+    "slippage": 0.0009994289040395194
+  },
+  "continuation": "Batch closed. No tuning, sample expansion, second experiment, training, trading or deployment.",
+  "contract_sha256": "c578a99a3a6e88f1c1ffb2f52a5aa42dccee4e25e6fbefc905f57a6cd1b2aabd",
+  "documentation_read_units": 23,
+  "economic_experiments": 1,
+  "excluded_days": 31,
+  "input_rows": {
+    "funding": 4391,
+    "mark": 35125,
+    "trade": 35125,
+    "views": 1462
+  },
+  "last_completed_nav": 0.9860698784487274,
+  "limitations": [
+    "Reconstructed pageviews, not proven historical first-publication vintages",
+    "Reference fee/slippage assumptions, not account execution",
+    "Hourly mark extrema identify a definite breach, not an executable stop fill",
+    "Rejects this frozen rule/risk contract, not all attention mechanisms"
+  ],
+  "new_synthetic_tests": 27,
+  "no_later_outcomes_computed": true,
+  "preserved_old_gate_sha256": {
+    "candidate-governance-20260928/validation-state.json": "319bf86388b1eb65b070ba49e428d6d54dfd16038a36c8342aae9bb663b37ebf",
+    "candidate-intake-20260928/validation-state.json": "6d550f9da602e701c4588213d4e0a61b0dbec49499815fcb89d19c5e1a478204",
+    "engineering-freeze-20260921/validation-state.json": "b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    "free-option-flow-20260928/validation-state.json": "73cf7cac5138c3e2132a1c55edf393186250fc48c20ac6bb3d7e17dcc62226d5",
+    "offline-learning-loop-20260922/validation-state.json": "a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    "option-flow-proxy-20260928/validation-state.json": "8197102f64237f978619a34ba319d64a778c4986ffe90e11578ff377a7edb08f",
+    "regional-session-20260928/validation-state.json": "4d3ad8ffe9c21c8d898f6cc0a40268e26ea99b2ccadad1eb495779a7077d8a22",
+    "regional-session-screen-20260928/validation-state.json": "55d98883af3749cb656cd4d89e898a2abbbb17d87bbb9826861283c54aa401bb",
+    "safety-promotion-20260924/validation-state.json": "25f7174f281d375cf4576202f2f83b5fcb9cdc3c1307902231c3a3fb77c4fca0",
+    "safety-withdrawal-20260923/validation-state.json": "314d3a9fb5aa60bbfa694e935525474ceec610178d8e43041bc758a53f966a76",
+    "strict-learning-20260923/validation-state.json": "cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    "validation-gate/state.json": "bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b"
+  },
+  "prior_peak": 1.0599066759106333,
+  "public_reads": 122,
+  "r2_status": "NOT_SELECTED_BEFORE_EXPERIMENT_NO_ECONOMIC_VERDICT",
+  "reason": "REFERENCE_DRAWDOWN",
+  "record_sha256": {
+    "audit.json": "8f306cc913d45aef67a5b2c61efc7f0d77a7e18b1382a7c2f395de2cda28eff1",
+    "capacity.json": "5b44515a7076d6426beb325172bfff09038c6df8b035f6e248eb28b6b122d166",
+    "economy-freeze.json": "ffab6564cba8197baa9da5420411d8005c46e963bb72e29a4969b37f5505e346",
+    "experiment-start.json": "d32708262d1b4b570b536a568b1ff6a4b3edcdeb69495e5a53df23bbdb4cf00f",
+    "freeze.json": "a92008f37225a2651976db0e192751213036d37e787fa8e83b4ad5955b5ced8e",
+    "result.json": "b2fb6305ed3c60d953803e248b61140605660a227b86ec1450f5fc71347d3e3f"
+  },
+  "selected_candidates": 0,
+  "stage": "capacity-first-20260928",
+  "status": "REJECT",
+  "stop": {
+    "at": 1652112000000,
+    "at_utc": "2022-05-09T16:00:00+00:00",
+    "cash": 0.9858978917797879,
+    "entry": 1652097600000,
+    "entry_utc": "2022-05-09T12:00:00+00:00",
+    "lower_drawdown": 0.08039150967160447,
+    "marked_close": 0.9753593309220746,
+    "nav_high": 0.9819065222843536,
+    "nav_low": 0.9746991781231654,
+    "no_fill_invented": true,
+    "phase": "mark_ohlc",
+    "reason": "REFERENCE_DRAWDOWN",
+    "signed_quantity": 7.443373536015222e-06,
+    "status": "REJECT",
+    "upper_drawdown": 0.08039150967160447
+  },
+  "technical_failures": 0
+}
