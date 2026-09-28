@@ -1,0 +1,96 @@
+{
+  "schema_version": "bounded_research_review_v1",
+  "mechanism_id": "btc_regional_session_premium_v1",
+  "baseline_git_sha": "512cb1f7dcc4cc8e5644afcccc69790e7a704eb4",
+  "authorization": "User OK to one effective engineering day, one new mechanism, at most one fixed-parameter offline screen",
+  "status": "INSUFFICIENT_NEW_MECHANISM_BASIS",
+  "project_candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "disposition": "CLOSED_WITHOUT_MARKET_EXPERIMENT",
+  "publication_date_utc": "2026-09-28",
+  "first_recorded_scope_check_utc": "2026-09-28T03:55:37Z",
+  "source_review_finished_by_utc": "2026-09-28T03:58:21Z",
+  "limits": {
+    "effective_engineering_hours": 8,
+    "source_review_minutes": 60,
+    "search_queries": 8,
+    "selected_source_objects": 12,
+    "mechanisms": 1,
+    "market_gets_if_admitted": 120,
+    "fixed_parameter_screens_if_admitted": 1,
+    "formal_compute_minutes_if_admitted": 30
+  },
+  "actual": {
+    "search_queries": 8,
+    "selected_source_objects": 8,
+    "mechanisms": 1,
+    "market_gets": 0,
+    "market_return_calculations": 0,
+    "fixed_parameter_screens": 0,
+    "training_runs": 0,
+    "account_accesses": 0,
+    "orders": 0,
+    "deployments": 0
+  },
+  "queries": [
+    "Bitcoin overnight drift intraday returns time of day paper authors",
+    "Bitcoin overnight returns European hours drift research paper",
+    "site:aaltodoc.aalto.fi \"Crypto never sleeps\" \"pdf\"",
+    "\"Keeping New York’s hours\" \"Bitcoin\" Schmidt Kraft",
+    "\"Kauppinen\" \"Bitcoin\" \"overnight\" \"costs\"",
+    "\"Bitcoin time-of-day\" \"Baur\" pdf [domain: research-repository.uwa.edu.au]",
+    "\"Crypto never sleeps, but humans do\" \"Kauppinen\"",
+    "\"Do regional hours matter for Bitcoin returns\""
+  ],
+  "sources": [
+    {"id":"S1","url":"https://aaltodoc.aalto.fi/items/e4962f5a-045a-4131-b329-cc27926f6c4f","read_scope":"University record abstract via search index, not thesis full text","finding":"Reported full-sample Asian premium weakens in the later regime; retail-cost simulation underperforms buy-and-hold","limits":"Not proof of absolute loss or a Bybit perpetual result"},
+    {"id":"S2","url":"https://research-repository.uwa.edu.au/en/publications/bitcoin-time-of-day-day-of-week-and-month-of-year-effects-in-retu-2/","read_scope":"University abstract and bibliographic page","finding":"Activity patterns are more persistent than return patterns","limits":"Historical sample, not a new replication"},
+    {"id":"S3","url":"https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7384239","read_scope":"Author working-paper abstract via search index","finding":"New York clock predicts activity and volatility, not return direction","limits":"Working paper; full methods not read"},
+    {"id":"S4","url":"https://www.mdpi.com/1911-8074/19/9/692","read_scope":"Publisher search abstract and method snippet","finding":"Search-selected session/reversal rules do not define this exogenous-clock mechanism","limits":"Not adopted; no ETH or second mechanism substituted"},
+    {"id":"S5","url":"https://bybit-exchange.github.io/docs/v5/market/kline","read_scope":"Official endpoint documentation","finding":"Historical trade OHLC endpoint documented","limits":"No market API invocation or coverage certification"},
+    {"id":"S6","url":"https://bybit-exchange.github.io/docs/v5/market/mark-kline","read_scope":"Official endpoint documentation","finding":"Historical mark OHLC endpoint documented","limits":"Mark is not an executable price"},
+    {"id":"S7","url":"https://bybit-exchange.github.io/docs/v5/market/history-fund-rate","read_scope":"Official endpoint documentation","finding":"Historical settlement-rate endpoint documented","limits":"No collection or position-funding reconstruction"},
+    {"id":"S8","url":"https://www.bybit.com/en/help-center/article/Futures-Contracts-Fees-Explained","read_scope":"Official Non-VIP fee explanation","finding":"USDT taker reference 0.055 percent per side","limits":"Not account-specific or historical fee certification"}
+  ],
+  "source_integrity": {
+    "full_text_methods_verified": false,
+    "web_content_byte_hashes_archived": false,
+    "search_index_is_original_document_archive": false
+  },
+  "access_limitations": [
+    {"url":"https://aaltodoc.aalto.fi/items/e4962f5a-045a-4131-b329-cc27926f6c4f","observed":"403 in browser open","upstream_cause":"UNKNOWN"},
+    {"url":"https://www.sciencedirect.com/science/article/pii/S1544612319301710","observed":"403 in browser open","upstream_cause":"UNKNOWN"},
+    {"url":"https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7384239","observed":"403 in browser open","upstream_cause":"UNKNOWN"},
+    {"url":"https://www.mdpi.com/1911-8074/19/9/692","observed":"browser Internal Error","upstream_cause":"UNKNOWN"},
+    {"url":"https://urn.fi/URN:NBN:fi:aalto-202604203194","observed":"not accessible via browser tool","upstream_cause":"UNKNOWN"},
+    {"url":"https://www.mdpi.com/1911-8074/19/9/692/htm","observed":"not accessible via browser tool","upstream_cause":"UNKNOWN"},
+    {"url":"https://aaltodoc.aalto.fi/server/api/core/items/e4962f5a-045a-4131-b329-cc27926f6c4f/bundles","observed":"not accessible via browser tool","upstream_cause":"UNKNOWN"}
+  ],
+  "route_review": {
+    "first_unmet_condition":"Adequate mechanism and method basis before market screening",
+    "goal_alignment":"Return predictability after costs, not activity timing or another engineering pass",
+    "data_feasibility":"Public market interfaces documented; no assertion of downloaded qualified coverage",
+    "method_feasibility":"Full method and net-cost/OOS basis unverified; visible evidence includes regime and cost caveats",
+    "decision":"Stop dependencies and close; do not pick a new clock, asset or mechanism",
+    "not_claimed":["Bybit backtest loss","all session effects disproved","candidate qualified","live runtime health","profitable self-learning achieved"]
+  },
+  "old_gate_sha256": {
+    ".artifacts/validation-gate/state.json":"bc576299059d630fcf400de46dc16b38d6c83591c1dc193433a9c32322f6910b",
+    ".artifacts/engineering-freeze-20260921/validation-state.json":"b31d1a7a87810ff377003adc59f68f212b8a8aecebee7d0116a8c38cb8f0eb8d",
+    ".artifacts/offline-learning-loop-20260922/validation-state.json":"a1afc2526b05335c2c8f6c408c5c12aea5081dc5790a1002bc8e779525a04116",
+    ".artifacts/strict-learning-20260923/validation-state.json":"cb40156a5496c46404fa2f643d4b2b746dc785d97410ae870abfe068b47228c8",
+    ".artifacts/safety-withdrawal-20260923/validation-state.json":"314d3a9fb5aa60bbfa694e935525474ceec610178d8e43041bc758a53f966a76",
+    ".artifacts/safety-promotion-20260924/validation-state.json":"25f7174f281d375cf4576202f2f83b5fcb9cdc3c1307902231c3a3fb77c4fca0",
+    ".artifacts/candidate-governance-20260928/validation-state.json":"319bf86388b1eb65b070ba49e428d6d54dfd16038a36c8342aae9bb663b37ebf"
+  },
+  "new_validation_scope":"Documentation and unchanged closeout boundaries only; never market qualification",
+  "new_validation_state":".artifacts/regional-session-20260928/validation-state.json",
+  "validation": {
+    "closeout_boundary_tests_passed": 8,
+    "closeout_boundary_test_seconds": 0.064,
+    "record_integrity": "PASS",
+    "old_gate_hashes_matched": 7,
+    "gate_status": "READY",
+    "market_evidence_pass": false,
+    "new_ci_result_claimed": false
+  }
+}
