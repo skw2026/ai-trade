@@ -1,0 +1,105 @@
+{
+  "status": "CAPACITY_INSUFFICIENT",
+  "audit": "INDEPENDENT_RAW_CLOCK_RECONSTRUCTION_PASS",
+  "maximum_valid_weeks": 142,
+  "maximum_half_counts": [
+    77,
+    65
+  ],
+  "excluded_by_entry_year": {
+    "2023": 1,
+    "2024": 2,
+    "2025": 12
+  },
+  "unique_decision_violating_days": 78,
+  "maximum_recorded_delay": {
+    "completion_utc": "2025-06-21T23:05:44Z",
+    "day": "2025-05-07",
+    "delay_seconds": 3884744
+  },
+  "reasons": {
+    "COMPLETION_AFTER_DECISION": 15
+  },
+  "supply_rows": 1100,
+  "price_rows": 0,
+  "economic_attempts": 0,
+  "candidate_qualified": false,
+  "preserved_files": 54,
+  "preserved_gates": 15,
+  "actual_gets": 2,
+  "documentation_reads": 12,
+  "clock_capacity_sha256": "6fd8b548103bb8ada051e8ee1b033de69a680e6329f5c17569957e73d995f734",
+  "scope": "FIXED_RECONSTRUCTED_CONTRACT_CAPACITY_FAILURE_NOT_ECONOMIC_REJECTION",
+  "contract_sha256": "0e11227b41fd8edf126e4bf77092878a40c3008486e6839f1c83911b59b210cd",
+  "calendar_slots": 157,
+  "minimum_valid_weeks": 144,
+  "minimum_half_counts": 64,
+  "excluded_weeks": 15,
+  "price_cells": "NOT_EVALUATED",
+  "economic_effect": "NOT_EVALUATED",
+  "closed": true,
+  "new_tests_passed": 20,
+  "design_regressions_passed": 20,
+  "closeout_regressions_passed": 8,
+  "unexpected_formal_failures": 0,
+  "public_read_units_used": 14,
+  "public_read_units_limit": 120,
+  "excluded_entries": [
+    "2023-09-18T12:00:00Z",
+    "2024-08-05T12:00:00Z",
+    "2024-08-19T12:00:00Z",
+    "2025-05-05T12:00:00Z",
+    "2025-05-12T12:00:00Z",
+    "2025-05-19T12:00:00Z",
+    "2025-05-26T12:00:00Z",
+    "2025-06-02T12:00:00Z",
+    "2025-06-09T12:00:00Z",
+    "2025-06-16T12:00:00Z",
+    "2025-06-23T12:00:00Z",
+    "2025-07-07T12:00:00Z",
+    "2025-07-14T12:00:00Z",
+    "2025-07-21T12:00:00Z",
+    "2025-07-28T12:00:00Z"
+  ],
+  "source_sha256": {
+    "docs/plans/2026-09-29-eth-net-supply-screen.md": "1e108d9d55da1a130a64c34f1865e904eaa7cfebab456d9a8cc6b8cb82a37231",
+    "docs/reviews/2026-09-29-eth-net-supply-input-review.md": "0153ae62ed2484e213b1d07920fda8afd03de2f7ff0705f69c30129cef2fd6da",
+    "tools/eth_net_supply_inputs.py": "62eed7ee226a5111677cdb1efdf7cacb09d9874ea8377483ca057ad87f545e14",
+    "tools/test_eth_net_supply_inputs.py": "a78171374b90eb8d37097da626ef559bd6773186320c773f9d056183a3d415c5",
+    "tools/audit_eth_supply_clock.py": "70634b2359c46da373112822d77dc476f5bc12b1527f8221ee1be38699866ba1",
+    "tools/test_audit_eth_supply_clock.py": "7e81154ce54df62696835aa819324be3088a344a4b0d13003c719d2873beae80"
+  },
+  "raw_receipts": [
+    {
+      "url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=eth&metrics=SplyCur%2CAssetCompletionTime%2CAssetEODCompletionTime&frequency=1d&start_time=2022-12-24&end_time=2025-09-18&page_size=1000",
+      "status": 200,
+      "sha256": "a6f73dbd7f07658a6dfafe2b188c2b5c3610a61c3a70f282cc2ec01836b2da25",
+      "bytes": 169903,
+      "retrieved_utc": "2026-09-29T03:20:46Z"
+    },
+    {
+      "url": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=eth&metrics=SplyCur%2CAssetCompletionTime%2CAssetEODCompletionTime&frequency=1d&start_time=2025-09-19&end_time=2025-12-27&page_size=1000",
+      "status": 200,
+      "sha256": "d53aa3c735cfdf5eaed2a83086bc1a4947ecd91a47ae11e610aa49983d6ec6aa",
+      "bytes": 17001,
+      "retrieved_utc": "2026-09-29T03:20:47Z"
+    }
+  ],
+  "independent_audit_sha256": "ccea87c8eafc6fe7830cbdf64009fe647f0c53aab396b15a33933087691dccb1",
+  "clock_limitations": {
+    "entire_asset_not_supply_only": true,
+    "completion_fields_equal_rows": 1100,
+    "rows_with_returned_status_fields": 0,
+    "first_publication_proven": false,
+    "recalculation_vs_first_calculation_cause": "UNKNOWN",
+    "protocol_upgrade_causation_proven": false
+  },
+  "publication": {
+    "actual_pushes_this_stage": 0,
+    "deployed": false,
+    "previous_gate_status": "BLOCKED",
+    "previous_failure_id": "bd66bb677ac44b349daedd077455bc0b",
+    "remote_rechecked_this_stage": false
+  },
+  "closed_utc": "2026-09-29T03:25:08.548705+00:00"
+}
