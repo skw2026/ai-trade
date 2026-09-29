@@ -1,0 +1,123 @@
+{
+  "actual_pushes_this_stage": 0,
+  "branches": [
+    "master"
+  ],
+  "candidate_qualified": false,
+  "cause_of_missing_earlier_history": "UNKNOWN",
+  "commit_count": 65,
+  "corrected_dag_tests_passed": 10,
+  "csv_snapshots_downloaded": 0,
+  "deadlines": [
+    "2023-09-18T12:00:00Z",
+    "2024-08-05T12:00:00Z"
+  ],
+  "economic_attempts": 0,
+  "frozen_source_sha256": {
+    "docs/plans/2026-09-29-eth-supply-vintage-diagnosis.md": "c5cf92bb491ab6a73f7ecdea8a2574b47eb534663a6d63529bceb2e1a31a9438",
+    "tools/diagnose_eth_supply_vintage.py": "127471256f193d04e784214356fd5b7e759fca46b523a851100dc116a1834eda",
+    "tools/test_diagnose_eth_supply_vintage.py": "a29349a8b02373bf2edbf4ff945ecd0c77317ddc0ada8741024e4eac95589331"
+  },
+  "gate_states_preserved": 16,
+  "head_sha": "f1a36afb962731c387bb03982758ab0103063da5",
+  "historical_publication_proven": false,
+  "latest_reported_committer_time": "2026-05-24T13:37:39Z",
+  "merge_commit_count": 2,
+  "new_price_analysis": 0,
+  "oldest_reported_committer_time": "2026-03-26T18:44:35Z",
+  "original_capacity_upper_bound": 142,
+  "original_failure_id": "4d183e021c6743f28c9df8076b52c577",
+  "original_minimum_weeks": 144,
+  "original_status": "CAPACITY_INSUFFICIENT",
+  "parent_chain_complete": true,
+  "preserved_files": 76,
+  "publication_gate": "BLOCKED_UNCHANGED",
+  "receipts": [
+    {
+      "bytes": 200,
+      "retrieved_utc": "2026-09-29T05:34:31.815220+00:00",
+      "sha256": "03c54a1f4f3a016596c0bc7a3382f3b7bb7c6fa7f4cb2443ff5a2e262c3ff234",
+      "status": 200,
+      "url": "https://api.github.com/repos/coinmetrics/data/branches?per_page=100"
+    },
+    {
+      "bytes": 3388,
+      "retrieved_utc": "2026-09-29T05:33:48.735213+00:00",
+      "sha256": "b9801fc0aa4c8bb70a3da22c71ba8c4c311d5af689e0a862250526141ceb37c9",
+      "status": 200,
+      "url": "https://api.github.com/repos/coinmetrics/data/commits?path=csv%2Feth.csv&per_page=1"
+    },
+    {
+      "bytes": 2,
+      "retrieved_utc": "2026-09-29T05:33:31.427758+00:00",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "status": 200,
+      "url": "https://api.github.com/repos/coinmetrics/data/commits?path=csv%2Feth.csv&until=2023-09-18T12%3A00%3A00Z&per_page=1"
+    },
+    {
+      "bytes": 2,
+      "retrieved_utc": "2026-09-29T05:33:32.410683+00:00",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "status": 200,
+      "url": "https://api.github.com/repos/coinmetrics/data/commits?path=csv%2Feth.csv&until=2024-08-05T12%3A00%3A00Z&per_page=1"
+    },
+    {
+      "bytes": 2,
+      "retrieved_utc": "2026-09-29T05:33:49.399275+00:00",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "status": 200,
+      "url": "https://api.github.com/repos/coinmetrics/data/commits?until=2024-08-05T12%3A00%3A00Z&per_page=1"
+    },
+    {
+      "bytes": 836,
+      "retrieved_utc": "2026-09-29T05:33:50.093922+00:00",
+      "sha256": "a65828a94a9a4e79f9fc2806e742f2f253f3e08f24cd960d7d1e874e9cb3d5e1",
+      "status": 200,
+      "url": "https://raw.githubusercontent.com/coinmetrics/data/f1a36afb962731c387bb03982758ab0103063da5/.gitlab-ci.yml"
+    },
+    {
+      "bytes": 208683,
+      "retrieved_utc": "2026-09-29T05:34:31.105920+00:00",
+      "sha256": "627865519b93fd32fe8533edd35f807744dd54bdc4413f4fa1dc6f1bfcd2fa6a",
+      "status": 200,
+      "url": "https://api.github.com/repos/coinmetrics/data/commits?per_page=100"
+    },
+    {
+      "bytes": 2,
+      "retrieved_utc": "2026-09-29T05:34:32.804552+00:00",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "status": 200,
+      "url": "https://api.github.com/repos/coinmetrics/data/tags?per_page=100"
+    }
+  ],
+  "recorded_http_gets": 8,
+  "root_cause_boundary": "Reachable public history starts after target deadlines; reset/import/deletion cause not proven",
+  "root_reported_committer_time": "2026-03-26T18:44:35Z",
+  "root_sha": "606d84a244c53ca53b453addfd74dee7b709b2ba",
+  "scope": "READ_ONLY_DIAGNOSIS_NOT_REOPENING",
+  "signature": {
+    "payload": null,
+    "reason": "unsigned",
+    "signature": null,
+    "verified": false,
+    "verified_at": null
+  },
+  "source_sha256": {
+    "tools/close_eth_vintage_diagnosis.py": "2e4250c28888cebfa5ae5b4459a7727a2469eb92ed9642cd16192622c659c198",
+    "tools/test_close_eth_vintage_diagnosis.py": "66147c3da587bce14979b6815be972ce89fb5c6f0480c31e1ea81d8b3dd6f9ad"
+  },
+  "status": "NO_TARGET_VINTAGES_IN_REACHABLE_PUBLIC_HISTORY",
+  "tags": [],
+  "upstream_public_web_observation": "GitLab project URL redirected to sign-in; no authenticated access attempted",
+  "visible_document_reads": 3,
+  "visible_read_units": 11,
+  "local_result_sha256": "57a6b3f62ca1232de72159e5dddad045f3a795f8e0eaba56d3b6ba67eb4f0c68",
+  "validation": {
+    "unique_new_tests_passed": 18,
+    "old_closeout_tests_passed": 8,
+    "formal_failures_preserved": 1,
+    "reviewed_exact_command_retries": 1,
+    "retry_passed": true,
+    "repair_review": "docs/reviews/2026-09-29-eth-vintage-dag-repair.json"
+  }
+}

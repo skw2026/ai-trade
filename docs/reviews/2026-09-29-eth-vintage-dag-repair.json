@@ -1,0 +1,26 @@
+{
+  "failure_id": "4d183e021c6743f28c9df8076b52c577",
+  "decision": "retry",
+  "goal": "Verify the exact reachable public commit history, pagination and date-limited absence without changing the closed research contract",
+  "expected": "All parent objects reachable from master are represented; no unread page, branch or tag can conceal a target-era reachable commit",
+  "observed": "The first audit failed UNPROVEN_LINEAR_CHAIN at a legitimate two-parent merge, before producing result.json",
+  "root_cause_status": "confirmed",
+  "root_cause": "The auditor incorrectly required each commit to have exactly the next API list item as its sole parent. Saved response contains 65 commits including two merge commits: 301d1843d184a7670c7d72934da0cecb2e152cf0 and 9e5dbc39bbc67bc2e8455294d40ce924cdd67bfa. Every parent SHA is present and there is one root; a DAG is not a linear list. This is our validator implementation error, not missing API pages or provider data failure.",
+  "evidence": [
+    ".artifacts/eth-supply-vintage-diagnosis-20260929/raw/repository-history.bin",
+    ".artifacts/eth-supply-vintage-diagnosis-20260929/receipts/repository-history.json",
+    ".artifacts/eth-supply-vintage-diagnosis-20260929/failed-closeout.py",
+    ".artifacts/eth-supply-vintage-diagnosis-20260929/validation-state.json"
+  ],
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Still only diagnose missing historical versions, no change to 142/144, signal, clock or qualification",
+    "data_feasibility": "Use the same saved eight successful HTTP responses, no new fetch or provider retry; their SHA identities stay unchanged",
+    "method_feasibility": "Check unique nodes, every parent represented, cycle-free traversal, all response nodes reachable from master, one root, full pagination, all reported dates after deadlines, and unchanged branch/tag evidence",
+    "budget_and_exit": "One exact original-argv retry. Include ten synthetic DAG checks inside that command; missing parent/cycle/disconnected node/extra refs still reject. No economic work or new gate. Another failure blocks again."
+  },
+  "next_action": "Repair only close_eth_vintage_diagnosis.py and its synthetic fixtures; preserve the failed source and record. Then retry python3 tools/close_eth_vintage_diagnosis.py once in the same cwd through the same gate."
+}
