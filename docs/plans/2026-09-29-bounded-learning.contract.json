@@ -1,0 +1,90 @@
+{
+  "schema": "bounded_learning_development_v1",
+  "purpose": "Production bounded allocation learning diagnostic, not reopening a closed fixed-rule candidate",
+  "authorization": "docs/plans/2026-09-29-bounded-learning.md",
+  "maximum_engineering_hours": 16,
+  "maximum_market_runs": 1,
+  "maximum_compute_seconds": 1800,
+  "maximum_new_network_requests": 0,
+  "input": {
+    "csv": ".artifacts/mvp-reference-history-20260921/prepared/replay.csv",
+    "sha256": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+    "proof": ".artifacts/mvp-reference-history-20260921/prepared/input-proof.json",
+    "symbol": "BTCUSDT",
+    "interval_ms": 300000,
+    "source_start_ms": 1735603200000,
+    "development_start_ms": 1735689600000,
+    "development_end_exclusive_ms": 1767225600000,
+    "usage": "PREVIOUSLY_SEEN_DEVELOPMENT_ONLY"
+  },
+  "confirmation": {
+    "status": "NOT_ADMITTED",
+    "reason": "No authenticated unused interval; local historical consumption ledger absent",
+    "interval": null,
+    "maximum_runs": 0,
+    "learning_allowed": false,
+    "missing_ledger_is_empty": false
+  },
+  "signal_producers": {
+    "implementation": "src/strategy/strategy_engine.cpp",
+    "trend": "Existing EMA12/26, remaining filters at core defaults",
+    "defensive": "Existing ts_rank(close,20), threshold1.25, ratio1",
+    "regime": "Existing RegimeEngine core defaults with bar_interval_ms300000",
+    "notional_usd": 2500,
+    "initial_equity_usd": 10000,
+    "vol_target_pct": 0,
+    "strategy_parameters_learnable": false
+  },
+  "learning": {
+    "implementation": "src/evolution/self_evolution_controller.cpp",
+    "allowed_fields": ["trend_weight_by_regime", "defensive_weight_by_regime"],
+    "trend_grid": [0.4, 0.45, 0.5, 0.55, 0.6],
+    "maximum_grid_candidates": 5,
+    "defensive_weight": "1-trend_weight",
+    "initial_weights": [0.5, 0.5],
+    "max_step": 0.05,
+    "evaluation_bars": 240,
+    "minimum_update_bars": 72,
+    "clock_ms": 300000,
+    "internal_development_train_fraction": 0.7,
+    "internal_min_train_samples": 10,
+    "internal_min_holdout_samples": 10,
+    "learnability_min_samples": 120,
+    "learnability_min_t_abs": 1.5,
+    "holdout_superiority_min_samples": 10,
+    "holdout_superiority_min_t": 1.5,
+    "fallback_to_factor_ic": false,
+    "safety_withdrawal": true,
+    "risk_fields_learnable": false,
+    "note": "240 bars is a predeclared sample-capacity diagnostic, not the production hourly assessment cadence. Internal holdout belongs to development, never final confirmation. Virtual close-to-close objective is a training proxy; independent next-open cash accounting decides development outcome."
+  },
+  "comparison": {
+    "baseline": "Fixed0.5/0.5, same signals, same data, same nominal cap",
+    "adaptive": "One production strict learner, no hyperparameter search",
+    "execution": "Previous completed-bar target executed at next bar open; quantities held through bar; funding at open charged to prior holder before rebalance",
+    "quantity_step": 0.001,
+    "price_tick": 0.1,
+    "entry_and_exit_fee_bps": 5.5,
+    "adverse_slippage_bps": 1,
+    "stress_cost_multiplier": 2,
+    "reference_drawdown_stop": 0.08,
+    "funding": "Historical timestamped rate; mark_open for old holder",
+    "intrabar_risk": "Conservative mark high/low equity envelope; stop on either arm base or doubled cost reaching8%",
+    "terminal": "Explicit adverse close and fee, only if no risk-boundary ambiguity",
+    "exposure_attribution": "Additional two unit-direction arms with2500 notional when respective signal is nonzero; diagnostic only, not another selected model"
+  },
+  "development_pass": {
+    "all_required": [
+      "Complete predeclared development period, no safety withdrawal or risk stop",
+      "At least1 accepted bounded update",
+      "Adaptive base and stress net profit positive",
+      "At least26 complete weekly blocks",
+      "One-sided95% HAC lag4 lower bounds positive for adaptive stress and paired base uplift",
+      "One-sided95% HAC lag4 lower bound positive for unit-direction paired uplift"
+    ],
+    "successful_development_is_not_qualification": true,
+    "candidate_status": "NO_QUALIFIED_CANDIDATE"
+  },
+  "exits": ["REFERENCE_RISK_STOP", "SAFETY_WITHDRAWAL", "NO_DEVELOPMENT_EVIDENCE", "DEVELOPMENT_SUPPORTED_CONFIRMATION_UNAVAILABLE", "TECHNICAL_FAILURE_STOP_AND_DIAGNOSE"],
+  "forbidden": ["retune_after_outcome", "change_dates_after_outcome", "new_empty_final_ledger", "relabel_internal_holdout_as_confirmation", "model_registration", "demo_activation", "account_access", "deployment", "push_retry"]
+}

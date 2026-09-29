@@ -11,6 +11,20 @@
 
 ## 开始与阶段边界
 
+- 2026-09-29用户明确改为“开发集内允许有界学习，确认集严格冻结”，按
+  `docs/plans/2026-09-29-bounded-learning.md`和同名contract.json完成一次真实
+  开发比较、独立复算及限定工程修复。481开发bar后SAFETY_WITHDRAWAL，0调权，
+  固定/自适应参考净收益均-1.50576%，交易成本占损失98.19%。定位并修复严格
+  SelectEvalBucket忽略原learnability样本门槛的遗漏：65条优先桶遮蔽161条桶；
+  只加计数过滤，不改门槛/安全/风险。6个C++场景、25新Python测试及macOS
+  CTest122/122通过（7既有叶子测试因可选依赖/平台跳过），6套Decimal账一致。
+  251冻结文件含23旧gate保持，原执行18源码及二进制保留，旧结果不追溯改绿。
+  确认未准入/0次，禁止空账本把已见历史洗成确认；NO_QUALIFIED_CANDIDATE和
+  发布BLOCKED保持。0新GET/账户/交易/部署/push；仅本地main交付。见
+  `docs/reviews/2026-09-29-bounded-learning-result.md`。本次唯一经济次数已消费，
+  技术修复不是续第二次实验；下一研究须先定成本覆盖目标、逐桶容量和有限
+  新开发次数，不能事后调参数/换日期或等待两周。内部实现/验证不逐步索权。
+
 - 2026-09-29用户以ok批准免费原始数据先准入裁决，按
   `docs/plans/2026-09-29-free-input-first-intake.md`核D1调难卖压/L1 Coinbase
   首次上币准入需求，已结案NO_GO_NEW_ROUTE、选0。D1历史样例可读但缺事后

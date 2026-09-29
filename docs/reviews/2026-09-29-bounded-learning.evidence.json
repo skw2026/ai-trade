@@ -1,0 +1,174 @@
+{
+  "account_access": 0,
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "confirmation_runs": 0,
+  "confirmation_status": "NOT_ADMITTED",
+  "contract_sha256": "8a4c3f64bcc69cb0b10d23f21039e6a9b41108c160027f55a60380e1b35721ef",
+  "controller_updates": 0,
+  "deployment": 0,
+  "development_bars": 481,
+  "economic_result_uses_fixed_code": false,
+  "execution_cost_share_of_loss": 0.9818947108431486,
+  "fixed_binary_sha256": "fa20300109f7a4a57ab150a3e994d18282824ba4b2625c9bdc7308b1ec1f5962",
+  "fixed_controller_sha256": "02d3ee88eb6654284db0706d0cc39d859e69a778d28f3c09e4a7b3955921aea2",
+  "fixed_gross_pnl": -2.7174,
+  "fixed_net_pnl": -150.576034571,
+  "independent_audit_sha256": "227a78e012073ebff05cf41fb5a78743a4a41c544f09c1e53dd550f42cc2e1eb",
+  "input_sha256": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+  "market_runs": 1,
+  "network_requests": 0,
+  "original_binary_sha256": "6410ee583b27f77b7a96bd53e50eeb661b147ceb8659e47a07abd080cf8d5d43",
+  "original_controller_sha256": "067e8a2674ef5bbcfa1740e0e473faf07b60fc633acbc72ded69972ea0d3eecf",
+  "preserved_files": 251,
+  "preserved_old_gates": 23,
+  "previous_publication_status": "BLOCKED",
+  "processed_bars": 769,
+  "push_attempts": 0,
+  "reference_wallets": {
+    "adaptive": {
+      "cash": 9849.423965428987,
+      "equity": 9849.423965428987,
+      "fees": 125.00851192499994,
+      "fills": 252,
+      "funding_paid": 0.008822645999999976,
+      "max_drawdown": 0.01570465438781632,
+      "qty": 0.0,
+      "slippage": 22.84129999999965,
+      "turnover": 227288.20349999992
+    },
+    "adaptive_stress": {
+      "cash": 9701.672558673996,
+      "equity": 9701.672558673996,
+      "fees": 250.01701868000006,
+      "fills": 252,
+      "funding_paid": 0.008822645999999976,
+      "max_drawdown": 0.030308091703332485,
+      "qty": 0.0,
+      "slippage": 45.584199999998546,
+      "turnover": 227288.19879999993
+    },
+    "adaptive_unit": {
+      "cash": 9712.269240664997,
+      "equity": 9712.269240664997,
+      "fees": 215.17985714499994,
+      "fills": 152,
+      "funding_paid": 0.008002189999999965,
+      "max_drawdown": 0.030206998243383687,
+      "qty": 0.0,
+      "slippage": 39.320999999999316,
+      "turnover": 391236.1039000002
+    },
+    "fixed": {
+      "cash": 9849.423965428987,
+      "equity": 9849.423965428987,
+      "fees": 125.00851192499994,
+      "fills": 252,
+      "funding_paid": 0.008822645999999976,
+      "max_drawdown": 0.01570465438781632,
+      "qty": 0.0,
+      "slippage": 22.84129999999965,
+      "turnover": 227288.20349999992
+    },
+    "fixed_stress": {
+      "cash": 9701.672558673996,
+      "equity": 9701.672558673996,
+      "fees": 250.01701868000006,
+      "fills": 252,
+      "funding_paid": 0.008822645999999976,
+      "max_drawdown": 0.030308091703332485,
+      "qty": 0.0,
+      "slippage": 45.584199999998546,
+      "turnover": 227288.19879999993
+    },
+    "fixed_unit": {
+      "cash": 9712.269240664997,
+      "equity": 9712.269240664997,
+      "fees": 215.17985714499994,
+      "fills": 152,
+      "funding_paid": 0.008002189999999965,
+      "max_drawdown": 0.030206998243383687,
+      "qty": 0.0,
+      "slippage": 39.320999999999316,
+      "turnover": 391236.1039000002
+    }
+  },
+  "result_sha256": "a9e8082ada71db48361ea3bf27161638a6db0a38d1163bce6032b0405cfb38e6",
+  "root_cause": [
+    {
+      "buckets": {
+        "0": {
+          "cost": 23.928125,
+          "funding": -0.056233125,
+          "gross": 1.1726777569942841,
+          "net": -22.811680368005717,
+          "samples": 65
+        },
+        "1": {
+          "cost": 48.83125,
+          "funding": -0.0885625,
+          "gross": -0.9821917177248958,
+          "net": -49.902004217724894,
+          "samples": 161
+        },
+        "2": {
+          "cost": 3.9,
+          "funding": 0.0,
+          "gross": 1.5497930917714196,
+          "net": -2.3502069082285804,
+          "samples": 14
+        }
+      },
+      "end_timestamp_ms": 1735761900000
+    },
+    {
+      "buckets": {
+        "0": {
+          "cost": 28.35625,
+          "funding": 0.0,
+          "gross": -0.23774373976104268,
+          "net": -28.593993739761043,
+          "samples": 77
+        },
+        "1": {
+          "cost": 38.91875,
+          "funding": -0.08125,
+          "gross": 7.541376524734211,
+          "net": -31.45862347526579,
+          "samples": 139
+        },
+        "2": {
+          "cost": 7.475,
+          "funding": 0.125,
+          "gross": -11.583060260731912,
+          "net": -18.933060260731914,
+          "samples": 24
+        }
+      },
+      "end_timestamp_ms": 1735833900000
+    }
+  ],
+  "runtime_activation_authorized": false,
+  "schema": "bounded_learning_stage_evidence_v1",
+  "settlement_timestamp_ms": 1735833900000,
+  "source_bars": 105409,
+  "source_funding_events": 1099,
+  "source_pages": 218,
+  "stop_timestamp_ms": 1735833600000,
+  "terminal_flat": true,
+  "trace_sha256": "ef7e519e7c1b1c358ee2b57c09947b98883b154be16ebed093b70c65b011d6cb",
+  "trading": 0,
+  "verdict": "SAFETY_WITHDRAWAL",
+  "verification": {
+    "existing_leaf_tests_skipped": 7,
+    "skip_reasons": {"catboost_unavailable": 6, "linux_address_space_only": 1},
+    "new_tests_skipped": 0,
+    "catboost_inference_used": false,
+    "decimal_books": 6,
+    "full_ctest_log_sha256": "a696f17e871c621ea0117cc3a7e4736cb0a6a63f0c335bf26b6740527aed9b97",
+    "full_ctest_passed": 122,
+    "linux_not_run": true,
+    "new_cpp_scenarios": 6,
+    "new_python_tests": 25,
+    "os": "macOS"
+  }
+}

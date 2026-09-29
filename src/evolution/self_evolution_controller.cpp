@@ -1061,6 +1061,15 @@ std::size_t SelfEvolutionController::SelectEvalBucket(
         !config_.counterfactual_require_temporal_holdout) {
       return true;
     }
+    // Strict windows clear all buckets after an assessment. Do not prefer a
+    // bucket that is already known to fail the sample-capacity gate while an
+    // adequately sampled bucket would otherwise be discarded. This uses only
+    // counts, not holdout returns, and does not relax any downstream gate.
+    if (config_.enable_learnability_gate &&
+        bucket_window_learnability_stats_[index].samples <
+            config_.learnability_min_samples) {
+      return false;
+    }
     return bucket_window_virtual_pnl_train_samples_[index] >=
                config_.counterfactual_min_train_samples &&
            bucket_window_virtual_pnl_holdout_samples_[index] >=

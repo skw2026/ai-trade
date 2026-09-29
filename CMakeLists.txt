@@ -96,6 +96,12 @@ if(BUILD_TESTING)
   # Offline integration driver only: never installed into the runtime image.
   add_executable(offline_learning_driver tests/offline_learning_driver.cpp)
   target_link_libraries(offline_learning_driver PRIVATE ai_trade_system)
+  add_executable(bounded_learning_driver tools/bounded_learning_driver.cpp)
+  target_link_libraries(bounded_learning_driver PRIVATE ai_trade_system)
+  add_executable(evolution_sample_capacity_test tests/test_evolution_sample_capacity.cpp)
+  target_link_libraries(evolution_sample_capacity_test PRIVATE ai_trade_system)
+  add_test(NAME evolution_sample_capacity_test COMMAND evolution_sample_capacity_test)
+  set_tests_properties(evolution_sample_capacity_test PROPERTIES TIMEOUT 30 LABELS "offline;learning")
   add_executable(strict_evolution_test tests/test_strict_evolution.cpp)
   add_executable(evolution_safety_test tests/test_evolution_safety.cpp)
   target_link_libraries(evolution_safety_test PRIVATE ai_trade_system)
@@ -161,6 +167,14 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME bounded_learning_development_test
+             COMMAND ${CMAKE_COMMAND} -E env
+                     "BOUNDED_LEARNING_TEST_DRIVER=$<TARGET_FILE:bounded_learning_driver>"
+                     ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_run_bounded_learning.py)
+    add_test(NAME bounded_learning_decimal_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_audit_bounded_learning.py)
+    set_tests_properties(bounded_learning_development_test bounded_learning_decimal_audit_test
+                         PROPERTIES TIMEOUT 60 LABELS "offline;learning")
     add_test(NAME validation_stop_gate_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_validation_gate.py)
     add_test(NAME offline_learning_harness_test
