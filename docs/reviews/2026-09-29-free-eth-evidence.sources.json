@@ -1,0 +1,22 @@
+{
+  "scope": "FREE_PUBLIC_SOURCE_FEASIBILITY_ONLY",
+  "documentation_reads_before_content_audit": 7,
+  "documentation_reads_after_content_audit": 2,
+  "documentation_reads_total": 9,
+  "reads": [
+    {"kind": "search", "query": "\"coinmetrics-io/data\" github historical data"},
+    {"kind": "search", "query": "site.archive.org wayback cdx server api timestamp filter"},
+    {"kind": "search", "query": "site:docs.softwareheritage.org origin visits api snapshot"},
+    {"kind": "open", "url": "https://github.com/internetarchive/wayback/blob/master/wayback-cdx-server/README.md"},
+    {"kind": "open", "url": "https://docs.softwareheritage.org/devel/getting-started/api.html"},
+    {"kind": "open", "url": "https://github.com/coinmetrics-io/data", "observed_redirect": "https://github.com/coinmetrics/data"},
+    {"kind": "open", "url": "https://archive.org/help/wayback_api.php"},
+    {"kind": "open", "url": "https://coinmetrics.substack.com/p/state-of-the-network-issue-244", "after_content_audit": true},
+    {"kind": "open", "url": "https://gitbook-docs.coinmetrics.io/network-data/network-data-overview/supply/current-supply", "after_content_audit": true}
+  ],
+  "http_attempts": 18,
+  "total_public_reads": 27,
+  "economic_experiments": 0,
+  "original_contract_reopened": false,
+  "publication_retry": false
+}

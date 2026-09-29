@@ -1,5 +1,16 @@
 # 当前项目状态
 
+最新免费渠道结案（2026-09-29）：**FREE_RECONSTRUCTED_ONLY，旧内容可恢复但未准入**。
+[免费取数、差异审计与纠偏](reviews/2026-09-29-free-eth-evidence-result.md)：21个公开fork
+中定位两个目标前提交，官方SHA文件元数据可读；2023版本8.23MB已下载且Git blob
+核对，8个供给值与当前快照全不同、差290万—299万ETH，6天EOD时钟却相同；
+旧版缺AssetCompletionTime列、末两天EOD空，不能补回旧周。2024版仅元数据，未验正文。
+ultrasound JSON实际可读，目标1100日缺3日，无历史发布证明/统一日边界，不跨源补齐。
+18留痕GET+9资料=27/40；17新+8旧测试通过，110文件含19旧gate保全。
+0收益/账户/采购/交易/部署/push；旧142<144及NO_QUALIFIED_CANDIDATE、发布BLOCKED不改。
+下一关是统一版本/时点/修订输入合同，不再把供应商联系或采购当唯一出口，
+也不自动拼接、改旧合同或重开经济实验。以下为前序结论，不覆盖本次新发现。
+
 最新只读取证结案（2026-09-29）：**NO_TARGET_VINTAGES_IN_REACHABLE_PUBLIC_HISTORY**。
 [官方历史归档核查](reviews/2026-09-29-eth-supply-vintage-result.md)：固定2023-09-18/
 2024-08-05两截止查询均200空；当前公开master完整65节点/2merge、无其他分支/标签，

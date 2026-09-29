@@ -11,6 +11,16 @@
 
 ## 开始与阶段边界
 
+- 2026-09-29用户明确“用免费渠道，继续推进”，按
+  `docs/plans/2026-09-29-free-eth-evidence.md`完成公开fork/归档及ultrasound取证。
+  已结案FREE_RECONSTRUCTED_ONLY：官方旧SHA内容可恢复，2023 CSV已校验，但
+  8日供给值全有版本差异、缺Completion列/末两日EOD；ultrasound目标1100日缺3。
+  2024版仅官方元数据，未下载正文。18GET+9资料=27，17新/8旧测试通过，
+  实际110文件含19旧gate保持；无收益/训练/账户/采购/交易/部署/push。
+  见`docs/reviews/2026-09-29-free-eth-evidence-result.md`。原142<144和发布BLOCKED
+  不改；下一关为统一历史版本/时点/修订合同，不能跨源补两周或自动续回测。
+  不再将联系供应商/采购作为唯一可能出口，也不将找回旧CSV当PIT资格。
+
 - 2026-09-29用户接续历史版本缺件要求“继续推进”，本次按
   `docs/plans/2026-09-29-eth-supply-vintage-diagnosis.md`只读诊断官方Git历史：
   60分钟/16公开读取/至多12 GET，固定最早两排除周，最多两精确版本CSV供给列。
