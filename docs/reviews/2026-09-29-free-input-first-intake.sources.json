@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-09-29T12:25:43Z",
+  "plan": "docs/plans/2026-09-29-free-input-first-intake.md",
+  "public_read_limit": 30,
+  "web_read_limit": 18,
+  "get_limit": 12,
+  "web_reads": [
+    {"kind":"search", "query":"bitcoin mining difficulty adjustment stock returns predict miners selling empirical paper difficulty", "domains":["arxiv.org","papers.ssrn.com","sciencedirect.com"]},
+    {"kind":"search", "query":"Coinbase cryptocurrency listing announcement post announcement returns paper Ante", "domains":["arxiv.org","papers.ssrn.com","sciencedirect.com"]},
+    {"kind":"search", "query":"bitcoin difficulty adjustment price predictability empirical mining difficulty future returns", "domains":["arxiv.org","papers.ssrn.com","sciencedirect.com"]},
+    {"kind":"search", "query":"Coinbase listing announcement returns post announcement cryptocurrency exchange listing event study", "domains":["papers.ssrn.com","sciencedirect.com","arxiv.org"]},
+    {"kind":"search", "query":"site.coinbase.com listings roadmap experimental assets announcement trading enabled liquidity conditions"},
+    {"kind":"open", "url":"https://arxiv.org/abs/2204.13102", "use":"Original authors' abstract; contrary causal argument, not proof of universal impossibility."},
+    {"kind":"open", "url":"https://www.sciencedirect.com/science/article/pii/S0929119920302972", "status":"HTTP_403_NO_RETRY", "use":"Indexed publisher abstract only; no full-text claim."},
+    {"kind":"open", "url":"https://www.coinbase.com/blog/increasing-transparency-for-new-asset-listings-on-coinbase", "use":"Official mutable, explicitly non-exhaustive roadmap; web extraction readable, later direct GET separately failed."},
+    {"kind":"search", "query":"\"Returns and network growth of digital tokens after cross-listings\" paper data", "domains":["papers.ssrn.com","researchgate.net","pure.eur.nl","repository.tilburguniversity.edu","sciencedirect.com"]},
+    {"kind":"search", "query":"site.coinbase.com \"January 18, 2022\" \"listings\" \"blog\""},
+    {"kind":"open", "url":"https://arxiv.org/pdf/2204.13102", "use":"Original accepted manuscript; relevant text also located in find below."},
+    {"kind":"open", "url":"https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3450301", "use":"No full-text evidence retained or relied on; cited abstract is from indexed SSRN search result, not inferred PDF methods."},
+    {"kind":"open", "url":"https://www.coinbase.com/blog/update-to-asset-listing-announcements", "use":"Official January 18, 2022 change from individual blogs to Twitter announcements."},
+    {"kind":"open", "url":"https://github.com/Blockstream/esplora/blob/master/API.md", "use":"Maintainer documentation; header fields, historical height lookup and public base URL."},
+    {"kind":"find", "url":"https://arxiv.org/pdf/2204.13102", "pattern":"causality", "use":"Manuscript pp.9-10 and 14: selling versus production; price-to-cost argument; not a post-retarget trading study."},
+    {"kind":"search", "query":"Coinbase listing announcements dataset timestamps github paper data"},
+    {"kind":"search", "query":"\"Coinbase\" \"announcement\" \"post\" \"returns\" listing event study", "domains":["papers.ssrn.com","arxiv.org","sciencedirect.com"]},
+    {"kind":"open", "url":"https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4184367", "status":"HTTP_403_NO_RETRY", "use":"Lead not admitted; mirror search snippet is not original-method or dataset evidence."}
+  ],
+  "raw_receipt_directory": ".artifacts/free-input-first-intake-20260929",
+  "get_keys": ["bitcoin-pow", "esplora-api", "difficulty-boundary", "coinbase-roadmap", "coinbase-announcement-policy", "coinbase-status", "listing-tracker-readme"],
+  "counts": {"web_reads":18, "get_attempts":7, "total_public_reads":25},
+  "source_limits": [
+    "Web extraction and direct HTTP are different observations; HTTP 403 bodies are not admitted as article text.",
+    "Search results do not establish comprehensive historical coverage or a usable dataset license.",
+    "Listing-tracker maintainer README is evidence only of its own product limitation, not proof that all Coinbase data sources lack timestamps.",
+    "Bitcoin sample validates fields and one boundary, not a full header chain, historical reception times or mining sell-flow data.",
+    "No paid account, scraping proxy, challenge bypass, contact, price sample or economic computation."
+  ]
+}
