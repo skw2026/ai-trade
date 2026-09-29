@@ -1,5 +1,15 @@
 # 当前项目状态
 
+最新输入工程结案（2026-09-29）：**规范化通过，NOT_ADMITTED_UNRESOLVED_REVISION**。
+[合同实现与实际拒绝](reviews/2026-09-29-eth-supply-input-contract-result.md)：1100日
+逐行绑定原页/收据/精确数值/UTC边界/计算钟，整包绑定合同和代码；8条版本修订
+全部留痕，其中6条EOD同钟异值，原因仍UNKNOWN。独立原件复核一致，23新+16旧
+测试通过，173旧文件含20旧gate不变；0新增GET/收益/账户/采购/交易/部署/push。
+原合同已经允许受限重建研究，不新增PIT门槛；已知修订未解释与旧142<144是
+两个独立阻断，不能以快照hash/技术PASS放行。NO_QUALIFIED_CANDIDATE与发布
+BLOCKED保持；下一缺件是对应旧SHA/新快照的官方修订及整段口径解释，而非
+重复寻找免费入口、重复建合同或默认等待两周。本阶段已关闭，不自动续回测。
+
 最新免费渠道结案（2026-09-29）：**FREE_RECONSTRUCTED_ONLY，旧内容可恢复但未准入**。
 [免费取数、差异审计与纠偏](reviews/2026-09-29-free-eth-evidence-result.md)：21个公开fork
 中定位两个目标前提交，官方SHA文件元数据可读；2023版本8.23MB已下载且Git blob

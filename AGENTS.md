@@ -11,6 +11,17 @@
 
 ## 开始与阶段边界
 
+- 2026-09-29用户接续统一版本/时点/修订合同要求继续，按
+  `docs/plans/2026-09-29-eth-supply-input-contract.md`完成离线输入工程。
+  原合同本就允许RECONSTRUCTED_SNAPSHOT_ONLY，不另加PIT入场门槛；已知未解释
+  修订仍是原明确阻断。1100日整包/逐行身份、UTC边界、计算钟及8日修订清单
+  已实现并独立复核，39测试通过，173文件含20旧gate保持。0新增GET/经济实验。
+  实际NOT_ADMITTED_UNRESOLVED_REVISION：8异值/6同EOD，修订原因UNKNOWN；
+  快照hash不是供应商原子版本或首发证明。原142<144/候选关闭/发布BLOCKED不改。
+  见`docs/reviews/2026-09-29-eth-supply-input-contract-result.md`。本阶段结案，
+  不重复规范化/扩校验器代替研究；下一缺件为具名版本的官方修订/整段口径
+  绑定，不能自动重开旧回测或混源补周；无账户/采购/交易/部署/push。
+
 - 2026-09-29用户明确“用免费渠道，继续推进”，按
   `docs/plans/2026-09-29-free-eth-evidence.md`完成公开fork/归档及ultrasound取证。
   已结案FREE_RECONSTRUCTED_ONLY：官方旧SHA内容可恢复，2023 CSV已校验，但

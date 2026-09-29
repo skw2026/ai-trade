@@ -1,0 +1,18 @@
+{
+  "id": "eth-supply-snapshot-input-v1",
+  "scope": "OFFLINE_INPUT_REVIEW_ONLY",
+  "research_mode": "RECONSTRUCTED_SNAPSHOT_ONLY",
+  "authority": {"fetch": false, "backtest": false, "train": false, "tune": false, "account": false, "trade": false, "deploy": false},
+  "original_contract": "docs/contracts/eth_net_supply_proxy_v1.json",
+  "original_contract_sha256": "0e11227b41fd8edf126e4bf77092878a40c3008486e6839f1c83911b59b210cd",
+  "source": {"provider": "coinmetrics", "asset": "eth", "metric": "SplyCur", "frequency": "1d", "unit": "ETH", "endpoint": "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"},
+  "range": {"first_day": "2022-12-24", "last_day": "2025-12-27", "expected_days": 1100},
+  "day_boundary": "Source time denotes UTC period start. Period end is exactly next UTC midnight; no timezone shift or nearest-day mapping. This is the original contract convention, not a newly proven universal cross-provider convention.",
+  "identity": "Bind the whole ordered raw-page/receipt manifest, this contract and normalizer source into one snapshot ID; retain page and row provenance. This is a local immutable bundle, not proof of a vendor-atomic snapshot or historical publication.",
+  "numeric": "Preserve positive native-ETH supply decimal strings exactly; no binary float, rounding, imputation or conversion to another supply metric.",
+  "clocks": {"required": ["AssetCompletionTime", "AssetEODCompletionTime"], "unit": "unix_seconds", "constraints": "If present: period_end <= clock <= retrieval. Missing remains null and makes the row ineligible; no clock substitution. Historical decision-time tests remain in the original closed contract, not rerun here.", "first_publication_utc": null, "interpretation": "Computation clocks do not prove first publication and do not identify a value version."},
+  "known_revision": {"comparison_deadline": "2023-09-18T12:00:00Z", "first_day": "2023-09-09", "last_day": "2023-09-16", "old_commit": "46f409bbd8d933e58172cab721c9de6bc0a77e50", "old_blob_sha1": "cb0adbc057c32c2adab38d4f5430b125aee07cf2", "old_sha256": "b3df18433656e3d2751624d6ebeac6e572c32f90aefeb6d43167335db163a4f6", "cause": "UNKNOWN", "effective_revision_time": null, "methodology_binding": "UNRESOLVED"},
+  "admission": {"known_unresolved_revision": "NOT_ADMITTED_UNRESOLVED_REVISION", "missing_rows_or_fields": "NOT_ADMITTED_INCOMPLETE_INPUT", "otherwise": "NORMALIZED_ONLY_REQUIRES_SEPARATE_INPUT_REVIEW", "historical_vintage_unknown": "Limitation, not an additional PIT prerequisite for this reconstructed-only mode.", "no_auto_grant": true},
+  "reentry_evidence": ["Primary-source evidence binding the observed old/new supply difference to specific accounting definitions and revisions; an unsigned commit time or generic methodology page alone is insufficient.", "One consistent whole-window methodology/version treatment across protocol changes, with exact receipts/hashes and no row-level provider splice.", "Separate original capacity blocker 142<144 remains; explaining the eight revision rows alone neither restores the fifteen excluded weeks nor reopens the closed experiment."],
+  "forbidden": ["cross_provider_splice", "partial_refresh", "clock_as_version_id", "clock_as_publication_time", "manual_reviewed_unlock", "automatic_economic_restart", "candidate_qualification"]
+}
