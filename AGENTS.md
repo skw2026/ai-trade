@@ -11,6 +11,17 @@
 
 ## 开始与阶段边界
 
+- 2026-09-29用户接续官方修订归因核查要求继续，按
+  `docs/plans/2026-09-29-eth-supply-revision-binding.md`完成32/32公开读取。
+  已取得2024官方CSV并验blob，固定8日值/两钟均与当前相同；官方2023Q3历史
+  有09-16至09-21 ETH日终延迟，支持原最早排除。机制有官方依据，但精确版本
+  修订归因/1100日口径仍不完整，MECHANISM_SUPPORTED_VERSION_BINDING_INCOMPLETE。
+  8关闭回归及两路原件核对通过，183文件含21旧gate保持。0经济/账户/采购/
+  交易/部署/push，不恢复原142<144。本批到否定出口结案，不再自动重复补证。
+  见`docs/reviews/2026-09-29-eth-supply-revision-binding-result.md`。建议下一轮
+  免费原始数据先准入的新机制裁决（2小时/2机制/30读取、0回测）是实质方向
+  提案，尚未执行，不把原始数据缺件无限改成更多合同/校验工程。
+
 - 2026-09-29用户接续统一版本/时点/修订合同要求继续，按
   `docs/plans/2026-09-29-eth-supply-input-contract.md`完成离线输入工程。
   原合同本就允许RECONSTRUCTED_SNAPSHOT_ONLY，不另加PIT入场门槛；已知未解释

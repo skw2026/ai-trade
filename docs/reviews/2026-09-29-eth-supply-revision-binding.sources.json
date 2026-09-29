@@ -1,0 +1,42 @@
+{
+  "scope": "OFFICIAL_REVISION_BINDING_DIAGNOSIS_ONLY",
+  "web_read_count": 24,
+  "get_attempt_count": 8,
+  "total_public_reads": 32,
+  "reads": [
+    {"kind":"search","query":"site:coinmetrics.io Ethereum supply SplyCur \"revised\""},
+    {"kind":"search","query":"site:coinmetrics.io Ethereum supply \"2023\" \"double\""},
+    {"kind":"search","query":"site:docs.coinmetrics.io \"SplyCur\" \"2024\""},
+    {"kind":"search","query":"Coin Metrics \"SplyCur\" \"changed\""},
+    {"kind":"search","query":"Coin Metrics Ethereum supply methodology update withdrawals 2023 2024"},
+    {"kind":"search","query":"site:docs.coinmetrics.io \"release notes\" \"supply\" Ethereum"},
+    {"kind":"open","url":"https://coinmetrics.substack.com/p/state-of-the-network-issue-244"},
+    {"kind":"open","url":"https://coinmetrics.substack.com/p/state-of-the-network-issue-244","line":20,"reason":"Read article content after combined search response only exposed page header"},
+    {"kind":"search","query":"\"SplyCur\" \"methodology\" \"Ethereum\" \"update\"","domains":["coinmetrics.io","gitbook-docs.coinmetrics.io","coinmetrics.substack.com"]},
+    {"kind":"search","query":"\"Ethereum\" \"supply\" \"changelog\"","domains":["coinmetrics.io","gitbook-docs.coinmetrics.io"]},
+    {"kind":"search","query":"\"Coin Metrics\" \"SplyCurEL\""},
+    {"kind":"search","query":"\"Coin Metrics\" \"Release Notes\" \"2024\""},
+    {"kind":"search","query":"\"SplyCur\" \"recalculated\""},
+    {"kind":"search","query":"site:status.coinmetrics.io Ethereum supply"},
+    {"kind":"search","query":"site:status.coinmetrics.io SplyCur"},
+    {"kind":"search","query":"\"SplyCur\" \"September\" \"2023\""},
+    {"kind":"open","url":"https://status.coinmetrics.io/history"},
+    {"kind":"search","query":"site:status.coinmetrics.io \"Ethereum\" \"Supply\" \"2024\""},
+    {"kind":"search","query":"site:status.coinmetrics.io \"ETH\" \"SplyCur\" \"2023\""},
+    {"kind":"open","url":"https://gitbook-docs.coinmetrics.io/network-data/network-data-overview/supply/supply-issuance"},
+    {"kind":"search","query":"\"Coin Metrics\" \"Ethereum\" \"supply\" \"recalculation\""},
+    {"kind":"search","query":"\"Coin Metrics\" \"supply\" \"recomputed\" \"2023\""},
+    {"kind":"open","url":"https://status.coinmetrics.io/incidents/cvqccfpyll79","outcome":"WEB_TOOL_INACCESSIBLE","http_status":null,"retried":false},
+    {"kind":"open","url":"https://gitbook-docs.coinmetrics.io/network-data/network-data-overview/supply/current-supply"}
+  ],
+  "get_receipts_local_directory": ".artifacts/eth-supply-revision-binding-20260929",
+  "key_primary_sources": [
+    {"url":"https://coinmetrics.substack.com/p/state-of-the-network-issue-244","published":"2024-01-30","supports":"EL/CL/deposit accounting mechanism; not an exact revision effective-date receipt"},
+    {"url":"https://raw.githubusercontent.com/coinmetrics/data/60ff1c4ce32f0426a65d03b0588e1ec10e71231d/csv/eth.csv","supports":"Recoverable 2024-labelled immutable content; eight fixed supply values equal current snapshot; not independent publication-time proof"},
+    {"url":"https://status.coinmetrics.io/history?page=13","supports":"Historical ETH EOD delay entry cvqccfpyll79, September 16-21 2023; not supply-method revision cause"},
+    {"url":"https://gitbook-docs.coinmetrics.io/network-data/network-data-overview/supply/supply-issuance","supports":"Current eth issuance definition is rewards; eth_cl total includes deposits; no old-version effective date"}
+  ],
+  "economic_experiments": 0,
+  "original_contract_reopened": false,
+  "publication_retry": false
+}
