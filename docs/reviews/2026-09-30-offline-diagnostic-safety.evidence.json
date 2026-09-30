@@ -1,0 +1,666 @@
+{
+  "account_access": 0,
+  "artifact_sha256": {
+    "concentration.json": "0bd89d07070ad77029056bddbb1006dcc82d57fb30e41f690d9d1eaf7e698ea9",
+    "evaluation-fixed.jsonl": "b50e9725fb3106696dc8fad6d1d3d39a0f4482fec76f01ee36e4acfee109bd83",
+    "evaluation-learned.jsonl": "c0b14b0e0525812af757057640e9eacb2051510823e4d302a93ed858ba8dfa7c",
+    "evaluation-start.json": "b363add67dcb6319581bbfd292fdb70aa4438134e1c37aca7d5ce896b9b04c1a",
+    "execution-freeze.json": "6c24a7adcb82215731a5f9fa8a3d783192ca36d711c0f95b052ade8b6fdc5a29",
+    "frozen-model.json": "af278f3b9612944d7bf5825ba01d910628e7604f96fa92785301464c58d9ed4c",
+    "independent-audit.json": "a9282d88d64f77dc45d51c7b2a7c1a58dcfcdb62b4bdebe60f73599baa595d98",
+    "market-attempt.json": "9141f6bfdbb79acaff7d95641a69523f33062a3381a8b082e4d300a8ff3a3852",
+    "result.json": "b9b19c8462b3a2f853be5eab20eceff790008d5a4bab68a65a0901b9a67ca3d3"
+  },
+  "baseline_code": "81db86c",
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "chosen_coefficients": [
+    0,
+    -4
+  ],
+  "coefficient_updates": 2,
+  "completed_utc": "2026-09-30T10:20:19.757266+00:00",
+  "compute_seconds": 10.574614541023038,
+  "concentration": {
+    "confirmation_runs": 0,
+    "learned_evaluation": {
+      "episodes": [
+        {
+          "direction": "LONG",
+          "end_ms": 1744059000000,
+          "fills": [
+            4,
+            4
+          ],
+          "net": [
+            110.18748509677243,
+            106.88187145177108
+          ],
+          "position_bars": 171,
+          "start_ms": 1744007700000
+        },
+        {
+          "direction": "SHORT",
+          "end_ms": 1744305600000,
+          "fills": [
+            2,
+            2
+          ],
+          "net": [
+            104.30419818966038,
+            101.15893143965877
+          ],
+          "position_bars": 193,
+          "start_ms": 1744247700000
+        },
+        {
+          "direction": "LONG",
+          "end_ms": 1760217600000,
+          "fills": [
+            5,
+            5
+          ],
+          "net": [
+            168.77883708466834,
+            165.44996191966857
+          ],
+          "position_bars": 288,
+          "start_ms": 1760131200000
+        },
+        {
+          "direction": "LONG",
+          "end_ms": 1763796900000,
+          "fills": [
+            2,
+            2
+          ],
+          "net": [
+            30.16771519376198,
+            27.003379468760613
+          ],
+          "position_bars": 288,
+          "start_ms": 1763710500000
+        }
+      ],
+      "first_warning": {
+        "at_ms": 1744113600000,
+        "diagnostic": {
+          "mode": "DEVELOPMENT_DIAGNOSTIC_ONLY",
+          "net_by_decision_bucket_and_total": [
+            -43.53724133999458,
+            7.910878317559764,
+            50.418554534993746,
+            14.79219151255893
+          ],
+          "streak": [
+            2,
+            0,
+            0,
+            0
+          ],
+          "withdrawn": false,
+          "would_withdraw": true
+        },
+        "net_liquidation": [
+          110.18748509677243,
+          106.88187145177108
+        ],
+        "position": 0.0
+      },
+      "largest_stress_episode_share": 0.4131145593081499,
+      "nonzero_calendar_weeks": 4,
+      "position_hours": 78.33333333333333,
+      "round_trips": 4
+    },
+    "model_sha256": "af278f3b9612944d7bf5825ba01d910628e7604f96fa92785301464c58d9ed4c",
+    "new_market_attempts": 0,
+    "qualification": false,
+    "result_sha256": "b9b19c8462b3a2f853be5eab20eceff790008d5a4bab68a65a0901b9a67ca3d3",
+    "schema": "diagnostic_safety_existing_trace_concentration_v1",
+    "training_winner": {
+      "episodes": [
+        {
+          "direction": "SHORT",
+          "end_ms": 1738691700000,
+          "fills": [
+            2,
+            2
+          ],
+          "net": [
+            49.4027270671686,
+            46.27617986716723
+          ],
+          "position_bars": 192,
+          "start_ms": 1738634100000
+        },
+        {
+          "direction": "SHORT",
+          "end_ms": 1741020000000,
+          "fills": [
+            2,
+            2
+          ],
+          "net": [
+            76.84346235799967,
+            73.75085244799993
+          ],
+          "position_bars": 277,
+          "start_ms": 1740936900000
+        },
+        {
+          "direction": "LONG",
+          "end_ms": 1741115100000,
+          "fills": [
+            3,
+            3
+          ],
+          "net": [
+            56.92874820538782,
+            53.67561267538804
+          ],
+          "position_bars": 253,
+          "start_ms": 1741039200000
+        }
+      ],
+      "first_warning": {
+        "at_ms": 1741017600000,
+        "diagnostic": {
+          "mode": "DEVELOPMENT_DIAGNOSTIC_ONLY",
+          "net_by_decision_bucket_and_total": [
+            120.77214720999655,
+            -31.736902703998567,
+            1.6961323600007745,
+            90.73137686599875
+          ],
+          "streak": [
+            0,
+            2,
+            0,
+            0
+          ],
+          "withdrawn": false,
+          "would_withdraw": true
+        },
+        "net_liquidation": [
+          124.06620767316781,
+          117.84598092316628
+        ],
+        "position": -0.026
+      },
+      "largest_stress_episode_share": 0.4245810560455773,
+      "nonzero_calendar_weeks": 2,
+      "position_hours": 60.166666666666664,
+      "round_trips": 3
+    }
+  },
+  "confirmation_interval": null,
+  "confirmation_runs": 0,
+  "contract_sha256": "26616bfb8efc34645b752a402154f969b4be877891dd7aecbbd9a93fd85d7876",
+  "ctest_leaf_skips": 7,
+  "ctest_log_sha256": "58c7092263fd1a62fca6ee7c77409b3545ae6f6c8bd75855d8c597210ef90f79",
+  "ctest_passed": 126,
+  "decimal_audit_books": 42,
+  "deployments": 0,
+  "evaluation": {
+    "fixed": {
+      "active_bars": 55478,
+      "calendar_weeks": 39,
+      "coefficients": [
+        1,
+        0
+      ],
+      "diagnostic_triggered_windows": 16,
+      "domain_bars": 79200,
+      "economics": [
+        {
+          "fees": 226.235900935,
+          "fills": 180,
+          "funding": 0.8632758803365,
+          "gross": -215.4699,
+          "net": -483.9078768153365,
+          "slippage": 41.3388
+        },
+        {
+          "fees": 452.47182607,
+          "fills": 180,
+          "funding": 0.8632758803365,
+          "gross": -215.4699,
+          "net": -751.2838019503365,
+          "slippage": 82.4788
+        }
+      ],
+      "exit_at_ms": 1760109000000,
+      "exposure_short_flat_long": [
+        518,
+        78079,
+        603
+      ],
+      "first_legacy_withdrawal_ms": 1743609600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "max_drawdowns": [
+        0.058084817812712686,
+        0.08022009300343502
+      ],
+      "nonzero_weeks": 23,
+      "percentage_returns": [
+        -4.839078768153366,
+        -7.5128380195033655
+      ],
+      "reason": "REFERENCE_RISK_STOP",
+      "stop_at_ms": 1760109000000,
+      "terminal_flat": true
+    },
+    "learned": {
+      "active_bars": 79200,
+      "calendar_weeks": 39,
+      "coefficients": [
+        0,
+        -4
+      ],
+      "diagnostic_triggered_windows": 2,
+      "domain_bars": 79200,
+      "economics": [
+        {
+          "fees": 10.954640455,
+          "fills": 13,
+          "funding": -0.0133760198624,
+          "gross": 426.383,
+          "net": 413.4382355648624,
+          "slippage": 2.0035
+        },
+        {
+          "fees": 21.90923174,
+          "fills": 13,
+          "funding": -0.0133760198624,
+          "gross": 426.383,
+          "net": 400.4941442798624,
+          "slippage": 3.993
+        }
+      ],
+      "exit_at_ms": 1767225600000,
+      "exposure_short_flat_long": [
+        193,
+        78260,
+        747
+      ],
+      "first_legacy_withdrawal_ms": 1744113600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "max_drawdowns": [
+        0.016985595771843998,
+        0.017292560278295288
+      ],
+      "nonzero_weeks": 4,
+      "percentage_returns": [
+        4.134382355648624,
+        4.004941442798624
+      ],
+      "reason": "COMPLETE",
+      "stop_at_ms": null,
+      "terminal_flat": true
+    }
+  },
+  "hac_lower": {
+    "paired_base": 6.030648046960671,
+    "paired_stress": 8.948053760400537,
+    "stress": 0.6021561188733315
+  },
+  "input_sha256": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+  "market_attempts": 1,
+  "maximum_training_vectors": 25,
+  "network_requests": 0,
+  "new_synthetic_tests": 16,
+  "new_validation_failures": 0,
+  "paired_net_uplift": [
+    897.346112380199,
+    1151.777946230199
+  ],
+  "plan_sha256": "2b781bfdf24517ee2c669d6d2a42aa08bb67b98c1cfc0b90b75fdc03094da108",
+  "preserved_files": 371,
+  "preserved_gates": 27,
+  "push_attempts": 0,
+  "qualification": false,
+  "safety_mode": "DEVELOPMENT_DIAGNOSTIC_ONLY",
+  "schema": "offline_diagnostic_safety_closeout_v1",
+  "scope": "DEVELOPMENT_ONLY",
+  "sources": {
+    "CMakeLists.txt": "5c38cb7fe9a432a8be6b944c8c921ed92e0e54b97e34ab4ca2542d6f7355be51",
+    "tools/audit_bounded_learning.py": "6675ad26694f3920f7171a3b0bcfe2dc1e8e7045d1fea963526733454a348c45",
+    "tools/audit_execution_net_learning.py": "a42357dc25a145c2c3edb6685a7f3ba3b0489092ad23912f2580b6a4c6cc40b2",
+    "tools/audit_offline_diagnostic_safety.py": "d3b06c2f97c976892699344d7878f9f9f7640d2c1887679889255bda8ad98c26",
+    "tools/audit_offline_policy_correction.py": "28be9542d7a033e0db37bbb03cc43b1dc4a085323437a32b3bddb9f1bd998d7d",
+    "tools/bounded_learning_driver.cpp": "1e905d2acadff8e4ef237013df9c9759fd84c8725be13416784e1574e36dd1ad",
+    "tools/execution_net_learning.py": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d",
+    "tools/mvp_reference_inputs.py": "c12267edd479cdf58b0b8f7998672d562343a2d8e236e832fd1456e125cc00a1",
+    "tools/offline_diagnostic_safety.py": "967d8cb5620fa2cef528e859425440d0d5ca162ab0fedc57cb8506937dc5abf4",
+    "tools/offline_policy_correction.py": "4b4f11434fdf339531052eca5c7b306b6683d234e72e990a7ab1c88e1ce59730",
+    "tools/run_bounded_learning.py": "ab63c734747bc11bd600df151196e8b37b144460e6c6d2352468071290f43e95",
+    "tools/run_offline_diagnostic_safety.py": "1f34d97638644efc1d426bcab657f02dd3aa16732a5466878fd6097ac230f359",
+    "tools/run_offline_policy_correction.py": "04db148a9204043bd7d0f8e89c2939f40cb03e26f97787c7f5e302ffdec40494",
+    "tools/test_offline_diagnostic_safety.py": "b63c4a92d89276c12d1e0121657b65af289142c0d5b88659d69853bf177baec7",
+    "tools/test_offline_policy_correction.py": "b0b040cd6a28b6562f88217bec567e6e424746df9a266701c1c99d6407f97c4f"
+  },
+  "training_steps": [
+    {
+      "after": [
+        0,
+        0
+      ],
+      "axis": 0,
+      "before": [
+        1,
+        0
+      ],
+      "objective": 0.0,
+      "sweep": 0
+    },
+    {
+      "after": [
+        0,
+        -4
+      ],
+      "axis": 1,
+      "before": [
+        0,
+        0
+      ],
+      "objective": 173.7026449905552,
+      "sweep": 0
+    },
+    {
+      "after": [
+        0,
+        -4
+      ],
+      "axis": 0,
+      "before": [
+        0,
+        -4
+      ],
+      "objective": 173.7026449905552,
+      "sweep": 1
+    },
+    {
+      "after": [
+        0,
+        -4
+      ],
+      "axis": 1,
+      "before": [
+        0,
+        -4
+      ],
+      "objective": 173.7026449905552,
+      "sweep": 1
+    }
+  ],
+  "training_trials": [
+    {
+      "active_bars": 16306,
+      "base_net": -523.6076316310044,
+      "coefficients": [
+        1,
+        0
+      ],
+      "first_legacy_withdrawal_ms": 1736409600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -747.1947437609979,
+      "position_bars": 940,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -747.1947437610044
+    },
+    {
+      "active_bars": 3857,
+      "base_net": -331.1503267985048,
+      "coefficients": [
+        -4,
+        0
+      ],
+      "first_legacy_withdrawal_ms": 1735905600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -803.2344481335113,
+      "position_bars": 1712,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -803.2344481335048
+    },
+    {
+      "active_bars": 8885,
+      "base_net": -235.5835385778476,
+      "coefficients": [
+        -2,
+        0
+      ],
+      "first_legacy_withdrawal_ms": 1735977600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -748.1532551228447,
+      "position_bars": 1988,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -748.1532551228476
+    },
+    {
+      "active_bars": 25920,
+      "base_net": -183.8912479483706,
+      "coefficients": [
+        -1,
+        0
+      ],
+      "first_legacy_withdrawal_ms": 1736265600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -605.5874889033621,
+      "position_bars": 1793,
+      "reason": "COMPLETE",
+      "stress_net": -605.5874889033706
+    },
+    {
+      "active_bars": 25920,
+      "base_net": 0.0,
+      "coefficients": [
+        0,
+        0
+      ],
+      "first_legacy_withdrawal_ms": null,
+      "legacy_path_status": "PATH_CONSTRAINTS_ONLY_NOT_QUALIFICATION",
+      "objective": 0.0,
+      "position_bars": 0,
+      "reason": "COMPLETE",
+      "stress_net": 0.0
+    },
+    {
+      "active_bars": 5702,
+      "base_net": -492.1370166368726,
+      "coefficients": [
+        2,
+        0
+      ],
+      "first_legacy_withdrawal_ms": 1735833600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -801.2915157368643,
+      "position_bars": 1159,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -801.2915157368726
+    },
+    {
+      "active_bars": 2725,
+      "base_net": -462.5582560756258,
+      "coefficients": [
+        4,
+        0
+      ],
+      "first_legacy_withdrawal_ms": 1735833600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -790.9088832606376,
+      "position_bars": 1187,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -790.9088832606258
+    },
+    {
+      "active_bars": 25920,
+      "base_net": 183.174937630556,
+      "coefficients": [
+        0,
+        -4
+      ],
+      "first_legacy_withdrawal_ms": 1741017600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": 173.7026449905552,
+      "position_bars": 722,
+      "reason": "COMPLETE",
+      "stress_net": 173.702644990556
+    },
+    {
+      "active_bars": 25920,
+      "base_net": 0.0,
+      "coefficients": [
+        0,
+        -2
+      ],
+      "first_legacy_withdrawal_ms": null,
+      "legacy_path_status": "PATH_CONSTRAINTS_ONLY_NOT_QUALIFICATION",
+      "objective": 0.0,
+      "position_bars": 0,
+      "reason": "COMPLETE",
+      "stress_net": 0.0
+    },
+    {
+      "active_bars": 25920,
+      "base_net": 0.0,
+      "coefficients": [
+        0,
+        -1
+      ],
+      "first_legacy_withdrawal_ms": null,
+      "legacy_path_status": "PATH_CONSTRAINTS_ONLY_NOT_QUALIFICATION",
+      "objective": 0.0,
+      "position_bars": 0,
+      "reason": "COMPLETE",
+      "stress_net": 0.0
+    },
+    {
+      "active_bars": 25920,
+      "base_net": 0.0,
+      "coefficients": [
+        0,
+        1
+      ],
+      "first_legacy_withdrawal_ms": null,
+      "legacy_path_status": "PATH_CONSTRAINTS_ONLY_NOT_QUALIFICATION",
+      "objective": 0.0,
+      "position_bars": 0,
+      "reason": "COMPLETE",
+      "stress_net": 0.0
+    },
+    {
+      "active_bars": 25920,
+      "base_net": 0.0,
+      "coefficients": [
+        0,
+        2
+      ],
+      "first_legacy_withdrawal_ms": null,
+      "legacy_path_status": "PATH_CONSTRAINTS_ONLY_NOT_QUALIFICATION",
+      "objective": 0.0,
+      "position_bars": 0,
+      "reason": "COMPLETE",
+      "stress_net": 0.0
+    },
+    {
+      "active_bars": 25920,
+      "base_net": -202.145986160556,
+      "coefficients": [
+        0,
+        4
+      ],
+      "first_legacy_withdrawal_ms": 1738713600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -211.6183420505531,
+      "position_bars": 722,
+      "reason": "COMPLETE",
+      "stress_net": -211.618342050556
+    },
+    {
+      "active_bars": 4193,
+      "base_net": -293.7181386793392,
+      "coefficients": [
+        -4,
+        -4
+      ],
+      "first_legacy_withdrawal_ms": 1735977600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -803.0468632193279,
+      "position_bars": 1880,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -803.0468632193392
+    },
+    {
+      "active_bars": 8873,
+      "base_net": -186.6986101667166,
+      "coefficients": [
+        -2,
+        -4
+      ],
+      "first_legacy_withdrawal_ms": 1735833600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -762.8690184917068,
+      "position_bars": 2677,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -762.8690184917166
+    },
+    {
+      "active_bars": 25920,
+      "base_net": 86.6426776611884,
+      "coefficients": [
+        -1,
+        -4
+      ],
+      "first_legacy_withdrawal_ms": 1736265600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -461.6241469937959,
+      "position_bars": 4511,
+      "reason": "COMPLETE",
+      "stress_net": -461.6241469938116
+    },
+    {
+      "active_bars": 16793,
+      "base_net": -547.6282398811308,
+      "coefficients": [
+        1,
+        -4
+      ],
+      "first_legacy_withdrawal_ms": 1736265600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -780.7214049411377,
+      "position_bars": 1538,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -780.7214049411308
+    },
+    {
+      "active_bars": 5444,
+      "base_net": -531.204716956696,
+      "coefficients": [
+        2,
+        -4
+      ],
+      "first_legacy_withdrawal_ms": 1735833600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -801.6684650966945,
+      "position_bars": 1272,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -801.668465096696
+    },
+    {
+      "active_bars": 2783,
+      "base_net": -460.7888042905354,
+      "coefficients": [
+        4,
+        -4
+      ],
+      "first_legacy_withdrawal_ms": 1735833600000,
+      "legacy_path_status": "REJECT_LEGACY_SAFETY",
+      "objective": -791.653873030531,
+      "position_bars": 1335,
+      "reason": "REFERENCE_RISK_STOP",
+      "stress_net": -791.6538730305354
+    }
+  ],
+  "training_vectors": 19,
+  "verdict": "DEVELOPMENT_SUPPORTED_CONFIRMATION_UNAVAILABLE",
+  "warning": "Development-only changed stop semantics; legacy safety/qualification and all historical failures remain unchanged"
+}
