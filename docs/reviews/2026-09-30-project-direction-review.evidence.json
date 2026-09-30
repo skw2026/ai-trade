@@ -1,0 +1,112 @@
+{
+  "account_access": 0,
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "coverage": {
+    "complete_weeks": 0,
+    "confirmation_interval": null,
+    "confirmation_runs": 0,
+    "consumed_bars": 480,
+    "fraction": 0.0045662100456621,
+    "year_bars": 105120
+  },
+  "current_result_sha256": "e25561b87f2ae764200e0312066ce1618d16303ae763e475c17a534c8ccab5c8",
+  "deployment": 0,
+  "historical_verdict_unchanged": "NO_GO_SAFETY_WITHDRAWAL",
+  "immutable_files": 324,
+  "immutable_old_gates": 25,
+  "learning_scope": {
+    "absolute_positive_required_before_weight_application": true,
+    "controller_updates": 0,
+    "distinct_vectors": 13,
+    "forecast_model_trained": false,
+    "learned_fields": "three_regime_blend_weights_only",
+    "nominal_slots": 15,
+    "one_locked_bucket_reachable_weights": [
+      0.45,
+      0.5,
+      0.55
+    ]
+  },
+  "market_experiments": 0,
+  "new_market_rows": 0,
+  "new_network_requests": 0,
+  "observed_fee_and_slippage_by_change": {
+    "bucket_only": 42.461500245000316,
+    "direction_and_bucket": 45.6009359499999,
+    "direction_only": 58.24500562499929,
+    "initial_entry": 0.7915880050001135,
+    "terminal_exit": 0.752882219999978
+  },
+  "observed_fills_by_change": {
+    "bucket_only": 98,
+    "direction_and_bucket": 77,
+    "direction_only": 75,
+    "initial_entry": 1,
+    "terminal_exit": 1
+  },
+  "original_prd": {
+    "commit": "aa5a6da",
+    "path": "docs/需求描述.md",
+    "sha256": "1d5012050206c7fb935b606972faede88d3817384b41b4e8a647c8eb0a0394d9"
+  },
+  "prior_result_sha256": "a9e8082ada71db48361ea3bf27161638a6db0a38d1163bce6032b0405cfb38e6",
+  "push_attempts": 0,
+  "recommendation": "SEPARATE_OFFLINE_LEARNING_RESEARCH_FROM_CANDIDATE_ACTIVATION_BEFORE_ANY_NEW_EXPERIMENT",
+  "regime": {
+    "base_alpha": 0.2,
+    "bucket_runs": 240,
+    "bucket_switches": 239,
+    "effective_alpha": 0.9999984675044591,
+    "one_bar_runs": 143,
+    "physical_half_life_seconds": 15.531418597526953,
+    "prior_state_weight": 1.532495540865894e-06,
+    "reference_interval_ms": 5000,
+    "sample_interval_ms": 300000,
+    "switch_confirm_ticks": 0,
+    "valid_signals": 479
+  },
+  "same_prefix": {
+    "common_bars": 768,
+    "common_development_bars": 480,
+    "compared_fields": [
+      "cash",
+      "qty",
+      "fees",
+      "slippage",
+      "funding_paid",
+      "turnover",
+      "fills"
+    ],
+    "six_book_accounting_different_bars": 0
+  },
+  "schema": "project_direction_review_v1",
+  "scope": "READ_ONLY_EXISTING_EVIDENCE",
+  "source_sha256": {
+    "docs/plans/2026-09-05-evidence-first-delivery-roadmap.md": "5cc63f8fb67355919135fe20325acf3518df9b2fa5886780f3dfbb895552d59a",
+    "docs/reviews/2026-08-24-maker-v5-closure-roundtable.md": "e52c0cda8ce487b64bc5ebbacf8b7735e3a01a25dbb0524d30892edf0faf6c69",
+    "docs/reviews/2026-08-25-funding-basis-carry-result.md": "f26d14f358db2264a41b3e8d4ef2e6c4776a1a9013eb4511842aa701be2fe861",
+    "docs/reviews/2026-09-12-option-candidate-closure-result.md": "0bf6369580ffbcc5453f2d9b94bf4b100220ba89b3a250bb47feb1541365f0e9",
+    "docs/reviews/2026-09-20-project-comprehensive-roundtable.md": "892a31494abfc387e30fb25810b15216d90a673dfb3fcbb4c256ce03f5edc950",
+    "docs/reviews/2026-09-28-regional-session-screen-result.md": "804347344969733bf02b27ddabbc4b27be329eb59900d5ab039cd028e473e9e8",
+    "docs/实现路径.md": "6a4c6a876e32f1325d1c7f9bcd631dbe5ff58094330db89f193e7293f08ea982",
+    "docs/需求描述.md": "6b47abc61468f5f7758b1847890aba2cad6cc1c3ed5fb533487aa9f965b71412",
+    "src/core/config.h": "10ab7df880b85bc4b282f9592298b0b18bb39043f6fd3bbb189793c0ecc34a2b",
+    "src/regime/regime_engine.cpp": "bca4f5545409fae6946faac9e25b4ea1fda39f5c2710a55243a8cc32b888ae83",
+    "src/strategy/strategy_engine.cpp": "1b37ef437fb4e7f0c80ef0b561337a412351d65dd151d0b838972ba35cf3f7c8",
+    "tools/bounded_learning_driver.cpp": "1e905d2acadff8e4ef237013df9c9759fd84c8725be13416784e1574e36dd1ad",
+    "tools/economic_target_probe.py": "ac3f53401cb5b4abf246188be78dfe04e5566ca4b8c85800e04df884896f2336",
+    "tools/execution_net_learning.py": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d",
+    "tools/run_execution_net_learning.py": "f65526911cf15ae3d3eb7edc121c9708adc76af85241c3cef37aef031cd82477",
+    "tools/run_maker_execution_learnability_experiment.py": "317dce4d507d47bb6aa4573550ed4d1f13fb766d4e47597987aa60af9fdeb94a",
+    "tools/run_microstructure_alpha_development.py": "60459bd4b2f2cf16d8e068f7fe6299578799d730a49c749b7f3dc16e06a01c63"
+  },
+  "stop": {
+    "adaptive_reference_max_drawdown": 0.01570465438781632,
+    "configured_reference_drawdown_stop": 0.08,
+    "negative_windows": 2,
+    "reason": "SAFETY_WITHDRAWAL"
+  },
+  "trace_sha256": "05bef21fb966b33b3b297614fed099445011a9fd2f6459eef630ad37d05e5478",
+  "training_runs": 0,
+  "warning": "Observed attribution is not hypothetical savings or evidence of a profitable slower strategy"
+}
