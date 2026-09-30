@@ -1,0 +1,26 @@
+{
+  "failure_id": "7a9b1d57cef54533a3bbb49d9e493b01",
+  "decision": "retry",
+  "goal": "Verify independent permanent safety withdrawal without terminating offline research processing",
+  "expected": "Synthetic safety fixtures reach two negative 240-bar windows before the reference drawdown limit",
+  "observed": "One formal test invocation: 17 cases passed, 2 assertions failed because the fixtures hit reference risk after 124 bars instead of safety after 480",
+  "root_cause_status": "confirmed",
+  "root_cause": "The constant-price fixture reversed full 2500 notional each 5m bar. At the fixed doubled cost, 125 fills including exit cost 682 in fees and 124 in slippage, net -806 and drawdown 8.06%. The 8% protection correctly precedes the intended two-window branch. Independent Decimal reconciliation passed before the failed expectation assertion.",
+  "evidence": [
+    ".artifacts/offline-policy-correction-20260930/validation-state.json",
+    "tools/test_offline_policy_correction.py:test_safety_stops_path_but_reader_finishes_domain",
+    "tools/test_offline_policy_correction.py:test_stopped_comparator_does_not_stop_other_path",
+    "Read-only synthetic reproduction: base net -403, stress net -806, stress max_drawdown 0.0806, active_bars 124; no market attempt exists"
+  ],
+  "next_action": "Change only the two synthetic fixtures to reverse every 120 bars, retaining negative windows without prior 8% breach; retry the exact original test command once. Risk-specific fixtures, code, research contract, costs, parameters and acceptance remain unchanged.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Tests must separately verify both stop branches and continue processing after a permanently closed path; do not weaken either branch",
+    "data_feasibility": "Entirely synthetic constant-price inputs with zero funding; no market data or account access required",
+    "method_feasibility": "Reducing fixture reversals to one per 120 bars leaves negative costs in both 240-bar windows but fewer than 8% reference losses; separate drawdown tests retain exact risk coverage",
+    "budget_and_exit": "One exact retry within the shared 16h batch; no consumed market attempt, no new state or reset; another unresolved failure triggers route reassessment"
+  }
+}

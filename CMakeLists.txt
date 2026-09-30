@@ -167,6 +167,11 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME offline_policy_correction_test
+             COMMAND ${CMAKE_COMMAND} -E env
+                     "OFFLINE_POLICY_TEST_DRIVER=$<TARGET_FILE:bounded_learning_driver>"
+                     ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_offline_policy_correction.py)
+    set_tests_properties(offline_policy_correction_test PROPERTIES TIMEOUT 60 LABELS "offline;learning")
     add_test(NAME execution_net_learning_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_execution_net_learning.py)
     add_test(NAME execution_net_pipeline_test

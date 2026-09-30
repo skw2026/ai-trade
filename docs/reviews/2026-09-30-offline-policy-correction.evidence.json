@@ -1,0 +1,449 @@
+{
+  "account_access": 0,
+  "artifact_sha256": {
+    "evaluation-fixed.jsonl": "7f51142f63ae485f6696f23fe8781b871dbd51507b39d31a7705db4c359c21cb",
+    "evaluation-learned.jsonl": "5dd1d27c7832c6bfdf604d07d5466cc9963cd54fa8af510a5342660adbec6631",
+    "evaluation-start.json": "dedbbfe6b090b51d103f508d458eca05efc98255a421a4afd17d5a6dd14fe60e",
+    "execution-freeze.json": "6447a7f2c278501f62129ea779d3b8bc5bc5bce84891272e0ae7abcb8505a6c7",
+    "frozen-model.json": "ced75262a618849c0d2720a1a77bf44657181e166a7a60a0ee5cbccf93803501",
+    "independent-audit.json": "d9a9c3a2053af8bbb9fc1c9b0eacdf33b3ae9dd28f5ee0dcaf1c2e6b0750b2c5",
+    "market-attempt.json": "5b0c9077ed889ab578e414e5a5fba18f0861333f3b65e45ad59657a612c3c4fd",
+    "result.json": "3226e26c0d7e0a47a7043fb05f678ad875c5b346daa60b347363cc8e1afaa62e"
+  },
+  "baseline_code": "ac97bdd",
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "chosen_coefficients": [
+    -2,
+    -2
+  ],
+  "coefficient_updates": 2,
+  "completed_utc": "2026-09-30T06:56:14.666052+00:00",
+  "compute_seconds": 3.921316499938257,
+  "confirmation_interval": null,
+  "confirmation_runs": 0,
+  "contract_sha256": "88b205ed7fbf0267abe4f1eb92c5af1f16f743a1109bfe96bde76025e0b84838",
+  "ctest_leaf_skips": 7,
+  "ctest_log_sha256": "519075ad2a4a786429c6357fcf9c915a4f51ebb73797939566f63387f73edf83",
+  "ctest_passed": 125,
+  "decimal_audit_books": 42,
+  "deployments": 0,
+  "disposition": "CLOSED_NO_GO_STOP_CURRENT_STRATEGY_RESEARCH",
+  "evaluation": {
+    "fixed": {
+      "coefficients": [
+        1,
+        0
+      ],
+      "decision_bars_before_stop": 480,
+      "economics": [
+        {
+          "fees": 5.37628927,
+          "fills": 4,
+          "funding": -0.024464358872,
+          "gross": 8.6684,
+          "net": 2.336375088872,
+          "slippage": 0.9802
+        },
+        {
+          "fees": 10.75257535,
+          "fills": 4,
+          "funding": -0.024464358872,
+          "gross": 8.6684,
+          "net": -4.017210991128,
+          "slippage": 1.9575
+        }
+      ],
+      "exit_at_ms": 1743609600000,
+      "exposure_short_flat_long": [
+        0,
+        79177,
+        23
+      ],
+      "fixed_domain_bars": 79200,
+      "full_calendar_weeks": 39,
+      "max_drawdowns": [
+        0.0026723636749006463,
+        0.003057252281534528
+      ],
+      "nonzero_weeks": 1,
+      "percentage_returns": [
+        0.02336375088872,
+        -0.04017210991127999
+      ],
+      "position_bars": 23,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stop_at_ms": 1743609600000,
+      "terminal_flat": true
+    },
+    "learned": {
+      "coefficients": [
+        -2,
+        -2
+      ],
+      "decision_bars_before_stop": 720,
+      "economics": [
+        {
+          "fees": 24.448046095,
+          "fills": 19,
+          "funding": -0.0256395544925,
+          "gross": -44.5946,
+          "net": -73.4905065405075,
+          "slippage": 4.4735
+        },
+        {
+          "fees": 48.89610176,
+          "fills": 19,
+          "funding": -0.0256395544925,
+          "gross": -44.5946,
+          "net": -102.3826622055075,
+          "slippage": 8.9176
+        }
+      ],
+      "exit_at_ms": 1743681600000,
+      "exposure_short_flat_long": [
+        104,
+        79043,
+        53
+      ],
+      "fixed_domain_bars": 79200,
+      "full_calendar_weeks": 39,
+      "max_drawdowns": [
+        0.012836027398086092,
+        0.014473301514390524
+      ],
+      "nonzero_weeks": 1,
+      "percentage_returns": [
+        -0.7349050654050749,
+        -1.023826622055075
+      ],
+      "position_bars": 157,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stop_at_ms": 1743681600000,
+      "terminal_flat": true
+    }
+  },
+  "failure_review_sha256": "135bf40f0aceb4084234dcd849024eace75e02c2bf7f8584118f20097b2ccb45",
+  "hac_lower": {
+    "paired_base": -5.092534587229814,
+    "paired_stress": -6.60622528229611,
+    "stress": -6.876021236935467
+  },
+  "input_sha256": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+  "market_attempts": 1,
+  "maximum_training_vectors": 25,
+  "native_sha256": "fa20300109f7a4a57ab150a3e994d18282824ba4b2625c9bdc7308b1ec1f5962",
+  "new_network_requests": 0,
+  "new_synthetic_tests": 21,
+  "paired_net_uplift": [
+    -75.8268816293795,
+    -98.3654512143795
+  ],
+  "plan_sha256": "b547db4e746109e96c022c2d16f258cdbfaf7032485f47d77bd6d02cb8ceafe2",
+  "preserved_files": 330,
+  "preserved_gates": 26,
+  "push_attempts": 0,
+  "schema": "offline_policy_correction_closeout_v1",
+  "scope": "DEVELOPMENT_ONLY",
+  "source_sha256": {
+    "tools/audit_bounded_learning.py": "6675ad26694f3920f7171a3b0bcfe2dc1e8e7045d1fea963526733454a348c45",
+    "tools/audit_execution_net_learning.py": "a42357dc25a145c2c3edb6685a7f3ba3b0489092ad23912f2580b6a4c6cc40b2",
+    "tools/audit_offline_policy_correction.py": "28be9542d7a033e0db37bbb03cc43b1dc4a085323437a32b3bddb9f1bd998d7d",
+    "tools/bounded_learning_driver.cpp": "1e905d2acadff8e4ef237013df9c9759fd84c8725be13416784e1574e36dd1ad",
+    "tools/execution_net_learning.py": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d",
+    "tools/offline_policy_correction.py": "4b4f11434fdf339531052eca5c7b306b6683d234e72e990a7ab1c88e1ce59730",
+    "tools/run_bounded_learning.py": "ab63c734747bc11bd600df151196e8b37b144460e6c6d2352468071290f43e95",
+    "tools/run_offline_policy_correction.py": "04db148a9204043bd7d0f8e89c2939f40cb03e26f97787c7f5e302ffdec40494",
+    "tools/test_offline_policy_correction.py": "b0b040cd6a28b6562f88217bec567e6e424746df9a266701c1c99d6407f97c4f"
+  },
+  "synthetic_failures_preserved": 1,
+  "training_domain_bars": 25920,
+  "training_no_trade_paths": 2,
+  "training_steps": [
+    {
+      "after": [
+        -2,
+        0
+      ],
+      "axis": 0,
+      "before": [
+        1,
+        0
+      ],
+      "objective": 10.20041972999934,
+      "sweep": 0
+    },
+    {
+      "after": [
+        -2,
+        -2
+      ],
+      "axis": 1,
+      "before": [
+        -2,
+        0
+      ],
+      "objective": 28.73422634000235,
+      "sweep": 0
+    },
+    {
+      "after": [
+        -2,
+        -2
+      ],
+      "axis": 0,
+      "before": [
+        -2,
+        -2
+      ],
+      "objective": 28.73422634000235,
+      "sweep": 1
+    },
+    {
+      "after": [
+        -2,
+        -2
+      ],
+      "axis": 1,
+      "before": [
+        -2,
+        -2
+      ],
+      "objective": 28.73422634000235,
+      "sweep": 1
+    }
+  ],
+  "training_stopped_paths": 17,
+  "training_trials": [
+    {
+      "base_net": -27.175298975,
+      "coefficients": [
+        1,
+        0
+      ],
+      "decision_bars_before_stop": 2400,
+      "objective": -39.90158599500137,
+      "position_bars": 55,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -39.901585995
+    },
+    {
+      "base_net": -0.42347533,
+      "coefficients": [
+        -4,
+        0
+      ],
+      "decision_bars_before_stop": 720,
+      "objective": -79.8551473500047,
+      "position_bars": 305,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -79.85514735
+    },
+    {
+      "base_net": 45.183434465,
+      "coefficients": [
+        -2,
+        0
+      ],
+      "decision_bars_before_stop": 960,
+      "objective": 10.20041972999934,
+      "position_bars": 134,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 10.20041973
+    },
+    {
+      "base_net": -55.323393465,
+      "coefficients": [
+        -1,
+        0
+      ],
+      "decision_bars_before_stop": 1920,
+      "objective": -61.68840460499996,
+      "position_bars": 32,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -61.688404605
+    },
+    {
+      "base_net": 0,
+      "coefficients": [
+        0,
+        0
+      ],
+      "decision_bars_before_stop": 25920,
+      "objective": 0,
+      "position_bars": 0,
+      "reason": "COMPLETE",
+      "stress_net": 0
+    },
+    {
+      "base_net": -99.06110014,
+      "coefficients": [
+        2,
+        0
+      ],
+      "decision_bars_before_stop": 480,
+      "objective": -121.39638058000128,
+      "position_bars": 55,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -121.39638058
+    },
+    {
+      "base_net": -137.692661915,
+      "coefficients": [
+        4,
+        0
+      ],
+      "decision_bars_before_stop": 480,
+      "objective": -198.20492439000736,
+      "position_bars": 208,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -198.20492439
+    },
+    {
+      "base_net": 28.590892525,
+      "coefficients": [
+        -2,
+        -4
+      ],
+      "decision_bars_before_stop": 480,
+      "objective": 12.692485050001778,
+      "position_bars": 98,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 12.69248505
+    },
+    {
+      "base_net": 47.89301042,
+      "coefficients": [
+        -2,
+        -2
+      ],
+      "decision_bars_before_stop": 480,
+      "objective": 28.73422634000235,
+      "position_bars": 68,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 28.73422634
+    },
+    {
+      "base_net": 59.69539511,
+      "coefficients": [
+        -2,
+        -1
+      ],
+      "decision_bars_before_stop": 720,
+      "objective": 24.76977602000443,
+      "position_bars": 131,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 24.76977602
+    },
+    {
+      "base_net": 62.58053465,
+      "coefficients": [
+        -2,
+        1
+      ],
+      "decision_bars_before_stop": 960,
+      "objective": 27.577855100000306,
+      "position_bars": 104,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 27.5778551
+    },
+    {
+      "base_net": 46.4044899,
+      "coefficients": [
+        -2,
+        2
+      ],
+      "decision_bars_before_stop": 960,
+      "objective": 8.245765600000595,
+      "position_bars": 125,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 8.2457656
+    },
+    {
+      "base_net": 50.853450695,
+      "coefficients": [
+        -2,
+        4
+      ],
+      "decision_bars_before_stop": 720,
+      "objective": 25.42538844000228,
+      "position_bars": 97,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 25.42538844
+    },
+    {
+      "base_net": -28.24778882,
+      "coefficients": [
+        -4,
+        -2
+      ],
+      "decision_bars_before_stop": 960,
+      "objective": -120.52810119000242,
+      "position_bars": 391,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -120.52810119
+    },
+    {
+      "base_net": -58.716458625,
+      "coefficients": [
+        -1,
+        -2
+      ],
+      "decision_bars_before_stop": 1920,
+      "objective": -65.08333492499878,
+      "position_bars": 37,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -65.083334925
+    },
+    {
+      "base_net": 0,
+      "coefficients": [
+        0,
+        -2
+      ],
+      "decision_bars_before_stop": 25920,
+      "objective": 0,
+      "position_bars": 0,
+      "reason": "COMPLETE",
+      "stress_net": 0
+    },
+    {
+      "base_net": 25.524038535,
+      "coefficients": [
+        1,
+        -2
+      ],
+      "decision_bars_before_stop": 1920,
+      "objective": 19.162094745001014,
+      "position_bars": 27,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": 19.162094745
+    },
+    {
+      "base_net": -100.10651233,
+      "coefficients": [
+        2,
+        -2
+      ],
+      "decision_bars_before_stop": 480,
+      "objective": -122.44420495999657,
+      "position_bars": 50,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -122.44420496
+    },
+    {
+      "base_net": -126.10860931,
+      "coefficients": [
+        4,
+        -2
+      ],
+      "decision_bars_before_stop": 480,
+      "objective": -176.8617989200029,
+      "position_bars": 170,
+      "reason": "SAFETY_WITHDRAWAL",
+      "stress_net": -176.86179892
+    }
+  ],
+  "training_vectors": 19,
+  "verdict": "NO_GO_SAFETY_OR_REFERENCE_RISK",
+  "warning": "Calendar zero tails are retained losses and shutdown, not independent trading coverage; no new attempt or automatic next family"
+}
