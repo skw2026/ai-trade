@@ -1,0 +1,27 @@
+{
+  "failure_id": "4913a654e60d4e55afb0820b48ff2a3b",
+  "decision": "retry",
+  "goal": "归档本轮执行净收益学习的真实否定结果与完整工程验收，不重跑市场实验",
+  "expected": "原件和冻结执行身份保持、124项回归和独立账本通过后导出脱敏证据",
+  "observed": "closeout.py 在读 gate['failure_count'] 时 KeyError；证据导出尚未生成，后续提交已暂停",
+  "root_cause_status": "confirmed",
+  "root_cause": "导出脚本混淆 validation_gate.summary() 的输出结构与 schema_version=1 的持久结构。summary 将 active.failure_count 展平，状态文件没有顶层 failure_count。原件、市场结果、Decimal审计及CTest均已通过；错误发生在导出末尾门禁检查。仅把字段改为 active.failure_count==0 仍会错误拒绝已批准的唯一复验，因此改为核对九项必需历史验收成功，并只允许已具名审查的这一次导出失败；原失败不删除、不清零。",
+  "evidence": [
+    "tools/validation_gate.py:load/summary/execute",
+    ".artifacts/execution-net-learning-20260930/validation-state.json",
+    ".artifacts/execution-net-learning-20260930/closeout.py:31",
+    ".artifacts/execution-net-learning-20260930/build/Testing/Temporary/LastTest.log",
+    ".artifacts/execution-net-learning-20260930/independent-audit.json"
+  ],
+  "next_action": "只修私有导出脚本对持久schema的检查，保留九项前置成功与所有hash、124项回归、27新测试、7既有skip断言；同cwd唯一重试 python3 .artifacts/execution-net-learning-20260930/closeout.py export。绝不重跑市场尝试、改执行代码、输入、阈值、原24gate或经济结论。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "交付如实的NO_GO及可复用执行净收益组件，不把导出故障或工程通过当经济资格",
+    "data_feasibility": "市场结果、两个窗口候选收据、6执行账和每窗32候选账的独立核验均已在本地存在，未消耗第二次实验",
+    "method_feasibility": "持久schema及summary函数给出直接根因证据；按历史事件验证原先要求的必需验收，显式保留本次失败，不允许未知失败通过",
+    "budget_and_exit": "共享8小时内最多10分钟修复诊断，原导出命令唯一一次60秒复验；再失败重新阻断，不继续提交或改换命令"
+  }
+}

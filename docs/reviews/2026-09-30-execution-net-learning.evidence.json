@@ -1,0 +1,303 @@
+{
+  "account_access": 0,
+  "binary_sha256": "fa20300109f7a4a57ab150a3e994d18282824ba4b2625c9bdc7308b1ec1f5962",
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "complete_weeks": 0,
+  "completed": "2026-09-30T03:17:39.401159+00:00",
+  "compute_seconds": 0.13658779207617044,
+  "confirmation_runs": 0,
+  "confirmation_status": "NOT_ADMITTED",
+  "contract_sha256": "03576b88fd493d39a59367bf763810026ab7482927dd28cf0f07243070721461",
+  "controller_updates": 0,
+  "deployment": 0,
+  "development_bars": 480,
+  "diagnosis": {
+    "audit_sha256": "2e69ea8765855771acfa484206f16bc64e74d1881bc675aa386ec333adaf7c3e",
+    "costs_by_type": {
+      "entry": 45.91464053500049,
+      "exit": 47.07499811499919,
+      "reversal": 16.174607189999474,
+      "same_side_resize": 38.68766620500045
+    },
+    "distinct_raw_signal_pairs": 14,
+    "execution_cost_share_of_loss": 0.9576115962764449,
+    "fills_by_cause": {
+      "changed_signal_target": 251,
+      "terminal_exit": 1
+    },
+    "fills_by_type": {
+      "entry": 71,
+      "exit": 71,
+      "reversal": 9,
+      "same_side_resize": 101
+    },
+    "new_experiments": 0,
+    "result_sha256": "e25561b87f2ae764200e0312066ce1618d16303ae763e475c17a534c8ccab5c8",
+    "same_side_resizes_with_regime_change": 74,
+    "scope": "CONSUMED_PREFIX_DIAGNOSIS_ONLY",
+    "windows": [
+      {
+        "combined_net_range": [
+          -89.86563204933918,
+          -65.0457770856483
+        ],
+        "counts": [
+          [
+            39,
+            26
+          ],
+          [
+            119,
+            41
+          ],
+          [
+            9,
+            5
+          ]
+        ],
+        "end_ms": 1735761600000,
+        "locked": "1:3",
+        "locked_scores": {
+          "holdout": -10.40053976867057,
+          "stress_holdout": -31.56591020367705,
+          "stress_train": -108.78994755058739,
+          "train": -59.60150968058588
+        },
+        "policy_vectors": 15,
+        "positive_train_and_holdout": 0,
+        "safety": {
+          "net_by_decision_bucket_and_total": [
+            -30.100128995005434,
+            -34.62160075499742,
+            -8.838957600004505,
+            -73.56068735000736
+          ],
+          "streak": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "withdrawn": false
+        },
+        "score_ranges": {
+          "holdout": [
+            -17.100437180819426,
+            -7.867108719181488
+          ],
+          "stress_holdout": [
+            -46.09284461582138,
+            -25.852645424176444
+          ],
+          "stress_train": [
+            -136.19076167351886,
+            -103.81426039647704
+          ],
+          "train": [
+            -72.76519486851976,
+            -57.17866836646681
+          ]
+        },
+        "selection_reason": "NO_ABSOLUTE_NET_EDGE"
+      },
+      {
+        "combined_net_range": [
+          -108.39381280501402,
+          -63.80901390499457
+        ],
+        "counts": [
+          [
+            57,
+            21
+          ],
+          [
+            103,
+            36
+          ],
+          [
+            8,
+            15
+          ]
+        ],
+        "end_ms": 1735833600000,
+        "locked": "1:3",
+        "locked_scores": {
+          "holdout": -36.6514718650069,
+          "stress_holdout": -59.64954339999531,
+          "stress_train": -85.68605646000287,
+          "train": -38.40703279999798
+        },
+        "policy_vectors": 15,
+        "positive_train_and_holdout": 0,
+        "safety": {
+          "net_by_decision_bucket_and_total": [
+            -55.922942865012374,
+            -12.11300337999819,
+            -12.915618319995701,
+            -80.95156456500627
+          ],
+          "streak": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "withdrawn": true
+        },
+        "score_ranges": {
+          "holdout": [
+            -45.97572938999474,
+            -32.552707539998664
+          ],
+          "stress_holdout": [
+            -73.87055844999486,
+            -53.1649147499993
+          ],
+          "stress_train": [
+            -129.13928363999003,
+            -72.95529253999302
+          ],
+          "train": [
+            -62.41808341501928,
+            -31.256306364995908
+          ]
+        },
+        "selection_reason": "NO_ABSOLUTE_NET_EDGE"
+      }
+    ],
+    "zero_target_bars": 122
+  },
+  "evidence_sha256": {
+    "baseline.json": "cdfc5f38f7ecf363c0197fc1a4c6cd8b6424df9e95f6064609f37cba272031cf",
+    "diagnose.py": "b8da76495f81b7ca879736627c435f30926f1da1637d7e69e17ab2600a94dce3",
+    "diagnosis.json": "da6aba94c1f298bf0d0ef012a7030920ce6d32aec540ac34b2fc3c8f507edc25",
+    "execution-freeze.json": "a2d100517dcf1f90da84e17f7dbd375207dd832aa41883ad8f091ca4c6e5f9c2",
+    "independent-audit.json": "2e69ea8765855771acfa484206f16bc64e74d1881bc675aa386ec333adaf7c3e",
+    "market-attempt.json": "91a34e71935105fdde7b9ffb83dc4bd374861596b1abed85ae61121704a27916",
+    "result.json": "e25561b87f2ae764200e0312066ce1618d16303ae763e475c17a534c8ccab5c8",
+    "trace.jsonl": "05bef21fb966b33b3b297614fed099445011a9fd2f6459eef630ad37d05e5478"
+  },
+  "executed_sources": {
+    "src/core/config.h": "10ab7df880b85bc4b282f9592298b0b18bb39043f6fd3bbb189793c0ecc34a2b",
+    "src/core/log.cpp": "92ae545ffabb867b5c22aea374f268c1f432466c0c5572c0c7e43b29180f8ee9",
+    "src/core/log.h": "4a02b9caabb5097efefaf527247db4ae88f5a19765fa4fb355333c0445a3fec5",
+    "src/core/types.h": "c6eced004e17c313d7293e8cf882bfbb4ec2c54082b7b25b6915616c60d1ebd8",
+    "src/evolution/self_evolution_controller.cpp": "02d3ee88eb6654284db0706d0cc39d859e69a778d28f3c09e4a7b3955921aea2",
+    "src/evolution/self_evolution_controller.h": "344a5ccec11366f27e1036be05cb104c8cf7047ec2226c1b81f5b50261514abf",
+    "src/oms/account_state.cpp": "81f0b8df355b91eaedac1c86566c3c071090e7299d18996465720f6cf20f4aec",
+    "src/oms/account_state.h": "762a2bb5ae980c99d3e3ffb842d5fe6d2570e9e5d0f65382ddfcbf203f2db2fa",
+    "src/regime/regime_engine.cpp": "bca4f5545409fae6946faac9e25b4ea1fda39f5c2710a55243a8cc32b888ae83",
+    "src/regime/regime_engine.h": "bf1ec3c172c635eb54ca53cef4a9577b9ff664b836bb5600858e25467a5a1cca",
+    "src/research/online_feature_engine.cpp": "3e514b24f5d532c297adb2d5ca864485de625bc0c74187df5b23719380255deb",
+    "src/research/online_feature_engine.h": "6f7193ba9691315a4f9ee621a71c2ea9ff9e6e594784db5922a97cf5d3d5335b",
+    "src/research/time_series_operators.cpp": "05a7222bdde6a4f900ac93b39178aa241187736782085741814e041b06724139",
+    "src/research/time_series_operators.h": "d5932b752ae61d8bd0617d049fbd1b0fa12f64b59105bf96c62b64a49961c90c",
+    "src/strategy/strategy_engine.cpp": "1b37ef437fb4e7f0c80ef0b561337a412351d65dd151d0b838972ba35cf3f7c8",
+    "src/strategy/strategy_engine.h": "5585363cf0e89528a9e6501b757974042d4f92e7c8d83b7f151a16bec7db4816",
+    "tools/audit_bounded_learning.py": "6675ad26694f3920f7171a3b0bcfe2dc1e8e7045d1fea963526733454a348c45",
+    "tools/audit_execution_net_learning.py": "a42357dc25a145c2c3edb6685a7f3ba3b0489092ad23912f2580b6a4c6cc40b2",
+    "tools/bounded_learning_driver.cpp": "1e905d2acadff8e4ef237013df9c9759fd84c8725be13416784e1574e36dd1ad",
+    "tools/execution_net_learning.py": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d",
+    "tools/run_bounded_learning.py": "ab63c734747bc11bd600df151196e8b37b144460e6c6d2352468071290f43e95",
+    "tools/run_execution_net_learning.py": "f65526911cf15ae3d3eb7edc121c9708adc76af85241c3cef37aef031cd82477"
+  },
+  "final_weights": [
+    0.5,
+    0.5,
+    0.5
+  ],
+  "full_year_evaluated": false,
+  "hac_lower": {
+    "paired": null,
+    "stress": null,
+    "unit": null
+  },
+  "independent_audit": {
+    "actual_books": 6,
+    "shadow_books_per_window": 32,
+    "status": "PASS_OFFLINE_RECEIPTS_ONLY",
+    "verified_updates": 0,
+    "verified_windows": 2
+  },
+  "input_sha256": "4de7105e0e79ea7679e0b72e45bc54a9908c1037e05d5a1592cd482abfa4cc47",
+  "live_runtime_changed": false,
+  "market_attempts": 1,
+  "new_network_requests": 0,
+  "paired_uplift": 0.0,
+  "preserved_export_failure_id": "4913a654e60d4e55afb0820b48ff2a3b",
+  "preserved_files": 285,
+  "preserved_old_gates": 24,
+  "previous_publication_status": "BLOCKED",
+  "publication": "LOCAL_MAIN_SKIP_CI_ONLY",
+  "push_attempts": 0,
+  "reference_economics": {
+    "adaptive": {
+      "fees": 125.010612045,
+      "fills": 252,
+      "funding": 0.008822646,
+      "gross": -6.5358,
+      "net": -154.396534691,
+      "slippage": 22.8413
+    },
+    "adaptive_stress": {
+      "fees": 250.02121892,
+      "fills": 252,
+      "funding": 0.008822646,
+      "gross": -6.5358,
+      "net": -302.150041566,
+      "slippage": 45.5842
+    },
+    "adaptive_unit": {
+      "fees": 215.184232395,
+      "fills": 152,
+      "funding": 0.00800219,
+      "gross": -41.1769,
+      "net": -295.690134585,
+      "slippage": 39.321
+    },
+    "fixed": {
+      "fees": 125.010612045,
+      "fills": 252,
+      "funding": 0.008822646,
+      "gross": -6.5358,
+      "net": -154.396534691,
+      "slippage": 22.8413
+    },
+    "fixed_stress": {
+      "fees": 250.02121892,
+      "fills": 252,
+      "funding": 0.008822646,
+      "gross": -6.5358,
+      "net": -302.150041566,
+      "slippage": 45.5842
+    },
+    "fixed_unit": {
+      "fees": 215.184232395,
+      "fills": 152,
+      "funding": 0.00800219,
+      "gross": -41.1769,
+      "net": -295.690134585,
+      "slippage": 39.321
+    }
+  },
+  "regression": {
+    "catboost_optional_skips": 6,
+    "ctest_failed": 0,
+    "ctest_passed": 124,
+    "existing_leaf_skips": 7,
+    "linux_only_skips": 1,
+    "log_sha256": "31cdfdce8526c9c431f319dae5b3c6dfc08a09f4160c08622e86003ab25f4496",
+    "new_python_tests": 27,
+    "new_skips": 0,
+    "seconds": 178.53
+  },
+  "schema": "execution_net_learning_public_evidence_v1",
+  "scope": "OFFLINE_REFERENCE_EXECUTION_DEVELOPMENT_ONLY_NOT_ACCOUNT_PNL",
+  "source_bars": 768,
+  "stage_status": "CLOSED_NO_GO",
+  "terminal_flat": true,
+  "terminal_timestamp_ms": 1735833600000,
+  "trade_orders": 0,
+  "unit_direction_uplift": 0.0,
+  "verdict": "NO_GO_SAFETY_WITHDRAWAL"
+}
