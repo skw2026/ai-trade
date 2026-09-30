@@ -1,0 +1,283 @@
+{
+  "account_access": 0,
+  "anonymous_public_api_gets": 6,
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "capacity": {
+    "all_win_fair_sign_probability": 0.0625,
+    "concentration_sha256": "0bd89d07070ad77029056bddbb1006dcc82d57fb30e41f690d9d1eaf7e698ea9",
+    "confirmation_runs": 0,
+    "development_days": 275,
+    "events_per_365_days": 5.3090909090909095,
+    "group_all_win_fair_sign_probability": 0.125,
+    "groups": [
+      [
+        1744007700000,
+        1744247700000
+      ],
+      [
+        1760131200000
+      ],
+      [
+        1763710500000
+      ]
+    ],
+    "illustrative_two_week_expected_events": 0.20363636363636364,
+    "model_sha256": "af278f3b9612944d7bf5825ba01d910628e7604f96fa92785301464c58d9ed4c",
+    "planning_days_for_events": {
+      "1": 68.75,
+      "10": 687.5,
+      "20": 1375.0,
+      "5": 343.75
+    },
+    "qualification": false,
+    "round_trips": 4,
+    "schema": "frozen_candidate_capacity_diagnosis_v1",
+    "seven_day_separated_groups": 3,
+    "sign_test_power_illustrations": [
+      {
+        "actual_alpha": 0.04723726761096572,
+        "critical_wins": 90,
+        "event_count": 158,
+        "hypothetical_win_probability": 0.6,
+        "power": 0.8056549358366878,
+        "years_at_development_episode_rate": 29.73990417522245
+      },
+      {
+        "actual_alpha": 0.04559324528350576,
+        "critical_wins": 42,
+        "event_count": 69,
+        "hypothetical_win_probability": 0.65,
+        "power": 0.8020563639664955,
+        "years_at_development_episode_rate": 12.987679671457906
+      },
+      {
+        "actual_alpha": 0.04943587479647249,
+        "critical_wins": 24,
+        "event_count": 37,
+        "hypothetical_win_probability": 0.7,
+        "power": 0.8070956916527874,
+        "years_at_development_episode_rate": 6.964407939767283
+      }
+    ],
+    "warning": "Illustrative IID Bernoulli win-rate power, not net-profit proof. Selected-development frequency is uncertain, clustered and nonstationary; no ETA guarantee. No new acceptance threshold."
+  },
+  "coefficients": [
+    0,
+    -4
+  ],
+  "confirmation_runs": 0,
+  "deployments": 0,
+  "existing_public_archive_timestamp_grids": [
+    {
+      "endpoint": "/v5/market/funding/history",
+      "max_ms": 1767254400000,
+      "min_ms": 1640822400000,
+      "rows": 4391,
+      "step_ms": 28800000
+    },
+    {
+      "endpoint": "/v5/market/kline",
+      "max_ms": 1767268800000,
+      "min_ms": 1640822400000,
+      "rows": 35125,
+      "step_ms": 3600000
+    },
+    {
+      "endpoint": "/v5/market/mark-price-kline",
+      "max_ms": 1767268800000,
+      "min_ms": 1640822400000,
+      "rows": 35125,
+      "step_ms": 3600000
+    }
+  ],
+  "existing_public_archive_verified_pages": 94,
+  "external_usage_status": "UNKNOWN",
+  "forward_monitor_configured": false,
+  "full_2021_coverage_verified": false,
+  "historical_confirmation_admitted": false,
+  "independent_arithmetic": "EXACT_FRACTIONS_VERIFIED",
+  "local_complete_consumption_ledger_located": false,
+  "metadata_files_scanned": 1570,
+  "metadata_groups": {
+    "capacity-first-20260928": {
+      "end_inclusive_utc": "2026-01-01T12:59:59.999000+00:00",
+      "endpoints": [
+        "/v5/market/funding/history",
+        "/v5/market/kline",
+        "/v5/market/mark-price-kline"
+      ],
+      "request_records": 282,
+      "start_utc": "2021-12-30T00:00:00+00:00"
+    },
+    "free-option-flow-20260928": {
+      "end_inclusive_utc": "2026-09-01T23:59:59.999000+00:00",
+      "endpoints": [
+        "/v5/market/funding/history",
+        "/v5/market/kline",
+        "/v5/market/mark-price-kline"
+      ],
+      "request_records": 405,
+      "start_utc": "2023-01-01T00:00:00+00:00"
+    },
+    "mvp-reference-20260921": {
+      "end_inclusive_utc": "2025-07-02T00:04:59.999000+00:00",
+      "endpoints": [
+        "/v5/market/funding/history",
+        "/v5/market/kline",
+        "/v5/market/mark-price-kline"
+      ],
+      "request_records": 3,
+      "start_utc": "2025-06-29T23:55:00+00:00"
+    },
+    "mvp-reference-history-20260921": {
+      "end_inclusive_utc": "2026-01-01T00:04:59.999000+00:00",
+      "endpoints": [
+        "/v5/market/funding/history",
+        "/v5/market/kline",
+        "/v5/market/mark-price-kline"
+      ],
+      "request_records": 218,
+      "start_utc": "2024-12-31T00:00:00+00:00"
+    },
+    "regional-session-screen-20260928": {
+      "end_inclusive_utc": "2026-09-25T06:39:59.999000+00:00",
+      "endpoints": [
+        "/v5/market/funding/history",
+        "/v5/market/kline",
+        "/v5/market/mark-price-kline"
+      ],
+      "request_records": 321,
+      "start_utc": "2026-04-01T00:00:00+00:00"
+    },
+    "weekly-momentum-screen-20260921": {
+      "end_inclusive_utc": "2025-01-06T01:59:59.999000+00:00",
+      "endpoints": [
+        "/v5/market/funding/history",
+        "/v5/market/kline",
+        "/v5/market/mark-price-kline"
+      ],
+      "request_records": 48,
+      "start_utc": "2023-01-02T00:00:00+00:00"
+    }
+  },
+  "model_sha256": "af278f3b9612944d7bf5825ba01d910628e7604f96fa92785301464c58d9ed4c",
+  "new_economic_runs": 0,
+  "new_training_vectors": 0,
+  "new_validation_failures": 0,
+  "next_action": "Resolve one external data-usage fact, then freeze and execute one bounded historical transfer check without another permission request. Not future temporal OOS.",
+  "online_safety_changed": false,
+  "preserved_files": 414,
+  "preserved_gates": 28,
+  "probes": [
+    {
+      "bytes": 200,
+      "coverage": "POINT_PRESENT",
+      "date": "2021-01-01",
+      "error": null,
+      "http_status": 200,
+      "kind": "trade",
+      "raw_sha256": "c664c6f9f8f4d5e6ef20f344325ff0313977b849cc0ee5b270fc15599468d036",
+      "received_utc": "2026-09-30T10:54:16.085302+00:00",
+      "retCode": 0,
+      "rows": 1,
+      "timestamps_ms": [
+        1609459200000
+      ],
+      "url": "https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&limit=1&start=1609459200000&end=1609459499999&interval=5"
+    },
+    {
+      "bytes": 186,
+      "coverage": "POINT_PRESENT",
+      "date": "2021-01-01",
+      "error": null,
+      "http_status": 200,
+      "kind": "mark",
+      "raw_sha256": "46f42fb9fbdb8f3b07b5287374e2754f577d2853cb9ff3e15bd72788be749bed",
+      "received_utc": "2026-09-30T10:54:16.602098+00:00",
+      "retCode": 0,
+      "rows": 1,
+      "timestamps_ms": [
+        1609459200000
+      ],
+      "url": "https://api.bybit.com/v5/market/mark-price-kline?category=linear&symbol=BTCUSDT&limit=1&start=1609459200000&end=1609459499999&interval=5"
+    },
+    {
+      "bytes": 191,
+      "coverage": "POINT_PRESENT",
+      "date": "2021-01-01",
+      "error": null,
+      "http_status": 200,
+      "kind": "funding",
+      "raw_sha256": "24ebada6162b18156131874b6cc33ee17e0b0d92ae0285760b849e11c9f1553b",
+      "received_utc": "2026-09-30T10:54:17.133679+00:00",
+      "retCode": 0,
+      "rows": 1,
+      "timestamps_ms": [
+        1609459200000
+      ],
+      "url": "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=BTCUSDT&limit=1&startTime=1609459200000&endTime=1609459499999"
+    },
+    {
+      "bytes": 199,
+      "coverage": "POINT_PRESENT",
+      "date": "2021-12-29",
+      "error": null,
+      "http_status": 200,
+      "kind": "trade",
+      "raw_sha256": "b80baa41a4b6f32b3f8456eefc95bdbcd03589f147bf93f5d89cbbac24ea3e7e",
+      "received_utc": "2026-09-30T10:54:17.673825+00:00",
+      "retCode": 0,
+      "rows": 1,
+      "timestamps_ms": [
+        1640736000000
+      ],
+      "url": "https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&limit=1&start=1640736000000&end=1640736299999&interval=5"
+    },
+    {
+      "bytes": 186,
+      "coverage": "POINT_PRESENT",
+      "date": "2021-12-29",
+      "error": null,
+      "http_status": 200,
+      "kind": "mark",
+      "raw_sha256": "b9435a21d800fd8a78d94196d676f9a3663b4dc2a8f7741defb8232f4b159676",
+      "received_utc": "2026-09-30T10:54:19.221877+00:00",
+      "retCode": 0,
+      "rows": 1,
+      "timestamps_ms": [
+        1640736000000
+      ],
+      "url": "https://api.bybit.com/v5/market/mark-price-kline?category=linear&symbol=BTCUSDT&limit=1&start=1640736000000&end=1640736299999&interval=5"
+    },
+    {
+      "bytes": 187,
+      "coverage": "POINT_PRESENT",
+      "date": "2021-12-29",
+      "error": null,
+      "http_status": 200,
+      "kind": "funding",
+      "raw_sha256": "33dd83b26ec2ee9afb911269fc55849b93d5753b23c8db5d1af54f2f98f7f8ff",
+      "received_utc": "2026-09-30T10:54:19.741198+00:00",
+      "retCode": 0,
+      "rows": 1,
+      "timestamps_ms": [
+        1640736000000
+      ],
+      "url": "https://api.bybit.com/v5/market/funding/history?category=linear&symbol=BTCUSDT&limit=1&startTime=1640736000000&endTime=1640736299999"
+    }
+  ],
+  "proposed_historical_end_exclusive_utc": "2021-12-30T00:00:00Z",
+  "proposed_historical_start_utc": "2021-01-01T00:00:00Z",
+  "public_document_reads": 3,
+  "push_attempts": 0,
+  "schema": "frozen_confirmation_feasibility_v1",
+  "sources": {
+    ".artifacts/frozen-confirmation-20260930/audit.py": "be854f2d93932c18079a65141caf0a49e1433ae32bcc23d414545018ee5d925f",
+    ".artifacts/frozen-confirmation-20260930/baseline.json": "e247b288036f6950c89cda9c07f0cc5b6118b8973989d8783c9d035699d0cd04",
+    ".artifacts/frozen-confirmation-20260930/capacity.json": "45d6b251c13e9eb6d0218a3a10acf26ec448d06f91930af476eb4e69f636fd6b",
+    ".artifacts/frozen-confirmation-20260930/exposure.json": "b093ec9c35302e7c0ab3ee3b0c11081cff11c1c883dac7766424abc550006075",
+    ".artifacts/frozen-confirmation-20260930/inspect.py": "b69a227d9200a980920ddcd9cdf004ebcc33b8f1dace018eb14b015897e318ba"
+  },
+  "verdict": "HISTORICAL_POINTS_AVAILABLE_USAGE_PROVENANCE_UNRESOLVED",
+  "warning": "Availability is not provenance. No assumption that missing records mean unused; no automatic economic qualification or two-week wait."
+}
