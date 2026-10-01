@@ -1,0 +1,41 @@
+{
+  "failure_id": "02ba1dbef33e4f58913ad64114cfccdc",
+  "decision": "retry",
+  "goal": "Independently audit the already consumed one-shot historical receipts without changing economic acceptance or rerunning a model",
+  "expected": "Input identity, four Decimal books, exposure episodes and the predeclared risk/net/statistical verdict agree",
+  "observed": "Raw input and both trace/concentration audits reached the final verdict comparison. Both verdicts are INSUFFICIENT_STATISTICAL_SUPPORT. Only paired_base differs: stored 7.985213912467021 versus independent 7.9852139124670245, a 3.552713678800501e-15 difference (4 ULP). The learned-stress bound remains exactly -2.3864586709821687 in both implementations.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The two frozen HAC implementations evaluate 2*w*sum/n in different multiplication/division orders. The new audit mistakenly required exact Python float dictionary equality. Constant weekly synthetic verdict fixtures did not exercise this rounding difference. This is a numeric comparison defect in the new audit, not a changed economic result or evidence of profitability.",
+  "evidence": [
+    ".artifacts/frozen-history-transfer-20261001/validation-state.json",
+    ".artifacts/frozen-history-transfer-20261001/result.json:hac_lower",
+    ".artifacts/frozen-history-transfer-20261001/auditor-before-numeric-repair.py",
+    "tools/run_bounded_learning.py:hac_lower",
+    "tools/audit_offline_policy_correction.py:lower_bound"
+  ],
+  "next_action": "One exact audit-command retry, with eight synthetic numeric guards inside that command. Audit comparisons require identical keys/None state, finite values, identical signs (including zero), identical verdict and at most 8 ULP. Reconstruct the same existing four books. Preserve the original frozen auditor byte-for-byte and bind the one permitted audit-only source repair by hashes; do not change freeze, contract, model, execution sources, traces, result or economic attempt.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "auditor_repair": {
+    "source": "tools/audit_frozen_history_transfer.py",
+    "original_sha256": "75f1e42db417807216f9af821c4a9ef2b29407a0979deaa799ccb5bcf302689f",
+    "repaired_sha256": "60d6129d2243030a385de70b0a767c5684c271e2dbe42bbe6d2f7c35f1dae9f0",
+    "archive": ".artifacts/frozen-history-transfer-20261001/auditor-before-numeric-repair.py",
+    "test_sha256": "68290372947d08fdb5eca4da6efb19f4cf4c50519993aed9b86d8cf7036f031d"
+  },
+  "path_review": {
+    "goal_alignment": "Credible net-return evidence requires a separate receipt audit; an insufficient statistical verdict cannot be upgraded by a comparison repair.",
+    "data_feasibility": "All 216 fixed pages are archived, exact grids and six previous probes match. Zero more GETs or data periods are needed.",
+    "method_feasibility": "Measured discrepancy is four representable float steps from an algebraically identical operation order. Same-sign 8-ULP comparison is restricted to statistic reconstruction, never the strict greater-than-zero economic threshold or Decimal cash tolerance. All original execution sources and the original auditor are preserved.",
+    "budget_and_exit": "One original-command retry, maximum 240 seconds, 8 synthetic guards then the same receipt audit. Zero model execution, training or new GETs. A further failure blocks; economic result remains INSUFFICIENT_STATISTICAL_SUPPORT regardless of audit recovery."
+  },
+  "route_reassessment": {
+    "old_route_failure": "A repeated engineering weakness is under-testing the audit boundary: Decimal operand types and now nonconstant float statistics. Neither is evidence that repeating market tests is warranted.",
+    "replacement": "Retain immutable execution artifacts; repair only the named auditor and add nonconstant synthetic, nonfinite, sign, zero and material-error comparison guards before auditing existing receipts.",
+    "feasibility_evidence": "Independent verdict matches exactly; two bounds match exactly and the third differs by four ULP; no economic threshold is remotely crossed by the numeric difference.",
+    "budget": "One 240-second receipt-only retry inside the existing 8-hour stage. No additional economic attempt.",
+    "stop_condition": "Any guard or audit mismatch reblocks. The economic insufficiency itself closes this frozen test; no threshold change, new dates, parameter sweep or live/Demo activation."
+  }
+}

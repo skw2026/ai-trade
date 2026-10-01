@@ -1,0 +1,26 @@
+{
+  "failure_id": "97641347be6d40fb8148320bab7c0c6f",
+  "decision": "retry",
+  "goal": "Collect the exact frozen 216-page anonymous Bybit input with no missing or substituted observations",
+  "expected": "All pages return retCode 0, pass the original strict grids, and retain raw receipts within 220 total GETs",
+  "observed": "72 pages passed. Attempt 73, request_index 72, HTTP 200, returned retCode 10016 and retMsg svc error: Get kline failed; no input compilation or economic attempt followed.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The immediate failure is the upstream API's explicit server-error response, rejected by the strict retCode check. Official Bybit error documentation identifies 10016 as Server error, distinct from invalid parameters 10001 and rate limit 10006. The exchange's underlying incident and whether it is transient remain unknown; this record does not claim a server restart or a repaired exchange.",
+  "evidence": [
+    ".artifacts/frozen-history-transfer-20261001/raw/0073.json sha256 abb4d54aa976cb029264fd218368b6dde31db596ccda510b5af0f03e2cf02754",
+    ".artifacts/frozen-history-transfer-20261001/receipts/0073.json",
+    ".artifacts/frozen-history-transfer-20261001/attempts/0073.json",
+    "https://bybit-exchange.github.io/docs/v5/error HTTP/UTA error table, read 2026-10-01"
+  ],
+  "next_action": "After at least 60 seconds from the failed receipt, one exact-command retry. Frozen collector revalidates and reuses all 72 successful pages; request_index 72 is the next GET. Keep raw failed response and immutable source/model/contract. Stop again on any failure.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "No economic claim before complete original input. A bounded retry of a read-only server error neither changes strategy nor weakens data integrity.",
+    "data_feasibility": "All six funding pages and 66 prior candle pages already satisfy the exact grids. One explicit server error is not evidence the requested historical period is absent. Successful pages are retained, not re-downloaded.",
+    "method_feasibility": "The already frozen collector supports reviewed reuse only, records every attempt, and applies the same strict checks to the same URL. Recovery is tested, not assumed; no alternate host, dates or reduced page size.",
+    "budget_and_exit": "73 GETs spent, 147 remain under 220. Exact completion needs 144 more and would total 217. One original-command retry with 2400-second cap and unchanged 8-hour stage deadline. A further failure blocks and requires route reassessment; no economic attempt until complete. Documentation reads now 4 of 10."
+  }
+}

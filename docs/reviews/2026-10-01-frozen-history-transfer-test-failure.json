@@ -1,0 +1,25 @@
+{
+  "failure_id": "30b4df8b31874470a265f960ff15814f",
+  "decision": "retry",
+  "goal": "Freeze and audit exactly one historical transfer with unchanged model and economic acceptance",
+  "expected": "All synthetic guards pass before freeze or any new market GET",
+  "observed": "59 synthetic tests ran: 47 passed, 12 errored in audit_concentration Decimal-versus-float comparison",
+  "root_cause_status": "confirmed",
+  "root_cause": "The new concentration auditor converted independently subtracted Decimal cash to float and accumulated float cluster totals, but audit_bounded_learning.close requires its expected operand to remain Decimal. All 12 errors share this type boundary; no new market inputs or economic attempts were consumed.",
+  "evidence": [
+    ".artifacts/frozen-history-transfer-20261001/validation-state.json",
+    "tools/audit_frozen_history_transfer.py:audit_concentration",
+    "tools/audit_bounded_learning.py:close"
+  ],
+  "next_action": "Keep concentration expectations and cluster sums as Decimal, including empty sums; retry the exact 59-test command once. No changed assertions, tolerance, dates, vectors or gates.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "The independent cash and event decomposition must pass before unseen economic evidence is consumed.",
+    "data_feasibility": "The failing tests use invented input only. Full-grid synthetic compilation and all 15 prior intake guards passed. Real whole-year coverage remains unproven until collection.",
+    "method_feasibility": "This is an explicit operand-type mismatch, not disagreement about execution economics. Keeping expected arithmetic Decimal preserves the existing 0.00000005 tolerance and independent ledger.",
+    "budget_and_exit": "One exact-command retry, 180 seconds, zero network and economic attempts. A second failure blocks and requires route reassessment. The 8-hour and 220-GET stage limits remain unchanged."
+  }
+}
