@@ -1,0 +1,24 @@
+{
+  "failure_id": "6c46f88b25b54542a1df7550adf2426c",
+  "decision": "retry",
+  "goal": "Audit existing timestamp coverage and calendar feasibility without another economic run",
+  "expected": "Existing-input inspection and fourteen negative/boundary design checks complete",
+  "observed": "ImportError before any inspection: dataclasses imported the local diagnostic inspect.py instead of Python's standard library inspect, recursively importing run_bounded_learning",
+  "root_cause_status": "confirmed",
+  "root_cause": "The new private script basename shadows a standard library module because its directory is on sys.path. The traceback shows the exact dataclasses -> local inspect.py -> partially initialized run_bounded_learning cycle. No data check, market request, training or result generation occurred.",
+  "evidence": [
+    ".artifacts/cross-regime-exit-design-20261001/validation-state.json",
+    ".artifacts/cross-regime-exit-design-20261001/inspect.py:imports"
+  ],
+  "next_action": "Exclude only this script's directory from sys.path before importing unchanged project helpers. Keep the filename, command, all assertions and input identities; one exact-command retry.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Only metadata and calendar calculations are needed to decide whether there is a timely independent validation exit.",
+    "data_feasibility": "Required old receipts and raw timestamp grids already exist locally and are frozen; no new data access is needed.",
+    "method_feasibility": "The error precedes all computations and follows Python module resolution. Removing the local shadowing directory leaves the original statistical helpers and all checks unchanged.",
+    "budget_and_exit": "One original-command retry, 120 seconds, within the original 90-minute design budget. Any repeated failure blocks and requires route reassessment; zero economic attempts remains mandatory."
+  }
+}

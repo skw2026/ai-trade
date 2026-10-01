@@ -1,0 +1,245 @@
+{
+  "account_access": 0,
+  "actual_timestamp_grids": [
+    {
+      "endpoint": "/v5/market/funding/history",
+      "first_ms": 1775001600000,
+      "last_ms": 1790294400000,
+      "rows": 532,
+      "step_ms": 28800000
+    },
+    {
+      "endpoint": "/v5/market/kline",
+      "first_ms": 1775001600000,
+      "last_ms": 1790318100000,
+      "rows": 51056,
+      "step_ms": 300000
+    },
+    {
+      "endpoint": "/v5/market/mark-price-kline",
+      "first_ms": 1775001600000,
+      "last_ms": 1790318100000,
+      "rows": 51056,
+      "step_ms": 300000
+    }
+  ],
+  "authoritative_method_sources": [
+    {
+      "url": "https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf",
+      "use": "Repeated selection can produce backtest overfitting; not evidence this specific model is overfit."
+    },
+    {
+      "url": "https://www.nber.org/papers/t0055",
+      "use": "Search abstract only; direct page and PDF both returned 403. No full-paper inference or claim of a universal 26-week threshold."
+    }
+  ],
+  "calendar_threshold_is_power_guarantee": false,
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "deployments": 0,
+  "design_checks": 14,
+  "document_reads": 5,
+  "example_is_schedule": false,
+  "forward_monitor_configured": false,
+  "gap_scope": "Only excludes timestamp-verified regional data, so gaps are upper bounds, NOT certified unused data. Other 2026 usage can only shrink them.",
+  "historical_input_usage": {
+    "2021": "CONSUMED_HISTORICAL_TRANSFER_NOT_FRESH_CONFIRMATION",
+    "2022_2024": "PREVIOUSLY_ACCESSED_HOURLY_DEVELOPMENT_ONLY_NOT_5M_READY",
+    "2025": "PREVIOUSLY_SELECTED_DEVELOPMENT_ONLY",
+    "2026_remaining": "NOT_CERTIFIED_UNUSED_AND_TOO_SHORT_UNDER_CURRENT_RULE"
+  },
+  "horizons": [
+    {
+      "calendar_minimum_met": false,
+      "days": 14,
+      "earnings_tested": false,
+      "full_week_blocks": 2,
+      "historical_rate_illustrations": [
+        {
+          "clusters": 0.5399449035812672,
+          "episodes": 2.352617079889807,
+          "name": "2021 historical transfer"
+        },
+        {
+          "clusters": 0.15272727272727274,
+          "episodes": 0.20363636363636364,
+          "name": "2025 selected development"
+        }
+      ],
+      "qualification": false
+    },
+    {
+      "calendar_minimum_met": false,
+      "days": 30,
+      "earnings_tested": false,
+      "full_week_blocks": 4,
+      "historical_rate_illustrations": [
+        {
+          "clusters": 1.1570247933884297,
+          "episodes": 5.041322314049586,
+          "name": "2021 historical transfer"
+        },
+        {
+          "clusters": 0.32727272727272727,
+          "episodes": 0.43636363636363634,
+          "name": "2025 selected development"
+        }
+      ],
+      "qualification": false
+    },
+    {
+      "calendar_minimum_met": false,
+      "days": 90,
+      "earnings_tested": false,
+      "full_week_blocks": 12,
+      "historical_rate_illustrations": [
+        {
+          "clusters": 3.4710743801652892,
+          "episodes": 15.12396694214876,
+          "name": "2021 historical transfer"
+        },
+        {
+          "clusters": 0.9818181818181818,
+          "episodes": 1.309090909090909,
+          "name": "2025 selected development"
+        }
+      ],
+      "qualification": false
+    },
+    {
+      "calendar_minimum_met": false,
+      "days": 180,
+      "earnings_tested": false,
+      "full_week_blocks": 25,
+      "historical_rate_illustrations": [
+        {
+          "clusters": 6.9421487603305785,
+          "episodes": 30.24793388429752,
+          "name": "2021 historical transfer"
+        },
+        {
+          "clusters": 1.9636363636363636,
+          "episodes": 2.618181818181818,
+          "name": "2025 selected development"
+        }
+      ],
+      "qualification": false
+    },
+    {
+      "calendar_minimum_met": true,
+      "days": 182,
+      "earnings_tested": false,
+      "full_week_blocks": 26,
+      "historical_rate_illustrations": [
+        {
+          "clusters": 7.019283746556474,
+          "episodes": 30.584022038567493,
+          "name": "2021 historical transfer"
+        },
+        {
+          "clusters": 1.9854545454545454,
+          "episodes": 2.6472727272727274,
+          "name": "2025 selected development"
+        }
+      ],
+      "qualification": false
+    },
+    {
+      "calendar_minimum_met": true,
+      "days": 365,
+      "earnings_tested": false,
+      "full_week_blocks": 52,
+      "historical_rate_illustrations": [
+        {
+          "clusters": 14.077134986225895,
+          "episodes": 61.33608815426997,
+          "name": "2021 historical transfer"
+        },
+        {
+          "clusters": 3.981818181818182,
+          "episodes": 5.3090909090909095,
+          "name": "2025 selected development"
+        }
+      ],
+      "qualification": false
+    }
+  ],
+  "hypothetical_first_calendar_eligible": "2027-04-02T00:00:00+00:00",
+  "hypothetical_prospective_start": "2026-10-02T00:00:00+00:00",
+  "independent_audit": "PASS_TIMESTAMP_GRIDS_AND_EXACT_CALENDAR_RATE_ARITHMETIC",
+  "known_regional_archive_pages": 107,
+  "maximum_optimistic_gap_days": 90,
+  "minimum_calendar_days": 182,
+  "minimum_complete_weeks": 26,
+  "model_sha256": "af278f3b9612944d7bf5825ba01d910628e7604f96fa92785301464c58d9ed4c",
+  "new_economic_attempts": 0,
+  "new_market_gets": 0,
+  "new_training_allowed_by_this_design": false,
+  "new_training_vectors": 0,
+  "old_historical_attempts": 1,
+  "old_publication_status": "BLOCKED_UNCHANGED",
+  "optimistic_2026_gap_upper_bounds": [
+    {
+      "complete_days": 90,
+      "complete_weeks": 12,
+      "end_exclusive_utc": "2026-04-01T00:00:00+00:00",
+      "milliseconds": 7776000000,
+      "start_utc": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "complete_days": 5,
+      "complete_weeks": 0,
+      "end_exclusive_utc": "2026-10-01T00:00:00+00:00",
+      "milliseconds": 494400000,
+      "start_utc": "2026-09-25T06:40:00+00:00"
+    }
+  ],
+  "original_command_retry_passed": true,
+  "original_qualification_unchanged": true,
+  "preserved_files": 1782,
+  "preserved_gates": 30,
+  "push_attempts": 0,
+  "qualification": false,
+  "schema": "cross_regime_exit_design_v1",
+  "source_sha256": {
+    ".artifacts/cross-regime-exit-design-20261001/audit.py": "7f821ddcc6622c6bc4a4386718578df42782c93664183c4abd951cc059792f75",
+    ".artifacts/cross-regime-exit-design-20261001/baseline.json": "3c94f6a65511a0f9725536da5e71f75e2fc4b5d75fe41a4760bc27ac8ad6ca7a",
+    ".artifacts/cross-regime-exit-design-20261001/freeze.py": "96cb63fdfb4fea355dc261b34e32ca938184d4e21806d3b54620bd2ff3ed611f",
+    ".artifacts/cross-regime-exit-design-20261001/inspect.py": "63d8b89c4bc9a57484f3f336c2a0685646aac6034d1dad640649fb8df7da00eb",
+    ".artifacts/cross-regime-exit-design-20261001/inspection.json": "6f0782fe3bf9c750401f551863a4e0f0b61dd10b2e04401b9afc027b932f58fb",
+    "docs/plans/2026-10-01-cross-regime-exit-design.md": "29193d0e1ef7d34a38fafa111c2b0a0461f6f81bba97868b1d0dccf710dbd7ab",
+    "docs/reviews/2026-09-30-frozen-confirmation-feasibility.evidence.json": "310654c681fe11171b201b97ac08c5d77130b7cd0bb05158f2ef907ad4d4a428",
+    "docs/reviews/2026-10-01-cross-regime-design-import-failure.json": "72ab0e1e3d14afe2d5e7f537c5b2d26132a4540fd062a1cb56fae95c5b5e8330",
+    "docs/reviews/2026-10-01-frozen-history-transfer.evidence.json": "394436021159dfda29753a1d60cf8d96fefe6d9403633e6c939ba8d26ab0e562",
+    "tools/audit_offline_policy_correction.py": "28be9542d7a033e0db37bbb03cc43b1dc4a085323437a32b3bddb9f1bd998d7d",
+    "tools/run_bounded_learning.py": "ab63c734747bc11bd600df151196e8b37b144460e6c6d2352468071290f43e95"
+  },
+  "trades": 0,
+  "unexpected_validation_failures": 1,
+  "validation_receipts": [
+    {
+      "at": "2026-10-01T13:55:19.562514+00:00",
+      "command_sha256": "48f18826cebe3e5df83196e4824ff2de4e5d2d36c80f6a4e36c03dfee7dddceb",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "freeze-cross-regime-design",
+      "retry_of": null
+    },
+    {
+      "at": "2026-10-01T13:56:20.664444+00:00",
+      "command_sha256": "eb4441e3f32a5a08fe09517b29ad08c4193fb113ba22acf786e8fd86a1127526",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "inspect-cross-regime-exit",
+      "retry_of": null
+    },
+    {
+      "at": "2026-10-01T13:56:50.348616+00:00",
+      "command_sha256": "eb4441e3f32a5a08fe09517b29ad08c4193fb113ba22acf786e8fd86a1127526",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "inspect-cross-regime-exit",
+      "retry_of": "6c46f88b25b54542a1df7550adf2426c"
+    }
+  ],
+  "verdict": "NO_FAST_INDEPENDENT_EXIT_UNDER_CURRENT_GATE"
+}
