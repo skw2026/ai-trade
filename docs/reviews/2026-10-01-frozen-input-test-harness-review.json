@@ -1,0 +1,27 @@
+{
+  "failure_id": "db4bb4fc5a474e72a3dc57caf2e2e264",
+  "decision": "retry",
+  "goal": "Verify the fixed 2021 offline request preparation and unchanged legacy public-input pipeline against synthetic data only",
+  "expected": "All 39 selected tests pass, including 4 existing integration cases using an explicitly identified real offline executable",
+  "observed": "35 tests passed, including all 15 new tests; 4 old integration cases errored at Path(BINARY) because BINARY was None",
+  "root_cause_status": "confirmed",
+  "root_cause": "The assistant selected unittest import invocation for ReferenceInputTest, bypassing the old module's __main__ --binary initialization. CTest explicitly passes --binary. The joint command did not bind it. This is test harness configuration, not a market-data error or policy failure.",
+  "evidence": [
+    ".artifacts/frozen-confirmation-20260930/validation-state.json",
+    "tools/test_mvp_reference_pipeline.py: BINARY=None and __main__ --binary parsing",
+    ".artifacts/offline-diagnostic-safety-20260930/build/CTestTestfile.cmake: explicit mvp_reference_pipeline_test --binary",
+    ".artifacts/offline-diagnostic-safety-20260930/build/Testing/Temporary/LastTest.log: prior actual integration command passed",
+    ".artifacts/offline-diagnostic-safety-20260930/build/trade_bot SHA256 8cd6c00938b67f426e3558f4639a898946898c508cf4ec4e333b17ba5ed70724"
+  ],
+  "next_action": "Add setUpModule in the new test module only. When the original argv explicitly selects the prior ReferenceInputTest suite, bind exactly the previously tested executable after SHA verification. Keep all 39 cases and assertions, old sources, original argv/cwd and fixtures unchanged; retry the original command once.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Synthetic completeness and rejection checks remain the prerequisite to generating a provisional request plan, not an economic qualification.",
+    "data_feasibility": "The exact prior offline executable exists and its previous CTest command and passing receipt are available. No real market data, credentials or network are required.",
+    "method_feasibility": "Explicitly binding the intended fixture supplies the missing argument; the original real-binary integration assertions and data-scope rejection remain in force. No skip, mock execution success or alternate acceptance command is introduced.",
+    "budget_and_exit": "One narrow initialization repair and one exact-command retry in the same gate; repeat failure blocks preparation. No added public GET, economic run or model training. This work remains within the 45-minute continuation cap."
+  }
+}

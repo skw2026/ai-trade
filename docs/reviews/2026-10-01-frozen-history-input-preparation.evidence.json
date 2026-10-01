@@ -1,0 +1,65 @@
+{
+  "account_access": 0,
+  "active_stage_gate": "READY_AFTER_REVIEWED_RETRY",
+  "candidate_status": "NO_QUALIFIED_CANDIDATE",
+  "coefficients": [
+    0,
+    -4
+  ],
+  "confirmation_runs": 0,
+  "coverage_verified": false,
+  "deployments": 0,
+  "exact_command_retry_passed": true,
+  "expected_evaluation_bars": 104544,
+  "expected_funding_events": 1092,
+  "expected_source_bars": 104832,
+  "external_usage_status": "UNKNOWN",
+  "final_tests_passed": 39,
+  "full_data_downloaded": false,
+  "limitation": "Offline preparation only; no collection or economic execution entry point. External usage fact remains missing; old prior-stage evidence remains as-of its original closeout.",
+  "model_sha256": "af278f3b9612944d7bf5825ba01d910628e7604f96fa92785301464c58d9ed4c",
+  "new_economic_runs": 0,
+  "new_network_requests": 0,
+  "new_tests": 15,
+  "new_training_vectors": 0,
+  "old_compiler_compatible": false,
+  "planned_new_gets": 216,
+  "preserved_files": 414,
+  "preserved_old_gates": 28,
+  "push_attempts": 0,
+  "qualification": false,
+  "regression_tests": 24,
+  "schema": "frozen_history_preparation_closeout_v1",
+  "skipped_tests": 0,
+  "source_sha256": {
+    ".artifacts/frozen-confirmation-20260930/closeout_20261001.py": "4ab7b0443a88c94c871818cae4c943c1fb6b7e37d60a00d0e4e5d11e5da04b45",
+    ".artifacts/frozen-confirmation-20260930/input-preparation-20261001.json": "dc3f5180b5e58cecd06bae056c98cfe4478e29ec7f640d568833353a17cdde16",
+    "docs/plans/2026-10-01-frozen-history-input-preparation.md": "627a0d8706b7bfe110dcd6a0db4b7deea7c0718f6f3cda27569252adff648134",
+    "docs/reviews/2026-10-01-frozen-input-test-harness-review.json": "b0d417de223f21d7d4b168d48ec5afbb68343b9c0356c20f20f682090e8ef79d",
+    "tools/plan_frozen_history_intake.py": "454b94de3f7b67d301d7dd18749f495c82aba371dcfeee15706bdc8b44e4a9fa",
+    "tools/test_mvp_reference_pipeline.py": "80843af7d978fb54fa4df08ba19e283aad78aaa57eb31f4ff893800596e6144e",
+    "tools/test_plan_frozen_history_intake.py": "13bcb98782403fe21aabbabf50affb3b1f3066b8673405e0c06db75865b27204"
+  },
+  "status": "PREPARED_NOT_ADMITTED",
+  "trades": 0,
+  "unexpected_validation_failures": 1,
+  "validation_receipts": [
+    {
+      "at": "2026-10-01T12:41:19.031721+00:00",
+      "command_sha256": "8249b2bec74159fd8ee731c23d2d8b90c54da26d22d6e6e55392cc07f1bc6c77",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "frozen-input-preparation-synthetic-regression",
+      "retry_of": null
+    },
+    {
+      "at": "2026-10-01T12:42:30.907126+00:00",
+      "command_sha256": "8249b2bec74159fd8ee731c23d2d8b90c54da26d22d6e6e55392cc07f1bc6c77",
+      "event": "validation",
+      "exit_code": 0,
+      "label": "frozen-input-preparation-synthetic-regression",
+      "retry_of": "db4bb4fc5a474e72a3dc57caf2e2e264"
+    }
+  ],
+  "warmup_bars": 288
+}
