@@ -336,6 +336,9 @@ struct AppConfig {
   RiskThresholds risk_thresholds{};
 
   // Execution
+  // Operator maintenance mode. Only an explicit config release may clear it;
+  // automatic gate/reconciliation recovery must never enable new exposure.
+  bool execution_operator_reduce_only{false};
   double execution_max_order_notional{1000.0};
   double execution_min_rebalance_notional_usd{0.0};
   double execution_same_side_rebalance_multiplier{1.0};

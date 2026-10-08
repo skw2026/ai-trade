@@ -38,7 +38,8 @@ class AsyncExecutor {
    * @param mode 回放在调用线程完成执行并入队结果；线上默认保持异步。
    */
   explicit AsyncExecutor(ExchangeAdapter* adapter,
-                         Mode mode = Mode::kBackground);
+                         Mode mode = Mode::kBackground,
+                         bool operator_reduce_only = false);
   ~AsyncExecutor();
 
   /// 启动后台工作线程；重复调用无副作用。
@@ -70,6 +71,9 @@ class AsyncExecutor {
 
   ExchangeAdapter* adapter_{nullptr};  ///< 外部注入适配器（不拥有所有权）。
   const Mode mode_;
+  // Immutable for the executor lifetime, including before Start and while
+  // draining queued work in Stop. No automatic recovery can clear this flag.
+  const bool operator_reduce_only_;
   std::mutex send_mutex_;
   std::atomic<bool> safety_withdrawn_{false};
   std::thread worker_;  ///< 后台执行线程。

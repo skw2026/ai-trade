@@ -101,6 +101,23 @@ class ResearchCloseoutContractTest(unittest.TestCase):
         self.assertIn('if [[ "${observed}" == "${ECS_FINGERPRINT}" ]]', source)
         self.assertNotIn('if [[ -n "${ECS_FINGERPRINT}" ]]', source)
 
+    def test_operator_mode_readonly_flags_do_not_hide_adapter_health(self):
+        source = read(".github/workflows/bybit-demo-readonly.yml")
+        pattern = re.search(r"r'(\\b\(trade_ok\|[^']+)'", source)
+        self.assertIsNotNone(pattern)
+        text = ("RUNTIME_STATUS: trade_ok=false, trading_halted=false, "
+                "account={equity=PRIVATE}, trade_health={adapter_trade_ok=true, "
+                "force_reduce_only=true, operator_reduce_only=true, "
+                "evidence_persistence_failed=false, reconcile_reduce_only=false}")
+        flags = {key: value == "true" for key, value in re.findall(pattern[1], text)}
+        self.assertEqual(flags, {"trade_ok": False, "trading_halted": False,
+            "adapter_trade_ok": True, "force_reduce_only": True,
+            "operator_reduce_only": True, "evidence_persistence_failed": False,
+            "reconcile_reduce_only": False})
+        self.assertNotIn("PRIVATE", json.dumps(flags))
+        # Older releases must not manufacture the missing operator flag.
+        self.assertNotIn("operator_reduce_only", dict(re.findall(pattern[1], "trade_ok=true")))
+
     def test_engineering_branch_is_pinned_archive_only(self):
         source = read(".github/workflows/bybit-demo-readonly.yml")
         branch = "fix/replay-ordering-closeout-20260920"

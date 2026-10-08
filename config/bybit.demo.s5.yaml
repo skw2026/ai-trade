@@ -44,6 +44,9 @@ risk:
     fuse_recover_threshold: 0.16
 
 execution:
+  # 2026-10-08 operator decision: no new exposure; retain protective exits.
+  # Clearing this requires a new explicit risk decision, never auto-resume.
+  operator_reduce_only: true
   max_order_notional: 380
   min_rebalance_notional_usd: 80
   same_side_rebalance_multiplier: 2.0

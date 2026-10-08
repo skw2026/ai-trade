@@ -179,6 +179,104 @@ void Sender() {
   Check(adapter.sent == 1 && results.size() == 3 && !results[0].success &&
         !results[1].success && results[2].success, "queued entries escaped sender latch");
 }
+void OperatorReduceOnly() {
+  Temp root;
+  const auto config_path = root.path / "operator.yaml";
+  AppConfig cfg;
+  std::string error;
+  Check(!cfg.execution_operator_reduce_only, "legacy default changed");
+  for (const std::string value : {"true", "false", "invalid"}) {
+    { std::ofstream out(config_path); out << "execution:\n  operator_reduce_only: " << value << '\n'; }
+    const bool loaded = LoadAppConfigFromYaml(config_path.string(), &cfg, &error);
+    Check(loaded == (value != "invalid"), "operator flag parsing is not strict");
+    if (loaded) Check(cfg.execution_operator_reduce_only == (value == "true"), "operator flag ignored");
+  }
+
+  // Both executor modes reject before touching the adapter, including queued
+  // entries drained during Stop. A misleading purpose cannot bypass reduceOnly.
+  for (auto mode : {AsyncExecutor::Mode::kBackground, AsyncExecutor::Mode::kInlineReplay}) {
+    CountingAdapter adapter;
+    AsyncExecutor sender(&adapter, mode, true);
+    sender.Submit(Intent("queued-entry"));
+    auto disguised = Intent("disguised-entry"); disguised.purpose = OrderPurpose::kSl;
+    sender.Submit(disguised);
+    for (auto purpose : {OrderPurpose::kReduce, OrderPurpose::kSl, OrderPurpose::kTp}) {
+      auto reducing = Intent("allowed-" + std::to_string(static_cast<int>(purpose)), true);
+      reducing.purpose = purpose; sender.Submit(reducing);
+    }
+    sender.Cancel("old-entry");
+    sender.Start(); sender.Stop();
+    std::vector<AsyncResult> results; sender.PollResults(&results);
+    Check(adapter.sent == 3 && adapter.cancelled == 1 && results.size() == 6,
+          "operator sender blocked reductions or allowed new exposure");
+    Check(!results[0].success && results[0].error == "OPERATOR_REDUCE_ONLY" &&
+          !results[1].success && results[1].error == "OPERATOR_REDUCE_ONLY",
+          "operator rejection not attributable");
+    for (std::size_t i = 2; i < results.size(); ++i)
+      Check(results[i].success, "protection/cancellation rejected");
+  }
+
+  cfg = AppConfig{};
+  cfg.mode = "replay"; cfg.data_path = root.path.string();
+  cfg.execution_operator_reduce_only = true;
+  cfg.execution_direct_flip_entry_enabled = true;
+  for (int boot = 0; boot < 2; ++boot) {
+    BotApplication app(cfg);
+    Check(app.Initialize(), "operator startup/restart failed");
+    Check(app.IsForceReduceOnlyActive() && !app.trading_halted_ &&
+          !app.evolution_safety_withdrawn_, "operator mode stopped process or forged safety failure");
+    Check(app.executor_->operator_reduce_only_, "startup did not bind sender guard");
+    Check(!app.EnqueueIntent(Intent("baseline-entry")), "baseline entry admitted");
+    BotApplication::IntegratorCandidateLineage lineage;
+    lineage.candidate_id = "synthetic-candidate";
+    Check(!app.EnqueueIntent(Intent("model-entry"), &lineage), "candidate entry admitted");
+    Check(app.oms_.Find("model-entry") == nullptr, "rejected entry persisted");
+    app.protection_forced_reduce_only_ = app.gate_forced_reduce_only_ =
+        app.reconcile_forced_reduce_only_ = false;
+    app.RefreshReduceOnlyMode();
+    MarketEvent event; event.symbol = "BTCUSDT"; event.price = event.mark_price = 100; event.ts_ms = 1000;
+    const auto decision = app.system_.Evaluate(event, true);
+    Check(decision.risk_adjusted.reduce_only && !decision.intent,
+          "automatic recovery reopened flat account");
+
+    auto adapter = std::make_unique<CountingAdapter>();
+    auto* observed = adapter.get();
+    app.executor_->Stop(); app.executor_.reset();
+    app.adapter_ = std::move(adapter);
+    app.executor_ = std::make_unique<AsyncExecutor>(app.adapter_.get(), AsyncExecutor::Mode::kInlineReplay, true);
+    Check(app.oms_.RegisterIntent(Intent("old-entry")), "old entry fixture");
+    for (auto purpose : {OrderPurpose::kReduce, OrderPurpose::kSl, OrderPurpose::kTp}) {
+      auto reducing = Intent("protect-" + std::to_string(static_cast<int>(purpose)), true);
+      reducing.purpose = purpose;
+      Check(app.EnqueueIntent(reducing), "app blocked reducing order");
+    }
+    app.CancelEvolutionRiskOrders(); app.CancelEvolutionRiskOrders();
+    app.ProcessAsyncResults();
+    Check(observed->sent == 3 && observed->cancelled == 1, "operator cancel removed protections or retried tightly");
+    FillEvent late;
+    late.fill_id = "late-operator-fill"; late.client_order_id = "old-entry";
+    late.symbol = "BTCUSDT"; late.direction = 1; late.qty = 0.1; late.price = 100;
+    app.ProcessFillEvent(late);
+    Check(app.system_.account().position_qty("BTCUSDT") == 0.1 && app.IsForceReduceOnlyActive(),
+          "late fill lost or unlocked operator mode");
+    app.Shutdown();
+  }
+
+  // The existing execution contract must also prevent increasing shorts/longs
+  // or crossing through zero, even when direct flip is enabled.
+  ExecutionEngine execution(cfg.GetExecutionEngineConfig());
+  for (double position : {-100.0, 0.0, 100.0}) {
+    for (double target : {-200.0, -50.0, 0.0, 50.0, 200.0}) {
+      RiskAdjustedPosition desired;
+      desired.symbol = "BTCUSDT"; desired.adjusted_notional_usd = target; desired.reduce_only = true;
+      const auto intent = execution.BuildIntent(desired, position, 100);
+      if (!intent) continue;
+      const double after = position + intent->direction * intent->qty * 100;
+      Check(intent->reduce_only && std::fabs(after) <= std::fabs(position) &&
+            after * position >= 0, "reduce-only increased or reversed exposure");
+    }
+  }
+}
 void Application() {
   Temp root;
   AppConfig cfg;
@@ -282,8 +380,8 @@ void EventBeforeReprice() {
 }
 int main() {
   try {
-    Controller(); Persistence(); Sender(); Application(); EventBeforeReprice();
-    std::cout << "TEST_ONLY evolution safety controller/app/execution/persistence/restart PASS\n";
+    Controller(); Persistence(); Sender(); Application(); EventBeforeReprice(); OperatorReduceOnly();
+    std::cout << "TEST_ONLY evolution safety and operator reduce-only controller/app/execution/restart PASS\n";
     return 0;
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

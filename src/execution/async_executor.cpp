@@ -4,8 +4,10 @@
 
 namespace ai_trade {
 
-AsyncExecutor::AsyncExecutor(ExchangeAdapter* adapter, Mode mode)
-    : adapter_(adapter), mode_(mode) {}
+AsyncExecutor::AsyncExecutor(ExchangeAdapter* adapter, Mode mode,
+                             bool operator_reduce_only)
+    : adapter_(adapter), mode_(mode),
+      operator_reduce_only_(operator_reduce_only) {}
 
 AsyncExecutor::~AsyncExecutor() {
   Stop();
@@ -100,7 +102,9 @@ void AsyncExecutor::ExecuteTask(const Task& task) {
     std::lock_guard<std::mutex> send_lock(send_mutex_);
     result.client_order_id = task.intent.client_order_id;
     result.is_cancel = false;
-    if (safety_withdrawn_.load() && !task.intent.reduce_only) {
+    if (operator_reduce_only_ && !task.intent.reduce_only) {
+      result.error = "OPERATOR_REDUCE_ONLY";
+    } else if (safety_withdrawn_.load() && !task.intent.reduce_only) {
       result.error = "EVOLUTION_SAFETY_WITHDRAWAL_LATCHED";
     } else if (adapter_) {
       result.success = adapter_->SubmitOrder(task.intent);

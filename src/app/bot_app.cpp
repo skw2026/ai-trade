@@ -886,7 +886,9 @@ BotApplication::BotApplication(const AppConfig& config)
       reconciler_(config.reconcile.tolerance_notional_usd),
       gate_monitor_(config.gate),
       universe_selector_(config.universe, config.primary_symbol),
-      wal_(config.data_path + "/trade.wal") {}
+      wal_(config.data_path + "/trade.wal") {
+  RefreshReduceOnlyMode();
+}
 
 std::string BotApplication::SelfEvolutionPolicyFingerprint() const {
   std::string payload;
@@ -3632,7 +3634,7 @@ void BotApplication::AccumulateStats(DecisionFunnelStats* total,
 }
 
 bool BotApplication::IsForceReduceOnlyActive() const {
-  return protection_forced_reduce_only_ ||
+  return config_.execution_operator_reduce_only || protection_forced_reduce_only_ ||
          evidence_persistence_failed_ ||
          startup_protection_recovery_pending_ ||
          gate_forced_reduce_only_ || reconcile_forced_reduce_only_;
@@ -3951,7 +3953,8 @@ bool BotApplication::Initialize() {
   executor_ = std::make_unique<AsyncExecutor>(
       adapter_.get(), config_.mode == "replay"
                           ? AsyncExecutor::Mode::kInlineReplay
-                          : AsyncExecutor::Mode::kBackground);
+                          : AsyncExecutor::Mode::kBackground,
+      config_.execution_operator_reduce_only);
   if (evolution_safety_withdrawn_) executor_->LatchSafetyWithdrawal();
   executor_->Start();
   LogInfo(std::string("EXECUTION_MODE: ") +
@@ -3964,7 +3967,12 @@ bool BotApplication::Initialize() {
   if (!RecoverStartupOrdersAndProtection()) {
     return false;
   }
-  if (evolution_safety_withdrawn_) CancelEvolutionRiskOrders();
+  if (evolution_safety_withdrawn_ || config_.execution_operator_reduce_only)
+    CancelEvolutionRiskOrders();
+  if (config_.execution_operator_reduce_only) {
+    LogInfo("OPERATOR_REDUCE_ONLY_ACTIVE: new_risk=blocked, "
+            "protections=preserved, auto_resume=false");
+  }
 
   if (config_.integrator.enabled &&
       system_.integrator_mode() != IntegratorMode::kOff &&
@@ -4795,7 +4803,8 @@ void BotApplication::ApplyCandidateEpisodeFill(
 void BotApplication::RunLoop() {
   MarketEvent event;
   while (true) {
-    if (evolution_safety_withdrawn_) CancelEvolutionRiskOrders();
+    if (evolution_safety_withdrawn_ || config_.execution_operator_reduce_only)
+      CancelEvolutionRiskOrders();
     if (config_.closed_bar_mvp && system_.mvp_risk_state().latched) {
       // Cancel ALL-symbol queued entries before polling another executable
       // open. A risk latch must not let a previously queued entry add risk.
@@ -5769,6 +5778,11 @@ void BotApplication::ProcessMarketEvent(const MarketEvent& event) {
 bool BotApplication::EnqueueIntent(
     const OrderIntent& intent,
     const IntegratorCandidateLineage* integrator_lineage) {
+  if (config_.execution_operator_reduce_only && !intent.reduce_only) {
+    LogInfo("ORDER_REJECTED_OPERATOR_REDUCE_ONLY: client_order_id=" +
+            intent.client_order_id);
+    return false;
+  }
   if (evolution_safety_withdrawn_ && !intent.reduce_only) {
     LogInfo("ORDER_REJECTED_EVOLUTION_SAFETY: client_order_id=" + intent.client_order_id);
     return false;
@@ -7690,6 +7704,8 @@ void BotApplication::LatchEvolutionSafetyWithdrawal(bool persist) {
 }
 
 void BotApplication::CancelEvolutionRiskOrders() {
+  // Shared by safety withdrawal and operator maintenance; never cancel
+  // protective/reducing orders merely because new exposure is disabled.
   if (!executor_) return;
   for (const auto& id : oms_.PendingOrderIds()) {
     const auto* order = oms_.Find(id);
@@ -8181,6 +8197,8 @@ void BotApplication::LogStatus() {
           std::string(adapter_trade_ok ? "true" : "false") +
           ", force_reduce_only=" +
           std::string(force_reduce_only ? "true" : "false") +
+          ", operator_reduce_only=" +
+          std::string(config_.execution_operator_reduce_only ? "true" : "false") +
           ", protection_reduce_only=" +
           std::string(protection_forced_reduce_only_ ? "true" : "false") +
           ", evidence_persistence_failed=" +

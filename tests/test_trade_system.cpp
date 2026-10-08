@@ -5429,7 +5429,8 @@ int main(int argc, char** argv) {
 	        return 1;
 	      }
 	      if (std::string(file_name) == "bybit.demo.s5.yaml" &&
-	          (!config.protection.enabled ||
+	          (!config.execution_operator_reduce_only ||
+	           !config.protection.enabled ||
 	           !config.protection.dynamic_distance_enabled ||
 	           !config.protection.break_even_enabled ||
 	           !config.protection.trailing_enabled ||

@@ -484,6 +484,19 @@ bool LoadAppConfigFromYaml(const std::string& file_path,
       continue;
     }
 
+    if (current_section == "execution" && key == "operator_reduce_only") {
+      bool parsed = false;
+      if (!ParseBool(value, &parsed)) {
+        if (out_error != nullptr) {
+          *out_error = "execution.operator_reduce_only 解析失败，行号: " +
+                       std::to_string(line_no);
+        }
+        return false;
+      }
+      config.execution_operator_reduce_only = parsed;
+      continue;
+    }
+
     if (current_section == "execution" &&
         (key == "direct_flip_entry_enabled" ||
          key == "enable_direct_flip_entry")) {

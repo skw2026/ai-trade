@@ -169,7 +169,7 @@ jobs:
               report['runtime_status_count_last_15m_bounded'] = len(lines) if logs.returncode == 0 else None
               if lines and logs.returncode == 0:
                   report['latest_flags'] = {key: value == 'true' for key, value in re.findall(
-                      r'\b(trade_ok|trading_halted|evidence_persistence_failed|reconcile_reduce_only)=(true|false)', lines[-1])}
+                      r'\b(trade_ok|adapter_trade_ok|trading_halted|force_reduce_only|operator_reduce_only|evidence_persistence_failed|reconcile_reduce_only)=(true|false)', lines[-1])}
               required = ('manifest_identity_matches', 'release_tree_integrity_passed',
                           'runtime_image_matches_manifest', 'config_mount_matches_release')
               report['identity_status'] = 'PASS' if all(report.get(key) is True for key in required) and report.get('runtime_config_sha256') else 'FAIL'
