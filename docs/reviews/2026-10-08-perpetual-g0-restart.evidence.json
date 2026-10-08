@@ -1,0 +1,210 @@
+{
+  "schema_version": "perpetual_g0_restart_review_v1",
+  "baseline_sha": "34ba9b378761cc2f8d4251aa6666fac867713fd8",
+  "plan": "docs/plans/2026-10-08-perpetual-g0-restart.md",
+  "decision": "G0_NO_GO_INPUT_QUALIFICATION",
+  "selected_candidate": null,
+  "selected_count": 0,
+  "g1_started": false,
+  "g2_started": false,
+  "g3_started": false,
+  "g4_started": false,
+  "economic_result": "NOT_EVALUATED",
+  "local_validation": {
+    "status": "DOCUMENTARY_CHECK_PASS_NOT_G0_ADMISSION",
+    "existing_closeout_tests": 9,
+    "existing_closeout_skipped": 0,
+    "unchanged_hac_boundary_cases": 8,
+    "protected_identity_checks_passed": 41,
+    "source_identity_checks_passed": 9,
+    "formal_validation_failures": 0,
+    "new_full_ctest_run": false
+  },
+  "economic_attempts": 0,
+  "training_vectors": 0,
+  "market_price_requests": 0,
+  "account_requests": 0,
+  "order_submissions": 0,
+  "deployments": 0,
+  "background_observation_started": false,
+  "operator_reduce_only_unchanged": true,
+  "budget": {
+    "project_engineering_hours_limit": 32,
+    "project_active_days_limit": 5,
+    "g0_hours_limit": 4,
+    "engineering_hours_charged_upper_bound": 1,
+    "conservative_work_interval_utc": [
+      "2026-10-08T12:00:00Z",
+      "2026-10-08T13:00:00Z"
+    ],
+    "document_operations": 22,
+    "document_operations_limit": 40,
+    "public_input_gets": 3,
+    "public_input_gets_limit": 6,
+    "web_operations_without_returned_content": 4,
+    "unused_budget_is_not_automatic_next_batch": true
+  },
+  "candidates": [
+    {
+      "id": "S1",
+      "mechanism": "Stablecoin primary issuance and deployable purchasing power",
+      "status": "NOT_ADMITTED_ISSUANCE_AND_KNOWLEDGE_TIME_UNBOUND",
+      "raw_input_available": true,
+      "input_definition_qualified": false,
+      "independent_confirmation_admitted": false,
+      "empirical_profit_evaluated": false,
+      "findings": [
+        "Tether inventory authorization is distinct from circulation.",
+        "Aggregate public series contains 3236 unique consecutive UTC daily rows, 2017-11-29 through 2026-10-08.",
+        "Current Tether adapter is bound to bef03c7d3c7ca432927e370f99d03f2550ec909e; some branches read present transparency and ignore time arguments.",
+        "Current aggregate snapshot and current adapter do not alone bind historical actual issuance events and knowledge times. This does not prove all historical values wrong or nonexistent."
+      ],
+      "required_missing": [
+        "historical event classification and raw/version provenance",
+        "causal availability contract",
+        "qualified independent confirmation domain"
+      ]
+    },
+    {
+      "id": "S2",
+      "mechanism": "Ethereum validator exit queue and withdrawable inventory",
+      "status": "NOT_ADMITTED_HISTORICAL_QUEUE_AND_SELLING_HYPOTHESIS_UNBOUND",
+      "raw_input_available": "CURRENT_HEADER_ONLY",
+      "input_definition_qualified": false,
+      "independent_confirmation_admitted": false,
+      "empirical_profit_evaluated": false,
+      "findings": [
+        "Electra consolidation can set an exit epoch and transfer effective balance to another validator; validator exit is not identical to liquid sale.",
+        "Finalized header request HTTP 200; fixed 2024-01-01 state sample HTTP 403 with empty body.",
+        "403 internal cause UNKNOWN. It does not prove archive pruning, absence of history, or an invalid strategy."
+      ],
+      "required_missing": [
+        "usable historical queue/withdrawal/consolidation inputs",
+        "directional selling hypothesis separated from restaking/internal migration",
+        "qualified independent confirmation domain"
+      ]
+    }
+  ],
+  "statistical_boundary": {
+    "minimum_complete_weeks": 26,
+    "source": "tools/run_bounded_learning.py:hac_lower",
+    "preserved": true,
+    "minimum_length_is_not_profit_evidence": true
+  },
+  "protection": {
+    "baseline_file": ".artifacts/perpetual-g0-restart-20261008/protected.json",
+    "protected_files": 41,
+    "old_gates": 35,
+    "entire_repository_not_audited": true
+  },
+  "sources": [
+    {
+      "url": "https://tether.to/en/faqs/",
+      "file": "tether-faq.html",
+      "http_status": 200,
+      "complete": true,
+      "purpose": "issuer definitions"
+    },
+    {
+      "url": "https://stablecoins.llama.fi/stablecoincharts/all",
+      "file": "stablecoin-circulation-sample.json",
+      "http_status": 200,
+      "complete": true,
+      "purpose": "input schema and date coverage only"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/DefiLlama/peggedassets-server/bef03c7d3c7ca432927e370f99d03f2550ec909e/src/adapters/peggedAssets/tether/index.ts",
+      "file": "tether-adapter-bound.ts",
+      "http_status": 200,
+      "complete": true,
+      "purpose": "current adapter semantics, not historic deployed version proof"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/ethereum/consensus-specs/master/specs/electra/beacon-chain.md",
+      "file": "electra-beacon-chain.md",
+      "http_status": 200,
+      "complete": true,
+      "purpose": "protocol mechanics, not economic effect"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/ethereum/beacon-APIs/master/apis/beacon/states/validators.yaml",
+      "file": "beacon-state-api.yaml",
+      "http_status": 200,
+      "complete": true,
+      "purpose": "historical state API definition"
+    },
+    {
+      "url": "https://ethereum-beacon-api.publicnode.com/eth/v1/beacon/headers/finalized",
+      "file": "beacon-finalized.json",
+      "http_status": 200,
+      "complete": true,
+      "purpose": "current endpoint control only"
+    },
+    {
+      "url": "https://ethereum-beacon-api.publicnode.com/eth/v1/beacon/states/8103598/validators?id=0",
+      "file": "beacon-history-20240101.json",
+      "http_status": 403,
+      "complete": false,
+      "purpose": "historical access failed; body empty"
+    },
+    {
+      "url": "https://www.blockchainresearchlab.org/wp-content/uploads/2020/05/The_Influence_of_Stablecoin_Issuances_on_Cryptocurrency_Markets_BRL_Working_Paper_No_11.pdf",
+      "file": "stablecoin-issuance.pdf",
+      "http_status": 200,
+      "complete": false,
+      "purpose": "discovery only; partial download excluded from full-text claims"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/DefiLlama/peggedassets-server/master/src/adapters/tether/index.ts",
+      "file": "tether-adapter.ts",
+      "http_status": 404,
+      "complete": false,
+      "purpose": "wrong path retained, resolved through repository directory"
+    }
+  ],
+  "source_files": {
+    "beacon-finalized.json": {
+      "bytes": 671,
+      "sha256": "beeecdc55037865c26c29fae9b38bf012f07671c107e472acc3399e9b7ef3d20"
+    },
+    "beacon-history-20240101.json": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "beacon-state-api.yaml": {
+      "bytes": 6739,
+      "sha256": "8ed96b77cc3f533e8a2e8bde6238a753545b62afb2a7bca9f388fbd5a90f9bf0"
+    },
+    "electra-beacon-chain.md": {
+      "bytes": 76557,
+      "sha256": "5ddb1d2cf4f181533f757977c737f294d9211034cf5fd4c259f1cb1b442d2972"
+    },
+    "stablecoin-circulation-sample.json": {
+      "bytes": 1308255,
+      "sha256": "674b517adba96764c041a17b973d1a4567ef25b6f1e30399d6d0632e03ea7aea"
+    },
+    "stablecoin-issuance.pdf": {
+      "bytes": 409339,
+      "sha256": "797494500c5ebe0ae82394010518ea488b3d6ffc2a7e9bf0e3da5c5ce1d1727a"
+    },
+    "tether-adapter-bound.ts": {
+      "bytes": 32678,
+      "sha256": "a0a9eaf41be7dfdbb1611cb0785d366c11d91b7d282d552d79b7ef3a0482be31"
+    },
+    "tether-adapter.ts": {
+      "bytes": 14,
+      "sha256": "d5558cd419c8d46bdc958064cb97f963d1ea793866414c025906ec15033512ed"
+    },
+    "tether-faq.html": {
+      "bytes": 86331,
+      "sha256": "5212819d43f81e7bfca5f5f2647b25b8160e4c9644c16bcaa4f20eb66fc2caf1"
+    }
+  },
+  "limitations": [
+    "No full-text confirmation of research paper performance.",
+    "Neither mechanism was tested for profitability or declared generally impossible.",
+    "No historical candidate verdict, safety rule, V4 failure or old gate was changed.",
+    "No new six-month waiting period was started."
+  ],
+  "access_review": "docs/reviews/2026-10-08-g0-source-access-review.json"
+}

@@ -1,0 +1,17 @@
+{
+  "scope": "G0 exploratory source access, not an economic run or formal gate retry",
+  "decision": "use bounded public alternatives; do not retry failed economic work",
+  "observations": [
+    {"source": "web research service", "observed": "401 IP not authorized on a batch of four requested opens", "root_cause_status": "unknown", "action": "No further call to that service; read already-public original sites through the available shell network channel. No credentials or access-control workaround."},
+    {"source": "BRL stablecoin paper", "observed": "HTTP 200 but transfer timed out at 409339 of 629468 bytes within 40 seconds", "root_cause_status": "unknown", "action": "Preserve incomplete file; do not parse it as a complete paper or claim full-text confirmation. No download retry."},
+    {"source": "ethereum.org withdrawals", "observed": "connection timed out; HTTP status 000", "root_cause_status": "unknown", "action": "Use the official open-source protocol specification for event semantics, not as market-performance evidence."},
+    {"source": "DefiLlama adapter path", "observed": "guessed src/adapters/tether/index.ts returned 404", "root_cause_status": "confirmed", "action": "Repository directory lookup, not a claim that the provider or data is absent. Bind any actual source to its observed commit."},
+    {"source": "public Beacon API", "observed": "latest finalized header HTTP 200; fixed historical state request HTTP 403 with no body", "root_cause_status": "unknown", "action": "Do not infer pruning, nonexistent history, or global unavailability. Current reachability is not historical input qualification; no authentication bypass or repeat request."}
+  ],
+  "route_review": {
+    "goal_alignment": "Two bounded new mechanisms need causal input identities and a reachable independent confirmation exit, not a positive backtest before admission.",
+    "data_feasibility": "An aggregate circulation series and a current Beacon header are accessible; neither alone supplies the required historical event-and-knowledge-time binding.",
+    "method_feasibility": "Keep original safety, cost and independence requirements. Do not treat protocol transfers or treasury inventory as observed buying or selling.",
+    "budget_and_exit": "Keep the existing G0 four-hour, forty-document-operation and six-input-GET limits. No third mechanism, training, account operations or deployment. Missing required inputs lead to no G1 admission, not a finding of negative expected returns."
+  }
+}
