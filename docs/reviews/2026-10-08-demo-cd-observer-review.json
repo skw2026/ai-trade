@@ -1,0 +1,26 @@
+{
+  "failure_id": "2ca12e0571d549e3a6522fbf12832d99",
+  "decision": "retry",
+  "goal": "Verify the single authorized Demo operator-reduce-only release without restarting or replaying deployment",
+  "expected": "gh run watch 37747000573 --exit-status observes the exact main push CD outcome",
+  "observed": "gh 2.97.0 exited 1 with failed to get run: Get https://api.github.com/repos/skw2026/ai-trade/actions/runs/37747000573?exclude_pull_requests=true: EOF. Subsequent read-only inspection shows the same CD and CI completed successfully on f6cc4ea7f03c1c8f251c730e3642d2ca19b00ca4; no workflow was rerun.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The failing command terminated on an HTTP observation transport EOF, not a remote job failure: its recorded error is a failed GET before obtaining run state, whereas authoritative follow-up metadata identifies the same completed successful run. The underlying cause of the truncated connection remains UNKNOWN; no claim of server or network repair is made. A one-shot polling client made transport loss fatal to the observer. The remote operation is now terminal, so the identical command can verify its final result without another long-running polling loop or any deployment mutation.",
+  "evidence": [
+    ".artifacts/demo-operator-reduce-only-20261008/validation-state.json: operator-exact-cd exit 1 at 2026-10-08T10:03:06.664836+00:00",
+    "Captured CLI output: failed to get run ... exclude_pull_requests=true: EOF",
+    "https://github.com/skw2026/ai-trade/actions/runs/37747000573: main push, exact f6cc4ea7f03c1c8f251c730e3642d2ca19b00ca4, completed success, build-test-push and deploy-ecs success",
+    "https://github.com/skw2026/ai-trade/actions/runs/37747000583: completed success"
+  ],
+  "next_action": "Run the identical gh run watch argv once with a 120-second observation budget; do not push, rerun jobs, replace the run identity or reset a gate. Only after success perform the already planned post-deployment readonly acceptance.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Final CD identity is a required prerequisite to claiming the approved entry prohibition is live; transport recovery is not trading qualification.",
+    "data_feasibility": "Read-only authoritative job metadata for the exact SHA and run is accessible and terminal; no additional account credential or user decision is required.",
+    "method_feasibility": "The unchanged command now takes the terminal-run observation path; no code, deployment or acceptance threshold changes are necessary. Post-deployment runtime evidence remains independently required.",
+    "budget_and_exit": "One original-command retry, 120 seconds. A second observation failure blocks and requires route reassessment. No second publication attempt and no automatic workflow rerun."
+  }
+}
