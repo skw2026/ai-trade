@@ -1,0 +1,452 @@
+{
+  "schema_version": "eth_queue_input_admission_v1",
+  "date": "2026-10-09",
+  "decision": "G0_NO_GO_USAGE_PROVENANCE",
+  "diagnostic_result": {
+    "all_version_bodies_verified": false,
+    "archive_control": [
+      {
+        "created_at": "2024-01-01T00:30:18Z",
+        "id": "34495570853",
+        "sha": "639fa417c92e821f6969073c5b165eba85064811",
+        "type": "PushEvent"
+      }
+    ],
+    "comment_bound": 9,
+    "demo_reduce_only_changed": false,
+    "deployment_bound": 693,
+    "economic_attempts": 0,
+    "first_ever_publication_proven": false,
+    "g0_admitted": false,
+    "g1_to_g4_started": false,
+    "independent_confirmation_admitted": false,
+    "input_adjudication_reads": 72,
+    "local_request_metadata": 2221,
+    "new_price_requests": 0,
+    "oldest_retained_artifact": "2026-07-11T03:43:18Z",
+    "remote_allowlisted_metadata_files": 0,
+    "remote_entries": 14793,
+    "remote_inventory_run_id": 37878657030,
+    "research_named_artifacts": 490,
+    "retained_github_artifacts": 1304,
+    "sampled_snapshot_count": 9,
+    "samples": [
+      {
+        "last_date": "2023-06-04",
+        "rows": 15,
+        "sha": "354e92c9cdfb92e8c52f615e3feac87122fccbc3",
+        "sha256": "de11b53785d074113f7715b764b6b7097d2f34358520d7623ed668b335e31ea4"
+      },
+      {
+        "last_date": "2023-09-01",
+        "rows": 104,
+        "sha": "b1735644b06a0ae093b1c2398844b30c93cbff6a",
+        "sha256": "39c4be4e8747c6fa8422fe50333ebd6dd4f604c0586941c69bdd7a49beb22ad5"
+      },
+      {
+        "last_date": "2023-12-01",
+        "rows": 195,
+        "sha": "c0635e9bd025a0e68e08906ffc88f23a6c3498ff",
+        "sha256": "0651e7ec02ecfc21269f12d8ba6c76aba5703ed5387a019db4a39e3ecc6fdd53"
+      },
+      {
+        "last_date": "2024-01-01",
+        "rows": 226,
+        "sha": "639fa417c92e821f6969073c5b165eba85064811",
+        "sha256": "36d15d9ef6a9f7e9b3ca2c4f7a063b8cea26eb8f9f6634d4a43c764b4c2bc29d"
+      },
+      {
+        "last_date": "2024-04-01",
+        "rows": 315,
+        "sha": "eff9ebcbcfb3faa28799eee16e922b35119cce41",
+        "sha256": "4b57a3ece30b893695501f1e0c8a4fab190c321c3a468e457b39e1917c68e418"
+      },
+      {
+        "last_date": "2024-07-01",
+        "rows": 406,
+        "sha": "800bb33d570f4693e41ab45de81d8a7db2021cf6",
+        "sha256": "24950f5a78bb9919a46fc959c6bf3e7a9edf97bf411565706372ea88c7963d64"
+      },
+      {
+        "last_date": "2024-10-01",
+        "rows": 498,
+        "sha": "d022144c8ef70b692703f4cf998cea2a5f5583a6",
+        "sha256": "36afb9d6290087d788bd385c8ba97c9f83c0905f54b4139e42383c3546b848a4"
+      },
+      {
+        "last_date": "2025-01-01",
+        "rows": 590,
+        "sha": "39b7850bd21a53b657dc4d8dfa9b4bace9bbca42",
+        "sha256": "d5864e5033bd546c208344240f6ca74379ef12c371c1dc4700065ad21a2750bf"
+      },
+      {
+        "last_date": "2025-05-05",
+        "rows": 714,
+        "sha": "4e4b5be2858d299c1a223b8acb646d9709c223a6",
+        "sha256": "4463c60fcae1f4c98de96369f301091c712b452dca2cfb2d22549f8dcc2d0404"
+      }
+    ],
+    "selected_archive_usage": [
+      {
+        "archive": "retained-oldest.zip",
+        "members": 8,
+        "metadata": []
+      },
+      {
+        "archive": "retained-alpha-early.zip",
+        "members": 11,
+        "metadata": []
+      },
+      {
+        "archive": "retained-latest.zip",
+        "members": 51,
+        "metadata": [
+          {
+            "basename": "market_alpha_history_report.json",
+            "intervals": [
+              {
+                "first_timestamp_ms": 1758314100000,
+                "last_timestamp_ms": 1784493000000,
+                "symbol": "SOLUSDT",
+                "target_eth_overlap": false
+              },
+              {
+                "first_timestamp_ms": 1758314100000,
+                "last_timestamp_ms": 1784493000000,
+                "symbol": "BTCUSDT",
+                "target_eth_overlap": false
+              },
+              {
+                "first_timestamp_ms": 1758314100000,
+                "last_timestamp_ms": 1784493000000,
+                "symbol": "ETHUSDT",
+                "target_eth_overlap": false
+              }
+            ],
+            "sha256": "9bf929679f4cd2ec2dfffdf4a5e4d5edcebc8592e59ec5d23aeba3f82b5c7a6e"
+          },
+          {
+            "basename": "research_domain_split_report.json",
+            "intervals": [
+              {
+                "first_timestamp_ms": 1758314100000,
+                "last_timestamp_ms": 1789849800000,
+                "symbol": "SOLUSDT",
+                "target_eth_overlap": false
+              }
+            ],
+            "sha256": "e746f0535a2b2a591dce8113c5763d7a303ccdf2375c29da6e7e81d348c46a1f"
+          }
+        ]
+      }
+    ],
+    "status": "PUBLICATION_PATH_SUPPORTED_USAGE_UNRESOLVED",
+    "training_vectors": 0,
+    "versions": 702
+  },
+  "selected_candidate": null,
+  "selected_count": 0,
+  "previous_g0_decision_preserved": "G0_NO_GO_INPUT_QUALIFICATION",
+  "independent_confirmation_admitted": false,
+  "development_confirmation_partition_frozen": false,
+  "event_capacity_validated": false,
+  "all_daily_version_bodies_validated": false,
+  "external_usage_fact": {
+    "scope": "2023-05-21 through 2025-05-05 ETH history outside repository",
+    "status": "USER_CONFIRMED_NOT_USED",
+    "confers_admission": false
+  },
+  "internal_usage_status": "UNKNOWN_INCOMPLETE_HISTORICAL_RECORDS",
+  "backup_fact_requested": true,
+  "diagnostic_publication": {
+    "sha": "f3ddc2b398ce1851334d86a71e7043fe6adfc7ba",
+    "run_id": 37878657030,
+    "run_event": "workflow_dispatch",
+    "run_conclusion": "success",
+    "automatic_runs_observed_after_push": [],
+    "existing_release_sha": "f6cc4ea7f03c1c8f251c730e3642d2ca19b00ca4",
+    "deployments": 0,
+    "restarts": 0,
+    "account_requests": 0
+  },
+  "validation": {
+    "new_synthetic_tests": 13,
+    "new_skips": 0,
+    "existing_closure_tests": 9,
+    "formal_failures": 0,
+    "protected_files": 45,
+    "old_gates": 35,
+    "full_ctest_run": false
+  },
+  "budget": {
+    "additional_explicit_reads_at_input_adjudication": 72,
+    "additional_read_cap": 100,
+    "publication_only_checks_after_adjudication": "recorded separately in local delivery receipt; within same 100-read cap",
+    "input_stage_start_utc": "2026-10-09T02:49:37Z",
+    "input_stage_deadline_utc": "2026-10-09T04:49:37Z",
+    "new_engineering_hours_cap": 2,
+    "g0_hours_total_cap": 4,
+    "project_engineering_hours_cap": 32,
+    "project_deadline_local": "2026-10-14T23:59:00+08:00",
+    "opaque_download_bytes": 124788441,
+    "opaque_download_cap_bytes": 300000000,
+    "single_download_cap_bytes": 150000000
+  },
+  "source_files": {
+    "access-review.json": {
+      "bytes": 880,
+      "sha256": "ee4e2e0e928ea298dc1babf61fa2089a080421569dc33052c8abbcc83cf1df01"
+    },
+    "audited-result-with-archives.json": {
+      "bytes": 4383,
+      "sha256": "c82c26d7bcd28c77444ce85cdc00004976075f32ae3c32e625f17b3526da9678"
+    },
+    "audited-result.json": {
+      "bytes": 2785,
+      "sha256": "fc1706304e0ba93ce6733a2eeba12a8f255ba403a622dcebcf34e7cd6029cc50"
+    },
+    "clickhouse-schema.json": {
+      "bytes": 11554,
+      "sha256": "6a5f8183d651250e538b4a75482553b870d5e6ccab26ebd82498b3a8c292df67"
+    },
+    "comment-bindings-control.json": {
+      "bytes": 1507,
+      "sha256": "b43fb08bdca945b4b43f59258fdb29cf2b9e71f0d6310a7f85e64b425403ff3d"
+    },
+    "events-months.json": {
+      "bytes": 2093,
+      "sha256": "9f0601814308c8976c1341c4ec30c8b41160f7748fd6f7d115a2fd6ad2d39f01"
+    },
+    "gharchive-2024-01-01-0.json.gz": {
+      "bytes": 74527660,
+      "sha256": "d68c3e2d4443c01a02e25e23fc7b809e34027b26257bb743adadc4aaac1b9308"
+    },
+    "github-graphql-fields.json": {
+      "bytes": 12981,
+      "sha256": "582c6babe43e12b21b456b97a390db5f195d3f804abd6b048ef73570cecba1aa"
+    },
+    "historical-checks.json": {
+      "bytes": 34,
+      "sha256": "371a03382fe9a66aed3055842ef0ba4119935b68055ea100aed8ea8032cc7f22"
+    },
+    "historical-deployments.json": {
+      "bytes": 1718,
+      "sha256": "73a2c937a35828abc156c289de07b8c76a885d0e1ae77996ec8ffc84194ca982"
+    },
+    "historical-runs.json": {
+      "bytes": 37,
+      "sha256": "fc5753fa7f5380199fb73c07a084e2125b722a06993132cdf348bc7e41367728"
+    },
+    "historical-status.json": {
+      "bytes": 4993,
+      "sha256": "a2c3f7390881adc8967cb5ec2da9f3e4aeabb1c38df3ed05b397c3749eaa3fda"
+    },
+    "inventory-jobs.json": {
+      "bytes": 899,
+      "sha256": "bdd26e8b143c089947899b4e14bdfb30a8db070e0af8e231dce20c35fa53e3dd"
+    },
+    "local-usage-observation.json": {
+      "bytes": 864,
+      "sha256": "ccd72bd79c97ccbb48307143d7d82653bcb45e0984a7e5a1665c23b9ba0d0bad"
+    },
+    "missing-deployment-comments.json": {
+      "bytes": 1408,
+      "sha256": "f04533845888afa81564d39917083cc3b20fe5c885c9c647817f930bba6cab1c"
+    },
+    "publication-days-corrected.json": {
+      "bytes": 44886,
+      "sha256": "d21906750de1f56e8b39ce4af409eae7a38f4e015364e961d1be44c6b26be37f"
+    },
+    "publication-days.json": {
+      "bytes": 223,
+      "sha256": "59257fd586ca39210034455ec538f0e617ae0c2afc2ce51b072ec61dcade78bb"
+    },
+    "publication-metadata-1.json": {
+      "bytes": 83358,
+      "sha256": "2367fac31ed8bfad544405d3458889d4ee572efd00f292cc77d8bb649ef49c81"
+    },
+    "publication-metadata-2.json": {
+      "bytes": 83359,
+      "sha256": "d9f279ae84d82619071c9689b5d90a0b8184006d1abe79eb2ef9e550a66c9de8"
+    },
+    "publication-metadata-3.json": {
+      "bytes": 83359,
+      "sha256": "72a5d38eda7702a90503442c8b2e85590ce069f1da3f87e08e8a7dd600c03f78"
+    },
+    "publication-metadata-4.json": {
+      "bytes": 83359,
+      "sha256": "a14d226456691826e7f61bf9d875e793a596017a2f5c2747c25df4c7bb65d03e"
+    },
+    "publication-metadata-5.json": {
+      "bytes": 83359,
+      "sha256": "66db16795e99bc44bba8f7ca9ee9bcd92b2b726b5f03db79530fd2e7a61b035e"
+    },
+    "publication-metadata-6.json": {
+      "bytes": 82753,
+      "sha256": "d3c7d9e71e793fe3a36b8bb312277eee2b5efcee6af2e86de99e8198cc2eaac7"
+    },
+    "publication-metadata-7.json": {
+      "bytes": 78883,
+      "sha256": "907ad77490279c2d2d79875578445317e96765732a6b3165c15d4fbfe7194e64"
+    },
+    "publication-metadata-8.json": {
+      "bytes": 2018,
+      "sha256": "66aeb8f449a68b7e8466890f55168fd3c5447a97eb8bb911b70f951453635045"
+    },
+    "publication-query-review.json": {
+      "bytes": 896,
+      "sha256": "600ae621dbdbc327c3ea23823969dede4714896e2d290009e43f7ae2ecbc3846"
+    },
+    "push-days.json": {
+      "bytes": 75961,
+      "sha256": "c8d274bc44ac708c5e5ebcd9a65e2e0aea37743aade2279b40cf357c683bd555"
+    },
+    "push-events-20240101-corrected.json": {
+      "bytes": 6253,
+      "sha256": "762c56a49d5a92a8d78f0aea4743f0e767f1109ab2f8a16bbc7e682f9cdb3d20"
+    },
+    "push-events-20240101.json": {
+      "bytes": 137,
+      "sha256": "47b7688388ecf59b43dc681e2af05b19a1720a4d7bb4757124f2619698a02453"
+    },
+    "queue-20230604.json": {
+      "bytes": 3487,
+      "sha256": "de11b53785d074113f7715b764b6b7097d2f34358520d7623ed668b335e31ea4"
+    },
+    "queue-20230901.json": {
+      "bytes": 24589,
+      "sha256": "39c4be4e8747c6fa8422fe50333ebd6dd4f604c0586941c69bdd7a49beb22ad5"
+    },
+    "queue-20231201-first-public.json": {
+      "bytes": 45975,
+      "sha256": "0651e7ec02ecfc21269f12d8ba6c76aba5703ed5387a019db4a39e3ecc6fdd53"
+    },
+    "queue-20240401.json": {
+      "bytes": 75081,
+      "sha256": "4b57a3ece30b893695501f1e0c8a4fab190c321c3a468e457b39e1917c68e418"
+    },
+    "queue-20240701.json": {
+      "bytes": 100742,
+      "sha256": "24950f5a78bb9919a46fc959c6bf3e7a9edf97bf411565706372ea88c7963d64"
+    },
+    "queue-20241001.json": {
+      "bytes": 126561,
+      "sha256": "36afb9d6290087d788bd385c8ba97c9f83c0905f54b4139e42383c3546b848a4"
+    },
+    "queue-20250101.json": {
+      "bytes": 152441,
+      "sha256": "d5864e5033bd546c208344240f6ca74379ef12c371c1dc4700065ad21a2750bf"
+    },
+    "read-ledger-at-adjudication.json": {
+      "bytes": 16515,
+      "sha256": "54508464146d1679b7fec334118e7c64c45cb9eb3e2c6c85c339682ad7011b63"
+    },
+    "read-ledger-final-inputs.json": {
+      "bytes": 17391,
+      "sha256": "1264082b57165e6f366dfd6df3c045aa0e6bef6338f0517bbff9d3a9dc55e6d9"
+    },
+    "remote-inventory/research-input-inventory.json": {
+      "bytes": 801,
+      "sha256": "2404b8d9056cde50a4002fb04d7fd8e7b2ead2c9df56653f82c882b0400cfd62"
+    },
+    "retained-alpha-early.zip": {
+      "bytes": 21334745,
+      "sha256": "66938f4b65d08efb6830414211987004c6a9b036e559cb57ad32d098276d436c"
+    },
+    "retained-artifact-index-page1.json": {
+      "bytes": 29550,
+      "sha256": "1dce9aa901e260540fd2a1ca63c68e905ed1131bfb649e87aeab945b7e98f21d"
+    },
+    "retained-artifact-index-page10.json": {
+      "bytes": 10750,
+      "sha256": "235380075ffd65eb7e6250117fbe2fb82916dde8160fe4fdc191ec0285f99fe8"
+    },
+    "retained-artifact-index-page11.json": {
+      "bytes": 8926,
+      "sha256": "4877de2365ceb8f9d47578ebe69ffb2df257eed84788cef435b49dec326e0461"
+    },
+    "retained-artifact-index-page12.json": {
+      "bytes": 11983,
+      "sha256": "702b6eef5d2ea327502ac19c7d2595d65aab5d32b4e79b1f99d88d51ba3bb9ec"
+    },
+    "retained-artifact-index-page13.json": {
+      "bytes": 20259,
+      "sha256": "c9fef53c4e1fe1695f02850011b4fbcb5ef26241ca90d3ad6c6ce6b140b05d8c"
+    },
+    "retained-artifact-index-page14.json": {
+      "bytes": 1180,
+      "sha256": "4b532a462c5689c32547e0a91101830292a93ecf5480df42daf40a08d77d6a28"
+    },
+    "retained-artifact-index-page2.json": {
+      "bytes": 4050,
+      "sha256": "90025ca1c2abeafe9e57862a96f6af514fc3a6db157b7f90d61bba11dee776b4"
+    },
+    "retained-artifact-index-page3.json": {
+      "bytes": 4286,
+      "sha256": "be5bc7c80121d937e2001c4dcea7e0c184d2ead32453872d4c895c1277884fb4"
+    },
+    "retained-artifact-index-page4.json": {
+      "bytes": 11015,
+      "sha256": "26991312e150778a5ec7a4dbe43e12b007d9caf05b6085b12d37aaffa8a73584"
+    },
+    "retained-artifact-index-page5.json": {
+      "bytes": 8410,
+      "sha256": "ee9b3232e24d6e5d11703e54faf137dc831935ea4608c4459441fa6cba882f8e"
+    },
+    "retained-artifact-index-page6.json": {
+      "bytes": 9435,
+      "sha256": "b4e134fffe7831a25fa4018d68566e877952e7012d922833351993863c4fa152"
+    },
+    "retained-artifact-index-page7.json": {
+      "bytes": 13041,
+      "sha256": "7d465f623c6c91c4207f52ca15ebc6479d576c594c43cff9155f20b0960b3eec"
+    },
+    "retained-artifact-index-page8.json": {
+      "bytes": 11260,
+      "sha256": "667b8abc37d0c8f0199d91c5431d169962ed6c04529d3f54a7d5068b321a3809"
+    },
+    "retained-artifact-index-page9.json": {
+      "bytes": 8919,
+      "sha256": "cd22907b21dbf0c14cca9444d39eb1155cd8e58680950c306e0938ed5321e664"
+    },
+    "retained-latest.zip": {
+      "bytes": 28761542,
+      "sha256": "6910e05e8871e2b45b9d8df442d6aa119d5fa645d42c5ee8ad1f58afdc6fd470"
+    },
+    "retained-oldest.zip": {
+      "bytes": 164494,
+      "sha256": "aeca042742092cea7c37100aba920a804f298d61b86a8816bd72c09176390992"
+    },
+    "selected-archive-receipts.json": {
+      "bytes": 2314,
+      "sha256": "c9209bdcc63f0a9f6a7f8aff0b99eeef52647ce2ff459af22dcf3b9ffb702e7c"
+    },
+    "technical-diagnostic-review.json": {
+      "bytes": 1742,
+      "sha256": "b78f518616cc5c99eb9ff7d3d0da40c89fc990b8a30513ef488b09434fc741a2"
+    }
+  },
+  "local_evidence_bytes": 126264084,
+  "raw_sources_uploaded": false,
+  "opaque_artifacts_extracted": false,
+  "opaque_archive_price_or_account_members_parsed": false,
+  "selected_archive_limitation": "The 2026-08-05 01:00:44 UTC calendar-early archive predates the alpha source commit at 07:10:14 UTC; not a post-introduction negative control. Preserved, not replaced.",
+  "network_error_reviews": [
+    "readonly server setting rejected; corrected query once",
+    "aggregate alias shadowing; qualified and renamed once",
+    "sandbox network connection failed; same read succeeded via network-capable execution, no remote outage established"
+  ],
+  "economic_result": "NOT_EVALUATED",
+  "new_exchange_price_requests": 0,
+  "economic_attempts": 0,
+  "training_vectors": 0,
+  "background_observation_started": false,
+  "demo_reduce_only_changed": false,
+  "known_limits": [
+    "702 SHA timestamp metadata bindings are not all-version content or first-ever-publication certification",
+    "Scoped absence cannot prove non-use",
+    "Only three selected existing GitHub archive bodies inspected through research metadata allowlist; full archive corpus not inspected",
+    "No current account/risk runtime health conclusion"
+  ],
+  "next_dependency": "Specific recoverable historical usage ledger, research run receipts or backup entry point; no automatic new model, third mechanism, input budget or market waiting period"
+}
