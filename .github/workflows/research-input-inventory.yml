@@ -1,0 +1,100 @@
+name: Research Input Readonly Inventory
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_release_sha:
+        description: Existing deployed SHA; never deploys or restarts a service
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-trade-research-input-readonly-inventory
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read allowlisted research metadata, not accounts or price payloads
+        env:
+          EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+          ECS_TRANSPORT_HOST: ${{ secrets.ECS_HOST }}
+          ECS_TRANSPORT_USER: ${{ secrets.ECS_USER }}
+          ECS_TRANSPORT_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_TRANSPORT_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_TRANSPORT_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT }}
+        run: |
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+
+          os.umask(0o077)
+          sha = os.environ['EXPECTED_RELEASE_SHA']
+          if not re.fullmatch(r'[0-9a-f]{40}', sha):
+              raise SystemExit('INVALID_RELEASE_SHA')
+          source = Path('tools/inspect_research_input_usage.py').read_text()
+          marker = 'AI_TRADE_RESEARCH_METADATA_ONLY'
+          if marker in source:
+              raise SystemExit('SOURCE_DELIMITER_COLLISION')
+          script = ('set -euo pipefail\nulimit -v 524288\n'
+                    'timeout --signal=TERM --kill-after=5s 45s python3 -B - '
+                    '--expected-release-sha ' + sha + " <<'" + marker + "'\n"
+                    + source + '\n' + marker + '\n')
+          env = dict(os.environ, ECS_TRANSPORT_MODE='script', ECS_TRANSPORT_TIMEOUT='100s',
+                     ECS_TRANSPORT_ENVS='', ECS_TRANSPORT_SCRIPT=script)
+          report = None
+          code = 2
+          try:
+              done = subprocess.run([sys.executable, '-B', 'deploy/ecs_ssh.py'],
+                                    env=env, capture_output=True, timeout=145, check=False)
+              code = done.returncode
+              for line in done.stdout.splitlines():
+                  try:
+                      candidate = json.loads(line)
+                  except (ValueError, UnicodeError):
+                      continue
+                  if isinstance(candidate, dict) and candidate.get('schema_version') == 'research_input_usage_inventory_v1':
+                      report = candidate
+          except subprocess.TimeoutExpired:
+              pass
+          # Never print/upload SSH stdout, stderr, raw metadata or credentials.
+          if report is None:
+              report = {'schema_version':'research_input_usage_inventory_v1',
+                        'diagnosis_completed':False, 'reason_code':'NO_DIAGNOSTIC_RECEIPT',
+                        'independent_confirmation_admitted':False}
+          report['transport_completed_successfully'] = code == 0
+          report['diagnostic_source_sha256'] = hashlib.sha256(source.encode()).hexdigest()
+          report['diagnostic_commit_sha'] = os.environ['GITHUB_SHA']
+          Path('.artifacts').mkdir(exist_ok=True)
+          with Path('.artifacts/research-input-inventory.json').open('x') as handle:
+              json.dump(report, handle, indent=2, sort_keys=True, allow_nan=False)
+              handle.write('\n')
+          print(json.dumps({key: report.get(key) for key in (
+              'diagnosis_completed','coverage','existing_release_sha','target_eth_exposure_found',
+              'independent_confirmation_admitted','transport_completed_successfully')}))
+          if code or report.get('diagnosis_completed') is not True:
+              raise SystemExit(2)
+          PY
+
+      - name: Retain sanitized research metadata receipt only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-input-inventory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/research-input-inventory.json
+          retention-days: 7
+          if-no-files-found: error
