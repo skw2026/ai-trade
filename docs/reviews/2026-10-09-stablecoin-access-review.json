@@ -1,0 +1,48 @@
+{
+  "scope": "S1 input availability diagnosis only",
+  "orchestration": {
+    "expected": "Wait for the yielded gate process to finish before starting another gate command",
+    "observed": "Archive probe and status commands were refused while the Tether current probe retained the lock",
+    "root_cause_status": "confirmed",
+    "root_cause": "The collector was still running; the caller treated an incomplete poll as completion",
+    "dependent_input_requests_executed": 0,
+    "gate_validation_failures": 0,
+    "correction": "Wait for session completion; run archive controls once after READY, never concurrent gate commands",
+    "scope_unchanged": true,
+    "acceptance_unchanged": true
+  },
+  "tether_current": {
+    "observed": "Anonymous app.tether.to/transparency.json read timed out with no response body",
+    "root_cause_status": "unknown",
+    "classification": "Availability observation, not input admission and not evidence that historical data do not exist",
+    "next_action": "Distinct historical archive and provider controls within the frozen input budget; no repeated current API request"
+  },
+  "local_process_check": {
+    "observed": "Sandbox denied ps",
+    "next_action": "Use the active exec session completion and gate receipt; no privileged process inspection needed"
+  },
+  "archive_access": {
+    "observed": "Four fixed issuer-date availability requests and one distinct Tether CDX index request ended with TLS EOF",
+    "root_cause_status": "unknown",
+    "next_action": "No repeated archive requests; issuer documents and provider controls assessed separately",
+    "does_not_prove": "No historical snapshot exists"
+  },
+  "llama_size": {
+    "observed": "The full single-asset response exceeded 8 MiB and was retained as an incomplete prefix",
+    "root_cause_status": "confirmed",
+    "root_cause": "Response exceeds the frozen per-response limit",
+    "next_action": "Distinct documented daily charts endpoint, unchanged size limit; incomplete response not parsed or admitted"
+  },
+  "coinmetrics_parameters": {
+    "observed": "Global usdt SplyFF returned unsupported metric; wildcard catalog rejected usdt*; explicit multi-chain catalog rejected usdt_tron",
+    "root_cause_status": "confirmed",
+    "root_cause": "The requested metric/asset combinations and wildcard are not supported by those requests",
+    "next_action": "One exact usdt_eth SplyFF control returned HTTP 403 indicating missing community permission; stop without purchasing or accessing credentials",
+    "does_not_prove": "All chains or paid vendor data are unavailable"
+  },
+  "web_alternatives": {
+    "observed": "Browser retrieval of Tether JSON, archive metadata and the provider tree was unavailable; public crawler Google Sheet link and metadata-only view unavailable; full API documentation exceeded browser size limit",
+    "root_cause_status": "unknown",
+    "next_action": "Use successful fixed provider source and official monthly reports; do not infer absent history or historical publication from current access"
+  }
+}

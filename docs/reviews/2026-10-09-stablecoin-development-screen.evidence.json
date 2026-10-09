@@ -1,0 +1,69 @@
+{
+  "decision": "NOT_ADMITTED_HISTORICAL_AVAILABILITY",
+  "economic_result": "NOT_EVALUATED",
+  "started_utc_conservative": "2026-10-09T11:07:00Z",
+  "input_verdict_utc": "2026-10-09T11:17:59.628587+00:00",
+  "plan_sha256": "6a9a7d84227057037775974c82cecdcf4f122a07fa3e9b41ba6c87258242f75f",
+  "private_evidence_sha256": {
+    "freeze.json": "1edc6be508c553d65a1424352cf2be23c1594d37adf0e0ce4bd11c4b3c8cd341",
+    "result.json": "bb2cc988832a1bdb588c0891f1b699e2cc7cec0ef99632b39a93206dfcc7052d",
+    "probe.py": "bda610b3ceccc2be52fee381b9d85f634dee073c169f0ef2febe32a5618e0c6f",
+    "audit.py": "70dd39fd2725e428fa2160da3d620d71b5ffe0eae8b7673e5f9550759c1fbd0f",
+    "test_audit.py": "4db20bdaa546967a1c4d19b018dca16328aef5b711c60298ac8d2dd1603de9db"
+  },
+  "input_gets": 20,
+  "input_bytes": 9838611,
+  "browser_source_operations": 38,
+  "http_status_counts": {"200": 8, "301": 2, "400": 3, "403": 1, "None": 6},
+  "oversized_incomplete_responses": 1,
+  "usdt": {"rows": 3237, "missing_days": 0, "rows_with_inventory": 2345},
+  "usdc": {"rows": 2951, "missing_days": 0, "rows_with_inventory": 1363},
+  "provider_source_ref": "bef03c7d3c7ca432927e370f99d03f2550ec909e",
+  "provider_git_blobs_verified": 3,
+  "historical_publication_bound": false,
+  "issuer_report_controls": [
+    {
+      "observation_date": "2023-05-31",
+      "observation_clock": "23:59 Pacific Daylight Time",
+      "total_supply": "33516720340",
+      "allowed_not_issued": "4636538712",
+      "access_denied": "10038158",
+      "circulating": "28870143470",
+      "accountants_report_date": "2023-06-30",
+      "first_publication_proven": false
+    },
+    {
+      "observation_date": "2024-05-31",
+      "observation_clock": "23:59 Pacific Daylight Time",
+      "total_supply": "33287450152",
+      "allowed_not_issued": "918246276",
+      "access_denied": "79955816",
+      "circulating": "32289248060",
+      "management_signature_date": "2024-06-27",
+      "first_publication_proven": false
+    }
+  ],
+  "verification": {
+    "stage_local_synthetic_tests": 8,
+    "existing_queue_regressions": 9,
+    "formal_validation_failures": 0,
+    "concurrent_gate_commands_refused_before_execution": 2,
+    "protected_originals": 128,
+    "older_gates_preserved": 37,
+    "full_ctest_rerun": false
+  },
+  "economic_attempts": 0,
+  "training_vectors": 0,
+  "independent_historical_exit": "NOT_BOUND",
+  "independent_confirmation_admitted": false,
+  "g0_passed": false,
+  "g4_passed": false,
+  "qualified_candidates": 0,
+  "account_accesses": 0,
+  "service_deployments": 0,
+  "demo_reduce_only_changed": false,
+  "background_observation_started": false,
+  "raw_evidence_uploaded": false,
+  "two_mechanism_scope": "CLOSED_NO_QUALIFIED_CANDIDATE",
+  "s2_fixed_rule_decision_unchanged": "REJECT_REFERENCE_RISK"
+}
