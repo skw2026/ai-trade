@@ -1,0 +1,21 @@
+{
+  "failure_id": "c7ad100d941843c99af321efcfe20166",
+  "decision": "retry",
+  "goal": "Validate the fixed seven-day queue signal and event grouping with synthetic inputs before market access",
+  "expected": "Three signal days at Jan 8, 16 and 23; first two separated by seven flat days, last two grouped",
+  "observed": "Twelve tests passed; group-gap fixture emitted two signals rather than three",
+  "root_cause_status": "confirmed",
+  "root_cause": "Fixture set Jan 23 exit count to 1, identical to Jan 16 count. The frozen strict-greater-than rule correctly emitted no Jan 23 signal. This is a fixture error, not an event grouping or market rule defect.",
+  "evidence": ["test_group_gap_boundary assertion 2 != 3", "Jan 23 as-of count 1 equals its seven-day-lag Jan 16 count 1"],
+  "next_action": "Change only Jan 23 synthetic count to 2, retaining the three-signal and two-group assertions; retry the identical unittest command once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "The same frozen causal rule and gap boundary remain under test; no economic result exists",
+    "data_feasibility": "Only deterministic synthetic records are used; no new input GET or returns consumed",
+    "method_feasibility": "The fixture now actually emits the intended third signal, leaving the grouping implementation unchanged",
+    "budget_and_exit": "One fixture-only repair and one identical retry within the eight-hour batch; failure stops dependent input acquisition"
+  }
+}
