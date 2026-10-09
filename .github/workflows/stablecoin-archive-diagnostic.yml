@@ -1,0 +1,42 @@
+name: Stablecoin Archive Access Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-trade-stablecoin-archive-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  public-metadata-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Isolated synthetic regressions without network access
+        run: >-
+          python3 tools/validation_gate.py
+          --state "${RUNNER_TEMP}/archive-diagnostic-test-gate.json"
+          run --label archive-diagnostic-synthetic --timeout 30 --
+          python3 -B tools/test_diagnose_stablecoin_archive_access.py
+
+      - name: Four fixed anonymous requests; receipt is not input admission
+        run: >-
+          timeout --signal=TERM --kill-after=5s 100s
+          python3 -B tools/diagnose_stablecoin_archive_access.py
+          --output "${RUNNER_TEMP}/stablecoin-archive-diagnostic.json"
+
+      - name: Retain only public archive metadata diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stablecoin-archive-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stablecoin-archive-diagnostic.json
+          retention-days: 7
+          if-no-files-found: error
