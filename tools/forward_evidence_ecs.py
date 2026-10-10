@@ -99,6 +99,23 @@ def run_spec(image, code, data, uid, gid):
             "/forward/forward_evidence.py", "run", "--root=/evidence"]
 
 
+def replay_spec(image, code, data):
+    need(data.is_dir() and not data.is_symlink(), "REPLAY_DIRECTORY_IDENTITY")
+    owner = data.stat()
+    need(owner.st_uid > 0, "REPLAY_OWNER_MUST_BE_UNPRIVILEGED")
+    for name in ("receipt.json", "receive.jsonl.gz"):
+        path = data / name
+        need(path.is_file() and not path.is_symlink() and path.stat().st_uid == owner.st_uid
+             and path.stat().st_gid == owner.st_gid, "REPLAY_FILE_OWNER_MISMATCH")
+    return ["docker", "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
+            "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=512m", "--cpus=0.5",
+            "--user", "%d:%d" % (owner.st_uid, owner.st_gid),
+            "--mount", "type=bind,source=%s,target=/forward,readonly" % code,
+            "--mount", "type=bind,source=%s,target=/evidence,readonly" % data,
+            "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", "python3", image,
+            "/forward/forward_evidence.py", "verify", "--root=/evidence"]
+
+
 def diagnose(batch, image=None):
     """Bounded metadata only; no market rows, account data or raw logs exported."""
     state = command(["docker", "inspect", "--format",
@@ -253,12 +270,7 @@ def execute(mode, expected, commit, bundle):
             need(result["capture"].get("status") in ("CAPTURING", "SEGMENT_SEALED", "BOUNDED_COLLECTION_COMPLETE"), "CAPTURE_STOPPED_ERROR")
             need(result["capture"].get("completed_segments", 0) > 0, "NO_SEALED_SEGMENT")
             code, data = batch / "code", batch / "capture/segment-000"
-            argv = ["docker", "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
-                    "--security-opt=no-new-privileges", "--pids-limit=64", "--memory=512m", "--cpus=0.5",
-                    "--mount", "type=bind,source=%s,target=/forward,readonly" % code,
-                    "--mount", "type=bind,source=%s,target=/evidence,readonly" % data,
-                    "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", "python3", image,
-                    "/forward/forward_evidence.py", "verify", "--root=/evidence"]
+            argv = replay_spec(image, code, data)
             replayed = command(argv, 90)
             need(replayed.returncode == 0, "ISOLATED_REPLAY_FAILED")
             receipt = json.loads(replayed.stdout)

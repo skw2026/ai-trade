@@ -1,0 +1,28 @@
+{
+  "failure_id": "655f354be3d34648b5512482440b22c5",
+  "decision": "stop",
+  "goal": "Deliver actual receive-time evidence and independently replay it without network access or trading changes.",
+  "expected": "Final original verification reads the sealed segment and reproduces its observation hash.",
+  "observed": "Original run 38040639340 attempt 3 failed ISOLATED_REPLAY_FAILED. Read-only diagnostic 38041174618 found the first segment present (262895 compressed bytes), owned by 65534:65534 with directory 0700 and files 0600. A network-disabled access-only container using original default uid 0 cannot read either file; the same isolation using uid 65534 can read both. No diagnostic replay was executed.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The verifier omitted --user and inherited root while dropping all capabilities. Root without DAC override is not the owner of the private capture files and cannot traverse/read them. This is a second deployment identity mismatch, not an observed data/reconstruction mismatch. Access diagnosis does not prove the remaining replay path succeeds.",
+  "evidence": [".artifacts/forward-evidence-20261010/first-segment-verified/forward-receipt.json", ".artifacts/forward-evidence-20261010/replay-access-diagnostic/forward-receipt.json", "https://github.com/skw2026/ai-trade/actions/runs/38041174618", "tools/forward_evidence_ecs.py::replay_spec", "tools/test_forward_evidence.py"],
+  "next_action": "Honor the previous final-attempt stop condition. No fourth formal attempt or replacement gate. Retain the exact capture source and original three failures. Complete limited source correction using the non-root evidence owner, keep no-network/read-only/no-capability isolation, and retain 23 synthetic plus 5 existing collector regressions. Do not claim deployment acceptance or start economic learning. The already authorized bounded public collector continues without extension or restart; no new long-run experiment is armed.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "unproven",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Real data is now accumulating, but engineering completion still requires independent replay and a recoverable off-host copy before research can depend on it.",
+    "data_feasibility": "First segment and its receipt exist, and collector reports its own sealing checks completed. No raw market data was exported or assumed externally verified.",
+    "method_feasibility": "Explicit reader identity resolves the demonstrated access defect without chmod on raw evidence or privileged containers. Full corrected integration remains unverified.",
+    "budget_and_exit": "Stop the formal batch at its predeclared third-attempt failure. No extension of two-hour active engineering, 24-hour capture, 2 GiB or old project budget. Final diagnosis, limited source correction and truthful handoff only."
+  },
+  "route_reassessment": {
+    "old_route_failure": "Local parsing/replay unit tests covered algorithms but not effective directory permissions and both container identities; fixed-run verification was also dispatched before sealed readiness. These orchestration omissions caused three failed acceptance attempts.",
+    "replacement": "One end-to-end deployment contract must cover writer UID, reader UID, umask, read-only mounts, source identity and sealed readiness before formal ECS acceptance. Do not build more research models around an unaccepted data path.",
+    "feasibility_evidence": "Current first segment is naturally sealed; actual isolated access-only probes distinguish default-root failure from owner-user success. The source correction has three new regression cases; full replay is still unverified.",
+    "budget": "No further formal retries in this batch; only bounded diagnostic/source handoff. Any future correction acceptance must explicitly bind the corrected controller SHA and preserve this failed gate.",
+    "stop_condition": "This batch is INCOMPLETE/HALTED. No renamed acceptance, new gate or profitability claim; do not ask the user to wait for returns from a model that has not been registered or run."
+  }
+}

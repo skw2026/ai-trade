@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import forward_evidence as forward
 import forward_evidence_ecs as ecs
@@ -43,6 +44,35 @@ def make_segment(root):
 
 
 class ForwardEvidenceTest(unittest.TestCase):
+    def test_replay_runs_as_capture_owner_without_dac_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp)
+            make_segment(data)
+            spec = ecs.replay_spec("fixed-image", Path("/code"), data)
+            stat = data.stat()
+            self.assertEqual(spec[spec.index("--user") + 1], "%d:%d" % (stat.st_uid, stat.st_gid))
+            self.assertIn("--network=none", spec)
+            self.assertIn("--cap-drop=ALL", spec)
+            mounts = [spec[i + 1] for i, value in enumerate(spec) if value == "--mount"]
+            self.assertEqual(len(mounts), 2)
+            self.assertTrue(all(m.endswith(",readonly") for m in mounts))
+
+    def test_replay_rejects_symlink_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root / "data"
+            data.mkdir()
+            make_segment(data)
+            (root / "linked").symlink_to(data, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "REPLAY_DIRECTORY_IDENTITY"):
+                ecs.replay_spec("fixed-image", Path("/code"), root / "linked")
+
+    def test_replay_rejects_root_owned_evidence(self):
+        with patch.object(Path, "is_dir", return_value=True), patch.object(Path, "is_symlink", return_value=False), \
+             patch.object(Path, "stat", return_value=SimpleNamespace(st_uid=0, st_gid=0)):
+            with self.assertRaisesRegex(ValueError, "REPLAY_OWNER_MUST_BE_UNPRIVILEGED"):
+                ecs.replay_spec("fixed-image", Path("/code"), Path("/evidence"))
+
     def test_code_readable_under_private_umask(self):
         with tempfile.TemporaryDirectory() as tmp:
             old = os.umask(0o077)
