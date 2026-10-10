@@ -6,7 +6,7 @@ on:
       mode:
         type: choice
         required: true
-        options: [inspect, start, verify, diagnose]
+        options: [inspect, start, verify, diagnose, repair-startup]
         default: inspect
       capture_commit_sha:
         description: Existing batch identity; leave empty only when starting a new batch
@@ -50,7 +50,7 @@ jobs:
           from pathlib import Path
           mode, release, commit = os.environ['FORWARD_MODE'], os.environ['EXPECTED_RELEASE_SHA'], os.environ['GITHUB_SHA']
           capture_commit = os.environ.get('CAPTURE_COMMIT_SHA') or commit
-          if mode not in ('inspect','start','verify','diagnose') or not re.fullmatch('[0-9a-f]{40}', release) or not re.fullmatch('[0-9a-f]{40}', capture_commit):
+          if mode not in ('inspect','start','verify','diagnose','repair-startup') or not re.fullmatch('[0-9a-f]{40}', release) or not re.fullmatch('[0-9a-f]{40}', capture_commit):
               raise SystemExit('INVALID_OPERATION')
           if mode == 'start' and capture_commit != commit:
               raise SystemExit('START_SOURCE_IDENTITY_MISMATCH')

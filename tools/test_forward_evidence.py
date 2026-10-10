@@ -3,6 +3,7 @@ import copy
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -42,6 +43,24 @@ def make_segment(root):
 
 
 class ForwardEvidenceTest(unittest.TestCase):
+    def test_code_readable_under_private_umask(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = os.umask(0o077)
+            try:
+                directory = Path(tmp) / "code"
+                ecs.readable_code_directory(directory)
+                self.assertEqual(directory.stat().st_mode & 0o777, 0o755)
+            finally:
+                os.umask(old)
+
+    def test_startup_repair_rejects_other_batch(self):
+        with self.assertRaisesRegex(ValueError, "REPAIR_BATCH_IDENTITY"):
+            ecs.repair_startup(Path("/not-the-frozen-batch"), "unused")
+
+    def test_startup_repair_binds_original_source(self):
+        for name, expected in ecs.STARTUP_SOURCE_HASHES.items():
+            self.assertEqual(forward.digest(Path(__file__).with_name(name)), expected)
+
     def test_repeatable_raw_replay_and_live_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

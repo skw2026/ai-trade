@@ -16,6 +16,11 @@ NAME = "ai-trade-forward-evidence-v1"
 ROOT = Path("/opt/ai-trade/data/research/forward_evidence_v1")
 FILES = {"forward_evidence.py", "collect_bybit_microstructure.py"}
 SCHEMA = "forward_ecs_delivery_v1"
+STARTUP_REPAIR_BATCH = "1efbac875f971a1c72840e528d27d9e788634d71"
+STARTUP_SOURCE_HASHES = {
+    "forward_evidence.py": "9f4c31dac311ea14a3b3f42de31b7a872f289902f7f49412b7be05e10388e070",
+    "collect_bybit_microstructure.py": "90f4bb9c417781f3d9d93b39897b74061dc226a827861b0f425af8f13502d101",
+}
 
 
 def need(condition, reason):
@@ -119,6 +124,53 @@ def diagnose(batch):
             "paths": paths}
 
 
+def readable_code_directory(path):
+    path.mkdir(mode=0o755)
+    # mkdir's mode is masked by the caller's 077 umask; code is public/read-only.
+    path.chmod(0o755)
+
+
+def repair_startup(batch, image):
+    """One exact pre-capture permission correction; never resume failed market data."""
+    need(batch == ROOT / STARTUP_REPAIR_BATCH, "REPAIR_BATCH_IDENTITY")
+    for path in (batch, batch / "code", batch / "capture"):
+        need(path.is_dir() and not path.is_symlink(), "REPAIR_PATH_IDENTITY")
+    before = diagnose(batch)
+    need(before["running"] is False and before["exit_code"] == 2
+         and before["permission_denied_starting_script"] and before["container_user"] == "65534:65534",
+         "REPAIR_NOT_CONFIRMED_STARTUP_FAILURE")
+    need(not list((batch / "capture").iterdir()), "REPAIR_CAPTURE_ALREADY_STARTED")
+    need(before["paths"]["code"]["mode"] == "0o700" and before["paths"]["code"]["uid"] == 0,
+         "REPAIR_PERMISSION_MISMATCH")
+    for name, expected in STARTUP_SOURCE_HASHES.items():
+        need(not (batch / "code" / name).is_symlink() and sha(batch / "code" / name) == expected,
+             "REPAIR_SOURCE_CHANGED")
+    config = command(["docker", "inspect", NAME])
+    need(config.returncode == 0, "REPAIR_CONTAINER_MISSING")
+    item = json.loads(config.stdout)[0]
+    mounts = {(m["Source"], m["Destination"], m["RW"]) for m in item["Mounts"] if m["Type"] == "bind"}
+    need(item["Config"]["Image"] == image and item["HostConfig"]["ReadonlyRootfs"]
+         and mounts == {(str(batch / "code"), "/forward", False), (str(batch / "capture"), "/evidence", True)},
+         "REPAIR_CONTAINER_IDENTITY")
+    marker = batch / "permission-repair.json"
+    with marker.open("x") as handle:
+        json.dump({"before": before, "source_sha256": STARTUP_SOURCE_HASHES,
+                   "started_epoch_ms": time.time_ns() // 1_000_000}, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
+    (batch / "code").chmod(0o755)
+    checked = command(["docker", "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
+                       "--security-opt=no-new-privileges", "--user", "65534:65534",
+                       "--memory=128m", "--pids-limit=32", "--cpus=0.5",
+                       "--mount", "type=bind,source=%s,target=/forward,readonly" % (batch / "code"),
+                       "--env", "PYTHONDONTWRITEBYTECODE=1", "--entrypoint", "python3", image,
+                       "-c", "import sys; sys.path.insert(0,'/forward'); import forward_evidence; import websockets"], 30)
+    need(checked.returncode == 0, "REPAIR_IMPORT_PREFLIGHT_FAILED")
+    need(command(["docker", "start", NAME]).returncode == 0, "REPAIR_CONTAINER_START_FAILED")
+    return {"status": "PERMISSION_CORRECTED_AWAITING_ORIGINAL_VERIFY", "source_unchanged": True,
+            "network_disabled_import_passed": True, "code_mode": oct((batch / "code").stat().st_mode & 0o777)}
+
+
 def execute(mode, expected, commit, bundle):
     need(re.fullmatch(r"[0-9a-f]{40}", commit), "INVALID_CODE_SHA")
     image = pinned_release(expected)
@@ -152,7 +204,7 @@ def execute(mode, expected, commit, bundle):
         need(all(isinstance(value, str) and len(value.encode()) < 256 * 1024 for value in contents.values()), "SOURCE_BUNDLE_SIZE")
         create_directory(batch)
         code, data = batch / "code", batch / "capture"
-        code.mkdir(mode=0o755)
+        readable_code_directory(code)
         data.mkdir(mode=0o700)
         uid, gid = (os.getuid(), os.getgid()) if os.getuid() else (65534, 65534)
         if os.getuid() == 0:
@@ -168,6 +220,9 @@ def execute(mode, expected, commit, bundle):
         need(started.returncode == 0, "SIDECAR_START_FAILED")
         result["status"] = "SIDECAR_STARTED_NOT_ACCEPTED"
         result["source_sha256"] = {name: sha(code / name) for name in sorted(FILES)}
+    elif mode == "repair-startup":
+        result["repair"] = repair_startup(batch, image)
+        result["status"] = "PERMISSION_CORRECTED_NOT_ACCEPTED"
     elif mode in ("inspect", "verify", "diagnose"):
         result["status"] = "INSPECTED"
         health = batch / "capture/health.json"
@@ -205,7 +260,7 @@ def execute(mode, expected, commit, bundle):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", required=True, choices=("inspect", "start", "verify", "diagnose"))
+    parser.add_argument("--mode", required=True, choices=("inspect", "start", "verify", "diagnose", "repair-startup"))
     parser.add_argument("--expected-release-sha", required=True)
     parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--bundle-base64", default="")

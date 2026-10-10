@@ -1,0 +1,21 @@
+{
+  "failure_id": "1864f40d853f4cedb3592d6eaa2d4a10",
+  "decision": "retry",
+  "goal": "Verify a real ECS receive-time segment and network-disabled replay with the trading identity and entry locks unchanged.",
+  "expected": "Original verify run obtains a sealed first segment and deterministic replay.",
+  "observed": "Run 38040639340 attempt 1 failed CAPTURE_HEALTH_MISSING. Diagnostic 38040845352 confirms the container exited 2 before started.json, permission denied reading /forward/forward_evidence.py, root-owned code directory 0700 and container user 65534:65534.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Deployment umask 077 masked mkdir(0755) into 0700. The root-owned source directory was unreadable by the intentionally unprivileged container. No collection or market-data validation had begun; OOM is false. Local reproduction produces the same 0700 mode.",
+  "evidence": [".artifacts/forward-evidence-20261010/first-segment/forward-receipt.json", ".artifacts/forward-evidence-20261010/startup-diagnostic/forward-receipt.json", "https://github.com/skw2026/ai-trade/actions/runs/38040845352", "tools/test_forward_evidence.py::test_code_readable_under_private_umask"],
+  "next_action": "One exact-batch permission correction, guarded by original source hashes, empty capture directory, stopped container identity, and an exclusive repair marker. Change only public code directory to 0755, verify imports as the same unprivileged user without network, start that container once. Rerun failed jobs of the ORIGINAL verify run 38040639340 at its original source SHA; one identical gh run watch argv/cwd retry. Preserve attempt 1 and all original capture sources; no new economic attempt, trading restart, or gate reset.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Correct deploy-time access for the approved isolated collector; do not add research or declare profitability.",
+    "data_feasibility": "The existing public collector is running and the pinned research image exists. New collection remains unproved until the original verification succeeds.",
+    "method_feasibility": "Explicit chmod makes the already public read-only source traversable; no raw-data permissions, source content, receiver clocks or replay assertions are weakened.",
+    "budget_and_exit": "One guarded repair and one original verification retry inside the original two-hour cap. Any repair error stops without rerunning; second verify failure requires route reassessment and no further automatic restart."
+  }
+}
