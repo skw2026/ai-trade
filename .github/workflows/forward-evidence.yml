@@ -6,8 +6,12 @@ on:
       mode:
         type: choice
         required: true
-        options: [inspect, start, verify]
+        options: [inspect, start, verify, diagnose]
         default: inspect
+      capture_commit_sha:
+        description: Existing batch identity; leave empty only when starting a new batch
+        type: string
+        required: false
       expected_release_sha:
         type: string
         required: true
@@ -33,6 +37,7 @@ jobs:
       - name: Pinned public data sidecar operation
         env:
           FORWARD_MODE: ${{ inputs.mode }}
+          CAPTURE_COMMIT_SHA: ${{ inputs.capture_commit_sha }}
           EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
           ECS_TRANSPORT_HOST: ${{ secrets.ECS_HOST }}
           ECS_TRANSPORT_USER: ${{ secrets.ECS_USER }}
@@ -44,15 +49,18 @@ jobs:
           import base64, json, os, re, shlex, subprocess, sys
           from pathlib import Path
           mode, release, commit = os.environ['FORWARD_MODE'], os.environ['EXPECTED_RELEASE_SHA'], os.environ['GITHUB_SHA']
-          if mode not in ('inspect','start','verify') or not re.fullmatch('[0-9a-f]{40}', release):
+          capture_commit = os.environ.get('CAPTURE_COMMIT_SHA') or commit
+          if mode not in ('inspect','start','verify','diagnose') or not re.fullmatch('[0-9a-f]{40}', release) or not re.fullmatch('[0-9a-f]{40}', capture_commit):
               raise SystemExit('INVALID_OPERATION')
+          if mode == 'start' and capture_commit != commit:
+              raise SystemExit('START_SOURCE_IDENTITY_MISMATCH')
           source = Path('tools/forward_evidence_ecs.py').read_text()
           bundle = base64.b64encode(json.dumps({name: Path('tools',name).read_text() for name in (
               'forward_evidence.py','collect_bybit_microstructure.py')}).encode()).decode() if mode == 'start' else ''
           marker = 'FORWARD_EVIDENCE_REMOTE_SOURCE'
           if marker in source:
               raise SystemExit('SOURCE_DELIMITER_COLLISION')
-          args = ['--mode',mode,'--expected-release-sha',release,'--commit-sha',commit,'--bundle-base64',bundle]
+          args = ['--mode',mode,'--expected-release-sha',release,'--commit-sha',capture_commit,'--bundle-base64',bundle]
           script = 'python3 -B - ' + shlex.join(args) + " <<'" + marker + "'\n" + source + '\n' + marker + '\n'
           env = dict(os.environ, ECS_TRANSPORT_MODE='script', ECS_TRANSPORT_TIMEOUT='240s',
                      ECS_TRANSPORT_ENVS='', ECS_TRANSPORT_SCRIPT=script)

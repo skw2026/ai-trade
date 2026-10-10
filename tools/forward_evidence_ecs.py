@@ -94,6 +94,31 @@ def run_spec(image, code, data, uid, gid):
             "/forward/forward_evidence.py", "run", "--root=/evidence"]
 
 
+def diagnose(batch):
+    """Bounded metadata only; no market rows, account data or raw logs exported."""
+    state = command(["docker", "inspect", "--format",
+                     '{{json .State}}', NAME])
+    need(state.returncode == 0, "DIAGNOSTIC_CONTAINER_MISSING")
+    item = json.loads(state.stdout)
+    logs = command(["docker", "logs", "--tail", "20", NAME])
+    content = logs.stdout + logs.stderr
+    paths = {}
+    for relative in ("code", "code/forward_evidence.py", "capture", "capture/started.json", "capture/health.json"):
+        path = batch / relative
+        if path.exists():
+            stat = path.stat()
+            paths[relative] = {"mode": oct(stat.st_mode & 0o777), "uid": stat.st_uid,
+                               "gid": stat.st_gid, "bytes": stat.st_size}
+        else:
+            paths[relative] = {"present": False}
+    user = command(["docker", "inspect", "--format", '{{json .Config.User}}', NAME])
+    return {"running": item.get("Running"), "exit_code": item.get("ExitCode"),
+            "oom_killed": item.get("OOMKilled"), "container_user": json.loads(user.stdout),
+            "permission_denied_starting_script": b"can't open file '/forward/forward_evidence.py'" in content
+            and b"Permission denied" in content, "log_sha256": hashlib.sha256(content).hexdigest(),
+            "paths": paths}
+
+
 def execute(mode, expected, commit, bundle):
     need(re.fullmatch(r"[0-9a-f]{40}", commit), "INVALID_CODE_SHA")
     image = pinned_release(expected)
@@ -143,11 +168,13 @@ def execute(mode, expected, commit, bundle):
         need(started.returncode == 0, "SIDECAR_START_FAILED")
         result["status"] = "SIDECAR_STARTED_NOT_ACCEPTED"
         result["source_sha256"] = {name: sha(code / name) for name in sorted(FILES)}
-    elif mode in ("inspect", "verify"):
+    elif mode in ("inspect", "verify", "diagnose"):
         result["status"] = "INSPECTED"
         health = batch / "capture/health.json"
         if health.is_file():
             result["capture"] = read_json(health)
+        if mode == "diagnose":
+            result["diagnostic"] = diagnose(batch)
         if mode == "verify":
             need(health.is_file(), "CAPTURE_HEALTH_MISSING")
             need(result["capture"].get("status") in ("CAPTURING", "SEGMENT_SEALED", "BOUNDED_COLLECTION_COMPLETE"), "CAPTURE_STOPPED_ERROR")
@@ -178,7 +205,7 @@ def execute(mode, expected, commit, bundle):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", required=True, choices=("inspect", "start", "verify"))
+    parser.add_argument("--mode", required=True, choices=("inspect", "start", "verify", "diagnose"))
     parser.add_argument("--expected-release-sha", required=True)
     parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--bundle-base64", default="")
