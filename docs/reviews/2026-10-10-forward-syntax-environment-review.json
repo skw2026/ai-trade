@@ -1,0 +1,21 @@
+{
+  "failure_id": "f59e2cd3a48a4536b3e4b943fe1c4155",
+  "decision": "retry",
+  "goal": "Parse the exact forward workflow YAML and embedded Python before publishing.",
+  "expected": "YAML and embedded Python parse successfully.",
+  "observed": "The original command failed at import yaml with ModuleNotFoundError; no workflow parsed or remote operation attempted.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The selected local Python 3.14 has no PyYAML. The research runtime requirements do not include it, and the syntax check introduced this local-only verification dependency without preflight.",
+  "evidence": [".artifacts/forward-evidence-20261010/validation-state.json", "tools/requirements-research.txt", "python3 -m pip --version"],
+  "next_action": "Install PyYAML 6.0.3 in this phase's private python-deps directory; expose it only via PYTHONPATH for the one identical argv/cwd retry. Keep workflow and syntax assertions unchanged.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Syntax verification still protects the exact isolated deployment workflow.",
+    "data_feasibility": "The workflow is local and complete; this failure is not missing market data.",
+    "method_feasibility": "Standard PyYAML parses workflow YAML and ast parses its embedded Python; no acceptance condition changes.",
+    "budget_and_exit": "One isolated dependency installation and one original-command retry within the existing two-hour cap; a second failure stops dependent publication."
+  }
+}

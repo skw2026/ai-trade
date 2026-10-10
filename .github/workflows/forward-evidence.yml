@@ -1,0 +1,84 @@
+name: Forward Receive Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        required: true
+        options: [inspect, start, verify]
+        default: inspect
+      expected_release_sha:
+        type: string
+        required: true
+        default: f6cc4ea7f03c1c8f251c730e3642d2ca19b00ca4
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-trade-forward-evidence
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fixed isolated regression
+        run: python3 tools/validation_gate.py --state .artifacts/forward-workflow-gate.json run --label forward-evidence-regression -- python3 tools/test_forward_evidence.py
+      - name: Pinned public data sidecar operation
+        env:
+          FORWARD_MODE: ${{ inputs.mode }}
+          EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+          ECS_TRANSPORT_HOST: ${{ secrets.ECS_HOST }}
+          ECS_TRANSPORT_USER: ${{ secrets.ECS_USER }}
+          ECS_TRANSPORT_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_TRANSPORT_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_TRANSPORT_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT }}
+        run: |
+          python3 -B - <<'PY'
+          import base64, json, os, re, shlex, subprocess, sys
+          from pathlib import Path
+          mode, release, commit = os.environ['FORWARD_MODE'], os.environ['EXPECTED_RELEASE_SHA'], os.environ['GITHUB_SHA']
+          if mode not in ('inspect','start','verify') or not re.fullmatch('[0-9a-f]{40}', release):
+              raise SystemExit('INVALID_OPERATION')
+          source = Path('tools/forward_evidence_ecs.py').read_text()
+          bundle = base64.b64encode(json.dumps({name: Path('tools',name).read_text() for name in (
+              'forward_evidence.py','collect_bybit_microstructure.py')}).encode()).decode() if mode == 'start' else ''
+          marker = 'FORWARD_EVIDENCE_REMOTE_SOURCE'
+          if marker in source:
+              raise SystemExit('SOURCE_DELIMITER_COLLISION')
+          args = ['--mode',mode,'--expected-release-sha',release,'--commit-sha',commit,'--bundle-base64',bundle]
+          script = 'python3 -B - ' + shlex.join(args) + " <<'" + marker + "'\n" + source + '\n' + marker + '\n'
+          env = dict(os.environ, ECS_TRANSPORT_MODE='script', ECS_TRANSPORT_TIMEOUT='240s',
+                     ECS_TRANSPORT_ENVS='', ECS_TRANSPORT_SCRIPT=script)
+          Path('.artifacts').mkdir(exist_ok=True)
+          result = subprocess.run([sys.executable,'deploy/ecs_ssh.py'],env=env,capture_output=True,timeout=280,check=False)
+          receipt = None
+          for line in result.stdout.splitlines():
+              try:
+                  value = json.loads(line)
+              except (ValueError, UnicodeError):
+                  continue
+              if isinstance(value,dict) and value.get('schema_version') == 'forward_ecs_delivery_v1':
+                  receipt = value
+          if receipt is None:
+              receipt = {'schema_version':'forward_ecs_delivery_v1','status':'INCOMPLETE','reason_code':'NO_REMOTE_RECEIPT'}
+          receipt.update(workflow_commit=commit, transport_exit=result.returncode)
+          Path('.artifacts/forward-receipt.json').write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n')
+          print(json.dumps(receipt,sort_keys=True))
+          if result.returncode or receipt['status'] == 'INCOMPLETE':
+              raise SystemExit(2)
+          PY
+      - name: Retain sanitized receipt only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/forward-receipt.json
+          retention-days: 30
+          if-no-files-found: error
