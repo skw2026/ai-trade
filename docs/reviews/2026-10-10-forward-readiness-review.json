@@ -1,0 +1,28 @@
+{
+  "failure_id": "56f9dea6b01c4cfea6980dd545c52e7a",
+  "decision": "retry",
+  "goal": "Verify the unchanged first sealed receive-time segment with the original offline replay acceptance.",
+  "expected": "Run 38040639340 validates only after at least one segment has sealed.",
+  "observed": "Attempt 2 returned NO_SEALED_SEGMENT at 09:19:33 UTC. The guarded container start happened after 09:18:46 UTC, leaving at most 47 seconds for a required 65-second capture. Read-only inspect 38041015913 later shows completed_segments=1 and active_segment=1, with sealing already complete at 09:19:54.643 UTC, the container running, and both entry locks true.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Orchestration error: the original retry was dispatched before the fixed first-capture interval could end. A workflow start success was incorrectly used as a readiness trigger. This is not missing data, an exchange failure or a replay mismatch; the first segment completed naturally without another restart or source change.",
+  "evidence": [".artifacts/forward-evidence-20261010/permission-repair/forward-receipt.json", ".artifacts/forward-evidence-20261010/first-segment-retry/forward-receipt.json", ".artifacts/forward-evidence-20261010/readiness-inspection/forward-receipt.json", "https://github.com/skw2026/ai-trade/actions/runs/38040639340/attempts/2", "https://github.com/skw2026/ai-trade/actions/runs/38041015913"],
+  "next_action": "Having independently observed completed_segments=1, rerun only the original verification run at original source SHA and retry the identical watcher once. Do not change collection/replay code, data, clock limits, duration or resources. Any third failure closes this delivery as incomplete; no further formal retries in this batch.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Actual immutable evidence remains the deliverable; a running process is not data acceptance.",
+    "data_feasibility": "The same collector now reports a sealed segment and is capturing the next one without intervention.",
+    "method_feasibility": "Use observed sealing as the trigger; original network-disabled replay remains unchanged.",
+    "budget_and_exit": "One final original-source verification inside the existing two-hour cap; any failure closes this engineering attempt. No new market experiment or service restart."
+  },
+  "route_reassessment": {
+    "old_route_failure": "Two orchestration assumptions were not covered end to end: requested mkdir permissions versus effective umask, then start success versus sealed-data readiness. This caused avoidable retries rather than evidence-driven progress.",
+    "replacement": "Keep the same isolated collector, explicit tested code-directory permissions, and status-driven progression: start, read-only sealed-count check, then original offline replay. No source patch is needed for this second issue.",
+    "feasibility_evidence": "Diagnostic 38040845352 proves the first root cause; 38040929316 proves same-user import after correction; 38041015913 proves natural first-segment completion with original trading identity and locks unchanged.",
+    "budget": "One final original verifier, at most six minutes, no additional restart or collection source changes, within the original two-hour total.",
+    "stop_condition": "Any error in the third original-run attempt stops this delivery as INCOMPLETE and preserves all three attempts. No fourth attempt, threshold relaxation, sample replacement, alternate gate or renamed acceptance."
+  }
+}

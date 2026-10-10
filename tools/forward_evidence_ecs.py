@@ -99,7 +99,7 @@ def run_spec(image, code, data, uid, gid):
             "/forward/forward_evidence.py", "run", "--root=/evidence"]
 
 
-def diagnose(batch):
+def diagnose(batch, image=None):
     """Bounded metadata only; no market rows, account data or raw logs exported."""
     state = command(["docker", "inspect", "--format",
                      '{{json .State}}', NAME])
@@ -108,7 +108,8 @@ def diagnose(batch):
     logs = command(["docker", "logs", "--tail", "20", NAME])
     content = logs.stdout + logs.stderr
     paths = {}
-    for relative in ("code", "code/forward_evidence.py", "capture", "capture/started.json", "capture/health.json"):
+    for relative in ("code", "code/forward_evidence.py", "capture", "capture/started.json", "capture/health.json",
+                     "capture/segment-000", "capture/segment-000/receipt.json", "capture/segment-000/receive.jsonl.gz"):
         path = batch / relative
         if path.exists():
             stat = path.stat()
@@ -117,11 +118,28 @@ def diagnose(batch):
         else:
             paths[relative] = {"present": False}
     user = command(["docker", "inspect", "--format", '{{json .Config.User}}', NAME])
-    return {"running": item.get("Running"), "exit_code": item.get("ExitCode"),
+    result = {"running": item.get("Running"), "exit_code": item.get("ExitCode"),
             "oom_killed": item.get("OOMKilled"), "container_user": json.loads(user.stdout),
             "permission_denied_starting_script": b"can't open file '/forward/forward_evidence.py'" in content
             and b"Permission denied" in content, "log_sha256": hashlib.sha256(content).hexdigest(),
             "paths": paths}
+    segment = batch / "capture/segment-000"
+    if image and segment.is_dir():
+        # Access-only diagnosis. Does not execute the failed replay/checker.
+        script = ("import os,json; print(json.dumps({'uid':os.getuid(),'gid':os.getgid(),"
+                  "'receipt_readable':os.access('/evidence/receipt.json',os.R_OK),"
+                  "'raw_readable':os.access('/evidence/receive.jsonl.gz',os.R_OK)}))")
+        base = ["docker", "run", "--rm", "--network=none", "--read-only", "--cap-drop=ALL",
+                "--security-opt=no-new-privileges", "--memory=128m", "--pids-limit=32", "--cpus=0.5",
+                "--mount", "type=bind,source=%s,target=/evidence,readonly" % segment,
+                "--entrypoint", "python3"]
+        probes = {}
+        for label, args in (("original_default_user", []), ("capture_owner", ["--user", "65534:65534"])):
+            checked = command(base + args + [image, "-c", script])
+            need(checked.returncode == 0, "REPLAY_ACCESS_DIAGNOSIS_FAILED")
+            probes[label] = json.loads(checked.stdout)
+        result["replay_access_only"] = probes
+    return result
 
 
 def readable_code_directory(path):
@@ -229,7 +247,7 @@ def execute(mode, expected, commit, bundle):
         if health.is_file():
             result["capture"] = read_json(health)
         if mode == "diagnose":
-            result["diagnostic"] = diagnose(batch)
+            result["diagnostic"] = diagnose(batch, image)
         if mode == "verify":
             need(health.is_file(), "CAPTURE_HEALTH_MISSING")
             need(result["capture"].get("status") in ("CAPTURING", "SEGMENT_SEALED", "BOUNDED_COLLECTION_COMPLETE"), "CAPTURE_STOPPED_ERROR")
