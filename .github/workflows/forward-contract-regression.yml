@@ -1,0 +1,42 @@
+name: Forward Synthetic Contract Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-trade-forward-synthetic-contract
+  cancel-in-progress: false
+
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Bind exact source and first attempt
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          test "$GITHUB_SHA" = "$EXPECTED_SHA"
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_REF" = refs/heads/main
+      - name: Synthetic controller and recovery unit tests
+        run: |
+          python3 -B tools/test_forward_evidence.py
+          python3 -B tools/test_collect_bybit_microstructure.py
+          python3 -B tools/test_forward_evidence_backup.py
+          python3 -B tools/test_forward_evidence_correction.py
+          python3 -B tools/test_forward_correction_local.py
+      - name: Fixed image native Linux lifecycle regression
+        run: |
+          docker pull --platform linux/amd64 ghcr.io/skw2026/ai-trade-research@sha256:96e70a394c8a74264e5ea30a4bdbcb2b08aed313e587296b757299d98de93eba
+          python3 -B tools/test_forward_deployment_contract.py --image ghcr.io/skw2026/ai-trade-research@sha256:96e70a394c8a74264e5ea30a4bdbcb2b08aed313e587296b757299d98de93eba --platform linux/amd64
