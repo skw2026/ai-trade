@@ -1,0 +1,30 @@
+{
+  "schema_version": "forward_correction_once_v1",
+  "correction_id": "forward-first-segment-20261011",
+  "parent_gate_sha256": "ad3e595a8253c105a3bdae4218e50638056b4dabf5077f434f38b1849cea6861",
+  "parent_status": "HALTED",
+  "parent_run": "38040639340",
+  "parent_failed_attempts": 3,
+  "capture_commit_sha": "1efbac875f971a1c72840e528d27d9e788634d71",
+  "release_sha": "f6cc4ea7f03c1c8f251c730e3642d2ca19b00ca4",
+  "image": "ghcr.io/skw2026/ai-trade-research@sha256:96e70a394c8a74264e5ea30a4bdbcb2b08aed313e587296b757299d98de93eba",
+  "platform": "linux/amd64",
+  "inventory_run": "38144406932",
+  "inventory_static_sha256": "3e225476170e6fc167c4462ce852b39438ba699e9ca9f9db589d1ff82136c49b",
+  "expected_file_hashes": {
+    "capture/started.json": "3013bb3c5e764decf4e765c7edf76c892acb33b3c043c0b77e1602d93e790c8e",
+    "code/forward_evidence.py": "9f4c31dac311ea14a3b3f42de31b7a872f289902f7f49412b7be05e10388e070",
+    "code/collect_bybit_microstructure.py": "90f4bb9c417781f3d9d93b39897b74061dc226a827861b0f425af8f13502d101",
+    "capture/segment-000/receipt.json": "5eab6a76e16179557b90c3c7e789073bb407adbd09517fbd3d7468176b568735",
+    "capture/segment-000/receive.jsonl.gz": "b9c14cf667f1530e8b33d8ad5e894f398914f71ceda5f8d9c0da1270c463caa1"
+  },
+  "maximum_attempts": 1,
+  "maximum_formal_replays": 1,
+  "segment_index": 0,
+  "research_admitted": false,
+  "economic_evidence": false,
+  "parent_gate_modified": false,
+  "new_collection": false,
+  "account_access": false,
+  "order_submission": false
+}

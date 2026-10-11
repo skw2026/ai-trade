@@ -1,0 +1,58 @@
+name: Frozen Forward Correction Once
+on:
+  workflow_dispatch:
+    inputs:
+      expected_controller_sha:
+        type: string
+        required: true
+      expected_contract_sha256:
+        type: string
+        required: true
+      recipient_certificate_base64:
+        description: Public RSA certificate only; private key must remain local
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: ai-trade-forward-evidence
+  cancel-in-progress: false
+jobs:
+  correction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Synthetic backup and controller checks
+        run: |
+          python3 -B tools/test_forward_evidence_backup.py
+          python3 -B tools/test_forward_evidence_correction.py
+          python3 -B tools/test_forward_correction_local.py
+      - name: Native Linux deployment lifecycle regression
+        run: |
+          docker pull --platform linux/amd64 ghcr.io/skw2026/ai-trade-research@sha256:96e70a394c8a74264e5ea30a4bdbcb2b08aed313e587296b757299d98de93eba
+          python3 -B tools/test_forward_deployment_contract.py --image ghcr.io/skw2026/ai-trade-research@sha256:96e70a394c8a74264e5ea30a4bdbcb2b08aed313e587296b757299d98de93eba --platform linux/amd64
+      - name: Same originals precise-version correction
+        env:
+          EXPECTED_CONTROLLER_SHA: ${{ inputs.expected_controller_sha }}
+          EXPECTED_CONTRACT_SHA256: ${{ inputs.expected_contract_sha256 }}
+          RECIPIENT_CERTIFICATE_BASE64: ${{ inputs.recipient_certificate_base64 }}
+          ECS_TRANSPORT_HOST: ${{ secrets.ECS_HOST }}
+          ECS_TRANSPORT_USER: ${{ secrets.ECS_USER }}
+          ECS_TRANSPORT_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_TRANSPORT_PORT: ${{ secrets.ECS_PORT || 22 }}
+          ECS_TRANSPORT_FINGERPRINT: ${{ secrets.ECS_HOST_FINGERPRINT }}
+        run: python3 -B tools/forward_evidence_correction.py
+      - name: Retain ciphertext and sanitized receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forward-correction-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/forward-correction/first-segment.cms
+            .artifacts/forward-correction/run-binding.json
+            .artifacts/forward-correction/remote-receipt.json
+          retention-days: 7
+          if-no-files-found: error
