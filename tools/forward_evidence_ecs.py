@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -21,6 +22,317 @@ STARTUP_SOURCE_HASHES = {
     "forward_evidence.py": "9f4c31dac311ea14a3b3f42de31b7a872f289902f7f49412b7be05e10388e070",
     "collect_bybit_microstructure.py": "90f4bb9c417781f3d9d93b39897b74061dc226a827861b0f425af8f13502d101",
 }
+INVENTORY_IMAGE = "ghcr.io/skw2026/ai-trade-research@sha256:96e70a394c8a74264e5ea30a4bdbcb2b08aed313e587296b757299d98de93eba"
+INVENTORY_TOPICS = tuple(kind + symbol for symbol in ("BTCUSDT", "ETHUSDT", "SOLUSDT")
+                         for kind in ("orderbook.50.", "publicTrade."))
+INVENTORY_MAX_SEGMENTS = 97
+INVENTORY_MAX_BYTES = 2 * 1024**3
+
+
+def inventory_directory(path):
+    """Open every path component without following symlinks (including parents)."""
+    path = Path(path)
+    need(path.is_absolute() and ".." not in path.parts, "INVENTORY_PATH_OUTSIDE_BATCH")
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def inventory_file(path, limit, deadline, *, parse=False):
+    """Hash only regular files, using bounded streaming; never import capture code."""
+    parent = inventory_directory(Path(path).parent)
+    try:
+        fd = os.open(Path(path).name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    finally:
+        os.close(parent)
+    with os.fdopen(fd, "rb") as handle:
+        before = os.fstat(handle.fileno())
+        need(stat.S_ISREG(before.st_mode), "INVENTORY_NOT_REGULAR_FILE")
+        need(0 <= before.st_size <= limit, "INVENTORY_FILE_SIZE_LIMIT")
+        digest, size, content = hashlib.sha256(), 0, []
+        while True:
+            need(time.monotonic() <= deadline, "INVENTORY_TIME_LIMIT")
+            chunk = handle.read(min(1024 * 1024, limit + 1 - size))
+            if not chunk:
+                break
+            size += len(chunk)
+            need(size <= limit, "INVENTORY_FILE_SIZE_LIMIT")
+            digest.update(chunk)
+            if parse:
+                content.append(chunk)
+        after = os.fstat(handle.fileno())
+        need((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+             == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+             and size == before.st_size, "INVENTORY_FILE_CHANGED")
+    metadata = {"sha256": digest.hexdigest(), "bytes": size, "uid": before.st_uid,
+                "gid": before.st_gid, "mode": oct(stat.S_IMODE(before.st_mode))}
+    if parse:
+        value = json.loads(b"".join(content))
+        need(isinstance(value, dict), "INVENTORY_JSON_NOT_OBJECT")
+        return metadata, value
+    return metadata
+
+
+def inventory_entries(path, limit):
+    fd = inventory_directory(path)
+    try:
+        entries = []
+        with os.scandir(fd) as iterator:
+            for entry in iterator:
+                need(len(entries) < limit, "INVENTORY_DIRECTORY_ENTRY_LIMIT")
+                entries.append(entry.name)
+        return sorted(entries)
+    finally:
+        os.close(fd)
+
+
+def inventory_container():
+    template = ('{"id":{{json .Id}},"image":{{json .Config.Image}},"image_id":{{json .Image}},'
+                '"user":{{json .Config.User}},"command":{{json .Config.Cmd}},'
+                '"entrypoint":{{json .Config.Entrypoint}},"mounts":{{json .Mounts}},'
+                '"readonly":{{json .HostConfig.ReadonlyRootfs}},"caps":{{json .HostConfig.CapDrop}},'
+                '"cap_add":{{json .HostConfig.CapAdd}},"security_opt":{{json .HostConfig.SecurityOpt}},'
+                '"memory":{{json .HostConfig.Memory}},"nano_cpus":{{json .HostConfig.NanoCpus}},'
+                '"pids_limit":{{json .HostConfig.PidsLimit}},'
+                '"privileged":{{json .HostConfig.Privileged}},"restart":{{json .HostConfig.RestartPolicy.Name}},'
+                '"running":{{json .State.Running}},"exit_code":{{json .State.ExitCode}},'
+                '"oom_killed":{{json .State.OOMKilled}},"restarts":{{json .RestartCount}}}')
+    checked = command(["docker", "inspect", "--format", template, NAME])
+    need(checked.returncode == 0 and len(checked.stdout) <= 1024 * 1024, "INVENTORY_CONTAINER_UNAVAILABLE")
+    item = json.loads(checked.stdout)
+    need(isinstance(item, dict), "INVENTORY_CONTAINER_INVALID")
+    return item
+
+
+def inventory_image_platform(image):
+    checked = command(["docker", "image", "inspect", "--format",
+                       '{"os":{{json .Os}},"architecture":{{json .Architecture}}}', image])
+    need(checked.returncode == 0 and len(checked.stdout) <= 4096, "INVENTORY_IMAGE_PLATFORM_UNAVAILABLE")
+    platform = json.loads(checked.stdout)
+    need(isinstance(platform, dict) and set(platform) == {"os", "architecture"}
+         and all(isinstance(v, str) and re.fullmatch(r"[a-z0-9_]{1,24}", v) for v in platform.values()),
+         "INVENTORY_IMAGE_PLATFORM_INVALID")
+    return platform
+
+
+def inventory(batch, image):
+    """One frozen-batch diagnostic inventory; not replay, recovery or admission."""
+    need(batch == ROOT / STARTUP_REPAIR_BATCH, "INVENTORY_BATCH_IDENTITY")
+    deadline = time.monotonic() + 150
+    anomalies, identity_issues = [], []
+
+    def issue(scope, code, *, identity=False):
+        anomalies.append({"scope": scope, "code": code})
+        if identity:
+            identity_issues.append(code)
+
+    def read(relative, limit=1024 * 1024, *, parse=False, identity=False):
+        try:
+            return inventory_file(batch / relative, limit, deadline, parse=parse)
+        except (OSError, ValueError) as error:
+            code = str(error) if isinstance(error, ValueError) and re.fullmatch(r"[A-Z_]+", str(error)) else type(error).__name__
+            issue(relative, code, identity=identity)
+            return (None, {}) if parse else None
+
+    # A parent symlink is rejected even if the final leaf itself is not a link.
+    fd = inventory_directory(batch)
+    os.close(fd)
+    before = inventory_container()
+    platform = inventory_image_platform(INVENTORY_IMAGE)
+    expected_mounts = {(str(batch / "code"), "/forward", False),
+                       (str(batch / "capture"), "/evidence", True)}
+    mounts = before.get("mounts", [])
+    binds = {(m.get("Source"), m.get("Destination"), m.get("RW")) for m in mounts if m.get("Type") == "bind"}
+    mount_identity = binds == expected_mounts and len([m for m in mounts if m.get("Type") == "bind"]) == 2 \
+        and all(m.get("Type") == "bind" or (m.get("Type") == "tmpfs" and m.get("Destination") == "/tmp") for m in mounts)
+    container_identity = (image == INVENTORY_IMAGE and before.get("image") == INVENTORY_IMAGE
+                          and before.get("image_id") == INVENTORY_IMAGE.split("@", 1)[1]
+                          and before.get("user") == "65534:65534" and mount_identity
+                          and before.get("readonly") is True and before.get("privileged") is False
+                          and before.get("caps") == ["ALL"] and before.get("restart") == "no"
+                          and before.get("cap_add") in (None, [])
+                          and before.get("security_opt") in (["no-new-privileges"], ["no-new-privileges:true"])
+                          and before.get("memory") == 512 * 1024**2
+                          and before.get("nano_cpus") == 500_000_000 and before.get("pids_limit") == 64
+                          and before.get("entrypoint") == ["python3"]
+                          and before.get("command") == ["/forward/forward_evidence.py", "run", "--root=/evidence"])
+    if not container_identity:
+        issue("container", "CONTAINER_IDENTITY_MISMATCH", identity=True)
+    if before.get("running") is not False:
+        issue("container", "CONTAINER_NOT_TERMINAL")
+    if before.get("exit_code") != 0 or before.get("oom_killed") is not False or before.get("restarts") != 0:
+        issue("container", "CONTAINER_EXIT_OR_RESTART_ANOMALY")
+
+    source = {}
+    for name, expected in sorted(STARTUP_SOURCE_HASHES.items()):
+        found = read("code/" + name, 256 * 1024, identity=True)
+        source[name] = found
+        if found and found["sha256"] != expected:
+            issue("code/" + name, "SOURCE_HASH_MISMATCH", identity=True)
+    started_meta, started = read("capture/started.json", parse=True, identity=True)
+    health_meta, health = read("capture/health.json", parse=True)
+    if (started.get("schema_version") != "forward_receive_evidence_v1"
+            or started.get("source_sha256") != STARTUP_SOURCE_HASHES["forward_evidence.py"]
+            or started.get("book_source_sha256") != STARTUP_SOURCE_HASHES["collect_bybit_microstructure.py"]):
+        issue("started", "STARTED_SOURCE_IDENTITY_MISMATCH", identity=True)
+    if (started.get("maximum_seconds") != 86400 or started.get("maximum_bytes") != INVENTORY_MAX_BYTES
+            or started.get("maximum_segments") != INVENTORY_MAX_SEGMENTS
+            or started.get("research_domain") != "prospective_development"
+            or any(started.get(k) is not False for k in ("economic_evidence", "account_access", "order_submission"))):
+        issue("started", "STARTED_SCOPE_MISMATCH", identity=True)
+    completed = health.get("completed_segments")
+    if type(completed) is not int or not 0 <= completed <= INVENTORY_MAX_SEGMENTS:
+        issue("health", "INVALID_COMPLETED_COUNT")
+        completed = None
+    health_status = health.get("status")
+    if health_status not in ("BOUNDED_COLLECTION_COMPLETE", "STOPPED_ERROR"):
+        issue("health", "HEALTH_NOT_TERMINAL")
+    entries = inventory_entries(batch / "capture", INVENTORY_MAX_SEGMENTS + 8)
+    indices = []
+    for name in entries:
+        if re.fullmatch(r"segment-[0-9]{3}", name) and int(name[-3:]) < INVENTORY_MAX_SEGMENTS:
+            indices.append(int(name[-3:]))
+        elif name not in ("started.json", "health.json", "failure.json", "health.json.tmp"):
+            issue("capture", "UNEXPECTED_ENTRY_" + hashlib.sha256(name.encode()).hexdigest()[:16])
+    if "health.json.tmp" in entries:
+        issue("capture", "UNCOMMITTED_HEALTH_PRESENT")
+    failure_meta, failure = (read("capture/failure.json", parse=True) if "failure.json" in entries else (None, {}))
+    if "failure.json" in entries or health_status == "STOPPED_ERROR":
+        issue("capture", "CAPTURE_REPORTED_FAILURE")
+    stop_reason = failure.get("reason_code", health.get("reason_code"))
+    if not isinstance(stop_reason, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,100}", stop_reason):
+        stop_reason = "EXACT_BOUND_NOT_RECORDED" if health_status == "BOUNDED_COLLECTION_COMPLETE" else "UNKNOWN"
+
+    segments, missing, total, hashed = [], [], 0, 0
+    previous_receipt, previous_last = None, None
+    for index in range(max(indices + ([completed - 1] if completed else []) + [-1]) + 1):
+        need(time.monotonic() <= deadline, "INVENTORY_TIME_LIMIT")
+        relative = "capture/segment-%03d" % index
+        record = {"segment_index": index, "present": index in indices}
+        if index not in indices:
+            missing.append(index)
+            issue(relative, "SEGMENT_MISSING")
+            previous_receipt, previous_last = None, None
+            segments.append(record)
+            continue
+        try:
+            children = inventory_entries(batch / relative, 8)
+        except (OSError, ValueError):
+            issue(relative, "SEGMENT_DIRECTORY_UNREADABLE_OR_UNSAFE", identity=True)
+            previous_receipt, previous_last = None, None
+            segments.append(record)
+            continue
+        record["partial_present"] = "receive.partial.jsonl.gz" in children
+        for name in children:
+            if name not in ("receipt.json", "receive.jsonl.gz", "receive.partial.jsonl.gz"):
+                issue(relative, "UNEXPECTED_SEGMENT_ENTRY_" + hashlib.sha256(name.encode()).hexdigest()[:16])
+        if record["partial_present"]:
+            issue(relative, "PARTIAL_RAW_PRESENT")
+        if completed is not None and index >= completed:
+            issue(relative, "SEGMENT_BEYOND_REPORTED_SEALED_COUNT")
+        receipt_meta, receipt = read(relative + "/receipt.json", parse=True)
+        record["receipt"] = receipt_meta
+        raw = None
+        for filename in ("receive.jsonl.gz", "receive.partial.jsonl.gz"):
+            if filename not in children:
+                if filename == "receive.jsonl.gz":
+                    issue(relative, "SEALED_RAW_MISSING")
+                continue
+            found = read(relative + "/" + filename, min(129 * 1024**2, INVENTORY_MAX_BYTES - hashed), identity=True)
+            if found:
+                hashed += found["bytes"]
+                if found["uid"] != 65534 or found["gid"] != 65534:
+                    issue(relative, "RAW_OWNER_MISMATCH", identity=True)
+            if filename == "receive.jsonl.gz":
+                raw = found
+                total += found["bytes"] if found else 0
+            else:
+                record["partial_raw"] = found
+        record["raw"] = raw
+        if (receipt.get("schema_version") != "forward_receive_evidence_v1"
+                or receipt.get("status") != "SEALED" or type(receipt.get("segment_index")) is not int
+                or receipt.get("segment_index") != index
+                or receipt.get("economic_evidence") is not False):
+            issue(relative, "RECEIPT_SCHEMA_OR_INDEX_MISMATCH")
+        if receipt.get("source_sha256") != STARTUP_SOURCE_HASHES["forward_evidence.py"]:
+            issue(relative, "RECEIPT_SOURCE_MISMATCH", identity=True)
+        if receipt.get("previous_receipt_sha256") != previous_receipt:
+            issue(relative, "PREVIOUS_RECEIPT_HASH_MISMATCH")
+        record["previous_receipt_sha256"] = receipt.get("previous_receipt_sha256") \
+            if isinstance(receipt.get("previous_receipt_sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", receipt["previous_receipt_sha256"]) else None
+        if raw and (receipt.get("raw_sha256") != raw["sha256"] or type(receipt.get("raw_bytes")) is not int
+                    or receipt["raw_bytes"] != raw["bytes"]):
+            issue(relative, "RAW_HASH_OR_SIZE_MISMATCH")
+        if receipt_meta and (receipt_meta["uid"] != 65534 or receipt_meta["gid"] != 65534):
+            issue(relative, "RECEIPT_OWNER_MISMATCH", identity=True)
+        observation = receipt.get("observation", {})
+        observation = observation if isinstance(observation, dict) else {}
+        summary = {}
+        for key in ("messages", "first_receive_epoch_ms", "last_receive_epoch_ms", "elapsed_monotonic_ms"):
+            value = observation.get(key)
+            if type(value) is int and value >= 0:
+                summary[key] = value
+            else:
+                issue(relative, "OBSERVATION_FIELD_INVALID_" + key.upper())
+        counts = observation.get("topic_counts")
+        if isinstance(counts, dict) and set(counts) == set(INVENTORY_TOPICS) and all(type(v) is int and v > 0 for v in counts.values()):
+            summary["topic_counts"] = counts
+            if sum(counts.values()) != summary.get("messages"):
+                issue(relative, "TOPIC_TOTAL_MISMATCH")
+        else:
+            issue(relative, "TOPIC_COUNTS_INVALID")
+        replay_hash = observation.get("replay_sha256")
+        if isinstance(replay_hash, str) and re.fullmatch(r"[0-9a-f]{64}", replay_hash):
+            summary["claimed_replay_sha256"] = replay_hash
+        else:
+            issue(relative, "CLAIMED_REPLAY_HASH_INVALID")
+        first, last = summary.get("first_receive_epoch_ms"), summary.get("last_receive_epoch_ms")
+        if first is not None and last is not None:
+            if first > last:
+                issue(relative, "RECEIPT_TIME_RANGE_REVERSED")
+            if previous_last is not None:
+                record["claimed_gap_from_previous_receive_ms"] = first - previous_last
+                if first < previous_last:
+                    issue(relative, "CROSS_SEGMENT_TIME_OVERLAP")
+            previous_last = last
+        else:
+            previous_last = None
+        record["claimed_observation"] = summary
+        previous_receipt = receipt_meta["sha256"] if receipt_meta else None
+        segments.append(record)
+    if completed != len(indices) or health.get("raw_bytes") != total:
+        issue("health", "REPORTED_TOTALS_MISMATCH")
+    health_after, _ = read("capture/health.json", parse=True)
+    if health_after != health_meta or inventory_container() != before:
+        issue("snapshot", "STATE_CHANGED_DURING_INVENTORY", identity=True)
+    snapshot = {"schema_version": "forward_inventory_diagnostic_v1", "status": "DIAGNOSTIC_NOT_ADMITTED",
+                "capture_commit_sha": STARTUP_REPAIR_BATCH, "observed_epoch_ms": time.time_ns() // 1_000_000,
+                "identity_bound": not identity_issues, "source_files": source,
+                "container": {"identity_matches": container_identity, "mounts_match": mount_identity,
+                              "id": before.get("id") if isinstance(before.get("id"), str) and re.fullmatch(r"[0-9a-f]{64}", before["id"]) else None,
+                              "running": before.get("running"), "exit_code": before.get("exit_code"),
+                              "restarts": before.get("restarts"), "expected_user": "65534:65534",
+                              "observed_user": before.get("user") if isinstance(before.get("user"), str) and re.fullmatch(r"[0-9]{1,10}:[0-9]{1,10}", before["user"]) else None,
+                              "expected_image": INVENTORY_IMAGE},
+                "image_platform": platform,
+                "started_file": started_meta, "health_file": health_meta, "failure_file": failure_meta,
+                "reported_started_epoch_ms": started.get("started_epoch_ms") if type(started.get("started_epoch_ms")) is int else None,
+                "reported_terminal_epoch_ms": health.get("updated_epoch_ms") if type(health.get("updated_epoch_ms")) is int else None,
+                "reported_health_status": health_status if health_status in ("BOUNDED_COLLECTION_COMPLETE", "STOPPED_ERROR", "CAPTURING", "SEGMENT_SEALED") else "UNKNOWN",
+                "reported_stop_reason": stop_reason, "reported_completed_segments": completed,
+                "observed_segment_directories": len(indices), "missing_segments": missing,
+                "raw_bytes_hashed": hashed, "observed_final_raw_bytes": total, "segments": segments,
+                "anomalies": anomalies, "raw_replay_performed": False, "backup_restored": False,
+                "continuous_coverage_verified": False, "economic_evidence": False, "research_admitted": False}
+    encoded = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return {"snapshot": snapshot, "snapshot_sha256": hashlib.sha256(encoded).hexdigest()}
 
 
 def need(condition, reason):
@@ -258,6 +570,9 @@ def execute(mode, expected, commit, bundle):
     elif mode == "repair-startup":
         result["repair"] = repair_startup(batch, image)
         result["status"] = "PERMISSION_CORRECTED_NOT_ACCEPTED"
+    elif mode == "inventory":
+        result["inventory"] = inventory(batch, image)
+        result["status"] = "INVENTORY_DIAGNOSTIC_ONLY"
     elif mode in ("inspect", "verify", "diagnose"):
         result["status"] = "INSPECTED"
         health = batch / "capture/health.json"
@@ -290,7 +605,7 @@ def execute(mode, expected, commit, bundle):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", required=True, choices=("inspect", "start", "verify", "diagnose", "repair-startup"))
+    parser.add_argument("--mode", required=True, choices=("inspect", "start", "verify", "diagnose", "repair-startup", "inventory"))
     parser.add_argument("--expected-release-sha", required=True)
     parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--bundle-base64", default="")

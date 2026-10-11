@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from contextlib import ExitStack
 from unittest.mock import patch
 from types import SimpleNamespace
 
@@ -41,6 +42,209 @@ def make_segment(root):
                "observation": observation, "economic_evidence": False}
     forward.write_json(root / "receipt.json", receipt)
     return receipt
+
+
+def make_inventory_batch(root, count=3):
+    batch = root / ecs.STARTUP_REPAIR_BATCH
+    code, capture = batch / "code", batch / "capture"
+    code.mkdir(parents=True)
+    capture.mkdir()
+    for name in ecs.FILES:
+        (code / name).write_bytes(Path(__file__).with_name(name).read_bytes())
+    started = {"schema_version": forward.SCHEMA, "started_epoch_ms": 1_800_000_000_000,
+               "source_sha256": ecs.STARTUP_SOURCE_HASHES["forward_evidence.py"],
+               "book_source_sha256": ecs.STARTUP_SOURCE_HASHES["collect_bybit_microstructure.py"],
+               "maximum_seconds": 86400, "maximum_bytes": ecs.INVENTORY_MAX_BYTES,
+               "maximum_segments": 97, "research_domain": "prospective_development",
+               "economic_evidence": False, "account_access": False, "order_submission": False}
+    (capture / "started.json").write_text(json.dumps(started))
+    previous, total = None, 0
+    for index in range(count):
+        directory = capture / ("segment-%03d" % index)
+        directory.mkdir()
+        receipt = make_segment(directory)
+        receipt.update(segment_index=index, previous_receipt_sha256=previous,
+                       raw_bytes=(directory / "receive.jsonl.gz").stat().st_size,
+                       source_sha256=ecs.STARTUP_SOURCE_HASHES["forward_evidence.py"])
+        for field in ("first_receive_epoch_ms", "last_receive_epoch_ms"):
+            receipt["observation"][field] += index * 1_000
+        (directory / "receipt.json").write_text(json.dumps(receipt))
+        previous = forward.digest(directory / "receipt.json")
+        total += receipt["raw_bytes"]
+    (capture / "health.json").write_text(json.dumps({"status": "BOUNDED_COLLECTION_COMPLETE",
+        "completed_segments": count, "raw_bytes": total, "updated_epoch_ms": 1_800_000_100_000}))
+    container = {"id": "a" * 64, "image": ecs.INVENTORY_IMAGE,
+                 "image_id": ecs.INVENTORY_IMAGE.split("@", 1)[1], "user": "65534:65534",
+                 "command": ["/forward/forward_evidence.py", "run", "--root=/evidence"],
+                 "entrypoint": ["python3"], "readonly": True, "caps": ["ALL"],
+                 "cap_add": None, "security_opt": ["no-new-privileges"], "memory": 512 * 1024**2,
+                 "nano_cpus": 500_000_000, "pids_limit": 64,
+                 "privileged": False, "restart": "no", "running": False,
+                 "exit_code": 0, "oom_killed": False, "restarts": 0,
+                 "mounts": [{"Type": "bind", "Source": str(code), "Destination": "/forward", "RW": False},
+                            {"Type": "bind", "Source": str(capture), "Destination": "/evidence", "RW": True}]}
+    return batch, container
+
+
+class ForwardInventoryDiagnosticTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        self.batch, self.container = make_inventory_batch(self.root)
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch.object(ecs, "ROOT", self.root))
+        self.container_probe = self.stack.enter_context(patch.object(ecs, "inventory_container", return_value=self.container))
+        self.stack.enter_context(patch.object(ecs, "inventory_image_platform", return_value={"os": "linux", "architecture": "amd64"}))
+        # Synthetic host ownership: still execute all real no-follow, bounded reads.
+        original_file = ecs.inventory_file
+        def target_owner(*args, **kwargs):
+            result = original_file(*args, **kwargs)
+            metadata = result[0] if isinstance(result, tuple) else result
+            metadata.update(uid=65534, gid=65534)
+            return result
+        self.stack.enter_context(patch.object(ecs, "inventory_file", side_effect=target_owner))
+        self.stack.enter_context(patch.object(ecs, "command", side_effect=AssertionError("unexpected command")))
+        self.stack.enter_context(patch.object(forward, "replay", side_effect=AssertionError("inventory must not replay")))
+        self.stack.enter_context(patch.object(forward, "verify_segment", side_effect=AssertionError("inventory must not verify")))
+        self.stack.enter_context(patch.object(ecs, "replay_spec", side_effect=AssertionError("inventory must not launch replay")))
+
+    def collect(self):
+        return ecs.inventory(self.batch, ecs.INVENTORY_IMAGE)
+
+    def codes(self, result):
+        return {item["code"] for item in result["snapshot"]["anomalies"]}
+
+    def receipt(self, index=1):
+        path = self.batch / ("capture/segment-%03d/receipt.json" % index)
+        return path, json.loads(path.read_text())
+
+    def test_frozen_inventory_is_read_only_and_never_admission(self):
+        before = {str(p): forward.digest(p) for p in self.batch.rglob("*") if p.is_file()}
+        result = self.collect()
+        snapshot = result["snapshot"]
+        after = {str(p): forward.digest(p) for p in self.batch.rglob("*") if p.is_file()}
+        self.assertEqual(before, after)
+        self.assertEqual(snapshot["status"], "DIAGNOSTIC_NOT_ADMITTED")
+        self.assertTrue(snapshot["identity_bound"])
+        self.assertEqual(snapshot["anomalies"], [])
+        self.assertEqual(snapshot["reported_stop_reason"], "EXACT_BOUND_NOT_RECORDED")
+        self.assertEqual(snapshot["observed_segment_directories"], 3)
+        self.assertEqual(snapshot["segments"][1]["claimed_gap_from_previous_receive_ms"], 995)
+        for field in ("raw_replay_performed", "backup_restored", "continuous_coverage_verified", "economic_evidence", "research_admitted"):
+            self.assertFalse(snapshot[field])
+        canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        self.assertEqual(result["snapshot_sha256"], hashlib.sha256(canonical).hexdigest())
+
+    def test_wrong_batch_and_parent_symlink_rejected(self):
+        with self.assertRaisesRegex(ValueError, "INVENTORY_BATCH_IDENTITY"):
+            ecs.inventory(self.root / "different", ecs.INVENTORY_IMAGE)
+        link = self.root / "link"
+        link.symlink_to(self.root, target_is_directory=True)
+        with patch.object(ecs, "ROOT", link):
+            with self.assertRaises(OSError):
+                ecs.inventory(link / ecs.STARTUP_REPAIR_BATCH, ecs.INVENTORY_IMAGE)
+
+    def test_raw_symlink_is_not_followed(self):
+        raw = self.batch / "capture/segment-001/receive.jsonl.gz"
+        raw.unlink()
+        raw.symlink_to(self.batch / "code/forward_evidence.py")
+        result = self.collect()
+        self.assertIsNone(result["snapshot"]["segments"][1]["raw"])
+        self.assertFalse(result["snapshot"]["identity_bound"])
+        self.assertTrue(result["snapshot"]["anomalies"])
+
+    def test_wrong_source_started_identity_and_container_are_retained(self):
+        (self.batch / "code/forward_evidence.py").write_text("changed")
+        started = self.batch / "capture/started.json"
+        value = json.loads(started.read_text())
+        value["book_source_sha256"] = "0" * 64
+        started.write_text(json.dumps(value))
+        self.container["user"] = "0:0"
+        result = self.collect()
+        self.assertFalse(result["snapshot"]["identity_bound"])
+        self.assertTrue({"SOURCE_HASH_MISMATCH", "STARTED_SOURCE_IDENTITY_MISMATCH", "CONTAINER_IDENTITY_MISMATCH"} <= self.codes(result))
+        self.assertEqual(len(result["snapshot"]["segments"]), 3)
+
+    def test_bad_hash_size_chain_and_boolean_index_are_reported(self):
+        path, value = self.receipt()
+        value.update(raw_sha256="0" * 64, raw_bytes=1, previous_receipt_sha256="0" * 64, segment_index=True)
+        path.write_text(json.dumps(value))
+        result = self.collect()
+        self.assertTrue({"RAW_HASH_OR_SIZE_MISMATCH", "PREVIOUS_RECEIPT_HASH_MISMATCH", "RECEIPT_SCHEMA_OR_INDEX_MISMATCH"} <= self.codes(result))
+
+    def test_missing_and_partial_segment_remain_visible(self):
+        missing = self.batch / "capture/segment-001"
+        missing.rename(self.root / "held-segment")
+        partial = self.batch / "capture/segment-003"
+        partial.mkdir()
+        (partial / "receive.partial.jsonl.gz").write_bytes(b"partial")
+        result = self.collect()
+        self.assertEqual(result["snapshot"]["missing_segments"], [1])
+        self.assertTrue({"SEGMENT_MISSING", "PARTIAL_RAW_PRESENT", "SEALED_RAW_MISSING", "SEGMENT_BEYOND_REPORTED_SEALED_COUNT"} <= self.codes(result))
+        self.assertEqual(result["snapshot"]["segments"][3]["partial_raw"]["bytes"], 7)
+
+    def test_running_or_failed_capture_does_not_become_healthy(self):
+        self.container.update(running=True, exit_code=2)
+        failure = {"status": "STOPPED_ERROR", "reason_code": "STREAM_IDLE_TIMEOUT", "completed_segments": 3}
+        (self.batch / "capture/failure.json").write_text(json.dumps(failure))
+        result = self.collect()
+        self.assertTrue({"CONTAINER_NOT_TERMINAL", "CONTAINER_EXIT_OR_RESTART_ANOMALY", "CAPTURE_REPORTED_FAILURE"} <= self.codes(result))
+        self.assertEqual(result["snapshot"]["reported_stop_reason"], "STREAM_IDLE_TIMEOUT")
+
+    def test_extra_capabilities_or_changed_resource_limit_lose_identity(self):
+        for key, value in (("cap_add", ["SYS_ADMIN"]), ("security_opt", []),
+                           ("memory", 0), ("nano_cpus", 0), ("pids_limit", -1)):
+            with self.subTest(field=key):
+                original = self.container[key]
+                self.container[key] = value
+                result = self.collect()
+                self.assertFalse(result["snapshot"]["identity_bound"])
+                self.assertIn("CONTAINER_IDENTITY_MISMATCH", self.codes(result))
+                self.container[key] = original
+
+    def test_diagnostic_never_exports_arbitrary_receipt_strings(self):
+        path, value = self.receipt()
+        value["secret"] = "DO_NOT_EXPORT_TEST_MARKER"
+        value["previous_receipt_sha256"] = "DO_NOT_EXPORT_TEST_MARKER"
+        value["observation"]["messages"] = "DO_NOT_EXPORT_TEST_MARKER"
+        path.write_text(json.dumps(value))
+        result = self.collect()
+        self.assertNotIn("DO_NOT_EXPORT_TEST_MARKER", json.dumps(result))
+        self.assertIn("OBSERVATION_FIELD_INVALID_MESSAGES", self.codes(result))
+
+    def test_container_change_during_inventory_loses_identity_binding(self):
+        changed = dict(self.container, id="b" * 64)
+        self.container_probe.side_effect = [self.container, changed]
+        result = self.collect()
+        self.assertFalse(result["snapshot"]["identity_bound"])
+        self.assertIn("STATE_CHANGED_DURING_INVENTORY", self.codes(result))
+
+    def test_single_file_read_bound_and_no_path_traversal(self):
+        with self.assertRaisesRegex(ValueError, "INVENTORY_FILE_SIZE_LIMIT"):
+            ecs.inventory_file(self.batch / "capture/health.json", 2, float("inf"))
+        with self.assertRaisesRegex(ValueError, "INVENTORY_PATH_OUTSIDE_BATCH"):
+            ecs.inventory_directory(self.batch / "..")
+
+    def test_out_of_range_directory_is_not_walked(self):
+        outside = self.batch / "capture/segment-999"
+        outside.symlink_to(self.root, target_is_directory=True)
+        result = self.collect()
+        self.assertEqual(result["snapshot"]["observed_segment_directories"], 3)
+        self.assertTrue(any(code.startswith("UNEXPECTED_ENTRY_") for code in self.codes(result)))
+
+    def test_image_platform_reads_only_fixed_fields(self):
+        with patch.object(ecs, "command", return_value=SimpleNamespace(returncode=0, stdout=b'{"os":"linux","architecture":"amd64"}')) as invoked:
+            # Exit the fixture's platform stub only for this bounded parser test.
+            function = globals()["ORIGINAL_INVENTORY_IMAGE_PLATFORM"]
+            self.assertEqual(function(ecs.INVENTORY_IMAGE), {"os": "linux", "architecture": "amd64"})
+            rendered = " ".join(invoked.call_args.args[0])
+            self.assertNotIn("Env", rendered)
+            self.assertNotIn("logs", rendered)
+
+
+ORIGINAL_INVENTORY_IMAGE_PLATFORM = ecs.inventory_image_platform
 
 
 class ForwardEvidenceTest(unittest.TestCase):
