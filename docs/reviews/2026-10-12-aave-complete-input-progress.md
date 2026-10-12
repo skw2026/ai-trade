@@ -1,4 +1,4 @@
-# Aave 完整批次进度：原生回执控制通过，年度目录等待接口额度
+# Aave 完整批次输入进度与资金流识别边界
 
 截至 2026-10-12 11:13 UTC，本批已取得三笔事前固定交易的完整原生回执，
 首笔通过区块身份和时间绑定；全年目录尚未完成，尚未计算收益。
@@ -67,5 +67,58 @@ DEX 身份和净流可识别性；价格前冻结规则、弃权边界、成本�
 才执行唯一开发筛查。缺失回执不能模拟成不交易，未知流不能冒称零卖压。
 同交易交换不证明卖的正是清算抵押品；学习增益仍 NOT_EVALUATED。
 
-代码和本进度仅作 main `[skip ci]` 脱敏工程交付，原始证据不上传，不部署
-交易服务或操作账户。远端 SHA／实际无 CI/CD 需推送后核对，不预先声明完成。
+上述首轮代码已由 `14a8a0bc20fa4f7d827f486c30858db683e896ac` 推至 main，
+精确 SHA 查询为 0 个 Actions run；未部署交易服务。两次只读交付查询亦计入
+资源账，首轮收尾累计 43 次公开操作，原始证据保持本地。
+
+## 等待期间的真实回执解析结果
+
+截至 11:31 UTC，新增 WETH／V3 解析与池身份搜索，17 项合成测试通过，原
+30 项输入流水线回归仍通过；共 47 项不同测试，没有运行全项目 CTest。
+对已冻结的三笔回执实际解析及独立整数复算通过，新增网络数据请求为 0。
+三笔分别识别出一座 canonical Uniswap V3 池；Swap 的有符号 WETH 数量与
+该池的实际 WETH 转账一致，每笔均满足收到的 WETH 等于池内出售量加解包量。
+这不是年度资金流通过，也没有计算 ETH 价格或收益。
+
+池身份依据官方 [PoolAddress 公式](https://raw.githubusercontent.com/Uniswap/v3-periphery/v1.0.0/contracts/libraries/PoolAddress.sol)
+与[不可变字段定义](https://raw.githubusercontent.com/Uniswap/v3-core/v1.0.0/contracts/interfaces/pool/IUniswapV3PoolImmutables.sol)。
+以当前回执的日志发出地址为 token 候选、100／500／3000／10000 为固定 fee
+搜索集合，仅公式计算地址精确等于实际 Swap 发出池时认定。方法审查确认，
+在官方 factory／init code 及实际历史日志绑定下，可省去命中池的逐池身份
+RPC；这不是声称只有四档费率。未命中、冲突身份或未知 WETH 路径不当作零。
+Swap 数量按[官方事件定义](https://raw.githubusercontent.com/Uniswap/v3-core/v1.0.0/contracts/interfaces/pool/IUniswapV3PoolEvents.sol)
+解释为池余额增量，不把单条 Transfer 当作卖出。
+
+当前解析器只输出组件与未知项，没有交易动作。首笔原生块已绑定，后两笔
+的原生块绑定及三笔抵押转出方的历史身份尚待完成；不把组件检查冒称全回执
+资金流准入。结算不匹配可能来自 LP、Flash 或额外转账，不直接判输入错误。
+
+## 圆桌复核纠正追踪前置的口径扩大
+
+经济复核明确撤回先前“解包后所有原生 ETH 去向必须查清才可识别 WETH
+净流”的过强建议。原[机制计划](../plans/2026-10-12-aave-forced-flow-research.md)
+始终要求同交易的 DEX 净 WETH 出售，不要求全球 ETH 等值风险净额，也明示
+共现不等于逐单位抵押品来源证明。本次没有修改原计划、降低阈值或把 V3
+子项直接改成完整信号。
+
+充分证据仍须覆盖完整 canonical WETH 回执账：所有 DEX 边界均已认证，
+多池及买回全部净额计算，Swap 与结算一致，其余 WETH 边能由已验证的抵押
+转移、偿还或转换等解释；任何可能改变该净额的未解释转移仍为 UNKNOWN。
+Withdrawal 是可见转换，本身不是 DEX 交换。满足全账条件后，可以同时报告
+WETH 边界净交换已核实、抵押品逐单位来源 UNKNOWN、全球原生 ETH 净流未评价。
+目前三笔只有组件通过，不提前赋予上述全账通过状态。
+
+[dRPC 的 Ethereum 官方说明](https://drpc.org/docs/ethereum-api/debugandtrace)
+将 debug／trace 列为付费功能，本轮未调用、注册或采购。
+[Blockscout 官方接口定义](https://github.com/blockscout/blockscout-api-v2-swagger/blob/main/swagger.yaml)
+列有 raw-trace，但其当前可用性及额度未实测；它不是默认新增 1,817 次取数
+的前置。仅在具体 WETH 未解释路径确有需要时，才核算有界补证成本。
+
+11:31:32 UTC 的组件审计核实 320 旧原件保持；累计 49 次公开操作，包括
+25 次资料、21 次数据、1 次 DNS 诊断及 2 次交付核对。保守体积 7,070,763
+字节、主动时间 2,365.1 秒，尚无等待扣时。年度目录仍为 2,169／1,817 的
+非完整前缀，现有计时进程未到下一取数窗口。后续交付查询继续计数。
+
+本次组件及说明仍作 main `[skip ci]` 脱敏交付，原始回执和报告留本地。
+下一步继续完整目录、总输入资源核算与原生绑定；不为等待时间追加调参、
+采购或交易，也不因组件通过宣称 G4 或经济效果达成。
