@@ -138,8 +138,12 @@ def estimate(rows):
 
 
 def run_chunk(limit):
+    # Local import avoids a module cycle. A receipt/header-only lower bound is
+    # insufficient: reserve identities and all market inputs must also fit.
+    import aave_input_costs
     a.protect()
     rows=catalog()
+    aave_input_costs.require_bulk_plan()
     resources=estimate(rows)
     a.require(resources['public_operations']+resources['minimum_remaining_native_calls']<10000,
               'KNOWN_NATIVE_INPUT_EXCEEDS_REQUEST_BUDGET')
