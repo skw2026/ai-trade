@@ -1,0 +1,28 @@
+{
+  "failure_id": "57cbd19eaa354c43805a0c1c8d45b455",
+  "decision": "retry",
+  "goal": "Verify complete canonical WETH DEX boundary flow without treating an authenticated pool component as whole-transaction flow",
+  "expected": "Unknown WETH counterparties or unidentified swap participants touching WETH keep the transaction UNKNOWN; purely non-WETH unknown events do not add a global native-ETH prerequisite",
+  "observed": "The 14-test counterparty regression failed three assertions: known pool to/from unknown endpoint and liquidator with unknown Swap emission were incorrectly VERIFIED",
+  "root_cause_status": "confirmed",
+  "root_cause": "The transfer classifier used from-in-pools OR to-in-pools as sufficient explanation of both ends, while unresolved Swap emitters were reported but not consulted. Exact pool settlement therefore did not ensure complete DEX boundary accounting",
+  "evidence": [
+    "tools/test_aave_weth_boundary.py:test_known_pool_does_not_explain_unknown_other_end",
+    "tools/test_aave_weth_boundary.py:test_liquidator_role_cannot_hide_unknown_swap",
+    "Failing source SHA256 cbe8c06571087a78776a42d5b1701663101df8af1b93d488e79d5a528c2c1968",
+    "Original command SHA256 9aaf1fdf0b6dc68c4259ff030b47ead555519af63d0e4268add6626ce272cb1f",
+    "Independent read-only method review identified the cross-pool counterexample before the formal failing regression"
+  ],
+  "next_action": "Require explained roles at both endpoints, block unknown swap emitters with nonzero WETH contact and ambiguous participant-emitter roles, then execute exactly one retry of the original unittest discovery argv in the same cwd",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Restores the original whole-WETH boundary requirement. No profitability, parameters, economic eligibility or global native ETH requirement is changed",
+    "data_feasibility": "All counterexample evidence is already in complete receipts; role checks need no new RPC. The fixed historical reserve control returned a bound aToken identity matching the real collateral transfer",
+    "method_feasibility": "Both WETH transfer endpoints and unknown emitting participants are observable in the same raw receipt. Existing authenticated pool quantities and conversion handling remain unchanged; unclassified paths stay UNKNOWN",
+    "budget_and_exit": "At most one 120-second original-command retry, zero new public operations or economics. If it fails, stop dependent classification and reassess; the scheduled catalog window independently refuses to dispatch while the same gate is not READY"
+  },
+  "preservation": "The original first-control classification output, raw receipts, historical reserve response and all older failed gates remain unchanged. Later corrected-source revalidation must be an additional record, not overwrite the first output"
+}

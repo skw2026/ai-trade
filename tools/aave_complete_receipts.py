@@ -73,7 +73,14 @@ def envelope(value):
 
 
 def fetch(name,method,params,validator):
-    a.require(method in ('eth_getTransactionReceipt','eth_getBlockByNumber'),'READ_ONLY_ALLOWLIST')
+    # Historical reserve identity reads share transport/accounting only. They
+    # cannot invoke arbitrary calls, latest-state reads or transaction writes.
+    if method=='eth_call':
+        expected={'to':c.POOL,'data':'0x35ea6a75'+'0'*24+c.WETH[2:]}
+        a.require(isinstance(params,list) and len(params)==2 and params[0]==expected
+                  and a.hx(params[1]) and int(params[1],16)>0,'HISTORICAL_RESERVE_CALL_ONLY')
+    else:
+        a.require(method in ('eth_getTransactionReceipt','eth_getBlockByNumber'),'READ_ONLY_ALLOWLIST')
     c.budget()
     out=a.ROOT/'operations'/name
     out.mkdir(mode=0o700)
