@@ -1,0 +1,21 @@
+{
+  "failure_id": "4e803862439a4f7a9b8942fc72ce654a",
+  "decision": "retry",
+  "goal": "Validate the frozen two-sided model and same original parser on synthetic inputs before the unique economic run",
+  "expected": "All 32 synthetic tests pass without changing the original parser or economic contract",
+  "observed": "Three fixture-based tests raised order-book exchange timestamp is missing before any quote evaluation; 29 tests passed",
+  "root_cause_status": "confirmed",
+  "root_cause": "The newly authored write_fixture book payload omitted cts and ts, while collect_bybit_microstructure.OrderBook.apply requires a positive exchange timestamp at line 154. The real capture source and data were not modified or executed.",
+  "evidence": [".artifacts/two-sided-screen-20261012/validation-state.json", "tools/collect_bybit_microstructure.py:154", "tools/test_two_sided_quote_screen.py:72"],
+  "next_action": "Add cts and ts derived from the existing synthetic second clock, then retry the exact original 32-test command once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "The same original parser must validate synthetic fixtures before using actual evidence; missing test metadata is not an economic threshold issue",
+    "data_feasibility": "Synthetic exchange timestamps are already available from epoch and second; real data is not needed to repair the fixture",
+    "method_feasibility": "The thrown source guard names exactly the missing fields; adding them does not alter model rules, assertions, source hashes or sample selection",
+    "budget_and_exit": "One exact-command retry within the approved four-hour batch; if it fails, halt dependent container and economic execution and reassess"
+  }
+}

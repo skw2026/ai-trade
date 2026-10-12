@@ -1,0 +1,21 @@
+{
+  "failure_id": "dfbd900cc0eb49cfb2a1d7874eb9da97",
+  "decision": "retry",
+  "goal": "Verify the same UID, read-only data and disabled network in the pinned synthetic research container",
+  "expected": "Synthetic lifecycle succeeds while no usable external network interface or route exists",
+  "observed": "Container assertion at bootstrap line 3 rejected sysfs interface names before the synthetic screen",
+  "root_cause_status": "confirmed",
+  "root_cause": "The test incorrectly equated network=none with exactly one sysfs entry. Read-only inspection found lo plus kernel-created tunl0, sit0, ip6tnl0 and bonding_masters. SIOCGIFFLAGS returned lo=73, each tunnel=128 (IFF_UP clear), and /proc/net/route contained only its header. No network call or data access was attempted.",
+  "evidence": [".artifacts/two-sided-screen-20261012/validation-state.json", "tools/test_two_sided_screen_container.py:62", "Read-only pinned-image diagnostics: uid=gid=65534; tunnel flags=128; route table empty"],
+  "next_action": "Replace the incorrect name-count test with namespace interface IFF_UP and empty-route checks, retaining Docker network=none and dropped capabilities; retry exact original command once",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "The property is absence of usable external connectivity, not absence of inactive kernel virtual interfaces",
+    "data_feasibility": "Interface flags and the namespace route table are available read-only to UID 65534",
+    "method_feasibility": "Confirmed flags and routes directly establish why the original name-only assertion was false; economic code and data remain unchanged",
+    "budget_and_exit": "One exact container command retry under the four-hour bound; no actual economic run before success; repeated failure stops for renewed review"
+  }
+}
