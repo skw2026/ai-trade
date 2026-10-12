@@ -13,6 +13,7 @@ import forward_evidence_ecs as ecs
 
 ROOT = Path(".artifacts/forward-correction-20261011")
 PARENT = Path(".artifacts/forward-evidence-20261010/validation-state.json")
+APPROVAL = ROOT / "approval-20261012.json"
 
 
 def read(path):
@@ -28,8 +29,38 @@ def protected(contract):
     return len(originals)
 
 
-def prepare(contract):
+def authorized_chain(contract):
+    old = read(ROOT / "attempt-start.json")
+    blocked = read(ROOT / "dispatch-blocked.json")
+    approval = read(APPROVAL)
+    contract_hash = correction.digest(correction.canonical(contract))
+    correction.require(approval == {"status": "APPROVED_BY_USER", "date": "2026-10-12",
+                       "user_reply": "允许", "contract_sha256": contract_hash,
+                       "original_first_segment_correction": True,
+                       "fixed_five_file_ciphertext_to_github_artifact": True,
+                       "retention_days": 7, "private_key_local_only": True,
+                       "maximum_actual_runs": 1}, "EXPLICIT_APPROVAL_MISSING_OR_CHANGED")
+    correction.require(old["contract_sha256"] == contract_hash
+                       and blocked["workflow_sha"] == old["workflow_sha"]
+                       and blocked["status"] == "DISPATCH_NOT_EXECUTED_APPROVAL_REQUIRED"
+                       and blocked["remote_run_created"] is False
+                       and blocked["formal_replay_executed"] is False
+                       and blocked["ciphertext_exported"] is False, "PREVIOUS_RESERVATION_NOT_UNEXECUTED")
+    for name, expected in old["source_hashes"].items():
+        correction.require(correction.digest(Path("tools", name).read_bytes()) == expected,
+                           "PREVIOUS_REMOTE_IMPLEMENTATION_CHANGED")
+    return {"previous_attempt_sha256": correction.digest((ROOT / "attempt-start.json").read_bytes()),
+            "previous_dispatch_block_sha256": correction.digest((ROOT / "dispatch-blocked.json").read_bytes()),
+            "approval_sha256": correction.digest(APPROVAL.read_bytes())}
+
+
+def prepare(contract, authorized=False):
     protected(contract)
+    chain = authorized_chain(contract) if authorized else None
+    if authorized:
+        runs = json.loads(subprocess.check_output(["gh", "api",
+            "repos/skw2026/ai-trade/actions/workflows/forward-correction.yml/runs?event=workflow_dispatch&per_page=1"]))
+        correction.require(runs["total_count"] == 0 and runs["workflow_runs"] == [], "CORRECTION_ALREADY_DISPATCHED")
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     correction.require(not subprocess.check_output(["git", "status", "--porcelain"]), "WORKTREE_NOT_CLEAN")
     cert = (ROOT / "keys/recipient.pem").read_bytes()
@@ -41,15 +72,22 @@ def prepare(contract):
               "contract_sha256": correction.digest(correction.canonical(contract)),
               "certificate_sha256": correction.digest(cert), "parent_gate_sha256": contract["parent_gate_sha256"],
               "source_hashes": {name: correction.digest(Path("tools", name).read_bytes()) for name in correction.SOURCES}}
-    correction.exclusive_json(ROOT / "attempt-start.json", record)
+    if authorized:
+        record["authorized_chain"] = chain
+        record["previous_actual_runs"] = 0
+    prefix = "authorized-" if authorized else ""
+    correction.exclusive_json(ROOT / (prefix + "attempt-start.json"), record)
     inputs = {"expected_controller_sha": sha, "expected_contract_sha256": record["contract_sha256"],
               "recipient_certificate_base64": base64.b64encode(cert).decode()}
-    correction.exclusive_json(ROOT / "dispatch.json", inputs)
+    correction.exclusive_json(ROOT / (prefix + "dispatch.json"), inputs)
     print(json.dumps(record, sort_keys=True))
 
 
-def complete(contract):
-    attempt = read(ROOT / "attempt-start.json")
+def complete(contract, authorized=False):
+    attempt = read(ROOT / (("authorized-" if authorized else "") + "attempt-start.json"))
+    if authorized:
+        correction.require(attempt["authorized_chain"] == authorized_chain(contract)
+                           and attempt["previous_actual_runs"] == 0, "AUTHORIZED_CHAIN_CHANGED")
     correction.require(correction.digest(correction.canonical(contract)) == attempt["contract_sha256"], "LOCAL_CONTRACT_CHANGED")
     correction.require(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() == attempt["workflow_sha"]
                        and not subprocess.check_output(["git", "status", "--porcelain"]), "LOCAL_CONTROLLER_CHANGED")
@@ -130,15 +168,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("prepare", "fetch", "complete"))
     parser.add_argument("--run-id")
+    parser.add_argument("--authorized", action="store_true",
+                        help="Use the append-only 2026-10-12 user-approved binding; never replace the prior reservation")
     args = parser.parse_args()
     contract = read(correction.CONTRACT_PATH)
     if args.mode == "prepare":
-        prepare(contract)
+        prepare(contract, args.authorized)
         return 0
     if args.mode == "fetch":
         fetch(args.run_id or "")
         return 0
-    return complete(contract)
+    return complete(contract, args.authorized)
 
 
 if __name__ == "__main__":

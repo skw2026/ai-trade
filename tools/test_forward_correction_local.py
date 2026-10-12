@@ -161,5 +161,61 @@ class LocalCorrectionGuardTest(unittest.TestCase):
         self.assertIn("--network=none", argv)
 
 
+class AuthorizedReservationTest(unittest.TestCase):
+    def setUp(self):
+        self.contract = {"synthetic": True}
+        self.contract_hash = local.correction.digest(local.correction.canonical(self.contract))
+        self.source = b"synthetic unchanged remote code"
+        self.old = {"workflow_sha": "a" * 40, "contract_sha256": self.contract_hash,
+                    "source_hashes": {"forward_evidence_ecs.py": local.correction.digest(self.source)}}
+        self.blocked = {"workflow_sha": "a" * 40, "status": "DISPATCH_NOT_EXECUTED_APPROVAL_REQUIRED",
+                        "remote_run_created": False, "formal_replay_executed": False, "ciphertext_exported": False}
+        self.approval = {"status": "APPROVED_BY_USER", "date": "2026-10-12", "user_reply": "允许",
+                         "contract_sha256": self.contract_hash, "original_first_segment_correction": True,
+                         "fixed_five_file_ciphertext_to_github_artifact": True, "retention_days": 7,
+                         "private_key_local_only": True, "maximum_actual_runs": 1}
+        self.reads = {str(local.ROOT / "attempt-start.json"): self.old,
+                      str(local.ROOT / "dispatch-blocked.json"): self.blocked,
+                      str(local.APPROVAL): self.approval}
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch.object(local, "read", side_effect=lambda p: self.reads[str(p)]))
+        self.stack.enter_context(patch.object(Path, "read_bytes", autospec=True,
+            side_effect=lambda p: self.source if str(p).startswith("tools/")
+            else local.correction.canonical(self.reads[str(p)])))
+
+    def test_approved_chain_binds_old_records_without_replacing_them(self):
+        before = copy.deepcopy(self.reads)
+        chain = local.authorized_chain(self.contract)
+        self.assertEqual(set(chain), {"approval_sha256", "previous_attempt_sha256", "previous_dispatch_block_sha256"})
+        self.assertEqual(self.reads, before)
+
+    def test_changed_approval_rejected(self):
+        self.approval["retention_days"] = 8
+        with self.assertRaisesRegex(ValueError, "EXPLICIT_APPROVAL_MISSING_OR_CHANGED"):
+            local.authorized_chain(self.contract)
+
+    def test_executed_previous_attempt_rejected(self):
+        for field in ("remote_run_created", "formal_replay_executed", "ciphertext_exported"):
+            with self.subTest(field=field):
+                self.blocked[field] = True
+                with self.assertRaisesRegex(ValueError, "PREVIOUS_RESERVATION_NOT_UNEXECUTED"):
+                    local.authorized_chain(self.contract)
+                self.blocked[field] = False
+
+    def test_changed_previous_source_rejected(self):
+        self.source += b"changed"
+        with self.assertRaisesRegex(ValueError, "PREVIOUS_REMOTE_IMPLEMENTATION_CHANGED"):
+            local.authorized_chain(self.contract)
+
+    def test_existing_real_run_rejected_before_reservation(self):
+        with patch.object(local, "protected"), patch.object(local.subprocess, "check_output",
+             return_value=b'{"total_count":1,"workflow_runs":[{"id":1}]}'), \
+             patch.object(local.correction, "exclusive_json") as writer:
+            with self.assertRaisesRegex(ValueError, "CORRECTION_ALREADY_DISPATCHED"):
+                local.prepare(self.contract, authorized=True)
+        writer.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
