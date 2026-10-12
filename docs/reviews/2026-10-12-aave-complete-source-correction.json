@@ -1,0 +1,41 @@
+{
+  "failure_id": "951a7615bcee475487d3d8b0a16bc9d2",
+  "decision": "retry",
+  "goal": "Obtain the same frozen first successful native Aave transaction receipt, without weakening fields or changing the sample",
+  "expected": "A successful complete native receipt matching transaction, block number/index and every target LiquidationCall byte",
+  "observed": "Flashbots HTTP200 returned JSON-RPC result:null; the validator correctly rejected it. Its separately read historical block contains the exact transaction at index6 and the expected timestamp.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Confirmed failure mechanism is an unsatisfied source-capability assumption: reading historical blocks did not establish this endpoint could return the required historical receipt. The observed null, rather than a malformed target ID or validator tolerance, caused rejection. Flashbots internal reason for the missing receipt remains UNKNOWN; no claim is made about pruning or permanent service capability.",
+  "service_internal_cause": "UNKNOWN",
+  "corrected_source_sha256": "b7bc41edce635675efd5cfc7767d02032dff4e7bd5e93a9b91e4f470f48a1cc0",
+  "original_argv": ["python3", "tools/aave_complete_input.py", "receipt0"],
+  "independent_reviewer": "/root/new_mechanism_method: supports one same-gate corrective retry; native validators, fixed target and success criteria unchanged; backend independence not claimed",
+  "evidence": [
+    ".artifacts/aave-complete-input-20261012/operations/receipt0/record.json",
+    "original response sha256 ca3db3fe00f86a9485058afc1daf2f0547027fc3262b67c570f89d0b4638c8c6",
+    ".artifacts/aave-complete-input-20261012/operations/diag-flashbots-block/record.json",
+    ".artifacts/aave-complete-input-20261012/operations/diag-drpc-network-chain/record.json",
+    ".artifacts/aave-complete-input-20261012/operations/diag-drpc-network-receipt/record.json",
+    "dRPC native receipt sha256 adb107bb8768cbf39a5e5b66fcb88cb5e6b80d43b318014f66e96e70d995b977",
+    ".artifacts/aave-complete-input-20261012/operations/diag-drpc-network-block/record.json",
+    "https://drpc.org/docs/ethereum-api"
+  ],
+  "next_action": "One original argv/cwd retry against the evidenced public dRPC source using explicitly permitted network access, retaining original receipt0 and writing receipt0-corrected exclusively. No further retry on failure; original validator and fixed transaction unchanged.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Still the same first-transaction native receipt control within the user's complete free read-only batch; no economic run or bulk acquisition is admitted yet.",
+    "data_feasibility": "Official public dRPC endpoint returned chainId1, an 18-log successful native receipt matching every existing check and the same block hash/transaction position/timestamp as the independently read Flashbots block.",
+    "method_feasibility": "No indexed-to-native coercion, invented removed/status fields, changed event, validator relaxation or endpoint identity rotation. Preserve null evidence and bind the sole corrective attempt to this gate's failure ID and review hash.",
+    "budget_and_exit": "One additional RPC at most8MiB/30seconds within approved10k/2GiB/8active-hours/48wall-hours; any failure immediately reblocks, no auto-retry. Small control success does not certify bulk throughput or full-year coverage."
+  },
+  "route_reassessment": {
+    "old_route_failure": "The prior endpoint returned no receipt for a transaction whose block it could read. Retrying that source without new capability evidence would be speculative.",
+    "replacement": "Use officially published public dRPC for the exact same native Ethereum receipt method and transaction; normal TLS/DNS, no credential or account.",
+    "feasibility_evidence": "Three ordered read-only diagnostic controls passed the unchanged native receipt/block validators, including cross-provider block identity. A default-sandbox DNS failure and its sole explicit network correction remain recorded; the lower-level DNS cause is not asserted.",
+    "budget": "No budget extension; one formal corrective RPC, followed only on success by the original block and next two preselected transaction controls.",
+    "stop_condition": "Any corrective command failure, response conflict, completeness issue or resource limit stops dependencies and is preserved in the same gate."
+  }
+}
