@@ -1,0 +1,64 @@
+{
+  "failure_id": "a694cbc9987b40a891f65859025d8446",
+  "decision": "stop",
+  "goal": "Deliver complete2024 native Aave input before one fixed development screen",
+  "expected": "The sole original-command slower correction completes its at-most100-call segment with unchanged native validation and no new rate failure",
+  "observed": "The corrective segment returned74 valid receipts then HTTP429/code15 on its75th request at2026-10-12T12:20:46.799698Z. Gate BLOCKED/failure_count2; no second correction or post-failure RPC was executed.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Confirmed repeated public-endpoint rate-limit rejection prevents completing the input under the tried anonymous access arrangement. The specific anonymous quota, window, scope, reset and backend enforcement remain UNKNOWN. One recovery success did not establish sustainable delivery. Do not infer permanent absence of data or universal failure of free providers.",
+  "service_internal_cause": "UNKNOWN",
+  "verdict": "INSUFFICIENT_INPUT_DELIVERY_CAPACITY",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "blocked",
+  "structural_issue": true,
+  "evidence": [
+    "docs/reviews/2026-10-12-aave-public-rate-correction.json",
+    ".artifacts/aave-complete-input-20261012/operations/native-receipt-2e6cb20303950dabf4326c8710d66def32d0c4e3739b20c3a65233351e457a97/record.json",
+    "failed request sha256 b1f4045f61826943e9c43328fbd360191799658d72951e95dbb5d5d731e17d79",
+    "failed response sha2562e181fd7ef06029befd3261469703795f1192e8fedcf64991a998df72b4b7c2b",
+    "executed corrective source sha256981efb7a743c62b5c342c44081b71e0284a30ce311ed3345dc41918b3a42033d",
+    ".artifacts/aave-complete-input-20261012/annual-catalog.json",
+    ".artifacts/aave-complete-input-20261012/protected.json"
+  ],
+  "next_action": "HALT this anonymous full-input acquisition route according to the predeclared repeated-failure exit. Preserve all inputs, code and failures; no new timer, second corrective request, price read or partial-sample economic run. Publish only sanitized diagnostic records with skip-ci, not unverified pipeline changes or raw evidence.",
+  "independent_reviewers": ["new_mechanism_method", "new_mechanism_economic"],
+  "observed_pacing": {
+    "configured_start_spacing_seconds": 3,
+    "send_timestamp_gap_min_seconds": 2.990811,
+    "send_timestamp_gap_mean_seconds": 3.0819977027027026,
+    "send_timestamp_gap_max_seconds": 5.803864,
+    "qualification": "The limiter schedules its monotonic slot before budget checks; timestamp logging has sub10ms variation around the3second target, so a strict3second wire minimum is not claimed. This does not identify the undocumented server limit or establish it as the429 cause. No source change or additional retry is authorized by this observation."
+  },
+  "evidence_scope": {
+    "indexed_events": 2825,
+    "unique_transactions": 2429,
+    "unique_blocks": 1672,
+    "valid_acquisition_receipts": 139,
+    "fully_bound_fixed_weth_controls": 3,
+    "remaining_native_methods": 5628,
+    "completed_public_operations_before_diagnostic_delivery": 222,
+    "data_requests": 171,
+    "data_http_counts": {"200":167,"429":2,"525":1,"000":1},
+    "documentation_operations": 42,
+    "dns_diagnostics": 1,
+    "delivery_reads_before_this_delivery": 8,
+    "protected_files_unchanged": 320,
+    "new_prices": 0,
+    "economic_attempts": 0,
+    "economic_effect": "NOT_EVALUATED"
+  },
+  "path_review": {
+    "goal_alignment": "Retain complete-year scope and a decision-worthy economic screen;139 receipts are not a substitute sample and inputs are not profit evidence.",
+    "data_feasibility": "Required historical transactions exist and some native inputs are valid; full sustainable delivery under this anonymous endpoint is not demonstrated after the sole correction. No currently evidenced equivalent full delivery route is available within the approved access conditions.",
+    "method_feasibility": "Current mechanism is not economically rejected. Complete native binding, flow coverage and capacity remain prerequisite; UNKNOWN and missing technical input cannot be relabeled no trade.",
+    "budget_and_exit": "Original resource caps unchanged.222+5628+1422market+200reserve=7472known projected operations before final delivery, but numerical budget fit cannot cure unavailable service throughput. Remaining budget is not permission for endless trials. Stop dependencies now."
+  },
+  "route_reassessment": {
+    "old_route_failure": "Controls plus request-count feasibility failed to establish sustained anonymous capacity; the original and sole slower corrective segments both encountered explicit429 responses without reset metadata.",
+    "replacement": "No replacement is executed. Future reevaluation needs an identified read-only arrangement covering historical receipts, block headers and historical eth_call with usable quota, remaining time and byte budget.",
+    "feasibility_evidence": "Blockscout's observed10-per-hour shared allowance cannot deliver the remaining per-transaction input within48hours; earlier Flashbots receipt was null. No new equivalent route is established. These observations do not exhaust all public sources.",
+    "budget": "Close the present anonymous route without extending8active-hours/48wall-hours/10000operations/2GiB or consuming the economic attempt. Do not count unfinished waiting as idle deductions.",
+    "stop_condition": "Already met: a second rate failure after the sole reviewed correction. No automatic restarts, new state, changed sample or further cooldown diagnosis. Registration, purchases or broader resources need their own substantive decision."
+  }
+}

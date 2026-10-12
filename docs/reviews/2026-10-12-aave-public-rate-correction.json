@@ -1,0 +1,43 @@
+{
+  "failure_id": "74ae9db5110c4525ba20fef5e694671e",
+  "decision": "retry",
+  "goal": "Complete the unchanged 2024 native input for the approved fixed Aave mechanism within the original complete-batch resources",
+  "expected": "Original command validates cached successes and at most100 new native responses, preserving all identity, completeness and resource checks; a chunk is not annual admission",
+  "observed": "62 successful new receipts followed by HTTP429/code15. The same failed request returned HTTP200 and a valid22-log receipt in the single predeclared observation at12:14:05UTC. The gate and original failure remained unchanged.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Confirmed proximate failure was an explicit public-endpoint rate-limit rejection, not absent transaction data or weakened receipt validation. The previous1-second idle policy did not establish sustainable public access. The anonymous quota/window/scope/reset and backend enforcement rule remain UNKNOWN; the ten-minute diagnostic interval is not a claimed reset.",
+  "service_internal_cause": "UNKNOWN_ANONYMOUS_QUOTA_WINDOW_SCOPE_AND_RESET",
+  "corrected_source_sha256": "981efb7a743c62b5c342c44081b71e0284a30ce311ed3345dc41918b3a42033d",
+  "original_request_sha256": "3831720e5eafa233d48a319b48926c033ceee91da79f847658337a35c4d2ef2a",
+  "original_response_sha256": "2e181fd7ef06029befd3261469703795f1192e8fedcf64991a998df72b4b7c2b",
+  "observation_response_sha256": "e4399e04ffefb6ad37d63bfe16b7735117af6997d555c8994fd485272e6eaa1f",
+  "original_argv": ["python3", "tools/aave_complete_receipts.py", "--max-requests", "100"],
+  "independent_review": "new_mechanism_method: a successful single recovery observation plus evidenced rate rejection and a bounded slower original-command correction is sufficient for one falsifiable attempt; exact public quota or a guarantee of future availability is not required. new_mechanism_economic: retain the full input target and a finite route exit, never substitute62receipts or wait indefinitely.",
+  "evidence": [
+    ".artifacts/aave-complete-input-20261012/operations/native-receipt-3aa0f3e05df1dcc99bd0c717fb8c466132008618b299672c6123b983fa7f5e16/record.json",
+    ".artifacts/aave-complete-input-20261012/operations/native-receipt-3aa0f3e05df1dcc99bd0c717fb8c466132008618b299672c6123b983fa7f5e16/headers.txt",
+    ".artifacts/aave-complete-input-20261012/rate-recovery-observation.json",
+    ".artifacts/aave-complete-input-20261012/operations/rate-recovery-observation-1/record.json",
+    ".artifacts/aave-complete-input-20261012/input-cost-plan.json",
+    "https://drpc.org/docs/howitworks/ratelimiting",
+    "https://drpc.org/docs/pricing/compute-units"
+  ],
+  "next_action": "One same-cwd original-argv retry, at most100 new calls and600seconds. One serial caller only; same endpoint and identity, request starts at least3seconds apart with at least1second idle. The first call respects the prior process's latest request_sent_utc (old records conservatively use ended_utc), subsequent calls use a monotonic clock. Budget is checked again after waiting, before curl. Preserve original directory; separately bind the sole corrected request to this failure/review/source. No automatic retries. Any new failure stops dependencies and triggers stop-route review.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Only the original full-year native input and unchanged100-call command; no price, economic attempt, alternate year, truncated sample, purchase, registration or account action.",
+    "data_feasibility": "Annual indexed catalog2825events/2429transactions/1672blocks is complete under the documented indexed algorithm.65native receipts are cached; one additional fixed receipt is readable in diagnosis only. Its observation does not claim sustainable quota or annual coverage.",
+    "method_feasibility": "The same native validators and complete-year catalog remain. All successful caches are reused; original429 response preserved. One verified restoration and slower serial pacing make this a bounded testable correction, not a promise of permanent repair. Generic free-tier limits are not treated as this anonymous gateway's actual quota.",
+    "budget_and_exit": "147operations consumed before correction;2364receipts+1669headers+1669reserves=5702missing methods. Updated known request projection147+5702+1422market+200reserve=7471<=10000. At3-second starts native minimum17106seconds;1422market requests at assumed2seconds need2844seconds. At12:15UTC elapsed4973seconds leaves3877seconds for implementation and latency above those assumptions within28800seconds. Throughput and market latency remain planning assumptions, not guarantees. Every request still checks time/bytes/count. One chunk capped600seconds; any new failure or infeasible remaining budget stops. No wait deductions or resource extension."
+  },
+  "route_reassessment": {
+    "old_route_failure": "A short control and total request count did not establish anonymous service throughput; the first long segment met an unexplained rate limit despite serial requests.",
+    "replacement": "Same service and fixed input, one demonstrated recovery followed by starts>=3seconds/idle>=1second, once-only100-call segment and unchanged full-year resource checks. No identity rotation, unbounded backoff or alternative gate.",
+    "feasibility_evidence": "Same failed transaction has a valid22-log response after one predeclared observation; previous successful requests show the method and historical data exist. Remaining input-count and conditional elapsed-time projections fit, with explicit finite margins.",
+    "budget": "Original8effective-hours/48wall-hours/10000operations/2GiB. This formal correction is at most100calls/600seconds; original failed request, observation and corrective request are counted separately.",
+    "stop_condition": "Any further429, transport/validation error, missing completeness evidence, byte/time/request exhaustion immediately blocks dependencies; no second correction or new timer to continue this route. Success is only this chunk, not annual or economic admission."
+  }
+}
