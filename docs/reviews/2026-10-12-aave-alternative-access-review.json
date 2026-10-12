@@ -1,0 +1,31 @@
+{
+  "decision": "bounded_read_only_diagnostic_followup_not_formal_retry",
+  "goal": "Verify free historical Ethereum read access without trading or changing prior failures",
+  "expected": "Cloudflare and Flashbots expose the frozen input controls, including remote event-signature hashing",
+  "observed": "Cloudflare chainId failed with gaierror before HTTP. Flashbots returned chainId 1, finalized and block 20000000, then HTTP403 JSON-RPC -32601 with message rpc method is not whitelisted for web3_sha3.",
+  "cloudflare_root_cause_status": "unknown",
+  "flashbots_method_root_cause_status": "confirmed",
+  "root_cause": "The diagnostic unnecessarily coupled historical data access to a server-side hashing convenience method. Flashbots explicitly excludes this method. The exact Ethereum event hash can be checked locally without requesting remote execution or changing the filter.",
+  "evidence": [
+    ".artifacts/aave-alternative-access-20261012/cloudflare/chain.json",
+    ".artifacts/aave-alternative-access-20261012/flashbots/chain.response.json",
+    ".artifacts/aave-alternative-access-20261012/flashbots/historical.response.json",
+    ".artifacts/aave-alternative-access-20261012/flashbots/topic.error-body",
+    "docs/reviews/2026-10-12-aave-forced-flow-research-result.md"
+  ],
+  "rejected_body_sha256": "4eb544943e41fc08d2340176c0d9dd064398673116d3d0194c5e90dc407c34f2",
+  "original_executed_source_sha256": "6e2e36bec326288da20e43f14b144c4714a68e6b40aedc8880863ae7eba1d4ae",
+  "scope_unchanged": true,
+  "economic_acceptance_unchanged": true,
+  "diagnostic_implementation_change": "Hash exactly the original event signature using OpenSSL Ethereum Keccak with the empty-vector control; revalidate hashes and exact requests for the three already successful responses, then issue only the nine at-most remaining predeclared logs/receipt/block reads in a once-only child directory. Do not request web3_sha3 again or rewrite the failed summary.",
+  "route_reassessment": {
+    "old_route_failure": "A nonessential hash utility became a prerequisite for independent historical log access",
+    "replacement": "Locally verify the identical frozen topic, then finish only the unconsumed read-only diagnostic controls",
+    "feasibility_evidence": "Three successful Ethereum responses plus exact method-specific refusal; local OpenSSL Keccak implementation was previously checked against an Ethereum empty-input vector",
+    "budget": "Original 08:31 UTC diagnostic deadline, same two endpoints, no more than 13 Flashbots calls in total and 26 overall; at most nine new calls, no repeats, dates or economic requests",
+    "stop_condition": "Any additional failure ends this diagnostic; empty fixed-domain logs yield NO_CONTROL_EVENT without widening dates; old intake HALTED and both initial diagnostic failure summaries remain unchanged"
+  },
+  "old_gate_status_changed": false,
+  "formal_retry": false,
+  "economic_attempts": 0
+}

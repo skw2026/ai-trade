@@ -11,6 +11,19 @@
 
 ## 开始与阶段边界
 
+- 2026-10-12 用户 OK 接续免费入口和完整性核验，按同日 aave-alternative-access
+  计划完成两入口诊断，自限07:46—08:31 UTC/10资料/26RPC，不续经济预算。
+  实际9资料、6RPC；Cloudflare DNS失败，Flashbots链身份/最终头/历史20000000
+  成功。web3_sha3明确不白名单，具名复核后本地Keccak同topic验证，只查原
+  未消费首片800区块日志，HTTP504，内部原因UNKNOWN，立即停止，无重复请求。
+  17合成与210保护原件通过；原Aave HALTED/失败2次及初次诊断失败摘要不改，
+  新测试gate只验纯合成，不是替代输入准入。方法/经济短复核支持本批结案：
+  HISTORICAL_HEADERS_READABLE_LOG_ACCESS_UNRESOLVED，0事件/回执/收益，不建设
+  经济runner或自动第三入口/缩片重试/扩域/观察；时间上限不必填满。恢复需
+  具名可验证的新日志及匹配回执来源，不泛化为机制否定或全域免费渠道穷尽。
+  见同日 aave-alternative-access-result；main [skip ci]诊断交付，无部署/账户/
+  采购，旧研究关闭/G4未达成/Demo禁开仓保持。
+
 - 2026-10-12 用户明确「重新立项新机制研究」。本次仅选 Aave V3 WETH 清算
   伴随同交易 DEX 净出售后的 ETH 残余传导，不复活旧 SOL 强平／趋势／报价。
   执行者自限07:24—11:24 UTC四墙钟小时，24资料／6初始RPC控制／条件式60
