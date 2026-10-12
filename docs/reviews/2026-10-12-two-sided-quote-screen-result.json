@@ -1,0 +1,256 @@
+{
+  "account_access": false,
+  "actual_fills_identified": false,
+  "compute_seconds": 887.6,
+  "contract_sha256": "86ebedbdc8c5b1b813c75037cc3a5798f02afd6272b8c3e1075a008bcb489e49",
+  "counts": {
+    "funding_excluded": 33,
+    "labels_unavailable": 0,
+    "mature_updates": 558,
+    "quote_excluded": 0,
+    "scheduled": 837
+  },
+  "counts_by_symbol": {
+    "BTCUSDT": {
+      "funding_excluded": 11,
+      "labels_unavailable": 0,
+      "mature_updates": 186,
+      "quote_excluded": 0,
+      "scheduled": 279
+    },
+    "ETHUSDT": {
+      "funding_excluded": 11,
+      "labels_unavailable": 0,
+      "mature_updates": 186,
+      "quote_excluded": 0,
+      "scheduled": 279
+    },
+    "SOLUSDT": {
+      "funding_excluded": 11,
+      "labels_unavailable": 0,
+      "mature_updates": 186,
+      "quote_excluded": 0,
+      "scheduled": 279
+    }
+  },
+  "demo_entry_lock_unchanged": true,
+  "economic_verdict": "INSUFFICIENT_EXECUTION_IDENTIFICATION",
+  "engineering_delivery_passed": true,
+  "g4_passed": false,
+  "independent_audit": {
+    "absolute_relative_tolerance": "1e-30",
+    "audited_arm_cost_ledgers": 3216,
+    "cycles": 804,
+    "fill_identification_verified": false,
+    "g4_passed": false,
+    "raw_market_required": false,
+    "status": "INDEPENDENT_RATIONAL_AUDIT_PASS",
+    "verdict": "INSUFFICIENT_EXECUTION_IDENTIFICATION"
+  },
+  "manifest_sha256": "b6039e5671fbd7ae7c782436cc641c8a9764ab12a004c7257248836a5611ad61",
+  "messages": 6503806,
+  "new_collection": false,
+  "order_submission": false,
+  "profitability_proven": false,
+  "protected_originals": 201,
+  "replayed_segments": 94,
+  "resource_decision": "NOT_ADVANCE_FIXED_RULE",
+  "run_id": 38203387319,
+  "schema_version": "two_sided_screen_public_result_v1",
+  "screen_receipt_sha256": "b7764f288c027776377f03fc1026bca815f28335592cebb83380e9a6934b3778",
+  "summary": {
+    "ALL": {
+      "arms": {
+        "adaptive": {
+          "base_bps_positive_upper_cycles": 2,
+          "base_bps_sum": [
+            "-1858.928669670295299626290971048625233660",
+            "9.000000000000000000000000000000000000000"
+          ],
+          "buy_capacity_fraction_sum": "90",
+          "buy_positive_capacity_cycles": 90,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "100.1940100000000000000000000000000000000",
+          "sell_positive_capacity_cycles": 102,
+          "stress_bps_positive_upper_cycles": 2,
+          "stress_bps_sum": [
+            "-2294.141065815652497938086968405679183748",
+            "6.250000000000000000000000000000000000000"
+          ]
+        },
+        "fixed": {
+          "base_bps_positive_upper_cycles": 4,
+          "base_bps_sum": [
+            "-1921.712164207791457001042778211943224754",
+            "18.0000000000"
+          ],
+          "buy_capacity_fraction_sum": "92",
+          "buy_positive_capacity_cycles": 92,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "105.5368000000000000000000000000000000000",
+          "sell_positive_capacity_cycles": 107,
+          "stress_bps_positive_upper_cycles": 4,
+          "stress_bps_sum": [
+            "-2369.282660456094585999577012125478878639",
+            "12.500000000000"
+          ]
+        }
+      },
+      "cycles": 804,
+      "paired_base_bps_sum": [
+        "-1876.928669670295299626290971048625233660",
+        "1930.712164207791457001042778211943224754"
+      ],
+      "paired_stress_bps_sum": [
+        "-2306.641065815652497938086968405679183748",
+        "2375.532660456094585999577012125478878639"
+      ]
+    },
+    "BTCUSDT": {
+      "arms": {
+        "adaptive": {
+          "base_bps_positive_upper_cycles": 0,
+          "base_bps_sum": [
+            "-161.0956079317603237518858813991335200630",
+            "0E-46"
+          ],
+          "buy_capacity_fraction_sum": "8",
+          "buy_positive_capacity_cycles": 8,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "10",
+          "sell_positive_capacity_cycles": 10,
+          "stress_bps_positive_upper_cycles": 0,
+          "stress_bps_sum": [
+            "-202.7242252792646236237354981305335626558",
+            "0E-48"
+          ]
+        },
+        "fixed": {
+          "base_bps_positive_upper_cycles": 0,
+          "base_bps_sum": [
+            "-161.9164394472790661820491351872339543300",
+            "0E-10"
+          ],
+          "buy_capacity_fraction_sum": "8",
+          "buy_positive_capacity_cycles": 8,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "10",
+          "sell_positive_capacity_cycles": 10,
+          "stress_bps_positive_upper_cycles": 0,
+          "stress_bps_sum": [
+            "-203.5450003470935594435388292161928937146",
+            "0E-12"
+          ]
+        }
+      },
+      "cycles": 268,
+      "paired_base_bps_sum": [
+        "-161.0956079317603237518858813991335200630",
+        "161.9164394472790661820491351872339543300"
+      ],
+      "paired_stress_bps_sum": [
+        "-202.7242252792646236237354981305335626558",
+        "203.5450003470935594435388292161928937146"
+      ]
+    },
+    "ETHUSDT": {
+      "arms": {
+        "adaptive": {
+          "base_bps_positive_upper_cycles": 0,
+          "base_bps_sum": [
+            "-490.3545121681132578425260439405695785786",
+            "0E-46"
+          ],
+          "buy_capacity_fraction_sum": "28",
+          "buy_positive_capacity_cycles": 28,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "23",
+          "sell_positive_capacity_cycles": 23,
+          "stress_bps_positive_upper_cycles": 0,
+          "stress_bps_sum": [
+            "-608.2857287922735806270630616504645992182",
+            "0E-48"
+          ]
+        },
+        "fixed": {
+          "base_bps_positive_upper_cycles": 1,
+          "base_bps_sum": [
+            "-507.4980696593153217282599647425001051208",
+            "4.5000000000"
+          ],
+          "buy_capacity_fraction_sum": "28",
+          "buy_positive_capacity_cycles": 28,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "25",
+          "sell_positive_capacity_cycles": 25,
+          "stress_bps_positive_upper_cycles": 1,
+          "stress_bps_sum": [
+            "-627.7442643553024566194008938692813884330",
+            "3.125000000000"
+          ]
+        }
+      },
+      "cycles": 268,
+      "paired_base_bps_sum": [
+        "-494.8545121681132578425260439405695785786",
+        "507.4980696593153217282599647425001051208"
+      ],
+      "paired_stress_bps_sum": [
+        "-611.4107287922735806270630616504645992182",
+        "627.7442643553024566194008938692813884330"
+      ]
+    },
+    "SOLUSDT": {
+      "arms": {
+        "adaptive": {
+          "base_bps_positive_upper_cycles": 2,
+          "base_bps_sum": [
+            "-1207.478549570421718031879045708922135017",
+            "9.000000000000000000000000000000000000000"
+          ],
+          "buy_capacity_fraction_sum": "54",
+          "buy_positive_capacity_cycles": 54,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "67.19401000000000000000000000000000000000",
+          "sell_positive_capacity_cycles": 69,
+          "stress_bps_positive_upper_cycles": 2,
+          "stress_bps_sum": [
+            "-1483.131111744114293687288408624681021874",
+            "6.250000000000000000000000000000000000000"
+          ]
+        },
+        "fixed": {
+          "base_bps_positive_upper_cycles": 3,
+          "base_bps_sum": [
+            "-1252.297655101197069090733678282209165300",
+            "13.5000000000"
+          ],
+          "buy_capacity_fraction_sum": "56",
+          "buy_positive_capacity_cycles": 56,
+          "post_only_rejected_sides": 0,
+          "sell_capacity_fraction_sum": "70.53680000000000000000000000000000000000",
+          "sell_positive_capacity_cycles": 72,
+          "stress_bps_positive_upper_cycles": 3,
+          "stress_bps_sum": [
+            "-1537.993395753698569936637289040004596491",
+            "9.375000000000"
+          ]
+        }
+      },
+      "cycles": 268,
+      "paired_base_bps_sum": [
+        "-1220.978549570421718031879045708922135017",
+        "1261.297655101197069090733678282209165300"
+      ],
+      "paired_stress_bps_sum": [
+        "-1492.506111744114293687288408624681021874",
+        "1544.243395753698569936637289040004596491"
+      ]
+    }
+  },
+  "trading_deployment": false,
+  "trading_instance_unchanged": true,
+  "unique_trades": 726994,
+  "whole_batch_backed_up": false,
+  "workflow_sha": "b2c097f91403c616cf7216d5c7ee4bfb19838fb1"
+}
