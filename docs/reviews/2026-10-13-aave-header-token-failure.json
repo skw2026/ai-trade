@@ -1,0 +1,27 @@
+{
+  "failure_id": "1c07ced1fbfd4899bfa3bb4fa09c0a8a",
+  "decision": "retry",
+  "goal": "Complete the same 636 missing frozen market pages within the approved bounded recovery stage.",
+  "expected": "A valid HTTP200/retCode0 response with legal HTTP field names passes unchanged market validation.",
+  "observed": "First GET returned HTTP200/retCode0 and1000rows, but the local parser raised HEADER_FIELD on ret_code before payload validation. The original FAILED record is preserved.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Parser restricted field names to alphanumeric/hyphen. RFC9110 sections5.1/5.6.2 allow underscore in token. Stored original wire reproduces the failure under the archived parser and passes unchanged row validation with the RFC token parser. This is not a provider rate-limit response.",
+  "evidence": [
+    "https://httpwg.org/specs/rfc9110.html#tokens",
+    ".artifacts/aave-market-recovery-20261013/attempts/0000/record.json",
+    ".artifacts/aave-market-recovery-20261013/attempts/0000/response.bin",
+    ".artifacts/aave-market-recovery-20261013/originals/aave_market_recovery.py"
+  ],
+  "next_action": "One original argv/cwd retry, including focused synthetic regression before network. Accept RFC field-name grammar; hash-bind corrected source versions, archived originals and failure. Reinterpret only the first preserved successful wire through a separate annotation, retain its failed record unchanged, charge its GET, and request only the remaining635pages. No old model/audit/contract/gate edits.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Repair transport parsing only; economic qualification and one total development attempt remain unchanged.",
+    "data_feasibility": "First preserved response contains1000valid rows with HTTP200/retCode0; no quota headers, no rate-limit inference. Remaining data still must pass complete coverage and strict validation.",
+    "method_feasibility": "RFC token parser preserves status/body limits and strict quota checks. Independent full ledger replay rejects altered records, missing pages, excess calls or invalid market rows. Repair is one-use and requires the accepted named review hash.",
+    "budget_and_exit": "Same650newGET ceiling including firstGET; same3perpage/14knownerrors/120secondsrecoverywait. Hard deadline2026-10-13T15:53:15Z, no budget extension. Unexpected failure stops immediately; no second automatic retry."
+  },
+  "correction_manifest_sha256": "4df85a719adc78e25befdce04c436668c5f7550f4f18228b007f3c09e48ef3c4"
+}
