@@ -15,6 +15,58 @@ import time
 import aave_complete_input as a
 import aave_complete_catalog as c
 
+RATE_TX = '0x3aa0f3e05df1dcc99bd0c717fb8c466132008618b299672c6123b983fa7f5e16'
+RATE_FAILURE = '74ae9db5110c4525ba20fef5e694671e'
+RATE_REVIEW = Path('docs/reviews/2026-10-12-aave-public-rate-correction.json')
+_next_request_not_before = 0.0
+
+
+def wait_request_slot():
+    """Serial acquisition only; also respect the preceding process's last call."""
+    global _next_request_not_before
+    if _next_request_not_before == 0:
+        stamps = []
+        for path in (a.ROOT/'operations').glob('*/record.json'):
+            record = json.loads(path.read_text())
+            if record.get('endpoint') == a.ENDPOINT:
+                stamp = record.get('request_sent_utc', record.get('ended_utc'))
+                if stamp is not None:
+                    stamps.append(a.dt.datetime.fromisoformat(stamp))
+        remaining = max(0, 3-(a.now()-max(stamps)).total_seconds()) if stamps else 0
+        a.require(remaining <= 30, 'RPC_CLOCK_MOVED_BACKWARDS')
+        _next_request_not_before = time.monotonic()+remaining
+    time.sleep(max(1, _next_request_not_before-time.monotonic()))
+    _next_request_not_before = time.monotonic()+3
+
+
+def rate_correction_name():
+    """Only the named same-gate correction can replace the one failed request."""
+    original = 'native-receipt-'+RATE_TX[2:]
+    corrected = original+'-rate-corrected'
+    review_raw = RATE_REVIEW.read_bytes()
+    review = json.loads(review_raw)
+    a.require(review['failure_id'] == RATE_FAILURE and review['decision'] == 'retry' and
+              review['corrected_source_sha256'] == a.digest(Path(__file__).read_bytes()),
+              'RATE_CORRECTION_REVIEW_BINDING')
+    old = a.ROOT/'operations'/original
+    a.require(a.digest((old/'request.json').read_bytes()) == review['original_request_sha256'] and
+              a.digest((old/'response.json').read_bytes()) == review['original_response_sha256'],
+              'RATE_ORIGINAL_EVIDENCE_CHANGED')
+    observation = a.ROOT/'operations'/'rate-recovery-observation-1'
+    a.require(a.digest((observation/'response.json').read_bytes()) == review['observation_response_sha256'],
+              'RATE_RECOVERY_OBSERVATION_CHANGED')
+    out = a.ROOT/'operations'/corrected
+    if out.exists():
+        record = json.loads((out/'record.json').read_text())
+        a.require(record.get('correction_review_sha256') == a.digest(review_raw) and
+                  record.get('retry_of') == RATE_FAILURE, 'RATE_CORRECTED_CACHE_BINDING')
+    else:
+        gate = json.loads((a.ROOT/'validation-state.json').read_text())
+        a.require(gate['status'] == 'RUNNING' and gate['active']['failure_id'] == RATE_FAILURE and
+                  gate['active'].get('review_sha256') == a.digest(review_raw),
+                  'RATE_SAME_GATE_RETRY_REQUIRED')
+    return corrected
+
 
 def grouped(rows):
     groups={}
@@ -81,15 +133,24 @@ def fetch(name,method,params,validator):
                   and a.hx(params[1]) and int(params[1],16)>0,'HISTORICAL_RESERVE_CALL_ONLY')
     else:
         a.require(method in ('eth_getTransactionReceipt','eth_getBlockByNumber'),'READ_ONLY_ALLOWLIST')
+    correction = name == 'native-receipt-'+RATE_TX[2:]+'-rate-corrected'
+    if correction:
+        a.require(method == 'eth_getTransactionReceipt' and params == [RATE_TX] and
+                  name == rate_correction_name(), 'RATE_CORRECTIVE_REQUEST_IDENTITY')
     c.budget()
     out=a.ROOT/'operations'/name
     out.mkdir(mode=0o700)
     a.save(out/'request.json',request_identity(method,params))
     record={'endpoint':a.ENDPOINT,'method':method,'public_operations':1,'status':'NATIVE_FAILED',
             'started_utc':a.now().isoformat(),'request_sha256':a.digest((out/'request.json').read_bytes()),
-            'source_sha256':a.digest(Path(__file__).read_bytes())}
+            'source_sha256':a.digest(Path(__file__).read_bytes()),
+            'minimum_request_start_interval_seconds':3,'minimum_idle_seconds':1}
+    if correction:
+        record.update(retry_of=RATE_FAILURE, correction_review_sha256=a.digest(RATE_REVIEW.read_bytes()))
     try:
-        time.sleep(1)
+        wait_request_slot()
+        c.budget()
+        record['request_sent_utc'] = a.now().isoformat()
         r=subprocess.run(['curl','--silent','--show-error','--proto','=https','--connect-timeout','5',
              '--max-time','30','--max-filesize',str(a.MAX_BODY),'--retry','0','-H','Content-Type: application/json',
              '--data-binary','@'+str(out/'request.json'),'--dump-header',str(out/'headers.txt'),
@@ -118,6 +179,8 @@ def receipt_name(tx):
     for index,row in enumerate(first):
         if row['transactionHash']==tx:
             return 'receipt0-corrected' if index==0 else 'receipt%d'%index
+    if tx == RATE_TX:
+        return rate_correction_name()
     return 'native-receipt-'+tx[2:]
 
 
