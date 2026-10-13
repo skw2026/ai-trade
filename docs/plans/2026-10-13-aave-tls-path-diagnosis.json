@@ -1,0 +1,17 @@
+{
+  "scope": "Bounded credential-free read-only diagnosis of the existing authenticated batch TLS failure; no formal retry or new research scope",
+  "authorization": "Existing AGENTS diagnostic-only main skip-ci publication and bounded execution authorization applies even while BLOCKED. No credentials leave this Mac.",
+  "failure_id": "02bb586e02c74dc3b58880c311b7cf2c",
+  "local_observations_already_completed": "Read-only routes/proxy/TLS versions plus six fixed-IP no-key HEAD comparisons, three addresses times system curl and Python OpenSSL. Local collection began07:55:36UTC and completed07:56:30UTC. All six TLS-verified401; elapsed0.693to17.980s. This section records completed observations, not retrospective preregistration.",
+  "remote_prospective_scope": "One exact-main-SHA manual GitHub-hosted Linux diagnostic run, first attempt only, no checkout/secrets/artifacts/ECS/RPC. Four HEAD requests: normal DNS then the same three already observed IPv4 addresses, retaining hostname/SNI and certificate validation.",
+  "fixed_host": "eth-mainnet.g.alchemy.com",
+  "fixed_path": "/",
+  "addresses": ["15.235.230.239", "15.235.229.138", "15.235.234.154"],
+  "limits": "Remote run4min; each connect15s,total30s,subprocess35s; no retries/redirects/TLS bypass. At most4remoteHEAD plus6completedlocalHEAD. Read-only GitHub delivery metadata counted separately in the original10000operation allowance. No extension of11:25:50UTC current phase deadline.",
+  "interpretation": "401 on the root without a key is an expected application response proving verified TLS/HTTP reachability, not key failure or authenticated historical throughput. Workflow completion means observations were collected, never annual-input or economic PASS.",
+  "comparison_limits": "Different source networks, times and TLS implementations confound causal attribution. Fast remote results can support investigating local-source paths, not prove a particular ISP/VPN fault or authorize credential transfer.",
+  "exit": "Archive observations once. Stop if execution/identity fails, do not rerun. Underlying cause remains UNKNOWN without causal evidence; no gate review/retry, timeout increase, pinned-IP collector, single-request fallback or key relocation on the strength of this diagnostic alone.",
+  "formal_gate": "UNCHANGED_BLOCKED",
+  "prices_and_economic_attempts": 0,
+  "demo_reduce_only": "UNCHANGED"
+}

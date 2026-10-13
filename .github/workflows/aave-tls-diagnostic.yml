@@ -1,0 +1,75 @@
+name: Aave credential-free TLS diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact main SHA for this one diagnostic run
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ai-trade-aave-tls-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      # Deliberately no checkout, secrets, RPC, account, artifact or ECS access.
+      # This observes four public HEAD requests; completion is NOT gate PASS.
+      - name: Observe fixed credential-free TLS paths once
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import re
+          import subprocess
+          import time
+
+          expected = os.environ['EXPECTED_SHA']
+          if not (re.fullmatch(r'[0-9a-f]{40}', expected)
+                  and expected == os.environ['GITHUB_SHA']
+                  and os.environ['GITHUB_REF'] == 'refs/heads/main'
+                  and os.environ['GITHUB_RUN_ATTEMPT'] == '1'):
+              raise SystemExit('DIAGNOSTIC_IDENTITY_MISMATCH')
+          host = 'eth-mainnet.g.alchemy.com'
+          print(json.dumps({'event': 'DIAGNOSTIC_SCOPE', 'sha': expected,
+              'run_id': os.environ['GITHUB_RUN_ID'], 'rpc_methods': 0,
+              'credentials': False, 'requests': 4, 'gate_changes': False,
+              'curl_version': subprocess.check_output(['curl', '--version'], text=True).splitlines()[0]}), flush=True)
+          observations = []
+          for address in (None, '15.235.230.239', '15.235.229.138', '15.235.234.154'):
+              args = ['curl', '--disable', '--silent', '--head', '--proto', '=https',
+                  '--retry', '0', '--connect-timeout', '15', '--max-time', '30',
+                  '--max-filesize', '65536', '--output', '/dev/null', '--write-out',
+                  '{"http":"%{http_code}","dns":%{time_namelookup},"tcp":%{time_connect},'
+                  '"tls":%{time_appconnect},"total":%{time_total},"verify":%{ssl_verify_result},'
+                  '"remote_ip":"%{remote_ip}","http_version":"%{http_version}"}']
+              if address:
+                  args += ['--resolve', host + ':443:' + address]
+              args += ['https://' + host + '/']
+              row = {'event': 'TLS_OBSERVATION', 'address': address,
+                  'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+              start = time.monotonic()
+              try:
+                  done = subprocess.run(args, capture_output=True, timeout=35)
+                  row['returncode'] = done.returncode
+                  row['metrics'] = json.loads(done.stdout)
+              except Exception as exc:
+                  row['error_type'] = type(exc).__name__
+              row['elapsed_seconds'] = round(time.monotonic() - start, 6)
+              observations.append(row)
+              print(json.dumps(row, sort_keys=True), flush=True)
+          print(json.dumps({'event': 'DIAGNOSTIC_COLLECTION_COMPLETE_NOT_ACCEPTANCE',
+              'observations': len(observations), 'rpc_methods': 0,
+              'formal_input_gate': 'UNCHANGED_BLOCKED'}), flush=True)
+          PY
