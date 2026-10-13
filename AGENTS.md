@@ -11,6 +11,19 @@
 
 ## 开始与阶段边界
 
+- 2026-10-13 用户要求下一步继续，完成无凭据网络路径对照。六本机HEAD均
+  TLS通过，总耗时0.69—17.98s；隔离GitHub Linux唯一38366204265／5885a0a
+  四HEAD均通过且<0.7s，含相同三目标IP。无Key/RPC/ECS/账户/artifact，
+  不能从401认定已有Key失效，也不能把网络差异当ISP/VPN精确根因。
+  见同日aave-tls-path-result.md。旧BLOCKED/失败原件保持，不重试或加超时；
+  139有效年度回执/5628缺件/0新经济/G4未达成/Demo禁开仓不改。
+  下一建议为一次隔离Actions取数：现有仓库Secret保存只读Key、加密结果
+  artifact保留7天、私钥仅本机并取回核验。已询问该凭据/存储实质范围，
+  尚无答复、未转移Key或采集；普通继续不假造同意。原预算与11:25:50UTC
+  阶段截止不自动延长。诊断代码/脱敏结论main skip-ci交付，0交易部署。
+  本地PyYAML缺失导致首次静态检查未完成，提交后、dispatch前用现有Ruby
+  YAML及Python AST核清；不称首次通过、不安装依赖、不新增正式gate。
+
 - 2026-10-13 用户配置完整ALCHEMY_RPC_URL并“确认”后，接续同日
   aave-authenticated-access：主网身份/原首笔历史回执/块/历史reserve及完整
   WETH边界跨源一致，109合成通过。首次5秒连接失败经具名复盘/同gate唯一
