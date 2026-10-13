@@ -1,0 +1,17 @@
+{
+  "scope": "Implement the original complete-input contract's explicitly allowed, capability-checked batch path; same authenticated source, fixed2024 domain, native validators and budget",
+  "official_batch_source": "https://www.alchemy.com/docs/reference/batch-requests",
+  "official_cost_source": "https://www.alchemy.com/docs/reference/compute-unit-costs",
+  "caveat": "Provider warns batching can be less reliable than single calls. This is a small bounded batch capability check, not an assumed reliability improvement. IDs may be out of order and HTTP200 may contain per-item errors.",
+  "fixed_control": "One batch of original first receipt, its block and historical reserve;3 methods/66CU. Compare the full boundary with the passed single-request control before any bulk.",
+  "bulk": "At most10 methods/260CU per serial HTTP POST, at least1s between starts; each method counted individually including failures, no retry or provider switch. TLS verified, connection15s per named correction, total30s, response8MiB. Metadata records phase timings but no key.",
+  "identity": "Require exact integer ID set, complete response count, no per-item error/null, native payload and dependency validation before marking a batch valid; no partial batch admission.",
+  "checkpoint": "First100 native methods then full remainder only after checkpoint passes. Structural UNKNOWN kept as null; technical absence/mismatch blocks rather than becoming abstention.",
+  "resource_bounds": "Same original8active-hours/48wall-hours/10000operations/2GiB. Prior4h/300operation reservations unchanged; current phase ends2026-10-13T11:25:50Z. Three new control methods and two additional documentation reads charged. No quota or billing changes.",
+  "budget_projection": "Approximately563POSTs for5628 remaining native methods, before controls. Request/byte/time budget fit checked before and throughout. This is not a guarantee of actual monthly quota or completion.",
+  "gate": ".artifacts/aave-authenticated-access-20261013/validation-state.json",
+  "failure_exit": "First new transport/native validation failure pauses dependencies, diagnosis before any retry. All prior failures and binding snapshots remain immutable.",
+  "prices": "DISABLED",
+  "economic_attempts": 0,
+  "demo_reduce_only": "UNCHANGED"
+}

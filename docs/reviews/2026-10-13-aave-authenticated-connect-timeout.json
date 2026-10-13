@@ -1,0 +1,55 @@
+{
+  "failure_id": "295013aeb8024fe2a5637b9f7b015e46",
+  "decision": "retry",
+  "goal": "Verify the same fixed historical Aave inputs through the user-configured free authenticated source",
+  "expected": "Mainnet chain identity, original first receipt, bound block and historical reserve all validate, with no credential exposure",
+  "observed": "eth_chainId HTTP200/result0x1; first historical receipt curl28/HTTP000 after5.02s, zero response bytes. Dependent block/state reads did not run.97 synthetic tests passed before the attempt.",
+  "root_cause_status": "confirmed",
+  "root_cause": "Confirmed client connection-deadline mismatch: configured connect-timeout5s includes DNS/TCP/TLS, whereas a bounded credential-free same-host diagnostic completed verified TLS at10.437103s and received HTTP401 at11.650919s. The original failure exhausted its5s connection allowance before any HTTP response. Its exact phase/address was not recorded, and why the network handshake is slow remains UNKNOWN; the diagnostic does not prove the original request used the same address. Correction addresses the demonstrated insufficient connection allowance, not a claimed provider data or authentication defect.",
+  "underlying_network_cause": "UNKNOWN",
+  "evidence": [
+    ".artifacts/aave-authenticated-access-20261013/validation-state.json",
+    ".artifacts/aave-authenticated-access-20261013/operations/eth_getTransactionReceipt-9de609b862e1a195ae70a5f218291f03b38a4caebdf4c575219d84e7332c7ead/record.json",
+    "Three bounded credential-free HEAD observations and local curl manual, timings recorded below"
+  ],
+  "head_diagnostics": [
+    {"connect_cap":5,"http":401,"dns":0.004742,"tcp":0.160514,"tls":0.317488,"first_byte":1.140891,"total":1.141116,"ssl_verify":0},
+    {"start_utc":"2026-10-13T07:32:59Z","connect_cap":15,"http":401,"remote":"15.235.230.239","dns":0.594840,"tcp":1.738533,"tls":1.893301,"first_byte":2.223375,"total":2.223956,"ssl_verify":0},
+    {"start_utc":"2026-10-13T07:33:02Z","connect_cap":15,"http":401,"remote":"15.235.229.138","dns":0.004144,"tcp":4.164077,"tls":10.437103,"first_byte":11.650919,"total":11.651321,"ssl_verify":0}
+  ],
+  "head_caveat": "HEAD used the host root without any key;401 is not rejection of the configured key. No repeated historical RPC was made during diagnosis. scutil --nwi could not read system state (registration failed9), so no system-network cause is inferred.",
+  "next_action": "One same-gate same-argv/cwd retry. Change only connect allowance5to15s; total30s, no retries/redirects, same key/host/year/transaction/validators. Reuse successful chain response; keep failed receipt folder and create only its named corrected attempt. Run98 synthetic checks inside the original controls command before network. If another failure occurs, stop and reassess without a second correction.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Only historical input access, no change to economic rule, year, credential exposure constraints or Demo risk.",
+    "data_feasibility": "Original native receipt exists in protected prior source and index; Alchemy documents historical support and mainnet identity has responded. Historical data access itself is still unverified and is the fixed next test, not assumed PASS.",
+    "method_feasibility": "Verified TLS can complete under15s on the same host; native payload and cross-provider boundary validators remain unchanged. No guarantee against another network failure.",
+    "budget_and_exit": "At most3 additional RPC methods for original receipt/block/reserve, original30s request cap;3 HEAD diagnostics charged. Original8h/10000ops/2GiB/48h caps not extended. New failure stops dependencies and no automatic second retry."
+  },
+  "failed_operation": "eth_getTransactionReceipt-9de609b862e1a195ae70a5f218291f03b38a4caebdf4c575219d84e7332c7ead",
+  "failed_record_sha256": "31054879ea2975f68278b757bee9371610e29d4851a03a3c9f4ad67a7913e915",
+  "corrected_driver_sha256": "bc644eda2dfd233df0a37ccc6b5024d6fc85a2bc5cc30af2eb4bfe3450b8c54d",
+  "original_core_sources": {
+    "aave_authenticated_rpc.py": "92610ab4235ead4ed5d836c0f186bf570f21d68e62684cace7307b3ef31202cb",
+    "aave_complete_catalog.py": "4c50344ac766ccb86b8e98f5eb79dc85f8e44a5e54731843fdde42f3c8b53589",
+    "aave_complete_input.py": "b7bc41edce635675efd5cfc7767d02032dff4e7bd5e93a9b91e4f470f48a1cc0",
+    "aave_complete_receipts.py": "981efb7a743c62b5c342c44081b71e0284a30ce311ed3345dc41918b3a42033d",
+    "aave_input_costs.py": "23e71de3273be20600e2a6de96077f5ffac63befc85bc74b85d5b9c2849b2d79",
+    "aave_reserve_identity.py": "9218803bb7fb0177e853a574fd16392a0fbf0fbcc4a7f3a93cb1dee0c91b1b1f",
+    "aave_weth_boundary.py": "1aaeb097431362bfcc1916eb343e7ba090302a5bd060c4bf7d20ab194238d809",
+    "aave_weth_flow.py": "ea1cb80a6b7afc0670ed776514b58462b685c940b91b848219371d3313fa8d03"
+  },
+  "corrected_core_sources": {
+    "aave_authenticated_rpc.py": "feb1f6dae2a8a95c3feb4d31451e32a9085cfe92fb3d913d1acf7b568e203181",
+    "aave_complete_catalog.py": "4c50344ac766ccb86b8e98f5eb79dc85f8e44a5e54731843fdde42f3c8b53589",
+    "aave_complete_input.py": "b7bc41edce635675efd5cfc7767d02032dff4e7bd5e93a9b91e4f470f48a1cc0",
+    "aave_complete_receipts.py": "981efb7a743c62b5c342c44081b71e0284a30ce311ed3345dc41918b3a42033d",
+    "aave_input_costs.py": "23e71de3273be20600e2a6de96077f5ffac63befc85bc74b85d5b9c2849b2d79",
+    "aave_reserve_identity.py": "9218803bb7fb0177e853a574fd16392a0fbf0fbcc4a7f3a93cb1dee0c91b1b1f",
+    "aave_weth_boundary.py": "1aaeb097431362bfcc1916eb343e7ba090302a5bd060c4bf7d20ab194238d809",
+    "aave_weth_flow.py": "ea1cb80a6b7afc0670ed776514b58462b685c940b91b848219371d3313fa8d03"
+  }
+}

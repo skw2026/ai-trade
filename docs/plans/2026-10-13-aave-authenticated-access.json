@@ -1,0 +1,35 @@
+{
+  "authorization": "User allowed free registration, configured ALCHEMY_RPC_URL and confirmed continuation on 2026-10-13",
+  "scope": "Credential-safe read-only access for the same fixed 2024 Aave complete-input batch; no purchases, billing changes, wallets, trading or deployment",
+  "prior_route": "Anonymous route remains HALTED. New explicit authenticated-access scope does not retry or reset its gate.",
+  "gate": ".artifacts/aave-authenticated-access-20261013/validation-state.json",
+  "original_contract": "docs/plans/2026-10-12-aave-complete-input-batch.md",
+  "original_deadline_utc": "2026-10-14T10:52:07Z",
+  "new_active_interval_start_utc": "2026-10-13T07:25:50Z",
+  "prior_active_seconds_reserved": 14400,
+  "prior_operations_reserved": 300,
+  "accounting": "Conservative reservations, NOT asserted actual consumption: original completed work and registration/setup are charged 4h and 300 operations. Stopped periods are not active engineering. This access phase has at most the remaining 4h of the unchanged 8h total, remaining 9700 operations of 10000, and original 2GiB logical input cap. No old ledger is changed. All new documentation, failures and per-method requests count.",
+  "phase_active_deadline_utc": "2026-10-13T11:25:50Z",
+  "endpoint_identity": "Alchemy Ethereum Mainnet; key read from .env.local, no credential in argv, persisted endpoint, exception or logs",
+  "first_controls": [
+    "eth_chainId must be 0x1",
+    "original fixed first transaction receipt must match all indexed target events",
+    "same historical block header must bind receipt hash, timestamp and transaction position",
+    "same historical Aave WETH reserve eth_call must decode and reproduce prior fixed boundary"
+  ],
+  "control_rpc_limit": 4,
+  "transport": "TLS verification enabled, no redirects or automatic retries, >=1 second between serial starts, connection5s/request30s, max8MiB response",
+  "full_input_condition": "Controls and synthetic safety tests pass; original catalog and successful cached inputs hash-verified; request/byte/time plan fits. Old failed records are preserved and never treated as missing successes.",
+  "remaining_native_methods_before_controls": 5628,
+  "reserved_market_methods": 1422,
+  "additional_methods_reserve": 200,
+  "projected_total_methods_with_reservations": 7554,
+  "free_plan_evidence": [
+    "https://www.alchemy.com/pricing",
+    "https://www.alchemy.com/docs/reference/compute-unit-costs",
+    "https://www.alchemy.com/docs/what-is-archive-data-on-ethereum"
+  ],
+  "free_plan_caveat": "Documentation is not an authenticated remaining quota report. Do not upgrade plans; stop on capacity/auth failures.",
+  "failure_exit": "Stop dependencies on first unexpected transport, validation or budget failure; preserve evidence and diagnose. No automatic retry or identity rotation.",
+  "economic_boundary": "No prices/economic attempt until original complete-input and pre-price economic contract requirements pass. UNKNOWN is never zero or silently excluded; no changed year/rule. G4 and Demo reduce-only unchanged."
+}

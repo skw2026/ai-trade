@@ -1,0 +1,61 @@
+{
+  "status": "FIXED_HISTORICAL_ACCESS_VERIFIED_SUSTAINED_TRANSPORT_BLOCKED",
+  "failure_id": "02bb586e02c74dc3b58880c311b7cf2c",
+  "observed_at_utc": "2026-10-13T07:44:10Z",
+  "authorization": "User allowed free registration, configured complete ALCHEMY_RPC_URL and confirmed continuation. No further registration/key approval is needed.",
+  "fixed_controls": {
+    "status": "PASS_WITH_PRESERVED_FIRST_TIMEOUT_AND_ONE_REVIEWED_CORRECTION",
+    "chain_id": "0x1",
+    "historical_transaction": "0xfbd29292a12e291d1e57c7a26e83486b742774298ffb65206a649373b73e982b",
+    "historical_block": 18909175,
+    "checks": ["full indexed target receipt", "bound native block identity/time/transaction position", "historical Aave WETH reserve eth_call", "entire WETH boundary equals protected prior result"],
+    "artifact": ".artifacts/aave-authenticated-access-20261013/controls.json",
+    "qualification": "One fixed historical transaction, not annual completeness, sustained throughput, actual remaining account quota or economic admission"
+  },
+  "transport_failure": {
+    "first": "Receipt connection timed out at5s; one same-host no-key HEAD proved verified TLS can take10.437103s. Named correction raised connection cap to15s, kept total30s, then original command passed.",
+    "new_batch_control": "One POST containing3 fixed native methods timed out during TLS at15.004011s; DNS0.396223s/TCP0.645087s/TLS0, HTTP000, zero body. No bulk requests followed.",
+    "confirmed_stage": "TCP established, TLS not completed before client deadline",
+    "underlying_cause": "UNKNOWN",
+    "not_established": ["invalid key", "missing historical data", "quota rejection", "batch JSON rejection", "provider outage", "specific VPN/proxy defect"],
+    "route_reassessment": "One successful correction did not establish sustained delivery. Do not continue increasing timeouts, automatically retry RPC or revert to singles to bypass the blocked batch control. Local network-path facts or a verified alternate execution arrangement are needed first. This is not an economic rejection."
+  },
+  "diagnostics": {
+    "credential_free_HEAD_requests": 3,
+    "HEAD_http_statuses": [401,401,401],
+    "dns_lookup_operations": 1,
+    "dns_aliases": ["eth-mainnet.g.alchemy.com","eth-mainnet.r.alchemy.com","r.alchemy.com"],
+    "observed_addresses": ["15.235.230.239","15.235.229.138","15.235.234.154"],
+    "system_or_environment_HTTP_proxy_entries_reported": 0,
+    "caveat": "No reported HTTP proxy entries does not exclude VPN, tunnel, transparent middlebox or provider network issues. A non-elevated scutil --nwi attempt was unavailable, not a finding about the network.",
+    "user_fact_pending": "Whether this Mac uses VPN, proxy client or network acceleration. Asked as a fact question, not a new authorization request."
+  },
+  "counts": {
+    "single_RPC_attempts": 5,
+    "single_RPC_valid_responses": 4,
+    "batch_POST_attempts": 1,
+    "batch_methods_charged_conservatively": 3,
+    "total_RPC_methods_charged": 8,
+    "new_documentation_reads": 8,
+    "new_diagnostic_HEAD_and_DNS_operations": 4,
+    "new_external_operations_including_conservative_DNS_count_before_delivery": 20,
+    "prior_operations_reserved_not_claimed_actual": 300,
+    "reserved_plus_new_before_delivery": 320,
+    "largest_passed_synthetic_suite": 109,
+    "protected_files_unchanged": 1085,
+    "credential_matches_in_new_code_docs_and_artifacts": 0,
+    "new_distinct_annual_transactions": 0,
+    "valid_unique_annual_receipts_still": 139,
+    "remaining_native_methods_still": 5628,
+    "prices_read": 0,
+    "economic_attempts": 0
+  },
+  "security": "Key read locally, never printed or in argv/public artifacts; URL restricted to verified HTTPS Alchemy mainnet host; no redirects/writes/automatic retries. .env.local remains git-ignored and was tightened from0644to0600. No wallet, card, billing, signing, account permission or trading changes.",
+  "gate": "Authenticated access gate BLOCKED on new TLS failure; earlier anonymous HALTED and all protected gates untouched. No review granting another retry.",
+  "delivery": "Only sanitized plans/diagnostic findings and current-state updates prepared for main skip-ci delivery. New authenticated code remains local;109 tests and fixed-control pass are not a full batch validation or a deployed collector. Prior unpublished drafts preserved.",
+  "next": "Resolve the concrete network-path dependency first, retaining the same fixed controls and remaining original budget. Do not ask the user for the API key again, copy it to another system without a settled execution arrangement, reset gates or start market waiting.",
+  "live_acquisition_sessions": [],
+  "g4": "NOT_ACHIEVED",
+  "economic_effect": "NOT_EVALUATED",
+  "demo_reduce_only": "UNCHANGED_BY_THIS_WORK"
+}
