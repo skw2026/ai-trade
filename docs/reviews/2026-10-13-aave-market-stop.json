@@ -1,0 +1,34 @@
+{
+  "failure_id": "62e9352971274eac89a0614fb044540d",
+  "decision": "stop",
+  "goal": "Complete the frozen full-year market input and then evaluate exactly one development rule",
+  "expected": "The only reviewed original-command retry completes all1422pages with unchanged acceptance",
+  "observed": "The retry recovered the original index540 and another245pages, then index786 returned HTTP200/curl0 with retCode10006 and Too many visits. Exceeded the API Rate Limit. Total788attempts,786valid pages,2failed responses;636pages remain. No market admission or economic attempt occurred.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The immediate second rejection is the provider's explicit API rate-limit response10006. It is different from the first server error10016. The precise limiter bucket, effective quota, shared-egress contribution and recovery timestamp are UNKNOWN. The frozen collector saved bodies but not response headers; no X-Bapi reset evidence is available. Serial starts were>=1second, which is not proof that provider quota or aggregate egress usage permits that rate.",
+  "evidence": [
+    ".artifacts/aave-economic-screen-20261013/attempts/0787/response.json sha256db5417484b8ff0882f3522a68c90a875327e04ed0b6a5995269ef17d10fa4022",
+    ".artifacts/aave-economic-screen-20261013/attempts/0787/record.json completed2026-10-13T14:00:12.320376+00:00,curl0,HTTP200,0.530seconds",
+    ".artifacts/aave-economic-screen-20261013/attempts/0541/record.json original failed index540 recovered unchanged with1000valid rows",
+    "Read-only cache diagnosis:366funding pages/1098rows,210trade and210mark pages/210000rows each, contiguous prefixes,29027901raw bytes,1154protected files unchanged, frozen8source hashes unchanged, no economic-attempt reservation",
+    "https://bybit-exchange.github.io/docs/v5/rate-limit read by verified-TLS curl2026-10-13:10006 indicates API rate limiting; reset information is supplied through response headers when applicable. The documented HTTP403 waiting advice is not evidence for a10006reset time"
+  ],
+  "next_action": "Close this delivery arrangement without another market request or formal retry. Preserve all raw successes/failures and frozen code. Publish only sanitized diagnosis and state, skip CI/CD. Any continuation needs an explicit revised input-delivery contract, not an altered old gate, reduced sample, changed economic rule or guessed recovery timer.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "blocked_under_current_delivery_contract",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "Financial conclusion still requires complete input; partial pages do not answer profitability and cannot be promoted to G4",
+    "data_feasibility": "786pages are valid and reusable; remaining636pages have not been admitted. A provider rate limit is not evidence the historical data are absent",
+    "method_feasibility": "Synthetic model and independent arithmetic passed, but the all-or-stop delivery arrangement lacks limit/reset telemetry and has exhausted its one retry. Changing trading parameters cannot fix this input problem",
+    "budget_and_exit": "Stop now before the15:50:27UTCphase limit, preserve original8activehours/10000operations/2GiB. No background wait or automatic budget renewal. Diagnostic publication does not clear HALTED"
+  },
+  "route_reassessment": {
+    "old_route_failure": "Serial1second pacing was an assumption, not measured permitted quota; full-chain success depended on1422requests with only one reviewed continuation. Different backend and quota errors exhausted that allowance before full coverage",
+    "replacement": "Proposed, NOT EXECUTED: separate bounded transport recovery from final data admission. Reuse786validated pages, fetch the same636missing pages only, record bounded response headers and all attempts, predeclare small server-error retry and quota-reset handling budgets, and retain strict full-domain acceptance and unchanged economics",
+    "feasibility_evidence": "The cache already verifies response hashes/request identities and the first failed page succeeded unchanged; official quota documentation identifies response headers as the required recovery evidence. This supports designing a bounded collector, not a guarantee of sustained access",
+    "budget": "Proposal only: at most650additional public attempts, so788+650=1438<=original1500market allowance; original active/wall budgets must be reconciled at actual resumption, no automatic extension. No alternate account, paid source, IP rotation, cloud transfer or strategy change",
+    "stop_condition": "Do not execute under the exhausted old retry permission. Revised policy requires an explicit scope decision. Missing/invalid reset evidence on a new rate-limit event, authentication/permission errors, corrupt data, exhausted attempt/time budget or unknown transport failure stop; no silent drop or economic experiment on incomplete data"
+  }
+}

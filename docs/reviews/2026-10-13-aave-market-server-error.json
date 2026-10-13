@@ -1,0 +1,26 @@
+{
+  "failure_id": "080389beb33e4a299c21c56f0d6d2460",
+  "decision": "retry",
+  "goal": "Complete exactly the frozen1422public market pages before the one fixed development attempt",
+  "expected": "Each original page has HTTP200, retCode0 and the unchanged strict funding/minute-grid validation",
+  "observed": "540pages passed. Attempt541, zero-based index540, trade minute page returned HTTP200/curl0 but retCode10016, retMsg svc error: Get kline failed. The collector stopped immediately, gate BLOCKED, no economic attempt.",
+  "root_cause_status": "confirmed",
+  "root_cause": "The immediate rejection is an explicit upstream REST server-error response, not local parsing, invalid minute grids, missing credentials or observed rate-limit code. Current official REST table maps10016 to Server error,10001 to parameter error and10006 to rate limit. The underlying exchange incident and its persistence remain UNKNOWN; no claim of restart, transient resolution or repaired exchange.",
+  "evidence": [
+    ".artifacts/aave-economic-screen-20261013/attempts/0540/response.json sha2569c4ed372620187c916f7e9165285ed14cfce2b383eca0c6406904d3c76bdb27a",
+    ".artifacts/aave-economic-screen-20261013/attempts/0540/record.json completed2026-10-13T13:54:14.947126+00:00,curl0,HTTP200,0.522seconds",
+    "Immediately preceding adjacent trade and mark pages0538/0539 both VALID1000rows, same market and parameter form",
+    "https://bybit-exchange.github.io/docs/v5/error REST table read by verified-TLS curl2026-10-13; web tool itself returned401 before delivering page, not a Bybit market401"
+  ],
+  "next_action": "After at least60seconds from failure, one exact argv/cwd retry through the same gate. Revalidate and reuse540successful raw pages, resume original index540, preserve failed raw response. No source, contract, rate, timeout, host, query, sample, strategy or acceptance change. Any further failure stops dependent work and requires route reassessment.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "Only complete fixed input permits the economic attempt; no partial-input success or performance claim",
+    "data_feasibility": "366funding pages and87trade/87mark full minute pages already valid. One explicit backend error does not establish historical-domain absence. Availability of the remaining pages is tested, not assumed",
+    "method_feasibility": "Frozen collector already retains attempts, verifies cache identity, requires reviewed retry and applies original page checks. Bounded replay does not alter statistical or financial design",
+    "budget_and_exit": "541GETattempts consumed,882pages remain, successful completion totals1423<=1500. Prior6274+1500maximum+100documentation/control reserve<=10000. Same3600second wrapper and15:50:27UTC hard stage deadline. No automatic retry or new budget; one more failure stops this execution arrangement"
+  }
+}

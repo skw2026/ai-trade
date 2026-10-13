@@ -1,0 +1,22 @@
+{
+  "status": "PRE_EXECUTION_ARGUMENT_REJECTED_NOT_COLLECTION_ATTEMPT",
+  "expected": "Start the fixed remaining market archive through the existing validation gate",
+  "observed": "validation_gate returned exit2: timeout must be in1..3600seconds; requested7200",
+  "root_cause_status": "confirmed",
+  "root_cause": "Caller supplied an unsupported wrapper timeout. validation_gate.py checks this argument before execute and before creating RUNNING state or executing the child. This was not a network or market validation failure.",
+  "evidence": [
+    "tools/validation_gate.py main timeout precondition",
+    "economic stage gate remains READY, active null, final history is successful three fixed controls",
+    "Only the three previously successful control request records exist before correction"
+  ],
+  "correction": "Use supported wrapper timeout3600 for the exact same child argv: python3 tools/aave_market_input.py collect --limit1422. No validation retry is available or fabricated because no formal run/failure record was created.",
+  "path_review": {
+    "goal_alignment": "Still acquire the frozen complete2024development market input before the one economic attempt",
+    "data_feasibility": "Three fixed public funding/trade/mark controls passed; full delivery not yet established",
+    "method_feasibility": "Serial starts>=1second need at least1419seconds;3600seconds bounds delivery without weakening page validation or increasing stage budget",
+    "budget_and_exit": "One corrected launch, same1422plan and original operation/deadline constraints. Any execution failure blocks dependent economics and requires its own diagnosis"
+  },
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "source_or_gate_modified": false
+}
