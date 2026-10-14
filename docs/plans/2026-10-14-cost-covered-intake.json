@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-10-14T05:14:30+00:00",
+  "deadline_utc": "2026-10-14T13:14:30+00:00",
+  "maximum_total_operations": 800,
+  "document_operations_before_freeze": 34,
+  "maximum_total_raw_bytes": 1073741824,
+  "maximum_response_bytes": 2097152,
+  "maximum_uncompressed_bytes": 8388608,
+  "connect_timeout_seconds": 15,
+  "request_timeout_seconds": 30,
+  "research_only": true,
+  "economic_attempts_allowed_by_this_intake": 0,
+  "controls": [
+    {"symbol": "BTCUSD_230929", "month": "2023-09", "delivery_utc": "2023-09-29T08:00:00+00:00"},
+    {"symbol": "BTCUSD_231229", "month": "2023-12", "delivery_utc": "2023-12-29T08:00:00+00:00"}
+  ],
+  "selection_reason": "Fixed structural controls named in official-repository issue507, not selected on returns; inspect full months, never silently truncate expired rows.",
+  "source": "https://data.binance.vision/data/futures/cm/monthly/klines/",
+  "expected_negative_exits": ["HTTP_404_ARCHIVE_ABSENT", "POST_DELIVERY_ROWS_MAPPING_UNBOUND"],
+  "unknown_transport_or_malformed_input": "STOP_DEPENDENT_WORK_AND_REVIEW_NO_AUTOMATIC_RETRY",
+  "next_admission": "Even absence of post-delivery rows does not establish symbol identity, actual settlement prices, historical margin or full input availability. No economic runner authorized by this file."
+}
