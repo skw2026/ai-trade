@@ -16,7 +16,10 @@
   筛查REJECT_SAMPLED_REFERENCE_COST_COVERAGE：毛空间最高27.872417bps、
   均值3.707112bps，0/52覆盖31bps、压力0/52。独立ABI/有理数复算一致，
   收尾58相关合成通过无skip；5533原件保持，旧BLOCKED/失败不改，新gate
-  READY/0失败不是盈利资格。两个临时Secrets删除、既有4保持，仅密文七天、
+  最终READY不是盈利资格。收尾checker误用顶层failure_count，1次失败具名
+  复盘后按active字段修复、原命令唯一复验通过；编排未等结果导致4f8754f
+  文档先推的失误也保留，后续分开验收与依赖发布，无经济重跑/二次dispatch。
+  两个临时Secrets删除、既有4保持，仅密文七天、
   私钥本机。见同日steth-cost-headroom-result.md；本批CLOSED_NO_GO，0候选，
   G4未达成，真实净收益/夏普/DD未评估。参考预算不是所有执行方案的成本
   下界，52点不是全年机会穷尽；不扩大否定。唯一经济次数消费，不自动

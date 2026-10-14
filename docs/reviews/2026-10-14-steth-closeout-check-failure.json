@@ -1,0 +1,36 @@
+{
+  "failure_id": "caaad68618ed4cfdbf6b2c11e2c29d8c",
+  "decision": "retry",
+  "goal": "Verify closeout document numbers, links, credential boundary and preservation of the original BLOCKED state without another economic experiment.",
+  "expected": "Original blocked gate retains failure count one; report numbers match audited result; sources, raw evidence and credential boundaries unchanged.",
+  "observed": "The document checker raised KeyError failure_count. In the same orchestration cell, a dependent docs commit/push proceeded before inspecting the checker outcome; 4f8754f reached main. This ordering failure is acknowledged, not treated as a permitted acceptance pass.",
+  "root_cause_status": "confirmed",
+  "root_cause": "validation_gate.py persists failure_count under active. Only summary(state) projects it to the top level. The new document checker incorrectly indexed old['failure_count']; actual state has schema_version/status/active/history. The orchestration independently scheduled commit/push after polling without an exit-code conditional. Economic result and independent ABI audit finished earlier and were not modified or rerun.",
+  "evidence": [
+    "tools/validation_gate.py: summary(state) and persistent active failure_count",
+    ".artifacts/steth-cloud-input-20261014/verify-closeout-docs.failed.py",
+    ".artifacts/steth-cloud-input-20261014/validation-state.json",
+    ".artifacts/cost-covered-mechanisms-20261014/validation-state.json",
+    ".artifacts/steth-cloud-input-20261014/result.json",
+    ".artifacts/steth-cloud-input-20261014/audit.json",
+    "git commit 4f8754f and its confirmed push receipt"
+  ],
+  "next_action": "Read old['active']['failure_count']; perform the exact original checker argv once via same-gate retry. Inspect completion before issuing any dependent publication. Afterwards append this incident and verified outcome to public closeout records; do not push altered economic code or dispatch again.",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": true,
+  "path_review": {
+    "goal_alignment": "The fix verifies the original preservation condition rather than changing economic qualification or suppressing a failure.",
+    "data_feasibility": "Both states are local and parsed; frozen hash protection already matches. The old blocked active failure_count is exactly one.",
+    "method_feasibility": "The one-line access change follows the existing state schema; all original assertions and the exact failed argv remain. Report arithmetic and independent result stay frozen.",
+    "budget_and_exit": "At most one 120-second original-command retry; zero new RPC, training or economic calculations. A repeat failure stops dependency work again. Corrective publication is documents only with skip ci."
+  },
+  "route_reassessment": {
+    "old_route_failure": "A summary schema was confused with stored state and the tool orchestration lacked a dependency exit guard.",
+    "replacement": "Use the confirmed persistent schema; separate review/retry/result inspection from any subsequent commit and push. Keep original failed source, failed gate history and the premature publication trace.",
+    "feasibility_evidence": "Existing summary() explicitly reads state['active']; two read-only state inspections confirm the shape and counts. Economic result SHA256 remains 564e7fbf2443032a89e40f223a44272975a7b660c67e02a0d98d6daa5a4a323a.",
+    "budget": "One local retry up to120seconds and one bounded docs correction, inside the original13:14:30UTC deadline and100 reserved control-plane operations.",
+    "stop_condition": "Any repeat checker failure, original evidence change, unexpected workflow or deployment stops dependent delivery; no economic rerun, fresh gate, redispatch or reset."
+  }
+}
