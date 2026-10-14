@@ -1,0 +1,61 @@
+name: stETH isolated encrypted input once
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        type: string
+        required: true
+      seed_sha256:
+        type: string
+        required: true
+      recipient_certificate_base64:
+        description: Public certificate only
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: ai-trade-steth-cloud-input-20261014
+  cancel-in-progress: false
+jobs:
+  input:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Bind the single approved execution
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          test "$GITHUB_SHA" = "$EXPECTED_SHA"
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+      - name: Credential free synthetic regressions
+        run: >-
+          python3 tools/validation_gate.py --state "${RUNNER_TEMP}/steth-cloud-gate.json"
+          run --label cloud-synthetic --timeout 120 --
+          python3 -m unittest discover -s tools -p test_steth_cloud.py
+      - name: Fixed controls and missing inputs once
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_SEED_SHA: ${{ inputs.seed_sha256 }}
+          RECIPIENT_CERTIFICATE_BASE64: ${{ inputs.recipient_certificate_base64 }}
+          ALCHEMY_RPC_URL: ${{ secrets.STETH_CLOUD_20261014_RPC }}
+          STETH_SEED: ${{ secrets.STETH_CLOUD_20261014_SEED }}
+          CLOUD_OUTPUT: ${{ runner.temp }}/steth-cloud-output
+        run: >-
+          python3 tools/validation_gate.py --state "${RUNNER_TEMP}/steth-cloud-gate.json"
+          run --label cloud-input-once --timeout 1600 --
+          python3 tools/steth_cloud_input.py collect
+      - name: Retain only encrypted input and sanitized receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: steth-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/steth-cloud-output/native.cms
+            ${{ runner.temp }}/steth-cloud-output/receipt.json
+          retention-days: 7
+          if-no-files-found: error
