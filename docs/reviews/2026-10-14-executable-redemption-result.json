@@ -1,0 +1,130 @@
+{
+  "schema": "executable-redemption-review-v1",
+  "decision": "NOT_ADMITTED_COST_EXIT_AND_EXECUTION_INPUTS",
+  "stage": "G0",
+  "scope": "stETH secondary discount followed by Lido protocol redemption, USDT to USDT",
+  "code_review_commit": "19014df2846e014a299877a8e55ecd1aa0b7df00",
+  "prior_economic_result_unchanged": true,
+  "qualification": {
+    "costs_numerically_bound": false,
+    "unfinalized_claim_exit_bound": false,
+    "cross_asset_accounting_and_unwind_designed": false,
+    "independent_confirmation_admitted": false,
+    "qualified_candidates": 0,
+    "g4_passed": false
+  },
+  "economic_evaluation": {
+    "development_attempts": 0,
+    "learning_vectors": 0,
+    "confirmation_attempts": 0,
+    "net_return": null,
+    "sharpe": null,
+    "max_drawdown": null
+  },
+  "states": [
+    {
+      "state": "STETH_BEFORE_REQUEST",
+      "asset": "stETH",
+      "possible_exit": "market sale, conditional on executable size and price",
+      "cash_available": false,
+      "exit_price_verified": false
+    },
+    {
+      "state": "REQUESTED_UNFINALIZED",
+      "asset": "unstETH ERC721 withdrawal claim",
+      "cancelable": false,
+      "protocol_claim_available": false,
+      "possible_exit": "transfer to a buyer, but buyer and price not established",
+      "cash_available": false,
+      "exit_price_verified": false
+    },
+    {
+      "state": "FINALIZED_UNCLAIMED",
+      "asset": "claim on reserved ETH",
+      "possible_exit": "claim transaction, then ETH transfer and sale",
+      "cash_available": false,
+      "exit_price_verified": false
+    },
+    {
+      "state": "CLAIMED_ETH",
+      "asset": "ETH in wallet",
+      "possible_exit": "transfer and sell for USDT, coordinate remaining hedge",
+      "cash_available": false,
+      "exit_price_verified": false
+    }
+  ],
+  "unbound_cost_inputs": [
+    "account and time specific spot and perpetual fee rates",
+    "executed spot and hedge prices and quantities",
+    "withdrawal and deposit rules, deductions and availability",
+    "gas used and effective gas price for each required or failed transaction",
+    "historically bound queue settlement time and redeemed amount",
+    "funding and margin reserve throughout actual holding time",
+    "size and price of emergency exit for an unfinalized NFT",
+    "total committed capital including inventory, hedge collateral and reserves"
+  ],
+  "risk_semantics": {
+    "research_stop_drawdown": 0.08,
+    "product_degrade_drawdown": 0.08,
+    "product_cooldown_drawdown": 0.12,
+    "product_fuse_drawdown": 0.20,
+    "product_fuse_requires_economic_closeout": true,
+    "cex_zero_position_does_not_prove_claim_closeout": true,
+    "current_live_runtime_not_inspected": true
+  },
+  "sources": [
+    {
+      "id": "lido_queue",
+      "url": "https://docs.lido.fi/contracts/withdrawal-queue-erc721/",
+      "evidence": "official documentation retrieved through web before later direct GET timeout",
+      "historical_2024_contract_binding": false
+    },
+    {
+      "id": "lido_accounting",
+      "url": "https://docs.lido.fi/guides/oracle-spec/accounting-oracle/",
+      "evidence": "official documentation explicitly describes noncancelable requests and conditional finalization",
+      "historical_2024_contract_binding": false
+    },
+    {
+      "id": "bybit_fee_api",
+      "url": "https://bybit-exchange.github.io/docs/v5/account/fee-rate",
+      "evidence": "official private account fee endpoint documented, direct GET HTTP 200",
+      "body_sha256": "e5afaefaf4e29540d8eada671e5978dd138491a6e977a9fff99216dc2686f668",
+      "actual_account_queried": false
+    }
+  ],
+  "read_budget": {
+    "official_operations_limit": 40,
+    "web_operations_successful_calls": 9,
+    "web_operations_reserved_for_failed_call": 6,
+    "direct_get_attempts": 4,
+    "operations_charged_upper_bound": 19,
+    "direct_get_http_200": 1,
+    "direct_get_http_403": 2,
+    "direct_get_curl_28": 1,
+    "new_chain_rpc": 0,
+    "new_market_data_requests": 0,
+    "retrieval_complete": false
+  },
+  "retrieval_review": {
+    "web_channel_failure": "401 IP authorization error; dispatch of six requested operations unknown",
+    "individual_web_document_failure": "Lido withdrawal FAQ open returned Internal Error",
+    "direct_failures": "Bybit fee table and Lido FAQ HTTP 403; Lido queue curl 28 HTTP 000 with zero bytes",
+    "underlying_causes": "UNKNOWN",
+    "retried": false,
+    "private_key_or_alchemy_key_failure_inferred": false,
+    "dependent_economic_work_stopped": true
+  },
+  "next_state": {
+    "batch_closed_at_predeclared_insufficiency_exit": true,
+    "waiting_for_market_time": false,
+    "background_task_started": false,
+    "demo_new_position_lock_unchanged": true,
+    "automatic_new_mechanism_or_budget": false,
+    "future_admission_requires": [
+      "a feasible noncancelable-claim valuation and risk exit design under the same product requirements, or an explicit product-risk scope decision",
+      "complete timestamped costs, settlement and capital inputs",
+      "a reachable independent confirmation endpoint before training"
+    ]
+  }
+}
