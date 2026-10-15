@@ -1,0 +1,75 @@
+{
+  "schema": "research_product_policy_v1",
+  "policy_id": "product_research_20261015",
+  "authority": "User accepted direction B after the 2026-10-15 multi-agent roundtable",
+  "scope": "NEW_RESEARCH_DESIGN_ONLY",
+  "runtime_applied": false,
+  "market_research_authorized": false,
+  "reopen_closed_routes": false,
+  "stages": ["FROZEN_DEPLOYABLE_STRATEGY", "INCREMENTAL_ONLINE_LEARNING"],
+  "development": {
+    "positive_baseline_required": false,
+    "negative_training_examples_allowed": true,
+    "complete_scope_and_budget_required": true,
+    "hard_stopped_path_may_resume": false,
+    "closed_candidate_may_resume": false
+  },
+  "qualification": {
+    "candidate_base_and_stress_net_positive": true,
+    "learned_candidate_must_improve_frozen_reference": true,
+    "no_trade_is_success": false,
+    "independent_evidence_required": true,
+    "same_delivery_semantics_required": true,
+    "actual_execution_required_before_deployment_qualification": true,
+    "default_confirmation_weeks": null,
+    "automatic_online_updates_required_for_first_stage": false
+  },
+  "risk": {
+    "research_drawdown_stop": "0.08",
+    "product_drawdown_actions": ["0.08", "0.12", "0.20"],
+    "per_position_liquidation_distance_floor": "0.08",
+    "risk_fields_learnable": false,
+    "operator_lock_may_clear": false,
+    "existing_safety_latch_may_clear": false,
+    "new_design_performance_alert": "FREEZE_UPDATES_AND_REVIEW",
+    "new_design_alert_auto_unfreezes": false,
+    "hard_risk_action": "STOP_PATH_AND_UNWIND",
+    "data_or_execution_unknown_action": "BLOCK_NEW_RISK_AND_RECONCILE",
+    "live_rules": "UNCHANGED_UNTIL_SEPARATE_QUALIFIED_RELEASE"
+  },
+  "next_market_scope_required": [
+    "named_falsifiable_mechanism",
+    "difference_from_closed_routes",
+    "complete_cost_and_exit_model",
+    "development_and_independent_input_identity",
+    "frozen_learning_algorithm_and_reference",
+    "same_research_and_delivery_semantics",
+    "performance_alert_trigger_and_recovery_protocol",
+    "minimum_economic_effect_and_units",
+    "dependence_and_tail_assumptions",
+    "familywise_selection_and_monitoring_policy",
+    "false_admission_limit_and_minimum_power",
+    "event_capacity_and_final_endpoint",
+    "total_resource_budget_and_negative_exit"
+  ],
+  "synthetic_calibration": {
+    "scope": "STATISTICAL_COMPONENT_ONLY_NOT_MARKET_OR_FULL_STRATEGY_POWER",
+    "model": "IID equal-magnitude cost-net plus-one/minus-one block returns",
+    "sample_counts": [20, 50, 100, 200],
+    "win_probabilities": ["0.4", "0.5", "0.6", "0.75"],
+    "null_win_probability": "0.5",
+    "one_sided_alpha": "0.05",
+    "illustrative_power_target": "0.8",
+    "selected_rule": "FIXED_ENDPOINT_EXACT_BINOMIAL_NO_INTERIM_SUCCESS",
+    "project_effect_size_estimate": null,
+    "project_confirmation_duration": null
+  },
+  "this_delivery": {
+    "maximum_engineering_hours": 2,
+    "market_requests": 0,
+    "economic_experiments": 0,
+    "account_operations": 0,
+    "deployments": 0,
+    "automatic_new_research_budget": false
+  }
+}
