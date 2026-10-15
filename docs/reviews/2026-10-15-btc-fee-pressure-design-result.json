@@ -1,0 +1,105 @@
+{
+  "acceptance": "INPUT_AND_DESIGN_ONLY",
+  "account_operations": 0,
+  "audit": {
+    "document_operations": 3,
+    "economic_attempts": 0,
+    "g4": false,
+    "input_series": {
+      "obm_block_weight_wu_daily": {
+        "required_positive": 790,
+        "rows": 6490
+      },
+      "obm_fees_btc_daily": {
+        "required_positive": 790,
+        "rows": 6492
+      }
+    },
+    "plan_sha256": "2edbc7e98c0c214e421d47dcefaf82b643fd50e2bf4da6538ea381b5f3120b7b",
+    "point_in_time_certified": false,
+    "proposal_sha256": "4661266c865d519080297fe3e5656a555a923bb14ea2b4edfd1766fea9ac849d",
+    "protected_files": 6115,
+    "status": "INPUT_AND_DESIGN_AUDIT_PASS",
+    "successful_gets": 4,
+    "web_document_cache_misses": 1
+  },
+  "checked_utc": "2026-10-15T14:18:33.109825+00:00",
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "economic_attempts": 0,
+  "evidence_sha256": {
+    ".artifacts/btc-fee-pressure-design-20261015/delivery.py": "b9faf65a92399ad1e4ae14f7c7b2890718ad8d03cb120a026a2c4c7fda5e24f7",
+    ".artifacts/btc-fee-pressure-design-20261015/design-audit.json": "55ebe193a2099857d1f565a1ae2279d97f326e75fd8e3d0625923649d48217d7",
+    ".artifacts/btc-fee-pressure-design-20261015/freeze.json": "6639f2ef04be12802d2141c5befd9ab75227b9140f51422ffdd7b2760c0d8a94",
+    ".artifacts/btc-fee-pressure-design-20261015/input-inspection.json": "a3a7aab14205108a6d095fc34ab268fec20343657bed9a03ac168bb9954e7063",
+    ".artifacts/btc-fee-pressure-design-20261015/input_check.py": "6d74c8194b01945b0cbae8c892ff666069f091a15a6b62d2cb477bcf47fb8f95",
+    ".artifacts/btc-fee-pressure-design-20261015/request-01.body": "b6c7845a0a178c5c684ce6968eadf280b4041035c97699650b51941aa40ab20a",
+    ".artifacts/btc-fee-pressure-design-20261015/request-01.headers": "6bb0ed9cdba807faaef45f7e796005e75d59ef652af9fb3820a0b77b327f0b97",
+    ".artifacts/btc-fee-pressure-design-20261015/request-01.receipt.json": "d8a6b9b82b69a79c20beeb59bb3d82ae3f1be470b3044c788a0f358825bf8d7d",
+    ".artifacts/btc-fee-pressure-design-20261015/request-01.start.json": "70e1508a481aa2a19bc6698b5be1da5866623316735ca8695f14d226bb7f8d53",
+    ".artifacts/btc-fee-pressure-design-20261015/request-02.body": "066c83c297c5dbdb4a4f69afa99a53327f8bddb7ee2209a924b41a600f148cf4",
+    ".artifacts/btc-fee-pressure-design-20261015/request-02.headers": "7fac9c41c75845a2b7c17e57a62e48c6e3ab81b4acc763f19d2cb1a4dee90d2d",
+    ".artifacts/btc-fee-pressure-design-20261015/request-02.receipt.json": "173987336158a29e62efc6179128b7386b3de80ffeb254aece75faf4d8726796",
+    ".artifacts/btc-fee-pressure-design-20261015/request-02.start.json": "91674f0c6c193c36ae224767470f51535e8856f5096f82cea330a240d0cf7557",
+    ".artifacts/btc-fee-pressure-design-20261015/request-03.body": "073c4955fc036ac00170ab8fa30b3fcd3f5b842c2ca9c980ee156109404ce96e",
+    ".artifacts/btc-fee-pressure-design-20261015/request-03.headers": "52ccb794802af85964ce05cc85841e51fcff4267d81c20094cc56d4a029b520d",
+    ".artifacts/btc-fee-pressure-design-20261015/request-03.receipt.json": "b08b43e07dcfc197b56431e084865c1299bdbf71fd04374a63b94646b8bfed8c",
+    ".artifacts/btc-fee-pressure-design-20261015/request-03.start.json": "28fbca58a1602646744b4995920fe7f71fa8bc9631e0781b65681f3d55b02da2",
+    ".artifacts/btc-fee-pressure-design-20261015/request-04.body": "7af48da6fdc71fe0d7fe17fa83d6b8ef5db20a116391b167f9e70e7772193afb",
+    ".artifacts/btc-fee-pressure-design-20261015/request-04.headers": "52a59fa1ca08531a2091cfa670ebe34f84bfd6d50efaefdbf643e9ded5b1d8ba",
+    ".artifacts/btc-fee-pressure-design-20261015/request-04.receipt.json": "5769ad9f96e5c36706b82d8583d3abe676aa0d70cf08c154e3d4126ffb6ddcdf",
+    ".artifacts/btc-fee-pressure-design-20261015/request-04.start.json": "eb2129cb7987c8b0e6faca3bbe1c525bdf6ad017c9b8a94e721f77bd0a5e91f5"
+  },
+  "existing_boundary_tests": 9,
+  "g4": false,
+  "input_receipts": [
+    {
+      "bytes": 10764,
+      "error": "",
+      "http": "200",
+      "returncode": 0,
+      "sha256": "b6c7845a0a178c5c684ce6968eadf280b4041035c97699650b51941aa40ab20a",
+      "url": "https://raw.githubusercontent.com/diegorllanos/open-bitcoin-metrics/10b92355aa57d8f62f27d9a3283f2c25b5b0b152/metrics/obm_fees_btc_daily/README.md"
+    },
+    {
+      "bytes": 414325,
+      "error": "",
+      "http": "200",
+      "returncode": 0,
+      "sha256": "066c83c297c5dbdb4a4f69afa99a53327f8bddb7ee2209a924b41a600f148cf4",
+      "url": "https://raw.githubusercontent.com/diegorllanos/open-bitcoin-metrics/10b92355aa57d8f62f27d9a3283f2c25b5b0b152/metrics/obm_fees_btc_daily/obm_fees_btc_daily.csv"
+    },
+    {
+      "bytes": 14129,
+      "error": "",
+      "http": "200",
+      "returncode": 0,
+      "sha256": "073c4955fc036ac00170ab8fa30b3fcd3f5b842c2ca9c980ee156109404ce96e",
+      "url": "https://raw.githubusercontent.com/diegorllanos/open-bitcoin-metrics/10b92355aa57d8f62f27d9a3283f2c25b5b0b152/metrics/obm_block_weight_wu_daily/README.md"
+    },
+    {
+      "bytes": 437805,
+      "error": "",
+      "http": "200",
+      "returncode": 0,
+      "sha256": "7af48da6fdc71fe0d7fe17fa83d6b8ef5db20a116391b167f9e70e7772193afb",
+      "url": "https://raw.githubusercontent.com/diegorllanos/open-bitcoin-metrics/10b92355aa57d8f62f27d9a3283f2c25b5b0b152/metrics/obm_block_weight_wu_daily/obm_block_weight_wu_daily.csv"
+    }
+  ],
+  "market_batch_started": false,
+  "new_full_ctest": false,
+  "production_changes": 0,
+  "qualified_candidates": 0,
+  "scope_deadline": "2026-10-15T15:37:13Z",
+  "scope_start": "2026-10-15T14:07:13Z",
+  "skips": 0,
+  "sources": [
+    {
+      "supports": "price_and_congestion_to_fees_not_reverse_profit_prediction",
+      "url": "https://www.bankofcanada.ca/wp-content/uploads/2022/01/swp2022-2.pdf"
+    }
+  ],
+  "status": "PROPOSED_RECONSTRUCTED_INPUT_VERIFIED",
+  "training_runs": 0,
+  "validation_failures": 0
+}
