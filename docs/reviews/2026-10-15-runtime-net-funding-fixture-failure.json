@@ -1,0 +1,33 @@
+{
+  "failure_id": "6f913e4e7e5b4cfc8f60bd74355e9208",
+  "decision": "retry",
+  "goal": "完整运行时执行净收益学习和独立账务对照",
+  "expected": "只向迟到余量之前的60%已成交持仓收取资金费",
+  "observed": "已通过订单来源和WAL关闭；第三测试将Decimal资金费0.060060与错误上限0.01比较失败",
+  "root_cause_status": "confirmed",
+  "root_cause": "夹具目标1000/价格10000=0.1 BTC，先成交60%=0.06 BTC，下一行情10010和费率0.0001产生0.06006。断言误用了小十倍的金额范围。原生收据和独立Decimal均为0.060060；迟到0.04 BTC在资金费后入账。",
+  "evidence": [
+    ".artifacts/runtime-net-learning-20261015/synthetic-retry.json",
+    ".artifacts/runtime-net-learning-20261015/synthetic-retry.jsonl.gz",
+    ".artifacts/runtime-net-learning-20261015/failure-source/test_runtime_net_learning-second.cpp.py",
+    ".artifacts/runtime-net-learning-20261015/failure-source/runtime_learning_driver-second.cpp"
+  ],
+  "next_action": "改为准确的数量乘价格乘费率恒等式断言，保留旧金额负例与所有失败，输出自动追加唯一编号避免覆盖第二次证据。补充收据时钟倒退篡改检查；原命令唯一复验，不改执行代码、成本、选择规则或控制方程。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "仍需真实应用链上的学习更新，不能用反复夹具修复替代四组控制裁决",
+    "data_feasibility": "固定订单和资金费原始收据完整，尚无市场取数或经济选择",
+    "method_feasibility": "原订单来源问题已通过，本次只改错算的预期金额，采用明确维度恒等式而非扩大误差容忍",
+    "budget_and_exit": "本批21:28:49 UTC截止不延长；一次原命令复验，未知或结构性故障停止依赖工作"
+  },
+  "route_reassessment": {
+    "old_route_failure": "新测试适配层未经核对假设订单收据完整，又在迟到夹具中混淆100与1000名义单位；两次是不同已定位的合同/断言缺陷，不能归因真实账务或学习性能",
+    "replacement": "保持同一路线，用提交时持久化订单与成交收据交叉绑定，所有费用断言按数量、价格和费率推导；训练和留出控制方程不变",
+    "feasibility_evidence": "第一次缺失字段修复后的第二测试通过；第二失败中原生和Decimal均0.060060且旧来源v3/bucket2保持，证明需要纠正预期而非放松会计",
+    "budget": "原8小时范围、同一gate、同一原命令；不增加市场实验或研究预算",
+    "stop_condition": "下一复验再失败重新阻断；未知根因或验收不可达不转为跳过用例或扩大策略范围"
+  }
+}

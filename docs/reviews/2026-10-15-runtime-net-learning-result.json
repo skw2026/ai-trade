@@ -1,0 +1,323 @@
+{
+  "account_operations": 0,
+  "audited_receipts": 441828,
+  "checked_utc": "2026-10-15T13:52:25.543499+00:00",
+  "controls": {
+    "cost": {
+      "applied_first_at": null,
+      "classification": "NO_ACCEPTED_UPDATE",
+      "final_liquidation": [
+        9968.8,
+        9937.6
+      ],
+      "legacy_final_liquidation": [
+        9968.8,
+        9937.6
+      ],
+      "legacy_final_weights": [
+        0.5,
+        0.5
+      ],
+      "legacy_updates": [
+        0,
+        0
+      ],
+      "locked": "1:2",
+      "new_vs_legacy_total": [
+        0.0,
+        0.0
+      ],
+      "next_window_net": [
+        -15.600000000000364,
+        -31.19999999999891
+      ],
+      "next_window_vs_fixed": [
+        0.0,
+        0.0
+      ],
+      "reason": "NO_ABSOLUTE_NET_EDGE",
+      "selected_scores": {
+        "holdout": -4.680000000000291,
+        "stress_holdout": -9.360000000000582,
+        "stress_train": -21.840000000000146,
+        "train": -10.920000000000073
+      },
+      "unit_gain": [
+        0.0,
+        0.0
+      ],
+      "weights_after": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "positive": {
+      "applied_first_at": 241,
+      "classification": "DIRECTIONAL_EXECUTION_GAIN",
+      "final_liquidation": [
+        9982.173606600001,
+        9952.460213200002
+      ],
+      "legacy_final_liquidation": [
+        9982.173606600001,
+        9952.460213200002
+      ],
+      "legacy_final_weights": [
+        0.6,
+        0.6
+      ],
+      "legacy_updates": [
+        2,
+        2
+      ],
+      "locked": "1:3",
+      "new_vs_legacy_total": [
+        0.0,
+        0.0
+      ],
+      "next_window_net": [
+        104.25106600000072,
+        88.63713200000166
+      ],
+      "next_window_vs_fixed": [
+        226.33252540000103,
+        224.8180508000023
+      ],
+      "reason": "EXECUTION_NET_UPDATE",
+      "selected_scores": {
+        "holdout": 31.262419800001226,
+        "stress_holdout": 26.562639600000693,
+        "stress_train": 61.9744924000006,
+        "train": 72.94064620000063
+      },
+      "unit_gain": [
+        136.75487524000164,
+        136.80695048000052
+      ],
+      "weights_after": [
+        0.5,
+        0.55,
+        0.5
+      ]
+    },
+    "reverse": {
+      "applied_first_at": null,
+      "classification": "NO_ACCEPTED_UPDATE",
+      "final_liquidation": [
+        10036.714025860001,
+        10008.515041720002
+      ],
+      "legacy_final_liquidation": [
+        10036.714025860001,
+        10008.515041720002
+      ],
+      "legacy_final_weights": [
+        0.45,
+        0.45
+      ],
+      "legacy_updates": [
+        1,
+        1
+      ],
+      "locked": "1:3",
+      "new_vs_legacy_total": [
+        0.0,
+        0.0
+      ],
+      "next_window_net": [
+        93.66665940000166,
+        79.56731880000189
+      ],
+      "next_window_vs_fixed": [
+        0.0,
+        0.0
+      ],
+      "reason": "NO_ABSOLUTE_NET_EDGE",
+      "selected_scores": {
+        "holdout": -41.234795074999056,
+        "stress_holdout": -45.934890149999774,
+        "stress_train": 61.9744924000006,
+        "train": 72.94064620000063
+      },
+      "unit_gain": [
+        -136.6878352399999,
+        -136.63547048000146
+      ],
+      "weights_after": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "scale": {
+      "applied_first_at": 241,
+      "classification": "EXPOSURE_SCALING_ONLY",
+      "final_liquidation": [
+        10033.52929602,
+        10032.10459204
+      ],
+      "legacy_final_liquidation": [
+        10033.52929602,
+        10032.10459204
+      ],
+      "legacy_final_weights": [
+        0.6,
+        0.6
+      ],
+      "legacy_updates": [
+        2,
+        2
+      ],
+      "locked": "1:3",
+      "new_vs_legacy_total": [
+        0.0,
+        0.0
+      ],
+      "next_window_net": [
+        18.028541519999635,
+        17.913083039999037
+      ],
+      "next_window_vs_fixed": [
+        1.2377815199997713,
+        1.131563039998582
+      ],
+      "reason": "EXECUTION_NET_UPDATE",
+      "selected_scores": {
+        "holdout": 5.540950799999337,
+        "stress_holdout": 5.537901599998804,
+        "stress_train": 10.072758300000714,
+        "train": 11.509879150000415
+      },
+      "unit_gain": [
+        0.0,
+        0.0
+      ],
+      "weights_after": [
+        0.5,
+        0.55,
+        0.5
+      ]
+    }
+  },
+  "ctest": 130,
+  "deadline": "2026-10-15T21:28:49Z",
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "driver_sha256": "f31b01c20653833b7a3d0d12d11621c907bf5c3fb166c7c3532d0db50ea1f57c",
+  "engineering_only": true,
+  "evidence_sha256": {
+    ".artifacts/runtime-net-learning-20261015/baseline/CMakeLists.txt": "d073ab24ab3c4208ce70358282a80a6d73883c196eea24c0f43e00a1f465c622",
+    ".artifacts/runtime-net-learning-20261015/clock-retry.json": "5e534f0e440c171f3084435f0f18a4a30fa63745973c526727cf7f3a7db4d0c5",
+    ".artifacts/runtime-net-learning-20261015/clock-retry.jsonl.gz": "216a2fafbe5087cbf54b1f665bca5e82d989d87ae7802700bea14688cde95cb2",
+    ".artifacts/runtime-net-learning-20261015/clock.json": "34f25d6711393091c46973c7e0394068dd16e6abbf0831f3c2cfc0785f59ecab",
+    ".artifacts/runtime-net-learning-20261015/clock.jsonl.gz": "a2706c6d50be191cb19c567d945917267071f4f04ac1693b57df0a378f478ccc",
+    ".artifacts/runtime-net-learning-20261015/ctest-full.log": "2d174d1ae67910234931beb4123701c68f64d95acc264e1aa3443c2864decb24",
+    ".artifacts/runtime-net-learning-20261015/ctest.xml": "fa5a8f7272d73d8bf6532e938113eead9201f65b0ce82e2313833a71a8545466",
+    ".artifacts/runtime-net-learning-20261015/failure-source/runtime_learning_driver-before-clock.cpp": "2074a1a5a4c3a5812820c268eec5a5ddbbe54e22955483bd83c8f53223f699a7",
+    ".artifacts/runtime-net-learning-20261015/failure-source/runtime_learning_driver-second.cpp": "2074a1a5a4c3a5812820c268eec5a5ddbbe54e22955483bd83c8f53223f699a7",
+    ".artifacts/runtime-net-learning-20261015/failure-source/runtime_learning_driver.cpp": "2c1a219b888c2bc8bdf7af814765bf3d403330057e9ce8939fc32ab473c589b1",
+    ".artifacts/runtime-net-learning-20261015/failure-source/runtime_net_learning-before-clock.py": "74a8d6eee637898016678b87054a28d922a54ecf04a980f4eb0cba3bde2409fb",
+    ".artifacts/runtime-net-learning-20261015/failure-source/runtime_net_learning.py": "74a8d6eee637898016678b87054a28d922a54ecf04a980f4eb0cba3bde2409fb",
+    ".artifacts/runtime-net-learning-20261015/failure-source/stage-before-log-fix.py": "ef05e279c923072bb2a9108dbc73f8d7a6e4e40274609bc24cf40c92a0ef6060",
+    ".artifacts/runtime-net-learning-20261015/failure-source/test_runtime_net_learning-before-clock.py": "f773546d162e447b800521613108064b291d8c944084f8488e47b8f199ea0f0a",
+    ".artifacts/runtime-net-learning-20261015/failure-source/test_runtime_net_learning-second.cpp.py": "f3e526b2a6e7e0fb5b112672e8a43615a5e50b87264147f0da5d6bb052c705d0",
+    ".artifacts/runtime-net-learning-20261015/failure-source/test_runtime_net_learning.py": "f3e526b2a6e7e0fb5b112672e8a43615a5e50b87264147f0da5d6bb052c705d0",
+    ".artifacts/runtime-net-learning-20261015/freeze.json": "0a0c07388c29a2edd8cc2c532b3f8c19419104384d7c90eb69e12d8c5a7d6341",
+    ".artifacts/runtime-net-learning-20261015/stage.py": "49e90d2baa24a2b40a8e5d7172b501b2115535a83280dd99a843207cc055e984",
+    ".artifacts/runtime-net-learning-20261015/synthetic-retry.json": "8d7e51e8fac8f3a3c9b604cf8af087eaef9cf97aa2734666966526b014d48953",
+    ".artifacts/runtime-net-learning-20261015/synthetic-retry.jsonl.gz": "24b401245d7003158760cda61f6d0615a681ea0ecf788c3e4c2a22a599cac955",
+    ".artifacts/runtime-net-learning-20261015/synthetic-retry2.json": "56637ec395298671b1a8b94af6de6a74d7bb8a5c04f0f26bd2b732a7d5affcfc",
+    ".artifacts/runtime-net-learning-20261015/synthetic-retry2.jsonl.gz": "5c69f16d5118a6575ba1f191f033a8675ef0bc2ca76d75e25b692b3393fd6d74",
+    ".artifacts/runtime-net-learning-20261015/synthetic.json": "4c1ea703613d49b4c8b806933a8747d98b9c2764269fff45cb845214a025e418",
+    ".artifacts/runtime-net-learning-20261015/synthetic.jsonl.gz": "187f747c73ebccea45b7cf57295a7f9a0bf77328c1dcb2b8b9af77ace93c16ab",
+    ".artifacts/runtime-net-learning-20261015/trace-audit.json": "a53c23ccd05c0763614d9b4cd968efd1a7ad36850c0b252c4ee7b5a53efa1e90",
+    ".artifacts/runtime-net-learning-20261015/validation-state.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".artifacts/runtime-net-learning-20261015/verify_publication.py": "0047333a4e89e2be05414efab42370985d9d0ee984287afca2bd1dd72c8e8dcf"
+  },
+  "existing_leaf_skips": [
+    {
+      "skips": 1,
+      "test": "option_archive_lifecycle_audit_test"
+    },
+    {
+      "skips": 1,
+      "test": "integrator_train_test"
+    },
+    {
+      "skips": 1,
+      "test": "maker_execution_learnability_experiment_test"
+    },
+    {
+      "skips": 1,
+      "test": "maker_subsecond_information_experiment_test"
+    },
+    {
+      "skips": 3,
+      "test": "run_microstructure_alpha_development_test"
+    }
+  ],
+  "g4": false,
+  "limitations": [
+    "SYNTHETIC_NO_ALPHA_OR_G4",
+    "FIXED_SIGNAL_TEST_ACTUATOR_NOT_PRODUCTION_STRATEGY",
+    "COUNTERFACTUAL_DETERMINISTIC_REPLAY_NOT_ACTUAL_EXCHANGE_FILLS",
+    "LOCAL_PROCESSING_SEQUENCE_NOT_EXCHANGE_EXECUTION_CLOCK",
+    "REPLAY_PREFIX_COPY_NOT_PRODUCTION_RESTART_CONTINUITY",
+    "CANDIDATE_PORTFOLIO_DIFFERENCES_NOT_SINGLE_PATH_CAUSAL_BUCKET_CREDIT",
+    "MACOS_NOT_LINUX_CI",
+    "OLD_CONTROLLER_COMPARISON_IS_FIXED_TEST_CONFIG_NOT_ONLINE_PROFILE",
+    "EARLY_SYNTHETIC_PASS_LEGACY_COMPARISON_INVALID_CLOCK"
+  ],
+  "market_experiments": 0,
+  "market_requests": 0,
+  "online_learning_objective_changed": false,
+  "production_sources_changed": false,
+  "protected_files": 6075,
+  "qualified_candidates": 0,
+  "scope_start": "2026-10-15T13:28:49Z",
+  "source_sha256": {
+    "CMakeLists.txt": "3f34aaab3d8b7c7f24522b58591fa5ce85ec84997795bc479cc0ce1741a241a4",
+    "tests/runtime_learning_driver.cpp": "49d1f862fbed139aec2cd10b8d2c550aedc5ed9759d667f89b78d130cb1ffa38",
+    "tools/runtime_net_learning.py": "95cb2a9b0d6c8c86e0fa35793c8dd5f039205b1c67ed6763240eb18ce8ea1e82",
+    "tools/test_runtime_net_learning.py": "f773546d162e447b800521613108064b291d8c944084f8488e47b8f199ea0f0a"
+  },
+  "status": "RUNTIME_NET_LEARNING_SYNTHETIC_PASS",
+  "tests": 14,
+  "unchanged_controller_sha256": "02d3ee88eb6654284db0706d0cc39d859e69a778d28f3c09e4a7b3955921aea2",
+  "unchanged_learner_sha256": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d",
+  "validation_failures": [
+    {
+      "at": "2026-10-15T13:36:59.328903+00:00",
+      "command_sha256": "e8f2c618d68e5720c2cc5585c097ee0c5e9b3002957efebbbf769d42ebb77786",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "runtime-net-controls",
+      "retry_of": null
+    },
+    {
+      "at": "2026-10-15T13:37:58.113076+00:00",
+      "command_sha256": "e8f2c618d68e5720c2cc5585c097ee0c5e9b3002957efebbbf769d42ebb77786",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "runtime-net-controls",
+      "retry_of": "9f21a2563d274c7b90035e8244f41862"
+    },
+    {
+      "at": "2026-10-15T13:41:43.375506+00:00",
+      "command_sha256": "9183f6b80181c09deb93c2426d78c38e24c6fde0f13e06654f90a299830ff1f2",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "matched-clock-acceptance",
+      "retry_of": null
+    },
+    {
+      "at": "2026-10-15T13:50:24.938719+00:00",
+      "command_sha256": "6af9a35926439a1906700ddf527994cea7021340c23003cc1d43fd7c2401fb35",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "result-audit",
+      "retry_of": null
+    }
+  ]
+}

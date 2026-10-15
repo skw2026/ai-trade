@@ -1,0 +1,25 @@
+{
+  "failure_id": "4f75c654fa53484290a2ce63252c520f",
+  "decision": "retry",
+  "goal": "将全量回归与固定合成收据逐字段交叉核对并生成最终报告",
+  "expected": "读取CTest中runtime_net_learning_test完整JSON，并与同源码固定运行一致",
+  "observed": "130/130 CTest通过，但结果归档程序在XML中找不到JSON而StopIteration；未生成机器结果或发布",
+  "root_cause_status": "confirmed",
+  "root_cause": "CTest JUnit system-out只保留前1024字节并明确标注截断，完整JSON在其后。原始build/Testing/Temporary/LastTest.log包含完整输出，结果未缺失；归档程序误把摘要XML当完整原日志。",
+  "evidence": [
+    ".artifacts/runtime-net-learning-20261015/ctest.xml",
+    ".artifacts/runtime-net-learning-20261015/ctest-full.log",
+    ".artifacts/runtime-net-learning-20261015/failure-source/stage-before-log-fix.py"
+  ],
+  "next_action": "归档未改写的LastTest.log，核其测试名称集合与XML130项一致，再从原日志读取JSON和真实叶子skip；仍逐字段比较固定结果。不重跑测试或模型，只对原结果审计命令唯一复验。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "完整可追溯交付不能只凭CTest成功摘要，保留原始结果才可宣称独立一致",
+    "data_feasibility": "同一次CTest原日志仍完整存在并已独立复制，原XML不改",
+    "method_feasibility": "只更换同一次运行的完整证据载体；测试与固定JSON逐字段一致门槛不降低",
+    "budget_and_exit": "原21:28:49 UTC截止及同gate保持，仅一次归档审计复验；缺件则停止发布"
+  }
+}

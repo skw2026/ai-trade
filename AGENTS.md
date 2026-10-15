@@ -11,6 +11,23 @@
 
 ## 开始与阶段边界
 
+- 2026-10-15 用户接续执行收益学习对照建议要求继续，按
+  `docs/plans/2026-10-15-runtime-net-learning-comparison.md`执行本地合成完整
+  范围，自限13:28:49至21:28:49 UTC八小时，0行情/市场实验/账户/ECS。
+  已完成RUNTIME_NET_LEARNING_SYNTHETIC_PASS：原LearningWindow接真实应用
+  订单/异步成交/资金费/WAL，独立事件前缀继承持仓/待处理成交/风险锁，
+  训练锁定、留出拒绝、下一窗更新。14项无skip、441828收据Decimal及独立
+  选择审计通过，完整CTest130/130（7既有叶子skip），6075旧绑定保持。
+  四次正式失败具名复盘/原命令唯一复验：订单导出遗漏、夹具资金费算错、
+  新旧信号时钟不一致、归档误读截断XML；早期优势作废。公平对齐后四组新旧完整执行收益
+  相同，不能说换目标提升收益；方向正例后窗盈利但全480步仍负。见
+  `docs/reviews/2026-10-15-runtime-net-learning-result.md`与JSON。
+  生产app/system/观察器/控制器与原Python学习选择规则不改，仅测试驱动
+  和离线适配器；不是线上目标已切换。main skip-ci核精确SHA，G4/候选0/
+  Demo锁/旧经济否决保持。此工程批次结案，不扩通用框架或自动等待；下一
+  真实经济批次需具名机制与完整有界合同，本批无新机制依据，不自动重开
+  BTC/ETH/SOL或其他旧关闭族。正常内部步骤不索权，实质新研究范围仍需决定。
+
 - 2026-10-15 用户以ok接受上一阶段8h完整运行时只读收益接线，按
   `docs/plans/2026-10-15-runtime-reward-shadow.md`从10:49:37至18:49:37 UTC
   执行。本批完成RUNTIME_REWARD_SHADOW_SYNTHETIC_PASS：BotApplication

@@ -91,6 +91,8 @@ target_link_libraries(trade_bot PRIVATE ai_trade_system)
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(runtime_learning_driver tests/runtime_learning_driver.cpp)
+  target_link_libraries(runtime_learning_driver PRIVATE ai_trade_system)
   add_executable(runtime_reward_shadow_test tests/test_runtime_reward_shadow.cpp)
   target_link_libraries(runtime_reward_shadow_test PRIVATE ai_trade_system)
   add_test(NAME runtime_reward_shadow_test COMMAND runtime_reward_shadow_test)
@@ -178,6 +180,10 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME runtime_net_learning_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_runtime_net_learning.py
+                     --driver $<TARGET_FILE:runtime_learning_driver>)
+    set_tests_properties(runtime_net_learning_test PROPERTIES TIMEOUT 180 LABELS "offline;learning;synthetic")
     add_test(NAME runtime_reward_shadow_audit_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_runtime_reward_shadow.py
                      --driver $<TARGET_FILE:runtime_reward_shadow_test>)
