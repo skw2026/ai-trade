@@ -1,0 +1,116 @@
+{
+  "schema": "single_mechanism_admission_review_v1",
+  "date": "2026-10-15",
+  "authority": "User continued the named complete-scope admission judgment after accepting the redesigned product rules",
+  "status": "NOT_ADMITTED_COMPLETE_SCOPE_UNBOUND",
+  "mechanism": "Post-publication incremental information in CFTC CME Bitcoin institutional option positioning",
+  "research_candidates_reviewed": 1,
+  "qualified_candidates": 0,
+  "g4": "NOT_ACHIEVED",
+  "demo_unlock": false,
+  "research_runtime_changed": false,
+  "market_research_authorized": false,
+  "confirmed_effect_size": null,
+  "confirmed_duration_weeks": null,
+  "current_reference_taker_fee_bps": "5.5",
+  "equal_notional_round_trip_fee_bps": "11",
+  "fee_reference_is_account_or_historical_attestation": false,
+  "budget": {
+    "started_utc": "2026-10-15T04:34:23+00:00",
+    "deadline_utc": "2026-10-15T06:04:23+00:00",
+    "maximum_review_minutes": 90,
+    "maximum_public_document_operations": 24,
+    "market_experiments": 0,
+    "automatic_followup_budget": false
+  },
+  "actions": {
+    "market_api_requests": 0,
+    "backtests": 0,
+    "training": 0,
+    "account_operations": 0,
+    "deployments": 0,
+    "scheduled_observations": 0
+  },
+  "scope_assessment": {
+    "named_falsifiable_mechanism": {
+      "status": "IDENTIFIED",
+      "finding": "Test incremental post-publication BTC return information from institution-category option positioning beyond historical prices and futures positioning; predictive association is not causal flow or demonstrated net profit."
+    },
+    "difference_from_closed_routes": {
+      "status": "IDENTIFIED",
+      "finding": "Regulator category positions, not expiry flow, inferred dealer Gamma, ETF daily creations, carry, price-only trend, or ETH/SOL residual reversion. No closed route reopened."
+    },
+    "complete_cost_and_exit_model": {
+      "status": "PARTIAL",
+      "finding": "Bybit BTCUSDT single leg with fees, spread, impact, latency, signed funding, partial fills and residual exits required; current fee illustration known but path-specific executable bounds unbound."
+    },
+    "development_and_independent_input_identity": {
+      "status": "UNBOUND",
+      "finding": "Official report sources and delayed release notices identified; complete target release clocks not bound. New COT input does not restore independence to consumed BTC returns. No new independent historical domain certified."
+    },
+    "frozen_learning_algorithm_and_reference": {
+      "status": "UNBOUND",
+      "finding": "Candidate comparison would add institution option information to a same-clock price-and-futures reference. Complete equations, training scope and selection procedure not frozen; no claim to replicate the paper or permission to train."
+    },
+    "same_research_and_delivery_semantics": {
+      "status": "PARTIAL",
+      "finding": "CME nearby-futures results cannot substitute for Bybit perpetual fills. Existing native replay is reusable, but this candidate has no executed model-to-runtime parity verification."
+    },
+    "performance_alert_trigger_and_recovery_protocol": {
+      "status": "UNBOUND",
+      "finding": "New policy separates performance from hard risk; candidate trigger and recovery not selected. Existing locks and risk rules remain unchanged."
+    },
+    "minimum_economic_effect_and_units": {
+      "status": "UNBOUND",
+      "finding": "Needs cost-net equity return per fixed reporting block and economically meaningful absolute and incremental effects; no observed or assumed d is promoted to a market estimate."
+    },
+    "dependence_and_tail_assumptions": {
+      "status": "UNBOUND",
+      "finding": "Weekly reports, overlapping positions and catch-up release clusters cannot be treated as independent daily samples. No calibrated dependence, tail or stopped-path model available."
+    },
+    "familywise_selection_and_monitoring_policy": {
+      "status": "PARTIAL",
+      "finding": "One mechanism in this review; no economic selection or interim profit test. Project search history is not reset. A new full experiment still needs selection-aware fixed-endpoint or valid sequential rules."
+    },
+    "false_admission_limit_and_minimum_power": {
+      "status": "UNBOUND",
+      "finding": "5 percent alpha and 80 percent power apply only to the explicitly idealized planning calculation; no market-calibrated qualification power claimed."
+    },
+    "event_capacity_and_final_endpoint": {
+      "status": "UNBOUND",
+      "finding": "At most one ordinary reporting date per week does not identify independent events. No qualified historical capacity or bounded forward endpoint; no observation scheduled."
+    },
+    "total_resource_budget_and_negative_exit": {
+      "status": "PARTIAL",
+      "finding": "This admission review is bounded to 90 minutes and 24 document operations, zero economic attempts. No full research/maintenance/confirmation budget activated; insufficient complete scope ends this review without second candidate."
+    }
+  },
+  "public_operations": [
+    {"id": 1, "kind": "search", "target": "CFTC TFF Bitcoin categories and release timing"},
+    {"id": 2, "kind": "search", "target": "Bitcoin COT asset manager return predictability primary research"},
+    {"id": 3, "kind": "open", "target": "https://hull-repository.worktribe.com/output/5680567/option-positions-non-momentum-trading-and-bitcoin-futures-returns", "outcome": "403_FULL_MANUSCRIPT_NOT_OBTAINED"},
+    {"id": 4, "kind": "open", "target": "https://www.sciencedirect.com/science/article/pii/S1544612326008287", "outcome": "403_DIRECT_BODY"},
+    {"id": 5, "kind": "open", "target": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm"},
+    {"id": 6, "kind": "open", "target": "https://publicreporting.cftc.gov/stories/s/TFF-Futures-Only/98ig-3k9y/", "outcome": "NO_RENDERED_ROWS_NOT_DATA_INTAKE"},
+    {"id": 7, "kind": "search", "target": "Exact option-position paper title PDF", "outcome": "PUBLISHER_CHAPTER_EXCERPTS_AND_AUTHOR_REPOSITORY_METADATA"},
+    {"id": 8, "kind": "click", "target": "CFTC TFF explanatory notes"},
+    {"id": 9, "kind": "click", "target": "CFTC release schedule"},
+    {"id": 10, "kind": "open", "target": "CFTC explanatory notes reference"},
+    {"id": 11, "kind": "open", "target": "CFTC schedule reference"},
+    {"id": 12, "kind": "search", "target": "Author repository PDF file index for selected paper"},
+    {"id": 13, "kind": "search", "target": "BIS Bitcoin carry and CFTC leveraged fund hedging interpretation"},
+    {"id": 14, "kind": "open", "target": "CFTC explanatory notes line 30"},
+    {"id": 15, "kind": "open", "target": "CFTC schedule line 55"},
+    {"id": 16, "kind": "open", "target": "https://www.bis.org/publ/work1087.pdf", "outcome": "REDIRECT_TO_OFFICIAL_SUMMARY"},
+    {"id": 17, "kind": "search", "target": "Selected option-position paper exact title filetype PDF", "outcome": "NO_FULL_PDF_OBTAINED"},
+    {"id": 18, "kind": "search", "target": "CFTC official ION 2023 publication delays"},
+    {"id": 19, "kind": "open", "target": "https://bybit-exchange.github.io/docs/v5/market/history-fund-rate"},
+    {"id": 20, "kind": "open", "target": "https://www.bybit.com/en/help-center/article/Trading-Fee-Structure/"},
+    {"id": 21, "kind": "open", "target": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/HistoricalSpecialAnnouncements/index.htm"},
+    {"id": 22, "kind": "open", "target": "https://bybit-exchange.github.io/docs/v5/order/create-order"},
+    {"id": 23, "kind": "open", "target": "Bybit fee structure line 25"},
+    {"id": 24, "kind": "open", "target": "Bybit funding history documentation line 40"}
+  ],
+  "decision": "End this single admission review without a market experiment. Do not automatically expand document searches, implement a runner, change mechanism, resume old routes or begin a long observation.",
+  "reentry_requirement": "A complete named proposal binding publication-clock inputs, development and independent confirmation identities, costs and exits, model and reference, power and an affordable final endpoint; a paper or public endpoint alone does not satisfy this requirement."
+}
