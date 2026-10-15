@@ -1,0 +1,146 @@
+{
+  "account_operations": 0,
+  "archived_mutable_baselines": {
+    "CMakeLists.txt": {
+      "path": ".artifacts/runtime-reward-shadow-20261015/baseline/CMakeLists.txt",
+      "sha256": "28963046de01bdc10ea8fa6068ad6aa0605ebc708dfaf9c9d75e27dea7ae8fc4"
+    },
+    "src/app/bot_app.cpp": {
+      "path": ".artifacts/runtime-reward-shadow-20261015/baseline/src/app/bot_app.cpp",
+      "sha256": "24d2c2286eda9075b7f2c20c3d459500b2d79f8d09dff1d3ac7f40d0e2f9b547"
+    },
+    "src/app/bot_app.h": {
+      "path": ".artifacts/runtime-reward-shadow-20261015/baseline/src/app/bot_app.h",
+      "sha256": "6c21d52c35b2b35cee846f45f5c2fa3ec9af64a207a1d9a8f36cd4dceeab18fd"
+    },
+    "src/system/trade_system.cpp": {
+      "path": ".artifacts/runtime-reward-shadow-20261015/baseline/src/system/trade_system.cpp",
+      "sha256": "9467c3e91a3312610784fbbf5daebe253cc5939938e0c3f05cecb728329faf24"
+    },
+    "src/system/trade_system.h": {
+      "path": ".artifacts/runtime-reward-shadow-20261015/baseline/src/system/trade_system.h",
+      "sha256": "65f2600cdf97f65b0b867ab72f42e9246e68d0f07ef1370a13bdf529e1c0b40a"
+    }
+  },
+  "audited_receipts": 94,
+  "checked_utc": "2026-10-15T11:14:00.404206+00:00",
+  "deadline": "2026-10-15T18:49:37Z",
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "driver_sha256": "7616eba7a48d618e57303a7751e70d64f19c57a0182a968cdbbb302263e16d90",
+  "engineering_only": true,
+  "evidence_sha256": {
+    ".artifacts/runtime-reward-shadow-20261015/ctest-corrected.xml": "0fa3421db59f78a06cbcc8d576ee75f2b33d162d283985f267ee5e5430f80335",
+    ".artifacts/runtime-reward-shadow-20261015/ctest-final.xml": "87ec498e774525d71249740dbdd79e87997b1286344075c32b134df4f3a4f46e",
+    ".artifacts/runtime-reward-shadow-20261015/ctest.xml": "50aefbc38964aa0416c1f478041135ebea595216b568952e2967a93b36ce15a1",
+    ".artifacts/runtime-reward-shadow-20261015/persistence-failure-source/test_runtime_reward_shadow.cpp": "c420eb2e24d2265e0a23f81e550dc019557fdc3f939bd02e3317ce0f178b191f",
+    ".artifacts/runtime-reward-shadow-20261015/persistence-failure-source/test_runtime_reward_shadow.py": "b6ecf538f5b0606368407b04b5a410ababb7298c1052e8b779c812b33d8ecbed",
+    ".artifacts/runtime-reward-shadow-20261015/persistence-retry.json": "36dc627a40df1b23cc415e9c1f7d6f343bc704805d836a402b11e657138e8c4e",
+    ".artifacts/runtime-reward-shadow-20261015/persistence-retry.log": "b0828d0ee2f01f4e9055adcd099ca5c80d94b490a2d29726bf29bca9e86e06fa",
+    ".artifacts/runtime-reward-shadow-20261015/persistence.json": "9a1b2f8ebdf43c3bd92304275acb76585a0e249e62a48efb3f85d7e17f0b13f8",
+    ".artifacts/runtime-reward-shadow-20261015/persistence.log": "674a849712dbed979d95a524d5b736507b7181da20a81ff99cebad2f1aa3287a",
+    ".artifacts/runtime-reward-shadow-20261015/synthetic-final.json": "0b9c6f540263cadad7eadba0840690bcb622f37901cd93941b16020e21378e18",
+    ".artifacts/runtime-reward-shadow-20261015/synthetic-final.log": "c046bf54143322a43bdc57792388a6cf5d1add26930c1c1117b8b749f2caa39e",
+    ".artifacts/runtime-reward-shadow-20261015/synthetic.json": "d55bf14ce45d28f6aad41b2608b8f7e0dd5c3514212bf90a752c02500c747649",
+    ".artifacts/runtime-reward-shadow-20261015/synthetic.log": "34736ff2a9c73e71ef050b49b4d243ae39961b7403c7862ba8418c8513d137bd"
+  },
+  "failures_preserved": [
+    {
+      "at": "2026-10-15T11:08:46.352971+00:00",
+      "command_sha256": "82e60632fa2d41901dfb71bd951b826825c7de2d117b55fcc875aa89a4c552a3",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "runtime-shadow-persistence-audit",
+      "retry_of": null
+    }
+  ],
+  "g4": false,
+  "limitations": [
+    "LOCAL_PROCESSING_SEQUENCE_NOT_EXCHANGE_FILL_TIME",
+    "REMOTE_REBASE_REFLECTED_FILL_OR_RESTART_CONTINUITY_NOT_ADMITTED",
+    "IN_MEMORY_BOUNDED_OBSERVER_NO_PRODUCTION_REWARD_WAL",
+    "HYPOTHETICAL_EXIT_COST_NOT_EXECUTABLE_LIQUIDITY",
+    "PORTFOLIO_REWARD_NOT_CANDIDATE_CAUSAL_CREDIT",
+    "ONLINE_LEARNER_OBJECTIVE_UNCHANGED",
+    "NO_ECONOMIC_OR_G4_PASS",
+    "MACOS_PYTHON314_NOT_LINUX_CI"
+  ],
+  "market_experiments": 0,
+  "market_requests": 0,
+  "online_learning_objective_changed": false,
+  "protected_files": 6041,
+  "qualified_candidates": 0,
+  "runtime_observer_hooks_changed": true,
+  "runtime_shadow_default": "DISCONNECTED_REPLAY_INJECTION_ONLY",
+  "scope_start": "2026-10-15T10:49:37Z",
+  "source_sha256": {
+    "CMakeLists.txt": "d073ab24ab3c4208ce70358282a80a6d73883c196eea24c0f43e00a1f465c622",
+    "src/app/bot_app.cpp": "648bb9ce0255e0e393bdde87f4e459b0821f8e53556f37d19fa964c96e3f416c",
+    "src/app/bot_app.h": "918afd5b96273bcddee2b43d0bd0ce4a80f90073db17e54567157cf85dd22677",
+    "src/evolution/runtime_reward_shadow.cpp": "2044d1280532c9a1086b5691999db483b8e6aaa1722f9f0536d49870aae761ac",
+    "src/evolution/runtime_reward_shadow.h": "fe913d4ae5d5c5ddc8397fd35b05c068406a8d3d97607ea4da7192e6c2e52b08",
+    "src/system/trade_system.cpp": "20efca4dbeb08d161897400c0d973dc911e823634473b64bd24bc7433803f340",
+    "src/system/trade_system.h": "3a0aff60d9eca0a6122a75cd02afcec4db72c8dadbdcbc0960a27f1063c53690",
+    "tests/test_runtime_reward_shadow.cpp": "71a458a93dd008ff25e50016d95f7843233139bb83fb5683d04244781343ff04",
+    "tools/test_runtime_reward_shadow.py": "b6ecf538f5b0606368407b04b5a410ababb7298c1052e8b779c812b33d8ecbed"
+  },
+  "status": "RUNTIME_REWARD_SHADOW_SYNTHETIC_PASS",
+  "streams": {
+    "async-sequence": {
+      "fees": "0.057750000000000002",
+      "final_liquidation": "10004.909249999999999998",
+      "funding": "0.0330",
+      "receipts": 15
+    },
+    "full-runtime": {
+      "fees": "0",
+      "final_liquidation": "9997.34139999999990955",
+      "funding": "0",
+      "receipts": 37
+    },
+    "legacy-no-fill": {
+      "fees": "0",
+      "final_liquidation": "10000",
+      "funding": "0",
+      "receipts": 31
+    },
+    "multi-symbol": {
+      "fees": "0.049500000000000002",
+      "final_liquidation": "10006.812366499999999998",
+      "funding": "0.0170",
+      "receipts": 11
+    }
+  },
+  "tests": {
+    "ctest": 129,
+    "existing_leaf_skips": [
+      {
+        "skips": 1,
+        "test": "option_archive_lifecycle_audit_test"
+      },
+      {
+        "skips": 1,
+        "test": "integrator_train_test"
+      },
+      {
+        "skips": 1,
+        "test": "maker_execution_learnability_experiment_test"
+      },
+      {
+        "skips": 1,
+        "test": "maker_subsecond_information_experiment_test"
+      },
+      {
+        "skips": 3,
+        "test": "run_microstructure_alpha_development_test"
+      }
+    ],
+    "independent_audit": 6,
+    "native_cases": 23,
+    "new_skips": 0
+  },
+  "unchanged_controller_sha256": "02d3ee88eb6654284db0706d0cc39d859e69a778d28f3c09e4a7b3955921aea2",
+  "unchanged_learner_sha256": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d",
+  "unexpected_runtime_errors_after_repair": 0,
+  "validation_failures": 1
+}

@@ -1,0 +1,31 @@
+{
+  "failure_id": "2287453221a24373bb301b04a5261d57",
+  "decision": "retry",
+  "goal": "完整本地运行时只读收益接线，包含真实订单与成交持久化而不改变交易规则",
+  "expected": "合成事件现金流、来源、行为对照及必要WAL写入全部成功，无未预期运行错误",
+  "observed": "原23场景及6项账务断言返回成功，但原始stderr有两条INTEGRATOR_EPISODE_CLOSURE_WAL_FAILED。新增无未预期ERROR的审计后，原生returncode仍0而总验收明确FAIL，发布未执行。",
+  "root_cause_status": "confirmed",
+  "root_cause": "新测试Order夹具设置非空candidate_id/model_version但遗漏position_episode_id和integrator_policy_reason；应用因此建立候选周期，平仓时WalStore::AppendCandidateEpisodeClosure按既有必填规则拒绝。测试只核账户/订单/风险对照，没有断言evidence_persistence_failed_和关闭记录可重载，两侧同时失败仍可被错误看成行为一致。不是磁盘权限、影子奖励计算或生产WAL规则错误。",
+  "evidence": [
+    ".artifacts/runtime-reward-shadow-20261015/persistence.json",
+    ".artifacts/runtime-reward-shadow-20261015/persistence.log",
+    ".artifacts/runtime-reward-shadow-20261015/synthetic-final.log",
+    ".artifacts/runtime-reward-shadow-20261015/persistence-failure-source/test_runtime_reward_shadow.cpp",
+    ".artifacts/runtime-reward-shadow-20261015/persistence-failure-source/test_runtime_reward_shadow.py",
+    "src/storage/wal_store.cpp::AppendCandidateEpisodeClosure",
+    "src/app/bot_app.cpp::RecordCandidateEpisodeClosure"
+  ],
+  "next_action": "仅补齐固定合成订单的episode/mode/policy身份；原生测试断言未触发持久化失败、关闭记录及4笔成交2个订单可从真实WAL重载。保留新增ERROR扫描，不弱化原断言。限定重建后一次原argv复验，输出新-retry文件而不覆盖原FAIL。通过后完成最终全CTest和交付核验。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "测试成功必须包含原运行时持久化成功；不得把两侧同时错误的对照当完整通过。",
+    "data_feasibility": "全部是可明确绑定身份的固定本地夹具，没有外部数据或权限缺件。",
+    "method_feasibility": "必填字段检查和错误日志精确一致；添加真实WAL读取验收可以直接区分记录缺失与成功，不修改生产代码或风险门槛。",
+    "budget_and_exit": "原10:49:37至18:49:37 UTC预算不延长，限定一次最多120秒重建和30秒原命令复验；再失败停并重审，不发布或重跑经济实验。"
+  },
+  "repair_build_argv": ["cmake", "--build", "build", "--parallel", "4"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade"
+}

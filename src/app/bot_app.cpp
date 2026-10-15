@@ -871,8 +871,10 @@ bool ValidateAccountSnapshot(const AppConfig& config, ExchangeAdapter* adapter) 
 
 }  // namespace
 
-BotApplication::BotApplication(const AppConfig& config)
-    : config_(config),
+BotApplication::BotApplication(const AppConfig& config,
+                               std::shared_ptr<RuntimeRewardShadow> replay_reward_shadow)
+    : replay_reward_shadow_(std::move(replay_reward_shadow)),
+      config_(config),
       startup_utc_(CurrentUtcIsoTimestamp()),
       boot_id_(BuildBootId()),
       system_(config),
@@ -887,6 +889,8 @@ BotApplication::BotApplication(const AppConfig& config)
       gate_monitor_(config.gate),
       universe_selector_(config.universe, config.primary_symbol),
       wal_(config.data_path + "/trade.wal") {
+  if (replay_reward_shadow_ && config.mode != "replay")
+    throw std::invalid_argument("reward shadow injection requires offline replay");
   RefreshReduceOnlyMode();
 }
 
@@ -4128,6 +4132,7 @@ bool BotApplication::Initialize() {
     system_.EnableEvolution(false);
   }
 
+  if (replay_reward_shadow_) system_.AttachRewardShadow(replay_reward_shadow_);
   return true;
 }
 
@@ -5852,6 +5857,8 @@ bool BotApplication::EnqueueIntent(
   if (IsNetPositionOrderPurpose(intent.purpose)) {
     pending_net_order_enqueued_ms_[intent.client_order_id] = CurrentTimestampMs();
   }
+  system_.ObserveRewardOrder(attributed_intent,
+      has_last_regime_state_ ? last_regime_state_.bucket : RegimeBucket::kRange);
   executor_->Submit(attributed_intent);
   ++funnel_window_.intents_enqueued;
   if (config_.execution_strategy_reduce_post_only_timeout_ticks > 0 &&
@@ -7761,6 +7768,7 @@ void BotApplication::RunSelfEvolution(std::int64_t event_time_ms,
                              observed_turnover_cost_bps,
                              observed_funding_rate_per_tick,
                              event_time_ms);
+  system_.ObserveRewardEvolution(action ? &*action : nullptr);
   pending_fills_for_evolution_ = 0;
   if (!action.has_value()) {
     return;

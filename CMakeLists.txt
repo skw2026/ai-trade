@@ -53,6 +53,7 @@ add_library(ai_trade_system STATIC
   src/execution/order_throttle.cpp
   src/execution/async_executor.cpp
   src/evolution/self_evolution_controller.cpp
+  src/evolution/runtime_reward_shadow.cpp
   src/monitor/gate_monitor.cpp
   src/research/time_series_operators.cpp
   src/research/ic_evaluator.cpp
@@ -90,6 +91,10 @@ target_link_libraries(trade_bot PRIVATE ai_trade_system)
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(runtime_reward_shadow_test tests/test_runtime_reward_shadow.cpp)
+  target_link_libraries(runtime_reward_shadow_test PRIVATE ai_trade_system)
+  add_test(NAME runtime_reward_shadow_test COMMAND runtime_reward_shadow_test)
+  set_tests_properties(runtime_reward_shadow_test PROPERTIES TIMEOUT 30 LABELS "offline;learning;shadow")
   # Deliberately excludes ai_trade_system, libcurl and all trading adapters.
   add_executable(execution_reward_driver
     tests/execution_reward_driver.cpp src/evolution/execution_reward_ledger.cpp
@@ -173,6 +178,10 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME runtime_reward_shadow_audit_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_runtime_reward_shadow.py
+                     --driver $<TARGET_FILE:runtime_reward_shadow_test>)
+    set_tests_properties(runtime_reward_shadow_audit_test PROPERTIES TIMEOUT 60 LABELS "offline;learning;shadow")
     add_test(NAME native_execution_reward_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_native_execution_reward.py
                      --driver $<TARGET_FILE:execution_reward_driver>)

@@ -2,12 +2,14 @@
 
 #include <array>
 #include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "core/config.h"
 #include "core/types.h"
 #include "execution/execution_engine.h"
+#include "evolution/runtime_reward_shadow.h"
 #include "market/market_data.h"
 #include "market/closed_bar_clock.h"
 #include "oms/account_state.h"
@@ -92,6 +94,19 @@ class TradeSystem {
   void OnReflectedFill(const FillEvent& fill,
                        double position_qty_before,
                        double avg_entry_price_before);
+  // Observational injection only; no configuration/CLI or trading feedback.
+  void AttachRewardShadow(std::shared_ptr<RuntimeRewardShadow> shadow) {
+    reward_shadow_ = std::move(shadow);
+    if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kBaseline, account_);
+  }
+  void ObserveRewardOrder(const OrderIntent& intent, RegimeBucket bucket) noexcept {
+    if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kOrder, account_, nullptr,
+        nullptr, &intent, static_cast<int>(bucket), GetEvolutionWeights(bucket));
+  }
+  void ObserveRewardEvolution(const SelfEvolutionAction* action) noexcept {
+    if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kEvolution, account_,
+        nullptr, nullptr, nullptr, -1, {}, 0.0, action);
+  }
   void OnMarketSnapshot(const MarketEvent& event);
   double ApplyFunding(const std::string& symbol,
                       double funding_rate_per_interval);
@@ -195,6 +210,7 @@ class TradeSystem {
   IntegratorShadow integrator_shadow_;
   MicrostructureDemoOverlay microstructure_demo_overlay_;
   AccountState account_;
+  std::shared_ptr<RuntimeRewardShadow> reward_shadow_;  // Null in normal runtime.
 
   // Configuration
   IntegratorConfig integrator_config_;

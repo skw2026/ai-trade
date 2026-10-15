@@ -167,6 +167,7 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
   // 1. Update Account Valuation
   account_.OnMarket(event);
   if (reference_enabled_) reference_account_.OnMarket(event, account_);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kMarket, account_, &event);
   if (closed_bar_mvp_) {
     mvp_trade_healthy_ = trade_ok;
     mvp_symbol_pending_orders_ = has_pending_symbol_net_orders;
@@ -336,6 +337,7 @@ MarketDecision TradeSystem::Evaluate(const MarketEvent& event,
 void TradeSystem::OnFill(const FillEvent& fill) {
   if (reference_enabled_) reference_account_.OnFill(fill, account_);
   account_.ApplyFill(fill, reference_enabled_);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kFill, account_, nullptr, &fill);
   if (reference_enabled_) reference_account_.AfterAccounting(account_);
   ObserveMvpRisk(manual_risk_.state().last_ts_ms);
 }
@@ -347,11 +349,13 @@ void TradeSystem::OnReflectedFill(const FillEvent& fill,
   account_.RecordReflectedFillEconomics(fill,
                                         position_qty_before,
                                         avg_entry_price_before);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kReflectedFill, account_, nullptr, &fill);
 }
 
 void TradeSystem::OnMarketSnapshot(const MarketEvent& event) {
   account_.OnMarket(event);
   if (reference_enabled_) reference_account_.OnMarket(event, account_);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kMarket, account_, &event);
   ObserveMvpRisk(event.ts_ms);
 }
 
@@ -368,6 +372,8 @@ double TradeSystem::ApplyFunding(const std::string& symbol, double rate) {
         account_.mark_price(symbol) * rate, account_);
   }
   const double paid = account_.ApplyFunding(symbol, rate, reference_enabled_);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kFunding, account_, nullptr,
+      nullptr, nullptr, -1, {}, paid, nullptr, &symbol, rate, reference_enabled_);
   if (reference_enabled_) reference_account_.AfterAccounting(account_);
   ObserveMvpRisk(manual_risk_.state().last_ts_ms);
   return paid;
@@ -406,12 +412,14 @@ void TradeSystem::SyncAccountFromRemotePositions(
   if (closed_bar_mvp_ && manual_risk_.state().initialized)
     throw std::logic_error("MVP manual risk history forbids account rebase after observations");
   account_.SyncFromRemotePositions(positions, baseline_cash_usd);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kRebase, account_);
 }
 
 void TradeSystem::RefreshAccountRiskFromRemotePositions(
     const std::vector<RemotePositionSnapshot>& positions) {
   if (reference_enabled_) throw std::logic_error("reference risk cannot ingest exchange snapshots");
   account_.RefreshRiskFromRemotePositions(positions);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kRebase, account_);
 }
 
 void TradeSystem::ForceSyncAccountPositionsFromRemote(
@@ -420,6 +428,7 @@ void TradeSystem::ForceSyncAccountPositionsFromRemote(
   if (closed_bar_mvp_ && manual_risk_.state().initialized)
     throw std::logic_error("MVP manual risk history forbids position overwrite");
   account_.ForceSyncPositionsFromRemote(positions);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kRebase, account_);
 }
 
 void TradeSystem::SyncAccountFromRemoteBalance(
@@ -429,6 +438,7 @@ void TradeSystem::SyncAccountFromRemoteBalance(
   if (closed_bar_mvp_ && manual_risk_.state().initialized)
     throw std::logic_error("MVP manual risk history forbids balance rebase after observations");
   account_.SyncFromRemoteAccountBalance(balance, reset_peak_to_equity);
+  if (reward_shadow_) reward_shadow_->Capture(ShadowEvent::kRebase, account_);
 }
 
 bool TradeSystem::SetEvolutionWeights(double trend_weight,

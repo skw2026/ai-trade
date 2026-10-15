@@ -41,7 +41,8 @@ class BotApplication {
    * @brief 构造函数
    * @param config 应用程序完整配置
    */
-  explicit BotApplication(const AppConfig& config);
+  explicit BotApplication(const AppConfig& config,
+                          std::shared_ptr<RuntimeRewardShadow> replay_reward_shadow = {});
 
   /**
    * @brief 运行机器人
@@ -69,6 +70,7 @@ class BotApplication {
   int CheckExchange();
 
  private:
+  std::shared_ptr<RuntimeRewardShadow> replay_reward_shadow_;
   struct IntegratorCandidateEpisode;
 
   // --- 初始化阶段 ---
