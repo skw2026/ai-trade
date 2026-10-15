@@ -1,0 +1,29 @@
+{
+  "failure_id": "2d8fc83d57c2425c9fd218448a89adc0",
+  "decision": "retry",
+  "goal": "完整本地工程回归，不用新增测试通过代替旧工程健康",
+  "expected": "127个CTest目标全部通过，既有可选依赖/平台叶子skip如实记录",
+  "observed": "113/127通过，14失败；新增原生测试通过。13项直接报缺numpy，1项子CLI在import numpy前置失败导致退出1而非业务拒绝2。",
+  "root_cause_status": "confirmed",
+  "root_cause": "原build缓存使用/usr/local/bin/python3，该路径当前为Python3.15.0且没有numpy。未修改旧CLI的--help复现同一ModuleNotFoundError；已安装的python3.14为3.14.8，numpy2.4.4/pandas3.0.2可导入，同一CLI能进入参数帮助。是本地解释器环境选择错误，不是收益或策略失败。",
+  "evidence": [
+    ".artifacts/native-execution-reward-20261015/ctest-initial-failure.xml",
+    ".artifacts/native-execution-reward-20261015/ctest-initial-failure.log",
+    "build/CMakeCache.txt",
+    "tools/run_microstructure_alpha_lifecycle.py:30",
+    "tools/test_record_microstructure_regime_evidence.py:436"
+  ],
+  "next_action": "仅将本地生成的CMakeCache解释器显式绑定现有python3.14；通过具名repair-build让CMake重新生成测试命令，执行唯一原CTest argv复验。原FAIL XML/log已另名保留，不更改旧源文件、测试断言、依赖要求或省略测试。不上线、不安装全局依赖。",
+  "repair_build_argv": ["cmake", "--build", "build", "--parallel", "4"],
+  "repair_build_cwd": "/Users/sk.wang/Projects/c++/ai-trade",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "恢复原完整测试覆盖，不使用跳过numpy测试或新增回归掩盖旧失败。",
+    "data_feasibility": "现有已安装解释器和依赖可用；只跑本地合成/夹具回归，不取市场数据。",
+    "method_feasibility": "解释器导入路径和同一CLI启动对照已定位根因；CMake支持显式Python3_EXECUTABLE，旧源码及所有127目标保持。此为macOS本地回归，不冒称Linux/CI锁定依赖验证。",
+    "budget_and_exit": "原8h内，一次限定重建<=120秒和原CTest<=600秒；再失败保留阻断并重审，不推送或篡改旧门禁。"
+  }
+}

@@ -90,6 +90,12 @@ target_link_libraries(trade_bot PRIVATE ai_trade_system)
 
 include(CTest)
 if(BUILD_TESTING)
+  # Deliberately excludes ai_trade_system, libcurl and all trading adapters.
+  add_executable(execution_reward_driver
+    tests/execution_reward_driver.cpp src/evolution/execution_reward_ledger.cpp
+    src/oms/account_state.cpp src/oms/order_manager.cpp
+    src/risk/risk_engine.cpp src/execution/execution_engine.cpp)
+  target_include_directories(execution_reward_driver PRIVATE ${CMAKE_SOURCE_DIR}/src)
   # Transaction fixtures execute temporary CLI stand-ins. Docker's default
   # tmpfs is noexec; keep them in an isolated build-owned executable directory.
   configure_file(tools/CTestCustom.cmake.in CTestCustom.cmake @ONLY)
@@ -167,6 +173,10 @@ if(BUILD_TESTING)
               "Python3 interpreter not found; Python unit tests are disabled.")
     endif()
   else()
+    add_test(NAME native_execution_reward_test
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_native_execution_reward.py
+                     --driver $<TARGET_FILE:execution_reward_driver>)
+    set_tests_properties(native_execution_reward_test PROPERTIES TIMEOUT 180 LABELS "offline;learning;synthetic")
     add_test(NAME offline_diagnostic_safety_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_offline_diagnostic_safety.py)
     set_tests_properties(offline_diagnostic_safety_test PROPERTIES TIMEOUT 60 LABELS "offline;learning")

@@ -1,0 +1,27 @@
+{
+  "failure_id": "ac45db0083fe4370adfd34592ba1ac38",
+  "decision": "retry",
+  "goal": "原生执行奖励的独立账务、因果学习与风险继承合成验收",
+  "expected": "18项工程测试以及方向正例、成本/留出/敞口缩放控制均满足事前边界",
+  "observed": "16项通过；减仓预期负奖励与实际1.8189894e-12冲突；正例锁1:3且四段净收益为正，但net_t=0，拒绝更新。未继续全CTest或发布。",
+  "root_cause_status": "confirmed",
+  "root_cause": "两个合成测试设计错误。1）可清算权益已经扣除全仓退出准备；平价部分减仓将相应准备转成实际费用，权益和准备同额下降，可清算权益不应再次下降。原assertLess把成本扣两次。2）原周期价格+固定数量产生恒定正奖励；未改LearningWindow的t_stat在标准差<=1e-12时明确返回0。原正例因此不能满足既有统计门槛，非费用或原生归因错误。",
+  "evidence": [
+    ".artifacts/native-execution-reward-20261015/synthetic-result.json",
+    ".artifacts/native-execution-reward-20261015/validation-state.json",
+    "tools/execution_net_learning.py::t_stat",
+    "src/evolution/execution_reward_ledger.cpp::Liquidation",
+    "tools/audit_native_execution_reward.py::DecimalBook"
+  ],
+  "next_action": "保持原生源码、学习器、网格、门槛与价格周期不变。减仓测试改为精确零奖励及实际费用/退出准备的双重恒等检查。保留原完整价格输入及prefix hash为退化负例；方向正例加入固定0.0001资金费率，交替等量旧仓产生两bar零和的非退化扰动，反转负例共享此前168条。不是搜种子或新增市场尝试。原FAIL报告不覆写，原命令唯一复验另写-retry结果。",
+  "scope_unchanged": true,
+  "acceptance_unchanged": true,
+  "path_verdict": "viable",
+  "structural_issue": false,
+  "path_review": {
+    "goal_alignment": "核对真实执行收益而不是让虚拟收益刷绿；保留原退化拒绝，增强重复计费检查。",
+    "data_feasibility": "全部确定性合成事件，无市场输入缺件或新取数，价格/信号周期保持。",
+    "method_feasibility": "逐事件Decimal核验已通过；原正例基础留出31.2642198、压力26.5644396，固定两bar零和资金费只使标准差非零，不改正收益方向或t阈值。原退化案例仍须拒绝。",
+    "budget_and_exit": "原8h预算内只做一次同命令复验，最多180秒；若再次失败停止并重审路线，不续参数搜索或发布。"
+  }
+}

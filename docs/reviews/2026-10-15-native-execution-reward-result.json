@@ -1,0 +1,279 @@
+{
+  "account_operations": 0,
+  "checked_utc": "2026-10-15T08:58:16.978115+00:00",
+  "controls": {
+    "cost": {
+      "audited_receipts": 76002,
+      "classification": "NO_ACCEPTED_UPDATE",
+      "current_net": {
+        "holdout": -4.679999999905704,
+        "stress_holdout": -9.360000000073342,
+        "stress_train": -21.84000000017113,
+        "train": -10.919999999779975
+      },
+      "input_prefix_sha256": "46e7be5519c16e7caeb4ad93e6cacae11294027cda1fa0a554073819b2d320f1",
+      "journal_sha256": "4eacbe09a3de6e48ba9cff0f6cc2438497bba3ad0393df545d87f725fc1a47c0",
+      "locked": "1:2",
+      "next_window_net_gain": null,
+      "raw_updated": false,
+      "reason": "NO_ABSOLUTE_NET_EDGE",
+      "selected_net": {
+        "holdout": -4.679999999905704,
+        "stress_holdout": -9.360000000073342,
+        "stress_train": -21.84000000017113,
+        "train": -10.919999999779975
+      },
+      "unit_net_gain": [
+        0.0,
+        0.0
+      ],
+      "weights_after": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "weights_before": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "degenerate": {
+      "audited_receipts": 75998,
+      "classification": "NO_ACCEPTED_UPDATE",
+      "current_net": {
+        "holdout": -36.66223782002635,
+        "stress_holdout": -40.892075640033,
+        "stress_train": -95.414843160077,
+        "train": -85.54522158006148
+      },
+      "input_prefix_sha256": "7e66da4f4751f4fefcedafa1e9bb2182c5393e5f575e090bb5e83c59388b1641",
+      "journal_sha256": "0fc358bdac7f19db36752e4faef96992fee5fcea82b488fa652e6212454d03f3",
+      "locked": "1:3",
+      "next_window_net_gain": null,
+      "raw_updated": false,
+      "reason": "NET_OR_PAIRED_EVIDENCE_INSUFFICIENT",
+      "selected_net": {
+        "holdout": 31.264219800083083,
+        "stress_holdout": 26.564439599911566,
+        "stress_train": 61.983692399793654,
+        "train": 72.94984620019386
+      },
+      "unit_net_gain": [
+        136.85207523999998,
+        136.9041504800207
+      ],
+      "weights_after": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "weights_before": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "positive": {
+      "audited_receipts": 84636,
+      "classification": "DIRECTIONAL_EXECUTION_GAIN",
+      "current_net": {
+        "holdout": -36.624437820064486,
+        "stress_holdout": -40.85427564007114,
+        "stress_train": -95.32264316016517,
+        "train": -85.45302158014965
+      },
+      "input_prefix_sha256": "42ccebe6851c67b3a85493c9b319b299fe7308259038c61fba965cdcded03e05",
+      "journal_sha256": "4008e9c6ae174a461f24b9eee1ad593c23e3f917d4c18a2d7dbb8e7afa64b898",
+      "locked": "1:3",
+      "next_window_net_gain": [
+        226.33252540042486,
+        224.8180507998768
+      ],
+      "raw_updated": true,
+      "reason": "EXECUTION_NET_UPDATE",
+      "selected_net": {
+        "holdout": 31.26241980006307,
+        "stress_holdout": 26.562639599891554,
+        "stress_train": 61.97449239974776,
+        "train": 72.94064620014797
+      },
+      "unit_net_gain": [
+        136.7548752400362,
+        136.8069504800569
+      ],
+      "weights_after": [
+        0.5,
+        0.55,
+        0.5
+      ],
+      "weights_before": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "reverse": {
+      "audited_receipts": 75998,
+      "classification": "NO_ACCEPTED_UPDATE",
+      "current_net": {
+        "holdout": 28.500388040100006,
+        "stress_holdout": 24.270366080012536,
+        "stress_train": -95.32264316016517,
+        "train": -85.45302158014965
+      },
+      "input_prefix_sha256": "42ccebe6851c67b3a85493c9b319b299fe7308259038c61fba965cdcded03e05",
+      "journal_sha256": "a24a02a8a58a1c6dfcfdb6034c8b7a0c6c64ef59e626b7220ed196a74f26bf6f",
+      "locked": "1:3",
+      "next_window_net_gain": null,
+      "raw_updated": false,
+      "reason": "NO_ABSOLUTE_NET_EDGE",
+      "selected_net": {
+        "holdout": -41.23479507493721,
+        "stress_holdout": -45.934890150016145,
+        "stress_train": 61.97449239974776,
+        "train": 72.94064620014797
+      },
+      "unit_net_gain": [
+        -136.68783524003084,
+        -136.63547048005603
+      ],
+      "weights_after": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "weights_before": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    },
+    "scale": {
+      "audited_receipts": 42354,
+      "classification": "EXPOSURE_SCALING_ONLY",
+      "current_net": {
+        "holdout": 5.0372280000010505,
+        "stress_holdout": 5.034455999999409,
+        "stress_train": 9.157053000000815,
+        "train": 10.463526499999716
+      },
+      "input_prefix_sha256": "ecbcd5b8026961487268d560c462b709b2f1b061ac6fe26231739b0a6a53c223",
+      "journal_sha256": "ce9452d5dfa3753db4fb6d3849d1f6b38af9ffe53a7e10ae2f85c5edaa6d9119",
+      "locked": "1:3",
+      "next_window_net_gain": null,
+      "raw_updated": true,
+      "reason": "EXECUTION_NET_UPDATE",
+      "selected_net": {
+        "holdout": 5.540950799999337,
+        "stress_holdout": 5.537901599998804,
+        "stress_train": 10.072758300000714,
+        "train": 11.509879150000415
+      },
+      "unit_net_gain": [
+        0.0,
+        0.0
+      ],
+      "weights_after": [
+        0.5,
+        0.55,
+        0.5
+      ],
+      "weights_before": [
+        0.5,
+        0.5,
+        0.5
+      ]
+    }
+  },
+  "demo_opening_lock_unchanged": true,
+  "deployments": 0,
+  "driver_sha256": "ef5b2e2e320d8bf39d37b8729d418b2344a03aa5480b151d15793101b7ef6e42",
+  "engineering_only": true,
+  "evidence_sha256": {
+    ".artifacts/native-execution-reward-20261015/ctest-final.xml": "aa1a97bdb0a56b9c6979ec83e4420845c0b542431a53f5a35f5535d635687a9d",
+    ".artifacts/native-execution-reward-20261015/ctest-initial-failure.xml": "bf4a37a2d0d020aff1c283cd2c88957056633d9a295fa8caa63468e48fa5aa25",
+    ".artifacts/native-execution-reward-20261015/synthetic-final.json": "59257e241794245de7849de7ab713b0d3c5a444e25c571ccff06b4afcf59bc08",
+    ".artifacts/native-execution-reward-20261015/synthetic-result-retry.json": "a39fb9452e4f2d182ceb0d2961d96b2815f99110ea512c0ef33e3cdcbaef283c",
+    ".artifacts/native-execution-reward-20261015/synthetic-result.json": "6c20328ecd6e8c706e6e2dda8cb9ee2ce63df2121065f33d1aa87a733025e2dc"
+  },
+  "failures_preserved": [
+    {
+      "at": "2026-10-15T08:42:04.791570+00:00",
+      "command_sha256": "f3f3219596b126ccd079338c893e283d920fc97fd9c8988c7dd4cd132f92d432",
+      "event": "validation",
+      "exit_code": 1,
+      "label": "native-reward-synthetic-controls",
+      "retry_of": null
+    },
+    {
+      "at": "2026-10-15T08:47:46.749826+00:00",
+      "command_sha256": "03082a1033c65217592948b9febb2aaf3c34a4a35de6560b9606c2325120eb15",
+      "event": "validation",
+      "exit_code": 8,
+      "label": "native-reward-full-regression",
+      "retry_of": null
+    }
+  ],
+  "fixture_erratum": {
+    "correction": "FIXED_FUNDING_IS_NOT_EXACTLY_ZERO_SUM_WITH_DIFFERENT_MARKS",
+    "no_threshold_or_price_rule_change": true,
+    "original_review_preserved": true,
+    "positive_holdout_net_reduction_vs_degenerate": 0.0018
+  },
+  "g4": false,
+  "limitations": [
+    "SYNTHETIC_SINGLE_SYMBOL_NO_LIQUIDITY_PROOF",
+    "NATIVE_SUBSET_NOT_FULL_BOT_APPLICATION",
+    "IN_MEMORY_JOURNAL_REPLAY_NOT_PRODUCTION_WAL",
+    "MACOS_PYTHON314_NOT_LINUX_CI",
+    "NO_MARKET_PROFIT_OR_SHARPE_CLAIM",
+    "ONLINE_LEARNING_NOT_SWITCHED"
+  ],
+  "market_experiments": 0,
+  "market_requests": 0,
+  "production_controller_changed": false,
+  "protected_files": 6014,
+  "qualified_candidates": 0,
+  "scope_start": "2026-10-15T08:23:52Z",
+  "source_sha256": {
+    "CMakeLists.txt": "28963046de01bdc10ea8fa6068ad6aa0605ebc708dfaf9c9d75e27dea7ae8fc4",
+    "src/evolution/execution_reward_ledger.cpp": "a47f25200f3ab167830bc9f8f8ac87e814d78bc9c3c8c3b26d665df56912f8d6",
+    "src/evolution/execution_reward_ledger.h": "4d758b5cca59ac7479f86607c2aa47e64036e161ef1078adb2dd674f4db23830",
+    "tests/execution_reward_driver.cpp": "3d33d0da80517786e51c9e222a797faf5a15f904380e94f77aca24c55d6a97ab",
+    "tools/audit_native_execution_reward.py": "edbfaeca57077643206a67719bddeaf13c1a6a47befdb31b230da0d85b1c1679",
+    "tools/native_execution_reward.py": "f752d22093ca1fa70dae6f0ef2c92d16a07693388b4eab81136015b9e3b0b79c",
+    "tools/test_native_execution_reward.py": "2670568e3b763e265aa6cde1b59fadd21f6dab245c9f07f2677787e978c758ce"
+  },
+  "status": "NATIVE_EXECUTION_REWARD_SYNTHETIC_PASS",
+  "tests": {
+    "ctest": 127,
+    "ctest_failures": 0,
+    "existing_leaf_skips": [
+      {
+        "skips": 1,
+        "test": "option_archive_lifecycle_audit_test"
+      },
+      {
+        "skips": 1,
+        "test": "integrator_train_test"
+      },
+      {
+        "skips": 1,
+        "test": "maker_execution_learnability_experiment_test"
+      },
+      {
+        "skips": 1,
+        "test": "maker_subsecond_information_experiment_test"
+      },
+      {
+        "skips": 3,
+        "test": "run_microstructure_alpha_development_test"
+      }
+    ],
+    "new": 19,
+    "new_skips": 0
+  },
+  "total_control_receipt_audits": 354988,
+  "unchanged_learner_sha256": "cacc6e89ad8293b415591b0a19b7dcd20df35671898765b6d038e007ba11bd6d"
+}
